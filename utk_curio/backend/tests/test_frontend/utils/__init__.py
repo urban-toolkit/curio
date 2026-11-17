@@ -189,6 +189,14 @@ from .palettes import (  # noqa: F401
     close_tools_palette,
     tools_palette_is_open,
 )
+from .collection_cache import (  # noqa: F401
+    CARD,
+    DRAWER_ROOT,
+    bucket_collections_of,
+    cache_bucket_collections,
+    cache_collection_files,
+    data_catalog_drawer,
+)
 from .upload import upload_workflow  # noqa: F401
 from .canvas_authoring import (  # noqa: F401
     CANVAS_DROP_TARGET,

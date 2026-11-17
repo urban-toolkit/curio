@@ -69,11 +69,15 @@ from utk_curio.backend.tests.dataset_catalog_coverage import (
 )
 
 from .utils import (
+    CARD,
+    DRAWER_ROOT,
     accept_confirm_dialog,
     assert_header_shows_save,
     assert_vega_canvas_rendered,
+    cache_collection_files,
     canvas_node_type,
     connect_nodes,
+    data_catalog_drawer,
     dataset_widget_state,
     drag_to_canvas,
     drag_builtin_to_canvas,
@@ -102,11 +106,6 @@ VEGA_TYPE = "curio.builtin/vis-vega"
 
 TRANSFORM_TILE = "#tile-python-computation"
 VEGA_TILE = "#tile-vis-vega"
-
-DRAWER_ROOT = '[data-curio-dataset-catalog-drawer="true"]'
-# The "Adding…" placeholder is an <article role="status"> carrying the same
-# title as the real card, so every card locator has to exclude it.
-CARD = 'article:not([role="status"])'
 
 # Two nodes at zoom 1: the pair proven by test_canvas_authoring_e2e.py. A node
 # is 525x350 flow units in a 1280x720 viewport, so this is about as close as
@@ -142,21 +141,6 @@ def _username(dataset: CatalogDataset) -> str:
     return f"ds_{tail}"[:30]
 
 
-def _drawer(page):
-    root = page.locator(DRAWER_ROOT)
-    root.wait_for(state="attached", timeout=15000)
-    # aria-hidden IS the presented signal: until the rAF flips it, every role
-    # query inside the subtree returns zero matches, so gating on it is
-    # strictly better than waiting for visibility (the drawer slides in via
-    # translate3d, so it is "visible" before it is usable).
-    expect(root).to_have_attribute("aria-hidden", "false", timeout=10000)
-    dialog = page.get_by_role("dialog").filter(
-        has=page.get_by_role("heading", name="Data Catalog", exact=True)
-    )
-    expect(dialog).to_be_visible(timeout=10000)
-    return dialog
-
-
 def _add_dataset_from_catalog(page, palette, dataset: CatalogDataset):
     """Add *dataset* to the open dataflow, and return its palette row.
 
@@ -164,7 +148,7 @@ def _add_dataset_from_catalog(page, palette, dataset: CatalogDataset):
     open past the drawer.
     """
     palette.get_by_role("button", name="Browse Data Catalog +").click(force=True)
-    drawer = _drawer(page)
+    drawer = data_catalog_drawer(page)
     # The drawer shows a group (a NetCDF file's variables, a PBF's layers) as
     # one card under the group's id, and adding it adds every member.
     card_id = dataset.manifest.group_id or dataset.dataset_id
@@ -193,7 +177,7 @@ def _add_dataset_from_catalog(page, palette, dataset: CatalogDataset):
         )
     ).to_be_visible(timeout=20000)
     if bucket_source(dataset) is not None:
-        _cache_its_files(page, drawer, card_id, int(expected_markers(dataset)["CURIO_E2E_ROWS"]))
+        cache_collection_files(page, drawer, card_id, int(expected_markers(dataset)["CURIO_E2E_ROWS"]))
 
     # This drawer has no Escape handler, so close through the header button.
     drawer.locator("header").get_by_role(
@@ -214,28 +198,6 @@ def _add_dataset_from_catalog(page, palette, dataset: CatalogDataset):
         expect(caret).to_have_attribute("aria-expanded", "true", timeout=5000)
     expect(row).to_have_count(1, timeout=20000)
     return row
-
-
-def _cache_its_files(page, drawer, card_id: str, files: int) -> None:
-    """Cache the collection's files from its details, as a person does, then
-    close them.
-
-    A committed collection whose files are in a bucket (``bucket_source``) is
-    read once they are on this machine wherever no mount reads the bucket, as
-    on every e2e stack: the Collection section's **Cache files** copies them
-    from the recorded corpus, the bucket's stand-in here, and then says every
-    file is on this machine.
-    """
-    card = drawer.locator(f'{CARD}[data-dataset-id="{card_id}"]')
-    card.get_by_role("button", name=re.compile(r"^View .+ details$")).click()
-    details = page.get_by_role("dialog", name="Dataset details")
-    expect(details).to_be_visible(timeout=30000)
-    details.get_by_role("button", name="Cache files", exact=True).click()
-    expect(details.get_by_text(f"{files:,} of {files:,} files", exact=True)).to_be_visible(timeout=120000)
-    expect(details.get_by_role("button", name="Cache files", exact=True)).to_have_count(0)
-    # One Escape closes the details alone; the drawer under them stays open.
-    page.keyboard.press("Escape")
-    expect(details).to_have_count(0, timeout=10000)
 
 
 def test_the_catalog_is_not_empty():

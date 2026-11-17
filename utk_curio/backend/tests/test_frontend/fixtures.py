@@ -19,6 +19,7 @@ from playwright.sync_api import Page
 from . import diagnostics
 from .utils import (
     FrontendPage,
+    cache_bucket_collections,
     debug_log,
     REPO_ROOT,
     is_port_in_use,
@@ -779,6 +780,12 @@ def loaded_workflow(
     )
     upload_workflow(
         workflow_page, workflow_frontend, seeded_tmp.name, spec.nodes_count,
+    )
+    # A committed collection whose files are in a bucket is read once they are
+    # on this machine, as on a Curio that mounts no bucket: Cache files copies
+    # them from the recorded corpus before anything runs.
+    cache_bucket_collections(
+        workflow_page, [ref["datasetId"] for ref in wf_data["dataflow"].get("datasets") or []],
     )
     request.cls.spec = spec
     request.cls.page = workflow_page
