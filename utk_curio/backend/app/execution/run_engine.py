@@ -279,13 +279,14 @@ def _handed_back(work: Callable, step: Step, arrivals: "queue.Queue") -> None:
     what it raised, which that thread raises as a future's result would.
     Something is always handed back, so the run's thread never waits for a
     step that ended."""
-    handed = ("raised", step, RuntimeError(f"the step of node {step.node_id!r} ended with no outcome"))
     try:
         handed = ("finished", step, work())
     except Exception as exc:  # noqa: BLE001 - raised again on the run's thread
         handed = ("raised", step, exc)
-    finally:
-        arrivals.put(handed)
+    except BaseException:
+        arrivals.put(("raised", step, RuntimeError(f"the step of node {step.node_id!r} ended with no outcome")))
+        raise
+    arrivals.put(handed)
 
 
 def _attempt_step(step: Step, sent: str, input_ref, execute, started: float) -> _Outcome:
