@@ -159,8 +159,8 @@ def _validate_events(
                     "attachment_id": attachment_id, "session_id": session_id,
                     "granted": [], "manifest": None,
                 },
-                dataset_paths_fn=lambda codes, formats: agents_grounding._exec_dataset_paths(
-                    project_id, *codes, formats=formats,
+                dataset_paths_fn=lambda codes, formats, unavailable=None: agents_grounding._exec_dataset_paths(
+                    project_id, *codes, formats=formats, unavailable=unavailable,
                 ),
                 # Looked up in the request the stream holds, and handed to the
                 # thread each attempt runs on.

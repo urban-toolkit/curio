@@ -597,9 +597,12 @@ def _verified_content_rounds(
       refusal text is the correction's error, and it never reaches the sandbox;
     - a run's ``dataset_paths`` are resolved for the candidate + its slice,
       by ``dataset_paths_fn(codes, formats)``, which fills ``formats`` with
-      how they are read (a layer group's entry, naming its layers), and its
-      collections and media folder by ``collections_fn(codes)``, on the
-      thread that starts the attempt, which hands them to the one that runs it;
+      how they are read (a layer group's entry, naming its layers) and, when
+      it takes ``unavailable``, that with why each whose file failed to
+      download could not be had, which fails the node that reads it with
+      that reason; and its collections and media folder by
+      ``collections_fn(codes)``, on the thread that starts the attempt,
+      which hands them to the one that runs it;
     - a failed round feeds the next generation ``previousAttempt``,
       ``validationError``, ``sourceGrounding`` (data-loading nodes) and — when
       the failure names an HTTP problem — fresh probe evidence for the URLs

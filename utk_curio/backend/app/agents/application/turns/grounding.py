@@ -64,7 +64,10 @@ def _resolve_catalog_execution_paths(project_id: str, dataset_ids: list) -> dict
         return {}
 
 
-def _dataset_path_topup(project_id: str, user_obj, mapping: dict, ids: list, formats: dict | None = None) -> dict:
+def _dataset_path_topup(
+    project_id: str, user_obj, mapping: dict, ids: list, formats: dict | None = None,
+    unavailable: dict | None = None,
+) -> dict:
     """Resolve dataset ids the eager mapping does not have, as *user_obj*.
 
     dev/131 F4, closed by dev/132: the sandbox path mapping is resolved when a
@@ -75,7 +78,8 @@ def _dataset_path_topup(project_id: str, user_obj, mapping: dict, ids: list, for
     Solve. The acting user is what the resolution actually needs, and a job can
     hold that from its start; the top-up caches into the same mapping, so one
     new id costs one lookup per session. *formats*, when given, is filled
-    with how each id it resolves is read (``resolve_execution_paths``).
+    with how each id it resolves is read, and *unavailable* with why each id
+    whose download failed could not be had (``resolve_execution_paths``).
     """
     missing = [i for i in ids if i and i not in mapping]
     if not missing or user_obj is None:
@@ -86,6 +90,8 @@ def _dataset_path_topup(project_id: str, user_obj, mapping: dict, ids: list, for
         )
 
         read_as = {} if formats is None else {"formats": formats}
+        if unavailable is not None:
+            read_as["unavailable"] = unavailable
         resolved = DatasetCatalogService(user_obj).resolve_execution_paths(
             missing, dataflow_id=project_id, **read_as
         ) or {}
@@ -113,6 +119,7 @@ def _dataset_ids_in(codes: list) -> list[str]:
 
 def _session_dataset_paths(
     project_id: str, user_obj, mapping: dict, codes: list, formats: dict | None = None,
+    unavailable: dict | None = None,
 ) -> dict:
     """The paths *codes* need — from the eager mapping, topped up for anything
     that arrived since the session started (dev/131 F4).
@@ -121,11 +128,13 @@ def _session_dataset_paths(
     *formats* its entry and its layers' (``layer_group_formats``), so
     ``curio_load_data("<group id>")`` runs as on Play. A group's id has no
     path to keep, so it is resolved again for each run; every other dataset
-    is read by its path alone, as before."""
+    is read by its path alone, as before. *unavailable*, when given, gets
+    why each id whose file failed to download could not be had, which the
+    run reports for the node that reads it (``runner.run_through_node``)."""
     ids = _dataset_ids_in(codes)
     found: dict | None = None if formats is None else {}
     if ids:
-        _dataset_path_topup(project_id, user_obj, mapping, ids, found)
+        _dataset_path_topup(project_id, user_obj, mapping, ids, found, unavailable)
     if formats is None:
         return _filter_dataset_paths(mapping, codes)
     groups = layer_group_formats(ids, found)
@@ -147,7 +156,9 @@ def _filter_dataset_paths(mapping: dict, codes: list, formats: dict | None = Non
     return out
 
 
-def _exec_dataset_paths(project_id: str, *codes: str, formats: dict | None = None) -> dict:
+def _exec_dataset_paths(
+    project_id: str, *codes: str, formats: dict | None = None, unavailable: dict | None = None,
+) -> dict:
     """dev/115: the ``{datasetId: absolutePath}`` mapping the sandbox needs for
     every ``curio_data_path("<id>")`` and ``curio_load_collection("<id>")`` call
     in *codes* — resolved the way ``/processPythonCode`` resolves it
@@ -157,7 +168,8 @@ def _exec_dataset_paths(project_id: str, *codes: str, formats: dict | None = Non
     batch precomputes it in the request thread and hands the mapping to its
     workers. *formats*, when given, gets the entries of the layer groups the
     codes name and of their layers, as :func:`_session_dataset_paths` gives
-    them."""
+    them, and *unavailable* why each id whose file failed to download could
+    not be had, which the run reports for the node that reads it."""
     ids = _dataset_ids_in(list(codes))[:32]
     if not ids:
         return {}
@@ -171,6 +183,8 @@ def _exec_dataset_paths(project_id: str, *codes: str, formats: dict | None = Non
         user = getattr(g, "user", None) if has_request_context() else None
         found: dict = {}
         read_as = {} if formats is None else {"formats": found}
+        if unavailable is not None:
+            read_as["unavailable"] = unavailable
         resolved = DatasetCatalogService(user).resolve_execution_paths(
             ids, dataflow_id=project_id, **read_as
         )

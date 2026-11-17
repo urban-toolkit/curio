@@ -437,6 +437,38 @@ describe("CodeEditor's look", () => {
     });
 });
 
+describe("a running node's output says what its run does", () => {
+    const outputBox = () => document.querySelector("[data-curio-node-output]") as HTMLElement;
+    const props = (output: { code: string; content: string }) => ({
+        setOutputCallback: jest.fn(),
+        data: { nodeId: "n1", input: "", inputTypes: [], outputCallback: jest.fn() },
+        output,
+        nodeType: "curio.builtin/python-computation@1" as any,
+        replacedCode: "",
+        sendCodeToWidgets: jest.fn(),
+        replacedCodeDirty: 0,
+        readOnly: false,
+        defaultValue: SAVED_CODE,
+        floatCode: jest.fn(),
+    });
+
+    beforeEach(() => {
+        __editors.length = 0;
+    });
+
+    test("Running..., or what its run says it is doing, such as how far its weights have downloaded", () => {
+        const view = render(<CodeEditor {...props({ code: "exec", content: "" })} />);
+        expect(outputBox().textContent).toBe("[*]:Running...");
+
+        const message = "Downloading model.safetensors, a file of the weights of model.curio.sam3: 1.21 of 3.44 GB (35%)";
+        view.rerender(<CodeEditor {...props({ code: "exec", content: message })} />);
+        expect(outputBox().textContent).toBe(`[*]:${message}`);
+
+        view.rerender(<CodeEditor {...props({ code: "exec", content: "" })} />);
+        expect(outputBox().textContent).toBe("[*]:Running...");
+    });
+});
+
 /**
  * The header's Functions are read where a node's code is edited. The
  * dashboard page mounts every node of the dataflow and asks the server for
