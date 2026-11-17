@@ -21,7 +21,10 @@ changed:
    rclone call;
 2. the host and port are admitted to the backend's proxy, the service's one
    way out (``infrastructure/mount_proxy.py``), which checks them again at
-   each connection and connects to an address it checked;
+   each connection and connects to an address it checked. In a start of
+   several backend processes the home process alone runs the proxy, and any
+   process may mount: the hosts go into one list the start's processes share
+   (:class:`SharedAdmissions`), each held by the process that admitted it;
 3. ``operations/mkdir`` and ``mount/mount`` of the bucket's folder at
    ``/mounts/<sourceId>@<major>`` in the service, which is
    ``<bucket-mounts-dir>/<sourceId>@<major>`` here;
@@ -60,13 +63,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, NamedTuple, Optional
 
-from utk_curio.backend.app.common import egress_policy
+from utk_curio.backend.app.common import egress_policy, shared_budgets
 from utk_curio.backend.app.discovery.application import bucket_mount_check
 from utk_curio.backend.app.discovery.application.catalog import DiscoveryCatalog
 from utk_curio.backend.app.discovery.domain.bucket_mount import BucketMount, NotMountable, bucket_mount
 from utk_curio.backend.app.discovery.domain.manifest import DiscoverySourceManifest
 from utk_curio.backend.app.discovery.infrastructure import bucket_mounts
 from utk_curio.backend.app.discovery.infrastructure.mount_proxy import MountProxy
+from utk_curio.common import backend_processes
 
 log = logging.getLogger(__name__)
 
@@ -98,6 +102,7 @@ REASONS = {
     "listing": "the bucket refuses listing",
     "not-propagated": "the mount did not reach this container",
     "proxy": f"the mount service cannot reach Curio's proxy on port {bucket_mounts.PROXY_PORT}",
+    "admission": "Curio could not let the bucket's host through its proxy",
 }
 
 #: The /monitor problem (``bucket_mounts.PROBLEMS``) of a call that found the
@@ -302,7 +307,10 @@ class BucketMountSources:
             egress_policy.public_addresses(mount.host, resolver=self._resolver)
         except egress_policy.EgressRefused as refused:
             raise _Failed("host", str(refused)) from None
-        self.proxy.admit(mount.name, mount.host, mount.port)
+        try:
+            self.proxy.admit(mount.name, mount.host, mount.port)
+        except OSError as exc:
+            raise _Failed("admission", detail=f"the start's list of the hosts let through: {exc}") from None
         point = mount_point(mount.name)
         made = False
         try:
@@ -581,6 +589,86 @@ class BucketMountSources:
         self._known.pop(name, None)
 
 
+# ── The hosts a start of several processes lets through ─────────────────────
+
+#: The start's document of the hosts its processes let through
+#: (:class:`SharedAdmissions`), kept with its budgets.
+ADMISSIONS = "bucket-mount-admissions"
+#: Its one field: each host let through, as ``{host, port, source, process}``.
+_ADMITTED = "admitted"
+
+
+class SharedAdmissions:
+    """The hosts the proxy lets through, in a start of several backend
+    processes: one list for the start, which each process writes as it mounts
+    and the proxy reads at each ``CONNECT`` (``MountProxy``'s *admissions*).
+
+    The home process alone runs the proxy that listens (``server.py``), while
+    a source is mounted in whichever process reads its files: a node's
+    collection and a media read run in the process that owns the dataflow,
+    any of them. A list in each process's memory let a host through only for
+    the mounts home made. So the list is one document every process of the
+    start reads and changes under its lock (``shared_budgets.State``, in
+    ``.curio/budgets``, which node code cannot reach).
+
+    Each entry is held by the process that let its host through, and
+    :meth:`withdraw` takes this process's own alone: a mount that fails in one
+    process leaves the host to another that still holds a mount of it. The
+    document is the start's, so each start begins with none, as a process's
+    memory does.
+    """
+
+    def __init__(self, state: Optional[shared_budgets.State] = None):
+        self._state = state or shared_budgets.State(ADMISSIONS)
+
+    def admit(self, name: str, host: str, port: int) -> None:
+        """This process lets tunnels reach *host* at *port*, for the source
+        mounted as *name*. Raises ``OSError`` when the list cannot be written."""
+        entry = {"host": host, "port": port, "source": name, "process": backend_processes.this_process()}
+        with self._state.held() as state:
+            held = _entries(state)
+            if entry not in held:
+                state[_ADMITTED] = [*held, entry]
+
+    def withdraw(self, name: str) -> None:
+        """This process needs the host of the source mounted as *name* no
+        more; what other processes hold stays. When the list cannot be
+        written, that is logged, and this process's entry stays until the
+        start ends."""
+        here = backend_processes.this_process()
+        try:
+            with self._state.held() as state:
+                held = _entries(state)
+                kept = [entry for entry in held if (entry["source"], entry["process"]) != (name, here)]
+                if kept != held:
+                    state[_ADMITTED] = kept
+        except OSError as exc:
+            log.warning("Bucket mounts: backend process %d could not take %s's host off the hosts let through: %s",
+                        here, name, exc)
+
+    def admits(self, host: str, port: int) -> bool:
+        """Whether a process of the start lets *host* at *port* through. A
+        list that cannot be read lets nothing through, which is logged."""
+        try:
+            with self._state.held() as state:
+                return any(entry["host"] == host and entry["port"] == port for entry in _entries(state))
+        except OSError as exc:
+            log.warning("Bucket mounts: the hosts let through could not be read, so %s port %d is refused: %s",
+                        host, port, exc)
+            return False
+
+
+def _entries(state: dict) -> list[dict]:
+    """The hosts let through that *state* holds, each entry as Curio writes
+    one; anything else lets nothing through."""
+    kept = state.get(_ADMITTED)
+    return [
+        entry for entry in (kept if isinstance(kept, list) else [])
+        if isinstance(entry, dict) and isinstance(entry.get("host"), str) and isinstance(entry.get("port"), int)
+        and isinstance(entry.get("source"), str) and isinstance(entry.get("process"), int)
+    ]
+
+
 # ── The process's service ────────────────────────────────────────────────────
 
 _LOCK = threading.Lock()
@@ -589,10 +677,13 @@ _sources: Optional[BucketMountSources] = None
 
 
 def _the_proxy() -> MountProxy:
-    """The process's proxy; the caller holds ``_LOCK``."""
+    """The process's proxy; the caller holds ``_LOCK``. In a start of several
+    backend processes it lets through the hosts of the start's list
+    (:class:`SharedAdmissions`), whichever process let them through; with
+    one, the hosts this process let through, in its memory."""
     global _proxy
     if _proxy is None:
-        _proxy = MountProxy()
+        _proxy = MountProxy(admissions=SharedAdmissions() if shared_budgets.across_processes() else None)
     return _proxy
 
 
