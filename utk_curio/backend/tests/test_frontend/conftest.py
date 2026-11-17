@@ -162,6 +162,9 @@ WORKFLOW_FILES = [
     # on a tiny SAM 3 planted as fetched and the walk's recorded stand-in,
     # cached first (utils/stand_ins.py, which loaded_workflow asks).
     "docs/examples/31-sideseeing-objects-along-a-walk.json",
+    # A SAGE bucket's collections, cached from the recorded corpus before the
+    # run, as a Curio that mounts no bucket reads them.
+    "docs/examples/32-sage-idot-rail-crossings.json",
 ]
 
 

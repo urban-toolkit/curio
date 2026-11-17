@@ -333,6 +333,19 @@
       "Video"
     ]
   },
+  "32-sage-idot-rail-crossings": {
+    "tags": [
+      "Autark",
+      "Vega-Lite",
+      "GeoPandas",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries",
+      "Imagery"
+    ]
+  },
   "dataflows/autk-map": {
     "tags": [
       "Autark",

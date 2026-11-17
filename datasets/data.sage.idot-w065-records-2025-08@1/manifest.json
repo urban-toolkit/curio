@@ -1,0 +1,79 @@
+{
+  "id": "data.sage.idot-w065-records-2025-08",
+  "name": "SAGE-IDOT W065 records, August 2025",
+  "version": "1.0.0",
+  "format": "collection",
+  "description": "The detection records of SAGE's W065 camera at an IDOT rail crossing for August 2025, its month's JSON Lines file of 1,407,944,770 bytes: a line per image, about every 3 seconds, the JSON text of what YOLOv5n, YOLOv8n and YOLOv10n detected in it, and a line per snapshot uploaded. The file stays in the idot bucket on data.urbantk.org, read in place where the deployment mounts the bucket and once cached elsewhere; node code opens it from its row's path. Used with the permission of its authors.",
+  "publisher": "SAGE",
+  "license": "",
+  "tags": [
+    "sage",
+    "rail crossings",
+    "illinois",
+    "object detection"
+  ],
+  "dataFile": "data/index.parquet",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "SAGE-IDOT rail crossings",
+  "createdAt": "2026-11-17T00:00:00Z",
+  "updatedAt": "2026-11-17T00:00:00Z",
+  "rowCount": 1,
+  "featureCount": null,
+  "schema": null,
+  "discoverySource": {
+    "sourceId": "source.sage.idot-crossings@1",
+    "sourceName": "SAGE-IDOT rail crossings",
+    "resourceId": "records@crossing=W065;month=2025-08-01T00:00:00",
+    "fileCount": 1,
+    "fields": "crossing,month",
+    "fetchedAt": "2026-11-17T00:00:00Z",
+    "fingerprint": "66ead76656656eca24d2eac8198330f44122f46868f5c2fa7a71a4184088d4b6"
+  },
+  "collection": {
+    "kind": "files",
+    "sourceId": "source.sage.idot-crossings@1",
+    "sourceName": "SAGE-IDOT rail crossings",
+    "provider": "s3",
+    "resourceId": "records@crossing=W065;month=2025-08-01T00:00:00",
+    "resource": "records",
+    "resourceName": "Detection records",
+    "path": "{crossing}/data/*_{month:%Y_%m}.jsonl",
+    "fields": [
+      "crossing",
+      "month"
+    ],
+    "fieldValues": [
+      {
+        "name": "crossing",
+        "type": "str",
+        "distinct": 1,
+        "values": [
+          "W065"
+        ]
+      },
+      {
+        "name": "month",
+        "type": "datetime",
+        "distinct": 1,
+        "values": [
+          "2025-08-01T00:00:00"
+        ]
+      }
+    ],
+    "counts": {
+      "file": 1
+    },
+    "fileCount": 1,
+    "totalBytes": 1407944770,
+    "hasGps": false,
+    "probeErrors": 0,
+    "indexedAt": "2026-11-17T00:00:00Z",
+    "fingerprint": "66ead76656656eca24d2eac8198330f44122f46868f5c2fa7a71a4184088d4b6",
+    "split": {
+      "crossing": "W065",
+      "month": "2025-08-01T00:00:00"
+    }
+  }
+}
