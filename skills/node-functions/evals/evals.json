@@ -62,14 +62,17 @@
     {
       "id": 4,
       "dataflow": "docs/examples/dataflows/default-workflow.json",
-      "prompt": "In a Python node, take one frame every half second from the video in the Example street survey collection, and return the frames as rows a Simple View can show as cards.",
-      "expected_output": "One new Python node whose code reads the collection with curio_load_collection(\"data.curio.storage-survey\"), takes the video's row, and for each frame at 0, 500, 1000 ms and on gets where to write it from curio_derived_file(dataset_id, file_id, t_ms, kind=\"video\"), writes the frame there, and returns the rows curio_derived_file gives.",
+      "prompt": "In a Python node, make a black-and-white copy of each Lincoln Park street photo, and return the copies as rows a Simple View can show as cards.",
+      "expected_output": "One new Python node whose code reads the photos with curio_load_collection(\"data.curio.mapillary-sample\"), and for each photo gets where to write its copy from curio_derived_file(dataset_id, file_id, 0, kind=\"image\"), writes the black-and-white copy there, and returns the rows curio_derived_file gives.",
       "assertions": [
         "The answer creates one new node (node.create) of a Python code template.",
-        "The code it writes reads the collection with curio_load_collection(\"data.curio.storage-survey\") and takes the video's row from it.",
-        "For each frame, the code calls curio_derived_file with the row's dataset_id and file_id, the frame's time in milliseconds (0, 500, 1000, ...) and kind=\"video\".",
-        "The code writes each frame image to the path in the row curio_derived_file returns, and makes no folder or file path of its own (no tempfile, no hard-coded directory).",
-        "The code returns the frames' rows, which carry the thumbnail and image_url that curio_derived_file gives."
+        "The code it writes reads the photos with curio_load_collection(\"data.curio.mapillary-sample\").",
+        "For each photo, the code calls curio_derived_file with the row's dataset_id and file_id, 0 for the time and kind=\"image\".",
+        "The code writes each copy to the path in the row curio_derived_file returns, and makes no folder or file path of its own (no tempfile, no hard-coded directory).",
+        "The code returns the copies' rows, which carry the thumbnail and image_url that curio_derived_file gives."
+      ],
+      "checks": [
+        {"assertion": 2, "kind": "code", "pattern": "curio_load_collection\\(\\s*[\"']data\\.curio\\.mapillary-sample[\"']"}
       ]
     }
   ],
