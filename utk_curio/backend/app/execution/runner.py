@@ -284,6 +284,7 @@ def run_through_node(
     as_validation: bool = True,
     dataset_paths: dict | None = None,
     dataset_formats: dict | None = None,
+    dataset_problems: dict | None = None,
     exec_user_key: str | None = None,
     secrets: dict | None = None,
     collections: dict | None = None,
@@ -318,7 +319,11 @@ def run_through_node(
     without them the Data Catalog's portable loader form failed under
     validation while working on Play. ``dataset_formats`` rides with them:
     how ``curio_load_data`` reads each, such as a layer group's entry naming
-    its layers. A sandbox execution timeout is the
+    its layers. ``dataset_problems`` (``{datasetId: message}``, from the
+    same resolution's ``unavailable``) are the datasets whose file Curio
+    downloads on first use and could not: a node whose code names one fails
+    with the download's own message, and the sandbox is not asked, as on
+    Play. A sandbox execution timeout is the
     NODE's failure (``ExecutionTimeout`` → error record, blocker), never
     infrastructure.
 
@@ -494,6 +499,15 @@ def run_through_node(
         if media_dir:
             payload["media_dir"] = media_dir
         download_problem = None
+        if is_py and dataset_problems:
+            # A dataset the node reads whose file failed to download on its
+            # first use: the node fails with the download's own error, as
+            # Play's does, where the sandbox would only say it is not here.
+            from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
+
+            named = [dataset_problems[i] for i in dict.fromkeys(dataset_ids_in_code(seeded)) if i in dataset_problems]
+            if named:
+                download_problem = "\n\n".join(dict.fromkeys(named))
         if is_py and "curio_load_model" in seeded:
             # The model packages the node loads, as /processPythonCode
             # resolves them, from the acting account's store.
@@ -514,7 +528,9 @@ def run_through_node(
                     models = resolve_models_for(seeded, exec_user_key or user_key)
                     model_weights = resolve_fetched_weights_for(seeded, exec_user_key or user_key) if models else {}
             if unavailable:
-                download_problem = "\n\n".join(unavailable.values())
+                download_problem = "\n\n".join(
+                    message for message in (download_problem, *unavailable.values()) if message
+                )
             if models:
                 payload["models"] = models
             if model_weights:

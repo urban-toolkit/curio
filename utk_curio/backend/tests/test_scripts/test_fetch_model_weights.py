@@ -3,7 +3,8 @@
 The script reads a shipped package's ``model.fetch`` and downloads each file
 it lists from ``https://huggingface.co/<repo>/resolve/<revision>/<path>``,
 into the package's entry folder or, with ``--into <dir>``, into
-``<dir>/<id>@<major>/<entry>``, the folder ``--model-weights-dir`` reads. Each
+``<dir>/<id>@<major>/<revision>/<entry>``, the folder ``--model-weights-dir``
+reads, linking a file another revision's folder holds with its digest. Each
 file streams to a temporary file, is checked against its digest, and only
 then is moved into place, readable by every account, and stamped with that
 digest as Curio's own download stamps it: a stamped file is skipped unread,
@@ -271,9 +272,9 @@ def test_a_gated_repository_says_how_to_get_access_and_never_prints_the_token(sh
 
 
 def test_into_writes_the_folder_model_weights_dir_reads(shipped, tmp_path):
-    """``<dir>/<package id>@<major>/<entry>``, where the backend looks with
-    ``--model-weights-dir <dir>`` (``model_fetch.fetched_root``); the package's
-    own folder is left as it was."""
+    """``<dir>/<package id>@<major>/<revision>/<entry>``, where the backend
+    looks with ``--model-weights-dir <dir>`` (``model_fetch.fetched_root``);
+    the package's own folder is left as it was."""
     from utk_curio.backend.app.packages.domain.model_fetch import fetched_root
 
     into = tmp_path / "model-weights"
@@ -281,10 +282,10 @@ def test_into_writes_the_folder_model_weights_dir_reads(shipped, tmp_path):
     code, out, err = _run(shipped, f"{PACKAGE_ID}@1", "--into", str(into), opener=_HuggingFace(FILES))
 
     assert (code, err) == (0, "")
-    root = fetched_root(into.resolve(), PACKAGE_ID, 1)
-    assert root == into.resolve() / DIR
+    root = fetched_root(into.resolve(), PACKAGE_ID, 1, REVISION)
+    assert root == into.resolve() / DIR / REVISION
     assert {name: (root / ENTRY / name).read_bytes() for name in FILES} == FILES
-    assert [_mode(into), _mode(root), _mode(root / ENTRY)] == [0o755, 0o755, 0o755]
+    assert [_mode(into), _mode(root.parent), _mode(root), _mode(root / ENTRY)] == [0o755, 0o755, 0o755, 0o755]
     assert not (shipped / "packages" / DIR / "models").exists()
     assert str(root / ENTRY) in out, out
 

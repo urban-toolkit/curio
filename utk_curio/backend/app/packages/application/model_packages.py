@@ -21,11 +21,13 @@ A package the store does not hold gives the node no model, and the sandbox's
   ``fetch``, ``domain/model_fetch.py``) are in neither git nor the pip
   package: a node's first run downloads them through the same code
   (``infrastructure/fetched_weights.py``), into the catalog's copy of the
-  package, or under the folder ``--model-weights-dir`` names, where a node
-  reads them in place (:func:`fetched_weights_folder`), each file stamped
-  with its digest, so a later version of the package that names other
-  digests downloads them again. ``scripts/fetch_model_weights.py`` fetches
-  them there ahead, stamped alike. A download that
+  package, or under the folder ``--model-weights-dir`` names, in a folder of
+  their revision, where a node reads them in place
+  (:func:`fetched_weights_folder`), each file stamped with its digest, so a
+  later version of the package that names other digests downloads them
+  again, and stacks that share the folder keep each version's.
+  ``scripts/fetch_model_weights.py`` fetches them there ahead, stamped
+  alike. A download that
   fails is reported for the node's run, and the model still resolves. Export,
   Publish and Save as package node refuse such a package
   (:func:`refuse_fetched_weights`).
@@ -99,10 +101,13 @@ def holds_weights(folder: Path, manifest: PackageManifest) -> bool:
 def fetched_weights_root(manifest: PackageManifest, shipped: Path) -> Path:
     """Where this Curio keeps the weights the catalog's model package
     *manifest*, in *shipped*, names in its model block's ``fetch``: the
-    package's folder under ``--model-weights-dir`` when that flag is set, else
-    *shipped* itself, each laid out as the package is, its entry under it."""
+    folder of the block's revision in the package's folder under
+    ``--model-weights-dir`` when that flag is set, else *shipped* itself,
+    each laid out as the package is, its entry under it."""
     weights_dir = packages_catalog_dir.model_weights_dir()
-    return shipped if weights_dir is None else fetched_root(weights_dir, manifest.package_id, manifest.major)
+    if weights_dir is None:
+        return shipped
+    return fetched_root(weights_dir, manifest.package_id, manifest.major, manifest.model.fetch.revision)
 
 
 def fetched_weights_folder(manifest: PackageManifest, shipped: Path) -> Path | None:
@@ -305,13 +310,15 @@ def local_weights_folder(manifest: PackageManifest, folder: Path) -> Path | None
 def weights_on_first_use(manifest: PackageManifest, folder: Path) -> bool:
     """Whether a node's first run downloads the weights of the model package
     *manifest* in *folder*: neither the folder nor the catalog's copy holds
-    them, and the catalog's copy names them in its ``fetch``, or a pip
-    install left them out and none has been fetched yet. Nothing is
-    downloaded to say so."""
+    them, and the catalog's copy names them in its ``fetch``, a file of them
+    being in no other folder of the package under ``--model-weights-dir``
+    either (``fetched_weights.to_download``), or a pip install left them out
+    and none has been fetched yet. Nothing is downloaded to say so."""
     if local_weights_folder(manifest, folder) is not None:
         return False
     if manifest.model.fetch is not None:
-        return _catalog_fetch(manifest) is not None
+        found = _catalog_fetch(manifest)
+        return found is not None and bool(fetched_weights.to_download(found[0], fetched_weights_root(*found)))
     from utk_curio.backend.app.datasets.infrastructure import left_out_files
 
     prefix = f"packages/{manifest.dir_name}/{MODELS_DIR}/"

@@ -306,8 +306,8 @@ def _run_node_loop(
         # dev/132 (closes dev/131 F4): topped up for a dataset that
         # arrived after this job started — the per-pill Solve and the
         # Finder's own delegation both come through here.
-        dataset_paths_fn=lambda codes, formats: agents_grounding._session_dataset_paths(
-            project_id, acting_user, dataset_paths, codes, formats
+        dataset_paths_fn=lambda codes, formats, unavailable=None: agents_grounding._session_dataset_paths(
+            project_id, acting_user, dataset_paths, codes, formats, unavailable,
         ),
         # The collections the request resolved, topped up the same way, on
         # the job's thread, and handed to the thread each attempt runs on.

@@ -14,19 +14,25 @@ package's entry folder, or under the folder ``curio.py start
   the parser read them, and what each refuses, a template of that type with
   no source of its own among it.
 - Where a run reads the weights: the package's own folder, or the flag's
-  folder, which the sandbox gets apart from the model's and reads in place.
+  folder of the block's revision, which the sandbox gets apart from the
+  model's and reads in place.
 - The first use: one download, each file checked against its digest, with no
   token and an idle timeout, before the sandbox is asked to run the node; a
   second use reads them in place; two first uses download once; a file that
   does not match, a cut download, a gated or gone source, an address the
   egress policy refuses and a folder Curio cannot write each place nothing
   and fail the node's run, saying what failed and naming the script; an
-  agent's run of the node fails alike.
+  agent's run of the node fails alike. A cut download keeps what came, and
+  the next use goes on from it, checking the whole file, or downloads the
+  file again whole when that does not match; each download says how far it
+  has come.
 - Stamps: each placed file's digest beside it, the same from the first use
   and from the script; a later version that names other digests downloads
-  those files again; a file with no stamp is hashed once, and stamped when
-  it matches or downloaded again when it does not, and no node reads it
-  meanwhile.
+  those files again, in a folder of its revision, so two stacks that share
+  the flag's folder keep their own; a file with no stamp is hashed once, and
+  stamped when it matches or downloaded again when it does not, and no node
+  reads it meanwhile; weights an earlier Curio placed for the package are
+  found and linked in, never downloaded again.
 - The Model Catalog's listing says the weights download on first use until
   they are here.
 - Integrity, ``scripts/regen_integrity.py`` among it, leaves them out.
@@ -232,6 +238,12 @@ def weights_dir(tmp_curio, monkeypatch):
     return folder
 
 
+def _revision_root(weights_dir: Path, revision: str = REVISION) -> Path:
+    """The folder of ``--model-weights-dir`` that holds the test package's
+    weights at *revision*: ``<dir>/<package id>@<major>/<revision>``."""
+    return weights_dir / DIR / revision
+
+
 # ---------------------------------------------------------------------------
 # The manifest
 # ---------------------------------------------------------------------------
@@ -434,16 +446,17 @@ def test_weights_fetched_into_the_package_are_read_there(catalog, monkeypatch):
 
 
 def test_with_the_flag_the_weights_are_read_in_place_from_its_folder(catalog, weights_dir, monkeypatch):
-    """``<dir>/<package id>@<major>/<entry>``: the run gets the catalog's
-    folder for the manifest and the flag's folder for the weights, and
-    nothing is copied into the account's store."""
+    """``<dir>/<package id>@<major>/<revision>/<entry>``: the run gets the
+    catalog's folder for the manifest and the flag's folder of the block's
+    revision for the weights, and nothing is copied into the account's
+    store."""
     from utk_curio.backend.app.packages.application.model_packages import weights_on_first_use
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
     from utk_curio.backend.app.packages.service import resolve_model_dirs, resolve_model_weights
 
     _no_download(monkeypatch)
     copy = _add("guest", catalog)
-    root = _fetch_into(weights_dir / DIR)
+    root = _fetch_into(_revision_root(weights_dir))
 
     assert resolve_model_dirs("guest", [PACKAGE_ID, f"{PACKAGE_ID}@1"]) == {
         PACKAGE_ID: str((catalog / DIR).resolve()), f"{PACKAGE_ID}@1": str((catalog / DIR).resolve()),
@@ -464,28 +477,28 @@ def test_with_the_flag_the_packages_own_folder_and_a_stopped_fetch_count_as_not_
 
     copy = _add("guest", catalog)
     _fetch_into(catalog / DIR)
-    _fetch_into(weights_dir / DIR, "config.json")
+    _fetch_into(_revision_root(weights_dir), "config.json")
     manifest = load_package_manifest(copy)
 
     assert resolve_model_weights("guest", [PACKAGE_ID]) == {}
     assert weights_on_first_use(manifest, copy)
     assert weights_on_first_use(manifest, catalog / DIR)
-    assert not (weights_dir / DIR / ENTRY / "model.safetensors").exists()
+    assert not (_revision_root(weights_dir) / ENTRY / "model.safetensors").exists()
 
-    _fetch_into(weights_dir / DIR)
+    _fetch_into(_revision_root(weights_dir))
     assert not weights_on_first_use(manifest, copy)
 
 
 def test_with_the_flag_a_first_use_downloads_only_what_the_flags_folder_lacks(catalog, weights_dir, monkeypatch):
-    """Into ``<dir>/<package id>@<major>/<entry>``, which isolated node code
-    reads in place: every folder made there every account may enter, the
-    files readable by all, and a file already there is not asked for again.
-    The catalog's copy and the account's stay as they were."""
+    """Into ``<dir>/<package id>@<major>/<revision>/<entry>``, which isolated
+    node code reads in place: every folder made there every account may
+    enter, the files readable by all, and a file already there is not asked
+    for again. The catalog's copy and the account's stay as they were."""
     from utk_curio.backend.app.packages.service import resolve_model_dirs, resolve_model_weights
     from utk_curio.backend.tests._support.fetched_weights import resolve_url
 
     copy = _add("guest", catalog)
-    root = _fetch_into(weights_dir / DIR, "config.json")
+    root = _fetch_into(_revision_root(weights_dir), "config.json")
     hugging_face = _hugging_face(monkeypatch)
     umask = os.umask(0o077)
     try:
@@ -582,7 +595,10 @@ def test_a_file_whose_digest_does_not_match_is_refused_and_never_placed(catalog,
     )
 
 
-def test_a_download_cut_midway_leaves_nothing_and_the_next_use_fetches_it_whole(catalog, monkeypatch):
+def test_a_download_cut_midway_places_nothing_and_the_next_use_completes_it(catalog, monkeypatch):
+    """A cut places no file, and nothing a node reads: only the partial file
+    of the file it cut, which the next use goes on from, then places the
+    weights whole."""
     _hugging_face(monkeypatch, cut=OSError("Connection reset by peer"))
     _add("guest", catalog)
 
@@ -591,14 +607,18 @@ def test_a_download_cut_midway_leaves_nothing_and_the_next_use_fetches_it_whole(
     assert "Connection reset by peer" in message and SCRIPT in message, message
     entry = catalog / DIR / ENTRY
     assert not any((entry / name).exists() for name in FILES)
-    assert _left_in(entry) == [".download.lock"]
+    assert _left_in(entry) == [".config.json.download.part", ".download.lock"]
+    half = len(CONFIG) // 2
+    assert (entry / ".config.json.download.part").read_bytes() == CONFIG[:half]
 
     from utk_curio.backend.app.packages.service import resolve_model_dirs
 
     hugging_face = _hugging_face(monkeypatch)
     resolve_model_dirs("guest", [PACKAGE_ID])
     assert hugging_face.urls == _urls()
+    assert _ranges(hugging_face) == [f"bytes={half}-", None, None]
     assert {name: (entry / name).read_bytes() for name in FILES} == FILES
+    assert _left_in(entry) == [".config.json.digest", ".download.lock", ".model.safetensors.digest"]
 
 
 def test_a_partial_file_a_dead_download_left_is_removed_and_a_live_ones_kept(catalog, monkeypatch):
@@ -774,11 +794,12 @@ NEXT_FETCH = {
 
 
 def test_a_later_version_that_names_other_digests_downloads_those_files_again(catalog, weights_dir, monkeypatch):
-    """Under the flag's folder, kept by ``<id>@<major>``, the first use placed
-    this version's weights. The next version of the package names other
-    weights at another revision: they are not in place until downloaded, so
-    no run reads the old ones as the new, and its first use downloads the
-    file whose digest changed, and only that one."""
+    """Under the flag's folder, kept by ``<id>@<major>`` and revision, the
+    first use placed this version's weights. The next version of the package
+    names other weights at another revision: they are not in place until
+    downloaded, so no run reads the old ones as the new, and its first use
+    downloads the file whose digest changed, and only that one; the other is
+    linked from the first revision's folder, which keeps its files."""
     from utk_curio.backend.app.packages.application.model_packages import weights_on_first_use
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
     from utk_curio.backend.app.packages.service import resolve_model_dirs, resolve_model_weights
@@ -787,8 +808,8 @@ def test_a_later_version_that_names_other_digests_downloads_those_files_again(ca
     copy = _add("guest", catalog)
     _hugging_face(monkeypatch)
     resolve_model_dirs("guest", [PACKAGE_ID])
-    root = (weights_dir / DIR).resolve()
-    assert resolve_model_weights("guest", [PACKAGE_ID]) == {PACKAGE_ID: str(root)}
+    first = _revision_root(weights_dir).resolve()
+    assert resolve_model_weights("guest", [PACKAGE_ID]) == {PACKAGE_ID: str(first)}
 
     _write_package(catalog / DIR, _manifest(model=_block(fetch=NEXT_FETCH)))
     assert resolve_model_weights("guest", [PACKAGE_ID]) == {}, "the old weights were read as the new version's"
@@ -800,6 +821,7 @@ def test_a_later_version_that_names_other_digests_downloads_those_files_again(ca
     assert resolve_model_dirs("guest", [PACKAGE_ID]) == {PACKAGE_ID: str((catalog / DIR).resolve())}
 
     assert hugging_face.urls == [resolve_url(REPOSITORY, NEXT_REVISION, "model.safetensors"), f"{CDN}/model.safetensors"]
+    root = _revision_root(weights_dir, NEXT_REVISION).resolve()
     entry = root / ENTRY
     assert {name: (entry / name).read_bytes() for name in NEXT_FILES} == NEXT_FILES
     assert _stamps(entry) == {
@@ -807,6 +829,8 @@ def test_a_later_version_that_names_other_digests_downloads_those_files_again(ca
     }
     assert resolve_model_weights("guest", [PACKAGE_ID]) == {PACKAGE_ID: str(root)}
     assert not weights_on_first_use(load_package_manifest(copy), copy)
+    assert {name: (first / ENTRY / name).read_bytes() for name in FILES} == FILES
+    assert _stamps(first / ENTRY) == STAMPS
 
 
 def test_two_curios_that_share_the_flags_folder_each_keep_their_versions_weights(
@@ -916,7 +940,7 @@ def test_weights_placed_with_no_stamp_are_hashed_once_and_stamped_when_they_matc
 
     _no_download(monkeypatch)
     _add("guest", catalog)
-    root = _place_by_hand(weights_dir / DIR).resolve()
+    root = _place_by_hand(_revision_root(weights_dir)).resolve()
     hashed = _spy_on_hashing(monkeypatch)
     assert resolve_model_weights("guest", [PACKAGE_ID]) == {}
 
@@ -938,7 +962,7 @@ def test_a_weight_placed_with_no_stamp_that_does_not_match_downloads_again(catal
 
     hugging_face = _hugging_face(monkeypatch)
     _add("guest", catalog)
-    root = _place_by_hand(weights_dir / DIR, {**FILES, "model.safetensors": WEIGHTS[::-1]}).resolve()
+    root = _place_by_hand(_revision_root(weights_dir), {**FILES, "model.safetensors": WEIGHTS[::-1]}).resolve()
     assert resolve_model_weights("guest", [PACKAGE_ID]) == {}, "a file that does not match was read as in place"
 
     resolve_model_dirs("guest", [PACKAGE_ID])
@@ -1025,14 +1049,14 @@ def test_the_first_use_and_the_script_stamp_each_file_alike(catalog, weights_dir
     _hugging_face(monkeypatch)
     _add("guest", catalog)
     resolve_model_dirs("guest", [PACKAGE_ID])
-    served = weights_dir / DIR / ENTRY
+    served = _revision_root(weights_dir) / ENTRY
     shipped_root = tmp_path / "shipped"
     _write_package(shipped_root / "packages" / DIR)
     fetched = tmp_path / "fetched"
 
     _run_the_script(shipped_root, fetched, FILES)
 
-    by_script = fetched / DIR / ENTRY
+    by_script = _revision_root(fetched) / ENTRY
     assert _stamps(by_script) == _stamps(served) == STAMPS
     assert [_mode(by_script / name) for name in STAMPS] == [_mode(served / name) for name in STAMPS] == [0o644, 0o644]
 
@@ -1040,7 +1064,7 @@ def test_the_first_use_and_the_script_stamp_each_file_alike(catalog, weights_dir
     _no_download(monkeypatch)
     hashed = _spy_on_hashing(monkeypatch)
     assert resolve_model_dirs("guest", [PACKAGE_ID]) == {PACKAGE_ID: str((catalog / DIR).resolve())}
-    assert resolve_model_weights("guest", [PACKAGE_ID]) == {PACKAGE_ID: str((fetched / DIR).resolve())}
+    assert resolve_model_weights("guest", [PACKAGE_ID]) == {PACKAGE_ID: str(_revision_root(fetched).resolve())}
     assert hashed == []
 
     out = _run_the_script(shipped_root, weights_dir, {})
@@ -1063,7 +1087,7 @@ def test_a_folder_curio_cannot_write_holding_unstamped_weights_says_so_until_the
 
     hugging_face = _hugging_face(monkeypatch)
     _add("guest", catalog)
-    root = _place_by_hand(weights_dir / DIR).resolve()
+    root = _place_by_hand(_revision_root(weights_dir)).resolve()
     read_only = {"on": True}
     real_open = os.open
 
@@ -1208,7 +1232,8 @@ def test_a_folder_curio_cannot_write_says_so_and_names_the_script_with_into(cata
     message = _failed_first_use(catalog)
 
     assert message.startswith(
-        f"Curio could not write the weights of {PACKAGE_ID} into {blocked.resolve() / 'model-weights' / DIR / ENTRY}: "
+        f"Curio could not write the weights of {PACKAGE_ID} into "
+        f"{_revision_root(blocked.resolve() / 'model-weights') / ENTRY}: "
     ), message
     assert "Start Curio with --model-weights-dir naming a folder it can write" in message, message
     assert f"{SCRIPT} --into <that folder>" in message, message
@@ -1245,7 +1270,7 @@ def test_a_run_sends_the_weights_folder_beside_the_models_folder(client, user_an
                                                                  monkeypatch):
     user, token = user_and_token
     _add(_key(user), catalog)
-    root = _fetch_into(weights_dir / DIR)
+    root = _fetch_into(_revision_root(weights_dir))
     _no_download(monkeypatch)
     sent = _capture_sandbox(monkeypatch)
 
@@ -1276,7 +1301,7 @@ def test_a_nodes_first_run_downloads_the_weights_once_before_the_sandbox_runs_it
 
     assert hugging_face.urls == _urls()
     assert asked_while_downloading == [0, 0, 0]
-    root = (weights_dir / DIR).resolve()
+    root = _revision_root(weights_dir).resolve()
     assert len(sent) == 2
     for body in sent:
         assert body["models"] == {PACKAGE_ID: str((catalog / DIR).resolve())}

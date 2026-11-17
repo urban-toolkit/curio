@@ -16,7 +16,9 @@ Curio's state directory.
   file of the release names a dataset or a package.
 - The fetch: a missing listed file is fetched, verified and placed, then read
   where it was placed; a wrong sha256, a refused address, a dropped
-  connection or a checkout without a record places nothing; a file the
+  connection or a checkout without a record places nothing; a dropped
+  connection keeps what came, which the next read goes on from, checking
+  the whole file; a download says how far it has come; a file the
   package holds is never fetched; two readers fetch a file once; the fetched
   folder is its owner's alone; a download removes other releases' files.
 - The readers: the Data Catalog's details, preview, download and install, and
@@ -518,6 +520,9 @@ def test_the_download_goes_through_the_egress_policy(pip_tree, monkeypatch):
 
 
 def test_a_partial_download_never_counts_as_present(pip_tree, monkeypatch):
+    """A cut places nothing where a reader looks: under the release's folder
+    there is nothing but the locks and the one partial file the next read
+    goes on from, which then places the file whole, asking once."""
     m = pip_tree.module
     FakeGitHub(contents={SIDEWALK: PAYLOAD}, cut=OSError("Connection reset by peer")).serve(monkeypatch)
 
@@ -525,13 +530,17 @@ def test_a_partial_download_never_counts_as_present(pip_tree, monkeypatch):
         m.fetch(SIDEWALK, pip_tree.shipped)
 
     assert "Connection reset by peer" in str(raised.value)
-    assert not (m.fetched_root(COMMIT) / SIDEWALK).exists()
-    assert _only_locks(m.fetched_root(COMMIT))
+    root = m.fetched_root(COMMIT)
+    assert not (root / SIDEWALK).exists()
+    kept = _partials(root)
+    assert [path.parent for path in kept] == [root / ".partial"], kept
+    assert all(path.suffix == ".lock" for path in root.rglob("*") if path.is_file() and path not in kept)
 
-    # The next read fetches it whole.
+    # The next read completes it.
     github = FakeGitHub(contents={SIDEWALK: PAYLOAD}).serve(monkeypatch)
     assert m.fetch(SIDEWALK, pip_tree.shipped).read_bytes() == PAYLOAD
     assert len(github.urls) == 1
+    assert _partials(root) == []
 
 
 def _partials(root: Path) -> list[Path]:

@@ -15,6 +15,8 @@ export type TrackedStep = { role: StepRole; status: StepStatus };
 
 export type NodeChange =
   | { kind: "running" }
+  /** Still running, and saying what it does, such as a download's progress; nothing to say once that is over. */
+  | { kind: "progress"; message: string }
   | { kind: "result"; reply: any; startedAt?: number; finishedAt?: number }
   | { kind: "skipped"; reason: string }
   | { kind: "stopped" };
@@ -30,6 +32,7 @@ export function nodeChangeFor(
   { started }: { started: boolean },
 ): NodeChange | null {
   if (event.kind === "step_started") return { kind: "running" };
+  if (event.kind === "step_progress") return { kind: "progress", message: event.message ?? "" };
   if (event.kind !== "step_finished") return null;
   switch (event.status) {
     case "ok":
