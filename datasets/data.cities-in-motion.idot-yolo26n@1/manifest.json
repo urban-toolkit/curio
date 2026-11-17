@@ -1,0 +1,25 @@
+{
+  "id": "data.cities-in-motion.idot-yolo26n",
+  "name": "IDOT snapshots: YOLO26n boxes",
+  "version": "1.0.0",
+  "format": "csv",
+  "description": "Keira's run of Ultralytics' YOLO26n, at a confidence of 0.25 or more, on the snapshots of the three team days: 3,016 boxes, one row each, with the snapshot's name in nanoseconds (timestamps_ns), the class, the confidence, the box in pixels (x_min, y_min, x_max, y_max) and the team day (dataset). A snapshot YOLO26n found nothing in has no row. As committed in keira/yolo26n_detections.csv of isalva2/cities-in-motion-video at commit cf66012d663f. Used with the permission of its authors.",
+  "publisher": "Cities in Motion workshop team (isalva2/cities-in-motion-video)",
+  "license": "",
+  "tags": [
+    "cities in motion",
+    "rail crossings",
+    "object detection",
+    "yolo26n"
+  ],
+  "dataFile": "data/yolo26n_detections.csv",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "Cities in Motion workshop team (isalva2/cities-in-motion-video)",
+  "createdAt": "2026-11-17T00:00:00Z",
+  "updatedAt": "2026-11-17T00:00:00Z",
+  "rowCount": 3016,
+  "featureCount": null,
+  "schema": null
+}

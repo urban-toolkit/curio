@@ -66,6 +66,7 @@ NOT_SCANNED = {
     "scripts/build_example_bedford_shadow.py": "builds the Crown Heights shadow example from its dataset",
     "scripts/build_example_chicago_loop_layers.py": "builds the Chicago Loop layers example from its dataset",
     "scripts/build_example_datasets.py": "builds the example datasets and writes their manifests",
+    "scripts/build_example_idot.py": "builds the SAGE-IDOT example's datasets from its source and the team's files",
     "scripts/build_example_mapillary.py": "builds the Mapillary sample dataset",
     "scripts/build_example_scenario_charts.py": "builds the datasets the scenario chart examples read",
     "scripts/build_example_storage.py": "builds the example storage datasets",
