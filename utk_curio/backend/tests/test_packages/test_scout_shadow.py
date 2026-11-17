@@ -36,8 +36,9 @@ sums: ``scripts/scout/export_deep_umbra.py`` measured TensorFlow's own float32
 run up to 0.016 from a float64 run of the same generator, on an output from -1 to
 1, and onnxruntime within 0.0177 of TensorFlow. onnxruntime's output is the same
 on 1 to 16 intra-op threads and moves from 17 on, by up to 0.027, as its sums are
-split differently; Curio leaves the thread count to onnxruntime, so a machine
-with more cores sees the second result. On SCOUT's tiles, up to 16 threads give
+split differently; Curio leaves the thread count to onnxruntime unless
+``OMP_NUM_THREADS`` names one, so a machine with more cores that sets none
+sees the second result. On SCOUT's tiles, up to 16 threads give
 one gray level on up to 686 of a tile's 65,536 pixels (2 on 2 of them) and the
 metrics within 0.013 minutes; 32 threads give up to 5 levels on up to 3,267
 pixels (5%), the mean within 0.052 minutes and the median within 0.012. So a

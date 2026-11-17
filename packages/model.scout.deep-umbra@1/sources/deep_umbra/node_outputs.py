@@ -27,6 +27,7 @@ height under 1.08 m (550 / 255 / 2 is 1.078).
 
 import hashlib
 import math
+import os
 
 import numpy as np
 import onnxruntime as ort
@@ -163,18 +164,33 @@ def neighbourhood(padded, column, row):
     return padded[row * TILE:(row + 3) * TILE, column * TILE:(column + 3) * TILE]
 
 
+def _library_threads():
+    """The thread count ``OMP_NUM_THREADS`` names (its first, when it lists one
+    per level), which OpenBLAS reads for itself and onnxruntime does not; None
+    when it names none."""
+    first = os.environ.get("OMP_NUM_THREADS", "").split(",")[0].strip()
+    return int(first) if first.isdigit() and int(first) > 0 else None
+
+
 def shadow_tiles(raster, season, model):
     """Deep Umbra on every tile of *raster* that holds a height: ``{(column,
     row): shadow}``, each tile's shadow from 0 to 1, 256 by 256. *model* is
     Deep Umbra as ``curio_load_model`` gives it: its ONNX file
     (``model.path``) opens in one onnxruntime session on the CPU, which every
-    tile runs in."""
+    tile runs in, on as many threads as ``OMP_NUM_THREADS`` names, else on one
+    per core."""
     zoom, x, y, columns, rows = tile_grid(raster)
     written = tiles_with_heights(raster, columns, rows)
     if not written:
         raise ValueError("The height raster holds no height: every cell is no data, so no tile has buildings.")
     padded = np.pad(gray_levels(raster), TILE)
-    generator = ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])
+    options = ort.SessionOptions()
+    # A session that names no count starts a thread per core it sees, the
+    # whole machine's where others share its CPUs.
+    threads = _library_threads()
+    if threads:
+        options.intra_op_num_threads = threads
+    generator = ort.InferenceSession(model.path, sess_options=options, providers=["CPUExecutionProvider"])
     shadows = {}
     for column, row in written:
         _input_height, prediction = predict_shadow(

@@ -260,9 +260,18 @@ def files_read_beside(path) -> list[Path]:
     ]
 
 
+def _library_threads():
+    """The thread count ``OMP_NUM_THREADS`` names (its first, when it lists one
+    per level), which torch and OpenBLAS read for themselves and onnxruntime
+    does not; None when it names none."""
+    first = os.environ.get("OMP_NUM_THREADS", "").split(",")[0].strip()
+    return int(first) if first.isdigit() and int(first) > 0 else None
+
+
 def _read_onnx(path: str):
-    """An ONNX model as an onnxruntime session on the CPU, opened the way a
-    model package's node opens a Model Catalog model's."""
+    """An ONNX model as an onnxruntime session on the CPU, as the shipped
+    model packages' modules open theirs: on as many threads as
+    ``OMP_NUM_THREADS`` names, else on one per core."""
     try:
         import onnxruntime as ort
     except ImportError as exc:
@@ -271,7 +280,13 @@ def _read_onnx(path: str):
             "does not have it: add a model that runs on ONNX, such as DDRNet23-Slim, "
             "with Add in the Model Catalog, which installs it."
         ) from exc
-    return ort.InferenceSession(path, providers=["CPUExecutionProvider"])
+    options = ort.SessionOptions()
+    # A session that names no count starts a thread per core it sees, the
+    # whole machine's where others share its CPUs.
+    threads = _library_threads()
+    if threads:
+        options.intra_op_num_threads = threads
+    return ort.InferenceSession(path, sess_options=options, providers=["CPUExecutionProvider"])
 
 
 def read_dataset(path: str, fmt: str | None, *, layer_type: str | None = None):
