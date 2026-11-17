@@ -451,6 +451,7 @@ class DiscoveryService:
         if state.status == "scanning":
             leg["seen"] = state.seen
         payload = search_payload(rows, sources=[leg], truncated=view.truncated if view else False)
+        payload["cutShort"] = scanning.cut_short_text(view.stopped_at) if view else None
         payload["unmatched"] = view.unmatched if view else 0
         payload["scannedAt"] = _iso(view.scanned_at) if view else None
         return payload

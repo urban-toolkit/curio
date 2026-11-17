@@ -32,13 +32,15 @@ from utk_curio.backend.app.discovery.infrastructure.transport import (
 )
 from utk_curio.backend.app.discovery.providers.storage_base import (
     FileEntry,
+    ListingCut,
     is_skipped,
     validate_relpath,
 )
 
 _NS = "{http://s3.amazonaws.com/doc/2006-03-01/}"
 
-#: Pages listed per scan at most: 1000 keys each.
+#: Pages one listing reads at most, of up to 1000 keys each: past them it
+#: stops, noted in ``S3Storage.cut_short``.
 MAX_PAGES = 400
 
 #: The parameters this provider reads: an area, for a GeoParquet table row.
@@ -58,6 +60,9 @@ class S3Storage:
         #: ``SourceMount``, and ``forget(path)``); None reads every file over
         #: HTTP.
         self.reads = reads
+        #: Each listing that stopped at :data:`MAX_PAGES` before its end, a
+        #: file listing's or a folder listing's, so a scan says it was cut short.
+        self.cut_short: list[ListingCut] = []
 
     # ── urls ───────────────────────────────────────────────────────────────
 
@@ -70,7 +75,8 @@ class S3Storage:
         return url
 
     def _pages(self, prefix: str, *, delimiter: str | None = None) -> Iterator[ET.Element]:
-        """Each page of the listing under *prefix*, up to :data:`MAX_PAGES`."""
+        """Each page of the listing under *prefix*, up to :data:`MAX_PAGES`;
+        a listing that runs past them is noted in :attr:`cut_short`."""
         token = None
         for _page in range(MAX_PAGES):
             body = self.transport.json_get(self._list_url(prefix, token, delimiter=delimiter))
@@ -84,6 +90,8 @@ class S3Storage:
             token = root.findtext(f"{_NS}NextContinuationToken")
             if not token:
                 return
+        # The last page read names another: the listing stops short of the bucket.
+        self.cut_short.append(ListingCut(prefix, MAX_PAGES))
 
     def file_url(self, relpath: str) -> str:
         validate_relpath(relpath)

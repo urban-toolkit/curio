@@ -23,7 +23,9 @@ by, or a name of its own comes below a pattern, as SAGE-IDOT's
 the folders under each pattern's parent are listed, and the files of only the
 folders a row needs, several at once (:func:`folders_to_list`). A row holds up
 to the source's ``limits.maxFiles`` files, and a whole listing up to
-:data:`MAX_LISTING_FILES`, its rows' together.
+:data:`MAX_LISTING_FILES`, its rows' together. A walk that stops at one of
+its bounds says which (``ScanResult.stopped_at``), and so do the source's
+page (:func:`cut_short_text`) and a refused add.
 """
 
 from __future__ import annotations
@@ -72,6 +74,15 @@ MAX_FOLDERS = 10_000
 #: walk stops short of the source.
 MAX_LISTING_FILES = 2_000_000
 
+#: The bounds a walk stops short of its source at, as ``ScanResult.stopped_at``
+#: names them: a row's ``limits.maxFiles``, :data:`MAX_LISTING_FILES`,
+#: :data:`MAX_FOLDERS`, and a provider's bound of pages on one listing
+#: (``storage_base.ListingCut``).
+ROW_FILES = "row files"
+LISTING_FILES = "listing files"
+FOLDERS = "folders"
+PAGES = "pages"
+
 KIND_LABEL = {
     "rasters": "Rasters",
     "frames": "Frames",
@@ -117,8 +128,16 @@ class ScanResult:
     groups: list[Group]
     matched: int
     unmatched: int
-    truncated: bool
     scanned_at: float
+    #: Each bound the walk met, which stopped it short of the source (a
+    #: row's files, the listing's, its folders or a listing's pages), with
+    #: the number it holds; empty when it read the whole source.
+    stopped_at: dict[str, int] = field(default_factory=dict)
+
+    @property
+    def truncated(self) -> bool:
+        """Whether the walk stopped short of the source, at any bound."""
+        return bool(self.stopped_at)
 
 
 # ── resource ids ───────────────────────────────────────────────────────────
@@ -426,7 +445,13 @@ def scan(
     one_row_each = selection is not None or all(spec.datasets == "one" for spec in specs)
     full: set[str] = set()
     at_bound = False
-    folders, truncated = folders_to_list(provider, specs, selection=selection)
+    stopped_at: dict[str, int] = {}
+    # The listings this walk cuts, not those of a walk before it on the provider.
+    cuts = getattr(provider, "cut_short", None)
+    cut_before = len(cuts) if cuts is not None else 0
+    folders, past_folders = folders_to_list(provider, specs, selection=selection)
+    if past_folders:
+        stopped_at[FOLDERS] = MAX_FOLDERS
     with closing(_files_under(provider, folders)) as entries:
         for entry in entries:
             if cancelled is not None and cancelled():
@@ -446,7 +471,8 @@ def scan(
                     continue
                 if matched >= MAX_LISTING_FILES:
                     # A file past the listing's bound: the walk stops short of the source.
-                    truncated = at_bound = True
+                    stopped_at[LISTING_FILES] = MAX_LISTING_FILES
+                    at_bound = True
                     break
                 if spec.datasets == "per-file":
                     key: tuple = (found.relpath,)
@@ -461,7 +487,7 @@ def scan(
                     )
                 elif len(group.files) >= manifest.max_files:
                     # A file past the row's limit: the row stops short of the source.
-                    truncated = True
+                    stopped_at[ROW_FILES] = manifest.max_files
                     full.add(spec.id)
                     continue
                 group.files.append(found)
@@ -474,6 +500,9 @@ def scan(
                 unmatched += 1
             if at_bound or (one_row_each and len(full) == len(specs)):
                 break
+    if cuts is not None and len(cuts) > cut_before:
+        # A listing the provider stopped at its bound of pages, short of the source.
+        stopped_at[PAGES] = max(cut.pages for cut in cuts[cut_before:])
     order = {spec.id: index for index, spec in enumerate(specs)}
     out = sorted(groups.values(), key=lambda g: (order[g.spec.id], tuple(map(_value_text, g.key))))
     for group in out:
@@ -481,8 +510,7 @@ def scan(
             group.files = [_with_parts(f, sidecars) for f in group.files]
         group.files.sort(key=lambda f: f.relpath)
     return ScanResult(
-        groups=out, matched=matched, unmatched=unmatched, truncated=truncated,
-        scanned_at=time.time(),
+        groups=out, matched=matched, unmatched=unmatched, scanned_at=time.time(), stopped_at=stopped_at,
     )
 
 
@@ -674,6 +702,27 @@ def to_resource(manifest: DiscoverySourceManifest, group: Group) -> DiscoveryRes
     )
 
 
+#: What a storage source's page says of each bound its listing met, in order.
+_SAID_OF_BOUNDS = (
+    (ROW_FILES, "a row lists up to {}", "file", "files"),
+    (LISTING_FILES, "a listing holds up to {}, all its rows' together", "file", "files"),
+    (FOLDERS, "a listing reads the files of up to {}", "folder", "folders"),
+    (PAGES, "a folder's listing stops at {}", "page", "pages"),
+)
+
+
+def cut_short_text(stopped_at: dict[str, int]) -> str | None:
+    """What a storage source's page says of a listing that stopped short of
+    the source: each bound it met (``ScanResult.stopped_at``). None for a
+    listing of the whole source."""
+    met = [
+        said.format(_counted(stopped_at[bound], one, many))
+        for bound, said, one, many in _SAID_OF_BOUNDS
+        if bound in stopped_at
+    ]
+    return f"This source holds more files than are listed here: {'; '.join(met)}." if met else None
+
+
 # ── the shared listing cache ───────────────────────────────────────────────
 
 
@@ -704,6 +753,8 @@ class _State:
     groups: dict[str, Group] = field(default_factory=dict)
     unmatched: int = 0
     truncated: bool = False
+    #: The bounds the scan met short of the source (``ScanResult.stopped_at``).
+    stopped_at: dict[str, int] = field(default_factory=dict)
     scanned_at: float | None = None
     started_at: float = 0.0
     #: Files walked so far, while a scan runs.
@@ -782,6 +833,7 @@ class ListingCache:
             state.groups = {group.resource_id: group for group in result.groups}
             state.unmatched = result.unmatched
             state.truncated = result.truncated
+            state.stopped_at = result.stopped_at
             state.scanned_at = result.scanned_at
             state.previous = None
             state.status = "ready"

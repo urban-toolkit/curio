@@ -6,9 +6,10 @@ model added from the Discovery Catalog, whose packages name this one in
 ``dependencies.packages``. A model (from ``curio_load_model``) carries a
 manifest that says how to run it, so nothing here is fitted to one model:
 
-- ``onnx``: onnxruntime on the CPU. Each image is resized to the manifest's
-  input, fed as ``uint8`` pixels or as ``float32`` scaled and normalized, and
-  each pixel takes the channel the graph scores highest;
+- ``onnx``: onnxruntime on the CPU, on as many threads as ``OMP_NUM_THREADS``
+  names, as torch is, else on one per core. Each image is resized to the
+  manifest's input, fed as ``uint8`` pixels or as ``float32`` scaled and
+  normalized, and each pixel takes the channel the graph scores highest;
 - ``transformers``: the checkpoint's own image processor and
   ``AutoModelForSemanticSegmentation``, read from the folder alone
   (``local_files_only``, safetensors only), with torch on the CPU.
@@ -77,6 +78,14 @@ def palette(labels):
     return colours
 
 
+def _library_threads():
+    """The thread count ``OMP_NUM_THREADS`` names (its first, when it lists one
+    per level), which torch and OpenBLAS read for themselves and onnxruntime
+    does not; None when it names none."""
+    first = os.environ.get("OMP_NUM_THREADS", "").split(",")[0].strip()
+    return int(first) if first.isdigit() and int(first) > 0 else None
+
+
 class _OnnxRunner:
     def __init__(self, path: str, manifest: dict) -> None:
         try:
@@ -88,7 +97,14 @@ class _OnnxRunner:
             ) from exc
         self.labels = list(manifest.get("labels") or [])
         self.input = manifest.get("input") or {}
-        self.session = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
+        options = ort.SessionOptions()
+        # A session that names no count starts a thread per core it sees, the
+        # whole machine's where others share its CPUs: DDRNet23-Slim on 96
+        # threads of a busy CI machine ran ten times longer than on a quiet one.
+        threads = _library_threads()
+        if threads:
+            options.intra_op_num_threads = threads
+        self.session = ort.InferenceSession(path, sess_options=options, providers=["CPUExecutionProvider"])
         self.input_name = self.session.get_inputs()[0].name
 
     def __call__(self, image):
