@@ -25,7 +25,6 @@ from utk_curio.backend.app.packages.domain.spec_packages import (
 )
 from utk_curio.backend.app.packages.repositories import defaults as defaults_io
 from utk_curio.backend.app.packages.infrastructure import backend_runtime as packages_backend_runtime
-from utk_curio.backend.app.packages.infrastructure.pip_runner import PipInstallError
 from utk_curio.backend.app.packages.application import libraries as packages_libraries
 from utk_curio.backend.app.packages.application import store_reads as packages_store_reads
 from utk_curio.backend.app.packages.domain.errors import PackageServiceError
@@ -49,7 +48,8 @@ def prune_unreferenced_packages(
         purpose.)
 
     Then the libraries only the pruned packages asked for leave from where
-    their install put them (:func:`_uninstall_libraries_only_they_asked_for`).
+    their install put them, and the account's tree gives way to the image
+    (``libraries.take_back_after_a_removal``).
 
     Returns ``{"pruned": <dirs>, "removedFromDefaults": <dirs>}``.
     """
@@ -74,7 +74,7 @@ def prune_unreferenced_packages(
     pruned_libraries: dict[str, set[str]] = {}
     for dn in unreferenced:
         try:
-            pruned_libraries[dn] = _node_libraries(user_key, dn)
+            pruned_libraries[dn] = packages_libraries.node_libraries_of(user_key, dn)
         except Exception:  # noqa: BLE001 — keep prune resilient
             pruned_libraries[dn] = set()
         try:
@@ -93,32 +93,10 @@ def prune_unreferenced_packages(
         defaults_io.save_defaults(user_key, new_defaults)
 
     if pruned:
-        _uninstall_libraries_only_they_asked_for(
+        packages_libraries.take_back_after_a_removal(
             user_key, set().union(*(pruned_libraries[dn] for dn in pruned)),
         )
     return {"pruned": pruned, "removedFromDefaults": removed_from_defaults}
-
-
-def _uninstall_libraries_only_they_asked_for(user_key: str, libraries: set[str]) -> None:
-    """Uninstall the pruned packages' *libraries* that nothing else asks for,
-    and that Curio put there (``libraries.names_to_take_back``, which the
-    libraries dialog's Remove asks too), from where their install put them:
-    the libraries dialog's removal (``libraries.uninstall_user_libraries``),
-    whose route follows the install's.
-
-    A library another package still asks for stays, and its copy in the
-    account's tree goes where the image's meets every range left
-    (``libraries.give_way_after_a_removal``), as the next start would take
-    it."""
-    names = packages_libraries.names_to_take_back(user_key, libraries) if libraries else []
-    if names:
-        try:
-            packages_libraries.uninstall_user_libraries(user_key, names)
-        except PipInstallError as exc:
-            # Don't fail the whole prune over a pip uninstall hiccup;
-            # the user can clean up manually if needed.
-            log.warning("prune: pip uninstall failed: %s", exc)
-    packages_libraries.give_way_after_a_removal(user_key)
 
 
 def dataflow_packages(spec, installed_majors) -> set[str]:
@@ -190,18 +168,3 @@ def _read_python_deps(user_key: str, dir_name: str) -> dict[str, str]:
     """Read the installed package's ``manifest.dependencies.python`` map."""
     m = packages_store_reads._read_manifest(user_key, dir_name)
     return dict(m.python_deps or {}) if m is not None else {}
-
-
-def _node_libraries(user_key: str, dir_name: str) -> set[str]:
-    """The libraries *dir_name*'s install put where node code imports from:
-    those its manifest declares, when they go there
-    (``backend_runtime.dep_destinations``, ``host`` or ``both``). A package
-    whose libraries go to its own overlay alone loses them with its backend
-    residue, and none of them is anywhere else."""
-    manifest = packages_store_reads._read_manifest(user_key, dir_name)
-    if manifest is None:
-        return set()
-    destination, _reason = packages_backend_runtime.dep_destinations(manifest)
-    if destination not in ("host", "both"):
-        return set()
-    return set(manifest.python_deps or {})

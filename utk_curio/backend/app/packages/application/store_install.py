@@ -728,17 +728,21 @@ def remove_package(user_key: str, dir_name: str) -> None:
     """Uninstall *dir_name* from the user store with its backend residue
     (dev/97: overlay, data dir, pin — the invocation ledger survives). The
     builtin is refused; a package that is not installed is a 404;
-    ``PackageIdError`` propagates for a malformed name. Under per-user node
-    environments a copy in the account's tree that only the package needed,
-    in front of an image library that meets every range left, goes too
-    (``libraries.give_way_after_a_removal``), as the next start would take
-    it."""
+    ``PackageIdError`` propagates for a malformed name. The libraries its
+    install put where node code imports from leave from there when nothing
+    asks for them now and Curio put them there, as a removal from the
+    package's last dataflow takes them back, and a copy in the account's tree
+    that only the package needed, in front of an image library that meets
+    every range left, goes too, as the next start would take it
+    (``libraries.take_back_after_a_removal``)."""
     if dir_name.startswith(f"{BUILTIN_PACKAGE_ID}@"):
         raise PackageServiceError(f"{BUILTIN_PACKAGE_ID} is built-in and cannot be uninstalled", 400)
+    # Read before its files go.
+    its_libraries = packages_libraries.node_libraries_of(user_key, dir_name)
     if not uninstall_package(user_key, dir_name):
         raise PackageServiceError("package not installed", 404)
     packages_backend_runtime.remove_backend_residue(user_key, dir_name)
-    packages_libraries.give_way_after_a_removal(user_key)
+    packages_libraries.take_back_after_a_removal(user_key, its_libraries)
 
 
 def archive_file_for_download(user_key: str, dir_name: str) -> tuple[Path, Callable[[], None]]:

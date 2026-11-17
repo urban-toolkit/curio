@@ -14,7 +14,8 @@ The `/api/libraries` surface backs the "Installed libraries" menu (formerly
 - **Package-derived**: libraries declared by an installed node package's
   ``manifest.dependencies.{python,js}``. These are *read-only* from the
   modal's perspective - they get installed automatically by the catalog
-  flow (see ``pip_runner.py``) and removed by ``prune_unreferenced_packages``.
+  flow (see ``pip_runner.py``) and taken back by a package's removal
+  (:func:`take_back_after_a_removal`).
   We surface them in the list so the user knows what's on their machine
   and why.
 
@@ -43,7 +44,10 @@ from utk_curio.backend.app.packages.infrastructure import (
     pip_runner as packages_pip_runner,
 )
 from utk_curio.backend.app.packages.infrastructure.target_locks import target_lock
-from utk_curio.backend.app.packages.application import provisioning as packages_provisioning
+from utk_curio.backend.app.packages.application import (
+    provisioning as packages_provisioning,
+    store_reads as packages_store_reads,
+)
 from utk_curio.backend.app.packages.infrastructure.pip_runner import PipInstallError
 from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
@@ -277,8 +281,8 @@ def uninstall_user_libraries(user_key: str, names):
     run, or one walk of the user's tree under its lock.
 
     A package's removal takes its libraries back through this
-    (``prune.py``), so they leave from where their install put them, as the
-    dialog's do.
+    (:func:`take_back_after_a_removal`), so they leave from where their
+    install put them, as the dialog's do.
     """
     names = list(names)
     if not packages_backend_runtime.per_user_node_envs():
@@ -294,8 +298,8 @@ def uninstall_user_libraries(user_key: str, names):
 def names_to_take_back(user_key: str, names) -> list[str]:
     """The libraries among *names* that may leave where *user_key*'s nodes
     import them from, sorted: those nothing asks for any more, which Curio
-    put there. A package's removal (``prune.py``) and the dialog's Remove
-    both take back only these.
+    put there. A package's removal (:func:`take_back_after_a_removal`) and
+    the dialog's Remove both take back only these.
 
     Under fork isolation that is the account's own tree, which no other
     account imports from and only Curio's pip writes, so only the account's
@@ -362,8 +366,10 @@ def give_way_to_the_image(user_key: str) -> list[str]:
 
 def give_way_after_a_removal(user_key: str) -> list[str]:
     """:func:`give_way_to_the_image` after a removal: of a package, from its
-    last dataflow (``prune.py``) or from the account (``store_install``), or
-    of a library in Installed libraries (:func:`remove_standalone_library`).
+    last dataflow, from the account, or by a start's take-off of a guest
+    package, or of the version an Update replaced, each after the take-back
+    of its libraries (:func:`take_back_after_a_removal`), or of a library in
+    Installed libraries (:func:`remove_standalone_library`).
     A library another package of the account's still asks for stays, and its
     copy in the account's tree, which the removed package or list entry put
     there, goes where the image's copy meets every range left, as the next
@@ -375,6 +381,51 @@ def give_way_after_a_removal(user_key: str) -> list[str]:
         log.warning("Account %s's node libraries could not give way to the image after a removal: %s",
                     user_key, exc)
         return []
+
+
+def node_libraries_of(user_key: str, dir_name: str) -> set[str]:
+    """The libraries the install of *dir_name*, in *user_key*'s store, put
+    where node code imports from: those its manifest declares, when they go
+    there (``backend_runtime.dep_destinations``, ``host`` or ``both``). A
+    package whose libraries go to its own overlay alone loses them with its
+    backend residue, and none of them is anywhere else. Empty when the store
+    holds no copy of it that reads. Read before the package's files go, for
+    :func:`take_back_after_a_removal`."""
+    manifest = packages_store_reads._read_manifest(user_key, dir_name)
+    if manifest is None:
+        return set()
+    destination, _reason = packages_backend_runtime.dep_destinations(manifest)
+    if destination not in ("host", "both"):
+        return set()
+    return set(manifest.python_deps or {})
+
+
+def take_back_after_a_removal(user_key: str, libraries) -> list[str]:
+    """After packages left *user_key*'s store, take back *libraries*, those
+    their installs put where node code imports from (:func:`node_libraries_of`),
+    that nothing asks for now and Curio put there (:func:`names_to_take_back`,
+    which the libraries dialog's Remove asks too), from where their install
+    put them (:func:`uninstall_user_libraries`), then give way to the image
+    (:func:`give_way_after_a_removal`): a library another package still asks
+    for stays, and its copy in the account's tree goes where the image's
+    meets every range left, as the next start would take it.
+
+    What a removal gets: Remove from project on a package's last dataflow
+    (``prune.py``), Remove from account (``store_install.remove_package``),
+    an Update, for what the version it replaced declared
+    (``store_install.install_from_catalog``), and a guest package a start
+    takes off (``guest_packages``). The removal is done already, so a failed
+    uninstall is logged and the libraries stay. The names taken back, sorted."""
+    names = names_to_take_back(user_key, libraries) if libraries else []
+    if names:
+        try:
+            uninstall_user_libraries(user_key, names)
+        except (PipInstallError, OSError) as exc:
+            log.warning("Account %s's libraries %s could not be taken back after a removal: %s",
+                        user_key, names, exc)
+            names = []
+    give_way_after_a_removal(user_key)
+    return names
 
 
 def accounts() -> list[str]:
