@@ -10,8 +10,9 @@ import { planNodeExtras, planNodeRowState, type PlanDisplay, type PlanNodeReview
 export const PlanNodesList: React.FC<{
   part: PlanDisplay;
   planNodeState?: PlanNodeReviewState;
-  onSolvePlanNode?: (ref: string) => Promise<void>;
-  onRunPlanNode?: (ref: string) => Promise<void>;
+  /** Each tells the row's `onLine` how far a download its run waits on has come. */
+  onSolvePlanNode?: (ref: string, onLine?: (line: string) => void) => Promise<void>;
+  onRunPlanNode?: (ref: string, onLine?: (line: string) => void) => Promise<void>;
   onOpenAgentChat?: (attachmentId: string) => void;
   delegateExists?: (attachmentId: string) => boolean;
   /** The name of the agent another attachment binds, from the live list. */
@@ -33,8 +34,8 @@ export const PlanNodesList: React.FC<{
           solvable={row.solvable}
           solveBlocker={row.solveBlocker}
           extras={planNodeExtras(part, node)}
-          onSolve={onSolvePlanNode ? () => onSolvePlanNode(node.ref) : undefined}
-          onRun={onRunPlanNode ? () => onRunPlanNode(node.ref) : undefined}
+          onSolve={onSolvePlanNode ? (onLine) => onSolvePlanNode(node.ref, onLine) : undefined}
+          onRun={onRunPlanNode ? (onLine) => onRunPlanNode(node.ref, onLine) : undefined}
           onOpenChange={linkable ? () => onOpenAgentChat!(row.changeHomeId!) : undefined}
           changeAgentName={row.changeHomeId ? agentNameOf?.(row.changeHomeId) ?? undefined : undefined}
         />

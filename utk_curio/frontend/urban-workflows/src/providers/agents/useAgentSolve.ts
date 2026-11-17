@@ -11,6 +11,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 
 import { agentsApi, bridgeLandedChangeEvent, notifyAgentCanvasMutation } from "../../services/agents";
 import type { AgentAttachment, AgentRemedy, AgentSolveResult, AgentSolveWave } from "../../services/agents/types";
+import { downloadLine } from "../../utils/downloadLine";
 
 export type AgentSolveWaiting = Array<{ nodeId: string; kind: string; reason?: string; attachmentId?: string | null }>;
 
@@ -35,16 +36,6 @@ type ById<T> = Record<string, T>;
 function without<T>(prev: ById<T>, key: string): ById<T> {
   const { [key]: _gone, ...rest } = prev;
   return rest;
-}
-
-/**
- * What a `node_download` event of an agent's run says, for the line that
- * narrates the node's run: how far a download on first use of what the node
- * reads has come, as the canvas says a run's step_progress; null once its
- * downloads are over and the node runs.
- */
-export function downloadLine(payload: Record<string, unknown>): string | null {
-  return typeof payload.message === "string" && payload.message ? payload.message : null;
 }
 
 function readWaiting(raw: unknown): AgentSolveWaiting {
