@@ -13,6 +13,8 @@ up for a moment, each other object keeps its own mask and score.
 
 import colorsys
 import datetime
+import hashlib
+import json
 import math
 from dataclasses import dataclass
 from fractions import Fraction
@@ -34,7 +36,7 @@ PER_FILE = frozenset({
 })
 #: The columns of a video's tracks, one row per object, after the video's own.
 TRACK_COLUMNS = ["object_id", "label", "start_s", "end_s", "frames", "largest_share", "mean_score"]
-#: The tag of the overlay and the tracks a video gets.
+#: How the tag of the overlay and the tracks a video gets begins (``_tag``).
 TAG = "sam3"
 #: How long before a step's time a frame may come and still be the frame
 #: looked at for that step.
@@ -93,7 +95,9 @@ def track_objects(media, model, derived_file, *, labels, every_seconds=0.5, forg
     as ``_``, and ``tracks``, the path of the video's tracks: one row per
     object, with ``video_file_id``, ``video``, ``object_id``, ``label``,
     ``start_s`` and ``end_s`` (in seconds from the video's start), ``frames``,
-    ``largest_share`` and ``mean_score``.
+    ``largest_share`` and ``mean_score``. A call that asks other labels, frames,
+    forgetting, part or width of a video than an earlier call keeps files of
+    its own; one that asks the same writes the earlier call's files again.
     """
     if not labels:
         raise ValueError("LABELS is empty: name at least one thing to look for")
@@ -452,12 +456,23 @@ def _keep(output, *, memory, alone=False):
                 output[key] = value.clone()
 
 
+def _tag(labels, every_seconds, forget_seconds, end, width):
+    """The tag of a video's overlay and tracks: ``TAG``, then the first twelve
+    hex digits of the SHA-256 of what they depend on besides where the part
+    starts, which their name holds: the labels, the gap between frames, how
+    long an object unseen is followed, where the part ends and the width."""
+    asked = [list(labels), float(every_seconds), None if forget_seconds is None else float(forget_seconds),
+             float(end), int(width)]
+    return TAG + hashlib.sha256(json.dumps(asked, separators=(",", ":")).encode("utf-8")).hexdigest()[:12]
+
+
 def _track(run, video, end):
     """Run SAM 3 through one video: its overlay's row, with its tracks file."""
     frames, times = _sample(run, video, end)
     start_ms = round(run.from_seconds * 1000)
-    overlay = run.derived_file(video["dataset_id"], video["file_id"], start_ms, "mp4", tag=TAG)
-    tracks_file = run.derived_file(video["dataset_id"], video["file_id"], start_ms, "parquet", tag=TAG)
+    tag = _tag(run.labels, run.every_seconds, run.forget_seconds, end, run.width)
+    overlay = run.derived_file(video["dataset_id"], video["file_id"], start_ms, "mp4", tag=tag)
+    tracks_file = run.derived_file(video["dataset_id"], video["file_id"], start_ms, "parquet", tag=tag)
     width, height = frames[0].size
     # Each frame of the overlay plays at its own time in the video, from the
     # first, in milliseconds, so the overlay plays in real time whatever
