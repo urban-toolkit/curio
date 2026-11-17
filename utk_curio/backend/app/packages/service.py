@@ -43,6 +43,7 @@ from utk_curio.backend.app.packages.application.provisioning import (
     provision_python_deps,
 )
 from utk_curio.backend.app.packages.application.libraries import (
+    give_way_to_the_image,
     install_user_library,
     uninstall_user_library,
     user_library_import_failure,
@@ -254,6 +255,7 @@ __all__ = [
     "catalog_root",
     "PackageIdError",
     "assert_may_install",
+    "give_way_to_the_image",
     "install_user_library",
     "uninstall_user_library",
     "user_library_import_failure",

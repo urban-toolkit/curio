@@ -207,17 +207,22 @@ def provision_user_node_deps(
     one library would re-run pip over their whole environment - and leave them
     with nothing at all if that run failed offline.
 
-    So the probe decides the work: only names that cannot already be imported
-    from the tree are handed to pip. That is also what keeps a re-install of an
-    already-satisfied package from making pip rewrite a tree it is happy with.
+    So the probe and the versions decide the work: only names that cannot
+    already be imported from the tree, and names imported at a version their
+    range does not accept, are handed to pip, which installs into the tree
+    only what neither the tree nor the image holds at an accepted version
+    (``pip_runner.install_python_deps_to_target`` *in_front*). That is also
+    what keeps a re-install of an already-satisfied package from making pip
+    rewrite a tree it is happy with.
     """
     overlay = packages_backend_runtime.user_node_overlay_dir(user_key)
     overlay.mkdir(parents=True, exist_ok=True)
     before = node_overlay_import_failures(user_key, py_deps)
-    missing = {name: spec for name, spec in py_deps.items() if name in before}
+    outside = set(packages_pip_runner.outside_their_ranges_in_front(py_deps, str(overlay)))
+    missing = {name: spec for name, spec in py_deps.items() if name in before or name in outside}
     installed: list[str] = []
     if missing:
-        report = packages_pip_runner.install_python_deps_to_target(missing, str(overlay))
+        report = packages_pip_runner.install_python_deps_to_target(missing, str(overlay), in_front=True)
         installed = sorted(report.installed)
     failures.update(node_overlay_import_failures(user_key, py_deps))
     return installed

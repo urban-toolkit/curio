@@ -18,6 +18,7 @@ import io
 import re
 import zipfile
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,9 @@ class WheelLibrary:
     module: str
     #: The string the module holds as ``MESSAGE``.
     message: str
+    #: What the library requires, each a ``Requires-Dist`` of its metadata,
+    #: such as ``"torch>=2.6"``.
+    requires: tuple[str, ...] = ()
 
 
 def _wheel_name(dist: str) -> str:
@@ -50,10 +54,11 @@ def _record_line(path: str, data: bytes) -> str:
 def build_wheel(library: WheelLibrary) -> bytes:
     """The wheel's bytes: the module, and the dist-info pip reads and records."""
     info = f"{_wheel_name(library.dist)}-{library.version}.dist-info"
+    requires = "".join(f"Requires-Dist: {requirement}\n" for requirement in library.requires)
     files = {
         f"{library.module}.py": f"MESSAGE = {library.message!r}\n".encode("utf-8"),
         f"{info}/METADATA": (
-            f"Metadata-Version: 2.1\nName: {library.dist}\nVersion: {library.version}\n"
+            f"Metadata-Version: 2.1\nName: {library.dist}\nVersion: {library.version}\n{requires}"
         ).encode("utf-8"),
         f"{info}/WHEEL": (
             "Wheel-Version: 1.0\nGenerator: curio-tests\n"
@@ -70,3 +75,21 @@ def build_wheel(library: WheelLibrary) -> bytes:
             wheel.writestr(path, data)
         wheel.writestr(f"{info}/RECORD", record)
     return buffer.getvalue()
+
+
+def write_wheelhouse(folder, libraries) -> Path:
+    """*folder*, made, holding the wheel of each of *libraries*: what
+    ``PIP_FIND_LINKS`` names, with ``PIP_NO_INDEX``, for a pip that installs
+    them offline."""
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    for library in libraries:
+        (folder / wheel_file_name(library)).write_bytes(build_wheel(library))
+    return folder
+
+
+def unpack_wheel(library: WheelLibrary, target) -> None:
+    """*library*'s files in the folder *target*, its module and its
+    dist-info, as ``pip install --target`` leaves them."""
+    with zipfile.ZipFile(io.BytesIO(build_wheel(library))) as wheel:
+        wheel.extractall(target)

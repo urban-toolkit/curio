@@ -1622,6 +1622,20 @@ after the fork. Three things follow, and none of them is a mode bit:
 - It cannot give two users different versions of the same library. pandas,
   geopandas, shapely and duckdb are resident in the zygote before the fork;
   additions are what this serves. Per-user versions would need a zygote each.
+- The image's libraries win wherever they meet a range. The tree is in front
+  of the image's interpreter, and `pip install --target` ignores what that
+  interpreter holds, so each install into the tree, a package's add, a start
+  and the dialog's alike, resolves with the tree in front of the interpreter,
+  as node code imports them (`pip_runner.install_python_deps_to_target` with
+  `in_front`, a `pip install --dry-run --report`), and puts into the tree only
+  what neither holds at a version the requirements accept, without its own
+  requirements, which that resolution met: a package's `torch>=2.6` keeps the
+  image's CUDA torch, and one asking a version the image's is outside gets
+  its own. A copy in the tree at a version the range does not accept, where
+  the image's meets it, is taken out rather than replaced. Each start also
+  takes out a copy an earlier one put in front of an image library that
+  meets every range the account's packages declare, unless the account's own
+  list names it (`libraries.give_way_to_the_image`).
 
 A run of an editor the dataflow's owner invited reads the owner's folder too,
 after the editor's own, so a node of the owner's packages imports the
@@ -2492,7 +2506,7 @@ Spec syntax accepts PEP 440 comparators (`>=2.0`, `~=4.30`, `==1.5.0`), bare ver
 
 The framework needs to boot before any manifests can be walked, so `pip install -r requirements.txt` (or `pip install utk-curio`) seeds enough of an env that the launcher can read `manifest.dependencies.python` and continue. A package's heavy libraries are not in the framework requirements: they install when the user clicks Install in the catalog, and a Transformers model's `torch` installs when the model is added to the Model Catalog.
 
-Standalone libraries the user adds via the [Installed Libraries modal](EXTENDING.md) (canvas → File → Installed libraries) sit in a third bucket, per-user JSON at `.curio/users/<u>/installed-libraries.json`, and pip-install through the same `pip_runner`, with ref-counted uninstall against every installed package's manifest.
+Standalone libraries the user adds via the [Installed Libraries modal](EXTENDING.md) (canvas → File → Installed libraries) sit in a third bucket, per-user JSON at `.curio/users/<u>/installed-libraries.json`, and pip-install through the same `pip_runner`. Their Remove takes a library back by a package's removal's rule (`libraries.names_to_take_back`): only when nothing else asks for it, and without isolation only when this backend's own pip installed it, so a library the dialog found installed already, such as the image's `torch`, stays.
 
 The same route is reachable without opening that modal: when a node run ends in `ModuleNotFoundError`, `/processPythonCode` carries a `missingModule` field naming the import and the distribution that provides it (`packages/missing_import.py`, sharing `dependency_scanner`'s alias table and passing `pip_runner.validate_python_requirement` before it is offered), and the node's output panel renders an **Install** button beside the traceback.
 

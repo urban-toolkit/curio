@@ -310,7 +310,8 @@ _ACCOUNTED_ENUMERATORS = {
     "app/packages/application/starters.py": {"_generate_unlocked"},  # unlocked core
     "app/packages/application/libraries.py": {"package_derived",  # lock owners
                                               "any_package_declares",
-                                              "not_asked_for"},
+                                              "not_asked_for",
+                                              "give_way_to_the_image"},
     "app/packages/builder/deps.py": {"installed_manifests"},  # lock owner
     "app/packages/application/function_nodes.py": {"package_functions"},  # lock owner
     "app/packages/application/model_packages.py": {"held_model_packages"},  # lock owner
