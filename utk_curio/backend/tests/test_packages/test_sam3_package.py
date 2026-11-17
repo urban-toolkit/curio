@@ -194,9 +194,11 @@ def _tiny_config(tracking=None, **video):
 
 
 def _tiny_weights(tmp_path_factory, config):
-    """The package's folder under ``--model-weights-dir``, its entry holding a
-    tiny SAM 3 of *config* and its processor: every file the package's
-    ``fetch`` lists."""
+    """The folder the sandbox reads the package's weights from, as a
+    revision's folder under ``--model-weights-dir``
+    (``<dir>/<id>@<major>/<revision>/``) holds them: its entry holding a tiny
+    SAM 3 of *config* and its processor, every file the package's ``fetch``
+    lists."""
     import torch
     from transformers import Sam2VideoVideoProcessor, Sam3ImageProcessor, Sam3VideoModel, Sam3VideoProcessor
 
