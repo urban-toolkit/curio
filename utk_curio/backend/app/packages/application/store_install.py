@@ -687,10 +687,12 @@ def bring_needed_packages(user_key: str, dir_name: str, *, its_catalog_copy: boo
 
 
 def install_from_catalog(user_key: str, dir_name: str, *, replace: bool) -> tuple[InstallResult, InstallOutcome]:
-    """Install a catalog package by its on-disk directory name (a catalog's
-    Update, with ``replace``, and the models a skill evaluation's account
-    holds, ``skill_eval_worker._hold_models``). Copies
-    ``<repo_root>/packages/<dir_name>/`` into the user's store through the same
+    """Install a catalog package by its on-disk directory name, for its one
+    caller, the catalog route ``POST /api/packages/catalog/install``: the
+    Node and Model Catalogs' Update sends it with ``replace``, and a skill
+    evaluation's worker sends it without, over HTTP, for each model the
+    evaluation's account is to hold (``skill_eval_worker._hold_models``).
+    Copies ``<repo_root>/packages/<dir_name>/`` into the user's store through the same
     validator, size caps and integrity writer the sideload uses;
     ``InstallerError`` propagates. A missing catalog entry is a
     :class:`PackageServiceError` 404.
