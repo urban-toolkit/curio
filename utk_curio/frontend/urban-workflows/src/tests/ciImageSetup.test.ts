@@ -40,8 +40,16 @@
  * every `docker run` there from 3 s to 13 (11-15). So the pull, start-stack's,
  * takes one of a few image slots the server's runners share first
  * (scripts/ci_image_slots.py, tested in the backend suite).
+ *
+ * That script also tries a pull again when the registry fails it: on 11-17
+ * GitHub's registry reset two pulls of one run 5 s apart (run 44017255256),
+ * start-stack's in e2e-desktop (10) and test-desktop-stress's own, and each
+ * lost its job before any test ran. So every pull of the CI image in the Full
+ * stack build goes through it.
  */
-import { read } from "./_support/workflowPaths";
+import * as fs from "fs";
+import * as path from "path";
+import { read, REPO_ROOT } from "./_support/workflowPaths";
 
 const WORKFLOW = ".github/workflows/docker-compose.yml";
 const CI_OVERLAYS = [
@@ -262,5 +270,39 @@ describe("Whole images take turns on the disk arcade's runners share", () => {
             .filter(([, job]) => OWN_PULL.test(job) && !/^ {4}runs-on: ubuntu-latest$/m.test(job))
             .map(([name]) => name);
         expect(pulling).toEqual([]);
+    });
+});
+
+describe("A pull of the CI image is tried again when the registry fails it", () => {
+    const THROUGH_THE_SCRIPT = 'python3 scripts/ci_image_slots.py pull "$IMAGE"\n';
+    /** A line that pulls an image itself, anywhere on it, unless the line is a comment. */
+    const BARE_PULL = /^(?!\s*#).*\bdocker (?:image )?pull\b/;
+
+    /** The Full stack build and every action of this repository it can use. */
+    function filesWithSteps(): string[] {
+        const actions = fs
+            .readdirSync(path.join(REPO_ROOT, ".github", "actions"))
+            .flatMap((name) => ["action.yml", "action.yaml"].map((file) => `.github/actions/${name}/${file}`))
+            .filter((file) => fs.existsSync(path.join(REPO_ROOT, file)));
+        return [WORKFLOW, ...actions];
+    }
+
+    test("no step of the Full stack build or of its actions runs a bare docker pull", () => {
+        const files = filesWithSteps();
+        expect(files).toContain(".github/actions/start-stack/action.yml");
+        const bare: string[] = [];
+        for (const file of files) {
+            read(file)
+                .split("\n")
+                .forEach((line, index) => {
+                    if (BARE_PULL.test(line)) bare.push(`${file}:${index + 1}: ${line.trim()}`);
+                });
+        }
+        expect(bare).toEqual([]);
+    });
+
+    test("test-desktop-stress pulls the image through ci_image_slots.py pull, as start-stack does", () => {
+        expect(read(".github/actions/start-stack/action.yml")).toContain(THROUGH_THE_SCRIPT);
+        expect(jobs().get("test-desktop-stress")).toContain(THROUGH_THE_SCRIPT);
     });
 });
