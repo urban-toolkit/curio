@@ -578,7 +578,8 @@ describe("AgentChangeCard: dev/71 a landed plan's rows: Solve then Run", () => {
     const solveB = screen.getByRole("button", { name: "Solve node Analyze" });
     expect(solveB).toBeEnabled();
     fireEvent.click(solveB);
-    await waitFor(() => expect(onSolve).toHaveBeenCalledWith("b"));
+    // The ref, and the row's listener for how far a download has come.
+    await waitFor(() => expect(onSolve).toHaveBeenCalledWith("b", expect.any(Function)));
     // Upstream approved rows show Run, not Solve.
     expect(screen.queryByRole("button", { name: "Solve node Load" })).toBeNull();
     expect(screen.getByText("Solved ✓")).toBeInTheDocument();
@@ -600,7 +601,8 @@ describe("AgentChangeCard: dev/71 a landed plan's rows: Solve then Run", () => {
     const onRun = jest.fn().mockResolvedValue(undefined);
     renderRows({ appliedRefs: ["a", "b"], nodeStates: { a: "validated", b: "approved" } }, { onRun });
     fireEvent.click(screen.getByRole("button", { name: "Run through node Analyze" }));
-    await waitFor(() => expect(onRun).toHaveBeenCalledWith("b"));
+    // The ref, and the row's listener for how far a download has come.
+    await waitFor(() => expect(onRun).toHaveBeenCalledWith("b", expect.any(Function)));
     expect(screen.getByRole("button", { name: "Run through node Load" })).toBeInTheDocument();
   });
 
