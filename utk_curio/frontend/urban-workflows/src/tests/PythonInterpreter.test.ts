@@ -267,6 +267,97 @@ describe('PythonInterpreter', () => {
         });
     });
 
+    describe("a Play that waits for its node's downloads on first use", () => {
+        // A Play the browser runs, as a hosted guest's does, is answered once
+        // the node has run, and a node's first run downloads what it reads
+        // first: SAM 3's weights are 3.4 GB. While the Play waits, the page
+        // asks how far those downloads have come, naming the Play by the id it
+        // was posted with, and the node says it, as a run on the server shows
+        // its step_progress.
+        const MESSAGE = 'Downloading model.safetensors, a file of the weights of model.curio.sam3: 1.21 of 3.44 GB (35%)';
+
+        /** A backend that holds the Play's answer until the test sends it, and
+         *  answers each ask of its progress with the next of *said*. */
+        const backend = (said: string[]) => {
+            let answer = (): void => {
+                throw new Error('the node never sent its run');
+            };
+            (global.fetch as jest.Mock).mockImplementation((url: string, init?: RequestInit) => {
+                if ((init?.method ?? 'GET') === 'POST') {
+                    return new Promise((resolve) => {
+                        answer = () => resolve({
+                            ok: true, status: 200,
+                            json: async () => ({ stdout: [], stderr: '', output: { path: 'art-1', dataType: 'int' } }),
+                        });
+                    });
+                }
+                const message = said.length ? said.shift() : '';
+                return Promise.resolve({ ok: true, status: 200, json: async () => ({ message }) });
+            });
+            return { answer: () => answer() };
+        };
+        const calls = () => (global.fetch as jest.Mock).mock.calls as Array<[string, RequestInit | undefined]>;
+        const asks = () => calls().filter(([, init]) => (init?.method ?? 'GET') !== 'POST');
+
+        test("says how far they have come, then Running... again, and asks no more once it is answered", async () => {
+            jest.useFakeTimers();
+            try {
+                const server = backend([MESSAGE, '']);
+                const callback = jest.fn();
+                const shown: string[] = [];
+                // Cast: the Play's progress callback, whatever the types of the code under test name.
+                const send = interpreter.interpretCode.bind(interpreter) as (...args: unknown[]) => void;
+                send('return 1', 'return 1', '', [], callback, NodeType.PYTHON_COMPUTATION, 'node-1', 'workflow-1',
+                    mockNodeExecProv, 'flow-1', false, 'Node', [], (message: string) => shown.push(message));
+
+                await jest.advanceTimersByTimeAsync(1000);
+                const id = JSON.parse(String(calls()[0][1]?.body)).progressId;
+                // The page asked how far the Play's downloads had come, by its id, signed in.
+                expect(asks().map(([url]) => url)).toEqual([
+                    expect.stringContaining(`/processPythonCode/progress?play=${encodeURIComponent(String(id))}`),
+                ]);
+                expect((asks()[0][1]?.headers as Record<string, string>).Authorization).toBe('Bearer test-token');
+                expect(shown).toEqual([MESSAGE]);
+
+                // The downloads over, the node runs.
+                await jest.advanceTimersByTimeAsync(1000);
+                expect(shown).toEqual([MESSAGE, '']);
+
+                server.answer();
+                await jest.advanceTimersByTimeAsync(0);
+                expect(callback).toHaveBeenCalledTimes(1);
+                const asked = asks().length;
+                await jest.advanceTimersByTimeAsync(5000);
+                expect(asks()).toHaveLength(asked);
+                expect(shown).toEqual([MESSAGE, '']);
+            } finally {
+                jest.useRealTimers();
+                (global.fetch as jest.Mock).mockReset();
+            }
+        });
+
+        test("asks nothing when it is answered within a second", async () => {
+            jest.useFakeTimers();
+            try {
+                const server = backend([MESSAGE]);
+                const shown: string[] = [];
+                const send = interpreter.interpretCode.bind(interpreter) as (...args: unknown[]) => void;
+                send('return 1', 'return 1', '', [], jest.fn(), NodeType.PYTHON_COMPUTATION, 'node-1', 'workflow-1',
+                    mockNodeExecProv, 'flow-1', false, 'Node', [], (message: string) => shown.push(message));
+
+                await jest.advanceTimersByTimeAsync(500);
+                server.answer();
+                await jest.advanceTimersByTimeAsync(5000);
+
+                expect(asks()).toEqual([]);
+                expect(shown).toEqual([]);
+            } finally {
+                jest.useRealTimers();
+                (global.fetch as jest.Mock).mockReset();
+            }
+        });
+    });
+
     describe('a run that waited for its turn (#888)', () => {
         // The backend answers every run, however long the run first waited for
         // its turn or a free slot, and its own timeout decides (#863). So the

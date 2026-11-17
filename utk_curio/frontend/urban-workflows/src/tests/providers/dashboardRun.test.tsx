@@ -158,6 +158,31 @@ describe("a change", () => {
         expect(hook.result.current.active).toBe(false);
     });
 
+    test("a step's progress shows on its node while it runs, as on the canvas: its weights downloading, then Running... again", async () => {
+        mockStart.mockResolvedValue({ runId: "r1", token: "t1", joined: false, nodeIds: ["grid", "chart"] });
+        const { outcomes, hook } = setUp();
+        await act(async () => { hook.result.current.opened("dash-1"); });
+        await act(async () => { await hook.result.current.start(); });
+        const run = followed();
+        const message = "Downloading model.safetensors, a file of the weights of model.curio.sam3: 1.21 of 3.44 GB (35%)";
+
+        run.emit({ kind: "step_started", nodeId: "grid", startedAt: 1 });
+        run.emit({ kind: "step_progress", nodeId: "grid", message, done: 1210000000, total: 3440000000 });
+        expect(outcomes.showOnNode).toHaveBeenLastCalledWith("grid", { code: "exec", content: message });
+
+        // The downloads over, the node runs.
+        run.emit({ kind: "step_progress", nodeId: "grid", message: "" });
+        expect(outcomes.showOnNode).toHaveBeenLastCalledWith("grid", { code: "exec", content: "" });
+
+        run.emit({ kind: "step_finished", nodeId: "grid", status: "ok", output: { path: "art-1", dataType: "str" } });
+        expect(outcomes.showResult).toHaveBeenCalledTimes(1);
+        // A progress replayed after the outcome changes nothing.
+        outcomes.showOnNode.mockClear();
+        run.emit({ kind: "step_progress", nodeId: "grid", message });
+        expect(outcomes.showOnNode).not.toHaveBeenCalled();
+        expect(hook.result.current.active).toBe(true);
+    });
+
     test("a picked date reruns the dashboard with that date as its text", async () => {
         mockStart.mockResolvedValue({ runId: "r1", token: "t1", joined: false, nodeIds: ["grid", "chart"] });
         const { nodes, hook } = setUp({ extra: [dayTile()] });
