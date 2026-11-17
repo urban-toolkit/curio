@@ -31,6 +31,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from utk_curio.backend.tests._support import tiny_sam3
 from utk_curio.backend.tests.test_packages.test_sam3_package import (
     EVERY,
     MODEL_ID,
@@ -38,9 +39,6 @@ from utk_curio.backend.tests.test_packages.test_sam3_package import (
     _collection,
     _loaded,
     _manifest,
-    _street,
-    _tiny_config,
-    _tiny_weights,
 )
 
 REPO = Path(__file__).resolve().parents[4]
@@ -72,7 +70,7 @@ RESULTS = [
 def weights(tmp_path_factory):
     """The tiny SAM 3 Track Objects' tests use, saved where
     ``--model-weights-dir`` puts the package's weights."""
-    return _tiny_weights(tmp_path_factory, _tiny_config())
+    return tiny_sam3.weights(tmp_path_factory, tiny_sam3.config())
 
 
 @pytest.fixture
@@ -304,10 +302,10 @@ def test_photos_get_overlays_named_after_themselves_and_a_row_without_an_image_s
 
     root = tmp_path / "photos"
     root.mkdir()
-    Image.fromarray(_street(1)).save(root / "a.png")
-    Image.fromarray(np.kron(_street(3), np.ones((30, 30, 1), dtype=np.uint8))).save(root / "b.png")
+    Image.fromarray(tiny_sam3.street(1)).save(root / "a.png")
+    Image.fromarray(np.kron(tiny_sam3.street(3), np.ones((30, 30, 1), dtype=np.uint8))).save(root / "b.png")
     (root / "c.png").write_bytes(b"not an image")
-    Image.fromarray(_street(5)).save(root / "d.png")
+    Image.fromarray(tiny_sam3.street(5)).save(root / "d.png")
     resource = {"id": "photos", "name": "Photos", "kind": "images", "path": "*"}
     source = write_source(tmp_path / "discovery", "source.example.folder@1", a_storage_manifest(root, [resource]))
     rows, helpers = collection_rows(load_source_manifest(source), "photos", tmp_path)

@@ -9,7 +9,9 @@ Loading gives for a folder of videos.
 
 SAM 3's weights are Meta's, 3.4 GB: no clone, image or pip install holds them,
 a node's first run downloads them from an identical copy, and no test fetches
-them. The tests use a tiny SAM 3 video model built here with random weights:
+them. The tests use a tiny SAM 3 video model with random weights, built by
+``tests/_support/tiny_sam3.py``, which the e2e harness and the GPU's guard
+build too:
 
 - saved where ``--model-weights-dir`` puts the package's weights, every file
   the package's ``fetch`` lists, and read in place, as ``curio_load_model``
@@ -42,6 +44,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
+from utk_curio.backend.tests._support import tiny_sam3
+from utk_curio.backend.tests._support.tiny_sam3 import CLIP_RATE, CLIP_SECONDS, SIZE
 
 REPO = Path(__file__).resolve().parents[4]
 PACKAGE = REPO / "packages" / "model.curio.sam3@1"
@@ -83,10 +88,9 @@ DEFAULT_LABELS = [
 TRACK_COLUMNS = [
     "video_file_id", "video", "object_id", "label", "start_s", "end_s", "frames", "largest_share", "mean_score",
 ]
-#: The side of the tiny model's square input.
-SIZE = 224
-#: The synthetic clip: 2 s at 4 frames a second, sampled every half second.
-CLIP_SECONDS, CLIP_RATE, EVERY = 2.0, 4, 0.5
+#: The synthetic clip, 2 s at 4 frames a second (``tiny_sam3.clip``), is
+#: sampled every half second.
+EVERY = 0.5
 SAMPLED = [0.0, 0.5, 1.0, 1.5]
 #: The frame rate of the SideSeeing walk Track Objects ran on in dev's check,
 #: 30.033 frames a second, at which a frame can come just before a step's time.
@@ -97,136 +101,11 @@ def _manifest() -> dict:
     return json.loads((PACKAGE / "manifest.json").read_text(encoding="utf-8"))
 
 
-# ---------------------------------------------------------------------------
-# The tiny SAM 3
-# ---------------------------------------------------------------------------
-
-def _tiny_tokenizer(folder: Path):
-    """A CLIP tokenizer over a vocab of single letters and digits, its bos,
-    eos and pad ids inside the tiny text model's vocab."""
-    from transformers import CLIPTokenizer
-
-    vocab = {"<|startoftext|>": 0, "<|endoftext|>": 1}
-    for char in "abcdefghijklmnopqrstuvwxyz0123456789":
-        vocab[char] = len(vocab)
-        vocab[char + "</w>"] = len(vocab)
-    (folder / "vocab.json").write_text(json.dumps(vocab), encoding="utf-8")
-    (folder / "merges.txt").write_text("#version: 0.2\n", encoding="utf-8")
-    return CLIPTokenizer(
-        str(folder / "vocab.json"), str(folder / "merges.txt"), pad_token="<|endoftext|>", model_max_length=32,
-    )
-
-
-def _tiny_config(tracking=None, **video):
-    """A Sam3VideoConfig of about 5.8 M parameters that tracks text prompts:
-    four FPN scale factors as SAM 3's; a hidden size of 128, a multiple of the
-    64-wide memory, as SAM 3's 256 is; ``image_size`` on the video config;
-    detection thresholds at 0, so random weights detect; six objects at most.
-    *tracking* sets the tracker's own settings, and keywords the video's, such
-    as ``max_num_objects``."""
-    from transformers import (
-        Sam3Config,
-        Sam3DETRDecoderConfig,
-        Sam3DETREncoderConfig,
-        Sam3GeometryEncoderConfig,
-        Sam3MaskDecoderConfig,
-        Sam3TrackerVideoConfig,
-        Sam3TrackerVideoMaskDecoderConfig,
-        Sam3TrackerVideoPromptEncoderConfig,
-        Sam3VideoConfig,
-        Sam3ViTConfig,
-        Sam3VisionConfig,
-    )
-
-    hidden = 128
-    backbone = Sam3ViTConfig(
-        hidden_size=32, num_hidden_layers=2, num_attention_heads=4, intermediate_size=64,
-        num_channels=3, image_size=SIZE, patch_size=14, window_size=8, global_attn_indexes=[0, 1],
-    )
-    vision = Sam3VisionConfig(backbone_config=backbone, fpn_hidden_size=hidden, scale_factors=[4.0, 2.0, 1.0, 0.5])
-    text = {
-        "vocab_size": 1000, "hidden_size": 64, "intermediate_size": 128, "projection_dim": hidden,
-        "num_hidden_layers": 2, "num_attention_heads": 4, "max_position_embeddings": 32, "hidden_act": "gelu",
-        "bos_token_id": 0, "eos_token_id": 1, "pad_token_id": 1,
-    }
-    detector = Sam3Config(
-        vision_config=vision,
-        text_config=text,
-        geometry_encoder_config=Sam3GeometryEncoderConfig(
-            hidden_size=hidden, num_layers=1, num_attention_heads=4, intermediate_size=2 * hidden,
-            mask_fuser_hidden_size=hidden, mask_fuser_num_layers=1,
-        ),
-        detr_encoder_config=Sam3DETREncoderConfig(
-            hidden_size=hidden, num_layers=1, num_attention_heads=4, intermediate_size=2 * hidden,
-        ),
-        detr_decoder_config=Sam3DETRDecoderConfig(
-            hidden_size=hidden, num_layers=1, num_queries=5, num_attention_heads=4, intermediate_size=2 * hidden,
-        ),
-        mask_decoder_config=Sam3MaskDecoderConfig(hidden_size=hidden, num_upsampling_stages=2),
-    )
-    tracker = Sam3TrackerVideoConfig(**{
-        "vision_config": vision,
-        "prompt_encoder_config": Sam3TrackerVideoPromptEncoderConfig(hidden_size=hidden, image_size=SIZE, patch_size=14),
-        "mask_decoder_config": Sam3TrackerVideoMaskDecoderConfig(hidden_size=hidden),
-        "num_maskmem": 2,
-        "memory_attention_hidden_size": hidden,
-        "memory_attention_num_layers": 1,
-        "memory_attention_feed_forward_hidden_size": 2 * hidden,
-        "memory_attention_rope_feat_sizes": [SIZE // 14, SIZE // 14],
-        "memory_encoder_hidden_size": hidden,
-        "memory_encoder_output_channels": 64,
-        "mask_downsampler_embed_dim": hidden,
-        "memory_fuser_embed_dim": hidden,
-        "memory_fuser_intermediate_dim": 2 * hidden,
-        "max_object_pointers_in_encoder": 4,
-        **(tracking or {}),
-    })
-    objects = video.pop("max_num_objects", 6)
-    config = Sam3VideoConfig(**{
-        "detector_config": detector, "tracker_config": tracker,
-        "score_threshold_detection": 0.0, "new_det_thresh": 0.0, "hotstart_delay": 0,
-        "low_res_mask_size": SIZE * 288 // 1008,
-        **video,
-    })
-    config.image_size = SIZE
-    config.max_num_objects = objects
-    return config
-
-
-def _tiny_weights(tmp_path_factory, config):
-    """The package's folder under ``--model-weights-dir``, its entry holding a
-    tiny SAM 3 of *config* and its processor: every file the package's
-    ``fetch`` lists."""
-    import torch
-    from transformers import Sam2VideoVideoProcessor, Sam3ImageProcessor, Sam3VideoModel, Sam3VideoProcessor
-
-    root = tmp_path_factory.mktemp("model-weights") / PACKAGE.name
-    checkpoint = root / _manifest()["model"]["entry"]
-    checkpoint.mkdir(parents=True)
-    words = tmp_path_factory.mktemp("tokenizer")
-    size = {"height": SIZE, "width": SIZE}
-    processor = Sam3VideoProcessor(
-        Sam3ImageProcessor(size=size), Sam2VideoVideoProcessor(size=size), _tiny_tokenizer(words),
-    )
-    torch.manual_seed(0)
-    Sam3VideoModel(config).save_pretrained(checkpoint)
-    processor.save_pretrained(checkpoint)
-    # The checkpoint as Hugging Face holds SAM 3's: the tokenizer's vocabulary
-    # and merges beside its tokenizer.json, and its special tokens.
-    for name in ("vocab.json", "merges.txt"):
-        shutil.copyfile(words / name, checkpoint / name)
-    (checkpoint / "special_tokens_map.json").write_text(json.dumps({
-        "bos_token": "<|startoftext|>", "eos_token": "<|endoftext|>",
-        "pad_token": "<|endoftext|>", "unk_token": "<|endoftext|>",
-    }), encoding="utf-8")
-    return root
-
-
 @pytest.fixture(scope="module")
 def weights(tmp_path_factory):
     """The tiny SAM 3, saved where ``--model-weights-dir`` puts the package's
     weights."""
-    return _tiny_weights(tmp_path_factory, _tiny_config())
+    return tiny_sam3.weights(tmp_path_factory, tiny_sam3.config())
 
 
 @pytest.fixture(scope="module")
@@ -234,7 +113,7 @@ def steady_weights(tmp_path_factory):
     """A tiny SAM 3 whose objects stay the same from the first frame: its
     first frame's detections, all kept, fill its three objects, and it takes
     no object again from a detection nor drops one in its first frames."""
-    return _tiny_weights(tmp_path_factory, _tiny_config(
+    return tiny_sam3.weights(tmp_path_factory, tiny_sam3.config(
         det_nms_thresh=0.0, max_num_objects=3, recondition_every_nth_frame=0,
     ))
 
@@ -251,7 +130,7 @@ def windowed_weights(tmp_path_factory):
     three; that holds each frame back until it has seen three after it; and
     that takes every object it follows again from a detection every second
     frame, so each gains more conditioning frames than SAM 3 reads memory of."""
-    return _tiny_weights(tmp_path_factory, _tiny_config(
+    return tiny_sam3.weights(tmp_path_factory, tiny_sam3.config(
         WINDOWS, det_nms_thresh=0.0, max_num_objects=3,
         hotstart_delay=3, hotstart_unmatch_thresh=3, hotstart_dup_thresh=3,
         recondition_every_nth_frame=2, high_conf_thresh=-1e4, high_iou_thresh=0.0,
@@ -276,31 +155,6 @@ def few_threads(monkeypatch):
 # The clip and the node
 # ---------------------------------------------------------------------------
 
-def _street(index: int):
-    """Frame *index* of the clip: an orange box crossing a dark street, 8
-    pixels further each frame, as an RGB array."""
-    import numpy as np
-
-    image = np.full((64, 96, 3), 40, dtype=np.uint8)
-    image[20:44, 8 + 8 * index:24 + 8 * index] = (230, 120, 40)
-    return image
-
-
-def _clip(path: Path, seconds: float = CLIP_SECONDS) -> None:
-    """A clip of :func:`_street`, *seconds* long, in MPEG-4 Part 2, which every
-    FFmpeg build reads and writes, so the overlay alone needs H.264."""
-    import av
-
-    with av.open(str(path), "w") as out:
-        stream = out.add_stream("mpeg4", rate=CLIP_RATE)
-        stream.width, stream.height, stream.pix_fmt = 96, 64, "yuv420p"
-        for index in range(int(seconds * CLIP_RATE)):
-            for packet in stream.encode(av.VideoFrame.from_ndarray(_street(index), format="rgb24")):
-                out.mux(packet)
-        for packet in stream.encode():
-            out.mux(packet)
-
-
 def _collection(tmp_path: Path, seconds: float = CLIP_SECONDS):
     """``(rows, helpers)``: what Data Loading's ``curio_load_collection`` gives
     for a folder holding one clip *seconds* long, and the helpers a node runs
@@ -311,7 +165,7 @@ def _collection(tmp_path: Path, seconds: float = CLIP_SECONDS):
 
     root = tmp_path / "walk"
     root.mkdir()
-    _clip(root / "corner.mp4", seconds)
+    tiny_sam3.clip(root / "corner.mp4", seconds)
     resource = {"id": "walk", "name": "Walk", "kind": "videos", "path": "*", "extensions": ["mp4"]}
     source = write_source(tmp_path / "discovery", "source.example.folder@1", a_storage_manifest(root, [resource]))
     return collection_rows(load_source_manifest(source), "walk", tmp_path)
@@ -352,7 +206,7 @@ def walk(tmp_path):
 @pytest.fixture
 def corner(tmp_path):
     """The 2 s clip at 4 frames a second, as ``_sample`` reads a video."""
-    _clip(tmp_path / "corner.mp4")
+    tiny_sam3.clip(tmp_path / "corner.mp4")
     return {"path": str(tmp_path / "corner.mp4"), "relpath": "corner.mp4"}
 
 
@@ -1044,6 +898,31 @@ def test_a_long_part_at_a_large_every_seconds_that_fits_runs(catalog_copy, weigh
     assert (row["t_s"], row["duration_s"]) == (0.0, 30.0)
 
 
+def test_a_file_shorter_than_its_row_is_tracked_as_long_as_the_file_is(catalog_copy, weights, few_threads, tmp_path):
+    """CI's stand-in for the SideSeeing walk is an 8 s clip under the walk's
+    committed row, whose ``duration_s`` says 864.2 s, as example 31 reads it
+    on CI. Track Objects reads the file's own length, never the row's: at a
+    frame every 2 s the clip is 4 frames, which a limit of 4 runs whole where
+    the row's 433 would stop it, and the overlay and its tracks keep to the
+    clip's 8 s."""
+    import av
+    import pandas as pd
+
+    rows, helpers = _collection(tmp_path, seconds=8)
+    rows["duration_s"] = 864.2
+    model = _loaded(catalog_copy, weights)(MODEL_ID)
+    with _staged(tmp_path) as module:
+        (row,) = module.track_objects(rows, model, helpers["curio_derived_file"], labels=TWO_LABELS,
+                                      every_seconds=2, max_frames=4).to_dict("records")
+    with av.open(row["path"]) as overlay:
+        shown = [round(float(frame.time), 3) for frame in overlay.decode(overlay.streams.video[0])]
+    assert shown == [0.0, 2.0, 4.0, 6.0], f"the overlay shows its frames at {shown} s"
+    assert (row["t_s"], row["duration_s"], row["fps"]) == (0.0, 8.0, 0.5)
+    tracks = pd.read_parquet(row["tracks"])
+    assert set(tracks["start_s"]) | set(tracks["end_s"]) <= set(shown), tracks
+    assert row["pole_objects"] + row["person_objects"] == len(tracks)
+
+
 def test_the_code_tabs_max_frames_is_450_which_takes_the_whole_walk_at_a_frame_every_2_s(tmp_path, no_sam3):
     """On dev the whole 864.3 s walk at a frame every 2 s took 433 frames in
     208 s, and 0 to 300 s at the code tab's frame every 0.5 s took 600 in 269
@@ -1181,7 +1060,7 @@ def test_sam3_finds_in_each_frame_what_it_finds_holding_every_frame(
     import torch
     from PIL import Image
 
-    frames = [Image.fromarray(_street(index)) for index in range(16)]
+    frames = [Image.fromarray(tiny_sam3.street(index)) for index in range(16)]
     path = _loaded(catalog_copy, windowed_weights)(MODEL_ID).path
     with _staged(tmp_path) as module:
         processor = module.Sam3VideoProcessor.from_pretrained(path, local_files_only=True)
@@ -1218,7 +1097,7 @@ LOW_RES = SIZE * 288 // 1008
 def street_weights(tmp_path_factory):
     """A tiny SAM 3 that follows up to 40 objects and holds each frame back
     until it has seen seven after it, as SAM 3 holds a frame back fourteen."""
-    return _tiny_weights(tmp_path_factory, _tiny_config(max_num_objects=40, hotstart_delay=8))
+    return tiny_sam3.weights(tmp_path_factory, tiny_sam3.config(max_num_objects=40, hotstart_delay=8))
 
 
 class _Street:
@@ -1414,7 +1293,7 @@ def test_letting_go_of_an_object_leaves_what_sam3_finds_of_every_other(
     import torch
     from PIL import Image
 
-    frames = [Image.fromarray(_street(index)) for index in range(20)]
+    frames = [Image.fromarray(tiny_sam3.street(index)) for index in range(20)]
     path = _loaded(catalog_copy, street_weights)(MODEL_ID).path
     objects = [("pole", range(5)), ("person", range(2, 10)), ("pole", range(11, 13)), ("person", range(16, 20))]
     with _staged(tmp_path) as module:
@@ -1449,7 +1328,7 @@ def dropping_weights(tmp_path_factory):
     """A tiny SAM 3 that holds each frame back until it has seen seven after
     it, as ``street_weights`` does, and drops an object it found in those
     frames once its detector has missed the object in three."""
-    return _tiny_weights(tmp_path_factory, _tiny_config(
+    return tiny_sam3.weights(tmp_path_factory, tiny_sam3.config(
         max_num_objects=40, hotstart_delay=8, hotstart_unmatch_thresh=3))
 
 
@@ -1475,7 +1354,7 @@ def test_on_a_frame_where_sam3_drops_an_object_each_other_object_keeps_its_own_m
     import torch
     from PIL import Image
 
-    frames = [Image.fromarray(_street(index)) for index in range(12)]
+    frames = [Image.fromarray(tiny_sam3.street(index)) for index in range(12)]
     path = _loaded(catalog_copy, dropping_weights)(MODEL_ID).path
     outputs = {}
 
@@ -1542,7 +1421,7 @@ def test_objects_let_go_keep_their_labels_when_sam3_drops_the_last_object_it_fol
     import torch
     from PIL import Image
 
-    frames = [Image.fromarray(_street(index)) for index in range(12)]
+    frames = [Image.fromarray(tiny_sam3.street(index)) for index in range(12)]
     path = _loaded(catalog_copy, dropping_weights)(MODEL_ID).path
     outputs = {}
 
@@ -1735,7 +1614,7 @@ def test_of_two_detections_of_a_label_that_overlap_sam3_follows_the_one_it_score
     the person, and nothing else, in every frame."""
     from PIL import Image
 
-    frames = [Image.fromarray(_street(index)) for index in range(4)]
+    frames = [Image.fromarray(tiny_sam3.street(index)) for index in range(4)]
     path = _loaded(catalog_copy, weights)(MODEL_ID).path
     seen = _see(no_kernels_library, path, frames, _objects(OVERLAPPING), monkeypatch)
 
@@ -1767,7 +1646,7 @@ def test_sam3_fills_the_small_holes_and_removes_the_specks_of_every_mask_it_show
     tracker, SAM 3 shows the pole whole and the person without the speck."""
     from PIL import Image
 
-    frames = [Image.fromarray(_street(index)) for index in range(4)]
+    frames = [Image.fromarray(tiny_sam3.street(index)) for index in range(4)]
     path = _loaded(catalog_copy, weights)(MODEL_ID).path
     seen = _see(no_kernels_library, path, frames, _objects(HOLED), monkeypatch)
 
@@ -1853,7 +1732,7 @@ def test_sam3_finds_what_transformers_finds_with_the_kernels_library(
     import torch
     from PIL import Image
 
-    frames = [Image.fromarray(_street(index)) for index in range(6)]
+    frames = [Image.fromarray(tiny_sam3.street(index)) for index in range(6)]
     path = _loaded(catalog_copy, weights)(MODEL_ID).path
     with _staged(tmp_path) as module:
         transformers_module = sys.modules[module.TransformersSam3VideoModel.__module__]
@@ -1902,7 +1781,7 @@ def test_a_run_no_longer_says_that_sam3s_clean_up_is_skipped(weights, catalog_co
     from PIL import Image
     from transformers.utils import logging as transformers_logging
 
-    frames = [Image.fromarray(_street(index)) for index in range(2)]
+    frames = [Image.fromarray(tiny_sam3.street(index)) for index in range(2)]
     path = _loaded(catalog_copy, weights)(MODEL_ID).path
     said = []
 
