@@ -7,12 +7,15 @@ crossing's data folder, each kept as one page of its first and last file. No
 file beside those is listed, such as ``sample/``'s. Each monthly JSON Lines file is
 indexed to a synthetic stand-in in the real files' format
 (``fixtures/download/storage/idot/detections.jsonl``), and the one empty file
-in the bucket, W06E's for March 2026, to an empty body.
+in the bucket, W06E's for March 2026, to an empty body. The ``records``
+resource lists the same files as files for node code, whose add reads none of
+them.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
@@ -70,12 +73,17 @@ class TestTheListing:
         # A row's name gives its month as the folder does; its id keeps the whole time.
         july = rows[row_id("snapshots", "W042", JULY)]
         assert (july["name"], july["kind"], july["fileCount"]) == ("Crossing snapshots · W042, 2025-07", "images", 2)
-        for resource, name in (("detections", "Detections"), ("frames", "Frames by model")):
+        for resource, name, kind in (
+            ("detections", "Detections", "table"), ("frames", "Frames by model", "table"),
+            ("records", "Detection records", "files"),
+        ):
             assert {r for r in rows if r.startswith(f"{resource}@")} == {
                 row_id(resource, crossing, month) for crossing, month in DATA_MONTHS
             }
             row = rows[row_id(resource, "W042", JULY)]
-            assert (row["name"], row["kind"], row["fileCount"]) == (f"{name} · W042, 2025-07", "table", 1)
+            assert (row["name"], row["kind"], row["fileCount"]) == (f"{name} · W042, 2025-07", kind, 1)
+        # A files row has no preview, so no sample files to draw.
+        assert rows[row_id("records", "W042", JULY)]["samples"] == []
 
     def test_a_month_over_the_default_download_limit_says_why(
         self, client, auth, app, shipped_root, fixture_corpus
@@ -87,6 +95,31 @@ class TestTheListing:
         assert december["acquirable"] is False
         assert "1,310,434,728 bytes" in december["unavailableReason"], december["unavailableReason"]
         assert rows[row_id("detections", "W042", JULY)]["unavailableReason"] is None
+
+
+class TestTheRecords:
+    def test_a_months_records_are_its_file_left_in_the_bucket(self, client, auth, app, shipped_root, fixture_corpus):
+        """A month's records add as a collection of its one JSON Lines file,
+        indexed where it is: the add reads none of it, so a month over the
+        download limit adds as well, and node code opens it from its row's path."""
+        import pandas as pd
+
+        rows = {r["resourceId"]: r for r in listing(client, auth, SOURCE)["resources"]}
+        december = rows[row_id("records", "W042", "2025-12-01T00:00:00")]
+        assert (december["acquirable"], december["unavailableReason"]) == (True, None)
+
+        dataset = _added(client, auth, row_id("records", "W042", JULY))
+        assert dataset["title"] == "Detection records · W042, 2025-07"
+        assert (dataset["collection"]["kind"], dataset["collection"]["provider"]) == ("files", "s3")
+        index = pd.read_parquet(dataset["path"])
+        assert len(index) == 1
+        row = index.iloc[0]
+        assert (row["relpath"], row["kind"], row["ext"]) == ("W042/data/W042_2025_07.jsonl", "file", "jsonl")
+        assert row["bytes"] == 717_568_766
+        assert (row["crossing"], row["month"]) == ("W042", datetime(2025, 7, 1))
+        # Nothing of the file was copied into the dataset.
+        folder = Path(dataset["path"]).parents[1]
+        assert (folder / "manifest.json").is_file() and not list(folder.rglob("*.jsonl"))
 
 
 class TestTheSnapshots:
