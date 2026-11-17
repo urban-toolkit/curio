@@ -63,6 +63,10 @@ recursive-include utk_curio/frontend *
 
 prune utk_curio/frontend/urban-workflows/node_modules
 
+# The recorded corpus's copies of files of the SAGE-IDOT bucket, which the
+# tests read in its place: test data, which neither archive carries.
+prune utk_curio/backend/tests/test_discovery/fixtures/download/storage/idot
+
 # The built frontend's source maps.
 recursive-exclude utk_curio/frontend *.map
 

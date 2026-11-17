@@ -113,6 +113,148 @@ SYNTHETIC_HEADS = {
 #: What the index probes with, restated here only to spell the fixture key.
 PROBE_RANGE = "bytes=0-65535"
 
+
+#: The SAGE-IDOT example's files (``scripts/build_example_idot.py``) as the
+#: corpus holds them, test data that MANIFEST.in keeps out of both archives:
+#: each team day of its month's records, thinned, and the snapshots of the
+#: half hour its Frames tile shows first, made smaller. Every other snapshot
+#: of the example's days is ``IDOT_SNAPSHOT``, a gray picture of their shape.
+IDOT_EXAMPLE = "download/storage/idot/example"
+IDOT_SNAPSHOT = f"{IDOT_EXAMPLE}/snapshot.jpg"
+#: Of a team day's image lines, each snapshot's and every ``THIN_EVERY``-th
+#: are kept, with the day's other lines (its uploads), and ``AROUND`` lines of
+#: each day beside it, so a bisection for the day does real work.
+THIN_EVERY = 300
+AROUND = 3
+#: The half hour the example's Frames tile shows first: the busiest of W042's
+#: day with the Settings tile's defaults, 4:00 to 4:30 PM in Chicago, as
+#: nanoseconds in UTC (``test_idot_example.py`` pins it).
+IDOT_FRAMES = ("W042", 1_754_773_200_000_000_000, 1_754_775_000_000_000_000)
+#: How wide the corpus's snapshots are, in pixels.
+IDOT_SNAPSHOT_WIDTH = 640
+IDOT_SOURCE = "source.sage.idot-crossings@1"
+
+
+def thin_day(block: bytes, day: str) -> bytes:
+    """The lines of *block*, whole lines of a month's records around its team
+    *day*, that the corpus keeps of it (``THIN_EVERY``, ``AROUND``)."""
+    lines = block.splitlines(keepends=True)
+    records = [json.loads(line) for line in lines]
+    inside = [i for i, record in enumerate(records) if record["timestamp"][:10] == day]
+    first, last = inside[0], inside[-1]
+    snapshots = {
+        int(records[i]["value"].rsplit("/", 1)[-1].split("-")[0]) for i in inside if records[i]["name"] == "upload"
+    }
+    kept, images = lines[max(0, first - AROUND):first], 0
+    for i in range(first, last + 1):
+        if records[i]["name"] == "object.detections.all":
+            ns = json.loads(records[i]["value"])["image_timestamp_ns"]
+            if ns in snapshots or images % THIN_EVERY == 0:
+                kept.append(lines[i])
+            images += 1
+        else:
+            kept.append(lines[i])
+    return b"".join(kept + lines[last + 1:last + 1 + AROUND])
+
+
+def _bytes_at(url: str, start: int, end: int) -> bytes:
+    """Bytes *start* to *end*, not included, of the file at *url*."""
+    import urllib.request
+
+    request = urllib.request.Request(url, headers={"Range": f"bytes={start}-{end - 1}"})
+    with urllib.request.urlopen(request, timeout=600) as response:
+        return response.read()
+
+
+def _first_line_from(url: str, size: int, day: str) -> int:
+    """Where the first line of the file at *url* dated *day* or later starts,
+    by a bisection on its lines' dates, which never go down."""
+
+    def line_after(offset: int) -> tuple[int, bytes]:
+        window = _bytes_at(url, offset, min(size, offset + 65536))
+        start = 0 if offset == 0 else window.index(b"\n") + 1
+        end = window.find(b"\n", start)
+        return offset + start, window[start:end + 1] if end >= 0 else window[start:]
+
+    low, high = 0, size
+    while low < high:
+        middle = (low + high) // 2
+        _start, line = line_after(middle)
+        if line.strip() and json.loads(line)["timestamp"][:10] < day:
+            low = middle + 1
+        else:
+            high = middle
+    return line_after(low)[0] if low < size else size
+
+
+def write_thinned_day(path: Path, url: str, size: int, day: str) -> None:
+    """The corpus's copy of the month file at *url*: its team *day*, thinned."""
+    from datetime import date, timedelta
+
+    start = _first_line_from(url, size, day)
+    end = _first_line_from(url, size, (date.fromisoformat(day) + timedelta(days=1)).isoformat())
+    lo, hi = max(0, start - 65536), min(size, end + 65536)
+    block = _bytes_at(url, lo, hi)
+    # Whole lines only: what comes before the first newline and after the last.
+    block = block[block.index(b"\n") + 1 if lo else 0:block.rindex(b"\n") + 1]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(thin_day(block, day))
+
+
+def write_small_snapshot(path: Path, url: str) -> None:
+    """The snapshot at *url*, ``IDOT_SNAPSHOT_WIDTH`` pixels wide."""
+    import io
+    import urllib.request
+
+    from PIL import Image
+
+    with urllib.request.urlopen(url, timeout=120) as response:
+        image = Image.open(io.BytesIO(response.read())).convert("RGB")
+    height = round(IDOT_SNAPSHOT_WIDTH * image.height / image.width)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    image.resize((IDOT_SNAPSHOT_WIDTH, height), Image.Resampling.LANCZOS).save(path, quality=80)
+
+
+def write_snapshot_stand_in(path: Path) -> None:
+    """A gray picture in the snapshots' shape, 4 by 3."""
+    from PIL import Image
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", (160, 120), (128, 128, 128)).save(path, quality=80)
+
+
+def idot_example_files() -> dict[str, tuple[str, object]]:
+    """Each file of the SAGE-IDOT collections the Data Catalog commits, by
+    relpath: its stand-in's path in the corpus, and what writes the stand-in
+    (called with the stand-in's path)."""
+    import functools
+    import importlib.util
+
+    import pandas as pd
+
+    spec = importlib.util.spec_from_file_location("build_example_idot", REPO / "scripts" / "build_example_idot.py")
+    builder = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(builder)
+    base = load_source_manifest(REPO / "discovery" / IDOT_SOURCE).provider.base_url
+    camera, first, last = IDOT_FRAMES
+    files: dict[str, tuple[str, object]] = {}
+    for manifest_path in sorted((REPO / "datasets").glob("*/manifest.json")):
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if (manifest.get("collection") or {}).get("sourceId") != IDOT_SOURCE:
+            continue
+        index = pd.read_parquet(manifest_path.parent / manifest["dataFile"])
+        for row in index.itertuples():
+            url = f"{base}/{row.relpath}"
+            if row.ext == "jsonl":
+                day = builder.CAMERAS[row.crossing][0]
+                files[row.relpath] = (f"{IDOT_EXAMPLE}/{row.name}",
+                                      functools.partial(write_thinned_day, url=url, size=row.bytes, day=day))
+            elif row.crossing == camera and first <= row.ns < last:
+                files[row.relpath] = (f"{IDOT_EXAMPLE}/{row.name}", functools.partial(write_small_snapshot, url=url))
+            else:
+                files[row.relpath] = (IDOT_SNAPSHOT, write_snapshot_stand_in)
+    return files
+
 #: Services asked over HTTP: each request is recorded as the service sends it,
 #: with the answers a person gives, normalized as the app normalizes them.
 #: Images are not: each image URL is indexed to the synthetic JPEG, so the
