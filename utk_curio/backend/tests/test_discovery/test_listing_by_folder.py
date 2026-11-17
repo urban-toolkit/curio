@@ -653,5 +653,5 @@ class TestTheFolders:
         # A hidden folder, and one named by the prefix alone, name no folder.
         bucket = ListingBucket(BASE, idot_keys() + ["W0.hidden/x.jpg", "W0/x.jpg"])
 
-        assert S3Storage(manifest, bucket).folders() == ["42", "65"]
+        assert S3Storage(manifest, bucket).level()[0] == ["42", "65"]
         assert bucket.asked() == Counter({("W0", "/"): 1})

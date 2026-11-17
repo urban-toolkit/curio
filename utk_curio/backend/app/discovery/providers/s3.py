@@ -145,10 +145,6 @@ class S3Storage:
                     names.append(name)
         return names, files
 
-    def folders(self, prefix: str = "") -> list[str]:
-        """The names of the folders right under *prefix* (:meth:`level`)."""
-        return self.level(prefix)[0]
-
     def open(self, relpath: str, *, byte_range: tuple[int, int] | None = None,
              max_bytes: int = MAX_DISCOVERY_DOWNLOAD_BYTES, ceiling: int | None = None) -> BinaryIO:
         local = self.local_path(relpath)
