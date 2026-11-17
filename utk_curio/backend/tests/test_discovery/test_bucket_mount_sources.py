@@ -895,6 +895,206 @@ class TestTheProcessService:
         assert sources_module.sources().where[0] == Path("/srv/other")
 
 
+# ── A start of several backend processes ────────────────────────────────────
+
+
+class ListedThroughTheProxy(FakeFolders):
+    """Curio's view of the service's mounts, each listing going out through
+    the proxy at *proxy_port*, on loopback, as rclone's does: a ``CONNECT`` to
+    the host and port rclone asks the bucket at, and a listing that fails as
+    FUSE fails it (``EIO``) unless the proxy opens the tunnel. :attr:`answers`
+    keeps the status line of each answer."""
+
+    def __init__(self, service, proxy_port):
+        super().__init__(service)
+        self.proxy_port = proxy_port
+        self.answers = []
+
+    def list(self, folder):
+        fs = self.service.mounts.get(f"{bm.SERVICE_MOUNTS}/{folder.name}")
+        if fs is not None:
+            asked = urlsplit(rclone_url(fs, ""))
+            status = self._connect(asked.hostname, asked.port or 443)
+            self.answers.append(status)
+            if not status.startswith("HTTP/1.1 200 "):
+                raise OSError(errno.EIO, os.strerror(errno.EIO))
+        return super().list(folder)
+
+    def _connect(self, host, port):
+        """The status line the proxy answers a ``CONNECT`` to *host* at *port* with."""
+        with socket.create_connection(("127.0.0.1", self.proxy_port), timeout=10) as sock:
+            sock.sendall(f"CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n\r\n".encode("ascii"))
+            head = b""
+            while b"\r\n" not in head:
+                chunk = sock.recv(1024)
+                if not chunk:
+                    break
+                head += chunk
+        return head.split(b"\r\n", 1)[0].decode("latin-1") or "no answer"
+
+
+class TestAStartOfSeveralProcesses:
+    """``curio.py start --backend-processes N``. The home process, this test's,
+    runs the one proxy that listens, as ``serve()`` starts it
+    (``start_proxy``). Each other process of the start is a forked child
+    (``_support/two_processes.py``), which mounts a source as the owner of a
+    dataflow does for a node's collection or a media read, its listing going
+    out through home's proxy as the mount service's requests do."""
+
+    HOST = "data.example.org"
+
+    @pytest.fixture
+    def start(self, tmp_path, monkeypatch):
+        """A start of the given number of processes with a state folder of its
+        own: home's proxy listening on loopback, the bucket's host a server on
+        loopback that takes connections, and a source at that host and port.
+        Gives home's proxy, the port it listens on, the source and the port of
+        the source's host."""
+        upstream = socket.create_server(("127.0.0.1", 0))
+        port = upstream.getsockname()[1]
+        monkeypatch.setenv("CURIO_STATE_DIR", str(tmp_path / "state"))
+        monkeypatch.setattr(bm, "PROXY_PORT", 0)
+        # The bucket's host is the server on loopback, which these tests take
+        # as public, as test_mount_proxy.py's tunnels do; any other host is
+        # Curio's policy's to judge.
+        policy = egress_policy.public_addresses
+
+        def the_bucket_is_public(host, *, resolver=None):
+            return ["127.0.0.1"] if host == self.HOST else policy(host, resolver=resolver)
+
+        monkeypatch.setattr(egress_policy, "public_addresses", the_bucket_is_public)
+
+        def begin(processes):
+            monkeypatch.setenv("CURIO_BACKEND_PROCESSES", str(processes))
+            monkeypatch.setenv("CURIO_BACKEND_PROCESS", "0")
+            assert sources_module.start_proxy("127.0.0.1")
+            home = sources_module.process_proxy()
+            source = a_manifest(f"https://{self.HOST}:{port}/sideseeing", "chicago/")
+            return home, home.start("127.0.0.1", 0), source, port
+
+        try:
+            yield begin
+        finally:
+            upstream.close()
+
+    @staticmethod
+    def _in_process(number, work):
+        """*work* in the start's process *number*, a forked child that holds no
+        proxy and no mount of its own yet, as a process of its own starts:
+        what it raised, or ""."""
+        from utk_curio.backend.tests._support.two_processes import in_another_process
+
+        def run():
+            os.environ["CURIO_BACKEND_PROCESS"] = str(number)
+            # The module's proxy and sources here are copies of home's, the
+            # test process's; a process of its own makes its own.
+            sources_module._proxy = sources_module._sources = None
+            work()
+
+        return in_another_process(run)
+
+    @staticmethod
+    def _mounts(service, folders, root):
+        """The sources' mounts of this process over *service*, with its proxy."""
+        return BucketMountSources(service, root, proxy=sources_module.process_proxy(), folders=folders,
+                                  resolver=resolver)
+
+    def test_a_source_another_process_mounts_gets_its_host_through_homes_proxy(self, start, tmp_path):
+        """Process 1 owns the dataflow whose node reads a source's collection,
+        or whose page reads its media, so it mounts the source. Its listing,
+        and every read after it, goes out through home's proxy, which must
+        let the source's host through. Each process kept the hosts it let
+        through in its own memory, read by no proxy but its own, which never
+        listens: home's refused the CONNECT, and the mount was down for "the
+        bucket refuses listing"."""
+        home, proxy_port, source, port = start(2)
+
+        def mounts_the_source():
+            service = FakeRclone()
+            folders = ListedThroughTheProxy(service, proxy_port)
+            found = self._mounts(service, folders, tmp_path).ensure(source)
+            assert found.mounted, (
+                f"process 1's mount of the source is {found.state}, for {found.reason!r}: "
+                f"home's proxy answered its listing {folders.answers}"
+            )
+
+        error = self._in_process(1, mounts_the_source)
+        assert error == "", error
+        assert home.admits(self.HOST, port), (
+            "home's proxy, which the mount service reaches, does not let through the host of a source "
+            "process 1 mounted"
+        )
+
+    def test_a_mount_that_fails_in_one_process_leaves_the_host_to_the_process_that_holds_one(
+            self, start, tmp_path):
+        """Process 1 holds a mount of the source. Process 2's look at it fails
+        (its listing is refused), so process 2 lets the host go: home's proxy
+        still lets it through for process 1, until process 1 lets it go too."""
+        home, proxy_port, source, port = start(3)
+
+        def mounts_the_source():
+            service = FakeRclone()
+            folders = ListedThroughTheProxy(service, proxy_port)
+            found = self._mounts(service, folders, tmp_path).ensure(source)
+            assert found.mounted, (
+                f"process 1's mount of the source is {found.state}, for {found.reason!r}: "
+                f"home's proxy answered its listing {folders.answers}"
+            )
+
+        def fails_to_list_it():
+            service = FakeRclone()
+            # The service holds process 1's mount of the source.
+            service.mounts[POINT] = fs_of(bucket_mount(source))
+            folders = ListedThroughTheProxy(service, proxy_port)
+            folders.refuse.add(NAME)
+            found = self._mounts(service, folders, tmp_path).ensure(source)
+            assert (found.state, found.reason) == ("down", REASONS["listing"]), found
+            assert POINT in service.mounts, "process 2 unmounted a mount it did not make"
+
+        def lets_it_go():
+            sources_module.process_proxy().withdraw(NAME)
+
+        error = self._in_process(1, mounts_the_source)
+        assert error == "", error
+        error = self._in_process(2, fails_to_list_it)
+        assert error == "", error
+        assert home.admits(self.HOST, port), (
+            "process 2's failed look at the source took the host from process 1, which still holds its mount"
+        )
+        error = self._in_process(1, lets_it_go)
+        assert error == "", error
+        assert not home.admits(self.HOST, port), "home's proxy lets a host through that no process holds"
+
+    def test_a_start_of_one_process_keeps_the_hosts_it_lets_through_in_its_memory(self, tmp_path, monkeypatch):
+        from utk_curio.backend.app.common import shared_budgets, user_storage
+
+        monkeypatch.setenv("CURIO_STATE_DIR", str(tmp_path / "state"))
+        monkeypatch.delenv("CURIO_BACKEND_PROCESSES", raising=False)
+        monkeypatch.delenv("CURIO_BACKEND_PROCESS", raising=False)
+        service = FakeRclone()
+
+        assert self._mounts(service, FakeFolders(service), tmp_path).ensure(PATH_STYLE).mounted
+        assert sources_module.process_proxy().admits("data.example.org", 443)
+        folder = user_storage.curio_root() / shared_budgets.FOLDER
+        assert not folder.exists(), sorted(str(path) for path in folder.rglob("*"))
+
+    def test_each_start_begins_with_no_host_let_through(self, start, monkeypatch):
+        """The hosts one start let through are its own: the next start's
+        proxy lets none of them through, as a process's memory starts empty."""
+        from utk_curio.backend.app.common import shared_budgets
+
+        home, _proxy_port, _source, port = start(2)
+        home.admit(NAME, self.HOST, port)
+        assert home.admits(self.HOST, port)
+
+        monkeypatch.setattr(shared_budgets, "BOOT_ID", "the next start")
+        sources_module.reset()
+
+        assert not sources_module.process_proxy().admits(self.HOST, port), (
+            "the next start's proxy lets through a host the start before it let through"
+        )
+
+
 class TestTheFolders:
     """The operating system's view, on folders that are no mount."""
 
