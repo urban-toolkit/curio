@@ -21,7 +21,9 @@ bucket's folders name its rows (a folder holds a capture the rows are split
 by, or a name of its own comes below a pattern, as SAGE-IDOT's
 ``{crossing}/images/{month:%Y_%m}/``), it is read a folder at a time instead:
 the folders under each pattern's parent are listed, and the files of only the
-folders a row needs, several at once (:func:`folders_to_list`). A row holds up
+folders a row needs, several at once (:func:`folders_to_list`). The files a
+listing of folders holds beside them, such as a file at the bucket's root, are
+seen with them. A row holds up
 to the source's ``limits.maxFiles`` files, and a whole listing up to
 :data:`MAX_LISTING_FILES`, its rows' together. A walk that stops at one of
 its bounds says which (``ScanResult.stopped_at``), and so do the source's
@@ -33,6 +35,7 @@ from __future__ import annotations
 import re
 import threading
 import time
+from bisect import bisect_right
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from dataclasses import dataclass, field, replace
@@ -355,26 +358,41 @@ def _outermost(prefixes: list[str]) -> list[str]:
     return kept
 
 
+def _under(folders: list[str], prefix: str) -> bool:
+    """Whether *prefix* is one of *folders*, or under one: sorted, and none
+    under another, so the last of them up to *prefix* is the one to hold it."""
+    at = bisect_right(folders, prefix)
+    return at > 0 and prefix.startswith(folders[at - 1])
+
+
 def folders_to_list(
     provider, specs: list[ResourceSpec], *, selection: "Selection | None" = None,
-) -> tuple[list[str], bool]:
+) -> tuple[list[str], bool, list[FileEntry]]:
     """The folders a scan of *specs* lists the files of, each once in key
-    order, and whether there were more than :data:`MAX_FOLDERS`.
+    order, whether there were more than :data:`MAX_FOLDERS`, and the files
+    found beside the folders on the way to them.
 
-    A provider that lists the folders under a prefix (a bucket's, with a
-    delimiter) is read a folder at a time where a template's folders name its
-    rows (:func:`_walked`): under each pattern, only the folders whose names
-    match it, and hold values *selection* keeps, are walked into, those
-    under several prefixes listed at once. So an add lists its row's folders
-    alone, and a listing each row's, with none beside them. Any other
-    template's files are listed under the names it starts with, as before.
+    A provider that lists what is right under a prefix (a bucket's
+    ``level``, with a delimiter) is read a folder at a time where a
+    template's folders name its rows (:func:`_walked`): under each pattern,
+    only the folders whose names match it, and hold values *selection* keeps,
+    are walked into, those under several prefixes listed at once. So an add
+    lists its row's folders alone, and a listing each row's, with none beside
+    them. Any other template's files are listed under the names it starts
+    with, as before.
+
+    Each listing of the folders under a prefix holds the files right under it
+    too, such as a file at the bucket's root. Those under no folder the scan
+    lists are handed back, a prefix after another, so the scan sees each
+    once, as a listing of everything under the prefix does.
     """
-    walked = {spec.id: _walked(spec) for spec in specs} if hasattr(provider, "folders") else {}
+    walked = {spec.id: _walked(spec) for spec in specs} if hasattr(provider, "level") else {}
     if not any(walked.values()):
-        return [common_prefix(specs)], False
+        return [common_prefix(specs)], False, []
     flat = [spec for spec in specs if not walked[spec.id]]
     leaves: set[str] = {common_prefix(flat)} if flat else set()
     children: dict[str, list[str]] = {}
+    beside: dict[str, list[FileEntry]] = {}
     with ThreadPoolExecutor(max_workers=LISTING_WORKERS, thread_name_prefix="discovery-folders") as pool:
         for spec in specs:
             prefixes = [""] if walked[spec.id] else []
@@ -383,7 +401,8 @@ def folders_to_list(
                     prefixes = [prefix + folder.text + "/" for prefix in prefixes]
                     continue
                 unknown = [prefix for prefix in prefixes if prefix not in children]
-                children.update(zip(unknown, pool.map(provider.folders, unknown)))
+                for prefix, (names, files) in zip(unknown, pool.map(provider.level, unknown)):
+                    children[prefix], beside[prefix] = names, files
                 prefixes = [
                     prefix + name + "/"
                     for prefix in prefixes
@@ -392,16 +411,22 @@ def folders_to_list(
                 ]
             leaves.update(prefixes)
     kept = _outermost(sorted(leaves))
-    return kept[:MAX_FOLDERS], len(kept) > MAX_FOLDERS
+    listed = kept[:MAX_FOLDERS]
+    return listed, len(kept) > MAX_FOLDERS, [
+        entry for prefix in sorted(beside) if not _under(listed, prefix) for entry in beside[prefix]
+    ]
 
 
 def _listing(provider, prefix: str) -> list[FileEntry]:
     return list(provider.scan(prefix))
 
 
-def _files_under(provider, prefixes: list[str]) -> Iterator[FileEntry]:
-    """Every file under each of *prefixes*, a folder after another in their
-    order; with several, :data:`LISTING_WORKERS` of them are listed at once."""
+def _files_under(provider, prefixes: list[str], beside: Iterable[FileEntry] = ()) -> Iterator[FileEntry]:
+    """*beside*, the files found beside the folders on the way to
+    *prefixes*, then every file under each of them, a folder after another in
+    their order; with several, :data:`LISTING_WORKERS` of them are listed at
+    once."""
+    yield from beside
     if len(prefixes) == 1:
         yield from provider.scan(prefixes[0])
         return
@@ -449,10 +474,10 @@ def scan(
     # The listings this walk cuts, not those of a walk before it on the provider.
     cuts = getattr(provider, "cut_short", None)
     cut_before = len(cuts) if cuts is not None else 0
-    folders, past_folders = folders_to_list(provider, specs, selection=selection)
+    folders, past_folders, beside = folders_to_list(provider, specs, selection=selection)
     if past_folders:
         stopped_at[FOLDERS] = MAX_FOLDERS
-    with closing(_files_under(provider, folders)) as entries:
+    with closing(_files_under(provider, folders, beside)) as entries:
         for entry in entries:
             if cancelled is not None and cancelled():
                 break
