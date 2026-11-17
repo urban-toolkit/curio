@@ -25,8 +25,9 @@ Apply endpoint calls after the user reviews a ``ready`` build:
    the project lockfile updates only after the package install succeeded;
    registry refresh (frontend) is confirmed before node creation
    (:func:`confirm_registry_ready` → :func:`confirm_nodes_created`, which
-   completes the journal, drops the backup, and discards the staged
-   artifact).
+   completes the journal, drops the backup, discards the staged artifact,
+   and takes back the libraries only the replaced copy asked for, which the
+   install over it kept for a rollback).
 """
 
 from __future__ import annotations
@@ -47,6 +48,7 @@ from utk_curio.backend.app.packages.repositories.staging import StagingError
 from utk_curio.backend.app.packages.application.store_install import (
     export_package_archive_to,
     install_package_from_archive,
+    take_back_what_it_replaced,
     uninstall_package,
 )
 from utk_curio.backend.app.packages.repositories.archive import InstallerError
@@ -275,13 +277,19 @@ def _back_up_prior(user_key: str, journal: dict[str, Any], installed_digest: str
 
 
 def _install_artifact(user_key: str, journal: dict[str, Any], archive: IO[bytes], *, replace: bool) -> None:
+    """The install over the prior copy keeps the libraries that copy's
+    install put where node code imports from, for a rollback to find them,
+    and names them in the journal (``replacedLibraries``) for
+    :func:`confirm_nodes_created`, which takes them back."""
     try:
-        install_package_from_archive(user_key, archive, replace=replace)
+        result = install_package_from_archive(user_key, archive, replace=replace, take_back=False)
     except InstallerError as exc:
         journal["status"] = "failed"
         journal["error"] = f"install failed: {exc}"
         _save_journal(user_key, journal)
         raise PromotionError(f"install failed: {exc}", 422) from exc
+    if result.replaced_libraries:
+        journal["replacedLibraries"] = sorted(result.replaced_libraries)
     _record_step(journal, "installed")
     _save_journal(user_key, journal)
 
@@ -458,7 +466,15 @@ def confirm_registry_ready(user_key: str, artifact_digest: str) -> dict[str, Any
 
 def confirm_nodes_created(user_key: str, artifact_digest: str) -> dict[str, Any]:
     """Complete the promotion: requested nodes exist on the canvas. Drops the
-    compensation backup and discards the staged artifact (it is installed)."""
+    compensation backup and discards the staged artifact (it is installed).
+
+    The prior copy of an extension can no longer come back then, so it gets
+    what a removal of it gets, as an install over a copy that cannot roll
+    back gets it at once (``store_install.install_package_from_archive``):
+    the libraries its install put where node code imports from, which the
+    journal names (``replacedLibraries``), are taken back when nothing asks
+    for them now, and the account's tree gives way to the image
+    (``store_install.take_back_what_it_replaced``)."""
     journal = _require_journal(user_key, artifact_digest, expect_status="awaiting-activation")
     if not _has_step(journal, "registry-ready"):
         raise PromotionError(
@@ -470,6 +486,8 @@ def confirm_nodes_created(user_key: str, artifact_digest: str) -> dict[str, Any]
     _save_journal(user_key, journal)
     _backup_path(user_key, artifact_digest).unlink(missing_ok=True)
     build_staging.discard_artifact(user_key, artifact_digest)
+    if journal.get("priorDigest"):
+        take_back_what_it_replaced(user_key, journal.get("replacedLibraries") or [])
     return journal
 
 

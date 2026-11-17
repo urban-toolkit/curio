@@ -469,6 +469,80 @@ def test_a_later_start_keeps_a_package_the_shipped_examples_need(catalog, start,
 
 
 # ---------------------------------------------------------------------------
+# A package a later start takes off gets what a removal gets
+# ---------------------------------------------------------------------------
+#
+# The libraries are the launcher's to install, at launch, before the backend
+# starts. The guest's store still holds a package the flag no longer names when
+# the launch that takes it off begins, so under isolation the launcher puts its
+# libraries into the shared guest's own tree, in front of the image's. A
+# removal takes back the libraries nothing else asks for, then gives way to the
+# image (``libraries.give_way_after_a_removal``); the take-off did neither.
+
+def _the_launchers_install_in_the_guests_tree(library) -> Path:
+    """The shared guest's own node libraries holding *library*, as the
+    launch before a start that takes its package off leaves them under
+    isolation; the tree."""
+    from utk_curio.backend.app.packages.infrastructure import backend_runtime
+    from utk_curio.backend.tests._support.front_of_the_image import held
+    from utk_curio.backend.tests._support.offline_wheels import unpack_wheel
+
+    tree = backend_runtime.user_node_overlay_dir(GUEST_KEY)
+    unpack_wheel(library, tree)
+    assert held(tree) == {library.dist: library.version}
+    return tree
+
+
+def test_under_isolation_a_later_start_takes_back_a_library_only_the_package_it_took_off_declared(
+    catalog, start, monkeypatch,
+):
+    """No other package of the guest's declares it, so no start would give
+    way for it: it stayed in the guest's tree for good."""
+    from utk_curio.backend.tests._support.front_of_the_image import held
+    from utk_curio.backend.tests._support.offline_wheels import WheelLibrary
+
+    monkeypatch.setenv("CURIO_ISOLATION", "fork")
+    library = WheelLibrary(
+        dist="curio-guest-tracking", version="1.0.0", module="curio_guest_tracking", message="guest tracking",
+    )
+    tracker = _publish(catalog, "ai.test.tracker", python={library.dist: ">=1.0"}, module="tracker_helpers")
+    start(tracker)
+    tree = _the_launchers_install_in_the_guests_tree(library)
+
+    start()
+
+    left = held(tree)
+    assert library.dist not in left, (
+        f"the start took {tracker} off the shared guest's account, and the guest's tree still holds "
+        f"{library.dist} {left.get(library.dist)}, which no package of the account declares")
+
+
+def test_under_isolation_a_later_start_takes_out_a_copy_only_the_package_it_took_off_needed(
+    catalog, start, monkeypatch,
+):
+    """The package taken off declared ``torch>=2.99.0``, a torch the image's
+    is below, so the launch put a torch 2.99 into the guest's tree; the guest
+    package left declares ``torch>=2.6``, which the image's torch meets. The
+    copy stayed in front of the image's until the next start."""
+    from utk_curio.backend.tests._support.front_of_the_image import OTHER_TORCH, held, the_images_torch
+
+    monkeypatch.setenv("CURIO_ISOLATION", "fork")
+    image_torch = the_images_torch()
+    tracker = _publish(catalog, "ai.test.tracker", python={"torch": f">={OTHER_TORCH.version}"}, module="tracker_helpers")
+    other = _publish(catalog, "ai.test.other", python={"torch": ">=2.6"}, module="other_helpers")
+    start(tracker, other)
+    tree = _the_launchers_install_in_the_guests_tree(OTHER_TORCH)
+
+    start(other)
+
+    left = held(tree)
+    assert "torch" not in left, (
+        f"the start took {tracker} off the shared guest's account, and the guest's tree still holds torch "
+        f"{left.get('torch')} in front of the image's {image_torch}, which meets torch>=2.6, the one range of "
+        "torch the account's packages declare now")
+
+
+# ---------------------------------------------------------------------------
 # Without the flag
 # ---------------------------------------------------------------------------
 

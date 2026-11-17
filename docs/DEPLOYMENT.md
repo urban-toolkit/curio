@@ -359,7 +359,8 @@ commas between them. To give every guest SAM 3, add to the `command` in
   of their cards on the canvas.
 - Their libraries install with the examples' as the stack starts.
 - A start takes off what an earlier start added that the list no longer
-  names, unless an example uses it.
+  names, unless an example uses it, and the libraries only it asked for go
+  with it.
 - A name that is not a package of the catalog stops the start.
 
 ### Bucket mounts

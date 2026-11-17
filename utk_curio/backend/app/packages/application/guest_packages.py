@@ -18,7 +18,11 @@ What the flag gave, the store copies a start's add made and the defaults
 entries it wrote, is recorded (``repositories/guest_record.py``), and a later
 start takes off what the flag no longer names: never a copy the store held
 before the flag named it, the built-in, a package the shipped examples need or
-one a dataflow of the account uses.
+one a dataflow of the account uses. A store copy taken off gets what a
+removal gets: the libraries its install put where node code imports from,
+which the launch before that start put in the guest's own tree under
+isolation, leave when nothing asks for them now, and the tree gives way to
+the image (``libraries.take_back_after_a_removal``).
 """
 
 from __future__ import annotations
@@ -35,6 +39,7 @@ from utk_curio.backend.app.packages.repositories import (
 from utk_curio.backend.app.packages.repositories.store import list_user_packages
 from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
 from utk_curio.backend.app.packages.application import (
+    libraries as packages_libraries,
     prune as packages_prune,
     seeding as packages_seeding,
     store_install as packages_store_install,
@@ -117,10 +122,13 @@ def _take_off(user_key: str, gone: dict[str, guest_record.GivenPackage]) -> dict
     """Take off the account what the flag gave it of each package in *gone*,
     which it no longer names: the defaults entry the flag wrote, and the store
     copy the flag's add made, unless something else keeps the package
-    (:func:`_kept_for_another_reason`). Answers what could not be taken off,
-    for a later start to take off."""
+    (:func:`_kept_for_another_reason`). The copies taken off then get what a
+    removal gets (``libraries.take_back_after_a_removal``). Answers what
+    could not be taken off, for a later start to take off."""
     examples_need: set[str] | None = None
     left: dict[str, guest_record.GivenPackage] = {}
+    taken_off: list[str] = []
+    their_libraries: set[str] = set()
     for dir_name, entry in sorted(gone.items()):
         try:
             if entry.defaults:
@@ -129,11 +137,21 @@ def _take_off(user_key: str, gone: dict[str, guest_record.GivenPackage]) -> dict
                 if examples_need is None:
                     examples_need = set(packages_seeding.example_dep_package_ids())
                 if not _kept_for_another_reason(user_key, dir_name, examples_need):
+                    # Read before its files go.
+                    its_libraries = packages_libraries.node_libraries_of(user_key, dir_name)
                     packages_store_install.take_back_copy(user_key, dir_name)
+                    taken_off.append(dir_name)
+                    their_libraries |= its_libraries
                     log.info("Took %s off the shared guest's account: --guest-packages no longer names it", dir_name)
         except Exception as exc:  # noqa: BLE001 - one package must stop neither the others nor the start
             log.warning("Could not take %s off the shared guest's account: %s", dir_name, exc)
             left[dir_name] = entry
+    if taken_off:
+        try:
+            packages_libraries.take_back_after_a_removal(user_key, their_libraries)
+        except Exception as exc:  # noqa: BLE001 - the copies are off already, and the start goes on
+            log.warning("Could not take back the libraries of %s, taken off the shared guest's account: %s",
+                        taken_off, exc)
     return left
 
 

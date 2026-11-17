@@ -619,6 +619,15 @@ def holding_tree(target_dir) -> contextlib.AbstractContextManager:
     return _one_run_into(str(target_dir))
 
 
+def holding_the_interpreter() -> contextlib.AbstractContextManager:
+    """Hold this interpreter as a pip run into it does, for a decision a
+    change of it is made on, as :func:`install_python_deps` decides what to
+    install inside its hold: a removal's take-back of the libraries nothing
+    asks for now. A pip run from inside the hold, on the same thread, holds
+    it on."""
+    return _one_run_into()
+
+
 def _pip_ran() -> None:
     """Pip changed this interpreter. Each process drops its memoised import
     verdicts at its next question (:func:`import_failures`), this one now: a

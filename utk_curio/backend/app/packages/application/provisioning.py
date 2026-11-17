@@ -26,6 +26,7 @@ from utk_curio.backend.app.packages.infrastructure.pip_runner import (
     PipInstallError,
     PipSpecError,
 )
+from utk_curio.backend.app.packages.infrastructure.target_locks import target_lock
 from utk_curio.backend.app.packages.application import store_reads as packages_store_reads
 from utk_curio.backend.app.packages.domain.errors import PackageServiceError
 
@@ -214,16 +215,26 @@ def provision_user_node_deps(
     (``pip_runner.install_python_deps_to_target`` *in_front*). That is also
     what keeps a re-install of an already-satisfied package from making pip
     rewrite a tree it is happy with.
+
+    The probe and the versions are read holding the tree, as a removal's
+    give-way reads it (``libraries.give_way_to_the_image``): the lock its
+    changes take in this process (``target_locks``), then the one pip's runs
+    into it take across processes (``pip_runner.holding_tree``). Read before
+    them, an add racing a removal, in this process or another, could find a
+    copy there that the removal then took out, install nothing, and leave
+    its package's nodes the image's copy, outside its range.
     """
     overlay = packages_backend_runtime.user_node_overlay_dir(user_key)
     overlay.mkdir(parents=True, exist_ok=True)
-    before = node_overlay_import_failures(user_key, py_deps)
-    outside = set(packages_pip_runner.outside_their_ranges_in_front(py_deps, str(overlay)))
-    missing = {name: spec for name, spec in py_deps.items() if name in before or name in outside}
     installed: list[str] = []
-    if missing:
-        report = packages_pip_runner.install_python_deps_to_target(missing, str(overlay), in_front=True)
-        installed = sorted(report.installed)
+    with target_lock(user_key, NODE_OVERLAY_LOCK):
+        with packages_pip_runner.holding_tree(overlay):
+            before = node_overlay_import_failures(user_key, py_deps)
+            outside = set(packages_pip_runner.outside_their_ranges_in_front(py_deps, str(overlay)))
+            missing = {name: spec for name, spec in py_deps.items() if name in before or name in outside}
+            if missing:
+                report = packages_pip_runner.install_python_deps_to_target(missing, str(overlay), in_front=True)
+                installed = sorted(report.installed)
     failures.update(node_overlay_import_failures(user_key, py_deps))
     return installed
 
