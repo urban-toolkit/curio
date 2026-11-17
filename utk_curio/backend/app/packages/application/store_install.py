@@ -218,16 +218,8 @@ def install_package_from_archive(
         the store copy on the catalog's refresh track (#194). Everything
         else is the user's own content, and the seeder leaves it alone (#564).
     take_back:
-        An install over a copy is a removal of that copy as much as an add
-        of the new one. So once the copy is replaced, the libraries its
-        install put where node code imports from are taken back when nothing
-        asks for them now, and the account's tree gives way to the image
-        (:func:`take_back_what_it_replaced`), whichever path replaced it: an
-        Update, Import package with replace, the wizard's Save and install,
-        a model downloaded again, an applied build's rollback. The caller
-        installs the new version's libraries after. An applied build passes
-        ``False``, and takes them back once it can no longer roll back
-        (``builder/promotion.confirm_nodes_created``).
+        Whether a copy it replaces gets what a removal of it gets
+        (:func:`take_back_what_it_replaced`): all but an applied build.
 
     Returns
     -------
@@ -235,8 +227,7 @@ def install_package_from_archive(
         ``manifest`` (the validated :class:`PackageManifest`),
         ``integrity`` (the ``{relative_path: sha256_hex}`` map),
         ``replaced_existing`` (whether *replace* actually displaced an
-        existing package), and ``replaced_libraries`` (what the displaced
-        copy's install put where node code imports from).
+        existing package), and ``replaced_libraries`` (that copy's).
 
     Raises
     ------
@@ -304,18 +295,7 @@ def install_package_from_archive(
             # to refresh the old copy and then swap it in over this one.
             with package_seed_lock(user_key):
                 refuse_a_module_name_in_use(user_key, staging_root, manifest)
-                replaced = False
-                replaced_libraries: frozenset[str] = frozenset()
-                if final_dest.exists():
-                    if not replace:
-                        raise InstallerError(
-                            f"package {dir_name} already installed; pass replace=True "
-                            f"to overwrite"
-                        )
-                    # Read before its files go: the copy this one replaces.
-                    replaced_libraries = frozenset(packages_libraries.node_libraries_of(user_key, dir_name))
-                    shutil.rmtree(final_dest)
-                    replaced = True
+                replaced_libraries = _out_of_the_way(user_key, dir_name, final_dest, replace=replace)
                 staging_root.replace(final_dest)
                 _touch_manifest_for_install_recency(final_dest)
                 merged_manifest = load_package_manifest(final_dest)
@@ -334,28 +314,48 @@ def install_package_from_archive(
             result = InstallResult(
                 manifest=merged_manifest,
                 integrity=integrity,
-                replaced_existing=replaced,
-                replaced_libraries=replaced_libraries,
+                replaced_existing=replaced_libraries is not None,
+                replaced_libraries=replaced_libraries or frozenset(),
             )
         except Exception:
             shutil.rmtree(staging_root, ignore_errors=True)
             raise
-    # Once the store lock is let go: the take-back takes it to walk the
-    # store, and it is a leaf.
-    if result.replaced_existing and take_back:
+    if result.replaced_existing and take_back:  # once the store lock, a leaf the take-back takes, is let go
         take_back_what_it_replaced(user_key, result.replaced_libraries)
     return result
+
+
+def _out_of_the_way(user_key: str, dir_name: str, final_dest: Path, *, replace: bool) -> frozenset[str] | None:
+    """Take the copy of *dir_name* at *final_dest* out of the way of its
+    install, under the store lock, when *replace* lets it: an
+    ``InstallerError`` otherwise. Answers what that copy's install put where
+    node code imports from (``libraries.node_libraries_of``), read before its
+    files go, or None when the store held no copy."""
+    if not final_dest.exists():
+        return None
+    if not replace:
+        raise InstallerError(f"package {dir_name} already installed; pass replace=True to overwrite")
+    libraries = frozenset(packages_libraries.node_libraries_of(user_key, dir_name))
+    shutil.rmtree(final_dest)
+    return libraries
 
 
 def take_back_what_it_replaced(user_key: str, libraries) -> None:
     """After an install replaced a copy of a package in *user_key*'s store,
     or the seeder's refresh did (``seeding.seed_dev_packages``), what a
-    removal of that copy gets: *libraries*, those the copy's install put
-    where node code imports from (``InstallResult.replaced_libraries``),
-    are taken back when nothing asks for them now, and the account's tree
-    gives way to the image (``libraries.take_back_after_a_removal``). The
-    copy is replaced already and the install stands, so a failure is
-    logged, and the next start gives way instead."""
+    removal of that copy gets: an install over a copy is a removal of it as
+    much as an add of the new one, whichever path replaced it (an Update,
+    Import package with replace, the wizard's Save and install, a model
+    downloaded again, an applied build's rollback). *libraries*, those the
+    copy's install put where node code imports from
+    (``InstallResult.replaced_libraries``), are taken back when nothing asks
+    for them now, and the account's tree gives way to the image
+    (``libraries.take_back_after_a_removal``), before the caller installs the
+    new version's. An applied build installs with ``take_back=False`` and
+    calls this once it can no longer roll back
+    (``builder/promotion.confirm_nodes_created``). The copy is replaced
+    already and the install stands, so a failure is logged, and the next
+    start gives way instead."""
     try:
         packages_libraries.take_back_after_a_removal(user_key, libraries)
     except Exception:  # noqa: BLE001 - the new copy is in place, and its install must stand
