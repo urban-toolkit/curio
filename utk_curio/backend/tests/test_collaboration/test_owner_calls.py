@@ -20,7 +20,6 @@ import copy
 import hashlib
 import json
 import threading
-import uuid
 from types import SimpleNamespace
 
 import pytest
@@ -291,14 +290,14 @@ def test_a_dataflow_made_where_it_does_not_belong_is_written_on_by_its_owner(own
     the create writes its files there and keeps no doc, and the writes that
     follow it, the create's second write and the account's datasets for all
     projects, are made by the dataflow's owner."""
-    from utk_curio.backend.app.collaboration import dataflow_docs
+    from utk_curio.backend.app.collaboration import dataflow_docs, placement
     from utk_curio.backend.app.datasets import defaults as dataset_defaults
-    from utk_curio.backend.app.projects import models as project_models
 
     application, _socketio = doc_app
     user, session = make_user("kai")
     made = owned_by(0)
-    monkeypatch.setattr(project_models, "uuid4", lambda: uuid.UUID(made))
+    # The new dataflow's id, which the placement of new dataflows makes.
+    monkeypatch.setattr(placement, "new_dataflow_id", lambda: made)
     dataset_defaults.add_to_dataset_defaults(str(user.id), "imported.example.x1")
 
     reply = application.test_client().post(

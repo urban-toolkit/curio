@@ -94,9 +94,10 @@ def bucket_mounts_status() -> dict:
 
 
 def start_bucket_mount_proxy(host: str) -> bool:
-    """The mount service's one way out, a CONNECT proxy on *host* (the
-    backend's own), when ``--bucket-mounts-dir`` and ``--bucket-mount-socket``
-    name a service (``infrastructure/mount_proxy.py``). Whether it listens."""
+    """The mount service's one way out, a CONNECT proxy on *host* (where the
+    backend listens, the launcher's ``--backend-host``), when
+    ``--bucket-mounts-dir`` and ``--bucket-mount-socket`` name a service
+    (``infrastructure/mount_proxy.py``). Whether it listens."""
     return bucket_mount_sources.start_proxy(host)
 
 

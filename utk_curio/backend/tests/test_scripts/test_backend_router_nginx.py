@@ -223,6 +223,23 @@ def test_each_dataflow_reaches_the_process_that_owns_it(router):
     assert wrong == {}, f"nginx sent these dataflows to a process that does not own them: {wrong}"
 
 
+def test_a_dataflow_made_for_a_process_reaches_that_process(router):
+    """A new dataflow's id is made for the process the placement of new
+    dataflows picks (``backend_processes.dataflow_id_on``): its requests
+    reach that process, by the header and by the path."""
+    from utk_curio.common.backend_processes import dataflow_id_on
+
+    wrong = {}
+    for process in range(PROCESSES):
+        for _ in range(8):
+            made = dataflow_id_on(process, PROCESSES)
+            reached = (_process(router, "/api/runs/1", headers={"X-Curio-Dataflow": made}),
+                       _process(router, f"/api/projects/{made}"))
+            if reached != (process, process):
+                wrong[made] = (process, reached)
+    assert wrong == {}, f"nginx sent these dataflows elsewhere, (made for, (by the header, by the path)): {wrong}"
+
+
 def test_the_header_decides_then_the_query_then_the_path_and_a_request_with_none_is_homes(router):
     from utk_curio.common.backend_processes import shard_of
 

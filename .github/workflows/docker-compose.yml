@@ -2301,7 +2301,7 @@ jobs:
   # the scripted model, report in stress-guests/. The browser tier is five
   # real Chrome contexts rendering Autark on WebGPU, which is the half that
   # cannot be driven any other way and does not scale past a handful on one GPU.
-  # The stack runs 8 backend processes behind nginx, each owning the dataflows
+  # The stack runs 16 backend processes behind nginx, each owning the dataflows
   # that hash to it: the count chosen for dev and stable
   # (CURIO_STRESS_BACKEND_PROCESSES).
   test-gpu-stress:
@@ -2341,10 +2341,10 @@ jobs:
       CURIO_STRESS: "1"
       CURIO_WEBGPU_BACKEND: hardware
       # The stack's backend processes behind nginx, read only by the overlay's
-      # command: 8, the count chosen for dev and stable, so every stage
+      # command: 16, the count chosen for dev and stable, so every stage
       # measures and guards that shape. Each report gives every process its
       # rooms, sync and turns.
-      CURIO_STRESS_BACKEND_PROCESSES: "8"
+      CURIO_STRESS_BACKEND_PROCESSES: "16"
 
     steps:
       - *reclaim

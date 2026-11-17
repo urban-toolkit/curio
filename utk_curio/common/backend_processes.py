@@ -1,5 +1,7 @@
-"""Which backend process this is, the start's boot id, and the process a
-dataflow belongs to.
+"""Which backend process this is, the start's boot id, the process a
+dataflow belongs to (:func:`shard_of`), and a new dataflow's id made for the
+process the backend's ``collaboration/placement.py`` picks
+(:func:`dataflow_id_on`).
 
 ``curio.py start --backend-processes N`` runs N backend processes behind nginx
 (``cli/backend_group.py``), and one by default. It starts each with three
@@ -51,6 +53,7 @@ from __future__ import annotations
 
 import os
 import re
+import secrets
 import uuid
 from collections.abc import Mapping
 
@@ -66,6 +69,11 @@ BOOT_ID_VARIABLE = "CURIO_BOOT_ID"
 PORTS_VARIABLE = "CURIO_BACKEND_PORTS"
 #: The secret the start's backends show each other on a call between them.
 TOKEN_VARIABLE = "CURIO_BACKEND_TOKEN"
+#: Where nginx listens, the launcher's ``--backend-host``: each process itself
+#: listens on 127.0.0.1, so a server the home process starts for another
+#: container to reach, the bucket mount service's proxy, listens here
+#: (``backend/server.py``).
+ROUTER_HOST_VARIABLE = "CURIO_BACKEND_ROUTER_HOST"
 
 #: The header a request names its dataflow in, and the query argument a
 #: socket's handshake names it in, which nginx routes by
@@ -198,3 +206,18 @@ def shard_of(dataflow_id, processes: int) -> int:
         return HOME
     lead = _LEAD.match(str(dataflow_id or ""))
     return int(lead.group(0), 16) % processes if lead else HOME
+
+
+def dataflow_id_on(process: int, processes: int) -> str:
+    """A new dataflow id that belongs to the process numbered *process* among
+    *processes* (:func:`shard_of`): a uuid4 whose first two hex digits are
+    one, at random, of those that name that process. Its version and variant
+    are a uuid4's. With one process, a plain uuid4."""
+    made = uuid.uuid4()
+    if processes <= 1:
+        return str(made)
+    leads = range(process, 256, processes)
+    if not 0 <= process < processes or not leads:
+        raise ValueError(f"no dataflow id names backend process {process} of {processes}")
+    lead = leads[secrets.randbelow(len(leads))]
+    return str(uuid.UUID(bytes=bytes([lead]) + made.bytes[1:]))

@@ -241,14 +241,14 @@ jobs:
           if grep -q -e '"--guest-packages"' utk_curio/main.py; then
             guest_args=', "--guest-packages", "model.curio.sam3@1"'
           fi
-          # 8 backend processes behind nginx, when this release's launcher has
+          # 16 backend processes behind nginx, when this release's launcher has
           # the flag: each keeps the dataflows that hash to it, so people at
           # work in different dataflows, and their agents, wait on different
           # processes. Checked once the stack is up.
           backend_processes=""
           processes_args=""
           if grep -q -e '"--backend-processes"' utk_curio/main.py; then
-            backend_processes=8
+            backend_processes=16
             processes_args=", \"--backend-processes\", \"$backend_processes\""
           fi
           # The bucket mount service (docker-compose.bucket-mounts.yml), when

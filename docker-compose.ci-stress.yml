@@ -39,7 +39,7 @@ services:
     # limit is one of the things the run is measuring the distance to, so it
     # matches another CI overlay rather than being widened for this job alone:
     # docker-compose.ci-shards.yml's, whose container holds up to eight stacks. The
-    # stack may run up to 8 backend processes (--backend-processes below), each
+    # stack may run up to 16 backend processes (--backend-processes below), each
     # with its own threads, beside the sandbox's.
     pids_limit: 16384
     # Each isolated node in a cgroup at its budget, as docker-compose.deploy.yml
@@ -80,7 +80,7 @@ services:
       - "2000"
       # How many backend processes serve, behind nginx past one: the job's
       # CURIO_STRESS_BACKEND_PROCESSES, 1 when it sets none. test-gpu-stress
-      # sets 8, the count chosen for dev and stable; test-desktop-stress, a
+      # sets 16, the count chosen for dev and stable; test-desktop-stress, a
       # laptop, sets none. The count goes only in the command, under a name of
       # its own: a process that inherited the backends' own
       # CURIO_BACKEND_PROCESSES, the job's host-side harness and browser tier

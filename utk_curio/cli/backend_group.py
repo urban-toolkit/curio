@@ -277,11 +277,13 @@ http {{
 
 
 def backend_environment(*, process: int, ports: Sequence[int], boot_id: str, token: str, proxy_hops: int,
-                        environ: Mapping[str, str] | None = None) -> dict[str, str]:
+                        host: str | None = None, environ: Mapping[str, str] | None = None) -> dict[str, str]:
     """The environment backend process *process* of a start of several
     starts with: the launcher's own, its number, the count, the start's boot
     id, every process's port and the start's secret, its own port on
-    127.0.0.1, no reloader, and *proxy_hops* proxies in front of it."""
+    127.0.0.1, no reloader, *proxy_hops* proxies in front of it, and *host*,
+    where nginx listens (the launcher's ``--backend-host``, its
+    ``FLASK_BACKEND_HOST`` when not given)."""
     environ = os.environ if environ is None else environ
     env = dict(environ)
     env.update(backend_processes.environment(
@@ -292,6 +294,7 @@ def backend_environment(*, process: int, ports: Sequence[int], boot_id: str, tok
         "FLASK_BACKEND_PORT": str(ports[process]),
         "FLASK_USE_RELOADER": "0",
         "CURIO_PROXY_HOPS": str(proxy_hops),
+        backend_processes.ROUTER_HOST_VARIABLE: environ.get("FLASK_BACKEND_HOST", "127.0.0.1") if host is None else host,
     })
     return env
 
@@ -377,7 +380,8 @@ def boot(host: str, port: int, processes: int, *, nginx: str):
 
     def start(number: int):
         name = f"Backend {number}"
-        env = backend_environment(process=number, ports=ports, boot_id=boot_id, token=token, proxy_hops=hops)
+        env = backend_environment(process=number, ports=ports, boot_id=boot_id, token=token, proxy_hops=hops,
+                                  host=host)
         process = _kept(services.spawn_backend(env, name))
         started.append((name, process))
         return number, name, process
