@@ -29,23 +29,23 @@ flowchart LR
   M[`Python Computation`<br/>Models on the snapshots]
   G[`Python Computation`<br/>On the ground]
   J[`Spatial Join`<br/>Objects in each zone]
-  O[`Python Computation`<br/>Zone occupancy]
+  O[`Python Computation`<br/>Zone occupancy by minute]
   LI[`Python Computation`<br/>Light]
   HH[`Python Computation`<br/>Half hour of the frames]
   OC[`Vega-Lite`<br/>Zone occupancy]
-  PH[`Python Computation`<br/>Per hour]
+  PH[`Python Computation`<br/>Objects per hour]
   PC[`Vega-Lite`<br/>Per hour]
-  CH[`Python Computation`<br/>Confidence by hour]
+  CH[`Python Computation`<br/>Confidence quartiles by hour]
   CC[`Vega-Lite`<br/>Confidence by hour]
-  F[`Python Computation`<br/>Frames]
+  F[`Python Computation`<br/>Draw the frames]
   FV[`Simple View`<br/>Frames]
   CG[`Python Computation`<br/>Confidence grid]
   ME[`Python Computation`<br/>Map extent]
   PT[`Python Computation`<br/>Points of the half hour]
   GM[`Autark`<br/>Ground]
-  BM[`Python Computation`<br/>By model]
+  BM[`Python Computation`<br/>Boxes by model]
   BC[`Vega-Lite`<br/>By model]
-  AG[`Python Computation`<br/>Agreement]
+  AG[`Python Computation`<br/>Agreement between models]
   AC[`Vega-Lite`<br/>Agreement]
   S --> H & R & P & M & G & O & HH & F
   CA --> H & Z & F
@@ -241,7 +241,7 @@ The Spatial Join node, with the operation `within`, pairs each point with the zo
 
 ## Zone occupancy
 
-**Zone occupancy** counts the objects in each zone per image, per 100 square metres, minute by minute. Every image the model looked at counts, one it saw nothing in too, whatever the filters keep. YOLO26n looked at a snapshot every 5 minutes, so its bins are 5 minutes long.
+**Zone occupancy by minute** counts the objects in each zone per image, per 100 square metres, minute by minute. Every image the model looked at counts, one it saw nothing in too, whatever the filters keep. YOLO26n looked at a snapshot every 5 minutes, so its bins are 5 minutes long.
 
 ```python
 import pandas as pd
@@ -281,7 +281,7 @@ return occupancy
 
 ## Frames
 
-**Half hour of the frames** picks the half hour: the one **Frames from** names, or the busiest. **Frames** draws up to six of its snapshots with PIL, with the zones in yellow and the chosen model's boxes colored by class, each as a picture derived from its snapshot, whose tag names the model, classes and confidence it was drawn with. Each card's caption gives the snapshot's Chicago time and every model's count of boxes on it, of the chosen classes at the chosen confidence. A Simple View shows the cards.
+**Half hour of the frames** picks the half hour: the one **Frames from** names, or the busiest. **Draw the frames** draws up to six of its snapshots with PIL, with the zones in yellow and the chosen model's boxes colored by class, each as a picture derived from its snapshot, whose tag names the model, classes and confidence it was drawn with. Each card's caption gives the snapshot's Chicago time and every model's count of boxes on it, of the chosen classes at the chosen confidence. A Simple View shows the cards.
 
 ## The ground
 
@@ -307,7 +307,7 @@ A map clips every layer after its first to its first's outline, so **Map extent*
 
 ## The models on the snapshots
 
-**Models on the snapshots** gathers every model's boxes on the day's snapshots, YOLOv5n's, YOLOv8n's and YOLOv10n's from the records and YOLO26n's from Keira's run, of the chosen classes at the chosen confidence. **By model** shares each model's boxes over the snapshots, a snapshot it found nothing in counted too. **Agreement** gives the share of one model's boxes that another finds too: a box of the same class on the same snapshot that overlaps it by an intersection over union of 0.5 or more.
+**Models on the snapshots** gathers every model's boxes on the day's snapshots, YOLOv5n's, YOLOv8n's and YOLOv10n's from the records and YOLO26n's from Keira's run, of the chosen classes at the chosen confidence. **Boxes by model** shares each model's boxes over the snapshots, a snapshot it found nothing in counted too. **Agreement between models** gives the share of one model's boxes that another finds too: a box of the same class on the same snapshot that overlaps it by an intersection over union of 0.5 or more.
 
 ```python
 import numpy as np

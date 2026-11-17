@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/31-sage-idot-rail-crossings.json",
-    "sha256": "3c5be99462585fb3af99f97d91acd4102483f95d9c72f0c4248db9bc93e32e8f",
+    "sha256": "87ba6be61ba405400a9f4990557127abdb9ac13654e68f0b9cbeb202cb6d45c7",
     "walkthrough": "docs/examples/31-sage-idot-rail-crossings.md"
   },
   "prompt": "For the SAGE cameras at three IDOT rail crossings, W042, W065 and W06E, each on the day the Cities in Motion workshop team studied, read the camera's day of YOLO detection records out of its month's JSON Lines file in the Data Catalog without reading the rest of the file, and list its snapshots of that day. Place every object the chosen model saw on the ground, at its box's bottom center, through the camera's homography fitted in float64 to the team's control points, and measure how full each of the camera's lanes before and after the crossing is, per image and per 100 square metres, minute by minute, against night, twilight and day from astral. Draw a half hour's snapshots with the lanes and the boxes, map a grid of mean confidence on 2 m cells with that half hour's objects, and compare YOLOv5n, YOLOv8n, YOLOv10n and the team's YOLO26n boxes on the snapshots: boxes per snapshot by class group, and how often each model finds another's boxes at an IoU of 0.5 or more. Put the camera, model, classes, lowest confidence and half hour on a dashboard with the charts, the map and the drawn snapshots.",

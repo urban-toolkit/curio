@@ -398,7 +398,7 @@
         "metadata": {
           "keywords": []
         },
-        "title": "Zone occupancy"
+        "title": "Zone occupancy by minute"
       },
       {
         "id": "idot-light",
@@ -459,7 +459,7 @@
         "metadata": {
           "keywords": []
         },
-        "title": "Per hour"
+        "title": "Objects per hour"
       },
       {
         "id": "idot-per-hour-chart",
@@ -492,7 +492,7 @@
         "metadata": {
           "keywords": []
         },
-        "title": "Confidence by hour"
+        "title": "Confidence quartiles by hour"
       },
       {
         "id": "idot-confidence-chart",
@@ -525,7 +525,7 @@
         "metadata": {
           "keywords": []
         },
-        "title": "Frames"
+        "title": "Draw the frames"
       },
       {
         "id": "idot-frames-view",
@@ -619,7 +619,7 @@
         "metadata": {
           "keywords": []
         },
-        "title": "By model"
+        "title": "Boxes by model"
       },
       {
         "id": "idot-by-model-chart",
@@ -652,7 +652,7 @@
         "metadata": {
           "keywords": []
         },
-        "title": "Agreement"
+        "title": "Agreement between models"
       },
       {
         "id": "idot-agreement-chart",
