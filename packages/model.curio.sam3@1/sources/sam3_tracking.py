@@ -68,7 +68,7 @@ class _Run:
 
 
 def track_objects(media, model, derived_file, *, labels, every_seconds=0.5, forget_seconds=10, from_seconds=0,
-                  to_seconds=None, max_seconds=300, width=960):
+                  to_seconds=None, max_frames=450, width=960, max_seconds=None):
     """Follow what *labels* name, such as curb ramp or traffic cone, through
     each video of a collection with SAM 3: each video comes back as its
     overlay, its frames with each object's mask and id drawn, which Simple View
@@ -84,9 +84,11 @@ def track_objects(media, model, derived_file, *, labels, every_seconds=0.5, forg
     one id. It lets go of an object it has not seen for *forget_seconds*
     (None: it follows every object to the part's end): the object's track ends
     where it was last seen, and an object that comes back is found again, as a
-    new object with a new id. A part longer than *max_seconds*, the most one
-    run takes, stops the call before SAM 3 loads, as do empty *labels* and a
-    video not on this machine.
+    new object with a new id. A part of a video that needs more than
+    *max_frames* frames, one every *every_seconds*, stops the call before SAM 3
+    loads, as do empty *labels* and a video not on this machine. So does
+    *max_seconds*, the limit in seconds of a node's code older than
+    *max_frames*, with the lines of that code to change.
 
     Each row keeps the video's own columns, its overlay's (``file_id``,
     ``path``, ``thumbnail``, ``image_url``, ``duration_s``, ``fps``, ``width``,
@@ -99,10 +101,18 @@ def track_objects(media, model, derived_file, *, labels, every_seconds=0.5, forg
     forgetting, part or width of a video than an earlier call keeps files of
     its own; one that asks the same writes the earlier call's files again.
     """
+    if max_seconds is not None:
+        raise ValueError(
+            "MAX_SECONDS is gone: Track Objects counts the frames a run looks at. In the node's code, replace "
+            f"MAX_SECONDS = {max_seconds!r} with MAX_FRAMES = 450, and max_seconds=MAX_SECONDS with "
+            "max_frames=MAX_FRAMES"
+        )
     if not labels:
         raise ValueError("LABELS is empty: name at least one thing to look for")
+    if max_frames < 1:
+        raise ValueError(f"MAX_FRAMES is {max_frames}: a run looks at one frame at least, so set it to 1 or more")
     videos = [video for _, video in media[media["kind"] == "video"].iterrows()]
-    ends = [_part_end(video, from_seconds, to_seconds, max_seconds) for video in videos]
+    ends = [_part_end(video, from_seconds, to_seconds, every_seconds, max_frames) for video in videos]
     rows = []
     if videos:
         device, dtype = _device()
@@ -147,10 +157,21 @@ def _length_of(container, stream):
     return None
 
 
-def _part_end(video, from_seconds, to_seconds, max_seconds):
+def _seconds(value):
+    """*value*, a time in seconds, as a message writes it: to the millisecond,
+    with no trailing zeros."""
+    return f"{value:.3f}".rstrip("0").rstrip(".")
+
+
+def _part_end(video, from_seconds, to_seconds, every_seconds, max_frames):
     """Where the part of *video* to track ends, in seconds, once it is checked
     with no frame read: the file is on this machine, its end is known, and the
-    part fits one run."""
+    part needs no more than *max_frames* frames, one every *every_seconds*.
+
+    The frames a part needs are its steps (:func:`_steps`), the frames
+    :func:`_sample` looks at: one for each step, or fewer when the video's
+    frames come further apart than *every_seconds* or the part runs past the
+    video's end."""
     if not isinstance(video["path"], str) or not video["path"]:
         raise ValueError(f"{video['relpath']} is not on this machine yet; cache the collection's files first")
     end = to_seconds
@@ -159,12 +180,31 @@ def _part_end(video, from_seconds, to_seconds, max_seconds):
             end = _length_of(container, container.streams.video[0])
     if end is None:
         raise ValueError(f"{video['relpath']} does not say how long it is: set TO_SECONDS to where to stop")
-    if end - from_seconds > max_seconds:
+    frames = _steps(from_seconds, end, every_seconds)[0]
+    if frames > max_frames:
+        # What fits: the gap, in tenths of a second, at which the whole part
+        # needs max_frames frames at most, and the part's first max_frames
+        # steps, to the millisecond (the 1e-6 is for float rounding).
+        every = math.ceil((end - from_seconds) / max_frames * 10) / 10
+        shorter = math.floor((from_seconds + max_frames * every_seconds) * 1000 + 1e-6) / 1000
         raise ValueError(
-            f"{video['relpath']}: Track Objects takes {max_seconds} s of video in one run; "
-            f"set FROM_SECONDS and TO_SECONDS to the part to track, such as 0 and {max_seconds}"
+            f"{video['relpath']}: Track Objects looks at {max_frames} frames of a video at most in one run, "
+            f"and {_seconds(from_seconds)} to {_seconds(end)} s at a frame every {every_seconds:g} s is {frames} "
+            f"frames; raise EVERY_SECONDS to {every:g} or more, or set FROM_SECONDS and TO_SECONDS to a shorter "
+            f"part, such as {_seconds(from_seconds)} and {_seconds(shorter)}"
         )
     return end
+
+
+def _steps(from_seconds, end, every_seconds):
+    """``(count, stop)``: the steps of *every_seconds* from *from_seconds* up to
+    *end*, never the step at *end*, ceil(W / every_seconds) of a part of W
+    seconds (the 1e-9 is for float rounding), and where the frames of the step
+    at *end* would start. A part of no length has one step and no such end."""
+    if end > from_seconds:
+        count = math.ceil((end - from_seconds) / every_seconds - 1e-9)
+        return count, from_seconds + count * every_seconds - EARLY_SECONDS
+    return int(end == from_seconds), float("inf")
 
 
 def _sample(run, video, end):
@@ -185,14 +225,7 @@ def _sample(run, video, end):
         width = 2 * (min(run.width, stream.codec_context.width) // 2)
         height = 2 * round(stream.codec_context.height * width / stream.codec_context.width / 2)
         container.seek(int(run.from_seconds / stream.time_base), stream=stream, backward=True)
-        # The part's steps, ceil(W / every_seconds) of a part of W seconds (the
-        # 1e-9 is for float rounding), and where the frames of the step at
-        # *end* would start; a part of no length has one step and no such end.
-        if end > run.from_seconds:
-            count = math.ceil((end - run.from_seconds) / run.every_seconds - 1e-9)
-            stop = run.from_seconds + count * run.every_seconds - EARLY_SECONDS
-        else:
-            count, stop = int(end == run.from_seconds), float("inf")
+        count, stop = _steps(run.from_seconds, end, run.every_seconds)
         steps, wanted = 0, run.from_seconds
         for frame in container.decode(stream):
             if steps >= count:
