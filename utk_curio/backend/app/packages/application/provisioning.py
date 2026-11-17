@@ -213,19 +213,10 @@ def provision_user_node_deps(
     only what neither the tree nor the image holds at an accepted version
     (``pip_runner.install_python_deps_to_target`` *in_front*). That is also
     what keeps a re-install of an already-satisfied package from making pip
-    rewrite a tree it is happy with. A copy an earlier add or start put into
-    the tree in front of an image library that meets the package's range goes
-    first (``libraries.give_way_to_the_image``), so the image's wins.
+    rewrite a tree it is happy with.
     """
-    from utk_curio.backend.app.packages.application import libraries as packages_libraries
-
     overlay = packages_backend_runtime.user_node_overlay_dir(user_key)
     overlay.mkdir(parents=True, exist_ok=True)
-    try:
-        packages_libraries.give_way_to_the_image(user_key)
-    except (PipInstallError, OSError):
-        # The add goes on: the copy stays in front, as it was.
-        log.warning("could not look over %s's node libraries", user_key, exc_info=True)
     before = node_overlay_import_failures(user_key, py_deps)
     outside = set(packages_pip_runner.outside_their_ranges_in_front(py_deps, str(overlay)))
     missing = {name: spec for name, spec in py_deps.items() if name in before or name in outside}

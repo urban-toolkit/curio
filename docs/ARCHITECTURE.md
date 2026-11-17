@@ -1631,10 +1631,11 @@ after the fork. Three things follow, and none of them is a mode bit:
   what neither holds at a version the requirements accept, without its own
   requirements, which that resolution met: a package's `torch>=2.6` keeps the
   image's CUDA torch, and one asking a version the image's is outside gets
-  its own. An add or a start first takes out a copy an earlier one put in
-  front of an image library that meets every range the account's packages
-  declare, unless the account's own list names it
-  (`libraries.give_way_to_the_image`).
+  its own. A copy in the tree at a version the range does not accept, where
+  the image's meets it, is taken out rather than replaced. Each start also
+  takes out a copy an earlier one put in front of an image library that
+  meets every range the account's packages declare, unless the account's own
+  list names it (`libraries.give_way_to_the_image`).
 
 A run of an editor the dataflow's owner invited reads the owner's folder too,
 after the editor's own, so a node of the owner's packages imports the

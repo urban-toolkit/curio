@@ -229,6 +229,28 @@ class TestTheImagesLibrariesWinInAnAccountsTree:
             f"the add left torch>={OTHER_TORCH.version} out of account 7's tree, which holds {tree}: "
             f"its nodes import the image's {image_torch}, which the package does not accept")
 
+    def test_an_add_takes_out_a_torch_of_the_tree_its_range_misses_where_the_images_meets_it(
+        self, isolated, launch_tree, tmp_path, monkeypatch,
+    ):
+        """An earlier add can have put into the tree a torch a new package's
+        range does not accept, in front of the image's, which it does: the
+        add takes the tree's copy out, and its nodes import the image's."""
+        from utk_curio.backend.tests._support.front_of_the_image import held, offline_pip, the_images_torch
+        from utk_curio.backend.tests._support.offline_wheels import WheelLibrary, unpack_wheel
+
+        image_torch = the_images_torch()
+        offline_pip(monkeypatch, tmp_path / "wheelhouse")
+        tree = rt.user_node_overlay_dir("7")
+        unpack_wheel(WheelLibrary(dist="torch", version="2.0.0", module="curio_old_torch", message="old"), tree)
+        assert held(tree) == {"torch": "2.0.0"}
+
+        provisioning.provision_python_deps("7", "ai.test.torch@1", _Manifest({"torch": ">=2.6"}))
+
+        left = held(tree)
+        assert "torch" not in left, (
+            f"account 7's tree still holds torch {left.get('torch')}, which torch>=2.6 does not accept, "
+            f"in front of the image's {image_torch}, which it does")
+
 
 class TestTheProbeAsksTheRightInterpreter:
 

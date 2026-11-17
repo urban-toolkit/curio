@@ -363,8 +363,11 @@ def version_in_front(name: str, target_dir, in_tree: Optional[Mapping[str, str]]
     tree's :func:`tree_versions`, when the caller has read them."""
     in_tree = tree_versions(target_dir) if in_tree is None else in_tree
     version = in_tree.get(_canonical_dist_name(name))
-    if version is not None:
-        return version
+    return version if version is not None else interpreter_version(name)
+
+
+def interpreter_version(name: str) -> Optional[str]:
+    """The version of *name* this interpreter, the image's, holds, or None."""
     try:
         return installed_version(name)
     except PackageNotFoundError:
@@ -398,12 +401,12 @@ def copies_this_interpreter_meets(declared: Mapping[str, Iterable[str]], target_
                 continue  # a line pip would not read either
             if requirement.marker is None or requirement.marker.evaluate({"extra": ""}):
                 needs.append((requirer, _canonical_dist_name(requirement.name), requirement.specifier))
+    # A library this interpreter lacks keeps the tree's copy, node code's only one.
     image = {}
     for name in declared:
-        try:
-            image[name] = installed_version(name)
-        except PackageNotFoundError:
-            continue  # the tree's copy is node code's only one
+        version = interpreter_version(name)
+        if version is not None:
+            image[name] = version
     # A copy that goes no longer needs what it required: so on until no
     # other copy can go.
     going: set[str] = set()
@@ -1157,13 +1160,23 @@ def _install_in_front(
     distributions it would install go into the tree, each at the version pip
     chose and without its own requirements, which that resolution met. A
     distribution the tree holds at another version is taken out first, since
-    ``--target`` leaves one it holds as it is."""
+    ``--target`` leaves one it holds as it is; so is a requirement's copy in
+    the tree at a version its range does not accept where this interpreter's
+    meets it, which then wins."""
     in_tree = tree_versions(target_dir)
-    wanted = {}
+    wanted, hiding = {}, []
     for name, spec in deps.items():
         version = version_in_front(name, target_dir, in_tree)
-        if version is None or not accepts(name, spec, version):
-            wanted[name] = spec
+        if version is not None and accepts(name, spec, version):
+            continue
+        image = interpreter_version(name)
+        if _canonical_dist_name(name) in in_tree and image is not None and accepts(name, spec, image):
+            hiding.append(name)
+            continue
+        wanted[name] = spec
+    if hiding:
+        uninstall_python_deps_from_target(hiding, target_dir)
+        in_tree = tree_versions(target_dir)
     plan = _resolved_in_front(wanted, target_dir) if wanted else []
     planned = {_canonical_dist_name(name) for name, _version in plan}
     skipped = sorted(name for name in deps if _canonical_dist_name(name) not in planned)
