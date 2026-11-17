@@ -10,6 +10,12 @@
  * more. An account's load names no copy: its socket opens at once, apart
  * from the load.
  *
+ * A dashboard served with its data loads nothing: the page server built it
+ * for the visitor's sign-in (`cli/static_server.py`), and a hosted guest's
+ * names the guest's own copy (`copy_id`), which the page names from then on,
+ * before it is loaded and starts a viewer's run, as a canvas names the copy
+ * its load answers with.
+ *
  * The helper is loaded in each test, so a checkout without it fails each test
  * on its own.
  */
@@ -73,9 +79,13 @@ jest.mock("../../services/packages", () => ({
   packagesApi: { getDefaults: jest.fn().mockResolvedValue({ packages: [] }) },
 }));
 
-import { ProjectLoader } from "../../components/ProjectLoader";
+import { ProjectLoader, useProjectLoadState } from "../../components/ProjectLoader";
+import { resetEmbeddedDashboardForTests } from "../../standalone/dashboardPayload";
 
+const HEADER = "X-Curio-Dataflow";
 const ROUTE_ID = "11111111-2222-4333-8444-555555555555";
+/** A hosted guest's own copy of the dataflow of ROUTE_ID. */
+const COPY = "99999999-8888-5777-a666-555555555555";
 const SPEC = { dataflow: { nodes: [{ id: "py" }], edges: [] } };
 
 /** The helper, loaded when a test asks for it. */
@@ -164,4 +174,52 @@ test("a new dataflow, which no load names, waits for nothing", () => {
 
   expect(mockKnownWhenPinned).toEqual([]);
   expect(names().dataflowNameKnown(ROUTE_ID)).toBe(true);
+});
+
+describe("a dashboard served with its data", () => {
+  const PAYLOAD_ID = "curio-dashboard-payload";
+
+  /** The page as the page server served it, with *payload* inside. */
+  const servedWith = (payload: object) => {
+    const element = document.createElement("script");
+    element.id = PAYLOAD_ID;
+    element.type = "application/json";
+    element.textContent = JSON.stringify(payload);
+    document.body.appendChild(element);
+    resetEmbeddedDashboardForTests();
+  };
+
+  afterEach(() => {
+    document.getElementById(PAYLOAD_ID)?.remove();
+    resetEmbeddedDashboardForTests();
+    window.history.replaceState(null, "", "/");
+  });
+
+  test("names the copy its page was built for before the page is loaded", async () => {
+    // A hosted guest's page names no account (UserProvider's viewer), and the
+    // browser holds no session the page could ask with.
+    mockHostedGuest = false;
+    window.history.replaceState(null, "", `/dashboard/${ROUTE_ID}`);
+    servedWith({
+      meta: { projectId: ROUTE_ID, name: "Example" },
+      spec: SPEC,
+      outputs: {},
+      outputRefs: [],
+      copy_id: COPY,
+    });
+    /** What a request names each time the page reads as loaded. */
+    const named: string[] = [];
+    const Probe: React.FC = () => {
+      if (useProjectLoadState() === "loaded") named.push(names().requestHeaders("tok")[HEADER]);
+      return null;
+    };
+
+    render(<ProjectLoader presentation><Probe /></ProjectLoader>);
+
+    await waitFor(() => expect(named.length).toBeGreaterThan(0));
+    expect(named[0]).toBe(COPY);
+    expect(names().requestHeaders("tok", {}, ROUTE_ID)[HEADER]).toBe(COPY);
+    expect(mockLoadProject).not.toHaveBeenCalled();
+    expect(mockLoadSharedProject).not.toHaveBeenCalled();
+  });
 });
