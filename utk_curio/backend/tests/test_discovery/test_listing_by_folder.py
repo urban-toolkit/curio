@@ -330,7 +330,7 @@ class TestTheListing:
 
         manifest, _bucket, provider = idot
         # Each row's 1,500 snapshots under the row limit of 2,000, and the
-        # bucket's 6,008 matched files over a bound of 4,000.
+        # bucket's 6,012 matched files over a bound of 4,000.
         limited = dataclasses.replace(manifest, max_files=2000)
         bound = 4000
         monkeypatch.setattr(scan, "MAX_LISTING_FILES", bound, raising=False)
@@ -343,8 +343,9 @@ class TestTheListing:
         # The folders are read in key order, so the first crossing's rows are whole.
         assert all(rows[month_row("snapshots", "W042", month)] == SNAPSHOTS for month in MONTHS), rows
 
-        # A bucket of exactly the bound is listed whole.
-        total = len(CROSSINGS) * len(MONTHS) * (SNAPSHOTS + 2)
+        # A bucket of exactly the bound is listed whole: a month's file is
+        # matched by each of the three resources that read it.
+        total = len(CROSSINGS) * len(MONTHS) * (SNAPSHOTS + 3)
         monkeypatch.setattr(scan, "MAX_LISTING_FILES", total)
         whole = scan.scan(limited, provider)
         assert whole.matched == total and not whole.truncated, (whole.matched, whole.truncated)

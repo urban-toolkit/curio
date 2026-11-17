@@ -434,7 +434,9 @@ class TestAnEvaluationNeverSeesItsExample:
         assert (path, method) == ("/api/projects", "POST")
         marker = authorization.marker_of(payload["spec"])
         assert (marker.run_id, marker.fixture_id) == ("r-1", SIXTEEN)
-        assert examples.excluded_by(payload["spec"]) == {SIXTEEN}
+        # Example 31 draws its frames with PIL as 16 draws its pictures: its
+        # line ``from PIL import Image, ImageDraw`` is a piece of 16's answer.
+        assert examples.excluded_by(payload["spec"]) == {SIXTEEN, "31-sage-idot-rail-crossings"}
 
 
 class TestADataflowIsNeverItsOwnExample:
