@@ -145,8 +145,11 @@ return find_in_images(
 | `MAX_IMAGES` | `300` | The most images one run looks at, as many as Sample Video Frames samples from one video by default. More rows stop the node before SAM 3 loads. |
 
 It reads the model as Track Objects does, on the same device, and draws each
-object as Track Objects draws one. Each row comes back with these columns
-first, the ones Image Segmentation gives, then its own:
+object as Track Objects draws one. It also cleans what SAM 3 finds as Track
+Objects does: of two objects of one label whose masks overlap, it keeps the
+one SAM 3 scores higher, and it fills the small holes and removes the small
+specks of each mask. Each row comes back with these columns first, the ones
+Image Segmentation gives, then its own:
 
 | Column | What it holds |
 |---|---|
