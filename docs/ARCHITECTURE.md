@@ -1821,7 +1821,11 @@ reads the manifests, for the release and for a running Curio.
    only when a round's code reads it, never at its start, and keeps each id
    whose download failed with its reason for the rest of its run
    (`SolveBatch.solve_dataset_failures`, `_session_dataset_paths`' `failed`),
-   so no later round downloads it again. A node that failed so is marked
+   so no later round downloads it again. A plan's Solve makes one round's
+   lookup at a time (`SolveBatch._dataset_paths_of`): the rounds of a wave run
+   at once and share those paths and failures, so a dataset two nodes read at
+   once is looked up once, and its failed download is not asked for again by
+   the other node. A node that failed so is marked
    `downloadFailed` on the runner's record and in the round's evidence
    (`validation.validate_candidate`), and the verified loop ends its rounds
    there as a blocker, one attempt saying why; a later pass of a plan's Solve

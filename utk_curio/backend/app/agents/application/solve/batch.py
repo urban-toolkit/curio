@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import logging
 import queue as _queue
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
@@ -179,9 +180,11 @@ class SolveBatch:
         # The paths of the datasets the batch's runs read, each looked up as
         # a round's code reads it (``grounding._session_dataset_paths``), and
         # why each whose download failed in this Solve's run could not be
-        # had, which no later round downloads again.
+        # had, which no later round downloads again. Its rounds look them up
+        # one at a time (:meth:`_dataset_paths_of`).
         self.solve_dataset_paths = dataset_paths if dataset_paths is not None else {}
         self.solve_dataset_failures: dict = {}
+        self.dataset_lookups = threading.Lock()
         # The Data Catalog's collections, which the request thread resolved
         # too; each attempt takes those its code reads on its pool's thread
         # (``grounding._session_collections``).
@@ -1402,6 +1405,25 @@ class SolveBatch:
             return None
         return None
 
+    def _dataset_paths_of(self, codes, formats, unavailable=None) -> dict:
+        """The paths of the datasets a round's *codes* read, looked up as the
+        acting user (``grounding._session_dataset_paths``, which fills
+        *formats* and *unavailable*), by one round at a time.
+
+        The rounds of a wave run at once, on the pool's threads, and share the
+        batch's paths and failed downloads: one at a time, a dataset two nodes
+        read at once is looked up once, and a download that failed for one is
+        not asked for again by the other. A download holds the other rounds'
+        lookups until it is over, as a Solve's start once held every round
+        for all of them. In the unit suites' in-memory database every thread
+        shares one SQLite connection, on which two lookups at once crashed
+        the backend's tests."""
+        with self.dataset_lookups:
+            return agents_grounding._session_dataset_paths(
+                self.project_id, self.acting_user, self.solve_dataset_paths, codes, formats, unavailable,
+                failed=self.solve_dataset_failures,
+            )
+
     def _run_verified_worker(self, node_id: str, node: dict, wave_spec: dict, upstream_outputs) -> None:
         """dev/115 (DEC-073) → dev/118 (DEC-075): the ONE verified-content
         loop for EVERY executable kind — and, since dev/134, for every
@@ -1436,11 +1458,8 @@ class SolveBatch:
             # reads, looked up now as the acting user, a dataset the user
             # imported or installed since this session started among them,
             # and why each whose file failed to download could not be had,
-            # kept for the Solve's run.
-            dataset_paths_fn=lambda codes, formats, unavailable=None: agents_grounding._session_dataset_paths(
-                self.project_id, self.acting_user, self.solve_dataset_paths, codes, formats, unavailable,
-                failed=self.solve_dataset_failures,
-            ),
+            # kept for the Solve's run; one round's lookup at a time.
+            dataset_paths_fn=self._dataset_paths_of,
             # The collections, from the batch's mapping, topped up the same
             # way, and handed to the thread each attempt runs on.
             collections_fn=lambda codes: agents_grounding._session_collections(
