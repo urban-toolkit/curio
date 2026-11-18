@@ -283,18 +283,16 @@ describe("a raster in a Data Pool", () => {
   test("the pool's run is told to the node's journal as ok for a raster, and as an input it cannot show for a text", async () => {
     mockEdges = [{ id: "e", source: "up", target: "pool", sourceHandle: "out", targetHandle: "in" }];
     const outputCallback = jest.fn();
-    const raster = renderHook(() => useDataPoolBehavior(
-      poolData(normalizeFlowInput({ path: "art-raster", dataType: "raster" }), outputCallback), nodeState(),
-    ));
+    const rasterInput = normalizeFlowInput({ path: "art-raster", dataType: "raster" });
+    const raster = renderHook(() => useDataPoolBehavior(poolData(rasterInput, outputCallback), nodeState()));
     await waitFor(() => expect(raster.result.current.outputOverride).toMatchObject({ code: "success" }));
     await waitFor(() => expect(mockReport).toHaveBeenLastCalledWith(expect.objectContaining({ nodeId: "pool", status: "ok" })));
     expect(mockReport).not.toHaveBeenCalledWith(expect.objectContaining({ status: "error" }));
     raster.unmount();
 
     mockReport.mockClear();
-    const text = renderHook(() => useDataPoolBehavior(
-      poolData(normalizeFlowInput({ path: "art-text", dataType: "str" }), jest.fn()), nodeState(),
-    ));
+    const textInput = normalizeFlowInput({ path: "art-text", dataType: "str" });
+    const text = renderHook(() => useDataPoolBehavior(poolData(textInput, jest.fn()), nodeState()));
     await waitFor(() => expect(text.result.current.outputOverride).toMatchObject({ code: "success" }));
     await waitFor(() => expect(mockReport).toHaveBeenLastCalledWith(
       expect.objectContaining({ nodeId: "pool", status: "error", kind: "bad-input:not-tabular" }),
