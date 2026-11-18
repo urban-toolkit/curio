@@ -12,7 +12,6 @@
     { "in": "", "key": "layout", "what": "\"layout\"" },
     { "in": "", "key": "links", "what": "\"links\"" },
     { "in": "compute[]", "key": "type", "value": "render", "what": "a render pass" },
-    { "in": "data[]", "key": "type", "value": "heatmap", "what": "a heatmap source" },
     { "in": "data[]", "key": "type", "value": "geotiff", "what": "a geotiff source" }
   ],
   "notRunYetKey": "This spec uses {what}{at}, which Curio does not run yet.",

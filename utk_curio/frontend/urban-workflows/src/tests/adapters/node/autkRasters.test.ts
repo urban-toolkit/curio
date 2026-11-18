@@ -207,6 +207,31 @@ describe("withRasterSources", () => {
     expect(getRaster.mock.calls).toEqual([["input_0"]]);
   });
 
+  // loadGeoTiff labels a band by its id. A heatmap's bands are labelled
+  // `<aggregateFn>_<table>`, and a map's getFnv `count.noise` finds its band
+  // by that label, so the map is served the labels the bands were made with.
+  test("repro: a raster's bands keep the labels they were made with, so a getFnv such as count.noise finds its band", async () => {
+    const { grammar } = fakeGrammar();
+    const db = fakeDb();
+    const asLoaded = {
+      ...RASTER,
+      features: [{
+        type: "Feature",
+        geometry: null,
+        properties: { rasterResX: 40, rasterResY: 30, bands: [{ id: "band_1", label: "band_1" }, { id: "band_2", label: "band_2" }] },
+      }],
+    };
+    db.getRaster.mockResolvedValueOnce(asLoaded);
+    withRasterSources(grammar, jest.fn());
+    const made = [{ id: "band_1", label: "count_noise" }, { id: "band_2", label: "sum_noise" }];
+    await grammar.dataAdapter.resolveSource(db, { ...source, bands: made });
+
+    const raster = await db.getRaster("input_0");
+    expect(raster.features[0].properties.bands).toEqual(made);
+    expect(raster.bbox).toEqual(RASTER.bbox);
+    expect(raster.features[1].geometry).not.toBeNull();
+  });
+
   test("guard: any other table's getRaster is the database's to answer, with all it was asked", async () => {
     const { grammar } = fakeGrammar();
     const db = fakeDb();

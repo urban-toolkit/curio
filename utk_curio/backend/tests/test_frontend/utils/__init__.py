@@ -267,6 +267,7 @@ from .node_drawings import (  # noqa: F401
     AUTK_MAP_MIN_FRAMED_SPAN,
     autark_map_framing,
     assert_autark_drawing_fits,
+    assert_raster_cells_follow_their_values,
     assert_editor_panes_clear_of_markers,
     assert_vega_charts_fit,
     assert_vega_node_empty_state,

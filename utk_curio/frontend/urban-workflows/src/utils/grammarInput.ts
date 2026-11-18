@@ -246,6 +246,25 @@ function rasterFrame(
   return null;
 }
 
+/**
+ * The raster envelope a list's item is, under the envelopes `parseOutput` writes
+ * a list's items in (`{dataType: "dict", data}`), or null: a raster an Autark
+ * node's data section made, which it hands on after its layers.
+ */
+function rasterEnvelopeIn(item: any): any | null {
+  let value = item;
+  while (
+    isObject(value)
+    && typeof value.dataType === "string"
+    && value.dataType !== "raster"
+    && !FRAME_TYPES.has(value.dataType)
+    && "data" in value
+  ) {
+    value = value.data;
+  }
+  return isObject(value) && value.dataType === "raster" ? value : null;
+}
+
 /** Strip Curio's `{dataType, data}` envelopes down to the value inside. */
 function unwrap(value: any): any {
   return isObject(value) && "data" in value && "dataType" in value ? unwrap(value.data) : value;
@@ -334,9 +353,17 @@ export function framesFromPayload(value: any, opts: RasterOptions = {}): {
     return opts.values ? { frames, refs, skipped, values } : { frames, refs, skipped };
   }
 
-  // A layer array from an upstream Autark node: `{name, type, geojson}` records.
+  // A layer array from an upstream Autark node: `{name, type, geojson}` records,
+  // then a raster table its data section made (a heatmap), in its envelope.
   if (Array.isArray(payload)) {
     payload.forEach((item: any, index: number) => {
+      const raster = rasterEnvelopeIn(item);
+      if (raster) {
+        const frame = rasterFrame(raster, opts, { fromBundle: true, index });
+        if (frame) frames.push(frame);
+        else skipped.push(`raster at position ${index}`);
+        return;
+      }
       const fc = asFeatureCollection(item);
       if (!fc) {
         skipped.push(`an item at position ${index}`);

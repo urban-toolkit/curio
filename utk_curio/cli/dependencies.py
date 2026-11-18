@@ -147,7 +147,9 @@ def _sandbox_nodejs_folder(root: Path) -> Path | None:
     """The folder npm installs the sandbox's Node.js packages in, or None after
     logging why there is none: *root* when it holds Curio's package.json, else
     ``nodejs/`` in Curio's state directory, not a link, with the package.json
-    and package-lock.json the package ships written into it."""
+    and package-lock.json the package ships written into it, and beside them
+    each file that package.json installs a package from (the vendored autk-db),
+    taken from where the package holds it under *root*."""
     from utk_curio.sandbox.util import node_runtime
 
     folder = node_runtime.nodejs_dir(root)
@@ -168,6 +170,19 @@ def _sandbox_nodejs_folder(root: Path) -> Path | None:
             f"{_WITHOUT_NODE_PACKAGES}."
         )
         return None
+    try:
+        local = node_runtime.local_package_files(shipped / "package.json")
+    except ValueError as exc:
+        log_error(f"[Sandbox] {exc}, so npm is not run and {_WITHOUT_NODE_PACKAGES}.")
+        return None
+    for relative in local:
+        if not (root / relative).is_file():
+            log_error(
+                f"[Sandbox] {root / relative}, which Curio's package.json installs a package from, "
+                f"is missing, so npm is not run and {_WITHOUT_NODE_PACKAGES}. Install Curio from "
+                f"its release on PyPI, or start it from a clone."
+            )
+            return None
     links = [path for path in (folder, folder / "node_modules") if path.is_symlink()]
     if links:
         log_error(
@@ -177,12 +192,14 @@ def _sandbox_nodejs_folder(root: Path) -> Path | None:
         return None
     try:
         folder.mkdir(parents=True, exist_ok=True)
-        for name in node_runtime.PACKAGE_FILES:
-            data = (shipped / name).read_bytes()
-            target = folder / name
+        copies = [(shipped / name, folder / name) for name in node_runtime.PACKAGE_FILES]
+        copies += [(root / relative, folder / relative) for relative in local]
+        for source, target in copies:
+            data = source.read_bytes()
             if target.is_file() and not target.is_symlink() and target.read_bytes() == data:
                 continue
-            partial = folder / f".{name}.partial"
+            _make_folders_inside(folder, target.parent)
+            partial = target.parent / f".{target.name}.partial"
             partial.write_bytes(data)
             os.replace(partial, target)
     except OSError as exc:
@@ -192,6 +209,17 @@ def _sandbox_nodejs_folder(root: Path) -> Path | None:
         )
         return None
     return folder.resolve()
+
+
+def _make_folders_inside(folder: Path, inner: Path) -> None:
+    """Make *inner*, a folder under *folder*, and the folders between them;
+    raise OSError for one of those that is a link, which could lead out."""
+    path = folder
+    for part in inner.relative_to(folder).parts:
+        path = path / part
+        if path.is_symlink():
+            raise OSError(f"{path} is a link to {path.resolve()}")
+        path.mkdir(exist_ok=True)
 
 
 def _run_pip(cmd: list[str], failure_label: str) -> None:

@@ -430,6 +430,13 @@ WALK_VIDEO = f'.react-flow__node[data-id="{WALK_OVERLAY}"] video'
 #: walk is 8 s long, and its GPS track's three fixes are 4.5 to 6.7 s in.
 WALK_SEEK_S, WALK_SEEK_BACK_S = 7.0, 5.0
 
+#: Example 34, an Autark heatmap of park access, and the nodes its own test reads.
+EXAMPLE_34 = "34-autark-park-access-heatmap.json"
+PARK_ACCESS_MAP = "park-access-map"
+PARK_ACCESS_SHARES = "park-access-shares"
+#: The classes of the Python step's table: how many parks are within reach.
+PARK_ACCESS_CLASSES = ["none", "1", "2 to 4", "5 to 9", "10 or more"]
+
 #: Example 33, SAM 3 on the same walk's frames and the walk cut into blocks,
 #: and the nodes its own test reads.
 EXAMPLE_33 = "33-sideseeing-frames-segments-blocks.json"
@@ -1889,6 +1896,24 @@ class TestWorkflowCanvas:
         finally:
             page.evaluate("(selector) => { document.querySelector(selector).style.visibility = ''; }", WALK_VIDEO)
         assert page.evaluate(_SAME_CANVAS_JS, map_canvas), "the map was drawn again for its frames"
+
+    @pytest.mark.only_workflows(EXAMPLE_34)
+    def test_the_park_access_heatmap_is_drawn_and_reaches_python_with_varied_cells(self, loaded_workflow):
+        """Example 34 as it ships: its heatmap counts, for each of its 900
+        cells, the parks within about 150 m of the cell's center, from none to
+        dozens. The map draws it over the streets, and the Python step reads it
+        as a raster: its shares of the area by parks within reach cover the
+        whole area and spread over at least four of their five classes, so the
+        cells hold real, varied counts, not one value."""
+        page = self.page
+        self._execute_all_playable_nodes()
+
+        assert_autark_map_drawn(page, PARK_ACCESS_MAP, timeout=60000, attach_as="the park access heatmap")
+        shares = _stored_rows(page, PARK_ACCESS_SHARES)
+        assert [row["parks within about 150 m"] for row in shares] == PARK_ACCESS_CLASSES, shares
+        values = [row["share of the area"] for row in shares]
+        assert abs(sum(values) - 1) <= 0.005, shares
+        assert sum(value > 0 for value in values) >= 4 and max(values) < 1, shares
 
     @pytest.mark.only_workflows(EXAMPLE_33)
     def test_a_blocks_player_lights_the_frames_from_its_start_to_where_it_stands(self, loaded_workflow):

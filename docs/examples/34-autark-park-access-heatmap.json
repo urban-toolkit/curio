@@ -1,0 +1,78 @@
+{
+  "dataflow": {
+    "categories": {
+      "city": [
+        "New York"
+      ],
+      "topic": [
+        "Greenery"
+      ],
+      "complexity": [
+        "Beginner"
+      ]
+    },
+    "name": "Autark: park access heatmap",
+    "description": "One Autark node loads the tip of Lower Manhattan from a local .pbf and bins its parks into a heatmap: each cell of a 30 by 30 grid counts the parks within about 150 m of its center, measured to each park's edge. A map draws it over the streets, parks and water, and a Python step reads it as a rasterio dataset and gives the share of the area by how many parks are within reach.",
+    "task": "See how close every part of Lower Manhattan's tip is to a park.",
+    "timestamp": 0,
+    "provenance_id": "autark-park-access-heatmap",
+    "packages": [],
+    "nodes": [
+      {
+        "id": "park-access-data",
+        "type": "curio.builtin/autk-grammar",
+        "x": 0,
+        "y": 215,
+        "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/lower_mnt.osm.pbf\",\n      \"queryArea\": {\n        \"bbox\": [\n          -74.0194,\n          40.7,\n          -74.0085,\n          40.7085\n        ]\n      },\n      \"outputTableName\": \"tip\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"surface\",\n          \"parks\",\n          \"water\",\n          \"roads\"\n        ]\n      }\n    },\n    {\n      \"type\": \"heatmap\",\n      \"joinDataRef\": \"tip_parks\",\n      \"near\": {\n        \"distance\": 200,\n        \"useCentroid\": false\n      },\n      \"outputTableName\": \"park_access\",\n      \"grid\": {\n        \"rows\": 30,\n        \"columns\": 30\n      },\n      \"groupBy\": [\n        {\n          \"column\": \"*\",\n          \"aggregateFn\": \"count\"\n        }\n      ]\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the tip of Lower Manhattan's streets, parks and water from the repository's extract, and bin its parks into a 30 by 30 heatmap: each cell counts the parks within about 150 m of its center, measured to each park's edge.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "park-access-map",
+        "type": "curio.builtin/autk-grammar",
+        "x": 645,
+        "y": 0,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"tip_surface\"\n      },\n      {\n        \"dataRef\": \"tip_parks\"\n      },\n      {\n        \"dataRef\": \"tip_water\"\n      },\n      {\n        \"dataRef\": \"tip_roads\"\n      },\n      {\n        \"dataRef\": \"park_access\",\n        \"getFnv\": \"count.tip_parks\",\n        \"title\": \"Parks within about 150 m\",\n        \"opacity\": 0.6\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the streets, parks and water, with the heatmap of parks within about 150 m over them.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "park-access-shares",
+        "type": "curio.builtin/python-computation",
+        "x": 645,
+        "y": 430,
+        "content": "import pandas as pd\nimport rasterio\n\n# The heatmap the data node built, a rasterio dataset on its 30 by 30 grid, and\n# its band that counts the parks within about 150 m of each cell's center.\nheat = next(item for item in input_0 if isinstance(item, rasterio.io.DatasetReader))\nparks = pd.Series(heat.read(heat.descriptions.index(\"count_tip_parks\") + 1).ravel())\n\n# The share of the area each number of parks within reach covers.\nreach = pd.cut(parks, [-0.5, 0.5, 1.5, 4.5, 9.5, float(\"inf\")],\n               labels=[\"none\", \"1\", \"2 to 4\", \"5 to 9\", \"10 or more\"])\nshare = reach.value_counts(normalize=True, sort=False)\nreturn pd.DataFrame({\n    \"parks within about 150 m\": share.index.astype(str),\n    \"share of the area\": share.values.round(3),\n})\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Read the heatmap as a rasterio dataset and give the share of the area by how many parks are within about 150 m.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-park-access-dataout-park-access-mapin",
+        "source": "park-access-data",
+        "target": "park-access-map",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-access-dataout-park-access-sharesin",
+        "source": "park-access-data",
+        "target": "park-access-shares",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      }
+    ]
+  }
+}

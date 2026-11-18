@@ -51,10 +51,11 @@ import {
     countedItem, describeAutkRun, emptyStateWords, featureCount, hasFeatures, totalCount,
 } from './autkRunDescriptions';
 import {
-    loadSpecLayers, materializeBackendLayers, runDataInBackend, toPoolOutput, type AutkLayer,
+    RASTER_TABLE, loadSpecLayers, loadedRows, materializeBackendLayers, runDataInBackend, toPoolOutput,
+    type AutkLayer,
 } from './autkLayerMaterialize';
 import {
-    bleedRasterEdges, isCurioRasterSource, newAutkDb, resolveRasterInputs, withOpaqueRasters,
+    bleedRasterEdges, isCurioRasterSource, newAutkDb, rasterSourceOf, resolveRasterInputs, withOpaqueRasters,
     withRasterSources, type CurioRasterSource,
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
@@ -848,7 +849,7 @@ export const useAutkGrammarBehavior = (
                     // coordinate-magnitude heuristic). Each goes back into the
                     // workspace it was loaded into, where the grammar's data
                     // adapter loads it.
-                    const backendAsSources = layers.map((l) => ({
+                    const backendAsSources = layers.filter((l) => l.type !== RASTER_TABLE).map((l) => ({
                         type: 'geojson',
                         geojsonObject: l.geojson,
                         outputTableName: l.name,
@@ -856,8 +857,16 @@ export const useAutkGrammarBehavior = (
                         ...(l.type && l.type !== 'polygons' ? { layerType: l.type } : {}),
                         ...(l.workspace ? { workspace: l.workspace } : {}),
                     }));
-                    ownSources = backendAsSources;
-                    dataSectionSources = [...rasterSources, ...upstreamSources, ...backendAsSources];
+                    // The raster tables the data section made (a heatmap),
+                    // drawn as every raster is (adapters/node/autkRasters), each
+                    // in the workspace it was built in.
+                    const ownRasters = layers.filter((l) => l.type === RASTER_TABLE).map((l) => {
+                        const source = rasterSourceOf(l.name, l.geojson);
+                        if ('refused' in source) throw new Error(source.refused);
+                        return l.workspace ? { ...source, workspace: l.workspace } : source;
+                    });
+                    ownSources = [...ownRasters, ...backendAsSources];
+                    dataSectionSources = [...rasterSources, ...ownRasters, ...upstreamSources, ...backendAsSources];
                 }
                 // What the document can draw from, counted BEFORE any source is
                 // dropped: an empty table still exists, so a ref to it is not a
@@ -1323,13 +1332,15 @@ export const useAutkGrammarBehavior = (
                     // Their rows are unknown there, so no emptiness is claimed;
                     // only layers in hand are counted.
                     const tables = backendLayers
-                        ? backendLayers.map((l) => countedItem(autkTableKey(l.workspace, l.name), featureCount(l.geojson), 'features'))
+                        ? backendLayers.map((l) => countedItem(
+                            autkTableKey(l.workspace, l.name), loadedRows(l), l.type === RASTER_TABLE ? 'cells' : 'features',
+                        ))
                         : requestedLayerTables(specDataSources);
                     summary = describeAutkRun('Loaded', 'table', tables);
                     summaryListsItems = tables.length > 0;
                     runCounts = {
                         sourceRows: backendLayers
-                            ? totalCount(backendLayers.map((l) => featureCount(l.geojson)))
+                            ? totalCount(backendLayers.map((l) => loadedRows(l)))
                             : undefined,
                     };
                 } else {

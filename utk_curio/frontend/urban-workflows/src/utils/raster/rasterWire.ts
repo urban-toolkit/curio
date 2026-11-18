@@ -16,6 +16,7 @@
  *
  * Pure, with no autk import, so it is testable under jest.
  */
+import { rasterEnvelope } from "../../adapters/node/autkDataCompile";
 
 /** The grid a raster's cells lie on. */
 export type RasterGrid = {
@@ -106,23 +107,13 @@ export function isRasterEnvelope(value: unknown): value is { dataType: "raster";
     && value.data.type === "FeatureCollection";
 }
 
-/** The envelope a node hands on for a raster collection. */
+/**
+ * The envelope a node hands on for a raster collection: the Autark loaders'
+ * own encoding (`rasterEnvelope` in adapters/node/autkDataCompile), which the
+ * sandbox's Node runs too when a data section makes a raster.
+ */
 export function encodeRasterEnvelope(collection: RasterCollection, layerName?: string): RasterEnvelope {
-  const [feature] = collection.features;
-  const properties: Record<string, unknown> = { ...feature.properties };
-  for (const id of rasterBandIds(collection)) {
-    properties[id] = { [WIRE_BAND_KEY]: encodeFloat32(feature.properties[id] as ArrayLike<number>) };
-  }
-  return {
-    dataType: RASTER_DATA_TYPE,
-    data: {
-      type: "FeatureCollection",
-      bbox: [...collection.bbox],
-      grid: { ...collection.grid },
-      features: [{ type: "Feature", geometry: null, properties: properties as RasterProperties }],
-    },
-    ...(layerName ? { layerName } : {}),
-  };
+  return rasterEnvelope(collection, layerName) as RasterEnvelope;
 }
 
 const GRID_NUMBERS: Array<keyof RasterGrid> = ["width", "height", "originX", "originY", "resX", "resY"];
