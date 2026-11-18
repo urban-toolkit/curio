@@ -1685,7 +1685,7 @@ The layout is decided once, by whether `utk_curio/_shipped/` exists, never folde
 
 ### The sandbox's Node.js packages
 
-autk-db runs in Node.js for the sandbox's JS nodes and for OpenStreetMap downloads. [`sandbox/util/node_runtime.py`](../utk_curio/sandbox/util/node_runtime.py) `nodejs_dir` names the folder whose `node_modules` they read and the launcher installs:
+autk-db runs in Node.js for the sandbox's JS nodes and for OpenStreetMap downloads, and so does autk-grammar's data entry (`@urban-toolkit/autk-grammar/data`, which imports autk-db alone). [`sandbox/util/node_runtime.py`](../utk_curio/sandbox/util/node_runtime.py) `nodejs_dir` names the folder whose `node_modules` they read and the launcher installs:
 
 - A clone, the Docker image and CI: the folder that holds `utk_curio/` and Curio's `package.json`.
 - A pip install: `nodejs/` in Curio's state directory. `setup.py` copies the repository's `package.json` and `package-lock.json` into the wheel at `utk_curio/sandbox/nodejs/`, and the launcher writes them into that folder.
