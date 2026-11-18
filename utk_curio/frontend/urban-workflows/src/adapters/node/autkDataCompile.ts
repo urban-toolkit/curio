@@ -101,6 +101,26 @@ export function requestedLayerTables(dataSources: any[]): string[] {
     return Array.from(new Set(names));
 }
 
+// Why a data section's heatmap cannot be built, or null: it bins a table one of
+// the section's own sources loads before it, since both loaders build it in
+// the database the section loads and nothing else, the node's input included.
+// Both loaders fail with these words before they load anything (the sandbox's
+// code throws them, as computed here).
+export function heatmapTableProblem(dataSources: any[]): string | null {
+    const sources: any[] = Array.isArray(dataSources) ? dataSources : [];
+    for (let index = 0; index < sources.length; index++) {
+        const source = sources[index];
+        if (source?.type !== 'heatmap') continue;
+        const table = source.joinDataRef;
+        if (requestedLayerTables(sources.slice(0, index)).includes(table)) continue;
+        const heatmap = `The heatmap "${source.outputTableName}" bins "${table}"`;
+        return requestedLayerTables(sources.slice(index + 1)).includes(table)
+            ? `${heatmap} before its data section loads that table: list the source of "${table}" first.`
+            : `${heatmap}, a table its data section does not load: a data section loads only its own sources, not the node's input.`;
+    }
+    return null;
+}
+
 // A table's rows as Curio hands them to autk-db, which refuses a row whose
 // geometry is missing and reads a layer's kind off its first row. A row with no
 // geometry gets an empty one, a GeometryCollection with none in it: it loads,
@@ -271,7 +291,11 @@ export function compileDataSpecToAutkDbJs(dataSources: any[]): string {
     const grammarImport = grammarSources
         ? `import { createDataAdapter } from '@urban-toolkit/autk-grammar/data';\n`
         : '';
-    const grammarAdapter = grammarSources ? `// The grammar's own data adapter, which loads a source of these types as the
+    const grammarAdapter = grammarSources ? `// A heatmap that bins a table this section does not load fails before anything
+// loads, with the words the host gives it (heatmapTableProblem).
+const __heatmapProblem = ${JSON.stringify(heatmapTableProblem(dataSources))};
+if (__heatmapProblem) throw new Error(__heatmapProblem);
+// The grammar's own data adapter, which loads a source of these types as the
 // grammar does. The raster table it makes is read back at once, in the
 // workspace it was built in, with the grid its cells lie on (withRasterGrid),
 // in the envelope it is handed on in (rasterEnvelope), as the host defines them.

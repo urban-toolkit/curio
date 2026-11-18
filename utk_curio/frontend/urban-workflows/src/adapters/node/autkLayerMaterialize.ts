@@ -23,6 +23,7 @@ import { deriveBuildingHeight } from '../../utils/buildingHeight';
 import { decodeRasterEnvelope } from '../../utils/raster/rasterWire';
 import {
     GRAMMAR_RASTER_SOURCES,
+    heatmapTableProblem,
     joinQueryParams,
     loadableFeatures,
     rasterEnvelope,
@@ -248,6 +249,8 @@ async function loadableGeojson(source: any): Promise<any> {
 export async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: string; geojson: FeatureCollection }>> {
     const keyProblem = autkKeyProblem({ data: spec?.data });
     if (keyProblem) throw new Error(keyProblem);
+    const heatmapProblem = heatmapTableProblem(spec?.data ?? []);
+    if (heatmapProblem) throw new Error(heatmapProblem);
     const { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } = await import('@urban-toolkit/autk-db');
     // `init()` downloads the DuckDB spatial extension; a flaky fetch is worth
     // another instance rather than a failed node (#318).
