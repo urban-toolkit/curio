@@ -1375,7 +1375,6 @@ A node does not run these keys of the Autark grammar. A document that writes
 one does not run, and the node's error names the key and where it is written:
 
 - `layout` and `links`;
-- a map's `camera`;
 - a render pass (`"type": "render"`);
 - `geotiff` sources;
 - `workspace`, on a source, a compute pass, a map or a plot.
@@ -1447,9 +1446,10 @@ failed, or what this input lacks. A node whose document loads everything it
 draws only says it has not run yet. A run that ends on an input the node
 cannot draw names the reason in the node body and in its error.
 
-A map opens framed on what its layers draw: it looks straight down on their
-middle, with all of them in view and a little room around them. Pressing R on
-the map frames it again.
+A map opens framed on what its layers draw: it looks down on their middle,
+with all of them in view and a little room around them, straight down unless
+its `camera` turns it (see [The map's camera](#the-maps-camera)). Pressing R on
+the map gives it that view again.
 
 A map or a plot redraws on its own when new data reaches it, as a `Vega-Lite`
 chart does: when a project opens with its input restored, and when the node
@@ -1534,6 +1534,30 @@ chip as its color, which its tag under **Scenarios** above the spec drags in
 The chip writes the box's color, and for an input from no box a gray of its
 own. A box recolored gives the layer its new color on the map's next run.
 
+### The map's camera
+
+A map's `camera` turns the view the map opens framed at, around the point it
+looks at. `pitch` tilts the view from straight down, from 0 to 90 degrees, and
+`bearing` turns it to face a compass heading, in degrees clockwise from north,
+which is then up on the screen. The eye stays as far from that point as the
+framing put it, unless `zoom` sets the distance: `10000 / 2^(zoom - 10)` of the
+map's planar units, half as far for each step up.
+
+```json
+{
+  "map": {
+    "camera": {"pitch": 50, "bearing": 30},
+    "layerRefs": [
+      {"dataRef": "table_osm_buildings", "getFnv": "height", "getFnvType": "quantitative"}
+    ]
+  }
+}
+```
+
+Pressing R on the map frames it and turns it by its camera again. A map a Map
+Editor node feeds keeps the view you zoomed or panned to when an edit draws it
+again, and a change to its `camera` shows that camera's view.
+
 ### Heatmaps
 
 A `heatmap` source bins a table of the document's `data` into a grid over the
@@ -1555,9 +1579,11 @@ An entry with `"normalize": true` rescales its band from 0 at its least cell to
 1 at its greatest, and its label ends in `_norm`. Bands of one aggregate over
 different columns each name their column too, such as `avg_<table>_db` and
 `avg_<table>_peak`, so every label names one band. A cell no row reaches holds
-0 in every band. A heatmap without `groupBy` has one band, `count`. The table it bins is one its `data` section loads before
-it: a data section loads only its own sources, not the node's input, and a
-heatmap of any other table fails the node with an error that names it.
+0 in every band. A heatmap without `groupBy` has one band, `count`.
+
+The table a heatmap bins is one its `data` section loads before it: a data
+section loads only its own sources, not the node's input, and a heatmap of any
+other table fails the node with an error that names it.
 
 ```json
 {
@@ -1580,12 +1606,12 @@ heatmap of any other table fails the node with an error that names it.
 
 A heatmap is a raster. A map draws it as it draws any raster, by one band:
 `"getFnv": "band_1"`, or its label written with dots for its underscores, such
-as `"count.tip_parks"` for `count_tip_parks`.
-Every cell is drawn opaque unless the layer writes an `opacity` or a
-`transferFunction`. A node that only loads data hands its heatmaps on after
-its layers: an `Autark` node draws one by its table's name, and a Python node
-receives it as a `rasterio` dataset on the same grid, in the list of the
-node's tables, each band described by its label (`count_tip_parks`).
+as `"count.tip_parks"` for `count_tip_parks`. Every cell is drawn opaque unless
+the layer writes an `opacity` or a `transferFunction`. A node that only loads
+data hands its heatmaps on after its layers: an `Autark` node draws one by its
+table's name, and a Python node receives it as a `rasterio` dataset on the
+same grid, in the list of the node's tables, each band described by its label
+(`count_tip_parks`).
 
 ### The starter document
 
