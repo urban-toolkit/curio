@@ -1378,7 +1378,7 @@ one does not run, and the node's error names the key and where it is written:
 - a map's `camera`;
 - a render pass (`"type": "render"`), and a compute pass's `outputTableName`
   and `layerType`;
-- `heatmap` and `geotiff` sources;
+- `geotiff` sources;
 - `workspace`, on a source, a compute pass, a map or a plot.
 
 ### Its input
@@ -1439,8 +1439,8 @@ one does not run, and the node's error names the key and where it is written:
 - A raster the node hands on reaches a Python node as a `rasterio` dataset on
   the same grid: its bands, origin, cell size and CRS.
 - A `data` section runs in the sandbox, where the input is not available: its
-  `join` sources cannot read the input. Join it in a Python node, or name it
-  from a map, plot or compute block.
+  `join` and `heatmap` sources cannot read the input. Join it in a Python node,
+  or name it from a map, plot or compute block.
 
 Before it runs, a node that reads its input says what a `Vega-Lite` node says:
 connect a node, run the node feeding this one, the node feeding this one
@@ -1507,6 +1507,44 @@ chip as its color, which its tag under **Scenarios** above the spec drags in
 
 The chip writes the box's color, and for an input from no box a gray of its
 own. A box recolored gives the layer its new color on the map's next run.
+
+### Heatmaps
+
+A `heatmap` source bins a table of the document's `data` into a grid over the
+area the document loads. Each cell takes the rows of `joinDataRef` within
+`near.distance` of its center, in the map's planar units as a line's `width`
+is, measured to each row's center, or with `"useCentroid": false` to the
+nearest point of its shape, so a long road counts in every cell it passes
+near. `grid` sets the rows and columns, and each `groupBy` entry is a band:
+`{"column": "*", "aggregateFn": "count"}` counts the rows, as a heatmap
+without `groupBy` does. The table it bins comes before it in `data`.
+
+```json
+{
+  "data": [
+    {"type": "osm", "pbfFileUrl": "docs/examples/data/lower_mnt.osm.pbf", "outputTableName": "tip",
+     "queryArea": {"bbox": [-74.0195, 40.7, -74.0085, 40.7085]},
+     "autoLoadLayers": {"layers": ["surface", "parks", "roads"]}},
+    {"type": "heatmap", "joinDataRef": "tip_parks", "outputTableName": "park_access",
+     "near": {"distance": 200, "useCentroid": false}, "grid": {"rows": 30, "columns": 30},
+     "groupBy": [{"column": "*", "aggregateFn": "count"}]}
+  ],
+  "map": {
+    "layerRefs": [
+      {"dataRef": "tip_roads"},
+      {"dataRef": "park_access", "getFnv": "count.tip_parks", "title": "Parks within 200 m", "opacity": 0.6}
+    ]
+  }
+}
+```
+
+A heatmap is a raster. A map draws it as it draws any raster, by one band:
+`"getFnv": "band_1"`, or the band's aggregate and table, `"count.tip_parks"`.
+A cell with no row near holds 0, so every cell is drawn opaque unless the
+layer writes an `opacity` or a `transferFunction`. A node that only loads
+data hands its heatmaps on after its layers: an `Autark` node draws one by its
+table's name, and a Python node receives it as a `rasterio` dataset on the
+same grid, in the list of the node's tables.
 
 ### The starter document
 
