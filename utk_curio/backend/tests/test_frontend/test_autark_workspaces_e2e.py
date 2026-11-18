@@ -1,14 +1,14 @@
 """A map draws a table of a named workspace (autk-grammar 5.0.0's ``workspace``),
 and the table reaches the nodes after it in that workspace.
 
-One Autark data node loads ``lines``, three GeoJSON lines in the Loop, into the
-workspace ``east``, in the sandbox, as a node's data section loads. A map in
-``east`` draws them and hands them on as they came to a second map in
-``east``, which draws them too. A Python node fed by the data node reads each
-table's workspace. A map with no workspace finds no ``lines`` in the default
-workspace: it draws nothing, and its error names the table there is,
-``east/lines``. Each map is checked through what its canvas drew, with no
-frame of its own.
+One Autark data node loads ``blocks``, sixteen GeoJSON squares in the Loop,
+into the workspace ``east``, in the sandbox, as a node's data section loads. A
+map in ``east`` draws them, each colored by its number, and hands them on as
+they came to a second map in ``east``, which draws them too. A Python node fed
+by the data node reads each table's workspace. A map with no workspace finds
+no ``blocks`` in the default workspace: it draws nothing, and its error names
+the table there is, ``east/blocks``. Each map is checked through what its
+canvas drew, with no frame of its own.
 
 Run::
 
@@ -51,18 +51,29 @@ NEXT_MAP = "ws-next-map"
 PLAIN_MAP = "ws-plain-map"
 READER = "ws-read"
 
-#: Three lines in the Loop, about 330 m apart.
-LINES = {"type": "FeatureCollection", "features": [
-    {"type": "Feature", "properties": {"line": i},
-     "geometry": {"type": "LineString", "coordinates": [[-87.632 + 0.004 * i, 41.878], [-87.630 + 0.004 * i, 41.884]]}}
-    for i in range(3)
+def _square(column: int, row: int) -> list:
+    west, south = -87.634 + 0.0025 * column, 41.876 + 0.0019 * row
+    return [[[west, south], [west + 0.002, south], [west + 0.002, south + 0.0015], [west, south + 0.0015], [west, south]]]
+
+
+#: Sixteen squares in the Loop, 4 by 4, about 170 m on a side, each with its
+#: number: a map colored by it draws sixteen colors.
+BLOCKS = {"type": "FeatureCollection", "features": [
+    {"type": "Feature", "properties": {"block": 4 * row + column},
+     "geometry": {"type": "Polygon", "coordinates": _square(column, row)}}
+    for row in range(4) for column in range(4)
 ]}
 
+
+def _colored(interpolator: str) -> dict:
+    return {"dataRef": "blocks", "getFnv": "block", "getFnvType": "quantitative", "colorMapInterpolator": interpolator}
+
+
 DOCUMENTS = {
-    DATA: {"data": [{"type": "geojson", "outputTableName": "lines", "workspace": "east", "geojsonObject": LINES}]},
-    EAST_MAP: {"map": {"workspace": "east", "layerRefs": [{"dataRef": "lines", "color": "#d62728", "width": 40}]}},
-    NEXT_MAP: {"map": {"workspace": "east", "layerRefs": [{"dataRef": "lines", "color": "#1f77b4", "width": 40}]}},
-    PLAIN_MAP: {"map": {"layerRefs": [{"dataRef": "lines"}]}},
+    DATA: {"data": [{"type": "geojson", "outputTableName": "blocks", "workspace": "east", "geojsonObject": BLOCKS}]},
+    EAST_MAP: {"map": {"workspace": "east", "layerRefs": [_colored("interpolateViridis")]}},
+    NEXT_MAP: {"map": {"workspace": "east", "layerRefs": [_colored("interpolateReds")]}},
+    PLAIN_MAP: {"map": {"layerRefs": [{"dataRef": "blocks"}]}},
 }
 
 #: Each table the data node hands on, as `<name>@<workspace>`, from its layer
@@ -123,7 +134,7 @@ def test_a_map_draws_a_table_of_its_workspace_and_hands_it_on_in_it(
     )
     require_owner_view(page)
 
-    # The second map draws what the first one, in east, hands on: east's lines.
+    # The second map draws what the first one, in east, hands on: east's blocks.
     _play(page, NEXT_MAP, AUTK_TYPE)
     wait_for_node_done(page, EAST_MAP, node_type=AUTK_TYPE)
     frame_nodes(page, [EAST_MAP, NEXT_MAP])
@@ -135,12 +146,12 @@ def test_a_map_draws_a_table_of_its_workspace_and_hands_it_on_in_it(
     artifact = page.evaluate(_OUTPUT_ARTIFACT_JS, READER)
     assert artifact, f"{READER} shows no saved output"
     said = json.dumps(load_artifact_as_dict(artifact))
-    assert "lines@east" in said, said
+    assert "blocks@east" in said, said
 
-    # A map with no workspace finds no lines in the default workspace, and says
+    # A map with no workspace finds no blocks in the default workspace, and says
     # which table there is.
     play_node(page, PLAIN_MAP)
     status = wait_for_node_settled(page, PLAIN_MAP, node_type=AUTK_TYPE)
     detail = read_node_error_text(node_locator(page, PLAIN_MAP)) or ""
-    assert status == "error" and "available: east/lines" in detail, (status, detail)
+    assert status == "error" and "available: east/blocks" in detail, (status, detail)
     wait_for_run_guard_released(page, timeout_ms=node_execution_timeout_ms(AUTK_TYPE))

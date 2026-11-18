@@ -104,6 +104,19 @@ describe("an input that brings a table of one name in two workspaces", () => {
   });
 });
 
+describe("a frame a Python node hands on", () => {
+  test("is in the workspace its own metadata names", () => {
+    const envelope = {
+      dataType: "geodataframe",
+      data: { ...lines(-87.6), metadata: { name: "lines", layerType: "roads", workspace: "east" } },
+    };
+    const [frame] = framesFromPayload(envelope).frames;
+    expect([frame.layerType, frame.workspace]).toEqual(["roads", "east"]);
+    const { sources } = autkSourcesFrom({ frames: [frame] }, {}, { alias: false });
+    expect(sources.map((s) => autkInput.tableKeyOf(s))).toEqual(["east/input_0"]);
+  });
+});
+
 describe("an OpenStreetMap load in each of two workspaces", () => {
   const source = (name: string, layerType: string, workspace: string) => ({
     type: "geojson", outputTableName: name, layerType, workspace, geojsonObject: lines(0),

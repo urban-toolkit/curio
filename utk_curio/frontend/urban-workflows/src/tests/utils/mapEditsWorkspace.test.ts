@@ -25,6 +25,20 @@ const RECORDS = [
   },
 ];
 
+test("a new layer is made in the workspace every layer of the input shares, else in the default one", () => {
+  const inEast = [RECORDS[1], { ...RECORDS[1], name: "more_lines" }];
+  const made = (records: any[]) => {
+    const out: any = editedOutput({ frames: framesFromPayload(records).frames }, {
+      settings: { newLayers: [{ name: "marks", geometry: "Point" }] } as any,
+      circles: 1,
+    });
+    const last = out.data[out.data.length - 1];
+    return [last.layerName, last.workspace];
+  };
+  expect(made(inEast)).toEqual(["marks", "east"]);
+  expect(made(RECORDS)).toEqual(["marks", undefined]);
+});
+
 test("an edited layer and one it leaves are handed on in their workspaces", () => {
   const read = { frames: framesFromPayload(RECORDS).frames };
   const out: any = editedOutput(read, {

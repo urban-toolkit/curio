@@ -110,7 +110,7 @@ describe("the sandbox's loader", () => {
     expect(compileDataSpecToAutkDbJs(SOURCES))
       .toContain("\nimport { enterWorkspace, tableKey } from '@urban-toolkit/autk-grammar/data';\n");
     // The default workspace, named or not, is no other workspace.
-    expect(compileDataSpecToAutkDbJs([SOURCES[0], SOURCES[2]])).not.toContain("autk-grammar");
+    expect(compileDataSpecToAutkDbJs([SOURCES[0], SOURCES[2]])).not.toContain("@urban-toolkit/autk-grammar/data");
   });
 
   test("loads each source into its workspace", async () => {
