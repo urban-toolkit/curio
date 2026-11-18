@@ -340,16 +340,21 @@ class ALayerChipReadsARasterTest(StoreTestCase):
         self.assertEqual(load_from_duckdb(result["output"]["path"]), self.READ)
 
     def test_in_an_isolated_child(self):
+        """The output staged from the store as the parent stages a node's one
+        input (``staging.stage_input``), and read back by the child as it reads
+        a stored value (``rebuild_input``)."""
         from utk_curio.sandbox.isolation import child, zygote
+        from utk_curio.sandbox.util import staging
+        from utk_curio.sandbox.util.parsers import save_to_duckdb
 
+        art_id = save_to_duckdb(self.handed_on(), "autark-node")
         with TemporaryDirectory() as scratch:
-            Path(scratch, "in_0.json").write_text(json.dumps(self.handed_on()), encoding="utf-8")
             request = {
                 "code": self.CHIPS,
                 "node_type": "curio.builtin/python-computation",
                 "data_type": "dict",
                 "scratch_dir": scratch,
-                "input": {"kind": "json", "file": "in_0.json"},
+                "input": staging.stage_input(art_id, scratch),
                 "input_slots": [0],
                 "dataset_paths": {},
                 "session_imports": [],
