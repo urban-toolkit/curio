@@ -43,11 +43,6 @@ describe("applyComputeBlocks", () => {
       'This spec uses "wglsFunction" at compute[0], which autk-grammar 5 renamed to "wgslFunction".',
     ],
     [
-      "a pass that writes a new table",
-      [PASS, { ...PASS, outputTableName: "lanes_copy" }],
-      'This spec uses a compute pass\'s "outputTableName" at compute[1], which Curio does not run yet.',
-    ],
-    [
       "a render pass",
       [{ type: "render", outputTableName: "views", layers: [], viewpoints: { dataRef: "input_0" }, aggregation: { type: "classes" } }],
       "This spec uses a render pass at compute[0], which Curio does not run yet.",
@@ -67,6 +62,16 @@ describe("applyComputeBlocks", () => {
     expect(failures).toEqual([]);
     expect(mockRunCompute).toHaveBeenCalledTimes(1);
     expect(mockRunCompute.mock.calls[0][0]).toBe(PASS);
+  });
+
+  test("a pass that writes a new table, with its type, runs", async () => {
+    mockRunCompute.mockResolvedValue(ROADS.geojson);
+    const failures: string[] = [];
+    const written = { ...PASS, outputTableName: "lanes_copy", layerType: "points" };
+    await applyComputeBlocks([ROADS], [PASS, written], failures);
+    expect(failures).toEqual([]);
+    expect(mockRunCompute).toHaveBeenCalledTimes(2);
+    expect(mockRunCompute.mock.calls[1][0]).toBe(written);
   });
 });
 

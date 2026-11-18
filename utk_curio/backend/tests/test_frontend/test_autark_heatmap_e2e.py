@@ -2,14 +2,19 @@
 
 A heatmap bins a table of the document's ``data`` into a grid, through
 autk-grammar's own data adapter: the node's run builds it in the sandbox,
-which loads the grammar's ``./data`` entry. Four readings at the corners of a
-box about 1.1 km by 1.5 km in the Chicago Loop are binned into 3 columns by 2
-rows over their extent, each cell counting the readings within 5 km of its
-center, all four.
+which loads the grammar's ``./data`` entry. Sound levels in a box 3 km by 2 km
+at the Chicago Loop, in EPSG:3395 metres, are binned into 3 columns by 2 rows
+of 1 km over their extent. Each cell aggregates the readings within 600 m of
+its center: the two at the box's corners lie 707 m from every center, and the
+others lie within 100 m of their own cell's center, none to four a cell. One
+heatmap builds a band per aggregate (``count``, ``weighted``, ``sum``,
+``avg``, ``min`` and ``max``), whose cells this module computes from the
+readings.
 
 A map draws it as Autark draws any raster, from the node that builds it or
-from a node it is handed on to, and a Python node receives it as a
-``rasterio`` dataset on its grid, after the layers of the node that built it.
+from a node it is handed on to, its cells in colours that follow their values;
+and a Python node receives it as a ``rasterio`` dataset on its grid, a band
+per aggregate named by its label, after the layers of the node that built it.
 
 Run::
 
@@ -18,10 +23,12 @@ Run::
 from __future__ import annotations
 
 import json
+import math
 from typing import TYPE_CHECKING
 
 from .utils import (
     assert_autark_map_drawn,
+    assert_raster_cells_follow_their_values,
     play_node,
     read_node_output_text,
     require_owner_view,
@@ -37,33 +44,91 @@ if TYPE_CHECKING:
 AUTARK_TYPE = "curio.builtin/autk-grammar"
 PYTHON_TYPE = "curio.builtin/python-computation"
 
-#: The readings, and their heatmap.
+#: The box's south-west corner, in EPSG:3395 metres, and each reading's place
+#: east and north of it, then its level in decibels.
+LOOP = (-9755000.0, 5106000.0)
+LEVELS = [
+    (0, 0, 40), (3000, 2000, 95),
+    (500, 500, 50),
+    (1500, 500, 60), (1600, 500, 70),
+    (500, 1500, 55), (600, 1500, 58), (400, 1500, 61),
+    (1500, 1500, 62), (1600, 1500, 66), (1400, 1500, 70), (1500, 1600, 74),
+    (2500, 1500, 80), (2500, 1600, 84),
+]
+AGGREGATES = ["count", "weighted", "sum", "avg", "min", "max"]
+#: How far a cell's center reaches, and the grid's rows, columns and cell size.
+REACH, ROWS, COLUMNS, CELL = 600.0, 2, 3, 1000.0
+
+
+def _cells_from_the_levels() -> dict[str, list[list[float]]]:
+    """Each aggregate's cells, the north row first, computed from ``LEVELS``:
+    the readings within ``REACH`` of a cell's center, counted, weighted
+    1 / (distance + 1) each, or their levels summed, averaged, or their least
+    and greatest; 0 for a cell none reaches."""
+    cells = {fn: [[0.0] * COLUMNS for _ in range(ROWS)] for fn in AGGREGATES}
+    for row in range(ROWS):
+        for column in range(COLUMNS):
+            center = ((column + 0.5) * CELL, (ROWS - row - 0.5) * CELL)
+            near = [(math.dist((east, north), center), db) for east, north, db in LEVELS]
+            near = [(distance, db) for distance, db in near if distance <= REACH]
+            if not near:
+                continue
+            levels = [db for _distance, db in near]
+            cells["count"][row][column] = len(near)
+            cells["weighted"][row][column] = sum(1 / (distance + 1) for distance, _db in near)
+            cells["sum"][row][column] = sum(levels)
+            cells["avg"][row][column] = sum(levels) / len(levels)
+            cells["min"][row][column] = min(levels)
+            cells["max"][row][column] = max(levels)
+    return cells
+
+
+CELLS = _cells_from_the_levels()
+
+#: The readings, and their heatmap, a band per aggregate.
 DATA = [
-    {"type": "geojson", "outputTableName": "readings", "coordinateFormat": "EPSG:4326",
+    {"type": "geojson", "outputTableName": "levels", "coordinateFormat": "EPSG:3395",
      "geojsonObject": {"type": "FeatureCollection", "features": [
-         {"type": "Feature", "geometry": {"type": "Point", "coordinates": [lon, lat]}, "properties": {"db": db}}
-         for lon, lat, db in ((-87.64, 41.87, 61), (-87.63, 41.87, 74), (-87.64, 41.88, 58), (-87.63, 41.88, 66))
+         {"type": "Feature", "geometry": {"type": "Point", "coordinates": [LOOP[0] + east, LOOP[1] + north]},
+          "properties": {"db": db}}
+         for east, north, db in LEVELS
      ]}},
-    {"type": "heatmap", "joinDataRef": "readings", "outputTableName": "density",
-     "near": {"distance": 5000}, "grid": {"rows": 2, "columns": 3},
-     "groupBy": [{"column": "*", "aggregateFn": "count"}]},
+    {"type": "heatmap", "joinDataRef": "levels", "outputTableName": "noise",
+     "near": {"distance": REACH}, "grid": {"rows": ROWS, "columns": COLUMNS},
+     "groupBy": [{"column": "*" if fn in ("count", "weighted") else "db", "aggregateFn": fn} for fn in AGGREGATES]},
 ]
 
-#: The heatmap drawn by its band's aggregate and table.
-MAP = {"layerRefs": [{"dataRef": "density", "getFnv": "count.readings", "colorMapInterpolator": "interpolateReds"}]}
 
-#: The Python node checks what it was handed, so a wrong grid or count fails the node.
-PYTHON_READS_HEATMAP = '''import rasterio
+def _map(aggregate: str) -> dict:
+    """A map of the heatmap's band for *aggregate*, named by its aggregate and table."""
+    return {"layerRefs": [{"dataRef": "noise", "getFnv": f"{aggregate}.levels", "colorMapInterpolator": "interpolateReds"}]}
+
+
+#: The Python node checks what it was handed, so a wrong grid, band or cell fails the node.
+PYTHON_READS_HEATMAP = f'''import numpy as np
+import rasterio
 
 heat = [item for item in input_0 if isinstance(item, rasterio.io.DatasetReader)]
 assert len(heat) == 1, input_0
 heat = heat[0]
 assert heat.crs.to_epsg() == 3395, heat.crs
-assert (heat.width, heat.height) == (3, 2), (heat.width, heat.height)
-counts = heat.read(1)
-assert (counts == 4).all(), counts
-layers = [item["name"] for item in input_0 if isinstance(item, dict)]
-summary = f"heatmap {heat.width}x{heat.height} EPSG:{heat.crs.to_epsg()} of {int(counts.sum())} counts beside {layers}"
+assert (heat.count, heat.width, heat.height) == ({len(AGGREGATES)}, {COLUMNS}, {ROWS}), (heat.count, heat.width, heat.height)
+labels = {tuple(f"{fn}_levels" for fn in AGGREGATES)!r}
+expected = {json.dumps({f"{fn}_levels": cells for fn, cells in CELLS.items()})}
+for index, label in enumerate(labels, start=1):
+    assert np.allclose(heat.read(index), expected[label], rtol=1e-6), (label, heat.read(index).tolist())
+assert heat.descriptions == labels, heat.descriptions
+
+
+def layer_name(item):
+    if isinstance(item, dict):
+        return item.get("name")
+    metadata = getattr(item, "metadata", None)
+    return metadata.get("name") if isinstance(metadata, dict) else None
+
+
+layers = [layer_name(item) for item in input_0 if not isinstance(item, rasterio.io.DatasetReader)]
+summary = f"heatmap {{heat.width}}x{{heat.height}} EPSG:{{heat.crs.to_epsg()}}, avg {{heat.read(4).tolist()}} beside {{layers}}"
 print(summary)
 return summary
 '''
@@ -105,7 +170,7 @@ def _enter(page, app_frontend, current_server, *, username: str, spec: dict) -> 
     return errors
 
 
-def test_a_heatmap_the_document_builds_draws_on_its_map(
+def test_a_heatmap_the_document_builds_draws_its_cells_by_their_values_on_its_map(
     app_frontend: "FrontendPage",
     current_server: str,
     page,
@@ -113,7 +178,7 @@ def test_a_heatmap_the_document_builds_draws_on_its_map(
     drawer = "heatmap-own-map"
     errors = _enter(page, app_frontend, current_server, username="autark_heatmap_own", spec=_spec(
         "AutarkHeatmapOnItsMap",
-        [_node(drawer, AUTARK_TYPE, 120, 160, json.dumps({"data": DATA, "map": MAP}, indent=2))],
+        [_node(drawer, AUTARK_TYPE, 120, 160, json.dumps({"data": DATA, "map": _map("avg")}, indent=2))],
         [],
     ))
 
@@ -121,10 +186,12 @@ def test_a_heatmap_the_document_builds_draws_on_its_map(
     play_node(page, drawer)
     wait_for_node_done(page, drawer, node_type=AUTARK_TYPE)
     assert_autark_map_drawn(page, drawer, timeout=60000, attach_as="a heatmap on its own node's map")
+    # Each reading's level averaged in its cell: every cell a value of its own.
+    assert_raster_cells_follow_their_values(page, drawer, CELLS["avg"], attach_as="a heatmap's avg cells")
     assert not [e for e in errors if "[autk-grammar] node error" in e], errors
 
 
-def test_a_heatmap_a_data_node_hands_on_draws_on_a_map_and_reaches_python_as_rasterio(
+def test_a_heatmap_a_data_node_hands_on_draws_by_its_values_and_reaches_python_as_rasterio(
     app_frontend: "FrontendPage",
     current_server: str,
     page,
@@ -134,7 +201,7 @@ def test_a_heatmap_a_data_node_hands_on_draws_on_a_map_and_reaches_python_as_ras
         "AutarkHeatmapHandedOn",
         [
             _node(builder, AUTARK_TYPE, 120, 160, json.dumps({"data": DATA}, indent=2)),
-            _node(drawer, AUTARK_TYPE, 820, 40, json.dumps({"map": MAP}, indent=2)),
+            _node(drawer, AUTARK_TYPE, 820, 40, json.dumps({"map": _map("count")}, indent=2)),
             _node(reader, PYTHON_TYPE, 820, 520, PYTHON_READS_HEATMAP),
         ],
         [_edge(builder, drawer), _edge(builder, reader)],
@@ -144,8 +211,13 @@ def test_a_heatmap_a_data_node_hands_on_draws_on_a_map_and_reaches_python_as_ras
     play_node(page, drawer)
     wait_for_node_done(page, drawer, node_type=AUTARK_TYPE)
     assert_autark_map_drawn(page, drawer, timeout=60000, attach_as="a handed-on heatmap on an Autark map")
+    # The readings counted in each cell: two cells count 2 and share a colour.
+    assert_raster_cells_follow_their_values(page, drawer, CELLS["count"], attach_as="a handed-on heatmap's count cells")
 
     play_node(page, reader)
     wait_for_node_done(page, reader, node_type=PYTHON_TYPE)
-    assert "heatmap 3x2 EPSG:3395 of 24 counts beside ['readings']" in read_node_output_text(page, reader)
+    assert (
+        f"heatmap {COLUMNS}x{ROWS} EPSG:3395, avg {CELLS['avg']} beside ['levels']"
+        in read_node_output_text(page, reader)
+    )
     assert not [e for e in errors if "[autk-grammar] node error" in e], errors

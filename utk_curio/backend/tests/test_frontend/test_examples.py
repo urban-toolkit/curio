@@ -144,6 +144,10 @@ EXAMPLE_INVARIANTS = [
       "curio.media/video-frames": 1, "model.curio.sam3/segment-images": 1,
       "curio.media/split-video": 1, "curio.builtin/autk-grammar": 2,
       "curio.builtin/vis-simple": 2, "curio.builtin/vis-vega": 2}, True),
+    # An Autark heatmap of park access: its data node hands it to a map, which
+    # draws it by its table's name, and to a Python step, with no interaction.
+    ("34-autark-park-access-heatmap.json", 3, 2,
+     {"curio.builtin/autk-grammar": 2, "curio.builtin/python-computation": 1}, False),
 ]
 
 

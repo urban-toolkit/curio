@@ -1377,8 +1377,7 @@ one does not run, and the node's error names the key and where it is written:
 
 - `layout` and `links`;
 - a map's `camera`;
-- a render pass (`"type": "render"`), and a compute pass's `outputTableName`
-  and `layerType`;
+- a render pass (`"type": "render"`);
 - `workspace`, on a source, a compute pass, a map or a plot.
 
 ### Its input
@@ -1461,6 +1460,33 @@ a run is going, and a selection only highlights it (see
 [Linking charts](#linking-charts)). A data or compute step runs only when you
 press play or run the dataflow. Without WebGPU nothing is drawn on its own;
 pressing play says why.
+
+### Compute passes
+
+Each entry of `compute` runs a WGSL function on the GPU over every feature of
+the table its `dataRef` names, and writes the result to each feature as
+`compute.<column>`, under the names `outputColumnName` or `outputColumns`
+give. A pass writes into that table, unless it names a new one:
+
+```json
+{"dataRef": "input_0", "attributes": {"v": "value"}, "wgslFunction": "return v * 2.0;",
+ "outputColumnName": "twice", "outputTableName": "doubled", "layerType": "points"}
+```
+
+- With `outputTableName`, the pass writes a new table of that name and leaves
+  its `dataRef` table as it was. Later passes, the map and the plot read the
+  new table by its name: `{"dataRef": "doubled", "getFnv": "compute.twice"}`.
+  A pick on it, and a selection that lights it, name the rows of the table it
+  was computed from.
+- `layerType` is the type the new table is drawn and handed on as; without
+  it, the new table has the type of the table it was computed from. A pass
+  without `outputTableName` keeps its table's type.
+- A document with no map or plot is a compute step: it hands on every table it
+  holds, each as its passes left it, with the new tables after them, each with
+  its name and type. Each computed column is also a column of its own, `twice`
+  beside `compute.twice`.
+- A compute step with a `data` section of its own runs its passes on the tables
+  it loads, and on its input's tables when a pass names one.
 
 ### Layer titles and colors
 
@@ -1556,12 +1582,23 @@ node.
 
 A `heatmap` source bins a table of the document's `data` into a grid over the
 area the document loads. Each cell takes the rows of `joinDataRef` within
-`near.distance` of its center, in the map's planar units as a line's `width`
-is, measured to each row's center, or with `"useCentroid": false` to the
-nearest point of its shape, so a long road counts in every cell it passes
-near. `grid` sets the rows and columns, and each `groupBy` entry is a band:
-`{"column": "*", "aggregateFn": "count"}` counts the rows, as a heatmap
-without `groupBy` does. The table it bins comes before it in `data`.
+`near.distance` of its center. The distance is in the map's planar units
+(EPSG:3395), as a line's `width` is: 200 reaches about 150 m on the ground in
+Chicago or New York. It is measured to each row's center, or with
+`"useCentroid": false` to the nearest point of its shape, so a long road
+counts in every cell it passes near. `grid` sets the rows and columns.
+
+Each `groupBy` entry is a band, labelled `<aggregateFn>_<table>`:
+
+- `count` counts the rows, and `weighted` adds 1 / (distance + 1) for each,
+  so a row near the center weighs more; both take `"column": "*"`;
+- `sum`, `avg`, `min` and `max` aggregate the rows' `column`, such as
+  `{"column": "db", "aggregateFn": "avg"}`.
+
+A cell no row reaches holds 0 in every band. A heatmap without `groupBy` has
+one band, `count`. The table it bins is one its `data` section loads before
+it: a data section loads only its own sources, not the node's input, and a
+heatmap of any other table fails the node with an error that names it.
 
 ```json
 {
@@ -1576,7 +1613,7 @@ without `groupBy` does. The table it bins comes before it in `data`.
   "map": {
     "layerRefs": [
       {"dataRef": "tip_roads"},
-      {"dataRef": "park_access", "getFnv": "count.tip_parks", "title": "Parks within 200 m", "opacity": 0.6}
+      {"dataRef": "park_access", "getFnv": "count.tip_parks", "title": "Parks within about 150 m", "opacity": 0.6}
     ]
   }
 }
@@ -1584,11 +1621,11 @@ without `groupBy` does. The table it bins comes before it in `data`.
 
 A heatmap is a raster. A map draws it as it draws any raster, by one band:
 `"getFnv": "band_1"`, or the band's aggregate and table, `"count.tip_parks"`.
-A cell with no row near holds 0, so every cell is drawn opaque unless the
-layer writes an `opacity` or a `transferFunction`. A node that only loads
-data hands its heatmaps on after its layers: an `Autark` node draws one by its
-table's name, and a Python node receives it as a `rasterio` dataset on the
-same grid, in the list of the node's tables.
+Every cell is drawn opaque unless the layer writes an `opacity` or a
+`transferFunction`. A node that only loads data hands its heatmaps on after
+its layers: an `Autark` node draws one by its table's name, and a Python node
+receives it as a `rasterio` dataset on the same grid, in the list of the
+node's tables, each band described by its label (`count_tip_parks`).
 
 ### The starter document
 

@@ -119,6 +119,27 @@ class TheEnvelopeTest(unittest.TestCase):
             second.close()
             self.assertEqual(len(list(Path(folder).glob("*.tif"))), 1)
 
+    def test_repro_each_band_is_named_by_its_label(self):
+        """A heatmap labels its bands ``<aggregateFn>_<table>``: a Python node
+        gets each band described by its label, so it can tell them apart, and
+        the same cells under other labels are a raster of their own."""
+        case = next(case for case in cases() if len(case["bands"]) == 2)
+        labelled = json.loads(json.dumps(case["envelope"]))
+        properties = labelled["data"]["features"][0]["properties"]
+        properties["bands"] = [{"id": "band_1", "label": "sum_noise"}, {"id": "band_2", "label": "avg_noise"}]
+        with TemporaryDirectory() as folder:
+            dataset = rasters().raster_from_envelope(labelled, folder)
+            plain = rasters().raster_from_envelope(case["envelope"], folder)
+            try:
+                self.assertEqual(dataset.descriptions, ("sum_noise", "avg_noise"))
+                self.assertEqual(plain.descriptions, ("band_1", "band_2"))
+                self.assertNotEqual(dataset.name, plain.name)
+                for index, band in enumerate(case["bands"], start=1):
+                    self.assertEqual(as_lists(dataset.read(index)), case["rows_north_to_south"][band])
+            finally:
+                dataset.close()
+                plain.close()
+
     def test_the_geotiff_the_frontend_writes_is_the_same_grid_to_gdal(self):
         """``writeGeoTiff`` (utils/raster/geotiffWriter.ts) is what autk-db
         loads a handed-on raster from. GDAL reads its bytes as the same grid."""

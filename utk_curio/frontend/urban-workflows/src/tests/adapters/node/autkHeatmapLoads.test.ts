@@ -60,11 +60,64 @@ const mockCreateDataAdapter = jest.fn((..._args: any[]) => ({
   }),
 }));
 
+// Sound levels in EPSG:3395 metres, in a box 3 km by 2 km at the Chicago Loop
+// binned into 3 by 2 cells of 1 km, as test_autk_server_data_load.py builds
+// them with autk-db itself: two readings at the box's corners, 707 m from
+// every cell's center, past the 600 m a cell reaches, and the others within
+// 100 m of their own cell's center.
+const LOOP = [-9755000, 5106000];
+const LEVELS = [
+  [0, 0, 40], [3000, 2000, 95],
+  [500, 500, 50],
+  [1500, 500, 60], [1600, 500, 70],
+  [500, 1500, 55], [600, 1500, 58], [400, 1500, 61],
+  [1500, 1500, 62], [1600, 1500, 66], [1400, 1500, 70], [1500, 1600, 74],
+  [2500, 1500, 80], [2500, 1600, 84],
+];
+const LEVEL_SOURCE = {
+  type: "geojson",
+  outputTableName: "levels",
+  coordinateFormat: "EPSG:3395",
+  geojsonObject: {
+    type: "FeatureCollection",
+    features: LEVELS.map(([east, north, db]) => ({
+      type: "Feature", geometry: { type: "Point", coordinates: [LOOP[0] + east, LOOP[1] + north] }, properties: { db },
+    })),
+  },
+};
+const LEVEL_BBOX = [LOOP[0], LOOP[1], LOOP[0] + 3000, LOOP[1] + 2000];
+// What autk-db builds from them, a band per aggregate, rows from south to
+// north: the readings within 600 m of a cell's center counted, weighted
+// 1 / (distance + 1) each, or their levels summed, averaged, or their least
+// and greatest; 0 where none is near.
+const LEVEL_CELLS: Record<string, number[]> = {
+  count: [1, 2, 0, 3, 4, 2],
+  weighted: [1, 1 + 1 / 101, 0, 1 + 2 / 101, 1 + 3 / 101, 1 + 1 / 101],
+  sum: [50, 130, 0, 174, 272, 164],
+  avg: [50, 65, 0, 58, 68, 82],
+  min: [50, 60, 0, 55, 62, 80],
+  max: [50, 70, 0, 61, 74, 84],
+};
+const AGGREGATES = ["count", "weighted", "sum", "avg", "min", "max"];
+/** A heatmap of the levels with a band for each of *aggregates*. */
+const levelHeatmap = (aggregates: string[]) => ({
+  type: "heatmap",
+  joinDataRef: "levels",
+  outputTableName: "noise",
+  near: { distance: 600 },
+  grid: { rows: 2, columns: 3 },
+  groupBy: aggregates.map((fn) => ({ column: fn === "count" || fn === "weighted" ? "*" : "db", aggregateFn: fn })),
+});
+
 class mockAutkDb {
   heatmaps = new Map<string, any>();
+  layers: string[] = [];
   init() { return Promise.resolve(); }
-  loadGeojson() { return Promise.resolve(); }
-  getLayersMetadata() { return [{ name: "readings", type: "points", source: "geojson", columns: [] }]; }
+  loadGeojson(params: any) { this.layers.push(params.outputTableName); return Promise.resolve(); }
+  getLayersMetadata() {
+    const names = this.layers.length ? this.layers : ["readings"];
+    return names.map((name) => ({ name, type: "points", source: "geojson", columns: [] }));
+  }
   getLayer() { return Promise.resolve(JSON.parse(JSON.stringify(READINGS))); }
   getWorkspaceConfiguration() { return { coordinateFormat: "EPSG:3395", precisionGrid: 0.01 }; }
   getCurrentWorkspace() { return "autk"; }
@@ -76,6 +129,31 @@ class mockAutkDb {
   }
   getRaster(name: string) {
     if (!this.heatmaps.has(name)) return Promise.reject(new Error(`Table ${name} is not a compact raster table.`));
+    const params = this.heatmaps.get(name);
+    if (params.tableJoinName === "levels") {
+      // As autk-db labels a heatmap's bands: `<aggregateFn>_<table>`, one per groupBy entry.
+      const bands = params.groupBy.map((group: any, index: number) => ({
+        id: `band_${index + 1}`, label: `${group.aggregateFn}_${params.tableJoinName}`,
+      }));
+      return Promise.resolve({
+        type: "FeatureCollection",
+        bbox: [...LEVEL_BBOX],
+        features: [{
+          type: "Feature",
+          geometry: null,
+          properties: {
+            rasterResX: 3,
+            rasterResY: 2,
+            bands,
+            originalRasterResX: 3,
+            originalRasterResY: 2,
+            ...Object.fromEntries(params.groupBy.map((group: any, index: number) => [
+              `band_${index + 1}`, Float32Array.from(LEVEL_CELLS[group.aggregateFn]),
+            ])),
+          },
+        }],
+      });
+    }
     return Promise.resolve({
       type: "FeatureCollection",
       bbox: [...BBOX],
@@ -225,4 +303,79 @@ test("both loaders hand the heatmap on in the same envelope", async () => {
   const [, fromSandbox] = await sandboxLoad(SOURCES);
   const fromBrowser = (await toPoolOutput(await loadSpecLayers({ data: SOURCES }), undefined, "heat-node")).data[1];
   expect(fromSandbox).toEqual(fromBrowser);
+});
+
+// A data section loads its own sources into a database of its own, so a
+// heatmap bins only a table one of them loads before it: never the node's
+// input. Both loaders say so, naming the table, before they load anything.
+describe("a heatmap of a table its data section does not load", () => {
+  const OF_THE_INPUT = { ...HEATMAP, joinDataRef: "input_0" };
+  const SAID = 'The heatmap "density" bins "input_0", a table its data section does not load: '
+    + "a data section loads only its own sources, not the node's input.";
+
+  test("fails the sandbox's load before anything loads, naming the table", async () => {
+    await expect(sandboxLoad([SOURCES[0], OF_THE_INPUT])).rejects.toThrow(SAID);
+    expect(mockBuilt).toEqual([]);
+  });
+
+  test("fails the in-browser load before anything loads, naming the table", async () => {
+    await expect(loadSpecLayers({ data: [SOURCES[0], OF_THE_INPUT] })).rejects.toThrow(SAID);
+    expect(mockBuilt).toEqual([]);
+  });
+
+  test("one listed before the source of its table fails both loads, saying to list that source first", async () => {
+    const early = [HEATMAP, SOURCES[0]];
+    const said = 'The heatmap "density" bins "readings" before its data section loads that table: '
+      + 'list the source of "readings" first.';
+    await expect(sandboxLoad(early)).rejects.toThrow(said);
+    await expect(loadSpecLayers({ data: early })).rejects.toThrow(said);
+    expect(mockBuilt).toEqual([]);
+  });
+});
+
+// The database is a stand-in here, so these pin the loaders' part for every
+// aggregate: the heatmap reaches autk-db as written, and each band it builds
+// is handed on under the label autk-db gives it, with its cells. autk-db's own
+// part, the cells' values, is test_autk_server_data_load.py's and the e2e's.
+describe("every aggregate", () => {
+  /** The heatmap each loader hands on for *sources*: the sandbox's, then the browser's. */
+  async function bothLoaders(sources: any[]): Promise<any[]> {
+    const fromSandbox = (await sandboxLoad(sources)).find((item: any) => item.dataType === "raster");
+    const fromBrowser = (await toPoolOutput(await loadSpecLayers({ data: sources }), undefined, "heat-node"))
+      .data.find((item: any) => item.dataType === "raster");
+    return [fromSandbox, fromBrowser];
+  }
+
+  test.each(AGGREGATES)("guard: both loaders build a %s heatmap and hand on its band, labelled as autk-db labels it, with its cells", async (fn) => {
+    const heatmap = levelHeatmap([fn]);
+    const handed = await bothLoaders([LEVEL_SOURCE, heatmap]);
+
+    expect(mockBuilt.map((params) => [params.tableJoinName, params.groupBy])).toEqual([
+      ["levels", heatmap.groupBy], ["levels", heatmap.groupBy],
+    ]);
+    for (const envelope of handed) {
+      expect(envelope.layerName).toBe("noise");
+      const collection = collectionIn(envelope);
+      expect(collection.bbox).toEqual(LEVEL_BBOX);
+      expect(collection.grid).toEqual({
+        crs: "EPSG:3395", width: 3, height: 2, originX: LOOP[0], originY: LOOP[1] + 2000, resX: 1000, resY: -1000,
+      });
+      const properties = collection.features[0].properties;
+      expect(properties.bands).toEqual([{ id: "band_1", label: `${fn}_levels` }]);
+      expect(Array.from(properties.band_1 as Float32Array)).toEqual(Array.from(Float32Array.from(LEVEL_CELLS[fn])));
+    }
+  });
+
+  test("guard: both loaders hand on a heatmap of every aggregate with a band each, in the order it names them", async () => {
+    const handed = await bothLoaders([LEVEL_SOURCE, levelHeatmap(AGGREGATES)]);
+
+    expect(handed[0]).toEqual(handed[1]);
+    const properties = collectionIn(handed[0]).features[0].properties;
+    expect(properties.bands).toEqual(AGGREGATES.map((fn, index) => ({ id: `band_${index + 1}`, label: `${fn}_levels` })));
+    AGGREGATES.forEach((fn, index) => {
+      expect(Array.from(properties[`band_${index + 1}`] as Float32Array)).toEqual(
+        Array.from(Float32Array.from(LEVEL_CELLS[fn])),
+      );
+    });
+  });
 });

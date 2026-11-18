@@ -80,7 +80,7 @@ ROADS_LAYER = "table_osm_roads"
 #: ``scripts/build_example_pbfs.py``.
 EXAMPLE_EXTRACT = "docs/examples/data/chicago_downtown.osm.pbf"
 #: The autk-db the example's roads, and so ``EXAMPLE``, come from.
-AUTK_DB_VERSION = "4.1.1"
+AUTK_DB_VERSION = "4.1.1-curio.1"
 #: The coordinate system an Autark data node names on each layer it hands on
 #: (``autkDataCompile.ts``): World Mercator, the CRS Autark keeps its layers in.
 CRS_3395 = {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::3395"}}

@@ -200,6 +200,26 @@ def _seeded_duckdb_extensions():
     return sorted(path.relative_to(target).as_posix() for path in target.rglob("*") if path.is_file())
 
 
+def _sandbox_node_packages():
+    """What the launcher writes into a pip install's folder for the sandbox's
+    Node.js packages before it runs npm there, each file by its path in the
+    folder with its sha256. npm does not run."""
+    from utk_curio.cli import dependencies
+    from utk_curio.sandbox.util import node_runtime
+
+    with contextlib.redirect_stdout(io.StringIO()):
+        folder = dependencies._sandbox_nodejs_folder(Path(node_runtime.REPO_ROOT))
+    if folder is None:
+        return {"error": "the launcher wrote no folder for the sandbox's Node.js packages"}
+    return {
+        "folder": str(folder),
+        "files": {
+            path.relative_to(folder).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in sorted(folder.rglob("*")) if path.is_file()
+        },
+    }
+
+
 def _file_route(paths):
     """What ``GET /file/<path>`` answers for each repository path in *paths*:
     the sha256 of the file it serves, or the status it gives instead."""
@@ -399,6 +419,7 @@ def main():
     from utk_curio.sandbox.util import node_runtime
 
     report["duckdb_extensions"] = {"root": str(node_runtime.duckdb_extensions_dir()), "seeded": _seeded_duckdb_extensions()}
+    report["sandbox_node_packages"] = _guarded(_sandbox_node_packages)
 
     report["scripts"] = {"test_sh": _curio_test_script()}
 
