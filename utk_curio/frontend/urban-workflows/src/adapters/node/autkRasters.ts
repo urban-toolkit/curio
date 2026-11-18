@@ -17,7 +17,9 @@
  * a map that starts with it (`framedRaster`), its bands named as they were
  * made (`withBandLabels`). The grammar colors a raster's
  * cells in its layer's scheme; Curio hands it every raster layer with every
- * cell that has a value opaque (`withOpaqueRasters`), and once the map is
+ * cell that has a value opaque (`withOpaqueRasters`), the base-map layers a map
+ * lists after a raster as plain geometry, which autk-map then draws over it
+ * (`withLayersOverRasters`), and once the map is
  * drawn, keeps linear sampling from drawing dark seams at the edges of the
  * cells with no data (`bleedRasterEdges`). Nothing in Autark is changed; the
  * instance's data adapter, and that database's `getRaster` and `getLayer`,
@@ -390,6 +392,52 @@ export function withOpaqueRasters(spec: any): any {
     };
     const map = Array.isArray(spec.map) ? spec.map.map(opaque) : opaque(spec.map);
     return changed ? { ...spec, map } : spec;
+}
+
+/**
+ * The layer types autk-map draws in places of their own under every other
+ * layer, whatever the order a map lists its layers in: the base map's, which
+ * its LayerManager sorts first (surface, parks, water, roads). Every other
+ * type, a raster included, comes after them, in the order the map adds them.
+ * Buildings, which stand up from the ground, keep their type.
+ */
+const BASE_MAP_TYPES: ReadonlySet<string> = new Set(['surface', 'parks', 'water', 'roads']);
+
+/**
+ * *spec* with each table of a base-map type a map draws after a raster handed
+ * to the grammar as the plain geometry it is: loaded with no `layerType`, so
+ * autk-db types it by its geometry (polygons, polylines, points) and autk-map
+ * draws it in the map's order, over the raster. Every raster cell is drawn
+ * opaque (withOpaqueRasters), and autk-map would draw a base-map layer under
+ * every raster whatever the map's order, so a GeoTIFF hid the parks and roads
+ * a map listed after it. A table drawn before every raster of its map, or by
+ * no map, keeps its type, and a document that draws no raster is handed on as
+ * it is.
+ */
+export function withLayersOverRasters(spec: any): any {
+    const rasters = rasterTables(spec);
+    if (rasters.size === 0 || !Array.isArray(spec?.data)) return spec;
+    const over = new Set<string>();
+    for (const mapSpec of mapsOf(spec)) {
+        // A layer draws a table of its map's workspace.
+        const workspace = autkWorkspaceOf(mapSpec);
+        let afterRaster = false;
+        for (const ref of Array.isArray(mapSpec?.layerRefs) ? mapSpec.layerRefs : []) {
+            if (typeof ref?.dataRef !== 'string') continue;
+            const key = autkTableKey(workspace, ref.dataRef);
+            if (rasters.has(key)) afterRaster = true;
+            else if (afterRaster) over.add(key);
+        }
+    }
+    let changed = false;
+    const data = spec.data.map((source: any) => {
+        if (!BASE_MAP_TYPES.has(source?.layerType)
+            || !over.has(autkTableKey(autkWorkspaceOf(source), source.outputTableName))) return source;
+        changed = true;
+        const { layerType: _type, ...plain } = source;
+        return plain;
+    });
+    return changed ? { ...spec, data } : spec;
 }
 
 /**

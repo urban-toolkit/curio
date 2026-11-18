@@ -55,8 +55,8 @@ import {
     type AutkLayer,
 } from './autkLayerMaterialize';
 import {
-    bleedRasterEdges, isCurioRasterSource, newAutkDb, rasterSourceOf, resolveRasterInputs, withOpaqueRasters,
-    withRasterSources, type CurioRasterSource,
+    bleedRasterEdges, isCurioRasterSource, newAutkDb, rasterSourceOf, resolveRasterInputs, withLayersOverRasters,
+    withOpaqueRasters, withRasterSources, type CurioRasterSource,
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
 import { attachSpecCameras, frameMaps, keepMapViews, mapViews, type MapView } from './autkMapView';
@@ -1121,8 +1121,9 @@ export const useAutkGrammarBehavior = (
                 // The map draws its layers as the document writes them: a layer
                 // in its scenario's color writes that box's color through its
                 // chip, resolved before the run (utils/references/codeReferences).
-                // Every raster draws each cell that has a value opaque.
-                spec = withOpaqueRasters(spec);
+                // Every raster draws each cell that has a value opaque, and a
+                // base-map layer the map lists after a raster draws over it.
+                spec = withLayersOverRasters(withOpaqueRasters(spec));
 
                 const { AutkGrammar, applyCamera, enterWorkspace } = await import('@urban-toolkit/autk-grammar');
                 // A node that left the page while its data loaded has no

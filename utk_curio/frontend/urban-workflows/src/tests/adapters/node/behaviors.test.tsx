@@ -2269,6 +2269,81 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         }
       });
 
+      // A map that draws an Autark data node's GeoTIFF, then its parks and
+      // roads, as example 35's does. autk-map draws a layer of a base-map type
+      // (surface, parks, water, roads) under every raster whatever the map's
+      // order, and every raster cell is opaque, so the GeoTIFF hid them: the
+      // map drew the temperature alone. The parks and roads are handed to the
+      // grammar as plain geometry, which autk-map draws in the map's order.
+      test('the parks and roads a map lists after a GeoTIFF reach the grammar as plain geometry, drawn over it', async () => {
+        const wire = (values: number[]) => ({ float32le: Buffer.from(Float32Array.from(values).buffer).toString('base64') });
+        const area = (x: number) => ({
+          type: 'Polygon',
+          coordinates: [[[x, -2596000], [x + 1000, -2596000], [x + 1000, -2595000], [x, -2595000], [x, -2596000]]],
+        });
+        api().fetchData.mockImplementation(async (path: string) => (path === 'art-lst' ? {
+          dataType: 'list',
+          data: [
+            { dataType: 'dict', data: { name: 'table_osm_parks', type: 'parks', geojson: {
+              type: 'FeatureCollection', features: [{ type: 'Feature', geometry: area(-4790000), properties: {} }] } } },
+            { dataType: 'dict', data: { name: 'table_osm_roads', type: 'roads', geojson: {
+              type: 'FeatureCollection',
+              features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: [[-4795000, -2595000], [-4785000, -2595000]] }, properties: {} }] } } },
+            { dataType: 'dict', data: {
+              dataType: 'raster',
+              layerName: 'lst',
+              data: {
+                type: 'FeatureCollection',
+                bbox: [-4802000, -2604000, -4780000, -2589000],
+                grid: { crs: 'EPSG:3395', width: 2, height: 1, originX: -4802000, originY: -2589000, resX: 11000, resY: -15000 },
+                features: [{
+                  type: 'Feature',
+                  geometry: null,
+                  properties: { rasterResX: 2, rasterResY: 1, bands: [{ id: 'band_1', label: 'band_1' }], band_1: wire([30, 31]) },
+                }],
+              },
+            } },
+          ],
+        } : { data: {}, dataType: 'dataframe' }));
+        const drawn: { spec: any } = { spec: null };
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const grammarAsBefore = AutkGrammar.getMockImplementation();
+        AutkGrammar.mockImplementation(() => {
+          const grammar: any = { data: {} };
+          grammar.dataAdapter = { resolveSource: jest.fn(async (db: any) => db) };
+          grammar.run = jest.fn(async (spec: any) => { drawn.spec = spec; });
+          return grammar;
+        });
+        try {
+          const setOutput = jest.fn();
+          const result = await callBehavior(
+            useAutkGrammarBehavior,
+            { outputCallback: jest.fn(), input: { path: 'art-lst', dataType: 'list' } as any },
+            { setOutput },
+          );
+          await act(async () => {
+            await result.current.applyGrammar!(JSON.stringify({
+              map: { layerRefs: [
+                { dataRef: 'lst', getFnv: 'band_1', colorMapInterpolator: 'interpolateYlOrRd' },
+                { dataRef: 'table_osm_parks', color: '#2ca02c', opacity: 0.45 },
+                { dataRef: 'table_osm_roads', color: '#4d4d4d' },
+              ] },
+            }));
+          });
+
+          expect(setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error')).toBeUndefined();
+          const handed = Object.fromEntries((drawn.spec.data as any[]).map((s: any) => [s.outputTableName, s]));
+          expect(handed.lst.type).toBe('curio-raster');
+          expect(handed.table_osm_parks).toMatchObject({ type: 'geojson' });
+          expect(handed.table_osm_parks.layerType).toBeUndefined();
+          expect(handed.table_osm_roads.layerType).toBeUndefined();
+          // The map's order is the document's.
+          expect(drawn.spec.map.layerRefs.map((ref: any) => ref.dataRef)).toEqual(['lst', 'table_osm_parks', 'table_osm_roads']);
+        } finally {
+          AutkGrammar.mockImplementation(grammarAsBefore);
+        }
+      });
+
       // A GPGPU pass computes one value for each feature of its table, and a
       // raster holds all its cells in one feature, so a pass over a raster
       // fails the node before anything is loaded, computed or drawn, naming

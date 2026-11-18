@@ -1426,7 +1426,8 @@ one does not run, and the node's error names the key and where it is written:
   `band_2`, and so on. Every cell with a value is drawn opaque, 0 included, in
   the layerRef's `colorMapInterpolator` (reds without one) from the band's lowest
   value to its highest, and a cell with no value is clear: the raster's nodata,
-  or 0 when the GeoTIFF names no nodata. A raster with
+  or 0 when the GeoTIFF names no nodata. The layers listed after a raster in
+  `layerRefs`, parks and roads included, are drawn over it. A raster with
   a `colorMapInterpolator` shows its legend, with that scheme and range;
   `"isColorMap": false` hides the legend and keeps the colours. It is drawn at
   its own size, cell for cell, up to 4096 by 4096 cells and 8192 on a side. A
