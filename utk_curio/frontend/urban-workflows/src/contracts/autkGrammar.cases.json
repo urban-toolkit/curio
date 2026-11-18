@@ -123,14 +123,14 @@
       "says": "This spec uses \"links\", which Curio does not run yet."
     },
     {
-      "name": "a map's camera is not run yet",
+      "name": "a map's camera is run",
       "spec": { "map": { "camera": { "pitch": 50, "bearing": 30 }, "layerRefs": [{ "dataRef": "input_0" }] } },
-      "says": "This spec uses \"camera\" at map, which Curio does not run yet."
+      "says": null
     },
     {
-      "name": "a camera in a list of one map is named where it is",
+      "name": "a camera in a list of one map is run",
       "spec": { "map": [{ "camera": { "zoom": 14 }, "layerRefs": [{ "dataRef": "input_0" }] }] },
-      "says": "This spec uses \"camera\" at map[0], which Curio does not run yet."
+      "says": null
     },
     {
       "name": "a render pass is not run yet",
