@@ -7,9 +7,9 @@ the node's own run in the browser does. This runs that compiled JavaScript for
 the loaders of examples 06 (Back Bay), 07 (Chicago Loop), 08 (Niterói) and 11
 (Lower Manhattan), and of the test dataflow ``lower-manhattan-park-shade``
 (Lower Manhattan's parks and the buildings around them), through
-``execute_js_code`` and pins what it hands on with autk-db 4.1.1-curio.1
+``execute_js_code`` and pins what it hands on with autk-db 4.1.1-curio.2
 (release 4.1.1 with urban-toolkit/autark#132, which changes only how a heatmap
-reads its cells): each layer's name, type, feature count and CRS, its first
+reads and labels its bands): each layer's name, type, feature count and CRS, its first
 feature's keys, and every OpenStreetMap feature's id in ``osm_id``.
 
 No socket: the extract is served from disk by a ``fetch`` placed before the
@@ -37,7 +37,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES = REPO_ROOT / "docs" / "examples"
-AUTK_DB_VERSION = "4.1.1-curio.1"
+AUTK_DB_VERSION = "4.1.1-curio.2"
 EPSG_3395 = "urn:ogc:def:crs:EPSG::3395"
 #: A feature's keys: autk-db gives an OSM element's id, not a surface's or a
 #: building part's.
@@ -366,6 +366,88 @@ def test_the_server_compiled_load_builds_every_heatmap_aggregate_from_the_readin
         assert heat.descriptions == tuple(f"{fn}_levels" for fn in AGGREGATES)
     finally:
         for item in handed[1:]:
+            item.close()
+
+
+#: Each reading's peak, this many decibels above its level.
+PEAK = 10
+
+#: Two averages of different columns, and two bands rescaled from 0 to 1.
+LABELLED_HEATMAP = {"data": [
+    {"type": "geojson", "outputTableName": "levels", "coordinateFormat": "EPSG:3395",
+     "geojsonObject": {"type": "FeatureCollection", "features": [
+         {"type": "Feature", "geometry": {"type": "Point", "coordinates": [LOOP[0] + east, LOOP[1] + north]},
+          "properties": {"db": db, "peak": db + PEAK}}
+         for east, north, db in LEVELS
+     ]}},
+    {"type": "heatmap", "joinDataRef": "levels", "outputTableName": "noise",
+     "near": {"distance": REACH}, "grid": {"rows": ROWS, "columns": COLUMNS},
+     "groupBy": [
+         {"column": "db", "aggregateFn": "avg"},
+         {"column": "peak", "aggregateFn": "avg"},
+         {"column": "db", "aggregateFn": "avg", "normalize": True},
+         {"column": "*", "aggregateFn": "count", "normalize": True},
+     ]},
+]}
+
+
+def _rescaled(cells: list[list[float]]) -> list[list[float]]:
+    """*cells* from 0 at their least to 1 at their greatest, as the join
+    rescales a normalized aggregate across the cells."""
+    values = [value for row in cells for value in row]
+    low, high = min(values), max(values)
+    return [[(value - low) / (high - low) for value in row] for row in cells]
+
+
+def test_the_server_compiled_load_labels_each_band_apart_and_rescales_the_normalized_ones(tmp_path, monkeypatch):
+    """Two averages of different columns each name their column, and a band
+    that asks to be normalized holds its cells rescaled from 0 to 1, under a
+    label that ends in ``_norm``: every label names one band, in the envelope
+    and in the rasterio dataset a Python node gets."""
+    import numpy as np
+
+    from utk_curio.cli import dependencies
+    from utk_curio.common.autk_data_compiler import compile_data_spec
+    from utk_curio.sandbox.app.worker import _worker_init, execute_js_code
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+    from utk_curio.sandbox.util.rasters import envelope_arrays, rasters_for_python
+
+    cells = _cells_from_the_levels()
+    peaks = [[average + PEAK if count else 0.0 for average, count in zip(averages, counts)]
+             for averages, counts in zip(cells["avg"], cells["count"])]
+    expected = {
+        "avg_levels_db": cells["avg"],
+        "avg_levels_peak": peaks,
+        "avg_levels_norm": _rescaled(cells["avg"]),
+        "count_levels_norm": _rescaled(cells["count"]),
+    }
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setenv("FLASK_BACKEND_HOST", "curio-backend.invalid")
+    monkeypatch.setenv("FLASK_BACKEND_PORT", "1")
+    dependencies.seed_duckdb_extensions()
+    _worker_init()
+    result = execute_js_code(
+        _NO_SOCKET + compile_data_spec(json.dumps(LABELLED_HEATMAP)), "", "AUTK_GRAMMAR", "",
+        launch_dir=str(REPO_ROOT), session_id=None,
+    )
+
+    assert result["output"]["path"], result["stderr"]
+    noise = load_from_duckdb(result["output"]["path"], session_id=None)[1]
+    assert [band["label"] for band in noise["data"]["features"][0]["properties"]["bands"]] == list(expected)
+    _grid, _bands, values = envelope_arrays(noise)
+    for (label, band_cells), band in zip(expected.items(), values):
+        np.testing.assert_allclose(band, band_cells, rtol=1e-6, atol=1e-6, err_msg=f"the {label} band's cells")
+
+    handed = rasters_for_python([noise], tmp_path / "rasters")
+    try:
+        (heat,) = handed
+        assert heat.descriptions == tuple(expected)
+        for index, (label, band_cells) in enumerate(expected.items(), start=1):
+            np.testing.assert_allclose(heat.read(index), band_cells, rtol=1e-6, atol=1e-6, err_msg=label)
+    finally:
+        for item in handed:
             item.close()
 
 

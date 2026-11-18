@@ -51,7 +51,7 @@ OSM_ID = "osm_id"
 #: The layers the data node loads, in its order, and the autk-db they come
 #: from (``test_autk_server_data_load.py`` pins both).
 LAYERS = ["table_osm_surface", "table_osm_parks", "table_osm_water", ROADS, "table_osm_buildings"]
-AUTK_DB_VERSION = "4.1.1-curio.1"
+AUTK_DB_VERSION = "4.1.1-curio.2"
 ROAD_COUNT = 736
 #: The two inputs, by the scenario each comes from, as Compare's code named them.
 SCENARIOS = [("s-baseline", "Baseline"), ("s-twice", "Twice as tall")]

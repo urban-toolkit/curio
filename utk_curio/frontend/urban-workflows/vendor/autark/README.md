@@ -1,15 +1,17 @@
 Curio installs two Autark packages from the tarballs in this folder, each in place of its 4.1.1 release on npm, until Autark releases their changes.
 
-`urban-toolkit-autk-db-4.1.1-curio.1.tgz` is `@urban-toolkit/autk-db` 4.1.1, from its tag `@urban-toolkit/autk-db@4.1.1` (`1faf032b4fe83189246b9966c0ef324f5821c731`), with one commit of urban-toolkit/autark#132 on top:
+`urban-toolkit-autk-db-4.1.1-curio.2.tgz` is `@urban-toolkit/autk-db` 4.1.1, from its tag `@urban-toolkit/autk-db@4.1.1` (`1faf032b4fe83189246b9966c0ef324f5821c731`), with the three fix commits of urban-toolkit/autark#132 on top, in this order (each at its commit on #132's branch, then as cherry-picked on the tag):
 
-- `8418124d` (`1c25e26c` on the tag): a heatmap's `avg`, `sum`, `min` and `max` bands read their cells from the joined values. In 4.1.1 every cell of those bands is 0.
+- `8418124bb9078b7759dba7f840da4f798658fad9` (`1c25e26e6a961f70d6a3288ed3c5d5bf2f3cd1cf`): a heatmap's `avg`, `sum`, `min` and `max` bands read their cells from the joined values. In 4.1.1 every cell of those bands is 0.
+- `ad20682e34e41ccdfc8a82769a5bd157627ffd42` (`bb2f41ac5535c19eb2394292ace6c8e0ebc38173`): a band with `normalize: true` reads the values the join rescales from 0 to 1. In 4.1.1 it reads the raw values.
+- `e45655295bd0831ea6283554cded28f2cc8326e5` (`3b0a2f5b380e2a3755f637fb53f071caed95773f`): each band gets a label of its own. A normalized band's label ends in `_norm`, and bands of one aggregate over different columns name their columns, such as `avg_noise_db`. In 4.1.1 such bands share `<aggregateFn>_<table>`.
 
-It was built with Node 26 from the tag's lockfile, and its `dist/` is 4.1.1's file for file but for the two lines of that commit in `browser.js` and `node.js`. `npm pkg set version=4.1.1-curio.1`, then `npm pack`. Its dependencies are 4.1.1's.
+It was built with Node 26 from the tag's lockfile. Its `dist/` is 4.1.1's file for file but for those commits' lines in `browser.js` and `node.js` and a comment in `use-cases/build-heatmap/use-case.d.ts`. `npm pkg set version=4.1.1-curio.2`, then `npm pack`. Its dependencies are 4.1.1's.
 
-- SHA-256: `9bfd2dab6d335a1c186892e1ff22cd97fd40add063a61bbd286f20f77e80c7bb`
-- npm integrity: `sha512-2UOMzWt8JLqgDTnaD/3r1HtcSovir+h/QYTuZ+QC0oSsWUDYVgtmgLJ478VlluXn+uHTR/Dmzg5JcB98QeIs0g==`
+- SHA-256: `d9a4eb8ac79fb194dc32ac84c47d4e78f6b0546e13da8e804977a61582cbe12e`
+- npm integrity: `sha512-vYoV3Q0Juj7KxiCdLcqRJmxm8egmC8EELxcLg5Pz/sg4oONGiW6s9Egizuka0IwcCim9dhS55tdVGrNITxbwwg==`
 
-Both of Curio's npm trees install it: the frontend's `package.json` names it as `file:vendor/autark/urban-toolkit-autk-db-4.1.1-curio.1.tgz`, and the repository's, which installs the sandbox's Node.js packages, as `file:utk_curio/frontend/urban-workflows/vendor/autark/urban-toolkit-autk-db-4.1.1-curio.1.tgz`. A pip install's launcher writes it beside the `package.json` it writes in `.curio/nodejs`. autk-grammar asks for autk-db `^4.1.1`, which the prerelease does not satisfy, so each tree's `overrides` give autk-grammar this copy too.
+Both of Curio's npm trees install it: the frontend's `package.json` names it as `file:vendor/autark/urban-toolkit-autk-db-4.1.1-curio.2.tgz`, and the repository's, which installs the sandbox's Node.js packages, as `file:utk_curio/frontend/urban-workflows/vendor/autark/urban-toolkit-autk-db-4.1.1-curio.2.tgz`. A pip install's launcher writes it beside the `package.json` it writes in `.curio/nodejs`. autk-grammar asks for autk-db `^4.1.1`, which the prerelease does not satisfy, so each tree's `overrides` give autk-grammar this copy too.
 
 `urban-toolkit-autk-map-4.1.1-curio.4.tgz` is `@urban-toolkit/autk-map` packed from four urban-toolkit/autark PRs, applied in this order on top of autk-map 4.1.1:
 

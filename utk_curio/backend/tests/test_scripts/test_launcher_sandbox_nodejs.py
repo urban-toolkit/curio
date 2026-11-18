@@ -164,7 +164,7 @@ def test_a_pip_install_that_ships_no_package_json_says_so_and_runs_no_npm(pip_in
 
 #: A package Curio's package.json installs from a tarball in the repository,
 #: as it installs the vendored autk-db: its path from the package.json.
-VENDORED = "utk_curio/frontend/urban-workflows/vendor/autark/urban-toolkit-autk-db-4.1.1-curio.1.tgz"
+VENDORED = "utk_curio/frontend/urban-workflows/vendor/autark/urban-toolkit-autk-db-4.1.1-curio.2.tgz"
 
 
 def _ship_a_vendored_tarball(pip_install, spec: str = f"file:{VENDORED}") -> bytes:
