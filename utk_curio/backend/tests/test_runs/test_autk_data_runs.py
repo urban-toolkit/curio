@@ -205,8 +205,8 @@ def test_example_34s_loader_builds_its_heatmap_on_the_server_as_the_browser_does
     (shares,) = sandbox.bodies("/exec")
     assert (shares["file_path"], shares["dataType"]) == (LAYERS, "list"), shares
     assert steps["park-access-shares"]["status"] == "ok", steps["park-access-shares"]
-    # Only a browser draws the map.
-    assert steps["park-access-map"]["role"] == "browser", steps["park-access-map"]
+    # The map draws in a browser: the run hands it the load's tables and runs nothing for it.
+    assert steps["park-access-map"]["role"] == "forward", steps["park-access-map"]
 
 
 def test_a_node_below_a_pool_reads_the_layers_the_load_made(client, user_and_token, sandbox, recorded):
