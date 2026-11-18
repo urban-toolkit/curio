@@ -66,20 +66,23 @@ def names_outputs(value) -> bool:
 
 def keep_layer_identity(value, envelope):
     """A layer an Autark node handed on keeps its name, its layer type and the
-    workspace it is in.
+    workspace it is in, a table's and a raster's alike.
 
     Its envelope names them (``layerName``, ``layerType``, and ``workspace``
-    for a table in another workspace than autk-db's default one); the frame
+    for a table in another workspace than autk-db's default one); the frame,
+    or the rasterio dataset a raster becomes (``rasters.rasters_for_python``),
     keeps them where Curio keeps a frame's own (``metadata``, which
     ``parseOutput`` hands on), so a node can tell an Autark node's layers
-    apart, as the Map Editor node does to edit one of them (#662), and a node
-    it hands the frame to loads it in its workspace. A frame that already has
-    a name keeps it, and one read from a bundle keeps its part's label.
+    apart, as the Map Editor node does to edit one of them (#662) and a layer
+    chip does to read one (``input_layers.curio_layer``), and a node it hands
+    the frame to loads it in its workspace. A frame that already has a name
+    keeps it, and one read from a bundle keeps its part's label.
     """
     from utk_curio.sandbox.util.codec import is_geospatial_frame, part_label_only
+    from utk_curio.sandbox.util.rasters import is_dataset
 
     name = envelope.get("layerName")
-    if not isinstance(name, str) or not name or not is_geospatial_frame(value):
+    if not isinstance(name, str) or not name or not (is_geospatial_frame(value) or is_dataset(value)):
         return value
     meta = getattr(value, "metadata", None)
     if isinstance(meta, dict) and meta.get("name"):

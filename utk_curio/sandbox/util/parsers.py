@@ -268,6 +268,18 @@ def _holds_frames(mapping):
     return False
 
 
+def _raster_described(dataset):
+    """What a chip's preview shows of the rasterio *dataset*
+    (``rasters.described``), or None when GDAL cannot say: ``/get`` still
+    sends the raster's file."""
+    from utk_curio.sandbox.util.rasters import described
+
+    try:
+        return described(dataset)
+    except Exception:  # noqa: BLE001 - a description is no reason to fail the read
+        return None
+
+
 # Output Functions
 def parseOutput(output):
     import math
@@ -349,6 +361,11 @@ def parseOutput(output):
     elif 'rasterio' in sys.modules and isinstance(output, sys.modules['rasterio'].io.DatasetReader):
         json_output['data'] = output.name
         json_output['dataType'] = 'raster'
+        # What it is, beside its file, for a chip's preview: its size, its
+        # bands and its CRS.
+        meta = _raster_described(output)
+        if meta is not None:
+            json_output['meta'] = meta
     elif isinstance(output, tuple):
         json_output['data'] = [parseOutput(elem) for elem in output]
         json_output['dataType'] = 'outputs'
