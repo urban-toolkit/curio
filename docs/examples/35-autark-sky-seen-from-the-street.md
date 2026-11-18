@@ -30,13 +30,16 @@ contributors, ODbL 1.0), built by `scripts/build_example_pbfs.py`.
 ## Step 1: Load Wall Street from a PBF (`sky-data`)
 
 The `data` block loads the box around Wall Street, west, south, east and north, from the extract: its
-surface, its roads and its buildings, each with its height.
+surface, its roads and its buildings, each with its height. The box runs about 560 m east to west, from
+Broadway to Front Street, and 900 m north to south, from Peter Minuit Plaza to Maiden Lane, south of the
+World Trade Center's towers. The extract holds about 1,370 roads and 260 buildings in it, with about 740
+building parts.
 
 ```json
 "data": [{
   "type": "osm",
   "pbfFileUrl": "docs/examples/data/lower_mnt.osm.pbf",
-  "queryArea": { "bbox": [-74.0125, 40.705, -74.008, 40.7085] },
+  "queryArea": { "bbox": [-74.0128, 40.7012, -74.0062, 40.7093] },
   "outputTableName": "wall_st",
   "autoLoadLayers": { "layers": ["surface", "roads", "buildings"] }
 }]
@@ -46,8 +49,8 @@ surface, its roads and its buildings, each with its height.
 
 The pass draws the buildings, raised to their heights, from each road of `wall_st_roads`: from the middle of
 the road, on the ground, in four directions around it, each looking up at 45 degrees, into frames 64 pixels
-square. It counts the share of each road's frames the buildings cover and, with `includeBackground`, the
-share no layer covers, named `sky`.
+square: about 5,500 frames for the box's roads. It counts the share of each road's frames the buildings
+cover and, with `includeBackground`, the share no layer covers, named `sky`.
 
 ```json
 "compute": [{
@@ -65,7 +68,7 @@ The pass writes `street_sky`: the roads, each with its shares in `compute.render
 
 ## Step 3: Map the share of sky (`sky-map`)
 
-The map draws the surface in a light land colour, then `street_sky`, each road a line 8 units wide colored
+The map draws the surface in a light land colour, then `street_sky`, each road a line 16 units wide colored
 by its share of sky: dark purple where the buildings close in, through green, to yellow where the road sees
 more sky. The buildings come last, in gray and half see-through, so a street behind a tower still shows. Its
 `camera` tilts the view the node frames it at, 30 degrees from straight down, facing 125 degrees, down Wall
@@ -77,7 +80,7 @@ streets stay in view between them.
   { "dataRef": "wall_st_surface", "color": "#ece8dc" },
   { "dataRef": "street_sky", "title": "Share of sky seen from the street",
     "getFnv": "compute.render.classes.sky", "getFnvType": "quantitative",
-    "colorMapInterpolator": "interpolateViridis", "width": 8 },
+    "colorMapInterpolator": "interpolateViridis", "width": 16 },
   { "dataRef": "wall_st_buildings", "color": "#a9b0b5", "opacity": 0.5 }
 ]}
 ```
