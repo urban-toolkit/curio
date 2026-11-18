@@ -195,6 +195,9 @@ AUTK_NOT_RUN_YET: tuple[dict, ...] = tuple(_AUTK_GRAMMAR["notRunYet"])
 #: The kinds of data source that make a raster table, a heatmap and a GeoTIFF:
 #: a compute pass over one of their tables is not run (``autk_raster_pass_problem``).
 AUTK_RASTER_SOURCES: tuple[str, ...] = tuple(_AUTK_GRAMMAR["rasterSources"])
+#: autk-db's default workspace, where a source or a pass that names none keeps
+#: and reads its tables.
+AUTK_DEFAULT_WORKSPACE: str = _AUTK_GRAMMAR["defaultWorkspace"]
 
 
 def _objects_at(document: dict, place: str) -> list[tuple[str, object]]:
@@ -234,34 +237,42 @@ def _not_run_yet(what: str, path: str) -> str:
     return _fill(_AUTK_GRAMMAR["notRunYetKey"], what=what, at=at)
 
 
+def _workspace_of(held: object) -> str | None:
+    """The workspace *held* (a source, a pass or a raster) names, or None for
+    the default one (``AUTK_DEFAULT_WORKSPACE``), named or not."""
+    workspace = held.get("workspace") if isinstance(held, dict) else None
+    return workspace if isinstance(workspace, str) and workspace and workspace != AUTK_DEFAULT_WORKSPACE else None
+
+
 def autk_raster_pass_problem(document: object, rasters) -> str | None:
     """What a document is told when one of its compute passes reads a raster,
-    else None: the first pass whose ``dataRef`` is one of *rasters*, with where
-    it is written, as a key a node does not run yet is told (the file's
-    ``rasterPass``). A pass computes one value for each feature of the table it
-    reads, and a raster holds all its cells in one feature.
+    else None: the first pass whose ``dataRef``, in the pass's workspace, is one
+    of *rasters* (each ``{"name", "workspace"}``, the workspace left out for the
+    default one), with where it is written, as a key a node does not run yet is
+    told (the file's ``rasterPass``). A pass computes one value for each feature
+    of the table it reads, and a raster holds all its cells in one feature.
     ``autkRasterPassProblem`` is the node's twin."""
     if not isinstance(document, dict):
         return None
-    names = set(rasters)
+    held_rasters = {(raster.get("name"), _workspace_of(raster)) for raster in rasters}
     for path, held in _objects_at(document, "compute[]"):
         table = held.get("dataRef") if isinstance(held, dict) else None
-        if isinstance(table, str) and table in names:
+        if isinstance(table, str) and (table, _workspace_of(held)) in held_rasters:
             return _not_run_yet(_fill(_AUTK_GRAMMAR["rasterPass"], table=table), path)
     return None
 
 
-def _own_rasters(document: dict) -> list[str]:
+def _own_rasters(document: dict) -> list[dict]:
     """The tables *document*'s own data sources of ``AUTK_RASTER_SOURCES``
-    kinds write: its heatmaps and GeoTIFFs."""
-    names = []
+    kinds write, its heatmaps and GeoTIFFs, each with the workspace it is in."""
+    rasters = []
     for _path, held in _objects_at(document, "data[]"):
         if not isinstance(held, dict):
             continue
         table = held.get("outputTableName")
         if held.get("type") in AUTK_RASTER_SOURCES and isinstance(table, str) and table:
-            names.append(table)
-    return names
+            rasters.append({"name": table, "workspace": _workspace_of(held)})
+    return rasters
 
 
 def autk_key_problem(document: object) -> str | None:

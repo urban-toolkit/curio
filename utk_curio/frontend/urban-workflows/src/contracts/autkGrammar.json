@@ -16,6 +16,7 @@
   "notRunYetKey": "This spec uses {what}{at}, which Curio does not run yet.",
   "keyAt": " at {path}",
   "rasterSources": ["heatmap", "geotiff"],
+  "defaultWorkspace": "autk",
   "rasterPass": "a compute pass over the raster \"{table}\"",
   "starterColoring": {
     "geometry+quantitative": { "getFnvType": "quantitative", "colorMapInterpolator": "interpolateViridis" },

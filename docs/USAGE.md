@@ -1434,9 +1434,9 @@ one does not run, and the node's error names the key and where it is written:
   crop it in the node that makes it, for example with a rasterio window read or
   the `bounds` of `curio_load_data` (see the [Data Catalog](DATA-CATALOG.md)).
   It needs a CRS with an EPSG code and a north-up grid. A plot or a compute step
-  does not read a raster, and a document whose compute pass names one does not
-  run: the node's error names the pass and the raster. Compute over a raster's
-  cells in a Python node.
+  does not read a raster, and a document whose compute pass names one, in the
+  pass's own workspace, does not run: the node's error names the pass and the
+  raster. Compute over a raster's cells in a Python node.
 - A raster the node hands on reaches a Python node as a `rasterio` dataset on
   the same grid: its bands, origin, cell size and CRS.
 - A `data` section runs in the sandbox, where the input is not available: its

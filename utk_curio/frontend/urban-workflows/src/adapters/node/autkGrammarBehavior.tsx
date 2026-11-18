@@ -748,10 +748,11 @@ export const useAutkGrammarBehavior = (
         // So does a compute pass over a raster the input brings, as one over a
         // raster of the document's own data is refused above (autkKeyProblem):
         // a pass cannot compute over a raster cell by cell
-        // (contracts/autkGrammar autkRasterPassProblem).
+        // (contracts/autkGrammar autkRasterPassProblem). Each raster is in
+        // the workspace it came in, which a pass reads it in.
         const rasterPass = autkRasterPassProblem(
             spec,
-            (preparedInput?.rasters ?? []).map((raster) => raster.outputTableName),
+            (preparedInput?.rasters ?? []).map((raster) => ({ name: raster.outputTableName, workspace: raster.workspace })),
         );
         if (rasterPass) {
             grammarRef.current = null;

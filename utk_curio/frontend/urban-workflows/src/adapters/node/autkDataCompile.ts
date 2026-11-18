@@ -27,6 +27,8 @@ export const SANDBOX_BACKEND_URL_TOKEN = '__CURIO_BACKEND_URL__';
 
 // autk-db's default workspace (its DEFAULT_WORKSPACE_NAME): where a source, a
 // pass, a map or a plot that names no `workspace` keeps and reads its tables.
+// contracts/autkGrammar.json holds it too, as `defaultWorkspace`, for the
+// check of a compute pass over a raster on both sides.
 export const AUTK_DEFAULT_WORKSPACE = 'autk';
 
 // The workspace *entry* names (a source, a pass, a map, a plot, or a table a
