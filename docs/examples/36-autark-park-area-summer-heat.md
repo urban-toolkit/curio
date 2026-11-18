@@ -46,7 +46,7 @@ with each outline simplified within about 5 m.
 ## Step 1: Load the layers, the GeoTIFF, the parks and the heatmap (`park-area-data`)
 
 The `osm` source loads Niterói's land (its surface) and roads into the tables `table_osm_surface` and
-`table_osm_roads`, as example 08 does. The `geotiff` source loads the temperature raster into the table
+`table_osm_roads`, from example 08's extract and area. The `geotiff` source loads the temperature raster into the table
 `lst`, its bands named `band_1` to `band_24`. The `geojson` source loads the parks into the table
 `park_areas`, each row with its `area`. The `heatmap` source then sums them into a grid of 60 rows and 80
 columns over the area the document loads:

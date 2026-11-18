@@ -37,7 +37,7 @@ February from MODIS (MOD11A2), in °C, on 22 by 15 cells of about 1 km over Nite
 ## Step 1: Load the layers and the GeoTIFF (`green-heat-data`)
 
 The `osm` source loads Niterói's land (its surface), parks and roads into the tables `table_osm_surface`,
-`table_osm_parks` and `table_osm_roads`, as example 08 does. The parks layer holds what autk-db takes as
+`table_osm_parks` and `table_osm_roads`, from example 08's extract and area. The parks layer holds what autk-db takes as
 green: parks, playgrounds, recreation grounds and dog parks; woods, forests, grass, meadows, orchards,
 vineyards, cemeteries and village greens; grassland, scrub and heath. The `geotiff` source loads the
 temperature raster into the table `lst`, its bands named `band_1` to `band_24`; `"resampleMethod":
