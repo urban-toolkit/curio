@@ -164,6 +164,36 @@ export function tablesToLoad<T extends { outputTableName?: unknown; layerType?: 
   return [...loaded.filter(brought), ...loaded.filter((table) => !brought(table))];
 }
 
+/** A table a compute pass of the document writes under a name of its own. */
+export type WrittenTable = {
+  /** Its name, the pass's `outputTableName`. */
+  name: string;
+  /** The table the pass computes over, its `dataRef`, whose rows it holds. */
+  from: string;
+  /** The type it is drawn and handed on as, when the pass says (`layerType`). */
+  layerType?: string;
+};
+
+/**
+ * The tables the document's GPGPU passes write under their `outputTableName`,
+ * in pass order, so a table a pass writes from another's comes after it. A
+ * pass keeps every feature of the table it computes over, so the table it
+ * writes holds that table's rows; its type is the pass's `layerType`, else
+ * that table's (autk-grammar's compute adapter, `store`). A pass without an
+ * `outputTableName`, or with its `dataRef` as one, writes into that table and
+ * makes none.
+ */
+export function writtenTables(spec: any): WrittenTable[] {
+  const written: WrittenTable[] = [];
+  for (const pass of asList<any>(spec?.compute)) {
+    if (pass == null || typeof pass !== "object" || (pass.type != null && pass.type !== "gpgpu")) continue;
+    const { outputTableName: name, dataRef: from, layerType } = pass;
+    if (typeof name !== "string" || !name || typeof from !== "string" || !from || name === from) continue;
+    written.push({ name, from, ...(typeof layerType === "string" && layerType ? { layerType } : {}) });
+  }
+  return written;
+}
+
 /** The tables the document's own data section creates. */
 export function ownTableNames(spec: any): string[] {
   const sources: any[] = Array.isArray(spec?.data) ? spec.data : [];
@@ -178,9 +208,9 @@ export function ownTableNames(spec: any): string[] {
 
 /**
  * Whether the document reads its input at all: a compute-only document works
- * on what arrives, and any other reads it when it names a table its own data
- * section does not create. A document that loads everything it draws does not,
- * so it never says "connect something".
+ * on what arrives, and any other reads it when it names a table that neither
+ * its own data section nor one of its compute passes creates. A document that
+ * makes everything it draws does not, so it never says "connect something".
  */
 export function autkNeedsInput(spec: any): boolean {
   if (spec == null || typeof spec !== "object") return false;
@@ -188,7 +218,7 @@ export function autkNeedsInput(spec: any): boolean {
   const hasCompute = asList(spec.compute).length > 0;
   const hasData = Array.isArray(spec.data) && spec.data.length > 0;
   if (hasCompute && !hasRender && !hasData) return true;
-  const own = new Set(ownTableNames(spec));
+  const own = new Set([...ownTableNames(spec), ...writtenTables(spec).map((table) => table.name)]);
   return documentTableRefs(spec).some((name) => !own.has(name));
 }
 
