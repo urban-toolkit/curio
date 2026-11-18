@@ -161,6 +161,8 @@ const useTableData = ({ data }: { data: INodeData }) => {
                 data: rec.geojson,
                 layerName: rec.name,
                 layerType: rec.type,
+                // A table of another workspace than the default one stays in it.
+                ...(typeof rec.workspace === 'string' && rec.workspace ? { workspace: rec.workspace } : {}),
               });
             }
           }
