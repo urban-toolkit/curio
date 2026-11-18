@@ -195,6 +195,56 @@ export function tablesToLoad<T extends { outputTableName?: unknown; layerType?: 
   return [...loaded.filter(brought), ...loaded.filter((table) => !brought(table))];
 }
 
+/** A table a compute pass of the document writes. */
+export type WrittenTable = {
+  /** Its name: the pass's `outputTableName`, else its `dataRef`. */
+  name: string;
+  /** The table the pass computes over, its `dataRef`, whose rows it holds. */
+  from: string;
+  /** The type the pass draws and hands it on as (`layerType`), read only with an `outputTableName`. */
+  layerType?: string;
+  /** The pass's workspace, where it reads `from` and writes the table, when it is not the default one. */
+  workspace?: string;
+};
+
+/**
+ * The tables the document's GPGPU passes write, in pass order, so a table a
+ * pass writes from another's comes after it: each under the pass's
+ * `outputTableName`, else in place of its `dataRef` table, as autk-grammar's
+ * compute adapter keeps them (`store`), in the pass's workspace. A map or a
+ * plot draws a table a pass wrote from that result, which holds every feature
+ * of the table the pass computed over, in the order autk-db stores them. A
+ * table a pass names is drawn as its `layerType`, else as the table it is
+ * computed from.
+ */
+export function writtenTables(spec: any): WrittenTable[] {
+  const written: WrittenTable[] = [];
+  for (const pass of asList<any>(spec?.compute)) {
+    if (pass == null || typeof pass !== "object" || (pass.type != null && pass.type !== "gpgpu")) continue;
+    const { outputTableName, dataRef: from, layerType } = pass;
+    if (typeof from !== "string" || !from) continue;
+    const named = typeof outputTableName === "string" && outputTableName !== "";
+    const workspace = autkWorkspaceOf(pass);
+    written.push({
+      name: named ? outputTableName : from,
+      from,
+      ...(named && typeof layerType === "string" && layerType ? { layerType } : {}),
+      ...(workspace ? { workspace } : {}),
+    });
+  }
+  return written;
+}
+
+/**
+ * The tables the document's passes make, by key (`autkTableKey`): those
+ * written under a name other than the table they are computed from.
+ */
+export function madeTables(spec: any): string[] {
+  return writtenTables(spec)
+    .filter((table) => table.name !== table.from)
+    .map((table) => autkTableKey(table.workspace, table.name));
+}
+
 /** The tables the document's own data section creates, by key. */
 export function ownTableNames(spec: any): string[] {
   const sources: any[] = Array.isArray(spec?.data) ? spec.data : [];
@@ -209,9 +259,9 @@ export function ownTableNames(spec: any): string[] {
 
 /**
  * Whether the document reads its input at all: a compute-only document works
- * on what arrives, and any other reads it when it names a table its own data
- * section does not create. A document that loads everything it draws does not,
- * so it never says "connect something".
+ * on what arrives, and any other reads it when it names a table that neither
+ * its own data section nor one of its compute passes creates. A document that
+ * makes everything it draws does not, so it never says "connect something".
  */
 export function autkNeedsInput(spec: any): boolean {
   if (spec == null || typeof spec !== "object") return false;
@@ -219,7 +269,7 @@ export function autkNeedsInput(spec: any): boolean {
   const hasCompute = asList(spec.compute).length > 0;
   const hasData = Array.isArray(spec.data) && spec.data.length > 0;
   if (hasCompute && !hasRender && !hasData) return true;
-  const own = new Set(ownTableNames(spec));
+  const own = new Set([...ownTableNames(spec), ...madeTables(spec)]);
   return documentTableRefs(spec).some((name) => !own.has(name));
 }
 

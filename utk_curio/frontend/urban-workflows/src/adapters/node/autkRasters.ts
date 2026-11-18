@@ -25,7 +25,7 @@
  * its own size, with `nearest` resampling and its CRS (utils/raster/rasterLoad).
  */
 import { fetchRaster } from '../../services/api';
-import type { AutkRasterInput } from '../../utils/autkInput';
+import { writtenTables, type AutkRasterInput } from '../../utils/autkInput';
 import { autkTableKey, autkWorkspaceOf } from './autkDataCompile';
 import { writeGeoTiff } from '../../utils/raster/geotiffWriter';
 import {
@@ -303,13 +303,24 @@ function mapsOf(spec: any): any[] {
     return spec?.map ? (Array.isArray(spec.map) ? spec.map : [spec.map]) : [];
 }
 
-/** The tables of *spec*'s data that are rasters, by key (`autkTableKey`): Curio's own and the grammar's heatmaps. */
+/**
+ * The tables of *spec* that are rasters, by key (`autkTableKey`): those of its
+ * data that are, Curio's own and the grammar's heatmaps, and each a compute
+ * pass writes as one, in the pass's workspace, by its `layerType` or else by
+ * the type of the table it is computed from.
+ */
 export function rasterTables(spec: any): Set<string> {
     const sources: any[] = Array.isArray(spec?.data) ? spec.data : [];
-    return new Set(sources
+    const rasters = new Set(sources
         .filter((source) => isCurioRasterSource(source) || source?.type === 'heatmap')
         .filter((source) => typeof source.outputTableName === 'string')
         .map((source) => autkTableKey(autkWorkspaceOf(source), source.outputTableName)));
+    for (const { name, from, layerType, workspace } of writtenTables(spec)) {
+        const key = autkTableKey(workspace, name);
+        if (layerType ? layerType === 'raster' : rasters.has(autkTableKey(workspace, from))) rasters.add(key);
+        else rasters.delete(key);
+    }
+    return rasters;
 }
 
 /**
