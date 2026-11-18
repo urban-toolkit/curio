@@ -102,6 +102,22 @@ def test_the_document_check_refuses_a_heatmap_that_collects_its_rows():
     assert verdict["detail"].startswith("data[1].groupBy[0].aggregateFn: 'collect' is not one of"), verdict
 
 
+def test_the_document_check_takes_a_pass_that_writes_a_new_table_and_its_type():
+    """A node runs a GPGPU pass that writes its result as a new table
+    (``outputTableName``), drawn as its ``layerType``, and a map of that table,
+    so the agents may write one."""
+    from utk_curio.backend.app.agents.domain import document_validation as dv
+
+    document = {
+        "compute": [{
+            "dataRef": "input_0", "attributes": {"v": "properties.value"}, "wgslFunction": "return v * 2.0;",
+            "outputColumnName": "twice", "outputTableName": "doubled", "layerType": "points",
+        }],
+        "map": {"layerRefs": [{"dataRef": "doubled", "getFnv": "twice"}]},
+    }
+    assert dv.validate(AUTK, json.dumps(document)) == {"status": dv.STATUS_VALID}
+
+
 def test_a_document_is_told_only_the_files_sentences():
     from utk_curio.backend.app.agents.domain import contracts
 

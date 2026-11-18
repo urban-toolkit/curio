@@ -138,14 +138,14 @@
       "says": "This spec uses a render pass at compute[0], which Curio does not run yet."
     },
     {
-      "name": "a compute pass's outputTableName is not run yet",
+      "name": "a compute pass's outputTableName is run",
       "spec": { "compute": [{ "dataRef": "input_0", "attributes": {}, "wgslFunction": "return 1.0;", "outputColumnName": "x" }, { "dataRef": "input_0", "attributes": {}, "wgslFunction": "return 2.0;", "outputColumnName": "y", "outputTableName": "copy" }] },
-      "says": "This spec uses a compute pass's \"outputTableName\" at compute[1], which Curio does not run yet."
+      "says": null
     },
     {
-      "name": "a compute pass's layerType is not run yet",
+      "name": "a compute pass's layerType is run",
       "spec": { "compute": [{ "dataRef": "input_0", "attributes": {}, "wgslFunction": "return 1.0;", "outputColumnName": "x", "layerType": "points" }] },
-      "says": "This spec uses a compute pass's \"layerType\" at compute[0], which Curio does not run yet."
+      "says": null
     },
     {
       "name": "a heatmap source is run",

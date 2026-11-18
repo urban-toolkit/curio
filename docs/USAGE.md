@@ -1376,8 +1376,7 @@ one does not run, and the node's error names the key and where it is written:
 
 - `layout` and `links`;
 - a map's `camera`;
-- a render pass (`"type": "render"`), and a compute pass's `outputTableName`
-  and `layerType`;
+- a render pass (`"type": "render"`);
 - `geotiff` sources;
 - `workspace`, on a source, a compute pass, a map or a plot.
 
@@ -1459,6 +1458,33 @@ a run is going, and a selection only highlights it (see
 [Linking charts](#linking-charts)). A data or compute step runs only when you
 press play or run the dataflow. Without WebGPU nothing is drawn on its own;
 pressing play says why.
+
+### Compute passes
+
+Each entry of `compute` runs a WGSL function on the GPU over every feature of
+the table its `dataRef` names, and writes the result to each feature as
+`compute.<column>`, under the names `outputColumnName` or `outputColumns`
+give. A pass writes into that table, unless it names a new one:
+
+```json
+{"dataRef": "input_0", "attributes": {"v": "value"}, "wgslFunction": "return v * 2.0;",
+ "outputColumnName": "twice", "outputTableName": "doubled", "layerType": "points"}
+```
+
+- With `outputTableName`, the pass writes a new table of that name and leaves
+  its `dataRef` table as it was. Later passes, the map and the plot read the
+  new table by its name: `{"dataRef": "doubled", "getFnv": "compute.twice"}`.
+  A pick on it, and a selection that lights it, name the rows of the table it
+  was computed from.
+- `layerType` is the type the new table is drawn and handed on as; without
+  it, the new table has the type of the table it was computed from. A pass
+  without `outputTableName` keeps its table's type.
+- A document with no map or plot is a compute step: it hands on every table it
+  holds, each as its passes left it, with the new tables after them, each with
+  its name and type. Each computed column is also a column of its own, `twice`
+  beside `compute.twice`.
+- A compute step with a `data` section of its own runs its passes on the tables
+  it loads, and on its input's tables when a pass names one.
 
 ### Layer titles and colors
 

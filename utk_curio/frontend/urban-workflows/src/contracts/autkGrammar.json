@@ -13,8 +13,6 @@
     { "in": "", "key": "links", "what": "\"links\"" },
     { "in": "map[]", "key": "camera", "what": "\"camera\"" },
     { "in": "compute[]", "key": "type", "value": "render", "what": "a render pass" },
-    { "in": "compute[]", "key": "outputTableName", "what": "a compute pass's \"outputTableName\"" },
-    { "in": "compute[]", "key": "layerType", "what": "a compute pass's \"layerType\"" },
     { "in": "data[]", "key": "type", "value": "geotiff", "what": "a geotiff source" },
     { "in": "data[]", "key": "workspace", "what": "\"workspace\"" },
     { "in": "compute[]", "key": "workspace", "what": "\"workspace\"" },
