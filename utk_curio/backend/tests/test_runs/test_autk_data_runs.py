@@ -31,6 +31,17 @@ BACK_BAY_LAYERS = [
 EXAMPLE_34 = REPO / "docs" / "examples" / "34-autark-park-access-heatmap.json"
 #: The tables example 34's data node makes: the tip's layers, then its heatmap.
 TIP_TABLES = ["tip_surface", "tip_parks", "tip_water", "tip_roads", "park_access"]
+EXAMPLE_36 = REPO / "docs" / "examples" / "36-autark-green-share-summer-heat.json"
+#: The tables example 36's data node makes: Niterói's layers, then its GeoTIFF.
+GREEN_TABLES = ["table_osm_surface", "table_osm_parks", "table_osm_roads", "lst"]
+EXAMPLE_37 = REPO / "docs" / "examples" / "37-autark-park-area-summer-heat.json"
+#: The tables example 37's data node makes: Niterói's layers, its GeoTIFF, its
+#: parks with their areas, then the heatmap that sums them.
+PARK_AREA_TABLES = ["table_osm_surface", "table_osm_roads", "lst", "park_areas", "park_area"]
+#: The files examples 36 and 37 load, as their code names them for the sandbox.
+NITEROI_EXTRACT = '"pbfFileUrl":"__CURIO_BACKEND_URL__/file/docs/examples/data/niteroi.osm.pbf"'
+NITEROI_SUMMERS = '"geotiffFileUrl":"__CURIO_BACKEND_URL__/file/docs/examples/data/niteroi_lst_verao_2001_2024.tif"'
+NITEROI_PARKS = '"geojsonFileUrl":"__CURIO_BACKEND_URL__/file/docs/examples/data/niteroi_parks.geojson"'
 
 
 def _auth(token):
@@ -209,6 +220,80 @@ def test_example_34s_loader_builds_its_heatmap_on_the_server_as_the_browser_does
     assert steps["park-access-map"]["role"] == "forward", steps["park-access-map"]
 
 
+def _niteroi_load(client, token, sandbox, example, prefix):
+    """Example 36's or 37's run on the server: its steps by node, and the one
+    load its data node *prefix*-data posted, which must be the code the
+    browser's compiler gives, autk-db and then the grammar's ``./data`` entry,
+    which loads the GeoTIFF, with the extract's and the GeoTIFF's URLs left for
+    the sandbox to resolve. Its Python step reads the load's list, and its map
+    and scatter draw in a browser: the run hands them their inputs and runs
+    nothing for them."""
+    from utk_curio.common.autk_data_compiler import compile_data_spec
+
+    dataflow = json.loads(example.read_text(encoding="utf-8"))["dataflow"]
+    run = _run(client, token, _create(client, token, dataflow))
+    steps = {s["nodeId"]: s for s in run["steps"]}
+
+    loader = steps[f"{prefix}-data"]
+    assert (loader["role"], loader["status"]) == ("run", "ok"), loader
+    assert (loader["outputPath"], loader["outputType"]) == (LAYERS, "list"), loader
+    (load,) = sandbox.bodies("/execJs")
+    assert load["code"] == compile_data_spec(_node_content(dataflow, f"{prefix}-data"))
+    assert load["code"].splitlines()[:2] == [
+        "import { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } from '@urban-toolkit/autk-db';",
+        "import { createDataAdapter } from '@urban-toolkit/autk-grammar/data';",
+    ]
+    assert NITEROI_EXTRACT in load["code"]
+    assert NITEROI_SUMMERS in load["code"]
+
+    (cells,) = sandbox.bodies("/exec")
+    assert (cells["file_path"], cells["dataType"]) == (LAYERS, "list"), cells
+    assert steps[f"{prefix}-cells"]["status"] == "ok", steps[f"{prefix}-cells"]
+    for drawn in (f"{prefix}-map", f"{prefix}-scatter"):
+        assert steps[drawn]["role"] == "forward", steps[drawn]
+    return load
+
+
+def _compiled_sources(code: str) -> list[dict]:
+    """The data sources a load's compiled code runs, as it inlines them
+    (``const __sources = [...];``). The rest of the code names every kind of
+    source its helpers can load, whatever the section holds."""
+    prefix = "const __sources = "
+    line = next(line for line in code.splitlines() if line.startswith(prefix))
+    return json.loads(line[len(prefix):].rstrip(";"))
+
+
+def test_example_36s_loader_reads_its_geotiff_on_the_server_as_the_browser_does(
+    client, user_and_token, sandbox, recorded,
+):
+    """Example 36's data node loads Niterói's surface, parks and roads from the
+    repository's extract and its summer land surface temperature from the
+    repository's GeoTIFF: on the server, the layers and the GeoTIFF's table
+    are expected, and it runs those two sources alone, no GeoJSON among them."""
+    user, token = user_and_token
+    load = _niteroi_load(client, token, sandbox, EXAMPLE_36, "green-heat")
+
+    assert f"const __expectedTables = {json.dumps(GREEN_TABLES, separators=(',', ':'))};" in load["code"]
+    assert [source["type"] for source in _compiled_sources(load["code"])] == ["osm", "geotiff"]
+
+
+def test_example_37s_loader_reads_its_parks_and_sums_their_area_on_the_server_as_the_browser_does(
+    client, user_and_token, sandbox, recorded,
+):
+    """Example 37's data node also loads Niterói's parks with their areas from
+    the repository's GeoJSON, its URL left for the sandbox to resolve, and sums
+    their area in a heatmap: on the server, the layers, the GeoTIFF's, the
+    parks' and the heatmap's tables are expected, and the heatmap bins a table
+    its data section loads before it."""
+    user, token = user_and_token
+    load = _niteroi_load(client, token, sandbox, EXAMPLE_37, "park-area")
+
+    assert NITEROI_PARKS in load["code"]
+    assert [source["type"] for source in _compiled_sources(load["code"])] == ["osm", "geotiff", "geojson", "heatmap"]
+    assert f"const __expectedTables = {json.dumps(PARK_AREA_TABLES, separators=(',', ':'))};" in load["code"]
+    assert "const __heatmapProblem = null;" in load["code"]
+
+
 def test_a_node_below_a_pool_reads_the_layers_the_load_made(client, user_and_token, sandbox, recorded):
     user, token = user_and_token
     load = json.dumps({"data": [{
@@ -251,23 +336,26 @@ def test_a_failed_load_is_tried_once_more(client, user_and_token, sandbox, recor
     assert [(ref.node_id, ref.filename, ref.data_type) for ref in recorded] == [("water", LAYERS, "list")]
 
 
-@pytest.mark.parametrize("source, said", [
-    ({"type": "join", "tableRootName": "table_osm_roads", "joinDataRef": "table_osm_surface"},
+#: The roads of Back Bay, which each document below loads beside the key it writes.
+BACK_BAY_ROADS = {"type": "osm", "pbfFileUrl": "docs/examples/data/back_bay.osm.pbf", "outputTableName": "table_osm",
+                  "autoLoadLayers": {"layers": ["surface", "roads"]}}
+
+
+@pytest.mark.parametrize("document, said", [
+    ({"data": [BACK_BAY_ROADS,
+               {"type": "join", "tableRootName": "table_osm_roads", "joinDataRef": "table_osm_surface"}]},
      'This spec uses "tableRootName" at data[1], which autk-grammar 5 renamed to "dataRef".'),
-    ({"type": "geotiff", "geotiffFileUrl": "docs/examples/data/niteroi_lst_verao_2001_2024.tif",
-      "outputTableName": "lst"},
-     "This spec uses a geotiff source at data[1], which Curio does not run yet."),
+    # Links describe no step of their own, so the document is still a data
+    # node's, which a run on the server loads.
+    ({"data": [BACK_BAY_ROADS], "links": [{"source": "roads-plot", "target": "roads-map"}]},
+     'This spec uses "links", which Curio does not run yet.'),
 ], ids=["renamed-key", "not-run-yet"])
 def test_a_load_that_writes_a_key_the_node_refuses_fails_with_its_words(
-        client, user_and_token, sandbox, recorded, source, said):
+        client, user_and_token, sandbox, recorded, document, said):
     """The compiler refuses the document as the node does
     (``contracts/autkGrammar``), so nothing reaches the sandbox."""
     user, token = user_and_token
-    content = json.dumps({"data": [
-        {"type": "osm", "pbfFileUrl": "docs/examples/data/back_bay.osm.pbf", "outputTableName": "table_osm",
-         "autoLoadLayers": {"layers": ["surface", "roads"]}},
-        source,
-    ]})
+    content = json.dumps(document)
     run = _run(client, token, _create(client, token, {
         "name": "Back Bay roads",
         "nodes": [{"id": "roads", "type": AUTARK, "content": content}],

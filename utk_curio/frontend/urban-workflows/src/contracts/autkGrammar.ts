@@ -2,8 +2,8 @@
  * What a grammar node calls its inputs, the one view an Autark node draws, and
  * the keys of a document it does not run, over the values in autkGrammar.json,
  * which the backend reads too (contracts.input_table_name,
- * autk_one_view_problem and autk_key_problem). autkGrammar.cases.json holds
- * the cases both sides run.
+ * autk_one_view_problem, autk_key_problem and autk_raster_pass_problem).
+ * autkGrammar.cases.json holds the cases both sides run.
  */
 import autkGrammar from "./autkGrammar.json";
 
@@ -62,10 +62,74 @@ function fill(template: string, values: Record<string, string>): string {
 }
 
 /**
+ * What a document is told of *what* it uses that a node does not run yet,
+ * written at *path* ("" for the document itself): autkGrammar.json's
+ * `notRunYetKey`, filled.
+ */
+export function autkNotRunYet(what: string, path: string): string {
+  return fill(autkGrammar.notRunYetKey, { what, at: path ? fill(autkGrammar.keyAt, { path }) : "" });
+}
+
+/** A raster table: its name, and its workspace when it is not the default one. */
+export type AutkRasterTable = { name: string; workspace?: string };
+
+/**
+ * The workspace *object* (a source, a pass or a raster) names, or undefined for
+ * autk-db's default one (autkGrammar.json's `defaultWorkspace`), named or not.
+ */
+function workspaceOf(object: unknown): string | undefined {
+  const workspace = object !== null && typeof object === "object"
+    ? (object as Record<string, unknown>).workspace
+    : undefined;
+  return typeof workspace === "string" && workspace !== "" && workspace !== autkGrammar.defaultWorkspace
+    ? workspace
+    : undefined;
+}
+
+/**
+ * What a document is told when one of its compute passes reads a raster, else
+ * null: the first pass whose `dataRef`, in the pass's workspace, is one of
+ * *rasters*, with where it is written, as a key a node does not run yet is told
+ * (autkGrammar.json's `rasterPass`). A pass computes one value for each feature
+ * of the table it reads, and a raster holds all its cells in one feature.
+ */
+export function autkRasterPassProblem(spec: unknown, rasters: Iterable<AutkRasterTable>): string | null {
+  if (spec === null || typeof spec !== "object" || Array.isArray(spec)) return null;
+  const held = [...rasters].map((raster) => ({ name: raster.name, workspace: workspaceOf(raster) }));
+  for (const { path, object } of objectsAt(spec as Record<string, unknown>, "compute[]")) {
+    const table = (object as Record<string, unknown> | null)?.dataRef;
+    const workspace = workspaceOf(object);
+    if (typeof table === "string" && held.some((raster) => raster.name === table && raster.workspace === workspace)) {
+      return autkNotRunYet(fill(autkGrammar.rasterPass, { table }), path);
+    }
+  }
+  return null;
+}
+
+/**
+ * The tables *document*'s own data sources of autkGrammar.json's
+ * `rasterSources` kinds write, its heatmaps and GeoTIFFs, each in its workspace.
+ */
+function ownRasters(document: Record<string, unknown>): AutkRasterTable[] {
+  const rasters: AutkRasterTable[] = [];
+  for (const { object } of objectsAt(document, "data[]")) {
+    if (object === null || typeof object !== "object" || Array.isArray(object)) continue;
+    const { type, outputTableName } = object as Record<string, unknown>;
+    if (typeof type === "string" && autkGrammar.rasterSources.includes(type)
+      && typeof outputTableName === "string" && outputTableName) {
+      rasters.push({ name: outputTableName, workspace: workspaceOf(object) });
+    }
+  }
+  return rasters;
+}
+
+/**
  * What a document that writes a key a node does not run is told, else null.
  * A key autk-grammar 5 renamed comes first, named with its new name; then a
  * key of autk-grammar 5 a node does not run yet. The first of autkGrammar.json's
  * keys the document writes is the one it is told of, with where it is written.
+ * Last, a compute pass over a raster the document's own data writes, which a
+ * node does not run either (autkRasterPassProblem).
  */
 export function autkKeyProblem(spec: unknown): string | null {
   if (spec === null || typeof spec !== "object" || Array.isArray(spec)) return null;
@@ -77,7 +141,7 @@ export function autkKeyProblem(spec: unknown): string | null {
   }
   for (const rule of autkGrammar.notRunYet as Array<KeyRule & { what: string }>) {
     const path = written(document, rule);
-    if (path !== null) return fill(autkGrammar.notRunYetKey, { what: rule.what, at: at(path) });
+    if (path !== null) return autkNotRunYet(rule.what, path);
   }
-  return null;
+  return autkRasterPassProblem(document, ownRasters(document));
 }

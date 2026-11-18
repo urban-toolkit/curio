@@ -175,6 +175,13 @@ WORKFLOW_FILES = [
     # An Autark render pass, the sky each street around Wall Street sees:
     # test-gpu runs it, for its map.
     "docs/examples/35-autark-sky-seen-from-the-street.json",
+    # Niterói's summer surface temperature, a GeoTIFF, under its parks on a
+    # map, and each cell's green share against its heat in Vega-Lite.
+    "docs/examples/36-autark-green-share-summer-heat.json",
+    # Niterói's park area within reach, a heatmap summing the areas of a
+    # GeoJSON's parks, on a map, and each cell's park area against its heat
+    # in Vega-Lite.
+    "docs/examples/37-autark-park-area-summer-heat.json",
 ]
 
 

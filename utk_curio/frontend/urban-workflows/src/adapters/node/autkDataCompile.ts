@@ -27,6 +27,8 @@ export const SANDBOX_BACKEND_URL_TOKEN = '__CURIO_BACKEND_URL__';
 
 // autk-db's default workspace (its DEFAULT_WORKSPACE_NAME): where a source, a
 // pass, a map or a plot that names no `workspace` keeps and reads its tables.
+// contracts/autkGrammar.json holds it too, as `defaultWorkspace`, for the
+// check of a compute pass over a raster on both sides.
 export const AUTK_DEFAULT_WORKSPACE = 'autk';
 
 // The workspace *entry* names (a source, a pass, a map, a plot, or a table a
@@ -86,7 +88,7 @@ export function inItsWorkspace(source: any): any {
 export function resolveDataSourceUrls(spec: any, base: string): any {
     if (!Array.isArray(spec.data) || spec.data.length === 0) return spec;
 
-    const urlFields = ['pbfFileUrl', 'csvFileUrl', 'jsonFileUrl', 'geojsonFileUrl'];
+    const urlFields = ['pbfFileUrl', 'csvFileUrl', 'jsonFileUrl', 'geojsonFileUrl', 'geotiffFileUrl'];
     const isAbsolute = (url: string) => /^[a-z][a-z\d+\-.]*:/i.test(url);
 
     const resolved = spec.data.map((source: any) => {
@@ -104,12 +106,14 @@ export function resolveDataSourceUrls(spec: any, base: string): any {
 }
 
 // The source types both loaders hand to autk-grammar's own data adapter
-// (`createDataAdapter().resolveSource`), which loads them as the grammar does:
-// the sandbox's from the grammar's `./data` entry, which imports autk-db alone,
-// and the browser's from its main entry. Each makes a raster table, which the
-// loaders read back with the grid its cells lie on (withRasterGrid) and hand on
-// as Curio hands on a raster (rasterEnvelope).
-export const GRAMMAR_RASTER_SOURCES = ['heatmap'];
+// (`createDataAdapter().resolveSource`), which loads them as the grammar does,
+// each loader taking it from the grammar's `./data` entry, which imports
+// autk-db alone. Each makes a raster table, a heatmap with autk-db's
+// `buildHeatmap` and a GeoTIFF with its `loadGeoTiff`, which the loaders read
+// back with the grid its cells lie on (withRasterGrid) and hand on as Curio
+// hands on a raster (rasterEnvelope). contracts/autkGrammar.json holds this
+// list too, as `rasterSources`.
+export const GRAMMAR_RASTER_SOURCES = ['heatmap', 'geotiff'];
 
 // Table names a data spec is contractually asking autk-db to create.
 //
@@ -124,7 +128,8 @@ export const GRAMMAR_RASTER_SOURCES = ['heatmap'];
 // Naming mirrors autk-db's own, which derives a layer table as
 // `outputTableName || `${osmInputTableName}_${layer}``. Each table is named by
 // its key (autkTableKey), in the workspace its source loads it into. A
-// heatmap's raster table is one of them: the loaders read it back by its key.
+// heatmap's or a GeoTIFF's raster table is one of them: the loaders read it
+// back by its key.
 export function requestedLayerTables(dataSources: any[]): string[] {
     const names: string[] = [];
     for (const source of dataSources ?? []) {
@@ -263,12 +268,14 @@ export function withOsmIds(table: { source?: string; type?: string } | null | un
 }
 
 // A raster table's `getRaster` collection with `grid`, the grid its cells lie
-// on (utils/raster/rasterWire.ts), which autk-db keeps for no raster it builds.
-// A heatmap's cells lie on a regular grid over the collection's extent,
+// on (utils/raster/rasterWire.ts), which autk-db keeps for no raster it makes.
+// A raster's cells lie on a regular grid over the collection's extent,
 // `rasterResX` columns by `rasterResY` rows with row 0 at the south edge, in
-// `crs`, the CRS of the workspace that built it. The band arrays are shared,
-// not copied. Both loaders go through this one function (compileDataSpecToAutkDbJs
-// embeds its source), so the body avoids what loadableFeatures avoids.
+// `crs`, the CRS of the workspace that made it: a heatmap's are built there,
+// and autk-db lays a GeoTIFF's over the file's corners taken into it. The map
+// draws them there too. The band arrays are shared, not copied. Both loaders
+// go through this one function (compileDataSpecToAutkDbJs embeds its source),
+// so the body avoids what loadableFeatures avoids.
 export function withRasterGrid(collection: any, crs: string): any {
     const bbox = collection.bbox;
     const properties = collection.features[0].properties;
@@ -383,17 +390,17 @@ const __have = new Set(__tables.map((t) => tableKey(t.workspace, t.table.name))
 // Node.js sandbox. The top-level `import` is rewritten to `await import()` by
 // execute_js_code, and so is autk-grammar's data entry's, the one line that
 // imports what the section needs of it: `createDataAdapter` for a source of
-// GRAMMAR_RASTER_SOURCES (a heatmap), `enterWorkspace` and `tableKey` for a
-// section that names a workspace, and nothing for a section with neither. The
-// rest is the body of the async function the sandbox wraps user code in.
-// Mirrors loadSpecLayers exactly, with the spec inlined as a literal and
-// flattenToMultiPolygon inlined (the module-level helper above is not in the
-// sandbox's scope). Each source loads into its workspace, entered with the
-// grammar's own `enterWorkspace` (workspaceCode), and a heatmap through the
-// grammar's own data adapter. The function returns Array<{name, type, geojson}>,
-// each raster table after them in its envelope (rasterEnvelope), each table or
-// raster in another workspace than the default one with its `workspace` too,
-// which the sandbox persists to DuckDB.
+// GRAMMAR_RASTER_SOURCES (a heatmap, a GeoTIFF), `enterWorkspace` and
+// `tableKey` for a section that names a workspace, and nothing for a section
+// with neither. The rest is the body of the async function the sandbox wraps
+// user code in. Mirrors loadSpecLayers exactly, with the spec inlined as a
+// literal and flattenToMultiPolygon inlined (the module-level helper above is
+// not in the sandbox's scope). Each source loads into its workspace, entered
+// with the grammar's own `enterWorkspace` (workspaceCode), and a heatmap or a
+// GeoTIFF through the grammar's own data adapter. The function returns
+// Array<{name, type, geojson}>, each raster table after them in its envelope
+// (rasterEnvelope), each table or raster in another workspace than the default
+// one with its `workspace` too, which the sandbox persists to DuckDB.
 export function compileDataSpecToAutkDbJs(dataSources: any[]): string {
     const sources = (dataSources ?? []).map(inItsWorkspace);
     const parts = workspaceCode(autkUsesWorkspaces({ data: sources }));

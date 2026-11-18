@@ -13,6 +13,8 @@ import * as fs from "fs";
 import * as path from "path";
 
 import {
+    AUTK_DEFAULT_WORKSPACE,
+    GRAMMAR_RASTER_SOURCES,
     SANDBOX_BACKEND_URL_TOKEN,
     compileDataSpecToAutkDbJs,
     requestedLayerTables,
@@ -52,6 +54,27 @@ describe("autkDataCompile stays importable outside the browser", () => {
     });
 });
 
+describe("GRAMMAR_RASTER_SOURCES", () => {
+    it("are the raster sources a compute pass is refused over, the node's and the agents' check's", () => {
+        // This module imports nothing, so it holds its own list, which the
+        // contract both sides read must hold too (contracts/autkGrammar.json).
+        const contract = JSON.parse(fs.readFileSync(
+            path.join(__dirname, "..", "..", "..", "contracts", "autkGrammar.json"), "utf8",
+        ));
+        expect(GRAMMAR_RASTER_SOURCES).toEqual(contract.rasterSources);
+    });
+});
+
+describe("AUTK_DEFAULT_WORKSPACE", () => {
+    it("is the default workspace the raster-pass check reads, the node's and the agents' check's", () => {
+        // Held here and in the contract both sides read, for the same reason.
+        const contract = JSON.parse(fs.readFileSync(
+            path.join(__dirname, "..", "..", "..", "contracts", "autkGrammar.json"), "utf8",
+        ));
+        expect(AUTK_DEFAULT_WORKSPACE).toBe(contract.defaultWorkspace);
+    });
+});
+
 describe("requestedLayerTables", () => {
     it("names one table per auto-loaded OSM layer", () => {
         const sources = dataSourcesOf("11-autark-pbf-loading.json", "pbf-load");
@@ -80,6 +103,15 @@ describe("resolveDataSourceUrls", () => {
         );
         expect(resolved.data[0].pbfFileUrl)
             .toBe(`${SANDBOX_BACKEND_URL_TOKEN}/file/docs/examples/data/x.osm.pbf`);
+    });
+
+    it("rewrites a GeoTIFF's relative file URL the same way", () => {
+        const resolved = resolveDataSourceUrls(
+            { data: [{ type: "geotiff", geotiffFileUrl: "docs/examples/data/lst.tif", outputTableName: "lst" }] },
+            SANDBOX_BACKEND_URL_TOKEN,
+        );
+        expect(resolved.data[0].geotiffFileUrl)
+            .toBe(`${SANDBOX_BACKEND_URL_TOKEN}/file/docs/examples/data/lst.tif`);
     });
 
     it("leaves absolute URLs alone", () => {

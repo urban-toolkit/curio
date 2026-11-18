@@ -2160,6 +2160,343 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         });
         expect(api().fetchData.mock.calls.filter((c: any[]) => c[0] === 'art-in')).toHaveLength(0);
       });
+
+      // A GeoTIFF a data section loads, as the sandbox's loader hands it on
+      // (compileDataSpecToAutkDbJs): in its envelope, the list's one item in
+      // the `dict` envelope /get answers it in. 4 columns by 3 rows of 5.5 by
+      // 5 km over Niterói, rows from south to north, two of its bands.
+      test('a GeoTIFF the data section loads is drawn as every raster is: framed, its cells opaque, its bands named as they were read', async () => {
+        const bbox = [-4802000, -2604000, -4780000, -2589000];
+        const bands = [{ id: 'band_1', label: 'band_1' }, { id: 'band_2', label: 'band_2' }];
+        const wire = (values: number[]) => ({ float32le: Buffer.from(Float32Array.from(values).buffer).toString('base64') });
+        api().fetchData.mockImplementation(async (path: string) => (path === 'art-tif' ? {
+          dataType: 'list',
+          data: [{
+            dataType: 'dict',
+            data: {
+              dataType: 'raster',
+              layerName: 'lst',
+              data: {
+                type: 'FeatureCollection',
+                bbox,
+                grid: { crs: 'EPSG:3395', width: 4, height: 3, originX: -4802000, originY: -2589000, resX: 5500, resY: -5000 },
+                features: [{
+                  type: 'Feature',
+                  geometry: null,
+                  properties: {
+                    rasterResX: 4,
+                    rasterResY: 3,
+                    bands,
+                    band_1: wire([27.5, 28, 28.5, 29, 29.5, 30, 30.5, 31, 31.5, 32, 32.5, 33]),
+                    band_2: wire([26.5, 27, 27.5, 28, 28.5, 29, 29.5, 30, 30.5, 31, 31.5, 32]),
+                  },
+                }],
+              },
+            },
+          }],
+        } : { data: {}, dataType: 'dataframe' }));
+        // The grammar as autk-grammar builds it: each data source through its
+        // data adapter, then its map reads the raster table with getRaster,
+        // which the grammar's database answers, once Curio loaded the raster
+        // with loadGeoTiff, at its own extent, its bands labelled by their ids.
+        // Every mock is put back afterwards, whatever the test reached.
+        const drawn: { spec: any; raster: any } = { spec: null, raster: null };
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const grammarAsBefore = AutkGrammar.getMockImplementation();
+        const getRasterAsBefore = mockAutkDbGetRaster.getMockImplementation()!;
+        AutkGrammar.mockImplementation(() => {
+          const grammar: any = { data: {} };
+          grammar.dataAdapter = { resolveSource: jest.fn(async (db: any) => db) };
+          grammar.run = jest.fn(async (spec: any) => {
+            drawn.spec = spec;
+            let db: any;
+            for (const source of spec.data) db = await grammar.dataAdapter.resolveSource(db, source);
+            drawn.raster = await db.getRaster('lst');
+          });
+          return grammar;
+        });
+        mockAutkDbGetRaster.mockImplementation(() => Promise.resolve({
+          type: 'FeatureCollection',
+          bbox,
+          features: [{
+            type: 'Feature',
+            geometry: null,
+            properties: { rasterResX: 4, rasterResY: 3, bands, band_1: new Float32Array(12), band_2: new Float32Array(12) },
+          }],
+        } as any));
+        mockAutkDbLoadGeoTiff.mockClear();
+        try {
+          const interpretCode = jest.fn(
+            (_unresolved, _code, _input, _inputTypes, cb) =>
+              cb({ stdout: [], stderr: '', output: { path: 'art-tif', dataType: 'list' } }),
+          );
+          const setOutput = jest.fn();
+          const result = await callBehavior(
+            useAutkGrammarBehavior,
+            { outputCallback: jest.fn(), jsInterpreter: { interpretCode } as any },
+            { setOutput },
+          );
+          await act(async () => {
+            await result.current.applyGrammar!(JSON.stringify({
+              data: [{ type: 'geotiff', geotiffFileUrl: 'docs/examples/data/niteroi_lst_verao_2001_2024.tif', outputTableName: 'lst' }],
+              map: { layerRefs: [{ dataRef: 'lst', getFnv: 'band_2', colorMapInterpolator: 'interpolateYlOrRd' }] },
+            }));
+          });
+
+          expect(setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error')).toBeUndefined();
+          // The sandbox loaded it: the code it was sent imports the grammar's
+          // ./data entry and fetches the file from the backend's /file/ route.
+          const code = interpretCode.mock.calls[0][1];
+          expect(code).toContain("import { createDataAdapter } from '@urban-toolkit/autk-grammar/data';");
+          expect(code).toContain(`"geotiffFileUrl":"${SANDBOX_BACKEND_URL_TOKEN}/file/docs/examples/data/niteroi_lst_verao_2001_2024.tif"`);
+          // The grammar is handed a raster of Curio's own, loaded at its own
+          // size, cell for cell, in the CRS of the grid its cells lie on.
+          expect(drawn.spec.data.map((s: any) => [s.type, s.outputTableName])).toEqual([['curio-raster', 'lst']]);
+          expect(mockAutkDbLoadGeoTiff).toHaveBeenCalledWith(expect.objectContaining({
+            outputTableName: 'lst', coordinateFormat: 'EPSG:3395', maxRasterCells: 12, resampleMethod: 'nearest',
+          }));
+          // Every cell opaque, as every raster layer is drawn.
+          expect(drawn.spec.map.layerRefs).toEqual([{
+            dataRef: 'lst', getFnv: 'band_2', colorMapInterpolator: 'interpolateYlOrRd',
+            transferFunction: { opacityMin: 1, opacityMax: 1 },
+          }]);
+          // The map reads it at its own extent, outlined so a map that starts
+          // with it is placed, its bands named as they were read.
+          expect(drawn.raster.bbox).toEqual(bbox);
+          expect(drawn.raster.features[0].geometry).toBeNull();
+          expect(drawn.raster.features[1].geometry.type).toBe('Polygon');
+          expect(drawn.raster.features[0].properties.bands).toEqual(bands);
+          expect(setOutput.mock.calls.map((c: any[]) => c[0]?.code)).toContain('success');
+        } finally {
+          AutkGrammar.mockImplementation(grammarAsBefore);
+          mockAutkDbGetRaster.mockImplementation(getRasterAsBefore);
+        }
+      });
+
+      // A map that draws an Autark data node's GeoTIFF, then its parks and
+      // roads, as example 36's does. autk-map draws a layer of a base-map type
+      // (surface, parks, water, roads) under every raster whatever the map's
+      // order, and every raster cell is opaque, so the GeoTIFF hid them: the
+      // map drew the temperature alone. The parks and roads are handed to the
+      // grammar as plain geometry, which autk-map draws in the map's order.
+      test('the parks and roads a map lists after a GeoTIFF reach the grammar as plain geometry, drawn over it', async () => {
+        const wire = (values: number[]) => ({ float32le: Buffer.from(Float32Array.from(values).buffer).toString('base64') });
+        const area = (x: number) => ({
+          type: 'Polygon',
+          coordinates: [[[x, -2596000], [x + 1000, -2596000], [x + 1000, -2595000], [x, -2595000], [x, -2596000]]],
+        });
+        api().fetchData.mockImplementation(async (path: string) => (path === 'art-lst' ? {
+          dataType: 'list',
+          data: [
+            { dataType: 'dict', data: { name: 'table_osm_parks', type: 'parks', geojson: {
+              type: 'FeatureCollection', features: [{ type: 'Feature', geometry: area(-4790000), properties: {} }] } } },
+            { dataType: 'dict', data: { name: 'table_osm_roads', type: 'roads', geojson: {
+              type: 'FeatureCollection',
+              features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: [[-4795000, -2595000], [-4785000, -2595000]] }, properties: {} }] } } },
+            { dataType: 'dict', data: {
+              dataType: 'raster',
+              layerName: 'lst',
+              data: {
+                type: 'FeatureCollection',
+                bbox: [-4802000, -2604000, -4780000, -2589000],
+                grid: { crs: 'EPSG:3395', width: 2, height: 1, originX: -4802000, originY: -2589000, resX: 11000, resY: -15000 },
+                features: [{
+                  type: 'Feature',
+                  geometry: null,
+                  properties: { rasterResX: 2, rasterResY: 1, bands: [{ id: 'band_1', label: 'band_1' }], band_1: wire([30, 31]) },
+                }],
+              },
+            } },
+          ],
+        } : { data: {}, dataType: 'dataframe' }));
+        const drawn: { spec: any } = { spec: null };
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const grammarAsBefore = AutkGrammar.getMockImplementation();
+        AutkGrammar.mockImplementation(() => {
+          const grammar: any = { data: {} };
+          grammar.dataAdapter = { resolveSource: jest.fn(async (db: any) => db) };
+          grammar.run = jest.fn(async (spec: any) => { drawn.spec = spec; });
+          return grammar;
+        });
+        try {
+          const setOutput = jest.fn();
+          const result = await callBehavior(
+            useAutkGrammarBehavior,
+            { outputCallback: jest.fn(), input: { path: 'art-lst', dataType: 'list' } as any },
+            { setOutput },
+          );
+          await act(async () => {
+            await result.current.applyGrammar!(JSON.stringify({
+              map: { layerRefs: [
+                { dataRef: 'lst', getFnv: 'band_1', colorMapInterpolator: 'interpolateYlOrRd' },
+                { dataRef: 'table_osm_parks', color: '#2ca02c', opacity: 0.45 },
+                { dataRef: 'table_osm_roads', color: '#4d4d4d' },
+              ] },
+            }));
+          });
+
+          expect(setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error')).toBeUndefined();
+          const handed = Object.fromEntries((drawn.spec.data as any[]).map((s: any) => [s.outputTableName, s]));
+          expect(handed.lst.type).toBe('curio-raster');
+          expect(handed.table_osm_parks).toMatchObject({ type: 'geojson' });
+          expect(handed.table_osm_parks.layerType).toBeUndefined();
+          expect(handed.table_osm_roads.layerType).toBeUndefined();
+          // The map's order is the document's.
+          expect(drawn.spec.map.layerRefs.map((ref: any) => ref.dataRef)).toEqual(['lst', 'table_osm_parks', 'table_osm_roads']);
+        } finally {
+          AutkGrammar.mockImplementation(grammarAsBefore);
+        }
+      });
+
+      // A GPGPU pass computes one value for each feature of its table, and a
+      // raster holds all its cells in one feature, so a pass over a raster
+      // fails the node before anything is loaded, computed or drawn, naming
+      // the pass and the raster (contracts/autkGrammar autkRasterPassProblem).
+      const warming = (dataRef: string, band: string) => ({
+        dataRef, attributes: { t: band }, outputColumns: ['warming'], wgslFunction: 'return t;',
+      });
+
+      test('a compute pass over the GeoTIFF the document loads fails the node before anything runs, naming the pass and the raster', async () => {
+        const interpretCode = jest.fn(
+          (_unresolved, _code, _input, _inputTypes, cb) =>
+            cb({ stdout: [], stderr: '', output: { path: 'art-tif', dataType: 'list' } }),
+        );
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const grammarsBefore = AutkGrammar.mock.calls.length;
+        const setOutput = jest.fn();
+        const outputCallback = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback, jsInterpreter: { interpretCode } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            data: [{
+              type: 'geotiff', geotiffFileUrl: 'docs/examples/data/niteroi_lst_verao_2001_2024.tif',
+              outputTableName: 'lst', resampleMethod: 'nearest',
+            }],
+            compute: [warming('lst', 'band_24')],
+            map: { layerRefs: [{ dataRef: 'lst', getFnv: 'band_24' }] },
+          }));
+        });
+        const errors = setOutput.mock.calls.filter((c: any[]) => c[0]?.code === 'error');
+        expect(errors.map((c: any[]) => c[0].content)).toEqual([
+          'This spec uses a compute pass over the raster "lst" at compute[0], which Curio does not run yet.',
+        ]);
+        expect(interpretCode).not.toHaveBeenCalled();
+        expect(AutkGrammar.mock.calls.length).toBe(grammarsBefore);
+        expect(outputCallback).not.toHaveBeenCalled();
+      });
+
+      test('a compute pass over a raster the input brings fails a map the same way', async () => {
+        const { fetchRaster } = jest.requireMock('../../../services/api') as { fetchRaster: jest.Mock };
+        // A map reads its input's raster as GeoTIFF bytes.
+        fetchRaster.mockResolvedValueOnce({
+          ok: true,
+          bytes: new ArrayBuffer(16),
+          meta: {
+            width: 40, height: 30, count: 1, crs: 'EPSG:32616', crsWkt: null,
+            transform: [100, 0, 447000, 0, -100, 4637000], nodata: -9999,
+          },
+        });
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const grammarsBefore = AutkGrammar.mock.calls.length;
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback: jest.fn(), input: { path: 'art-r', dataType: 'raster' } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            compute: [warming('input_0', 'band_1')],
+            map: { layerRefs: [{ dataRef: 'input_0', getFnv: 'band_1' }] },
+          }));
+        });
+        const errors = setOutput.mock.calls.filter((c: any[]) => c[0]?.code === 'error');
+        expect(errors.map((c: any[]) => c[0].content)).toEqual([
+          'This spec uses a compute pass over the raster "input_0" at compute[0], which Curio does not run yet.',
+        ]);
+        expect(AutkGrammar.mock.calls.length).toBe(grammarsBefore);
+      });
+
+      test('a compute pass over a raster the input brings fails a compute step the same way, and nothing is handed on', async () => {
+        const setOutput = jest.fn();
+        const outputCallback = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback, input: { path: 'art-r', dataType: 'raster' } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ compute: [warming('input_0', 'band_1')] }));
+        });
+        const errors = setOutput.mock.calls.filter((c: any[]) => c[0]?.code === 'error');
+        expect(errors.map((c: any[]) => c[0].content)).toEqual([
+          'This spec uses a compute pass over the raster "input_0" at compute[0], which Curio does not run yet.',
+        ]);
+        expect(outputCallback).not.toHaveBeenCalled();
+      });
+
+      // A GeoTIFF wider than a map holds (8192 cells on a side), as the
+      // sandbox's loader hands it on: autk-db shrinks one to the source's
+      // maxRasterCells as it loads it, so that is what the node says to lower.
+      test('a GeoTIFF the data section loads too large to draw says to lower its source\'s maxRasterCells', async () => {
+        const width = 9000;
+        api().fetchData.mockImplementation(async (path: string) => (path === 'art-wide' ? {
+          dataType: 'list',
+          data: [{
+            dataType: 'dict',
+            data: {
+              dataType: 'raster',
+              layerName: 'lst',
+              data: {
+                type: 'FeatureCollection',
+                bbox: [-4802000, -2604000, -4780000, -2603000],
+                grid: { crs: 'EPSG:3395', width, height: 1, originX: -4802000, originY: -2603000, resX: 22000 / width, resY: -1000 },
+                features: [{
+                  type: 'Feature',
+                  geometry: null,
+                  properties: {
+                    rasterResX: width,
+                    rasterResY: 1,
+                    bands: [{ id: 'band_1', label: 'band_1' }],
+                    band_1: { float32le: Buffer.from(new Float32Array(width).fill(30).buffer).toString('base64') },
+                  },
+                }],
+              },
+            },
+          }],
+        } : { data: {}, dataType: 'dataframe' }));
+        const interpretCode = jest.fn(
+          (_unresolved, _code, _input, _inputTypes, cb) =>
+            cb({ stdout: [], stderr: '', output: { path: 'art-wide', dataType: 'list' } }),
+        );
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const grammarsBefore = AutkGrammar.mock.calls.length;
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback: jest.fn(), jsInterpreter: { interpretCode } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            data: [{
+              type: 'geotiff', geotiffFileUrl: 'docs/examples/data/wide.tif', outputTableName: 'lst',
+              maxRasterCells: 20000000,
+            }],
+            map: { layerRefs: [{ dataRef: 'lst', getFnv: 'band_1' }] },
+          }));
+        });
+        const errors = setOutput.mock.calls.filter((c: any[]) => c[0]?.code === 'error');
+        expect(errors.map((c: any[]) => c[0].content)).toEqual([
+          'lst is 9000 by 1 cells, more than an Autark map loads at its own size (16777216 cells, 8192 on a side). '
+          + 'Give its geotiff source a lower maxRasterCells, which shrinks it as it loads, and run the node again.',
+        ]);
+        expect(AutkGrammar.mock.calls.length).toBe(grammarsBefore);
+      });
     });
 
     describe('empty-render counts', () => {
@@ -2946,9 +3283,9 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         'This spec uses "layout", which Curio does not run yet.',
       ],
       [
-        'a geotiff source',
-        { data: [{ type: 'geotiff', geotiffFileUrl: 'lst.tif', outputTableName: 'lst' }] },
-        'This spec uses a geotiff source at data[0], which Curio does not run yet.',
+        'a layout beside a data section',
+        { data: [{ type: 'csv', csvFileUrl: 'a.csv', outputTableName: 'a' }], layout: { type: 'horizontal' } },
+        'This spec uses "layout", which Curio does not run yet.',
       ],
     ])('%s fails the node before anything runs, naming the key', async (_what, spec, said) => {
       // The sandbox answers, as it does for any data-only node, so a node that

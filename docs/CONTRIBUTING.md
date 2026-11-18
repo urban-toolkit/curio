@@ -476,8 +476,9 @@ with nothing to run. An object that names one key twice is refused.
 
 To add, remove or reorder a starter rule, edit its ladder in `visDefaults.json`
 and add or remove its builder in `vegaDefaultSpec.ts` or `autkDefaultSpec.ts`,
-keyed by the rule's id. `inputTableName`, `autkOneViewProblem` and
-`autkKeyProblem` are code over `autkGrammar.json` on both sides, in
+keyed by the rule's id. `inputTableName`, `autkOneViewProblem`,
+`autkKeyProblem` and `autkRasterPassProblem` are code over `autkGrammar.json`
+on both sides, in
 `contracts/autkGrammar.ts` and `contracts.py`; a change to any of them goes
 into both, with a case for it in `autkGrammar.cases.json`, which Jest and the
 backend suite both run. A step that makes a node run a key of `notRunYet`

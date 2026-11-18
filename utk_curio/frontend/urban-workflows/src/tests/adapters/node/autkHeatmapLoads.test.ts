@@ -19,9 +19,8 @@ jest.mock("@urban-toolkit/autk-db", () => ({
   AutkDb: jest.fn().mockImplementation(() => new mockAutkDb()),
 }), { virtual: true });
 // The grammar's data entry with its own `enterWorkspace` and `tableKey`, and a
-// stand-in data adapter. Plain, not virtual: the suites that load this entry
-// unmocked key it by its file, and a Jest worker's resolver keeps the first key
-// it works out for a file's require (autkGrammarBuildMocks.test.ts).
+// stand-in data adapter. Plain, not virtual: every suite mocks a module one
+// way, and this entry's one mock kind is plain (mockKinds.test.ts).
 jest.mock("@urban-toolkit/autk-grammar/data", () => ({
   ...jest.requireActual("@urban-toolkit/autk-grammar/data"),
   createDataAdapter: (...args: any[]) => mockCreateDataAdapter(...args),

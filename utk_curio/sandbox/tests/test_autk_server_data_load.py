@@ -21,6 +21,12 @@ A heatmap source is built by autk-grammar's own data adapter, which the
 compiled code imports from the grammar's ``./data`` entry: its raster table is
 handed on after the layers, in the envelope a raster travels in between nodes,
 which a Python node receives as a ``rasterio`` dataset.
+
+A geotiff source is loaded by the same adapter, from a file of the repository
+the document names by its path, which the compiled code fetches from the
+backend's ``/file/`` route (served from disk here, as an extract is). Its
+raster table is handed on as a heatmap's is: the file's cells, laid over its
+corners in the workspace's CRS.
 """
 from __future__ import annotations
 
@@ -552,3 +558,100 @@ def _assert_osm_ids(layer: dict) -> None:
     assert any(len(own) > 1 for own in parts.values()), f"{name} has no building of several parts"
     shared = {building: own for building, own in parts.items() if len(set(own)) < len(own)}
     assert not shared, (name, dict(list(shared.items())[:3]))
+
+
+#: GeoTIFFs of the repository, as a document's geotiff source names them, each
+#: with the CRS the file is in and what autk-db reads of it (columns, rows,
+#: bands): Niterói's summer surface temperature, a band a summer from 2001 to
+#: 2024, whole, and shrunk to at most 200 cells with nearest resampling, as
+#: the grammar's gallery loads it; and a raster in UTM zone 16N with no-data
+#: cells.
+NITEROI_LST = "docs/examples/data/niteroi_lst_verao_2001_2024.tif"
+UTM_RASTER = "utk_curio/backend/tests/test_frontend/data/autark_raster_utm16n.tif"
+GEOTIFFS = [
+    pytest.param({"type": "geotiff", "geotiffFileUrl": NITEROI_LST, "outputTableName": "lst",
+                  "resampleMethod": "nearest"},
+                 "EPSG:4326", (22, 15, 24), id="niteroi"),
+    pytest.param({"type": "geotiff", "geotiffFileUrl": NITEROI_LST, "outputTableName": "lst",
+                  "coordinateFormat": "EPSG:4326", "maxRasterCells": 200, "resampleMethod": "nearest"},
+                 "EPSG:4326", (17, 11, 24), id="niteroi-in-200-cells"),
+    pytest.param({"type": "geotiff", "geotiffFileUrl": UTM_RASTER, "outputTableName": "heat",
+                  "coordinateFormat": "EPSG:32616"},
+                 "EPSG:32616", (40, 30, 1), id="utm16n-with-no-data"),
+]
+
+
+@pytest.mark.parametrize("source, crs, size", GEOTIFFS)
+def test_the_server_compiled_load_reads_a_geotiff_of_the_repository_and_hands_it_on_as_a_raster(
+        source, crs, size, tmp_path, monkeypatch):
+    import numpy as np
+    import rasterio
+    from pyproj import Transformer
+
+    from utk_curio.cli import dependencies
+    from utk_curio.common.autk_data_compiler import compile_data_spec
+    from utk_curio.sandbox.app.worker import _worker_init, execute_js_code
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+    from utk_curio.sandbox.util.rasters import envelope_arrays, rasters_for_python
+
+    path = source["geotiffFileUrl"]
+    code = compile_data_spec(json.dumps({"data": [source]}))
+    assert code.splitlines()[:2] == [
+        "import { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } from '@urban-toolkit/autk-db';",
+        "import { createDataAdapter } from '@urban-toolkit/autk-grammar/data';",
+    ]
+    # The file is named by its path in the repository, as an extract is, and
+    # fetched from the backend's /file/ route.
+    assert f'"geotiffFileUrl":"__CURIO_BACKEND_URL__/file/{path}"' in code
+    serve = (_FETCH_FROM_DISK
+             .replace("EXTRACT", json.dumps(path))
+             .replace("ROOT", json.dumps(str(REPO_ROOT))))
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setenv("FLASK_BACKEND_HOST", "curio-backend.invalid")
+    monkeypatch.setenv("FLASK_BACKEND_PORT", "1")
+    dependencies.seed_duckdb_extensions()
+    _worker_init()
+    result = execute_js_code(
+        serve + code, "", "AUTK_GRAMMAR", "", launch_dir=str(REPO_ROOT), session_id=None,
+    )
+
+    assert result["output"]["path"], result["stderr"]
+    assert result["output"]["dataType"] == "list"
+    assert f"[served] {path}" in result["stdout"], result["stdout"]
+    loaded = load_from_duckdb(result["output"]["path"], session_id=None)
+    assert [(item.get("dataType"), item.get("layerName")) for item in loaded] == [("raster", source["outputTableName"])]
+    (raster,) = loaded
+    grid, bands, values = envelope_arrays(raster)
+    width, height, count = size
+    assert (grid["crs"], grid["width"], grid["height"]) == ("EPSG:3395", width, height), grid
+    assert bands == [f"band_{n}" for n in range(1, count + 1)]
+    assert raster["data"]["features"][0]["properties"]["bands"] == [{"id": band, "label": band} for band in bands]
+
+    with rasterio.open(REPO_ROOT / path) as tif:
+        assert f"EPSG:{tif.crs.to_epsg()}" == crs
+        held = tif.read(masked=True).astype("float32").filled(np.nan)
+        left, bottom, right, top = tif.bounds
+    if (held.shape[2], held.shape[1]) == (width, height):
+        # The file's own cells, every band, north up, no data as NaN.
+        assert np.array_equal(values, held, equal_nan=True)
+    else:
+        # Shrunk with nearest resampling: each cell is one of the file's, never a blend.
+        for read, own in zip(values, held):
+            assert set(read.ravel().tolist()) <= set(own.ravel().tolist())
+    # Placed where autk-db places it: over the file's corners in the workspace's CRS.
+    xs, ys = Transformer.from_crs(crs, "EPSG:3395", always_xy=True).transform(
+        [left, left, right, right], [bottom, top, bottom, top])
+    corners = (min(xs), min(ys), max(xs), max(ys))
+
+    # A Python node downstream receives it as a rasterio dataset on that grid.
+    handed = rasters_for_python(loaded, tmp_path / "rasters")
+    try:
+        (dataset,) = handed
+        assert (dataset.width, dataset.height, dataset.count, dataset.crs.to_epsg()) == (width, height, count, 3395)
+        assert tuple(dataset.bounds) == pytest.approx(corners, abs=0.05)
+        assert np.array_equal(dataset.read(), values, equal_nan=True)
+    finally:
+        for item in handed:
+            item.close()

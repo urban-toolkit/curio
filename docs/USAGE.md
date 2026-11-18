@@ -1360,8 +1360,9 @@ The values are read from the node's input, so the table must come from an input,
 
 The `Autark` node draws an Autark document: map layers or a plot, and GPU
 compute over tables. A table comes from the document's own `data` section (an
-OSM extract, a GeoJSON or CSV file) or from the node's input. The document
-writes no `data` entry for its input; it names the tables the input provides.
+OSM extract, a GeoJSON or CSV file, a GeoTIFF) or from the node's input. The
+document writes no `data` entry for its input; it names the tables the input
+provides.
 
 Each feature of an OpenStreetMap layer the node hands on has its OpenStreetMap
 id in `osm_id`, and a building's parts share its `building_id`.
@@ -1371,11 +1372,9 @@ or whose `map` or `plot` lists more than one, does not run, and the node's
 error says to put each in its own `Autark` node and link them with interaction
 edges (see [Linking charts](#linking-charts)).
 
-A node does not run these keys of the Autark grammar. A document that writes
-one does not run, and the node's error names the key and where it is written:
-
-- `layout` and `links`;
-- `geotiff` sources.
+A node does not run the Autark grammar's `layout` and `links`. A document that
+writes either does not run, and the node's error names the key and where it is
+written.
 
 ### Its input
 
@@ -1425,7 +1424,8 @@ one does not run, and the node's error names the key and where it is written:
   `band_2`, and so on. Every cell with a value is drawn opaque, 0 included, in
   the layerRef's `colorMapInterpolator` (reds without one) from the band's lowest
   value to its highest, and a cell with no value is clear: the raster's nodata,
-  or 0 when the GeoTIFF names no nodata. A raster with
+  or 0 when the GeoTIFF names no nodata. The layers listed after a raster in
+  `layerRefs`, parks and roads included, are drawn over it. A raster with
   a `colorMapInterpolator` shows its legend, with that scheme and range;
   `"isColorMap": false` hides the legend and keeps the colours. It is drawn at
   its own size, cell for cell, up to 4096 by 4096 cells and 8192 on a side. A
@@ -1433,7 +1433,9 @@ one does not run, and the node's error names the key and where it is written:
   crop it in the node that makes it, for example with a rasterio window read or
   the `bounds` of `curio_load_data` (see the [Data Catalog](DATA-CATALOG.md)).
   It needs a CRS with an EPSG code and a north-up grid. A plot or a compute step
-  does not read a raster.
+  does not read a raster, and a document whose compute pass names one, in the
+  pass's own workspace, does not run: the node's error names the pass and the
+  raster. Compute over a raster's cells in a Python node.
 - A raster the node hands on reaches a Python node as a `rasterio` dataset on
   the same grid: its bands, origin, cell size and CRS.
 - A `data` section runs in the sandbox, where the input is not available: its
@@ -1659,6 +1661,48 @@ map's planar units, half as far for each step up.
 Pressing R on the map frames it and turns it by its camera again. A map a Map
 Editor node feeds keeps the view you zoomed or panned to when an edit draws it
 again, and a change to its `camera` shows that camera's view.
+
+### GeoTIFF rasters
+
+A `geotiff` source loads a raster from a GeoTIFF file. `geotiffFileUrl` is the
+file's path from the folder Curio was started from, as a Python node opens a
+file (`docs/examples/data/...` reads the example data Curio ships), or a URL.
+The file's first image is read, its bands named `band_1`, `band_2`, and so on,
+and a cell holding the file's no-data value has no value. `coordinateFormat`
+is the file's CRS, EPSG:4326 unless the source says otherwise. A file of more
+than `maxRasterCells` cells, one million unless the source says otherwise, is
+shrunk to fit: with `"resampleMethod": "nearest"` each cell keeps a value of
+the file, and with `"bilinear"`, the default, neighboring cells are blended. A
+rotated or sheared grid is refused.
+
+```json
+{
+  "data": [
+    {"type": "osm", "pbfFileUrl": "docs/examples/data/niteroi.osm.pbf", "outputTableName": "table_osm",
+     "queryArea": {"geocodeArea": "Rio de Janeiro", "areas": ["Niterói"]},
+     "autoLoadLayers": {"layers": ["parks"]}},
+    {"type": "geotiff", "geotiffFileUrl": "docs/examples/data/niteroi_lst_verao_2001_2024.tif",
+     "outputTableName": "lst", "resampleMethod": "nearest"}
+  ],
+  "map": {
+    "layerRefs": [
+      {"dataRef": "lst", "getFnv": "band_24", "colorMapInterpolator": "interpolateYlOrRd",
+       "title": "Summer surface temperature, 2024 (°C)"},
+      {"dataRef": "table_osm_parks", "color": "#2ca02c"}
+    ]
+  }
+}
+```
+
+A map draws it as it draws any raster, by one band, cell for cell, up to 4096
+by 4096 cells and 8192 on a side; for a larger one, the node says to give the
+source a lower `maxRasterCells`. A node that only loads data hands it on after
+its layers: an `Autark` node draws it by its table's name, and a Python node
+receives it as a `rasterio` dataset in EPSG:3395, holding the file's cells
+over the file's extent, where the map draws them. A Python node that opens the
+file by its path reads it on the file's own grid. A GeoTIFF in a workspace is
+loaded there and handed on with it, as a table is. A raster of the Data Catalog
+comes in on the node's input, from its Data Loading node.
 
 ### Heatmaps
 

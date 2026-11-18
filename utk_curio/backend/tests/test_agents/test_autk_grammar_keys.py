@@ -149,3 +149,37 @@ def test_a_document_is_told_only_the_files_sentences():
         said = contracts.autk_key_problem(case["spec"])
         if said is not None:
             assert any(shape.match(said) for shape in shapes), said
+
+
+#: Niterói's summer surface temperature in 2024, a GeoTIFF of the repository,
+#: drawn under the city's parks, as docs/USAGE.md's GeoTIFF section writes it.
+GEOTIFF_DOCUMENT = {
+    "data": [
+        {"type": "osm", "pbfFileUrl": "docs/examples/data/niteroi.osm.pbf", "outputTableName": "table_osm",
+         "queryArea": {"geocodeArea": "Rio de Janeiro", "areas": ["Niterói"]},
+         "autoLoadLayers": {"layers": ["parks"]}},
+        {"type": "geotiff", "geotiffFileUrl": "docs/examples/data/niteroi_lst_verao_2001_2024.tif",
+         "outputTableName": "lst", "resampleMethod": "nearest"},
+    ],
+    "map": {"layerRefs": [
+        {"dataRef": "lst", "getFnv": "band_24", "colorMapInterpolator": "interpolateYlOrRd",
+         "title": "Summer surface temperature, 2024 (°C)"},
+        {"dataRef": "table_osm_parks", "color": "#2ca02c"},
+    ]},
+}
+
+
+def test_the_document_check_accepts_a_geotiff_drawn_on_a_map():
+    from utk_curio.backend.app.agents.domain import document_validation as dv
+
+    assert dv.validate(AUTK, json.dumps(GEOTIFF_DOCUMENT)) == {"status": dv.STATUS_VALID}
+
+
+def test_the_document_check_refuses_a_geotiff_shrunk_a_way_autk_db_does_not_know():
+    from utk_curio.backend.app.agents.domain import document_validation as dv
+
+    document = json.loads(json.dumps(GEOTIFF_DOCUMENT))
+    document["data"][1]["resampleMethod"] = "cubic"
+    verdict = dv.validate(AUTK, json.dumps(document))
+    assert verdict["status"] == dv.STATUS_INVALID
+    assert verdict["detail"].startswith("data[1].resampleMethod: 'cubic' is not one of"), verdict

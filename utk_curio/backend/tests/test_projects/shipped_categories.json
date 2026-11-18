@@ -386,6 +386,32 @@
       "OpenStreetMap"
     ]
   },
+  "36-autark-green-share-summer-heat": {
+    "tags": [
+      "Autark",
+      "Vega-Lite",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries",
+      "OpenStreetMap",
+      "Rasters"
+    ]
+  },
+  "37-autark-park-area-summer-heat": {
+    "tags": [
+      "Autark",
+      "Vega-Lite",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries",
+      "OpenStreetMap",
+      "Rasters"
+    ]
+  },
   "dataflows/autk-map": {
     "tags": [
       "Autark",
