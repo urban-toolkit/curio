@@ -575,11 +575,27 @@ def render_autk_region(schema: dict, label: str) -> str:
             layers=layers, layer_fields=_every(layer_required), interpolators=_either(interpolators),
             layer_title=layer_title,
         )).rstrip(),
-        "- " + _autk_words("plot", one_view=AUTK_ONE_VIEW, plot_fields=_every(_plot_required(schema))),
     ]
+    lines += _camera_lines(schema)
+    lines.append("- " + _autk_words("plot", one_view=AUTK_ONE_VIEW, plot_fields=_every(_plot_required(schema))))
     for values, definition in _variants(schema, "PlotSpec", "mark"):
         lines.append(f"  - {_either(values)}: {definition.get('description', '')}")
     return "\n".join(lines)
+
+
+def _camera_lines(schema: dict) -> list[str]:
+    """The lines of a map's ``camera`` in the ``autark`` skill, which a node
+    turns the map it framed by: what the schema says of it, less its note on
+    which adapters read it, then each of its fields. None when *schema*, the
+    schema of what a node runs, holds no camera."""
+    camera = _resolved(schema, _definition(schema, "MapSpec").get("properties", {}).get("camera"))
+    if not isinstance(camera, dict):
+        return []
+    said = camera.get("description", "").split(" Read by the ", 1)[0]
+    return [f'  - "camera": {said}'] + [
+        f'    - "{name}": {field.get("description", "")}'
+        for name, field in camera.get("properties", {}).items()
+    ]
 
 
 # --- Starter specs and image columns ----------------------------------------

@@ -1376,7 +1376,6 @@ A node does not run these keys of the Autark grammar. A document that writes
 one does not run, and the node's error names the key and where it is written:
 
 - `layout` and `links`;
-- a map's `camera`;
 - a render pass (`"type": "render"`);
 - `workspace`, on a source, a compute pass, a map or a plot.
 
@@ -1449,9 +1448,10 @@ failed, or what this input lacks. A node whose document loads everything it
 draws only says it has not run yet. A run that ends on an input the node
 cannot draw names the reason in the node body and in its error.
 
-A map opens framed on what its layers draw: it looks straight down on their
-middle, with all of them in view and a little room around them. Pressing R on
-the map frames it again.
+A map opens framed on what its layers draw: it looks down on their middle,
+with all of them in view and a little room around them, straight down unless
+its `camera` turns it (see [The map's camera](#the-maps-camera)). Pressing R on
+the map gives it that view again.
 
 A map or a plot redraws on its own when new data reaches it, as a `Vega-Lite`
 chart does: when a project opens with its input restored, and when the node
@@ -1536,6 +1536,30 @@ chip as its color, which its tag under **Scenarios** above the spec drags in
 The chip writes the box's color, and for an input from no box a gray of its
 own. A box recolored gives the layer its new color on the map's next run.
 
+### The map's camera
+
+A map's `camera` turns the view the map opens framed at, around the point it
+looks at. `pitch` tilts the view from straight down, from 0 to 90 degrees, and
+`bearing` turns it to face a compass heading, in degrees clockwise from north,
+which is then up on the screen. The eye stays as far from that point as the
+framing put it, unless `zoom` sets the distance: `10000 / 2^(zoom - 10)` of the
+map's planar units, half as far for each step up.
+
+```json
+{
+  "map": {
+    "camera": {"pitch": 50, "bearing": 30},
+    "layerRefs": [
+      {"dataRef": "table_osm_buildings", "getFnv": "height", "getFnvType": "quantitative"}
+    ]
+  }
+}
+```
+
+Pressing R on the map frames it and turns it by its camera again. A map a Map
+Editor node feeds keeps the view you zoomed or panned to when an edit draws it
+again, and a change to its `camera` shows that camera's view.
+
 ### GeoTIFF rasters
 
 A `geotiff` source loads a raster from a GeoTIFF file. `geotiffFileUrl` is the
@@ -1571,12 +1595,11 @@ rotated or sheared grid is refused.
 A map draws it as it draws any raster, by one band, cell for cell, up to 4096
 by 4096 cells and 8192 on a side; for a larger one, the node says to give the
 source a lower `maxRasterCells`. A node that only loads data hands it on after
-its layers: an `Autark` node draws it by its table's
-name, and a Python node receives it as a `rasterio` dataset in EPSG:3395,
-holding the file's cells over the file's extent, where the map draws them. A
-Python node that opens the file by its path reads it on the file's own grid. A
-raster of the Data Catalog comes in on the node's input, from its Data Loading
-node.
+its layers: an `Autark` node draws it by its table's name, and a Python node
+receives it as a `rasterio` dataset in EPSG:3395, holding the file's cells
+over the file's extent, where the map draws them. A Python node that opens the
+file by its path reads it on the file's own grid. A raster of the Data Catalog
+comes in on the node's input, from its Data Loading node.
 
 ### Heatmaps
 
