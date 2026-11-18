@@ -172,6 +172,9 @@ WORKFLOW_FILES = [
     # An Autark heatmap of park access over Lower Manhattan's tip, drawn on a
     # map and read by a Python step as a raster.
     "docs/examples/34-autark-park-access-heatmap.json",
+    # Niterói's summer surface temperature, a GeoTIFF, under its parks on a
+    # map, and each cell's parks within reach against its heat in Vega-Lite.
+    "docs/examples/35-autark-parks-and-summer-heat.json",
 ]
 
 

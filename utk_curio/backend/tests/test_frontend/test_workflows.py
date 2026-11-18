@@ -437,6 +437,15 @@ PARK_ACCESS_SHARES = "park-access-shares"
 #: The classes of the Python step's table: how many parks are within reach.
 PARK_ACCESS_CLASSES = ["none", "1", "2 to 4", "5 to 9", "10 or more"]
 
+#: Example 35, Niterói's parks against its summer heat, and the nodes and
+#: columns its own test reads.
+EXAMPLE_35 = "35-autark-parks-and-summer-heat.json"
+PARKS_HEAT_MAP = "parks-heat-map"
+PARKS_HEAT_CELLS = "parks-heat-cells"
+PARKS_HEAT_SCATTER = "parks-heat-scatter"
+PARKS_WITHIN_500_M = "parks within about 500 m"
+SUMMER_2020_2024 = "summer temperature, 2020 to 2024 (°C)"
+
 #: Example 33, SAM 3 on the same walk's frames and the walk cut into blocks,
 #: and the nodes its own test reads.
 EXAMPLE_33 = "33-sideseeing-frames-segments-blocks.json"
@@ -1914,6 +1923,41 @@ class TestWorkflowCanvas:
         values = [row["share of the area"] for row in shares]
         assert abs(sum(values) - 1) <= 0.005, shares
         assert sum(value > 0 for value in values) >= 4 and max(values) < 1, shares
+
+    @pytest.mark.only_workflows(EXAMPLE_35)
+    def test_niteroi_cells_take_their_heat_from_the_geotiff_and_their_parks_from_the_heatmap(
+            self, loaded_workflow, record_property):
+        """Example 35 as it ships: its data node loads Niterói's summer land
+        surface temperature from the repository's GeoTIFF, and a heatmap of
+        its parks. The map draws the summer of 2024, and the Python step gives
+        each cell on Niterói's land, about 140 of the file's 330, its mean
+        summer temperature from 2020 to 2024, the file's own values to the
+        hundredth, and the mean of the heatmap's counts in it, which vary from
+        cell to cell; the scatter draws them. The regression line's slope and
+        the correlation are recorded as the run's properties."""
+        import numpy as np
+        import rasterio
+
+        from .utils import REPO_ROOT
+
+        page = self.page
+        self._execute_all_playable_nodes()
+
+        assert_autark_map_drawn(page, PARKS_HEAT_MAP, timeout=60000, attach_as="the summer of 2024 under the parks")
+        assert_vega_canvas_rendered(page, PARKS_HEAT_SCATTER)
+        cells = _stored_rows(page, PARKS_HEAT_CELLS)
+        assert 100 <= len(cells) <= 220, len(cells)
+        with rasterio.open(os.path.join(REPO_ROOT, "docs", "examples", "data", "niteroi_lst_verao_2001_2024.tif")) as tif:
+            summers = tif.read([20, 21, 22, 23, 24]).mean(axis=0)
+        for cell in cells:
+            expected = float(summers[int(cell["row"]), int(cell["column"])])
+            assert abs(cell[SUMMER_2020_2024] - expected) <= 0.006, (cell, expected)
+        parks = np.array([cell[PARKS_WITHIN_500_M] for cell in cells], dtype=float)
+        assert (parks >= 0).all() and len(np.unique(parks)) >= 20, sorted(set(parks.tolist()))[:30]
+        heat = np.array([cell[SUMMER_2020_2024] for cell in cells], dtype=float)
+        record_property("cells_on_land", len(cells))
+        record_property("slope_c_per_park", round(float(np.polyfit(parks, heat, 1)[0]), 3))
+        record_property("correlation", round(float(np.corrcoef(parks, heat)[0, 1]), 3))
 
     @pytest.mark.only_workflows(EXAMPLE_33)
     def test_a_blocks_player_lights_the_frames_from_its_start_to_where_it_stands(self, loaded_workflow):

@@ -376,6 +376,19 @@
       "Rasters"
     ]
   },
+  "35-autark-parks-and-summer-heat": {
+    "tags": [
+      "Autark",
+      "Vega-Lite",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries",
+      "OpenStreetMap",
+      "Rasters"
+    ]
+  },
   "dataflows/autk-map": {
     "tags": [
       "Autark",

@@ -148,6 +148,12 @@ EXAMPLE_INVARIANTS = [
     # draws it by its table's name, and to a Python step, with no interaction.
     ("34-autark-park-access-heatmap.json", 3, 2,
      {"curio.builtin/autk-grammar": 2, "curio.builtin/python-computation": 1}, False),
+    # Parks and summer heat in Niterói: its data node hands its layers, a
+    # GeoTIFF and a heatmap to a map and to a Python step, whose cells a
+    # Vega-Lite scatter plots, with no interaction.
+    ("35-autark-parks-and-summer-heat.json", 4, 3,
+     {"curio.builtin/autk-grammar": 2, "curio.builtin/python-computation": 1,
+      "curio.builtin/vis-vega": 1}, False),
 ]
 
 

@@ -31,6 +31,9 @@ BACK_BAY_LAYERS = [
 EXAMPLE_34 = REPO / "docs" / "examples" / "34-autark-park-access-heatmap.json"
 #: The tables example 34's data node makes: the tip's layers, then its heatmap.
 TIP_TABLES = ["tip_surface", "tip_parks", "tip_water", "tip_roads", "park_access"]
+EXAMPLE_35 = REPO / "docs" / "examples" / "35-autark-parks-and-summer-heat.json"
+#: The tables example 35's data node makes: Niterói's layers, its GeoTIFF, then its heatmap.
+NITEROI_TABLES = ["table_osm_surface", "table_osm_parks", "table_osm_water", "table_osm_roads", "lst", "park_access"]
 
 
 def _auth(token):
@@ -207,6 +210,49 @@ def test_example_34s_loader_builds_its_heatmap_on_the_server_as_the_browser_does
     assert steps["park-access-shares"]["status"] == "ok", steps["park-access-shares"]
     # The map draws in a browser: the run hands it the load's tables and runs nothing for it.
     assert steps["park-access-map"]["role"] == "forward", steps["park-access-map"]
+
+
+def test_example_35s_loader_reads_its_geotiff_and_builds_its_heatmap_on_the_server_as_the_browser_does(
+    client, user_and_token, sandbox, recorded,
+):
+    """Example 35's data node loads Niterói from the repository's extract, its
+    summer land surface temperature from the repository's GeoTIFF, and bins its
+    parks into a heatmap. On the server it posts the code the browser's compiler
+    gives: autk-db, then the grammar's ``./data`` entry, which loads the GeoTIFF
+    and builds the heatmap, both files' URLs left for the sandbox to resolve,
+    the layers, the GeoTIFF's table and the heatmap's expected, and no table the
+    heatmap bins missing. The Python step reads the load's list."""
+    from utk_curio.common.autk_data_compiler import compile_data_spec
+
+    user, token = user_and_token
+    dataflow = json.loads(EXAMPLE_35.read_text(encoding="utf-8"))["dataflow"]
+    run = _run(client, token, _create(client, token, dataflow))
+    steps = {s["nodeId"]: s for s in run["steps"]}
+
+    loader = steps["parks-heat-data"]
+    assert (loader["role"], loader["status"]) == ("run", "ok"), loader
+    assert (loader["outputPath"], loader["outputType"]) == (LAYERS, "list"), loader
+    (load,) = sandbox.bodies("/execJs")
+    assert load["code"] == compile_data_spec(_node_content(dataflow, "parks-heat-data"))
+    assert load["code"].splitlines()[:2] == [
+        "import { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } from '@urban-toolkit/autk-db';",
+        "import { createDataAdapter } from '@urban-toolkit/autk-grammar/data';",
+    ]
+    assert '"pbfFileUrl":"__CURIO_BACKEND_URL__/file/docs/examples/data/niteroi.osm.pbf"' in load["code"]
+    assert (
+        '"geotiffFileUrl":"__CURIO_BACKEND_URL__/file/docs/examples/data/niteroi_lst_verao_2001_2024.tif"'
+        in load["code"]
+    )
+    assert f"const __expectedTables = {json.dumps(NITEROI_TABLES, separators=(',', ':'))};" in load["code"]
+    assert "const __heatmapProblem = null;" in load["code"]
+
+    # The Python step reads the load's list, which holds the GeoTIFF and the heatmap.
+    (cells,) = sandbox.bodies("/exec")
+    assert (cells["file_path"], cells["dataType"]) == (LAYERS, "list"), cells
+    assert steps["parks-heat-cells"]["status"] == "ok", steps["parks-heat-cells"]
+    # The map and the scatter draw in a browser: the run hands them their inputs and runs nothing for them.
+    for drawn in ("parks-heat-map", "parks-heat-scatter"):
+        assert steps[drawn]["role"] == "forward", steps[drawn]
 
 
 def test_a_node_below_a_pool_reads_the_layers_the_load_made(client, user_and_token, sandbox, recorded):
