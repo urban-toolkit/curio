@@ -476,10 +476,13 @@ with nothing to run. An object that names one key twice is refused.
 
 To add, remove or reorder a starter rule, edit its ladder in `visDefaults.json`
 and add or remove its builder in `vegaDefaultSpec.ts` or `autkDefaultSpec.ts`,
-keyed by the rule's id. `inputTableName` and `autkOneViewProblem` are code over
-`autkGrammar.json` on both sides, in `contracts/autkGrammar.ts` and
-`contracts.py`; a change to either goes into both, with a case for it in
-`autkGrammar.cases.json`, which Jest and the backend suite both run. See
+keyed by the rule's id. `inputTableName`, `autkOneViewProblem` and
+`autkKeyProblem` are code over `autkGrammar.json` on both sides, in
+`contracts/autkGrammar.ts` and `contracts.py`; a change to any of them goes
+into both, with a case for it in `autkGrammar.cases.json`, which Jest and the
+backend suite both run. A step that makes a node run a key of `notRunYet`
+takes its entry out of `autkGrammar.json`, and its cases out of the `keys`
+cases or to `null`. See
 [ARCHITECTURE.md, Shared Constants](ARCHITECTURE.md#shared-constants).
 
 ### Vendored Autark Schema

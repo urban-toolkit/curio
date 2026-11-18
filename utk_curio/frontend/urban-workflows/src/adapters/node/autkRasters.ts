@@ -3,11 +3,11 @@
  * grammar's own map.
  *
  * autk-grammar draws a raster table on a map (`getRaster`, then autk-map's
- * `loadCollection` with `type: 'raster'`), but its document has no way to load
- * one: its data sources are OSM, CSV, JSON, GeoJSON, a heatmap or a join. So a
- * raster the node's input brings becomes a source of Curio's own,
- * `curio-raster`, which `withRasterSources` teaches one grammar instance to
- * load: into the grammar's own database, with `loadGeoTiff`, before its map
+ * `loadCollection` with `type: 'raster'`), and its `geotiff` source loads one
+ * from a file's URL, which a node refuses (contracts/autkGrammar). A raster the
+ * node's input brings is bytes, not a URL, so it becomes a source of Curio's
+ * own, `curio-raster`, which `withRasterSources` teaches one grammar instance
+ * to load: into the grammar's own database, with `loadGeoTiff`, before its map
  * runs. Every other source goes to the grammar unchanged. The map then reads
  * the raster by `getRaster`, at its own extent, outlined so autk-map can place
  * a map that starts with it (`framedRaster`). The grammar colors a raster's
