@@ -116,7 +116,7 @@ afterEach(unstubWebGpu);
 test.each([
   ['a map', { map: { camera: TILTED, layerRefs: LAYERS } }],
   ['a list of one map', { map: [{ camera: TILTED, layerRefs: LAYERS }] }],
-])('a document whose %s writes a camera runs, and its map is framed, then turned by it', async (_, spec) => {
+])('a document that writes a camera on %s runs, and its map is framed, then turned by it', async (_, spec) => {
   const node = mountAutkNode('cam-1');
   await node.run(spec);
 
