@@ -7,6 +7,7 @@ import {
   inputCapacity,
   inputCircleCount,
   inputSlotOf,
+  isDataEdge,
   nodeInputFromPorts,
   nodeInputFromSlots,
   slotHandleId,
@@ -67,6 +68,16 @@ describe('circles', () => {
       { source: 'v', target: 't', sourceHandle: 'in/out', targetHandle: 'in/out' },
     ];
     expect(wiredInputSlots(edges, 't')).toEqual([0]);
+  });
+
+  test("an interaction edge from a view's handle, or one a dataflow saved with no handles, takes no circle", () => {
+    const edges = [
+      { source: 'a', target: 't', targetHandle: 'in' },
+      { source: 'v', target: 't', sourceHandle: 'in/out@heights', targetHandle: 'in/out' },
+      { source: 'w', target: 't', type: 'Interaction' },
+    ];
+    expect(wiredInputSlots(edges, 't')).toEqual([0]);
+    expect(edges.map(isDataEdge)).toEqual([true, false, false]);
   });
 
   test("a port's declared maximum is the capacity", () => {

@@ -26,7 +26,7 @@ CONTRACTS = REPO_ROOT / "utk_curio" / "frontend" / "urban-workflows" / "src" / "
 #: Each shared file, by its name without ``.json``.
 FILES = (
     "renderCauses", "solveStopReasons", "agentCategories", "noteColors", "autkGrammar", "visDefaults", "nodeSettings",
-    "dashboardRuns", "agentInstalls", "agentChanges", "catalogCode",
+    "dashboardRuns", "agentInstalls", "agentChanges", "catalogCode", "interactionEdges",
 )
 
 

@@ -311,6 +311,67 @@
       }
     },
     {
+      "name": "a link from a view of a node is not followed",
+      "dataflowName": "Linked views",
+      "nodes": [
+        "load",
+        "a",
+        "map",
+        "view"
+      ],
+      "edges": [
+        {
+          "source": "load",
+          "target": "a"
+        },
+        {
+          "source": "a",
+          "target": "map"
+        },
+        {
+          "source": "map",
+          "target": "view",
+          "sourceHandle": "in/out@heights",
+          "targetHandle": "in/out"
+        }
+      ],
+      "scenarios": [
+        {
+          "id": "s1",
+          "name": "Only",
+          "color": "#2a9d8f",
+          "nodes": [
+            "a"
+          ]
+        }
+      ],
+      "expected": {
+        "scenarioSets": [
+          {
+            "id": "set-s1",
+            "name": "Linked views"
+          }
+        ],
+        "scenarios": [
+          {
+            "id": "s1",
+            "name": "Only",
+            "color": "#2a9d8f",
+            "nodes": [
+              "a"
+            ],
+            "set": "set-s1",
+            "context": [
+              "load"
+            ],
+            "outcomes": [
+              "map"
+            ]
+          }
+        ]
+      }
+    },
+    {
       "name": "given lists are kept, cut to nodes outside every box, in the dataflow's order",
       "nodes": [
         "load",

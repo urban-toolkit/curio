@@ -35,6 +35,7 @@ const FILES = [
   "nodeSettings",
   "dashboardRuns",
   "catalogCode",
+  "interactionEdges",
 ];
 
 /** A shared file, read when a test runs, so a checkout without it fails each test on its own. */

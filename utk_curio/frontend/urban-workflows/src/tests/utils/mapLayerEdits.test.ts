@@ -34,6 +34,17 @@ test("the node picks and draws on the map it feeds and is linked to, either way 
   expect(mapFedBy("edit", nodes, backwards)).toBe("map");
 });
 
+test("an edge from a view's interaction handle, or one a dataflow saved, is an interaction edge too", () => {
+  expect(isInteractionEdge({ source: "map", target: "edit", sourceHandle: "in/out@heights", targetHandle: "in/out" })).toBe(true);
+  expect(isInteractionEdge({ source: "edit", target: "map", type: "Interaction" })).toBe(true);
+  // A view's handle at one end alone is no interaction edge.
+  expect(isInteractionEdge({ source: "map", target: "edit", sourceHandle: "in/out@heights", targetHandle: "in_0" })).toBe(false);
+  // The node feeds the map and is linked to it through the map's view.
+  const fromView = { source: "map", target: "edit", sourceHandle: "in/out@heights", targetHandle: "in/out" };
+  expect(mapFedBy("edit", nodes, [...edges.slice(0, 3), fromView])).toBe("map");
+  expect(circlesInto("edit", [...edges.slice(0, 3), fromView])).toBe(2);
+});
+
 test("a data edge alone links nothing, and a map linked but not fed is not the node's", () => {
   expect(mapFedBy("edit", nodes, edges.slice(0, 3))).toBeNull();
   // Linked to a second map it does not feed: still only the one it feeds.

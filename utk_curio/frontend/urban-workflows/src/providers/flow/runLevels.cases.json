@@ -64,6 +64,24 @@
       "levels": [["c"], ["a"], ["b"]]
     },
     {
+      "name": "a link from a view of one node to another node orders nothing",
+      "nodes": ["a", "b", "c"],
+      "edges": [
+        {"id": "ab", "source": "a", "target": "b"},
+        {"id": "bc", "source": "b", "target": "c", "sourceHandle": "in/out@heights", "targetHandle": "in/out"}
+      ],
+      "levels": [["c"], ["a"], ["b"]]
+    },
+    {
+      "name": "a saved link between two views orders nothing",
+      "nodes": ["a", "b", "c"],
+      "edges": [
+        {"id": "ab", "source": "a", "target": "b"},
+        {"id": "bc", "source": "b", "target": "c", "type": "Interaction", "sourceHandle": "in/out@heights", "targetHandle": "in/out@buildings"}
+      ],
+      "levels": [["c"], ["a"], ["b"]]
+    },
+    {
       "name": "a cycle is left out, the rest runs",
       "nodes": ["a", "b", "c"],
       "edges": [

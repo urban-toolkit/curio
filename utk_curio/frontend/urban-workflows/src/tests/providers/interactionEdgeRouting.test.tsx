@@ -697,3 +697,72 @@ describe('a data edge from a pool into a chart linked to it', () => {
     expect(mockShowToast).toHaveBeenCalledWith('Cycles are not allowed in the dataflow', 'warning');
   });
 });
+
+/**
+ * A view of an Autark node has an interaction handle of its own,
+ * `in/out@<id>`, beside the node's `in/out` (contracts/interactionEdges.ts).
+ * An edge from it is an interaction edge, opened from a saved dataflow or
+ * drawn, and two interaction edges between the same two nodes are two edges:
+ * removing one leaves the selection the other still carries.
+ */
+describe('interaction edges that name a view', () => {
+  /** The edge from the view *view* of *source* to *target*'s own handle, as a dataflow saves it. */
+  const fromView = (id: string, source: string, view: string, target: string) => ({
+    id, source, target, sourceHandle: `in/out@${view}`, targetHandle: 'in/out', type: 'Interaction',
+  });
+
+  test('a saved edge from a view opens as an interaction edge on the handles it names, and carries a selection', async () => {
+    await renderFlow();
+    await addNodes(makeNode('M', AUTARK), makeNode('B', VEGA));
+
+    await load([fromView('link', 'M', 'heights', 'B')]);
+
+    expect(api.edges.map((e) => [e.id, e.sourceHandle, e.targetHandle, e.type])).toEqual([
+      ['link', 'in/out@heights', 'in/out', 'BIDIRECTIONAL_EDGE'],
+    ]);
+    expect(mockShowToast).not.toHaveBeenCalled();
+    await select('M', pick([1]));
+    expect(picksFrom('B', 'M')).toEqual([1]);
+  });
+
+  test('drawn from a view, an edge to a chart is an interaction edge, not a data edge into an input', async () => {
+    await renderFlow();
+    await addNodes(makeNode('M', AUTARK), makeNode('B', VEGA));
+
+    await act(async () => {
+      api.onConnect({ source: 'M', target: 'B', sourceHandle: 'in/out@heights', targetHandle: 'in/out' } as Connection);
+    });
+    await flush();
+
+    expect(api.edges.map((e) => [e.sourceHandle, e.targetHandle, e.type])).toEqual([
+      ['in/out@heights', 'in/out', 'BIDIRECTIONAL_EDGE'],
+    ]);
+    expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  test('two interaction edges between the same two nodes carry one selection, and removing one takes nothing back', async () => {
+    await renderFlow();
+    await addNodes(makeNode('M', AUTARK), makeNode('B', VEGA));
+    await load([saved('own', 'M', 'B', 'interaction'), fromView('view', 'M', 'heights', 'B')]);
+
+    await select('M', pick([1]));
+    expect(heldBy('B')).toHaveLength(1);
+    expect(picksFrom('B', 'M')).toEqual([1]);
+
+    // The view's edge still links the two nodes.
+    await act(async () => {
+      canvas.deleteElements({ edges: [{ id: 'own' }] });
+    });
+    await flush();
+    expect(api.edges.map((e) => e.id)).toEqual(['view']);
+    expect(picksFrom('B', 'M')).toEqual([1]);
+
+    // With no edge left between them, the selection goes.
+    await act(async () => {
+      canvas.deleteElements({ edges: [{ id: 'view' }] });
+    });
+    await flush();
+    expect(api.edges).toEqual([]);
+    expect(picksFrom('B', 'M')).toEqual([]);
+  });
+});

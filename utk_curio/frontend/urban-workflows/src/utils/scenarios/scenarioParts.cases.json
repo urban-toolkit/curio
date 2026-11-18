@@ -175,6 +175,21 @@
       "saves": []
     },
     {
+      "name": "a link from a view of another node is not a dataflow edge",
+      "nodes": [
+        {"id": "pool", "type": "curio.builtin/data-pool@1", "content": ""},
+        {"id": "chart", "type": "curio.builtin/vis-vega@1", "content": "{}"},
+        {"id": "other", "type": "curio.builtin/autk-grammar@1", "content": "{\"plot\": {\"id\": \"heights\"}}"}
+      ],
+      "edges": [
+        {"source": "pool", "target": "chart"},
+        {"source": "other", "target": "chart", "sourceHandle": "in/out@heights", "targetHandle": "in/out"}
+      ],
+      "scenarios": [{"id": "s1", "nodes": ["chart"], "context": ["pool"], "outcomes": []}],
+      "expected": {"s1": {"nodes": ["chart"], "last": ["chart"], "context": ["pool"], "outcomes": [], "boundary": ["pool"]}},
+      "saves": []
+    },
+    {
       "name": "an Autark node that draws stands for its input; one that makes layers saves its own",
       "nodes": [
         {"id": "layers", "type": "curio.builtin/autk-grammar@1", "content": "{\"data\": [{\"name\": \"roads\"}]}"},

@@ -397,6 +397,27 @@ describe("graph-created (dev/52 — a whole applied plan)", () => {
     expect(changes[1].item.markerStart).toBeUndefined();
   });
 
+  it("keeps the interaction handles an applied Interaction edge names, a view's among them, as a load does", () => {
+    render(<Host />);
+    act(() =>
+      notifyAgentCanvasMutation({
+        kind: "graph-created",
+        planId: "plan-views",
+        nodes: [],
+        edges: [
+          { id: "vx", source: "gm", target: "gp", sourceHandle: "in/out@heights", targetHandle: "in/out", type: "Interaction" },
+          { id: "bx", source: "gm", target: "gq", type: "Interaction" },
+        ],
+      }),
+    );
+    const changes = mockOnEdgesChange.mock.calls[0][0];
+    expect(changes[0].item).toMatchObject({
+      id: "vx", sourceHandle: "in/out@heights", targetHandle: "in/out", type: "BIDIRECTIONAL_EDGE",
+    });
+    // An edge that names no handle gets a node's own at each end.
+    expect(changes[1].item).toMatchObject({ id: "bx", sourceHandle: "in/out", targetHandle: "in/out", type: "BIDIRECTIONAL_EDGE" });
+  });
+
   it("skips nodes already live (partial replays)", () => {
     mockGetNodes.mockReturnValue([{ id: "ga" }]);
     render(<Host />);
