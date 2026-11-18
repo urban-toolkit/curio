@@ -59,6 +59,14 @@ export function resolveDataSourceUrls(spec: any, base: string): any {
     return { ...spec, data: resolved };
 }
 
+// The source types both loaders hand to autk-grammar's own data adapter
+// (`createDataAdapter().resolveSource`), which loads them as the grammar does:
+// the sandbox's from the grammar's `./data` entry, which imports autk-db alone,
+// and the browser's from its main entry. Each makes a raster table, which the
+// loaders read back with the grid its cells lie on (withRasterGrid) and hand on
+// as Curio hands on a raster (rasterEnvelope).
+export const GRAMMAR_RASTER_SOURCES = ['heatmap'];
+
 // Table names a data spec is contractually asking autk-db to create.
 //
 // The point is to tell a load that came back SHORT apart from one that came back
@@ -70,7 +78,8 @@ export function resolveDataSourceUrls(spec: any, base: string): any {
 // actually failed showing "Done" (#248), so the loaders check these names.
 //
 // Naming mirrors autk-db's own, which derives a layer table as
-// `outputTableName || `${osmInputTableName}_${layer}``.
+// `outputTableName || `${osmInputTableName}_${layer}``. A heatmap's raster
+// table is one of them: the loaders read it back by its name.
 export function requestedLayerTables(dataSources: any[]): string[] {
     const names: string[] = [];
     for (const source of dataSources ?? []) {
@@ -82,7 +91,7 @@ export function requestedLayerTables(dataSources: any[]): string[] {
             if (rest?.outputTableName && Array.isArray(layers)) {
                 for (const layer of layers) names.push(`${rest.outputTableName}_${layer}`);
             }
-        } else if (type === 'geojson' || type === 'csv' || type === 'json') {
+        } else if (type === 'geojson' || type === 'csv' || type === 'json' || GRAMMAR_RASTER_SOURCES.includes(type)) {
             if (rest?.outputTableName) names.push(rest.outputTableName);
         }
         // `join` is skipped on purpose: its MODIFY_ROOT/CREATE_TABLE output
@@ -184,16 +193,102 @@ export function withOsmIds(table: { source?: string; type?: string } | null | un
     });
 }
 
+// A raster table's `getRaster` collection with `grid`, the grid its cells lie
+// on (utils/raster/rasterWire.ts), which autk-db keeps for no raster it builds.
+// A heatmap's cells lie on a regular grid over the collection's extent,
+// `rasterResX` columns by `rasterResY` rows with row 0 at the south edge, in
+// `crs`, the CRS of the workspace that built it. The band arrays are shared,
+// not copied. Both loaders go through this one function (compileDataSpecToAutkDbJs
+// embeds its source), so the body avoids what loadableFeatures avoids.
+export function withRasterGrid(collection: any, crs: string): any {
+    const bbox = collection.bbox;
+    const properties = collection.features[0].properties;
+    const width = properties.rasterResX;
+    const height = properties.rasterResY;
+    return Object.assign({}, collection, {
+        grid: {
+            crs: crs,
+            width: width,
+            height: height,
+            originX: bbox[0],
+            originY: bbox[3],
+            resX: (bbox[2] - bbox[0]) / width,
+            resY: (bbox[1] - bbox[3]) / height,
+        },
+    });
+}
+
+// The envelope a raster is handed on in, from node to node and into the
+// sandbox's store (utils/raster/rasterWire.ts, whose `encodeRasterEnvelope` is
+// this function): its collection with its grid, each band base64 of
+// little-endian float32, so a nodata cell (NaN) survives JSON and a Python node
+// gets back exactly the values Autark held, and `layerName`, its table's name.
+// Both loaders hand a raster on through it (compileDataSpecToAutkDbJs embeds its
+// source), so the body avoids what loadableFeatures avoids.
+export function rasterEnvelope(collection: any, layerName?: string): any {
+    const feature = collection.features[0];
+    const properties: any = Object.assign({}, feature.properties);
+    const bands: any[] = Array.isArray(properties.bands) ? properties.bands : [];
+    for (let b = 0; b < bands.length; b++) {
+        const id = String(bands[b].id);
+        const values = feature.properties[id];
+        const bytes = new Uint8Array(values.length * 4);
+        const view = new DataView(bytes.buffer);
+        for (let i = 0; i < values.length; i++) view.setFloat32(i * 4, Number(values[i]), true);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i += 0x8000) {
+            binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + 0x8000)));
+        }
+        properties[id] = { float32le: btoa(binary) };
+    }
+    const envelope: any = {
+        dataType: 'raster',
+        data: {
+            type: 'FeatureCollection',
+            bbox: collection.bbox.slice(),
+            grid: Object.assign({}, collection.grid),
+            features: [{ type: 'Feature', geometry: null, properties: properties }],
+        },
+    };
+    if (layerName) envelope.layerName = layerName;
+    return envelope;
+}
+
 // Compile a grammar `data` section into autk-db JavaScript to run in the backend
-// Node.js sandbox. The single top-level `import` is rewritten to `await import()`
-// by execute_js_code; the rest is the body of the async function the sandbox
-// wraps user code in. Mirrors loadSpecLayers exactly, with the spec inlined as a
+// Node.js sandbox. The top-level imports are rewritten to `await import()` by
+// execute_js_code; the rest is the body of the async function the sandbox wraps
+// user code in. Mirrors loadSpecLayers exactly, with the spec inlined as a
 // literal and flattenToMultiPolygon inlined (the module-level helper above is not
-// in the sandbox's scope). The function returns Array<{name, type, geojson}>,
-// which the sandbox persists to DuckDB.
+// in the sandbox's scope). A source of GRAMMAR_RASTER_SOURCES (a heatmap) is
+// loaded by the grammar's own data adapter, from its `./data` entry, which the
+// code imports only for a document that has one. The function returns
+// Array<{name, type, geojson}>, each raster table after them in its envelope
+// (rasterEnvelope), which the sandbox persists to DuckDB.
 export function compileDataSpecToAutkDbJs(dataSources: any[]): string {
+    const grammarSources = (dataSources ?? []).some(
+        (source: any) => GRAMMAR_RASTER_SOURCES.includes(source?.type),
+    );
+    const grammarImport = grammarSources
+        ? `import { createDataAdapter } from '@urban-toolkit/autk-grammar/data';\n`
+        : '';
+    const grammarAdapter = grammarSources ? `// The grammar's own data adapter, which loads a source of these types as the
+// grammar does. The raster table it makes is read back at once, in the
+// workspace it was built in, with the grid its cells lie on (withRasterGrid),
+// in the envelope it is handed on in (rasterEnvelope), as the host defines them.
+const __adapter = createDataAdapter();
+const __grammarSources = ${JSON.stringify(GRAMMAR_RASTER_SOURCES)};
+const __withRasterGrid = ${withRasterGrid.toString()};
+const __rasterEnvelope = ${rasterEnvelope.toString()};
+` : '';
+    const grammarLoad = grammarSources ? `    else if (__grammarSources.includes(type)) {
+      await __adapter.resolveSource(db, source);
+      const __raster = await db.getRaster(rest.outputTableName);
+      const __crs = db.getWorkspaceConfiguration().coordinateFormat;
+      __rasters.push(__rasterEnvelope(__withRasterGrid(__raster, __crs), rest.outputTableName));
+    }
+` : '';
     return `import { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } from '@urban-toolkit/autk-db';
-const __sources = ${JSON.stringify(dataSources)};
+${grammarImport}const __sources = ${JSON.stringify(dataSources)};
 // Computed host-side by requestedLayerTables so the naming rules live in ONE
 // place rather than being restated inside this emitted string.
 const __expectedTables = ${JSON.stringify(requestedLayerTables(dataSources))};
@@ -205,6 +300,8 @@ const __joinErrors = [];
 const __loadableFeatures = ${loadableFeatures.toString()};
 const __withOsmIds = ${withOsmIds.toString()};
 const __joinQueryParams = ${joinQueryParams.toString()};
+${grammarAdapter}// The raster tables the data section made, each in its envelope.
+const __rasters = [];
 // A GeoJSON source as autk-db loads it: its rows through __loadableFeatures,
 // fetched first when the source names a file, as the grammar's own adapter does.
 const __loadableGeojson = async (source) => {
@@ -227,7 +324,7 @@ for (const source of __sources) {
     // spec order, so the join must come after the tables it references):
     // near: { distance } in workspace meters, groupBy as an array of column specs.
     else if (type === 'join') await db.spatialQuery(__joinQueryParams(rest));
-    else console.log('[autk-grammar] unsupported data source type "' + type + '" - skipped');
+${grammarLoad}    else console.log('[autk-grammar] unsupported data source type "' + type + '" - skipped');
   } catch (e) {
     // Recorded, not discarded: this reason is the only account of WHY a layer is
     // missing, and the contract check below attaches it to the thrown error.
@@ -244,7 +341,7 @@ try {
   // "no usable tables" and let the contract check report it.
   __loadErrors.push('getLayersMetadata: ' + ((e && e.message) || String(e)));
 }
-const __have = new Set(__tables.map((t) => t.name));
+const __have = new Set(__tables.map((t) => t.name).concat(__rasters.map((r) => r.layerName)));
 const __missing = __expectedTables.filter((n) => !__have.has(n));
 if (__missing.length > 0) {
   const __detail = 'missing: ' + __missing.join(', ')
@@ -355,5 +452,6 @@ for (const t of __tables) {
   if (geojson && typeof geojson === 'object') geojson.crs = __crsFor(geojson);
   __out.push({ name: t.name, type, geojson });
 }
+for (const __raster of __rasters) __out.push(__raster);
 return __out;`;
 }

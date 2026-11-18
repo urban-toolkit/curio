@@ -8,9 +8,12 @@
  * node's input brings is bytes, not a URL, so it becomes a source of Curio's
  * own, `curio-raster`, which `withRasterSources` teaches one grammar instance
  * to load: into the grammar's own database, with `loadGeoTiff`, before its map
- * runs. Every other source goes to the grammar unchanged. The map then reads
+ * runs. So does a raster the node's own data section made, a heatmap, which
+ * the data load hands the map as a collection (`rasterSourceOf`). Every other
+ * source goes to the grammar unchanged. The map then reads
  * the raster by `getRaster`, at its own extent, outlined so autk-map can place
- * a map that starts with it (`framedRaster`). The grammar colors a raster's
+ * a map that starts with it (`framedRaster`), its bands named as they were
+ * made (`withBandLabels`). The grammar colors a raster's
  * cells in its layer's scheme; Curio hands it every raster layer with every
  * cell that has a value opaque (`withOpaqueRasters`), and once the map is
  * drawn, keeps linear sampling from drawing dark seams at the edges of the
@@ -35,7 +38,13 @@ import {
     planForMeta,
     type GeotiffLoad,
 } from '../../utils/raster/rasterLoad';
-import { decodeRasterEnvelope, rasterBandIds, type RasterGrid } from '../../utils/raster/rasterWire';
+import {
+    decodeRasterEnvelope,
+    rasterBandIds,
+    type RasterBand,
+    type RasterCollection,
+    type RasterGrid,
+} from '../../utils/raster/rasterWire';
 
 export const CURIO_RASTER_SOURCE = 'curio-raster';
 
@@ -49,6 +58,8 @@ export type CurioRasterSource = {
     grid: RasterGrid;
     /** Its cells, the count the run reports for it. */
     cells: number;
+    /** Its bands as they were made, labels included, which a GeoTIFF does not keep. */
+    bands?: RasterBand[];
 };
 
 export function isCurioRasterSource(source: unknown): source is CurioRasterSource {
@@ -74,25 +85,35 @@ export type ResolvedRasters = {
     problems: string[];
 };
 
+/**
+ * A raster collection with its grid as a source the grammar loads: written to
+ * GeoTIFF bytes, loaded at its own size. Both the collection an upstream Autark
+ * node handed on and a raster the node's own data section made (a heatmap)
+ * come here. Or the sentence that says why it cannot be drawn.
+ */
+export function rasterSourceOf(name: string, collection: RasterCollection): CurioRasterSource | { refused: string } {
+    const plan = planForGrid(name, collection.grid);
+    if ('refused' in plan) return plan;
+    const props = collection.features[0].properties;
+    const bands = rasterBandIds(collection).map((id) => props[id] as Float32Array);
+    return {
+        type: CURIO_RASTER_SOURCE,
+        outputTableName: name,
+        geotiffArrayBuffer: writeGeoTiff(collection.grid, bands),
+        load: plan.load,
+        grid: plan.grid,
+        cells: plan.cells,
+        ...(Array.isArray(props.bands) ? { bands: props.bands } : {}),
+    };
+}
+
 async function resolveOne(raster: AutkRasterInput): Promise<CurioRasterSource | { refused: string }> {
     const name = raster.outputTableName;
     const payload: any = raster.payload;
     if (payload && 'envelope' in payload) {
         const decoded = decodeRasterEnvelope(payload.envelope);
         if ('problem' in decoded) return { refused: `${name} cannot be drawn: ${decoded.problem}.` };
-        const { collection } = decoded;
-        const plan = planForGrid(name, collection.grid);
-        if ('refused' in plan) return plan;
-        const props = collection.features[0].properties;
-        const bands = rasterBandIds(collection).map((id) => props[id] as Float32Array);
-        return {
-            type: CURIO_RASTER_SOURCE,
-            outputTableName: name,
-            geotiffArrayBuffer: writeGeoTiff(collection.grid, bands),
-            load: plan.load,
-            grid: plan.grid,
-            cells: plan.cells,
-        };
+        return rasterSourceOf(name, decoded.collection);
     }
     const fetched = await fetchRaster(payload.artifact, {
         part: payload.part,
@@ -192,8 +213,7 @@ function readRaster(db: any, table: string): Promise<any> {
  * which stretches the raster over that layer's extent instead, and its
  * `getRaster` reads a store the whole page shares (see `oneRasterAtATime`),
  * which can hold another node's raster of the same name by then. Every other
- * table, a heatmap the grammar builds among them, is the database's to
- * answer, as before.
+ * table is the database's to answer, as before.
  */
 function serveRaster(db: any, table: string, collection: any): void {
     let served: ServedRasters | undefined = db[SERVED_RASTERS];
@@ -227,11 +247,12 @@ function serveRaster(db: any, table: string, collection: any): void {
  * database has the workspace `autk`, and a node's input is `input_0`, so two
  * maps that load a raster at once each drew whichever loaded last. A raster
  * is loaded and read back here one at a time, and its node keeps what it
- * read.
+ * read. A heatmap a node's data section builds in the browser
+ * (autkLayerMaterialize) is built and read back here too.
  */
 let rasterLoads: Promise<unknown> = Promise.resolve();
 
-function oneRasterAtATime<T>(load: () => Promise<T>): Promise<T> {
+export function oneRasterAtATime<T>(load: () => Promise<T>): Promise<T> {
     const next = rasterLoads.then(load, load);
     rasterLoads = next.catch(() => undefined);
     return next;
@@ -257,10 +278,25 @@ export function withRasterSources(grammar: any, newDb: () => Promise<any>): void
                 await target.loadGeoTiff(loadGeoTiffParams(source));
                 return readRaster(target, source.outputTableName);
             });
-            serveRaster(target, source.outputTableName, collection);
+            serveRaster(target, source.outputTableName, withBandLabels(collection, source.bands));
             return target;
         },
     };
+}
+
+/**
+ * *collection* with each band labelled as *bands* labels the band at its place.
+ * `loadGeoTiff` labels a band by its id (`band_1`), and the GeoTIFF Curio writes
+ * holds the bands in their order (`rasterSourceOf`), so a map's `getFnv` that
+ * names a band by its label, as a heatmap's `count.noise` names `count_noise`,
+ * finds it. Without *bands* it is the collection as read.
+ */
+export function withBandLabels(collection: any, bands: RasterBand[] | undefined): any {
+    const [feature, ...rest] = collection?.features ?? [];
+    const read: any[] = feature?.properties?.bands;
+    if (!Array.isArray(bands) || bands.length === 0 || !Array.isArray(read)) return collection;
+    const labelled = read.map((band, at) => (typeof bands[at]?.label === 'string' ? { ...band, label: bands[at].label } : band));
+    return { ...collection, features: [{ ...feature, properties: { ...feature.properties, bands: labelled } }, ...rest] };
 }
 
 /**
