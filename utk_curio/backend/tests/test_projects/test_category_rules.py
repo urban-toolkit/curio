@@ -9,7 +9,8 @@ model's type, a dataset's format, a collection's kind), and the order the
 names are listed in. So it names no package, model, dataset or source.
 
 Each row gives exactly what ``derive`` gives a dataflow with that one signal,
-and a dataflow with every signal lists every name in the table's order.
+beside what the manifest behind that signal declares, and a dataflow with
+every signal lists every name in the table's order.
 
 The table is read inside each test, so a missing table fails these tests and
 nothing else.
@@ -125,6 +126,19 @@ def _model_node_types(model_type: str) -> list[str]:
         if raw.get("kind") == "model" and (raw.get("model") or {}).get("type") == model_type:
             found += [f"{raw['id']}/{template['id']}" for template in raw["templates"]]
     return found
+
+
+def _declared(node_type: str) -> dict:
+    """What *node_type*'s package and its template declare in ``dataflowCategories``,
+    as a row of the table."""
+    package_id, template_id = node_type.split("/", 1)
+    for path in sorted(PACKAGES.glob("*/manifest.json")):
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if raw["id"] == package_id:
+            template = next(t for t in raw["templates"] if t["id"] == template_id)
+            both = _given(raw.get("dataflowCategories") or {}, template.get("dataflowCategories") or {})
+            return {"tags": both["tags"], "dataTypes": both["data_type"]}
+    raise AssertionError(f"Curio ships no package {package_id}")
 
 
 # ---------------------------------------------------------------------------
@@ -245,13 +259,19 @@ def test_a_spec_key_gives_its_names_under_its_own_grammar_only():
 
 
 def test_each_model_type_gives_what_its_row_says():
+    """A model package can declare more in its manifest, as SAM 3 declares
+    PyTorch, which its package's module runs. The row's names never come from
+    that declaration, so they still come from the row alone."""
     model_types = _rules()["modelTypes"]
     assert model_types
     for model_type, row in model_types.items():
         node_types = _model_node_types(model_type)
         assert node_types, f"Curio ships no {model_type} model"
         for node_type in node_types:
-            assert _sorted(_derive([_node("", node_type)])) == _given(row), node_type
+            declared = _declared(node_type)
+            for gives in GIVES:
+                assert not set(declared[gives]) & set(row.get(gives, [])), (node_type, gives)
+            assert _sorted(_derive([_node("", node_type)])) == _given(row, declared), node_type
 
 
 def test_each_dataset_format_and_collection_kind_gives_what_its_row_says():

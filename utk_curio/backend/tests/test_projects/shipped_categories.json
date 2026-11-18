@@ -323,6 +323,7 @@
       "Vega-Lite",
       "GeoPandas",
       "Pandas",
+      "PyTorch",
       "Computer vision"
     ],
     "data_type": [
@@ -352,6 +353,7 @@
       "Vega-Lite",
       "GeoPandas",
       "Pandas",
+      "PyTorch",
       "Computer vision"
     ],
     "data_type": [
