@@ -839,6 +839,81 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(tabs.map((tab) => tab.textContent)).toEqual(['blocks', 'roads']);
     });
 
+    /** fetchData answers *answer* for one test, and this file's default
+     * answer comes back after it, however the test ends. */
+    async function answering(answer: unknown, body: (fetchData: jest.Mock) => Promise<void>) {
+      const api = jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+      api.fetchData.mockResolvedValueOnce(answer);
+      try {
+        await body(api.fetchData);
+      } finally {
+        api.fetchData.mockReset();
+        api.fetchData.mockResolvedValue({ data: {}, dataType: 'dataframe' });
+      }
+    }
+
+    test("a Python node's tuple, an output that names its artifact, is read for its frames, not taken for a bundle with nothing in yet", async () => {
+      // What /get answers for a node that returned (df, df).
+      const tuple = {
+        dataType: 'outputs',
+        data: [
+          { dataType: 'dataframe', data: { block: ['Brera', 'Duomo'], population: [120, 340] } },
+          { dataType: 'dataframe', data: { block: ['Navigli'], population: [80] } },
+        ],
+      };
+      await answering(tuple, async (fetchData) => {
+        const outputCallback = jest.fn();
+        const result = await callBehavior(useDataPoolBehavior, {
+          nodeId: 'pool-1',
+          outputCallback,
+          input: { path: 'art-tuple', dataType: 'outputs' } as any,
+        });
+        await waitFor(() => expect(result.current.outputOverride).toMatchObject({ code: 'success', content: { dataType: 'outputs' } }));
+
+        expect(fetchData).toHaveBeenCalledWith('art-tuple');
+        const [, emitted] = outputCallback.mock.calls[outputCallback.mock.calls.length - 1];
+        expect(emitted.filename).toBe('art-tuple');
+        expect(emitted.data.map((part: any) => Object.keys(part.data.interacted))).toEqual([['0', '1'], ['0']]);
+      });
+    });
+
+    test('a list of frames is drawn as a tab per frame and passed on as a tuple of them is', async () => {
+      // What /get answers for a node that returned [df, gdf]: each frame in
+      // its envelope, in the list's order.
+      const list = {
+        dataType: 'list',
+        data: [
+          { dataType: 'dataframe', data: { block: ['Brera', 'Duomo'], population: [120, 340] } },
+          {
+            dataType: 'geodataframe',
+            data: {
+              type: 'FeatureCollection',
+              features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [9.186, 45.466] }, properties: { name: 'Via Dante' } }],
+            },
+          },
+        ],
+      };
+      await answering(list, async () => {
+        const outputCallback = jest.fn();
+        const result = await callBehavior(useDataPoolBehavior, {
+          nodeId: 'pool-1',
+          outputCallback,
+          input: { path: 'art-list', dataType: 'list' } as any,
+        });
+        await waitFor(() => expect(result.current.outputOverride).toMatchObject({ code: 'success' }));
+
+        const [, emitted] = outputCallback.mock.calls[outputCallback.mock.calls.length - 1];
+        expect(emitted?.dataType).toBe('outputs');
+        expect(emitted.filename).toBe('art-list');
+        expect(emitted.data.map((part: any) => part.dataType)).toEqual(['dataframe', 'geodataframe']);
+        expect(emitted.data[0].data.interacted).toEqual({ 0: '0', 1: '0' });
+        expect(emitted.data[1].data.features[0].properties.interacted).toBe('0');
+        const { getByTestId } = render(<>{result.current.contentComponent}</>);
+        const tabs = Array.from(getByTestId('data-pool-tabs').querySelectorAll('.nav-link'));
+        expect(tabs.map((tab) => tab.textContent)).toEqual(['Tab 1', 'Tab 2']);
+      });
+    });
+
     test('returns contentComponent and overrides, and no widgets callback', async () => {
       const result = await callBehavior(useDataPoolBehavior);
       assertValidBehaviorResult(result.current);
@@ -1161,7 +1236,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         const selection = [{ nodeId: 'bar', details: { highlight: { type: 'POINT', data: [1], priority: 1 } }, priority: 1 }];
         await act(async () => { rerender({ d: { ...base, interactions: selection } }); });
 
-        await waitFor(() => expect(highlightOnMap).toHaveBeenCalledWith('input_0', [1]));
+        // On the node's one map, which each highlight names by its index (adapters/node/autkViews).
+        await waitFor(() => expect(highlightOnMap).toHaveBeenCalledWith('input_0', [1], 0));
         expect(grammarMock().AutkGrammar.mock.calls.length).toBe(constructed);
       });
 
@@ -1197,16 +1273,17 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
           priority: 1,
         }];
 
+        // Each highlight and each clear names the node's one map by its index (adapters/node/autkViews).
         await act(async () => { rerender({ d: { ...base, interactions: standingAt(0.2) } }); });
-        await waitFor(() => expect(highlightOnMap).toHaveBeenLastCalledWith('input_0', [1, 3, 4]));
+        await waitFor(() => expect(highlightOnMap).toHaveBeenLastCalledWith('input_0', [1, 3, 4], 0));
         await act(async () => { rerender({ d: { ...base, interactions: standingAt(0.1) } }); });
-        await waitFor(() => expect(highlightOnMap).toHaveBeenLastCalledWith('input_0', [1, 3]));
+        await waitFor(() => expect(highlightOnMap).toHaveBeenLastCalledWith('input_0', [1, 3], 0));
         // The player closed: the map lights nothing.
         const cleared = clearHighlightOnMap.mock.calls.length;
         const lit = highlightOnMap.mock.calls.length;
         await act(async () => { rerender({ d: { ...base, interactions: standingAt(null) } }); });
         await waitFor(() => expect(clearHighlightOnMap.mock.calls.length).toBeGreaterThan(cleared));
-        expect(clearHighlightOnMap).toHaveBeenLastCalledWith('input_0');
+        expect(clearHighlightOnMap).toHaveBeenLastCalledWith('input_0', 0);
         expect(highlightOnMap.mock.calls.length).toBe(lit);
         expect(grammarMock().AutkGrammar.mock.calls.length).toBe(constructed);
       });
@@ -1232,7 +1309,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         const selection = [{ nodeId: 'bar', details: { highlight: { type: 'POINT', data: [2], priority: 1 } }, priority: 1 }];
         await act(async () => { rerender({ d: { ...base, interactions: selection } }); });
 
-        await waitFor(() => expect(highlightOnMap).toHaveBeenCalledWith('input_0', [2]));
+        // On the node's one map, which each highlight names by its index (adapters/node/autkViews).
+        await waitFor(() => expect(highlightOnMap).toHaveBeenCalledWith('input_0', [2], 0));
         const named = [...highlightOnMap.mock.calls, ...clearHighlightOnMap.mock.calls].map((call) => call[0]);
         expect(named).not.toContain('Sensors');
       });
@@ -1346,16 +1424,17 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
           await act(async () => { await result.current.applyGrammar!(MAP); });
           const grammar = lastGrammar();
 
-          // The map drew row 2 first and row 1 second.
+          // The map drew row 2 first and row 1 second. Each highlight and each
+          // clear names the node's one map by its index (adapters/node/autkViews).
           await act(async () => { rerender({ d: { ...base, interactions: select(2) } }); });
-          await waitFor(() => expect(grammar.highlightOnMap).toHaveBeenLastCalledWith('input_0', [0]));
+          await waitFor(() => expect(grammar.highlightOnMap).toHaveBeenLastCalledWith('input_0', [0], 0));
           await act(async () => { rerender({ d: { ...base, interactions: select(1) } }); });
-          await waitFor(() => expect(grammar.highlightOnMap).toHaveBeenLastCalledWith('input_0', [1]));
+          await waitFor(() => expect(grammar.highlightOnMap).toHaveBeenLastCalledWith('input_0', [1], 0));
           // Row 0 is not drawn: nothing lights.
           const lit = grammar.highlightOnMap.mock.calls.length;
           grammar.clearHighlightOnMap.mockClear();
           await act(async () => { rerender({ d: { ...base, interactions: select(0) } }); });
-          await waitFor(() => expect(grammar.clearHighlightOnMap).toHaveBeenCalledWith('input_0'));
+          await waitFor(() => expect(grammar.clearHighlightOnMap).toHaveBeenCalledWith('input_0', 0));
           expect(grammar.highlightOnMap.mock.calls.length).toBe(lit);
         });
 

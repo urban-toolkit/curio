@@ -8,6 +8,19 @@ import { sandboxArtifactId } from "../utils/flowOutputRef";
 import { lazyRows } from "../utils/rowSource";
 import { copyForFlags } from "../utils/poolFlagCopy";
 import { keyedFramesAsOutputs } from "../utils/sandboxEnvelope";
+import { RASTER_DATA_TYPE } from "../utils/raster/rasterWire";
+
+/** A Python node's raster as the sandbox answers for it: its envelope's data is
+ * the sandbox's file of it (`parseOutput`), where an Autark node's holds its cells. */
+function isPythonRaster(value: any): boolean {
+  return !!value && typeof value === "object" && value.dataType === RASTER_DATA_TYPE && typeof value.data === "string";
+}
+
+/** A reference to a raster: one that names its artifact and carries no data. */
+function isRasterRef(value: any): boolean {
+  return !!value && typeof value === "object" && value.dataType === RASTER_DATA_TYPE
+    && value.data === undefined && sandboxArtifactId(value) !== null;
+}
 
 const useTableData = ({ data }: { data: INodeData }) => {
   const [tabData, setTabData] = useState<any[]>([]);
@@ -84,8 +97,9 @@ const useTableData = ({ data }: { data: INodeData }) => {
 
       // Known application-level shapes the rest of this hook handles directly.
       // Anything else (e.g. the sandbox's generic 'dict'/'list' envelope wrap on
-      // a persisted artifact) is peeled until we reach one of these.
-      const KNOWN_TYPES = new Set(["geodataframe", "dataframe", "outputs"]);
+      // a persisted artifact) is peeled until we reach one of these. A raster's
+      // envelope is one: it is a tab of its own, as a layer is.
+      const KNOWN_TYPES = new Set(["geodataframe", "dataframe", "outputs", RASTER_DATA_TYPE]);
       const unwrapToKnown = (v: any): any => {
         while (
           v && typeof v === "object" &&
@@ -98,54 +112,40 @@ const useTableData = ({ data }: { data: INodeData }) => {
         return v;
       };
 
-      // Fetch each wrapper by filename or path. After fetch, unwrap generic
-      // envelopes the sandbox adds around persisted artifacts so the downstream
-      // dataframe/geodataframe processing reads a recognized shape. Wrappers
-      // that already carry their content inline (no filename/path) — e.g. the
-      // safety-net path in autk-grammar when the JS interpreter is unavailable
-      // — are passed through untouched.
-      const fetched = await Promise.all(
-        wrappers.map(async (w) => {
-          const fileId = sandboxArtifactId(w);
-          if (fileId) {
-            try {
-              const raw = await fetchData(fileId);
-              return unwrapToKnown(raw);
-            } catch (err) {
-              console.error("Fetch failed for", fileId, err);
-              return null;
-            }
-          }
-          if (w && KNOWN_TYPES.has(w.dataType)) return w;
-          return null;
-        })
-      );
-
-      // Filter out nulls, then expand multi-layer envelopes into one tab per
-      // layer. autk-grammar has two emit shapes the pool must accept:
+      // Expand multi-layer envelopes into one tab per layer. autk-grammar has
+      // two emit shapes the pool must accept:
       //   - compute-only / data+compute: `layersToPoolWrapper` →
       //     `{dataType:'outputs', data:[{dataType:'geodataframe', data:FC, layerName, layerType}, ...]}`
       //   - data-only: `compileDataSpecToAutkDbJs` returns `[{name, type, geojson}, ...]`,
-      //     which the sandbox stores as `kind='list'`. After unwrap, fetched[i]
-      //     is a plain JS array of layer records (each wrapped in `{dataType:'dict', data:{...}}`
+      //     then each raster table (a heatmap, a GeoTIFF) in its envelope, which
+      //     the sandbox stores as `kind='list'`. After unwrap, the input is a
+      //     plain JS array of those (each wrapped in `{dataType:'dict', data:{...}}`
       //     by parseOutput's list traversal).
       // Without expansion, `tabd = [theWholeWrapper]` and `createTableData`
       // has no branch for either → empty table. Normalise both shapes to
       // individual geodataframe entries so the downstream code stays uniform.
-      let tabd: any[] = [];
-      for (const fetchedItem of fetched) {
+      // A raster among them keeps its envelope, in its place. A Python node's
+      // raster (its data is the sandbox's file of it) names the artifact it
+      // was read from and its part there, which is where a node after the pool
+      // reads it (utils/grammarInput). An input that holds no table nor raster
+      // of its own has no tabs.
+      const tabsOf = (value: any, artifact: string | null): any[] => {
+        const placed = (item: any, part: number) =>
+          artifact && isPythonRaster(item) ? { ...item, artifact, part } : item;
         // A dict of frames is drawn as a tuple of them is: a tab per frame,
         // named after its key.
-        const x = keyedFramesAsOutputs(fetchedItem) ?? fetchedItem;
-        if (x == null) continue;
+        const x = keyedFramesAsOutputs(value) ?? value;
+        if (x == null) return [];
         if (x.dataType === 'outputs' && Array.isArray(x.data)) {
-          for (const item of x.data) if (item) tabd.push(item);
-        } else if (Array.isArray(x)) {
-          for (const item of x) {
-            if (!item) continue;
+          return x.data.flatMap((item: any, part: number) => (item ? [placed(item, part)] : []));
+        }
+        if (Array.isArray(x)) {
+          const tabs: any[] = [];
+          x.forEach((item: any, part: number) => {
+            if (!item) return;
             // parseOutput on a `list` recursively wraps each dict element
             // as `{dataType:'dict', data:{...}}`; peel any non-known envelope
-            // until we reach the underlying layer record.
+            // until we reach the underlying layer record, or a raster.
             let rec: any = item;
             while (
               rec && typeof rec === 'object' &&
@@ -155,8 +155,13 @@ const useTableData = ({ data }: { data: INodeData }) => {
             ) {
               rec = rec.data;
             }
-            if (rec && rec.geojson?.type === 'FeatureCollection') {
-              tabd.push({
+            if (rec && rec.dataType === RASTER_DATA_TYPE) {
+              tabs.push(placed(rec, part));
+            } else if (rec && (rec.dataType === 'geodataframe' || rec.dataType === 'dataframe')) {
+              // A Python list's frame, as a tuple's.
+              tabs.push(rec);
+            } else if (rec && rec.geojson?.type === 'FeatureCollection') {
+              tabs.push({
                 dataType: 'geodataframe',
                 data: rec.geojson,
                 layerName: rec.name,
@@ -165,11 +170,47 @@ const useTableData = ({ data }: { data: INodeData }) => {
                 ...(typeof rec.workspace === 'string' && rec.workspace ? { workspace: rec.workspace } : {}),
               });
             }
-          }
-        } else {
-          tabd.push(x);
+          });
+          return tabs;
         }
-      }
+        return typeof x === 'object' && KNOWN_TYPES.has(x.dataType) ? [x] : [];
+      };
+
+      // The tabs of each input. One that names an artifact is fetched by its
+      // filename or path, its generic envelopes unwrapped so the dataframe and
+      // geodataframe processing below reads a recognized shape. One that
+      // carries its content inline (no filename/path) — e.g. the safety-net
+      // path in autk-grammar when the JS interpreter is unavailable — is read
+      // as it is. A Python node's raster is not fetched: there are no rows in
+      // it to show or flag, and the node it goes to reads it by its reference,
+      // as the Autark node does (utils/grammarInput). It, and an input that
+      // holds no table nor raster (a text, a number, a JSON list or dict), is
+      // one tab, the reference it came as, with the type the store gives it,
+      // and is handed on as that.
+      const tabsByInput = await Promise.all(
+        wrappers.map(async (w): Promise<any[]> => {
+          if (isRasterRef(w)) return [w];
+          const fileId = sandboxArtifactId(w);
+          if (!fileId) {
+            if (!w || typeof w !== 'object') return [];
+            const tabs = tabsOf(w, null);
+            return tabs.length > 0 || typeof w.dataType !== 'string' ? tabs : [w];
+          }
+          let raw: any;
+          try {
+            raw = await fetchData(fileId);
+          } catch (err) {
+            console.error("Fetch failed for", fileId, err);
+            return [];
+          }
+          const known = unwrapToKnown(raw);
+          const tabs = isPythonRaster(known) ? [] : tabsOf(known, fileId);
+          if (tabs.length > 0) return tabs;
+          const stored = typeof raw?.dataType === 'string' && raw.dataType ? { dataType: raw.dataType } : {};
+          return [typeof w.dataType === 'string' && w.dataType ? w : { ...w, ...stored }];
+        })
+      );
+      let tabd: any[] = tabsByInput.flat();
 
       // Drop layers with no rows/features. autk-db can hand the pool an empty
       // or null-feature layer (e.g. a PBF area with no parks); the
