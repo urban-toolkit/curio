@@ -211,6 +211,36 @@ def test_a_failed_load_is_tried_once_more(client, user_and_token, sandbox, recor
     assert [(ref.node_id, ref.filename, ref.data_type) for ref in recorded] == [("water", LAYERS, "list")]
 
 
+@pytest.mark.parametrize("source, said", [
+    ({"type": "join", "tableRootName": "table_osm_roads", "joinDataRef": "table_osm_surface"},
+     'This spec uses "tableRootName" at data[1], which autk-grammar 5 renamed to "dataRef".'),
+    ({"type": "heatmap", "joinDataRef": "table_osm_roads", "outputTableName": "density",
+      "near": {"distance": 50}, "grid": {"rows": 8, "columns": 8}},
+     "This spec uses a heatmap source at data[1], which Curio does not run yet."),
+], ids=["renamed-key", "not-run-yet"])
+def test_a_load_that_writes_a_key_the_node_refuses_fails_with_its_words(
+        client, user_and_token, sandbox, recorded, source, said):
+    """The compiler refuses the document as the node does
+    (``contracts/autkGrammar``), so nothing reaches the sandbox."""
+    user, token = user_and_token
+    content = json.dumps({"data": [
+        {"type": "osm", "pbfFileUrl": "docs/examples/data/back_bay.osm.pbf", "outputTableName": "table_osm",
+         "autoLoadLayers": {"layers": ["surface", "roads"]}},
+        source,
+    ]})
+    run = _run(client, token, _create(client, token, {
+        "name": "Back Bay roads",
+        "nodes": [{"id": "roads", "type": AUTARK, "content": content}],
+        "edges": [],
+    }))
+    (step,) = run["steps"]
+    assert step["status"] == "error", step
+    assert said in (step["stderrTail"] or ""), step
+    assert sandbox.bodies("/execJs") == []
+    assert recorded == []
+    assert run["status"] == "failed"
+
+
 def test_a_load_that_fails_twice_fails_the_node(client, user_and_token, sandbox, recorded):
     user, token = user_and_token
     sandbox.fail_loads = 2

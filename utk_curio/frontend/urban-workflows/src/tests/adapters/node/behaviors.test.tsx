@@ -1379,7 +1379,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
           const both = JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0', isPick: true }, { dataRef: 'input_1', isPick: true }] } });
           await act(async () => { await result.current.applyGrammar!(both); });
 
-          // autk-grammar names the map by a table it draws, here the first.
+          // The event names the map by a layer it draws, here another than the
+          // one that picks: the node goes by the map's layer that picks.
           await act(async () => { listeners['map:picking']({ selection: [0], layerId: 'input_0' }); });
           await waitFor(() => expect(interactionsCallback).toHaveBeenLastCalledWith(
             { autk_selection: expect.objectContaining({ type: 'POINT', data: [2], layerRef: 'input_1' }) }, 'map-1',
@@ -2730,6 +2731,53 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
 
     test('in-browser load: a join reaches spatialQuery under the names autk-db takes', async () => {
       expect(await loadInTheBrowser(JOIN_SPEC)).toEqual([[JOIN_QUERY]]);
+    });
+
+    // A document that writes a key autk-grammar 5 renamed, or one the node does
+    // not run yet, fails before anything is loaded, computed or drawn, with
+    // the sentence the agents' document check says too (contracts/autkGrammar).
+    test.each([
+      [
+        'a join written with tableRootName',
+        { data: [JOIN_SPEC.data[0], { type: 'join', tableRootName: 'table_osm_roads', joinDataRef: 'table_osm_surface' }] },
+        'This spec uses "tableRootName" at data[1], which autk-grammar 5 renamed to "dataRef".',
+      ],
+      [
+        'a compute pass written with wglsFunction',
+        { compute: [{ dataRef: 'input_0', attributes: {}, wglsFunction: 'return 1.0;', outputColumnName: 'x' }] },
+        'This spec uses "wglsFunction" at compute[0], which autk-grammar 5 renamed to "wgslFunction".',
+      ],
+      [
+        'a map with a camera',
+        { map: { camera: { pitch: 50 }, layerRefs: [{ dataRef: 'input_0' }] } },
+        'This spec uses "camera" at map, which Curio does not run yet.',
+      ],
+      [
+        'a heatmap source',
+        { data: [{ type: 'heatmap', joinDataRef: 'b', outputTableName: 'h', near: { distance: 5 }, grid: { rows: 2, columns: 2 } }] },
+        'This spec uses a heatmap source at data[0], which Curio does not run yet.',
+      ],
+    ])('%s fails the node before anything runs, naming the key', async (_what, spec, said) => {
+      const interpretCode = jest.fn();
+      const setOutput = jest.fn();
+      const outputCallback = jest.fn();
+      mockAutkDbSpatialQuery.mockClear();
+      const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+      const grammarsBefore = AutkGrammar.mock.calls.length;
+      const result = await callBehavior(
+        useAutkGrammarBehavior,
+        { jsInterpreter: { interpretCode } as any, outputCallback },
+        { setOutput },
+      );
+      await act(async () => {
+        await result.current.applyGrammar!(JSON.stringify(spec));
+      });
+      const errors = setOutput.mock.calls.filter((c: any[]) => c[0]?.code === 'error');
+      expect(errors.map((c: any[]) => c[0].content)).toEqual([said]);
+      expect(interpretCode).not.toHaveBeenCalled();
+      expect(mockAutkDbSpatialQuery).not.toHaveBeenCalled();
+      expect(AutkGrammar.mock.calls.length).toBe(grammarsBefore);
+      expect(outputCallback).not.toHaveBeenCalled();
     });
 
     test('in-browser load: a join with neither near nor groupBy hands autk-db the two names alone', async () => {

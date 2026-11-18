@@ -500,8 +500,10 @@ class TestTheAutarkRenderers:
         schema = contracts.load_autk_schema()
         shape = contracts.render_autk_shape(schema)
         assert "\n" not in shape
+        # Every family a node runs, and none it does not run yet.
+        refused = {rule["key"] for rule in contracts.AUTK_NOT_RUN_YET if rule["in"] == ""}
         for family in contracts.autk_families(schema):
-            assert f'"{family}"' in shape
+            assert (f'"{family}"' in shape) is (family not in refused), family
         assert f'"dataRef": "{contracts.input_table_name(0)}"' in shape
         # The whole shape survives the refusal's 600-character cut.
         assert shape in dv.validate(contracts.AUTK_TEMPLATE, "not controllable")["detail"]
@@ -512,10 +514,12 @@ class TestTheAutarkRenderers:
         assert schema["$id"] in region
         assert contracts.AUTK_TEMPLATE in region
         assert f'"{contracts.input_table_name(0)}"' in region
-        for union, key in (("DataSourceSpec", "type"), ("PlotSpec", "mark")):
+        # Every kind of source and plot a node runs, and none it does not run yet.
+        refused = {(rule["in"], rule["value"]) for rule in contracts.AUTK_NOT_RUN_YET if "value" in rule}
+        for union, key, place in (("DataSourceSpec", "type", "data[]"), ("PlotSpec", "mark", "plot[]")):
             for values, _ in contracts._variants(schema, union, key):
                 for value in values:
-                    assert f'"{value}"' in region, (union, value)
+                    assert (f'"{value}"' in region) is ((place, value) not in refused), (union, value)
 
     def test_compute_passes_listed_by_reference_are_read_through_the_gpgpu_pass(self):
         from utk_curio.backend.tests._support import autk_schemas

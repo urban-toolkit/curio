@@ -140,6 +140,20 @@ describe("pickingTableOf", () => {
     expect(pickingTableOf(drawnGrammar(layers, null), spec, "input_0")).toBeNull();
     expect(pickingTableOf(null, spec, "input_0")).toBeNull();
   });
+
+  test("guard: a pick named by the picked layer's id, its title or its table, is on that layer", () => {
+    // autk-grammar 5's map:picking names the layer picked by its id: its title,
+    // else its table. The grammar's mapLayer finds a map by a table only, so a
+    // title finds no map there, and the node's one map is the map picked on.
+    const titled = drawnGrammar(layers, "Building height (m)");
+    const byTableOnly = {
+      ...titled,
+      mapLayer: (table: string) => (["input_0", "input_1", "input_2"].includes(table) ? titled.mapLayer(table) : undefined),
+    };
+    expect(pickingTableOf(byTableOnly, spec, "Building height (m)")).toBe("input_1");
+    expect(pickingTableOf(drawnGrammar(layers, "input_2"), spec, "input_2")).toBe("input_2");
+    expect(pickingTableOf(drawnGrammar(layers, "Social vulnerability"), spec, "Social vulnerability")).toBe("input_0");
+  });
 });
 
 describe("what a map draws and lights, as autk-map and autk-db hold it", () => {
