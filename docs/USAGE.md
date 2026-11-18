@@ -1369,14 +1369,35 @@ provides.
 Each feature of an OpenStreetMap layer the node hands on has its OpenStreetMap
 id in `osm_id`, and a building's parts share its `building_id`.
 
-A node draws one view: one map or one plot. A document with a map and a plot,
-or whose `map` or `plot` lists more than one, does not run, and the node's
-error says to put each in its own `Autark` node and link them with interaction
-edges (see [Linking charts](#linking-charts)).
+### Several views
 
-A node does not run the Autark grammar's `layout` and `links`. A document that
-writes either does not run, and the node's error names the key and where it is
-written.
+A node draws every map and plot its document writes, each in a pane of its
+own: the maps in the order of `map`, then the plots in the order of `plot`.
+`layout` arranges the panes: `"vertical"` stacks them, as they stack without a
+`layout`, `"horizontal"` puts them side by side, and `"grid"` fills `columns`
+columns (2 by default), row by row; `gap` is the space between panes, in
+pixels. The node keeps its size, and its views share it.
+
+```json
+{"layout": {"type": "horizontal", "gap": 8},
+ "map": {"id": "buildings", "layerRefs": [{"dataRef": "table_osm_buildings", "isPick": true, "getFnv": "height"}]},
+ "plot": {"id": "heights", "dataRef": "table_osm_buildings", "mark": "bar", "axis": ["height", "@transform"],
+          "transform": {"preset": "binning-1d"}, "events": ["brushX"]},
+ "links": [{"source": "heights", "target": "buildings"}]}
+```
+
+An `id` names a map or a plot, and no two views share one. A plot without an
+`id` is known by its `dataRef`, so two plots of one table each need an `id`.
+`links` joins a plot to a layer of a map: a brush on the plot lights the same
+features on the layer, and a pick on the layer selects them in the plot. A
+link's `source` is the plot (its `id`, else its `dataRef`), its `target` is
+the map's `id`, and its `layer` is the layer's `title` or `dataRef`, by default
+the layer that draws the plot's table. A document whose ids or links break
+these rules does not run, and the node's error says which.
+
+Each map has its own menu, legend and R key, which reframes the map last
+clicked. Each view's selection reaches the nodes linked to the node by an
+interaction edge, on its own table (see [Linking charts](#linking-charts)).
 
 ### Its input
 

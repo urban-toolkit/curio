@@ -131,9 +131,10 @@ STOPPED_BY_PHRASES: dict[str, str] = one_phrase_per_reason(SOLVE_STOP_REASONS)
 # The grammar is defined upstream: autk-grammar generates a JSON Schema from its
 # TypeScript types, and ``schemas/autk-grammar.v1.json`` is a byte-for-byte copy
 # of the released file (``scripts/sync_autk_schema.py``). The renderers below
-# read that file. The Curio facts they add, how a node names its input and that
-# a node draws one view, are in ``autkGrammar.json`` with the top-level families
-# the node routes, which a test holds to the schema's.
+# read that file. The Curio facts they add, how a node names its input and the
+# grammar's words for the views of a document it refuses, are in
+# ``autkGrammar.json`` with the top-level families the node routes, which a
+# test holds to the schema's.
 
 _AUTK_GRAMMAR = shared_constants.read("autkGrammar")
 
