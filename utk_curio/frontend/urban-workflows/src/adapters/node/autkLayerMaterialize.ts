@@ -15,7 +15,13 @@ import { autkKeyProblem } from '../../contracts/autkGrammar';
 import { autkTableName } from '../../utils/autkInput';
 import { framesFromPayload } from '../../utils/grammarInput';
 import { deriveBuildingHeight } from '../../utils/buildingHeight';
-import { joinQueryParams, loadableFeatures, requestedLayerTables, withOsmIds } from './autkDataCompile';
+import {
+    autkTableKey, autkUsesWorkspaces, inItsWorkspace, joinQueryParams, loadableFeatures, requestedLayerTables, withOsmIds,
+} from './autkDataCompile';
+
+/** A table an Autark node loaded or hands on: its name, its autk-db layer type, its
+ * rows, and the workspace it is in when that is not the default one. */
+export type AutkLayer = { name: string; type?: string; geojson: any; workspace?: string };
 
 // Message for a load that produced layers, but not the ones the spec asked for.
 // Shared by both loaders so the two paths report a short load identically.
@@ -104,17 +110,23 @@ export async function runDataInBackend(
 
 // Resolve the backend data load into in-browser layers for the render path:
 // the in-memory fallback layers if present, otherwise fetch + normalize the
-// DuckDB artifact (framesFromPayload unwraps it, as it does an input).
+// DuckDB artifact (framesFromPayload unwraps it, as it does an input). Each
+// layer keeps the workspace it was loaded into.
 export async function materializeBackendLayers(
-    fallbackLayers: Array<{ name: string; type?: string; geojson: any }> | null,
+    fallbackLayers: AutkLayer[] | null,
     ref: { path: string; dataType: string } | null,
-): Promise<Array<{ name: string; type?: string; geojson: any }>> {
+): Promise<AutkLayer[]> {
     if (fallbackLayers) return fallbackLayers;
     if (!ref) return [];
     const fetched = await fetchData(ref.path);
     return framesFromPayload(fetched).frames
         .filter((frame) => frame.dataType === 'geodataframe')
-        .map((frame) => ({ name: autkTableName(frame), type: frame.layerType, geojson: frame.payload }));
+        .map((frame) => ({
+            name: autkTableName(frame),
+            type: frame.layerType,
+            geojson: frame.payload,
+            ...(frame.workspace ? { workspace: frame.workspace } : {}),
+        }));
 }
 
 // Flatten any (possibly nested) geometry into a single MultiPolygon by collecting
@@ -190,10 +202,25 @@ async function loadableGeojson(source: any): Promise<any> {
 // no `context` — so we drive the same AutkDb the grammar uses internally.)
 // Sources that write a key autk-grammar 5 renamed, or one a node does not run
 // yet (contracts/autkGrammar), load nothing: the load fails, naming the key.
-export async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: string; geojson: FeatureCollection }>> {
+// Each source loads into its workspace, entered with autk-grammar's own
+// `enterWorkspace` as its data adapter enters it, and each layer comes back
+// with the workspace it is in when that is not the default one.
+export async function loadSpecLayers(
+    spec: any,
+): Promise<Array<{ name: string; type: string; geojson: FeatureCollection; workspace?: string }>> {
     const keyProblem = autkKeyProblem({ data: spec?.data });
     if (keyProblem) throw new Error(keyProblem);
-    const { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } = await import('@urban-toolkit/autk-db');
+    const sources: any[] = (spec?.data ?? []).map(inItsWorkspace);
+    // autk-grammar's data entry, for a data section that names a workspace
+    // (autkUsesWorkspaces): one that names none loads in the default
+    // workspace, where the database starts, as it always has.
+    const [{ AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT }, grammarData] = await Promise.all([
+        import('@urban-toolkit/autk-db'),
+        autkUsesWorkspaces({ data: sources }) ? import('@urban-toolkit/autk-grammar/data') : Promise.resolve(null),
+    ]);
+    const enterWorkspace = grammarData
+        ? grammarData.enterWorkspace
+        : async (_db: unknown, _workspace?: string) => undefined;
     // `init()` downloads the DuckDB spatial extension; a flaky fetch is worth
     // another instance rather than a failed node (#318).
     const db: any = await withExtensionRetry(async () => {
@@ -212,9 +239,10 @@ export async function loadSpecLayers(spec: any): Promise<Array<{ name: string; t
     // of crashing later with an opaque "Cannot read properties of null".
     const loadErrors: string[] = [];
     const joinErrors: string[] = [];
-    for (const source of (spec?.data ?? [])) {
-        const { type, ...rest } = source ?? {};
+    for (const source of sources) {
+        const { type, workspace, ...rest } = source ?? {};
         try {
+            await enterWorkspace(db, workspace);
             if (type === 'osm') await db.loadOsm(rest);
             else if (type === 'geojson') await db.loadGeojson(await loadableGeojson(rest));
             else if (type === 'csv') await db.loadCsv(rest);
@@ -238,53 +266,63 @@ export async function loadSpecLayers(spec: any): Promise<Array<{ name: string; t
     // detected by coordinate magnitude: a wrong tag makes the renderer read
     // degree values as meters near the origin, a silently blank map. Strip any
     // pre-existing crs field first: detectCoordinateFormat trusts it over the
-    // heuristic.
-    let tables: Array<{ name: string; type?: string; source?: string }> = [];
-    try {
-        tables = db.getLayersMetadata() as Array<{ name: string; type?: string; source?: string }>;
-    } catch (e) {
-        // A partially-loaded DB can throw here (rather than return []). Treat it
-        // as "no usable tables" and let the empty-result guard below report it,
-        // instead of letting an opaque TypeError escape the loader.
-        loadErrors.push(`getLayersMetadata: ${(e as any)?.message ?? String(e)}`);
+    // heuristic. autk-db lists and reads the tables of the current workspace
+    // only, so each workspace the sources load into is entered in turn, in
+    // their order, and its tables are read before the next is entered.
+    const workspaces = [...new Set(sources.map((source) => source?.workspace as string | undefined))];
+    const layers: Array<{ name: string; type: string; geojson: FeatureCollection; workspace?: string } | null> = [];
+    for (const workspace of workspaces) {
+        let tables: Array<{ name: string; type?: string; source?: string }> = [];
+        try {
+            await enterWorkspace(db, workspace);
+            tables = db.getLayersMetadata() as Array<{ name: string; type?: string; source?: string }>;
+        } catch (e) {
+            // A partially-loaded DB can throw here (rather than return []). Treat it
+            // as "no usable tables" and let the empty-result guard below report it,
+            // instead of letting an opaque TypeError escape the loader.
+            loadErrors.push(`getLayersMetadata: ${(e as any)?.message ?? String(e)}`);
+        }
+        layers.push(...await Promise.all(
+            tables.map(async (t) => {
+                try {
+                    const geojson = (await db.getLayer(t.name)) as any;
+                    // Keep the autk-db layer type ('roads', 'surface', 'water', 'parks',
+                    // 'buildings', …) so a downstream grammar node re-loads it with the
+                    // right rendering.
+                    const type = (t.type as string) ?? 'polygons';
+                    // Each OpenStreetMap feature's OSM id in `osm_id`, a building
+                    // part's in that part, as the sandbox's loader hands them on.
+                    if (Array.isArray(geojson?.features)) geojson.features = withOsmIds(t, geojson.features);
+                    // Buildings: explode the grouped GeometryCollection into one footprint
+                    // feature per part (each with its own height) and KEEP type 'buildings',
+                    // so autk-map extrudes each part by its real height. See
+                    // explodeBuildingParts.
+                    if (type === 'buildings' && Array.isArray(geojson?.features)) {
+                        geojson.features = explodeBuildingParts(geojson.features);
+                    }
+                    if (geojson && typeof geojson === 'object') {
+                        delete geojson.crs;
+                        const fmt = detectCoordinateFormat(geojson as FeatureCollection);
+                        const epsg = fmt.match(/(\d+)/)?.[1]
+                            ?? String(DEFAULT_WORKSPACE_COORDINATE_FORMAT).match(/(\d+)/)?.[1]
+                            ?? '3395';
+                        geojson.crs = { type: 'name', properties: { name: `urn:ogc:def:crs:EPSG::${epsg}` } };
+                    }
+                    return {
+                        name: t.name, type, geojson: geojson as FeatureCollection,
+                        ...(workspace === undefined ? {} : { workspace }),
+                    };
+                } catch (e) {
+                    loadErrors.push(`getLayer(${t.name}): ${(e as any)?.message ?? String(e)}`);
+                    return null;
+                }
+            }),
+        ));
     }
-    const layers = await Promise.all(
-        tables.map(async (t) => {
-            try {
-                const geojson = (await db.getLayer(t.name)) as any;
-                // Keep the autk-db layer type ('roads', 'surface', 'water', 'parks',
-                // 'buildings', …) so a downstream grammar node re-loads it with the
-                // right rendering.
-                const type = (t.type as string) ?? 'polygons';
-                // Each OpenStreetMap feature's OSM id in `osm_id`, a building
-                // part's in that part, as the sandbox's loader hands them on.
-                if (Array.isArray(geojson?.features)) geojson.features = withOsmIds(t, geojson.features);
-                // Buildings: explode the grouped GeometryCollection into one footprint
-                // feature per part (each with its own height) and KEEP type 'buildings',
-                // so autk-map extrudes each part by its real height. See
-                // explodeBuildingParts.
-                if (type === 'buildings' && Array.isArray(geojson?.features)) {
-                    geojson.features = explodeBuildingParts(geojson.features);
-                }
-                if (geojson && typeof geojson === 'object') {
-                    delete geojson.crs;
-                    const fmt = detectCoordinateFormat(geojson as FeatureCollection);
-                    const epsg = fmt.match(/(\d+)/)?.[1]
-                        ?? String(DEFAULT_WORKSPACE_COORDINATE_FORMAT).match(/(\d+)/)?.[1]
-                        ?? '3395';
-                    geojson.crs = { type: 'name', properties: { name: `urn:ogc:def:crs:EPSG::${epsg}` } };
-                }
-                return { name: t.name, type, geojson: geojson as FeatureCollection };
-            } catch (e) {
-                loadErrors.push(`getLayer(${t.name}): ${(e as any)?.message ?? String(e)}`);
-                return null;
-            }
-        }),
-    );
     // Every layer is read: nothing below asks the database again (autkDbClose).
     closeAutkDb(db);
     const usable = layers.filter(
-        (l): l is { name: string; type: string; geojson: FeatureCollection } => l != null,
+        (l): l is { name: string; type: string; geojson: FeatureCollection; workspace?: string } => l != null,
     );
     // Same contract check as the sandbox emit: a load that came back short is a
     // failure, not a success with fewer layers. Without this, the caller's
@@ -297,9 +335,9 @@ export async function loadSpecLayers(spec: any): Promise<Array<{ name: string; t
     // layer is NOT caught by this, because getLayer returns an empty
     // FeatureCollection for it and it stays in `usable`; only a getLayer that
     // throws counts, and that is a defect rather than sparse data.
-    const requested = requestedLayerTables(spec?.data ?? []);
+    const requested = requestedLayerTables(sources);
     if (requested.length > 0) {
-        const have = new Set(usable.map((l) => l.name));
+        const have = new Set(usable.map((l) => autkTableKey(l.workspace, l.name)));
         const missing = requested.filter((n) => !have.has(n));
         if (missing.length > 0) {
             if (loadErrors.length > 0) {
@@ -364,7 +402,7 @@ function persistLayersToBackend(
 // left to this page goes to that run instead, which keeps it for this page
 // (#1117): a viewer has no session to persist it with.
 export async function toPoolOutput(
-    layers: Array<{ name: string; type?: string; geojson: FeatureCollection }>,
+    layers: AutkLayer[],
     jsInterpreter: JavaScriptInterpreter | undefined,
     nodeId: string,
 ): Promise<any> {
@@ -386,26 +424,18 @@ export async function toPoolOutput(
 // when a compute-only or data-only autk-grammar node feeds a Data Pool, we wrap
 // the output in a shape the pool can ingest, carrying `layerName`/`layerType`
 // metadata at the wrapper level so a downstream Autark node's input can restore
-// the original layer identity (e.g. `dataRef: "table_osm_buildings"`).
-function layersToPoolWrapper(
-    layers: Array<{ name: string; type?: string; geojson: FeatureCollection }>,
-): any {
+// the original layer identity (e.g. `dataRef: "table_osm_buildings"`). A layer
+// in another workspace than the default one names it (`workspace`), so the
+// node it is handed to loads it there.
+export function layersToPoolWrapper(layers: AutkLayer[]): any {
     if (!Array.isArray(layers) || layers.length === 0) return null;
-    if (layers.length === 1) {
-        return {
-            dataType: 'geodataframe',
-            data: layers[0].geojson,
-            layerName: layers[0].name,
-            layerType: layers[0].type,
-        };
-    }
-    return {
-        dataType: 'outputs',
-        data: layers.map((l) => ({
-            dataType: 'geodataframe',
-            data: l.geojson,
-            layerName: l.name,
-            layerType: l.type,
-        })),
-    };
+    const envelope = (l: AutkLayer) => ({
+        dataType: 'geodataframe',
+        data: l.geojson,
+        layerName: l.name,
+        layerType: l.type,
+        ...(l.workspace ? { workspace: l.workspace } : {}),
+    });
+    if (layers.length === 1) return envelope(layers[0]);
+    return { dataType: 'outputs', data: layers.map(envelope) };
 }

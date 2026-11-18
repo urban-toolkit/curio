@@ -15,11 +15,22 @@
  * source: it is listed in `rasters` with where it is, and the node loads it
  * (adapters/node/autkRasters).
  *
+ * A table an upstream Autark node handed on from another workspace than the
+ * default one keeps it (`workspace`), and the node loads it there. A document
+ * reads a table in the workspace of the map, plot or pass that names it, so
+ * tables are told apart by their key (`autkTableKey`): the name in the default
+ * workspace, `<workspace>/<name>` in another.
+ *
  * No autk import here: this stays testable under jest.
  */
 import type { FeatureCollection } from "geojson";
 import { inputTableName } from "../contracts/autkGrammar";
-import { loadableFeatures, requestedLayerTables } from "../adapters/node/autkDataCompile";
+import {
+  autkTableKey,
+  autkWorkspaceOf,
+  loadableFeatures,
+  requestedLayerTables,
+} from "../adapters/node/autkDataCompile";
 import { readableBuildingProperties } from "./buildingHeight";
 import { detectCoordinateFormat } from "./geoCrs";
 import { resolveGeometryField } from "./geometryField";
@@ -36,13 +47,22 @@ export type AutkSource = {
   outputTableName: string;
   coordinateFormat: string;
   layerType?: string;
+  /** The workspace it is loaded into, when it is not the default one. */
+  workspace?: string;
 };
 
 /** A raster the input provides, by the table name the document reads it by. */
 export type AutkRasterInput = {
   outputTableName: string;
   payload: RasterPayload;
+  /** The workspace it is loaded into, when it is not the default one. */
+  workspace?: string;
 };
+
+/** The key a source, a raster or a table of a document is told apart by (`autkTableKey`). */
+export function tableKeyOf(table: { outputTableName?: unknown; workspace?: unknown }): string {
+  return autkTableKey(autkWorkspaceOf(table), typeof table?.outputTableName === "string" ? table.outputTableName : "");
+}
 
 export type PreparedAutkInput = {
   /** One geojson source per table the input provides, plus `input_<k>` for an
@@ -50,9 +70,9 @@ export type PreparedAutkInput = {
   sources: AutkSource[];
   /** The rasters the input provides, named as the geojson sources are. */
   rasters: AutkRasterInput[];
-  /** The tables the input provides, by name. */
+  /** The tables the input provides, by key. */
   tables: string[];
-  /** Tables the input names but cannot provide, because they cannot be drawn. */
+  /** Tables the input names but cannot provide, because they cannot be drawn, by key. */
   unusable: string[];
   /** Features that can be drawn. `undefined` when nothing arrived. */
   rowsIn?: number;
@@ -69,26 +89,28 @@ function asList<T>(value: T | T[] | undefined | null): T[] {
 }
 
 /**
- * Every table name the document reads in the browser: map layers, plots (and
- * the map a plot links to), compute blocks and their `fromFeature` uniforms.
+ * Every table the document reads in the browser, by key (`autkTableKey`): map
+ * layers, plots (and the map a plot links to), compute blocks and their
+ * `fromFeature` uniforms, each in the workspace of the map, plot or pass that
+ * names it.
  */
 export function documentTableRefs(spec: any): string[] {
   const names = new Set<string>();
-  const add = (name: unknown) => {
-    if (typeof name === "string" && name) names.add(name);
+  const add = (entry: unknown, name: unknown) => {
+    if (typeof name === "string" && name) names.add(autkTableKey(autkWorkspaceOf(entry), name));
   };
   for (const map of asList(spec?.map)) {
-    for (const ref of asList((map as any)?.layerRefs)) add((ref as any)?.dataRef);
+    for (const ref of asList((map as any)?.layerRefs)) add(map, (ref as any)?.dataRef);
   }
   for (const plot of asList(spec?.plot)) {
-    add((plot as any)?.dataRef);
-    add((plot as any)?.mapRef);
+    add(plot, (plot as any)?.dataRef);
+    add(plot, (plot as any)?.mapRef);
   }
   for (const block of asList(spec?.compute)) {
-    add((block as any)?.dataRef);
+    add(block, (block as any)?.dataRef);
     for (const group of [(block as any)?.uniforms, (block as any)?.uniformMatrices]) {
       if (group == null || typeof group !== "object") continue;
-      for (const value of Object.values(group)) add((value as any)?.fromFeature?.layer);
+      for (const value of Object.values(group)) add(block, (value as any)?.fromFeature?.layer);
     }
   }
   return Array.from(names);
@@ -121,8 +143,10 @@ const OSM_LAYERS: ReadonlySet<string> = new Set([OSM_SURFACE, "parks", "water", 
  * loader keys them `surface`, `parks`, `water`, `roads` and `buildings`, each
  * typed as it is named. So a table `surface` of type `surface` is the surface
  * of such a load, and its layers are the tables named and typed as they are.
+ * A load's layers and its surface are in one workspace, so a layer brings
+ * the surface of its own workspace only.
  */
-export function tablesToLoad<T extends { outputTableName?: unknown; layerType?: unknown }>(
+export function tablesToLoad<T extends { outputTableName?: unknown; layerType?: unknown; workspace?: unknown }>(
   tables: readonly T[],
   spec: any,
   own: readonly T[] = [],
@@ -139,12 +163,17 @@ export function tablesToLoad<T extends { outputTableName?: unknown; layerType?: 
       ? name.slice(0, -OSM_SURFACE_SUFFIX.length)
       : null;
   };
-  const loads = tables.map(surfaceLoad).filter((load): load is string => load !== null);
-  // The load a table is a layer of, or null.
+  const loads = tables.flatMap((table) => {
+    const load = surfaceLoad(table);
+    return load === null ? [] : [{ load, workspace: autkWorkspaceOf(table) }];
+  });
+  // The load a table is a layer of, in its own workspace, or null.
   const layerLoad = (table: T): string | null => {
     const name = nameOf(table);
+    const workspace = autkWorkspaceOf(table);
     let load: string | null = null;
-    for (const prefix of loads) {
+    for (const { load: prefix, workspace: at } of loads) {
+      if (at !== workspace) continue;
       const isLayer = prefix === ""
         ? OSM_LAYERS.has(name) && table?.layerType === name
         : name.startsWith(`${prefix}_`);
@@ -152,15 +181,17 @@ export function tablesToLoad<T extends { outputTableName?: unknown; layerType?: 
     }
     return load;
   };
-  // The surfaces of the loads the document names a layer of.
+  // The surfaces of the loads the document names a layer of, by key.
   const surfaces = new Set<string>();
   for (const table of tables) {
-    if (!named.has(nameOf(table))) continue;
+    if (!named.has(tableKeyOf(table))) continue;
     const load = layerLoad(table);
-    if (load !== null) surfaces.add(load === "" ? OSM_SURFACE : load + OSM_SURFACE_SUFFIX);
+    if (load !== null) {
+      surfaces.add(autkTableKey(autkWorkspaceOf(table), load === "" ? OSM_SURFACE : load + OSM_SURFACE_SUFFIX));
+    }
   }
-  const brought = (table: T) => surfaceLoad(table) !== null && surfaces.has(nameOf(table));
-  const loaded = tables.filter((table) => own.includes(table) || named.has(nameOf(table)) || brought(table));
+  const brought = (table: T) => surfaceLoad(table) !== null && surfaces.has(tableKeyOf(table));
+  const loaded = tables.filter((table) => own.includes(table) || named.has(tableKeyOf(table)) || brought(table));
   return [...loaded.filter(brought), ...loaded.filter((table) => !brought(table))];
 }
 
@@ -172,16 +203,19 @@ export type WrittenTable = {
   from: string;
   /** The type the pass draws and hands it on as (`layerType`), read only with an `outputTableName`. */
   layerType?: string;
+  /** The pass's workspace, where it reads `from` and writes the table, when it is not the default one. */
+  workspace?: string;
 };
 
 /**
  * The tables the document's GPGPU passes write, in pass order, so a table a
  * pass writes from another's comes after it: each under the pass's
  * `outputTableName`, else in place of its `dataRef` table, as autk-grammar's
- * compute adapter keeps them (`store`). A map or a plot draws a table a pass
- * wrote from that result, which holds every feature of the table the pass
- * computed over, in the order autk-db stores them. A table a pass names is
- * drawn as its `layerType`, else as the table it is computed from.
+ * compute adapter keeps them (`store`), in the pass's workspace. A map or a
+ * plot draws a table a pass wrote from that result, which holds every feature
+ * of the table the pass computed over, in the order autk-db stores them. A
+ * table a pass names is drawn as its `layerType`, else as the table it is
+ * computed from.
  */
 export function writtenTables(spec: any): WrittenTable[] {
   const written: WrittenTable[] = [];
@@ -190,28 +224,35 @@ export function writtenTables(spec: any): WrittenTable[] {
     const { outputTableName, dataRef: from, layerType } = pass;
     if (typeof from !== "string" || !from) continue;
     const named = typeof outputTableName === "string" && outputTableName !== "";
+    const workspace = autkWorkspaceOf(pass);
     written.push({
       name: named ? outputTableName : from,
       from,
       ...(named && typeof layerType === "string" && layerType ? { layerType } : {}),
+      ...(workspace ? { workspace } : {}),
     });
   }
   return written;
 }
 
-/** The tables the document's passes make: those written under a name other than the table they are computed from. */
+/**
+ * The tables the document's passes make, by key (`autkTableKey`): those
+ * written under a name other than the table they are computed from.
+ */
 export function madeTables(spec: any): string[] {
-  return writtenTables(spec).filter((table) => table.name !== table.from).map((table) => table.name);
+  return writtenTables(spec)
+    .filter((table) => table.name !== table.from)
+    .map((table) => autkTableKey(table.workspace, table.name));
 }
 
-/** The tables the document's own data section creates. */
+/** The tables the document's own data section creates, by key. */
 export function ownTableNames(spec: any): string[] {
   const sources: any[] = Array.isArray(spec?.data) ? spec.data : [];
   const names = new Set(requestedLayerTables(sources));
   // A heatmap makes a table too; the sandbox does not run it, so the load
   // contract does not list it.
   for (const source of sources) {
-    if (source?.type === "heatmap" && source.outputTableName) names.add(source.outputTableName);
+    if (source?.type === "heatmap" && source.outputTableName) names.add(tableKeyOf(source));
   }
   return Array.from(names);
 }
@@ -424,14 +465,18 @@ export function selectFieldsOf(view: any): string[] | null {
 export function selectFieldsProblem(spec: any, sources: readonly AutkSource[]): string | null {
   const own = new Set([
     ...ownTableNames(spec),
-    ...asList<any>(spec?.data).map((source) => source?.outputTableName).filter((name) => typeof name === "string"),
+    ...asList<any>(spec?.data).filter((source) => typeof source?.outputTableName === "string").map(tableKeyOf),
   ]);
-  const views = [...asList<any>(spec?.map).flatMap((map) => asList<any>(map?.layerRefs)), ...asList<any>(spec?.plot)];
-  for (const view of views) {
+  // Each layer and plot, with the workspace its table is read from: its map's, or the plot's own.
+  const views = [
+    ...asList<any>(spec?.map).flatMap((map) => asList<any>(map?.layerRefs).map((view) => ({ view, workspace: autkWorkspaceOf(map) }))),
+    ...asList<any>(spec?.plot).map((view) => ({ view, workspace: autkWorkspaceOf(view) })),
+  ];
+  for (const { view, workspace } of views) {
     const fields = selectFieldsOf(view);
-    const table = view?.dataRef;
-    if (!fields || typeof table !== "string") continue;
-    const source = sources.find((s) => s.outputTableName === table);
+    if (!fields || typeof view?.dataRef !== "string") continue;
+    const table = autkTableKey(workspace, view.dataRef);
+    const source = sources.find((s) => tableKeyOf(s) === table);
     if (!source) {
       if (!own.has(table)) continue;
       return `selectFields needs ${table} to come from this node's input, but this document loads it. `
@@ -486,7 +531,9 @@ type FrameTable =
   | { refusal: { reason: NodeEmptyReason; detail: string } };
 
 function frameTable(frame: GrammarFrame, name: string): FrameTable {
-  if (frame.dataType === "raster") return { raster: { outputTableName: name, payload: frame.payload } };
+  // A table handed on from another workspace than the default one is loaded there.
+  const workspace = frame.workspace ? { workspace: frame.workspace } : {};
+  if (frame.dataType === "raster") return { raster: { outputTableName: name, payload: frame.payload, ...workspace } };
   const result = featuresOf(frame, name);
   if ("reason" in result) return { refusal: result };
   // A layer an Autark data node stored empty comes back with no feature
@@ -500,6 +547,7 @@ function frameTable(frame: GrammarFrame, name: string): FrameTable {
       outputTableName: name,
       coordinateFormat: detectCoordinateFormat(geojsonObject as any),
       ...(frame.layerType ? { layerType: frame.layerType } : {}),
+      ...workspace,
     },
     rows: Array.isArray(features) ? features.length : 0,
   };
@@ -550,13 +598,15 @@ export function autkSourcesFrom(
 
   for (const frame of read.frames) {
     let name = autkTableName(frame);
+    // Two tables of one name are two tables when they are in two workspaces.
+    const keyOf = (table: string) => autkTableKey(frame.workspace, table);
     let taken = false;
-    const earlier = broughtBy.get(name);
+    const earlier = broughtBy.get(keyOf(name));
     if (earlier !== undefined) {
       if (!frame.name) {
         // Several unnamed frames on one input are told apart by count.
         let n = 1;
-        while (broughtBy.has(`${name}_${n}`)) n += 1;
+        while (broughtBy.has(keyOf(`${name}_${n}`))) n += 1;
         name = `${name}_${n}`;
       } else {
         // The name stays the earlier input's layer.
@@ -565,14 +615,14 @@ export function autkSourcesFrom(
         taken = true;
       }
     }
-    if (!taken) broughtBy.set(name, frame.circle);
+    if (!taken) broughtBy.set(keyOf(name), frame.circle);
     const table = frameTable(frame, name);
     became.set(frame, { table, taken });
     if (taken) continue;
     if ("raster" in table) {
       rasters.push(table.raster);
     } else if ("refusal" in table) {
-      unusable.push(name);
+      unusable.push(keyOf(name));
       problems.push(table.refusal.detail);
       firstRefusal ??= table.refusal;
     } else {
@@ -588,11 +638,13 @@ export function autkSourcesFrom(
   // their names, and `alias: false` passes layers on under their own names.
   const byCircle = new Map<number, GrammarFrame[]>();
   for (const frame of read.frames) byCircle.set(frame.circle, [...(byCircle.get(frame.circle) ?? []), frame]);
+  // The alias is the same table under another name, so it is in that table's workspace.
   const aliasOf = (circle: number): string | null => {
     const frames = byCircle.get(circle) ?? [];
     if (opts.alias === false || frames.length !== 1 || !frames[0].name) return null;
     const alias = inputTableName(circle);
-    const named = sources.some((s) => s.outputTableName === alias) || rasters.some((r) => r.outputTableName === alias);
+    const key = autkTableKey(frames[0].workspace, alias);
+    const named = sources.some((s) => tableKeyOf(s) === key) || rasters.some((r) => tableKeyOf(r) === key);
     return named ? null : alias;
   };
 
@@ -610,15 +662,16 @@ export function autkSourcesFrom(
   const refs = new Set(documentTableRefs(spec));
   byCircle.forEach((frames, circle) => {
     const alias = aliasOf(circle);
-    if (!alias || !refs.has(alias)) return;
+    const key = alias === null ? null : autkTableKey(frames[0].workspace, alias);
+    if (!alias || !key || !refs.has(key)) return;
     const { table, taken } = became.get(frames[0])!;
     if ("source" in table) {
       sources.unshift({ ...table.source, outputTableName: alias });
       if (taken) rowsIn += table.rows;
     } else if ("raster" in table) {
       rasters.unshift({ ...table.raster, outputTableName: alias });
-    } else if (!unusable.includes(alias)) {
-      unusable.push(alias);
+    } else if (!unusable.includes(key)) {
+      unusable.push(key);
       if (taken) {
         problems.push(table.refusal.detail);
         firstRefusal ??= table.refusal;
@@ -629,7 +682,7 @@ export function autkSourcesFrom(
   const prepared: PreparedAutkInput = {
     sources,
     rasters,
-    tables: [...sources.map((s) => s.outputTableName), ...rasters.map((r) => r.outputTableName)],
+    tables: [...sources.map(tableKeyOf), ...rasters.map(tableKeyOf)],
     unusable,
     rowsIn,
     ...(problems.length ? { inputProblem: problems.join(" ") } : {}),

@@ -3,7 +3,8 @@
 autk-grammar, autk-compute, autk-db and autk-plot come from the registry, with
 autk-core, one copy of each, in the frontend's tree; the repo root's tree,
 which the sandbox's Node and the Discovery Catalog's OpenStreetMap downloads
-load autk-db from, takes autk-db and autk-core the same way. autk-map is the
+load autk-db from, takes autk-db, autk-core and autk-grammar, whose data entry
+imports autk-db alone, the same way. autk-map is the
 one Autark package Curio vendors: 4.1.1-curio.4, packed from
 urban-toolkit/autark#118 (a raster colored with one color function),
 autark#120 (a destroyed map releases its shared SSAO textures), autark#121
@@ -39,7 +40,7 @@ REGISTRY = "https://registry.npmjs.org"
 #: Each npm tree, and the Autark packages its package.json names.
 TREES = {
     "frontend": (FRONTEND, ("autk-grammar", "autk-compute", "autk-db", "autk-map", "autk-plot")),
-    "repo root": (REPO_ROOT, ("autk-db",)),
+    "repo root": (REPO_ROOT, ("autk-db", "autk-grammar")),
 }
 
 #: The package released apart from the others.
