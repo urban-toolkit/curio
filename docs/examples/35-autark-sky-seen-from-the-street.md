@@ -65,20 +65,20 @@ The pass writes `street_sky`: the roads, each with its shares in `compute.render
 
 ## Step 3: Map the share of sky (`sky-map`)
 
-The map draws the surface, then `street_sky`, each road a line 8 units wide colored by its share of sky:
-dark purple where the buildings close in, through green, to yellow where the road sees more sky. The
-buildings come last, in light gray and half see-through, so a street behind a tower still shows. Its
+The map draws the surface in a light land colour, then `street_sky`, each road a line 8 units wide colored
+by its share of sky: dark purple where the buildings close in, through green, to yellow where the road sees
+more sky. The buildings come last, in gray and half see-through, so a street behind a tower still shows. Its
 `camera` tilts the view the node frames it at, 30 degrees from straight down, facing 125 degrees, down Wall
 Street and the streets that cross Broadway, so the towers stand up beside the streets they shade and the
 streets stay in view between them.
 
 ```json
 "map": { "camera": { "pitch": 30, "bearing": 125 }, "layerRefs": [
-  { "dataRef": "wall_st_surface" },
+  { "dataRef": "wall_st_surface", "color": "#ece8dc" },
   { "dataRef": "street_sky", "title": "Share of sky seen from the street",
     "getFnv": "compute.render.classes.sky", "getFnvType": "quantitative",
     "colorMapInterpolator": "interpolateViridis", "width": 8 },
-  { "dataRef": "wall_st_buildings", "color": "#dddddd", "opacity": 0.5 }
+  { "dataRef": "wall_st_buildings", "color": "#a9b0b5", "opacity": 0.5 }
 ]}
 ```
 

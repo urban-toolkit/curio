@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/35-autark-sky-seen-from-the-street.json",
-    "sha256": "7c60b769ab1002d0897024b0b71e483fa758e5e252803e85652cd7ed4beed5d6",
+    "sha256": "fab39d70062beef1c11a59e175a28150a5913054d25e3ff06880eb8bcfe19905",
     "walkthrough": "docs/examples/35-autark-sky-seen-from-the-street.md"
   },
   "prompt": "How much sky does each street around Wall Street in Lower Manhattan see between its buildings? Load the surface, the roads and the buildings of the box around Wall Street with Autark, from the OpenStreetMap extract in this checkout at docs/examples/data/lower_mnt.osm.pbf. Then, on the GPU, draw the buildings from each road, looking in four directions 45 degrees above the horizon, count the share of each road's view that is sky, and map the roads colored by that share between the buildings, seen at a tilt.",
