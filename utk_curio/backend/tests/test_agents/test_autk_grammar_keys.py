@@ -84,6 +84,25 @@ def test_the_document_check_takes_a_pass_that_writes_a_new_table_and_its_type():
     assert dv.validate(AUTK, json.dumps(document)) == {"status": dv.STATUS_VALID}
 
 
+def test_the_document_check_takes_a_render_pass():
+    """A node runs a render pass, which writes the table a map draws: the
+    towers seen from each spot, with the share of its frames each covers and
+    the sky. So the agents may write one."""
+    from utk_curio.backend.app.agents.domain import document_validation as dv
+
+    document = {
+        "compute": [{
+            "type": "render", "outputTableName": "sky",
+            "layers": [{"id": "towers", "dataRef": "towers", "type": "buildings"}],
+            "viewpoints": {"dataRef": "spots", "sampling": {"directions": 4, "pitchDeg": 45}},
+            "aggregation": {"type": "classes", "includeBackground": True, "backgroundLayerType": "sky"},
+            "tileSize": 64,
+        }],
+        "map": {"layerRefs": [{"dataRef": "sky", "getFnv": "compute.render.classes.sky"}]},
+    }
+    assert dv.validate(AUTK, json.dumps(document)) == {"status": dv.STATUS_VALID}
+
+
 def test_a_document_is_told_only_the_files_sentences():
     from utk_curio.backend.app.agents.domain import contracts
 

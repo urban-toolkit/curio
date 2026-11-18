@@ -124,6 +124,58 @@ def test_the_reply_schema_keeps_a_pass_that_writes_a_new_table_and_its_type(flav
     assert json.loads(reply.decode(json.dumps(encoded))) == document
 
 
+#: A document whose render pass writes the table its map draws: the towers
+#: seen from each spot, in four directions, with the share of the sky.
+RENDER_DOCUMENT = {
+    "compute": [{
+        "type": "render", "outputTableName": "sky",
+        "layers": [{"id": "towers", "dataRef": "towers", "type": "buildings"}],
+        "viewpoints": {"dataRef": "spots", "sampling": {"directions": 4, "pitchDeg": 45}},
+        "aggregation": {"type": "classes", "includeBackground": True, "backgroundLayerType": "sky"},
+        "tileSize": 64,
+    }],
+    "map": {"layerRefs": [{"dataRef": "sky", "getFnv": "compute.render.classes.sky"}]},
+}
+
+
+@pytest.mark.parametrize("flavor", ["closed", "strict"])
+def test_the_reply_schema_lets_a_reply_write_a_render_pass(flavor):
+    """A node runs render passes, so the reply schema holds their branch: a
+    reply that writes one fits the schema a provider holds it to, and decodes
+    back whole."""
+    import jsonschema
+
+    from utk_curio.backend.app.agents.application import reply_schemas as rs
+
+    reply = rs.autk_reply_schema(rs.FLAVOR_CLOSED if flavor == "closed" else rs.FLAVOR_STRICT)
+    assert _written(reply.schema, {"in": "compute[]", "key": "type", "value": "render"})
+    encoded, dropped = reply.encode(RENDER_DOCUMENT)
+    assert dropped == []
+    jsonschema.Draft202012Validator(reply.schema).validate(encoded)
+    assert json.loads(reply.decode(json.dumps(encoded))) == RENDER_DOCUMENT
+
+
+def test_the_autark_skill_says_what_a_render_pass_requires():
+    """The autark skill tells a render pass apart from a GPGPU pass, with what
+    each requires, and so does the shape a refusal names."""
+    from utk_curio.backend.app.agents.domain import contracts
+    from utk_curio.backend.tests._support.prompt_files import prompt_text
+
+    text = prompt_text("autark/SKILL.md")
+    render = next((line for line in text.splitlines() if line.startswith('  - "type": "render":')), None)
+    assert render is not None, text
+    for field in ("aggregation", "layers", "outputTableName", "viewpoints"):
+        assert f'"{field}"' in render, render
+    # The types a render layer is drawn as; a render pass draws no points.
+    for layer_type in ("surface", "parks", "water", "roads", "buildings", "polygons", "polylines"):
+        assert f'"{layer_type}"' in render, render
+    assert '"points"' not in render, render
+    compute = next(line for line in text.splitlines() if line.startswith('- "compute":'))
+    assert "Every pass" not in compute, compute
+    shape = contracts.render_autk_shape(contracts.load_autk_schema())
+    assert '"type": "render"' in shape and '"viewpoints"' in shape, shape
+
+
 def test_the_autark_skill_names_no_family_or_kind_a_node_refuses():
     from utk_curio.backend.app.agents.domain import contracts
     from utk_curio.backend.tests._support.prompt_files import prompt_text
