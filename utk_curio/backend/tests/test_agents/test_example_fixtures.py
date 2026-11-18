@@ -55,17 +55,17 @@ class TestCompleteness:
         fixtures = set(FIXTURE_IDS)
         assert not examples - fixtures, f"examples with no fixture: {sorted(examples - fixtures)}"
         assert not fixtures - examples, f"fixtures with no example: {sorted(fixtures - examples)}"
-        # The 33 numbered examples (24 from #662, 25 from #576, 26 from #819,
+        # The 34 numbered examples (24 from #662, 25 from #576, 26 from #819,
         # 27 to 30 PyTorch on the GPU, 31 SAM 3 along a SideSeeing walk,
         # 32 the SAGE-IDOT rail crossings, 33 SAM 3 on the same walk's frames
-        # and its blocks)
+        # and its blocks, 38 the sky seen from the street by a render pass)
         # and the 31 test dataflows (#662 added scenarios, quad-cities-flood-vulnerability,
         # chicago-loop-shadow-towers, chicago-rain-wind-routing and netcdf-hourly-rain, the plan for #914
         # lower-manhattan-park-shade, and komar41's #914 the scenario
         # comparison charts, chicago-loop-layers for the Map Editor node,
         # komar41's crown-heights-1550-bedford-shadow for the Date widget, and
         # filter-rows-with-widgets for rows a widget rule keeps).
-        assert len(fixtures) == 64
+        assert len(fixtures) == 65
 
     def test_fixture_ids_are_unique(self):
         assert len(FIXTURE_IDS) == len(set(FIXTURE_IDS))
@@ -73,7 +73,7 @@ class TestCompleteness:
     def test_the_curated_and_legacy_corpora_are_both_covered(self):
         curated = [f for f in FIXTURES if f.path.parent.name == "prompts"]
         legacy = [f for f in FIXTURES if f.path.parent.name == "dataflows"]
-        assert len(curated) == 33
+        assert len(curated) == 34
         assert len(legacy) == 31
 
     def test_every_split_is_populated_and_heldout_is_a_minority(self):
@@ -310,7 +310,7 @@ class TestFixturesAreNotMistakenForDataflows:
         corpus by glob; the fixture directory must stay outside both."""
         curated = list((REPO_ROOT / "docs" / "examples").glob("[0-9][0-9]-*.json"))
         legacy = list((REPO_ROOT / "docs" / "examples" / "dataflows").glob("*.json"))
-        assert len(curated) == 33
+        assert len(curated) == 34
         assert len(legacy) == 31
         assert not any(".prompt.json" in p.name for p in curated + legacy)
 

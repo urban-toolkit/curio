@@ -144,6 +144,10 @@ EXAMPLE_INVARIANTS = [
       "curio.media/video-frames": 1, "model.curio.sam3/segment-images": 1,
       "curio.media/split-video": 1, "curio.builtin/autk-grammar": 2,
       "curio.builtin/vis-simple": 2, "curio.builtin/vis-vega": 2}, True),
+    # An Autark render pass: the loader's streets and buildings feed a map
+    # node whose pass writes each street's share of sky, which it draws.
+    ("38-autark-sky-seen-from-the-street.json", 2, 1,
+     {"curio.builtin/autk-grammar": 2}, False),
 ]
 
 

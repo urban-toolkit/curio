@@ -169,6 +169,9 @@ WORKFLOW_FILES = [
     # blocks by Split Video: test-gpu runs it, for its Autark maps, on the same
     # stand-ins as example 31.
     "docs/examples/33-sideseeing-frames-segments-blocks.json",
+    # An Autark render pass, the sky each street around Wall Street sees:
+    # test-gpu runs it, for its map.
+    "docs/examples/38-autark-sky-seen-from-the-street.json",
 ]
 
 

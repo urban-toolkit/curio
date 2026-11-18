@@ -364,6 +364,16 @@
       "Video"
     ]
   },
+  "38-autark-sky-seen-from-the-street": {
+    "tags": [
+      "Autark",
+      "GPU compute"
+    ],
+    "data_type": [
+      "Geometries",
+      "OpenStreetMap"
+    ]
+  },
   "dataflows/autk-map": {
     "tags": [
       "Autark",
