@@ -23,7 +23,7 @@ import { UNREPORTED_MESSAGE, describeError, runAndAlwaysSettle } from './autkRun
 import { withExtensionRetry } from './duckdbExtensionRetry';
 import { closeGrammarDb } from './autkDbClose';
 import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
-import { autkKeyProblem, autkOneViewProblem } from '../../contracts/autkGrammar';
+import { autkKeyProblem, autkOneViewProblem, autkRasterPassProblem } from '../../contracts/autkGrammar';
 import {
     autkNeedsInput, autkSourcesFrom, documentTableRefs, drawnFeatures, drawnRows, inputRow, keyValues, loadableSource, ownTableNames,
     readAutkInput, selectFieldsOf, selectFieldsProblem, tablePositions, tablesToLoad, type LoadOrder,
@@ -50,8 +50,8 @@ import {
     RASTER_TABLE, loadSpecLayers, loadedRows, materializeBackendLayers, runDataInBackend, toPoolOutput,
 } from './autkLayerMaterialize';
 import {
-    bleedRasterEdges, isCurioRasterSource, newAutkDb, rasterPassProblem, rasterSourceOf, rasterTables,
-    resolveRasterInputs, withOpaqueRasters, withRasterSources, type CurioRasterSource,
+    bleedRasterEdges, isCurioRasterSource, newAutkDb, rasterSourceOf, resolveRasterInputs, withOpaqueRasters,
+    withRasterSources, type CurioRasterSource,
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
 import { frameMaps, keepMapViews, mapViews, type MapView } from './autkMapView';
@@ -642,13 +642,14 @@ export const useAutkGrammarBehavior = (
             showToast(keyProblem, 'error');
             return;
         }
-        // So does a compute pass over a raster, one the data section makes or
-        // one the input brings, which a pass cannot compute over cell by cell
-        // (adapters/node/autkRasters rasterPassProblem).
-        const rasterPass = rasterPassProblem(spec, [
-            ...rasterTables(spec),
-            ...(preparedInput?.rasters ?? []).map((raster) => raster.outputTableName),
-        ]);
+        // So does a compute pass over a raster the input brings, as one over a
+        // raster of the document's own data is refused above (autkKeyProblem):
+        // a pass cannot compute over a raster cell by cell
+        // (contracts/autkGrammar autkRasterPassProblem).
+        const rasterPass = autkRasterPassProblem(
+            spec,
+            (preparedInput?.rasters ?? []).map((raster) => raster.outputTableName),
+        );
         if (rasterPass) {
             grammarRef.current = null;
             specRef.current = null;
@@ -759,8 +760,12 @@ export const useAutkGrammarBehavior = (
                     }));
                     // The raster tables the data section made (a heatmap, a
                     // GeoTIFF), drawn as every raster is (adapters/node/autkRasters).
+                    // A GeoTIFF too large to draw is made smaller by its source.
+                    const geotiffs = new Set(specDataSources
+                        .filter((source) => source?.type === 'geotiff')
+                        .map((source) => source.outputTableName));
                     const ownRasters = layers.filter((l) => l.type === RASTER_TABLE).map((l) => {
-                        const source = rasterSourceOf(l.name, l.geojson);
+                        const source = rasterSourceOf(l.name, l.geojson, geotiffs.has(l.name) ? 'geotiff' : 'node');
                         if ('refused' in source) throw new Error(source.refused);
                         return source;
                     });

@@ -11,7 +11,8 @@
  * `geotiff` source, which the data load hands the map as a collection
  * (`rasterSourceOf`). Every other source goes to the grammar unchanged. A
  * compute pass reads a table's features, and a raster has none of its own,
- * so a pass over a raster is refused (`rasterPassProblem`). The map then reads
+ * so a pass over a raster is refused (contracts/autkGrammar
+ * `autkRasterPassProblem`). The map then reads
  * the raster by `getRaster`, at its own extent, outlined so autk-map can place
  * a map that starts with it (`framedRaster`), its bands named as they were
  * made (`withBandLabels`). The grammar colors a raster's
@@ -28,7 +29,6 @@
  * handed on is written back to GeoTIFF bytes here. Either way it is loaded at
  * its own size, with `nearest` resampling and its CRS (utils/raster/rasterLoad).
  */
-import { autkNotRunYet } from '../../contracts/autkGrammar';
 import { fetchRaster } from '../../services/api';
 import type { AutkRasterInput } from '../../utils/autkInput';
 import { writeGeoTiff } from '../../utils/raster/geotiffWriter';
@@ -39,6 +39,7 @@ import {
     planForGrid,
     planForMeta,
     type GeotiffLoad,
+    type RasterMaker,
 } from '../../utils/raster/rasterLoad';
 import {
     decodeRasterEnvelope,
@@ -91,11 +92,16 @@ export type ResolvedRasters = {
 /**
  * A raster collection with its grid as a source the grammar loads: written to
  * GeoTIFF bytes, loaded at its own size. Both the collection an upstream Autark
- * node handed on and a raster the node's own data section made (a heatmap)
- * come here. Or the sentence that says why it cannot be drawn.
+ * node handed on and a raster the node's own data section made (a heatmap, a
+ * GeoTIFF) come here. Or the sentence that says why it cannot be drawn, and,
+ * for one too large, how *madeBy*, what made it, makes it smaller.
  */
-export function rasterSourceOf(name: string, collection: RasterCollection): CurioRasterSource | { refused: string } {
-    const plan = planForGrid(name, collection.grid);
+export function rasterSourceOf(
+    name: string,
+    collection: RasterCollection,
+    madeBy: RasterMaker = 'node',
+): CurioRasterSource | { refused: string } {
+    const plan = planForGrid(name, collection.grid, madeBy);
     if ('refused' in plan) return plan;
     const props = collection.features[0].properties;
     const bands = rasterBandIds(collection).map((id) => props[id] as Float32Array);
@@ -323,28 +329,6 @@ export function rasterTables(spec: any): Set<string> {
         .filter((source) => isCurioRasterSource(source) || GRAMMAR_RASTER_SOURCES.includes(source?.type))
         .map((source) => source.outputTableName)
         .filter((name): name is string => typeof name === 'string'));
-}
-
-/**
- * What a document is told when one of its compute passes reads a raster,
- * else null: the first pass whose `dataRef` is one of *rasters*, named with
- * where it is written, as a key a node does not run yet is
- * (contracts/autkGrammar). A GPGPU pass computes one value for each feature
- * of the table it reads, and a raster holds all its cells in one feature, so
- * no pass of autk-grammar computes over a raster's cells. *rasters* are the
- * raster tables the node holds: those its data section makes (`rasterTables`)
- * and those its input brings.
- */
-export function rasterPassProblem(spec: any, rasters: Iterable<string>): string | null {
-    const names = new Set(rasters);
-    const compute = spec?.compute;
-    const passes: any[] = Array.isArray(compute) ? compute : compute != null ? [compute] : [];
-    for (let i = 0; i < passes.length; i++) {
-        const table = passes[i]?.dataRef;
-        if (typeof table !== 'string' || !names.has(table)) continue;
-        return autkNotRunYet(`a compute pass over the raster "${table}"`, Array.isArray(compute) ? `compute[${i}]` : 'compute');
-    }
-    return null;
 }
 
 /**
