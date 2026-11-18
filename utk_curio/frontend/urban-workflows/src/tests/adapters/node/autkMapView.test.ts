@@ -295,4 +295,51 @@ describe("mapViews and keepMapViews", () => {
     expect(first.map.camera.resetCamera.mock.calls[0][1]).toEqual([0, 0, 0]);
     expect(first.ownReset).not.toHaveBeenCalled();
   });
+
+  describe("by each map's key, with the document each grammar drew", () => {
+    // Loaded in each test with the document it reads keys from, which the module's first version took none of.
+    const byKey = () =>
+      require("../../../adapters/node/autkMapView") as {
+        mapViews: (grammar: unknown, spec?: unknown) => Array<any>;
+        keepMapViews: (grammar: unknown, views: ReadonlyArray<any>, spec?: unknown) => void;
+      };
+    const LAYERS = [{ dataRef: "input_0" }];
+    const FAR_OFF = { eye: [-50, 70, 900], lookAt: [-50, 70, 0], up: [0, 1, 0] };
+    const AT_REST = { eye: [0, 0, 10000], lookAt: [0, 0, 0], up: [0, 1, 0] };
+
+    test("each map keeps its own view, found by its id, though the document lists the maps in another order", () => {
+      const before = { map: [{ id: "streets", layerRefs: LAYERS }, { id: "parks", layerRefs: LAYERS }] };
+      const views = byKey().mapViews(
+        grammarThatRan(before, viewedMap(ZOOMED, [0, 0]).map, viewedMap(FAR_OFF, [0, 0]).map), before,
+      );
+      expect(views.map((view) => view?.key)).toEqual(["streets", "parks"]);
+
+      const after = { map: [{ id: "parks", layerRefs: LAYERS }, { id: "streets", layerRefs: LAYERS }] };
+      const parks = viewedMap(AT_REST, [0, 0]);
+      const streets = viewedMap(AT_REST, [0, 0]);
+      byKey().keepMapViews(grammarThatRan(after, parks.map, streets.map), views, after);
+
+      expect(parks.map.camera.resetCamera).toHaveBeenCalledWith([0, 1, 0], [-50, 70, 0], [-50, 70, 900]);
+      expect(streets.map.camera.resetCamera).toHaveBeenCalledWith([0, 1, 0], [120, -40, 0], [120, -40, 300]);
+    });
+
+    test("a map with no id is known by its index, and a map whose key no view has is framed on its layers", () => {
+      const before = { map: [{ layerRefs: LAYERS }] };
+      const views = byKey().mapViews(grammarThatRan(before, viewedMap(ZOOMED, [0, 0]).map), before);
+      expect(views.map((view) => view?.key)).toEqual([0]);
+
+      // A map with an id goes first: the map with none is now the second, and both are framed.
+      const after = { map: [{ id: "new", layerRefs: LAYERS }, { layerRefs: LAYERS }] };
+      const added = viewedMap(AT_REST, [0, 0]);
+      const moved = viewedMap(AT_REST, [0, 0]);
+      byKey().keepMapViews(grammarThatRan(after, added.map, moved.map), views, after);
+      expect(added.map.camera.resetCamera.mock.calls[0][1]).toEqual([0, 0, 0]);
+      expect(moved.map.camera.resetCamera.mock.calls[0][1]).toEqual([0, 0, 0]);
+
+      // Where it stays first, it keeps its view.
+      const again = viewedMap(AT_REST, [0, 0]);
+      byKey().keepMapViews(grammarThatRan(before, again.map), views, before);
+      expect(again.map.camera.resetCamera).toHaveBeenCalledWith([0, 1, 0], [120, -40, 0], [120, -40, 300]);
+    });
+  });
 });
