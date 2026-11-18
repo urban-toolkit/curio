@@ -248,6 +248,120 @@ def test_the_server_compiled_load_builds_a_heatmap_and_hands_it_on_as_a_raster(t
             item.close()
 
 
+#: Sound levels in decibels, in EPSG:3395 metres: a box 3 km by 2 km at the
+#: Chicago Loop, its south-west corner at ``LOOP``, binned into 3 by 2 cells of
+#: 1 km. The two readings at the box's corners give the workspace its extent
+#: and lie 707 m from every cell's center, past the 600 m a cell reaches; every
+#: other one lies within 100 m of its own cell's center, and the cells hold
+#: none to four of them. Each is (east, north) of the corner, then its level.
+LOOP = (-9755000.0, 5106000.0)
+LEVELS = [
+    (0, 0, 40), (3000, 2000, 95),
+    (500, 500, 50),
+    (1500, 500, 60), (1600, 500, 70),
+    (500, 1500, 55), (600, 1500, 58), (400, 1500, 61),
+    (1500, 1500, 62), (1600, 1500, 66), (1400, 1500, 70), (1500, 1600, 74),
+    (2500, 1500, 80), (2500, 1600, 84),
+]
+#: Every aggregate a heatmap builds, one band each, in this order.
+AGGREGATES = ["count", "weighted", "sum", "avg", "min", "max"]
+#: How far a cell's center reaches, and the grid's rows, columns and cell size.
+REACH, ROWS, COLUMNS, CELL = 600.0, 2, 3, 1000.0
+
+LEVEL_HEATMAP = {"data": [
+    {"type": "geojson", "outputTableName": "levels", "coordinateFormat": "EPSG:3395",
+     "geojsonObject": {"type": "FeatureCollection", "features": [
+         {"type": "Feature", "geometry": {"type": "Point", "coordinates": [LOOP[0] + east, LOOP[1] + north]},
+          "properties": {"db": db}}
+         for east, north, db in LEVELS
+     ]}},
+    {"type": "heatmap", "joinDataRef": "levels", "outputTableName": "noise",
+     "near": {"distance": REACH}, "grid": {"rows": ROWS, "columns": COLUMNS},
+     "groupBy": [{"column": "*" if fn in ("count", "weighted") else "db", "aggregateFn": fn} for fn in AGGREGATES]},
+]}
+
+
+def _cells_from_the_levels() -> dict[str, list[list[float]]]:
+    """Each aggregate's cells, the north row first as rasterio reads them,
+    computed from ``LEVELS``: the readings within ``REACH`` of a cell's
+    center, counted, weighted 1 / (distance + 1) each, or their levels summed,
+    averaged, or their least and greatest; 0 for a cell none reaches."""
+    import math
+
+    cells = {fn: [[0.0] * COLUMNS for _ in range(ROWS)] for fn in AGGREGATES}
+    for row in range(ROWS):
+        for column in range(COLUMNS):
+            center = ((column + 0.5) * CELL, (ROWS - row - 0.5) * CELL)
+            near = [(math.dist((east, north), center), db) for east, north, db in LEVELS]
+            near = [(distance, db) for distance, db in near if distance <= REACH]
+            if not near:
+                continue
+            levels = [db for _distance, db in near]
+            cells["count"][row][column] = len(near)
+            cells["weighted"][row][column] = sum(1 / (distance + 1) for distance, _db in near)
+            cells["sum"][row][column] = sum(levels)
+            cells["avg"][row][column] = sum(levels) / len(levels)
+            cells["min"][row][column] = min(levels)
+            cells["max"][row][column] = max(levels)
+    return cells
+
+
+def test_the_server_compiled_load_builds_every_heatmap_aggregate_from_the_readings(tmp_path, monkeypatch):
+    """One heatmap with a band per aggregate: each cell holds the aggregate of
+    the readings near its center, as computed here from the readings, in the
+    envelope it is handed on in and in the rasterio dataset a Python node gets."""
+    import numpy as np
+
+    from utk_curio.cli import dependencies
+    from utk_curio.common.autk_data_compiler import compile_data_spec
+    from utk_curio.sandbox.app.worker import _worker_init, execute_js_code
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+    from utk_curio.sandbox.util.rasters import envelope_arrays, rasters_for_python
+
+    expected = _cells_from_the_levels()
+    # The readings make every aggregate a grid of its own, none of them flat.
+    assert len({json.dumps(cells) for cells in expected.values()}) == len(AGGREGATES)
+    assert all(len({value for row in cells for value in row}) >= 4 for cells in expected.values())
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setenv("FLASK_BACKEND_HOST", "curio-backend.invalid")
+    monkeypatch.setenv("FLASK_BACKEND_PORT", "1")
+    dependencies.seed_duckdb_extensions()
+    _worker_init()
+    result = execute_js_code(
+        _NO_SOCKET + compile_data_spec(json.dumps(LEVEL_HEATMAP)), "", "AUTK_GRAMMAR", "",
+        launch_dir=str(REPO_ROOT), session_id=None,
+    )
+
+    assert result["output"]["path"], result["stderr"]
+    loaded = load_from_duckdb(result["output"]["path"], session_id=None)
+    assert [(item.get("dataType"), item.get("layerName")) for item in loaded[1:]] == [("raster", "noise")]
+    noise = loaded[1]
+    grid, bands, cells = envelope_arrays(noise)
+    # The grid lies over the readings' extent, the box.
+    assert grid == {"crs": "EPSG:3395", "width": COLUMNS, "height": ROWS, "originX": LOOP[0],
+                    "originY": LOOP[1] + ROWS * CELL, "resX": CELL, "resY": -CELL}
+    assert noise["data"]["features"][0]["properties"]["bands"] == [
+        {"id": f"band_{index}", "label": f"{fn}_levels"} for index, fn in enumerate(AGGREGATES, start=1)
+    ]
+    for fn, band in zip(AGGREGATES, cells):
+        np.testing.assert_allclose(band, expected[fn], rtol=1e-6, err_msg=f"the {fn} band's cells")
+
+    # A Python node downstream receives it as one rasterio dataset with a band per aggregate.
+    handed = rasters_for_python(loaded, tmp_path / "rasters")
+    try:
+        heat = handed[1]
+        assert (heat.count, heat.width, heat.height, heat.crs.to_epsg()) == (len(AGGREGATES), COLUMNS, ROWS, 3395)
+        for index, fn in enumerate(AGGREGATES, start=1):
+            np.testing.assert_allclose(heat.read(index), expected[fn], rtol=1e-6, err_msg=f"band {index}, {fn}")
+        # Each band is named as the heatmap labels it, so a node can find an aggregate's band.
+        assert heat.descriptions == tuple(f"{fn}_levels" for fn in AGGREGATES)
+    finally:
+        for item in handed[1:]:
+            item.close()
+
+
 def _assert_osm_ids(layer: dict) -> None:
     """Every feature of *layer* carries its OpenStreetMap id in ``osm_id``: a
     road's, a park's or a water's the id autk-db gives its feature, a building
