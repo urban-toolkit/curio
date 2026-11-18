@@ -30,9 +30,12 @@ type StandInMap = {
 /** Each map a run made, in order. */
 const mockMaps: StandInMap[] = [];
 
+// Autark's packages are mocked virtually, as every suite mocks them
+// (tests/mockKinds.test.ts).
+//
 // autk-core's package names its ES build before its CommonJS one, so the
 // grammar gets the CommonJS build, as the other tests of Autark's builds do.
-jest.mock("@urban-toolkit/autk-core", () => jest.requireActual(`${mockAutark}/autk-core/dist/autk-core.umd.cjs`));
+jest.mock("@urban-toolkit/autk-core", () => jest.requireActual(`${mockAutark}/autk-core/dist/autk-core.umd.cjs`), { virtual: true });
 
 jest.mock("@urban-toolkit/autk-db", () => {
     /** Every position of a geometry's *coordinates*, however deep. */
@@ -79,7 +82,7 @@ jest.mock("@urban-toolkit/autk-db", () => {
         }
     }
     return { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT: "EPSG:3395", DEFAULT_WORKSPACE_NAME: "autk" };
-});
+}, { virtual: true });
 
 jest.mock("@urban-toolkit/autk-map", () => {
     class AutkMap {
@@ -104,12 +107,12 @@ jest.mock("@urban-toolkit/autk-map", () => {
         draw() {}
     }
     return { AutkMap, MapEvent: { PICKING: "picking" } };
-});
+}, { virtual: true });
 
 jest.mock("@urban-toolkit/autk-plot", () => ({
     PlotEvent: { CLICK: "click", BRUSH: "brush", BRUSH_X: "brushX", BRUSH_Y: "brushY" },
-}));
-jest.mock("@urban-toolkit/autk-compute", () => ({}));
+}), { virtual: true });
+jest.mock("@urban-toolkit/autk-compute", () => ({}), { virtual: true });
 
 // The autk-grammar build the app bundles, as CommonJS.
 const { AutkGrammar } = require(`${mockAutark}/autk-grammar/dist/autk-grammar.umd.cjs`);

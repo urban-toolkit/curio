@@ -5,7 +5,7 @@
  * runs. It is read from the grammar's CommonJS build, which loads with the five
  * packages it imports stubbed: the build reads none of them while it loads, and
  * `applyCamera` reads and resets only the map's camera. A suite that reads it
- * stubs them first:
+ * stubs them first, virtually, as every suite mocks them (tests/mockKinds.test.ts):
  *
  *     jest.mock("@urban-toolkit/autk-db", () => ({}), { virtual: true });
  *     jest.mock("@urban-toolkit/autk-map", () => ({}), { virtual: true });
