@@ -226,12 +226,38 @@ def _every(values) -> str:
     return quoted[0] if len(quoted) == 1 else ", ".join(quoted[:-1]) + " and " + quoted[-1]
 
 
+#: The compute pass a node runs: autk-grammar's GPGPU pass, a shader over a
+#: table, whose ``type`` is ``gpgpu`` or left out.
+GPGPU_PASS = "gpgpu"
+
+
+def _compute_passes(schema: dict) -> dict[str, tuple[str, list[dict]]]:
+    """Each kind of compute pass by its ``type``: its description and the
+    branches it can be written as. ``ComputeSpec`` lists the passes, inline or
+    by reference (a GPGPU pass and a render pass), and a pass is one branch
+    per way of naming its output. A branch whose ``type`` is no constant is a
+    GPGPU pass, the default; a pass with no description of its own has
+    ``ComputeSpec``'s."""
+    union = _definition(schema, "ComputeSpec")
+    passes: dict[str, tuple[str, list[dict]]] = {}
+    for member in union.get("anyOf", []):
+        target = _definition(schema, member["$ref"]) if "$ref" in member else member
+        for branch in target.get("anyOf", [target]):
+            branch = _definition(schema, branch["$ref"]) if "$ref" in branch else branch
+            kind = branch.get("properties", {}).get("type", {}).get("const", GPGPU_PASS)
+            description = target.get("description") or union.get("description", "")
+            passes.setdefault(kind, (description, []))[1].append(branch)
+    return passes
+
+
+def _gpgpu_pass(schema: dict) -> tuple[str, list[dict]]:
+    """The GPGPU pass's description and branches (``_compute_passes``)."""
+    return _compute_passes(schema).get(GPGPU_PASS, ("", []))
+
+
 def _compute_required(schema: dict) -> tuple[list[str], list[str]]:
-    """The fields every compute pass needs, and the fields it needs one of."""
-    branches = [
-        set(branch.get("required", []))
-        for branch in _definition(schema, "ComputeSpec").get("anyOf", [])
-    ] or [set()]
+    """The fields every GPGPU pass needs, and the fields it needs one of."""
+    branches = [set(branch.get("required", [])) for branch in _gpgpu_pass(schema)[1]] or [set()]
     common = set.intersection(*branches)
     return sorted(common), sorted(set.union(*branches) - common)
 
@@ -291,8 +317,8 @@ def render_autk_region(schema: dict, label: str) -> str:
     props = root.get("properties", {})
     layers, layer_required = map_layers(schema)
     common, either = _compute_required(schema)
-    compute = _definition(schema, "ComputeSpec")
-    compute_fields = compute.get("anyOf", [{}])[0].get("properties", {})
+    pass_description, pass_branches = _gpgpu_pass(schema)
+    compute_fields = (pass_branches or [{}])[0].get("properties", {})
     directive = _definition(schema, "FromFeatureDirective")
     iterate = directive.get("properties", {}).get("fromFeature", {}).get("properties", {}).get("iterate", {})
     layer_spec = _definition(schema, "MapLayerSpec")
@@ -321,7 +347,7 @@ def render_autk_region(schema: dict, label: str) -> str:
     lines += [
         "- " + _autk_words(
             "compute", description=props.get("compute", {}).get("description", ""),
-            pass_description=compute.get("description", ""), fields=_every(common),
+            pass_description=pass_description, fields=_every(common),
         ),
     ]
     for field in common:
