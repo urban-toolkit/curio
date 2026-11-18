@@ -14,9 +14,10 @@ each was packed):
   and autark#122 (numbers under a categorical color map drawn in their legend
   label's color) until Autark releases them, which autk-grammar's maps use
   too (an npm override);
-- autk-grammar 5.0.0-curio.1, packed from urban-toolkit/autk-grammar#22's
-  branch, which holds #20, #21 and #22 (5.0.0's keys, and a points layer's
-  ``pointSize`` in meters on the ground), until autk-grammar releases 5.0.0.
+- autk-grammar 5.0.0-curio.2, packed from urban-toolkit/autk-grammar#22's
+  branch at the commit that bumps it to 5.0.0, which holds #20, #21 and #22
+  (5.0.0's keys, and a points layer's ``pointSize`` in meters on the ground),
+  until autk-grammar releases 5.0.0.
 
 The Autark packages, all but autk-grammar, which is released on its own, are
 one release, 4.1.0 or later: from 4.1.0 on, autk-map draws a map on demand
@@ -72,9 +73,9 @@ VENDORED = {
         "integrity": "sha512-tzW/tZVMZ1ARnlj6C/DjmZejmdZ0Jg/maAu4nYB9XiPagTAwbtyR1viEDHY/H3ekfTsDISTeeGoVwBowgz/wkQ==",
     },
     "autk-grammar": {
-        "tarball": "urban-toolkit-autk-grammar-5.0.0-curio.1.tgz",
-        "version": "5.0.0-curio.1",
-        "integrity": "sha512-GON7Jimf4TVR/kkV/IMWGwGgsFt7iJ7yaXcwlV0VJBwzxdB45VfigZDrxVRNclKQ02jeozTVCds0WCRCctyaDg==",
+        "tarball": "urban-toolkit-autk-grammar-5.0.0-curio.2.tgz",
+        "version": "5.0.0-curio.2",
+        "integrity": "sha512-JVzQh+XRDs9WP8JkVVNDS0CuhwCTXUW7iWd+39xUy8t2LjaoVE2OxPfa5wggLQ9GJGs0zNMxTvBOYP3tkF7vPQ==",
     },
 }
 

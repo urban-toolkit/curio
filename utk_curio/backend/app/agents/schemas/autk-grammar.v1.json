@@ -66,7 +66,7 @@
           "type": "number"
         },
         "id": {
-          "description": "Name of the plot, which a link in `links` uses as its `source`. Unique among the ids of the maps and plots. Without it a plot is known by its `dataRef`, so two plots of one table need ids to be told apart.",
+          "description": "Name of the plot, which a link in `links` uses as its `source`. Unique among the ids of the maps and plots. Without it a plot is known by its `dataRef`, so two plots of one table need ids: a run refuses two plots known by one name.",
           "minLength": 1,
           "type": "string"
         },
@@ -157,7 +157,7 @@
       "description": "Where a map looks from. Each field is optional; an omitted field keeps the view that fits the map's layers. Read by the Autark adapter; the deck.gl adapter ignores it.",
       "properties": {
         "bearing": {
-          "description": "Rotation around the vertical axis, in degrees.",
+          "description": "Compass heading the view faces, in degrees clockwise from north: the map turns around the point it looks at.",
           "maximum": 360,
           "minimum": 0,
           "type": "number"
@@ -169,7 +169,7 @@
           "type": "number"
         },
         "zoom": {
-          "description": "Zoom level: the eye sits at a height of `10000 / 2^(zoom - 10)` workspace units above the point the map fits to, so each step doubles the scale.",
+          "description": "Zoom level: the eye sits `10000 / 2^(zoom - 10)` workspace units from the point the map looks at (straight above it without `pitch`), so each step doubles the scale.",
           "minimum": 0,
           "type": "number"
         }
@@ -542,6 +542,7 @@
           "type": "string"
         },
         "geotiffFileUrl": {
+          "description": "URL of the GeoTIFF file, relative to the page or absolute, which autk-db fetches. The file's first image is read: each of its bands becomes a band of the table (`band_1`, `band_2`, ...), where the file's no-data value reads as no value. A rotated or sheared grid is refused.",
           "type": "string"
         },
         "maxRasterCells": {
@@ -705,7 +706,7 @@
               "type": "array"
             },
             "outputTableName": {
-              "description": "Name of a new table that receives the result, so the source table stays as it is and later passes, maps and plots can read both. Without it, a GPGPU pass writes into its `dataRef` table. A render pass needs it.",
+              "description": "Name of a new table that receives the result, so the source table stays as it is and later passes, maps and plots can read both. Without it, the pass writes into its `dataRef` table.",
               "type": "string"
             },
             "type": {
@@ -856,7 +857,7 @@
               "type": "array"
             },
             "outputTableName": {
-              "description": "Name of a new table that receives the result, so the source table stays as it is and later passes, maps and plots can read both. Without it, a GPGPU pass writes into its `dataRef` table. A render pass needs it.",
+              "description": "Name of a new table that receives the result, so the source table stays as it is and later passes, maps and plots can read both. Without it, the pass writes into its `dataRef` table.",
               "type": "string"
             },
             "type": {
@@ -949,6 +950,18 @@
       ],
       "description": "A GPGPU compute pass over a table. Results are written to `feature.properties.compute.<column>`. It needs `outputColumnName` for a single result or `outputColumns` for several."
     },
+    "HeatmapAggregateFunction": {
+      "description": "How the rows near a heatmap cell are combined into its value: any aggregate function but `collect`, which lists the rows, while a cell holds one value.",
+      "enum": [
+        "sum",
+        "avg",
+        "count",
+        "min",
+        "max",
+        "weighted"
+      ],
+      "type": "string"
+    },
     "HeatmapSourceSpec": {
       "description": "Aggregates a table onto a regular grid, producing a raster heatmap table.",
       "properties": {
@@ -969,10 +982,12 @@
           "type": "object"
         },
         "groupBy": {
+          "description": "Aggregate the rows near each cell, one raster band per entry.",
           "items": {
             "properties": {
               "aggregateFn": {
-                "$ref": "#/definitions/AggregateFunction"
+                "$ref": "#/definitions/HeatmapAggregateFunction",
+                "description": "How the rows combine into the cell's value: any aggregate but `collect`, which lists rows, while a cell holds one value."
               },
               "column": {
                 "type": "string"
@@ -990,12 +1005,14 @@
           "type": "string"
         },
         "near": {
-          "description": "Radius around each grid cell, in workspace units, within which rows are aggregated. `useCentroid` measures from centroid to centroid; it defaults to true.",
+          "description": "Which rows count toward a grid cell: those within `distance` of the cell's center.",
           "properties": {
             "distance": {
+              "description": "Radius around each cell's center, in workspace units.",
               "type": "number"
             },
             "useCentroid": {
+              "description": "Measure from the cell's center to each row's centroid, the default. With `false`, measure to the nearest point of the row's geometry, so a long road counts in every cell within `distance` of any part of it.",
               "type": "boolean"
             }
           },
@@ -1055,7 +1072,7 @@
           "type": "number"
         },
         "id": {
-          "description": "Name of the plot, which a link in `links` uses as its `source`. Unique among the ids of the maps and plots. Without it a plot is known by its `dataRef`, so two plots of one table need ids to be told apart.",
+          "description": "Name of the plot, which a link in `links` uses as its `source`. Unique among the ids of the maps and plots. Without it a plot is known by its `dataRef`, so two plots of one table need ids: a run refuses two plots known by one name.",
           "minLength": 1,
           "type": "string"
         },
@@ -1218,12 +1235,14 @@
           "type": "string"
         },
         "near": {
-          "description": "Join rows within `distance` (in workspace units) instead of by containment. `useCentroid` measures from centroid to centroid; it defaults to true.",
+          "description": "Join the rows within `distance` of each root feature instead of the rows that intersect it.",
           "properties": {
             "distance": {
+              "description": "Greatest distance from a root feature to a row it receives, in workspace units.",
               "type": "number"
             },
             "useCentroid": {
+              "description": "Measure from the root feature's centroid to the row's centroid, the default. With `false`, measure between the geometries themselves, from their nearest points, so features that touch are 0 apart.",
               "type": "boolean"
             }
           },
@@ -1333,15 +1352,16 @@
       "type": "string"
     },
     "LayoutSpec": {
-      "description": "How the maps and plots of a specification are arranged on the page.\n\nThe engine does not read it: the host that creates the map canvases and the plot container does.",
+      "description": "How the maps and plots of a specification are arranged on the page.\n\nThe engine does not read it: the host that creates the map canvases and the plot elements does, through `arrangeViews`, which gives each view its pane.",
       "properties": {
         "columns": {
-          "description": "Number of columns of a `grid`. Defaults to 2.",
+          "description": "Number of columns of a `grid`, a whole number. Defaults to 2.",
           "minimum": 1,
+          "multipleOf": 1,
           "type": "number"
         },
         "gap": {
-          "description": "Space between views, in pixels.",
+          "description": "Space between views, in pixels. Defaults to 0.",
           "minimum": 0,
           "type": "number"
         },
@@ -1386,7 +1406,7 @@
           "type": "number"
         },
         "id": {
-          "description": "Name of the plot, which a link in `links` uses as its `source`. Unique among the ids of the maps and plots. Without it a plot is known by its `dataRef`, so two plots of one table need ids to be told apart.",
+          "description": "Name of the plot, which a link in `links` uses as its `source`. Unique among the ids of the maps and plots. Without it a plot is known by its `dataRef`, so two plots of one table need ids: a run refuses two plots known by one name.",
           "minLength": 1,
           "type": "string"
         },
@@ -1967,7 +1987,7 @@
           "type": "number"
         },
         "id": {
-          "description": "Name of the plot, which a link in `links` uses as its `source`. Unique among the ids of the maps and plots. Without it a plot is known by its `dataRef`, so two plots of one table need ids to be told apart.",
+          "description": "Name of the plot, which a link in `links` uses as its `source`. Unique among the ids of the maps and plots. Without it a plot is known by its `dataRef`, so two plots of one table need ids: a run refuses two plots known by one name.",
           "minLength": 1,
           "type": "string"
         },
@@ -2336,16 +2356,18 @@
       "type": "object"
     },
     "RenderComputeSpec": {
-      "description": "A render-based compute pass: from each viewpoint of a table it renders the layers in several directions on the GPU and counts what each frame shows (a visibility or sky-view metric). The result is a copy of the viewpoints table with the metrics in `feature.properties.compute.render`, stored as the table `outputTableName`. Read by the Autark adapter only.",
+      "description": "A render-based compute pass: from each viewpoint of a table it renders the layers in several directions on the GPU and counts what each frame shows (a visibility or sky-view metric). The result, the viewpoints table's features (one point per window with the `building-windows` strategy) with the metrics in `feature.properties.compute.render`, is stored as the table `outputTableName`. Read by the Autark adapter only.",
       "properties": {
         "aggregation": {
           "anyOf": [
             {
               "properties": {
                 "backgroundLayerType": {
+                  "description": "Name of that class. Defaults to `background`, and it must not be the type of a rendered layer.",
                   "type": "string"
                 },
                 "includeBackground": {
+                  "description": "Also count the pixels where no layer is drawn, such as the sky, as one more class.",
                   "type": "boolean"
                 },
                 "type": {
@@ -2371,22 +2393,27 @@
               "type": "object"
             }
           ],
-          "description": "`classes` counts the pixels of each layer type, `objects` those of each object."
+          "description": "What each feature of the result receives: `classes`, the share of its frames' pixels each layer type covers, from 0 to 1; `objects`, for each object seen, the share of its frames that show it."
         },
         "camera": {
+          "description": "The lens of the frames each viewpoint renders. Unlike a map's `camera`, which sets where a map view looks from, it sets no position or direction: `viewpoints` does.",
           "properties": {
             "clip": {
+              "description": "How near and how far from the viewpoint the frames show the layers, in workspace units.",
               "properties": {
                 "far": {
+                  "description": "Farthest distance drawn. Defaults to 5000.",
                   "type": "number"
                 },
                 "near": {
+                  "description": "Nearest distance drawn. Defaults to 1.",
                   "type": "number"
                 }
               },
               "type": "object"
             },
             "fov": {
+              "description": "Field of view of each square frame, in degrees. Defaults to 90.",
               "type": "number"
             }
           },
@@ -2394,7 +2421,7 @@
         },
         "layerType": {
           "$ref": "#/definitions/LayerType",
-          "description": "How the map draws the new table. Defaults to the type of the viewpoints table."
+          "description": "How the map draws the new table. Defaults to the type of the viewpoints table, or to `points` with the `building-windows` strategy, whose result holds one point per window."
         },
         "layers": {
           "description": "Layers to render.",
@@ -2416,24 +2443,29 @@
         },
         "type": {
           "const": "render",
+          "description": "Selects a render pass.",
           "type": "string"
         },
         "viewpoints": {
+          "description": "Where the frames are rendered from: the features of a table, and the directions each one looks in.",
           "properties": {
             "dataRef": {
               "description": "Name of the table whose features are the viewpoints.",
               "type": "string"
             },
             "sampling": {
+              "description": "The directions each viewpoint looks in, around the horizon. Read with the `centroid` strategy only.",
               "properties": {
                 "azimuthOffsetDeg": {
+                  "description": "Angle of the first direction, in degrees counterclockwise from east (0 looks east, 90 north); the others follow every 360 / `directions` degrees. Defaults to 0.",
                   "type": "number"
                 },
                 "directions": {
-                  "description": "Directions sampled around each viewpoint.",
+                  "description": "Directions sampled around each viewpoint, evenly spaced. Defaults to 1.",
                   "type": "number"
                 },
                 "pitchDeg": {
+                  "description": "Angle of every direction above the horizontal, in degrees: up when positive, down when negative. Defaults to 0.",
                   "type": "number"
                 }
               },
@@ -2456,6 +2488,7 @@
                 {
                   "properties": {
                     "floors": {
+                      "description": "Rows of windows on each facade, spread evenly up the building's height.",
                       "type": "number"
                     },
                     "type": {
@@ -2470,7 +2503,7 @@
                   "type": "object"
                 }
               ],
-              "description": "Where a feature's viewpoints are: its centroid (the default) or one per floor on a building's windows."
+              "description": "Where the viewpoints are: each feature's centroid (the default), looking in the directions `sampling` sets, or `building-windows`: windows along each building's facades, each looking out from the facade and 30 degrees to either side. The result then holds one point per window instead of the table's features."
             }
           },
           "required": [
@@ -2509,14 +2542,13 @@
           "type": "string"
         },
         "type": {
-          "description": "How the layer is drawn into the frames.",
+          "description": "How the layer is drawn into the frames. A render pass draws no points.",
           "enum": [
             "surface",
             "parks",
             "water",
             "roads",
             "buildings",
-            "points",
             "polygons",
             "polylines"
           ],
@@ -2559,7 +2591,7 @@
           "type": "number"
         },
         "id": {
-          "description": "Name of the plot, which a link in `links` uses as its `source`. Unique among the ids of the maps and plots. Without it a plot is known by its `dataRef`, so two plots of one table need ids to be told apart.",
+          "description": "Name of the plot, which a link in `links` uses as its `source`. Unique among the ids of the maps and plots. Without it a plot is known by its `dataRef`, so two plots of one table need ids: a run refuses two plots known by one name.",
           "minLength": 1,
           "type": "string"
         },
@@ -2652,7 +2684,7 @@
           "type": "number"
         },
         "id": {
-          "description": "Name of the plot, which a link in `links` uses as its `source`. Unique among the ids of the maps and plots. Without it a plot is known by its `dataRef`, so two plots of one table need ids to be told apart.",
+          "description": "Name of the plot, which a link in `links` uses as its `source`. Unique among the ids of the maps and plots. Without it a plot is known by its `dataRef`, so two plots of one table need ids: a run refuses two plots known by one name.",
           "minLength": 1,
           "type": "string"
         },
