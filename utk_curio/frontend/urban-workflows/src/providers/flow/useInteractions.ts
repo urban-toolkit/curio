@@ -20,6 +20,11 @@ function interactionLinks(edges: Edge[]): Map<string, Link> {
     return links;
 }
 
+/** The two nodes *link* joins, the same whichever way it was drawn. */
+function pairOf({ source, target }: Link): string {
+    return JSON.stringify(source < target ? [source, target] : [target, source]);
+}
+
 /** Whether *interaction* holds a selection that picks something. */
 function holdsSelection(interaction: IInteraction | undefined): boolean {
     return Object.values(interaction?.details ?? {}).some((detail: any) => isActiveSelect(detail));
@@ -91,6 +96,13 @@ export function useInteractions({
             }
         }
 
+        // A node gets a sender's selection once, however many interaction
+        // edges join the two (a node's own handle and a view's, say).
+        const send = (receiver: string, sender: string) => {
+            const list = toSend[receiver] ?? (toSend[receiver] = []);
+            if (!list.includes(interactionDict[sender])) list.push(interactionDict[sender]);
+        };
+
         for (let i = 0; i < edges.length; i++) {
             let targetNode = reactFlow.getNode(edges[i].target) as Node;
             let sourceNode = reactFlow.getNode(edges[i].source) as Node;
@@ -109,52 +121,15 @@ export function useInteractions({
 
                 if (sourceInteracted && targetPool) {
                     // then the target is the pool
-
-                    if (toSend[edges[i].target] == undefined) {
-                        toSend[edges[i].target] = [
-                            interactionDict[edges[i].source],
-                        ];
-                    } else {
-                        toSend[edges[i].target].push(
-                            interactionDict[edges[i].source]
-                        );
-                    }
+                    send(edges[i].target, edges[i].source);
                 } else if (targetInteracted && sourcePool) {
                     // then the source is the pool
-                    if (toSend[edges[i].source] == undefined) {
-                        toSend[edges[i].source] = [
-                            interactionDict[edges[i].target],
-                        ];
-                    } else {
-                        toSend[edges[i].source].push(
-                            interactionDict[edges[i].target]
-                        );
-                    }
+                    send(edges[i].source, edges[i].target);
                 } else if (!sourcePool && !targetPool) {
                     // Direct interaction edge between two non-pool nodes
                     // (e.g. AutkMap ↔ AutkPlot linked brushing).
-                    if (sourceInteracted) {
-                        if (toSend[edges[i].target] == undefined) {
-                            toSend[edges[i].target] = [
-                                interactionDict[edges[i].source],
-                            ];
-                        } else {
-                            toSend[edges[i].target].push(
-                                interactionDict[edges[i].source]
-                            );
-                        }
-                    }
-                    if (targetInteracted) {
-                        if (toSend[edges[i].source] == undefined) {
-                            toSend[edges[i].source] = [
-                                interactionDict[edges[i].target],
-                            ];
-                        } else {
-                            toSend[edges[i].source].push(
-                                interactionDict[edges[i].target]
-                            );
-                        }
-                    }
+                    if (sourceInteracted) send(edges[i].target, edges[i].source);
+                    if (targetInteracted) send(edges[i].source, edges[i].target);
                 }
             }
         }
@@ -230,7 +205,10 @@ export function useInteractions({
     // end what the other end delivered, and a new edge hands each end the
     // selection the other end already holds, by the routing rules above: a
     // pool takes a chart's selection, two views take each other's, and two
-    // pools exchange none.
+    // pools exchange none. Each edge counts on its own: while another
+    // interaction edge still joins the same two nodes (a node's own handle
+    // and a view's, say), one that goes takes nothing back, and one more
+    // between two joined nodes hands nothing over.
     const linksRef = useRef(new Map<string, Link>());
     const interactionsRef = useRef(interactions);
     interactionsRef.current = interactions;
@@ -238,8 +216,15 @@ export function useInteractions({
         const links = interactionLinks(edges);
         const before = linksRef.current;
         linksRef.current = links;
-        const removed = [...before].filter(([id]) => !links.has(id)).map(([, link]) => link);
-        const added = [...links].filter(([id]) => !before.has(id)).map(([, link]) => link);
+        const joined = (map: Map<string, Link>) => new Set([...map.values()].map(pairOf));
+        const joinedNow = joined(links);
+        const joinedBefore = joined(before);
+        const removed = [...before]
+            .filter(([id, link]) => !links.has(id) && !joinedNow.has(pairOf(link)))
+            .map(([, link]) => link);
+        const added = [...links]
+            .filter(([id, link]) => !before.has(id) && !joinedBefore.has(pairOf(link)))
+            .map(([, link]) => link);
         if (removed.length === 0 && added.length === 0) return;
 
         const takeBack = new Map<string, Set<string>>();
