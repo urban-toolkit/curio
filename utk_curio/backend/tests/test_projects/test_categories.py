@@ -28,7 +28,7 @@ had given them. Examples 27 to 30, whose nodes run torch, carry the computed
 package's node, is placed by the same rules (2026-11-17), and so is example
 33, SideSeeing's frames, segments and blocks (2026-11-17). Both carry
 ``PyTorch`` too since SAM 3's package, which runs torch, declares it for the
-dataflows it is in (2026-11-17). Example 38, the sky seen from the street, is
+dataflows it is in (2026-11-17). Example 34, the sky seen from the street, is
 placed by the same rules (2026-11-18): its render pass is a GPU compute.
 The automatic sections must reproduce it from the files alone, and the
 hand-set ones live in the files themselves.

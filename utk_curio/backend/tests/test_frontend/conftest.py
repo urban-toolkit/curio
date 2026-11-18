@@ -171,7 +171,7 @@ WORKFLOW_FILES = [
     "docs/examples/33-sideseeing-frames-segments-blocks.json",
     # An Autark render pass, the sky each street around Wall Street sees:
     # test-gpu runs it, for its map.
-    "docs/examples/38-autark-sky-seen-from-the-street.json",
+    "docs/examples/34-autark-sky-seen-from-the-street.json",
 ]
 
 

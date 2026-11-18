@@ -58,7 +58,7 @@ class TestCompleteness:
         # The 34 numbered examples (24 from #662, 25 from #576, 26 from #819,
         # 27 to 30 PyTorch on the GPU, 31 SAM 3 along a SideSeeing walk,
         # 32 the SAGE-IDOT rail crossings, 33 SAM 3 on the same walk's frames
-        # and its blocks, 38 the sky seen from the street by a render pass)
+        # and its blocks, 34 the sky seen from the street by a render pass)
         # and the 31 test dataflows (#662 added scenarios, quad-cities-flood-vulnerability,
         # chicago-loop-shadow-towers, chicago-rain-wind-routing and netcdf-hourly-rain, the plan for #914
         # lower-manhattan-park-shade, and komar41's #914 the scenario
