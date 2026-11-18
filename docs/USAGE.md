@@ -1542,8 +1542,10 @@ rotated or sheared grid is refused.
 }
 ```
 
-A map draws it as it draws any raster, by one band. A node that only loads
-data hands it on after its layers: an `Autark` node draws it by its table's
+A map draws it as it draws any raster, by one band, cell for cell, up to 4096
+by 4096 cells and 8192 on a side; for a larger one, the node says to give the
+source a lower `maxRasterCells`. A node that only loads data hands it on after
+its layers: an `Autark` node draws it by its table's
 name, and a Python node receives it as a `rasterio` dataset in EPSG:3395,
 holding the file's cells over the file's extent, where the map draws them. A
 Python node that opens the file by its path reads it on the file's own grid. A
