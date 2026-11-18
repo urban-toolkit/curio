@@ -529,6 +529,31 @@ class TestARasterBehindAPinnedMap:
         assert [(r["filename"], r["part"]) for r in rasters] == [("t_output", 1), ("t_output", 2)]
         assert [base64.b64decode(r["geotiff"])[-1] for r in rasters] == [1, 2]
 
+    def test_each_raster_of_a_list_travels_under_its_place_in_it(self):
+        # A Python list's raster is asked for by its part too, as the map asks for it.
+        envelope = {"dataType": "list", "data": [
+            {"dataType": "raster", "data": "/srv/day.tif"},
+            {"dataType": "int", "data": 3},
+            {"dataType": "raster", "data": "/srv/night.tif"},
+        ]}
+        asked = []
+
+        def fetch_raster(filename, part):
+            asked.append((filename, part))
+            return served(GEOTIFF + bytes([part]))
+
+        payload = build_dashboard_payload(
+            spec=raster_map_spec(),
+            output_refs=raster_refs("l_output", "list"),
+            fetch_envelope=lambda name: envelope,
+            fetch_raster=fetch_raster,
+        )
+        rasters = payload.to_dict()["rasters"]
+
+        assert asked == [("l_output", 0), ("l_output", 2)]
+        assert [(r["filename"], r["part"]) for r in rasters] == [("l_output", 0), ("l_output", 2)]
+        assert [base64.b64decode(r["geotiff"])[-1] for r in rasters] == [0, 2]
+
     def test_a_raster_that_travels_as_its_collection_needs_nothing_more(self):
         # A raster an Autark node handed on is its collection, inside the
         # envelope /get answered, which travels anyway.

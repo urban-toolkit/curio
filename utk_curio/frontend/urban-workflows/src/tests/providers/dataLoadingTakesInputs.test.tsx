@@ -5,6 +5,8 @@
  * providers/flow/useConnect.ts, ConnectionValidator.ts). So do the readers of
  * a shared value in the SCOUT packages: an Accumulated Shadow node takes a
  * season on its second circle, and a Raster Calculator a region on its third.
+ * And a Data Pool takes a raster from a node that makes only rasters, and hands
+ * it to a node that reads only rasters.
  *
  * The templates are registered as the app registers them at boot: the shipped
  * manifests, as GET /api/packages lists them, through registerPackageTemplates
@@ -83,6 +85,7 @@ const PYTHON = 'curio.builtin/python-computation@1';
 const RASTERIZE = 'curio.rasterization/rasterize-buildings@1';
 const CALCULATOR = 'curio.rasterization/raster-calculator@1';
 const SHADOW = 'model.scout.deep-umbra/accumulated-shadow@1';
+const POOL = 'curio.builtin/data-pool@1';
 
 const PACKAGES_ROOT = path.resolve(__dirname, '../../../../../../packages');
 
@@ -308,6 +311,19 @@ describe('the readers of a shared value take it on a circle of their own', () =>
     expect(drawn()).toEqual([
       ['tracts', 'average', 'in'], ['water', 'average', 'in_1'], ['region', 'average', 'in_2'],
     ]);
+    expect(mockShowToast).not.toHaveBeenCalled();
+  });
+});
+
+describe('a Data Pool takes a raster and hands it on', () => {
+  test('a node that makes only rasters feeds a Data Pool, and the pool feeds a node that reads only rasters', async () => {
+    await renderFlow();
+    await addNodes(makeNode('heights', RASTERIZE), makeNode('pool', POOL), makeNode('shadow', SHADOW));
+
+    await draw('heights', 'pool');
+    await draw('pool', 'shadow');
+
+    expect(drawn()).toEqual([['heights', 'pool', 'in'], ['pool', 'shadow', 'in']]);
     expect(mockShowToast).not.toHaveBeenCalled();
   });
 });

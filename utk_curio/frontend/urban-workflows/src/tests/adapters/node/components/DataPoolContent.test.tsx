@@ -270,6 +270,52 @@ describe('DataPoolContent', () => {
     expect(screen.getAllByText('Alice').length).toBeGreaterThanOrEqual(1);
   });
 
+  test("a tab of one input that holds several frames shows its own rows, not another input's preview", async () => {
+    // Circle 0 is a tuple of two frames, circle 1 a GeoDataFrame: three tabs.
+    // The tuple's second tab is no input of its own to preview.
+    mockFetchPreviewData.mockResolvedValue({ dataType: 'dataframe', data: { name: ['Somewhere else'] } } as any);
+    render(
+      <DataPoolContent
+        {...defaultProps}
+        activeTab="1"
+        tabData={[{ col: 1 }, { col: 2 }, { col: 3 }]}
+        tableData={[{ name: 'Tuple B' }]}
+        data={{
+          nodeId: 'test-node',
+          input: {
+            dataType: 'outputs',
+            data: [{ path: 'art-tuple', dataType: 'outputs' }, { path: 'art-gdf', dataType: 'geodataframe' }],
+          },
+        }}
+      />
+    );
+
+    // Long enough for a preview fetch to land, had one been sent.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(screen.getAllByText('Tuple B').length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText('Somewhere else')).toBeNull();
+  });
+
+  test("the one table of an input that holds several shows its own rows, not a preview of the whole input", async () => {
+    // An Autark data node that loaded one layer hands on its list of tables.
+    mockFetchPreviewData.mockResolvedValue({
+      dataType: 'list',
+      data: [{ dataType: 'dict', data: { name: 'roads', type: 'roads', geojson: { type: 'FeatureCollection', features: [] } } }],
+    } as any);
+    render(
+      <DataPoolContent
+        {...defaultProps}
+        tabData={[{ col: 1 }]}
+        tableData={[{ highway: 'primary' }]}
+        data={{ nodeId: 'test-node', input: { path: 'art-roads', dataType: 'list' } }}
+      />
+    );
+
+    // Long enough for a preview fetch to land, had one been sent.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(screen.getAllByText('primary').length).toBeGreaterThanOrEqual(1);
+  });
+
   // ---- #517: the pool shows at most 100 rows and must say so ---------------
 
   const rowsOf = (count: number) =>
