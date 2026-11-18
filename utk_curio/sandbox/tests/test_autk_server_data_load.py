@@ -234,7 +234,7 @@ def test_the_server_compiled_load_keeps_each_table_in_its_workspace(tmp_path, mo
     assert all(sorted(layer) == ["geojson", "name", "type", "workspace"] for layer in loaded[2:])
     # East's join counted east's lines, the three inside its zone.
     zone = loaded[2]["geojson"]["features"][0]["properties"]
-    assert 3 in _numbers(zone.get("sjoin")), zone
+    assert 3 in _numbers(zone), zone
 
 
 def _assert_osm_ids(layer: dict) -> None:

@@ -65,13 +65,9 @@ DOCUMENTS = {
     PLAIN_MAP: {"map": {"layerRefs": [{"dataRef": "lines"}]}},
 }
 
-#: Each table the data node hands on, as `<name>@<workspace>`, whether it
-#: arrives as the layer records or as frames.
-READ = '''layers = input_0 if isinstance(input_0, (list, tuple)) else [input_0]
-def where(layer):
-    held = layer if isinstance(layer, dict) else (layer.__dict__.get("metadata") or {})
-    return f"{held.get('name')}@{held.get('workspace', 'default')}"
-return ",".join(where(layer) for layer in layers)
+#: Each table the data node hands on, as `<name>@<workspace>`, from its layer
+#: records (`{name, type, geojson, workspace}`).
+READ = '''return ",".join(f"{layer['name']}@{layer.get('workspace', 'default')}" for layer in input_0)
 '''
 
 
