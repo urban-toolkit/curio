@@ -18,6 +18,8 @@ export type GrammarRun = {
   brush: (selection: number[]) => void;
   /** Each highlight the node asked of this run's map, in order: the table and the positions lit up (none: cleared). */
   highlights: Array<[string, number[]]>;
+  /** Each selection the node asked of this run's plot, in order: the plot and its positions (none: cleared). */
+  plotSelections: Array<[string, number[]]>;
   /** The maps this run drew, made by `drawnMaps.make` when a test sets it. */
   maps: any[];
   /**
@@ -63,6 +65,7 @@ export const grammarComputes: { on: boolean } = { on: false };
 export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string, unknown>) => {
   const handlers: Record<string, (event: any) => void> = {};
   const highlights: Array<[string, number[]]> = [];
+  const plotSelections: Array<[string, number[]]> = [];
   const grammar: any = {
     data: {},
     interactions: {
@@ -73,6 +76,8 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
     },
     highlightOnMap: jest.fn((table: string, positions: number[]) => { highlights.push([table, [...positions]]); }),
     clearHighlightOnMap: jest.fn((table: string) => { highlights.push([table, []]); }),
+    setPlotSelection: jest.fn((plot: string, positions: number[]) => { plotSelections.push([plot, [...positions]]); }),
+    clearHighlightOnPlot: jest.fn((plot: string) => { plotSelections.push([plot, []]); }),
     // Where autk-grammar keeps the adapter its run hands each compute pass to.
     computeAdapter: { resolveCompute: jest.fn(async (context: unknown) => context) },
   };
@@ -84,7 +89,7 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
     const terminate = jest.fn(async () => undefined);
     grammar.grammarEngine = { context: { db: { terminate } } };
     if (failedDraws.error) {
-      grammarRuns.push({ targets, spec, pick: () => {}, brush: () => {}, highlights, maps: [], terminate, destroy });
+      grammarRuns.push({ targets, spec, pick: () => {}, brush: () => {}, highlights, plotSelections, maps: [], terminate, destroy });
       throw failedDraws.error;
     }
     if (grammarComputes.on) {
@@ -102,6 +107,13 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
           source.outputTableName,
           Promise.resolve({ type: 'FeatureCollection', features: exportOf(source.outputTableName, source.geojsonObject.features) }),
         ]));
+      // A table a pass writes, under its outputTableName or in place, is what
+      // the pass computed over the table it read, as autk-grammar's compute
+      // cache keeps it: every feature of that table's export.
+      for (const pass of Array.isArray(spec?.compute) ? spec.compute : []) {
+        const read = grammar.data[pass?.dataRef];
+        if (read) grammar.data[pass.outputTableName ?? pass.dataRef] = read;
+      }
     }
     grammarRuns.push({
       targets,
@@ -109,6 +121,7 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
       pick: (selection) => handlers['map:picking']?.({ selection }),
       brush: (selection) => handlers['plot:selection']?.({ selection }),
       highlights,
+      plotSelections,
       maps,
       terminate,
       destroy,

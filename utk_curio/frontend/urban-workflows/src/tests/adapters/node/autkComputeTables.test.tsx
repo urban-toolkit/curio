@@ -70,6 +70,7 @@ import { useAutkGrammarBehavior } from '../../../adapters/node/autkGrammarBehavi
 import { withOpaqueRasters } from '../../../adapters/node/autkRasters';
 import { autkNeedsInput } from '../../../utils/autkInput';
 import {
+  drawnExports,
   grammarRuns as mockRuns,
   inputsByPath,
   resetAutkNodeMocks,
@@ -235,6 +236,26 @@ describe('a map of a table a pass of its document writes', () => {
     })).toBe(false);
   });
 
+  test('written in place under its own name is drawn as the pass says, a raster or not', () => {
+    const drawn = withOpaqueRasters({
+      data: [{ type: 'curio-raster', outputTableName: 'lst' }, { type: 'geojson', outputTableName: 'grid' }],
+      compute: [
+        pass('lst', 'once', { outputTableName: 'lst', layerType: 'points' }),
+        pass('grid', 'twice', { outputTableName: 'grid', layerType: 'raster' }),
+      ],
+      map: { layerRefs: [{ dataRef: 'lst' }, { dataRef: 'grid' }] },
+    });
+    expect(drawn.map.layerRefs[0].transferFunction).toBeUndefined();
+    expect(drawn.map.layerRefs[1].transferFunction).toEqual({ opacityMin: 1, opacityMax: 1 });
+  });
+
+  test('guard: written in place over a table of the input still reads the input', () => {
+    expect(autkNeedsInput({
+      compute: [pass('input_0', 'twice', { outputTableName: 'input_0' })],
+      map: { layerRefs: [{ dataRef: 'input_0' }] },
+    })).toBe(true);
+  });
+
   test('written from a raster is drawn with every cell opaque, as a raster is, unless the pass draws it as another type', () => {
     const raster = { type: 'curio-raster', outputTableName: 'lst' };
     const drawn = withOpaqueRasters({
@@ -247,6 +268,58 @@ describe('a map of a table a pass of its document writes', () => {
     });
     expect(drawn.map.layerRefs[0].transferFunction).toEqual({ opacityMin: 1, opacityMax: 1 });
     expect(drawn.map.layerRefs[1].transferFunction).toBeUndefined();
+  });
+});
+
+// autk-db exports a table with the rows whose geometry is empty first, each
+// group in the order it was handed (a table it loads gets its geometry
+// rewritten in place, `normalizeGeometryPrecision`, and its export has no
+// order of its own). A pass computes over that export, so a plot of a table a
+// pass wrote holds the rows in that order, not in the order Curio loads them:
+// for the units, MAP_ORDER (`drawnAt`) and not LOAD_ORDER.
+describe('a plot of a table a pass of its document writes', () => {
+  const NODE = 'tables-plot';
+  const PLOT = (dataRef: string) => ({ dataRef, mark: 'table', axis: ['unit_id', 'height'] });
+  const empty = (f: any) => !f?.geometry
+    || (f.geometry.type === 'GeometryCollection' && (f.geometry.geometries ?? []).length === 0);
+
+  beforeEach(() => {
+    drawnExports.of = (_table, handed) => [...handed.filter(empty), ...handed.filter((f) => !empty(f))];
+  });
+
+  test('names the input rows the pass kept where a brush lands, by the input table', async () => {
+    const node = mountAutkNode(NODE, unitsCollection());
+
+    await node.run({ compute: [pass('input_0', 'twice', { outputTableName: 'tall' })], plot: PLOT('tall') });
+    expect(node.lastOutput()).toEqual({ code: 'success', content: '' });
+
+    act(() => mockRuns[0].brush([drawnAt(UNIT_ROW[103])]));
+    await waitFor(() => expect(lastSelection(node)).toEqual(
+      expect.objectContaining({ data: [UNIT_ROW[103]], layerRef: 'input_0' }),
+    ));
+  });
+
+  test('repro: of a table a pass computes in place, it names the rows where a brush lands', async () => {
+    const node = mountAutkNode(NODE, unitsCollection());
+
+    await node.run({ compute: [pass('input_0', 'twice')], plot: PLOT('input_0') });
+    expect(node.lastOutput()).toEqual({ code: 'success', content: '' });
+
+    act(() => mockRuns[0].brush([drawnAt(UNIT_ROW[103])]));
+    await waitFor(() => expect(lastSelection(node)).toEqual(
+      expect.objectContaining({ data: [UNIT_ROW[103]], layerRef: 'input_0' }),
+    ));
+  });
+
+  test('lights the rows a selection names where the pass kept them', async () => {
+    const units = unitsCollection() as any;
+    units.features[UNIT_ROW[103]].properties.interacted = '1';
+    const node = mountAutkNode(NODE, units);
+
+    await node.run({ compute: [pass('input_0', 'twice', { outputTableName: 'tall' })], plot: PLOT('tall') });
+    expect(node.lastOutput()).toEqual({ code: 'success', content: '' });
+
+    await waitFor(() => expect(mockRuns[0].plotSelections).toContainEqual(['tall', [drawnAt(UNIT_ROW[103])]]));
   });
 });
 

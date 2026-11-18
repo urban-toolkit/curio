@@ -168,9 +168,9 @@ export function tablesToLoad<T extends { outputTableName?: unknown; layerType?: 
   return [...loaded.filter(brought), ...loaded.filter((table) => !brought(table))];
 }
 
-/** A table a compute pass of the document writes under a name of its own. */
+/** A table a compute pass of the document writes. */
 export type WrittenTable = {
-  /** Its name, the pass's `outputTableName`. */
+  /** Its name: the pass's `outputTableName`, else its `dataRef`. */
   name: string;
   /**
    * The table the pass computes over: a GPGPU pass's `dataRef`, a render
@@ -178,12 +178,15 @@ export type WrittenTable = {
    */
   from: string;
   /**
-   * Whether it holds the rows of `from`, one feature each, in their order:
-   * every pass's table but a render pass's over building windows, which holds
-   * one point per window.
+   * Whether it holds the rows of `from`, one feature each: every pass's table
+   * but a render pass's over building windows, which holds one point per
+   * window.
    */
   holdsRows: boolean;
-  /** The type it is drawn and handed on as, when the pass says (`layerType`), or a table of windows' `points`. */
+  /**
+   * The type the pass draws and hands it on as (`layerType`), read only with an
+   * `outputTableName`, or the `points` of a render pass's windows.
+   */
   layerType?: string;
 };
 
@@ -199,31 +202,44 @@ function passSource(pass: any): unknown {
   return passKind(pass) === "render" ? pass.viewpoints?.dataRef : pass?.dataRef;
 }
 
+/** Whether a render pass looks out from building windows: its table holds one point per window. */
+function overWindows(pass: any): boolean {
+  return passKind(pass) === "render" && pass.viewpoints?.strategy?.type === "building-windows";
+}
+
 /**
- * The tables the document's compute passes write under their
- * `outputTableName`, in pass order, so a table a pass writes from another's
- * comes after it. A GPGPU pass keeps every feature of the table it computes
- * over, and a render pass every feature of its viewpoints table, so the table
- * either writes holds that table's rows, but for a render pass over building
- * windows, whose table holds one point per window. Its type is the pass's
- * `layerType`, else `points` for windows, else the type of the table it is
- * computed from (autk-grammar's compute adapter, `store`). A pass whose
- * `outputTableName` is the table it computes over, and a GPGPU pass without
- * one, writes into that table and makes none.
+ * The tables the document's compute passes write, in pass order, so a table a
+ * pass writes from another's comes after it: each under the pass's
+ * `outputTableName`, else in place of the table it computes over, as
+ * autk-grammar's compute adapter keeps them (`store`). A map or a plot draws a
+ * table a pass wrote from that result, which holds every feature of the table
+ * the pass computed over, in the order autk-db stores them, but for a render
+ * pass over building windows, whose table holds one point per window. A table
+ * a pass names is drawn as its `layerType`, else as `points` for windows, else
+ * as the table it is computed from.
  */
 export function writtenTables(spec: any): WrittenTable[] {
   const written: WrittenTable[] = [];
   for (const pass of asList<any>(spec?.compute)) {
-    const kind = passKind(pass);
-    if (kind === null) continue;
-    const name = pass.outputTableName;
+    if (passKind(pass) === null) continue;
+    const { outputTableName, layerType } = pass;
     const from = passSource(pass);
-    if (typeof name !== "string" || !name || typeof from !== "string" || !from || name === from) continue;
-    const windows = kind === "render" && pass.viewpoints?.strategy?.type === "building-windows";
-    const layerType = typeof pass.layerType === "string" && pass.layerType ? pass.layerType : windows ? "points" : undefined;
-    written.push({ name, from, holdsRows: !windows, ...(layerType ? { layerType } : {}) });
+    if (typeof from !== "string" || !from) continue;
+    const named = typeof outputTableName === "string" && outputTableName !== "";
+    const windows = overWindows(pass);
+    written.push({
+      name: named ? outputTableName : from,
+      from,
+      holdsRows: !windows,
+      ...(named && typeof layerType === "string" && layerType ? { layerType } : named && windows ? { layerType: "points" } : {}),
+    });
   }
   return written;
+}
+
+/** The tables the document's passes make: those written under a name other than the table they are computed from. */
+export function madeTables(spec: any): string[] {
+  return writtenTables(spec).filter((table) => table.name !== table.from).map((table) => table.name);
 }
 
 /**
@@ -287,7 +303,7 @@ export function autkNeedsInput(spec: any): boolean {
   const hasCompute = asList(spec.compute).length > 0;
   const hasData = Array.isArray(spec.data) && spec.data.length > 0;
   if (hasCompute && !hasRender && !hasData) return true;
-  const own = new Set([...ownTableNames(spec), ...writtenTables(spec).map((table) => table.name)]);
+  const own = new Set([...ownTableNames(spec), ...madeTables(spec)]);
   return documentTableRefs(spec).some((name) => !own.has(name));
 }
 
