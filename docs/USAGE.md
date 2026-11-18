@@ -1482,9 +1482,11 @@ node it feeds draws one of them by naming its workspace:
 {"map": {"workspace": "chicago", "layerRefs": [{"dataRef": "area_roads"}]}}
 ```
 
-A table keeps its workspace through a compute step and a Map Editor node, and
-into a Python node, where the frame's `metadata` holds it as `workspace`
-beside its `name`. A map that names a table
+A table keeps its workspace through a compute step, a Map Editor node and a
+Data Pool. A Python node reads it as `workspace`: in each layer record a data
+section's tables arrive as (`{"name", "type", "geojson", "workspace"}`), and in
+the `metadata` of a frame read from another Autark node's layers or through a
+layer chip, beside its `name`. A map that names a table
 of another workspace than its own draws nothing and says which tables it has,
 each in another workspace written as `<workspace>/<table>`.
 
