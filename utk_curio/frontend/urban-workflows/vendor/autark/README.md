@@ -13,24 +13,22 @@ Curio installs it in place of autk-map 4.1.1 from npm until Autark releases thes
 
 ## autk-grammar
 
-`urban-toolkit-autk-grammar-4.5.0-curio.1.tgz` is `@urban-toolkit/autk-grammar` packed from urban-toolkit/autk-grammar #22 at `6a3f210a4def4abb095642b50cba03727beb8fd3` (autk-grammar 4.4.1 plus #22, whose last commit makes it 4.5.0): a map layer's `pointSize`, the radius of each point of a points layer in meters on the ground, which the grammar converts to autk-map's planar units by the Mercator scale at the layer's latitude. Its SHA-256 is `255e822caa2d09f27fdf20d3ad50712a3b0008fa487da1a507f599d4fa95ab3f`, and its npm integrity `sha512-Ig7qgplmqBBHp+lAiZDzJknD/BH0zrWvuRqu9ZSOtpNorBq8I9KvEDYJLu5MtZDhZH2fyUg5LhuNi4jVWGGfTg==`.
+`urban-toolkit-autk-grammar-5.0.0-curio.1.tgz` is `@urban-toolkit/autk-grammar` packed from urban-toolkit/autk-grammar #22's branch `feat/point-size` at `02e287d2c80a9380f34fc51a22986477a995324b`, a release candidate of 5.0.0: autk-grammar 4.4.1 with #20 (new keys, and keys renamed with no alias: `wglsFunction` is `wgslFunction`, a join's `tableRootName` and `tableJoinName` are `dataRef` and `joinDataRef`, a heatmap's `tableJoinName` is `joinDataRef`), #21 (`workspace`) and #22 (a map layer's `pointSize`, the radius of each point of a points layer in meters on the ground, which the grammar converts to autk-map's planar units by the Mercator scale at the layer's latitude). Its SHA-256 is `66e4c4d4b40d90db6e8b7a1ae47480ba8d8cc066f5cc798f057f7a7ad244bb24`, and its npm integrity `sha512-GON7Jimf4TVR/kkV/IMWGwGgsFt7iJ7yaXcwlV0VJBwzxdB45VfigZDrxVRNclKQ02jeozTVCds0WCRCctyaDg==`.
 
 It was built in a clean checkout of that commit, with Node 26:
 
 1. `npm ci` at the repository's root;
 2. `npm run build` in `grammar`, then in `adapters/autk`, which also writes `build/autk-grammar-schema.json`;
-3. `npm pkg set version=4.5.0-curio.1` in `adapters/autk`, so the version changes in the packed copy only;
+3. `npm pkg set version=5.0.0-curio.1` in `adapters/autk`, so the version changes in the packed copy only;
 4. `npm pack` of `adapters/autk`.
 
-Curio's vendored schema (`utk_curio/backend/app/agents/schemas/autk-grammar.v1.json`) is that tarball's `build/autk-grammar-schema.json`, written by `python scripts/sync_autk_schema.py --tarball utk_curio/frontend/urban-workflows/vendor/autark/urban-toolkit-autk-grammar-4.5.0-curio.1.tgz`. Its record names the tarball, and `--check` compares the copy with it.
-
-autk-grammar has another open pull request, #20, whose `pointSize` is a radius in planar units passed straight to autk-map. A release with that meaning would draw `"pointSize": 2` at about 1.5 m at Chicago instead of 2 m.
+Curio's vendored schema (`utk_curio/backend/app/agents/schemas/autk-grammar.v1.json`) is that tarball's `build/autk-grammar-schema.json`, written by `python scripts/sync_autk_schema.py --tarball utk_curio/frontend/urban-workflows/vendor/autark/urban-toolkit-autk-grammar-5.0.0-curio.1.tgz`. Its record names the tarball, and `--check` compares the copy with it.
 
 ## Switching back to npm
 
 Each package goes back on its own once a release carries its pull requests:
 
 - autk-map: after autark #118, #120, #121 and #122;
-- autk-grammar: after a release that carries #22's `pointSize`, in meters on the ground.
+- autk-grammar: once 5.0.0 is on npm.
 
 For autk-grammar, set `utk_curio/frontend/urban-workflows/package.json` to the release, update the lockfile, delete the tarball, run `python scripts/sync_autk_schema.py --version <release>`, and update `utk_curio/backend/tests/test_autark_packages.py`.

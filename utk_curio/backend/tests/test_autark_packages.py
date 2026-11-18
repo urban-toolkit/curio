@@ -14,17 +14,20 @@ each was packed):
   and autark#122 (numbers under a categorical color map drawn in their legend
   label's color) until Autark releases them, which autk-grammar's maps use
   too (an npm override);
-- autk-grammar 4.5.0-curio.1, packed from urban-toolkit/autk-grammar#22 (a
-  points layer's ``pointSize``, in meters on the ground) until autk-grammar
-  releases it.
+- autk-grammar 5.0.0-curio.1, packed from urban-toolkit/autk-grammar#22's
+  branch, which holds #20, #21 and #22 (5.0.0's renamed keys, and a points
+  layer's ``pointSize`` in meters on the ground), until autk-grammar
+  releases 5.0.0.
 
 The Autark packages, all but autk-grammar, which is released on its own, are
 one release, 4.1.0 or later: from 4.1.0 on, autk-map draws a map on demand
 (adapters/node/autkMapDrawing). The vendored autk-map is release 4.1.1 with
 those four changes. autk-grammar is 4.1.0 or later: from 4.1.0 on, it lists
 the maps a run drew (`AutkGrammar.maps`), which is where Curio takes a node's
-maps from (`grammarMaps`); and 4.5.0 or later, whose map layers take
-``pointSize``. Nothing else is vendored.
+maps from (`grammarMaps`); 4.5.0 or later, whose map layers take
+``pointSize``; and 5.0.0 or later, whose keys Curio's documents and loaders
+use (``wgslFunction``, a join's ``dataRef`` and ``joinDataRef``). Nothing
+else is vendored.
 """
 from __future__ import annotations
 
@@ -57,6 +60,10 @@ GRAMMAR_MAPS_RELEASE = (4, 1, 0)
 #: The first autk-grammar release whose map layers take ``pointSize``.
 GRAMMAR_POINT_SIZE_RELEASE = (4, 5, 0)
 
+#: The first autk-grammar release with the keys Curio's documents and loaders
+#: use: ``wgslFunction``, and a join's ``dataRef`` and ``joinDataRef``.
+GRAMMAR_KEYS_RELEASE = (5, 0, 0)
+
 #: The vendored Autark packages, in the frontend's tree: each one's tarball in
 #: vendor/autark/, its version and its npm integrity.
 VENDORED = {
@@ -66,9 +73,9 @@ VENDORED = {
         "integrity": "sha512-tzW/tZVMZ1ARnlj6C/DjmZejmdZ0Jg/maAu4nYB9XiPagTAwbtyR1viEDHY/H3ekfTsDISTeeGoVwBowgz/wkQ==",
     },
     "autk-grammar": {
-        "tarball": "urban-toolkit-autk-grammar-4.5.0-curio.1.tgz",
-        "version": "4.5.0-curio.1",
-        "integrity": "sha512-Ig7qgplmqBBHp+lAiZDzJknD/BH0zrWvuRqu9ZSOtpNorBq8I9KvEDYJLu5MtZDhZH2fyUg5LhuNi4jVWGGfTg==",
+        "tarball": "urban-toolkit-autk-grammar-5.0.0-curio.1.tgz",
+        "version": "5.0.0-curio.1",
+        "integrity": "sha512-GON7Jimf4TVR/kkV/IMWGwGgsFt7iJ7yaXcwlV0VJBwzxdB45VfigZDrxVRNclKQ02jeozTVCds0WCRCctyaDg==",
     },
 }
 
@@ -177,6 +184,16 @@ def test_the_grammars_map_layers_take_a_point_size():
     assert _release(version) >= GRAMMAR_POINT_SIZE_RELEASE, (
         f"the frontend lockfile takes autk-grammar {version}, whose map layers take no pointSize: "
         f"4.5.0 is the first whose do"
+    )
+
+
+def test_the_grammar_takes_the_keys_curio_writes():
+    entries = _read(FRONTEND / "package-lock.json")["packages"]
+    version = entries.get(f"node_modules/@urban-toolkit/{GRAMMAR}", {}).get("version", "")
+    assert version, "the frontend lockfile has no autk-grammar"
+    assert _release(version) >= GRAMMAR_KEYS_RELEASE, (
+        f"the frontend lockfile takes autk-grammar {version}, which reads wglsFunction and a join's "
+        f"tableRootName and tableJoinName: 5.0.0 is the first that reads wgslFunction, dataRef and joinDataRef"
     )
 
 

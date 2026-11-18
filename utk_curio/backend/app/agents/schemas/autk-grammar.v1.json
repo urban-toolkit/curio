@@ -65,8 +65,13 @@
         "height": {
           "type": "number"
         },
+        "id": {
+          "description": "Name of the plot, which a link in `links` uses as its `source`. Unique among the ids of the maps and plots. Without it a plot is known by its `dataRef`, so two plots of one table need ids to be told apart.",
+          "minLength": 1,
+          "type": "string"
+        },
         "mapRef": {
-          "description": "`dataRef` of the map layer this plot links its selection to.",
+          "description": "`dataRef` of the map layer this plot links its selection to. A shorthand for a link in `links`.",
           "type": "string"
         },
         "margins": {
@@ -112,6 +117,10 @@
         },
         "width": {
           "type": "number"
+        },
+        "workspace": {
+          "$ref": "#/definitions/WorkspaceName",
+          "description": "Workspace the table is read from."
         }
       },
       "required": [
@@ -142,6 +151,29 @@
         "maxLon",
         "maxLat"
       ],
+      "type": "object"
+    },
+    "CameraSpec": {
+      "description": "Where a map looks from. Each field is optional; an omitted field keeps the view that fits the map's layers. Read by the Autark adapter; the deck.gl adapter ignores it.",
+      "properties": {
+        "bearing": {
+          "description": "Rotation around the vertical axis, in degrees.",
+          "maximum": 360,
+          "minimum": 0,
+          "type": "number"
+        },
+        "pitch": {
+          "description": "Tilt from straight down, in degrees.",
+          "maximum": 90,
+          "minimum": 0,
+          "type": "number"
+        },
+        "zoom": {
+          "description": "Zoom level: the eye sits at a height of `10000 / 2^(zoom - 10)` workspace units above the point the map fits to, so each step doubles the scale.",
+          "minimum": 0,
+          "type": "number"
+        }
+      },
       "type": "object"
     },
     "ColorMapInterpolator": {
@@ -200,275 +232,13 @@
     "ComputeSpec": {
       "anyOf": [
         {
-          "properties": {
-            "attributeArrays": {
-              "additionalProperties": {
-                "type": "number"
-              },
-              "type": "object"
-            },
-            "attributeMatrices": {
-              "additionalProperties": {
-                "properties": {
-                  "cols": {
-                    "type": "number"
-                  },
-                  "rows": {
-                    "anyOf": [
-                      {
-                        "type": "number"
-                      },
-                      {
-                        "const": "auto",
-                        "type": "string"
-                      }
-                    ]
-                  }
-                },
-                "required": [
-                  "rows",
-                  "cols"
-                ],
-                "type": "object"
-              },
-              "type": "object"
-            },
-            "attributes": {
-              "additionalProperties": {
-                "type": "string"
-              },
-              "description": "Maps WGSL variable names to feature property paths.",
-              "type": "object"
-            },
-            "dataRef": {
-              "description": "Name of the table the shader runs over, one invocation per feature.",
-              "type": "string"
-            },
-            "outputColumnName": {
-              "description": "Column written when the shader returns one value.",
-              "type": "string"
-            },
-            "outputColumns": {
-              "items": {
-                "type": "string"
-              },
-              "minItems": 1,
-              "type": "array"
-            },
-            "uniformArrays": {
-              "additionalProperties": {
-                "items": {
-                  "type": "number"
-                },
-                "type": "array"
-              },
-              "type": "object"
-            },
-            "uniformMatrices": {
-              "additionalProperties": {
-                "anyOf": [
-                  {
-                    "properties": {
-                      "cols": {
-                        "type": "number"
-                      },
-                      "data": {
-                        "items": {
-                          "items": {
-                            "type": "number"
-                          },
-                          "type": "array"
-                        },
-                        "type": "array"
-                      }
-                    },
-                    "required": [
-                      "data",
-                      "cols"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "$ref": "#/definitions/FromFeatureDirective"
-                  }
-                ]
-              },
-              "description": "Matrix constants shared by every invocation, written inline or read from a feature.",
-              "type": "object"
-            },
-            "uniforms": {
-              "additionalProperties": {
-                "anyOf": [
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "$ref": "#/definitions/FromFeatureDirective"
-                  }
-                ]
-              },
-              "description": "Scalar constants shared by every invocation, written inline or read from a feature.",
-              "type": "object"
-            },
-            "wglsFunction": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
-                }
-              ],
-              "description": "WGSL body of the compute function. An array is joined with newlines, which keeps long shaders readable in JSON."
-            }
-          },
-          "required": [
-            "attributes",
-            "dataRef",
-            "outputColumnName",
-            "wglsFunction"
-          ],
-          "type": "object"
+          "$ref": "#/definitions/GpgpuComputeSpec"
         },
         {
-          "properties": {
-            "attributeArrays": {
-              "additionalProperties": {
-                "type": "number"
-              },
-              "type": "object"
-            },
-            "attributeMatrices": {
-              "additionalProperties": {
-                "properties": {
-                  "cols": {
-                    "type": "number"
-                  },
-                  "rows": {
-                    "anyOf": [
-                      {
-                        "type": "number"
-                      },
-                      {
-                        "const": "auto",
-                        "type": "string"
-                      }
-                    ]
-                  }
-                },
-                "required": [
-                  "rows",
-                  "cols"
-                ],
-                "type": "object"
-              },
-              "type": "object"
-            },
-            "attributes": {
-              "additionalProperties": {
-                "type": "string"
-              },
-              "description": "Maps WGSL variable names to feature property paths.",
-              "type": "object"
-            },
-            "dataRef": {
-              "description": "Name of the table the shader runs over, one invocation per feature.",
-              "type": "string"
-            },
-            "outputColumnName": {
-              "type": "string"
-            },
-            "outputColumns": {
-              "description": "Columns written when the shader returns several values, in order.",
-              "items": {
-                "type": "string"
-              },
-              "minItems": 1,
-              "type": "array"
-            },
-            "uniformArrays": {
-              "additionalProperties": {
-                "items": {
-                  "type": "number"
-                },
-                "type": "array"
-              },
-              "type": "object"
-            },
-            "uniformMatrices": {
-              "additionalProperties": {
-                "anyOf": [
-                  {
-                    "properties": {
-                      "cols": {
-                        "type": "number"
-                      },
-                      "data": {
-                        "items": {
-                          "items": {
-                            "type": "number"
-                          },
-                          "type": "array"
-                        },
-                        "type": "array"
-                      }
-                    },
-                    "required": [
-                      "data",
-                      "cols"
-                    ],
-                    "type": "object"
-                  },
-                  {
-                    "$ref": "#/definitions/FromFeatureDirective"
-                  }
-                ]
-              },
-              "description": "Matrix constants shared by every invocation, written inline or read from a feature.",
-              "type": "object"
-            },
-            "uniforms": {
-              "additionalProperties": {
-                "anyOf": [
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "$ref": "#/definitions/FromFeatureDirective"
-                  }
-                ]
-              },
-              "description": "Scalar constants shared by every invocation, written inline or read from a feature.",
-              "type": "object"
-            },
-            "wglsFunction": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
-                }
-              ],
-              "description": "WGSL body of the compute function. An array is joined with newlines, which keeps long shaders readable in JSON."
-            }
-          },
-          "required": [
-            "attributes",
-            "dataRef",
-            "outputColumns",
-            "wglsFunction"
-          ],
-          "type": "object"
+          "$ref": "#/definitions/RenderComputeSpec"
         }
       ],
-      "description": "A GPU compute pass over a table. Results are written to `feature.properties.compute.<column>`. It needs `outputColumnName` for a single result or `outputColumns` for several."
+      "description": "One entry of `compute`. A pass with `type: 'render'` is a  {@link  RenderComputeSpec } , any other a  {@link  GpgpuComputeSpec } ."
     },
     "CsvDataSourceSpec": {
       "description": "Loads a CSV table from exactly one of `csvFileUrl` or `csvObject`.",
@@ -507,6 +277,10 @@
         "type": {
           "const": "csv",
           "type": "string"
+        },
+        "workspace": {
+          "$ref": "#/definitions/WorkspaceName",
+          "description": "Workspace the table is created in."
         }
       },
       "required": [
@@ -546,6 +320,10 @@
           "$ref": "#/definitions/InlineFeatureCollection",
           "description": "GeoJSON FeatureCollection to load directly.\n\nPer RFC 7946, GeoJSON coordinates MUST be in WGS84 (EPSG:4326) longitude/latitude. This is the default assumption when `coordinateFormat` is omitted.\n\nIf your FeatureCollection is in a different CRS (e.g. a projected system such as EPSG:3395), you MUST set `coordinateFormat` explicitly to match the actual CRS of the input data. Omitting `coordinateFormat` when the data is not in EPSG:4326 will cause the spatial transform to produce invalid geometry."
         },
+        "layerType": {
+          "$ref": "#/definitions/LayerType",
+          "description": "How the map draws the layer. When omitted, autk-db reads it from the first feature's geometry. Set it to draw lines as `polylines` or polygons as a `buildings` layer, for example. Read by the Autark adapter only."
+        },
         "outputTableName": {
           "description": "Name of the table this source creates. Later sources, compute passes, maps and plots refer to it by this name.",
           "type": "string"
@@ -553,6 +331,10 @@
         "type": {
           "const": "geojson",
           "type": "string"
+        },
+        "workspace": {
+          "$ref": "#/definitions/WorkspaceName",
+          "description": "Workspace the table is created in."
         }
       },
       "required": [
@@ -624,6 +406,19 @@
           "if": {
             "properties": {
               "type": {
+                "const": "geotiff",
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/definitions/GeoTiffDataSourceSpec"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
                 "const": "heatmap",
                 "type": "string"
               }
@@ -655,6 +450,7 @@
             "csv",
             "json",
             "geojson",
+            "geotiff",
             "heatmap",
             "join"
           ]
@@ -738,6 +534,48 @@
         }
       ]
     },
+    "GeoTiffDataSourceSpec": {
+      "description": "Loads a GeoTIFF raster from `geotiffFileUrl` as a raster table: one feature, with one band per value. Read by the Autark adapter only.",
+      "properties": {
+        "coordinateFormat": {
+          "description": "CRS of the file, as an EPSG string. Defaults to `'EPSG:4326'`.",
+          "type": "string"
+        },
+        "geotiffFileUrl": {
+          "type": "string"
+        },
+        "maxRasterCells": {
+          "description": "Most cells to decode; a larger raster is downsampled to fit. Defaults to 1 000 000.",
+          "type": "number"
+        },
+        "outputTableName": {
+          "description": "Name of the table this source creates. Later sources, compute passes, maps and plots refer to it by this name.",
+          "type": "string"
+        },
+        "resampleMethod": {
+          "description": "How a larger raster is downsampled. Defaults to `'bilinear'`.",
+          "enum": [
+            "nearest",
+            "bilinear"
+          ],
+          "type": "string"
+        },
+        "type": {
+          "const": "geotiff",
+          "type": "string"
+        },
+        "workspace": {
+          "$ref": "#/definitions/WorkspaceName",
+          "description": "Workspace the table is created in."
+        }
+      },
+      "required": [
+        "geotiffFileUrl",
+        "outputTableName",
+        "type"
+      ],
+      "type": "object"
+    },
     "Geometry": {
       "anyOf": [
         {
@@ -804,6 +642,313 @@
       ],
       "description": "How rows become features: `true` reads the `Latitude` and `Longitude` columns, or name the columns."
     },
+    "GpgpuComputeSpec": {
+      "anyOf": [
+        {
+          "properties": {
+            "attributeArrays": {
+              "additionalProperties": {
+                "type": "number"
+              },
+              "type": "object"
+            },
+            "attributeMatrices": {
+              "additionalProperties": {
+                "properties": {
+                  "cols": {
+                    "type": "number"
+                  },
+                  "rows": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "const": "auto",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "rows",
+                  "cols"
+                ],
+                "type": "object"
+              },
+              "type": "object"
+            },
+            "attributes": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Maps WGSL variable names to feature property paths.",
+              "type": "object"
+            },
+            "dataRef": {
+              "description": "Name of the table the shader runs over, one invocation per feature.",
+              "type": "string"
+            },
+            "layerType": {
+              "$ref": "#/definitions/LayerType",
+              "description": "How the map draws the new table. Defaults to the type of the table it was computed from. Only used with `outputTableName`."
+            },
+            "outputColumnName": {
+              "description": "Column written when the shader returns one value.",
+              "type": "string"
+            },
+            "outputColumns": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "outputTableName": {
+              "description": "Name of a new table that receives the result, so the source table stays as it is and later passes, maps and plots can read both. Without it, a GPGPU pass writes into its `dataRef` table. A render pass needs it.",
+              "type": "string"
+            },
+            "type": {
+              "const": "gpgpu",
+              "description": "`gpgpu` is the default, so existing specifications need not set it.",
+              "type": "string"
+            },
+            "uniformArrays": {
+              "additionalProperties": {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              "type": "object"
+            },
+            "uniformMatrices": {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "cols": {
+                        "type": "number"
+                      },
+                      "data": {
+                        "items": {
+                          "items": {
+                            "type": "number"
+                          },
+                          "type": "array"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "data",
+                      "cols"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "$ref": "#/definitions/FromFeatureDirective"
+                  }
+                ]
+              },
+              "description": "Matrix constants shared by every invocation, written inline or read from a feature.",
+              "type": "object"
+            },
+            "uniforms": {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "$ref": "#/definitions/FromFeatureDirective"
+                  }
+                ]
+              },
+              "description": "Scalar constants shared by every invocation, written inline or read from a feature.",
+              "type": "object"
+            },
+            "wgslFunction": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ],
+              "description": "WGSL body of the compute function. An array is joined with newlines, which keeps long shaders readable in JSON."
+            },
+            "workspace": {
+              "$ref": "#/definitions/WorkspaceName",
+              "description": "Workspace of the tables the pass reads and writes."
+            }
+          },
+          "required": [
+            "attributes",
+            "dataRef",
+            "outputColumnName",
+            "wgslFunction"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "attributeArrays": {
+              "additionalProperties": {
+                "type": "number"
+              },
+              "type": "object"
+            },
+            "attributeMatrices": {
+              "additionalProperties": {
+                "properties": {
+                  "cols": {
+                    "type": "number"
+                  },
+                  "rows": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "const": "auto",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "rows",
+                  "cols"
+                ],
+                "type": "object"
+              },
+              "type": "object"
+            },
+            "attributes": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Maps WGSL variable names to feature property paths.",
+              "type": "object"
+            },
+            "dataRef": {
+              "description": "Name of the table the shader runs over, one invocation per feature.",
+              "type": "string"
+            },
+            "layerType": {
+              "$ref": "#/definitions/LayerType",
+              "description": "How the map draws the new table. Defaults to the type of the table it was computed from. Only used with `outputTableName`."
+            },
+            "outputColumnName": {
+              "type": "string"
+            },
+            "outputColumns": {
+              "description": "Columns written when the shader returns several values, in order.",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "outputTableName": {
+              "description": "Name of a new table that receives the result, so the source table stays as it is and later passes, maps and plots can read both. Without it, a GPGPU pass writes into its `dataRef` table. A render pass needs it.",
+              "type": "string"
+            },
+            "type": {
+              "const": "gpgpu",
+              "description": "`gpgpu` is the default, so existing specifications need not set it.",
+              "type": "string"
+            },
+            "uniformArrays": {
+              "additionalProperties": {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              "type": "object"
+            },
+            "uniformMatrices": {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "cols": {
+                        "type": "number"
+                      },
+                      "data": {
+                        "items": {
+                          "items": {
+                            "type": "number"
+                          },
+                          "type": "array"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "data",
+                      "cols"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "$ref": "#/definitions/FromFeatureDirective"
+                  }
+                ]
+              },
+              "description": "Matrix constants shared by every invocation, written inline or read from a feature.",
+              "type": "object"
+            },
+            "uniforms": {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "$ref": "#/definitions/FromFeatureDirective"
+                  }
+                ]
+              },
+              "description": "Scalar constants shared by every invocation, written inline or read from a feature.",
+              "type": "object"
+            },
+            "wgslFunction": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ],
+              "description": "WGSL body of the compute function. An array is joined with newlines, which keeps long shaders readable in JSON."
+            },
+            "workspace": {
+              "$ref": "#/definitions/WorkspaceName",
+              "description": "Workspace of the tables the pass reads and writes."
+            }
+          },
+          "required": [
+            "attributes",
+            "dataRef",
+            "outputColumns",
+            "wgslFunction"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "A GPGPU compute pass over a table. Results are written to `feature.properties.compute.<column>`. It needs `outputColumnName` for a single result or `outputColumns` for several."
+    },
     "HeatmapSourceSpec": {
       "description": "Aggregates a table onto a regular grid, producing a raster heatmap table.",
       "properties": {
@@ -840,11 +985,18 @@
           },
           "type": "array"
         },
+        "joinDataRef": {
+          "description": "Table whose rows are aggregated onto the grid.",
+          "type": "string"
+        },
         "near": {
-          "description": "Radius around each grid cell, in workspace units, within which rows are aggregated.",
+          "description": "Radius around each grid cell, in workspace units, within which rows are aggregated. `useCentroid` measures from centroid to centroid; it defaults to true.",
           "properties": {
             "distance": {
               "type": "number"
+            },
+            "useCentroid": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -856,20 +1008,20 @@
           "description": "Name of the table this source creates. Later sources, compute passes, maps and plots refer to it by this name.",
           "type": "string"
         },
-        "tableJoinName": {
-          "description": "Table whose rows are aggregated onto the grid.",
-          "type": "string"
-        },
         "type": {
           "const": "heatmap",
           "type": "string"
+        },
+        "workspace": {
+          "$ref": "#/definitions/WorkspaceName",
+          "description": "Workspace the table is created in."
         }
       },
       "required": [
         "grid",
+        "joinDataRef",
         "near",
         "outputTableName",
-        "tableJoinName",
         "type"
       ],
       "type": "object"
@@ -902,8 +1054,13 @@
         "height": {
           "type": "number"
         },
+        "id": {
+          "description": "Name of the plot, which a link in `links` uses as its `source`. Unique among the ids of the maps and plots. Without it a plot is known by its `dataRef`, so two plots of one table need ids to be told apart.",
+          "minLength": 1,
+          "type": "string"
+        },
         "mapRef": {
-          "description": "`dataRef` of the map layer this plot links its selection to.",
+          "description": "`dataRef` of the map layer this plot links its selection to. A shorthand for a link in `links`.",
           "type": "string"
         },
         "margins": {
@@ -949,6 +1106,10 @@
         },
         "width": {
           "type": "number"
+        },
+        "workspace": {
+          "$ref": "#/definitions/WorkspaceName",
+          "description": "Workspace the table is read from."
         }
       },
       "required": [
@@ -1027,6 +1188,10 @@
     "JoinSourceSpec": {
       "description": "Spatially joins one table onto another. The result replaces the root table.",
       "properties": {
+        "dataRef": {
+          "description": "Table that receives the joined columns.",
+          "type": "string"
+        },
         "groupBy": {
           "description": "Aggregate the joined rows per root feature.",
           "items": {
@@ -1048,8 +1213,12 @@
           },
           "type": "array"
         },
+        "joinDataRef": {
+          "description": "Table whose rows are joined onto the root table.",
+          "type": "string"
+        },
         "near": {
-          "description": "Join rows within `distance` (in workspace units) instead of by containment.",
+          "description": "Join rows within `distance` (in workspace units) instead of by containment. `useCentroid` measures from centroid to centroid; it defaults to true.",
           "properties": {
             "distance": {
               "type": "number"
@@ -1063,23 +1232,19 @@
           ],
           "type": "object"
         },
-        "tableJoinName": {
-          "description": "Table whose rows are joined onto the root table.",
-          "type": "string"
-        },
-        "tableRootName": {
-          "description": "Table that receives the joined columns.",
-          "type": "string"
-        },
         "type": {
           "const": "join",
           "type": "string"
+        },
+        "workspace": {
+          "$ref": "#/definitions/WorkspaceName",
+          "description": "Workspace of the two tables."
         }
       },
       "required": [
         "type",
-        "tableRootName",
-        "tableJoinName"
+        "dataRef",
+        "joinDataRef"
       ],
       "type": "object"
     },
@@ -1113,6 +1278,10 @@
         "type": {
           "const": "json",
           "type": "string"
+        },
+        "workspace": {
+          "$ref": "#/definitions/WorkspaceName",
+          "description": "Workspace the table is created in."
         }
       },
       "required": [
@@ -1163,6 +1332,31 @@
       ],
       "type": "string"
     },
+    "LayoutSpec": {
+      "description": "How the maps and plots of a specification are arranged on the page.\n\nThe engine does not read it: the host that creates the map canvases and the plot container does.",
+      "properties": {
+        "columns": {
+          "description": "Number of columns of a `grid`. Defaults to 2.",
+          "minimum": 1,
+          "type": "number"
+        },
+        "gap": {
+          "description": "Space between views, in pixels.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "type": {
+          "description": "`vertical` stacks the views, `horizontal` puts them side by side, `grid` fills `columns` columns. Defaults to `vertical`.",
+          "enum": [
+            "vertical",
+            "horizontal",
+            "grid"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "LinePlotSpec": {
       "description": "A line chart over a `reduce-series` or `binning-events` transform, which it requires.",
       "properties": {
@@ -1191,8 +1385,13 @@
         "height": {
           "type": "number"
         },
+        "id": {
+          "description": "Name of the plot, which a link in `links` uses as its `source`. Unique among the ids of the maps and plots. Without it a plot is known by its `dataRef`, so two plots of one table need ids to be told apart.",
+          "minLength": 1,
+          "type": "string"
+        },
         "mapRef": {
-          "description": "`dataRef` of the map layer this plot links its selection to.",
+          "description": "`dataRef` of the map layer this plot links its selection to. A shorthand for a link in `links`.",
           "type": "string"
         },
         "margins": {
@@ -1241,6 +1440,10 @@
         },
         "width": {
           "type": "number"
+        },
+        "workspace": {
+          "$ref": "#/definitions/WorkspaceName",
+          "description": "Workspace the table is read from."
         }
       },
       "required": [
@@ -1273,6 +1476,31 @@
       "required": [
         "coordinates",
         "type"
+      ],
+      "type": "object"
+    },
+    "LinkSpec": {
+      "description": "Links a plot to a layer of a map: selecting in the plot highlights the same features on the layer, and picking on the layer selects them in the plot. Read by the Autark adapter; the deck.gl adapter ignores it.",
+      "properties": {
+        "layer": {
+          "description": "Layer of the target map, by its `title`, else its `dataRef`. Defaults to the layer that draws the plot's `dataRef`.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "source": {
+          "description": "`id` of the plot, or its `dataRef` when it has no id.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "target": {
+          "description": "`id` of the map that highlights.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "target"
       ],
       "type": "object"
     },
@@ -1453,6 +1681,15 @@
     "MapSpec": {
       "description": "A map view.",
       "properties": {
+        "camera": {
+          "$ref": "#/definitions/CameraSpec",
+          "description": "Where the map looks from."
+        },
+        "id": {
+          "description": "Name of the map, which a link in `links` uses as its `target`. Unique among the ids of the maps and plots.",
+          "minLength": 1,
+          "type": "string"
+        },
         "layerRefs": {
           "description": "Layers to draw, bottom first. Each names a table with `dataRef`.",
           "items": {
@@ -1463,6 +1700,10 @@
         "style": {
           "description": "Map style.",
           "type": "string"
+        },
+        "workspace": {
+          "$ref": "#/definitions/WorkspaceName",
+          "description": "Workspace the map reads its layers' tables from."
         }
       },
       "required": [
@@ -1659,6 +1900,10 @@
         "type": {
           "const": "osm",
           "type": "string"
+        },
+        "workspace": {
+          "$ref": "#/definitions/WorkspaceName",
+          "description": "Workspace the table is created in."
         }
       },
       "required": [
@@ -1721,8 +1966,13 @@
         "height": {
           "type": "number"
         },
+        "id": {
+          "description": "Name of the plot, which a link in `links` uses as its `source`. Unique among the ids of the maps and plots. Without it a plot is known by its `dataRef`, so two plots of one table need ids to be told apart.",
+          "minLength": 1,
+          "type": "string"
+        },
         "mapRef": {
-          "description": "`dataRef` of the map layer this plot links its selection to.",
+          "description": "`dataRef` of the map layer this plot links its selection to. A shorthand for a link in `links`.",
           "type": "string"
         },
         "margins": {
@@ -1768,6 +2018,10 @@
         },
         "width": {
           "type": "number"
+        },
+        "workspace": {
+          "$ref": "#/definitions/WorkspaceName",
+          "description": "Workspace the table is read from."
         }
       },
       "required": [
@@ -2081,6 +2335,201 @@
       },
       "type": "object"
     },
+    "RenderComputeSpec": {
+      "description": "A render-based compute pass: from each viewpoint of a table it renders the layers in several directions on the GPU and counts what each frame shows (a visibility or sky-view metric). The result is a copy of the viewpoints table with the metrics in `feature.properties.compute.render`, stored as the table `outputTableName`. Read by the Autark adapter only.",
+      "properties": {
+        "aggregation": {
+          "anyOf": [
+            {
+              "properties": {
+                "backgroundLayerType": {
+                  "type": "string"
+                },
+                "includeBackground": {
+                  "type": "boolean"
+                },
+                "type": {
+                  "const": "classes",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "type": {
+                  "const": "objects",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            }
+          ],
+          "description": "`classes` counts the pixels of each layer type, `objects` those of each object."
+        },
+        "camera": {
+          "properties": {
+            "clip": {
+              "properties": {
+                "far": {
+                  "type": "number"
+                },
+                "near": {
+                  "type": "number"
+                }
+              },
+              "type": "object"
+            },
+            "fov": {
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "layerType": {
+          "$ref": "#/definitions/LayerType",
+          "description": "How the map draws the new table. Defaults to the type of the viewpoints table."
+        },
+        "layers": {
+          "description": "Layers to render.",
+          "items": {
+            "$ref": "#/definitions/RenderLayerSpec"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "outputTableName": {
+          "description": "Name of the table that receives the result. Later passes, maps and plots read it by this name.",
+          "type": "string"
+        },
+        "tileSize": {
+          "description": "Frame size in pixels.",
+          "minimum": 8,
+          "multipleOf": 8,
+          "type": "number"
+        },
+        "type": {
+          "const": "render",
+          "type": "string"
+        },
+        "viewpoints": {
+          "properties": {
+            "dataRef": {
+              "description": "Name of the table whose features are the viewpoints.",
+              "type": "string"
+            },
+            "sampling": {
+              "properties": {
+                "azimuthOffsetDeg": {
+                  "type": "number"
+                },
+                "directions": {
+                  "description": "Directions sampled around each viewpoint.",
+                  "type": "number"
+                },
+                "pitchDeg": {
+                  "type": "number"
+                }
+              },
+              "type": "object"
+            },
+            "strategy": {
+              "anyOf": [
+                {
+                  "properties": {
+                    "type": {
+                      "const": "centroid",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "floors": {
+                      "type": "number"
+                    },
+                    "type": {
+                      "const": "building-windows",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "floors"
+                  ],
+                  "type": "object"
+                }
+              ],
+              "description": "Where a feature's viewpoints are: its centroid (the default) or one per floor on a building's windows."
+            }
+          },
+          "required": [
+            "dataRef"
+          ],
+          "type": "object"
+        },
+        "workspace": {
+          "$ref": "#/definitions/WorkspaceName",
+          "description": "Workspace of the tables the pass reads and writes."
+        }
+      },
+      "required": [
+        "type",
+        "outputTableName",
+        "layers",
+        "viewpoints",
+        "aggregation"
+      ],
+      "type": "object"
+    },
+    "RenderLayerSpec": {
+      "description": "A table drawn into the frames a render pass samples.",
+      "properties": {
+        "dataRef": {
+          "description": "Name of the table to draw.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Name given to the layer in the pass. Letters, digits and underscores, not starting with a digit.",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "type": "string"
+        },
+        "objectIdProperty": {
+          "description": "Property that holds the object's id, for `aggregation.type` `objects`.",
+          "type": "string"
+        },
+        "type": {
+          "description": "How the layer is drawn into the frames.",
+          "enum": [
+            "surface",
+            "parks",
+            "water",
+            "roads",
+            "buildings",
+            "points",
+            "polygons",
+            "polylines"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "dataRef",
+        "type"
+      ],
+      "type": "object"
+    },
     "ScatterPlotSpec": {
       "description": "A scatterplot of two or more columns.",
       "properties": {
@@ -2109,8 +2558,13 @@
         "height": {
           "type": "number"
         },
+        "id": {
+          "description": "Name of the plot, which a link in `links` uses as its `source`. Unique among the ids of the maps and plots. Without it a plot is known by its `dataRef`, so two plots of one table need ids to be told apart.",
+          "minLength": 1,
+          "type": "string"
+        },
         "mapRef": {
-          "description": "`dataRef` of the map layer this plot links its selection to.",
+          "description": "`dataRef` of the map layer this plot links its selection to. A shorthand for a link in `links`.",
           "type": "string"
         },
         "margins": {
@@ -2156,6 +2610,10 @@
         },
         "width": {
           "type": "number"
+        },
+        "workspace": {
+          "$ref": "#/definitions/WorkspaceName",
+          "description": "Workspace the table is read from."
         }
       },
       "required": [
@@ -2193,8 +2651,13 @@
         "height": {
           "type": "number"
         },
+        "id": {
+          "description": "Name of the plot, which a link in `links` uses as its `source`. Unique among the ids of the maps and plots. Without it a plot is known by its `dataRef`, so two plots of one table need ids to be told apart.",
+          "minLength": 1,
+          "type": "string"
+        },
         "mapRef": {
-          "description": "`dataRef` of the map layer this plot links its selection to.",
+          "description": "`dataRef` of the map layer this plot links its selection to. A shorthand for a link in `links`.",
           "type": "string"
         },
         "margins": {
@@ -2240,6 +2703,10 @@
         },
         "width": {
           "type": "number"
+        },
+        "workspace": {
+          "$ref": "#/definitions/WorkspaceName",
+          "description": "Workspace the table is read from."
         }
       },
       "required": [
@@ -2267,6 +2734,17 @@
           "description": "Tables to load, in order.",
           "items": {
             "$ref": "#/definitions/DataSourceSpec"
+          },
+          "type": "array"
+        },
+        "layout": {
+          "$ref": "#/definitions/LayoutSpec",
+          "description": "How the host arranges the maps and plots."
+        },
+        "links": {
+          "description": "Links between plots and map layers. The engine does not read them; the adapter wires them once the maps and plots exist.",
+          "items": {
+            "$ref": "#/definitions/LinkSpec"
           },
           "type": "array"
         },
@@ -2316,6 +2794,11 @@
         "wktColumnName"
       ],
       "type": "object"
+    },
+    "WorkspaceName": {
+      "description": "Name of a workspace: an isolated set of tables with its own extent. The first source loaded into a workspace sets its extent and later sources are cut to it, so two areas that must not clip each other go in two workspaces. A table is found by its name inside its workspace, so two workspaces may hold tables of the same name. Entries without a workspace use the default one. Read by the Autark adapter only.",
+      "minLength": 1,
+      "type": "string"
     }
   }
 }
