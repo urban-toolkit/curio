@@ -5,13 +5,14 @@
  * jsdom has no WebGPU, so the stand-in hands each GPGPU dispatch and each
  * render pipeline run to `computeRuns`, which a suite sets, and its device
  * reports in an error scope the GPU error a suite sets in `gpuErrors`. Free of
- * app imports, so a `jest.mock` factory can require it:
+ * app imports, so a `jest.mock` factory can require it. Autark's packages are
+ * mocked virtually, as every suite mocks them (tests/mockKinds.test.ts):
  *
  *     jest.mock("@urban-toolkit/autk-grammar", () => require("<this file>").grammarBuild(), { virtual: true });
  *     jest.mock("@urban-toolkit/autk-compute", () => require("<this file>").autkComputeModule, { virtual: true });
- *     jest.mock("@urban-toolkit/autk-core", () => require("<this file>").autkCoreBuild());
- *     jest.mock("@urban-toolkit/autk-map", () => require("<this file>").autkMapModule);
- *     jest.mock("@urban-toolkit/autk-plot", () => require("<this file>").autkPlotModule);
+ *     jest.mock("@urban-toolkit/autk-core", () => require("<this file>").autkCoreBuild(), { virtual: true });
+ *     jest.mock("@urban-toolkit/autk-map", () => require("<this file>").autkMapModule, { virtual: true });
+ *     jest.mock("@urban-toolkit/autk-plot", () => require("<this file>").autkPlotModule, { virtual: true });
  *
  * The grammar build reads autk-db too, which each suite stands in itself.
  */

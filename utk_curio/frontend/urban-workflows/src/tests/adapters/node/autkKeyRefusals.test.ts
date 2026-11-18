@@ -15,9 +15,9 @@ const mockAutkDb = jest.fn();
 jest.mock("../../../services/api", () => ({ fetchData: jest.fn() }));
 jest.mock("@urban-toolkit/autk-grammar", () => require("../../_support/autkComputeStandIns").grammarBuild(), { virtual: true });
 jest.mock("@urban-toolkit/autk-compute", () => require("../../_support/autkComputeStandIns").autkComputeModule, { virtual: true });
-jest.mock("@urban-toolkit/autk-core", () => require("../../_support/autkComputeStandIns").autkCoreBuild());
-jest.mock("@urban-toolkit/autk-map", () => require("../../_support/autkComputeStandIns").autkMapModule);
-jest.mock("@urban-toolkit/autk-plot", () => require("../../_support/autkComputeStandIns").autkPlotModule);
+jest.mock("@urban-toolkit/autk-core", () => require("../../_support/autkComputeStandIns").autkCoreBuild(), { virtual: true });
+jest.mock("@urban-toolkit/autk-map", () => require("../../_support/autkComputeStandIns").autkMapModule, { virtual: true });
+jest.mock("@urban-toolkit/autk-plot", () => require("../../_support/autkComputeStandIns").autkPlotModule, { virtual: true });
 jest.mock("@urban-toolkit/autk-db", () => ({
   AutkDb: function AutkDb(...a: any[]) { return mockAutkDb(...a); },
   DEFAULT_WORKSPACE_COORDINATE_FORMAT: "EPSG:3395",

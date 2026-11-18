@@ -10,11 +10,13 @@
  * The grammar is the build the app bundles, as CommonJS. jsdom has neither
  * DuckDB nor WebGPU: the database is a stand-in that holds the tables a data
  * section loads, and autk-compute the stand-in of _support/autkComputeStandIns.
+ * Autark's packages are mocked virtually, as every suite mocks them
+ * (tests/mockKinds.test.ts).
  */
-jest.mock("@urban-toolkit/autk-core", () => require("../../_support/autkComputeStandIns").autkCoreBuild());
-jest.mock("@urban-toolkit/autk-map", () => require("../../_support/autkComputeStandIns").autkMapModule);
-jest.mock("@urban-toolkit/autk-plot", () => require("../../_support/autkComputeStandIns").autkPlotModule);
-jest.mock("@urban-toolkit/autk-compute", () => require("../../_support/autkComputeStandIns").autkComputeModule);
+jest.mock("@urban-toolkit/autk-core", () => require("../../_support/autkComputeStandIns").autkCoreBuild(), { virtual: true });
+jest.mock("@urban-toolkit/autk-map", () => require("../../_support/autkComputeStandIns").autkMapModule, { virtual: true });
+jest.mock("@urban-toolkit/autk-plot", () => require("../../_support/autkComputeStandIns").autkPlotModule, { virtual: true });
+jest.mock("@urban-toolkit/autk-compute", () => require("../../_support/autkComputeStandIns").autkComputeModule, { virtual: true });
 jest.mock("@urban-toolkit/autk-db", () => {
     class AutkDb {
         private tables = new Map<string, { type: string; collection: any }>();
@@ -48,7 +50,7 @@ jest.mock("@urban-toolkit/autk-db", () => {
         }
     }
     return { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT: "EPSG:3395", DEFAULT_WORKSPACE_NAME: "autk" };
-});
+}, { virtual: true });
 
 import { grammarBuild, computeDevice, computeRuns, gpuErrors, resetComputeStandIns } from "../../_support/autkComputeStandIns";
 import { withCheckedPasses } from "../../../adapters/node/autkComputeScopes";
