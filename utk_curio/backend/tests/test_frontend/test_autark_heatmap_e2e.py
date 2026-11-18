@@ -113,10 +113,11 @@ assert len(heat) == 1, input_0
 heat = heat[0]
 assert heat.crs.to_epsg() == 3395, heat.crs
 assert (heat.count, heat.width, heat.height) == ({len(AGGREGATES)}, {COLUMNS}, {ROWS}), (heat.count, heat.width, heat.height)
-assert heat.descriptions == {tuple(f"{fn}_levels" for fn in AGGREGATES)!r}, heat.descriptions
+labels = {tuple(f"{fn}_levels" for fn in AGGREGATES)!r}
 expected = {json.dumps({f"{fn}_levels": cells for fn, cells in CELLS.items()})}
-for index, label in enumerate(heat.descriptions, start=1):
+for index, label in enumerate(labels, start=1):
     assert np.allclose(heat.read(index), expected[label], rtol=1e-6), (label, heat.read(index).tolist())
+assert heat.descriptions == labels, heat.descriptions
 
 
 def layer_name(item):
