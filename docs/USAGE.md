@@ -1376,8 +1376,7 @@ one does not run, and the node's error names the key and where it is written:
 
 - `layout` and `links`;
 - a render pass (`"type": "render"`);
-- `geotiff` sources;
-- `workspace`, on a source, a compute pass, a map or a plot.
+- `geotiff` sources.
 
 ### Its input
 
@@ -1402,8 +1401,10 @@ one does not run, and the node's error names the key and where it is written:
   so on, bring its `surface` the same way.
 - Autark clips every table after the first to the box around the first, and to
   the first's outline when it holds polygons. So a map of OpenStreetMap layers
-  is cut to its load's area, and the tables one document draws lie in one
-  area. Draw another area in its own node.
+  is cut to its load's area, and the tables one map draws lie in one area.
+  Load another area in a workspace of its own (see [Workspaces](#workspaces)).
+- A table an upstream Autark node hands on from a workspace stays in it: name
+  that `workspace` on the map, plot or compute pass that reads it.
 - A map draws tables with geometry, and a raster by one of its bands. A
   `DataFrame` is read through the one column that holds geometries; with none,
   or with several, the node draws nothing and says which. Return a
@@ -1439,6 +1440,60 @@ one does not run, and the node's error names the key and where it is written:
 - A `data` section runs in the sandbox, where the input is not available: its
   `join` and `heatmap` sources cannot read the input. Join it in a Python node,
   or name it from a map, plot or compute block.
+
+### Workspaces
+
+A workspace is a set of tables with its own area: Autark clips the tables of
+one workspace to its first table alone. A source's `workspace` loads its table
+there, and the `workspace` of a map, a plot or a compute pass is where it reads
+its tables. Without one, a table is in the default workspace. Two workspaces
+can hold tables of one name, so one document can load two areas, neither
+clipping the other:
+
+```json
+{
+  "data": [
+    {
+      "type": "osm",
+      "pbfFileUrl": "docs/examples/data/back_bay.osm.pbf",
+      "queryArea": {"geocodeArea": "Boston", "areas": ["Back Bay"]},
+      "outputTableName": "area",
+      "autoLoadLayers": {"layers": ["roads"]},
+      "workspace": "boston"
+    },
+    {
+      "type": "osm",
+      "pbfFileUrl": "docs/examples/data/chicago_loop.osm.pbf",
+      "queryArea": {"geocodeArea": "Chicago", "areas": ["Loop"]},
+      "outputTableName": "area",
+      "autoLoadLayers": {"layers": ["roads"]},
+      "workspace": "chicago"
+    }
+  ]
+}
+```
+
+This node hands on `area_roads` twice, once from each workspace. A map in the
+node it feeds draws one of them by naming its workspace:
+
+```json
+{"map": {"workspace": "chicago", "layerRefs": [{"dataRef": "area_roads"}]}}
+```
+
+A table keeps its workspace through a compute step, a Map Editor node and a
+Data Pool, and a Map Editor node makes its new layers in the workspace its
+input's layers share. A Python node reads it as `workspace`: in each layer
+record a data section's tables arrive as (`{"name", "type", "geojson",
+"workspace"}`), and in the `metadata` of a frame read from another Autark
+node's layers or through a layer chip, beside its `name`, which a frame the
+node returns hands on. In code, a layer chip names a table by its name when
+one layer has that name, whatever its workspace. When two workspaces hold
+tables of one name, the name names neither, the node says so with their keys,
+and the chip names one by its key, `<workspace>/<table>`:
+`[!! input_0:east/lines !!]` reads east's `lines`, and
+`[!! input_0:autk/lines !!]` the default workspace's. A map that names a table
+of another workspace than its own draws nothing and says which tables it has,
+each in another workspace written as `<workspace>/<table>`.
 
 Before it runs, a node that reads its input says what a `Vega-Lite` node says:
 connect a node, run the node feeding this one, the node feeding this one
@@ -1581,9 +1636,11 @@ different columns each name their column too, such as `avg_<table>_db` and
 `avg_<table>_peak`, so every label names one band. A cell no row reaches holds
 0 in every band. A heatmap without `groupBy` has one band, `count`.
 
-The table a heatmap bins is one its `data` section loads before it: a data
-section loads only its own sources, not the node's input, and a heatmap of any
-other table fails the node with an error that names it.
+The table a heatmap bins is one its `data` section loads before it, into the
+heatmap's own workspace: a data section loads only its own sources, not the
+node's input, and a heatmap of any other table fails the node with an error
+that names it, by its key (`<workspace>/<table>`) in another workspace than the
+default. A heatmap in a workspace is handed on with it, as a table is.
 
 ```json
 {

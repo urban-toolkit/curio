@@ -118,15 +118,19 @@ _INPUT_PLACE = re.compile(r"input_(\d+)(?:_(\d+))?")
 
 
 class _Layer:
-    """One layer of the input: its name and type, and its GeoJSON or its table."""
+    """One layer of the input: its name and type, its GeoJSON or its table, and
+    the workspace it is in when an Autark node handed it on from another than
+    autk-db's default one."""
 
-    def __init__(self, name=None, layer_type=None, fc=None, frame=None, envelope=None):
+    def __init__(self, name=None, layer_type=None, fc=None, frame=None, envelope=None, workspace=None):
         self.name = name
         self.layer_type = layer_type
         self.fc = fc
         self.frame = frame
         #: The envelope it came in, handed on as it is when it is not edited.
         self.envelope = envelope
+        # None for autk-db's default workspace, `autk`, named or not.
+        self.workspace = workspace if isinstance(workspace, str) and workspace and workspace != "autk" else None
 
     @property
     def label(self) -> str:
@@ -150,12 +154,19 @@ def _frame_name(frame):
     return None, None
 
 
+def _frame_workspace(frame):
+    """The workspace a frame's ``metadata`` names, or None."""
+    meta = getattr(frame, "metadata", None)
+    return meta.get("workspace") if isinstance(meta, dict) else None
+
+
 def _layer_of_envelope(item):
     """The layer an Autark envelope holds, or None for one this step cannot edit."""
     if not isinstance(item, dict) or item.get("dataType") != "geodataframe" or not _is_fc(item.get("data")):
         return None
     name = item.get("layerName") if isinstance(item.get("layerName"), str) and item.get("layerName") else None
-    return _Layer(name=name, layer_type=item.get("layerType"), fc=item["data"], envelope=item)
+    return _Layer(name=name, layer_type=item.get("layerType"), fc=item["data"], envelope=item,
+                  workspace=item.get("workspace"))
 
 
 def _layers_of(value):
@@ -163,7 +174,7 @@ def _layers_of(value):
     table, which is handed on as a table."""
     if _is_frame(value):
         name, layer_type = _frame_name(value)
-        return [_Layer(name=name, layer_type=layer_type, frame=value)], True
+        return [_Layer(name=name, layer_type=layer_type, frame=value, workspace=_frame_workspace(value))], True
     if isinstance(value, dict) and value.get("dataType") == "outputs" and isinstance(value.get("data"), list):
         return [_layer_of_envelope(item) or _Layer(envelope=item) for item in value["data"]], False
     if isinstance(value, dict) and value.get("dataType") == "geodataframe":
@@ -173,14 +184,17 @@ def _layers_of(value):
     if isinstance(value, (list, tuple)) and value:
         if all(isinstance(item, dict) and _is_fc(item.get("geojson")) for item in value):
             return [
-                _Layer(name=item.get("name") or None, layer_type=item.get("type"), fc=item["geojson"])
+                _Layer(
+                    name=item.get("name") or None, layer_type=item.get("type"), fc=item["geojson"],
+                    workspace=item.get("workspace"),
+                )
                 for item in value
             ], False
         if all(_is_frame(item) for item in value):
             layers = []
             for item in value:
                 name, layer_type = _frame_name(item)
-                layers.append(_Layer(name=name, layer_type=layer_type, frame=item))
+                layers.append(_Layer(name=name, layer_type=layer_type, frame=item, workspace=_frame_workspace(item)))
             return layers, False
         if all(isinstance(item, dict) and item.get("dataType") for item in value):
             return [_layer_of_envelope(item) or _Layer(envelope=item) for item in value], False
@@ -808,9 +822,17 @@ def _drawn_crs(layers, crs):
     return None
 
 
-def _new_layers(defs, crs_of):
+def _shared_workspace(layers):
+    """The workspace every layer of the input is in, when they share one other
+    than autk-db's default; else None."""
+    workspaces = {layer.workspace for layer in layers}
+    return workspaces.pop() if len(workspaces) == 1 else None
+
+
+def _new_layers(defs, crs_of, workspace=None):
     """The empty layers *defs* name (``new_layers``), each an Autark layer of
-    its geometry, in the CRS its drawn features are in (*crs_of*)."""
+    its geometry, in the CRS its drawn features are in (*crs_of*), and in the
+    *workspace* the input's layers share, so the map that reads it draws them."""
     made = []
     for position, spec in enumerate(defs or []):
         if not isinstance(spec, dict) or not isinstance(spec.get("name"), str) or not spec["name"].strip():
@@ -823,7 +845,7 @@ def _new_layers(defs, crs_of):
         fc = {"type": "FeatureCollection", "features": []}
         if crs_of is not None:
             fc["crs"] = crs_of
-        made.append(_Layer(name=spec["name"], layer_type=NEW_LAYER_TYPES[spec["geometry"]], fc=fc))
+        made.append(_Layer(name=spec["name"], layer_type=NEW_LAYER_TYPES[spec["geometry"]], fc=fc, workspace=workspace))
     return made
 
 
@@ -848,6 +870,8 @@ def _envelope(layer: _Layer, edited: bool):
             out["layerName"] = layer.name
         if layer.layer_type:
             out["layerType"] = layer.layer_type
+        if layer.workspace:
+            out["workspace"] = layer.workspace
         return out
     if layer.frame is not None:
         from utk_curio.sandbox.util.parsers import parseOutput
@@ -858,6 +882,8 @@ def _envelope(layer: _Layer, edited: bool):
             out["layerName"] = layer.name
         if layer.layer_type:
             out["layerType"] = layer.layer_type
+        if layer.workspace:
+            out["workspace"] = layer.workspace
         return out
     return layer.envelope
 
@@ -882,7 +908,7 @@ def edit_features(value, edits, key=None, layer=None, keys=None, new_layers=None
         return value
     if not by_input:
         layers, single_table = _layers_of(value)
-    made = _new_layers(new_layers, _drawn_crs(layers, crs))
+    made = _new_layers(new_layers, _drawn_crs(layers, crs), _shared_workspace(layers))
     made_names = {item.name for item in made}
     taken = {item.name for item in layers if item.name}
     clash = sorted(made_names & taken)

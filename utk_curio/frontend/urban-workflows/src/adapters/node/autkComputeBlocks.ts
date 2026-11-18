@@ -3,9 +3,11 @@
 
 import type { FeatureCollection } from 'geojson';
 import { autkKeyProblem } from '../../contracts/autkGrammar';
+import { autkWorkspaceOf } from './autkDataCompile';
 import { runComputeChecked } from './autkComputeScopes';
 
-type Layer = { name: string; type: string; geojson: FeatureCollection };
+/** A layer a compute step holds, in the workspace it names when it is not the default one. */
+type Layer = { name: string; type: string; geojson: FeatureCollection; workspace?: string };
 
 // Apply a grammar `compute` section to an array of named GeoJSON layers,
 // returning a new array where each pass's result, a FeatureCollection enriched
@@ -21,9 +23,9 @@ type Layer = { name: string; type: string; geojson: FeatureCollection };
 // directives, the `all` and `batched` iterations, and the packing of batched
 // features. Curio hands it the dispatch, which checks the GPU accepted the pass.
 //
-// A block whose `dataRef` doesn't match any layer is skipped quietly: chained
-// compute nodes can target different layers, and a no-op block is far less
-// surprising than aborting the whole pipeline. A section that writes a key
+// A block whose `dataRef` matches no layer of its workspace is skipped quietly:
+// chained compute nodes can target different layers, and a no-op block is far
+// less surprising than aborting the whole pipeline. A section that writes a key
 // autk-grammar 5 renamed, or one a node does not run yet (contracts/autkGrammar),
 // runs no block and is a failure, named.
 export async function applyComputeBlocks(
@@ -47,12 +49,16 @@ export async function applyComputeBlocks(
     let result = layers;
     for (const block of computeBlocks) {
         if (!block || !block.dataRef || !block.wgslFunction) continue;
-        const idx = result.findIndex((l) => l.name === block.dataRef);
+        // A pass reads the tables of its own workspace, as autk-grammar's
+        // compute adapter reads them.
+        const workspace = autkWorkspaceOf(block);
+        const inWorkspace = result.filter((l) => autkWorkspaceOf(l) === workspace);
+        const idx = result.findIndex((l) => l.name === block.dataRef && autkWorkspaceOf(l) === workspace);
         if (idx < 0) continue;
         const outCols: string[] = block.outputColumns ?? (block.outputColumnName ? [block.outputColumnName] : []);
         try {
             const gpgpu = new ComputeGpgpu();
-            const tables = new Map(result.map((l) => [l.name, l.geojson]));
+            const tables = new Map(inWorkspace.map((l) => [l.name, l.geojson]));
             const augmented = await runCompute(block, tables, (params) => runComputeChecked(gpgpu, params));
             // ComputeGpgpu writes outputs under properties.compute.<col>. Also lift them
             // to top-level properties so downstream nodes can reference the column by
@@ -96,12 +102,15 @@ export async function applyComputeBlocks(
  * `layerType` only with `outputTableName`. A name none of *layers* has is a
  * new table, after them, which later passes read; a name one of them has
  * replaces that table, as the grammar's result shadows a table of its name.
+ * The table is in the pass's workspace, where the grammar keeps it (by
+ * `tableKey`), so only a table of that workspace and name is replaced.
  */
 function writtenLayers(layers: Layer[], source: Layer, block: any, result: FeatureCollection): Layer[] {
     const named = typeof block.outputTableName === 'string' && block.outputTableName !== '';
     const name = named ? block.outputTableName : source.name;
     const type = named && typeof block.layerType === 'string' && block.layerType ? block.layerType : source.type;
-    const table = { name, type, geojson: result };
-    const at = layers.findIndex((l) => l.name === name);
+    const workspace = autkWorkspaceOf(block);
+    const table: Layer = { name, type, geojson: result, ...(workspace ? { workspace } : {}) };
+    const at = layers.findIndex((l) => l.name === name && autkWorkspaceOf(l) === workspace);
     return at < 0 ? [...layers, table] : layers.map((l, i) => (i === at ? table : l));
 }

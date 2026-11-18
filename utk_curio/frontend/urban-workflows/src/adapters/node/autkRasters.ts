@@ -29,6 +29,7 @@
  */
 import { fetchRaster } from '../../services/api';
 import { writtenTables, type AutkRasterInput } from '../../utils/autkInput';
+import { autkTableKey, autkWorkspaceOf } from './autkDataCompile';
 import { writeGeoTiff } from '../../utils/raster/geotiffWriter';
 import {
     RASTER_MAX_CELLS,
@@ -60,6 +61,8 @@ export type CurioRasterSource = {
     cells: number;
     /** Its bands as they were made, labels included, which a GeoTIFF does not keep. */
     bands?: RasterBand[];
+    /** The workspace it is loaded into, when it is not the default one. */
+    workspace?: string;
 };
 
 export function isCurioRasterSource(source: unknown): source is CurioRasterSource {
@@ -108,6 +111,12 @@ export function rasterSourceOf(name: string, collection: RasterCollection): Curi
 }
 
 async function resolveOne(raster: AutkRasterInput): Promise<CurioRasterSource | { refused: string }> {
+    const resolved = await resolveCells(raster);
+    // It is loaded into the workspace it came from.
+    return 'refused' in resolved || !raster.workspace ? resolved : { ...resolved, workspace: raster.workspace };
+}
+
+async function resolveCells(raster: AutkRasterInput): Promise<CurioRasterSource | { refused: string }> {
     const name = raster.outputTableName;
     const payload: any = raster.payload;
     if (payload && 'envelope' in payload) {
@@ -145,7 +154,7 @@ export async function resolveRasterInputs(rasters: AutkRasterInput[]): Promise<R
     for (const raster of rasters) {
         const result = await resolveOne(raster);
         if ('refused' in result) {
-            resolved.unusable.push(raster.outputTableName);
+            resolved.unusable.push(autkTableKey(autkWorkspaceOf(raster), raster.outputTableName));
             resolved.problems.push(result.refused);
         } else {
             resolved.sources.push(result);
@@ -188,8 +197,13 @@ export function framedRaster(collection: any): any {
 /** The rasters Curio loaded into a database, and the database's own reads it wraps. */
 const SERVED_RASTERS = Symbol.for('curio.autk.servedRasters');
 
+/** The workspace *db* works in, when it says and it is not the default one. */
+function workspaceOfDb(db: any): string | undefined {
+    return typeof db?.getCurrentWorkspace === 'function' ? autkWorkspaceOf({ workspace: db.getCurrentWorkspace() }) : undefined;
+}
+
 type ServedRasters = {
-    /** Each raster Curio loaded, framed, by its table. */
+    /** Each raster Curio loaded, framed, by its key: its workspace and its table (`autkTableKey`). */
     rasters: Map<string, any>;
     /** The database's own `getRaster`, which reads a raster from its store. */
     getRaster: ((name: string, ...rest: any[]) => Promise<any>) | null;
@@ -213,41 +227,44 @@ function readRaster(db: any, table: string): Promise<any> {
  * which stretches the raster over that layer's extent instead, and its
  * `getRaster` reads a store the whole page shares (see `oneRasterAtATime`),
  * which can hold another node's raster of the same name by then. Every other
- * table is the database's to answer, as before.
+ * table is the database's to answer, as before. A raster is found in the
+ * workspace it was loaded into, the one the database works in when it is
+ * read, so two workspaces can hold rasters of one name.
  */
-function serveRaster(db: any, table: string, collection: any): void {
+function serveRaster(db: any, table: string, collection: any, workspace?: string): void {
     let served: ServedRasters | undefined = db[SERVED_RASTERS];
     if (!served) {
         const rasters = new Map<string, any>();
         const getLayer = typeof db.getLayer === 'function' ? db.getLayer.bind(db) : null;
         const getRaster = typeof db.getRaster === 'function' ? db.getRaster.bind(db) : null;
+        const servedAs = (name: string) => autkTableKey(workspaceOfDb(db), name);
         db.getLayer = async (name: string, ...rest: any[]) => {
-            if (!rasters.has(name)) {
+            if (!rasters.has(servedAs(name))) {
                 if (!getLayer) throw new Error(`Table ${name} not found.`);
                 return getLayer(name, ...rest);
             }
-            return rasters.get(name);
+            return rasters.get(servedAs(name));
         };
         db.getRaster = async (name: string, ...rest: any[]) => {
-            if (!rasters.has(name)) {
+            if (!rasters.has(servedAs(name))) {
                 if (!getRaster) throw new Error(`Table ${name} not found.`);
                 return getRaster(name, ...rest);
             }
-            return rasters.get(name);
+            return rasters.get(servedAs(name));
         };
         served = { rasters, getRaster };
         db[SERVED_RASTERS] = served;
     }
-    served.rasters.set(table, framedRaster(collection));
+    served.rasters.set(autkTableKey(autkWorkspaceOf({ workspace }), table), framedRaster(collection));
 }
 
 /**
  * autk-db keeps a raster's cells in one store for the whole page, keyed by
  * workspace and table (`autk.input_0`), not by database. Every Autark node's
- * database has the workspace `autk`, and a node's input is `input_0`, so two
- * maps that load a raster at once each drew whichever loaded last. A raster
- * is loaded and read back here one at a time, and its node keeps what it
- * read. A heatmap a node's data section builds in the browser
+ * database starts in the workspace `autk`, and a node's input is `input_0`,
+ * so two maps that load a raster at once each drew whichever loaded last. A
+ * raster is loaded and read back here one at a time, and its node keeps what
+ * it read. A heatmap a node's data section builds in the browser
  * (autkLayerMaterialize) is built and read back here too.
  */
 let rasterLoads: Promise<unknown> = Promise.resolve();
@@ -262,9 +279,17 @@ export function oneRasterAtATime<T>(load: () => Promise<T>): Promise<T> {
  * Let one grammar instance load `curio-raster` sources: each goes into the
  * grammar's own database (made with `newDb` when it is the first source), by
  * `loadGeoTiff`, and the map is handed what `getRaster` read back. Any other
- * source is the grammar's to load, as before.
+ * source is the grammar's to load, as before. Each raster goes into its
+ * workspace, the default one included, entered with *enterWorkspace*
+ * (autk-grammar's, which the node passes) as the grammar's data adapter
+ * enters a source's: the source before it can have left the database in
+ * another.
  */
-export function withRasterSources(grammar: any, newDb: () => Promise<any>): void {
+export function withRasterSources(
+    grammar: any,
+    newDb: () => Promise<any>,
+    enterWorkspace?: (db: any, workspace?: string) => Promise<void>,
+): void {
     const adapter = grammar?.dataAdapter;
     if (!adapter || typeof adapter.resolveSource !== 'function') throw new Error(RASTER_ADAPTER_MISSING);
     const resolveSource = adapter.resolveSource.bind(adapter);
@@ -274,11 +299,12 @@ export function withRasterSources(grammar: any, newDb: () => Promise<any>): void
             if (!isCurioRasterSource(source)) return resolveSource(db, source);
             const target = db ?? await newDb();
             if (typeof target.getRaster !== 'function') throw new Error(RASTER_EXPORT_MISSING);
+            if (enterWorkspace) await enterWorkspace(target, source.workspace);
             const collection = await oneRasterAtATime(async () => {
                 await target.loadGeoTiff(loadGeoTiffParams(source));
                 return readRaster(target, source.outputTableName);
             });
-            serveRaster(target, source.outputTableName, withBandLabels(collection, source.bands));
+            serveRaster(target, source.outputTableName, withBandLabels(collection, source.bands), source.workspace);
             return target;
         },
     };
@@ -314,19 +340,21 @@ function mapsOf(spec: any): any[] {
 }
 
 /**
- * The tables of *spec* that are rasters: those of its data that are, Curio's
- * own and the grammar's heatmaps, and each a compute pass writes as one, by
- * its `layerType` or else by the type of the table it is computed from.
+ * The tables of *spec* that are rasters, by key (`autkTableKey`): those of its
+ * data that are, Curio's own and the grammar's heatmaps, and each a compute
+ * pass writes as one, in the pass's workspace, by its `layerType` or else by
+ * the type of the table it is computed from.
  */
 export function rasterTables(spec: any): Set<string> {
     const sources: any[] = Array.isArray(spec?.data) ? spec.data : [];
     const rasters = new Set(sources
         .filter((source) => isCurioRasterSource(source) || source?.type === 'heatmap')
-        .map((source) => source.outputTableName)
-        .filter((name): name is string => typeof name === 'string'));
-    for (const { name, from, layerType } of writtenTables(spec)) {
-        if (layerType ? layerType === 'raster' : rasters.has(from)) rasters.add(name);
-        else rasters.delete(name);
+        .filter((source) => typeof source.outputTableName === 'string')
+        .map((source) => autkTableKey(autkWorkspaceOf(source), source.outputTableName)));
+    for (const { name, from, layerType, workspace } of writtenTables(spec)) {
+        const key = autkTableKey(workspace, name);
+        if (layerType ? layerType === 'raster' : rasters.has(autkTableKey(workspace, from))) rasters.add(key);
+        else rasters.delete(key);
     }
     return rasters;
 }
@@ -343,8 +371,9 @@ export function withOpaqueRasters(spec: any): any {
     let changed = false;
     const opaque = (mapSpec: any) => {
         if (!Array.isArray(mapSpec?.layerRefs)) return mapSpec;
+        // A layer draws a table of its map's workspace.
         const layerRefs = mapSpec.layerRefs.map((ref: any) => {
-            if (!rasters.has(ref?.dataRef)) return ref;
+            if (typeof ref?.dataRef !== 'string' || !rasters.has(autkTableKey(autkWorkspaceOf(mapSpec), ref.dataRef))) return ref;
             changed = true;
             const own = ref.transferFunction && typeof ref.transferFunction === 'object' ? ref.transferFunction : {};
             return { ...ref, transferFunction: { ...OPAQUE_CELLS, ...own } };
