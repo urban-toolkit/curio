@@ -162,6 +162,82 @@ def test_a_pip_install_that_ships_no_package_json_says_so_and_runs_no_npm(pip_in
     assert not pip_install.folder.exists()
 
 
+#: A package Curio's package.json installs from a tarball in the repository,
+#: as it installs the vendored autk-db: its path from the package.json.
+VENDORED = "utk_curio/frontend/urban-workflows/vendor/autark/urban-toolkit-autk-db-4.1.1-curio.2.tgz"
+
+
+def _ship_a_vendored_tarball(pip_install, spec: str = f"file:{VENDORED}") -> bytes:
+    """The package ships a package.json that installs autk-db from *spec*,
+    and the tarball where the package keeps it, under site-packages."""
+    _write_json(pip_install.shipped / "package.json", {**PACKAGE_JSON, "dependencies": {AUTK_DB: spec}})
+    tarball = b"\x1f\x8b a stand-in for the vendored autk-db's tarball"
+    (pip_install.site / VENDORED).parent.mkdir(parents=True, exist_ok=True)
+    (pip_install.site / VENDORED).write_bytes(tarball)
+    return tarball
+
+
+def test_a_pip_install_writes_each_file_its_package_json_installs_from_beside_it(pip_install, npm):
+    """npm resolves a ``file:`` spec from the folder it installs in, so the
+    launcher writes the vendored tarball the package ships beside the
+    package.json it writes, at the spec's path, and npm runs there."""
+    tarball = _ship_a_vendored_tarball(pip_install)
+
+    dependencies._ensure_root_node_modules(str(pip_install.site))
+
+    assert npm.errors == []
+    assert [_project(cmd, cwd).resolve() for cmd, cwd in npm.calls] == [pip_install.folder.resolve()]
+    assert (pip_install.folder / VENDORED).read_bytes() == tarball, (
+        f"{pip_install.folder / VENDORED} is not the tarball the package ships, so npm cannot install "
+        f"autk-db from the package.json it was given"
+    )
+    assert json.loads((pip_install.folder / "package.json").read_text(encoding="utf-8"))["dependencies"] == {
+        AUTK_DB: f"file:{VENDORED}",
+    }
+
+
+def test_a_pip_install_without_the_tarball_its_package_json_names_says_so_and_runs_no_npm(pip_install, npm):
+    """A package that lacks a file its package.json installs from: the
+    launcher names it and what fails, and runs no npm."""
+    _ship_a_vendored_tarball(pip_install)
+    (pip_install.site / VENDORED).unlink()
+
+    dependencies._ensure_root_node_modules(str(pip_install.site))
+
+    assert npm.calls == [], f"npm ran with no tarball to install autk-db from: {npm.calls}"
+    said = "\n".join(npm.errors)
+    assert str(pip_install.site / VENDORED) in said and "Autark" in said, said
+    assert not (pip_install.folder / VENDORED).exists()
+
+
+def test_a_package_json_that_installs_from_outside_its_folder_is_refused(pip_install, npm):
+    """A ``file:`` spec that leaves the folder is never copied in, and npm does not run."""
+    _ship_a_vendored_tarball(pip_install, spec="file:../outside.tgz")
+    (pip_install.site.parent / "outside.tgz").write_bytes(b"not Curio's")
+
+    dependencies._ensure_root_node_modules(str(pip_install.site))
+
+    assert npm.calls == []
+    assert any("file:../outside.tgz" in message for message in npm.errors), npm.errors
+    assert not (pip_install.folder.parent / "outside.tgz").exists()
+
+
+def test_a_link_inside_the_state_folder_is_never_written_through(pip_install, launch, npm, tmp_path):
+    """A folder on the tarball's way that is a link (here to a folder outside
+    Curio's state): the launcher writes nothing through it and runs no npm."""
+    _ship_a_vendored_tarball(pip_install)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    pip_install.folder.mkdir(parents=True)
+    (pip_install.folder / "utk_curio").symlink_to(elsewhere, target_is_directory=True)
+
+    dependencies._ensure_root_node_modules(str(pip_install.site))
+
+    assert npm.calls == []
+    assert list(elsewhere.iterdir()) == [], f"the launcher wrote through the link: {list(elsewhere.rglob('*'))}"
+    assert any(str(pip_install.folder / "utk_curio") in message for message in npm.errors), npm.errors
+
+
 def test_a_clone_installs_beside_its_own_package_json(checkout, launch, npm):
     """A clone, the Docker image and CI install beside Curio's package.json,
     and nothing goes to the state directory."""

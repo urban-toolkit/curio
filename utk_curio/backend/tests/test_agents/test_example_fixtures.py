@@ -55,17 +55,18 @@ class TestCompleteness:
         fixtures = set(FIXTURE_IDS)
         assert not examples - fixtures, f"examples with no fixture: {sorted(examples - fixtures)}"
         assert not fixtures - examples, f"fixtures with no example: {sorted(fixtures - examples)}"
-        # The 34 numbered examples (24 from #662, 25 from #576, 26 from #819,
+        # The 35 numbered examples (24 from #662, 25 from #576, 26 from #819,
         # 27 to 30 PyTorch on the GPU, 31 SAM 3 along a SideSeeing walk,
         # 32 the SAGE-IDOT rail crossings, 33 SAM 3 on the same walk's frames
-        # and its blocks, 34 the sky seen from the street by a render pass)
+        # and its blocks, 34 an Autark heatmap of park access, 35 the sky seen
+        # from the street by a render pass)
         # and the 31 test dataflows (#662 added scenarios, quad-cities-flood-vulnerability,
         # chicago-loop-shadow-towers, chicago-rain-wind-routing and netcdf-hourly-rain, the plan for #914
         # lower-manhattan-park-shade, and komar41's #914 the scenario
         # comparison charts, chicago-loop-layers for the Map Editor node,
         # komar41's crown-heights-1550-bedford-shadow for the Date widget, and
         # filter-rows-with-widgets for rows a widget rule keeps).
-        assert len(fixtures) == 65
+        assert len(fixtures) == 66
 
     def test_fixture_ids_are_unique(self):
         assert len(FIXTURE_IDS) == len(set(FIXTURE_IDS))

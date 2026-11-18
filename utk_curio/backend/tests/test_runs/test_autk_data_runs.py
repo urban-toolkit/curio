@@ -28,6 +28,9 @@ LAYERS = "art-layers"
 BACK_BAY_LAYERS = [
     "table_osm_surface", "table_osm_parks", "table_osm_water", "table_osm_roads", "table_osm_buildings",
 ]
+EXAMPLE_34 = REPO / "docs" / "examples" / "34-autark-park-access-heatmap.json"
+#: The tables example 34's data node makes: the tip's layers, then its heatmap.
+TIP_TABLES = ["tip_surface", "tip_parks", "tip_water", "tip_roads", "park_access"]
 
 
 def _auth(token):
@@ -169,6 +172,43 @@ def test_example_06s_loader_runs_on_the_server_as_the_browser_runs_it(client, us
     assert run["status"] == "needs_canvas", run["status"]
 
 
+def test_example_34s_loader_builds_its_heatmap_on_the_server_as_the_browser_does(
+    client, user_and_token, sandbox, recorded,
+):
+    """Example 34's data node loads the tip of Lower Manhattan from the
+    repository's extract and bins its parks into a heatmap. On the server it
+    posts the code the browser's compiler gives: autk-db, then the grammar's
+    ``./data`` entry, which builds the heatmap, the extract's URL left for the
+    sandbox to resolve, the layers and the heatmap's table expected, and no
+    table the heatmap bins missing. The Python step reads the load's list."""
+    from utk_curio.common.autk_data_compiler import compile_data_spec
+
+    user, token = user_and_token
+    dataflow = json.loads(EXAMPLE_34.read_text(encoding="utf-8"))["dataflow"]
+    run = _run(client, token, _create(client, token, dataflow))
+    steps = {s["nodeId"]: s for s in run["steps"]}
+
+    loader = steps["park-access-data"]
+    assert (loader["role"], loader["status"]) == ("run", "ok"), loader
+    assert (loader["outputPath"], loader["outputType"]) == (LAYERS, "list"), loader
+    (load,) = sandbox.bodies("/execJs")
+    assert load["code"] == compile_data_spec(_node_content(dataflow, "park-access-data"))
+    assert load["code"].splitlines()[:2] == [
+        "import { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } from '@urban-toolkit/autk-db';",
+        "import { createDataAdapter } from '@urban-toolkit/autk-grammar/data';",
+    ]
+    assert '"pbfFileUrl":"__CURIO_BACKEND_URL__/file/docs/examples/data/lower_mnt.osm.pbf"' in load["code"]
+    assert f"const __expectedTables = {json.dumps(TIP_TABLES, separators=(',', ':'))};" in load["code"]
+    assert "const __heatmapProblem = null;" in load["code"]
+
+    # The Python step reads the load's list, which holds the heatmap.
+    (shares,) = sandbox.bodies("/exec")
+    assert (shares["file_path"], shares["dataType"]) == (LAYERS, "list"), shares
+    assert steps["park-access-shares"]["status"] == "ok", steps["park-access-shares"]
+    # The map draws in a browser: the run hands it the load's tables and runs nothing for it.
+    assert steps["park-access-map"]["role"] == "forward", steps["park-access-map"]
+
+
 def test_a_node_below_a_pool_reads_the_layers_the_load_made(client, user_and_token, sandbox, recorded):
     user, token = user_and_token
     load = json.dumps({"data": [{
@@ -214,9 +254,9 @@ def test_a_failed_load_is_tried_once_more(client, user_and_token, sandbox, recor
 @pytest.mark.parametrize("source, said", [
     ({"type": "join", "tableRootName": "table_osm_roads", "joinDataRef": "table_osm_surface"},
      'This spec uses "tableRootName" at data[1], which autk-grammar 5 renamed to "dataRef".'),
-    ({"type": "heatmap", "joinDataRef": "table_osm_roads", "outputTableName": "density",
-      "near": {"distance": 50}, "grid": {"rows": 8, "columns": 8}},
-     "This spec uses a heatmap source at data[1], which Curio does not run yet."),
+    ({"type": "geotiff", "geotiffFileUrl": "docs/examples/data/niteroi_lst_verao_2001_2024.tif",
+      "outputTableName": "lst"},
+     "This spec uses a geotiff source at data[1], which Curio does not run yet."),
 ], ids=["renamed-key", "not-run-yet"])
 def test_a_load_that_writes_a_key_the_node_refuses_fails_with_its_words(
         client, user_and_token, sandbox, recorded, source, said):

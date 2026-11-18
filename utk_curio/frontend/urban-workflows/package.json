@@ -33,7 +33,7 @@
     "@monaco-editor/react": "^4.7.0",
     "@mui/material": "^5.18.0",
     "@urban-toolkit/autk-compute": "4.1.1",
-    "@urban-toolkit/autk-db": "4.1.1",
+    "@urban-toolkit/autk-db": "file:vendor/autark/urban-toolkit-autk-db-4.1.1-curio.2.tgz",
     "@urban-toolkit/autk-grammar": "5.0.0",
     "@urban-toolkit/autk-map": "file:vendor/autark/urban-toolkit-autk-map-4.1.1-curio.4.tgz",
     "@urban-toolkit/autk-plot": "4.1.1",
@@ -68,6 +68,7 @@
       "minimatch": "^11.0.5"
     },
     "glob": "^14.0.4",
+    "@urban-toolkit/autk-db": "$@urban-toolkit/autk-db",
     "@urban-toolkit/autk-map": "$@urban-toolkit/autk-map"
   },
   "devDependencies": {

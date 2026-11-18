@@ -1375,7 +1375,7 @@ A node does not run these keys of the Autark grammar. A document that writes
 one does not run, and the node's error names the key and where it is written:
 
 - `layout` and `links`;
-- `heatmap` and `geotiff` sources.
+- `geotiff` sources.
 
 ### Its input
 
@@ -1437,8 +1437,8 @@ one does not run, and the node's error names the key and where it is written:
 - A raster the node hands on reaches a Python node as a `rasterio` dataset on
   the same grid: its bands, origin, cell size and CRS.
 - A `data` section runs in the sandbox, where the input is not available: its
-  `join` sources cannot read the input. Join it in a Python node, or name it
-  from a map, plot or compute block.
+  `join` and `heatmap` sources cannot read the input. Join it in a Python node,
+  or name it from a map, plot or compute block.
 
 ### Workspaces
 
@@ -1659,6 +1659,63 @@ map's planar units, half as far for each step up.
 Pressing R on the map frames it and turns it by its camera again. A map a Map
 Editor node feeds keeps the view you zoomed or panned to when an edit draws it
 again, and a change to its `camera` shows that camera's view.
+
+### Heatmaps
+
+A `heatmap` source bins a table of the document's `data` into a grid over the
+area the document loads. Each cell takes the rows of `joinDataRef` within
+`near.distance` of its center. The distance is in the map's planar units
+(EPSG:3395), as a line's `width` is: 200 reaches about 150 m on the ground in
+Chicago or New York. It is measured to each row's center, or with
+`"useCentroid": false` to the nearest point of its shape, so a long road
+counts in every cell it passes near. `grid` sets the rows and columns.
+
+Each `groupBy` entry is a band, labelled `<aggregateFn>_<table>`:
+
+- `count` counts the rows, and `weighted` adds 1 / (distance + 1) for each,
+  so a row near the center weighs more; both take `"column": "*"`;
+- `sum`, `avg`, `min` and `max` aggregate the rows' `column`, such as
+  `{"column": "db", "aggregateFn": "avg"}`.
+
+An entry with `"normalize": true` rescales its band from 0 at its least cell to
+1 at its greatest, and its label ends in `_norm`. Bands of one aggregate over
+different columns each name their column too, such as `avg_<table>_db` and
+`avg_<table>_peak`, so every label names one band. A cell no row reaches holds
+0 in every band. A heatmap without `groupBy` has one band, `count`.
+
+The table a heatmap bins is one its `data` section loads before it, into the
+heatmap's own workspace: a data section loads only its own sources, not the
+node's input, and a heatmap of any other table fails the node with an error
+that names it, by its key (`<workspace>/<table>`) in another workspace than the
+default. A heatmap in a workspace is handed on with it, as a table is.
+
+```json
+{
+  "data": [
+    {"type": "osm", "pbfFileUrl": "docs/examples/data/lower_mnt.osm.pbf", "outputTableName": "tip",
+     "queryArea": {"bbox": [-74.0194, 40.7, -74.0085, 40.7085]},
+     "autoLoadLayers": {"layers": ["surface", "parks", "roads"]}},
+    {"type": "heatmap", "joinDataRef": "tip_parks", "outputTableName": "park_access",
+     "near": {"distance": 200, "useCentroid": false}, "grid": {"rows": 30, "columns": 30},
+     "groupBy": [{"column": "*", "aggregateFn": "count"}]}
+  ],
+  "map": {
+    "layerRefs": [
+      {"dataRef": "tip_roads"},
+      {"dataRef": "park_access", "getFnv": "count.tip_parks", "title": "Parks within about 150 m", "opacity": 0.6}
+    ]
+  }
+}
+```
+
+A heatmap is a raster. A map draws it as it draws any raster, by one band:
+`"getFnv": "band_1"`, or its label written with dots for its underscores, such
+as `"count.tip_parks"` for `count_tip_parks`. Every cell is drawn opaque unless
+the layer writes an `opacity` or a `transferFunction`. A node that only loads
+data hands its heatmaps on after its layers: an `Autark` node draws one by its
+table's name, and a Python node receives it as a `rasterio` dataset on the
+same grid, in the list of the node's tables, each band described by its label
+(`count_tip_parks`).
 
 ### The starter document
 

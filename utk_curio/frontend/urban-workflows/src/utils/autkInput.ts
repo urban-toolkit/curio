@@ -328,13 +328,7 @@ export function passesAtHand(passes: readonly any[], known: ReadonlySet<string>,
 /** The tables the document's own data section creates, by key. */
 export function ownTableNames(spec: any): string[] {
   const sources: any[] = Array.isArray(spec?.data) ? spec.data : [];
-  const names = new Set(requestedLayerTables(sources));
-  // A heatmap makes a table too; the sandbox does not run it, so the load
-  // contract does not list it.
-  for (const source of sources) {
-    if (source?.type === "heatmap" && source.outputTableName) names.add(tableKeyOf(source));
-  }
-  return Array.from(names);
+  return requestedLayerTables(sources);
 }
 
 /**

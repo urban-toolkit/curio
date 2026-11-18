@@ -364,7 +364,19 @@
       "Video"
     ]
   },
-  "34-autark-sky-seen-from-the-street": {
+  "34-autark-park-access-heatmap": {
+    "tags": [
+      "Autark",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries",
+      "OpenStreetMap",
+      "Rasters"
+    ]
+  },
+  "35-autark-sky-seen-from-the-street": {
     "tags": [
       "Autark",
       "GPU compute"

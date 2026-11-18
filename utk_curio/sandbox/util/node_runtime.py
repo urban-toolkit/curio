@@ -60,6 +60,24 @@ def is_curio_package_json(path):
     return data.get('name') == 'curio' and isinstance(dependencies, dict) and AUTK_DB in dependencies
 
 
+def local_package_files(path):
+    """The files Curio's package.json at *path* installs packages from, by
+    their paths beside it: the ``file:`` spec of each dependency, such as the
+    vendored autk-db's tarball (``utk_curio/frontend/urban-workflows/vendor/autark/``).
+    A pip install's launcher writes each beside the package.json it writes.
+    Raises ValueError for a path that leaves that folder."""
+    data = json.loads(pathlib.Path(path).read_text(encoding='utf-8'))
+    files = []
+    for spec in (data.get('dependencies') or {}).values():
+        if not isinstance(spec, str) or not spec.startswith('file:'):
+            continue
+        relative = pathlib.PurePosixPath(spec[len('file:'):])
+        if not relative.parts or relative.is_absolute() or '..' in relative.parts:
+            raise ValueError(f'{spec!r} in {path} names no file beside it')
+        files.append(relative)
+    return files
+
+
 def state_dir():
     """Curio's state directory: ``CURIO_STATE_DIR``, or ``.curio`` in the
     folder Curio was started from (``CURIO_LAUNCH_CWD``)."""

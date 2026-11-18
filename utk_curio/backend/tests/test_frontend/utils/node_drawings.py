@@ -381,6 +381,88 @@ def _drawing_framing(page, node_id: str, *, min_span: float, timeout: float) -> 
         page.wait_for_timeout(500)
 
 
+def _luminance(colour) -> float:
+    red, green, blue = colour
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+
+def _raster_cell_colours(png: bytes, rows: int, columns: int):
+    """``(colours, box)``: the colour an Autark map draws at the center of each
+    cell of a raster that fills its drawing, north row first, and the
+    drawing's box; or ``(None, why)``. The drawing is the box of the pixels
+    that differ from the canvas's top-left corner, as ``autark_map_framing``
+    finds it, split into *rows* by *columns* cells; a cell's colour is the
+    median of each channel over 5 by 5 pixels at its center."""
+    from PIL import Image, ImageChops
+
+    image = Image.open(BytesIO(png)).convert("RGB")
+    channels = ImageChops.difference(image, Image.new("RGB", image.size, image.getpixel((0, 0)))).split()
+    moved = ImageChops.lighter(ImageChops.lighter(channels[0], channels[1]), channels[2])
+    box = moved.point(lambda v: 255 if v > 8 else 0).getbbox()
+    if not box:
+        return None, f"its {image.size[0]}x{image.size[1]} map canvas is one colour"
+    left, top, right, bottom = box
+    width, height = (right - left) / columns, (bottom - top) / rows
+    if min(width, height) < 10:
+        return None, f"its drawing, box {box}, is too small to hold {rows} by {columns} cells"
+    colours = []
+    for row in range(rows):
+        line = []
+        for column in range(columns):
+            x, y = int(left + (column + 0.5) * width), int(top + (row + 0.5) * height)
+            patch = [image.getpixel((x + dx, y + dy)) for dx in range(-2, 3) for dy in range(-2, 3)]
+            line.append(tuple(sorted(pixel[channel] for pixel in patch)[12] for channel in range(3)))
+        colours.append(line)
+    return colours, box
+
+
+def assert_raster_cells_follow_their_values(
+    page, node_id: str, values, *, timeout: float = 30000, attach_as: str = "",
+) -> None:
+    """Assert an Autark map draws a raster's cells in colours that follow
+    their values on a sequential scheme that darkens as values grow (such as
+    ``interpolateReds``), the raster filling the map's drawing.
+
+    *values* holds the cells, north row first. Cells with one value share a
+    colour (each channel within 6), cells with different values do not, and a
+    cell with a higher value is darker (lower luminance). So a raster drawn as
+    one flat colour, or with its cells in another order, fails. Read in the
+    frame that renders the map, as captures read it.
+    """
+    import base64
+
+    rows, columns = len(values), len(values[0])
+    cells = [(values[row][column], (row, column)) for row in range(rows) for column in range(columns)]
+    deadline = time.monotonic() + timeout / 1000
+    png, problem = None, None
+    while True:
+        url = page.evaluate(_AUTK_MAP_PIXELS_IN_FRAME_JS, node_id)
+        if not url:
+            problem = "it has no map canvas"
+        else:
+            png = base64.b64decode(url.split(",", 1)[1])
+            colours, box = _raster_cell_colours(png, rows, columns)
+            problem = box if colours is None else None
+            if colours is not None:
+                colour = {place: colours[place[0]][place[1]] for _value, place in cells}
+                for value, place in cells:
+                    for other, other_place in cells:
+                        apart = max(abs(a - b) for a, b in zip(colour[place], colour[other_place]))
+                        if value == other and apart > 6:
+                            problem = f"cells {place} and {other_place} hold {value} but are drawn {colour[place]} and {colour[other_place]}"
+                        elif value < other and _luminance(colour[place]) <= _luminance(colour[other_place]):
+                            problem = (f"cell {place} holds {value}, less than {other} at {other_place}, but is drawn "
+                                       f"{colour[place]}, no lighter than {colour[other_place]}")
+                if problem:
+                    problem += f" (every cell, north row first: {colours}, drawing box {box})"
+        if problem is None or time.monotonic() >= deadline:
+            break
+        page.wait_for_timeout(500)
+    if problem and attach_as and png:
+        allure.attach(png, name=f"{attach_as}: canvas pixels", attachment_type=allure.attachment_type.PNG)
+    assert problem is None, f"Autark node {node_id}: {problem}, so the raster's cells are not drawn by their values {values}"
+
+
 # An Autark node's drawing (its map canvas or plot div) and the content mount it
 # is shown in, in layout pixels, which the canvas zoom does not scale; then the
 # drawing's and the port markers' horizontal extents on screen.

@@ -205,17 +205,27 @@ def envelope_transform(grid):
                   0.0, float(grid["resY"]), float(grid["originY"]))
 
 
+def band_labels(envelope, ids):
+    """The label of each band *ids* names, as the envelope's raster lists its
+    bands (a heatmap's ``<aggregateFn>_<table>``), else the band's id."""
+    listed = envelope["data"]["features"][0]["properties"].get("bands") or []
+    labels = {str(band.get("id")): band.get("label") for band in listed if isinstance(band, dict)}
+    return [str(labels.get(band) or band) for band in ids]
+
+
 def raster_from_envelope(envelope, directory):
     """The rasterio dataset an Autark raster envelope describes, opened from a
     GeoTIFF written into *directory* (named after its content, so the same
-    raster is written once)."""
+    raster is written once), each band described by its label."""
     rasterio = _rasterio()
     from rasterio.crs import CRS
 
     grid, ids, values = envelope_arrays(envelope)
+    labels = band_labels(envelope, ids)
     digest = hashlib.sha256(
         json.dumps({key: grid[key] for key in sorted(grid)}, sort_keys=True).encode("utf-8")
         + "\0".join(ids).encode("utf-8")
+        + "\0".join(labels).encode("utf-8")
         + values.tobytes()
     ).hexdigest()[:24]
     folder = Path(directory)
@@ -230,8 +240,8 @@ def raster_from_envelope(envelope, directory):
             transform=envelope_transform(grid), nodata=float("nan"),
         ) as target:
             target.write(values)
-            for index, band in enumerate(ids, start=1):
-                target.set_band_description(index, band)
+            for index, label in enumerate(labels, start=1):
+                target.set_band_description(index, label)
         os.replace(partial, path)
     else:
         # In use again: the store's sweep removes a file under ``artifacts/``

@@ -169,9 +169,12 @@ WORKFLOW_FILES = [
     # blocks by Split Video: test-gpu runs it, for its Autark maps, on the same
     # stand-ins as example 31.
     "docs/examples/33-sideseeing-frames-segments-blocks.json",
+    # An Autark heatmap of park access over Lower Manhattan's tip, drawn on a
+    # map and read by a Python step as a raster.
+    "docs/examples/34-autark-park-access-heatmap.json",
     # An Autark render pass, the sky each street around Wall Street sees:
     # test-gpu runs it, for its map.
-    "docs/examples/34-autark-sky-seen-from-the-street.json",
+    "docs/examples/35-autark-sky-seen-from-the-street.json",
 ]
 
 
