@@ -64,11 +64,15 @@ RUN set -eu; \
     fi
 
 # Repo-root node_modules for the sandbox's Node.js subprocess
-# (@urban-toolkit/autk-db — see utk_curio/sandbox/app/worker.py).
-# Early layer: only rebuilds when the root lockfile changes; the
-# npm install in utk_curio/cli/dependencies.py::_ensure_root_node_modules at container
-# start then becomes a fast idempotent no-op.
+# (@urban-toolkit/autk-db, see utk_curio/sandbox/app/worker.py), whose
+# package.json installs autk-db from the tarball the frontend vendors
+# (utk_curio/frontend/urban-workflows/vendor/autark/README.md), so that folder
+# comes first too. Early layer: only rebuilds when the root lockfile or that
+# folder changes; the npm install in
+# utk_curio/cli/dependencies.py::_ensure_root_node_modules at container start
+# then becomes a fast idempotent no-op.
 COPY package.json package-lock.json ./
+COPY utk_curio/frontend/urban-workflows/vendor/autark/ utk_curio/frontend/urban-workflows/vendor/autark/
 RUN npm ci --no-audit --no-fund
 
 # Before the source, so a code change reuses this layer: pip needs nothing but

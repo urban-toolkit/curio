@@ -7,9 +7,10 @@ the node's own run in the browser does. This runs that compiled JavaScript for
 the loaders of examples 06 (Back Bay), 07 (Chicago Loop), 08 (Niterói) and 11
 (Lower Manhattan), and of the test dataflow ``lower-manhattan-park-shade``
 (Lower Manhattan's parks and the buildings around them), through
-``execute_js_code`` and pins what it hands on with autk-db 4.1.1: each layer's
-name, type, feature count and CRS, its first feature's keys, and every
-OpenStreetMap feature's id in ``osm_id``.
+``execute_js_code`` and pins what it hands on with autk-db 4.1.1-curio.1
+(release 4.1.1 with urban-toolkit/autark#132, which changes only how a heatmap
+reads its cells): each layer's name, type, feature count and CRS, its first
+feature's keys, and every OpenStreetMap feature's id in ``osm_id``.
 
 No socket: the extract is served from disk by a ``fetch`` placed before the
 compiled code, which refuses every other request, at the address the sandbox
@@ -30,7 +31,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES = REPO_ROOT / "docs" / "examples"
-AUTK_DB_VERSION = "4.1.1"
+AUTK_DB_VERSION = "4.1.1-curio.1"
 EPSG_3395 = "urn:ogc:def:crs:EPSG::3395"
 #: A feature's keys: autk-db gives an OSM element's id, not a surface's or a
 #: building part's.

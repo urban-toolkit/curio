@@ -141,21 +141,35 @@ def _read(pip_install, reader: str):
     return found
 
 
+def _frontend_kept() -> list[tuple[str, ...]]:
+    """What the project keeps of the frontend, by path under ``utk_curio/``:
+    the files it shares with the backend, and each file the repository's
+    package.json installs the sandbox's Node.js packages from (the vendored
+    autk-db's tarball)."""
+    from utk_curio.sandbox.util.node_runtime import local_package_files
+
+    local = [PurePosixPath(rel).relative_to("utk_curio").parts for rel in local_package_files(REPO / "package.json")]
+    return [SHARED_WITH_THE_FRONTEND.parts, *local]
+
+
 def _code_only(directory: str, names: list[str]) -> set[str]:
     """What the project leaves out of the checkout's ``utk_curio/``: the
-    frontend but for the files it shares with the backend, and the test
-    suites, which the probe never runs, compiled files, hidden folders such as
-    a run's ``.curio``, and a record of a local release build (the project
-    records its own)."""
+    frontend but for the files it shares with the backend and the files the
+    sandbox's Node.js packages install from, and the test suites, which the
+    probe never runs, compiled files, hidden folders such as a run's
+    ``.curio``, and a record of a local release build (the project records
+    its own)."""
     here = Path(directory)
     ignored = {
         name for name in names
         if name in ("__pycache__", "node_modules") or name.endswith(".pyc") or name.startswith(".")
     }
     inside = here.relative_to(REPO / "utk_curio").parts if here.is_relative_to(REPO / "utk_curio") else ()
-    if inside[:1] == SHARED_WITH_THE_FRONTEND.parts[:1] and len(inside) < len(SHARED_WITH_THE_FRONTEND.parts):
-        # Of the frontend, only the way down to the shared files.
-        ignored |= set(names) - {SHARED_WITH_THE_FRONTEND.parts[len(inside)]}
+    kept = _frontend_kept()
+    if inside[:1] == SHARED_WITH_THE_FRONTEND.parts[:1] and not any(inside[:len(path)] == path for path in kept):
+        # Of the frontend, only the way down to the kept files.
+        ignored |= set(names) - {path[len(inside)] for path in kept
+                                 if len(path) > len(inside) and path[:len(inside)] == inside}
     if here.parent == REPO / "utk_curio" and here.name in ("backend", "sandbox"):
         ignored |= {"tests"} & set(names)
     return ignored | ({RECORD.name} & set(names))
@@ -434,6 +448,25 @@ def test_a_pip_install_seeds_the_sandbox_with_the_duckdb_extensions_it_ships(pip
     assert vendored, "no DuckDB extension in this checkout"
     seeded = _files(pip_install.home / ".duckdb" / "extensions" / "extensions.duckdb.org")
     assert seeded == vendored, f"seeded {sorted(seeded)}, the package ships {sorted(vendored)}"
+
+
+def test_a_pip_installs_launcher_writes_the_sandboxs_package_files_with_the_tarballs_they_install_from(pip_install):
+    """The launcher writes into a pip install's folder for the sandbox's
+    Node.js packages (``.curio/nodejs`` in the launch folder) the package.json
+    and package-lock.json the wheel ships and, at their paths beside them, the
+    files that package.json installs a package from (the vendored autk-db's
+    tarball), byte for byte as the repository holds them, so npm installs
+    there from what the wheel carries."""
+    from utk_curio.sandbox.util.node_runtime import local_package_files
+
+    local = [rel.as_posix() for rel in local_package_files(REPO / "package.json")]
+    assert local, "the repository's package.json installs no package from a file of its own"
+    found = _read(pip_install, "sandbox_node_packages")
+    assert Path(found["folder"]).resolve() == (pip_install.launch / ".curio" / "nodejs").resolve()
+    expected = {name: _sha256((REPO / name).read_bytes()) for name in ("package.json", "package-lock.json", *local)}
+    assert found["files"] == expected, (
+        f"the sandbox's Node.js folder of a pip install holds {sorted(found['files'])}, not {sorted(expected)}"
+    )
 
 
 def test_a_pip_install_seeds_and_lists_every_dataflow_curio_ships(pip_install):
