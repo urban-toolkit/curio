@@ -11,6 +11,7 @@ import type { JavaScriptInterpreter } from '../../JavaScriptInterpreter';
 import { detectCoordinateFormat } from '../../utils/geoCrs';
 import { withExtensionRetry } from './duckdbExtensionRetry';
 import { closeAutkDb } from './autkDbClose';
+import { autkKeyProblem } from '../../contracts/autkGrammar';
 import { autkTableName } from '../../utils/autkInput';
 import { framesFromPayload } from '../../utils/grammarInput';
 import { deriveBuildingHeight } from '../../utils/buildingHeight';
@@ -187,7 +188,11 @@ async function loadableGeojson(source: any): Promise<any> {
 // resulting layers, so a grammar node can export its parsed data downstream.
 // (The grammar engine itself never exposes the loaded DB — createEngine returns
 // no `context` — so we drive the same AutkDb the grammar uses internally.)
+// Sources that write a key autk-grammar 5 renamed, or one a node does not run
+// yet (contracts/autkGrammar), load nothing: the load fails, naming the key.
 export async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: string; geojson: FeatureCollection }>> {
+    const keyProblem = autkKeyProblem({ data: spec?.data });
+    if (keyProblem) throw new Error(keyProblem);
     const { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } = await import('@urban-toolkit/autk-db');
     // `init()` downloads the DuckDB spatial extension; a flaky fetch is worth
     // another instance rather than a failed node (#318).

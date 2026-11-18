@@ -2,6 +2,7 @@
 // receives. Used by the node behavior (autkGrammarBehavior.tsx).
 
 import type { FeatureCollection } from 'geojson';
+import { autkKeyProblem } from '../../contracts/autkGrammar';
 import { runComputeChecked } from './autkComputeScopes';
 
 // Apply a grammar `compute` section to an array of named GeoJSON layers,
@@ -18,7 +19,9 @@ import { runComputeChecked } from './autkComputeScopes';
 //
 // A block whose `dataRef` doesn't match any upstream layer is skipped quietly:
 // chained compute nodes can target different layers, and a no-op block is far
-// less surprising than aborting the whole pipeline.
+// less surprising than aborting the whole pipeline. A section that writes a key
+// autk-grammar 5 renamed, or one a node does not run yet (contracts/autkGrammar),
+// runs no block and is a failure, named.
 export async function applyComputeBlocks(
     layers: Array<{ name: string; type: string; geojson: FeatureCollection }>,
     computeBlocks: any[],
@@ -28,6 +31,11 @@ export async function applyComputeBlocks(
     failures: string[] = [],
 ): Promise<Array<{ name: string; type: string; geojson: FeatureCollection }>> {
     if (!Array.isArray(computeBlocks) || computeBlocks.length === 0) return layers;
+    const keyProblem = autkKeyProblem({ compute: computeBlocks });
+    if (keyProblem) {
+        failures.push(keyProblem);
+        return layers;
+    }
     const [{ ComputeGpgpu }, { runCompute }] = await Promise.all([
         import('@urban-toolkit/autk-compute'),
         import('@urban-toolkit/autk-grammar'),

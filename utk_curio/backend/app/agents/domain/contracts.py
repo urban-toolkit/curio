@@ -184,6 +184,70 @@ def autk_one_view_problem(document: object) -> str | None:
     return AUTK_ONE_VIEW if both or several else None
 
 
+#: The keys autk-grammar 5 renamed, each where it is written and its new name.
+#: ``in`` is ``""`` for the document, or a section whose one object or each
+#: object of its list holds the key (``"compute[]"`` a pass).
+AUTK_RENAMED_KEYS: tuple[dict, ...] = tuple(_AUTK_GRAMMAR["renamedKeys"])
+#: The keys of autk-grammar 5 a node does not run yet, each where it is
+#: written; with ``value``, only that value of the key counts (a render pass
+#: is ``"type": "render"``). The step that runs one takes it out of the file.
+AUTK_NOT_RUN_YET: tuple[dict, ...] = tuple(_AUTK_GRAMMAR["notRunYet"])
+
+
+def _objects_at(document: dict, place: str) -> list[tuple[str, object]]:
+    """Each object *document* holds where *place* says, with its path
+    (``map``, ``compute[0]``)."""
+    if place == "":
+        return [("", document)]
+    section = place.removesuffix("[]")
+    held = document.get(section)
+    if held is None:
+        return []
+    if isinstance(held, list):
+        return [(f"{section}[{i}]", item) for i, item in enumerate(held)]
+    return [(section, held)]
+
+
+def _written(document: dict, rule: dict) -> str | None:
+    """The path of the first object of *document* that writes *rule*'s key, or None."""
+    for path, held in _objects_at(document, rule["in"]):
+        if not isinstance(held, dict) or held.get(rule["key"]) is None:
+            continue
+        if "value" in rule and held[rule["key"]] != rule["value"]:
+            continue
+        return path
+    return None
+
+
+def _fill(template: str, **values: str) -> str:
+    """*template* with each ``{name}`` replaced by its value."""
+    return re.sub(r"\{(\w+)\}", lambda m: values.get(m.group(1), m.group(0)), template)
+
+
+def autk_key_problem(document: object) -> str | None:
+    """What a document that writes a key a node does not run is told, else
+    None: a key autk-grammar 5 renamed first, named with its new name
+    (``AUTK_RENAMED_KEYS``), then a key a node does not run yet
+    (``AUTK_NOT_RUN_YET``), the first the document writes, with where it is
+    written. ``autkKeyProblem`` is the node's twin, held to this function by
+    the cases in ``autkGrammar.cases.json``."""
+    if not isinstance(document, dict):
+        return None
+
+    def at(path: str) -> str:
+        return _fill(_AUTK_GRAMMAR["keyAt"], path=path) if path else ""
+
+    for rule in AUTK_RENAMED_KEYS:
+        path = _written(document, rule)
+        if path is not None:
+            return _fill(_AUTK_GRAMMAR["renamedKey"], key=rule["key"], at=at(path), renamedTo=rule["renamedTo"])
+    for rule in AUTK_NOT_RUN_YET:
+        path = _written(document, rule)
+        if path is not None:
+            return _fill(_AUTK_GRAMMAR["notRunYetKey"], what=rule["what"], at=at(path))
+    return None
+
+
 def load_autk_schema(path: Path = AUTK_SCHEMA_PATH) -> dict:
     """The vendored Autark schema, parsed."""
     return json.loads(Path(path).read_text(encoding="utf-8"))
@@ -200,6 +264,98 @@ def autk_families(schema: dict) -> tuple[str, ...]:
     """The top-level keys a document can name, in schema order."""
     root = _definition(schema, schema.get("$ref", "UrbanSpec"))
     return tuple(key for key in root.get("properties", {}) if not key.startswith("$"))
+
+
+def _resolved(schema: dict, node: object) -> object:
+    """*node*, or the definition its ``$ref`` names."""
+    return _definition(schema, node["$ref"]) if isinstance(node, dict) and "$ref" in node else node
+
+
+def _place(schema: dict, place: str) -> object:
+    """The schema of what a document holds where *place* says (``""`` the
+    document, ``"map[]"`` its map or its list of maps)."""
+    root = _definition(schema, schema.get("$ref", "UrbanSpec"))
+    return root if place == "" else root.get("properties", {}).get(place.removesuffix("[]"))
+
+
+def _objects_under(schema: dict, node: object, seen: set[int]) -> list[dict]:
+    """Each object *node* can be, through ``$ref``, ``items``, ``anyOf``,
+    ``oneOf`` and the ``then`` of an ``allOf`` member: the objects that hold
+    a key written there, not the objects inside them."""
+    node = _resolved(schema, node)
+    if not isinstance(node, dict) or id(node) in seen:
+        return []
+    seen.add(id(node))
+    found = [node] if "properties" in node else []
+    if isinstance(node.get("items"), dict):
+        found += _objects_under(schema, node["items"], seen)
+    for member in [*node.get("anyOf", []), *node.get("oneOf", [])]:
+        found += _objects_under(schema, member, seen)
+    for clause in node.get("allOf", []):
+        if isinstance(clause, dict) and "then" in clause:
+            found += _objects_under(schema, clause["then"], seen)
+    return found
+
+
+def _names(condition: object, value: str) -> bool:
+    """Whether a property's schema *condition* is the one value *value*."""
+    return isinstance(condition, dict) and (condition.get("const") == value or condition.get("enum") == [value])
+
+
+def _property(node: object, key: str) -> object:
+    """The schema *node* gives its property *key*, if it is an object that has one."""
+    return node.get("properties", {}).get(key) if isinstance(node, dict) else None
+
+
+def _drop_kind(schema: dict, node: object, key: str, value: str, seen: set[int]) -> None:
+    """Take out of the unions under *node* the members ``key: value`` selects:
+    an ``anyOf`` or ``oneOf`` member whose *key* is that constant, an
+    ``allOf`` member whose ``if`` asks for it, and the value from *key*'s
+    ``enum``."""
+    node = _resolved(schema, node)
+    if not isinstance(node, dict) or id(node) in seen:
+        return
+    seen.add(id(node))
+    choices = _property(node, key)
+    if isinstance(choices, dict) and isinstance(choices.get("enum"), list):
+        choices["enum"] = [choice for choice in choices["enum"] if choice != value]
+    for union in ("anyOf", "oneOf"):
+        if union in node:
+            node[union] = [
+                member for member in node[union]
+                if not _names(_property(_resolved(schema, member), key), value)
+            ]
+            for member in node[union]:
+                _drop_kind(schema, member, key, value, seen)
+    if "allOf" in node:
+        node["allOf"] = [
+            clause for clause in node["allOf"]
+            if not (isinstance(clause, dict) and _names(_property(clause.get("if"), key), value))
+        ]
+        for clause in node["allOf"]:
+            if isinstance(clause, dict) and "then" in clause:
+                _drop_kind(schema, clause["then"], key, value, seen)
+    if isinstance(node.get("items"), dict):
+        _drop_kind(schema, node["items"], key, value, seen)
+
+
+def autk_schema_curio_runs(schema: dict) -> dict:
+    """A copy of *schema* without what a node does not run yet
+    (``AUTK_NOT_RUN_YET``): each such key taken out of the objects that hold
+    it where it is written, and each kind a value names (a render pass, a
+    heatmap source) out of its union. The agents' text and reply schema are
+    made from it, so an agent does not write what a node refuses."""
+    schema = json.loads(json.dumps(schema))
+    for rule in AUTK_NOT_RUN_YET:
+        place = _place(schema, rule["in"])
+        if "value" in rule:
+            _drop_kind(schema, place, rule["key"], rule["value"], set())
+            continue
+        for holder in _objects_under(schema, place, set()):
+            holder.get("properties", {}).pop(rule["key"], None)
+            if rule["key"] in holder.get("required", []):
+                holder["required"] = [name for name in holder["required"] if name != rule["key"]]
+    return schema
 
 
 def _variants(schema: dict, union: str, key: str) -> list[tuple[list[str], dict]]:
@@ -279,10 +435,12 @@ def map_layers(schema: dict) -> tuple[str, list[str]]:
 
 
 def render_autk_shape(schema: dict) -> str:
-    """One line naming what an Autark document is, for a refusal's text. The
-    map example leads, so it survives the attempt trail's shorter cut."""
+    """One line naming what an Autark document is, for a refusal's text, of
+    what a node runs (``autk_schema_curio_runs``). The map example leads, so
+    it survives the attempt trail's shorter cut."""
     from utk_curio.backend.app.agents.domain import agent_text
 
+    schema = autk_schema_curio_runs(schema)
     layers, layer_required = map_layers(schema)
     common, either = _compute_required(schema)
     source_types = _definition(schema, "DataSourceSpec").get("properties", {}).get("type", {}).get("enum", [])
@@ -311,8 +469,10 @@ def _autk_words(name: str, **values: str) -> str:
 
 def render_autk_region(schema: dict, label: str) -> str:
     """The ``autark`` skill's section on Autark documents: the words of the
-    base entry's ``autark-grammar.md``, filled from the schema, with the lines
-    of the schema's own choices between them."""
+    base entry's ``autark-grammar.md``, filled from the schema of what a node
+    runs (``autk_schema_curio_runs``), with the lines of the schema's own
+    choices between them."""
+    schema = autk_schema_curio_runs(schema)
     root = _definition(schema, schema.get("$ref", "UrbanSpec"))
     props = root.get("properties", {})
     layers, layer_required = map_layers(schema)

@@ -23,7 +23,7 @@ import { UNREPORTED_MESSAGE, describeError, runAndAlwaysSettle } from './autkRun
 import { withExtensionRetry } from './duckdbExtensionRetry';
 import { closeGrammarDb } from './autkDbClose';
 import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
-import { autkOneViewProblem } from '../../contracts/autkGrammar';
+import { autkKeyProblem, autkOneViewProblem } from '../../contracts/autkGrammar';
 import {
     autkNeedsInput, autkSourcesFrom, documentTableRefs, drawnFeatures, drawnRows, inputRow, keyValues, loadableSource, ownTableNames,
     readAutkInput, selectFieldsOf, selectFieldsProblem, tablePositions, tablesToLoad, type LoadOrder,
@@ -469,6 +469,14 @@ export const useAutkGrammarBehavior = (
         if (severalViews) {
             emit({ code: 'error', content: severalViews });
             showToast(severalViews, 'error');
+            return;
+        }
+        // A key autk-grammar 5 renamed, or one a node does not run yet, is
+        // refused the same way, naming the key and where it is written.
+        const unrunKey = autkKeyProblem(spec);
+        if (unrunKey) {
+            emit({ code: 'error', content: unrunKey });
+            showToast(unrunKey, 'error');
             return;
         }
         for (const view of ['map', 'plot'] as const) {
