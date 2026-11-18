@@ -173,7 +173,10 @@ function frameOf(
   place: { fromBundle: boolean; index: number; circle?: number; name?: string | null; layerType?: string; workspace?: string },
 ): GrammarFrame {
   const geo = dataType === "geodataframe";
-  const workspace = place.workspace ?? autkWorkspaceOf(envelope);
+  // Named by a layer record, an envelope, or a geodataframe's own metadata
+  // (`gdf.metadata = {"workspace": "east"}`), which the sandbox sends with its rows.
+  const workspace = place.workspace ?? autkWorkspaceOf(envelope)
+    ?? (geo && isObject(payload?.metadata) ? autkWorkspaceOf(payload.metadata) : undefined);
   return {
     name: place.name ?? envelope?.layerName ?? null,
     ...(workspace ? { workspace } : {}),

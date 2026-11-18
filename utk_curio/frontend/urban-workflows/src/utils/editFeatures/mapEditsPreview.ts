@@ -135,6 +135,8 @@ export function editedOutput(read: GrammarInput, feed: Pick<EditFeed, "settings"
       data: fc,
       ...(layerName ? { layerName } : {}),
       ...(source.layerType ? { layerType: source.layerType } : {}),
+      // A layer in another workspace than the default one stays in it.
+      ...(source.workspace ? { workspace: source.workspace } : {}),
     };
   });
   const crs = geojsonCrs(settings.crs) ?? (sources.find((source) => (source.geojsonObject as any)?.crs)?.geojsonObject as any)?.crs;

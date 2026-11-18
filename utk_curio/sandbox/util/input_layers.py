@@ -18,7 +18,8 @@ exactly (``table_osm_roads``, not ``roads``). What an input may carry:
 - frames that carry their name in ``metadata`` (``gdf.metadata = {"name":
   "roads"}``), on their own or in a list or tuple.
 
-The layer keeps its name and type in ``metadata``. An input that carries
+The layer keeps its name and type in ``metadata``, and the workspace a table
+in another than autk-db's default one names (``workspace``). An input that carries
 exactly one frame with no layer name (a GeoDataFrame a Python node returns, or
 one Data Loading reads) is that layer, whatever name the chip gives. Otherwise
 a name the input does not have fails the node with a message naming the input
@@ -90,7 +91,8 @@ def _frame_of_record(record):
 
 
 def _read(item, name: str):
-    """The layer *item* holds, as node code reads it, keeping its name."""
+    """The layer *item* holds, as node code reads it, keeping its name, its
+    type and the workspace it is in (another than autk-db's default one)."""
     if _is_record(item):
         frame = _frame_of_record(item)
         layer_type = item.get("type")
@@ -105,6 +107,8 @@ def _read(item, name: str):
         meta = {"name": name}
         if isinstance(layer_type, str) and layer_type:
             meta["layerType"] = layer_type
+        if isinstance(item.get("workspace"), str) and item["workspace"]:
+            meta["workspace"] = item["workspace"]
         frame.__dict__["metadata"] = meta
     return frame
 

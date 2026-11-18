@@ -118,15 +118,18 @@ _INPUT_PLACE = re.compile(r"input_(\d+)(?:_(\d+))?")
 
 
 class _Layer:
-    """One layer of the input: its name and type, and its GeoJSON or its table."""
+    """One layer of the input: its name and type, its GeoJSON or its table, and
+    the workspace it is in when an Autark node handed it on from another than
+    autk-db's default one."""
 
-    def __init__(self, name=None, layer_type=None, fc=None, frame=None, envelope=None):
+    def __init__(self, name=None, layer_type=None, fc=None, frame=None, envelope=None, workspace=None):
         self.name = name
         self.layer_type = layer_type
         self.fc = fc
         self.frame = frame
         #: The envelope it came in, handed on as it is when it is not edited.
         self.envelope = envelope
+        self.workspace = workspace if isinstance(workspace, str) and workspace else None
 
     @property
     def label(self) -> str:
@@ -150,6 +153,12 @@ def _frame_name(frame):
     return None, None
 
 
+def _frame_workspace(frame):
+    """The workspace a frame's ``metadata`` names, or None."""
+    meta = getattr(frame, "metadata", None)
+    return meta.get("workspace") if isinstance(meta, dict) else None
+
+
 def _layer_of_envelope(item):
     """The layer an Autark envelope holds, or None for one this step cannot edit."""
     if not isinstance(item, dict) or item.get("dataType") != "geodataframe" or not _is_fc(item.get("data")):
@@ -163,7 +172,7 @@ def _layers_of(value):
     table, which is handed on as a table."""
     if _is_frame(value):
         name, layer_type = _frame_name(value)
-        return [_Layer(name=name, layer_type=layer_type, frame=value)], True
+        return [_Layer(name=name, layer_type=layer_type, frame=value, workspace=_frame_workspace(value))], True
     if isinstance(value, dict) and value.get("dataType") == "outputs" and isinstance(value.get("data"), list):
         return [_layer_of_envelope(item) or _Layer(envelope=item) for item in value["data"]], False
     if isinstance(value, dict) and value.get("dataType") == "geodataframe":
@@ -173,14 +182,17 @@ def _layers_of(value):
     if isinstance(value, (list, tuple)) and value:
         if all(isinstance(item, dict) and _is_fc(item.get("geojson")) for item in value):
             return [
-                _Layer(name=item.get("name") or None, layer_type=item.get("type"), fc=item["geojson"])
+                _Layer(
+                    name=item.get("name") or None, layer_type=item.get("type"), fc=item["geojson"],
+                    workspace=item.get("workspace"),
+                )
                 for item in value
             ], False
         if all(_is_frame(item) for item in value):
             layers = []
             for item in value:
                 name, layer_type = _frame_name(item)
-                layers.append(_Layer(name=name, layer_type=layer_type, frame=item))
+                layers.append(_Layer(name=name, layer_type=layer_type, frame=item, workspace=_frame_workspace(item)))
             return layers, False
         if all(isinstance(item, dict) and item.get("dataType") for item in value):
             return [_layer_of_envelope(item) or _Layer(envelope=item) for item in value], False
@@ -848,6 +860,8 @@ def _envelope(layer: _Layer, edited: bool):
             out["layerName"] = layer.name
         if layer.layer_type:
             out["layerType"] = layer.layer_type
+        if layer.workspace:
+            out["workspace"] = layer.workspace
         return out
     if layer.frame is not None:
         from utk_curio.sandbox.util.parsers import parseOutput
@@ -858,6 +872,8 @@ def _envelope(layer: _Layer, edited: bool):
             out["layerName"] = layer.name
         if layer.layer_type:
             out["layerType"] = layer.layer_type
+        if layer.workspace:
+            out["workspace"] = layer.workspace
         return out
     return layer.envelope
 

@@ -14,9 +14,9 @@ One rule, which both runners follow: in process (``worker.execute_code`` and
 - Anything else reads as it is stored: an Autark data node's layer array
   (``[{name, type, geojson}]``), a dict a node returned.
 
-A frame read from an envelope keeps the envelope's ``layerName`` and
-``layerType`` in its ``metadata`` (:func:`keep_layer_identity`), beside the
-label of the bundle part it was read from, and is in the
+A frame read from an envelope keeps the envelope's ``layerName``,
+``layerType`` and ``workspace`` in its ``metadata`` (:func:`keep_layer_identity`),
+beside the label of the bundle part it was read from, and is in the
 coordinate system its FeatureCollection names. A JavaScript node gets it as
 the FeatureCollection ``worker._to_js_value`` writes, under its layer name.
 
@@ -65,13 +65,16 @@ def names_outputs(value) -> bool:
 
 
 def keep_layer_identity(value, envelope):
-    """A layer an Autark node handed on keeps its name and its layer type.
+    """A layer an Autark node handed on keeps its name, its layer type and the
+    workspace it is in.
 
-    Its envelope names them (``layerName``, ``layerType``); the frame keeps them
-    where Curio keeps a frame's own (``metadata``, which ``parseOutput`` hands
-    on), so a node can tell an Autark node's layers apart, as the Map Editor
-    node does to edit one of them (#662). A frame that already has a name keeps
-    it, and one read from a bundle keeps its part's label.
+    Its envelope names them (``layerName``, ``layerType``, and ``workspace``
+    for a table in another workspace than autk-db's default one); the frame
+    keeps them where Curio keeps a frame's own (``metadata``, which
+    ``parseOutput`` hands on), so a node can tell an Autark node's layers
+    apart, as the Map Editor node does to edit one of them (#662), and a node
+    it hands the frame to loads it in its workspace. A frame that already has
+    a name keeps it, and one read from a bundle keeps its part's label.
     """
     from utk_curio.sandbox.util.codec import is_geospatial_frame, part_label_only
 
@@ -82,8 +85,9 @@ def keep_layer_identity(value, envelope):
     if isinstance(meta, dict) and meta.get("name"):
         return value
     kept = {"name": name}
-    if isinstance(envelope.get("layerType"), str) and envelope["layerType"]:
-        kept["layerType"] = envelope["layerType"]
+    for key in ("layerType", "workspace"):
+        if isinstance(envelope.get(key), str) and envelope[key]:
+            kept[key] = envelope[key]
     value.__dict__["metadata"] = {**kept, **(part_label_only(meta) or {})}
     return value
 
