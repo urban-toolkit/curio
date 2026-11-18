@@ -8,7 +8,7 @@
     },
     {
       "name": "several sources only load",
-      "spec": "{\"data\": [{\"type\": \"csv\", \"csvFileUrl\": \"a.csv\", \"outputTableName\": \"a\"}, {\"type\": \"join\", \"tableRootName\": \"a\"}]}",
+      "spec": "{\"data\": [{\"type\": \"csv\", \"csvFileUrl\": \"a.csv\", \"outputTableName\": \"a\"}, {\"type\": \"join\", \"dataRef\": \"a\"}]}",
       "kind": "data"
     },
     {
@@ -34,6 +34,16 @@
     {
       "name": "a plot draws what the node loads",
       "spec": "{\"data\": [{\"type\": \"osm\"}], \"plot\": {\"dataRef\": \"table_osm_buildings\"}}",
+      "kind": "render"
+    },
+    {
+      "name": "a layout arranges views, so it is named with them",
+      "spec": "{\"data\": [{\"type\": \"osm\"}], \"layout\": {\"type\": \"horizontal\"}}",
+      "kind": "render"
+    },
+    {
+      "name": "links join views, so they are named with them",
+      "spec": "{\"data\": [{\"type\": \"osm\"}], \"links\": [{\"source\": \"heights\", \"target\": \"city\"}]}",
       "kind": "render"
     },
     {

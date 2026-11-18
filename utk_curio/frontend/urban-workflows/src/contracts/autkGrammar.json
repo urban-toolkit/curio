@@ -1,5 +1,5 @@
 {
-  "families": ["compute", "data", "map", "plot"],
+  "families": ["compute", "data", "layout", "links", "map", "plot"],
   "inputTablePrefix": "input_",
   "oneView": "An Autark node draws one view: one map or one plot. Put each in its own Autark node, and link them with interaction edges.",
   "starterColoring": {

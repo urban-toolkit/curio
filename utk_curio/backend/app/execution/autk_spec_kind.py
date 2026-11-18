@@ -11,7 +11,10 @@ from __future__ import annotations
 import json
 
 #: The step each top-level family describes (``FAMILY_KIND``).
-FAMILY_KIND = {"map": "render", "plot": "render", "compute": "compute", "data": "data"}
+FAMILY_KIND = {
+    "map": "render", "plot": "render", "layout": "render", "links": "render",
+    "compute": "compute", "data": "data",
+}
 
 #: Drawing wins over computing, and computing over loading.
 KIND_ORDER = ("render", "compute", "data")

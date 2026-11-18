@@ -13,6 +13,8 @@ export type AutkSpecKind = "render" | "compute" | "data" | "unknown";
 export const FAMILY_KIND = {
   map: "render",
   plot: "render",
+  layout: "render",
+  links: "render",
   compute: "compute",
   data: "data",
 } as const satisfies Record<string, Exclude<AutkSpecKind, "unknown">>;
