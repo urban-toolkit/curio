@@ -1360,8 +1360,9 @@ The values are read from the node's input, so the table must come from an input,
 
 The `Autark` node draws an Autark document: map layers or a plot, and GPU
 compute over tables. A table comes from the document's own `data` section (an
-OSM extract, a GeoJSON or CSV file) or from the node's input. The document
-writes no `data` entry for its input; it names the tables the input provides.
+OSM extract, a GeoJSON or CSV file, a GeoTIFF) or from the node's input. The
+document writes no `data` entry for its input; it names the tables the input
+provides.
 
 Each feature of an OpenStreetMap layer the node hands on has its OpenStreetMap
 id in `osm_id`, and a building's parts share its `building_id`.
@@ -1378,7 +1379,6 @@ one does not run, and the node's error names the key and where it is written:
 - a map's `camera`;
 - a render pass (`"type": "render"`), and a compute pass's `outputTableName`
   and `layerType`;
-- `geotiff` sources;
 - `workspace`, on a source, a compute pass, a map or a plot.
 
 ### Its input
@@ -1435,7 +1435,9 @@ one does not run, and the node's error names the key and where it is written:
   crop it in the node that makes it, for example with a rasterio window read or
   the `bounds` of `curio_load_data` (see the [Data Catalog](DATA-CATALOG.md)).
   It needs a CRS with an EPSG code and a north-up grid. A plot or a compute step
-  does not read a raster.
+  does not read a raster, and a document whose compute pass names one does not
+  run: the node's error names the pass and the raster. Compute over a raster's
+  cells in a Python node.
 - A raster the node hands on reaches a Python node as a `rasterio` dataset on
   the same grid: its bands, origin, cell size and CRS.
 - A `data` section runs in the sandbox, where the input is not available: its
@@ -1507,6 +1509,46 @@ chip as its color, which its tag under **Scenarios** above the spec drags in
 
 The chip writes the box's color, and for an input from no box a gray of its
 own. A box recolored gives the layer its new color on the map's next run.
+
+### GeoTIFF rasters
+
+A `geotiff` source loads a raster from a GeoTIFF file. `geotiffFileUrl` is the
+file's path from the folder Curio was started from, as a Python node opens a
+file (`docs/examples/data/...` reads the example data Curio ships), or a URL.
+The file's first image is read, its bands named `band_1`, `band_2`, and so on,
+and a cell holding the file's no-data value has no value. `coordinateFormat`
+is the file's CRS, EPSG:4326 unless the source says otherwise. A file of more
+than `maxRasterCells` cells, one million unless the source says otherwise, is
+shrunk to fit: with `"resampleMethod": "nearest"` each cell keeps a value of
+the file, and with `"bilinear"`, the default, neighboring cells are blended. A
+rotated or sheared grid is refused.
+
+```json
+{
+  "data": [
+    {"type": "osm", "pbfFileUrl": "docs/examples/data/niteroi.osm.pbf", "outputTableName": "table_osm",
+     "queryArea": {"geocodeArea": "Rio de Janeiro", "areas": ["Niterói"]},
+     "autoLoadLayers": {"layers": ["parks"]}},
+    {"type": "geotiff", "geotiffFileUrl": "docs/examples/data/niteroi_lst_verao_2001_2024.tif",
+     "outputTableName": "lst", "resampleMethod": "nearest"}
+  ],
+  "map": {
+    "layerRefs": [
+      {"dataRef": "lst", "getFnv": "band_24", "colorMapInterpolator": "interpolateYlOrRd",
+       "title": "Summer surface temperature, 2024 (°C)"},
+      {"dataRef": "table_osm_parks", "color": "#2ca02c"}
+    ]
+  }
+}
+```
+
+A map draws it as it draws any raster, by one band. A node that only loads
+data hands it on after its layers: an `Autark` node draws it by its table's
+name, and a Python node receives it as a `rasterio` dataset in EPSG:3395,
+holding the file's cells over the file's extent, where the map draws them. A
+Python node that opens the file by its path reads it on the file's own grid. A
+raster of the Data Catalog comes in on the node's input, from its Data Loading
+node.
 
 ### Heatmaps
 
