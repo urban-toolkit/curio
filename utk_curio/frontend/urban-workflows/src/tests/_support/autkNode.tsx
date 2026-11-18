@@ -26,6 +26,8 @@ export type MountedAutkNode = {
   rerender: () => void;
   /** Take the node off the page, as a deleted node or a closed dataflow does. */
   unmount: () => void;
+  /** The rows of panes the node's last run arranged its views in (the behavior's `viewRows`). */
+  viewRows: () => number | undefined;
 };
 
 /**
@@ -42,6 +44,7 @@ export function mountAutkNode(
   let apply: (spec: string) => Promise<void> = async () => { };
   const setOutput = jest.fn();
   const interactions = jest.fn();
+  let viewRows: number | undefined;
   const Probe: React.FC = () => {
     const behavior = useAutkGrammarBehavior(
       {
@@ -59,6 +62,7 @@ export function mountAutkNode(
       options,
     );
     apply = behavior.applyGrammar as (spec: string) => Promise<void>;
+    viewRows = behavior.viewRows;
     return <>{behavior.contentComponent}</>;
   };
   const mounted = render(<Probe />);
@@ -70,6 +74,7 @@ export function mountAutkNode(
     interactions,
     rerender: () => act(() => { mounted.rerender(<Probe />); }),
     unmount: () => act(() => { mounted.unmount(); }),
+    viewRows: () => viewRows,
   };
 }
 

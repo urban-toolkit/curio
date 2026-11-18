@@ -194,6 +194,16 @@ describe("the height of a cell's output", () => {
     expect(notebookOutputBox("curio.builtin/autk-grammar")).toEqual({ height: 400 });
   });
 
+  test("an Autark node whose views are arranged in rows of panes gets 400px a row", () => {
+    expect(notebookOutputBox("curio.builtin/autk-grammar", 1)).toEqual({ height: 400 });
+    expect(notebookOutputBox("curio.builtin/autk-grammar@1", 2)).toEqual({ height: 800 });
+    expect(notebookOutputBox("curio.builtin/autk-grammar", 3)).toEqual({ height: 1200 });
+    // No row known yet is one row.
+    expect(notebookOutputBox("curio.builtin/autk-grammar", 0)).toEqual({ height: 400 });
+    // A chart's box is its own, whatever an Autark node's rows.
+    expect(notebookOutputBox("curio.builtin/vis-vega@1", 2)).toEqual({ height: 320, overflow: "auto" });
+  });
+
   test("a table, a summary or a note takes its own height up to 360px", () => {
     for (const kind of ["data-pool", "vis-simple", "data-summary", "note"]) {
       expect(notebookOutputBox(`curio.builtin/${kind}@1`)).toEqual({ maxHeight: 360, overflow: "auto" });

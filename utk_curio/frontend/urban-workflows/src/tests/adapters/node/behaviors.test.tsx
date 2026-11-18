@@ -100,6 +100,8 @@ jest.mock('../../../utils/formatters', () => ({
 }));
 
 jest.mock('@urban-toolkit/autk-grammar', () => ({
+  // autk-grammar's arrangeViews, which places each view's pane.
+  arrangeViews: require('../../_support/autkArrangeViews').arrangeViews,
   // The grammar keeps the adapter its run hands each compute pass to, which a node checks.
   AutkGrammar: jest.fn().mockImplementation(() => ({ run: jest.fn().mockResolvedValue(undefined), data: {}, computeAdapter: { resolveCompute: jest.fn() } })),
   // The grammar's applyCamera, which the node turns a framed map by when the
