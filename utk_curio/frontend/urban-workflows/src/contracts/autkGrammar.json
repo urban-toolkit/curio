@@ -11,11 +11,7 @@
   "notRunYet": [
     { "in": "", "key": "layout", "what": "\"layout\"" },
     { "in": "", "key": "links", "what": "\"links\"" },
-    { "in": "compute[]", "key": "type", "value": "render", "what": "a render pass" },
-    { "in": "data[]", "key": "workspace", "what": "\"workspace\"" },
-    { "in": "compute[]", "key": "workspace", "what": "\"workspace\"" },
-    { "in": "map[]", "key": "workspace", "what": "\"workspace\"" },
-    { "in": "plot[]", "key": "workspace", "what": "\"workspace\"" }
+    { "in": "compute[]", "key": "type", "value": "render", "what": "a render pass" }
   ],
   "notRunYetKey": "This spec uses {what}{at}, which Curio does not run yet.",
   "keyAt": " at {path}",

@@ -8,6 +8,8 @@ Curio installs two Autark packages from the tarballs in this folder, each in pla
 
 It was built with Node 26 from the tag's lockfile. Its `dist/` is 4.1.1's file for file but for those commits' lines in `browser.js` and `node.js` and a comment in `use-cases/build-heatmap/use-case.d.ts`. `npm pkg set version=4.1.1-curio.2`, then `npm pack`. Its dependencies are 4.1.1's.
 
+Its `package.json` is the tag's, which is also the one in npm's 4.1.1 tarball (integrity `sha512-L5lskDyd3dSQB36AW3rNMzwoeEzEwD4H9LGE2rrJBakydMdK0CpDLt97MLZ9P/DMEYAybR57QkE5ALPGLQH8vA==`), except for two lines: the version, and the place of `@types/emscripten`, which `npm pkg set` moved into alphabetical order among the dependencies. Both files list the conditions of `exports["."]` as `types`, `browser`, `node`, `import`, `default`. The registry's metadata for 4.1.1, which `npm view` prints, lists them as `node`, `types`, `import`, `browser`, `default`. npm installs the tarball's `package.json`, though, so Curio's trees resolve autk-db to the same files as with 4.1.1.
+
 - SHA-256: `d9a4eb8ac79fb194dc32ac84c47d4e78f6b0546e13da8e804977a61582cbe12e`
 - npm integrity: `sha512-vYoV3Q0Juj7KxiCdLcqRJmxm8egmC8EELxcLg5Pz/sg4oONGiW6s9Egizuka0IwcCim9dhS55tdVGrNITxbwwg==`
 

@@ -1,25 +1,31 @@
 /**
  * A heatmap source loads on both of an Autark node's loaders as the grammar
- * loads it, through autk-grammar's own data adapter: the sandbox's
- * (compileDataSpecToAutkDbJs), which a run on the server posts, from the
- * grammar's `./data` entry, and the in-browser fallback (loadSpecLayers), from
- * its main entry. Each reads the raster table back with the grid its cells lie
- * on and hands it on after the layers, in Curio's raster envelope
- * (utils/raster/rasterWire), the same on both.
+ * loads it, through autk-grammar's own data adapter, from the grammar's
+ * `./data` entry: the sandbox's (compileDataSpecToAutkDbJs), which a run on the
+ * server posts, and the in-browser fallback (loadSpecLayers). Each reads the
+ * raster table back with the grid its cells lie on and hands it on after the
+ * layers, in Curio's raster envelope (utils/raster/rasterWire), the same on
+ * both. A heatmap in a workspace is built there and handed on with it.
  */
-import { compileDataSpecToAutkDbJs } from "../../../adapters/node/autkDataCompile";
+import { compileDataSpecToAutkDbJs, heatmapTableProblem } from "../../../adapters/node/autkDataCompile";
 import { loadSpecLayers, toPoolOutput } from "../../../adapters/node/autkLayerMaterialize";
 import { decodeRasterEnvelope } from "../../../utils/raster/rasterWire";
 
 jest.mock("../../../services/api", () => ({ fetchData: jest.fn() }));
 // Virtual, as the other suites mock Autark: keyed by the package's name.
 jest.mock("@urban-toolkit/autk-db", () => ({
+  DEFAULT_WORKSPACE_NAME: "autk",
   DEFAULT_WORKSPACE_COORDINATE_FORMAT: "EPSG:3395",
   AutkDb: jest.fn().mockImplementation(() => new mockAutkDb()),
 }), { virtual: true });
-jest.mock("@urban-toolkit/autk-grammar", () => ({
+// The grammar's data entry with its own `enterWorkspace` and `tableKey`, and a
+// stand-in data adapter. Plain, not virtual: the suites that load this entry
+// unmocked key it by its file, and a Jest worker's resolver keeps the first key
+// it works out for a file's require (autkGrammarBuildMocks.test.ts).
+jest.mock("@urban-toolkit/autk-grammar/data", () => ({
+  ...jest.requireActual("@urban-toolkit/autk-grammar/data"),
   createDataAdapter: (...args: any[]) => mockCreateDataAdapter(...args),
-}), { virtual: true });
+}));
 
 // Readings in Chicago, in EPSG:3395 metres, as autk-db's workspace holds them.
 const READINGS = {
@@ -36,9 +42,10 @@ const READINGS = {
 const BBOX = [-9755100, 5142000, -9753600, 5143000];
 const COUNTS = [0, 1, 2, 2, 1, 0];
 
-/** What the grammar's adapter was asked to load, and the heatmaps it built. */
+/** What the grammar's adapter was asked to load, the heatmaps it built, and the workspace each was built in. */
 const mockResolved: Array<{ db: any; source: any }> = [];
 const mockBuilt: any[] = [];
+const mockBuiltIn: string[] = [];
 /** A heatmap build that fails, when set. */
 let mockBuildFails: Error | null = null;
 
@@ -110,26 +117,35 @@ const levelHeatmap = (aggregates: string[]) => ({
 });
 
 class mockAutkDb {
+  /** The workspace the database works in; autk-db finds a table in it alone. */
+  workspace = "autk";
   heatmaps = new Map<string, any>();
-  layers: string[] = [];
+  /** Each workspace's tables. */
+  layers = new Map<string, string[]>();
   init() { return Promise.resolve(); }
-  loadGeojson(params: any) { this.layers.push(params.outputTableName); return Promise.resolve(); }
+  getCurrentWorkspace() { return this.workspace; }
+  setWorkspace(name: string) { this.workspace = name; return Promise.resolve(); }
+  loadGeojson(params: any) {
+    this.layers.set(this.workspace, [...(this.layers.get(this.workspace) ?? []), params.outputTableName]);
+    return Promise.resolve();
+  }
   getLayersMetadata() {
-    const names = this.layers.length ? this.layers : ["readings"];
+    const names = this.layers.size ? (this.layers.get(this.workspace) ?? []) : ["readings"];
     return names.map((name) => ({ name, type: "points", source: "geojson", columns: [] }));
   }
   getLayer() { return Promise.resolve(JSON.parse(JSON.stringify(READINGS))); }
   getWorkspaceConfiguration() { return { coordinateFormat: "EPSG:3395", precisionGrid: 0.01 }; }
-  getCurrentWorkspace() { return "autk"; }
   buildHeatmap(params: any) {
     if (mockBuildFails) return Promise.reject(mockBuildFails);
     mockBuilt.push(params);
-    this.heatmaps.set(params.outputTableName, params);
+    mockBuiltIn.push(this.workspace);
+    this.heatmaps.set(`${this.workspace}.${params.outputTableName}`, params);
     return Promise.resolve({ name: params.outputTableName, type: "raster", source: "user" });
   }
   getRaster(name: string) {
-    if (!this.heatmaps.has(name)) return Promise.reject(new Error(`Table ${name} is not a compact raster table.`));
-    const params = this.heatmaps.get(name);
+    const key = `${this.workspace}.${name}`;
+    if (!this.heatmaps.has(key)) return Promise.reject(new Error(`Table ${name} is not a compact raster table.`));
+    const params = this.heatmaps.get(key);
     if (params.tableJoinName === "levels") {
       // As autk-db labels a heatmap's bands: `<aggregateFn>_<table>`, one per groupBy entry.
       const bands = params.groupBy.map((group: any, index: number) => ({
@@ -192,15 +208,18 @@ const GRID = { crs: "EPSG:3395", width: 3, height: 2, originX: -9755100, originY
 const IMPORT_AUTK_DB = "import { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } from '@urban-toolkit/autk-db';";
 const IMPORT_GRAMMAR_DATA = "import { createDataAdapter } from '@urban-toolkit/autk-grammar/data';";
 
+/** The grammar data entry's own `enterWorkspace` and `tableKey`, which the sandbox's code imports. */
+const { enterWorkspace, tableKey } = jest.requireActual("@urban-toolkit/autk-grammar/data");
+
 /** What the sandbox's code returns, run as the sandbox runs it. */
 async function sandboxLoad(sources: any[]): Promise<any[]> {
   const body = compileDataSpecToAutkDbJs(sources).replace(/^import [^\n]*\n/gm, "");
   // The engine's own AsyncFunction: babel compiles an `async function` written
   // in this file to a generator, whose constructor is plain Function.
   const AsyncFunction = new Function("return (async () => {}).constructor")();
-  return new AsyncFunction("AutkDb", "DEFAULT_WORKSPACE_COORDINATE_FORMAT", "createDataAdapter", body)(
-    mockAutkDb, "EPSG:3395", mockCreateDataAdapter,
-  );
+  return new AsyncFunction(
+    "AutkDb", "DEFAULT_WORKSPACE_COORDINATE_FORMAT", "createDataAdapter", "enterWorkspace", "tableKey", body,
+  )(mockAutkDb, "EPSG:3395", mockCreateDataAdapter, enterWorkspace, tableKey);
 }
 
 /** A raster envelope's collection, or the reason it cannot be read. */
@@ -213,6 +232,7 @@ function collectionIn(envelope: any): any {
 beforeEach(() => {
   mockResolved.length = 0;
   mockBuilt.length = 0;
+  mockBuiltIn.length = 0;
   mockBuildFails = null;
   mockCreateDataAdapter.mockClear();
 });
@@ -262,7 +282,7 @@ describe("the sandbox's loader", () => {
 });
 
 describe("the in-browser loader", () => {
-  test("builds a heatmap through the main entry's data adapter, in the database it loaded the table into", async () => {
+  test("builds a heatmap through the data entry's data adapter, in the database it loaded the table into", async () => {
     await loadSpecLayers({ data: SOURCES });
     expect(mockCreateDataAdapter).toHaveBeenCalledTimes(1);
     expect(mockResolved.map(({ source }) => source)).toEqual([HEATMAP]);
@@ -377,5 +397,46 @@ describe("every aggregate", () => {
         Array.from(Float32Array.from(LEVEL_CELLS[fn])),
       );
     });
+  });
+});
+
+// A heatmap in a workspace (autk-grammar 5.0.0's `workspace`) is built there,
+// bins a table of that workspace, and is handed on with it, as a table is. Its
+// data section imports all it needs of the grammar's data entry in one line.
+describe("a heatmap in a workspace", () => {
+  const IN_EAST = [{ ...SOURCES[0], workspace: "east" }, { ...HEATMAP, workspace: "east" }];
+
+  test("the sandbox's code imports the data adapter and the workspace functions in one line", () => {
+    expect(compileDataSpecToAutkDbJs(IN_EAST).match(/^import [^\n]*$/gm)).toEqual([
+      IMPORT_AUTK_DB,
+      "import { createDataAdapter, enterWorkspace, tableKey } from '@urban-toolkit/autk-grammar/data';",
+    ]);
+  });
+
+  test("both loaders build it in its workspace and hand it on with it, after its table", async () => {
+    const fromSandbox = await sandboxLoad(IN_EAST);
+    expect(fromSandbox.map((item: any) => [item.name ?? item.layerName, item.workspace])).toEqual([
+      ["readings", "east"], ["density", "east"],
+    ]);
+    const tables: any[] = await loadSpecLayers({ data: IN_EAST });
+    expect(tables.map((table) => [table.name, table.type, table.workspace])).toEqual([
+      ["readings", "points", "east"], ["density", "raster", "east"],
+    ]);
+    expect(mockBuiltIn).toEqual(["east", "east"]);
+
+    const fromBrowser = (await toPoolOutput(tables, undefined, "heat-node")).data[1];
+    expect(fromBrowser.workspace).toBe("east");
+    expect(fromSandbox[1]).toEqual(fromBrowser);
+    expect(collectionIn(fromBrowser).grid).toEqual(GRID);
+  });
+
+  test("one that bins a table of another workspace fails both loads, naming each by its key", async () => {
+    const elsewhere = [SOURCES[0], { ...HEATMAP, workspace: "east" }];
+    const said = 'The heatmap "east/density" bins "east/readings", a table its data section does not load: '
+      + "a data section loads only its own sources, not the node's input.";
+    expect(heatmapTableProblem(elsewhere)).toBe(said);
+    await expect(sandboxLoad(elsewhere)).rejects.toThrow(said);
+    await expect(loadSpecLayers({ data: elsewhere })).rejects.toThrow(said);
+    expect(mockBuilt).toEqual([]);
   });
 });

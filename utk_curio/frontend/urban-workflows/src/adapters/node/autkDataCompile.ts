@@ -25,6 +25,50 @@
 // cases: default ports, a custom-port stack, and a remapped container port.
 export const SANDBOX_BACKEND_URL_TOKEN = '__CURIO_BACKEND_URL__';
 
+// autk-db's default workspace (its DEFAULT_WORKSPACE_NAME): where a source, a
+// pass, a map or a plot that names no `workspace` keeps and reads its tables.
+export const AUTK_DEFAULT_WORKSPACE = 'autk';
+
+// The workspace *entry* names (a source, a pass, a map, a plot, or a table a
+// node hands on), or undefined for the default one. Only a name other than the
+// default's is another workspace; a workspace written null or empty is none.
+export function autkWorkspaceOf(entry: any): string | undefined {
+    const workspace = entry == null ? undefined : entry.workspace;
+    return typeof workspace === 'string' && workspace !== '' && workspace !== AUTK_DEFAULT_WORKSPACE
+        ? workspace
+        : undefined;
+}
+
+// The key a table has where a node tells its tables apart: its name in the
+// default workspace, `<workspace>/<name>` in another, so two workspaces can
+// hold tables of one name. It is autk-grammar's own `tableKey`, which this
+// module, having no imports, writes out; the loaders enter a workspace with
+// the grammar's `enterWorkspace`, and the sandbox's loader keys what it read
+// back with the grammar's `tableKey`, which the server load's test holds to
+// this one (utk_curio/sandbox/tests/test_autk_server_data_load.py).
+export function autkTableKey(workspace: string | undefined, name: string): string {
+    return workspace === undefined || workspace === AUTK_DEFAULT_WORKSPACE ? name : workspace + '/' + name;
+}
+
+// Whether a document keeps tables in another workspace than the default one:
+// a source, a compute pass, a map or a plot of *spec* names one. Only then do
+// the loaders enter workspaces, with autk-grammar's data entry; a document that
+// names none loads in the default workspace alone, as it always has.
+export function autkUsesWorkspaces(spec: any): boolean {
+    const entries = (held: any): any[] => (held == null ? [] : Array.isArray(held) ? held : [held]);
+    return [spec?.data, spec?.compute, spec?.map, spec?.plot]
+        .some((held) => entries(held).some((entry) => autkWorkspaceOf(entry) !== undefined));
+}
+
+// A data source as the loaders load it: with the workspace it names, the
+// default one left out (autkWorkspaceOf).
+export function inItsWorkspace(source: any): any {
+    if (source == null || typeof source !== 'object' || !('workspace' in source)) return source;
+    const workspace = autkWorkspaceOf(source);
+    const { workspace: _written, ...rest } = source;
+    return workspace === undefined ? rest : { ...rest, workspace };
+}
+
 // Resolve relative URLs in data source specs to the Curio backend's /file/
 // route, which serves files by their path *relative to CURIO_LAUNCH_CWD* — the
 // same root and relative-path convention the Python sandbox uses. So users can
@@ -60,12 +104,13 @@ export function resolveDataSourceUrls(spec: any, base: string): any {
 }
 
 // The source types both loaders hand to autk-grammar's own data adapter
-// (`createDataAdapter().resolveSource`), which loads them as the grammar does:
-// the sandbox's from the grammar's `./data` entry, which imports autk-db alone,
-// and the browser's from its main entry. Each makes a raster table, a heatmap
-// with autk-db's `buildHeatmap` and a GeoTIFF with its `loadGeoTiff`, which the
-// loaders read back with the grid its cells lie on (withRasterGrid) and hand on
-// as Curio hands on a raster (rasterEnvelope).
+// (`createDataAdapter().resolveSource`), which loads them as the grammar does,
+// each loader taking it from the grammar's `./data` entry, which imports
+// autk-db alone. Each makes a raster table, a heatmap with autk-db's
+// `buildHeatmap` and a GeoTIFF with its `loadGeoTiff`, which the loaders read
+// back with the grid its cells lie on (withRasterGrid) and hand on as Curio
+// hands on a raster (rasterEnvelope). contracts/autkGrammar.json holds this
+// list too, as `rasterSources`.
 export const GRAMMAR_RASTER_SOURCES = ['heatmap', 'geotiff'];
 
 // Table names a data spec is contractually asking autk-db to create.
@@ -79,21 +124,24 @@ export const GRAMMAR_RASTER_SOURCES = ['heatmap', 'geotiff'];
 // actually failed showing "Done" (#248), so the loaders check these names.
 //
 // Naming mirrors autk-db's own, which derives a layer table as
-// `outputTableName || `${osmInputTableName}_${layer}``. A heatmap's or a
-// GeoTIFF's raster table is one of them: the loaders read it back by its name.
+// `outputTableName || `${osmInputTableName}_${layer}``. Each table is named by
+// its key (autkTableKey), in the workspace its source loads it into. A
+// heatmap's or a GeoTIFF's raster table is one of them: the loaders read it
+// back by its key.
 export function requestedLayerTables(dataSources: any[]): string[] {
     const names: string[] = [];
     for (const source of dataSources ?? []) {
         const { type, ...rest } = (source ?? {}) as any;
+        const workspace = autkWorkspaceOf(rest);
         if (type === 'osm') {
             // Per-layer tables only: autk-db drops the raw OSM import tables
             // once it has extracted the layers.
             const layers = rest?.autoLoadLayers?.layers;
             if (rest?.outputTableName && Array.isArray(layers)) {
-                for (const layer of layers) names.push(`${rest.outputTableName}_${layer}`);
+                for (const layer of layers) names.push(autkTableKey(workspace, `${rest.outputTableName}_${layer}`));
             }
         } else if (type === 'geojson' || type === 'csv' || type === 'json' || GRAMMAR_RASTER_SOURCES.includes(type)) {
-            if (rest?.outputTableName) names.push(rest.outputTableName);
+            if (rest?.outputTableName) names.push(autkTableKey(workspace, rest.outputTableName));
         }
         // `join` is skipped on purpose: its MODIFY_ROOT/CREATE_TABLE output
         // rewrites a table another source already created rather than adding a
@@ -103,18 +151,21 @@ export function requestedLayerTables(dataSources: any[]): string[] {
 }
 
 // Why a data section's heatmap cannot be built, or null: it bins a table one of
-// the section's own sources loads before it, since both loaders build it in
-// the database the section loads and nothing else, the node's input included.
-// Both loaders fail with these words before they load anything (the sandbox's
-// code throws them, as computed here).
+// the section's own sources loads before it, into the heatmap's own workspace,
+// since both loaders build it in the database the section loads and nothing
+// else, the node's input included. Both loaders fail with these words before
+// they load anything (the sandbox's code throws them, as computed here). A
+// table in another workspace than the default one is named by its key
+// (autkTableKey), as the load contract names it.
 export function heatmapTableProblem(dataSources: any[]): string | null {
     const sources: any[] = Array.isArray(dataSources) ? dataSources : [];
     for (let index = 0; index < sources.length; index++) {
         const source = sources[index];
         if (source?.type !== 'heatmap') continue;
-        const table = source.joinDataRef;
+        const workspace = autkWorkspaceOf(source);
+        const table = autkTableKey(workspace, source.joinDataRef);
         if (requestedLayerTables(sources.slice(0, index)).includes(table)) continue;
-        const heatmap = `The heatmap "${source.outputTableName}" bins "${table}"`;
+        const heatmap = `The heatmap "${autkTableKey(workspace, source.outputTableName)}" bins "${table}"`;
         return requestedLayerTables(sources.slice(index + 1)).includes(table)
             ? `${heatmap} before its data section loads that table: list the source of "${table}" first.`
             : `${heatmap}, a table its data section does not load: a data section loads only its own sources, not the node's input.`;
@@ -277,26 +328,88 @@ export function rasterEnvelope(collection: any, layerName?: string): any {
     return envelope;
 }
 
+// The parts of the sandbox's code that differ when a data section names a
+// workspace (autkUsesWorkspaces): what it takes from autk-grammar's data entry
+// (`enterWorkspace` and `tableKey`), each source loaded in its workspace, each
+// workspace's tables read back in turn, with the raster tables it made, and
+// each table handed on with its workspace. A data section that names none
+// compiles without them, as it always has.
+function workspaceCode(uses: boolean) {
+    if (!uses) {
+        return {
+            fromDataEntry: [] as string[],
+            load: `  const { type, ...rest } = source ?? {};
+  try {`,
+            readBack: `let __tables = [];
+try {
+  __tables = db.getLayersMetadata();
+} catch (e) {
+  // A partially-loaded DB can throw here rather than return [] - treat it as
+  // "no usable tables" and let the contract check report it.
+  __loadErrors.push('getLayersMetadata: ' + ((e && e.message) || String(e)));
+}
+const __have = new Set(__tables.map((t) => t.name).concat(__rasters.map((r) => r.layerName)));`,
+            each: 'for (const t of __tables) {',
+            handOn: '  __out.push({ name: t.name, type, geojson });',
+        };
+    }
+    return {
+        fromDataEntry: ['enterWorkspace', 'tableKey'],
+        load: `  const { type, workspace, ...rest } = source ?? {};
+  try {
+    // Into its workspace, as the grammar's data adapter loads a source:
+    // autk-db finds a table in the current workspace only.
+    await enterWorkspace(db, workspace);`,
+        readBack: `// The tables of each workspace the sources load into, in their order: autk-db
+// lists the tables of the current workspace only.
+const __workspaces = [...new Set(__sources.map((source) => (source ?? {}).workspace))];
+const __tables = [];
+for (const workspace of __workspaces) {
+  try {
+    await enterWorkspace(db, workspace);
+    for (const table of db.getLayersMetadata()) __tables.push({ table, workspace });
+  } catch (e) {
+    // A partially-loaded DB can throw here rather than return [] - treat it as
+    // "no usable tables" and let the contract check report it.
+    __loadErrors.push('getLayersMetadata: ' + ((e && e.message) || String(e)));
+  }
+}
+const __have = new Set(__tables.map((t) => tableKey(t.workspace, t.table.name))
+  .concat(__rasters.map((r) => tableKey(r.workspace, r.layerName))));`,
+        each: `for (const { table: t, workspace } of __tables) {
+  await enterWorkspace(db, workspace);`,
+        handOn: `  // A table in another workspace than the default one says which, so the node
+  // it is handed to loads it there.
+  __out.push(workspace === undefined ? { name: t.name, type, geojson } : { name: t.name, type, geojson, workspace });`,
+    };
+}
+
 // Compile a grammar `data` section into autk-db JavaScript to run in the backend
-// Node.js sandbox. The top-level imports are rewritten to `await import()` by
-// execute_js_code; the rest is the body of the async function the sandbox wraps
+// Node.js sandbox. The top-level `import` is rewritten to `await import()` by
+// execute_js_code, and so is autk-grammar's data entry's, the one line that
+// imports what the section needs of it: `createDataAdapter` for a source of
+// GRAMMAR_RASTER_SOURCES (a heatmap, a GeoTIFF), `enterWorkspace` and
+// `tableKey` for a section that names a workspace, and nothing for a section
+// with neither. The rest is the body of the async function the sandbox wraps
 // user code in. Mirrors loadSpecLayers exactly, with the spec inlined as a
-// literal and flattenToMultiPolygon inlined (the module-level helper above is not
-// in the sandbox's scope). A source of GRAMMAR_RASTER_SOURCES (a heatmap, a
-// GeoTIFF) is loaded by the grammar's own data adapter, from its `./data`
-// entry, which the code imports only for a document that has one. The
-// function returns Array<{name, type, geojson}>, each raster table after them
-// in its envelope (rasterEnvelope), which the sandbox persists to DuckDB.
+// literal and flattenToMultiPolygon inlined (the module-level helper above is
+// not in the sandbox's scope). Each source loads into its workspace, entered
+// with the grammar's own `enterWorkspace` (workspaceCode), and a heatmap or a
+// GeoTIFF through the grammar's own data adapter. The function returns
+// Array<{name, type, geojson}>, each raster table after them in its envelope
+// (rasterEnvelope), each table or raster in another workspace than the default
+// one with its `workspace` too, which the sandbox persists to DuckDB.
 export function compileDataSpecToAutkDbJs(dataSources: any[]): string {
-    const grammarSources = (dataSources ?? []).some(
-        (source: any) => GRAMMAR_RASTER_SOURCES.includes(source?.type),
-    );
-    const grammarImport = grammarSources
-        ? `import { createDataAdapter } from '@urban-toolkit/autk-grammar/data';\n`
+    const sources = (dataSources ?? []).map(inItsWorkspace);
+    const parts = workspaceCode(autkUsesWorkspaces({ data: sources }));
+    const grammarSources = sources.some((source: any) => GRAMMAR_RASTER_SOURCES.includes(source?.type));
+    const fromDataEntry = [...(grammarSources ? ['createDataAdapter'] : []), ...parts.fromDataEntry];
+    const dataEntryImport = fromDataEntry.length > 0
+        ? `\nimport { ${fromDataEntry.join(', ')} } from '@urban-toolkit/autk-grammar/data';`
         : '';
     const grammarAdapter = grammarSources ? `// A heatmap that bins a table this section does not load fails before anything
 // loads, with the words the host gives it (heatmapTableProblem).
-const __heatmapProblem = ${JSON.stringify(heatmapTableProblem(dataSources))};
+const __heatmapProblem = ${JSON.stringify(heatmapTableProblem(sources))};
 if (__heatmapProblem) throw new Error(__heatmapProblem);
 // The grammar's own data adapter, which loads a source of these types as the
 // grammar does. The raster table it makes is read back at once, in the
@@ -311,14 +424,18 @@ const __rasterEnvelope = ${rasterEnvelope.toString()};
       await __adapter.resolveSource(db, source);
       const __raster = await db.getRaster(rest.outputTableName);
       const __crs = db.getWorkspaceConfiguration().coordinateFormat;
-      __rasters.push(__rasterEnvelope(__withRasterGrid(__raster, __crs), rest.outputTableName));
+      const __envelope = __rasterEnvelope(__withRasterGrid(__raster, __crs), rest.outputTableName);
+      // A raster in another workspace than the default one names it, as a
+      // table does, so the node it is handed to loads it there.
+      if (source.workspace !== undefined) __envelope.workspace = source.workspace;
+      __rasters.push(__envelope);
     }
 ` : '';
-    return `import { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } from '@urban-toolkit/autk-db';
-${grammarImport}const __sources = ${JSON.stringify(dataSources)};
+    return `import { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } from '@urban-toolkit/autk-db';${dataEntryImport}
+const __sources = ${JSON.stringify(sources)};
 // Computed host-side by requestedLayerTables so the naming rules live in ONE
 // place rather than being restated inside this emitted string.
-const __expectedTables = ${JSON.stringify(requestedLayerTables(dataSources))};
+const __expectedTables = ${JSON.stringify(requestedLayerTables(sources))};
 const __loadErrors = [];
 // Mirrors joinFailureMessage() host-side; see the throw after the contract check.
 const __joinErrors = [];
@@ -341,8 +458,7 @@ const __loadableGeojson = async (source) => {
 const db = new AutkDb();
 await db.init();
 for (const source of __sources) {
-  const { type, ...rest } = source ?? {};
-  try {
+${parts.load}
     if (type === 'osm') await db.loadOsm(rest);
     else if (type === 'geojson') await db.loadGeojson(await __loadableGeojson(rest));
     else if (type === 'csv') await db.loadCsv(rest);
@@ -360,15 +476,7 @@ ${grammarLoad}    else console.log('[autk-grammar] unsupported data source type 
     console.log('[autk-grammar] data load failed for source type "' + type + '": ' + (e && e.message));
   }
 }
-let __tables = [];
-try {
-  __tables = db.getLayersMetadata();
-} catch (e) {
-  // A partially-loaded DB can throw here rather than return [] - treat it as
-  // "no usable tables" and let the contract check report it.
-  __loadErrors.push('getLayersMetadata: ' + ((e && e.message) || String(e)));
-}
-const __have = new Set(__tables.map((t) => t.name).concat(__rasters.map((r) => r.layerName)));
+${parts.readBack}
 const __missing = __expectedTables.filter((n) => !__have.has(n));
 if (__missing.length > 0) {
   const __detail = 'missing: ' + __missing.join(', ')
@@ -435,7 +543,7 @@ const __buildingHeight = (props) => {
   return top > base ? null : base + 6;
 };
 const __out = [];
-for (const t of __tables) {
+${parts.each}
   const geojson = await db.getLayer(t.name);
   let type = t.type ?? 'polygons';
   // Each OpenStreetMap feature's OSM id in osm_id, a building part's in that part.
@@ -477,7 +585,7 @@ for (const t of __tables) {
     geojson.features = __exploded;
   }
   if (geojson && typeof geojson === 'object') geojson.crs = __crsFor(geojson);
-  __out.push({ name: t.name, type, geojson });
+${parts.handOn}
 }
 for (const __raster of __rasters) __out.push(__raster);
 return __out;`;

@@ -1,14 +1,15 @@
 /**
  * A geotiff source loads on both of an Autark node's loaders as the grammar
- * loads it, through autk-grammar's own data adapter, which hands autk-db's
- * `loadGeoTiff` the source as the document writes it: the sandbox's loader
- * (compileDataSpecToAutkDbJs), which a run on the server posts, from the
- * grammar's `./data` entry, and the in-browser fallback (loadSpecLayers), from
- * its main entry. A file of the repository is named by its path, as a PBF
- * extract is, and fetched from the backend's `/file/` route; a URL is fetched
- * as written. Each loader reads the raster back with the grid its cells lie on
- * and hands it on after the layers, in Curio's raster envelope
- * (utils/raster/rasterWire), the same on both.
+ * loads it, through autk-grammar's own data adapter, from the grammar's
+ * `./data` entry, which hands autk-db's `loadGeoTiff` the source as the
+ * document writes it: the sandbox's loader (compileDataSpecToAutkDbJs), which a
+ * run on the server posts, and the in-browser fallback (loadSpecLayers). A file
+ * of the repository is named by its path, as a PBF extract is, and fetched from
+ * the backend's `/file/` route; a URL is fetched as written. Each loader reads
+ * the raster back with the grid its cells lie on and hands it on after the
+ * layers, in Curio's raster envelope (utils/raster/rasterWire), the same on
+ * both. A GeoTIFF in a workspace is loaded there and handed on with it, as a
+ * heatmap is (autkHeatmapLoads.test.ts).
  */
 import {
   SANDBOX_BACKEND_URL_TOKEN,
@@ -21,12 +22,17 @@ import { decodeRasterEnvelope } from "../../../utils/raster/rasterWire";
 jest.mock("../../../services/api", () => ({ fetchData: jest.fn() }));
 // Virtual, as the other suites mock Autark: keyed by the package's name.
 jest.mock("@urban-toolkit/autk-db", () => ({
+  DEFAULT_WORKSPACE_NAME: "autk",
   DEFAULT_WORKSPACE_COORDINATE_FORMAT: "EPSG:3395",
   AutkDb: jest.fn().mockImplementation(() => new mockAutkDb()),
 }), { virtual: true });
-jest.mock("@urban-toolkit/autk-grammar", () => ({
+// The grammar's data entry with its own `enterWorkspace` and `tableKey`, and a
+// stand-in data adapter. Plain, as every suite mocks this entry: one mock kind
+// for a module across the suites (mockKinds.test.ts).
+jest.mock("@urban-toolkit/autk-grammar/data", () => ({
+  ...jest.requireActual("@urban-toolkit/autk-grammar/data"),
   createDataAdapter: (...args: any[]) => mockCreateDataAdapter(...args),
-}), { virtual: true });
+}));
 
 // The raster's extent in EPSG:3395 metres, as autk-db's workspace holds it:
 // Niterói's summer surface temperature, read as 4 columns by 3 rows.
@@ -50,9 +56,10 @@ const EXTENT = {
   }],
 };
 
-/** What the grammar's adapter was asked to load, and what autk-db's loadGeoTiff was called with. */
+/** What the grammar's adapter was asked to load, what autk-db's loadGeoTiff was called with, and the workspace of each. */
 const mockResolved: Array<{ db: any; source: any }> = [];
 const mockLoaded: any[] = [];
+const mockLoadedIn: string[] = [];
 /** Whether loadGeoTiff fails, as autk-db's does for a file the server does not have. */
 let mockFileMissing = false;
 
@@ -70,25 +77,39 @@ const mockCreateDataAdapter = jest.fn((..._args: any[]) => ({
 }));
 
 class mockAutkDb {
+  /** The workspace the database works in; autk-db finds a table in it alone. */
+  workspace = "autk";
+  /** Each workspace's tables, and the rasters, by workspace and table. */
+  layers = new Map<string, string[]>();
   rasters = new Set<string>();
   init() { return Promise.resolve(); }
-  loadGeojson() { return Promise.resolve(); }
-  getLayersMetadata() { return [{ name: "extent", type: "polygons", source: "geojson", columns: [] }]; }
+  getCurrentWorkspace() { return this.workspace; }
+  setWorkspace(name: string) { this.workspace = name; return Promise.resolve(); }
+  loadGeojson(params: any) {
+    this.layers.set(this.workspace, [...(this.layers.get(this.workspace) ?? []), params.outputTableName]);
+    return Promise.resolve();
+  }
+  getLayersMetadata() {
+    return (this.layers.get(this.workspace) ?? []).map((name) => ({ name, type: "polygons", source: "geojson", columns: [] }));
+  }
   getLayer() { return Promise.resolve(JSON.parse(JSON.stringify(EXTENT))); }
   getWorkspaceConfiguration() { return { coordinateFormat: "EPSG:3395", precisionGrid: 0.01 }; }
-  getCurrentWorkspace() { return "autk"; }
   loadGeoTiff(params: any) {
     if (mockFileMissing) {
       return Promise.reject(new Error(`Failed to fetch GeoTIFF from ${params.geotiffFileUrl}: HTTP 404`));
     }
     mockLoaded.push(params);
-    this.rasters.add(params.outputTableName);
+    mockLoadedIn.push(this.workspace);
+    this.rasters.add(`${this.workspace}.${params.outputTableName}`);
     return Promise.resolve({ source: "geotiff", type: "raster", name: params.outputTableName });
   }
-  // As autk-db 4.1.1's getRaster gives a GeoTIFF table: its bands labelled by
-  // their ids, at the extent its corners take in the workspace's CRS.
+  // As autk-db 4.1.1's getRaster gives a GeoTIFF table of the current
+  // workspace: its bands labelled by their ids, at the extent its corners take
+  // in the workspace's CRS.
   getRaster(name: string) {
-    if (!this.rasters.has(name)) return Promise.reject(new Error(`Table ${name} is not a compact raster table.`));
+    if (!this.rasters.has(`${this.workspace}.${name}`)) {
+      return Promise.reject(new Error(`Table ${name} is not a compact raster table.`));
+    }
     return Promise.resolve({
       type: "FeatureCollection",
       bbox: [...BBOX],
@@ -135,6 +156,9 @@ const GRID = { crs: "EPSG:3395", width: 4, height: 3, originX: -4802000, originY
 const IMPORT_AUTK_DB = "import { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } from '@urban-toolkit/autk-db';";
 const IMPORT_GRAMMAR_DATA = "import { createDataAdapter } from '@urban-toolkit/autk-grammar/data';";
 
+/** The grammar data entry's own `enterWorkspace` and `tableKey`, which the sandbox's code imports. */
+const { enterWorkspace, tableKey } = jest.requireActual("@urban-toolkit/autk-grammar/data");
+
 /** The document's sources with their file URLs resolved, as the node resolves them for the sandbox. */
 function forTheSandbox(sources: any[]): any[] {
   return resolveDataSourceUrls({ data: sources }, SANDBOX_BACKEND_URL_TOKEN).data;
@@ -151,9 +175,9 @@ async function sandboxLoad(sources: any[]): Promise<any[]> {
   // The engine's own AsyncFunction: babel compiles an `async function` written
   // in this file to a generator, whose constructor is plain Function.
   const AsyncFunction = new Function("return (async () => {}).constructor")();
-  return new AsyncFunction("AutkDb", "DEFAULT_WORKSPACE_COORDINATE_FORMAT", "createDataAdapter", body)(
-    mockAutkDb, "EPSG:3395", mockCreateDataAdapter,
-  );
+  return new AsyncFunction(
+    "AutkDb", "DEFAULT_WORKSPACE_COORDINATE_FORMAT", "createDataAdapter", "enterWorkspace", "tableKey", body,
+  )(mockAutkDb, "EPSG:3395", mockCreateDataAdapter, enterWorkspace, tableKey);
 }
 
 /** A raster envelope's collection, or the reason it cannot be read. */
@@ -166,6 +190,7 @@ function collectionIn(envelope: any): any {
 beforeEach(() => {
   mockResolved.length = 0;
   mockLoaded.length = 0;
+  mockLoadedIn.length = 0;
   mockFileMissing = false;
   mockCreateDataAdapter.mockClear();
 });
@@ -221,7 +246,7 @@ describe("the sandbox's loader", () => {
 });
 
 describe("the in-browser loader", () => {
-  test("loads a file of the repository through the main entry's data adapter, fetched from the backend", async () => {
+  test("loads a file of the repository through the data entry's data adapter, fetched from the backend", async () => {
     await loadSpecLayers({ data: forTheBrowser(SOURCES) });
     expect(mockCreateDataAdapter).toHaveBeenCalledTimes(1);
     expect(mockResolved.map(({ source }) => source)).toEqual([{ ...GEOTIFF, geotiffFileUrl: `${BACKEND}/file/${FILE}` }]);
@@ -266,4 +291,35 @@ test("both loaders hand the GeoTIFF on in the same envelope", async () => {
   const [, fromSandbox] = await sandboxLoad(SOURCES);
   const fromBrowser = (await toPoolOutput(await loadSpecLayers({ data: forTheBrowser(SOURCES) }), undefined, "lst-node")).data[1];
   expect(fromSandbox).toEqual(fromBrowser);
+});
+
+// A GeoTIFF in a workspace (autk-grammar 5.0.0's `workspace`) is loaded there
+// and handed on with it, as a table is and as a heatmap is. Its data section
+// imports all it needs of the grammar's data entry in one line.
+describe("a GeoTIFF in a workspace", () => {
+  const IN_EAST = [{ ...SOURCES[0], workspace: "east" }, { ...GEOTIFF, workspace: "east" }];
+
+  test("the sandbox's code imports the data adapter and the workspace functions in one line", () => {
+    expect(compileDataSpecToAutkDbJs(forTheSandbox(IN_EAST)).match(/^import [^\n]*$/gm)).toEqual([
+      IMPORT_AUTK_DB,
+      "import { createDataAdapter, enterWorkspace, tableKey } from '@urban-toolkit/autk-grammar/data';",
+    ]);
+  });
+
+  test("both loaders load it in its workspace and hand it on with it, after its layer", async () => {
+    const fromSandbox = await sandboxLoad(IN_EAST);
+    expect(fromSandbox.map((item: any) => [item.name ?? item.layerName, item.workspace])).toEqual([
+      ["extent", "east"], ["lst", "east"],
+    ]);
+    const tables: any[] = await loadSpecLayers({ data: forTheBrowser(IN_EAST) });
+    expect(tables.map((table) => [table.name, table.type, table.workspace])).toEqual([
+      ["extent", "polygons", "east"], ["lst", "raster", "east"],
+    ]);
+    expect(mockLoadedIn).toEqual(["east", "east"]);
+
+    const fromBrowser = (await toPoolOutput(tables, undefined, "lst-node")).data[1];
+    expect(fromBrowser.workspace).toBe("east");
+    expect(fromSandbox[1]).toEqual(fromBrowser);
+    expect(collectionIn(fromBrowser).grid).toEqual(GRID);
+  });
 });

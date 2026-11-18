@@ -158,24 +158,24 @@
       "says": null
     },
     {
-      "name": "a source's workspace is not run yet",
+      "name": "a source's workspace is run",
       "spec": { "data": [{ "type": "csv", "csvFileUrl": "a.csv", "outputTableName": "a", "workspace": "east" }] },
-      "says": "This spec uses \"workspace\" at data[0], which Curio does not run yet."
+      "says": null
     },
     {
-      "name": "a pass's workspace is not run yet",
+      "name": "a pass's workspace is run",
       "spec": { "compute": [{ "dataRef": "input_0", "attributes": {}, "wgslFunction": "return 1.0;", "outputColumnName": "x", "workspace": "east" }] },
-      "says": "This spec uses \"workspace\" at compute[0], which Curio does not run yet."
+      "says": null
     },
     {
-      "name": "a map's workspace is not run yet",
+      "name": "a map's workspace is run",
       "spec": { "map": { "workspace": "east", "layerRefs": [{ "dataRef": "input_0" }] } },
-      "says": "This spec uses \"workspace\" at map, which Curio does not run yet."
+      "says": null
     },
     {
-      "name": "a plot's workspace is not run yet",
+      "name": "a plot's workspace is run",
       "spec": { "plot": { "workspace": "east", "dataRef": "input_0", "mark": "bar", "axis": ["a"] } },
-      "says": "This spec uses \"workspace\" at plot, which Curio does not run yet."
+      "says": null
     },
     {
       "name": "a key written null is not written",

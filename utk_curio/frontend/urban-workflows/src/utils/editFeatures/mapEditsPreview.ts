@@ -135,9 +135,15 @@ export function editedOutput(read: GrammarInput, feed: Pick<EditFeed, "settings"
       data: fc,
       ...(layerName ? { layerName } : {}),
       ...(source.layerType ? { layerType: source.layerType } : {}),
+      // A layer in another workspace than the default one stays in it.
+      ...(source.workspace ? { workspace: source.workspace } : {}),
     };
   });
   const crs = geojsonCrs(settings.crs) ?? (sources.find((source) => (source.geojsonObject as any)?.crs)?.geojsonObject as any)?.crs;
+  // A new layer is made in the workspace every layer of the input shares, so
+  // the map that reads that workspace draws it; else in the default one.
+  const workspaces = new Set(sources.map((source) => source.workspace));
+  const shared = workspaces.size === 1 ? [...workspaces][0] : undefined;
   for (const def of newLayers) {
     const mine = edits.filter((edit) => targetOf(edit, settings, only) === def.name);
     // In the CRS the run gives a new layer, which its shapes are checked in.
@@ -147,6 +153,7 @@ export function editedOutput(read: GrammarInput, feed: Pick<EditFeed, "settings"
       data: fc,
       layerName: def.name,
       layerType: NEW_LAYER_TYPES[def.geometry],
+      ...(shared ? { workspace: shared } : {}),
     });
   }
   return envelopes.length === 1 ? envelopes[0] : { dataType: "outputs", data: envelopes };

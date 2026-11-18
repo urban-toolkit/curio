@@ -40,10 +40,15 @@ jest.mock(
   () => ({
     ...require('../../_support/autkNodeMocks').autkGrammarModule,
     runCompute: (...args: any[]) => mockRunCompute(...args),
-    createDataAdapter: () => mockCreateDataAdapter(),
   }),
   { virtual: true },
 );
+// The grammar's data entry, which the browser's loader takes the data adapter
+// from. Plain, as every suite mocks this entry (mockKinds.test.ts).
+jest.mock('@urban-toolkit/autk-grammar/data', () => ({
+  ...jest.requireActual('@urban-toolkit/autk-grammar/data'),
+  createDataAdapter: () => mockCreateDataAdapter(),
+}));
 jest.mock('@urban-toolkit/autk-compute', () => ({ ComputeGpgpu: jest.fn() }), { virtual: true });
 // The tables a data section loads, as the browser's own loader reads them
 // back: there is no sandbox here. A raster is read back with getRaster.
@@ -74,6 +79,7 @@ jest.mock(
         return mockLoaded.rasters.get(name);
       }
     },
+    DEFAULT_WORKSPACE_NAME: 'autk',
     DEFAULT_WORKSPACE_COORDINATE_FORMAT: 'EPSG:3395',
   }),
   { virtual: true },
