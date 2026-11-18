@@ -266,6 +266,15 @@ def autk_families(schema: dict) -> tuple[str, ...]:
     return tuple(key for key in root.get("properties", {}) if not key.startswith("$"))
 
 
+def autk_step_families(schema: dict) -> tuple[str, ...]:
+    """The families of *schema* that make a step: those a node loads, computes
+    or draws with (``execution.autk_spec_kind.FAMILY_KIND``). A layout and
+    links make none of their own, so a document must name one of these."""
+    from utk_curio.backend.app.execution.autk_spec_kind import FAMILY_KIND
+
+    return tuple(family for family in autk_families(schema) if FAMILY_KIND.get(family))
+
+
 def _resolved(schema: dict, node: object) -> object:
     """*node*, or the definition its ``$ref`` names."""
     return _definition(schema, node["$ref"]) if isinstance(node, dict) and "$ref" in node else node
@@ -448,7 +457,7 @@ def render_autk_shape(schema: dict) -> str:
     example_layer = "{" + ", ".join(f'"{field}": "{first}"' for field in layer_required) + "}"
     return agent_text.message(
         "document.autk-shape", layers=layers, example_layer=example_layer, first=first,
-        families=_either(autk_families(schema)), plot_fields=_every(_plot_required(schema)),
+        families=_either(autk_step_families(schema)), plot_fields=_every(_plot_required(schema)),
         compute_fields=_every(common), compute_one_of=_either(either),
         source_type=source_types[0] if source_types else "",
     )
@@ -492,7 +501,7 @@ def render_autk_region(schema: dict, label: str) -> str:
     lines = [
         _autk_words(
             "intro", label=label, template=AUTK_TEMPLATE, schema_id=str(schema.get("$id")),
-            families=_either(autk_families(schema)),
+            families=_either(autk_step_families(schema)),
         ),
         _autk_words("inputs", first=input_table_name(0), second=input_table_name(1), label=label),
         "",

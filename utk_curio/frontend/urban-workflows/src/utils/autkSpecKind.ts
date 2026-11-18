@@ -8,16 +8,18 @@ export type AutkSpecKind = "render" | "compute" | "data" | "unknown";
  * The step each top-level family describes. Keyed by the families
  * contracts/autkGrammar.json lists from the vendored schema, which a test
  * holds these keys to, so a family the grammar adds fails until it is routed
- * here.
+ * here. A family of null describes none of its own: a layout arranges views
+ * and links join them, so a document with one is the step its other families
+ * describe.
  */
 export const FAMILY_KIND = {
   map: "render",
   plot: "render",
-  layout: "render",
-  links: "render",
+  layout: null,
+  links: null,
   compute: "compute",
   data: "data",
-} as const satisfies Record<string, Exclude<AutkSpecKind, "unknown">>;
+} as const satisfies Record<string, Exclude<AutkSpecKind, "unknown"> | null>;
 
 type AutkFamily = keyof typeof FAMILY_KIND;
 

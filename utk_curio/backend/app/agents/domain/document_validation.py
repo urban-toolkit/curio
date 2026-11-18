@@ -543,7 +543,7 @@ def _draws_nothing(payload: dict, schema: dict) -> str | None:
     """Why a schema-valid document would still run nothing, or None."""
     from utk_curio.backend.app.agents.domain import contracts
 
-    if not any(payload.get(f) not in (None, [], {}) for f in contracts.autk_families(schema)):
+    if not any(payload.get(f) not in (None, [], {}) for f in contracts.autk_step_families(schema)):
         return agent_text.message("document.autk-runs-nothing", shape=contracts.render_autk_shape(schema))
     layers, _ = contracts.map_layers(schema)
     maps = payload.get("map")

@@ -53,7 +53,7 @@ import {
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
 import { frameMaps, keepMapViews, mapViews, type MapView } from './autkMapView';
-import { grammarMaps, trackMaps } from './autkMapDrawing';
+import { destroyFailedGrammar, grammarMaps, trackMaps } from './autkMapDrawing';
 import { mapSession, onMapSession, registerEditMap } from '../../utils/editFeatures/mapEditBus';
 import {
     drawnFeatureAt, featurePositions, layerIdFor, mapLayerOf, mapStateOf, pickingTableOf, restoreMapLayers, showForEdits,
@@ -973,8 +973,10 @@ export const useAutkGrammarBehavior = (
                     try {
                         await g.run(spec);
                     } catch (err) {
-                        // A failed attempt ends its own database (autkDbClose).
+                        // A failed attempt ends its own database (autkDbClose),
+                        // then the maps it made, which no node keeps.
                         closeGrammarDb(g);
+                        destroyFailedGrammar(g);
                         throw err;
                     }
                     return g;
@@ -1504,9 +1506,11 @@ export const useAutkGrammarBehavior = (
         });
         for (const plotSpec of plots) {
             const sel = positions(plotSpec.dataRef, 'load');
+            // The grammar knows a plot by its id, else by its table (plotKey).
+            const plot = typeof plotSpec.id === 'string' && plotSpec.id ? plotSpec.id : plotSpec.dataRef;
             sel.length === 0
-                ? grammar.clearHighlightOnPlot?.(plotSpec.dataRef)
-                : grammar.setPlotSelection?.(plotSpec.dataRef, sel);
+                ? grammar.clearHighlightOnPlot?.(plot)
+                : grammar.setPlotSelection?.(plot, sel);
         }
     };
     const syncHighlightsNow = () => {
