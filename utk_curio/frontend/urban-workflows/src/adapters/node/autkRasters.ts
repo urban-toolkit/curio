@@ -25,7 +25,7 @@
  * its own size, with `nearest` resampling and its CRS (utils/raster/rasterLoad).
  */
 import { fetchRaster } from '../../services/api';
-import type { AutkRasterInput } from '../../utils/autkInput';
+import { writtenTables, type AutkRasterInput } from '../../utils/autkInput';
 import { writeGeoTiff } from '../../utils/raster/geotiffWriter';
 import {
     RASTER_MAX_CELLS,
@@ -277,13 +277,22 @@ function mapsOf(spec: any): any[] {
     return spec?.map ? (Array.isArray(spec.map) ? spec.map : [spec.map]) : [];
 }
 
-/** The tables of *spec*'s data that are rasters: Curio's own and the grammar's heatmaps. */
+/**
+ * The tables of *spec* that are rasters: those of its data that are, Curio's
+ * own and the grammar's heatmaps, and each a compute pass writes as one, by
+ * its `layerType` or else by the type of the table it is computed from.
+ */
 export function rasterTables(spec: any): Set<string> {
     const sources: any[] = Array.isArray(spec?.data) ? spec.data : [];
-    return new Set(sources
+    const rasters = new Set(sources
         .filter((source) => isCurioRasterSource(source) || source?.type === 'heatmap')
         .map((source) => source.outputTableName)
         .filter((name): name is string => typeof name === 'string'));
+    for (const { name, from, layerType } of writtenTables(spec)) {
+        if (layerType ? layerType === 'raster' : rasters.has(from)) rasters.add(name);
+        else rasters.delete(name);
+    }
+    return rasters;
 }
 
 /**
