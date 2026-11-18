@@ -511,7 +511,9 @@ the release on npm, or with the recorded tarball. A release that adds
 or drops a top-level family needs it in `families` of
 `src/contracts/autkGrammar.json` too: `test_shared_constants.py` fails until
 the file lists the schema's families, and Jest until `FAMILY_KIND` in
-`utils/autkSpecKind.ts` routes each one.
+`utils/autkSpecKind.ts` routes each one, as `autk_spec_kind.py` does: to the
+step it makes, or to none (`null`) for a family that makes no step of its own,
+such as `layout` and `links`.
 
 ## Organizing Contributions
 

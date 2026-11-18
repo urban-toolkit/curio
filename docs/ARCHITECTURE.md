@@ -2019,7 +2019,7 @@ Some vocabularies and tables are read by both the frontend and the backend. Each
 - **Code over them.** `inputTableName`, `autkOneViewProblem` and `autkKeyProblem` in `contracts/autkGrammar.ts` are the twins of `contracts.input_table_name`, `autk_one_view_problem` and `autk_key_problem`; `autkGrammar.cases.json` beside them holds the cases Jest and pytest both run.
 - **Tests.** `test_shared_constants.py` holds every backend constant to its file, the Autark families to the vendored schema's, and finds no Python module spelling a shared sentence or palette color of its own. `src/tests/contracts/sharedConstants.test.ts` does the same for the frontend.
 
-To change a shared value, edit its file. A new Autark family goes into `autkGrammar.json`: `test_shared_constants.py` fails until it matches the vendored schema, and Jest until `FAMILY_KIND` routes it.
+To change a shared value, edit its file. A new Autark family goes into `autkGrammar.json`: `test_shared_constants.py` fails until it matches the vendored schema, and Jest until `FAMILY_KIND` routes it, on both sides (`utils/autkSpecKind.ts`, `execution/autk_spec_kind.py`): to the step it makes, or to none (`null`, `None`) for a family that makes no step of its own, as `layout` and `links` make none.
 
 ---
 
