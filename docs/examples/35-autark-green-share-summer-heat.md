@@ -143,5 +143,4 @@ a second layer fits a straight line through them with Vega-Lite's `regression` t
 The map shows Niterói under its summer of 2024, cell by cell, with its parks and roads over it; the legend
 reads the band's range in °C. The scatter puts each of the 142 cells whose center is on land at its green
 share and its mean summer temperature from 2020 to 2024. The red line falls from left to right: it is
-2.35 °C cooler at an all-green cell than at a bare one, and the correlation is -0.38: the greener cells
-were the cooler ones in those summers.
+2.35 °C cooler at an all-green cell than at a bare one, with a correlation of -0.38 between the two.

@@ -179,5 +179,4 @@ within about 500 m of the cell's center, so a large reserve near a cell counts w
 legend reaches about 19 million m² (19 km²), and the scatter, whose cells of about 1 km average the
 heatmap's, about 16 km². The scatter puts each of the 142 cells whose center is on land at its park area
 within reach and its mean summer temperature from 2020 to 2024. The red line falls from left to right,
-0.157 °C for each km² of park within reach, and the correlation is -0.35: the cells with more park area
-within reach were the cooler ones in those summers.
+0.157 °C for each km² of park within reach, with a correlation of -0.35 between the two.
