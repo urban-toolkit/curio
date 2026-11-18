@@ -8,11 +8,12 @@
  * bar where they hide.
  *
  * The rule is the Vega-Lite node's (`vegaSpecSizing.ts`): a plot fills its
- * pane where the document did not say otherwise, a size the document set is
- * kept (the pane scrolls), and a spec with several plots is left alone. One
- * difference: a Vega view lays itself out again when its node is resized, but
- * autk-plot cannot change a plot's size once it is drawn, so an Autark plot is
- * fitted to its pane each time its node runs.
+ * pane where the document did not say otherwise, and a size the document set
+ * is kept (the pane scrolls). A document with several views gives each plot a
+ * pane of its own, which it is fitted to. One difference: a Vega view lays
+ * itself out again when its node is resized, but autk-plot cannot change a
+ * plot's size once it is drawn, so an Autark plot is fitted to its pane each
+ * time its node runs.
  */
 
 /**

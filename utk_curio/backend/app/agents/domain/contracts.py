@@ -161,27 +161,94 @@ def input_table_name(position: int) -> str:
     return f"{INPUT_TABLE_PREFIX}{position}"
 
 
-#: What a document with more than one view is told: a map and a plot, or a list
-#: of more than one map or more than one plot. An Autark node draws one view, a
-#: map on the one canvas or a plot in the one pane it hands autk-grammar, which
-#: puts every map of a list on that canvas and draws a plot only into a pane.
-#: The node's error (``autkOneViewProblem`` in ``contracts/autkGrammar.ts``),
-#: the agents' document check (``document_validation``) and the preamble say
-#: these words.
-AUTK_ONE_VIEW: str = _AUTK_GRAMMAR["oneView"]
+#: What a document whose views autk-grammar refuses is told, in the grammar's
+#: own words, by rule: an empty id, an id two views share, two plots known by
+#: one name, and a link that names no plot, no map or no layer of its map. The
+#: node's error (``autkViewProblem`` in ``contracts/autkGrammar.ts``) and the
+#: agents' document check (``document_validation``) say these words.
+AUTK_VIEW_RULES: dict[str, str] = dict(_AUTK_GRAMMAR["viewRules"])
 
 
-def autk_one_view_problem(document: object) -> str | None:
-    """``AUTK_ONE_VIEW`` when *document* has a map and a plot, or lists more
-    than one map or more than one plot, else None. A list of one map or one
-    plot is that view. ``autkOneViewProblem`` is the node's twin, held to this
-    function by the cases in ``autkGrammar.cases.json``."""
+def _list_of(value: object) -> list:
+    """*value* as a list: none (or null) is an empty list, and one value a list of one."""
+    if value is None:
+        return []
+    return value if isinstance(value, list) else [value]
+
+
+def _field_of(view: object, key: str) -> str | None:
+    """A view's own string field *key*, or None when it writes none."""
+    value = view.get(key) if isinstance(view, dict) else None
+    return value if isinstance(value, str) else None
+
+
+def _plot_name(plot: object) -> str | None:
+    """The name autk-grammar knows a plot by: its ``id``, else its ``dataRef``."""
+    return _field_of(plot, "id") if _field_of(plot, "id") is not None else _field_of(plot, "dataRef")
+
+
+def _layer_id(layer: object) -> str | None:
+    """A map layer's id in its map: its ``title``, else its ``dataRef``."""
+    return _field_of(layer, "title") if _field_of(layer, "title") is not None else _field_of(layer, "dataRef")
+
+
+def _shown(value: str | None) -> str:
+    """A field as the grammar's sentence shows it: one a link or a plot leaves
+    out reads ``undefined``, as in the node's words."""
+    return "undefined" if value is None else value
+
+
+def autk_view_problem(document: object) -> str | None:
+    """What *document* is told when autk-grammar refuses its views, in the
+    grammar's words (``AUTK_VIEW_RULES``), else None. An id names one view:
+    no id is empty, and no two maps or plots share one. A plot without an id
+    is known by its ``dataRef``, so no two plots are known by one name. Each
+    link names a plot (its ``id``, else its ``dataRef``), a map by its ``id``
+    and a layer of that map: its ``layer``, a layer's ``title``, else its
+    ``dataRef``, or without it a layer that draws the plot's table.
+    ``autkViewProblem`` is the node's twin, held to this function by the
+    cases in ``autkGrammar.cases.json``."""
     if not isinstance(document, dict):
         return None
-    views = [document.get("map"), document.get("plot")]
-    both = all(view is not None for view in views)
-    several = any(isinstance(view, list) and len(view) > 1 for view in views)
-    return AUTK_ONE_VIEW if both or several else None
+    maps, plots = _list_of(document.get("map")), _list_of(document.get("plot"))
+    ids: set[str] = set()
+    for view in [*maps, *plots]:
+        view_id = _field_of(view, "id")
+        if view_id is None:
+            continue
+        if view_id == "":
+            return AUTK_VIEW_RULES["emptyId"]
+        if view_id in ids:
+            return _fill(AUTK_VIEW_RULES["sharedId"], id=view_id)
+        ids.add(view_id)
+    named: dict[str, bool] = {}
+    for plot in plots:
+        name = _plot_name(plot)
+        if name is None:
+            continue
+        has_id = _field_of(plot, "id") is not None
+        if name in named:
+            if not named[name] and not has_id:
+                return _fill(AUTK_VIEW_RULES["plotsWithoutIds"], table=name)
+            return _fill(AUTK_VIEW_RULES["plotIdIsDataRef"], id=name)
+        named[name] = has_id
+    links = document.get("links")
+    for link in links if isinstance(links, list) else []:
+        source, target = _shown(_field_of(link, "source")), _shown(_field_of(link, "target"))
+        plot = next((p for p in plots if _plot_name(p) == source), None)
+        if plot is None:
+            return _fill(AUTK_VIEW_RULES["linkSource"], source=source)
+        target_map = next((m for m in maps if _field_of(m, "id") == target), None)
+        if target_map is None:
+            return _fill(AUTK_VIEW_RULES["linkTarget"], target=target)
+        layer, table = _field_of(link, "layer"), _field_of(plot, "dataRef")
+        layers = _list_of(target_map.get("layerRefs"))
+        if layer is not None:
+            if not any(_layer_id(each) == layer for each in layers):
+                return _fill(AUTK_VIEW_RULES["linkLayer"], source=source, target=target, layer=layer)
+        elif not any(_field_of(each, "dataRef") == table for each in layers):
+            return _fill(AUTK_VIEW_RULES["linkTable"], source=source, target=target, table=_shown(table))
+    return None
 
 
 #: The keys autk-grammar 5 renamed, each where it is written and its new name.
@@ -636,19 +703,46 @@ def render_autk_region(schema: dict, label: str) -> str:
     if render:
         lines.append("  - " + _render_words(render))
     lines += [
-        # The schema's own descriptions of "map" and "plot" allow several, and a
-        # document may name both; a node draws one view.
+        "- " + _autk_words("views"),
         ("- " + _autk_words(
-            "map", one_view=AUTK_ONE_VIEW, map_fields=_every(_definition(schema, "MapSpec").get("required", [])),
+            "map", description=props.get("map", {}).get("description", ""),
+            map_fields=_every(_definition(schema, "MapSpec").get("required", [])),
             layers=layers, layer_fields=_every(layer_required), interpolators=_either(interpolators),
             layer_title=layer_title,
         )).rstrip(),
     ]
     lines += _camera_lines(schema)
-    lines.append("- " + _autk_words("plot", one_view=AUTK_ONE_VIEW, plot_fields=_every(_plot_required(schema))))
+    lines.append("- " + _autk_words(
+        "plot", description=props.get("plot", {}).get("description", ""), plot_fields=_every(_plot_required(schema)),
+    ))
     for values, definition in _variants(schema, "PlotSpec", "mark"):
         lines.append(f"  - {_either(values)}: {definition.get('description', '')}")
+    lines += _view_lines(schema)
     return "\n".join(lines)
+
+
+def _view_lines(schema: dict) -> list[str]:
+    """The lines of a document's ``layout`` and ``links`` in the ``autark``
+    skill, which arrange and link the views a node draws: what the schema says
+    of each, its first paragraph less its note on which adapters read it, then
+    each of its fields. None for a key *schema*, the schema of what a node
+    runs, does not hold."""
+    root = _definition(schema, schema.get("$ref", "UrbanSpec"))
+    lines: list[str] = []
+    for key in ("layout", "links"):
+        prop = root.get("properties", {}).get(key)
+        if not isinstance(prop, dict):
+            continue
+        spec = _resolved(schema, prop.get("items") if prop.get("type") == "array" else prop)
+        if not isinstance(spec, dict):
+            continue
+        said = spec.get("description", "").split("\n\n", 1)[0].split(" Read by the ", 1)[0]
+        lines.append(f'- "{key}": {said}')
+        lines += [
+            f'  - "{name}": {field.get("description", "")}'
+            for name, field in spec.get("properties", {}).items()
+        ]
+    return lines
 
 
 def _camera_lines(schema: dict) -> list[str]:

@@ -1,8 +1,8 @@
 /**
- * What a grammar node calls its inputs, the one view an Autark node draws, and
- * the keys of a document it does not run, over the values in autkGrammar.json,
- * which the backend reads too (contracts.input_table_name,
- * autk_one_view_problem, autk_key_problem and autk_raster_pass_problem).
+ * What a grammar node calls its inputs, the views of an Autark document it
+ * refuses, and the keys of a document it does not run, over the values in
+ * autkGrammar.json, which the backend reads too (contracts.input_table_name,
+ * autk_view_problem, autk_key_problem and autk_raster_pass_problem).
  * autkGrammar.cases.json holds the cases both sides run.
  */
 import autkGrammar from "./autkGrammar.json";
@@ -12,18 +12,80 @@ export function inputTableName(position: number): string {
   return `${autkGrammar.inputTablePrefix}${position}`;
 }
 
+/** *value* as a list: none (or null) is an empty list, and one value a list of one. */
+function listOf(value: unknown): unknown[] {
+  if (value == null) return [];
+  return Array.isArray(value) ? value : [value];
+}
+
+/** A view's own string field *key*, or undefined when it writes none. */
+function fieldOf(view: unknown, key: string): string | undefined {
+  if (view === null || typeof view !== "object" || Array.isArray(view)) return undefined;
+  const value = (view as Record<string, unknown>)[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+/** The name autk-grammar knows a plot by: its `id`, else its `dataRef`. */
+const plotNameOf = (plot: unknown): string | undefined => fieldOf(plot, "id") ?? fieldOf(plot, "dataRef");
+
+/** A map layer's id in its map: its `title`, else its `dataRef`, as autk-grammar names it. */
+const layerIdOf = (layer: unknown): string | undefined => fieldOf(layer, "title") ?? fieldOf(layer, "dataRef");
+
 /**
- * What a document with more than one view is told, when *spec* has a map and a
- * plot, or lists more than one map or more than one plot; else null. A list of
- * one map or one plot is that view.
+ * What a document whose views autk-grammar refuses is told before anything
+ * runs, in the grammar's own words (autkGrammar.json's `viewRules`), else
+ * null. An id names one view: no id is empty, and no two maps or plots share
+ * one. A plot without an id is known by its `dataRef`, so no two plots are
+ * known by one name. Each link names a plot (its `id`, else its `dataRef`), a
+ * map by its `id`, and a layer of that map: its `layer`, a layer's `title`,
+ * else its `dataRef`, or without it a layer that draws the plot's table. The
+ * grammar checks its ids as its run starts and its links once it drew, so a
+ * node checks both before it loads anything.
  */
-export function autkOneViewProblem(spec: unknown): string | null {
+export function autkViewProblem(spec: unknown): string | null {
   if (spec === null || typeof spec !== "object" || Array.isArray(spec)) return null;
-  const { map, plot } = spec as { map?: unknown; plot?: unknown };
-  const views = [map, plot];
-  const both = views.every((view) => view != null);
-  const several = views.some((view) => Array.isArray(view) && view.length > 1);
-  return both || several ? autkGrammar.oneView : null;
+  const document = spec as Record<string, unknown>;
+  const rules = autkGrammar.viewRules;
+  const maps = listOf(document.map);
+  const plots = listOf(document.plot);
+  const ids = new Set<string>();
+  for (const view of [...maps, ...plots]) {
+    const id = fieldOf(view, "id");
+    if (id === undefined) continue;
+    if (id === "") return rules.emptyId;
+    if (ids.has(id)) return fill(rules.sharedId, { id });
+    ids.add(id);
+  }
+  const named = new Map<string, boolean>();
+  for (const plot of plots) {
+    const name = plotNameOf(plot);
+    if (name === undefined) continue;
+    const hasId = fieldOf(plot, "id") !== undefined;
+    if (named.has(name)) {
+      return !named.get(name) && !hasId
+        ? fill(rules.plotsWithoutIds, { table: name })
+        : fill(rules.plotIdIsDataRef, { id: name });
+    }
+    named.set(name, hasId);
+  }
+  for (const link of Array.isArray(document.links) ? document.links : []) {
+    const source = String(fieldOf(link, "source"));
+    const target = String(fieldOf(link, "target"));
+    const plot = plots.find((p) => plotNameOf(p) === source);
+    if (plot === undefined) return fill(rules.linkSource, { source });
+    const map = maps.find((m) => fieldOf(m, "id") === target);
+    if (map === undefined) return fill(rules.linkTarget, { target });
+    const layer = fieldOf(link, "layer");
+    const table = fieldOf(plot, "dataRef");
+    const layers = listOf((map as Record<string, unknown>).layerRefs);
+    const drawn = layers.some((l) => (layer !== undefined ? layerIdOf(l) === layer : fieldOf(l, "dataRef") === table));
+    if (!drawn) {
+      return layer !== undefined
+        ? fill(rules.linkLayer, { source, target, layer })
+        : fill(rules.linkTable, { source, target, table: String(table) });
+    }
+  }
+  return null;
 }
 
 /**

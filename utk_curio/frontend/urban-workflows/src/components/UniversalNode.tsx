@@ -631,6 +631,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
             readOnly={readOnly}
             floatCode={nodeState.setCode}
             contentComponent={behavior.contentComponent}
+            viewRows={behavior.viewRows}
             controlsComponent={behavior.controlsComponent}
             ownWidgets={behavior.ownWidgets}
           />
@@ -645,7 +646,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
           // In a notebook cell the body takes the height its kind gets there
           // (a table its own, up to a cap, scrolling inside past it).
           notebookOn && behavior.contentComponent ? (
-            <div className="curio-notebook-body" style={notebookOutputBox(descriptor.id)}>
+            <div className="curio-notebook-body" style={notebookOutputBox(descriptor.id, behavior.viewRows)}>
               {behavior.contentComponent}
             </div>
           ) : (behavior.contentComponent ?? null)
