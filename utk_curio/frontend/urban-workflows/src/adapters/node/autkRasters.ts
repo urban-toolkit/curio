@@ -34,6 +34,7 @@
 import { fetchRaster } from '../../services/api';
 import { writtenTables, type AutkRasterInput } from '../../utils/autkInput';
 import { GRAMMAR_RASTER_SOURCES, autkTableKey, autkWorkspaceOf } from './autkDataCompile';
+import { mapLayerRefs } from './autkViews';
 import { writeGeoTiff } from '../../utils/raster/geotiffWriter';
 import {
     RASTER_MAX_CELLS,
@@ -475,28 +476,30 @@ export function bleedIntoClearCells(rgba: Float32Array, width: number, height: n
 }
 
 /**
- * Give the clear cells of every raster a map drew their nearest colored
+ * Give the clear cells of every raster each map drew their nearest colored
  * neighbor's color (`bleedIntoClearCells`), once the grammar has run. The
- * grammar's lookup (`mapLayer`) finds the layer it drew for each table, under
- * its title if it has one; a layer that is not a raster is left as drawn. The
- * cells are written in place, which autk-map cannot see, so the layer is
- * marked for the GPU (`makeLayerDataDirty`) and its map, which draws on demand
+ * grammar's lookup (`mapLayers`) finds the layers each map drew for a table,
+ * on that map alone (by its index, `autkViews`), and each layer of the
+ * document is the one of its own id there, its title if it has one; a layer
+ * that is not a raster is left as drawn. The cells are written in place,
+ * which autk-map cannot see, so the layer is marked for the GPU
+ * (`makeLayerDataDirty`) and its map, which draws on demand
  * (`autkMapDrawing`), is asked for a frame.
  */
 export function bleedRasterEdges(grammar: any, spec: any): void {
-    if (typeof grammar?.mapLayer !== 'function') return;
-    for (const mapSpec of mapsOf(spec)) {
-        for (const ref of mapSpec?.layerRefs ?? []) {
-            if (typeof ref?.dataRef !== 'string') continue;
-            const found = grammar.mapLayer(ref.dataRef);
-            const layer = found?.map?.layerManager?.searchByLayerId?.(found.layerId);
-            if (layer?.layerInfo?.typeLayer !== 'raster') continue;
-            const rgba = layer.rasterData;
-            if (!(rgba instanceof Float32Array) || !(layer.rasterResX > 0) || !(layer.rasterResY > 0)) continue;
-            bleedIntoClearCells(rgba, layer.rasterResX, layer.rasterResY);
-            layer.makeLayerDataDirty?.();
-            found.map.requestRender?.();
-        }
+    if (typeof grammar?.mapLayers !== 'function') return;
+    for (const { index, ref } of mapLayerRefs(spec)) {
+        if (typeof ref?.dataRef !== 'string') continue;
+        const layerId = typeof ref.title === 'string' && ref.title !== '' ? ref.title : ref.dataRef;
+        const found = (grammar.mapLayers(ref.dataRef, index) as Array<{ map: any; layerId: string }>)
+            .find((drawn) => drawn.layerId === layerId);
+        const layer = found?.map?.layerManager?.searchByLayerId?.(found.layerId);
+        if (layer?.layerInfo?.typeLayer !== 'raster') continue;
+        const rgba = layer.rasterData;
+        if (!(rgba instanceof Float32Array) || !(layer.rasterResX > 0) || !(layer.rasterResY > 0)) continue;
+        bleedIntoClearCells(rgba, layer.rasterResX, layer.rasterResY);
+        layer.makeLayerDataDirty?.();
+        found!.map.requestRender?.();
     }
 }
 
