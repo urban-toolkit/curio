@@ -26,24 +26,39 @@ jest.mock('../../../providers/ToastProvider', () => require('../../_support/autk
 jest.mock('../../../services/api', () => require('../../_support/autkNodeMocks').apiModule);
 jest.mock('../../../JavaScriptInterpreter', () => ({ JavaScriptInterpreter: class { } }));
 const mockRunCompute = jest.fn();
+// The grammar's own data adapter, which the browser's loader hands a geotiff
+// source, as autk-grammar's does: to autk-db's loadGeoTiff.
+const mockCreateDataAdapter = () => ({
+  async resolveSource(db: any, source: any) {
+    const { type, ...params } = source;
+    if (type === 'geotiff') await db.loadGeoTiff(params);
+    return db;
+  },
+});
 jest.mock(
   '@urban-toolkit/autk-grammar',
   () => ({
     ...require('../../_support/autkNodeMocks').autkGrammarModule,
     runCompute: (...args: any[]) => mockRunCompute(...args),
+    createDataAdapter: () => mockCreateDataAdapter(),
   }),
   { virtual: true },
 );
 jest.mock('@urban-toolkit/autk-compute', () => ({ ComputeGpgpu: jest.fn() }), { virtual: true });
 // The tables a data section loads, as the browser's own loader reads them
-// back: there is no sandbox here.
-const mockLoaded: { layers: Array<{ name: string; type: string; features: any[] }> } = { layers: [] };
+// back: there is no sandbox here. A raster is read back with getRaster.
+const mockLoaded: { layers: Array<{ name: string; type: string; features: any[] }>; rasters: Map<string, any> } = {
+  layers: [],
+  rasters: new Map(),
+};
 jest.mock(
   '@urban-toolkit/autk-db',
   () => ({
     AutkDb: class {
       async init() { }
       async loadGeojson() { }
+      async loadGeoTiff() { }
+      getWorkspaceConfiguration() { return { coordinateFormat: 'EPSG:3395' }; }
       getLayersMetadata() {
         return mockLoaded.layers.map(({ name, type }) => ({ name, type }));
       }
@@ -53,6 +68,10 @@ jest.mock(
           type: 'FeatureCollection',
           features: (layer?.features ?? []).map((f) => ({ ...f, properties: { ...f.properties } })),
         };
+      }
+      async getRaster(name: string) {
+        if (!mockLoaded.rasters.has(name)) throw new Error(`Table ${name} is not a compact raster table.`);
+        return mockLoaded.rasters.get(name);
       }
     },
     DEFAULT_WORKSPACE_COORDINATE_FORMAT: 'EPSG:3395',
@@ -113,6 +132,7 @@ beforeEach(() => {
   mockRunCompute.mockReset();
   mockRunCompute.mockImplementation(async (block: any, tables: Map<string, any>) => computed(block, tables));
   mockLoaded.layers = [];
+  mockLoaded.rasters = new Map();
   stubWebGpu();
 });
 
@@ -369,5 +389,33 @@ describe('a document with data and compute and no view', () => {
     const [handed] = step.handedOn();
     expect(handed.data.map((l: any) => [l.layerName, l.layerType])).toEqual([['lanes', 'roads'], ['spots', 'points']]);
     expect(valuesOf(handed.data[0].data, 'twice')).toEqual([2, 4, 6]);
+  });
+
+  test('counts a raster it loaded by its cells, as a node that only loads data does, and hands it on', async () => {
+    // A GeoTIFF of 4 columns by 3 rows, as autk-db's getRaster gives it.
+    mockLoaded.rasters.set('lst', {
+      type: 'FeatureCollection',
+      bbox: [-4802000, -2604000, -4780000, -2589000],
+      features: [{
+        type: 'Feature',
+        geometry: null,
+        properties: {
+          rasterResX: 4,
+          rasterResY: 3,
+          bands: [{ id: 'band_1', label: 'band_1' }],
+          band_1: Float32Array.from([27.5, 28, 28.5, 29, 29.5, 30, 30.5, 31, 31.5, 32, 32.5, 33]),
+        },
+      }],
+    });
+    const step = mountStep('data-compute');
+
+    await step.run({
+      data: [...DATA, { type: 'geotiff', geotiffFileUrl: 'docs/examples/data/lst.tif', outputTableName: 'lst' }],
+      compute: [pass('spots', 'twice')],
+    });
+
+    expect(step.lastOutput()).toEqual({ code: 'success', content: 'Computed 2 layers: spots (3 rows), lst (12 cells)' });
+    const [handed] = step.handedOn();
+    expect(handed.data.map((l: any) => [l.dataType, l.layerName])).toEqual([['geodataframe', 'spots'], ['raster', 'lst']]);
   });
 });
