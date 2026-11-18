@@ -426,7 +426,7 @@ class TestTheShippedCorpus:
         paths = example_paths()
         curated = [p for p in paths if p.parent.name == "examples"]
         legacy = [p for p in paths if p.parent.name == "dataflows"]
-        assert len(curated) == 35, [p.name for p in curated]
+        assert len(curated) == 36, [p.name for p in curated]
         assert len(legacy) == 31, [p.name for p in legacy]
 
     @pytest.mark.parametrize("path", example_paths(), ids=lambda p: p.stem)

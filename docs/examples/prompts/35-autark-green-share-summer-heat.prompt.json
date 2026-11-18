@@ -1,0 +1,127 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "35-autark-green-share-summer-heat",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/35-autark-green-share-summer-heat.json",
+    "sha256": "181608b11c301788fe7c08c7812eead3c90a72474488702615d9b7ee9b8051c1",
+    "walkthrough": "docs/examples/35-autark-green-share-summer-heat.md"
+  },
+  "prompt": "Are the greener parts of Niterói cooler in summer? Use the OpenStreetMap extract in this checkout, docs/examples/data/niteroi.osm.pbf, for the city of Niterói in the state of Rio de Janeiro, and the summer land surface temperature GeoTIFF beside it, docs/examples/data/niteroi_lst_verao_2001_2024.tif, which holds one band for each summer from 2001 to 2024 on cells of about 1 km. With Autark, load the city's land, parks and roads and the GeoTIFF, and draw the summer of 2024 on a map under the parks and roads. Then give every temperature cell on land the share of its area that the green of the parks layer covers and its mean summer temperature from 2020 to 2024, and plot those cells as a scatter of temperature against green share, with a fitted line.",
+  "context": null,
+  "required": {
+    "datasets": [],
+    "packages": [],
+    "paths": [
+      "docs/examples/data/niteroi.osm.pbf",
+      "docs/examples/data/niteroi_lst_verao_2001_2024.tif"
+    ]
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "visualization1",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "visualization1",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "visualization3",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [],
+      "paths": [
+        "docs/examples/data/niteroi.osm.pbf",
+        "docs/examples/data/niteroi_lst_verao_2001_2024.tif"
+      ],
+      "urls": []
+    }
+  },
+  "intents": [
+    {
+      "ref": "analysis1",
+      "mustMention": [
+        "green",
+        "temperature"
+      ],
+      "outputKind": "dataframe"
+    }
+  ],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/autk-grammar",
+      "curio.builtin/vis-vega"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T3",
+    "needs": [
+      "gpu"
+    ],
+    "skip": [
+      {
+        "when": "gpu",
+        "reason": "The Autark map needs hardware WebGPU; the plan and apply half of this fixture still runs offline.",
+        "scope": "execution"
+      }
+    ]
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "an agent session, from the example JSON and its walkthrough, 2026-11-18",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
+  },
+  "notes": "One grammar node loads the extract and the GeoTIFF; a second draws the last summer on a map, a Python step gives each cell on land its green share from the parks layer's outlines, and a Vega-Lite scatter fits a line through them."
+}

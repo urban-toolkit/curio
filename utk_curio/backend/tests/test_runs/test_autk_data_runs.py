@@ -31,9 +31,17 @@ BACK_BAY_LAYERS = [
 EXAMPLE_34 = REPO / "docs" / "examples" / "34-autark-park-access-heatmap.json"
 #: The tables example 34's data node makes: the tip's layers, then its heatmap.
 TIP_TABLES = ["tip_surface", "tip_parks", "tip_water", "tip_roads", "park_access"]
-EXAMPLE_35 = REPO / "docs" / "examples" / "35-autark-parks-and-summer-heat.json"
-#: The tables example 35's data node makes: Niterói's layers, its GeoTIFF, then its heatmap.
-NITEROI_TABLES = ["table_osm_surface", "table_osm_parks", "table_osm_water", "table_osm_roads", "lst", "park_access"]
+EXAMPLE_35 = REPO / "docs" / "examples" / "35-autark-green-share-summer-heat.json"
+#: The tables example 35's data node makes: Niterói's layers, then its GeoTIFF.
+GREEN_TABLES = ["table_osm_surface", "table_osm_parks", "table_osm_roads", "lst"]
+EXAMPLE_36 = REPO / "docs" / "examples" / "36-autark-park-area-summer-heat.json"
+#: The tables example 36's data node makes: Niterói's layers, its GeoTIFF, its
+#: parks with their areas, then the heatmap that sums them.
+PARK_AREA_TABLES = ["table_osm_surface", "table_osm_roads", "lst", "park_areas", "park_area"]
+#: The files examples 35 and 36 load, as their code names them for the sandbox.
+NITEROI_EXTRACT = '"pbfFileUrl":"__CURIO_BACKEND_URL__/file/docs/examples/data/niteroi.osm.pbf"'
+NITEROI_SUMMERS = '"geotiffFileUrl":"__CURIO_BACKEND_URL__/file/docs/examples/data/niteroi_lst_verao_2001_2024.tif"'
+NITEROI_PARKS = '"geojsonFileUrl":"__CURIO_BACKEND_URL__/file/docs/examples/data/niteroi_parks.geojson"'
 
 
 def _auth(token):
@@ -212,47 +220,68 @@ def test_example_34s_loader_builds_its_heatmap_on_the_server_as_the_browser_does
     assert steps["park-access-map"]["role"] == "forward", steps["park-access-map"]
 
 
-def test_example_35s_loader_reads_its_geotiff_and_builds_its_heatmap_on_the_server_as_the_browser_does(
-    client, user_and_token, sandbox, recorded,
-):
-    """Example 35's data node loads Niterói from the repository's extract, its
-    summer land surface temperature from the repository's GeoTIFF, and bins its
-    parks into a heatmap. On the server it posts the code the browser's compiler
-    gives: autk-db, then the grammar's ``./data`` entry, which loads the GeoTIFF
-    and builds the heatmap, both files' URLs left for the sandbox to resolve,
-    the layers, the GeoTIFF's table and the heatmap's expected, and no table the
-    heatmap bins missing. The Python step reads the load's list."""
+def _niteroi_load(client, token, sandbox, example, prefix):
+    """Example 35's or 36's run on the server: its steps by node, and the one
+    load its data node *prefix*-data posted, which must be the code the
+    browser's compiler gives, autk-db and then the grammar's ``./data`` entry,
+    which loads the GeoTIFF, with the extract's and the GeoTIFF's URLs left for
+    the sandbox to resolve. Its Python step reads the load's list, and its map
+    and scatter draw in a browser: the run hands them their inputs and runs
+    nothing for them."""
     from utk_curio.common.autk_data_compiler import compile_data_spec
 
-    user, token = user_and_token
-    dataflow = json.loads(EXAMPLE_35.read_text(encoding="utf-8"))["dataflow"]
+    dataflow = json.loads(example.read_text(encoding="utf-8"))["dataflow"]
     run = _run(client, token, _create(client, token, dataflow))
     steps = {s["nodeId"]: s for s in run["steps"]}
 
-    loader = steps["parks-heat-data"]
+    loader = steps[f"{prefix}-data"]
     assert (loader["role"], loader["status"]) == ("run", "ok"), loader
     assert (loader["outputPath"], loader["outputType"]) == (LAYERS, "list"), loader
     (load,) = sandbox.bodies("/execJs")
-    assert load["code"] == compile_data_spec(_node_content(dataflow, "parks-heat-data"))
+    assert load["code"] == compile_data_spec(_node_content(dataflow, f"{prefix}-data"))
     assert load["code"].splitlines()[:2] == [
         "import { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } from '@urban-toolkit/autk-db';",
         "import { createDataAdapter } from '@urban-toolkit/autk-grammar/data';",
     ]
-    assert '"pbfFileUrl":"__CURIO_BACKEND_URL__/file/docs/examples/data/niteroi.osm.pbf"' in load["code"]
-    assert (
-        '"geotiffFileUrl":"__CURIO_BACKEND_URL__/file/docs/examples/data/niteroi_lst_verao_2001_2024.tif"'
-        in load["code"]
-    )
-    assert f"const __expectedTables = {json.dumps(NITEROI_TABLES, separators=(',', ':'))};" in load["code"]
-    assert "const __heatmapProblem = null;" in load["code"]
+    assert NITEROI_EXTRACT in load["code"]
+    assert NITEROI_SUMMERS in load["code"]
 
-    # The Python step reads the load's list, which holds the GeoTIFF and the heatmap.
     (cells,) = sandbox.bodies("/exec")
     assert (cells["file_path"], cells["dataType"]) == (LAYERS, "list"), cells
-    assert steps["parks-heat-cells"]["status"] == "ok", steps["parks-heat-cells"]
-    # The map and the scatter draw in a browser: the run hands them their inputs and runs nothing for them.
-    for drawn in ("parks-heat-map", "parks-heat-scatter"):
+    assert steps[f"{prefix}-cells"]["status"] == "ok", steps[f"{prefix}-cells"]
+    for drawn in (f"{prefix}-map", f"{prefix}-scatter"):
         assert steps[drawn]["role"] == "forward", steps[drawn]
+    return load
+
+
+def test_example_35s_loader_reads_its_geotiff_on_the_server_as_the_browser_does(
+    client, user_and_token, sandbox, recorded,
+):
+    """Example 35's data node loads Niterói's surface, parks and roads from the
+    repository's extract and its summer land surface temperature from the
+    repository's GeoTIFF: on the server, the layers and the GeoTIFF's table
+    are expected, and no file but the two is read."""
+    user, token = user_and_token
+    load = _niteroi_load(client, token, sandbox, EXAMPLE_35, "green-heat")
+
+    assert f"const __expectedTables = {json.dumps(GREEN_TABLES, separators=(',', ':'))};" in load["code"]
+    assert "geojsonFileUrl" not in load["code"]
+
+
+def test_example_36s_loader_reads_its_parks_and_sums_their_area_on_the_server_as_the_browser_does(
+    client, user_and_token, sandbox, recorded,
+):
+    """Example 36's data node also loads Niterói's parks with their areas from
+    the repository's GeoJSON, its URL left for the sandbox to resolve, and sums
+    their area in a heatmap: on the server, the layers, the GeoTIFF's, the
+    parks' and the heatmap's tables are expected, and the heatmap bins a table
+    its data section loads before it."""
+    user, token = user_and_token
+    load = _niteroi_load(client, token, sandbox, EXAMPLE_36, "park-area")
+
+    assert NITEROI_PARKS in load["code"]
+    assert f"const __expectedTables = {json.dumps(PARK_AREA_TABLES, separators=(',', ':'))};" in load["code"]
+    assert "const __heatmapProblem = null;" in load["code"]
 
 
 def test_a_node_below_a_pool_reads_the_layers_the_load_made(client, user_and_token, sandbox, recorded):
