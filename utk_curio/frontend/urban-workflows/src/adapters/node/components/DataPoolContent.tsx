@@ -6,6 +6,7 @@ import { sandboxArtifactId } from '../../../utils/flowOutputRef';
 import { previewTotalRows, rowsFromParseOutput } from '../../../utils/tabularPreview';
 import { NodeEmptyState } from '../../../components/nodes/NodeEmptyState';
 import { isTabularPayload, resolveNodeEmptyReason } from '../../../utils/nodeEmptyState';
+import { poolTabKind, RASTER_TAB_TITLE } from '../../../utils/poolTabs';
 import { ResolutionType } from '../../../constants';
 import nodeSettings from '../../../contracts/nodeSettings.json';
 
@@ -200,6 +201,9 @@ export default function DataPoolContent({
   const hasData = Array.isArray(tabData) && tabData.length > 0;
   const activeIndex = parseInt(activeTab) || 0;
   const activeTabInput = hasData && !expandedFromSingleRef ? (wrappers[activeIndex] ?? '') : '';
+  // A raster's tab says it is one, and a value's that it is not tabular: they
+  // have no rows to read or show.
+  const activeKind = hasData ? poolTabKind(tabData[activeIndex]) : 'table';
 
   return (
     // overflow:hidden + height:100% pin this component to the parent's box, so
@@ -256,7 +260,11 @@ export default function DataPoolContent({
         ) : null}
       </Nav>
       <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-        {hasData ? (
+        {hasData && activeKind === 'raster' ? (
+          <NodeEmptyState reason="not-tabular" title={RASTER_TAB_TITLE} hint="" />
+        ) : hasData && activeKind === 'value' ? (
+          <NodeEmptyState reason="not-tabular" />
+        ) : hasData ? (
           <ContentComponent
             key={activeIndex}
             outputTable={tableData}
