@@ -99,9 +99,9 @@ def test_the_reply_schema_lets_no_reply_write_a_refused_key(flavor):
     found = [where for rule in contracts.AUTK_NOT_RUN_YET for where in _written(reply.schema, rule)]
     assert found == []
     # A refused key in a reply is not kept: the projection drops it.
-    document = {"map": {"camera": {"pitch": 40}, "layerRefs": [{"dataRef": "input_0"}]}}
+    document = {"layout": {"type": "horizontal"}, "map": {"layerRefs": [{"dataRef": "input_0"}]}}
     encoded, dropped = reply.encode(document)
-    assert dropped == ["$.map.camera"]
+    assert dropped == ["$.layout"]
     assert json.loads(reply.decode(json.dumps(encoded))) == {"map": {"layerRefs": [{"dataRef": "input_0"}]}}
 
 

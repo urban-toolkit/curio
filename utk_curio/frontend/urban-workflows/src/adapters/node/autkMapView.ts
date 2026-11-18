@@ -1,13 +1,13 @@
 /**
- * Each Autark map opens framed on the layers it draws (#773).
+ * Each Autark map opens framed on the layers it draws (#773), then turned by
+ * the `camera` its document writes for it.
  *
  * autk-map's flat camera starts 10,000 world units straight above the map's
  * origin whatever its layers hold (`FlatMapRenderPath.resetCamera`), and its
  * R key puts it back there: about 8 km of ground across the map's height. A
  * few blocks were a speck in the middle of the map, and a city ran past every
  * edge. autk-map fits its camera to what it shows only in terrain mode
- * (`fitCameraToTerrainBounds`), and a node refuses a document's `camera`
- * (contracts/autkGrammar's `autkKeyProblem`).
+ * (`fitCameraToTerrainBounds`).
  *
  * `frameMaps` does for each flat map of a grammar what terrain mode does, with
  * the same arithmetic, through the camera's own `resetCamera` and `resize`:
@@ -20,11 +20,81 @@
  * on demand (`autkMapDrawing`). Every map the grammar drew is framed
  * (`grammarMaps`).
  *
+ * A framed map is then turned by the `camera` of its own `map` entry, as
+ * autk-grammar turns the maps it draws by itself, through the grammar's own
+ * `applyCamera`, which the node takes from the grammar it runs and gives each
+ * map with its entry's camera (`attachSpecCameras`), so the map keeps it for
+ * its R key and for the moment it is first shown. `applyCamera` moves the eye
+ * round the point the map looks at, as far from it as the eye is high, so it
+ * only ever turns a view that looks straight down: the framed one, or
+ * autk-map's own for a map with nothing to frame. A map in terrain mode fits
+ * its own camera, and no camera turns it; neither the grammar nor Curio turns
+ * terrain mode on.
+ *
  * A node whose map is drawn again after each edit (Map Editor) keeps the view
  * instead: `mapViews` takes each map's camera before the redraw, and
- * `keepMapViews` puts it back on the new maps.
+ * `keepMapViews` puts it back on the new maps. A map whose entry now writes
+ * another camera than the one it was drawn with shows that camera's view.
  */
+import type { CameraSpec } from '@urban-toolkit/autk-grammar';
 import { grammarMaps } from './autkMapDrawing';
+
+/** autk-grammar's `applyCamera`: turns a map's camera as a `camera` of the document says. */
+export type ApplyCamera = (map: any, camera: CameraSpec) => void;
+
+/** Set on a map: the `camera` of its own `map` entry, with the `applyCamera` that turns the map by it. */
+const SPEC_CAMERA = Symbol.for('curio.autk.specCamera');
+type SpecCamera = { camera: CameraSpec; applyCamera: ApplyCamera };
+
+/**
+ * Give each map *grammar* drew the `camera` its own entry of *spec*'s `map`
+ * writes, with autk-grammar's *applyCamera*, which turns the map by it each
+ * time Curio frames it. *spec* is the document the grammar ran; its maps are
+ * in the order of its entries (`grammarMaps`), a `map` that is one object
+ * being the first.
+ */
+export function attachSpecCameras(grammar: unknown, spec: any, applyCamera: ApplyCamera): void {
+    const entries: any[] = spec?.map ? (Array.isArray(spec.map) ? spec.map : [spec.map]) : [];
+    grammarMaps(grammar).forEach((map, index) => {
+        const camera = entries[index]?.camera;
+        if (!map || camera === null || typeof camera !== 'object' || Array.isArray(camera)) return;
+        const turn: SpecCamera = { camera, applyCamera };
+        map[SPEC_CAMERA] = turn;
+    });
+}
+
+/**
+ * The camera *map*'s entry writes, as a key that is the same for the same
+ * camera, however its fields are ordered; none when it writes no camera.
+ */
+function cameraKey(map: any): string | undefined {
+    const camera = (map?.[SPEC_CAMERA] as SpecCamera | undefined)?.camera;
+    return camera ? JSON.stringify([camera.zoom ?? null, camera.pitch ?? null, camera.bearing ?? null]) : undefined;
+}
+
+/**
+ * Turn *map* by the `camera` of its own entry, from a view that looks straight
+ * down: autk-grammar's `applyCamera` puts the eye `pitch` degrees from straight
+ * down, facing `bearing`, as far from the point the map looks at as the eye is
+ * high, or as `zoom` says. False when the entry writes no camera.
+ */
+function turnBySpecCamera(map: any): boolean {
+    const turn = map?.[SPEC_CAMERA] as SpecCamera | undefined;
+    if (!turn) return false;
+    turn.applyCamera(map, turn.camera);
+    return true;
+}
+
+/**
+ * Build *map*'s matrices for the camera it was just given, at the size its
+ * canvas draws at, and ask it for a frame: a map that draws on demand draws
+ * the camera it was given.
+ */
+function drawGivenCamera(map: any): void {
+    const { pixelWidth, pixelHeight } = map.renderer ?? {};
+    if (pixelWidth > 0 && pixelHeight > 0) map.camera.resize(pixelWidth, pixelHeight);
+    map.requestRender?.();
+}
 
 /** What a map's layers drew, in its world units, and the tallest height. */
 export type MapExtent = { minX: number; minY: number; maxX: number; maxY: number; top: number };
@@ -85,7 +155,10 @@ function shownCanvas(map: any): HTMLCanvasElement | null {
     return canvas && canvas.offsetWidth > 0 && canvas.offsetHeight > 0 ? canvas : null;
 }
 
-/** Frame *map* on its layers; false when it drew nothing to frame or is not shown. */
+/**
+ * Frame *map* on its layers, then turn it by its camera; false when it drew
+ * nothing to frame or is not shown.
+ */
 function frameMap(map: any): boolean {
     const camera = map?.camera;
     const canvas = shownCanvas(map);
@@ -96,6 +169,7 @@ function frameMap(map: any): boolean {
     const aspect = Math.max(canvas.offsetWidth / canvas.offsetHeight, 1e-6);
     const { lookAt, eye } = framingCamera(extent, aspect, camera.getFovyRadians(), camera.getFar());
     camera.resetCamera([0, 1, 0], lookAt, eye);
+    turnBySpecCamera(map);
     camera.resize(map.renderer.pixelWidth, map.renderer.pixelHeight);
     // A map that draws on demand draws the camera it was given.
     map.requestRender?.();
@@ -110,19 +184,28 @@ const VIEWED = Symbol.for('curio.autk.viewedMap');
 /** Whether *map* is a flat map, whose camera Curio sets; terrain mode fits its own. */
 const isFlat = (map: any): boolean => !!map && !map._terrainRenderPath && typeof map.resetCamera === 'function';
 
-/** The map's R key frames it on its layers. */
+/**
+ * The map's R key frames it on its layers and turns it by its camera. A map
+ * with nothing to frame takes autk-map's own view, turned by its camera as
+ * autk-grammar turns its own maps; a map in terrain mode fits its own camera.
+ */
 function frameOnReset(map: any): void {
     if (map[FRAMED]) return;
     const ownReset = map.resetCamera.bind(map);
     map.resetCamera = () => {
-        if (map._terrainRenderPath || !frameMap(map)) ownReset();
+        if (map._terrainRenderPath) ownReset();
+        else if (!frameMap(map)) {
+            ownReset();
+            if (turnBySpecCamera(map)) drawGivenCamera(map);
+        }
     };
     map[FRAMED] = true;
 }
 
 /**
- * Frame each flat map of *grammar* on its layers, now or, for a map drawn
- * while hidden (a collapsed scenario's member), when it is first shown:
+ * Frame each flat map of *grammar* on its layers and turn it by its camera,
+ * now or, for a map drawn while hidden (a collapsed scenario's member), when
+ * it is first shown:
  * Curio resizes a map that is shown with a window resize, which autk-map
  * handles before this listener, added later, runs.
  */
@@ -145,8 +228,11 @@ export function frameMaps(grammar: any): void {
     }
 }
 
-/** Where a map's camera stands, and the origin of the world it stands in. */
-export type MapView = { eye: number[]; lookAt: number[]; up: number[]; origin: number[] | null };
+/**
+ * Where a map's camera stands, the origin of the world it stands in, and the
+ * camera its entry wrote when it was drawn (`cameraKey`), when it wrote one.
+ */
+export type MapView = { eye: number[]; lookAt: number[]; up: number[]; origin: number[] | null; camera?: string };
 
 /**
  * The origin autk-map draws *map*'s layers relative to: the middle of the
@@ -173,12 +259,15 @@ export function mapViews(grammar: any): Array<MapView | null> {
         if (!isFlat(map) || typeof camera?.getEye !== 'function') return null;
         if (!map[VIEWED] && !shownCanvas(map)) return null;
         try {
-            return {
+            const view: MapView = {
                 eye: [...camera.getEye()],
                 lookAt: [...camera.getLookAt()],
                 up: [...camera.getUp()],
                 origin: originOf(map),
             };
+            const written = cameraKey(map);
+            if (written !== undefined) view.camera = written;
+            return view;
         } catch {
             return null;
         }
@@ -200,10 +289,7 @@ function putBackView(map: any, view: MapView): boolean {
     );
     const moved = (point: number[]) => point.map((value, i) => value + shift(i));
     camera.resetCamera([...view.up], moved(view.lookAt), moved(view.eye));
-    const { pixelWidth, pixelHeight } = map.renderer;
-    if (pixelWidth > 0 && pixelHeight > 0) camera.resize(pixelWidth, pixelHeight);
-    // A map that draws on demand draws the camera it was given.
-    map.requestRender?.();
+    drawGivenCamera(map);
     map[VIEWED] = true;
     return true;
 }
@@ -211,14 +297,18 @@ function putBackView(map: any, view: MapView): boolean {
 /**
  * Put each flat map of *grammar* back on the view *views* holds at its place,
  * as `mapViews` took it from the maps the last draw made, so a draw after an
- * edit keeps the view the person zoomed and panned to. autk-map draws a map's
- * layers relative to the middle of the first layer it loads, which a removed
- * feature at its edge moves; the camera moves with it. A map with no view to
- * keep is framed, as `frameMaps` frames it, and every map's R key frames it.
+ * edit keeps the view the person zoomed and panned to, or the one its camera
+ * turned it to: the view is put back as it was, never turned again. autk-map
+ * draws a map's layers relative to the middle of the first layer it loads,
+ * which a removed feature at its edge moves; the camera moves with it. A map
+ * with no view to keep, or whose entry writes another camera than the one its
+ * view was taken under, is framed and turned by its camera, as `frameMaps`
+ * does it, and every map's R key frames and turns it.
  */
 export function keepMapViews(grammar: any, views: ReadonlyArray<MapView | null>): void {
     grammarMaps(grammar).forEach((map, index) => {
-        const view = views[index];
+        const taken = views[index];
+        const view = taken && taken.camera === cameraKey(map) ? taken : null;
         if (!view || !isFlat(map) || !putBackView(map, view)) {
             frameMaps({ maps: [map] });
             return;
