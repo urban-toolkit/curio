@@ -5,22 +5,13 @@
  * runs. It is read from the grammar's CommonJS build, which loads with the five
  * packages it imports stubbed: the build reads none of them while it loads, and
  * `applyCamera` reads and resets only the map's camera. A suite that reads it
- * stubs them first, with plain mocks, never virtual ones:
+ * stubs them first:
  *
- *     jest.mock("@urban-toolkit/autk-db", () => ({}));
- *     jest.mock("@urban-toolkit/autk-map", () => ({}));
- *     jest.mock("@urban-toolkit/autk-plot", () => ({}));
- *     jest.mock("@urban-toolkit/autk-core", () => ({}));
- *     jest.mock("@urban-toolkit/autk-compute", () => ({}));
- *
- * autkPointSize.test.ts loads the same build with plain mocks of them, and a
- * Jest worker keeps, for every file it runs, the module id it first found for
- * the build's require of each: a virtual mock in one suite and a plain one in
- * another leave the build's require in whichever runs second to the installed
- * package, an ES module Jest cannot load (autkGrammarBuildMocks.test.ts). A
- * suite that also mounts a node keeps the node off these packages' own code
- * (a data section, a compute pass, a raster), which the other node suites
- * mock virtually.
+ *     jest.mock("@urban-toolkit/autk-db", () => ({}), { virtual: true });
+ *     jest.mock("@urban-toolkit/autk-map", () => ({}), { virtual: true });
+ *     jest.mock("@urban-toolkit/autk-plot", () => ({}), { virtual: true });
+ *     jest.mock("@urban-toolkit/autk-core", () => ({}), { virtual: true });
+ *     jest.mock("@urban-toolkit/autk-compute", () => ({}), { virtual: true });
  */
 import * as path from 'path';
 
