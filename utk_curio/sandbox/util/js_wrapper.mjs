@@ -35,10 +35,11 @@ console.log = (...args) => {
 // A layer chip (#662), `[!! input_0:table_osm_roads !!]`, is written as
 // `curio_layer(input_0, "table_osm_roads", 0)`: the layer of that name among the
 // ones the input carries, as a FeatureCollection, found by its name exactly as
-// an Autark spec finds it. An input that is exactly one FeatureCollection with
-// no layer name (a GeoDataFrame on its own) is that layer. The input's circle
-// names it when it is missing. The Python twin, with what an input may carry,
-// is util/input_layers.py.
+// an Autark spec finds it, and a table in another workspace than autk-db's
+// default one (`autk`) by `<workspace>/<name>`. An input that is exactly one
+// FeatureCollection with no layer name (a GeoDataFrame on its own) is that
+// layer. The input's circle names it when it is missing. The Python twin, with
+// what an input may carry, is util/input_layers.py.
 const curio_layer = (value, layer, slot = 0) => {
   const items = value && typeof value === 'object' && !Array.isArray(value)
     && value.dataType === 'outputs' && Array.isArray(value.data)
@@ -62,7 +63,10 @@ const curio_layer = (value, layer, slot = 0) => {
     } else {
       continue;
     }
-    if (typeof name === 'string' && name) named.push([name, found]);
+    const workspace = typeof item.workspace === 'string' && item.workspace && item.workspace !== 'autk'
+      ? item.workspace
+      : null;
+    if (typeof name === 'string' && name) named.push([workspace ? `${workspace}/${name}` : name, found]);
     else unnamed.push(found);
   }
   for (const [name, found] of named) {

@@ -84,9 +84,13 @@ def parse_geodataframe(data_value):
     # df['geometry'] = df['geometry'].apply(wkt.loads)
     # gdf = gpd.GeoDataFrame(df, geometry='geometry')
     gdf = gpd.GeoDataFrame.from_features(data_value["features"])
-    # Its layer's name, and the label of the bundle part it was read from.
+    # Its layer's name, Autark layer type and workspace, which parseOutput
+    # hands on, and the label of the bundle part it was read from.
     sent = data_value.get('metadata')
-    kept = {key: sent[key] for key in ('name', PART_LABEL) if key in sent} if isinstance(sent, dict) else {}
+    kept = (
+        {key: sent[key] for key in ('name', 'layerType', 'workspace', PART_LABEL) if key in sent}
+        if isinstance(sent, dict) else {}
+    )
     if kept:
         gdf.__dict__['metadata'] = kept
 

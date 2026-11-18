@@ -129,7 +129,8 @@ class _Layer:
         self.frame = frame
         #: The envelope it came in, handed on as it is when it is not edited.
         self.envelope = envelope
-        self.workspace = workspace if isinstance(workspace, str) and workspace else None
+        # None for autk-db's default workspace, `autk`, named or not.
+        self.workspace = workspace if isinstance(workspace, str) and workspace and workspace != "autk" else None
 
     @property
     def label(self) -> str:
@@ -164,7 +165,8 @@ def _layer_of_envelope(item):
     if not isinstance(item, dict) or item.get("dataType") != "geodataframe" or not _is_fc(item.get("data")):
         return None
     name = item.get("layerName") if isinstance(item.get("layerName"), str) and item.get("layerName") else None
-    return _Layer(name=name, layer_type=item.get("layerType"), fc=item["data"], envelope=item)
+    return _Layer(name=name, layer_type=item.get("layerType"), fc=item["data"], envelope=item,
+                  workspace=item.get("workspace"))
 
 
 def _layers_of(value):
@@ -820,9 +822,17 @@ def _drawn_crs(layers, crs):
     return None
 
 
-def _new_layers(defs, crs_of):
+def _shared_workspace(layers):
+    """The workspace every layer of the input is in, when they share one other
+    than autk-db's default; else None."""
+    workspaces = {layer.workspace for layer in layers}
+    return workspaces.pop() if len(workspaces) == 1 else None
+
+
+def _new_layers(defs, crs_of, workspace=None):
     """The empty layers *defs* name (``new_layers``), each an Autark layer of
-    its geometry, in the CRS its drawn features are in (*crs_of*)."""
+    its geometry, in the CRS its drawn features are in (*crs_of*), and in the
+    *workspace* the input's layers share, so the map that reads it draws them."""
     made = []
     for position, spec in enumerate(defs or []):
         if not isinstance(spec, dict) or not isinstance(spec.get("name"), str) or not spec["name"].strip():
@@ -835,7 +845,7 @@ def _new_layers(defs, crs_of):
         fc = {"type": "FeatureCollection", "features": []}
         if crs_of is not None:
             fc["crs"] = crs_of
-        made.append(_Layer(name=spec["name"], layer_type=NEW_LAYER_TYPES[spec["geometry"]], fc=fc))
+        made.append(_Layer(name=spec["name"], layer_type=NEW_LAYER_TYPES[spec["geometry"]], fc=fc, workspace=workspace))
     return made
 
 
@@ -898,7 +908,7 @@ def edit_features(value, edits, key=None, layer=None, keys=None, new_layers=None
         return value
     if not by_input:
         layers, single_table = _layers_of(value)
-    made = _new_layers(new_layers, _drawn_crs(layers, crs))
+    made = _new_layers(new_layers, _drawn_crs(layers, crs), _shared_workspace(layers))
     made_names = {item.name for item in made}
     taken = {item.name for item in layers if item.name}
     clash = sorted(made_names & taken)

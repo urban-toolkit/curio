@@ -255,8 +255,9 @@ const __have = new Set(__tables.map((t) => t.name));`,
         };
     }
     return {
-        imports: `
-import { enterWorkspace, tableKey } from '@urban-toolkit/autk-grammar/data';`,
+        // Its own line in the code it writes, though no line of this module
+        // starts with an import.
+        imports: "\nimport { enterWorkspace, tableKey } from '@urban-toolkit/autk-grammar/data';",
         load: `  const { type, workspace, ...rest } = source ?? {};
   try {
     // Into its workspace, as the grammar's data adapter loads a source:

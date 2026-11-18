@@ -8,7 +8,10 @@ calls it by name, in process and under isolation. The JavaScript twin is
 ``curio_layer`` in ``js_wrapper.mjs``.
 
 A layer is found by its name, as an Autark spec finds it: the table name
-exactly (``table_osm_roads``, not ``roads``). What an input may carry:
+exactly (``table_osm_roads``, not ``roads``), and a table in another
+workspace than autk-db's default one by ``<workspace>/<name>``
+(``[!! input_0:east/roads !!]``), so two workspaces' tables of one name are
+two layers. What an input may carry:
 
 - the layer array an Autark node with a data section hands on: a list of
   ``{name, type, geojson}``, its features in the coordinate system the
@@ -64,6 +67,29 @@ def _name_of(item):
         meta = getattr(item, "__dict__", {}).get("metadata")
         name = meta.get("name") if isinstance(meta, dict) else None
     return name if isinstance(name, str) and name else None
+
+
+#: autk-db's default workspace, where a table that names no ``workspace`` is.
+DEFAULT_WORKSPACE = "autk"
+
+
+def _workspace_of(item):
+    """The workspace *item* carries, a layer record's or envelope's
+    ``workspace`` or a frame's ``metadata["workspace"]``, when it is another
+    than autk-db's default one; else None."""
+    if isinstance(item, dict):
+        workspace = item.get("workspace")
+    else:
+        meta = getattr(item, "__dict__", {}).get("metadata")
+        workspace = meta.get("workspace") if isinstance(meta, dict) else None
+    return workspace if isinstance(workspace, str) and workspace and workspace != DEFAULT_WORKSPACE else None
+
+
+def _key_of(item, name: str) -> str:
+    """What a chip names *item*'s layer by, as autk-grammar keys a table: its
+    name, or ``<workspace>/<name>`` in another workspace than the default."""
+    workspace = _workspace_of(item)
+    return f"{workspace}/{name}" if workspace else name
 
 
 def _crs_named_by(fc):
@@ -136,13 +162,14 @@ def _read_unnamed(item):
 
 
 def curio_layer(value, layer: str, slot=0):
-    """The layer named *layer* of *value*, input *slot*'s value; or the one
-    frame *value* carries, when that frame has no layer name."""
+    """The layer named *layer* of *value*, input *slot*'s value, by its key
+    (``_key_of``); or the one frame *value* carries, when that frame has no
+    layer name."""
     items = _items(value)
     named = [(name, item) for item in items for name in [_name_of(item)] if name is not None]
     for name, item in named:
-        if name == layer:
+        if _key_of(item, name) == layer:
             return _read(item, name)
     if len(items) == 1 and not named and _is_frame(items[0]):
         return _read_unnamed(items[0])
-    raise LookupError(missing_layer_message(slot, layer, [name for name, _ in named]))
+    raise LookupError(missing_layer_message(slot, layer, [_key_of(item, name) for name, item in named]))
