@@ -159,7 +159,7 @@ class TestAutkGrammar:
         {"map": [{"layerRefs": [{"dataRef": "input_0"}]}]},
         {"plot": {"dataRef": "input_0", "mark": "bar", "axis": ["name", "value"]}},
         {"compute": [{"dataRef": "input_0", "attributes": {"h": "properties.height"},
-                      "wglsFunction": "return h * 2.0;", "outputColumnName": "h2"}]},
+                      "wgslFunction": "return h * 2.0;", "outputColumnName": "h2"}]},
         {"data": [{"type": "csv", "csvFileUrl": "a.csv", "outputTableName": "t"}]},
     ], ids=["map-list", "plot", "compute", "data"])
     def test_one_document_per_family_is_valid(self, grammar):
@@ -169,9 +169,9 @@ class TestAutkGrammar:
         ({"plot": {"dataRef": "input_0", "mark": "pie", "axis": ["a"]}}, "pie"),
         ({"plot": {"dataRef": "input_0", "mark": "bar", "axis": []}}, "plot.axis"),
         ({"compute": [{"dataRef": "input_0", "attributes": {},
-                       "wglsFunction": "return 1.0;"}]}, "outputColumnName"),
+                       "wgslFunction": "return 1.0;"}]}, "outputColumnName"),
         # A heatmap once validated as a csv source; the type now selects its fields.
-        ({"data": [{"type": "heatmap", "outputTableName": "x"}]}, "tableJoinName"),
+        ({"data": [{"type": "heatmap", "outputTableName": "x"}]}, "joinDataRef"),
     ], ids=["plot-mark", "plot-axis", "compute-output", "data-type"])
     def test_one_document_per_family_is_invalid_and_says_why(self, grammar, named):
         verdict = dv.validate(AUTK, json.dumps(grammar))
@@ -202,7 +202,7 @@ class TestAutkGrammar:
         grammar = {"compute": [{
             "dataRef": "input_0",
             "attributes": {"h": "properties.height"},
-            "wglsFunction": ["let x = h;", "// a comment", "return x;"],
+            "wgslFunction": ["let x = h;", "// a comment", "return x;"],
             "uniforms": {"sun": {"fromFeature": {"layer": "sun", "path": "properties.alt",
                                                  "iterate": "batched"}, "default": 0}},
             "uniformMatrices": {"box": {"fromFeature": {"layer": "zones", "path": "geometry"},

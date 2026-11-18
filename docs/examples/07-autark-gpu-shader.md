@@ -90,7 +90,7 @@ dropped here.
     }
   },
   "outputColumnName": "sunlight",
-  "wglsFunction": "... the batched sunlight shader ..."
+  "wgslFunction": "... the batched sunlight shader ..."
 }]
 ```
 

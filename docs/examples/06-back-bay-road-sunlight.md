@@ -156,7 +156,7 @@ value.
     }
   },
   "outputColumnName": "sunlight",
-  "wglsFunction": [ "...solar-time + AABB shadow projection; see Example 7 for the full body..." ]
+  "wgslFunction": [ "...solar-time + AABB shadow projection; see Example 7 for the full body..." ]
 }]
 ```
 

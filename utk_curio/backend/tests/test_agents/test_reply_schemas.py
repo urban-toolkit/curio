@@ -40,7 +40,7 @@ PID = "p-reply-schema"
 #: A document every part of which the vendored schema declares, drawn from the
 #: node's own input (no source a grounding gate would probe).
 DOCUMENT = {
-    "compute": [{"dataRef": "input_0", "wglsFunction": "fn main() {}",
+    "compute": [{"dataRef": "input_0", "wgslFunction": "fn main() {}",
                  "attributes": {"height": "properties.height"}, "outputColumnName": "shade"}],
     "map": {"layerRefs": [{"dataRef": "input_0"}]},
 }
@@ -177,7 +177,7 @@ class TestDecoding:
         reply = rs.autk_reply_schema(rs.FLAVOR_STRICT)
         document = {
             "compute": [{
-                "dataRef": "points", "wglsFunction": "fn main() {}",
+                "dataRef": "points", "wgslFunction": "fn main() {}",
                 "attributes": {"height": "properties.height"},
                 "outputColumnName": "shade",
             }],

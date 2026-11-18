@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/interaction-autark.json",
-    "sha256": "8f64d0ffa0434d9f8a75d4dbed396b984223f0b912808c1bf4f2e3a456c30320",
+    "sha256": "3b9c1bfb060672d10724059eeb5e3882c42c98e38307191bd945000d47c09e49",
     "walkthrough": null
   },
   "prompt": "Load the Chicago Loop buildings from the OSM extract at docs/examples/data/chicago_loop.osm.pbf with Autark, normalise their heights on the GPU by clamping zero heights to ten metres, and fan the augmented buildings out to two views: a 3D map coloured by normalised height and a brushable histogram of those heights. Brushing the histogram must highlight the buildings on the map, so the selection has to travel back through the fan-out.",

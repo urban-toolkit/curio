@@ -1579,7 +1579,7 @@ GPU_COMPUTE_SPEC = json.dumps({"compute": [{
     "dataRef": "input_0",
     "attributes": {"v": "properties.count"},
     "outputColumnName": "doubled",
-    "wglsFunction": ["return v * 2.0;"],
+    "wgslFunction": ["return v * 2.0;"],
 }]}, indent=2)
 
 #: What the GPU made, read back in Python as the table shows it. An Autark

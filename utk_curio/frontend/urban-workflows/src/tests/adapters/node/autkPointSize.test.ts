@@ -47,7 +47,16 @@ jest.mock("@urban-toolkit/autk-db", () => {
     };
     class AutkDb {
         private tables = new Map<string, { type: string; collection: any }>();
+        // The grammar enters a table's workspace on every load and read; all
+        // of these tables are in autk-db's default one.
+        private workspace = "autk";
         async init(): Promise<void> {}
+        getCurrentWorkspace(): string {
+            return this.workspace;
+        }
+        async setWorkspace(name: string): Promise<void> {
+            this.workspace = name;
+        }
         async loadGeojson({ outputTableName, geojsonObject }: any): Promise<void> {
             this.tables.set(outputTableName, { type: layerType(geojsonObject), collection: geojsonObject });
         }
@@ -70,7 +79,7 @@ jest.mock("@urban-toolkit/autk-db", () => {
             return { coordinateFormat: "EPSG:3395" };
         }
     }
-    return { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT: "EPSG:3395" };
+    return { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT: "EPSG:3395", DEFAULT_WORKSPACE_NAME: "autk" };
 });
 
 jest.mock("@urban-toolkit/autk-map", () => {

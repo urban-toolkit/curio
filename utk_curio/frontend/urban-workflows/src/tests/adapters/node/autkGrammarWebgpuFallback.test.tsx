@@ -59,7 +59,7 @@ import {
 
 const MAP_SPEC = JSON.stringify({ map: { layerRefs: [] } });
 const COMPUTE_SPEC = JSON.stringify({
-  compute: [{ dataRef: 'input_0', wglsFunction: 'fn main() {}' }],
+  compute: [{ dataRef: 'input_0', wgslFunction: 'fn main() {}' }],
 });
 
 interface Harness {

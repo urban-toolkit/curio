@@ -667,7 +667,7 @@ def cells_pass() -> str:
             "steps": {"fromFeature": {"layer": "[!! input_2 !!]", "path": "properties.steps"}, "cols": 4},
         },
         "outputColumnName": "shadow_min",
-        "wglsFunction": shader,
+        "wgslFunction": shader,
     }]})
 
 
@@ -697,7 +697,7 @@ def block_pass() -> str:
             "spots": {"fromFeature": {"layer": "[!! input_1 !!]", "path": "properties.spots"}, "cols": 2},
         },
         "outputColumnName": "share",
-        "wglsFunction": shader,
+        "wgslFunction": shader,
     }]})
 
 
@@ -740,7 +740,7 @@ def year_pass() -> str:
             "steps": {"fromFeature": {"layer": "[!! input_0 !!]", "path": "properties.steps"}, "cols": 4},
         },
         "outputColumnName": "shadow_min",
-        "wglsFunction": shader,
+        "wgslFunction": shader,
     }]})
 
 

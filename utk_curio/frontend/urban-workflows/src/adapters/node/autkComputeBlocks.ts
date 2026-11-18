@@ -34,7 +34,7 @@ export async function applyComputeBlocks(
     ]);
     let result = layers;
     for (const block of computeBlocks) {
-        if (!block || !block.dataRef || !block.wglsFunction) continue;
+        if (!block || !block.dataRef || !block.wgslFunction) continue;
         const idx = result.findIndex((l) => l.name === block.dataRef);
         if (idx < 0) continue;
         const outCols: string[] = block.outputColumns ?? (block.outputColumnName ? [block.outputColumnName] : []);

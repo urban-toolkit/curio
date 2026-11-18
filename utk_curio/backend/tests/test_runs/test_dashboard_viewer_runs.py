@@ -1020,7 +1020,7 @@ class TestKeptOutputsGo:
 AUTARK = "curio.builtin/autk-grammar"
 COMPUTE = json.dumps({"compute": [{
     "dataRef": "input_0", "attributes": {"v": "properties.count"},
-    "outputColumnName": "doubled", "wglsFunction": ["return v * 2.0;"],
+    "outputColumnName": "doubled", "wgslFunction": ["return v * 2.0;"],
 }]})
 #: What a page sends of that node: one layer, as Autark hands it on.
 LAYER = {"dataType": "geodataframe", "data": {"type": "FeatureCollection", "features": []}, "layerName": "grid"}

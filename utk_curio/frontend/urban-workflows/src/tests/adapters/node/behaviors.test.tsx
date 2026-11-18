@@ -1510,7 +1510,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       });
 
       test('a compute step needs its input; a data step does not', async () => {
-        expect((await body(JSON.stringify({ compute: [{ dataRef: 'x', wglsFunction: '' }] }))).reason)
+        expect((await body(JSON.stringify({ compute: [{ dataRef: 'x', wgslFunction: '' }] }))).reason)
           .toBe('disconnected');
         const data = JSON.stringify({ data: [{ type: 'json', jsonObject: [{ a: 1 }], outputTableName: 't' }] });
         expect((await body(data)).reason).toBe('not-run');
@@ -1637,7 +1637,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
           await run(
             { dataType: 'outputs', data: [cells(0, 0, 'a'), cells(1, 1, 'b'), cells(2, 2, 'c')] },
             {
-              compute: [{ dataRef: 'b', wglsFunction: '', uniforms: { near: { fromFeature: { layer: 'c', path: 'pop' } } } }],
+              compute: [{ dataRef: 'b', wgslFunction: '', uniforms: { near: { fromFeature: { layer: 'c', path: 'pop' } } } }],
               map: { layerRefs: [{ dataRef: 'b' }] },
             },
           );
@@ -2846,8 +2846,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
     test('join: expects nothing (it rewrites a table another source created)', () => {
       expect(requestedLayerTables([{
         type: 'join',
-        tableRootName: 'table_osm_roads',
-        tableJoinName: 'lst',
+        dataRef: 'table_osm_roads',
+        joinDataRef: 'lst',
         output: { type: 'MODIFY_ROOT' },
       }])).toEqual([]);
     });
