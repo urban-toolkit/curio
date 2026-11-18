@@ -366,10 +366,14 @@ def _is_raster_by_path(value: object) -> bool:
 
 
 def _keyed_frames_as_outputs(value: object) -> Optional[dict]:
-    """A dict of frames read as a tuple of them (``keyedFramesAsOutputs``)."""
+    """A dict of frames read as a tuple of them (``keyedFramesAsOutputs``), in
+    the order a page reads a dict's keys, which the page and the sandbox count
+    a dict's parts in (``rasters.page_order``)."""
+    from utk_curio.sandbox.util.rasters import page_order
+
     if not isinstance(value, dict) or not value or _is_envelope(value):
         return None
-    items = list(value.values())
+    items = [value[key] for key in page_order(value)]
     if not all(_is_envelope(item) for item in items):
         return None
     if not any(item["dataType"] in _FRAME_KINDS for item in items):
