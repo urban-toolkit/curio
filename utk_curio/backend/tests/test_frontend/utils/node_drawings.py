@@ -4,6 +4,7 @@ Autark map or plot and its legend, an empty state.
 
 import contextlib
 import json
+import math
 import time
 from io import BytesIO
 
@@ -244,6 +245,22 @@ def assert_autark_plot_drawn(page, node_id: str, *, timeout: float = 30000) -> N
 AUTK_MAP_MIN_FRAMED_SPAN = 0.75
 
 
+#: A map its camera turned stands where the camera says when its points agree
+#: with that view to this share of the eye's distance from the point it looks
+#: at, its up vector to this, and its angles to this many degrees: autk-map
+#: keeps its camera in 32-bit floats.
+TURNED_SAME_VIEW = 1e-4
+TURNED_SAME_UP = 1e-5
+TURNED_SAME_ANGLE = 0.01
+
+# The view of each map an Autark node drew (adapters/node/autkMapView's
+# mapViews), and the hook that shows the maps a camera turns at their framed
+# views (true) or turns them back (false).
+_AUTK_MAP_VIEWS_JS = """(id) => typeof window.__curio_mapViews === 'function' ? window.__curio_mapViews(id) : null"""
+_AUTK_SHOW_FRAMED_JS = """([id, framed]) => typeof window.__curio_showMapsFramed === 'function'
+    && window.__curio_showMapsFramed(id, framed)"""
+
+
 def autark_map_framing(page, node_id: str, *, min_span: float = AUTK_MAP_MIN_FRAMED_SPAN,
                        timeout: float = 5000) -> str | None:
     """Why an Autark map is not framed on what it draws, or None when it is (#773).
@@ -255,7 +272,74 @@ def autark_map_framing(page, node_id: str, *, min_span: float = AUTK_MAP_MIN_FRA
     middle nor a crop that runs past the canvas's edges. Read in the page, in
     the frame that renders the map, as the captures read it: the framing is the
     camera the map has now.
+
+    A map whose document writes a ``camera`` opens framed, then turned by it,
+    which can tilt its drawing past the canvas's edges. Its drawing is read at
+    the view the node framed it at, before the turn (``__curio_showMapsFramed``),
+    and then its turn (``__curio_mapViews``): the view it is turned back to
+    looks at the point the framed view looks at, from as far as the framed eye
+    is high, or as the camera's ``zoom`` says, ``pitch`` degrees from straight
+    down, facing ``bearing`` degrees clockwise from north, which is up the map.
     """
+    views = page.evaluate(_AUTK_MAP_VIEWS_JS, node_id) or []
+    if not any(view and view.get("camera") for view in views):
+        return _drawing_framing(page, node_id, min_span=min_span, timeout=timeout)
+    if not page.evaluate(_AUTK_SHOW_FRAMED_JS, [node_id, True]):
+        return f"Autark node {node_id}: its maps cannot be shown at the view they were framed at"
+    try:
+        framed = page.evaluate(_AUTK_MAP_VIEWS_JS, node_id) or []
+        problem = _drawing_framing(page, node_id, min_span=min_span, timeout=timeout)
+    finally:
+        page.evaluate(_AUTK_SHOW_FRAMED_JS, [node_id, False])
+    if problem:
+        return f"{problem}, at the view it was framed at before its camera turned it"
+    return _turn_problem(node_id, framed, page.evaluate(_AUTK_MAP_VIEWS_JS, node_id) or [])
+
+
+def _view_angles(view: dict) -> tuple[float, float, float]:
+    """How far *view*'s eye is from the point it looks at, and its pitch from
+    straight down and its bearing clockwise from north, in degrees."""
+    eye, look = view["eye"], view["lookAt"]
+    dx, dy, dz = look[0] - eye[0], look[1] - eye[1], look[2] - eye[2]
+    distance = math.sqrt(dx * dx + dy * dy + dz * dz)
+    pitch = math.degrees(math.acos(max(-1.0, min(1.0, -dz / distance)))) if distance else 0.0
+    bearing = math.degrees(math.atan2(dx, dy)) % 360
+    return distance, pitch, bearing
+
+
+def _turn_problem(node_id: str, framed: list, turned: list) -> str | None:
+    """Why a map its camera turns does not stand where the camera puts its
+    framed view (*framed*, each map's view before the turn; *turned*, after),
+    or None when each does."""
+    problems = []
+    for index, (before, after) in enumerate(zip(framed, turned)):
+        if not before or not after or not after.get("camera"):
+            continue
+        zoom, pitch, bearing = json.loads(after["camera"])
+        pitch, bearing = pitch or 0, (bearing or 0) % 360
+        high = before["eye"][2] - before["lookAt"][2]
+        far = 10000 / 2 ** (zoom - 10) if zoom is not None else high
+        distance, at_pitch, at_bearing = _view_angles(after)
+        turn = math.radians(bearing)
+        apart = lambda a, b: max(abs(x - y) for x, y in zip(a, b))  # noqa: E731
+        if apart(after["lookAt"], before["lookAt"]) > TURNED_SAME_VIEW * far:
+            problems.append(f"map {index} looks at {after['lookAt']}, framed at {before['lookAt']}")
+        if abs(distance - far) > TURNED_SAME_VIEW * far:
+            problems.append(f"map {index}'s eye is {distance} from where it looks, not {far}")
+        bearing_off = abs((at_bearing - bearing + 180) % 360 - 180)
+        if abs(at_pitch - pitch) > TURNED_SAME_ANGLE or (pitch > TURNED_SAME_ANGLE and bearing_off > TURNED_SAME_ANGLE):
+            problems.append(f"map {index} stands {at_pitch} degrees from straight down facing {at_bearing}, "
+                            f"not {pitch} facing {bearing}")
+        if apart(after["up"], [math.sin(turn), math.cos(turn), 0]) > TURNED_SAME_UP:
+            problems.append(f"map {index}'s up is {after['up']}, not the heading {bearing} degrees east of north")
+    if not problems:
+        return None
+    return f"Autark node {node_id}: its camera did not turn the view it was framed at: " + "; ".join(problems)
+
+
+def _drawing_framing(page, node_id: str, *, min_span: float, timeout: float) -> str | None:
+    """Why the drawing of an Autark map, at the view it has now, is not framed
+    on what it draws, or None when it is (``autark_map_framing``)."""
     import base64
 
     from PIL import Image, ImageChops

@@ -53,7 +53,7 @@ import {
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
 import { withCheckedPasses } from './autkComputeScopes';
-import { attachSpecCameras, frameMaps, keepMapViews, mapViews, type MapView } from './autkMapView';
+import { attachSpecCameras, frameMaps, keepMapViews, mapViews, showFramedViews, type MapView } from './autkMapView';
 import { destroyFailedGrammar, grammarMaps, trackMaps } from './autkMapDrawing';
 import { mapSession, onMapSession, registerEditMap } from '../../utils/editFeatures/mapEditBus';
 import {
@@ -77,15 +77,28 @@ const mapStateReaders = new Map<string, {
     state: () => Promise<Record<string, MapTableState> | null>;
     featureAt: (table: string, position: number) => Promise<Record<string, unknown> | null>;
     views: () => Array<MapView | null>;
+    showFramed: () => () => void;
 }>();
+/** What turns each node's maps back by their cameras, while they show their framed views. */
+const turnBack = new Map<string, () => void>();
 // The e2e tests read what a map draws and lights through them
 // (test_frontend/test_autark_positions_e2e.py), and its camera
-// (test_frontend/test_autark_camera_e2e.py).
+// (test_frontend/test_autark_camera_e2e.py); the map framing check (#773)
+// shows a map its camera turns at its framed view, then turns it back
+// (test_frontend/utils/node_drawings.py, autark_map_framing).
 if (typeof window !== 'undefined') {
     (window as any).__curio_mapState = (nodeId: string) => mapStateReaders.get(nodeId)?.state() ?? null;
     (window as any).__curio_mapFeatureAt = (nodeId: string, table: string, position: number) =>
         mapStateReaders.get(nodeId)?.featureAt(table, position) ?? null;
     (window as any).__curio_mapViews = (nodeId: string) => mapStateReaders.get(nodeId)?.views() ?? null;
+    (window as any).__curio_showMapsFramed = (nodeId: string, framed: boolean): boolean => {
+        turnBack.get(nodeId)?.();
+        turnBack.delete(nodeId);
+        const reader = mapStateReaders.get(nodeId);
+        if (!reader) return false;
+        if (framed) turnBack.set(nodeId, reader.showFramed());
+        return true;
+    };
 }
 
 /**
@@ -1672,9 +1685,11 @@ export const useAutkGrammarBehavior = (
             featureAt: async (table, position) =>
                 drawnFeatureAt(grammarRef.current, table, await drawn.features(table), position),
             views: () => mapViews(grammarRef.current),
+            showFramed: () => showFramedViews(grammarRef.current),
         });
         return () => {
             mapStateReaders.delete(data.nodeId);
+            turnBack.delete(data.nodeId);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [data.nodeId]);

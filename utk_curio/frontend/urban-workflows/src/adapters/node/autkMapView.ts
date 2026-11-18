@@ -295,6 +295,30 @@ function putBackView(map: any, view: MapView): boolean {
 }
 
 /**
+ * Show each flat map of *grammar* that its entry's `camera` turns at the view
+ * Curio framed it at, straight down on its layers, before the turn, and return
+ * what puts the turned views back. The e2e framing check (#773) reads such a
+ * map framed, as it reads a map with no camera, then reads its turn
+ * (`window.__curio_showMapsFramed`, `window.__curio_mapViews`).
+ */
+export function showFramedViews(grammar: any): () => void {
+    const views = mapViews(grammar);
+    const turned = grammarMaps(grammar).flatMap((map, index) => (
+        isFlat(map) && map[SPEC_CAMERA] ? [{ map, view: views[index] }] : []
+    ));
+    for (const { map } of turned) {
+        const turn = map[SPEC_CAMERA];
+        delete map[SPEC_CAMERA];
+        try {
+            frameMap(map);
+        } finally {
+            map[SPEC_CAMERA] = turn;
+        }
+    }
+    return () => keepMapViews({ maps: turned.map(({ map }) => map) }, turned.map(({ view }) => view));
+}
+
+/**
  * Put each flat map of *grammar* back on the view *views* holds at its place,
  * as `mapViews` took it from the maps the last draw made, so a draw after an
  * edit keeps the view the person zoomed and panned to, or the one its camera
