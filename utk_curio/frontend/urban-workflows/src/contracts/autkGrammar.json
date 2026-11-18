@@ -16,11 +16,7 @@
     { "in": "compute[]", "key": "outputTableName", "what": "a compute pass's \"outputTableName\"" },
     { "in": "compute[]", "key": "layerType", "what": "a compute pass's \"layerType\"" },
     { "in": "data[]", "key": "type", "value": "heatmap", "what": "a heatmap source" },
-    { "in": "data[]", "key": "type", "value": "geotiff", "what": "a geotiff source" },
-    { "in": "data[]", "key": "workspace", "what": "\"workspace\"" },
-    { "in": "compute[]", "key": "workspace", "what": "\"workspace\"" },
-    { "in": "map[]", "key": "workspace", "what": "\"workspace\"" },
-    { "in": "plot[]", "key": "workspace", "what": "\"workspace\"" }
+    { "in": "data[]", "key": "type", "value": "geotiff", "what": "a geotiff source" }
   ],
   "notRunYetKey": "This spec uses {what}{at}, which Curio does not run yet.",
   "keyAt": " at {path}",
