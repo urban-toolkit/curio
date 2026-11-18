@@ -105,6 +105,25 @@ def test_the_reply_schema_lets_no_reply_write_a_refused_key(flavor):
     assert json.loads(reply.decode(json.dumps(encoded))) == {"map": {"layerRefs": [{"dataRef": "input_0"}]}}
 
 
+@pytest.mark.parametrize("flavor", ["closed", "strict"])
+def test_the_reply_schema_keeps_a_pass_that_writes_a_new_table_and_its_type(flavor):
+    """A node runs a pass's ``outputTableName`` and ``layerType``, so a reply
+    that writes them keeps them, whole."""
+    from utk_curio.backend.app.agents.application import reply_schemas as rs
+
+    reply = rs.autk_reply_schema(rs.FLAVOR_CLOSED if flavor == "closed" else rs.FLAVOR_STRICT)
+    document = {
+        "compute": [{
+            "dataRef": "input_0", "attributes": {"v": "properties.value"}, "wgslFunction": "return v * 2.0;",
+            "outputColumnName": "twice", "outputTableName": "doubled", "layerType": "points",
+        }],
+        "map": {"layerRefs": [{"dataRef": "doubled", "getFnv": "twice"}]},
+    }
+    encoded, dropped = reply.encode(document)
+    assert dropped == []
+    assert json.loads(reply.decode(json.dumps(encoded))) == document
+
+
 def test_the_autark_skill_names_no_family_or_kind_a_node_refuses():
     from utk_curio.backend.app.agents.domain import contracts
     from utk_curio.backend.tests._support.prompt_files import prompt_text
