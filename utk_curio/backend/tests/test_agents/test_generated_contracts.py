@@ -517,6 +517,21 @@ class TestTheAutarkRenderers:
                 for value in values:
                     assert f'"{value}"' in region, (union, value)
 
+    def test_compute_passes_listed_by_reference_are_read_through_the_gpgpu_pass(self):
+        from utk_curio.backend.tests._support import autk_schemas
+
+        schema = autk_schemas.passes_by_reference(contracts.load_autk_schema())
+        shape = contracts.render_autk_shape(schema)
+        assert ('a compute pass needs "attributes", "dataRef" and "wgslFunction", '
+                'plus "outputColumnName" or "outputColumns"') in shape
+        region = contracts.render_autk_region(schema, "Autark")
+        assert autk_schemas.GPGPU_DESCRIPTION in region
+        assert f'"wgslFunction": {autk_schemas.SHADER_DESCRIPTION}' in region
+        # The render pass is no GPGPU pass: none of its fields is a pass's.
+        for render_only in ("viewpoints", "aggregation", autk_schemas.RENDER_DESCRIPTION):
+            assert render_only not in shape
+            assert render_only not in region
+
     def test_the_region_says_a_node_draws_one_view(self):
         schema = contracts.load_autk_schema()
         region = contracts.render_autk_region(schema, "Autark")

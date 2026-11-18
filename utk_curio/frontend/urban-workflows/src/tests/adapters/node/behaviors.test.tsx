@@ -2568,11 +2568,28 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         },
         {
           type: 'join',
-          tableRootName: 'table_osm_roads',
-          tableJoinName: 'table_osm_surface',
+          dataRef: 'table_osm_roads',
+          joinDataRef: 'table_osm_surface',
           near: { distance: 50 },
           groupBy: [{ column: 'osm_id', aggregateFn: 'count' }],
         },
+      ],
+    };
+    // What autk-db's spatialQuery is handed for JOIN_SPEC's join: autk-grammar
+    // 5 names a join's tables `dataRef` and `joinDataRef`, and autk-db takes
+    // them as `tableRootName` and `tableJoinName`, with `near` and `groupBy`,
+    // as the grammar's own data adapter hands them.
+    const JOIN_QUERY = {
+      tableRootName: 'table_osm_roads',
+      tableJoinName: 'table_osm_surface',
+      near: { distance: 50 },
+      groupBy: [{ column: 'osm_id', aggregateFn: 'count' }],
+    };
+    // A join with neither, as autk-db is handed it: the two names alone.
+    const BARE_JOIN_SPEC = {
+      data: [
+        JOIN_SPEC.data[0],
+        { type: 'join', dataRef: 'table_osm_roads', joinDataRef: 'table_osm_surface' },
       ],
     };
     const BINDER_ERROR = 'Binder Error: Referenced column "osm_id" not found in FROM clause!';
@@ -2668,6 +2685,59 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       mockAutkDbSpatialQuery.mockResolvedValue(undefined);
       mockAutkDbGetLayersMetadata.mockReset();
       mockAutkDbGetLayersMetadata.mockReturnValue([]);
+    });
+
+    test('sandbox script: a join reaches spatialQuery under the names autk-db takes', async () => {
+      const code = await captureSandboxScript(JOIN_SPEC);
+      const spatialQuery = jest.fn((..._a: unknown[]) => Promise.resolve(undefined));
+      await runSandboxScript(code, fakeSandboxDb(spatialQuery));
+      expect(spatialQuery.mock.calls).toEqual([[JOIN_QUERY]]);
+    });
+
+    test('sandbox script: a join with neither near nor groupBy hands autk-db the two names alone', async () => {
+      const code = await captureSandboxScript(BARE_JOIN_SPEC);
+      const spatialQuery = jest.fn((..._a: unknown[]) => Promise.resolve(undefined));
+      await runSandboxScript(code, fakeSandboxDb(spatialQuery));
+      expect(spatialQuery).toHaveBeenCalledTimes(1);
+      const [query] = spatialQuery.mock.calls[0] as any[];
+      expect(Object.keys(query).sort()).toEqual(['tableJoinName', 'tableRootName']);
+      expect(query).toEqual({ tableRootName: 'table_osm_roads', tableJoinName: 'table_osm_surface' });
+    });
+
+    // The browser's loader, which a node falls back to when the sandbox fails.
+    async function loadInTheBrowser(spec: object) {
+      const interpretCode = jest.fn(
+        (_unresolved, _code, _input, _inputTypes, cb) =>
+          cb({ stdout: [], stderr: 'sandbox down', output: { path: '', dataType: 'str' } }),
+      );
+      mockAutkDbLoadOsm.mockReset();
+      mockAutkDbLoadOsm.mockResolvedValue(undefined);
+      mockAutkDbGetLayersMetadata.mockReset();
+      mockAutkDbGetLayersMetadata.mockReturnValue(JOIN_TABLES);
+      mockAutkDbSpatialQuery.mockReset();
+      mockAutkDbSpatialQuery.mockResolvedValue(undefined);
+      try {
+        const result = await callBehavior(useAutkGrammarBehavior, { jsInterpreter: { interpretCode } as any });
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify(spec));
+        });
+        return [...mockAutkDbSpatialQuery.mock.calls];
+      } finally {
+        mockAutkDbGetLayersMetadata.mockReset();
+        mockAutkDbGetLayersMetadata.mockReturnValue([]);
+      }
+    }
+
+    test('in-browser load: a join reaches spatialQuery under the names autk-db takes', async () => {
+      expect(await loadInTheBrowser(JOIN_SPEC)).toEqual([[JOIN_QUERY]]);
+    });
+
+    test('in-browser load: a join with neither near nor groupBy hands autk-db the two names alone', async () => {
+      const calls = await loadInTheBrowser(BARE_JOIN_SPEC);
+      expect(calls).toHaveLength(1);
+      const [query] = calls[0] as any[];
+      expect(Object.keys(query).sort()).toEqual(['tableJoinName', 'tableRootName']);
+      expect(query).toEqual({ tableRootName: 'table_osm_roads', tableJoinName: 'table_osm_surface' });
     });
 
     // The browser must not put a host or port in a URL the SANDBOX will fetch:

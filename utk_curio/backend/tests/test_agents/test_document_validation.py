@@ -178,6 +178,26 @@ class TestAutkGrammar:
         assert verdict["status"] == dv.STATUS_INVALID
         assert named in verdict["detail"]
 
+    def test_a_compute_pass_is_told_what_its_own_kind_of_pass_lacks(self, monkeypatch):
+        # autk-grammar 5 lists a GPGPU pass and a render pass by reference, and
+        # a GPGPU pass names its output one of two ways.
+        from utk_curio.backend.app.agents.domain import contracts
+        from utk_curio.backend.tests._support import autk_schemas
+
+        schema = autk_schemas.passes_by_reference(contracts.load_autk_schema())
+        monkeypatch.setattr(contracts, "load_autk_schema", lambda *_args, **_kwargs: schema)
+        gpgpu = dv.validate(AUTK, json.dumps({"compute": [
+            {"dataRef": "input_0", "attributes": {}, "wgslFunction": "return 1.0;"}]}))
+        assert gpgpu == {"status": dv.STATUS_INVALID,
+                         "detail": 'compute[0]: missing one of "outputColumnName" or "outputColumns"'}
+        shader = dv.validate(AUTK, json.dumps({"compute": [
+            {"dataRef": "input_0", "attributes": {}, "outputColumnName": "h"}]}))
+        assert shader["status"] == dv.STATUS_INVALID
+        assert shader["detail"].startswith('compute[0]: missing "wgslFunction"')
+        render = dv.validate(AUTK, json.dumps({"compute": [{"type": "render", "outputTableName": "v"}]}))
+        assert render == {"status": dv.STATUS_INVALID,
+                          "detail": 'compute[0]: missing "layers", "viewpoints" and "aggregation"'}
+
     def test_the_widened_compute_forms_are_valid(self):
         grammar = {"compute": [{
             "dataRef": "input_0",
