@@ -12,11 +12,11 @@
  * `applyCamera` is the grammar's build (_support/autkApplyCamera). Each view
  * expected here is worked out from the framing and the angles.
  */
-jest.mock("@urban-toolkit/autk-db", () => ({}));
-jest.mock("@urban-toolkit/autk-map", () => ({}));
-jest.mock("@urban-toolkit/autk-plot", () => ({}));
-jest.mock("@urban-toolkit/autk-core", () => ({}));
-jest.mock("@urban-toolkit/autk-compute", () => ({}));
+jest.mock("@urban-toolkit/autk-db", () => ({}), { virtual: true });
+jest.mock("@urban-toolkit/autk-map", () => ({}), { virtual: true });
+jest.mock("@urban-toolkit/autk-plot", () => ({}), { virtual: true });
+jest.mock("@urban-toolkit/autk-core", () => ({}), { virtual: true });
+jest.mock("@urban-toolkit/autk-compute", () => ({}), { virtual: true });
 
 import { attachSpecCameras, frameMaps, framingCamera, keepMapViews, mapViews } from "../../../adapters/node/autkMapView";
 import { grammarThatRan } from "../../_support/autkGrammarMaps";
