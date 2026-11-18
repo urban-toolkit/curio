@@ -529,6 +529,33 @@ class TestARasterBehindAPinnedMap:
         assert [(r["filename"], r["part"]) for r in rasters] == [("t_output", 1), ("t_output", 2)]
         assert [base64.b64decode(r["geotiff"])[-1] for r in rasters] == [1, 2]
 
+    def test_each_raster_of_a_dict_travels_under_its_place_as_the_page_counts_it(self):
+        # A dict of frames reads as a tuple of them, in the order a page reads
+        # a dict's keys, whole numbers first by value (keyedFramesAsOutputs):
+        # the map asks for 2020's raster as part 0 and 2021's as part 1, and
+        # the sandbox serves them by that count (rasters.raster_artifact).
+        envelope = {"dataType": "dict", "data": {
+            "roads": {"dataType": "dataframe", "data": {"a": [1]}},
+            "2021": {"dataType": "raster", "data": "/srv/b.tif"},
+            "2020": {"dataType": "raster", "data": "/srv/a.tif"},
+        }}
+        asked = []
+
+        def fetch_raster(filename, part):
+            asked.append((filename, part))
+            return served(GEOTIFF + bytes([part]))
+
+        payload = build_dashboard_payload(
+            spec=raster_map_spec(),
+            output_refs=raster_refs("d_output", "dict"),
+            fetch_envelope=lambda name: envelope,
+            fetch_raster=fetch_raster,
+        )
+        rasters = payload.to_dict()["rasters"]
+
+        assert asked == [("d_output", 0), ("d_output", 1)]
+        assert [(r["filename"], r["part"]) for r in rasters] == [("d_output", 0), ("d_output", 1)]
+
     def test_a_raster_that_travels_as_its_collection_needs_nothing_more(self):
         # A raster an Autark node handed on is its collection, inside the
         # envelope /get answered, which travels anyway.
