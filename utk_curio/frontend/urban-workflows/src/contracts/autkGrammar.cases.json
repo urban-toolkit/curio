@@ -216,6 +216,21 @@
       "name": "a compute pass over a layer beside the document's GeoTIFF is run",
       "spec": { "data": [{ "type": "osm", "pbfFileUrl": "docs/examples/data/niteroi.osm.pbf", "outputTableName": "table_osm", "autoLoadLayers": { "layers": ["parks"] } }, { "type": "geotiff", "geotiffFileUrl": "docs/examples/data/niteroi_lst_verao_2001_2024.tif", "outputTableName": "lst", "resampleMethod": "nearest" }], "compute": [{ "dataRef": "table_osm_parks", "attributes": { "a": "area" }, "wgslFunction": "return a;", "outputColumnName": "x" }], "map": { "layerRefs": [{ "dataRef": "lst", "getFnv": "band_24" }, { "dataRef": "table_osm_parks" }] } },
       "says": null
+    },
+    {
+      "name": "a compute pass over the document's own GeoTIFF in its workspace is not run yet",
+      "spec": { "data": [{ "type": "geotiff", "geotiffFileUrl": "docs/examples/data/niteroi_lst_verao_2001_2024.tif", "outputTableName": "lst", "workspace": "heat" }], "compute": [{ "dataRef": "lst", "workspace": "heat", "attributes": { "t": "band_24" }, "wgslFunction": "return t;", "outputColumnName": "warming" }] },
+      "says": "This spec uses a compute pass over the raster \"lst\" at compute[0], which Curio does not run yet."
+    },
+    {
+      "name": "a compute pass over the document's own heatmap, both in the default workspace named or not, is not run yet",
+      "spec": { "data": [{ "type": "csv", "csvFileUrl": "a.csv", "outputTableName": "a" }, { "type": "heatmap", "joinDataRef": "a", "outputTableName": "h", "near": { "distance": 5 }, "grid": { "rows": 2, "columns": 2 }, "workspace": "autk" }], "compute": [{ "dataRef": "h", "attributes": { "n": "band_1" }, "wgslFunction": "return n;", "outputColumnName": "x" }] },
+      "says": "This spec uses a compute pass over the raster \"h\" at compute[0], which Curio does not run yet."
+    },
+    {
+      "name": "a compute pass over a table of a GeoTIFF's name in another workspace is run",
+      "spec": { "data": [{ "type": "geotiff", "geotiffFileUrl": "docs/examples/data/niteroi_lst_verao_2001_2024.tif", "outputTableName": "lst", "workspace": "heat" }, { "type": "csv", "csvFileUrl": "lst.csv", "outputTableName": "lst" }], "compute": [{ "dataRef": "lst", "attributes": { "t": "temperature" }, "wgslFunction": "return t;", "outputColumnName": "warming" }] },
+      "says": null
     }
   ]
 }

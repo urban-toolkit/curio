@@ -44,7 +44,7 @@ const shared = (): {
 const autkGrammar = () =>
   require("../../contracts/autkGrammar") as {
     autkKeyProblem: (spec: unknown) => string | null;
-    autkRasterPassProblem: (spec: unknown, rasters: Iterable<string>) => string | null;
+    autkRasterPassProblem: (spec: unknown, rasters: Iterable<{ name: string; workspace?: string }>) => string | null;
   };
 
 describe("the key cases", () => {
@@ -84,22 +84,38 @@ describe("autkKeyProblem", () => {
 describe("autkRasterPassProblem", () => {
   const PASS = { attributes: { t: "band_1" }, wgslFunction: "return t;", outputColumnName: "warming" };
 
+  const INPUT_0 = [{ name: "input_0" }];
+
   test("a pass over a raster the input brings is named, with where it is written", () => {
     expect(autkGrammar().autkRasterPassProblem(
       { compute: [{ dataRef: "table_osm_parks", ...PASS }, { dataRef: "input_0", ...PASS }] },
-      ["input_0"],
+      INPUT_0,
     )).toBe('This spec uses a compute pass over the raster "input_0" at compute[1], which Curio does not run yet.');
     // One pass written alone is the pass.
-    expect(autkGrammar().autkRasterPassProblem({ compute: { dataRef: "input_0", ...PASS } }, ["input_0"])).toBe(
+    expect(autkGrammar().autkRasterPassProblem({ compute: { dataRef: "input_0", ...PASS } }, INPUT_0)).toBe(
       'This spec uses a compute pass over the raster "input_0" at compute, which Curio does not run yet.',
     );
   });
 
   test("passes over layers, and a map of the raster, are run", () => {
-    expect(autkGrammar().autkRasterPassProblem({ compute: [{ dataRef: "table_osm_parks", ...PASS }] }, ["input_0"])).toBeNull();
+    expect(autkGrammar().autkRasterPassProblem({ compute: [{ dataRef: "table_osm_parks", ...PASS }] }, INPUT_0)).toBeNull();
     expect(autkGrammar().autkRasterPassProblem(
       { map: { layerRefs: [{ dataRef: "input_0", getFnv: "band_1" }] } },
-      ["input_0"],
+      INPUT_0,
     )).toBeNull();
+  });
+
+  // A pass reads the table of its own workspace, and a raster the input brings
+  // is in the workspace it came in: the default one, named or not, is one.
+  test("a pass over a raster in the raster's workspace is named, and one in another workspace is run", () => {
+    const east = [{ name: "input_0", workspace: "east" }];
+    expect(autkGrammar().autkRasterPassProblem({ compute: [{ dataRef: "input_0", workspace: "east", ...PASS }] }, east)).toBe(
+      'This spec uses a compute pass over the raster "input_0" at compute[0], which Curio does not run yet.',
+    );
+    expect(autkGrammar().autkRasterPassProblem({ compute: [{ dataRef: "input_0", ...PASS }] }, east)).toBeNull();
+    expect(autkGrammar().autkRasterPassProblem({ compute: [{ dataRef: "input_0", workspace: "east", ...PASS }] }, INPUT_0)).toBeNull();
+    expect(autkGrammar().autkRasterPassProblem({ compute: [{ dataRef: "input_0", workspace: "autk", ...PASS }] }, INPUT_0)).toBe(
+      'This spec uses a compute pass over the raster "input_0" at compute[0], which Curio does not run yet.',
+    );
   });
 });

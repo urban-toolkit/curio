@@ -13,6 +13,7 @@ import * as fs from "fs";
 import * as path from "path";
 
 import {
+    AUTK_DEFAULT_WORKSPACE,
     GRAMMAR_RASTER_SOURCES,
     SANDBOX_BACKEND_URL_TOKEN,
     compileDataSpecToAutkDbJs,
@@ -61,6 +62,16 @@ describe("GRAMMAR_RASTER_SOURCES", () => {
             path.join(__dirname, "..", "..", "..", "contracts", "autkGrammar.json"), "utf8",
         ));
         expect(GRAMMAR_RASTER_SOURCES).toEqual(contract.rasterSources);
+    });
+});
+
+describe("AUTK_DEFAULT_WORKSPACE", () => {
+    it("is the default workspace the raster-pass check reads, the node's and the agents' check's", () => {
+        // Held here and in the contract both sides read, for the same reason.
+        const contract = JSON.parse(fs.readFileSync(
+            path.join(__dirname, "..", "..", "..", "contracts", "autkGrammar.json"), "utf8",
+        ));
+        expect(AUTK_DEFAULT_WORKSPACE).toBe(contract.defaultWorkspace);
     });
 });
 
