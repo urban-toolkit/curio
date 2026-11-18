@@ -302,6 +302,21 @@ export const useAutkGrammarBehavior = (
         }
         return drawn.rows.get(table)!;
     };
+    // The input row each row of a table a pass of this draw wrote stands for,
+    // as a plot of it holds them: every feature the pass kept, in the order
+    // autk-db stores them, read back from what it exported. Null for any
+    // other table, whose rows a plot holds as Curio loads them.
+    const writtenRowsOf = (grammar: any, table: string): Promise<number[] | null> | null => {
+        const drawn = drawnRef.current;
+        const exports = grammar?.data;
+        if (!drawn || drawn.grammar !== grammar || !writtenFromRef.current[table] || !drawn.tagged.has(table)
+            || !exports || typeof exports !== 'object' || !(table in exports)) return null;
+        const key = `written:${table}`;
+        if (!drawn.rows.has(key)) {
+            drawn.rows.set(key, Promise.resolve(exports[table]).then((fc: any) => drawnRows(fc?.features), () => null));
+        }
+        return drawn.rows.get(key)!;
+    };
 
     // What the node knows about its input edge, asked the way the Vega-Lite
     // node asks (hook/useGrammarInputState).
@@ -611,26 +626,32 @@ export const useAutkGrammarBehavior = (
                 if (prepared.emptyReason && prepared.sources.length === 0 && rasterSources.length === 0) {
                     inputProblemRef.current = { reason: prepared.emptyReason, detail: prepared.detail };
                 }
+                // A table a pass writes from one of the input's holds that
+                // table's rows, as autk-db stores them (writtenTables).
+                const inputTables = new Set(prepared.sources.map((source) => source.outputTableName));
+                for (const { name, from } of writtenTables(spec)) {
+                    const root = writtenFrom[from] ?? from;
+                    if (inputTables.has(root)) writtenFrom[name] = root;
+                }
+                const passRoots = new Set(Object.values(writtenFrom));
                 const orders: Record<string, LoadOrder> = {};
                 const features: Record<string, readonly any[]> = {};
                 upstreamSources = prepared.sources.map((source) => {
-                    // Each feature a map draws carries its input row, read back from what autk-db exported.
-                    const loadable = loadableSource(source, { tagRows: hasMaps });
+                    // Each feature a map draws, and each a pass computes over,
+                    // carries its input row, read back from what autk-db exported.
+                    const loadable = loadableSource(source, { tagRows: hasMaps || passRoots.has(source.outputTableName) });
                     orders[source.outputTableName] = loadable.order;
                     features[source.outputTableName] = (source.geojsonObject as any)?.features ?? [];
                     return loadable.source;
                 });
-                taggedTables = hasMaps ? prepared.sources.map((source) => source.outputTableName) : [];
-                // A table a pass writes from one of these holds its rows, in
-                // the order the map draws them, each with its input row's tag.
-                const inputTables = new Set(Object.keys(orders));
-                for (const { name, from } of writtenTables(spec)) {
-                    const root = writtenFrom[from] ?? from;
-                    if (!inputTables.has(root)) continue;
-                    writtenFrom[name] = root;
-                    orders[name] = orders[root];
+                taggedTables = prepared.sources.map((source) => source.outputTableName)
+                    .filter((table) => hasMaps || passRoots.has(table));
+                for (const [name, root] of Object.entries(writtenFrom)) {
+                    // A pass's result keeps the rows in the order autk-db
+                    // stores them, which a map draws and a plot of it holds.
+                    orders[name] = { load: orders[root].map, map: orders[root].map };
                     features[name] = features[root];
-                    if (taggedTables.includes(root)) taggedTables.push(name);
+                    taggedTables.push(name);
                 }
                 loadOrdersRef.current = orders;
                 inputFeaturesRef.current = features;
@@ -1131,16 +1152,20 @@ export const useAutkGrammarBehavior = (
                         layerRef: string | undefined,
                         from: 'map' | 'plot',
                     ) => {
-                        // A pick names positions in the layer as the map drew it.
-                        const drawn = from === 'map' && layerRef ? drawnRowsOf(grammar, layerRef) : null;
+                        // A pick names positions in the layer as the map drew it,
+                        // and a brush positions in the table the plot holds,
+                        // which for a table a pass wrote is what the pass kept.
+                        const loaded = layerRef ? loadOrdersRef.current[layerRef]?.[from === 'map' ? 'map' : 'load'] : null;
+                        const drawn = !layerRef ? null
+                            : from === 'map' ? drawnRowsOf(grammar, layerRef) : writtenRowsOf(grammar, layerRef);
                         if (!drawn) {
-                            sendInteraction(selection, layerRef, from, layerRef ? loadOrdersRef.current[layerRef]?.[from === 'map' ? 'map' : 'load'] : null);
+                            sendInteraction(selection, layerRef, from, loaded);
                             return;
                         }
                         void drawn.then((order) => {
-                            // A map drawn again since shows none of this pick.
+                            // A view drawn again since shows none of this selection.
                             if (grammarRef.current !== grammar) return;
-                            sendInteraction(selection, layerRef, from, order ?? loadOrdersRef.current[layerRef!]?.map);
+                            sendInteraction(selection, layerRef, from, order ?? loaded);
                         });
                     };
 
@@ -1569,7 +1594,13 @@ export const useAutkGrammarBehavior = (
                 : grammar.highlightOnMap?.(lr.dataRef, sel);
         });
         for (const plotSpec of plots) {
-            const sel = positions(plotSpec.dataRef, 'load');
+            // A plot of a table a pass wrote holds the rows the pass kept.
+            const written = writtenRowsOf(grammar, plotSpec.dataRef);
+            const kept = written ? await written : null;
+            if (grammarRef.current !== grammar) return;
+            const sel = kept
+                ? tablePositions(rowsByLayer.get(plotSpec.dataRef) ?? [], kept)
+                : positions(plotSpec.dataRef, 'load');
             // The grammar knows a plot by its id, else by its table (plotKey).
             const plot = typeof plotSpec.id === 'string' && plotSpec.id ? plotSpec.id : plotSpec.dataRef;
             sel.length === 0

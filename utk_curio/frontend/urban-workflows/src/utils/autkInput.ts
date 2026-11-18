@@ -164,34 +164,44 @@ export function tablesToLoad<T extends { outputTableName?: unknown; layerType?: 
   return [...loaded.filter(brought), ...loaded.filter((table) => !brought(table))];
 }
 
-/** A table a compute pass of the document writes under a name of its own. */
+/** A table a compute pass of the document writes. */
 export type WrittenTable = {
-  /** Its name, the pass's `outputTableName`. */
+  /** Its name: the pass's `outputTableName`, else its `dataRef`. */
   name: string;
   /** The table the pass computes over, its `dataRef`, whose rows it holds. */
   from: string;
-  /** The type it is drawn and handed on as, when the pass says (`layerType`). */
+  /** The type the pass draws and hands it on as (`layerType`), read only with an `outputTableName`. */
   layerType?: string;
 };
 
 /**
- * The tables the document's GPGPU passes write under their `outputTableName`,
- * in pass order, so a table a pass writes from another's comes after it. A
- * pass keeps every feature of the table it computes over, so the table it
- * writes holds that table's rows; its type is the pass's `layerType`, else
- * that table's (autk-grammar's compute adapter, `store`). A pass without an
- * `outputTableName`, or with its `dataRef` as one, writes into that table and
- * makes none.
+ * The tables the document's GPGPU passes write, in pass order, so a table a
+ * pass writes from another's comes after it: each under the pass's
+ * `outputTableName`, else in place of its `dataRef` table, as autk-grammar's
+ * compute adapter keeps them (`store`). A map or a plot draws a table a pass
+ * wrote from that result, which holds every feature of the table the pass
+ * computed over, in the order autk-db stores them. A table a pass names is
+ * drawn as its `layerType`, else as the table it is computed from.
  */
 export function writtenTables(spec: any): WrittenTable[] {
   const written: WrittenTable[] = [];
   for (const pass of asList<any>(spec?.compute)) {
     if (pass == null || typeof pass !== "object" || (pass.type != null && pass.type !== "gpgpu")) continue;
-    const { outputTableName: name, dataRef: from, layerType } = pass;
-    if (typeof name !== "string" || !name || typeof from !== "string" || !from || name === from) continue;
-    written.push({ name, from, ...(typeof layerType === "string" && layerType ? { layerType } : {}) });
+    const { outputTableName, dataRef: from, layerType } = pass;
+    if (typeof from !== "string" || !from) continue;
+    const named = typeof outputTableName === "string" && outputTableName !== "";
+    written.push({
+      name: named ? outputTableName : from,
+      from,
+      ...(named && typeof layerType === "string" && layerType ? { layerType } : {}),
+    });
   }
   return written;
+}
+
+/** The tables the document's passes make: those written under a name other than the table they are computed from. */
+export function madeTables(spec: any): string[] {
+  return writtenTables(spec).filter((table) => table.name !== table.from).map((table) => table.name);
 }
 
 /** The tables the document's own data section creates. */
@@ -218,7 +228,7 @@ export function autkNeedsInput(spec: any): boolean {
   const hasCompute = asList(spec.compute).length > 0;
   const hasData = Array.isArray(spec.data) && spec.data.length > 0;
   if (hasCompute && !hasRender && !hasData) return true;
-  const own = new Set([...ownTableNames(spec), ...writtenTables(spec).map((table) => table.name)]);
+  const own = new Set([...ownTableNames(spec), ...madeTables(spec)]);
   return documentTableRefs(spec).some((name) => !own.has(name));
 }
 
