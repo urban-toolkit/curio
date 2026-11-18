@@ -19,6 +19,7 @@ import {
   type PreviewTable,
 } from "../../utils/references/inputScope";
 import { POOL_INPUT, SUMMARY_REF, SUMMARY_TUPLE } from "../_support/chipPreviewFixtures";
+import { ELEVATION } from "../_support/rasterInputFixtures";
 
 const fc = (type: string, rows: Array<Record<string, unknown>>) => ({
   type: "FeatureCollection",
@@ -185,9 +186,14 @@ describe("readInputPreview", () => {
     expect(mockFetchPreviewData).not.toHaveBeenCalled();
   });
 
-  test("a raster is not read", async () => {
-    expect(await readInputPreview({ path: "r", dataType: "raster" })).toEqual({ kind: "raster" });
-    expect(mockFetchPreviewData).not.toHaveBeenCalled();
+  test("a raster on its own is read once, for what it is: its size, its bands and its CRS", async () => {
+    mockFetchPreviewData.mockResolvedValue(ELEVATION);
+    expect(await readInputPreview({ path: "r", dataType: "raster" })).toEqual({
+      kind: "raster",
+      raster: { width: 40, height: 30, bands: ["elevation_m", "band_2"], crs: "EPSG:3395" },
+    });
+    expect(mockFetchPreviewData).toHaveBeenCalledTimes(1);
+    expect(mockFetchPreviewData).toHaveBeenCalledWith("r");
   });
 
   test("a JSON list or dict shows its first items", async () => {
