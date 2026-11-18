@@ -19,7 +19,7 @@ import type { InputScope, LayerScope } from "./codeReferences";
 import { isReferenceableColumn, isReferenceableLayer } from "./codeReferences";
 import { inputSlotOf, isDataEdge, wiredInputSlots } from "../inputSlots";
 import { readGrammarInput, type GrammarFrame, type GrammarInput } from "../grammarInput";
-import type { RasterMeta } from "../raster/rasterLoad";
+import { rasterOf, type PreviewRaster } from "../raster/rasterDescription";
 import { toRows } from "../rowSource";
 import { fetchPreviewData } from "../../services/api";
 import { outputStatus } from "../nodeOutputStatus";
@@ -201,16 +201,8 @@ export interface PreviewTable {
     geometryType?: string | null;
 }
 
-/** What a preview shows of one raster, as its envelope says it. */
-export interface PreviewRaster {
-    /** Its size in cells: how many across, then how many down. */
-    width: number;
-    height: number;
-    /** Each band's label, in band order. */
-    bands: string[];
-    /** Its coordinate system ("EPSG:3395"), when it names one. */
-    crs: string | null;
-}
+/** What a preview shows of one raster, as its envelope says it (utils/raster/rasterDescription). */
+export type { PreviewRaster };
 
 /** One layer of an input: a table, or a raster, null when its envelope says
  * nothing of it. */
@@ -330,46 +322,6 @@ function previewOf(
 /** A frame of a tuple as its part: a table, or a raster. */
 function partOf(frame: GrammarFrame): TuplePart {
     return frame.dataType === "raster" ? { raster: rasterOfFrame(frame) } : { table: tableOf(frame) };
-}
-
-const isCount = (value: unknown): value is number => typeof value === "number" && Number.isInteger(value) && value > 0;
-
-/** A raster *width* by *height* cells, with *bands* labelled, in *crs*; null
- * when its size is not one. */
-function rasterSized(width: unknown, height: unknown, bands: string[], crs: unknown): PreviewRaster | null {
-    if (!isCount(width) || !isCount(height)) return null;
-    return { width, height, bands, crs: typeof crs === "string" && crs ? crs : null };
-}
-
-/** A band's label: its own, else `band_<n>`, the id autk-db gives the band
- * at *index* when an Autark node loads the raster. */
-const bandLabel = (label: unknown, index: number) =>
-    typeof label === "string" && label ? label : `band_${index + 1}`;
-
-/**
- * What a preview shows of a raster, from its envelope: an Autark raster's
- * grid and its bands' labels (utils/raster/rasterWire), or, beside a Python
- * raster's file, what the sandbox read of it (`meta`: the description the
- * raster route's header gives, `RasterMeta`, with each band's label). Null
- * when it says neither.
- */
-function rasterOf(envelope: unknown): PreviewRaster | null {
-    if (!isRecord(envelope)) return null;
-    const data = envelope.data;
-    if (isRecord(data) && isRecord(data.grid)) {
-        const properties = Array.isArray(data.features) ? data.features[0]?.properties : null;
-        const bands: unknown[] = Array.isArray(properties?.bands) ? properties.bands : [];
-        const labels = bands.map((band, index) => bandLabel(isRecord(band) ? band.label || band.id : null, index));
-        return rasterSized(data.grid.width, data.grid.height, labels, data.grid.crs);
-    }
-    const meta = envelope.meta as Partial<RasterMeta> & { bands?: unknown } | undefined;
-    if (isRecord(meta)) {
-        const labels: unknown[] = Array.isArray(meta.bands)
-            ? meta.bands
-            : Array.from({ length: isCount(meta.count) ? meta.count : 0 }, () => null);
-        return rasterSized(meta.width, meta.height, labels.map(bandLabel), meta.crs);
-    }
-    return null;
 }
 
 /** What a preview shows of a raster frame: from the envelope an Autark node

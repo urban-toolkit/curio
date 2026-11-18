@@ -7,6 +7,7 @@ import { previewTotalRows, rowsFromParseOutput } from '../../../utils/tabularPre
 import { NodeEmptyState } from '../../../components/nodes/NodeEmptyState';
 import { isTabularPayload, resolveNodeEmptyReason } from '../../../utils/nodeEmptyState';
 import { poolTabKind, RASTER_TAB_TITLE } from '../../../utils/poolTabs';
+import { rasterBandsText, rasterCutText, rasterOf, rasterSizeText } from '../../../utils/raster/rasterDescription';
 import { ResolutionType } from '../../../constants';
 import nodeSettings from '../../../contracts/nodeSettings.json';
 
@@ -205,8 +206,16 @@ export default function DataPoolContent({
     ? wrappers[activeIndex]
     : '';
   // A raster's tab says it is one, and a value's that it is not tabular: they
-  // have no rows to read or show.
+  // have no rows to read or show. A raster's tab then says what it is, in the
+  // words a chip's hover says it in, from what the pool holds of it: an Autark
+  // raster's envelope, or what the sandbox read of a Python one beside its
+  // file. A raster the pool holds by its reference alone is not read for it.
   const activeKind = hasData ? poolTabKind(tabData[activeIndex]) : 'table';
+  const activeRaster = activeKind === 'raster' ? rasterOf(tabData[activeIndex]) : null;
+  const rasterLines = activeRaster
+    ? [rasterSizeText(activeRaster), rasterBandsText(activeRaster), rasterCutText(activeRaster)]
+      .filter((line): line is string => !!line)
+    : [];
 
   return (
     // overflow:hidden + height:100% pin this component to the parent's box, so
@@ -264,7 +273,7 @@ export default function DataPoolContent({
       </Nav>
       <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         {hasData && activeKind === 'raster' ? (
-          <NodeEmptyState reason="not-tabular" title={RASTER_TAB_TITLE} hint="" />
+          <NodeEmptyState reason="not-tabular" title={RASTER_TAB_TITLE} hint="" lines={rasterLines} />
         ) : hasData && activeKind === 'value' ? (
           <NodeEmptyState reason="not-tabular" />
         ) : hasData ? (

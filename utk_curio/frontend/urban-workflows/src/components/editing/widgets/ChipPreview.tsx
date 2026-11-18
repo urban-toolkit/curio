@@ -64,6 +64,7 @@ import {
   type PreviewRaster,
   type PreviewTable,
 } from "../../../utils/references/inputScope";
+import { rasterBandsText, rasterCaption, rasterCutText, rasterSizeText } from "../../../utils/raster/rasterDescription";
 import { INPUT_FIELD, stackInputs, type StackEntry } from "../../../utils/scenarios/stackedInputs";
 import {
   SCENARIO_FIELD,
@@ -98,8 +99,6 @@ const VALUE_CHARS = 120;
 /** The values of a tuple, and the layers of an input, a preview shows: two
  * tables of 3 rows fit its height with its head and its foot. */
 const SHOWN_PARTS = 2;
-/** The bands of a raster a preview names. */
-const SHOWN_BANDS = 5;
 /** The tooltip card's padding and border around a preview, in px (`.rich` in
  * TooltipLayer.module.css): what the card's size leaves the preview. */
 const CARD_PADDING_X = 10;
@@ -415,33 +414,22 @@ function staleLine(state: InputPreviewState | undefined): React.ReactNode {
   ) : null;
 }
 
-/** A raster's size in cells, its bands and its kind, as a frame's line gives
- * its rows, its columns and its kind: "40 by 30 cells · 2 bands · Raster, EPSG:3395". */
-function rasterSizeText(raster: PreviewRaster): string {
-  const kind = ["Raster", raster.crs].filter(Boolean).join(", ");
-  return `${count(raster.width)} by ${count(raster.height)} cells · ${countOf(raster.bands.length, "band", "bands")} · ${kind}`;
-}
-
-/** A raster on one line beside its name, as a table's caption gives its size:
- * "raster, 40 by 30 cells, 2 bands", or "raster" when nothing is known of it. */
-function rasterCaption(raster: PreviewRaster | null): string {
-  if (!raster) return "raster";
-  return `raster, ${count(raster.width)} by ${count(raster.height)} cells, ${countOf(raster.bands.length, "band", "bands")}`;
-}
-
-/** What a raster holds, under its head: its size, its bands and its CRS, then
- * its first bands by their labels; "A raster" when nothing is known of it. */
+/** What a raster holds, under its head, in the words a Data Pool's raster tab
+ * says it in too (utils/raster/rasterDescription): its size, its bands and its
+ * CRS, then its first bands by their labels; "A raster" when nothing is known
+ * of it. */
 function rasterHolding(raster: PreviewRaster | null | undefined): { body: React.ReactNode; foot: string[] } {
   if (!raster) return { body: <Line>A raster</Line>, foot: [] };
-  const shown = raster.bands.slice(0, SHOWN_BANDS);
+  const bands = rasterBandsText(raster);
+  const cut = rasterCutText(raster);
   return {
     body: (
       <>
         <Line tone="muted">{rasterSizeText(raster)}</Line>
-        {shown.length > 0 ? <Line>{raster.bands.length === 1 ? "Band" : "Bands"}: {shown.join(", ")}</Line> : null}
+        {bands ? <Line>{bands}</Line> : null}
       </>
     ),
-    foot: raster.bands.length > shown.length ? [`first ${shown.length} of ${count(raster.bands.length)} bands`] : [],
+    foot: cut ? [cut] : [],
   };
 }
 
