@@ -33,6 +33,7 @@ import {
 import { type GrammarInput } from '../../utils/grammarInput';
 import { featureRows, matchSelections, type IncomingSelection } from '../../utils/selectionMatch';
 import { EDIT_SELECTION, type SentSelection } from '../../utils/editFeatures/mapEditSelection';
+import { AUTK_SELECTION, autkSelectionKey, byAutkLayer, type AutkSelect } from '../../utils/autkSelects';
 import { provideViewRows } from '../../utils/references/viewSelections';
 import { withChipPlaceholders } from '../../utils/references/codeReferences';
 import { selectionEchoSource } from '../../utils/selectionEcho';
@@ -117,6 +118,25 @@ if (typeof window !== 'undefined') {
 }
 
 /**
+ * The key the select of *view* (none: the node's first map, where a Map
+ * Editor node picks) is sent under: `autk_selection` for a node of one view,
+ * else the view's own, by its `id`, else its place among the views of
+ * *panes*, the panes of the document the grammar drew (utils/autkSelects).
+ */
+function selectionKeyOf(panes: ViewPanes | null, view: Pick<DrawnView, 'kind' | 'index'> | null | undefined): string {
+    const all = panes ?? [];
+    if (all.length <= 1) return AUTK_SELECTION;
+    const where = view ?? { kind: 'map' as const, index: 0 };
+    const at = Math.max(all.findIndex((pane) => pane.kind === where.kind && pane.index === where.index), 0);
+    return autkSelectionKey(all[at].id ?? at);
+}
+
+/** Whether *select* holds a selection: a pick or a brush of rows, or of key values. */
+function holdsSelection(select: AutkSelect | undefined): boolean {
+    return Array.isArray(select?.data) && select!.data.length > 0;
+}
+
+/**
  * The layer a document's selections come from when they name none: its map's
  * pickable layer (or its first), else its plot's. The same layers a pick and a
  * plot brush report below.
@@ -198,11 +218,12 @@ export const useAutkGrammarBehavior = (
     // Unsubscribe functions returned by grammar.interactions.on(); cleared and
     // re-populated on every applyGrammar call and on unmount.
     const interactionOffRef = useRef<Array<() => void>>([]);
-    // The layer of the pick or brush this node last sent that picked
-    // something, and the view it was made in (none for a Map Editor node's
-    // pick, made on the node's first map), until it sends an empty one or is
-    // drawn again.
-    const ownSelectionRef = useRef<{ layerRef: string | undefined; view: Pick<DrawnView, 'kind' | 'index'> | null } | null>(null);
+    // The select each view of the last draw sent, by the key it is sent
+    // under (utils/autkSelects): `autk_selection` for a node of one view, one
+    // per view for a node of several, as a Vega-Lite chart keeps one per
+    // param. Kept until the node is drawn again, which empties those that
+    // held a selection.
+    const heldSelectsRef = useRef<Map<string, AutkSelect>>(new Map());
     // Disposer for the map canvas's window-bound pointer listeners (the
     // interaction zoom fix and the press guard), cleared and re-populated on
     // each applyGrammar run with a map, and on unmount.
@@ -249,18 +270,25 @@ export const useAutkGrammarBehavior = (
     // stale data object (grammar subscriptions outlive individual renders).
     const dataRef = useRef(data);
     useEffect(() => { dataRef.current = data; });
-    // The map's own selection, sent as the map's: a pick or a brush of
-    // autk-map's, in the view that made it, or a pick a Map Editor node's
-    // overlay makes on the map. The layer it names and its view are kept until
-    // it is emptied, so a draw that is not an edit's says that selection is
-    // gone (below).
-    const sendOwnSelection = useCallback((selection: SentSelection, view?: DrawnView) => {
+    // The node's own selection, sent as its view's: a pick or a brush of
+    // autk-map's or autk-plot's, in the view that made it, or a pick a Map
+    // Editor node's overlay makes on the node's first map. A node of one
+    // view sends it under `autk_selection`; a node of several sends every
+    // view's select it holds, as a Vega-Lite chart sends its params, each
+    // under its view's key, the one made now at priority 1 and the others at
+    // 0, oldest first (utils/autkSelects). Each is kept, so a draw that is
+    // not an edit's says each selection is gone (below).
+    const sendOwnSelection = useCallback((selection: SentSelection, view?: Pick<DrawnView, 'kind' | 'index'>) => {
         const detail = selection[EDIT_SELECTION];
-        ownSelectionRef.current = Array.isArray(detail?.data) && detail.data.length > 0
-            ? { layerRef: detail.layerRef, view: view ? { kind: view.kind, index: view.index } : null }
-            : null;
+        const key = selectionKeyOf(panesRef.current, view);
+        const held = heldSelectsRef.current;
+        held.delete(key);
+        if (detail) held.set(key, detail);
+        const details = key === AUTK_SELECTION
+            ? selection
+            : Object.fromEntries([...held].map(([k, select]) => [k, { ...select, priority: k === key ? 1 : 0 }]));
         const d = dataRef.current;
-        d.interactionsCallback?.(selection, d.nodeId);
+        d.interactionsCallback?.(details, d.nodeId);
     }, []);
     // The document as written, its chips unresolved: what a run's record
     // holds, since the provenance drawer puts a run's code back in the editor.
@@ -1347,7 +1375,7 @@ export const useAutkGrammarBehavior = (
                             ? keyValues(rows, inputFeaturesRef.current[autkTableKey(workspace, layerRef)] ?? [], fields)
                             : rows;
                         sendOwnSelection({
-                            autk_selection: {
+                            [EDIT_SELECTION]: {
                                 type: data.length > 0 ? VisInteractionType.POINT : VisInteractionType.UNDETERMINED,
                                 data,
                                 priority: 1,
@@ -1410,19 +1438,19 @@ export const useAutkGrammarBehavior = (
                 // showing that selection too. A draw for a Map Editor node's
                 // edit keeps it: the pick stays to edit again, and lights up
                 // on the new map below.
-                const lost = preview ? null : ownSelectionRef.current;
-                if (lost) {
-                    ownSelectionRef.current = null;
+                // Each view's: every select that held a selection is sent
+                // empty, under the key it was sent under.
+                const lost = preview ? [] : [...heldSelectsRef.current].filter(([, select]) => holdsSelection(select));
+                if (!preview) heldSelectsRef.current = new Map();
+                if (lost.length > 0) {
                     const d = dataRef.current;
-                    d.interactionsCallback?.({
-                        autk_selection: {
-                            type: VisInteractionType.UNDETERMINED,
-                            data: [],
-                            priority: 1,
-                            source: NodeType.AUTK_GRAMMAR,
-                            layerRef: lost.layerRef,
-                        },
-                    }, d.nodeId);
+                    d.interactionsCallback?.(Object.fromEntries(lost.map(([key, select]) => [key, {
+                        type: VisInteractionType.UNDETERMINED,
+                        data: [],
+                        priority: 1,
+                        source: NodeType.AUTK_GRAMMAR,
+                        layerRef: select.layerRef,
+                    }])), d.nodeId);
                 }
 
                 // What the map was fed, as it came: the edits a Map Editor
@@ -1802,10 +1830,11 @@ export const useAutkGrammarBehavior = (
             ? (current as any).interactions
             : [];
         // Each layer by key (tableKeyOf): a selection that names its layer
-        // lands on the first layer of that name.
+        // lands on the first layer of that name, and an Autark node of
+        // several views sends a select per view, each on its own layer
+        // (utils/autkSelects).
         const direct = new Map<string, IncomingSelection[]>();
-        for (const selection of incoming) {
-            const named = (selection as any)?.details?.autk_selection?.layerRef;
+        for (const { layer: named, selection } of byAutkLayer(incoming)) {
             const target = tableKeyOf(layers.find((l) => l.outputTableName === named) ?? layers[0]);
             direct.set(target, [...(direct.get(target) ?? []), selection]);
         }
