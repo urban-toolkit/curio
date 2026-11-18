@@ -88,8 +88,10 @@ export function plotKey(panes: ViewPanes | null | undefined, index: number): str
  * one: a number by its index, a string by its `id`; -1 when it names none.
  */
 export function mapIndexOf(panes: ViewPanes | null | undefined, mapId: unknown): number {
-    if (typeof mapId !== 'number' && typeof mapId !== 'string') return -1;
-    return (panes ?? []).find((pane) => pane.kind === 'map' && pane.key === mapId)?.index ?? -1;
+    const maps = (panes ?? []).filter((pane) => pane.kind === 'map');
+    if (typeof mapId === 'number') return maps.some((pane) => pane.index === mapId) ? mapId : -1;
+    if (typeof mapId === 'string') return maps.find((pane) => pane.id === mapId)?.index ?? -1;
+    return -1;
 }
 
 /**
