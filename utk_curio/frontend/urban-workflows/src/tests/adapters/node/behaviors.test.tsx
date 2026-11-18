@@ -1454,6 +1454,36 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         expect(clearHighlightOnPlot).not.toHaveBeenCalled();
       });
 
+      // autk-grammar 5 knows a plot by its id when it has one, else by its
+      // table (plotKey): a selection named by the table reached no plot.
+      test('a selection reaches a plot with an id by that id', async () => {
+        const setPlotSelection = jest.fn();
+        const clearHighlightOnPlot = jest.fn();
+        grammarMock().AutkGrammar.mockImplementationOnce(() => ({
+          run: jest.fn().mockResolvedValue(undefined), data: {}, setPlotSelection, clearHighlightOnPlot,
+        }));
+        const PLOT = JSON.stringify({ plot: { id: 'heights', dataRef: 'input_0', mark: 'bar', axis: ['i', '@transform'],
+          transform: { preset: 'binning-1d' }, events: ['brushX'] } });
+        const base = makeMockData({ nodeId: 'plot-1', outputCallback: jest.fn(), input: INPUT } as any);
+        const state = makeMockNodeState();
+        const { result, rerender } = renderHook(
+          ({ d }: { d: any }) => useAutkGrammarBehavior(d, state),
+          { initialProps: { d: base } },
+        );
+        await act(async () => { await result.current.applyGrammar!(PLOT); });
+        await waitFor(() => expect(clearHighlightOnPlot).toHaveBeenCalled());
+        expect(clearHighlightOnPlot.mock.calls.every(([plot]) => plot === 'heights')).toBe(true);
+
+        const flagged = {
+          ...INPUT,
+          data: { ...INPUT.data, features: INPUT.data.features.map((f, i) => ({
+            ...f, properties: { ...f.properties, interacted: i === 1 ? '1' : '0' } })) },
+        };
+        await act(async () => { rerender({ d: { ...base, input: markSelectionEcho(flagged, 'map-1') } }); });
+        await waitFor(() => expect(setPlotSelection).toHaveBeenCalledWith('heights', [1]));
+        expect(setPlotSelection.mock.calls.every(([plot]) => plot === 'heights')).toBe(true);
+      });
+
       test('a run asked for while one is under way runs once more afterwards, with the latest document', async () => {
         const base = makeMockData({ outputCallback: jest.fn(), input: INPUT } as any);
         const result = await callBehavior(useAutkGrammarBehavior, base as any);

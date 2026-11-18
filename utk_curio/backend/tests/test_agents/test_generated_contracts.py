@@ -500,10 +500,13 @@ class TestTheAutarkRenderers:
         schema = contracts.load_autk_schema()
         shape = contracts.render_autk_shape(schema)
         assert "\n" not in shape
-        # Every family a node runs, and none it does not run yet.
+        # Every family that makes a step and that a node runs, and no other: a
+        # layout and links make no step, and a refused key is not named.
         refused = {rule["key"] for rule in contracts.AUTK_NOT_RUN_YET if rule["in"] == ""}
+        steps = set(contracts.autk_step_families(schema)) - refused
+        assert steps >= {"compute", "data", "map", "plot"}
         for family in contracts.autk_families(schema):
-            assert (f'"{family}"' in shape) is (family not in refused), family
+            assert (f'"{family}"' in shape) is (family in steps), family
         assert f'"dataRef": "{contracts.input_table_name(0)}"' in shape
         # The whole shape survives the refusal's 600-character cut.
         assert shape in dv.validate(contracts.AUTK_TEMPLATE, "not controllable")["detail"]
@@ -514,6 +517,12 @@ class TestTheAutarkRenderers:
         assert schema["$id"] in region
         assert contracts.AUTK_TEMPLATE in region
         assert f'"{contracts.input_table_name(0)}"' in region
+        # A document names one of the families that make a step a node runs.
+        intro = next(line for line in region.splitlines() if "A document names at least one of" in line)
+        refused = {rule["key"] for rule in contracts.AUTK_NOT_RUN_YET if rule["in"] == ""}
+        steps = set(contracts.autk_step_families(schema)) - refused
+        for family in contracts.autk_families(schema):
+            assert (f'"{family}"' in intro) is (family in steps), family
         # Every kind of source and plot a node runs, and none it does not run yet.
         refused = {(rule["in"], rule["value"]) for rule in contracts.AUTK_NOT_RUN_YET if "value" in rule}
         for union, key, place in (("DataSourceSpec", "type", "data[]"), ("PlotSpec", "mark", "plot[]")):

@@ -37,14 +37,19 @@
       "kind": "render"
     },
     {
-      "name": "a layout arranges views, so it is named with them",
+      "name": "a layout arranges views and draws none, so a data section with one only loads",
       "spec": "{\"data\": [{\"type\": \"osm\"}], \"layout\": {\"type\": \"horizontal\"}}",
-      "kind": "render"
+      "kind": "data"
     },
     {
-      "name": "links join views, so they are named with them",
+      "name": "links join views and draw none, so a data section with them only loads",
       "spec": "{\"data\": [{\"type\": \"osm\"}], \"links\": [{\"source\": \"heights\", \"target\": \"city\"}]}",
-      "kind": "render"
+      "kind": "data"
+    },
+    {
+      "name": "a layout alone is no step",
+      "spec": "{\"layout\": {\"type\": \"grid\", \"columns\": 2}}",
+      "kind": "unknown"
     },
     {
       "name": "a map written as an empty list is still named",
