@@ -1,0 +1,99 @@
+{
+  "dataflow": {
+    "categories": {
+      "city": [
+        "Niterói"
+      ],
+      "topic": [
+        "Heat and climate",
+        "Greenery"
+      ],
+      "complexity": [
+        "Intermediate"
+      ]
+    },
+    "name": "Autark: park area within reach and summer heat in Niterói",
+    "description": "One Autark node loads Niterói's surface and roads from a local .pbf, its summer land surface temperature from 2001 to 2024 from a GeoTIFF in the repository, and its parks with each one's area from a GeoJSON in the repository, and sums the park area within about 500 m of each cell of a heatmap, measured to each park's edge. A map draws that heatmap under the parks and roads, a Python step puts it on the temperature's grid of about 1 km and gives each cell on land its park area within reach beside its mean summer temperature from 2020 to 2024, and a Vega-Lite scatter plots one against the other with a regression line.",
+    "task": "See whether Niterói's cells with more park area within reach are cooler in summer.",
+    "timestamp": 0,
+    "provenance_id": "autark-park-area-summer-heat",
+    "packages": [],
+    "nodes": [
+      {
+        "id": "park-area-data",
+        "type": "curio.builtin/autk-grammar",
+        "x": 0,
+        "y": 215,
+        "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/niteroi.osm.pbf\",\n      \"queryArea\": {\n        \"geocodeArea\": \"Rio de Janeiro\",\n        \"areas\": [\n          \"Niterói\"\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"surface\",\n          \"roads\"\n        ]\n      }\n    },\n    {\n      \"type\": \"geotiff\",\n      \"geotiffFileUrl\": \"docs/examples/data/niteroi_lst_verao_2001_2024.tif\",\n      \"outputTableName\": \"lst\",\n      \"resampleMethod\": \"nearest\"\n    },\n    {\n      \"type\": \"geojson\",\n      \"geojsonFileUrl\": \"docs/examples/data/niteroi_parks.geojson\",\n      \"outputTableName\": \"park_areas\"\n    },\n    {\n      \"type\": \"heatmap\",\n      \"joinDataRef\": \"park_areas\",\n      \"near\": {\n        \"distance\": 543,\n        \"useCentroid\": false\n      },\n      \"outputTableName\": \"park_area\",\n      \"grid\": {\n        \"rows\": 60,\n        \"columns\": 80\n      },\n      \"groupBy\": [\n        {\n          \"column\": \"area\",\n          \"aggregateFn\": \"sum\"\n        }\n      ]\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load Niterói's surface and roads from the repository's extract, its summer land surface temperature, 2001 to 2024, from the repository's GeoTIFF, and its parks with each one's area in m² from the repository's GeoJSON, and sum into a 60 by 80 heatmap the area of the parks within about 500 m of each cell, measured to each park's edge.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "park-area-map",
+        "type": "curio.builtin/autk-grammar",
+        "x": 645,
+        "y": 0,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"park_area\",\n        \"getFnv\": \"sum.park_areas\",\n        \"colorMapInterpolator\": \"interpolateGreens\",\n        \"title\": \"Park area within about 500 m (m²)\"\n      },\n      {\n        \"dataRef\": \"park_areas\",\n        \"color\": \"#2ca02c\",\n        \"opacity\": 0.45,\n        \"title\": \"Parks\"\n      },\n      {\n        \"dataRef\": \"table_osm_roads\",\n        \"color\": \"#4d4d4d\",\n        \"title\": \"Roads\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the park area within about 500 m under the parks and roads.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "park-area-cells",
+        "type": "curio.builtin/python-computation",
+        "x": 645,
+        "y": 430,
+        "content": "import numpy as np\nimport pandas as pd\nimport rasterio\nfrom rasterio.warp import Resampling, reproject\nfrom shapely.geometry import Point, shape\nfrom shapely.ops import unary_union\nfrom shapely.prepared import prep\nfrom shapely.validation import make_valid\n\n# The data node hands on its layers, then two rasterio datasets, each on its\n# own grid in EPSG:3395: the land surface temperature, one band a summer from\n# 2001 to 2024, and the heatmap of the park area within about 500 m, in m².\nrasters = [item for item in input_0 if isinstance(item, rasterio.io.DatasetReader)]\nlst = next(raster for raster in rasters if \"band_24\" in raster.descriptions)\nheat = next(raster for raster in rasters if \"sum_park_areas\" in raster.descriptions)\nland = next(item for item in input_0 if isinstance(item, dict) and item[\"name\"] == \"table_osm_surface\")\n\n# The park area on the temperature grid, in km²: in each cell of about 1 km,\n# the mean of the heatmap's cells that fall in it.\narea = np.full((lst.height, lst.width), np.nan, dtype=\"float64\")\nreproject(\n    heat.read(heat.descriptions.index(\"sum_park_areas\") + 1).astype(\"float64\"), area,\n    src_transform=heat.transform, src_crs=heat.crs, src_nodata=np.nan,\n    dst_transform=lst.transform, dst_crs=lst.crs, dst_nodata=np.nan,\n    resampling=Resampling.average,\n)\narea /= 1e6\n# Each cell's mean summer surface temperature over the last five summers.\nsummer = lst.read([20, 21, 22, 23, 24]).mean(axis=0)\n\n# The cells whose center lies on Niterói's land, each with both values.\non_land = prep(unary_union([make_valid(shape(feature[\"geometry\"])) for feature in land[\"geojson\"][\"features\"]]))\nreturn pd.DataFrame([\n    {\n        \"row\": row,\n        \"column\": col,\n        \"park area within about 500 m (km²)\": round(float(area[row, col]), 3),\n        \"summer temperature, 2020 to 2024 (°C)\": round(float(summer[row, col]), 2),\n    }\n    for row in range(lst.height) for col in range(lst.width)\n    if not np.isnan(area[row, col]) and on_land.contains(Point(lst.xy(row, col)))\n])",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Put the heatmap's park area on the temperature's grid and give each cell on Niterói's land its park area within about 500 m and its mean summer temperature from 2020 to 2024.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "park-area-scatter",
+        "type": "curio.builtin/vis-vega",
+        "x": 1290,
+        "y": 430,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"title\": \"Niterói's land: summer temperature against park area within reach\",\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"point\",\n        \"filled\": true,\n        \"opacity\": 0.6\n      },\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"park area within about 500 m (km²)\",\n          \"type\": \"quantitative\",\n          \"title\": \"Park area within about 500 m (km²)\"\n        },\n        \"y\": {\n          \"field\": \"summer temperature, 2020 to 2024 (°C)\",\n          \"type\": \"quantitative\",\n          \"scale\": {\n            \"zero\": false\n          },\n          \"title\": \"Mean summer surface temperature, 2020 to 2024 (°C)\"\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"line\",\n        \"color\": \"#d62728\",\n        \"strokeWidth\": 2\n      },\n      \"transform\": [\n        {\n          \"regression\": \"summer temperature, 2020 to 2024 (°C)\",\n          \"on\": \"park area within about 500 m (km²)\"\n        }\n      ],\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"park area within about 500 m (km²)\",\n          \"type\": \"quantitative\"\n        },\n        \"y\": {\n          \"field\": \"summer temperature, 2020 to 2024 (°C)\",\n          \"type\": \"quantitative\"\n        }\n      }\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Plot each cell's mean summer temperature against its park area within about 500 m, with a regression line.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-park-area-dataout-park-area-mapin",
+        "source": "park-area-data",
+        "target": "park-area-map",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-area-dataout-park-area-cellsin",
+        "source": "park-area-data",
+        "target": "park-area-cells",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-park-area-cellsout-park-area-scatterin",
+        "source": "park-area-cells",
+        "target": "park-area-scatter",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      }
+    ]
+  }
+}

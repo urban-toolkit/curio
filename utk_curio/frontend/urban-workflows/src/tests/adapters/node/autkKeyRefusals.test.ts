@@ -113,11 +113,6 @@ describe("loadSpecLayers", () => {
       { data: [{ type: "join", dataRef: "a", tableJoinName: "b" }] },
       'This spec uses "tableJoinName" at data[0], which autk-grammar 5 renamed to "joinDataRef".',
     ],
-    [
-      "a geotiff source",
-      { data: [{ type: "geotiff", geotiffFileUrl: "lst.tif", outputTableName: "lst" }] },
-      "This spec uses a geotiff source at data[0], which Curio does not run yet.",
-    ],
   ])("%s fails the load, named, and makes no database", async (_what, spec, said) => {
     await expect(loadSpecLayers(spec)).rejects.toThrow(said);
     expect(mockAutkDb).not.toHaveBeenCalled();

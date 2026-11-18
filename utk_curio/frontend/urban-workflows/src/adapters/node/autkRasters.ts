@@ -3,19 +3,23 @@
  * grammar's own map.
  *
  * autk-grammar draws a raster table on a map (`getRaster`, then autk-map's
- * `loadCollection` with `type: 'raster'`), and its `geotiff` source loads one
- * from a file's URL, which a node refuses (contracts/autkGrammar). A raster the
- * node's input brings is bytes, not a URL, so it becomes a source of Curio's
- * own, `curio-raster`, which `withRasterSources` teaches one grammar instance
- * to load: into the grammar's own database, with `loadGeoTiff`, before its map
- * runs. So does a raster the node's own data section made, a heatmap, which
- * the data load hands the map as a collection (`rasterSourceOf`). Every other
- * source goes to the grammar unchanged. The map then reads
+ * `loadCollection` with `type: 'raster'`). A raster the node's input brings is
+ * bytes, not a URL, so it becomes a source of Curio's own, `curio-raster`,
+ * which `withRasterSources` teaches one grammar instance to load: into the
+ * grammar's own database, with `loadGeoTiff`, before its map runs. So does a
+ * raster the node's own data section made, a heatmap or the GeoTIFF of a
+ * `geotiff` source, which the data load hands the map as a collection
+ * (`rasterSourceOf`). Every other source goes to the grammar unchanged. A
+ * compute pass reads a table's features, and a raster has none of its own,
+ * so a pass over a raster is refused (contracts/autkGrammar
+ * `autkRasterPassProblem`). The map then reads
  * the raster by `getRaster`, at its own extent, outlined so autk-map can place
  * a map that starts with it (`framedRaster`), its bands named as they were
  * made (`withBandLabels`). The grammar colors a raster's
  * cells in its layer's scheme; Curio hands it every raster layer with every
- * cell that has a value opaque (`withOpaqueRasters`), and once the map is
+ * cell that has a value opaque (`withOpaqueRasters`), the base-map layers a map
+ * lists after a raster as plain geometry, which autk-map then draws over it
+ * (`withLayersOverRasters`), and once the map is
  * drawn, keeps linear sampling from drawing dark seams at the edges of the
  * cells with no data (`bleedRasterEdges`). Nothing in Autark is changed; the
  * instance's data adapter, and that database's `getRaster` and `getLayer`,
@@ -29,7 +33,7 @@
  */
 import { fetchRaster } from '../../services/api';
 import { writtenTables, type AutkRasterInput } from '../../utils/autkInput';
-import { autkTableKey, autkWorkspaceOf } from './autkDataCompile';
+import { GRAMMAR_RASTER_SOURCES, autkTableKey, autkWorkspaceOf } from './autkDataCompile';
 import { writeGeoTiff } from '../../utils/raster/geotiffWriter';
 import {
     RASTER_MAX_CELLS,
@@ -38,6 +42,7 @@ import {
     planForGrid,
     planForMeta,
     type GeotiffLoad,
+    type RasterMaker,
 } from '../../utils/raster/rasterLoad';
 import {
     decodeRasterEnvelope,
@@ -91,11 +96,16 @@ export type ResolvedRasters = {
 /**
  * A raster collection with its grid as a source the grammar loads: written to
  * GeoTIFF bytes, loaded at its own size. Both the collection an upstream Autark
- * node handed on and a raster the node's own data section made (a heatmap)
- * come here. Or the sentence that says why it cannot be drawn.
+ * node handed on and a raster the node's own data section made (a heatmap, a
+ * GeoTIFF) come here. Or the sentence that says why it cannot be drawn, and,
+ * for one too large, how *madeBy*, what made it, makes it smaller.
  */
-export function rasterSourceOf(name: string, collection: RasterCollection): CurioRasterSource | { refused: string } {
-    const plan = planForGrid(name, collection.grid);
+export function rasterSourceOf(
+    name: string,
+    collection: RasterCollection,
+    madeBy: RasterMaker = 'node',
+): CurioRasterSource | { refused: string } {
+    const plan = planForGrid(name, collection.grid, madeBy);
     if ('refused' in plan) return plan;
     const props = collection.features[0].properties;
     const bands = rasterBandIds(collection).map((id) => props[id] as Float32Array);
@@ -264,8 +274,8 @@ function serveRaster(db: any, table: string, collection: any, workspace?: string
  * database starts in the workspace `autk`, and a node's input is `input_0`,
  * so two maps that load a raster at once each drew whichever loaded last. A
  * raster is loaded and read back here one at a time, and its node keeps what
- * it read. A heatmap a node's data section builds in the browser
- * (autkLayerMaterialize) is built and read back here too.
+ * it read. A heatmap or a GeoTIFF a node's data section makes in the browser
+ * (autkLayerMaterialize) is made and read back here too.
  */
 let rasterLoads: Promise<unknown> = Promise.resolve();
 
@@ -341,14 +351,14 @@ function mapsOf(spec: any): any[] {
 
 /**
  * The tables of *spec* that are rasters, by key (`autkTableKey`): those of its
- * data that are, Curio's own and the grammar's heatmaps, and each a compute
- * pass writes as one, in the pass's workspace, by its `layerType` or else by
- * the type of the table it is computed from.
+ * data that are, Curio's own and the grammar's heatmaps and GeoTIFFs, and each
+ * a compute pass writes as one, in the pass's workspace, by its `layerType` or
+ * else by the type of the table it is computed from.
  */
 export function rasterTables(spec: any): Set<string> {
     const sources: any[] = Array.isArray(spec?.data) ? spec.data : [];
     const rasters = new Set(sources
-        .filter((source) => isCurioRasterSource(source) || source?.type === 'heatmap')
+        .filter((source) => isCurioRasterSource(source) || GRAMMAR_RASTER_SOURCES.includes(source?.type))
         .filter((source) => typeof source.outputTableName === 'string')
         .map((source) => autkTableKey(autkWorkspaceOf(source), source.outputTableName)));
     for (const { name, from, layerType, workspace } of writtenTables(spec)) {
@@ -382,6 +392,52 @@ export function withOpaqueRasters(spec: any): any {
     };
     const map = Array.isArray(spec.map) ? spec.map.map(opaque) : opaque(spec.map);
     return changed ? { ...spec, map } : spec;
+}
+
+/**
+ * The layer types autk-map draws in places of their own under every other
+ * layer, whatever the order a map lists its layers in: the base map's, which
+ * its LayerManager sorts first (surface, parks, water, roads). Every other
+ * type, a raster included, comes after them, in the order the map adds them.
+ * Buildings, which stand up from the ground, keep their type.
+ */
+const BASE_MAP_TYPES: ReadonlySet<string> = new Set(['surface', 'parks', 'water', 'roads']);
+
+/**
+ * *spec* with each table of a base-map type a map draws after a raster handed
+ * to the grammar as the plain geometry it is: loaded with no `layerType`, so
+ * autk-db types it by its geometry (polygons, polylines, points) and autk-map
+ * draws it in the map's order, over the raster. Every raster cell is drawn
+ * opaque (withOpaqueRasters), and autk-map would draw a base-map layer under
+ * every raster whatever the map's order, so a GeoTIFF hid the parks and roads
+ * a map listed after it. A table drawn before every raster of its map, or by
+ * no map, keeps its type, and a document that draws no raster is handed on as
+ * it is.
+ */
+export function withLayersOverRasters(spec: any): any {
+    const rasters = rasterTables(spec);
+    if (rasters.size === 0 || !Array.isArray(spec?.data)) return spec;
+    const over = new Set<string>();
+    for (const mapSpec of mapsOf(spec)) {
+        // A layer draws a table of its map's workspace.
+        const workspace = autkWorkspaceOf(mapSpec);
+        let afterRaster = false;
+        for (const ref of Array.isArray(mapSpec?.layerRefs) ? mapSpec.layerRefs : []) {
+            if (typeof ref?.dataRef !== 'string') continue;
+            const key = autkTableKey(workspace, ref.dataRef);
+            if (rasters.has(key)) afterRaster = true;
+            else if (afterRaster) over.add(key);
+        }
+    }
+    let changed = false;
+    const data = spec.data.map((source: any) => {
+        if (!BASE_MAP_TYPES.has(source?.layerType)
+            || !over.has(autkTableKey(autkWorkspaceOf(source), source.outputTableName))) return source;
+        changed = true;
+        const { layerType: _type, ...plain } = source;
+        return plain;
+    });
+    return changed ? { ...spec, data } : spec;
 }
 
 /**

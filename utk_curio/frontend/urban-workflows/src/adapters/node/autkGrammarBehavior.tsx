@@ -23,7 +23,7 @@ import { UNREPORTED_MESSAGE, describeError, runAndAlwaysSettle } from './autkRun
 import { withExtensionRetry } from './duckdbExtensionRetry';
 import { closeGrammarDb } from './autkDbClose';
 import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
-import { autkKeyProblem, autkOneViewProblem } from '../../contracts/autkGrammar';
+import { autkKeyProblem, autkOneViewProblem, autkRasterPassProblem } from '../../contracts/autkGrammar';
 import {
     autkNeedsInput, autkSourcesFrom, documentTableRefs, drawnFeatures, drawnRows, inputRow, keyValues, loadableSource, ownTableNames,
     passesAtHand, readAutkInput, selectFieldsOf, selectFieldsProblem, tableKeyOf, tablePositions, tablesToLoad, writtenTables,
@@ -55,8 +55,8 @@ import {
     type AutkLayer,
 } from './autkLayerMaterialize';
 import {
-    bleedRasterEdges, isCurioRasterSource, newAutkDb, rasterSourceOf, resolveRasterInputs, withOpaqueRasters,
-    withRasterSources, type CurioRasterSource,
+    bleedRasterEdges, isCurioRasterSource, newAutkDb, rasterSourceOf, resolveRasterInputs, withLayersOverRasters,
+    withOpaqueRasters, withRasterSources, type CurioRasterSource,
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
 import { withCheckedPasses } from './autkComputeScopes';
@@ -760,6 +760,22 @@ export const useAutkGrammarBehavior = (
             showToast(keyProblem, 'error');
             return;
         }
+        // So does a compute pass over a raster the input brings, as one over a
+        // raster of the document's own data is refused above (autkKeyProblem):
+        // a pass cannot compute over a raster cell by cell
+        // (contracts/autkGrammar autkRasterPassProblem). Each raster is in
+        // the workspace it came in, which a pass reads it in.
+        const rasterPass = autkRasterPassProblem(
+            spec,
+            (preparedInput?.rasters ?? []).map((raster) => ({ name: raster.outputTableName, workspace: raster.workspace })),
+        );
+        if (rasterPass) {
+            grammarRef.current = null;
+            specRef.current = null;
+            emit({ code: 'error', content: rasterPass });
+            showToast(rasterPass, 'error');
+            return;
+        }
 
         emit({ code: 'exec', content: '' });
         let summary: string | null = null;
@@ -872,11 +888,16 @@ export const useAutkGrammarBehavior = (
                         ...(l.type && l.type !== 'polygons' ? { layerType: l.type } : {}),
                         ...(l.workspace ? { workspace: l.workspace } : {}),
                     }));
-                    // The raster tables the data section made (a heatmap),
-                    // drawn as every raster is (adapters/node/autkRasters), each
-                    // in the workspace it was built in.
+                    // The raster tables the data section made (a heatmap, a
+                    // GeoTIFF), drawn as every raster is (adapters/node/autkRasters),
+                    // each in the workspace it was made in. A GeoTIFF too large to
+                    // draw is made smaller by its source, known by its key.
+                    const geotiffs = new Set(specDataSources
+                        .filter((source) => source?.type === 'geotiff')
+                        .map((source) => autkTableKey(autkWorkspaceOf(source), source.outputTableName)));
                     const ownRasters = layers.filter((l) => l.type === RASTER_TABLE).map((l) => {
-                        const source = rasterSourceOf(l.name, l.geojson);
+                        const madeBy = geotiffs.has(autkTableKey(l.workspace, l.name)) ? 'geotiff' : 'node';
+                        const source = rasterSourceOf(l.name, l.geojson, madeBy);
                         if ('refused' in source) throw new Error(source.refused);
                         return l.workspace ? { ...source, workspace: l.workspace } : source;
                     });
@@ -1124,8 +1145,9 @@ export const useAutkGrammarBehavior = (
                 // The map draws its layers as the document writes them: a layer
                 // in its scenario's color writes that box's color through its
                 // chip, resolved before the run (utils/references/codeReferences).
-                // Every raster draws each cell that has a value opaque.
-                spec = withOpaqueRasters(spec);
+                // Every raster draws each cell that has a value opaque, and a
+                // base-map layer the map lists after a raster draws over it.
+                spec = withLayersOverRasters(withOpaqueRasters(spec));
 
                 const { AutkGrammar, applyCamera, enterWorkspace } = await import('@urban-toolkit/autk-grammar');
                 // A node that left the page while its data loaded has no
@@ -1422,13 +1444,15 @@ export const useAutkGrammarBehavior = (
                     let layers = [...upstream.filter((l) => !ownKeys.has(layerKey(l))), ...own];
                     // The rows at hand, counted before the empty-layer drop
                     // below hides them, and of those the ones its data section
-                    // loaded. No layer at all (nothing connected, or an input
-                    // this node cannot read) is no claim, not zero.
+                    // loaded; a raster's rows are its cells (loadedRows), as a
+                    // node that only loads data counts them. No layer at all
+                    // (nothing connected, or an input this node cannot read)
+                    // is no claim, not zero.
                     const rowsIn = layers.length > 0
-                        ? totalCount(layers.map((l) => featureCount(l.geojson)))
+                        ? totalCount(layers.map((l) => loadedRows(l)))
                         : computeInput?.inputProblem ? 0 : undefined;
                     const sourceRows = specDataSources.length > 0
-                        ? totalCount(own.map((l) => featureCount(l.geojson)))
+                        ? totalCount(own.map((l) => loadedRows(l)))
                         : undefined;
                     // Drop empty layers (autk-db throws on an empty
                     // FeatureCollection, and an empty layer would surface as a
@@ -1469,13 +1493,15 @@ export const useAutkGrammarBehavior = (
                     summary = describeAutkRun(
                         'Computed',
                         'layer',
-                        layers.map((l) => countedItem(autkTableKey(l.workspace, l.name), featureCount(l.geojson), 'rows')),
+                        layers.map((l) => countedItem(
+                            autkTableKey(l.workspace, l.name), loadedRows(l), l.type === RASTER_TABLE ? 'cells' : 'rows',
+                        )),
                     );
                     summaryListsItems = layers.length > 0;
                     runCounts = {
                         rowsIn,
                         ...(sourceRows !== undefined ? { sourceRows } : {}),
-                        drawn: totalCount(layers.map((l) => featureCount(l.geojson))),
+                        drawn: totalCount(layers.map((l) => loadedRows(l))),
                         ...(computeInput?.inputProblem ? { inputProblem: computeInput.inputProblem } : {}),
                     };
                     // An empty result is not passed on: downstream would get

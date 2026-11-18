@@ -193,6 +193,12 @@ AUTK_RENAMED_KEYS: tuple[dict, ...] = tuple(_AUTK_GRAMMAR["renamedKeys"])
 #: source is ``"type": "heatmap"``). The step that runs one takes it out of the
 #: file.
 AUTK_NOT_RUN_YET: tuple[dict, ...] = tuple(_AUTK_GRAMMAR["notRunYet"])
+#: The kinds of data source that make a raster table, a heatmap and a GeoTIFF:
+#: a compute pass over one of their tables is not run (``autk_raster_pass_problem``).
+AUTK_RASTER_SOURCES: tuple[str, ...] = tuple(_AUTK_GRAMMAR["rasterSources"])
+#: autk-db's default workspace, where a source or a pass that names none keeps
+#: and reads its tables.
+AUTK_DEFAULT_WORKSPACE: str = _AUTK_GRAMMAR["defaultWorkspace"]
 
 
 def _objects_at(document: dict, place: str) -> list[tuple[str, object]]:
@@ -225,13 +231,59 @@ def _fill(template: str, **values: str) -> str:
     return re.sub(r"\{(\w+)\}", lambda m: values.get(m.group(1), m.group(0)), template)
 
 
+def _not_run_yet(what: str, path: str) -> str:
+    """What a document is told of *what* it uses that a node does not run yet,
+    written at *path* (``""`` for the document itself)."""
+    at = _fill(_AUTK_GRAMMAR["keyAt"], path=path) if path else ""
+    return _fill(_AUTK_GRAMMAR["notRunYetKey"], what=what, at=at)
+
+
+def _workspace_of(held: object) -> str | None:
+    """The workspace *held* (a source, a pass or a raster) names, or None for
+    the default one (``AUTK_DEFAULT_WORKSPACE``), named or not."""
+    workspace = held.get("workspace") if isinstance(held, dict) else None
+    return workspace if isinstance(workspace, str) and workspace and workspace != AUTK_DEFAULT_WORKSPACE else None
+
+
+def autk_raster_pass_problem(document: object, rasters) -> str | None:
+    """What a document is told when one of its compute passes reads a raster,
+    else None: the first pass whose ``dataRef``, in the pass's workspace, is one
+    of *rasters* (each ``{"name", "workspace"}``, the workspace left out for the
+    default one), with where it is written, as a key a node does not run yet is
+    told (the file's ``rasterPass``). A pass computes one value for each feature
+    of the table it reads, and a raster holds all its cells in one feature.
+    ``autkRasterPassProblem`` is the node's twin."""
+    if not isinstance(document, dict):
+        return None
+    held_rasters = {(raster.get("name"), _workspace_of(raster)) for raster in rasters}
+    for path, held in _objects_at(document, "compute[]"):
+        table = held.get("dataRef") if isinstance(held, dict) else None
+        if isinstance(table, str) and (table, _workspace_of(held)) in held_rasters:
+            return _not_run_yet(_fill(_AUTK_GRAMMAR["rasterPass"], table=table), path)
+    return None
+
+
+def _own_rasters(document: dict) -> list[dict]:
+    """The tables *document*'s own data sources of ``AUTK_RASTER_SOURCES``
+    kinds write, its heatmaps and GeoTIFFs, each with the workspace it is in."""
+    rasters = []
+    for _path, held in _objects_at(document, "data[]"):
+        if not isinstance(held, dict):
+            continue
+        table = held.get("outputTableName")
+        if held.get("type") in AUTK_RASTER_SOURCES and isinstance(table, str) and table:
+            rasters.append({"name": table, "workspace": _workspace_of(held)})
+    return rasters
+
+
 def autk_key_problem(document: object) -> str | None:
     """What a document that writes a key a node does not run is told, else
     None: a key autk-grammar 5 renamed first, named with its new name
     (``AUTK_RENAMED_KEYS``), then a key a node does not run yet
     (``AUTK_NOT_RUN_YET``), the first the document writes, with where it is
-    written. ``autkKeyProblem`` is the node's twin, held to this function by
-    the cases in ``autkGrammar.cases.json``."""
+    written, and last a compute pass over a raster the document's own data
+    writes (``autk_raster_pass_problem``). ``autkKeyProblem`` is the node's
+    twin, held to this function by the cases in ``autkGrammar.cases.json``."""
     if not isinstance(document, dict):
         return None
 
@@ -245,8 +297,8 @@ def autk_key_problem(document: object) -> str | None:
     for rule in AUTK_NOT_RUN_YET:
         path = _written(document, rule)
         if path is not None:
-            return _fill(_AUTK_GRAMMAR["notRunYetKey"], what=rule["what"], at=at(path))
-    return None
+            return _not_run_yet(rule["what"], path)
+    return autk_raster_pass_problem(document, _own_rasters(document))
 
 
 def load_autk_schema(path: Path = AUTK_SCHEMA_PATH) -> dict:
