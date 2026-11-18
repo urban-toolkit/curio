@@ -1,8 +1,7 @@
 /**
  * A points layer's `pointSize`, the radius of each point in meters on the
  * ground, reaches its map as autk-map's radius in planar units
- * (urban-toolkit/autk-grammar#22, which Curio installs from vendor/autark/
- * until autk-grammar releases it).
+ * (urban-toolkit/autk-grammar#22, released in autk-grammar 5.0.0).
  *
  * autk-map draws each point of a points layer as a disc 64 planar units in
  * radius. The workspace is World Mercator (EPSG:3395), which stretches a meter
@@ -189,7 +188,7 @@ async function draw(spec: object): Promise<StandInMap> {
     return mockMaps[made];
 }
 
-describe("a points layer's pointSize, with the vendored autk-grammar", () => {
+describe("a points layer's pointSize, with the autk-grammar the app bundles", () => {
     test("reaches the map as the radius of 2 m on the ground, in planar units at the layer's latitude", async () => {
         const map = await draw(walkMap({ pointSize: 2 }));
         expect(map.types["GPS fixes"]).toBe("points");
