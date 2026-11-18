@@ -24,6 +24,9 @@ const mockRunCompute = jest.fn();
 
 import { act } from '@testing-library/react';
 import { applyComputeBlocks } from '../../../adapters/node/autkComputeBlocks';
+import { layersToPoolWrapper } from '../../../adapters/node/autkLayerMaterialize';
+import { rasterTables } from '../../../adapters/node/autkRasters';
+import { madeTables } from '../../../utils/autkInput';
 import {
   drawnExports,
   grammarRuns as mockRuns,
@@ -96,6 +99,23 @@ describe('a map', () => {
   });
 });
 
+describe('a map of a table a pass writes', () => {
+  test('in a workspace draws the table the pass writes there', async () => {
+    const node = mountAutkNode('ws-map', undefined, { input: INPUT });
+    await node.run({
+      compute: [{
+        workspace: 'east', dataRef: 'lines', attributes: { x: 'x' }, wgslFunction: 'return x;',
+        outputColumnName: 'y', outputTableName: 'lines_y',
+      }],
+      map: { workspace: 'east', layerRefs: [{ dataRef: 'lines_y' }] },
+    });
+    expect(node.lastOutput()?.code).not.toBe('error');
+    expect(mockRuns).toHaveLength(1);
+    expect(mockRuns[0].spec.map.layerRefs.map((ref: any) => ref.dataRef)).toEqual(['lines_y']);
+    expect(handed(mockRuns[0].spec)).toEqual([['lines', 'east', [-87.5, -87.49, -87.48]]]);
+  });
+});
+
 describe('a plot', () => {
   test('in a workspace plots the table of that workspace', async () => {
     const node = mountAutkNode('ws-plot', undefined, { input: INPUT });
@@ -126,6 +146,38 @@ describe('a compute pass', () => {
       ['lines', undefined, false],
       ['lines', 'east', true],
     ]);
+  });
+
+  test('in a workspace writes its new table there, and a compute step hands it on with that workspace', async () => {
+    mockRunCompute.mockImplementation(async (_pass: any, tables: Map<string, any>) => ({ ...tables.get('lines'), computed: true }));
+    const out = await applyComputeBlocks([LAYERS[1]] as any, [{ ...PASS, workspace: 'east', outputTableName: 'lines_y' }], []);
+    expect(out.map((layer: any) => [layer.name, layer.workspace, layer.geojson.computed === true])).toEqual([
+      ['lines', 'east', false],
+      ['lines_y', 'east', true],
+    ]);
+    expect(layersToPoolWrapper(out as any).data.map((envelope: any) => [envelope.layerName, envelope.workspace])).toEqual([
+      ['lines', 'east'],
+      ['lines_y', 'east'],
+    ]);
+  });
+
+  test('passes of two workspaces that write tables of one name write two tables', async () => {
+    mockRunCompute.mockImplementation(async (_pass: any, tables: Map<string, any>) => ({ ...tables.get('lines') }));
+    const passes = [
+      { ...PASS, outputTableName: 'out' },
+      { ...PASS, workspace: 'east', outputTableName: 'out' },
+    ];
+    const out = await applyComputeBlocks(LAYERS as any, passes, []);
+    expect(out.map((layer: any) => [layer.name, layer.workspace, layer.geojson.features.length])).toEqual([
+      ['lines', undefined, 1],
+      ['lines', 'east', 3],
+      ['out', undefined, 1],
+      ['out', 'east', 3],
+    ]);
+    expect(madeTables({ compute: passes })).toEqual(['out', 'east/out']);
+    // A raster a pass writes in a workspace is that workspace's.
+    expect([...rasterTables({ compute: [{ ...PASS, workspace: 'east', outputTableName: 'cells', layerType: 'raster' }] })])
+      .toEqual(['east/cells']);
   });
 
   test('with no workspace computes over the default workspace\'s table', async () => {
