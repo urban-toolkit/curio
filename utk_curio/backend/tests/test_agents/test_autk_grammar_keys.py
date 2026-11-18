@@ -81,7 +81,7 @@ HEATMAP_DOCUMENT = {
     ],
     "map": {"layerRefs": [
         {"dataRef": "tip_roads"},
-        {"dataRef": "park_access", "getFnv": "count.tip_parks", "title": "Parks within 200 m", "opacity": 0.6},
+        {"dataRef": "park_access", "getFnv": "count.tip_parks", "title": "Parks within about 150 m", "opacity": 0.6},
     ]},
 }
 

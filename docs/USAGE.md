@@ -1538,12 +1538,23 @@ own. A box recolored gives the layer its new color on the map's next run.
 
 A `heatmap` source bins a table of the document's `data` into a grid over the
 area the document loads. Each cell takes the rows of `joinDataRef` within
-`near.distance` of its center, in the map's planar units as a line's `width`
-is, measured to each row's center, or with `"useCentroid": false` to the
-nearest point of its shape, so a long road counts in every cell it passes
-near. `grid` sets the rows and columns, and each `groupBy` entry is a band:
-`{"column": "*", "aggregateFn": "count"}` counts the rows, as a heatmap
-without `groupBy` does. The table it bins comes before it in `data`.
+`near.distance` of its center. The distance is in the map's planar units
+(EPSG:3395), as a line's `width` is: 200 reaches about 150 m on the ground in
+Chicago or New York. It is measured to each row's center, or with
+`"useCentroid": false` to the nearest point of its shape, so a long road
+counts in every cell it passes near. `grid` sets the rows and columns.
+
+Each `groupBy` entry is a band, labelled `<aggregateFn>_<table>`:
+
+- `count` counts the rows, and `weighted` adds 1 / (distance + 1) for each,
+  so a row near the center weighs more; both take `"column": "*"`;
+- `sum`, `avg`, `min` and `max` aggregate the rows' `column`, such as
+  `{"column": "db", "aggregateFn": "avg"}`.
+
+A cell no row reaches holds 0 in every band. A heatmap without `groupBy` has
+one band, `count`. The table it bins is one its `data` section loads before
+it: a data section loads only its own sources, not the node's input, and a
+heatmap of any other table fails the node with an error that names it.
 
 ```json
 {
@@ -1558,7 +1569,7 @@ without `groupBy` does. The table it bins comes before it in `data`.
   "map": {
     "layerRefs": [
       {"dataRef": "tip_roads"},
-      {"dataRef": "park_access", "getFnv": "count.tip_parks", "title": "Parks within 200 m", "opacity": 0.6}
+      {"dataRef": "park_access", "getFnv": "count.tip_parks", "title": "Parks within about 150 m", "opacity": 0.6}
     ]
   }
 }
@@ -1566,11 +1577,11 @@ without `groupBy` does. The table it bins comes before it in `data`.
 
 A heatmap is a raster. A map draws it as it draws any raster, by one band:
 `"getFnv": "band_1"`, or the band's aggregate and table, `"count.tip_parks"`.
-A cell with no row near holds 0, so every cell is drawn opaque unless the
-layer writes an `opacity` or a `transferFunction`. A node that only loads
-data hands its heatmaps on after its layers: an `Autark` node draws one by its
-table's name, and a Python node receives it as a `rasterio` dataset on the
-same grid, in the list of the node's tables.
+Every cell is drawn opaque unless the layer writes an `opacity` or a
+`transferFunction`. A node that only loads data hands its heatmaps on after
+its layers: an `Autark` node draws one by its table's name, and a Python node
+receives it as a `rasterio` dataset on the same grid, in the list of the
+node's tables, each band described by its label (`count_tip_parks`).
 
 ### The starter document
 
