@@ -1329,13 +1329,15 @@ export const useAutkGrammarBehavior = (
                     let layers = [...upstream.filter((l) => !ownNames.has(l.name)), ...own];
                     // The rows at hand, counted before the empty-layer drop
                     // below hides them, and of those the ones its data section
-                    // loaded. No layer at all (nothing connected, or an input
-                    // this node cannot read) is no claim, not zero.
+                    // loaded; a raster's rows are its cells (loadedRows), as a
+                    // node that only loads data counts them. No layer at all
+                    // (nothing connected, or an input this node cannot read)
+                    // is no claim, not zero.
                     const rowsIn = layers.length > 0
-                        ? totalCount(layers.map((l) => featureCount(l.geojson)))
+                        ? totalCount(layers.map((l) => loadedRows(l)))
                         : computeInput?.inputProblem ? 0 : undefined;
                     const sourceRows = specDataSources.length > 0
-                        ? totalCount(own.map((l) => featureCount(l.geojson)))
+                        ? totalCount(own.map((l) => loadedRows(l)))
                         : undefined;
                     // Drop empty layers (autk-db throws on an empty
                     // FeatureCollection, and an empty layer would surface as a
@@ -1367,13 +1369,13 @@ export const useAutkGrammarBehavior = (
                     summary = describeAutkRun(
                         'Computed',
                         'layer',
-                        layers.map((l) => countedItem(l.name, featureCount(l.geojson), 'rows')),
+                        layers.map((l) => countedItem(l.name, loadedRows(l), l.type === RASTER_TABLE ? 'cells' : 'rows')),
                     );
                     summaryListsItems = layers.length > 0;
                     runCounts = {
                         rowsIn,
                         ...(sourceRows !== undefined ? { sourceRows } : {}),
-                        drawn: totalCount(layers.map((l) => featureCount(l.geojson))),
+                        drawn: totalCount(layers.map((l) => loadedRows(l))),
                         ...(computeInput?.inputProblem ? { inputProblem: computeInput.inputProblem } : {}),
                     };
                     // An empty result is not passed on: downstream would get
