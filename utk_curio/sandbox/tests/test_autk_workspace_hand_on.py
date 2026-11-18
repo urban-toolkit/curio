@@ -59,26 +59,64 @@ def test_a_layer_chip_finds_a_table_by_its_key():
 
     from utk_curio.sandbox.util.input_layers import curio_layer
 
-    assert len(curio_layer(TWO_WORKSPACES, "lines", 0)) == 1
+    # A key finds its table exactly: east's, and the default workspace's as autk/<name>.
     east = curio_layer(TWO_WORKSPACES, "east/lines", 0)
     assert len(east) == 2 and east.__dict__["metadata"]["workspace"] == "east"
+    assert len(curio_layer(TWO_WORKSPACES, "autk/lines", 0)) == 1
+    # A key no layer has fails, naming each layer by its key.
     with pytest.raises(LookupError, match=r"has no layer west/lines\. Its layers are east/lines, lines\."):
         curio_layer(TWO_WORKSPACES, "west/lines", 0)
 
 
-def test_the_javascript_layer_chip_finds_a_table_by_its_key():
+def test_a_layer_chip_finds_by_its_name_the_one_layer_that_has_it():
+    from utk_curio.sandbox.util.input_layers import curio_layer
+
+    # Whatever its workspace.
+    assert len(curio_layer(TWO_WORKSPACES[:1], "lines", 0)) == 2
+    assert len(curio_layer(TWO_WORKSPACES[1:], "lines", 0)) == 1
+
+
+def test_a_layer_chip_of_a_name_two_workspaces_share_names_neither_and_says_their_keys():
+    import pytest
+
+    from utk_curio.sandbox.util.input_layers import ambiguous_layer_message, curio_layer
+
+    said = ambiguous_layer_message(0, "lines", ["east/lines", "autk/lines"])
+    assert said == ("[!! input_0:lines !!]: input_0 has a layer lines in more than one workspace: "
+                    "east/lines, autk/lines. Name one by its key.")
+    with pytest.raises(LookupError) as raised:
+        curio_layer(TWO_WORKSPACES, "lines", 0)
+    assert str(raised.value) == said
+
+
+def _js(code, value):
     import json
 
     from utk_curio.sandbox.app.worker import run_js_script
 
-    code = ("return [curio_layer(input_0, 'lines', 0).features.length, "
-            "curio_layer(input_0, 'east/lines', 0).features.length];")
-    result, _logs, stderr = run_js_script(code, {"input_0": TWO_WORKSPACES}, cwd=".",
-                                          node_type="curio.builtin/js-computation")
+    result, _logs, stderr = run_js_script(code, {"input_0": value}, cwd=".", node_type="curio.builtin/js-computation")
     assert result is not None, "\n".join(stderr)
-    run = json.loads(result)
+    return json.loads(result)
+
+
+def test_the_javascript_layer_chip_finds_a_table_by_its_key_or_its_one_name():
+    run = _js("return [curio_layer(input_0, 'east/lines', 0).features.length, "
+              "curio_layer(input_0, 'autk/lines', 0).features.length];", TWO_WORKSPACES)
     assert run["success"], run.get("error")
-    assert run["value"] == [1, 2]
+    assert run["value"] == [2, 1]
+    run = _js("return curio_layer(input_0, 'lines', 0).features.length;", TWO_WORKSPACES[:1])
+    assert run["success"], run.get("error")
+    assert run["value"] == 2
+
+
+def test_the_javascript_layer_chip_says_what_python_says_of_a_name_two_workspaces_share():
+    from utk_curio.sandbox.util.input_layers import ambiguous_layer_message, missing_layer_message
+
+    run = _js("return curio_layer(input_0, 'lines', 0);", TWO_WORKSPACES)
+    assert not run["success"]
+    assert run["error"].startswith(ambiguous_layer_message(0, "lines", ["east/lines", "autk/lines"]) + "\n"), run["error"]
+    run = _js("return curio_layer(input_0, 'west/lines', 0);", TWO_WORKSPACES)
+    assert run["error"].startswith(missing_layer_message(0, "west/lines", ["east/lines", "lines"]) + "\n"), run["error"]
 
 
 def test_a_frame_passed_from_one_python_node_to_another_keeps_its_name_type_and_workspace():
