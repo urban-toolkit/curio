@@ -35,7 +35,11 @@ A uniform is written inline or as {"fromFeature": {...}}. {directive} Its "itera
 
 ## render
 
-"type": "render": {description} It requires {fields}. Each entry of its "layers" requires {layer_fields}, with a "type" of {layer_types}, and its "viewpoints" requires {viewpoint_fields}.
+"type": "render": {description} It requires {fields}.
+
+## render-layers
+
+Each entry of its "layers" requires {layer_fields}, with a "type" of {layer_types}, and its "viewpoints" requires {viewpoint_fields}.
 
 ## map
 

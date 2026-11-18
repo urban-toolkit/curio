@@ -428,22 +428,43 @@ RENDER_PASS = "render"
 
 def _render_pass(schema: dict) -> dict | None:
     """What a render pass is and requires, for the agents' text, or None when
-    *schema* has none: its description, without the grammar's note on which
-    adapters read it, the fields it requires, the fields each of its layers
-    requires and the types a layer is drawn as, and the fields its viewpoints
-    require."""
+    *schema* has none, or one that requires nothing: its description, without
+    the grammar's note on which adapters read it, the fields it requires, and
+    the fields each of its layers requires, the types a layer is drawn as and
+    the fields its viewpoints require, each empty where the schema does not
+    say, inline or by reference."""
     description, branches = _compute_passes(schema).get(RENDER_PASS, ("", []))
-    if not branches:
+    required = sorted(branches[0].get("required", [])) if branches else []
+    if not required:
         return None
     properties = branches[0].get("properties", {})
-    layer = _definition(schema, properties.get("layers", {}).get("items", {}).get("$ref", ""))
+
+    def said(node: object) -> dict:
+        node = _resolved(schema, node)
+        return node if isinstance(node, dict) else {}
+
+    layer = said(said(properties.get("layers")).get("items"))
+    layer_type = said(_property(layer, "type"))
     return {
         "description": description.split(" Read by the ", 1)[0],
-        "fields": _every(sorted(branches[0].get("required", []))),
-        "layer_fields": _every(sorted(layer.get("required", []))),
-        "layer_types": _either(layer.get("properties", {}).get("type", {}).get("enum", [])),
-        "viewpoint_fields": _every(sorted(properties.get("viewpoints", {}).get("required", []))),
+        "required": required,
+        "layer_fields": sorted(layer.get("required", [])),
+        "layer_types": list(layer_type.get("enum", [])),
+        "viewpoint_fields": sorted(said(properties.get("viewpoints")).get("required", [])),
     }
+
+
+def _render_words(render: dict) -> str:
+    """The ``autark`` skill's line on a render pass (``_render_pass``): what it
+    is and requires, then what each of its layers and its viewpoints require,
+    when the schema says all of that."""
+    words = _autk_words("render", description=render["description"], fields=_every(render["required"]))
+    if render["layer_fields"] and render["layer_types"] and render["viewpoint_fields"]:
+        words += " " + _autk_words(
+            "render-layers", layer_fields=_every(render["layer_fields"]),
+            layer_types=_either(render["layer_types"]), viewpoint_fields=_every(render["viewpoint_fields"]),
+        )
+    return words
 
 
 def _compute_required(schema: dict) -> tuple[list[str], list[str]]:
@@ -481,11 +502,17 @@ def render_autk_shape(schema: dict) -> str:
     source_types = _definition(schema, "DataSourceSpec").get("properties", {}).get("type", {}).get("enum", [])
     first = input_table_name(0)
     example_layer = "{" + ", ".join(f'"{field}": "{first}"' for field in layer_required) + "}"
-    render = _render_pass(schema) or {}
+    # A render pass is a compute pass written with "type": "render", which
+    # its clause names before the other fields it requires.
+    render = _render_pass(schema)
+    render_fields = [field for field in render["required"] if field != "type"] if render else []
+    render_pass = agent_text.message(
+        "document.autk-shape-render", fields=_every(render_fields),
+    ) if render_fields else ""
     return agent_text.message(
         "document.autk-shape", layers=layers, example_layer=example_layer, first=first,
         families=_either(autk_step_families(schema)), plot_fields=_every(_plot_required(schema)),
-        compute_fields=_every(common), compute_one_of=_either(either), render_fields=render.get("fields", ""),
+        compute_fields=_every(common), compute_one_of=_either(either), render_pass=render_pass,
         source_type=source_types[0] if source_types else "",
     )
 
@@ -555,7 +582,7 @@ def render_autk_region(schema: dict, label: str) -> str:
     )).rstrip())
     render = _render_pass(schema)
     if render:
-        lines.append("  - " + _autk_words("render", **render))
+        lines.append("  - " + _render_words(render))
     lines += [
         # The schema's own descriptions of "map" and "plot" allow several, and a
         # document may name both; a node draws one view.
