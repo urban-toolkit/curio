@@ -8,6 +8,7 @@ import { getUnversionedFlowNodeType } from "../../utils/flowNodeCanonicalType";
 import { TrillGenerator } from "../../TrillGenerator";
 import { inputSlotOf, slotHandleId, wiredInputSlots } from "../../utils/inputSlots";
 import { INTERACTION_EDGE_CARRIES_NOTHING, interactionEdgeCarries } from "../../registry/interactionRoles";
+import { isInteractionEdge, isInteractionHandle } from "../../contracts/interactionEdges";
 import type { useToastContext } from "../ToastProvider";
 import type { IOutput } from "./flowTypes";
 import type { useGraphEdits } from "./useGraphEdits";
@@ -98,9 +99,10 @@ export function useConnect({
                 }
             };
 
-            // accept string, null, or undefined:
-            const isInHandle = (h: string | null | undefined): boolean => !!h && h.startsWith("in") && h !== "in/out";
-            const isInOutHandle = (h: string | null | undefined): boolean => h === "in/out";
+            // accept string, null, or undefined: an interaction handle, a
+            // node's own or a view's (contracts/interactionEdges), is no input.
+            const isInHandle = (h: string | null | undefined): boolean => !!h && h.startsWith("in") && !isInteractionHandle(h);
+            const isInOutHandle = (h: string | null | undefined): boolean => isInteractionHandle(h);
 
 
             let validHandleCombination = true;
@@ -237,7 +239,7 @@ export function useConnect({
                     allowConnection = false;
                 }
 
-                if (connection.sourceHandle != "in/out" && hasCycle(target)) {
+                if (!isInteractionEdge(connection) && hasCycle(target)) {
                     showToast("Cycles are not allowed in the dataflow", "warning");
                     allowConnection = false;
                 }
@@ -285,10 +287,7 @@ export function useConnect({
                         if (customConnection.data == undefined)
                             customConnection.data = {};
 
-                        if (
-                            conn.sourceHandle == "in/out" &&
-                            conn.targetHandle == "in/out"
-                        ) {
+                        if (isInteractionEdge(conn)) {
                             customConnection.markerStart = {
                                 type: MarkerType.ArrowClosed,
                             };

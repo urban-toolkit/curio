@@ -20,6 +20,7 @@ from utk_curio.backend.app.execution.code_references import (
     normalize_widgets,
     resolve_references,
 )
+from utk_curio.backend.app.execution.run_plan import is_interaction_edge
 
 
 def named_input_slot(edge: dict) -> int | None:
@@ -370,9 +371,7 @@ class WorkflowSpec:
                 box_of.setdefault(member, (rank, scenario))
         sources: dict = {}
         for edge in self.edges:
-            if edge.get("target") != node_id or edge.get("type") == "Interaction":
-                continue
-            if edge.get("sourceHandle") == "in/out" and edge.get("targetHandle") == "in/out":
+            if edge.get("target") != node_id or is_interaction_edge(edge):
                 continue
             slot = input_slot(edge)
             if slot >= 0 and slot not in sources:

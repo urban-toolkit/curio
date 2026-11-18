@@ -6,6 +6,7 @@
 import React from "react";
 import { Handle, Position, type Edge, type Node } from "reactflow";
 import type { HandleDef } from "../../registry/types";
+import { isInteractionHandle } from "../../contracts/interactionEdges";
 import { notebookHandlePlaces, notebookInputLabel } from "../../utils/notebookLayout";
 import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft";
 
@@ -16,7 +17,7 @@ function notebookDotTitle(
   edges: readonly Edge[],
   nodes: readonly Node[] | undefined,
 ): string {
-  if (handle.id === "in/out") return "interaction";
+  if (isInteractionHandle(handle.id)) return "interaction";
   if (handle.type === "source") return "output";
   const edge = edges.find((e) => e.target === nodeId && (e.targetHandle ?? "in") === handle.id);
   const source = edge ? (nodes ?? []).find((n) => n.id === edge.source) : undefined;
@@ -65,7 +66,7 @@ export function NodeHandles({
           // them, each anchored to the top, the middle or the bottom so it
           // follows the cell as it grows. React Flow measures the dots again
           // whenever the cell resizes, and the arcs follow them.
-          const label = h.type === "target" && h.id !== "in/out" ? notebookInputLabel(h.id) : "";
+          const label = h.type === "target" && !isInteractionHandle(h.id) ? notebookInputLabel(h.id) : "";
           return (
             <Handle
               key={h.id}

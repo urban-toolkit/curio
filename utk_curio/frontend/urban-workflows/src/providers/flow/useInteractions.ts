@@ -2,17 +2,18 @@
 import React, { useCallback, useEffect, useRef } from "react";
 import type { Edge, Node, ReactFlowInstance } from "reactflow";
 import { NodeType } from "../../constants";
+import { isInteractionEdge } from "../../contracts/interactionEdges";
 import { getUnversionedFlowNodeType } from "../../utils/flowNodeCanonicalType";
 import { isActiveSelect } from "../../utils/selectionMatch";
 import type { IInteraction, IPropagation } from "./flowTypes";
 
 type Link = { source: string; target: string };
 
-/** The interaction edges among *edges*, by id: those whose both handles are `in/out`. */
+/** The interaction edges among *edges*, by id (contracts/interactionEdges). */
 function interactionLinks(edges: Edge[]): Map<string, Link> {
     const links = new Map<string, Link>();
     for (const edge of edges) {
-        if (edge.sourceHandle == "in/out" && edge.targetHandle == "in/out") {
+        if (isInteractionEdge(edge)) {
             links.set(edge.id, { source: edge.source, target: edge.target });
         }
     }
@@ -95,8 +96,7 @@ export function useInteractions({
             let sourceNode = reactFlow.getNode(edges[i].source) as Node;
 
                 if (
-                    edges[i].sourceHandle == "in/out" &&
-                    edges[i].targetHandle == "in/out" &&
+                    isInteractionEdge(edges[i]) &&
                     !(
                         getUnversionedFlowNodeType(targetNode) == NodeType.DATA_POOL &&
                         getUnversionedFlowNodeType(sourceNode) == NodeType.DATA_POOL
@@ -185,8 +185,7 @@ export function useInteractions({
                 let sourceNode = reactFlow.getNode(edge.source) as Node;
 
                 if (
-                    edge.sourceHandle == "in/out" &&
-                    edge.targetHandle == "in/out" &&
+                    isInteractionEdge(edge) &&
                     getUnversionedFlowNodeType(targetNode) == NodeType.DATA_POOL &&
                     getUnversionedFlowNodeType(sourceNode) == NodeType.DATA_POOL
                 ) {

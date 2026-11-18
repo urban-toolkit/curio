@@ -30,6 +30,7 @@ from __future__ import annotations
 from collections import deque
 from typing import TYPE_CHECKING, Optional
 
+from utk_curio.backend.app.execution.run_plan import is_interaction_edge
 from utk_curio.backend.app.projects.dashboard_payload import passes_through
 from utk_curio.backend.app.projects.scenario_sets import infer_context_outcomes
 
@@ -58,10 +59,8 @@ def is_pass_through(node: dict, packages: Optional["TemplateGrammars"] = None) -
 
 
 def _is_interaction(edge: dict) -> bool:
-    """A two-way link between views, which a run does not follow."""
-    return edge.get("type") == "Interaction" or (
-        edge.get("sourceHandle") == "in/out" and edge.get("targetHandle") == "in/out"
-    )
+    """A two-way link between views, which a run does not follow (the one rule, ``run_plan``'s)."""
+    return is_interaction_edge(edge)
 
 
 def spec_nodes_and_edges(spec: object) -> tuple[list[dict], list[dict]]:

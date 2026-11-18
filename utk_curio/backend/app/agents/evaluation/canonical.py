@@ -34,16 +34,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Iterable, Mapping
 
+from utk_curio.backend.app.execution.run_plan import is_interaction_edge
 from utk_curio.backend.app.packages.service import (
     canonical_template_id,
     template_is_executable,
 )
-
-#: Spec edges materialized for an interaction link carry ``type: "Interaction"``
-#: (the trill form the canvas writes) and symmetric ``in/out`` handles. Both
-#: spellings appear in the shipped corpus, so both are recognised.
-INTERACTION_EDGE_TYPE = "Interaction"
-_SYMMETRIC_HANDLE = "in/out"
 
 #: A single-input port, or circle 0 of a node with several (``in``); its
 #: other circles are ``in_1``, ``in_2``, ...
@@ -271,15 +266,11 @@ def edge_kind(edge: Mapping) -> str:
     """``"interaction"`` for a bidirectional link, ``"data"`` otherwise.
 
     Both spellings the corpus carries count: the trill ``type: "Interaction"``
-    the canvas writes, and the symmetric ``in/out`` handles dev/112 specifies
-    for the plan path.
+    the canvas writes, and an interaction handle at both ends, a node's own
+    (the symmetric ``in/out`` dev/112 specifies for the plan path) or a
+    view's, by the one rule (``run_plan.is_interaction_edge``).
     """
-    if str(edge.get("type") or "") == INTERACTION_EDGE_TYPE:
-        return "interaction"
-    handles = (str(edge.get("sourceHandle") or ""), str(edge.get("targetHandle") or ""))
-    if all(h == _SYMMETRIC_HANDLE for h in handles):
-        return "interaction"
-    return "data"
+    return "interaction" if is_interaction_edge(edge) else "data"
 
 
 def edge_slot(edge: Mapping) -> int | None:

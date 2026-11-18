@@ -11,6 +11,7 @@
  * The twin of `utk_curio/backend/app/projects/scenario_sets.py`; both read
  * `scenarioSets.cases.json`.
  */
+import { isInteractionEdge } from "../../contracts/interactionEdges";
 import { SHARED_KINDS, type Scenario, type ScenarioSet, type SharedKind, type SharedLook } from "./scenarioModel";
 
 type EdgeLike = {
@@ -21,9 +22,8 @@ type EdgeLike = {
   targetHandle?: string | null;
 };
 
-/** A two-way link between views, which a run does not follow. */
-export const isInteraction = (e: EdgeLike) =>
-  e.type === "Interaction" || (e.sourceHandle === "in/out" && e.targetHandle === "in/out");
+/** A two-way link between views, which a run does not follow (contracts/interactionEdges). */
+export const isInteraction = (e: EdgeLike) => isInteractionEdge(e);
 
 function walk(start: string[], step: Map<string, string[]>, boxed: Set<string>): Set<string> {
   const seen = new Set<string>();
