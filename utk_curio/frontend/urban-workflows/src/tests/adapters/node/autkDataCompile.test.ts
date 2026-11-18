@@ -98,11 +98,14 @@ describe("compileDataSpecToAutkDbJs", () => {
         resolveDataSourceUrls({ data: sources }, SANDBOX_BACKEND_URL_TOKEN).data,
     );
 
-    it("emits a single top-level autk-db import for the sandbox to rewrite", () => {
-        // execute_js_code turns exactly this one import into `await import()`.
+    it("emits autk-db's import and autk-grammar's data entry's, at the top, for the sandbox to rewrite", () => {
+        // execute_js_code turns exactly these imports into `await import()`.
         const imports = code.match(/^import /gm) ?? [];
-        expect(imports).toHaveLength(1);
-        expect(code.startsWith("import { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } from '@urban-toolkit/autk-db';")).toBe(true);
+        expect(imports).toHaveLength(2);
+        expect(code.startsWith(
+            "import { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } from '@urban-toolkit/autk-db';\n"
+            + "import { enterWorkspace, tableKey } from '@urban-toolkit/autk-grammar/data';\n",
+        )).toBe(true);
     });
 
     it("inlines the spec and the expected table list", () => {
