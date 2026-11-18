@@ -1103,7 +1103,8 @@ export const useAutkGrammarBehavior = (
 
                     // A pick is on the layer that picks on its map now, which
                     // can be another than the document's first `isPick` layer;
-                    // autk-grammar names the map by a table it draws.
+                    // autk-grammar 5 names the map by `mapId`, and the layer
+                    // picked by its title, else its table. A node draws one map.
                     const off1 = grammar.interactions.on('map:picking', ({ selection, layerId }) =>
                         emitInteraction(selection, pickingTableOf(grammar, spec, layerId) ?? pickedLayerRef, 'map'));
                     const off2 = grammar.interactions.on('plot:selection', ({ selection }) => emitInteraction(selection, plotLayerRef, 'plot'));
