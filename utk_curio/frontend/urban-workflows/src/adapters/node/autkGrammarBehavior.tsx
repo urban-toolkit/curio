@@ -1018,7 +1018,7 @@ export const useAutkGrammarBehavior = (
                 const drawsRasters = (spec.data as any[]).some(isCurioRasterSource);
                 const grammar = await withExtensionRetry(async () => {
                     const g = new AutkGrammar(targets);
-                    if (drawsRasters) withRasterSources(g, newAutkDb);
+                    if (drawsRasters) withRasterSources(g, newAutkDb, enterWorkspace);
                     try {
                         await g.run(spec);
                     } catch (err) {
