@@ -752,10 +752,13 @@ empty circle appears below it; each new edge takes the next circle. Circles are
 numbered from 0, top to bottom. A Data Loading node needs no input: wire a node into
 it when its code reads a value that node returns, such as the area several loaders
 read. A Data Pool shows each input as a tab, and each frame or raster of
-an input that holds several (a Python tuple, a list, a dict of frames, or the
-tables an Autark node hands on) as a tab too: a dict's tab is named after its
-key, and an Autark node's table after its name. A raster's tab says it is a
-raster, and the pool passes the raster on as it came.
+an input that holds several (a Python tuple, a list, a dict of frames or
+rasters, or the tables an Autark node hands on) as a tab too: a dict's tab is
+named after its key, and an Autark node's table after its name. A raster's tab
+says it is a raster, then, as an input chip's hover says them, its size in
+cells, its bands and its CRS, for a raster an Autark node hands on or one a
+Python node's tuple, list or dict holds; the pool passes the raster on as it
+came.
 
 In code and in a Vega-Lite or Autark spec, each input is a chip:
 
@@ -774,7 +777,7 @@ In code and in a Vega-Lite or Autark spec, each input is a chip:
    column's tag where a column name goes; it is written
    `[!! input_1.population !!]`. Click the chevron again to close the list.
 4. An input that carries several layers (an upstream Autark node's tables and
-   rasters, or a Python node's dict of frames) lists a line for each layer:
+   rasters, or a Python node's dict of frames or rasters) lists a line for each layer:
    the layer's tag, `[!! input_1:table_osm_roads !!]`, then that layer's
    columns, `[!! input_1:table_osm_roads.lanes !!]`, or **a raster** for a
    raster, which has no columns. A layer is named as the Autark node names its
@@ -801,8 +804,8 @@ When the node runs:
   which gives a GeoDataFrame
   in Python and a GeoJSON FeatureCollection in JavaScript. A raster layer, such
   as the heatmap an Autark node hands on, `[!! input_0:park_access !!]`, gives
-  a `rasterio` dataset in Python. On a Python node's dict of frames, a layer
-  chip gives the frame or raster under its key. An input that is one frame or
+  a `rasterio` dataset in Python. On a Python node's dict of frames or rasters,
+  a layer chip gives the frame or raster under its key. An input that is one frame or
   one raster with no layer name, such as a GeoDataFrame a Python node returns,
   is that layer. An input with several frames needs one of that name; if it has
   none, the node fails with a message naming the input and the layers it has.
@@ -1391,7 +1394,7 @@ written.
   the name for you. A frame that arrives under its own name (a Data Pool tab, a
   compute step's layer) keeps that name, and `input_<k>` also names it.
 - Several layers keep their own names: a Python tuple, a Python dict of frames
-  (each frame named after its key), a Data Pool with tabs, or the tables of an
+  or rasters (each named after its key), a Data Pool with tabs, or the tables of an
   upstream Autark node. A layer without a name is named after
   its position, `input_0`, `input_1`, and so on. When two inputs bring a layer
   of one name, the name means the first input's layer. The second input's layer
