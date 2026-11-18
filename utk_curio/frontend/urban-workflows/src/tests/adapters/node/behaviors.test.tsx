@@ -100,7 +100,8 @@ jest.mock('../../../utils/formatters', () => ({
 }));
 
 jest.mock('@urban-toolkit/autk-grammar', () => ({
-  AutkGrammar: jest.fn().mockImplementation(() => ({ run: jest.fn().mockResolvedValue(undefined), data: {} })),
+  // The grammar keeps the adapter its run hands each compute pass to, which a node checks.
+  AutkGrammar: jest.fn().mockImplementation(() => ({ run: jest.fn().mockResolvedValue(undefined), data: {}, computeAdapter: { resolveCompute: jest.fn() } })),
   // The grammar's applyCamera, which the node turns a framed map by when the
   // map's entry writes a camera (adapters/node/autkMapView).
   applyCamera: (...a: any[]) => mockApplyCamera(...a),
@@ -1071,9 +1072,12 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       // actually survives the DuckDB round-trip into spec.data.
       let runSpec: any = null;
       (AutkGrammar as jest.Mock).mockReset();
+      // It stays the grammar of the tests after this one: like the module's,
+      // it keeps the adapter its run hands each compute pass to.
       (AutkGrammar as jest.Mock).mockImplementation(() => ({
         run: jest.fn((s: any) => { runSpec = s; return Promise.resolve(); }),
         data: {},
+        computeAdapter: { resolveCompute: jest.fn() },
       }));
       // Mock fetchData with the REAL /get shape: parseOutput wraps the 'list'
       // artifact AND each element, so a backend layer array round-trips as

@@ -169,6 +169,8 @@ function frameMap(map: any): boolean {
     const aspect = Math.max(canvas.offsetWidth / canvas.offsetHeight, 1e-6);
     const { lookAt, eye } = framingCamera(extent, aspect, camera.getFovyRadians(), camera.getFar());
     camera.resetCamera([0, 1, 0], lookAt, eye);
+    const framed: FramedView = { eye: [...eye], lookAt: [...lookAt], up: [0, 1, 0] };
+    map[FRAMED_VIEW] = framed;
     turnBySpecCamera(map);
     camera.resize(map.renderer.pixelWidth, map.renderer.pixelHeight);
     // A map that draws on demand draws the camera it was given.
@@ -180,6 +182,12 @@ function frameMap(map: any): boolean {
 const FRAMED = Symbol.for('curio.autk.framedMap');
 /** Set on a map whose camera Curio framed or put back: a view worth keeping. */
 const VIEWED = Symbol.for('curio.autk.viewedMap');
+/**
+ * Set on a map Curio framed: the view it framed it at, straight down, before
+ * its camera turned it; a map whose view was put back keeps the one it had.
+ */
+const FRAMED_VIEW = Symbol.for('curio.autk.framedView');
+type FramedView = { eye: number[]; lookAt: number[]; up: number[] };
 
 /** Whether *map* is a flat map, whose camera Curio sets; terrain mode fits its own. */
 const isFlat = (map: any): boolean => !!map && !map._terrainRenderPath && typeof map.resetCamera === 'function';
@@ -229,10 +237,13 @@ export function frameMaps(grammar: any): void {
 }
 
 /**
- * Where a map's camera stands, the origin of the world it stands in, and the
- * camera its entry wrote when it was drawn (`cameraKey`), when it wrote one.
+ * Where a map's camera stands, the origin of the world it stands in, the
+ * camera its entry wrote when it was drawn (`cameraKey`), when it wrote one,
+ * and the view Curio framed it at before that camera turned it, when it did.
  */
-export type MapView = { eye: number[]; lookAt: number[]; up: number[]; origin: number[] | null; camera?: string };
+export type MapView = {
+    eye: number[]; lookAt: number[]; up: number[]; origin: number[] | null; camera?: string; framed?: FramedView;
+};
 
 /**
  * The origin autk-map draws *map*'s layers relative to: the middle of the
@@ -267,6 +278,8 @@ export function mapViews(grammar: any): Array<MapView | null> {
             };
             const written = cameraKey(map);
             if (written !== undefined) view.camera = written;
+            const framed = map[FRAMED_VIEW] as FramedView | undefined;
+            if (framed) view.framed = { eye: [...framed.eye], lookAt: [...framed.lookAt], up: [...framed.up] };
             return view;
         } catch {
             return null;
@@ -276,7 +289,8 @@ export function mapViews(grammar: any): Array<MapView | null> {
 
 /**
  * Put *map*'s camera at *view*, moved by however far the map's origin moved,
- * so the same ground stays in view; false when the map has no camera to set.
+ * so the same ground stays in view, and keep the view it was framed at, moved
+ * the same way; false when the map has no camera to set.
  */
 function putBackView(map: any, view: MapView): boolean {
     const camera = map?.camera;
@@ -289,9 +303,45 @@ function putBackView(map: any, view: MapView): boolean {
     );
     const moved = (point: number[]) => point.map((value, i) => value + shift(i));
     camera.resetCamera([...view.up], moved(view.lookAt), moved(view.eye));
+    if (view.framed) {
+        const framed: FramedView = { eye: moved(view.framed.eye), lookAt: moved(view.framed.lookAt), up: [...view.framed.up] };
+        map[FRAMED_VIEW] = framed;
+    }
     drawGivenCamera(map);
     map[VIEWED] = true;
     return true;
+}
+
+/**
+ * Show each flat map of *grammar* that its entry's `camera` turns at the view
+ * Curio framed it at, straight down on its layers, before the turn: the very
+ * view it was given then (`FRAMED_VIEW`), whatever size its canvas is laid out
+ * at now, or, for a map it holds none of, a framing made now. Return what puts
+ * the turned views back. The e2e framing check (#773) reads such a map framed,
+ * as it reads a map with no camera, then reads its turn
+ * (`window.__curio_showMapsFramed`, `window.__curio_mapViews`).
+ */
+export function showFramedViews(grammar: any): () => void {
+    const views = mapViews(grammar);
+    const turned = grammarMaps(grammar).flatMap((map, index) => (
+        isFlat(map) && map[SPEC_CAMERA] ? [{ map, view: views[index] }] : []
+    ));
+    for (const { map } of turned) {
+        const framed = map[FRAMED_VIEW] as FramedView | undefined;
+        if (framed && typeof map.camera?.resetCamera === 'function' && map.renderer) {
+            map.camera.resetCamera([...framed.up], [...framed.lookAt], [...framed.eye]);
+            drawGivenCamera(map);
+            continue;
+        }
+        const turn = map[SPEC_CAMERA];
+        delete map[SPEC_CAMERA];
+        try {
+            frameMap(map);
+        } finally {
+            map[SPEC_CAMERA] = turn;
+        }
+    }
+    return () => keepMapViews({ maps: turned.map(({ map }) => map) }, turned.map(({ view }) => view));
 }
 
 /**

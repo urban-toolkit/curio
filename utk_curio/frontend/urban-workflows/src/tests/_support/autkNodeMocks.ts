@@ -67,6 +67,14 @@ const workspaceOf = (source: any): string =>
 /** What a run fails with once it made its database, for a test of a failed draw; none unless a test sets it. */
 export const failedDraws: { error: Error | null } = { error: null };
 
+/**
+ * Whether a run hands each pass of its spec's `compute` to the grammar's
+ * compute adapter, in order, before it draws, as autk-grammar's engine does:
+ * not unless a test sets it. The stand-in adapter runs none of them; a node
+ * that wraps the adapter runs its wrapper.
+ */
+export const grammarComputes: { on: boolean } = { on: false };
+
 export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string, unknown>) => {
   const handlers: Record<string, (event: any) => void> = {};
   const highlights: Array<[string, number[]]> = [];
@@ -83,6 +91,8 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
     clearHighlightOnMap: jest.fn((table: string) => { highlights.push([table, []]); }),
     setPlotSelection: jest.fn((plot: string, positions: number[]) => { plotSelections.push([plot, [...positions]]); }),
     clearHighlightOnPlot: jest.fn((plot: string) => { plotSelections.push([plot, []]); }),
+    // Where autk-grammar keeps the adapter its run hands each compute pass to.
+    computeAdapter: { resolveCompute: jest.fn(async (context: unknown) => context) },
   };
   // autk-grammar 5's destroy() lets go of its engine, and with it the database.
   const destroy = jest.fn(() => { grammar.grammarEngine = undefined; });
@@ -94,6 +104,11 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
     if (failedDraws.error) {
       grammarRuns.push({ targets, spec, pick: () => {}, brush: () => {}, highlights, plotSelections, maps: [], terminate, destroy });
       throw failedDraws.error;
+    }
+    if (grammarComputes.on) {
+      for (const pass of Array.isArray(spec?.compute) ? spec.compute : []) {
+        await grammar.computeAdapter.resolveCompute(grammar.grammarEngine.context, pass);
+      }
     }
     const maps = drawnMaps.make && spec?.map ? [drawnMaps.make()] : [];
     if (maps.length > 0) grammar.maps = maps;
@@ -192,6 +207,7 @@ export function resetAutkNodeMocks(): void {
   heldDraws.until = null;
   drawnExports.of = null;
   failedDraws.error = null;
+  grammarComputes.on = false;
   AutkGrammar.mockClear();
   markNodeErrored.mockClear();
   showToast.mockClear();

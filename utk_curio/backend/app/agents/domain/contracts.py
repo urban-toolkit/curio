@@ -189,8 +189,9 @@ def autk_one_view_problem(document: object) -> str | None:
 #: object of its list holds the key (``"compute[]"`` a pass).
 AUTK_RENAMED_KEYS: tuple[dict, ...] = tuple(_AUTK_GRAMMAR["renamedKeys"])
 #: The keys of autk-grammar 5 a node does not run yet, each where it is
-#: written; with ``value``, only that value of the key counts (a render pass
-#: is ``"type": "render"``). The step that runs one takes it out of the file.
+#: written; with ``value``, only that value of the key counts (a heatmap
+#: source is ``"type": "heatmap"``). The step that runs one takes it out of the
+#: file.
 AUTK_NOT_RUN_YET: tuple[dict, ...] = tuple(_AUTK_GRAMMAR["notRunYet"])
 #: The kinds of data source that make a raster table, a heatmap and a GeoTIFF:
 #: a compute pass over one of their tables is not run (``autk_raster_pass_problem``).
@@ -403,8 +404,8 @@ def _drop_kind(schema: dict, node: object, key: str, value: str, seen: set[int])
 def autk_schema_curio_runs(schema: dict) -> dict:
     """A copy of *schema* without what a node does not run yet
     (``AUTK_NOT_RUN_YET``): each such key taken out of the objects that hold
-    it where it is written, and each kind a value names (a render pass, a
-    heatmap source) out of its union. The agents' text and reply schema are
+    it where it is written, and each kind a value names (a heatmap source)
+    out of its union. The agents' text and reply schema are
     made from it, so an agent does not write what a node refuses."""
     schema = json.loads(json.dumps(schema))
     for rule in AUTK_NOT_RUN_YET:
@@ -472,6 +473,52 @@ def _gpgpu_pass(schema: dict) -> tuple[str, list[dict]]:
     return _compute_passes(schema).get(GPGPU_PASS, ("", []))
 
 
+#: The ``type`` of a render pass: it draws tables from each feature of a
+#: viewpoints table and writes what the frames show as a new table.
+RENDER_PASS = "render"
+
+
+def _render_pass(schema: dict) -> dict | None:
+    """What a render pass is and requires, for the agents' text, or None when
+    *schema* has none, or one that requires nothing: its description, without
+    the grammar's note on which adapters read it, the fields it requires, and
+    the fields each of its layers requires, the types a layer is drawn as and
+    the fields its viewpoints require, each empty where the schema does not
+    say, inline or by reference."""
+    description, branches = _compute_passes(schema).get(RENDER_PASS, ("", []))
+    required = sorted(branches[0].get("required", [])) if branches else []
+    if not required:
+        return None
+    properties = branches[0].get("properties", {})
+
+    def said(node: object) -> dict:
+        node = _resolved(schema, node)
+        return node if isinstance(node, dict) else {}
+
+    layer = said(said(properties.get("layers")).get("items"))
+    layer_type = said(_property(layer, "type"))
+    return {
+        "description": description.split(" Read by the ", 1)[0],
+        "required": required,
+        "layer_fields": sorted(layer.get("required", [])),
+        "layer_types": list(layer_type.get("enum", [])),
+        "viewpoint_fields": sorted(said(properties.get("viewpoints")).get("required", [])),
+    }
+
+
+def _render_words(render: dict) -> str:
+    """The ``autark`` skill's line on a render pass (``_render_pass``): what it
+    is and requires, then what each of its layers and its viewpoints require,
+    when the schema says all of that."""
+    words = _autk_words("render", description=render["description"], fields=_every(render["required"]))
+    if render["layer_fields"] and render["layer_types"] and render["viewpoint_fields"]:
+        words += " " + _autk_words(
+            "render-layers", layer_fields=_every(render["layer_fields"]),
+            layer_types=_either(render["layer_types"]), viewpoint_fields=_every(render["viewpoint_fields"]),
+        )
+    return words
+
+
 def _compute_required(schema: dict) -> tuple[list[str], list[str]]:
     """The fields every GPGPU pass needs, and the fields it needs one of."""
     branches = [set(branch.get("required", [])) for branch in _gpgpu_pass(schema)[1]] or [set()]
@@ -507,10 +554,17 @@ def render_autk_shape(schema: dict) -> str:
     source_types = _definition(schema, "DataSourceSpec").get("properties", {}).get("type", {}).get("enum", [])
     first = input_table_name(0)
     example_layer = "{" + ", ".join(f'"{field}": "{first}"' for field in layer_required) + "}"
+    # A render pass is a compute pass written with "type": "render", which
+    # its clause names before the other fields it requires.
+    render = _render_pass(schema)
+    render_fields = [field for field in render["required"] if field != "type"] if render else []
+    render_pass = agent_text.message(
+        "document.autk-shape-render", fields=_every(render_fields),
+    ) if render_fields else ""
     return agent_text.message(
         "document.autk-shape", layers=layers, example_layer=example_layer, first=first,
         families=_either(autk_step_families(schema)), plot_fields=_every(_plot_required(schema)),
-        compute_fields=_every(common), compute_one_of=_either(either),
+        compute_fields=_every(common), compute_one_of=_either(either), render_pass=render_pass,
         source_type=source_types[0] if source_types else "",
     )
 
@@ -575,10 +629,13 @@ def render_autk_region(schema: dict, label: str) -> str:
         description = compute_fields.get(field, {}).get("description")
         if description:
             lines.append(f'  - "{field}": {description}')
+    lines.append(("  - " + _autk_words(
+        "uniform", directive=directive.get("description", ""), iterate=iterate.get("description", ""),
+    )).rstrip())
+    render = _render_pass(schema)
+    if render:
+        lines.append("  - " + _render_words(render))
     lines += [
-        ("  - " + _autk_words(
-            "uniform", directive=directive.get("description", ""), iterate=iterate.get("description", ""),
-        )).rstrip(),
         # The schema's own descriptions of "map" and "plot" allow several, and a
         # document may name both; a node draws one view.
         ("- " + _autk_words(

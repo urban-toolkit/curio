@@ -10,8 +10,7 @@
   "renamedKey": "This spec uses \"{key}\"{at}, which autk-grammar 5 renamed to \"{renamedTo}\".",
   "notRunYet": [
     { "in": "", "key": "layout", "what": "\"layout\"" },
-    { "in": "", "key": "links", "what": "\"links\"" },
-    { "in": "compute[]", "key": "type", "value": "render", "what": "a render pass" }
+    { "in": "", "key": "links", "what": "\"links\"" }
   ],
   "notRunYetKey": "This spec uses {what}{at}, which Curio does not run yet.",
   "keyAt": " at {path}",

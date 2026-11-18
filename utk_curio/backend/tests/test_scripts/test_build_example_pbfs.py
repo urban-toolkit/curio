@@ -459,7 +459,8 @@ def test_a_box_spec_loads_the_box_its_extract_is_cut_at_or_one_inside_it():
     extract's own. Example 34's heatmap loads the tip of Lower Manhattan, a box
     inside that extract. The park shade test dataflow's loader loads two boxes of
     Lower Manhattan's extract: its parks' box, and the box of the buildings
-    around them, which reaches the extract's edge."""
+    around them, which reaches the extract's edge; example 35's loader loads
+    the box around Wall Street, inside it."""
     boxes = [(dataflow, node_id, extract, area["bbox"])
              for dataflow, node_id, extract, area in PBF_LOADS if "bbox" in area]
 
@@ -467,6 +468,7 @@ def test_a_box_spec_loads_the_box_its_extract_is_cut_at_or_one_inside_it():
         ("31-sideseeing-objects-along-a-walk.json", "docs/examples/data/west_loop.osm.pbf"),
         ("33-sideseeing-frames-segments-blocks.json", "docs/examples/data/west_loop.osm.pbf"),
         ("34-autark-park-access-heatmap.json", "docs/examples/data/lower_mnt.osm.pbf"),
+        ("35-autark-sky-seen-from-the-street.json", "docs/examples/data/lower_mnt.osm.pbf"),
         ("dataflows/chicago-loop-layers.json", "docs/examples/data/chicago_downtown.osm.pbf"),
         ("dataflows/chicago-rain-wind-routing.json", "docs/examples/data/chicago_downtown.osm.pbf"),
         ("dataflows/lower-manhattan-park-shade.json", "docs/examples/data/lower_mnt.osm.pbf"),

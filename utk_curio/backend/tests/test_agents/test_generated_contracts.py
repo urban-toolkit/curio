@@ -530,20 +530,42 @@ class TestTheAutarkRenderers:
                 for value in values:
                     assert (f'"{value}"' in region) is ((place, value) not in refused), (union, value)
 
-    def test_compute_passes_listed_by_reference_are_read_through_the_gpgpu_pass(self):
+    def test_compute_passes_listed_by_reference_are_read_through_the_gpgpu_pass(self, monkeypatch):
         from utk_curio.backend.tests._support import autk_schemas
 
         schema = autk_schemas.passes_by_reference(contracts.load_autk_schema())
         shape = contracts.render_autk_shape(schema)
-        assert ('a compute pass needs "attributes", "dataRef" and "wgslFunction", '
-                'plus "outputColumnName" or "outputColumns"') in shape
+        gpgpu = ('a compute pass needs "attributes", "dataRef" and "wgslFunction", '
+                 'plus "outputColumnName" or "outputColumns"')
+        assert gpgpu in shape
         region = contracts.render_autk_region(schema, "Autark")
         assert autk_schemas.GPGPU_DESCRIPTION in region
         assert f'"wgslFunction": {autk_schemas.SHADER_DESCRIPTION}' in region
-        # The render pass is no GPGPU pass: none of its fields is a pass's.
-        for render_only in ("viewpoints", "aggregation", autk_schemas.RENDER_DESCRIPTION):
-            assert render_only not in shape
-            assert render_only not in region
+        render_only = ("viewpoints", "aggregation", autk_schemas.RENDER_DESCRIPTION)
+        # The render pass is no GPGPU pass: none of its fields is a pass's. A
+        # node runs it, so it is read through its own reference, and named in
+        # a clause and a line of its own, after the GPGPU pass's.
+        assert (gpgpu + ', or, as "type": "render", "aggregation", "layers", "outputTableName" '
+                'and "viewpoints"; a loader is ') in shape
+        assert autk_schemas.RENDER_DESCRIPTION not in shape
+        render_line = (f'  - "type": "render": {autk_schemas.RENDER_DESCRIPTION} It requires "aggregation", '
+                       '"layers", "outputTableName", "type" and "viewpoints".')
+        lines = region.splitlines()
+        assert lines.count(render_line) == 1, region
+        for line in lines:
+            if line != render_line:
+                assert not any(word in line for word in render_only), line
+        # A node that ran no render pass would name none of it, listed by
+        # reference as it is.
+        not_run = {"in": "compute[]", "key": "type", "value": "render", "what": "a render pass"}
+        monkeypatch.setattr(contracts, "AUTK_NOT_RUN_YET", (*contracts.AUTK_NOT_RUN_YET, not_run))
+        shape = contracts.render_autk_shape(schema)
+        region = contracts.render_autk_region(schema, "Autark")
+        assert gpgpu + "; a loader is " in shape
+        assert autk_schemas.GPGPU_DESCRIPTION in region
+        for word in render_only:
+            assert word not in shape
+            assert word not in region
 
     def test_the_region_says_a_node_draws_one_view(self):
         schema = contracts.load_autk_schema()

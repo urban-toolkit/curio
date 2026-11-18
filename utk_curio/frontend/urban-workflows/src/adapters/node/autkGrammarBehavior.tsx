@@ -26,7 +26,7 @@ import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../ut
 import { autkKeyProblem, autkOneViewProblem, autkRasterPassProblem } from '../../contracts/autkGrammar';
 import {
     autkNeedsInput, autkSourcesFrom, documentTableRefs, drawnFeatures, drawnRows, inputRow, keyValues, loadableSource, ownTableNames,
-    readAutkInput, selectFieldsOf, selectFieldsProblem, tableKeyOf, tablePositions, tablesToLoad, writtenTables,
+    passesAtHand, readAutkInput, selectFieldsOf, selectFieldsProblem, tableKeyOf, tablePositions, tablesToLoad, writtenTables,
     type LoadOrder,
     type PreparedAutkInput,
 } from '../../utils/autkInput';
@@ -59,7 +59,8 @@ import {
     withOpaqueRasters, withRasterSources, type CurioRasterSource,
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
-import { attachSpecCameras, frameMaps, keepMapViews, mapViews, type MapView } from './autkMapView';
+import { withCheckedPasses } from './autkComputeScopes';
+import { attachSpecCameras, frameMaps, keepMapViews, mapViews, showFramedViews, type MapView } from './autkMapView';
 import { destroyFailedGrammar, grammarMaps, trackMaps } from './autkMapDrawing';
 import { mapSession, onMapSession, registerEditMap } from '../../utils/editFeatures/mapEditBus';
 import {
@@ -83,15 +84,28 @@ const mapStateReaders = new Map<string, {
     state: () => Promise<Record<string, MapTableState> | null>;
     featureAt: (table: string, position: number) => Promise<Record<string, unknown> | null>;
     views: () => Array<MapView | null>;
+    showFramed: () => () => void;
 }>();
+/** What turns each node's maps back by their cameras, while they show their framed views. */
+const turnBack = new Map<string, () => void>();
 // The e2e tests read what a map draws and lights through them
 // (test_frontend/test_autark_positions_e2e.py), and its camera
-// (test_frontend/test_autark_camera_e2e.py).
+// (test_frontend/test_autark_camera_e2e.py); the map framing check (#773)
+// shows a map its camera turns at its framed view, then turns it back
+// (test_frontend/utils/node_drawings.py, autark_map_framing).
 if (typeof window !== 'undefined') {
     (window as any).__curio_mapState = (nodeId: string) => mapStateReaders.get(nodeId)?.state() ?? null;
     (window as any).__curio_mapFeatureAt = (nodeId: string, table: string, position: number) =>
         mapStateReaders.get(nodeId)?.featureAt(table, position) ?? null;
     (window as any).__curio_mapViews = (nodeId: string) => mapStateReaders.get(nodeId)?.views() ?? null;
+    (window as any).__curio_showMapsFramed = (nodeId: string, framed: boolean): boolean => {
+        turnBack.get(nodeId)?.();
+        turnBack.delete(nodeId);
+        const reader = mapStateReaders.get(nodeId);
+        if (!reader) return false;
+        if (framed) turnBack.set(nodeId, reader.showFramed());
+        return true;
+    };
 }
 
 /**
@@ -689,13 +703,14 @@ export const useAutkGrammarBehavior = (
                     inputProblemRef.current = { reason: prepared.emptyReason, detail: prepared.detail };
                 }
                 // A table a pass writes from one of the input's holds that
-                // table's rows, as autk-db stores them (writtenTables).
-                // Both by key: a pass reads and writes tables of its own workspace.
+                // table's rows, as autk-db stores them (writtenTables); a
+                // render pass's building windows hold none of them. Both by
+                // key: a pass reads and writes tables of its own workspace.
                 const inputTables = new Set(prepared.sources.map(tableKeyOf));
-                for (const { name, from, workspace } of writtenTables(spec)) {
+                for (const { name, from, holdsRows, workspace } of writtenTables(spec)) {
                     const fromKey = autkTableKey(workspace, from);
                     const root = writtenFrom[fromKey] ?? fromKey;
-                    if (inputTables.has(root)) writtenFrom[autkTableKey(workspace, name)] = root;
+                    if (holdsRows && inputTables.has(root)) writtenFrom[autkTableKey(workspace, name)] = root;
                 }
                 const passRoots = new Set(Object.values(writtenFrom));
                 const orders: Record<string, LoadOrder> = {};
@@ -923,7 +938,9 @@ export const useAutkGrammarBehavior = (
                 // node has: it holds the rows of the table the pass computes
                 // over, and is this node's own when that one is. In pass order,
                 // so one written from another's holds its rows too. By key:
-                // a pass reads and writes tables of its own workspace.
+                // a pass reads and writes tables of its own workspace. A
+                // render pass's building windows are counted as the buildings'
+                // rows: there are none when there are no buildings.
                 const written = writtenTables(spec);
                 for (const { name, from, workspace } of written) {
                     const source = tableRows.get(autkTableKey(workspace, from));
@@ -997,10 +1014,17 @@ export const useAutkGrammarBehavior = (
                             .filter((s: any) => s?.outputTableName)
                             .map(tableKeyOf),
                     );
-                    // A pass writes its table when the one it computes over is
-                    // there, in the pass's workspace.
-                    for (const { name, from, workspace } of written) {
-                        if (availableNames.has(autkTableKey(workspace, from))) availableNames.add(autkTableKey(workspace, name));
+                    // The grammar's run reads each table a pass names from
+                    // autk-db, which holds none without rows: a pass over one
+                    // does not run, and a render layer of one, which would
+                    // draw nothing, is left out of its pass (passesAtHand). A
+                    // pass that runs writes its table, in its own workspace.
+                    if (Array.isArray(spec.compute)) {
+                        const passes = passesAtHand(spec.compute, knownNames, availableNames);
+                        for (const { name, workspace } of writtenTables({ compute: passes })) {
+                            availableNames.add(autkTableKey(workspace, name));
+                        }
+                        spec = { ...spec, compute: passes };
                     }
                     if (spec.map && Array.isArray(spec.map.layerRefs)) {
                         const dangling = spec.map.layerRefs.filter(
@@ -1133,11 +1157,15 @@ export const useAutkGrammarBehavior = (
                 // DuckDB worker that failed to fetch the spatial extension keeps
                 // that state, so only a new one can succeed (#318).
                 const drawsRasters = (spec.data as any[]).some(isCurioRasterSource);
+                const computes = Array.isArray(spec.compute) && spec.compute.length > 0;
                 const grammar = await withExtensionRetry(async () => {
                     const g = new AutkGrammar(targets);
                     // A raster enters its workspace when the document keeps
                     // tables in more than the default one (autkUsesWorkspaces).
                     if (drawsRasters) withRasterSources(g, newAutkDb, autkUsesWorkspaces(spec) ? enterWorkspace : undefined);
+                    // Each pass the run computes is checked on the GPU's
+                    // device, as a compute step's is (autkComputeScopes).
+                    if (computes) withCheckedPasses(g);
                     try {
                         await g.run(spec);
                     } catch (err) {
@@ -1430,6 +1458,10 @@ export const useAutkGrammarBehavior = (
                     // FeatureCollection, and an empty layer would surface as a
                     // blank tab in the downstream Data Pool); the compute below
                     // then only runs on layers that have features.
+                    const held = new Set([
+                        ...layers.map(layerKey),
+                        ...writtenTables(spec).map((t) => autkTableKey(t.workspace, t.name)),
+                    ]);
                     const emptyLayers = layers.filter((l) => !hasFeatures(l.geojson));
                     if (emptyLayers.length > 0) {
                         console.warn(
@@ -1440,8 +1472,13 @@ export const useAutkGrammarBehavior = (
                     }
                     if (passes.length > 0) {
                         const computeFailures: string[] = [];
+                        // The passes run over the layers that have features, as
+                        // a map node's do (passesAtHand): one over a dropped
+                        // layer does not run, and a render layer of one is left
+                        // out of its pass. Each by key, in its workspace.
+                        const runs = passesAtHand(passes, held, new Set(layers.map(layerKey)));
                         layers = await applyComputeBlocks(
-                            layers, passes, computeFailures,
+                            layers, runs, computeFailures,
                         );
                         if (computeFailures.length > 0) {
                             // Emitting here would hand downstream nodes the
@@ -1780,9 +1817,11 @@ export const useAutkGrammarBehavior = (
             featureAt: async (table, position) =>
                 drawnFeatureAt(grammarRef.current, table, await drawn.features(table), position),
             views: () => mapViews(grammarRef.current),
+            showFramed: () => showFramedViews(grammarRef.current),
         });
         return () => {
             mapStateReaders.delete(data.nodeId);
+            turnBack.delete(data.nodeId);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [data.nodeId]);
