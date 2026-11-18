@@ -130,6 +130,15 @@ export const PYTHON_TUPLE = {
   data: [{ dataType: "dataframe", data: { osm_id: [1201], leisure: ["park"] }, schema: { osm_id: "int64", leisure: "str" } }, ELEVATION],
 };
 
+/** A Python node's `return {"day": day, "night": night}`: rasters alone. */
+export const PYTHON_RASTERS = {
+  dataType: "dict",
+  data: {
+    day: { ...ELEVATION, data: "/srv/curio/.curio/data/artifacts/day.tif" },
+    night: { ...ELEVATION, data: "/srv/curio/.curio/data/artifacts/night.tif" },
+  },
+};
+
 /** A Python node's raster on its own, and the next node's input from it. */
 export const PYTHON_RASTER_REF = { path: "elevation-artifact", dataType: "raster" };
 
@@ -140,5 +149,6 @@ export const RASTER_READS: Record<string, unknown> = {
   [PYTHON_DICT_REF.path]: PYTHON_DICT,
   "python-pair": PYTHON_PAIR,
   "python-tuple": PYTHON_TUPLE,
+  "python-rasters": PYTHON_RASTERS,
   [PYTHON_RASTER_REF.path]: ELEVATION,
 };

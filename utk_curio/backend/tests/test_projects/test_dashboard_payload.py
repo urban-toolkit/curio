@@ -556,6 +556,31 @@ class TestARasterBehindAPinnedMap:
         assert asked == [("d_output", 0), ("d_output", 1)]
         assert [(r["filename"], r["part"]) for r in rasters] == [("d_output", 0), ("d_output", 1)]
 
+    def test_each_raster_of_a_dict_of_rasters_alone_travels_under_its_place(self):
+        # A dict that holds rasters alone reads as a dict holding a table does,
+        # a tuple of its values (keyedFramesAsOutputs), and the map asks for
+        # each raster by its place there.
+        envelope = {"dataType": "dict", "data": {
+            "night": {"dataType": "raster", "data": "/srv/night.tif"},
+            "day": {"dataType": "raster", "data": "/srv/day.tif"},
+        }}
+        asked = []
+
+        def fetch_raster(filename, part):
+            asked.append((filename, part))
+            return served(GEOTIFF + bytes([part]))
+
+        payload = build_dashboard_payload(
+            spec=raster_map_spec(),
+            output_refs=raster_refs("r_output", "dict"),
+            fetch_envelope=lambda name: envelope,
+            fetch_raster=fetch_raster,
+        )
+        rasters = payload.to_dict()["rasters"]
+
+        assert asked == [("r_output", 0), ("r_output", 1)]
+        assert [(r["filename"], r["part"]) for r in rasters] == [("r_output", 0), ("r_output", 1)]
+
     def test_each_raster_of_a_list_travels_under_its_place_in_it(self):
         # A Python list's raster is asked for by its part too, as the map asks for it.
         envelope = {"dataType": "list", "data": [

@@ -17,6 +17,7 @@ jest.mock("../../services/api", () => ({
   fetchPreviewData: (...args: any[]) => mockFetchPreviewData(...args),
 }));
 
+import { readAutkInput } from "../../utils/autkInput";
 import { resolveReferences, type ReferenceScope } from "../../utils/references/codeReferences";
 import { inputScopeFor, readInputColumns, readInputPreview } from "../../utils/references/inputScope";
 import {
@@ -165,6 +166,39 @@ describe("a Python node's dict of frames: a raster in it is a layer named after 
         { name: "elevation", columns: [], dtypes: {}, raster: true },
       ],
     });
+  });
+});
+
+describe("a Python node's dict that holds rasters alone, read as one holding a table is", () => {
+  const ref = { path: "python-rasters", dataType: "dict" };
+
+  test("each raster is a layer named after its key, which a chip names", async () => {
+    expect(await readInputColumns(ref)).toEqual({
+      columns: [],
+      dtypes: {},
+      layers: [
+        { name: "day", columns: [], dtypes: {}, raster: true },
+        { name: "night", columns: [], dtypes: {}, raster: true },
+      ],
+    });
+    const scope = await scopeOf(ref);
+    expect(resolveReferences("night = [!! input_0:night !!]", scope, "python")).toEqual({
+      code: 'night = curio_layer(input_0, "night", 0)',
+      problems: [],
+    });
+    const preview: any = await readInputPreview(ref);
+    expect(preview.layers).toEqual([
+      { name: "day", raster: ELEVATION_SEEN },
+      { name: "night", raster: ELEVATION_SEEN },
+    ]);
+  });
+
+  test("an Autark node reads each by its place in the dict, under its key", async () => {
+    const read = await readAutkInput(ref, { preview: true });
+    expect(read.frames.map((frame) => [frame.name, frame.dataType, frame.payload])).toEqual([
+      ["day", "raster", { artifact: "python-rasters", part: 0 }],
+      ["night", "raster", { artifact: "python-rasters", part: 1 }],
+    ]);
   });
 });
 
