@@ -411,6 +411,15 @@ describe("withOpaqueRasters", () => {
     expect(withOpaqueRasters(spec).map.layerRefs[0].transferFunction).toEqual(OPAQUE);
   });
 
+  test("a GeoTIFF the document loads is a raster too", () => {
+    const { withOpaqueRasters } = require("../../../adapters/node/autkRasters");
+    const spec = {
+      data: [{ type: "geotiff", geotiffFileUrl: "docs/examples/data/lst.tif", outputTableName: "lst" }],
+      map: { layerRefs: [{ dataRef: "lst", getFnv: "band_24", colorMapInterpolator: "interpolateYlOrRd" }] },
+    };
+    expect(withOpaqueRasters(spec).map.layerRefs[0].transferFunction).toEqual(OPAQUE);
+  });
+
   test("repro: what a layer writes of the transfer function is kept, and the rest is opaque", () => {
     const { withOpaqueRasters } = require("../../../adapters/node/autkRasters");
     const spec = {
@@ -427,6 +436,71 @@ describe("withOpaqueRasters", () => {
     expect(withOpaqueRasters(roads)).toBe(roads);
     const plot = { data: [RASTER], plot: { dataRef: "input_0", mark: "bar" } };
     expect(withOpaqueRasters(plot)).toBe(plot);
+  });
+});
+
+// autk-map draws a layer of a base-map type (surface, parks, water, roads) in
+// a place of its own under every other layer, a raster included, whatever the
+// order a map lists them in, and every raster cell is opaque, so a GeoTIFF
+// hid the parks and roads drawn on it (example 36's map drew its temperature
+// alone). A table the map lists after a raster is handed on as plain geometry,
+// which autk-map draws in the map's order.
+describe("withLayersOverRasters", () => {
+  const LST = { type: CURIO_RASTER_SOURCE, outputTableName: "lst" };
+  const layer = (name: string, layerType?: string, workspace?: string) => ({
+    type: "geojson", outputTableName: name, geojsonObject: { type: "FeatureCollection", features: [] },
+    ...(layerType ? { layerType } : {}), ...(workspace ? { workspace } : {}),
+  });
+
+  test("repro: the parks and roads a map lists after a GeoTIFF are drawn over it, as plain geometry", () => {
+    const { withLayersOverRasters } = require("../../../adapters/node/autkRasters");
+    const spec = {
+      data: [LST, layer("table_osm_surface", "surface"), layer("table_osm_parks", "parks"), layer("table_osm_roads", "roads")],
+      map: { layerRefs: [
+        { dataRef: "table_osm_surface" },
+        { dataRef: "lst", getFnv: "band_24" },
+        { dataRef: "table_osm_parks", color: "#2ca02c" },
+        { dataRef: "table_osm_roads" },
+      ] },
+    };
+    const drawn = withLayersOverRasters(spec);
+    expect(drawn.data.map((source: any) => [source.outputTableName, source.layerType])).toEqual([
+      ["lst", undefined],
+      // Listed before the raster, the surface stays under it, typed.
+      ["table_osm_surface", "surface"],
+      ["table_osm_parks", undefined],
+      ["table_osm_roads", undefined],
+    ]);
+    expect(drawn.map).toBe(spec.map);
+    // The document the node holds is not changed.
+    expect(spec.data[2]).toEqual(layer("table_osm_parks", "parks"));
+  });
+
+  test("a heatmap the document builds is a raster too, in its map's workspace, and a table no map draws keeps its type", () => {
+    const { withLayersOverRasters } = require("../../../adapters/node/autkRasters");
+    const spec = {
+      data: [
+        { type: "heatmap", joinDataRef: "table_osm_parks", outputTableName: "park_access", workspace: "east" },
+        layer("table_osm_roads", "roads", "east"),
+        layer("table_osm_water", "water"),
+      ],
+      map: { workspace: "east", layerRefs: [{ dataRef: "park_access" }, { dataRef: "table_osm_roads" }] },
+    };
+    expect(withLayersOverRasters(spec).data.map((source: any) => source.layerType)).toEqual([undefined, undefined, "water"]);
+  });
+
+  test("guard: buildings keep their type, and so does every layer of a map with no raster", () => {
+    const { withLayersOverRasters } = require("../../../adapters/node/autkRasters");
+    const buildings = {
+      data: [LST, layer("table_osm_buildings", "buildings")],
+      map: { layerRefs: [{ dataRef: "lst" }, { dataRef: "table_osm_buildings" }] },
+    };
+    expect(withLayersOverRasters(buildings)).toBe(buildings);
+    const streets = {
+      data: [layer("table_osm_parks", "parks"), layer("table_osm_roads", "roads")],
+      map: { layerRefs: [{ dataRef: "table_osm_parks" }, { dataRef: "table_osm_roads" }] },
+    };
+    expect(withLayersOverRasters(streets)).toBe(streets);
   });
 });
 

@@ -10,11 +10,13 @@
   "renamedKey": "This spec uses \"{key}\"{at}, which autk-grammar 5 renamed to \"{renamedTo}\".",
   "notRunYet": [
     { "in": "", "key": "layout", "what": "\"layout\"" },
-    { "in": "", "key": "links", "what": "\"links\"" },
-    { "in": "data[]", "key": "type", "value": "geotiff", "what": "a geotiff source" }
+    { "in": "", "key": "links", "what": "\"links\"" }
   ],
   "notRunYetKey": "This spec uses {what}{at}, which Curio does not run yet.",
   "keyAt": " at {path}",
+  "rasterSources": ["heatmap", "geotiff"],
+  "defaultWorkspace": "autk",
+  "rasterPass": "a compute pass over the raster \"{table}\"",
   "starterColoring": {
     "geometry+quantitative": { "getFnvType": "quantitative", "colorMapInterpolator": "interpolateViridis" },
     "geometry+nominal": { "getFnvType": "categorical", "colorMapInterpolator": "schemeTableau10" }

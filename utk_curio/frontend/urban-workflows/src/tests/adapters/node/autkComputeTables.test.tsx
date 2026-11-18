@@ -27,6 +27,15 @@ jest.mock('../../../providers/FlowProvider', () => require('../../_support/autkN
 jest.mock('../../../providers/ToastProvider', () => require('../../_support/autkNodeMocks').toastProviderModule);
 jest.mock('../../../services/api', () => require('../../_support/autkNodeMocks').apiModule);
 jest.mock('../../../JavaScriptInterpreter', () => ({ JavaScriptInterpreter: class { } }));
+// The grammar's own data adapter, which the browser's loader hands a geotiff
+// source, as autk-grammar's does: to autk-db's loadGeoTiff.
+const mockCreateDataAdapter = () => ({
+  async resolveSource(db: any, source: any) {
+    const { type, ...params } = source;
+    if (type === 'geotiff') await db.loadGeoTiff(params);
+    return db;
+  },
+});
 jest.mock(
   '@urban-toolkit/autk-grammar',
   () => ({
@@ -35,19 +44,30 @@ jest.mock(
   }),
   { virtual: true },
 );
+// The grammar's data entry, which the browser's loader takes the data adapter
+// from. Plain, as every suite mocks this entry (mockKinds.test.ts).
+jest.mock('@urban-toolkit/autk-grammar/data', () => ({
+  ...jest.requireActual('@urban-toolkit/autk-grammar/data'),
+  createDataAdapter: () => mockCreateDataAdapter(),
+}));
 jest.mock('@urban-toolkit/autk-compute', () => require('../../_support/autkComputeStandIns').autkComputeModule, { virtual: true });
 jest.mock('@urban-toolkit/autk-core', () => require('../../_support/autkComputeStandIns').autkCoreBuild(), { virtual: true });
 jest.mock('@urban-toolkit/autk-map', () => require('../../_support/autkComputeStandIns').autkMapModule, { virtual: true });
 jest.mock('@urban-toolkit/autk-plot', () => require('../../_support/autkComputeStandIns').autkPlotModule, { virtual: true });
 // The tables a data section loads, as the browser's own loader reads them
-// back: there is no sandbox here.
-const mockLoaded: { layers: Array<{ name: string; type: string; features: any[] }> } = { layers: [] };
+// back: there is no sandbox here. A raster is read back with getRaster.
+const mockLoaded: { layers: Array<{ name: string; type: string; features: any[] }>; rasters: Map<string, any> } = {
+  layers: [],
+  rasters: new Map(),
+};
 jest.mock(
   '@urban-toolkit/autk-db',
   () => ({
     AutkDb: class {
       async init() { }
       async loadGeojson() { }
+      async loadGeoTiff() { }
+      getWorkspaceConfiguration() { return { coordinateFormat: 'EPSG:3395' }; }
       getLayersMetadata() {
         return mockLoaded.layers.map(({ name, type }) => ({ name, type }));
       }
@@ -57,6 +77,10 @@ jest.mock(
           type: 'FeatureCollection',
           features: (layer?.features ?? []).map((f) => ({ ...f, properties: { ...f.properties } })),
         };
+      }
+      async getRaster(name: string) {
+        if (!mockLoaded.rasters.has(name)) throw new Error(`Table ${name} is not a compact raster table.`);
+        return mockLoaded.rasters.get(name);
       }
     },
     DEFAULT_WORKSPACE_COORDINATE_FORMAT: 'EPSG:3395',
@@ -123,6 +147,7 @@ beforeEach(() => {
   resetComputeStandIns();
   computeRuns.gpgpu.mockImplementation(async (params: any) => computed(params));
   mockLoaded.layers = [];
+  mockLoaded.rasters = new Map();
   stubWebGpu();
 });
 
@@ -379,5 +404,33 @@ describe('a document with data and compute and no view', () => {
     const [handed] = step.handedOn();
     expect(handed.data.map((l: any) => [l.layerName, l.layerType])).toEqual([['lanes', 'roads'], ['spots', 'points']]);
     expect(valuesOf(handed.data[0].data, 'twice')).toEqual([2, 4, 6]);
+  });
+
+  test('counts a raster it loaded by its cells, as a node that only loads data does, and hands it on', async () => {
+    // A GeoTIFF of 4 columns by 3 rows, as autk-db's getRaster gives it.
+    mockLoaded.rasters.set('lst', {
+      type: 'FeatureCollection',
+      bbox: [-4802000, -2604000, -4780000, -2589000],
+      features: [{
+        type: 'Feature',
+        geometry: null,
+        properties: {
+          rasterResX: 4,
+          rasterResY: 3,
+          bands: [{ id: 'band_1', label: 'band_1' }],
+          band_1: Float32Array.from([27.5, 28, 28.5, 29, 29.5, 30, 30.5, 31, 31.5, 32, 32.5, 33]),
+        },
+      }],
+    });
+    const step = mountStep('data-compute');
+
+    await step.run({
+      data: [...DATA, { type: 'geotiff', geotiffFileUrl: 'docs/examples/data/lst.tif', outputTableName: 'lst' }],
+      compute: [pass('spots', 'twice')],
+    });
+
+    expect(step.lastOutput()).toEqual({ code: 'success', content: 'Computed 2 layers: spots (3 rows), lst (12 cells)' });
+    const [handed] = step.handedOn();
+    expect(handed.data.map((l: any) => [l.dataType, l.layerName])).toEqual([['geodataframe', 'spots'], ['raster', 'lst']]);
   });
 });
