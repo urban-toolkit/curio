@@ -242,10 +242,10 @@ def _compute_passes(schema: dict) -> dict[str, tuple[str, list[dict]]]:
     passes: dict[str, tuple[str, list[dict]]] = {}
     for member in union.get("anyOf", []):
         target = _definition(schema, member["$ref"]) if "$ref" in member else member
-        for branch in target.get("anyOf", [target]):
-            branch = _definition(schema, branch["$ref"]) if "$ref" in branch else branch
+        description = target.get("description") or union.get("description", "")
+        for listed in target.get("anyOf", [target]):
+            branch = _definition(schema, listed["$ref"]) if "$ref" in listed else listed
             kind = branch.get("properties", {}).get("type", {}).get("const", GPGPU_PASS)
-            description = target.get("description") or union.get("description", "")
             passes.setdefault(kind, (description, []))[1].append(branch)
     return passes
 
