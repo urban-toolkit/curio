@@ -2788,7 +2788,12 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         'This spec uses a heatmap source at data[0], which Curio does not run yet.',
       ],
     ])('%s fails the node before anything runs, naming the key', async (_what, spec, said) => {
-      const interpretCode = jest.fn();
+      // The sandbox answers, as it does for any data-only node, so a node that
+      // does not refuse fails the checks below at once instead of waiting.
+      const interpretCode = jest.fn(
+        (_unresolved, _code, _input, _inputTypes, cb) =>
+          cb({ stdout: [], stderr: '', output: { path: 'art-1', dataType: 'list' } }),
+      );
       const setOutput = jest.fn();
       const outputCallback = jest.fn();
       mockAutkDbSpatialQuery.mockClear();
