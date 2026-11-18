@@ -55,9 +55,9 @@ columns over the area the document loads:
   latitude;
 - `"useCentroid": false` measures to the nearest point of each park's shape, its edge, rather than to its
   center, so a large park counts in every cell near any of its sides;
-- the one `groupBy` entry, the `sum` of `area`, makes one band, `sum_park_areas`: the area, in m², of the
-  parks within reach of the cell's center, 0 where there is none. Two outlines over the same ground, such
-  as a park and a wood inside it, each count.
+- the one `groupBy` entry, the `sum` of `area`, makes one band, `sum_park_areas`: the total area, in m²,
+  of every park whose edge lies within reach of the cell's center, a large park counting whole, 0 where
+  there is none. Two outlines over the same ground, such as a park and a wood inside it, each count.
 
 ```json
 "data": [
@@ -174,7 +174,10 @@ transform.
 ## What you see
 
 The map shows the park area within about 500 m over Niterói, cell by cell, under its parks and roads;
-the legend reads the band's range in m². The scatter puts each cell on land at its park area within reach,
-in km², and its mean summer temperature from 2020 to 2024. The red line's slope is the answer: how many
-degrees cooler or warmer a cell is for each km² of park within reach. A line that falls from left to right
-says the cells with more park area within reach are cooler.
+the legend reads the band's range in m². The measure is the total area of every park whose edge lies
+within about 500 m of the cell's center, so a large reserve near a cell counts whole: that is why the
+legend reaches about 19 million m² (19 km²), and the scatter, whose cells of about 1 km average the
+heatmap's, about 16 km². The scatter puts each of the 142 cells whose center is on land at its park area
+within reach and its mean summer temperature from 2020 to 2024. The red line falls from left to right,
+0.157 °C for each km² of park within reach, and the correlation is -0.35: the cells with more park area
+within reach were the cooler ones in those summers.

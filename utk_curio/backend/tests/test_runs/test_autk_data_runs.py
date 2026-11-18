@@ -254,18 +254,27 @@ def _niteroi_load(client, token, sandbox, example, prefix):
     return load
 
 
+def _compiled_sources(code: str) -> list[dict]:
+    """The data sources a load's compiled code runs, as it inlines them
+    (``const __sources = [...];``). The rest of the code names every kind of
+    source its helpers can load, whatever the section holds."""
+    prefix = "const __sources = "
+    line = next(line for line in code.splitlines() if line.startswith(prefix))
+    return json.loads(line[len(prefix):].rstrip(";"))
+
+
 def test_example_35s_loader_reads_its_geotiff_on_the_server_as_the_browser_does(
     client, user_and_token, sandbox, recorded,
 ):
     """Example 35's data node loads Niterói's surface, parks and roads from the
     repository's extract and its summer land surface temperature from the
     repository's GeoTIFF: on the server, the layers and the GeoTIFF's table
-    are expected, and no file but the two is read."""
+    are expected, and it runs those two sources alone, no GeoJSON among them."""
     user, token = user_and_token
     load = _niteroi_load(client, token, sandbox, EXAMPLE_35, "green-heat")
 
     assert f"const __expectedTables = {json.dumps(GREEN_TABLES, separators=(',', ':'))};" in load["code"]
-    assert "geojsonFileUrl" not in load["code"]
+    assert [source["type"] for source in _compiled_sources(load["code"])] == ["osm", "geotiff"]
 
 
 def test_example_36s_loader_reads_its_parks_and_sums_their_area_on_the_server_as_the_browser_does(
@@ -280,6 +289,7 @@ def test_example_36s_loader_reads_its_parks_and_sums_their_area_on_the_server_as
     load = _niteroi_load(client, token, sandbox, EXAMPLE_36, "park-area")
 
     assert NITEROI_PARKS in load["code"]
+    assert [source["type"] for source in _compiled_sources(load["code"])] == ["osm", "geotiff", "geojson", "heatmap"]
     assert f"const __expectedTables = {json.dumps(PARK_AREA_TABLES, separators=(',', ':'))};" in load["code"]
     assert "const __heatmapProblem = null;" in load["code"]
 
