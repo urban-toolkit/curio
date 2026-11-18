@@ -4,7 +4,7 @@ How much sky does each street around Wall Street see between its buildings? A re
 GPU: from each street, Autark draws the buildings in four directions, looking up at 45 degrees, and counts
 how much of each frame is sky. The first `autk-grammar` node loads the surface, roads and buildings from a
 local `.pbf` file; the second runs the render pass, which writes the streets as a new table with their share
-of sky, and maps it over the buildings.
+of sky, and maps it between the buildings.
 
 > [!NOTE]
 > **WebGPU required**
@@ -65,18 +65,20 @@ The pass writes `street_sky`: the roads, each with its shares in `compute.render
 
 ## Step 3: Map the share of sky (`sky-map`)
 
-The map draws the surface and the buildings, and over them `street_sky`, each road colored by its share of
-sky on a blue scale: pale where the buildings close in, darker where the road sees more sky. Its `camera`
-tilts the view the node frames it at, 45 degrees from straight down, facing 30 degrees east of north, so the
-towers stand up beside the streets they shade.
+The map draws the surface, then `street_sky`, each road a line 8 units wide colored by its share of sky:
+dark purple where the buildings close in, through green, to yellow where the road sees more sky. The
+buildings come last, in light gray and half see-through, so a street behind a tower still shows. Its
+`camera` tilts the view the node frames it at, 30 degrees from straight down, facing 125 degrees, down Wall
+Street and the streets that cross Broadway, so the towers stand up beside the streets they shade and the
+streets stay in view between them.
 
 ```json
-"map": { "camera": { "pitch": 45, "bearing": 30 }, "layerRefs": [
+"map": { "camera": { "pitch": 30, "bearing": 125 }, "layerRefs": [
   { "dataRef": "wall_st_surface" },
-  { "dataRef": "wall_st_buildings" },
   { "dataRef": "street_sky", "title": "Share of sky seen from the street",
     "getFnv": "compute.render.classes.sky", "getFnvType": "quantitative",
-    "colorMapInterpolator": "interpolateBlues" }
+    "colorMapInterpolator": "interpolateViridis", "width": 8 },
+  { "dataRef": "wall_st_buildings", "color": "#dddddd", "opacity": 0.5 }
 ]}
 ```
 
