@@ -6,6 +6,12 @@ declare module 'react-dom';
 declare module 'react-dom/client';
 declare module '*.css';
 
+// autk-grammar's `./data` entry, which `moduleResolution: node` does not find
+// through the package's `exports`: its own types, where the package keeps them.
+declare module '@urban-toolkit/autk-grammar/data' {
+    export * from '@urban-toolkit/autk-grammar/dist/data/autk-grammar-data';
+}
+
 declare module '*.module.css' {
     const classes: { [key: string]: string };
     export default classes;

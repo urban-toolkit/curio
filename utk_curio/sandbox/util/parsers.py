@@ -84,9 +84,13 @@ def parse_geodataframe(data_value):
     # df['geometry'] = df['geometry'].apply(wkt.loads)
     # gdf = gpd.GeoDataFrame(df, geometry='geometry')
     gdf = gpd.GeoDataFrame.from_features(data_value["features"])
-    # Its layer's name, and the label of the bundle part it was read from.
+    # Its layer's name, Autark layer type and workspace, which parseOutput
+    # hands on, and the label of the bundle part it was read from.
     sent = data_value.get('metadata')
-    kept = {key: sent[key] for key in ('name', PART_LABEL) if key in sent} if isinstance(sent, dict) else {}
+    kept = (
+        {key: sent[key] for key in ('name', 'layerType', 'workspace', PART_LABEL) if key in sent}
+        if isinstance(sent, dict) else {}
+    )
     if kept:
         gdf.__dict__['metadata'] = kept
 
@@ -329,12 +333,15 @@ def parseOutput(output):
         # have to know which branch it is on to read them.
         json_output['schema'] = _frame_schema(output)
         json_output['columns'] = _frame_columns(output)
-        # The frame's own name and Autark layer type, and the label of the
-        # bundle part it was read from, as the Arrow path sends them in its
-        # X-Curio-Frame-Metadata header.
+        # The frame's own name, Autark layer type and workspace, and the label
+        # of the bundle part it was read from, as the Arrow path sends them in
+        # its X-Curio-Frame-Metadata header.
         frame_metadata = getattr(output, 'metadata', None)
         if isinstance(frame_metadata, dict):
-            kept = {key: frame_metadata[key] for key in ('name', 'layerType', PART_LABEL) if key in frame_metadata}
+            kept = {
+                key: frame_metadata[key]
+                for key in ('name', 'layerType', 'workspace', PART_LABEL) if key in frame_metadata
+            }
             if kept:
                 json_output['data']['metadata'] = kept
     # A DatasetReader can only exist if user code already imported rasterio,

@@ -87,11 +87,6 @@ describe("loadSpecLayers", () => {
       { data: [{ type: "geotiff", geotiffFileUrl: "lst.tif", outputTableName: "lst" }] },
       "This spec uses a geotiff source at data[0], which Curio does not run yet.",
     ],
-    [
-      "a source in a workspace",
-      { data: [{ type: "csv", csvFileUrl: "a.csv", outputTableName: "a", workspace: "east" }] },
-      'This spec uses "workspace" at data[0], which Curio does not run yet.',
-    ],
   ])("%s fails the load, named, and makes no database", async (_what, spec, said) => {
     await expect(loadSpecLayers(spec)).rejects.toThrow(said);
     expect(mockAutkDb).not.toHaveBeenCalled();
