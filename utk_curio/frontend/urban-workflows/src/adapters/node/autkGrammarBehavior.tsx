@@ -53,7 +53,7 @@ import {
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
 import { withCheckedPasses } from './autkComputeScopes';
-import { frameMaps, keepMapViews, mapViews, type MapView } from './autkMapView';
+import { attachSpecCameras, frameMaps, keepMapViews, mapViews, type MapView } from './autkMapView';
 import { destroyFailedGrammar, grammarMaps, trackMaps } from './autkMapDrawing';
 import { mapSession, onMapSession, registerEditMap } from '../../utils/editFeatures/mapEditBus';
 import {
@@ -68,16 +68,24 @@ import MapEditOverlay from '../../components/editFeatures/MapEditOverlay';
 const NO_CODE_EDITS = () => () => {};
 const NO_REVISION = () => 0;
 
-/** What each Autark node's map draws and lights now, by node id (autkMapState `mapStateOf`, `drawnFeatureAt`). */
+/**
+ * What each Autark node's map draws and lights now, and where the camera of
+ * each map it drew stands, by node id (autkMapState `mapStateOf`,
+ * `drawnFeatureAt`; autkMapView `mapViews`).
+ */
 const mapStateReaders = new Map<string, {
     state: () => Promise<Record<string, MapTableState> | null>;
     featureAt: (table: string, position: number) => Promise<Record<string, unknown> | null>;
+    views: () => Array<MapView | null>;
 }>();
-// The e2e tests read what a map draws and lights through them (test_frontend/test_autark_positions_e2e.py).
+// The e2e tests read what a map draws and lights through them
+// (test_frontend/test_autark_positions_e2e.py), and its camera
+// (test_frontend/test_autark_camera_e2e.py).
 if (typeof window !== 'undefined') {
     (window as any).__curio_mapState = (nodeId: string) => mapStateReaders.get(nodeId)?.state() ?? null;
     (window as any).__curio_mapFeatureAt = (nodeId: string, table: string, position: number) =>
         mapStateReaders.get(nodeId)?.featureAt(table, position) ?? null;
+    (window as any).__curio_mapViews = (nodeId: string) => mapStateReaders.get(nodeId)?.views() ?? null;
 }
 
 /**
@@ -114,10 +122,12 @@ export type AutkBehaviorOptions = {
     recordsProvenance?: boolean;
     /**
      * Whether a draw keeps the view of the maps the last draw made. Only the
-     * first draw frames the layers (`frameMaps`); each later one puts back
-     * the camera the person zoomed and panned to (`keepMapViews`). A map a
-     * Map Editor node feeds always does, so an edit, and the Commit after
-     * it, leave the map where it was.
+     * first draw frames the layers and turns them by the document's camera
+     * (`frameMaps`); each later one puts back the camera the person zoomed
+     * and panned to (`keepMapViews`), unless the map's camera in the document
+     * changed, which frames and turns it again. A map a Map Editor node feeds
+     * always does, so an edit, and the Commit after it, leave the map where
+     * it was.
      */
     keepsView?: boolean;
 };
@@ -1030,7 +1040,7 @@ export const useAutkGrammarBehavior = (
                 // Every raster draws each cell that has a value opaque.
                 spec = withOpaqueRasters(spec);
 
-                const { AutkGrammar } = await import('@urban-toolkit/autk-grammar');
+                const { AutkGrammar, applyCamera } = await import('@urban-toolkit/autk-grammar');
                 // A node that left the page while its data loaded has no
                 // canvas to draw on: its run ends here (see mountedRef).
                 if (leftPage()) return;
@@ -1071,6 +1081,9 @@ export const useAutkGrammarBehavior = (
                     return;
                 }
                 bleedRasterEdges(grammar, spec);
+                // Each map is framed on its layers, then turned by the camera
+                // its own entry writes, through the grammar's applyCamera.
+                attachSpecCameras(grammar, spec, applyCamera);
                 if (keepView && keptViewsRef.current) keepMapViews(grammar, keptViewsRef.current);
                 else frameMaps(grammar);
                 if (editFedRef.current) {
@@ -1658,6 +1671,7 @@ export const useAutkGrammarBehavior = (
             state: () => mapStateOf(grammarRef.current, specRef.current, drawn),
             featureAt: async (table, position) =>
                 drawnFeatureAt(grammarRef.current, table, await drawn.features(table), position),
+            views: () => mapViews(grammarRef.current),
         });
         return () => {
             mapStateReaders.delete(data.nodeId);
