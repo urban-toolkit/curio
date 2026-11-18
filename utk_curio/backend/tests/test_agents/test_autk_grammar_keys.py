@@ -73,7 +73,7 @@ def test_the_document_check_refuses_it_with_that_sentence(case):
 HEATMAP_DOCUMENT = {
     "data": [
         {"type": "osm", "pbfFileUrl": "docs/examples/data/lower_mnt.osm.pbf", "outputTableName": "tip",
-         "queryArea": {"bbox": [-74.0195, 40.7, -74.0085, 40.7085]},
+         "queryArea": {"bbox": [-74.0194, 40.7, -74.0085, 40.7085]},
          "autoLoadLayers": {"layers": ["surface", "parks", "roads"]}},
         {"type": "heatmap", "joinDataRef": "tip_parks", "outputTableName": "park_access",
          "near": {"distance": 200, "useCentroid": False}, "grid": {"rows": 30, "columns": 30},

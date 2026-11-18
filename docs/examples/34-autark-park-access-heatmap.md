@@ -28,7 +28,7 @@ the layers and the heatmap in its `input_0`.
 
 `docs/examples/data/lower_mnt.osm.pbf` is an OpenStreetMap extract for Lower Manhattan (© OpenStreetMap
 contributors, ODbL 1.0), built by `scripts/build_example_pbfs.py`. The example reads the box from
-longitude -74.0195 to -74.0085 and latitude 40.7 to 40.7085: Battery Park, the Battery Park City
+longitude -74.0194 to -74.0085 and latitude 40.7 to 40.7085, inside the box the extract is cut at: Battery Park, the Battery Park City
 esplanade and the south end of the Financial District, where small plazas and gardens sit between
 the streets, so the parks within reach change from one cell to the next.
 
@@ -48,7 +48,7 @@ rows and 30 columns over the area the document loads:
 "data": [
   {
     "type": "osm", "pbfFileUrl": "docs/examples/data/lower_mnt.osm.pbf",
-    "queryArea": { "bbox": [-74.0195, 40.7, -74.0085, 40.7085] },
+    "queryArea": { "bbox": [-74.0194, 40.7, -74.0085, 40.7085] },
     "outputTableName": "tip",
     "autoLoadLayers": { "layers": ["surface", "parks", "water", "roads"] }
   },

@@ -1563,7 +1563,7 @@ heatmap of any other table fails the node with an error that names it.
 {
   "data": [
     {"type": "osm", "pbfFileUrl": "docs/examples/data/lower_mnt.osm.pbf", "outputTableName": "tip",
-     "queryArea": {"bbox": [-74.0195, 40.7, -74.0085, 40.7085]},
+     "queryArea": {"bbox": [-74.0194, 40.7, -74.0085, 40.7085]},
      "autoLoadLayers": {"layers": ["surface", "parks", "roads"]}},
     {"type": "heatmap", "joinDataRef": "tip_parks", "outputTableName": "park_access",
      "near": {"distance": 200, "useCentroid": false}, "grid": {"rows": 30, "columns": 30},

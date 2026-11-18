@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/34-autark-park-access-heatmap.json",
-    "sha256": "cba5ac04b463c6df54e2a4f725dd4243668826e32dd143a6cde1f483a7a2a0a0",
+    "sha256": "8dd8018299fccb2d3b083328546bcbe1c593af84b885d433a7570b0a01fe6935",
     "walkthrough": "docs/examples/34-autark-park-access-heatmap.md"
   },
-  "prompt": "How close is every part of the southern tip of Lower Manhattan to a park? Use the OpenStreetMap extract in this checkout, docs/examples/data/lower_mnt.osm.pbf, cut to the box from longitude -74.0195 to -74.0085 and latitude 40.7 to 40.7085. With Autark, load its streets, parks and water, and bin the parks into a 30 by 30 grid where each cell counts the parks within about 150 m of its center, measured to the nearest edge of each park. Draw that grid on a map over the streets, parks and water, and give me a table of the share of the area by how many parks are within reach: none, one, two to four, five to nine, and ten or more.",
+  "prompt": "How close is every part of the southern tip of Lower Manhattan to a park? Use the OpenStreetMap extract in this checkout, docs/examples/data/lower_mnt.osm.pbf, cut to the box from longitude -74.0194 to -74.0085 and latitude 40.7 to 40.7085. With Autark, load its streets, parks and water, and bin the parks into a 30 by 30 grid where each cell counts the parks within about 150 m of its center, measured to the nearest edge of each park. Draw that grid on a map over the streets, parks and water, and give me a table of the share of the area by how many parks are within reach: none, one, two to four, five to nine, and ten or more.",
   "context": null,
   "required": {
     "datasets": [],
