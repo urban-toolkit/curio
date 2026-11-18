@@ -1483,10 +1483,14 @@ node it feeds draws one of them by naming its workspace:
 ```
 
 A table keeps its workspace through a compute step, a Map Editor node and a
-Data Pool. A Python node reads it as `workspace`: in each layer record a data
-section's tables arrive as (`{"name", "type", "geojson", "workspace"}`), and in
-the `metadata` of a frame read from another Autark node's layers or through a
-layer chip, beside its `name`. A map that names a table
+Data Pool, and a Map Editor node makes its new layers in the workspace its
+input's layers share. A Python node reads it as `workspace`: in each layer
+record a data section's tables arrive as (`{"name", "type", "geojson",
+"workspace"}`), and in the `metadata` of a frame read from another Autark
+node's layers or through a layer chip, beside its `name`, which a frame the
+node returns hands on. In code, a layer chip names a table of a workspace as
+`<workspace>/<table>`: `[!! input_0:east/lines !!]` reads east's `lines`, and
+`[!! input_0:lines !!]` the default workspace's. A map that names a table
 of another workspace than its own draws nothing and says which tables it has,
 each in another workspace written as `<workspace>/<table>`.
 
