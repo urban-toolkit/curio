@@ -3,14 +3,15 @@
  * grammar's own map.
  *
  * autk-grammar draws a raster table on a map (`getRaster`, then autk-map's
- * `loadCollection` with `type: 'raster'`), and its `geotiff` source loads one
- * from a file's URL, which a node refuses (contracts/autkGrammar). A raster the
- * node's input brings is bytes, not a URL, so it becomes a source of Curio's
- * own, `curio-raster`, which `withRasterSources` teaches one grammar instance
- * to load: into the grammar's own database, with `loadGeoTiff`, before its map
- * runs. So does a raster the node's own data section made, a heatmap, which
- * the data load hands the map as a collection (`rasterSourceOf`). Every other
- * source goes to the grammar unchanged. The map then reads
+ * `loadCollection` with `type: 'raster'`). A raster the node's input brings is
+ * bytes, not a URL, so it becomes a source of Curio's own, `curio-raster`,
+ * which `withRasterSources` teaches one grammar instance to load: into the
+ * grammar's own database, with `loadGeoTiff`, before its map runs. So does a
+ * raster the node's own data section made, a heatmap or the GeoTIFF of a
+ * `geotiff` source, which the data load hands the map as a collection
+ * (`rasterSourceOf`). Every other source goes to the grammar unchanged. A
+ * compute pass reads a table's features, and a raster has none of its own,
+ * so a pass over a raster is refused (`rasterPassProblem`). The map then reads
  * the raster by `getRaster`, at its own extent, outlined so autk-map can place
  * a map that starts with it (`framedRaster`), its bands named as they were
  * made (`withBandLabels`). The grammar colors a raster's
@@ -27,6 +28,7 @@
  * handed on is written back to GeoTIFF bytes here. Either way it is loaded at
  * its own size, with `nearest` resampling and its CRS (utils/raster/rasterLoad).
  */
+import { autkNotRunYet } from '../../contracts/autkGrammar';
 import { fetchRaster } from '../../services/api';
 import type { AutkRasterInput } from '../../utils/autkInput';
 import { writeGeoTiff } from '../../utils/raster/geotiffWriter';
@@ -45,6 +47,7 @@ import {
     type RasterCollection,
     type RasterGrid,
 } from '../../utils/raster/rasterWire';
+import { GRAMMAR_RASTER_SOURCES } from './autkDataCompile';
 
 export const CURIO_RASTER_SOURCE = 'curio-raster';
 
@@ -247,8 +250,8 @@ function serveRaster(db: any, table: string, collection: any): void {
  * database has the workspace `autk`, and a node's input is `input_0`, so two
  * maps that load a raster at once each drew whichever loaded last. A raster
  * is loaded and read back here one at a time, and its node keeps what it
- * read. A heatmap a node's data section builds in the browser
- * (autkLayerMaterialize) is built and read back here too.
+ * read. A heatmap or a GeoTIFF a node's data section makes in the browser
+ * (autkLayerMaterialize) is made and read back here too.
  */
 let rasterLoads: Promise<unknown> = Promise.resolve();
 
@@ -313,13 +316,35 @@ function mapsOf(spec: any): any[] {
     return spec?.map ? (Array.isArray(spec.map) ? spec.map : [spec.map]) : [];
 }
 
-/** The tables of *spec*'s data that are rasters: Curio's own and the grammar's heatmaps. */
+/** The tables of *spec*'s data that are rasters: Curio's own, and the grammar's heatmaps and GeoTIFFs. */
 export function rasterTables(spec: any): Set<string> {
     const sources: any[] = Array.isArray(spec?.data) ? spec.data : [];
     return new Set(sources
-        .filter((source) => isCurioRasterSource(source) || source?.type === 'heatmap')
+        .filter((source) => isCurioRasterSource(source) || GRAMMAR_RASTER_SOURCES.includes(source?.type))
         .map((source) => source.outputTableName)
         .filter((name): name is string => typeof name === 'string'));
+}
+
+/**
+ * What a document is told when one of its compute passes reads a raster,
+ * else null: the first pass whose `dataRef` is one of *rasters*, named with
+ * where it is written, as a key a node does not run yet is
+ * (contracts/autkGrammar). A GPGPU pass computes one value for each feature
+ * of the table it reads, and a raster holds all its cells in one feature, so
+ * no pass of autk-grammar computes over a raster's cells. *rasters* are the
+ * raster tables the node holds: those its data section makes (`rasterTables`)
+ * and those its input brings.
+ */
+export function rasterPassProblem(spec: any, rasters: Iterable<string>): string | null {
+    const names = new Set(rasters);
+    const compute = spec?.compute;
+    const passes: any[] = Array.isArray(compute) ? compute : compute != null ? [compute] : [];
+    for (let i = 0; i < passes.length; i++) {
+        const table = passes[i]?.dataRef;
+        if (typeof table !== 'string' || !names.has(table)) continue;
+        return autkNotRunYet(`a compute pass over the raster "${table}"`, Array.isArray(compute) ? `compute[${i}]` : 'compute');
+    }
+    return null;
 }
 
 /**

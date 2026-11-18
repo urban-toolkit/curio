@@ -42,7 +42,7 @@ export const SANDBOX_BACKEND_URL_TOKEN = '__CURIO_BACKEND_URL__';
 export function resolveDataSourceUrls(spec: any, base: string): any {
     if (!Array.isArray(spec.data) || spec.data.length === 0) return spec;
 
-    const urlFields = ['pbfFileUrl', 'csvFileUrl', 'jsonFileUrl', 'geojsonFileUrl'];
+    const urlFields = ['pbfFileUrl', 'csvFileUrl', 'jsonFileUrl', 'geojsonFileUrl', 'geotiffFileUrl'];
     const isAbsolute = (url: string) => /^[a-z][a-z\d+\-.]*:/i.test(url);
 
     const resolved = spec.data.map((source: any) => {
@@ -62,10 +62,11 @@ export function resolveDataSourceUrls(spec: any, base: string): any {
 // The source types both loaders hand to autk-grammar's own data adapter
 // (`createDataAdapter().resolveSource`), which loads them as the grammar does:
 // the sandbox's from the grammar's `./data` entry, which imports autk-db alone,
-// and the browser's from its main entry. Each makes a raster table, which the
+// and the browser's from its main entry. Each makes a raster table, a heatmap
+// with autk-db's `buildHeatmap` and a GeoTIFF with its `loadGeoTiff`, which the
 // loaders read back with the grid its cells lie on (withRasterGrid) and hand on
 // as Curio hands on a raster (rasterEnvelope).
-export const GRAMMAR_RASTER_SOURCES = ['heatmap'];
+export const GRAMMAR_RASTER_SOURCES = ['heatmap', 'geotiff'];
 
 // Table names a data spec is contractually asking autk-db to create.
 //
@@ -78,8 +79,8 @@ export const GRAMMAR_RASTER_SOURCES = ['heatmap'];
 // actually failed showing "Done" (#248), so the loaders check these names.
 //
 // Naming mirrors autk-db's own, which derives a layer table as
-// `outputTableName || `${osmInputTableName}_${layer}``. A heatmap's raster
-// table is one of them: the loaders read it back by its name.
+// `outputTableName || `${osmInputTableName}_${layer}``. A heatmap's or a
+// GeoTIFF's raster table is one of them: the loaders read it back by its name.
 export function requestedLayerTables(dataSources: any[]): string[] {
     const names: string[] = [];
     for (const source of dataSources ?? []) {
@@ -194,12 +195,14 @@ export function withOsmIds(table: { source?: string; type?: string } | null | un
 }
 
 // A raster table's `getRaster` collection with `grid`, the grid its cells lie
-// on (utils/raster/rasterWire.ts), which autk-db keeps for no raster it builds.
-// A heatmap's cells lie on a regular grid over the collection's extent,
+// on (utils/raster/rasterWire.ts), which autk-db keeps for no raster it makes.
+// A raster's cells lie on a regular grid over the collection's extent,
 // `rasterResX` columns by `rasterResY` rows with row 0 at the south edge, in
-// `crs`, the CRS of the workspace that built it. The band arrays are shared,
-// not copied. Both loaders go through this one function (compileDataSpecToAutkDbJs
-// embeds its source), so the body avoids what loadableFeatures avoids.
+// `crs`, the CRS of the workspace that made it: a heatmap's are built there,
+// and autk-db lays a GeoTIFF's over the file's corners taken into it. The map
+// draws them there too. The band arrays are shared, not copied. Both loaders
+// go through this one function (compileDataSpecToAutkDbJs embeds its source),
+// so the body avoids what loadableFeatures avoids.
 export function withRasterGrid(collection: any, crs: string): any {
     const bbox = collection.bbox;
     const properties = collection.features[0].properties;
@@ -259,11 +262,11 @@ export function rasterEnvelope(collection: any, layerName?: string): any {
 // execute_js_code; the rest is the body of the async function the sandbox wraps
 // user code in. Mirrors loadSpecLayers exactly, with the spec inlined as a
 // literal and flattenToMultiPolygon inlined (the module-level helper above is not
-// in the sandbox's scope). A source of GRAMMAR_RASTER_SOURCES (a heatmap) is
-// loaded by the grammar's own data adapter, from its `./data` entry, which the
-// code imports only for a document that has one. The function returns
-// Array<{name, type, geojson}>, each raster table after them in its envelope
-// (rasterEnvelope), which the sandbox persists to DuckDB.
+// in the sandbox's scope). A source of GRAMMAR_RASTER_SOURCES (a heatmap, a
+// GeoTIFF) is loaded by the grammar's own data adapter, from its `./data`
+// entry, which the code imports only for a document that has one. The
+// function returns Array<{name, type, geojson}>, each raster table after them
+// in its envelope (rasterEnvelope), which the sandbox persists to DuckDB.
 export function compileDataSpecToAutkDbJs(dataSources: any[]): string {
     const grammarSources = (dataSources ?? []).some(
         (source: any) => GRAMMAR_RASTER_SOURCES.includes(source?.type),

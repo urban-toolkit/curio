@@ -62,6 +62,15 @@ function fill(template: string, values: Record<string, string>): string {
 }
 
 /**
+ * What a document is told of *what* it uses that a node does not run yet,
+ * written at *path* ("" for the document itself): autkGrammar.json's
+ * `notRunYetKey`, filled.
+ */
+export function autkNotRunYet(what: string, path: string): string {
+  return fill(autkGrammar.notRunYetKey, { what, at: path ? fill(autkGrammar.keyAt, { path }) : "" });
+}
+
+/**
  * What a document that writes a key a node does not run is told, else null.
  * A key autk-grammar 5 renamed comes first, named with its new name; then a
  * key of autk-grammar 5 a node does not run yet. The first of autkGrammar.json's
@@ -77,7 +86,7 @@ export function autkKeyProblem(spec: unknown): string | null {
   }
   for (const rule of autkGrammar.notRunYet as Array<KeyRule & { what: string }>) {
     const path = written(document, rule);
-    if (path !== null) return fill(autkGrammar.notRunYetKey, { what: rule.what, at: at(path) });
+    if (path !== null) return autkNotRunYet(rule.what, path);
   }
   return null;
 }

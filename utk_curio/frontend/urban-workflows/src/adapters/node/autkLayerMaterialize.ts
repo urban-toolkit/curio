@@ -3,8 +3,8 @@
 // in-browser AutkDb fallback, and the wrapper a downstream Data Pool reads.
 // Used by the node behavior (autkGrammarBehavior.tsx).
 //
-// A raster table the data section makes (a heatmap) comes back from both
-// loaders beside the layers as `{name, type: 'raster', geojson}`, its `geojson`
+// A raster table the data section makes (a heatmap, a GeoTIFF) comes back from
+// both loaders beside the layers as `{name, type: 'raster', geojson}`, its `geojson`
 // autk-db's `getRaster` collection with the grid its cells lie on
 // (withRasterGrid), and is handed on in its envelope (rasterEnvelope).
 
@@ -210,11 +210,12 @@ function explodeBuildingParts(features: any[]): any[] {
 }
 
 // A source the grammar's own data adapter loads (GRAMMAR_RASTER_SOURCES, a
-// heatmap), as the sandbox's loader loads it (compileDataSpecToAutkDbJs): built
-// by the main entry's `createDataAdapter().resolveSource`, then its raster table
-// read back at once, in the workspace it was built in, with the grid its cells
-// lie on. autk-db keeps a raster's cells in one store for the whole page, so
-// the build and the read are one raster at a time (oneRasterAtATime).
+// heatmap, a GeoTIFF), as the sandbox's loader loads it
+// (compileDataSpecToAutkDbJs): made by the main entry's
+// `createDataAdapter().resolveSource`, then its raster table read back at
+// once, in the workspace it was made in, with the grid its cells lie on.
+// autk-db keeps a raster's cells in one store for the whole page, so the
+// making and the read are one raster at a time (oneRasterAtATime).
 async function grammarRaster(db: any, source: any): Promise<{ name: string; type: string; geojson: any }> {
     const { createDataAdapter } = await import('@urban-toolkit/autk-grammar');
     const adapter = createDataAdapter();
@@ -239,8 +240,8 @@ async function loadableGeojson(source: any): Promise<any> {
 }
 
 // Load a data-only grammar spec's sources directly with AutkDb and return the
-// resulting layers, then the raster tables it makes (a heatmap), so a grammar
-// node can export its parsed data downstream.
+// resulting layers, then the raster tables it makes (a heatmap, a GeoTIFF), so
+// a grammar node can export its parsed data downstream.
 // (The grammar engine itself never exposes the loaded DB — createEngine returns
 // no `context` — so we drive the same AutkDb the grammar uses internally.)
 // Sources that write a key autk-grammar 5 renamed, or one a node does not run

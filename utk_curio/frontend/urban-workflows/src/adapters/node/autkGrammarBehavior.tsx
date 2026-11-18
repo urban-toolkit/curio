@@ -50,8 +50,8 @@ import {
     RASTER_TABLE, loadSpecLayers, loadedRows, materializeBackendLayers, runDataInBackend, toPoolOutput,
 } from './autkLayerMaterialize';
 import {
-    bleedRasterEdges, isCurioRasterSource, newAutkDb, rasterSourceOf, resolveRasterInputs, withOpaqueRasters,
-    withRasterSources, type CurioRasterSource,
+    bleedRasterEdges, isCurioRasterSource, newAutkDb, rasterPassProblem, rasterSourceOf, rasterTables,
+    resolveRasterInputs, withOpaqueRasters, withRasterSources, type CurioRasterSource,
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
 import { frameMaps, keepMapViews, mapViews, type MapView } from './autkMapView';
@@ -642,6 +642,20 @@ export const useAutkGrammarBehavior = (
             showToast(keyProblem, 'error');
             return;
         }
+        // So does a compute pass over a raster, one the data section makes or
+        // one the input brings, which a pass cannot compute over cell by cell
+        // (adapters/node/autkRasters rasterPassProblem).
+        const rasterPass = rasterPassProblem(spec, [
+            ...rasterTables(spec),
+            ...(preparedInput?.rasters ?? []).map((raster) => raster.outputTableName),
+        ]);
+        if (rasterPass) {
+            grammarRef.current = null;
+            specRef.current = null;
+            emit({ code: 'error', content: rasterPass });
+            showToast(rasterPass, 'error');
+            return;
+        }
 
         emit({ code: 'exec', content: '' });
         let summary: string | null = null;
@@ -743,8 +757,8 @@ export const useAutkGrammarBehavior = (
                         coordinateFormat: detectCoordinateFormat(l.geojson as any),
                         ...(l.type && l.type !== 'polygons' ? { layerType: l.type } : {}),
                     }));
-                    // The raster tables the data section made (a heatmap),
-                    // drawn as every raster is (adapters/node/autkRasters).
+                    // The raster tables the data section made (a heatmap, a
+                    // GeoTIFF), drawn as every raster is (adapters/node/autkRasters).
                     const ownRasters = layers.filter((l) => l.type === RASTER_TABLE).map((l) => {
                         const source = rasterSourceOf(l.name, l.geojson);
                         if ('refused' in source) throw new Error(source.refused);
