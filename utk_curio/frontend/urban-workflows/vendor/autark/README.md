@@ -13,7 +13,7 @@ Curio installs it in place of autk-map 4.1.1 from npm until Autark releases thes
 
 ## autk-grammar
 
-`urban-toolkit-autk-grammar-5.0.0-curio.1.tgz` is `@urban-toolkit/autk-grammar` packed from urban-toolkit/autk-grammar #22's branch `feat/point-size` at `02e287d2c80a9380f34fc51a22986477a995324b`, a release candidate of 5.0.0: autk-grammar 4.4.1 with #20 (new keys, and keys renamed with no alias: `wglsFunction` is `wgslFunction`, a join's `tableRootName` and `tableJoinName` are `dataRef` and `joinDataRef`, a heatmap's `tableJoinName` is `joinDataRef`), #21 (`workspace`) and #22 (a map layer's `pointSize`, the radius of each point of a points layer in meters on the ground, which the grammar converts to autk-map's planar units by the Mercator scale at the layer's latitude). Its SHA-256 is `66e4c4d4b40d90db6e8b7a1ae47480ba8d8cc066f5cc798f057f7a7ad244bb24`, and its npm integrity `sha512-GON7Jimf4TVR/kkV/IMWGwGgsFt7iJ7yaXcwlV0VJBwzxdB45VfigZDrxVRNclKQ02jeozTVCds0WCRCctyaDg==`.
+`urban-toolkit-autk-grammar-5.0.0-curio.1.tgz` is `@urban-toolkit/autk-grammar` packed from urban-toolkit/autk-grammar #22's branch `feat/point-size` at `02e287d2c80a9380f34fc51a22986477a995324b`, a release candidate of 5.0.0: autk-grammar 4.4.1 with #20 (5.0.0's keys), #21 (`workspace`) and #22 (a map layer's `pointSize`, the radius of each point of a points layer in meters on the ground, which the grammar converts to autk-map's planar units by the Mercator scale at the layer's latitude). Its SHA-256 is `66e4c4d4b40d90db6e8b7a1ae47480ba8d8cc066f5cc798f057f7a7ad244bb24`, and its npm integrity `sha512-GON7Jimf4TVR/kkV/IMWGwGgsFt7iJ7yaXcwlV0VJBwzxdB45VfigZDrxVRNclKQ02jeozTVCds0WCRCctyaDg==`.
 
 It was built in a clean checkout of that commit, with Node 26:
 

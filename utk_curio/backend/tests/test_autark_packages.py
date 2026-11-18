@@ -15,9 +15,8 @@ each was packed):
   label's color) until Autark releases them, which autk-grammar's maps use
   too (an npm override);
 - autk-grammar 5.0.0-curio.1, packed from urban-toolkit/autk-grammar#22's
-  branch, which holds #20, #21 and #22 (5.0.0's renamed keys, and a points
-  layer's ``pointSize`` in meters on the ground), until autk-grammar
-  releases 5.0.0.
+  branch, which holds #20, #21 and #22 (5.0.0's keys, and a points layer's
+  ``pointSize`` in meters on the ground), until autk-grammar releases 5.0.0.
 
 The Autark packages, all but autk-grammar, which is released on its own, are
 one release, 4.1.0 or later: from 4.1.0 on, autk-map draws a map on demand
@@ -192,8 +191,8 @@ def test_the_grammar_takes_the_keys_curio_writes():
     version = entries.get(f"node_modules/@urban-toolkit/{GRAMMAR}", {}).get("version", "")
     assert version, "the frontend lockfile has no autk-grammar"
     assert _release(version) >= GRAMMAR_KEYS_RELEASE, (
-        f"the frontend lockfile takes autk-grammar {version}, which reads wglsFunction and a join's "
-        f"tableRootName and tableJoinName: 5.0.0 is the first that reads wgslFunction, dataRef and joinDataRef"
+        f"the frontend lockfile takes autk-grammar {version}, which does not read the keys Curio's documents "
+        f"use (wgslFunction, a join's dataRef and joinDataRef): 5.0.0 is the first that does"
     )
 
 
