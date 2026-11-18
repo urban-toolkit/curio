@@ -35,11 +35,16 @@ console.log = (...args) => {
 // A layer chip (#662), `[!! input_0:table_osm_roads !!]`, is written as
 // `curio_layer(input_0, "table_osm_roads", 0)`: the layer of that name among the
 // ones the input carries, as a FeatureCollection, found by its name exactly as
-// an Autark spec finds it, and a table in another workspace than autk-db's
-// default one (`autk`) by `<workspace>/<name>`. An input that is exactly one
-// FeatureCollection with no layer name (a GeoDataFrame on its own) is that
-// layer. The input's circle names it when it is missing. The Python twin, with
-// what an input may carry, is util/input_layers.py.
+// an Autark spec finds it, whatever workspace its table is in. When two
+// workspaces hold tables of one name, the name names neither, and the chip
+// names one by its key, `<workspace>/<name>` (`autk/<name>` in autk-db's
+// default workspace). An input that is exactly one FeatureCollection with no
+// layer name (a GeoDataFrame on its own) is that layer. The input's circle
+// names it when it is missing. The Python twin, with what an input may carry,
+// is util/input_layers.py.
+const ambiguousLayerMessage = (slot, layer, keys) =>
+  `[!! input_${slot}:${layer} !!]: input_${slot} has a layer ${layer} in more than one workspace: `
+  + `${keys.join(', ')}. Name one by its key.`;
 const curio_layer = (value, layer, slot = 0) => {
   const items = value && typeof value === 'object' && !Array.isArray(value)
     && value.dataType === 'outputs' && Array.isArray(value.data)
@@ -66,14 +71,22 @@ const curio_layer = (value, layer, slot = 0) => {
     const workspace = typeof item.workspace === 'string' && item.workspace && item.workspace !== 'autk'
       ? item.workspace
       : null;
-    if (typeof name === 'string' && name) named.push([workspace ? `${workspace}/${name}` : name, found]);
+    if (typeof name === 'string' && name) named.push([name, workspace, found]);
     else unnamed.push(found);
   }
-  for (const [name, found] of named) {
-    if (name === layer) return found;
+  // A layer's key, `<workspace>/<name>`, and that of one in the default workspace, `autk/<name>`.
+  const keyOf = (name, workspace) => (workspace ? `${workspace}/${name}` : name);
+  const workspaceKey = (name, workspace) => `${workspace || 'autk'}/${name}`;
+  for (const [name, workspace, found] of named) {
+    if (workspaceKey(name, workspace) === layer) return found;
+  }
+  const same = named.filter(([name]) => name === layer);
+  if (same.length === 1) return same[0][2];
+  if (same.length > 1) {
+    throw new Error(ambiguousLayerMessage(slot, layer, same.map(([name, workspace]) => workspaceKey(name, workspace))));
   }
   if (items.length === 1 && named.length === 0 && unnamed.length === 1) return unnamed[0];
-  const names = named.map(([name]) => name);
+  const names = named.map(([name, workspace]) => keyOf(name, workspace));
   const has = names.length > 0 ? `Its layers are ${names.join(', ')}.` : 'It carries no named layers.';
   throw new Error(`[!! input_${slot}:${layer} !!]: input_${slot} has no layer ${layer}. ${has}`);
 };

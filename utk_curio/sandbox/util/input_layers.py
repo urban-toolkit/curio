@@ -8,10 +8,11 @@ calls it by name, in process and under isolation. The JavaScript twin is
 ``curio_layer`` in ``js_wrapper.mjs``.
 
 A layer is found by its name, as an Autark spec finds it: the table name
-exactly (``table_osm_roads``, not ``roads``), and a table in another
-workspace than autk-db's default one by ``<workspace>/<name>``
-(``[!! input_0:east/roads !!]``), so two workspaces' tables of one name are
-two layers. What an input may carry:
+exactly (``table_osm_roads``, not ``roads``), whatever workspace its table is
+in. When two workspaces hold tables of one name, the name names neither, and
+the chip names one by its key, ``<workspace>/<name>``
+(``[!! input_0:east/roads !!]``; ``autk/<name>`` in autk-db's default
+workspace). What an input may carry:
 
 - the layer array an Autark node with a data section hands on: a list of
   ``{name, type, geojson}``, its features in the coordinate system the
@@ -161,15 +162,39 @@ def _read_unnamed(item):
     return item
 
 
+def ambiguous_layer_message(slot, layer: str, keys) -> str:
+    """Why *layer*, a name two workspaces' layers of input *slot* share, names
+    no one of them, naming each by its key. Kept in sync with
+    ``ambiguousLayerMessage`` in ``js_wrapper.mjs``."""
+    return (
+        f"[!! input_{slot}:{layer} !!]: input_{slot} has a layer {layer} in more than one workspace: "
+        f"{', '.join(keys)}. Name one by its key."
+    )
+
+
+def _workspace_key(item, name: str) -> str:
+    """*item*'s layer named with its workspace, ``autk/<name>`` in autk-db's
+    default one, which a chip names it by among layers of one name."""
+    return f"{_workspace_of(item) or DEFAULT_WORKSPACE}/{name}"
+
+
 def curio_layer(value, layer: str, slot=0):
-    """The layer named *layer* of *value*, input *slot*'s value, by its key
-    (``_key_of``); or the one frame *value* carries, when that frame has no
-    layer name."""
+    """The layer *layer* names of *value*, input *slot*'s value: the one whose
+    key it is (``<workspace>/<name>``, ``autk/<name>`` in the default
+    workspace), else the one layer of that name, whatever its workspace; or the
+    one frame *value* carries, when that frame has no layer name. A name two
+    workspaces' layers share names neither, and fails naming their keys."""
     items = _items(value)
     named = [(name, item) for item in items for name in [_name_of(item)] if name is not None]
     for name, item in named:
-        if _key_of(item, name) == layer:
+        if _workspace_key(item, name) == layer:
             return _read(item, name)
+    same = [(name, item) for name, item in named if name == layer]
+    if len(same) == 1:
+        name, item = same[0]
+        return _read(item, name)
+    if len(same) > 1:
+        raise LookupError(ambiguous_layer_message(slot, layer, [_workspace_key(item, name) for name, item in same]))
     if len(items) == 1 and not named and _is_frame(items[0]):
         return _read_unnamed(items[0])
     raise LookupError(missing_layer_message(slot, layer, [_key_of(item, name) for name, item in named]))
