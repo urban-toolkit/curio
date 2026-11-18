@@ -1551,8 +1551,11 @@ Each `groupBy` entry is a band, labelled `<aggregateFn>_<table>`:
 - `sum`, `avg`, `min` and `max` aggregate the rows' `column`, such as
   `{"column": "db", "aggregateFn": "avg"}`.
 
-A cell no row reaches holds 0 in every band. A heatmap without `groupBy` has
-one band, `count`. The table it bins is one its `data` section loads before
+An entry with `"normalize": true` rescales its band from 0 at its least cell to
+1 at its greatest, and its label ends in `_norm`. Bands of one aggregate over
+different columns each name their column too, such as `avg_<table>_db` and
+`avg_<table>_peak`, so every label names one band. A cell no row reaches holds
+0 in every band. A heatmap without `groupBy` has one band, `count`. The table it bins is one its `data` section loads before
 it: a data section loads only its own sources, not the node's input, and a
 heatmap of any other table fails the node with an error that names it.
 
@@ -1576,7 +1579,8 @@ heatmap of any other table fails the node with an error that names it.
 ```
 
 A heatmap is a raster. A map draws it as it draws any raster, by one band:
-`"getFnv": "band_1"`, or the band's aggregate and table, `"count.tip_parks"`.
+`"getFnv": "band_1"`, or its label written with dots for its underscores, such
+as `"count.tip_parks"` for `count_tip_parks`.
 Every cell is drawn opaque unless the layer writes an `opacity` or a
 `transferFunction`. A node that only loads data hands its heatmaps on after
 its layers: an `Autark` node draws one by its table's name, and a Python node

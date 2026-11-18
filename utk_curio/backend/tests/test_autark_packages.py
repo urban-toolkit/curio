@@ -8,8 +8,9 @@ imports autk-db alone, the same way. Curio vendors two Autark packages, each
 from its tarball in ``utk_curio/frontend/urban-workflows/vendor/autark/``
 (whose README says how it was packed), until Autark releases their changes:
 
-- autk-db 4.1.1-curio.1, packed from urban-toolkit/autark#132 (a heatmap's
-  avg, sum, min and max cells hold their values, not zeros), one copy in each
+- autk-db 4.1.1-curio.2, packed from urban-toolkit/autark#132 (a heatmap's
+  avg, sum, min and max cells hold their values, not zeros, a normalized band
+  holds its rescaled values, and each band has a label of its own), one copy in each
   tree, which autk-grammar's data adapter uses too (an npm override in each);
 - autk-map 4.1.1-curio.4, packed from urban-toolkit/autark#118 (a raster
   colored with one color function), autark#120 (a destroyed map releases its
@@ -69,9 +70,9 @@ GRAMMAR_KEYS_RELEASE = (5, 0, 0)
 #: The vendored Autark packages: each one's tarball in vendor/autark/, its
 #: version and its npm integrity.
 AUTK_DB = {
-    "tarball": "urban-toolkit-autk-db-4.1.1-curio.1.tgz",
-    "version": "4.1.1-curio.1",
-    "integrity": "sha512-2UOMzWt8JLqgDTnaD/3r1HtcSovir+h/QYTuZ+QC0oSsWUDYVgtmgLJ478VlluXn+uHTR/Dmzg5JcB98QeIs0g==",
+    "tarball": "urban-toolkit-autk-db-4.1.1-curio.2.tgz",
+    "version": "4.1.1-curio.2",
+    "integrity": "sha512-vYoV3Q0Juj7KxiCdLcqRJmxm8egmC8EELxcLg5Pz/sg4oONGiW6s9Egizuka0IwcCim9dhS55tdVGrNITxbwwg==",
 }
 AUTK_MAP = {
     "tarball": "urban-toolkit-autk-map-4.1.1-curio.4.tgz",
@@ -277,7 +278,7 @@ def test_each_vendored_tarball_is_the_package_and_integrity_the_lockfiles_name(n
 
 
 def test_the_vendored_autk_db_keeps_the_dependencies_of_autk_db_4_1_1():
-    """autk-db 4.1.1-curio.1 is release 4.1.1 with one change of its code, so
+    """autk-db 4.1.1-curio.2 is release 4.1.1 with three changes of its code, so
     it depends on what 4.1.1 depends on, and each tree's lockfile installs
     those."""
     assert _manifest_in(VENDOR / AUTK_DB["tarball"])["dependencies"] == AUTK_DB_DEPENDENCIES
