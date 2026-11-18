@@ -958,7 +958,11 @@ document refused: this node's content is a {what} document and it does not valid
 
 ## document.autk-shape
 
-an Autark grammar JSON document, such as the map {"map": {"{layers}": [{example_layer}]}}, where "{first}" is this node's first input. A document names at least one of {families}; a plot needs {plot_fields}; a compute pass needs {compute_fields}, plus {compute_one_of}; a loader is {"data": [{"type": "{source_type}", ...}]}
+an Autark grammar JSON document, such as the map {"map": {"{layers}": [{example_layer}]}}, where "{first}" is this node's first input. A document names at least one of {families}; a plot needs {plot_fields}; a compute pass needs {compute_fields}, plus {compute_one_of}{render_pass}; a loader is {"data": [{"type": "{source_type}", ...}]}
+
+## document.autk-shape-render
+
+, or, as "type": "render", {fields}
 
 ## result-shape.consumer-no-output
 

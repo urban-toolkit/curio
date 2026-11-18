@@ -5,6 +5,10 @@
  * workspace and in `east`. The node hands the grammar the table of the view's
  * workspace, says which tables it has when the view names none of them, and
  * names the rows of the table it drew in a pick.
+ *
+ * A compute step's passes run through autk-grammar's own compute code, the
+ * build the app bundles, on a stand-in autk-compute that records each GPGPU
+ * dispatch (_support/autkComputeStandIns).
  */
 jest.mock('../../../providers/FlowProvider', () => require('../../_support/autkNodeMocks').flowProviderModule);
 jest.mock('../../../providers/ToastProvider', () => require('../../_support/autkNodeMocks').toastProviderModule);
@@ -13,14 +17,19 @@ jest.mock('../../../JavaScriptInterpreter', () => ({ JavaScriptInterpreter: clas
 jest.mock(
   '@urban-toolkit/autk-grammar',
   () => ({
+    ...require('../../_support/autkComputeStandIns').grammarBuild(),
     ...require('../../_support/autkNodeMocks').autkGrammarModule,
-    runCompute: (...a: any[]) => mockRunCompute(...a),
   }),
   { virtual: true },
 );
-jest.mock('@urban-toolkit/autk-compute', () => ({ ComputeGpgpu: jest.fn() }), { virtual: true });
-
-const mockRunCompute = jest.fn();
+jest.mock('@urban-toolkit/autk-compute', () => require('../../_support/autkComputeStandIns').autkComputeModule, { virtual: true });
+jest.mock('@urban-toolkit/autk-core', () => require('../../_support/autkComputeStandIns').autkCoreBuild(), { virtual: true });
+jest.mock('@urban-toolkit/autk-map', () => require('../../_support/autkComputeStandIns').autkMapModule, { virtual: true });
+jest.mock('@urban-toolkit/autk-plot', () => require('../../_support/autkComputeStandIns').autkPlotModule, { virtual: true });
+jest.mock('@urban-toolkit/autk-db', () => ({
+  DEFAULT_WORKSPACE_COORDINATE_FORMAT: 'EPSG:3395',
+  DEFAULT_WORKSPACE_NAME: 'autk',
+}), { virtual: true });
 
 import { act } from '@testing-library/react';
 import { applyComputeBlocks } from '../../../adapters/node/autkComputeBlocks';
@@ -34,6 +43,7 @@ import {
   resetAutkNodeMocks,
 } from '../../_support/autkNodeMocks';
 import { lastSelection, mountAutkNode, stubWebGpu, unstubWebGpu } from '../../_support/autkNode';
+import { computeRuns, resetComputeStandIns } from '../../_support/autkComputeStandIns';
 
 const line = (x: number) => ({
   type: 'Feature',
@@ -56,7 +66,7 @@ const handed = (spec: any) => (spec.data as any[]).map((source) => [
 
 beforeEach(() => {
   resetAutkNodeMocks();
-  mockRunCompute.mockReset();
+  resetComputeStandIns();
   inputsByPath.current = { 'art-ws': { dataType: 'list', data: RECORDS } };
   stubWebGpu();
 });
@@ -133,15 +143,14 @@ describe('a compute pass', () => {
   const PASS = { dataRef: 'lines', attributes: { x: 'x' }, wgslFunction: 'return x;', outputColumnName: 'y' };
 
   test('in a workspace computes over that workspace\'s table, which keeps its workspace', async () => {
-    mockRunCompute.mockImplementation(async (_pass: any, tables: Map<string, any>) => ({ ...tables.get('lines'), computed: true }));
+    computeRuns.gpgpu.mockImplementation(async (params: any) => ({ ...params.collection, computed: true }));
     const failures: string[] = [];
     const out = await applyComputeBlocks(LAYERS as any, [{ ...PASS, workspace: 'east' }], failures);
     expect(failures).toEqual([]);
-    expect(mockRunCompute).toHaveBeenCalledTimes(1);
-    // The tables the pass reads are east's.
-    const tables: Map<string, any> = mockRunCompute.mock.calls[0][1];
-    expect([...tables.keys()]).toEqual(['lines']);
-    expect(tables.get('lines').features).toHaveLength(3);
+    expect(computeRuns.gpgpu).toHaveBeenCalledTimes(1);
+    // The table the pass reads is east's, row for row.
+    const read = computeRuns.gpgpu.mock.calls[0][0].collection;
+    expect(read.features.map((f: any) => f.properties.x)).toEqual([-87.5, -87.49, -87.48]);
     expect(out.map((layer: any) => [layer.name, layer.workspace, layer.geojson.computed === true])).toEqual([
       ['lines', undefined, false],
       ['lines', 'east', true],
@@ -149,7 +158,7 @@ describe('a compute pass', () => {
   });
 
   test('in a workspace writes its new table there, and a compute step hands it on with that workspace', async () => {
-    mockRunCompute.mockImplementation(async (_pass: any, tables: Map<string, any>) => ({ ...tables.get('lines'), computed: true }));
+    computeRuns.gpgpu.mockImplementation(async (params: any) => ({ ...params.collection, computed: true }));
     const out = await applyComputeBlocks([LAYERS[1]] as any, [{ ...PASS, workspace: 'east', outputTableName: 'lines_y' }], []);
     expect(out.map((layer: any) => [layer.name, layer.workspace, layer.geojson.computed === true])).toEqual([
       ['lines', 'east', false],
@@ -162,7 +171,7 @@ describe('a compute pass', () => {
   });
 
   test('passes of two workspaces that write tables of one name write two tables', async () => {
-    mockRunCompute.mockImplementation(async (_pass: any, tables: Map<string, any>) => ({ ...tables.get('lines') }));
+    computeRuns.gpgpu.mockImplementation(async (params: any) => ({ ...params.collection }));
     const passes = [
       { ...PASS, outputTableName: 'out' },
       { ...PASS, workspace: 'east', outputTableName: 'out' },
@@ -181,9 +190,9 @@ describe('a compute pass', () => {
   });
 
   test('with no workspace computes over the default workspace\'s table', async () => {
-    mockRunCompute.mockImplementation(async (_pass: any, tables: Map<string, any>) => ({ ...tables.get('lines'), computed: true }));
+    computeRuns.gpgpu.mockImplementation(async (params: any) => ({ ...params.collection, computed: true }));
     const out = await applyComputeBlocks(LAYERS as any, [PASS], []);
-    expect(mockRunCompute.mock.calls[0][1].get('lines').features).toHaveLength(1);
+    expect(computeRuns.gpgpu.mock.calls[0][0].collection.features).toHaveLength(1);
     expect(out.map((layer: any) => layer.geojson.computed === true)).toEqual([true, false]);
   });
 });

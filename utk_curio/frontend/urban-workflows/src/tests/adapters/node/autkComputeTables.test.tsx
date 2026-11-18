@@ -15,9 +15,11 @@
  * A document with data and compute and no view runs its compute on what its
  * data section loaded and hands on the result, as a compute step does.
  *
- * The grammar is a stand-in that records what the node hands it
- * (_support/autkNodeMocks), and `runCompute` one that writes, under
- * `compute.<outputColumnName>`, twice each feature's `value`.
+ * A node's map is drawn by a stand-in grammar that records what the node
+ * hands it (_support/autkNodeMocks). Its passes run through autk-grammar's own
+ * compute code, the build the app bundles, on a stand-in autk-compute whose
+ * GPGPU dispatch writes, under `compute.<outputColumnName>`, twice each
+ * feature's `value` (_support/autkComputeStandIns).
  */
 import { act, renderHook, waitFor } from '@testing-library/react';
 
@@ -25,16 +27,18 @@ jest.mock('../../../providers/FlowProvider', () => require('../../_support/autkN
 jest.mock('../../../providers/ToastProvider', () => require('../../_support/autkNodeMocks').toastProviderModule);
 jest.mock('../../../services/api', () => require('../../_support/autkNodeMocks').apiModule);
 jest.mock('../../../JavaScriptInterpreter', () => ({ JavaScriptInterpreter: class { } }));
-const mockRunCompute = jest.fn();
 jest.mock(
   '@urban-toolkit/autk-grammar',
   () => ({
+    ...require('../../_support/autkComputeStandIns').grammarBuild(),
     ...require('../../_support/autkNodeMocks').autkGrammarModule,
-    runCompute: (...args: any[]) => mockRunCompute(...args),
   }),
   { virtual: true },
 );
-jest.mock('@urban-toolkit/autk-compute', () => ({ ComputeGpgpu: jest.fn() }), { virtual: true });
+jest.mock('@urban-toolkit/autk-compute', () => require('../../_support/autkComputeStandIns').autkComputeModule, { virtual: true });
+jest.mock('@urban-toolkit/autk-core', () => require('../../_support/autkComputeStandIns').autkCoreBuild(), { virtual: true });
+jest.mock('@urban-toolkit/autk-map', () => require('../../_support/autkComputeStandIns').autkMapModule, { virtual: true });
+jest.mock('@urban-toolkit/autk-plot', () => require('../../_support/autkComputeStandIns').autkPlotModule, { virtual: true });
 // The tables a data section loads, as the browser's own loader reads them
 // back: there is no sandbox here.
 const mockLoaded: { layers: Array<{ name: string; type: string; features: any[] }> } = { layers: [] };
@@ -56,6 +60,7 @@ jest.mock(
       }
     },
     DEFAULT_WORKSPACE_COORDINATE_FORMAT: 'EPSG:3395',
+    DEFAULT_WORKSPACE_NAME: 'autk',
   }),
   { virtual: true },
 );
@@ -71,6 +76,7 @@ import {
   resetAutkNodeMocks,
 } from '../../_support/autkNodeMocks';
 import { lastSelection, mountAutkNode, stubWebGpu, unstubWebGpu } from '../../_support/autkNode';
+import { computeRuns, resetComputeStandIns } from '../../_support/autkComputeStandIns';
 import { UNIT_ROW, drawnAt, unitsCollection } from '../../_support/keyedSelections';
 
 /** Three points, each with a `value`. */
@@ -85,16 +91,20 @@ function spots(): any {
   };
 }
 
-/** What the stand-in `runCompute` writes: a new collection, as autk-compute's is. */
-function computed(block: any, tables: Map<string, any>): any {
-  const source = tables.get(block.dataRef);
+/**
+ * What the stand-in GPGPU dispatch writes: a new collection, as autk-compute's
+ * is, of the table the pass runs over (its `dataRef`) with each feature's
+ * `value` doubled under the pass's `outputColumnName` (`resultField`).
+ */
+function computed(params: any): any {
+  const source = params.collection;
   return {
     ...source,
     features: source.features.map((f: any) => ({
       ...f,
       properties: {
         ...f.properties,
-        compute: { ...(f.properties?.compute ?? {}), [block.outputColumnName]: 2 * Number(f.properties?.value ?? 0) },
+        compute: { ...(f.properties?.compute ?? {}), [params.resultField]: 2 * Number(f.properties?.value ?? 0) },
       },
     })),
   };
@@ -110,8 +120,8 @@ const valuesOf = (fc: any, column: string) => fc.features.map((f: any) => f.prop
 
 beforeEach(() => {
   resetAutkNodeMocks();
-  mockRunCompute.mockReset();
-  mockRunCompute.mockImplementation(async (block: any, tables: Map<string, any>) => computed(block, tables));
+  resetComputeStandIns();
+  computeRuns.gpgpu.mockImplementation(async (params: any) => computed(params));
   mockLoaded.layers = [];
   stubWebGpu();
 });
@@ -161,7 +171,7 @@ describe('a compute step writes each pass where autk-grammar writes it', () => {
     ]);
 
     // The second pass read what the first wrote.
-    expect(valuesOf(mockRunCompute.mock.calls[1][1].get('doubled'), 'twice')).toEqual([2, 4, 6]);
+    expect(valuesOf(computeRuns.gpgpu.mock.calls[1][0].collection, 'twice')).toEqual([2, 4, 6]);
     expect(layers.map((l) => [l.name, l.type])).toEqual([['spots', 'points'], ['other', 'points'], ['doubled', 'points']]);
     expect(valuesOf(layers[2].geojson, 'twice')).toEqual([2, 4, 6]);
     expect(valuesOf(layers[2].geojson, 'again')).toEqual([2, 4, 6]);
@@ -342,7 +352,7 @@ describe('a document with data and compute and no view', () => {
     await step.run({ data: DATA, compute: [pass('spots', 'twice')] });
 
     expect(step.lastOutput()).toEqual({ code: 'success', content: 'Computed 1 layer: spots (3 rows)' });
-    expect(mockRunCompute).toHaveBeenCalledTimes(1);
+    expect(computeRuns.gpgpu).toHaveBeenCalledTimes(1);
     const [handed] = step.handedOn();
     expect(handed).toEqual(expect.objectContaining({ dataType: 'geodataframe', layerName: 'spots', layerType: 'points' }));
     expect(valuesOf(handed.data, 'twice')).toEqual([2, 4, 6]);

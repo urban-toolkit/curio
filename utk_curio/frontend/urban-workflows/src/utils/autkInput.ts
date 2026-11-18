@@ -90,8 +90,9 @@ function asList<T>(value: T | T[] | undefined | null): T[] {
 
 /**
  * Every table the document reads in the browser, by key (`autkTableKey`): map
- * layers, plots (and the map a plot links to), compute blocks and their
- * `fromFeature` uniforms, each in the workspace of the map, plot or pass that
+ * layers, plots (and the map a plot links to), and compute passes: a GPGPU
+ * pass's table and its `fromFeature` uniforms, a render pass's viewpoints and
+ * the tables of its layers, each in the workspace of the map, plot or pass that
  * names it.
  */
 export function documentTableRefs(spec: any): string[] {
@@ -108,6 +109,8 @@ export function documentTableRefs(spec: any): string[] {
   }
   for (const block of asList(spec?.compute)) {
     add(block, (block as any)?.dataRef);
+    add(block, (block as any)?.viewpoints?.dataRef);
+    for (const layer of asList((block as any)?.layers)) add(block, (layer as any)?.dataRef);
     for (const group of [(block as any)?.uniforms, (block as any)?.uniformMatrices]) {
       if (group == null || typeof group !== "object") continue;
       for (const value of Object.values(group)) add(block, (value as any)?.fromFeature?.layer);
@@ -199,36 +202,70 @@ export function tablesToLoad<T extends { outputTableName?: unknown; layerType?: 
 export type WrittenTable = {
   /** Its name: the pass's `outputTableName`, else its `dataRef`. */
   name: string;
-  /** The table the pass computes over, its `dataRef`, whose rows it holds. */
+  /**
+   * The table the pass computes over: a GPGPU pass's `dataRef`, a render
+   * pass's viewpoints. The table it writes is empty when this one is.
+   */
   from: string;
-  /** The type the pass draws and hands it on as (`layerType`), read only with an `outputTableName`. */
+  /**
+   * Whether it holds the rows of `from`, one feature each: every pass's table
+   * but a render pass's over building windows, which holds one point per
+   * window.
+   */
+  holdsRows: boolean;
+  /**
+   * The type the pass draws and hands it on as (`layerType`), read only with an
+   * `outputTableName`, or the `points` of a render pass's windows.
+   */
   layerType?: string;
   /** The pass's workspace, where it reads `from` and writes the table, when it is not the default one. */
   workspace?: string;
 };
 
+/** A compute pass's kind: `render`, or `gpgpu` for the default, or null for neither. */
+function passKind(pass: any): "gpgpu" | "render" | null {
+  if (pass == null || typeof pass !== "object") return null;
+  if (pass.type === "render") return "render";
+  return pass.type == null || pass.type === "gpgpu" ? "gpgpu" : null;
+}
+
+/** The table a compute pass computes over: a GPGPU pass's `dataRef`, a render pass's viewpoints. */
+function passSource(pass: any): unknown {
+  return passKind(pass) === "render" ? pass.viewpoints?.dataRef : pass?.dataRef;
+}
+
+/** Whether a render pass looks out from building windows: its table holds one point per window. */
+function overWindows(pass: any): boolean {
+  return passKind(pass) === "render" && pass.viewpoints?.strategy?.type === "building-windows";
+}
+
 /**
- * The tables the document's GPGPU passes write, in pass order, so a table a
+ * The tables the document's compute passes write, in pass order, so a table a
  * pass writes from another's comes after it: each under the pass's
- * `outputTableName`, else in place of its `dataRef` table, as autk-grammar's
- * compute adapter keeps them (`store`), in the pass's workspace. A map or a
- * plot draws a table a pass wrote from that result, which holds every feature
- * of the table the pass computed over, in the order autk-db stores them. A
- * table a pass names is drawn as its `layerType`, else as the table it is
- * computed from.
+ * `outputTableName`, else in place of the table it computes over, as
+ * autk-grammar's compute adapter keeps them (`store`), in the pass's
+ * workspace. A map or a plot draws a table a pass wrote from that result,
+ * which holds every feature of the table the pass computed over, in the order
+ * autk-db stores them, but for a render pass over building windows, whose
+ * table holds one point per window. A table a pass names is drawn as its
+ * `layerType`, else as `points` for windows, else as the table it is computed
+ * from.
  */
 export function writtenTables(spec: any): WrittenTable[] {
   const written: WrittenTable[] = [];
   for (const pass of asList<any>(spec?.compute)) {
-    if (pass == null || typeof pass !== "object" || (pass.type != null && pass.type !== "gpgpu")) continue;
-    const { outputTableName, dataRef: from, layerType } = pass;
+    if (passKind(pass) === null) continue;
+    const { outputTableName, layerType } = pass;
+    const from = passSource(pass);
     if (typeof from !== "string" || !from) continue;
     const named = typeof outputTableName === "string" && outputTableName !== "";
+    const windows = overWindows(pass);
     const workspace = autkWorkspaceOf(pass);
     written.push({
       name: named ? outputTableName : from,
       from,
-      ...(named && typeof layerType === "string" && layerType ? { layerType } : {}),
+      holdsRows: !windows,
+      ...(named && typeof layerType === "string" && layerType ? { layerType } : named && windows ? { layerType: "points" } : {}),
       ...(workspace ? { workspace } : {}),
     });
   }
@@ -243,6 +280,49 @@ export function madeTables(spec: any): string[] {
   return writtenTables(spec)
     .filter((table) => table.name !== table.from)
     .map((table) => autkTableKey(table.workspace, table.name));
+}
+
+/**
+ * The document's compute passes as they run over the tables at hand, each
+ * table by key (`autkTableKey`), in the workspace of the pass that names it:
+ * of *known*, every table the node has, those in *atHand*, which have rows.
+ * autk-db holds no table without rows, so a pass whose own table (a GPGPU
+ * pass's `dataRef`, a render pass's viewpoints) has none does not run, and
+ * neither does a pass over the table one that does not run would write. A
+ * render layer whose table has no rows draws nothing in the frames: its pass
+ * runs without it, and does not run with no layer left. A table not in
+ * *known* is left as the document writes it, for the run to name.
+ */
+export function passesAtHand(passes: readonly any[], known: ReadonlySet<string>, atHand: ReadonlySet<string>): any[] {
+  const present = new Set(atHand);
+  const kept: any[] = [];
+  for (const pass of passes) {
+    const kind = passKind(pass);
+    if (kind === null) {
+      kept.push(pass);
+      continue;
+    }
+    const workspace = autkWorkspaceOf(pass);
+    const keyOf = (name: unknown) => (typeof name === "string" && name ? autkTableKey(workspace, name) : null);
+    const emptied = (name: unknown) => {
+      const key = keyOf(name);
+      return key !== null && known.has(key) && !present.has(key);
+    };
+    const source = passSource(pass);
+    if (emptied(source)) continue;
+    let runs = pass;
+    if (kind === "render" && Array.isArray(pass.layers)) {
+      const layers = pass.layers.filter((layer: any) => !emptied(layer?.dataRef));
+      if (layers.length < pass.layers.length) {
+        if (layers.length === 0) continue;
+        runs = { ...pass, layers };
+      }
+    }
+    kept.push(runs);
+    const writes = keyOf(typeof pass.outputTableName === "string" && pass.outputTableName ? pass.outputTableName : source);
+    if (writes !== null) present.add(writes);
+  }
+  return kept;
 }
 
 /** The tables the document's own data section creates, by key. */

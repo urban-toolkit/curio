@@ -1468,9 +1468,10 @@ class TestWorkflowCanvas:
 
         # Each map opens framed on the layers it draws (#773): not a speck in
         # the middle of the map, nor a crop past its edges. That is every
-        # Autark map, the one a Map Editor node edits on among them. Checked
-        # once every close-up is taken, and for every map before failing on
-        # one.
+        # Autark map, the one a Map Editor node edits on among them; a map its
+        # document's camera turns is read at the view it was framed at, then
+        # its turn. Checked once every close-up is taken, and for every map
+        # before failing on one.
         maps = [
             node.id for node in self._drawing_autark_nodes()
             if "map" in json.loads(self.spec.node_code(node, "json"))
