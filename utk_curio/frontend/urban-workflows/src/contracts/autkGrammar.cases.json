@@ -103,7 +103,7 @@
       "says": "This spec uses \"tableJoinName\" at data[0], which autk-grammar 5 renamed to \"joinDataRef\"."
     },
     {
-      "name": "a heatmap's tableJoinName is named with its new name before the heatmap is refused",
+      "name": "a heatmap's tableJoinName is named with its new name",
       "spec": { "data": [{ "type": "heatmap", "tableJoinName": "b", "outputTableName": "h", "near": { "distance": 5 }, "grid": { "rows": 2, "columns": 2 } }] },
       "says": "This spec uses \"tableJoinName\" at data[0], which autk-grammar 5 renamed to \"joinDataRef\"."
     },
@@ -148,9 +148,9 @@
       "says": "This spec uses a compute pass's \"layerType\" at compute[0], which Curio does not run yet."
     },
     {
-      "name": "a heatmap source is not run yet",
+      "name": "a heatmap source is run",
       "spec": { "data": [{ "type": "heatmap", "joinDataRef": "b", "outputTableName": "h", "near": { "distance": 5 }, "grid": { "rows": 2, "columns": 2 } }] },
-      "says": "This spec uses a heatmap source at data[0], which Curio does not run yet."
+      "says": null
     },
     {
       "name": "a geotiff source is not run yet",

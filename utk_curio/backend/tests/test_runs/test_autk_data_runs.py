@@ -214,9 +214,9 @@ def test_a_failed_load_is_tried_once_more(client, user_and_token, sandbox, recor
 @pytest.mark.parametrize("source, said", [
     ({"type": "join", "tableRootName": "table_osm_roads", "joinDataRef": "table_osm_surface"},
      'This spec uses "tableRootName" at data[1], which autk-grammar 5 renamed to "dataRef".'),
-    ({"type": "heatmap", "joinDataRef": "table_osm_roads", "outputTableName": "density",
-      "near": {"distance": 50}, "grid": {"rows": 8, "columns": 8}},
-     "This spec uses a heatmap source at data[1], which Curio does not run yet."),
+    ({"type": "geotiff", "geotiffFileUrl": "docs/examples/data/niteroi_lst_verao_2001_2024.tif",
+      "outputTableName": "lst"},
+     "This spec uses a geotiff source at data[1], which Curio does not run yet."),
 ], ids=["renamed-key", "not-run-yet"])
 def test_a_load_that_writes_a_key_the_node_refuses_fails_with_its_words(
         client, user_and_token, sandbox, recorded, source, said):

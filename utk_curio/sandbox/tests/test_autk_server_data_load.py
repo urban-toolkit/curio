@@ -15,6 +15,11 @@ No socket: the extract is served from disk by a ``fetch`` placed before the
 compiled code, which refuses every other request, at the address the sandbox
 writes for the backend (an unreachable one here). DuckDB's extensions are
 seeded from Curio's copy into a home of the test's own, as a launch seeds them.
+
+A heatmap source is built by autk-grammar's own data adapter, which the
+compiled code imports from the grammar's ``./data`` entry: its raster table is
+handed on after the layers, in the envelope a raster travels in between nodes,
+which a Python node receives as a ``rasterio`` dataset.
 """
 from __future__ import annotations
 
@@ -150,6 +155,97 @@ def test_the_server_compiled_load_hands_on_the_layers(example, node_id, extract,
     ] == layers
     for layer in loaded:
         _assert_osm_ids(layer)
+
+
+AUTK_GRAMMAR_VERSION = "5.0.0"
+
+#: Four readings at the corners of a box about 1.1 km by 1.5 km in the Chicago
+#: Loop, binned twice into 3 columns by 2 rows over their extent: each cell of
+#: `density` counts the readings within 5 km of its center, all four, and each
+#: cell of `nearby` those within 1 m, none.
+HEATMAPS = {"data": [
+    {"type": "geojson", "outputTableName": "readings", "coordinateFormat": "EPSG:4326",
+     "geojsonObject": {"type": "FeatureCollection", "features": [
+         {"type": "Feature", "geometry": {"type": "Point", "coordinates": [lon, lat]}, "properties": {"db": db}}
+         for lon, lat, db in ((-87.64, 41.87, 61), (-87.63, 41.87, 74), (-87.64, 41.88, 58), (-87.63, 41.88, 66))
+     ]}},
+    {"type": "heatmap", "joinDataRef": "readings", "outputTableName": "density",
+     "near": {"distance": 5000}, "grid": {"rows": 2, "columns": 3},
+     "groupBy": [{"column": "*", "aggregateFn": "count"}]},
+    {"type": "heatmap", "joinDataRef": "readings", "outputTableName": "nearby",
+     "near": {"distance": 1}, "grid": {"rows": 2, "columns": 3},
+     "groupBy": [{"column": "*", "aggregateFn": "count"}]},
+]}
+
+#: Put before the compiled code: no request leaves the run.
+_NO_SOCKET = """globalThis.fetch = async (url) => {
+  throw new Error('no socket in this test: ' + (typeof url === 'string' ? url : String(url)));
+};
+"""
+
+
+def test_the_server_compiled_load_builds_a_heatmap_and_hands_it_on_as_a_raster(tmp_path, monkeypatch):
+    from utk_curio.cli import dependencies
+    from utk_curio.common.autk_data_compiler import compile_data_spec
+    from utk_curio.sandbox.app.worker import _worker_init, execute_js_code
+    from utk_curio.sandbox.util.node_runtime import node_modules_dir, resolve_pkg_entry_url
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+    from utk_curio.sandbox.util.rasters import envelope_arrays, rasters_for_python
+
+    grammar = node_modules_dir() / "@urban-toolkit" / "autk-grammar"
+    installed = json.loads((grammar / "package.json").read_text(encoding="utf-8"))
+    assert installed["version"] == AUTK_GRAMMAR_VERSION, (
+        f"this heatmap is autk-grammar {AUTK_GRAMMAR_VERSION}'s; the sandbox has {installed['version']}"
+    )
+
+    code = compile_data_spec(json.dumps(HEATMAPS))
+    assert code.splitlines()[:2] == [
+        "import { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } from '@urban-toolkit/autk-db';",
+        "import { createDataAdapter } from '@urban-toolkit/autk-grammar/data';",
+    ]
+    # The sandbox loads the entry the grammar's exports give "./data", which
+    # imports autk-db alone, not its main entry.
+    assert resolve_pkg_entry_url("@urban-toolkit/autk-grammar/data", node_modules_dir()) == (
+        (grammar / "dist" / "data" / "autk-grammar-data.js").resolve().as_uri()
+    )
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setenv("FLASK_BACKEND_HOST", "curio-backend.invalid")
+    monkeypatch.setenv("FLASK_BACKEND_PORT", "1")
+    dependencies.seed_duckdb_extensions()
+    _worker_init()
+    result = execute_js_code(
+        _NO_SOCKET + code, "", "AUTK_GRAMMAR", "", launch_dir=str(REPO_ROOT), session_id=None,
+    )
+
+    assert result["output"]["path"], result["stderr"]
+    assert result["output"]["dataType"] == "list"
+    loaded = load_from_duckdb(result["output"]["path"], session_id=None)
+    assert [(item.get("name"), item.get("type")) for item in loaded[:1]] == [("readings", "points")]
+    assert [(item.get("dataType"), item.get("layerName")) for item in loaded[1:]] == [
+        ("raster", "density"), ("raster", "nearby"),
+    ]
+    density, nearby = loaded[1:]
+    grid, bands, counts = envelope_arrays(density)
+    assert (grid["crs"], grid["width"], grid["height"]) == ("EPSG:3395", 3, 2), grid
+    assert bands == ["band_1"]
+    assert density["data"]["features"][0]["properties"]["bands"] == [{"id": "band_1", "label": "count_readings"}]
+    assert counts.tolist() == [[[4.0, 4.0, 4.0], [4.0, 4.0, 4.0]]]
+    assert envelope_arrays(nearby)[2].tolist() == [[[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]]
+
+    # A Python node downstream receives each as a rasterio dataset on its grid.
+    handed = rasters_for_python(loaded, tmp_path / "rasters")
+    try:
+        heat = handed[1]
+        assert (heat.width, heat.height, heat.crs.to_epsg()) == (3, 2, 3395)
+        assert tuple(heat.transform)[:6] == (
+            grid["resX"], 0.0, grid["originX"], 0.0, grid["resY"], grid["originY"],
+        )
+        assert heat.read(1).tolist() == [[4.0, 4.0, 4.0], [4.0, 4.0, 4.0]]
+    finally:
+        for item in handed[1:]:
+            item.close()
 
 
 def _assert_osm_ids(layer: dict) -> None:

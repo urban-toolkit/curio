@@ -1910,6 +1910,159 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         expect(setOutput.mock.calls.map((c: any[]) => c[0]?.code)).toContain('success');
       });
 
+      // A heatmap a data section builds, as the sandbox's loader hands it on
+      // (compileDataSpecToAutkDbJs): the layers' records, then the heatmap in
+      // its envelope, each item of the list in the `dict` envelope /get
+      // answers it in. 3 columns by 2 rows of 500 m, rows from south to north.
+      const HEAT_BBOX = [-9785700, 5106000, -9784200, 5107000];
+      const heatList = () => ({
+        dataType: 'list',
+        data: [
+          {
+            dataType: 'dict',
+            data: {
+              name: 'readings',
+              type: 'points',
+              geojson: {
+                type: 'FeatureCollection',
+                crs: { type: 'name', properties: { name: 'urn:ogc:def:crs:EPSG::3395' } },
+                features: [{ type: 'Feature', geometry: point(-9785000, 5106500), properties: { db: 61 } }],
+              },
+            },
+          },
+          {
+            dataType: 'dict',
+            data: {
+              dataType: 'raster',
+              layerName: 'density',
+              data: {
+                type: 'FeatureCollection',
+                bbox: HEAT_BBOX,
+                grid: { crs: 'EPSG:3395', width: 3, height: 2, originX: -9785700, originY: 5107000, resX: 500, resY: -500 },
+                features: [{
+                  type: 'Feature',
+                  geometry: null,
+                  properties: {
+                    rasterResX: 3,
+                    rasterResY: 2,
+                    bands: [{ id: 'band_1', label: 'count_readings' }],
+                    band_1: { float32le: Buffer.from(Float32Array.from([0, 1, 2, 2, 1, 0]).buffer).toString('base64') },
+                  },
+                }],
+              },
+            },
+          },
+        ],
+      });
+      // What the grammar's database reads the heatmap back as once Curio loaded
+      // it with loadGeoTiff: its own extent, its band labelled by its id.
+      const heatAsLoaded = () => ({
+        type: 'FeatureCollection',
+        bbox: HEAT_BBOX,
+        features: [{
+          type: 'Feature',
+          geometry: null,
+          properties: { rasterResX: 3, rasterResY: 2, bands: [{ id: 'band_1', label: 'band_1' }], band_1: new Float32Array(6) },
+        }],
+      });
+      // The grammar as autk-grammar builds it: each data source through its
+      // data adapter, then its map reads the raster table with getRaster. The
+      // sandbox's list is what /get answers for the artifact `art-heat`. Every
+      // mock is put back afterwards, whatever the test reached.
+      async function drawingHeatmaps(table: string, run: (drawn: { spec: any; raster: any }) => Promise<void>) {
+        const drawn: { spec: any; raster: any } = { spec: null, raster: null };
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const grammarAsBefore = AutkGrammar.getMockImplementation();
+        const getRasterAsBefore = mockAutkDbGetRaster.getMockImplementation()!;
+        AutkGrammar.mockImplementation(() => {
+          const grammar: any = { data: {} };
+          grammar.dataAdapter = { resolveSource: jest.fn(async (db: any) => db) };
+          grammar.run = jest.fn(async (spec: any) => {
+            drawn.spec = spec;
+            let db: any;
+            for (const source of spec.data) db = await grammar.dataAdapter.resolveSource(db, source);
+            drawn.raster = await db.getRaster(table);
+          });
+          return grammar;
+        });
+        mockAutkDbGetRaster.mockImplementation(() => Promise.resolve(heatAsLoaded() as any));
+        api().fetchData.mockImplementation(async (path: string) => (
+          path === 'art-heat' ? heatList() : { data: {}, dataType: 'dataframe' }
+        ));
+        mockAutkDbLoadGeoTiff.mockClear();
+        try {
+          await run(drawn);
+        } finally {
+          AutkGrammar.mockImplementation(grammarAsBefore);
+          mockAutkDbGetRaster.mockImplementation(getRasterAsBefore);
+        }
+      }
+
+      test('a heatmap the data section builds is drawn as every raster is: framed, its cells opaque, its band named as it was made', () => drawingHeatmaps('density', async (drawn) => {
+        const interpretCode = jest.fn(
+          (_unresolved, _code, _input, _inputTypes, cb) =>
+            cb({ stdout: [], stderr: '', output: { path: 'art-heat', dataType: 'list' } }),
+        );
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback: jest.fn(), jsInterpreter: { interpretCode } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            data: [
+              { type: 'geojson', outputTableName: 'readings', geojsonObject: { type: 'FeatureCollection', features: [] } },
+              { type: 'heatmap', joinDataRef: 'readings', outputTableName: 'density', near: { distance: 400 }, grid: { rows: 2, columns: 3 } },
+            ],
+            map: { layerRefs: [{ dataRef: 'density', getFnv: 'count.readings' }] },
+          }));
+        });
+
+        expect(setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error')).toBeUndefined();
+        // The sandbox built it: the code it was sent imports the grammar's ./data entry.
+        expect(interpretCode.mock.calls[0][1]).toContain("import { createDataAdapter } from '@urban-toolkit/autk-grammar/data';");
+        // The grammar is handed a raster of Curio's own, loaded at its own size, in its CRS.
+        expect(drawn.spec.data.map((s: any) => [s.type, s.outputTableName])).toEqual([
+          ['curio-raster', 'density'],
+          ['geojson', 'readings'],
+        ]);
+        expect(mockAutkDbLoadGeoTiff).toHaveBeenCalledWith(expect.objectContaining({
+          outputTableName: 'density', coordinateFormat: 'EPSG:3395', maxRasterCells: 6, resampleMethod: 'nearest',
+        }));
+        // Every cell opaque, as every raster layer is drawn.
+        expect(drawn.spec.map.layerRefs).toEqual([
+          { dataRef: 'density', getFnv: 'count.readings', transferFunction: { opacityMin: 1, opacityMax: 1 } },
+        ]);
+        // The map reads it at its own extent, outlined, its band labelled as
+        // the heatmap made it, which `count.readings` names.
+        expect(drawn.raster.bbox).toEqual(HEAT_BBOX);
+        expect(drawn.raster.features[0].geometry).toBeNull();
+        expect(drawn.raster.features[1].geometry.type).toBe('Polygon');
+        expect(drawn.raster.features[0].properties.bands).toEqual([{ id: 'band_1', label: 'count_readings' }]);
+        expect(setOutput.mock.calls.map((c: any[]) => c[0]?.code)).toContain('success');
+      }));
+
+      test('a heatmap an upstream Autark node hands on after its layers is drawn by its table\'s name', () => drawingHeatmaps('density', async (drawn) => {
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback: jest.fn(), input: { path: 'art-heat', dataType: 'list' } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'density', getFnv: 'count.readings' }] } }));
+        });
+
+        expect(setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error')).toBeUndefined();
+        expect(drawn.spec.data.map((s: any) => [s.type, s.outputTableName])).toEqual([['curio-raster', 'density']]);
+        expect(mockAutkDbLoadGeoTiff).toHaveBeenCalledWith(expect.objectContaining({
+          outputTableName: 'density', coordinateFormat: 'EPSG:3395', maxRasterCells: 6,
+        }));
+        expect(drawn.raster.features[0].properties.bands).toEqual([{ id: 'band_1', label: 'count_readings' }]);
+        expect(drawn.raster.features[1].geometry.type).toBe('Polygon');
+      }));
+
       test('a raster too large to load is not drawn, and the node says to crop it', async () => {
         const { fetchRaster } = jest.requireMock('../../../services/api') as { fetchRaster: jest.Mock };
         fetchRaster.mockResolvedValueOnce({
@@ -2783,9 +2936,9 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         'This spec uses "camera" at map, which Curio does not run yet.',
       ],
       [
-        'a heatmap source',
-        { data: [{ type: 'heatmap', joinDataRef: 'b', outputTableName: 'h', near: { distance: 5 }, grid: { rows: 2, columns: 2 } }] },
-        'This spec uses a heatmap source at data[0], which Curio does not run yet.',
+        'a geotiff source',
+        { data: [{ type: 'geotiff', geotiffFileUrl: 'lst.tif', outputTableName: 'lst' }] },
+        'This spec uses a geotiff source at data[0], which Curio does not run yet.',
       ],
     ])('%s fails the node before anything runs, naming the key', async (_what, spec, said) => {
       // The sandbox answers, as it does for any data-only node, so a node that

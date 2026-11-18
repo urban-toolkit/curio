@@ -68,6 +68,40 @@ def test_the_document_check_refuses_it_with_that_sentence(case):
     assert verdict == {"status": dv.STATUS_INVALID, "detail": case["says"]}
 
 
+#: A heatmap of the parks near each cell, drawn on a map by its band's
+#: aggregate and table, as docs/USAGE.md's Heatmaps section writes it.
+HEATMAP_DOCUMENT = {
+    "data": [
+        {"type": "osm", "pbfFileUrl": "docs/examples/data/lower_mnt.osm.pbf", "outputTableName": "tip",
+         "queryArea": {"bbox": [-74.0195, 40.7, -74.0085, 40.7085]},
+         "autoLoadLayers": {"layers": ["surface", "parks", "roads"]}},
+        {"type": "heatmap", "joinDataRef": "tip_parks", "outputTableName": "park_access",
+         "near": {"distance": 200, "useCentroid": False}, "grid": {"rows": 30, "columns": 30},
+         "groupBy": [{"column": "*", "aggregateFn": "count"}]},
+    ],
+    "map": {"layerRefs": [
+        {"dataRef": "tip_roads"},
+        {"dataRef": "park_access", "getFnv": "count.tip_parks", "title": "Parks within 200 m", "opacity": 0.6},
+    ]},
+}
+
+
+def test_the_document_check_accepts_a_heatmap_drawn_on_a_map():
+    from utk_curio.backend.app.agents.domain import document_validation as dv
+
+    assert dv.validate(AUTK, json.dumps(HEATMAP_DOCUMENT)) == {"status": dv.STATUS_VALID}
+
+
+def test_the_document_check_refuses_a_heatmap_that_collects_its_rows():
+    from utk_curio.backend.app.agents.domain import document_validation as dv
+
+    document = json.loads(json.dumps(HEATMAP_DOCUMENT))
+    document["data"][1]["groupBy"][0]["aggregateFn"] = "collect"
+    verdict = dv.validate(AUTK, json.dumps(document))
+    assert verdict["status"] == dv.STATUS_INVALID
+    assert verdict["detail"].startswith("data[1].groupBy[0].aggregateFn: 'collect' is not one of"), verdict
+
+
 def test_a_document_is_told_only_the_files_sentences():
     from utk_curio.backend.app.agents.domain import contracts
 
