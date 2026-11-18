@@ -14,7 +14,7 @@ import { closeAutkDb } from './autkDbClose';
 import { autkTableName } from '../../utils/autkInput';
 import { framesFromPayload } from '../../utils/grammarInput';
 import { deriveBuildingHeight } from '../../utils/buildingHeight';
-import { loadableFeatures, requestedLayerTables, withOsmIds } from './autkDataCompile';
+import { joinQueryParams, loadableFeatures, requestedLayerTables, withOsmIds } from './autkDataCompile';
 
 // Message for a load that produced layers, but not the ones the spec asked for.
 // Shared by both loaders so the two paths report a short load identically.
@@ -217,7 +217,7 @@ export async function loadSpecLayers(spec: any): Promise<Array<{ name: string; t
             // In-grammar spatial join between already-loaded tables (sources
             // run in spec order, so the join must come after the tables it
             // references). Mirrors the sandbox emit in compileDataSpecToAutkDbJs.
-            else if (type === 'join') await db.spatialQuery(rest);
+            else if (type === 'join') await db.spatialQuery(joinQueryParams(rest));
             else console.warn(`[autk-grammar] unsupported data source type "${type}" — skipped`);
         } catch (e) {
             // Record + skip a source that fails to load; others may still

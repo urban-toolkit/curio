@@ -15,7 +15,8 @@
  * cell that has a value opaque (`withOpaqueRasters`), and once the map is
  * drawn, keeps linear sampling from drawing dark seams at the edges of the
  * cells with no data (`bleedRasterEdges`). Nothing in Autark is changed; the
- * instance's data adapter, and that database's `getLayer`, are wrapped.
+ * instance's data adapter, and that database's `getRaster` and `getLayer`,
+ * are wrapped.
  *
  * A raster comes as GeoTIFF bytes: a Python node's rasterio dataset is asked
  * of the sandbox by its artifact (`/raster`; a standalone dashboard carries
@@ -163,23 +164,43 @@ export function framedRaster(collection: any): any {
     return { ...collection, features: [collection.features[0], outline] };
 }
 
-/** The rasters Curio loaded into a database, and the getLayer it wraps. */
+/** The rasters Curio loaded into a database, and the database's own reads it wraps. */
 const SERVED_RASTERS = Symbol.for('curio.autk.servedRasters');
 
+type ServedRasters = {
+    /** Each raster Curio loaded, framed, by its table. */
+    rasters: Map<string, any>;
+    /** The database's own `getRaster`, which reads a raster from its store. */
+    getRaster: ((name: string, ...rest: any[]) => Promise<any>) | null;
+};
+
 /**
- * Answer the grammar's `getLayer` for a raster Curio loaded with the raster's
- * own collection, framed, as it was read right after loading. autk-db's
- * `getLayer` gives a raster the workspace's extent once any layer with
- * geometry has set one, which stretches the raster over that layer's extent
- * instead; `getRaster` gives its own. Every other table is the database's to
+ * A raster as the database itself reads it: by its own `getRaster`, never an
+ * answer `serveRaster` gives for it.
+ */
+function readRaster(db: any, table: string): Promise<any> {
+    const served: ServedRasters | undefined = db[SERVED_RASTERS];
+    if (served?.getRaster) return served.getRaster(table);
+    return db.getRaster(table);
+}
+
+/**
+ * Answer the grammar's reads of a raster Curio loaded, `getRaster` (how its
+ * map reads a raster table) and `getLayer`, with the raster's own collection,
+ * framed, as it was read right after loading. autk-db's `getLayer` gives a
+ * raster the workspace's extent once any layer with geometry has set one,
+ * which stretches the raster over that layer's extent instead, and its
+ * `getRaster` reads a store the whole page shares (see `oneRasterAtATime`),
+ * which can hold another node's raster of the same name by then. Every other
+ * table, a heatmap the grammar builds among them, is the database's to
  * answer, as before.
  */
 function serveRaster(db: any, table: string, collection: any): void {
-    let served: Map<string, any> | undefined = db[SERVED_RASTERS];
+    let served: ServedRasters | undefined = db[SERVED_RASTERS];
     if (!served) {
-        served = new Map();
-        const rasters = served;
+        const rasters = new Map<string, any>();
         const getLayer = typeof db.getLayer === 'function' ? db.getLayer.bind(db) : null;
+        const getRaster = typeof db.getRaster === 'function' ? db.getRaster.bind(db) : null;
         db.getLayer = async (name: string, ...rest: any[]) => {
             if (!rasters.has(name)) {
                 if (!getLayer) throw new Error(`Table ${name} not found.`);
@@ -187,9 +208,17 @@ function serveRaster(db: any, table: string, collection: any): void {
             }
             return rasters.get(name);
         };
+        db.getRaster = async (name: string, ...rest: any[]) => {
+            if (!rasters.has(name)) {
+                if (!getRaster) throw new Error(`Table ${name} not found.`);
+                return getRaster(name, ...rest);
+            }
+            return rasters.get(name);
+        };
+        served = { rasters, getRaster };
         db[SERVED_RASTERS] = served;
     }
-    served.set(table, framedRaster(collection));
+    served.rasters.set(table, framedRaster(collection));
 }
 
 /**
@@ -226,7 +255,7 @@ export function withRasterSources(grammar: any, newDb: () => Promise<any>): void
             if (typeof target.getRaster !== 'function') throw new Error(RASTER_EXPORT_MISSING);
             const collection = await oneRasterAtATime(async () => {
                 await target.loadGeoTiff(loadGeoTiffParams(source));
-                return target.getRaster(source.outputTableName);
+                return readRaster(target, source.outputTableName);
             });
             serveRaster(target, source.outputTableName, collection);
             return target;
