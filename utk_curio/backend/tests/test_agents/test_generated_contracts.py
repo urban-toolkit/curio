@@ -567,19 +567,34 @@ class TestTheAutarkRenderers:
             assert word not in shape
             assert word not in region
 
-    def test_the_region_says_a_node_draws_one_view(self):
+    def test_the_region_says_a_node_draws_every_view_arranged_by_layout_and_linked_by_links(self):
         schema = contracts.load_autk_schema()
         region = contracts.render_autk_region(schema, "Autark")
-        one_view = ("An Autark node draws one view: one map or one plot. Put each in its own "
-                    "Autark node, and link them with interaction edges.")
-        [map_line] = [row for row in region.splitlines() if row.startswith('- "map":')]
-        [plot_line] = [row for row in region.splitlines() if row.startswith('- "plot":')]
-        assert map_line.startswith(f'- "map": {one_view} Requires "layerRefs"')
-        assert plot_line.startswith(f'- "plot": {one_view} Every plot requires')
+        lines = region.splitlines()
+        [map_line] = [row for row in lines if row.startswith('- "map":')]
+        [plot_line] = [row for row in lines if row.startswith('- "plot":')]
+        # The schema's own words: a document names one of each, or several.
+        assert map_line.startswith('- "map": One map, or several. Requires "layerRefs"')
+        assert plot_line.startswith('- "plot": One plot, or several. Every plot requires')
+        # A node draws them all, each in its pane, arranged by "layout",
+        # linked by "links", and named by their ids.
+        [views] = [row for row in lines if row.startswith("- A node draws every map and plot of its document")]
+        for word in ('"layout"', '"links"', '"id"', "pane"):
+            assert word in views, word
+        # "layout" and "links", each with every field the schema gives it.
+        definitions = schema.get("definitions") or schema.get("$defs")
+        for key, definition in (("layout", "LayoutSpec"), ("links", "LinkSpec")):
+            [line] = [row for row in lines if row.startswith(f'- "{key}":')]
+            assert "Read by the" not in line and "arrangeViews" not in line, line
+            at = lines.index(line)
+            fields = definitions[definition]["properties"]
+            assert lines[at + 1:at + 1 + len(fields)] == [
+                f'  - "{name}": {field["description"]}' for name, field in fields.items()
+            ]
         autark = prompt_text("autark/SKILL.md")
-        for line in (map_line, plot_line):
-            assert "several" not in line
+        for line in (map_line, plot_line, views):
             assert line in autark
+        assert "draws one view" not in autark
 
     def test_the_preamble_fills_every_field_and_names_no_retired_node(self):
         text = prompt_text("default_preamble.md")

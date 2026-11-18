@@ -1,76 +1,186 @@
 {
-  "description": "What a grammar node calls its inputs, which Autark documents hold more than one view, and which write a key a node does not run, as the node and the backend decide it. inputTableNames: the name a node's input on each circle is read by. oneView: a document, and what it is told, named by its key in autkGrammar.json (\"oneView\"), or null for a document that draws one view or none. keys: a document, and the sentence it is told (autkGrammar.json's renamedKey or notRunYetKey, filled), or null for a document that writes no such key. Read by src/tests/contracts/autkGrammarCases.test.ts (inputTableName and autkOneViewProblem in contracts/autkGrammar.ts) and src/tests/contracts/autkGrammarKeys.test.ts (autkKeyProblem), and by backend/tests/test_agents/test_autk_grammar_cases.py (contracts.input_table_name and autk_one_view_problem, which the agents' document check uses) and test_autk_grammar_keys.py (autk_key_problem, which it uses too).",
+  "description": "What a grammar node calls its inputs, which Autark documents' views autk-grammar refuses, and which write a key a node does not run, as the node and the backend decide it. inputTableNames: the name a node's input on each circle is read by. views: a document, and the sentence it is told (one of autkGrammar.json's viewRules, filled), or null for a document whose views the grammar draws. keys: a document, and the sentence it is told (autkGrammar.json's renamedKey or notRunYetKey, filled), or null for a document that writes no such key. Read by src/tests/contracts/autkGrammarCases.test.ts (inputTableName and autkViewProblem in contracts/autkGrammar.ts) and src/tests/contracts/autkGrammarKeys.test.ts (autkKeyProblem), and by backend/tests/test_agents/test_autk_grammar_cases.py (contracts.input_table_name and autk_view_problem, which the agents' document check uses) and test_autk_grammar_keys.py (autk_key_problem, which it uses too).",
   "inputTableNames": [
     { "position": 0, "name": "input_0" },
     { "position": 1, "name": "input_1" },
     { "position": 2, "name": "input_2" },
     { "position": 12, "name": "input_12" }
   ],
-  "oneView": [
+  "views": [
     {
-      "name": "a map alone is one view",
-      "spec": { "map": { "layerRefs": [{ "dataRef": "input_0" }] } },
-      "problem": null
+      "name": "a map alone draws",
+      "spec": {"map": {"layerRefs": [{"dataRef": "input_0"}]}},
+      "says": null
     },
     {
-      "name": "a plot alone is one view",
-      "spec": { "plot": { "mark": "bar" } },
-      "problem": null
+      "name": "a plot alone draws",
+      "spec": {"plot": {"mark": "bar"}},
+      "says": null
     },
     {
       "name": "a list of one map is that map",
-      "spec": { "map": [{ "layerRefs": [{ "dataRef": "input_0" }] }] },
-      "problem": null
+      "spec": {"map": [{"layerRefs": [{"dataRef": "input_0"}]}]},
+      "says": null
     },
     {
       "name": "a list of one plot is that plot",
-      "spec": { "plot": [{ "mark": "bar" }] },
-      "problem": null
+      "spec": {"plot": [{"mark": "bar"}]},
+      "says": null
     },
     {
       "name": "a document that only loads data draws no view",
-      "spec": { "data": [{ "type": "osm" }, { "type": "csv" }] },
-      "problem": null
+      "spec": {"data": [{"type": "osm"}, {"type": "csv"}]},
+      "says": null
     },
     {
       "name": "a map named null is no map",
-      "spec": { "map": null, "plot": { "mark": "bar" } },
-      "problem": null
+      "spec": {"map": null, "plot": {"mark": "bar"}},
+      "says": null
     },
     {
-      "name": "a map and a plot are two views",
-      "spec": { "map": { "layerRefs": [] }, "plot": { "mark": "bar" } },
-      "problem": "oneView"
+      "name": "a map and a plot both draw",
+      "spec": {"map": {"layerRefs": []}, "plot": {"mark": "bar"}},
+      "says": null
     },
     {
-      "name": "a list of maps and a plot are more than one view",
-      "spec": { "map": [{ "layerRefs": [] }], "plot": { "mark": "bar" } },
-      "problem": "oneView"
+      "name": "a list of maps and a plot all draw",
+      "spec": {"map": [{"layerRefs": []}], "plot": {"mark": "bar"}},
+      "says": null
     },
     {
-      "name": "two maps are two views",
-      "spec": { "map": [{ "layerRefs": [] }, { "layerRefs": [] }] },
-      "problem": "oneView"
+      "name": "two maps both draw",
+      "spec": {"map": [{"layerRefs": []}, {"layerRefs": []}]},
+      "says": null
     },
     {
-      "name": "three plots are three views",
-      "spec": { "plot": [{ "mark": "bar" }, { "mark": "line" }, { "mark": "point" }] },
-      "problem": "oneView"
+      "name": "three plots of no table all draw",
+      "spec": {"plot": [{"mark": "bar"}, {"mark": "line"}, {"mark": "point"}]},
+      "says": null
     },
     {
       "name": "a list is no document",
-      "spec": [{ "map": {} }, { "plot": {} }],
-      "problem": null
+      "spec": [{"map": {}}, {"plot": {}}],
+      "says": null
     },
     {
       "name": "text is no document",
       "spec": "{\"map\": {}, \"plot\": {}}",
-      "problem": null
+      "says": null
     },
     {
       "name": "null is no document",
       "spec": null,
-      "problem": null
+      "says": null
+    },
+    {
+      "name": "two maps with one id",
+      "spec": {"map": [{"id": "city", "layerRefs": [{"dataRef": "buildings"}]}, {"id": "city", "layerRefs": [{"dataRef": "buildings"}]}]},
+      "says": "Two maps or plots have the id \"city\"; an id names one view."
+    },
+    {
+      "name": "a map and a plot with one id",
+      "spec": {"map": {"id": "city", "layerRefs": [{"dataRef": "buildings"}]}, "plot": {"id": "city", "dataRef": "buildings", "mark": "bar", "axis": ["height"]}},
+      "says": "Two maps or plots have the id \"city\"; an id names one view."
+    },
+    {
+      "name": "an empty id",
+      "spec": {"map": [{"id": "city", "layerRefs": [{"dataRef": "buildings"}]}, {"id": "", "layerRefs": [{"dataRef": "buildings"}]}]},
+      "says": "A map or plot has an empty id."
+    },
+    {
+      "name": "an id written null is no id",
+      "spec": {"map": [{"id": null, "layerRefs": [{"dataRef": "buildings"}]}, {"id": null, "layerRefs": [{"dataRef": "parks"}]}]},
+      "says": null
+    },
+    {
+      "name": "two plots of one table without ids",
+      "spec": {"plot": [{"dataRef": "buildings", "mark": "bar", "axis": ["height"]}, {"dataRef": "buildings", "mark": "bar", "axis": ["height"]}]},
+      "says": "Two plots of the table \"buildings\" have no id; give each plot an id."
+    },
+    {
+      "name": "two plots of one table, one with an id",
+      "spec": {"plot": [{"id": "heights", "dataRef": "buildings", "mark": "bar", "axis": ["height"]}, {"dataRef": "buildings", "mark": "bar", "axis": ["height"]}]},
+      "says": null
+    },
+    {
+      "name": "two plots of one table with ids",
+      "spec": {"plot": [{"id": "heights", "dataRef": "buildings", "mark": "bar", "axis": ["height"]}, {"id": "floors", "dataRef": "buildings", "mark": "bar", "axis": ["height"]}]},
+      "says": null
+    },
+    {
+      "name": "a plot whose id is the table of a plot without one",
+      "spec": {"plot": [{"dataRef": "buildings", "mark": "bar", "axis": ["height"]}, {"id": "buildings", "dataRef": "parks", "mark": "bar", "axis": ["height"]}]},
+      "says": "A plot's id \"buildings\" is the dataRef of a plot without an id; give each plot an id."
+    },
+    {
+      "name": "an id two views share comes before two plots of one table",
+      "spec": {"map": [{"id": "a", "layerRefs": [{"dataRef": "buildings"}]}, {"id": "a", "layerRefs": [{"dataRef": "buildings"}]}], "plot": [{"dataRef": "buildings", "mark": "bar", "axis": ["height"]}, {"dataRef": "buildings", "mark": "bar", "axis": ["height"]}]},
+      "says": "Two maps or plots have the id \"a\"; an id names one view."
+    },
+    {
+      "name": "a link from a plot to the layer of its table on a map",
+      "spec": {"map": {"id": "city", "layerRefs": [{"dataRef": "buildings"}]}, "plot": {"id": "heights", "dataRef": "buildings", "mark": "bar", "axis": ["height"]}, "links": [{"source": "heights", "target": "city"}]},
+      "says": null
+    },
+    {
+      "name": "a link names a plot without an id by its table",
+      "spec": {"map": {"id": "city", "layerRefs": [{"dataRef": "buildings"}]}, "plot": {"dataRef": "buildings", "mark": "bar", "axis": ["height"]}, "links": [{"source": "buildings", "target": "city"}]},
+      "says": null
+    },
+    {
+      "name": "a link names a layer by its title",
+      "spec": {"map": {"id": "city", "layerRefs": [{"dataRef": "buildings", "title": "Heights"}, {"dataRef": "parks"}]}, "plot": {"id": "heights", "dataRef": "parks", "mark": "bar", "axis": ["height"]}, "links": [{"source": "heights", "target": "city", "layer": "Heights"}]},
+      "says": null
+    },
+    {
+      "name": "a link names a layer by its table",
+      "spec": {"map": {"id": "city", "layerRefs": [{"dataRef": "buildings"}, {"dataRef": "parks"}]}, "plot": {"id": "heights", "dataRef": "buildings", "mark": "bar", "axis": ["height"]}, "links": [{"source": "heights", "target": "city", "layer": "parks"}]},
+      "says": null
+    },
+    {
+      "name": "a link whose source names no plot",
+      "spec": {"map": {"id": "city", "layerRefs": [{"dataRef": "buildings"}]}, "plot": {"id": "heights", "dataRef": "buildings", "mark": "bar", "axis": ["height"]}, "links": [{"source": "floors", "target": "city"}]},
+      "says": "Link source \"floors\" is not the id (or the dataRef) of a plot of this specification."
+    },
+    {
+      "name": "a link whose source is a map",
+      "spec": {"map": {"id": "city", "layerRefs": [{"dataRef": "buildings"}]}, "plot": {"id": "heights", "dataRef": "buildings", "mark": "bar", "axis": ["height"]}, "links": [{"source": "city", "target": "city"}]},
+      "says": "Link source \"city\" is not the id (or the dataRef) of a plot of this specification."
+    },
+    {
+      "name": "a link whose target names no map",
+      "spec": {"map": {"id": "city", "layerRefs": [{"dataRef": "buildings"}]}, "plot": {"id": "heights", "dataRef": "buildings", "mark": "bar", "axis": ["height"]}, "links": [{"source": "heights", "target": "town"}]},
+      "says": "Link target \"town\" is not the id of a map of this specification."
+    },
+    {
+      "name": "a link whose target is a map without an id",
+      "spec": {"map": {"layerRefs": [{"dataRef": "buildings"}]}, "plot": {"id": "heights", "dataRef": "buildings", "mark": "bar", "axis": ["height"]}, "links": [{"source": "heights", "target": "0"}]},
+      "says": "Link target \"0\" is not the id of a map of this specification."
+    },
+    {
+      "name": "a link whose target is a plot",
+      "spec": {"map": {"id": "city", "layerRefs": [{"dataRef": "buildings"}]}, "plot": [{"id": "heights", "dataRef": "buildings", "mark": "bar", "axis": ["height"]}, {"id": "floors", "dataRef": "buildings", "mark": "bar", "axis": ["height"]}], "links": [{"source": "heights", "target": "floors"}]},
+      "says": "Link target \"floors\" is not the id of a map of this specification."
+    },
+    {
+      "name": "a link to a layer its map does not draw",
+      "spec": {"map": {"id": "city", "layerRefs": [{"dataRef": "buildings"}]}, "plot": {"id": "heights", "dataRef": "buildings", "mark": "bar", "axis": ["height"]}, "links": [{"source": "heights", "target": "city", "layer": "parks"}]},
+      "says": "Link from \"heights\": map \"city\" has no layer \"parks\"."
+    },
+    {
+      "name": "a link to a map that draws no layer of the plot's table",
+      "spec": {"map": {"id": "city", "layerRefs": [{"dataRef": "parks"}]}, "plot": {"id": "heights", "dataRef": "buildings", "mark": "bar", "axis": ["height"]}, "links": [{"source": "heights", "target": "city"}]},
+      "says": "Link from \"heights\": map \"city\" draws no layer of the table \"buildings\"; name the layer."
+    },
+    {
+      "name": "the first link that names nothing is told",
+      "spec": {"map": {"id": "city", "layerRefs": [{"dataRef": "buildings"}]}, "plot": {"id": "heights", "dataRef": "buildings", "mark": "bar", "axis": ["height"]}, "links": [{"source": "heights", "target": "city"}, {"source": "heights", "target": "town"}, {"source": "floors", "target": "city"}]},
+      "says": "Link target \"town\" is not the id of a map of this specification."
+    },
+    {
+      "name": "links written null are none",
+      "spec": {"map": {"id": "city", "layerRefs": [{"dataRef": "buildings"}]}, "plot": {"id": "heights", "dataRef": "buildings", "mark": "bar", "axis": ["height"]}, "links": null},
+      "says": null
     }
   ],
   "keys": [
@@ -108,19 +218,19 @@
       "says": "This spec uses \"tableJoinName\" at data[0], which autk-grammar 5 renamed to \"joinDataRef\"."
     },
     {
-      "name": "a renamed key comes before a key a node does not run yet",
+      "name": "a renamed key is told in a document with a layout",
       "spec": { "layout": { "type": "horizontal" }, "compute": [{ "dataRef": "input_0", "wglsFunction": "return 1.0;" }] },
       "says": "This spec uses \"wglsFunction\" at compute[0], which autk-grammar 5 renamed to \"wgslFunction\"."
     },
     {
-      "name": "a layout is not run yet",
+      "name": "a layout is run",
       "spec": { "layout": { "type": "horizontal" }, "map": { "layerRefs": [{ "dataRef": "input_0" }] } },
-      "says": "This spec uses \"layout\", which Curio does not run yet."
+      "says": null
     },
     {
-      "name": "links are not run yet",
+      "name": "links are run",
       "spec": { "links": [{ "source": "heights", "target": "city" }] },
-      "says": "This spec uses \"links\", which Curio does not run yet."
+      "says": null
     },
     {
       "name": "a map's camera is run",

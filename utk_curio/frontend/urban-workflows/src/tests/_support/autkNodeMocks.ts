@@ -7,6 +7,7 @@
  *
  *     jest.mock("<src>/providers/FlowProvider", () => require("<this file>").flowProviderModule);
  */
+import { arrangeViews } from './autkArrangeViews';
 
 /** One run of the stand-in grammar. */
 export type GrammarRun = {
@@ -216,7 +217,7 @@ export const apiModule = {
   )),
   fetchPreviewData: jest.fn(),
 };
-export const autkGrammarModule = { AutkGrammar, enterWorkspace };
+export const autkGrammarModule = { AutkGrammar, arrangeViews, enterWorkspace };
 
 /** Forget the runs and calls of the last test, read ONE_ROW again, and hold no
  * scenario, node or edge. */
