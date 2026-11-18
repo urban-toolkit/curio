@@ -29,12 +29,12 @@
       "id": 2,
       "target": {"kind": "node", "node": "d517325b-266b-575d-ab48-2685bb889536"},
       "prompt": "Also show a bar chart of the stations by accessibility under the map, in this same node.",
-      "expected_output": "No document with both a map and a plot: the answer says an Autark node draws one view, so the bar chart goes in an Autark node of its own, linked to the map with an interaction edge. Any plot it writes is in a new Autark node, a bar over the stations' ada values.",
+      "expected_output": "The node's document keeps its map, gives it an \"id\", and adds a bar plot of the stations' ada values in this same node, under the map (no \"layout\", or a vertical one), linked to the map's CTA station layer by \"links\", so a brush on the bars lights those stations and a pick on a station selects its bar.",
       "assertions": [
-        "No document it writes holds both a \"map\" and a \"plot\".",
-        "The answer says an Autark node draws one view, one map or one plot, so the bar chart goes in an Autark node of its own.",
-        "The answer says the two views can be linked with an interaction edge.",
-        "The answer offers the bar chart as a node of its own: a new node (node.create) of type curio.builtin/autk-grammar whose plot has \"mark\": \"bar\" over the stations' ada values, or the steps to add one."
+        "The node's own document is changed: it keeps its map and adds a \"plot\" with \"mark\": \"bar\" over the stations' ada values; no new node is made.",
+        "The plot is under the map: the document writes no \"layout\", or a \"layout\" whose \"type\" is \"vertical\".",
+        "A link in \"links\" names the plot (its \"id\", else its \"dataRef\") as its \"source\", and as its \"target\" the \"id\" the document gives the map.",
+        "The answer says the bar chart and the map are in this one node, linked, so a selection in one highlights the other."
       ]
     },
     {
