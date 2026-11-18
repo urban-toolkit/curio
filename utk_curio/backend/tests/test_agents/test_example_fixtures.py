@@ -74,7 +74,7 @@ class TestCompleteness:
     def test_the_curated_and_legacy_corpora_are_both_covered(self):
         curated = [f for f in FIXTURES if f.path.parent.name == "prompts"]
         legacy = [f for f in FIXTURES if f.path.parent.name == "dataflows"]
-        assert len(curated) == 34
+        assert len(curated) == 35
         assert len(legacy) == 31
 
     def test_every_split_is_populated_and_heldout_is_a_minority(self):
@@ -311,7 +311,7 @@ class TestFixturesAreNotMistakenForDataflows:
         corpus by glob; the fixture directory must stay outside both."""
         curated = list((REPO_ROOT / "docs" / "examples").glob("[0-9][0-9]-*.json"))
         legacy = list((REPO_ROOT / "docs" / "examples" / "dataflows").glob("*.json"))
-        assert len(curated) == 34
+        assert len(curated) == 35
         assert len(legacy) == 31
         assert not any(".prompt.json" in p.name for p in curated + legacy)
 
