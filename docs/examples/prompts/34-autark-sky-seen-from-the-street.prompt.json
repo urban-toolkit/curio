@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/34-autark-sky-seen-from-the-street.json",
-    "sha256": "03b8fe65020132f9eb4f6136fe25e4bf837dd141cfd4a14e301d6a8d2d1d3a69",
+    "sha256": "ff211e220b7031345b3511a4c80e5dadc7beaf055146963bd1a5468ce809ff22",
     "walkthrough": "docs/examples/34-autark-sky-seen-from-the-street.md"
   },
-  "prompt": "How much sky does each street around Wall Street in Lower Manhattan see between its buildings? Load the surface, the roads and the buildings of the box around Wall Street with Autark, from the OpenStreetMap extract in this checkout at docs/examples/data/lower_mnt.osm.pbf. Then, on the GPU, draw the buildings from each road, looking in four directions 45 degrees above the horizon, count the share of each road's view that is sky, and map the roads colored by that share over the surface and the buildings.",
+  "prompt": "How much sky does each street around Wall Street in Lower Manhattan see between its buildings? Load the surface, the roads and the buildings of the box around Wall Street with Autark, from the OpenStreetMap extract in this checkout at docs/examples/data/lower_mnt.osm.pbf. Then, on the GPU, draw the buildings from each road, looking in four directions 45 degrees above the horizon, count the share of each road's view that is sky, and map the roads colored by that share over the surface and the buildings, seen at a tilt.",
   "context": null,
   "required": {
     "datasets": [],

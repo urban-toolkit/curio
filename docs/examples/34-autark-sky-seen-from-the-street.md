@@ -66,10 +66,12 @@ The pass writes `street_sky`: the roads, each with its shares in `compute.render
 ## Step 3: Map the share of sky (`sky-map`)
 
 The map draws the surface and the buildings, and over them `street_sky`, each road colored by its share of
-sky on a blue scale: pale where the buildings close in, darker where the road sees more sky.
+sky on a blue scale: pale where the buildings close in, darker where the road sees more sky. Its `camera`
+tilts the view the node frames it at, 45 degrees from straight down, facing 30 degrees east of north, so the
+towers stand up beside the streets they shade.
 
 ```json
-"map": { "layerRefs": [
+"map": { "camera": { "pitch": 45, "bearing": 30 }, "layerRefs": [
   { "dataRef": "wall_st_surface" },
   { "dataRef": "wall_st_buildings" },
   { "dataRef": "street_sky", "title": "Share of sky seen from the street",
