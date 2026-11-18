@@ -12,7 +12,6 @@ import { loadSpecLayers } from "../../../adapters/node/autkLayerMaterialize";
 jest.mock("../../../services/api", () => ({ fetchData: jest.fn() }));
 // Virtual, as the other suites mock Autark: keyed by the package's name.
 jest.mock("@urban-toolkit/autk-db", () => ({
-  DEFAULT_WORKSPACE_NAME: "autk",
   DEFAULT_WORKSPACE_COORDINATE_FORMAT: "EPSG:3395",
   AutkDb: jest.fn().mockImplementation(() => new mockAutkDb()),
 }), { virtual: true });
@@ -21,17 +20,11 @@ jest.mock("@urban-toolkit/autk-db", () => ({
 const mockLoaded: any[] = [];
 
 class mockAutkDb {
-  workspace = "autk";
   init() { return Promise.resolve(); }
-  getCurrentWorkspace() { return this.workspace; }
-  setWorkspace(name: string) { this.workspace = name; return Promise.resolve(); }
   loadGeojson(params: any) { mockLoaded.push(params); return Promise.resolve(); }
   getLayersMetadata() { return []; }
   getLayer() { return Promise.resolve({ type: "FeatureCollection", features: [] }); }
 }
-
-/** What the sandbox's code imports of autk-grammar's data entry, its own. */
-const { enterWorkspace, tableKey } = require("@urban-toolkit/autk-grammar/data");
 
 const EMPTY = { type: "GeometryCollection", geometries: [] };
 const point = (x: number, y: number) => ({ type: "Point", coordinates: [x, y] });
@@ -82,14 +75,14 @@ describe("a data section's GeoJSON sources go through the same rule", () => {
   const fromFile = () => [{ type: "geojson", outputTableName: "rows", geojsonFileUrl: "http://backend/file/rows.geojson" }];
   const stubFetch = jest.fn(async () => ({ json: async () => ({ type: "FeatureCollection", features: rows() }) }));
 
-  /** The sandbox's code, run as the sandbox runs it (its imports dropped, what they import handed in). */
+  /** The sandbox's code, run as the sandbox runs it (its one import dropped). */
   async function runInSandbox(sources: any[]) {
-    const body = compileDataSpecToAutkDbJs(sources).replace(/^import [^\n]*\n/gm, "");
+    const body = compileDataSpecToAutkDbJs(sources).replace(/^import [^\n]*\n/, "");
     // The engine's own AsyncFunction: babel compiles an `async function` written
     // in this file to a generator, whose constructor is plain Function.
     const AsyncFunction = new Function("return (async () => {}).constructor")();
-    await new AsyncFunction("AutkDb", "DEFAULT_WORKSPACE_COORDINATE_FORMAT", "enterWorkspace", "tableKey", "fetch", body)(
-      mockAutkDb, "EPSG:3395", enterWorkspace, tableKey, stubFetch,
+    await new AsyncFunction("AutkDb", "DEFAULT_WORKSPACE_COORDINATE_FORMAT", "fetch", body)(
+      mockAutkDb, "EPSG:3395", stubFetch,
     );
   }
 

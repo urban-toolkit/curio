@@ -38,6 +38,7 @@ import { selectionEchoSource } from '../../utils/selectionEcho';
 import {
     SANDBOX_BACKEND_URL_TOKEN,
     autkTableKey,
+    autkUsesWorkspaces,
     autkWorkspaceOf,
     compileDataSpecToAutkDbJs,
     requestedLayerTables,
@@ -1018,7 +1019,9 @@ export const useAutkGrammarBehavior = (
                 const drawsRasters = (spec.data as any[]).some(isCurioRasterSource);
                 const grammar = await withExtensionRetry(async () => {
                     const g = new AutkGrammar(targets);
-                    if (drawsRasters) withRasterSources(g, newAutkDb, enterWorkspace);
+                    // A raster enters its workspace when the document keeps
+                    // tables in more than the default one (autkUsesWorkspaces).
+                    if (drawsRasters) withRasterSources(g, newAutkDb, autkUsesWorkspaces(spec) ? enterWorkspace : undefined);
                     try {
                         await g.run(spec);
                     } catch (err) {

@@ -16,7 +16,6 @@ jest.mock("../../../services/api", () => ({ fetchData: jest.fn() }));
 // Virtual, as the other suites mock Autark: keyed by the package's name, so the
 // loader's import of it gets this whatever its `exports` resolve to under Jest.
 jest.mock("@urban-toolkit/autk-db", () => ({
-  DEFAULT_WORKSPACE_NAME: "autk",
   DEFAULT_WORKSPACE_COORDINATE_FORMAT: "EPSG:3395",
   AutkDb: jest.fn().mockImplementation(() => new mockAutkDb()),
 }), { virtual: true });
@@ -97,18 +96,12 @@ const TABLES = [
 let mockGiven: Record<string, () => any> = GIVEN;
 
 class mockAutkDb {
-  workspace = "autk";
   init() { return Promise.resolve(); }
-  getCurrentWorkspace() { return this.workspace; }
-  setWorkspace(name: string) { this.workspace = name; return Promise.resolve(); }
   loadOsm() { return Promise.resolve(); }
   loadGeojson() { return Promise.resolve(); }
   getLayersMetadata() { return TABLES.map((table) => ({ ...table, columns: [] })); }
   getLayer(name: string) { return Promise.resolve(mockGiven[name]()); }
 }
-
-/** What the sandbox's code imports of autk-grammar's data entry, its own. */
-const { enterWorkspace, tableKey } = require("@urban-toolkit/autk-grammar/data");
 
 beforeEach(() => { mockGiven = GIVEN; });
 
@@ -131,13 +124,11 @@ const byName = (layers: Array<{ name: string; geojson: any }>): Layers =>
 
 /** The layers the sandbox's code hands on, run as the sandbox runs it. */
 async function sandboxLayers(): Promise<Layers> {
-  const body = compileDataSpecToAutkDbJs(SOURCES).replace(/^import [^\n]*\n/gm, "");
+  const body = compileDataSpecToAutkDbJs(SOURCES).replace(/^import [^\n]*\n/, "");
   // The engine's own AsyncFunction: babel compiles an `async function` written
   // in this file to a generator, whose constructor is plain Function.
   const AsyncFunction = new Function("return (async () => {}).constructor")();
-  return byName(await new AsyncFunction("AutkDb", "DEFAULT_WORKSPACE_COORDINATE_FORMAT", "enterWorkspace", "tableKey", body)(
-    mockAutkDb, "EPSG:3395", enterWorkspace, tableKey,
-  ));
+  return byName(await new AsyncFunction("AutkDb", "DEFAULT_WORKSPACE_COORDINATE_FORMAT", body)(mockAutkDb, "EPSG:3395"));
 }
 
 /** The same, from the in-browser loader. */

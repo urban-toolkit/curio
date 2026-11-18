@@ -50,6 +50,16 @@ export function autkTableKey(workspace: string | undefined, name: string): strin
     return workspace === undefined || workspace === AUTK_DEFAULT_WORKSPACE ? name : workspace + '/' + name;
 }
 
+// Whether a document keeps tables in another workspace than the default one:
+// a source, a compute pass, a map or a plot of *spec* names one. Only then do
+// the loaders enter workspaces, with autk-grammar's data entry; a document that
+// names none loads in the default workspace alone, as it always has.
+export function autkUsesWorkspaces(spec: any): boolean {
+    const entries = (held: any): any[] => (held == null ? [] : Array.isArray(held) ? held : [held]);
+    return [spec?.data, spec?.compute, spec?.map, spec?.plot]
+        .some((held) => entries(held).some((entry) => autkWorkspaceOf(entry) !== undefined));
+}
+
 // A data source as the loaders load it: with the workspace it names, the
 // default one left out (autkWorkspaceOf).
 export function inItsWorkspace(source: any): any {
@@ -220,20 +230,75 @@ export function withOsmIds(table: { source?: string; type?: string } | null | un
     });
 }
 
+// The parts of the sandbox's code that differ when a data section names a
+// workspace (autkUsesWorkspaces): autk-grammar's data entry imported, each
+// source loaded in its workspace, each workspace's tables read back in turn,
+// and each table handed on with its workspace. A data section that names none
+// compiles without them, as it always has.
+function workspaceCode(uses: boolean) {
+    if (!uses) {
+        return {
+            imports: '',
+            load: `  const { type, ...rest } = source ?? {};
+  try {`,
+            readBack: `let __tables = [];
+try {
+  __tables = db.getLayersMetadata();
+} catch (e) {
+  // A partially-loaded DB can throw here rather than return [] - treat it as
+  // "no usable tables" and let the contract check report it.
+  __loadErrors.push('getLayersMetadata: ' + ((e && e.message) || String(e)));
+}
+const __have = new Set(__tables.map((t) => t.name));`,
+            each: 'for (const t of __tables) {',
+            handOn: '  __out.push({ name: t.name, type, geojson });',
+        };
+    }
+    return {
+        imports: `
+import { enterWorkspace, tableKey } from '@urban-toolkit/autk-grammar/data';`,
+        load: `  const { type, workspace, ...rest } = source ?? {};
+  try {
+    // Into its workspace, as the grammar's data adapter loads a source:
+    // autk-db finds a table in the current workspace only.
+    await enterWorkspace(db, workspace);`,
+        readBack: `// The tables of each workspace the sources load into, in their order: autk-db
+// lists the tables of the current workspace only.
+const __workspaces = [...new Set(__sources.map((source) => (source ?? {}).workspace))];
+const __tables = [];
+for (const workspace of __workspaces) {
+  try {
+    await enterWorkspace(db, workspace);
+    for (const table of db.getLayersMetadata()) __tables.push({ table, workspace });
+  } catch (e) {
+    // A partially-loaded DB can throw here rather than return [] - treat it as
+    // "no usable tables" and let the contract check report it.
+    __loadErrors.push('getLayersMetadata: ' + ((e && e.message) || String(e)));
+  }
+}
+const __have = new Set(__tables.map((t) => tableKey(t.workspace, t.table.name)));`,
+        each: `for (const { table: t, workspace } of __tables) {
+  await enterWorkspace(db, workspace);`,
+        handOn: `  // A table in another workspace than the default one says which, so the node
+  // it is handed to loads it there.
+  __out.push(workspace === undefined ? { name: t.name, type, geojson } : { name: t.name, type, geojson, workspace });`,
+    };
+}
+
 // Compile a grammar `data` section into autk-db JavaScript to run in the backend
-// Node.js sandbox. Its top-level `import`s, autk-db's and autk-grammar's data
-// entry's, are rewritten to `await import()` by execute_js_code; the rest is the
-// body of the async function the sandbox wraps user code in. Mirrors
-// loadSpecLayers exactly, with the spec inlined as a literal and
-// flattenToMultiPolygon inlined (the module-level helper above is not in the
-// sandbox's scope). Each source loads into its workspace, entered with the
-// grammar's own `enterWorkspace`. The function returns
-// Array<{name, type, geojson}>, each table in another workspace than the
+// Node.js sandbox. The top-level `import` is rewritten to `await import()` by
+// execute_js_code, and so is autk-grammar's data entry's, which a section that
+// names a workspace imports; the rest is the body of the async function the
+// sandbox wraps user code in. Mirrors loadSpecLayers exactly, with the spec
+// inlined as a literal and flattenToMultiPolygon inlined (the module-level helper
+// above is not in the sandbox's scope). Each source loads into its workspace,
+// entered with the grammar's own `enterWorkspace` (workspaceCode). The function
+// returns Array<{name, type, geojson}>, each table in another workspace than the
 // default one with its `workspace` too, which the sandbox persists to DuckDB.
 export function compileDataSpecToAutkDbJs(dataSources: any[]): string {
     const sources = (dataSources ?? []).map(inItsWorkspace);
-    return `import { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } from '@urban-toolkit/autk-db';
-import { enterWorkspace, tableKey } from '@urban-toolkit/autk-grammar/data';
+    const parts = workspaceCode(autkUsesWorkspaces({ data: sources }));
+    return `import { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } from '@urban-toolkit/autk-db';${parts.imports}
 const __sources = ${JSON.stringify(sources)};
 // Computed host-side by requestedLayerTables so the naming rules live in ONE
 // place rather than being restated inside this emitted string.
@@ -258,11 +323,7 @@ const __loadableGeojson = async (source) => {
 const db = new AutkDb();
 await db.init();
 for (const source of __sources) {
-  const { type, workspace, ...rest } = source ?? {};
-  try {
-    // Into its workspace, as the grammar's data adapter loads a source:
-    // autk-db finds a table in the current workspace only.
-    await enterWorkspace(db, workspace);
+${parts.load}
     if (type === 'osm') await db.loadOsm(rest);
     else if (type === 'geojson') await db.loadGeojson(await __loadableGeojson(rest));
     else if (type === 'csv') await db.loadCsv(rest);
@@ -280,21 +341,7 @@ for (const source of __sources) {
     console.log('[autk-grammar] data load failed for source type "' + type + '": ' + (e && e.message));
   }
 }
-// The tables of each workspace the sources load into, in their order: autk-db
-// lists the tables of the current workspace only.
-const __workspaces = [...new Set(__sources.map((source) => (source ?? {}).workspace))];
-const __tables = [];
-for (const workspace of __workspaces) {
-  try {
-    await enterWorkspace(db, workspace);
-    for (const table of db.getLayersMetadata()) __tables.push({ table, workspace });
-  } catch (e) {
-    // A partially-loaded DB can throw here rather than return [] - treat it as
-    // "no usable tables" and let the contract check report it.
-    __loadErrors.push('getLayersMetadata: ' + ((e && e.message) || String(e)));
-  }
-}
-const __have = new Set(__tables.map((t) => tableKey(t.workspace, t.table.name)));
+${parts.readBack}
 const __missing = __expectedTables.filter((n) => !__have.has(n));
 if (__missing.length > 0) {
   const __detail = 'missing: ' + __missing.join(', ')
@@ -361,8 +408,7 @@ const __buildingHeight = (props) => {
   return top > base ? null : base + 6;
 };
 const __out = [];
-for (const { table: t, workspace } of __tables) {
-  await enterWorkspace(db, workspace);
+${parts.each}
   const geojson = await db.getLayer(t.name);
   let type = t.type ?? 'polygons';
   // Each OpenStreetMap feature's OSM id in osm_id, a building part's in that part.
@@ -404,9 +450,7 @@ for (const { table: t, workspace } of __tables) {
     geojson.features = __exploded;
   }
   if (geojson && typeof geojson === 'object') geojson.crs = __crsFor(geojson);
-  // A table in another workspace than the default one says which, so the node
-  // it is handed to loads it there.
-  __out.push(workspace === undefined ? { name: t.name, type, geojson } : { name: t.name, type, geojson, workspace });
+${parts.handOn}
 }
 return __out;`;
 }

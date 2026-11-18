@@ -16,7 +16,7 @@ import { autkTableName } from '../../utils/autkInput';
 import { framesFromPayload } from '../../utils/grammarInput';
 import { deriveBuildingHeight } from '../../utils/buildingHeight';
 import {
-    autkTableKey, inItsWorkspace, joinQueryParams, loadableFeatures, requestedLayerTables, withOsmIds,
+    autkTableKey, autkUsesWorkspaces, inItsWorkspace, joinQueryParams, loadableFeatures, requestedLayerTables, withOsmIds,
 } from './autkDataCompile';
 
 /** A table an Autark node loaded or hands on: its name, its autk-db layer type, its
@@ -211,10 +211,16 @@ export async function loadSpecLayers(
     const keyProblem = autkKeyProblem({ data: spec?.data });
     if (keyProblem) throw new Error(keyProblem);
     const sources: any[] = (spec?.data ?? []).map(inItsWorkspace);
-    const [{ AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT }, { enterWorkspace }] = await Promise.all([
+    // autk-grammar's data entry, for a data section that names a workspace
+    // (autkUsesWorkspaces): one that names none loads in the default
+    // workspace, where the database starts, as it always has.
+    const [{ AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT }, grammarData] = await Promise.all([
         import('@urban-toolkit/autk-db'),
-        import('@urban-toolkit/autk-grammar/data'),
+        autkUsesWorkspaces({ data: sources }) ? import('@urban-toolkit/autk-grammar/data') : Promise.resolve(null),
     ]);
+    const enterWorkspace = grammarData
+        ? grammarData.enterWorkspace
+        : async (_db: unknown, _workspace?: string) => undefined;
     // `init()` downloads the DuckDB spatial extension; a flaky fetch is worth
     // another instance rather than a failed node (#318).
     const db: any = await withExtensionRetry(async () => {

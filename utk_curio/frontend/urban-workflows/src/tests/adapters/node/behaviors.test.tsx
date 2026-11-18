@@ -128,9 +128,6 @@ const mockAutkDbGetRaster = jest.fn((..._a: unknown[]) => Promise.resolve({
 jest.mock('@urban-toolkit/autk-db', () => ({
   AutkDb: jest.fn().mockImplementation(() => ({
     init: jest.fn().mockResolvedValue(undefined),
-    workspace: 'autk',
-    getCurrentWorkspace() { return this.workspace; },
-    setWorkspace(name: string) { this.workspace = name; return Promise.resolve(); },
     loadGeoTiff: (...a: any[]) => mockAutkDbLoadGeoTiff(...a),
     getRaster: (...a: any[]) => mockAutkDbGetRaster(...a),
     loadOsm: (...a: any[]) => mockAutkDbLoadOsm(...a),
@@ -141,7 +138,6 @@ jest.mock('@urban-toolkit/autk-db', () => ({
     getLayersMetadata: (...a: any[]) => mockAutkDbGetLayersMetadata(...a),
     getLayer: (...a: any[]) => mockAutkDbGetLayer(...a),
   })),
-  DEFAULT_WORKSPACE_NAME: 'autk',
   DEFAULT_WORKSPACE_COORDINATE_FORMAT: 'EPSG:3395',
 }), { virtual: true });
 
@@ -2546,9 +2542,6 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       const { AutkDb } = require('@urban-toolkit/autk-db');
       (AutkDb as jest.Mock).mockImplementationOnce(() => ({
         init: jest.fn().mockResolvedValue(undefined),
-        workspace: 'autk',
-        getCurrentWorkspace() { return this.workspace; },
-        setWorkspace(name: string) { this.workspace = name; return Promise.resolve(); },
         loadOsm: (...a: any[]) => mockAutkDbLoadOsm(...a),
         loadGeojson: jest.fn().mockResolvedValue(undefined),
         loadCsv: jest.fn().mockResolvedValue(undefined),
@@ -2653,27 +2646,19 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
     }
 
     // Run that script the way the sandbox does (an async function body), with a
-    // stand-in for the autk-db module its first import names, and autk-grammar's
-    // data entry's own enterWorkspace and tableKey for its second.
+    // stand-in for the autk-db module its one import names.
     function runSandboxScript(code: string, db: Record<string, any>): Promise<any> {
-      const body = code
-        .replace(/^import \{ AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT \} from '@urban-toolkit\/autk-db';/m, '')
-        .replace(/^import \{ enterWorkspace, tableKey \} from '@urban-toolkit\/autk-grammar\/data';/m, '');
-      const { enterWorkspace, tableKey } = require('@urban-toolkit/autk-grammar/data');
+      const body = code.replace(/^import \{ AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT \} from '@urban-toolkit\/autk-db';/, '');
       // Built from source text rather than `AsyncFunction`: the test transform
       // compiles `async` arrows down, so their constructor is plain Function.
-      return new Function(
-        'AutkDb', 'DEFAULT_WORKSPACE_COORDINATE_FORMAT', 'enterWorkspace', 'tableKey',
-        `return (async () => {\n${body}\n})();`,
-      )(function AutkDb() { return db; }, 'EPSG:3395', enterWorkspace, tableKey);
+      return new Function('AutkDb', 'DEFAULT_WORKSPACE_COORDINATE_FORMAT', `return (async () => {\n${body}\n})();`)(
+        function AutkDb() { return db; }, 'EPSG:3395',
+      );
     }
 
     function fakeSandboxDb(spatialQuery?: (...a: any[]) => Promise<unknown>) {
       return {
         init: async () => {},
-        workspace: 'autk',
-        getCurrentWorkspace() { return this.workspace; },
-        setWorkspace(name: string) { this.workspace = name; return Promise.resolve(); },
         loadOsm: async () => {},
         ...(spatialQuery ? { spatialQuery } : {}),
         getLayersMetadata: () => JOIN_TABLES,

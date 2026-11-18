@@ -26,19 +26,15 @@ const mockDatabases: Array<{ terminate: jest.Mock; layersRead: () => number }> =
 jest.mock(
   '@urban-toolkit/autk-db',
   () => ({
-    DEFAULT_WORKSPACE_NAME: 'autk',
     DEFAULT_WORKSPACE_COORDINATE_FORMAT: 'EPSG:3395',
     AutkDb: class {
       private tables: Array<{ name: string; type: string; features: any[] }> = [];
       private read = 0;
-      private workspace = 'autk';
       db = { terminate: jest.fn(async () => undefined) };
       constructor() {
         mockDatabases.push({ terminate: this.db.terminate, layersRead: () => this.read });
       }
       async init() { }
-      getCurrentWorkspace() { return this.workspace; }
-      async setWorkspace(name: string) { this.workspace = name; }
       async loadGeojson(source: any) {
         this.tables.push({ name: source.outputTableName, type: 'parks', features: source.geojsonObject.features });
       }
