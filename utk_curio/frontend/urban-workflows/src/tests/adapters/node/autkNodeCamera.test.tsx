@@ -25,12 +25,14 @@ jest.mock(
   }),
   { virtual: true },
 );
-// What autk-grammar's build imports, which it reads none of while it loads.
-jest.mock('@urban-toolkit/autk-db', () => ({}), { virtual: true });
-jest.mock('@urban-toolkit/autk-map', () => ({}), { virtual: true });
-jest.mock('@urban-toolkit/autk-plot', () => ({}), { virtual: true });
-jest.mock('@urban-toolkit/autk-core', () => ({}), { virtual: true });
-jest.mock('@urban-toolkit/autk-compute', () => ({ ComputeGpgpu: jest.fn() }), { virtual: true });
+// What autk-grammar's build imports, which it reads none of while it loads,
+// mocked plainly as every suite that loads the build mocks it
+// (_support/autkApplyCamera).
+jest.mock('@urban-toolkit/autk-db', () => ({}));
+jest.mock('@urban-toolkit/autk-map', () => ({}));
+jest.mock('@urban-toolkit/autk-plot', () => ({}));
+jest.mock('@urban-toolkit/autk-core', () => ({}));
+jest.mock('@urban-toolkit/autk-compute', () => ({ ComputeGpgpu: jest.fn() }));
 
 import { framingCamera } from '../../../adapters/node/autkMapView';
 import { drawnMaps, grammarRuns, markNodeErrored, resetAutkNodeMocks } from '../../_support/autkNodeMocks';
