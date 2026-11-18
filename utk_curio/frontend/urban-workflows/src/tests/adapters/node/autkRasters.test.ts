@@ -411,6 +411,15 @@ describe("withOpaqueRasters", () => {
     expect(withOpaqueRasters(spec).map.layerRefs[0].transferFunction).toEqual(OPAQUE);
   });
 
+  test("a GeoTIFF the document loads is a raster too", () => {
+    const { withOpaqueRasters } = require("../../../adapters/node/autkRasters");
+    const spec = {
+      data: [{ type: "geotiff", geotiffFileUrl: "docs/examples/data/lst.tif", outputTableName: "lst" }],
+      map: { layerRefs: [{ dataRef: "lst", getFnv: "band_24", colorMapInterpolator: "interpolateYlOrRd" }] },
+    };
+    expect(withOpaqueRasters(spec).map.layerRefs[0].transferFunction).toEqual(OPAQUE);
+  });
+
   test("repro: what a layer writes of the transfer function is kept, and the rest is opaque", () => {
     const { withOpaqueRasters } = require("../../../adapters/node/autkRasters");
     const spec = {
@@ -427,6 +436,58 @@ describe("withOpaqueRasters", () => {
     expect(withOpaqueRasters(roads)).toBe(roads);
     const plot = { data: [RASTER], plot: { dataRef: "input_0", mark: "bar" } };
     expect(withOpaqueRasters(plot)).toBe(plot);
+  });
+});
+
+// A GPGPU pass computes one value for each feature of the table it reads, and
+// a raster holds all its cells in one feature, so a pass over a raster is not
+// run: the node refuses it before anything runs, naming the pass and the
+// raster, as it names a key it does not run yet.
+describe("rasterPassProblem", () => {
+  const PASS = { attributes: { t: "band_24" }, outputColumns: ["warming"], wgslFunction: "return t;" };
+  const PARKS = {
+    type: "osm", pbfFileUrl: "docs/examples/data/niteroi.osm.pbf", outputTableName: "table_osm",
+    autoLoadLayers: { layers: ["parks"] },
+  };
+  const LST = {
+    type: "geotiff", geotiffFileUrl: "docs/examples/data/niteroi_lst_verao_2001_2024.tif", outputTableName: "lst",
+    resampleMethod: "nearest",
+  };
+
+  test("a pass over a GeoTIFF the document loads is refused, naming it and where the pass is written", () => {
+    const { rasterPassProblem, rasterTables } = require("../../../adapters/node/autkRasters");
+    const spec = { data: [PARKS, LST], compute: [{ dataRef: "table_osm_parks", ...PASS }, { dataRef: "lst", ...PASS }] };
+    expect(rasterPassProblem(spec, rasterTables(spec))).toBe(
+      'This spec uses a compute pass over the raster "lst" at compute[1], which Curio does not run yet.',
+    );
+  });
+
+  test("so is a pass over a heatmap the document builds, and one over a raster the input brings", () => {
+    const { rasterPassProblem, rasterTables } = require("../../../adapters/node/autkRasters");
+    const heat = {
+      data: [PARKS, {
+        type: "heatmap", joinDataRef: "table_osm_parks", outputTableName: "park_access",
+        near: { distance: 200 }, grid: { rows: 15, columns: 22 },
+      }],
+      compute: [{ dataRef: "park_access", ...PASS }],
+    };
+    expect(rasterPassProblem(heat, rasterTables(heat))).toBe(
+      'This spec uses a compute pass over the raster "park_access" at compute[0], which Curio does not run yet.',
+    );
+    expect(rasterPassProblem({ compute: [{ dataRef: "input_0", ...PASS }] }, ["input_0"])).toBe(
+      'This spec uses a compute pass over the raster "input_0" at compute[0], which Curio does not run yet.',
+    );
+  });
+
+  test("passes over layers are run, beside a raster", () => {
+    const { rasterPassProblem, rasterTables } = require("../../../adapters/node/autkRasters");
+    const spec = {
+      data: [PARKS, LST],
+      compute: [{ dataRef: "table_osm_parks", ...PASS }],
+      map: { layerRefs: [{ dataRef: "lst", getFnv: "band_24" }, { dataRef: "table_osm_parks" }] },
+    };
+    expect(rasterPassProblem(spec, rasterTables(spec))).toBeNull();
+    expect(rasterPassProblem({ map: { layerRefs: [{ dataRef: "input_0", getFnv: "band_1" }] } }, ["input_0"])).toBeNull();
   });
 });
 

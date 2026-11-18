@@ -211,23 +211,26 @@ def test_a_failed_load_is_tried_once_more(client, user_and_token, sandbox, recor
     assert [(ref.node_id, ref.filename, ref.data_type) for ref in recorded] == [("water", LAYERS, "list")]
 
 
-@pytest.mark.parametrize("source, said", [
-    ({"type": "join", "tableRootName": "table_osm_roads", "joinDataRef": "table_osm_surface"},
+#: The roads of Back Bay, which each document below loads beside the key it writes.
+BACK_BAY_ROADS = {"type": "osm", "pbfFileUrl": "docs/examples/data/back_bay.osm.pbf", "outputTableName": "table_osm",
+                  "autoLoadLayers": {"layers": ["surface", "roads"]}}
+
+
+@pytest.mark.parametrize("document, said", [
+    ({"data": [BACK_BAY_ROADS,
+               {"type": "join", "tableRootName": "table_osm_roads", "joinDataRef": "table_osm_surface"}]},
      'This spec uses "tableRootName" at data[1], which autk-grammar 5 renamed to "dataRef".'),
-    ({"type": "geotiff", "geotiffFileUrl": "docs/examples/data/niteroi_lst_verao_2001_2024.tif",
-      "outputTableName": "lst"},
-     "This spec uses a geotiff source at data[1], which Curio does not run yet."),
+    # Links describe no step of their own, so the document is still a data
+    # node's, which a run on the server loads.
+    ({"data": [BACK_BAY_ROADS], "links": [{"source": "roads-plot", "target": "roads-map"}]},
+     'This spec uses "links", which Curio does not run yet.'),
 ], ids=["renamed-key", "not-run-yet"])
 def test_a_load_that_writes_a_key_the_node_refuses_fails_with_its_words(
-        client, user_and_token, sandbox, recorded, source, said):
+        client, user_and_token, sandbox, recorded, document, said):
     """The compiler refuses the document as the node does
     (``contracts/autkGrammar``), so nothing reaches the sandbox."""
     user, token = user_and_token
-    content = json.dumps({"data": [
-        {"type": "osm", "pbfFileUrl": "docs/examples/data/back_bay.osm.pbf", "outputTableName": "table_osm",
-         "autoLoadLayers": {"layers": ["surface", "roads"]}},
-        source,
-    ]})
+    content = json.dumps(document)
     run = _run(client, token, _create(client, token, {
         "name": "Back Bay roads",
         "nodes": [{"id": "roads", "type": AUTARK, "content": content}],

@@ -78,11 +78,6 @@ describe("loadSpecLayers", () => {
       'This spec uses "tableJoinName" at data[0], which autk-grammar 5 renamed to "joinDataRef".',
     ],
     [
-      "a geotiff source",
-      { data: [{ type: "geotiff", geotiffFileUrl: "lst.tif", outputTableName: "lst" }] },
-      "This spec uses a geotiff source at data[0], which Curio does not run yet.",
-    ],
-    [
       "a source in a workspace",
       { data: [{ type: "csv", csvFileUrl: "a.csv", outputTableName: "a", workspace: "east" }] },
       'This spec uses "workspace" at data[0], which Curio does not run yet.',

@@ -82,6 +82,15 @@ describe("resolveDataSourceUrls", () => {
             .toBe(`${SANDBOX_BACKEND_URL_TOKEN}/file/docs/examples/data/x.osm.pbf`);
     });
 
+    it("rewrites a GeoTIFF's relative file URL the same way", () => {
+        const resolved = resolveDataSourceUrls(
+            { data: [{ type: "geotiff", geotiffFileUrl: "docs/examples/data/lst.tif", outputTableName: "lst" }] },
+            SANDBOX_BACKEND_URL_TOKEN,
+        );
+        expect(resolved.data[0].geotiffFileUrl)
+            .toBe(`${SANDBOX_BACKEND_URL_TOKEN}/file/docs/examples/data/lst.tif`);
+    });
+
     it("leaves absolute URLs alone", () => {
         const url = "https://example.org/x.geojson";
         const resolved = resolveDataSourceUrls(

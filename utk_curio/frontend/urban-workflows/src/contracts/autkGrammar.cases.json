@@ -153,9 +153,9 @@
       "says": null
     },
     {
-      "name": "a geotiff source is not run yet",
+      "name": "a geotiff source is run",
       "spec": { "data": [{ "type": "csv", "csvFileUrl": "a.csv", "outputTableName": "a" }, { "type": "json", "jsonFileUrl": "b.json", "outputTableName": "b" }, { "type": "geotiff", "geotiffFileUrl": "lst.tif", "outputTableName": "lst" }] },
-      "says": "This spec uses a geotiff source at data[2], which Curio does not run yet."
+      "says": null
     },
     {
       "name": "a source's workspace is not run yet",
