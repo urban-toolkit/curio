@@ -3,6 +3,7 @@
 
 import type { FeatureCollection } from 'geojson';
 import { autkKeyProblem } from '../../contracts/autkGrammar';
+import { autkWorkspaceOf } from './autkDataCompile';
 import { runComputeChecked } from './autkComputeScopes';
 
 // Apply a grammar `compute` section to an array of named GeoJSON layers,
@@ -17,19 +18,19 @@ import { runComputeChecked } from './autkComputeScopes';
 // directives, the `all` and `batched` iterations, and the packing of batched
 // features. Curio hands it the dispatch, which checks the GPU accepted the pass.
 //
-// A block whose `dataRef` doesn't match any upstream layer is skipped quietly:
+// A block whose `dataRef` matches no upstream layer of its workspace is skipped quietly:
 // chained compute nodes can target different layers, and a no-op block is far
 // less surprising than aborting the whole pipeline. A section that writes a key
 // autk-grammar 5 renamed, or one a node does not run yet (contracts/autkGrammar),
 // runs no block and is a failure, named.
 export async function applyComputeBlocks(
-    layers: Array<{ name: string; type: string; geojson: FeatureCollection }>,
+    layers: Array<{ name: string; type: string; geojson: FeatureCollection; workspace?: string }>,
     computeBlocks: any[],
     /** Appended to for every block that failed, so the caller can refuse to
      *  report success. A block whose ``dataRef`` matches no upstream layer is
      *  still skipped quietly - that is a no-op, not a failure. */
     failures: string[] = [],
-): Promise<Array<{ name: string; type: string; geojson: FeatureCollection }>> {
+): Promise<Array<{ name: string; type: string; geojson: FeatureCollection; workspace?: string }>> {
     if (!Array.isArray(computeBlocks) || computeBlocks.length === 0) return layers;
     const keyProblem = autkKeyProblem({ compute: computeBlocks });
     if (keyProblem) {
@@ -43,12 +44,16 @@ export async function applyComputeBlocks(
     let result = layers;
     for (const block of computeBlocks) {
         if (!block || !block.dataRef || !block.wgslFunction) continue;
-        const idx = result.findIndex((l) => l.name === block.dataRef);
+        // A pass reads the tables of its own workspace, as autk-grammar's
+        // compute adapter reads them.
+        const workspace = autkWorkspaceOf(block);
+        const inWorkspace = result.filter((l) => autkWorkspaceOf(l) === workspace);
+        const idx = result.findIndex((l) => l.name === block.dataRef && autkWorkspaceOf(l) === workspace);
         if (idx < 0) continue;
         const outCols: string[] = block.outputColumns ?? (block.outputColumnName ? [block.outputColumnName] : []);
         try {
             const gpgpu = new ComputeGpgpu();
-            const tables = new Map(result.map((l) => [l.name, l.geojson]));
+            const tables = new Map(inWorkspace.map((l) => [l.name, l.geojson]));
             const augmented = await runCompute(block, tables, (params) => runComputeChecked(gpgpu, params));
             // ComputeGpgpu writes outputs under properties.compute.<col>. Also lift them
             // to top-level properties so downstream nodes can reference the column by
