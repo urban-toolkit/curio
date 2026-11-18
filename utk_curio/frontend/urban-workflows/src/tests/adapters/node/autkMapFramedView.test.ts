@@ -15,7 +15,7 @@ jest.mock("@urban-toolkit/autk-plot", () => ({}), { virtual: true });
 jest.mock("@urban-toolkit/autk-core", () => ({}), { virtual: true });
 jest.mock("@urban-toolkit/autk-compute", () => ({}), { virtual: true });
 
-import { attachSpecCameras, frameMaps, framingCamera, mapViews, showFramedViews } from "../../../adapters/node/autkMapView";
+import { attachSpecCameras, frameMaps, framingCamera, keepMapViews, mapViews, showFramedViews } from "../../../adapters/node/autkMapView";
 import { grammarThatRan } from "../../_support/autkGrammarMaps";
 import { grammarApplyCamera } from "../../_support/autkApplyCamera";
 
@@ -46,11 +46,11 @@ function standingCamera() {
   return camera;
 }
 
-/** An AutkMap drawing a block about 1,200 by 700 around (40, -10), on a canvas laid out at 480 by 300. */
-function blockMap() {
+/** An AutkMap drawing a block about 1,200 by 700 around (40, -10), on a canvas laid out at *laid* (480 by 300). */
+function blockMap(laid = { width: WIDTH, height: HEIGHT }) {
   const canvas = document.createElement("canvas");
-  Object.defineProperty(canvas, "offsetWidth", { get: () => WIDTH, configurable: true });
-  Object.defineProperty(canvas, "offsetHeight", { get: () => HEIGHT, configurable: true });
+  Object.defineProperty(canvas, "offsetWidth", { get: () => laid.width, configurable: true });
+  Object.defineProperty(canvas, "offsetHeight", { get: () => laid.height, configurable: true });
   const camera = standingCamera();
   const block = {
     position: new Float32Array([-560, -360, 640, -360, 640, 340, -560, 340]),
@@ -121,6 +121,42 @@ describe("the framed view of a map its camera turns", () => {
 
     turnBack();
     expectView(map.camera.view, turned(FRAMED.lookAt, HIGH, 50, 30));
+  });
+
+  // The check compares the turned view with the framed one the hook shows:
+  // the view the node framed the map at, which a canvas laid out at another
+  // size since then would not give if the map were framed anew.
+  test("is the view the node framed it at, though its canvas was laid out at another size since", () => {
+    const laid = { width: WIDTH, height: HEIGHT };
+    const map = blockMap(laid);
+    const grammar = drawn(map, { pitch: 50, bearing: 30 });
+    frameMaps(grammar);
+    // Square now: framed anew, the block's width would set a higher eye.
+    laid.width = HEIGHT;
+    const anew = framingCamera({ minX: -560, minY: -360, maxX: 640, maxY: 340, top: 0 }, 1, FOVY, FAR);
+    expect(anew.eye[2]).toBeGreaterThan(HIGH * 1.2);
+
+    const turnBack = showFramedViews(grammar);
+    expectView(map.camera.view, STRAIGHT_DOWN);
+    turnBack();
+    expectView(map.camera.view, turned(FRAMED.lookAt, HIGH, 50, 30));
+  });
+
+  test("drawn again with its view kept, it is still the view the node framed it at", () => {
+    const first = blockMap();
+    const before = drawn(first, { pitch: 50, bearing: 30 });
+    frameMaps(before);
+    const views = mapViews(before);
+    // Drawn again, as after an upstream run, on a canvas laid out square since.
+    const again = blockMap({ width: HEIGHT, height: HEIGHT });
+    const grammar = drawn(again, { pitch: 50, bearing: 30 });
+    keepMapViews(grammar, views);
+    expectView(again.camera.view, turned(FRAMED.lookAt, HIGH, 50, 30));
+
+    const turnBack = showFramedViews(grammar);
+    expectView(again.camera.view, STRAIGHT_DOWN);
+    turnBack();
+    expectView(again.camera.view, turned(FRAMED.lookAt, HIGH, 50, 30));
   });
 
   test("with a zoom, the turn back puts the eye where the zoom puts it, not at the framed height", () => {
