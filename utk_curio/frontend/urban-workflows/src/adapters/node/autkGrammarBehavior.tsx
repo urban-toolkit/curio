@@ -23,7 +23,7 @@ import { UNREPORTED_MESSAGE, describeError, runAndAlwaysSettle } from './autkRun
 import { withExtensionRetry } from './duckdbExtensionRetry';
 import { closeGrammarDb } from './autkDbClose';
 import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
-import { autkOneViewProblem } from '../../contracts/autkGrammar';
+import { autkKeyProblem, autkOneViewProblem } from '../../contracts/autkGrammar';
 import {
     autkNeedsInput, autkSourcesFrom, documentTableRefs, drawnFeatures, drawnRows, inputRow, keyValues, loadableSource, ownTableNames,
     readAutkInput, selectFieldsOf, selectFieldsProblem, tablePositions, tablesToLoad, type LoadOrder,
@@ -53,7 +53,7 @@ import {
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
 import { frameMaps, keepMapViews, mapViews, type MapView } from './autkMapView';
-import { grammarMaps, trackMaps } from './autkMapDrawing';
+import { destroyFailedGrammar, grammarMaps, trackMaps } from './autkMapDrawing';
 import { mapSession, onMapSession, registerEditMap } from '../../utils/editFeatures/mapEditBus';
 import {
     drawnFeatureAt, featurePositions, layerIdFor, mapLayerOf, mapStateOf, pickingTableOf, restoreMapLayers, showForEdits,
@@ -469,6 +469,14 @@ export const useAutkGrammarBehavior = (
         if (severalViews) {
             emit({ code: 'error', content: severalViews });
             showToast(severalViews, 'error');
+            return;
+        }
+        // A key autk-grammar 5 renamed, or one a node does not run yet, is
+        // refused the same way, naming the key and where it is written.
+        const unrunKey = autkKeyProblem(spec);
+        if (unrunKey) {
+            emit({ code: 'error', content: unrunKey });
+            showToast(unrunKey, 'error');
             return;
         }
         for (const view of ['map', 'plot'] as const) {
@@ -965,8 +973,10 @@ export const useAutkGrammarBehavior = (
                     try {
                         await g.run(spec);
                     } catch (err) {
-                        // A failed attempt ends its own database (autkDbClose).
+                        // A failed attempt ends its own database (autkDbClose),
+                        // then the maps it made, which no node keeps.
                         closeGrammarDb(g);
+                        destroyFailedGrammar(g);
                         throw err;
                     }
                     return g;
@@ -1093,7 +1103,8 @@ export const useAutkGrammarBehavior = (
 
                     // A pick is on the layer that picks on its map now, which
                     // can be another than the document's first `isPick` layer;
-                    // autk-grammar names the map by a table it draws.
+                    // autk-grammar 5 names the map by `mapId`, and the layer
+                    // picked by its title, else its table. A node draws one map.
                     const off1 = grammar.interactions.on('map:picking', ({ selection, layerId }) =>
                         emitInteraction(selection, pickingTableOf(grammar, spec, layerId) ?? pickedLayerRef, 'map'));
                     const off2 = grammar.interactions.on('plot:selection', ({ selection }) => emitInteraction(selection, plotLayerRef, 'plot'));
@@ -1496,9 +1507,11 @@ export const useAutkGrammarBehavior = (
         });
         for (const plotSpec of plots) {
             const sel = positions(plotSpec.dataRef, 'load');
+            // The grammar knows a plot by its id, else by its table (plotKey).
+            const plot = typeof plotSpec.id === 'string' && plotSpec.id ? plotSpec.id : plotSpec.dataRef;
             sel.length === 0
-                ? grammar.clearHighlightOnPlot?.(plotSpec.dataRef)
-                : grammar.setPlotSelection?.(plotSpec.dataRef, sel);
+                ? grammar.clearHighlightOnPlot?.(plot)
+                : grammar.setPlotSelection?.(plot, sel);
         }
     };
     const syncHighlightsNow = () => {

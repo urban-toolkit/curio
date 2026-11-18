@@ -103,6 +103,29 @@ describe("a map's draws", () => {
     expect(node.lastOutput()?.code).toBe('error');
     expect(ended()).toEqual([1]);
   });
+
+  // No node keeps the maps of a draw that failed: the grammar's own destroy()
+  // ends them, once the worker is ended, since destroy() lets go of the
+  // engine the worker is found through.
+  test('a draw that fails destroys the maps it made, after it ends its worker', async () => {
+    failedDraws.error = new Error('Binder Error: no table named parks');
+    const node = mountAutkNode('map-1');
+
+    await node.run({ map: MAP });
+
+    const [run] = grammarRuns;
+    expect(run.destroy).toHaveBeenCalledTimes(1);
+    expect(run.terminate).toHaveBeenCalledTimes(1);
+    expect(run.terminate.mock.invocationCallOrder[0]).toBeLessThan(run.destroy.mock.invocationCallOrder[0]);
+  });
+
+  test('guard: a draw that succeeds is not destroyed by its run', async () => {
+    const node = mountAutkNode('map-1');
+
+    await node.run({ map: MAP });
+
+    expect(grammarRuns.map((run) => run.destroy.mock.calls.length)).toEqual([0]);
+  });
 });
 
 describe("a data step's layers", () => {

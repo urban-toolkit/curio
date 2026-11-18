@@ -1379,7 +1379,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
           const both = JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0', isPick: true }, { dataRef: 'input_1', isPick: true }] } });
           await act(async () => { await result.current.applyGrammar!(both); });
 
-          // autk-grammar names the map by a table it draws, here the first.
+          // The event names the map by a layer it draws, here another than the
+          // one that picks: the node goes by the map's layer that picks.
           await act(async () => { listeners['map:picking']({ selection: [0], layerId: 'input_0' }); });
           await waitFor(() => expect(interactionsCallback).toHaveBeenLastCalledWith(
             { autk_selection: expect.objectContaining({ type: 'POINT', data: [2], layerRef: 'input_1' }) }, 'map-1',
@@ -1453,6 +1454,36 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         expect(clearHighlightOnPlot).not.toHaveBeenCalled();
       });
 
+      // autk-grammar 5 knows a plot by its id when it has one, else by its
+      // table (plotKey): a selection named by the table reached no plot.
+      test('a selection reaches a plot with an id by that id', async () => {
+        const setPlotSelection = jest.fn();
+        const clearHighlightOnPlot = jest.fn();
+        grammarMock().AutkGrammar.mockImplementationOnce(() => ({
+          run: jest.fn().mockResolvedValue(undefined), data: {}, setPlotSelection, clearHighlightOnPlot,
+        }));
+        const PLOT = JSON.stringify({ plot: { id: 'heights', dataRef: 'input_0', mark: 'bar', axis: ['i', '@transform'],
+          transform: { preset: 'binning-1d' }, events: ['brushX'] } });
+        const base = makeMockData({ nodeId: 'plot-1', outputCallback: jest.fn(), input: INPUT } as any);
+        const state = makeMockNodeState();
+        const { result, rerender } = renderHook(
+          ({ d }: { d: any }) => useAutkGrammarBehavior(d, state),
+          { initialProps: { d: base } },
+        );
+        await act(async () => { await result.current.applyGrammar!(PLOT); });
+        await waitFor(() => expect(clearHighlightOnPlot).toHaveBeenCalled());
+        expect(clearHighlightOnPlot.mock.calls.every(([plot]) => plot === 'heights')).toBe(true);
+
+        const flagged = {
+          ...INPUT,
+          data: { ...INPUT.data, features: INPUT.data.features.map((f, i) => ({
+            ...f, properties: { ...f.properties, interacted: i === 1 ? '1' : '0' } })) },
+        };
+        await act(async () => { rerender({ d: { ...base, input: markSelectionEcho(flagged, 'map-1') } }); });
+        await waitFor(() => expect(setPlotSelection).toHaveBeenCalledWith('heights', [1]));
+        expect(setPlotSelection.mock.calls.every(([plot]) => plot === 'heights')).toBe(true);
+      });
+
       test('a run asked for while one is under way runs once more afterwards, with the latest document', async () => {
         const base = makeMockData({ outputCallback: jest.fn(), input: INPUT } as any);
         const result = await callBehavior(useAutkGrammarBehavior, base as any);
@@ -1510,7 +1541,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       });
 
       test('a compute step needs its input; a data step does not', async () => {
-        expect((await body(JSON.stringify({ compute: [{ dataRef: 'x', wglsFunction: '' }] }))).reason)
+        expect((await body(JSON.stringify({ compute: [{ dataRef: 'x', wgslFunction: '' }] }))).reason)
           .toBe('disconnected');
         const data = JSON.stringify({ data: [{ type: 'json', jsonObject: [{ a: 1 }], outputTableName: 't' }] });
         expect((await body(data)).reason).toBe('not-run');
@@ -1637,7 +1668,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
           await run(
             { dataType: 'outputs', data: [cells(0, 0, 'a'), cells(1, 1, 'b'), cells(2, 2, 'c')] },
             {
-              compute: [{ dataRef: 'b', wglsFunction: '', uniforms: { near: { fromFeature: { layer: 'c', path: 'pop' } } } }],
+              compute: [{ dataRef: 'b', wgslFunction: '', uniforms: { near: { fromFeature: { layer: 'c', path: 'pop' } } } }],
               map: { layerRefs: [{ dataRef: 'b' }] },
             },
           );
@@ -2568,11 +2599,28 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         },
         {
           type: 'join',
-          tableRootName: 'table_osm_roads',
-          tableJoinName: 'table_osm_surface',
+          dataRef: 'table_osm_roads',
+          joinDataRef: 'table_osm_surface',
           near: { distance: 50 },
           groupBy: [{ column: 'osm_id', aggregateFn: 'count' }],
         },
+      ],
+    };
+    // What autk-db's spatialQuery is handed for JOIN_SPEC's join: autk-grammar
+    // 5 names a join's tables `dataRef` and `joinDataRef`, and autk-db takes
+    // them as `tableRootName` and `tableJoinName`, with `near` and `groupBy`,
+    // as the grammar's own data adapter hands them.
+    const JOIN_QUERY = {
+      tableRootName: 'table_osm_roads',
+      tableJoinName: 'table_osm_surface',
+      near: { distance: 50 },
+      groupBy: [{ column: 'osm_id', aggregateFn: 'count' }],
+    };
+    // A join with neither, as autk-db is handed it: the two names alone.
+    const BARE_JOIN_SPEC = {
+      data: [
+        JOIN_SPEC.data[0],
+        { type: 'join', dataRef: 'table_osm_roads', joinDataRef: 'table_osm_surface' },
       ],
     };
     const BINDER_ERROR = 'Binder Error: Referenced column "osm_id" not found in FROM clause!';
@@ -2668,6 +2716,111 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       mockAutkDbSpatialQuery.mockResolvedValue(undefined);
       mockAutkDbGetLayersMetadata.mockReset();
       mockAutkDbGetLayersMetadata.mockReturnValue([]);
+    });
+
+    test('sandbox script: a join reaches spatialQuery under the names autk-db takes', async () => {
+      const code = await captureSandboxScript(JOIN_SPEC);
+      const spatialQuery = jest.fn((..._a: unknown[]) => Promise.resolve(undefined));
+      await runSandboxScript(code, fakeSandboxDb(spatialQuery));
+      expect(spatialQuery.mock.calls).toEqual([[JOIN_QUERY]]);
+    });
+
+    test('sandbox script: a join with neither near nor groupBy hands autk-db the two names alone', async () => {
+      const code = await captureSandboxScript(BARE_JOIN_SPEC);
+      const spatialQuery = jest.fn((..._a: unknown[]) => Promise.resolve(undefined));
+      await runSandboxScript(code, fakeSandboxDb(spatialQuery));
+      expect(spatialQuery).toHaveBeenCalledTimes(1);
+      const [query] = spatialQuery.mock.calls[0] as any[];
+      expect(Object.keys(query).sort()).toEqual(['tableJoinName', 'tableRootName']);
+      expect(query).toEqual({ tableRootName: 'table_osm_roads', tableJoinName: 'table_osm_surface' });
+    });
+
+    // The browser's loader, which a node falls back to when the sandbox fails.
+    async function loadInTheBrowser(spec: object) {
+      const interpretCode = jest.fn(
+        (_unresolved, _code, _input, _inputTypes, cb) =>
+          cb({ stdout: [], stderr: 'sandbox down', output: { path: '', dataType: 'str' } }),
+      );
+      mockAutkDbLoadOsm.mockReset();
+      mockAutkDbLoadOsm.mockResolvedValue(undefined);
+      mockAutkDbGetLayersMetadata.mockReset();
+      mockAutkDbGetLayersMetadata.mockReturnValue(JOIN_TABLES);
+      mockAutkDbSpatialQuery.mockReset();
+      mockAutkDbSpatialQuery.mockResolvedValue(undefined);
+      try {
+        const result = await callBehavior(useAutkGrammarBehavior, { jsInterpreter: { interpretCode } as any });
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify(spec));
+        });
+        return [...mockAutkDbSpatialQuery.mock.calls];
+      } finally {
+        mockAutkDbGetLayersMetadata.mockReset();
+        mockAutkDbGetLayersMetadata.mockReturnValue([]);
+      }
+    }
+
+    test('in-browser load: a join reaches spatialQuery under the names autk-db takes', async () => {
+      expect(await loadInTheBrowser(JOIN_SPEC)).toEqual([[JOIN_QUERY]]);
+    });
+
+    // A document that writes a key autk-grammar 5 renamed, or one the node does
+    // not run yet, fails before anything is loaded, computed or drawn, with
+    // the sentence the agents' document check says too (contracts/autkGrammar).
+    test.each([
+      [
+        'a join written with tableRootName',
+        { data: [JOIN_SPEC.data[0], { type: 'join', tableRootName: 'table_osm_roads', joinDataRef: 'table_osm_surface' }] },
+        'This spec uses "tableRootName" at data[1], which autk-grammar 5 renamed to "dataRef".',
+      ],
+      [
+        'a compute pass written with wglsFunction',
+        { compute: [{ dataRef: 'input_0', attributes: {}, wglsFunction: 'return 1.0;', outputColumnName: 'x' }] },
+        'This spec uses "wglsFunction" at compute[0], which autk-grammar 5 renamed to "wgslFunction".',
+      ],
+      [
+        'a map with a camera',
+        { map: { camera: { pitch: 50 }, layerRefs: [{ dataRef: 'input_0' }] } },
+        'This spec uses "camera" at map, which Curio does not run yet.',
+      ],
+      [
+        'a heatmap source',
+        { data: [{ type: 'heatmap', joinDataRef: 'b', outputTableName: 'h', near: { distance: 5 }, grid: { rows: 2, columns: 2 } }] },
+        'This spec uses a heatmap source at data[0], which Curio does not run yet.',
+      ],
+    ])('%s fails the node before anything runs, naming the key', async (_what, spec, said) => {
+      // The sandbox answers, as it does for any data-only node, so a node that
+      // does not refuse fails the checks below at once instead of waiting.
+      const interpretCode = jest.fn(
+        (_unresolved, _code, _input, _inputTypes, cb) =>
+          cb({ stdout: [], stderr: '', output: { path: 'art-1', dataType: 'list' } }),
+      );
+      const setOutput = jest.fn();
+      const outputCallback = jest.fn();
+      mockAutkDbSpatialQuery.mockClear();
+      const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+      const grammarsBefore = AutkGrammar.mock.calls.length;
+      const result = await callBehavior(
+        useAutkGrammarBehavior,
+        { jsInterpreter: { interpretCode } as any, outputCallback },
+        { setOutput },
+      );
+      await act(async () => {
+        await result.current.applyGrammar!(JSON.stringify(spec));
+      });
+      const errors = setOutput.mock.calls.filter((c: any[]) => c[0]?.code === 'error');
+      expect(errors.map((c: any[]) => c[0].content)).toEqual([said]);
+      expect(interpretCode).not.toHaveBeenCalled();
+      expect(mockAutkDbSpatialQuery).not.toHaveBeenCalled();
+      expect(AutkGrammar.mock.calls.length).toBe(grammarsBefore);
+      expect(outputCallback).not.toHaveBeenCalled();
+    });
+
+    test('in-browser load: a join with neither near nor groupBy hands autk-db the two names alone', async () => {
+      const calls = await loadInTheBrowser(BARE_JOIN_SPEC);
+      expect(calls).toHaveLength(1);
+      const [query] = calls[0] as any[];
+      expect(Object.keys(query).sort()).toEqual(['tableJoinName', 'tableRootName']);
+      expect(query).toEqual({ tableRootName: 'table_osm_roads', tableJoinName: 'table_osm_surface' });
     });
 
     // The browser must not put a host or port in a URL the SANDBOX will fetch:
@@ -2776,8 +2929,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
     test('join: expects nothing (it rewrites a table another source created)', () => {
       expect(requestedLayerTables([{
         type: 'join',
-        tableRootName: 'table_osm_roads',
-        tableJoinName: 'lst',
+        dataRef: 'table_osm_roads',
+        joinDataRef: 'lst',
         output: { type: 'MODIFY_ROOT' },
       }])).toEqual([]);
     });

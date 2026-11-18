@@ -25,6 +25,8 @@ export type GrammarRun = {
    * keeps it (its engine's context, an AutkDb holding DuckDB-Wasm's database).
    */
   terminate: jest.Mock;
+  /** The grammar's `destroy()`, which ends its maps and lets go of its engine, as autk-grammar 5's does. */
+  destroy: jest.Mock;
 };
 
 /** Every run of the stand-in grammar, in order. */
@@ -64,12 +66,15 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
     highlightOnMap: jest.fn((table: string, positions: number[]) => { highlights.push([table, [...positions]]); }),
     clearHighlightOnMap: jest.fn((table: string) => { highlights.push([table, []]); }),
   };
+  // autk-grammar 5's destroy() lets go of its engine, and with it the database.
+  const destroy = jest.fn(() => { grammar.grammarEngine = undefined; });
+  grammar.destroy = destroy;
   grammar.run = jest.fn(async (spec: any) => {
     // The database the run reads, where autk-grammar keeps it.
     const terminate = jest.fn(async () => undefined);
     grammar.grammarEngine = { context: { db: { terminate } } };
     if (failedDraws.error) {
-      grammarRuns.push({ targets, spec, pick: () => {}, brush: () => {}, highlights, maps: [], terminate });
+      grammarRuns.push({ targets, spec, pick: () => {}, brush: () => {}, highlights, maps: [], terminate, destroy });
       throw failedDraws.error;
     }
     const maps = drawnMaps.make && spec?.map ? [drawnMaps.make()] : [];
@@ -91,6 +96,7 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
       highlights,
       maps,
       terminate,
+      destroy,
     });
     if (heldDraws.until) await heldDraws.until;
   });

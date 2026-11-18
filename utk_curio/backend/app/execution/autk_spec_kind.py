@@ -10,8 +10,13 @@ from __future__ import annotations
 
 import json
 
-#: The step each top-level family describes (``FAMILY_KIND``).
-FAMILY_KIND = {"map": "render", "plot": "render", "compute": "compute", "data": "data"}
+#: The step each top-level family describes (``FAMILY_KIND``). A family of
+#: None describes none of its own: a layout arranges views and links join
+#: them, so a document with one is the step its other families describe.
+FAMILY_KIND = {
+    "map": "render", "plot": "render", "layout": None, "links": None,
+    "compute": "compute", "data": "data",
+}
 
 #: Drawing wins over computing, and computing over loading.
 KIND_ORDER = ("render", "compute", "data")

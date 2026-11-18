@@ -1,30 +1,27 @@
-"""Curio takes Autark from npm, autk-map and autk-grammar aside.
+"""Curio takes Autark from npm, autk-map aside.
 
-autk-compute, autk-db and autk-plot come from the registry, with autk-core,
-one copy of each, in the frontend's tree; the repo root's tree, which the
-sandbox's Node and the Discovery Catalog's OpenStreetMap downloads load
-autk-db from, takes autk-db and autk-core the same way. Two Autark packages
-are vendored in the frontend's tree, one copy each, from tarballs in
-``utk_curio/frontend/urban-workflows/vendor/autark/`` (its README says how
-each was packed):
-
-- autk-map 4.1.1-curio.4, packed from urban-toolkit/autark#118 (a raster
-  colored with one color function), autark#120 (a destroyed map releases its
-  shared SSAO textures), autark#121 (a legend's end labels inside its ramp)
-  and autark#122 (numbers under a categorical color map drawn in their legend
-  label's color) until Autark releases them, which autk-grammar's maps use
-  too (an npm override);
-- autk-grammar 4.5.0-curio.1, packed from urban-toolkit/autk-grammar#22 (a
-  points layer's ``pointSize``, in meters on the ground) until autk-grammar
-  releases it.
+autk-grammar, autk-compute, autk-db and autk-plot come from the registry, with
+autk-core, one copy of each, in the frontend's tree; the repo root's tree,
+which the sandbox's Node and the Discovery Catalog's OpenStreetMap downloads
+load autk-db from, takes autk-db and autk-core the same way. autk-map is the
+one Autark package Curio vendors: 4.1.1-curio.4, packed from
+urban-toolkit/autark#118 (a raster colored with one color function),
+autark#120 (a destroyed map releases its shared SSAO textures), autark#121
+(a legend's end labels inside its ramp) and autark#122 (numbers under a
+categorical color map drawn in their legend label's color) until Autark
+releases them, one copy in the frontend's tree, from its tarball in
+``utk_curio/frontend/urban-workflows/vendor/autark/`` (whose README says how
+it was packed), which autk-grammar's maps use too (an npm override).
 
 The Autark packages, all but autk-grammar, which is released on its own, are
 one release, 4.1.0 or later: from 4.1.0 on, autk-map draws a map on demand
 (adapters/node/autkMapDrawing). The vendored autk-map is release 4.1.1 with
-those four changes. autk-grammar is 4.1.0 or later: from 4.1.0 on, it lists
-the maps a run drew (`AutkGrammar.maps`), which is where Curio takes a node's
-maps from (`grammarMaps`); and 4.5.0 or later, whose map layers take
-``pointSize``. Nothing else is vendored.
+those four changes. autk-grammar is one exact release: 4.1.0 or later, which
+lists the maps a run drew (`AutkGrammar.maps`), where Curio takes a node's
+maps from (`grammarMaps`); 4.5.0 or later, whose map layers take
+``pointSize``; and 5.0.0 or later, whose keys Curio's documents and loaders
+use (``wgslFunction``, a join's ``dataRef`` and ``joinDataRef``). Nothing
+else is vendored.
 """
 from __future__ import annotations
 
@@ -57,6 +54,10 @@ GRAMMAR_MAPS_RELEASE = (4, 1, 0)
 #: The first autk-grammar release whose map layers take ``pointSize``.
 GRAMMAR_POINT_SIZE_RELEASE = (4, 5, 0)
 
+#: The first autk-grammar release with the keys Curio's documents and loaders
+#: use: ``wgslFunction``, and a join's ``dataRef`` and ``joinDataRef``.
+GRAMMAR_KEYS_RELEASE = (5, 0, 0)
+
 #: The vendored Autark packages, in the frontend's tree: each one's tarball in
 #: vendor/autark/, its version and its npm integrity.
 VENDORED = {
@@ -64,11 +65,6 @@ VENDORED = {
         "tarball": "urban-toolkit-autk-map-4.1.1-curio.4.tgz",
         "version": "4.1.1-curio.4",
         "integrity": "sha512-tzW/tZVMZ1ARnlj6C/DjmZejmdZ0Jg/maAu4nYB9XiPagTAwbtyR1viEDHY/H3ekfTsDISTeeGoVwBowgz/wkQ==",
-    },
-    "autk-grammar": {
-        "tarball": "urban-toolkit-autk-grammar-4.5.0-curio.1.tgz",
-        "version": "4.5.0-curio.1",
-        "integrity": "sha512-Ig7qgplmqBBHp+lAiZDzJknD/BH0zrWvuRqu9ZSOtpNorBq8I9KvEDYJLu5MtZDhZH2fyUg5LhuNi4jVWGGfTg==",
     },
 }
 
@@ -97,7 +93,7 @@ def _release(version: str) -> tuple[int, ...]:
 
 
 @pytest.mark.parametrize("tree", sorted(TREES))
-def test_package_json_names_the_4x_release(tree):
+def test_package_json_names_each_release(tree):
     root, packages = TREES[tree]
     dependencies = _read(root / "package.json")["dependencies"]
     for name in packages:
@@ -106,6 +102,13 @@ def test_package_json_names_the_4x_release(tree):
         if vendored:
             assert spec == _spec(vendored), (
                 f"the {tree} package.json takes @urban-toolkit/{name} as {spec!r}, not {_spec(vendored)!r}"
+            )
+            continue
+        if name == GRAMMAR:
+            # Released apart from the others: one exact release, with the keys Curio writes.
+            assert re.fullmatch(r"\d+\.\d+\.\d+", spec) and _release(spec) >= GRAMMAR_KEYS_RELEASE, (
+                f"the {tree} package.json takes @urban-toolkit/{name} as {spec!r}, "
+                f"not one release from npm, 5.0.0 or later"
             )
             continue
         assert re.fullmatch(r"[\^~]?4\.\d+\.\d+", spec), (
@@ -129,7 +132,12 @@ def test_the_lockfile_takes_one_copy_of_each_from_the_registry(tree):
                 vendored["version"], _spec(vendored), vendored["integrity"],
             ), f"the {tree} lockfile takes {name} as {version} from {entry.get('resolved')!r}"
             continue
-        assert version.startswith("4."), f"the {tree} lockfile has {name} {version}"
+        if name == GRAMMAR:
+            assert re.fullmatch(r"\d+\.\d+\.\d+", version) and _release(version) >= GRAMMAR_KEYS_RELEASE, (
+                f"the {tree} lockfile has {name} {version}, not one release, 5.0.0 or later"
+            )
+        else:
+            assert version.startswith("4."), f"the {tree} lockfile has {name} {version}"
         assert entry.get("resolved") == f"{REGISTRY}/@urban-toolkit/{name}/-/{name}-{version}.tgz", (
             f"the {tree} lockfile resolves {name} to {entry.get('resolved')!r}"
         )
@@ -180,7 +188,17 @@ def test_the_grammars_map_layers_take_a_point_size():
     )
 
 
-def test_autk_map_and_autk_grammar_are_the_vendored_autark_packages():
+def test_the_grammar_takes_the_keys_curio_writes():
+    entries = _read(FRONTEND / "package-lock.json")["packages"]
+    version = entries.get(f"node_modules/@urban-toolkit/{GRAMMAR}", {}).get("version", "")
+    assert version, "the frontend lockfile has no autk-grammar"
+    assert _release(version) >= GRAMMAR_KEYS_RELEASE, (
+        f"the frontend lockfile takes autk-grammar {version}, which does not read the keys Curio's documents "
+        f"use (wgslFunction, a join's dataRef and joinDataRef): 5.0.0 is the first that does"
+    )
+
+
+def test_autk_map_is_the_one_vendored_autark_package():
     tarballs = sorted(vendored["tarball"] for vendored in VENDORED.values())
     assert sorted(path.name for path in VENDOR.iterdir()) == ["README.md", *tarballs]
     readme = (VENDOR / "README.md").read_text(encoding="utf-8")

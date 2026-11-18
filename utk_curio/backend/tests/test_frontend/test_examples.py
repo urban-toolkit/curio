@@ -595,18 +595,18 @@ def test_example_06_maps_the_sunlight_change_on_a_diverging_scale_centered_on_no
 def test_example_07_drives_compute_gpgpu():
     """Example 07's headline functionality is a WGSL shader run via the
     autk-grammar's ``compute`` block.  Assert the grammar spec contains
-    a ``wglsFunction`` so we catch accidental removals of the GPU step."""
+    a ``wgslFunction`` so we catch accidental removals of the GPU step."""
     path = os.path.join(EXAMPLES_DIR, "07-autark-gpu-shader.json")
     with open(path, "r", encoding="utf-8") as f:
         wf = json.load(f)
     matches = [
         n for n in wf["dataflow"]["nodes"]
         if n["type"] == "curio.builtin/autk-grammar"
-        and "wglsFunction" in n.get("content", "")
+        and "wgslFunction" in n.get("content", "")
     ]
     assert matches, (
         "07-autark-gpu-shader.json no longer has a curio.builtin/autk-grammar "
-        "node with a wglsFunction — the example's GPU compute step is gone."
+        "node with a wgslFunction: the example's GPU compute step is gone."
     )
 
 

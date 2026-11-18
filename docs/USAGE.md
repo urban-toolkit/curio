@@ -1371,6 +1371,16 @@ or whose `map` or `plot` lists more than one, does not run, and the node's
 error says to put each in its own `Autark` node and link them with interaction
 edges (see [Linking charts](#linking-charts)).
 
+A node does not run these keys of the Autark grammar. A document that writes
+one does not run, and the node's error names the key and where it is written:
+
+- `layout` and `links`;
+- a map's `camera`;
+- a render pass (`"type": "render"`), and a compute pass's `outputTableName`
+  and `layerType`;
+- `heatmap` and `geotiff` sources;
+- `workspace`, on a source, a compute pass, a map or a plot.
+
 ### Its input
 
 - Each input is the table `input_0`, `input_1`, and so on, in the order of the
@@ -1429,8 +1439,8 @@ edges (see [Linking charts](#linking-charts)).
 - A raster the node hands on reaches a Python node as a `rasterio` dataset on
   the same grid: its bands, origin, cell size and CRS.
 - A `data` section runs in the sandbox, where the input is not available: its
-  `join` and `heatmap` sources cannot read the input. Join it in a Python node,
-  or name it from a map, plot or compute block.
+  `join` sources cannot read the input. Join it in a Python node, or name it
+  from a map, plot or compute block.
 
 Before it runs, a node that reads its input says what a `Vega-Lite` node says:
 connect a node, run the node feeding this one, the node feeding this one

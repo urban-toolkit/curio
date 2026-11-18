@@ -476,10 +476,13 @@ with nothing to run. An object that names one key twice is refused.
 
 To add, remove or reorder a starter rule, edit its ladder in `visDefaults.json`
 and add or remove its builder in `vegaDefaultSpec.ts` or `autkDefaultSpec.ts`,
-keyed by the rule's id. `inputTableName` and `autkOneViewProblem` are code over
-`autkGrammar.json` on both sides, in `contracts/autkGrammar.ts` and
-`contracts.py`; a change to either goes into both, with a case for it in
-`autkGrammar.cases.json`, which Jest and the backend suite both run. See
+keyed by the rule's id. `inputTableName`, `autkOneViewProblem` and
+`autkKeyProblem` are code over `autkGrammar.json` on both sides, in
+`contracts/autkGrammar.ts` and `contracts.py`; a change to any of them goes
+into both, with a case for it in `autkGrammar.cases.json`, which Jest and the
+backend suite both run. A step that makes a node run a key of `notRunYet`
+takes its entry out of `autkGrammar.json`, and its cases out of the `keys`
+cases or to `null`. See
 [ARCHITECTURE.md, Shared Constants](ARCHITECTURE.md#shared-constants).
 
 ### Vendored Autark Schema
@@ -508,7 +511,9 @@ the release on npm, or with the recorded tarball. A release that adds
 or drops a top-level family needs it in `families` of
 `src/contracts/autkGrammar.json` too: `test_shared_constants.py` fails until
 the file lists the schema's families, and Jest until `FAMILY_KIND` in
-`utils/autkSpecKind.ts` routes each one.
+`utils/autkSpecKind.ts` routes each one, as `autk_spec_kind.py` does: to the
+step it makes, or to none (`null`) for a family that makes no step of its own,
+such as `layout` and `links`.
 
 ## Organizing Contributions
 

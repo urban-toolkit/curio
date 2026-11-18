@@ -55,8 +55,8 @@ function layerRefsOf(spec: any): any[] {
 const bareRef = (ref: unknown) => String(ref ?? '').replace(/^\[!!\s*(.*?)\s*!!\]$/, '$1');
 
 /**
- * The autk-map layer that draws *table* on a map of *grammar*, found as the
- * grammar finds it to light it (`mapLayer`), or null.
+ * The autk-map layer that draws *table* on a map of *grammar*, the last one
+ * when several do, as the grammar's `mapLayer` finds it, or null.
  */
 export function mapLayerOf(grammar: any, table: string): any | null {
     const found = typeof grammar?.mapLayer === 'function' ? grammar.mapLayer(table) : undefined;

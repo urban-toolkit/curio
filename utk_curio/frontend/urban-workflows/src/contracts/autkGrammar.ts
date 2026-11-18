@@ -1,8 +1,9 @@
 /**
- * What a grammar node calls its inputs, and the one view an Autark node draws,
- * over the values in autkGrammar.json, which the backend reads too
- * (contracts.input_table_name and autk_one_view_problem). autkGrammar.cases.json
- * holds the cases both sides run.
+ * What a grammar node calls its inputs, the one view an Autark node draws, and
+ * the keys of a document it does not run, over the values in autkGrammar.json,
+ * which the backend reads too (contracts.input_table_name,
+ * autk_one_view_problem and autk_key_problem). autkGrammar.cases.json holds
+ * the cases both sides run.
  */
 import autkGrammar from "./autkGrammar.json";
 
@@ -23,4 +24,60 @@ export function autkOneViewProblem(spec: unknown): string | null {
   const both = views.every((view) => view != null);
   const several = views.some((view) => Array.isArray(view) && view.length > 1);
   return both || several ? autkGrammar.oneView : null;
+}
+
+/**
+ * A key autkGrammar.json names, where it is written: `in` is "" for the
+ * document, or a section, whose one object or each object of its list holds
+ * the key ("map[]" a map, "compute[]" a pass); with `value`, only that value
+ * of the key counts.
+ */
+type KeyRule = { in: string; key: string; value?: string };
+
+/** Each object *spec* holds where *place* says, with its path ("map", "compute[0]"). */
+function objectsAt(spec: Record<string, unknown>, place: string): Array<{ path: string; object: unknown }> {
+  if (place === "") return [{ path: "", object: spec }];
+  const section = place.replace(/\[\]$/, "");
+  const held = spec[section];
+  if (held == null) return [];
+  if (Array.isArray(held)) return held.map((object, i) => ({ path: `${section}[${i}]`, object }));
+  return [{ path: section, object: held }];
+}
+
+/** The path of the first object of *spec* that writes *rule*'s key, or null. */
+function written(spec: Record<string, unknown>, rule: KeyRule): string | null {
+  for (const { path, object } of objectsAt(spec, rule.in)) {
+    if (object === null || typeof object !== "object" || Array.isArray(object)) continue;
+    const value = (object as Record<string, unknown>)[rule.key];
+    if (value == null) continue;
+    if (rule.value !== undefined && value !== rule.value) continue;
+    return path;
+  }
+  return null;
+}
+
+/** *template* with each `{name}` replaced by its value. */
+function fill(template: string, values: Record<string, string>): string {
+  return template.replace(/\{(\w+)\}/g, (whole, name: string) => values[name] ?? whole);
+}
+
+/**
+ * What a document that writes a key a node does not run is told, else null.
+ * A key autk-grammar 5 renamed comes first, named with its new name; then a
+ * key of autk-grammar 5 a node does not run yet. The first of autkGrammar.json's
+ * keys the document writes is the one it is told of, with where it is written.
+ */
+export function autkKeyProblem(spec: unknown): string | null {
+  if (spec === null || typeof spec !== "object" || Array.isArray(spec)) return null;
+  const document = spec as Record<string, unknown>;
+  const at = (path: string) => (path ? fill(autkGrammar.keyAt, { path }) : "");
+  for (const rule of autkGrammar.renamedKeys) {
+    const path = written(document, rule);
+    if (path !== null) return fill(autkGrammar.renamedKey, { key: rule.key, at: at(path), renamedTo: rule.renamedTo });
+  }
+  for (const rule of autkGrammar.notRunYet as Array<KeyRule & { what: string }>) {
+    const path = written(document, rule);
+    if (path !== null) return fill(autkGrammar.notRunYetKey, { what: rule.what, at: at(path) });
+  }
+  return null;
 }

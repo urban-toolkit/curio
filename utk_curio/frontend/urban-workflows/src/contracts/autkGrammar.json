@@ -1,7 +1,29 @@
 {
-  "families": ["compute", "data", "map", "plot"],
+  "families": ["compute", "data", "layout", "links", "map", "plot"],
   "inputTablePrefix": "input_",
   "oneView": "An Autark node draws one view: one map or one plot. Put each in its own Autark node, and link them with interaction edges.",
+  "renamedKeys": [
+    { "in": "compute[]", "key": "wglsFunction", "renamedTo": "wgslFunction" },
+    { "in": "data[]", "key": "tableRootName", "renamedTo": "dataRef" },
+    { "in": "data[]", "key": "tableJoinName", "renamedTo": "joinDataRef" }
+  ],
+  "renamedKey": "This spec uses \"{key}\"{at}, which autk-grammar 5 renamed to \"{renamedTo}\".",
+  "notRunYet": [
+    { "in": "", "key": "layout", "what": "\"layout\"" },
+    { "in": "", "key": "links", "what": "\"links\"" },
+    { "in": "map[]", "key": "camera", "what": "\"camera\"" },
+    { "in": "compute[]", "key": "type", "value": "render", "what": "a render pass" },
+    { "in": "compute[]", "key": "outputTableName", "what": "a compute pass's \"outputTableName\"" },
+    { "in": "compute[]", "key": "layerType", "what": "a compute pass's \"layerType\"" },
+    { "in": "data[]", "key": "type", "value": "heatmap", "what": "a heatmap source" },
+    { "in": "data[]", "key": "type", "value": "geotiff", "what": "a geotiff source" },
+    { "in": "data[]", "key": "workspace", "what": "\"workspace\"" },
+    { "in": "compute[]", "key": "workspace", "what": "\"workspace\"" },
+    { "in": "map[]", "key": "workspace", "what": "\"workspace\"" },
+    { "in": "plot[]", "key": "workspace", "what": "\"workspace\"" }
+  ],
+  "notRunYetKey": "This spec uses {what}{at}, which Curio does not run yet.",
+  "keyAt": " at {path}",
   "starterColoring": {
     "geometry+quantitative": { "getFnvType": "quantitative", "colorMapInterpolator": "interpolateViridis" },
     "geometry+nominal": { "getFnvType": "categorical", "colorMapInterpolator": "schemeTableau10" }

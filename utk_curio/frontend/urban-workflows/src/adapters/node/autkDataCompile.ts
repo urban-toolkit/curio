@@ -128,6 +128,24 @@ export function loadableFeatures(features: any[]): { features: any[]; order: num
     return { features: order || filled ? out : features, order: order };
 }
 
+// What autk-db's `spatialQuery` is handed for a `join` source. The grammar
+// names a join's tables `dataRef`, the table that receives the joined columns,
+// and `joinDataRef`, the table whose rows are joined onto it; autk-db takes
+// them as `tableRootName` and `tableJoinName`. `near` and `groupBy` go with
+// them when the source has them, and nothing else does, as the grammar's own
+// data adapter hands a join to autk-db. Both loaders go through this one
+// function: the sandbox's (compileDataSpecToAutkDbJs embeds its source) and
+// the browser's (loadSpecLayers). So that embedded source runs as it is, the
+// body avoids what loadableFeatures avoids.
+export function joinQueryParams(source: any): {
+    tableRootName: string; tableJoinName: string; near?: unknown; groupBy?: unknown;
+} {
+    const params: any = { tableRootName: source.dataRef, tableJoinName: source.joinDataRef };
+    if (source.near) params.near = source.near;
+    if (source.groupBy) params.groupBy = source.groupBy;
+    return params;
+}
+
 // A layer's features as an Autark node hands them on: each OpenStreetMap
 // feature with its OSM id in an `osm_id` property, as the Discovery Catalog's
 // OpenStreetMap downloads name a row, so a Map Editor node or a selection can
@@ -182,9 +200,11 @@ const __expectedTables = ${JSON.stringify(requestedLayerTables(dataSources))};
 const __loadErrors = [];
 // Mirrors joinFailureMessage() host-side; see the throw after the contract check.
 const __joinErrors = [];
-// loadableFeatures and withOsmIds, as the host defines them (autkDataCompile.ts).
+// loadableFeatures, withOsmIds and joinQueryParams, as the host defines them
+// (autkDataCompile.ts).
 const __loadableFeatures = ${loadableFeatures.toString()};
 const __withOsmIds = ${withOsmIds.toString()};
+const __joinQueryParams = ${joinQueryParams.toString()};
 // A GeoJSON source as autk-db loads it: its rows through __loadableFeatures,
 // fetched first when the source names a file, as the grammar's own adapter does.
 const __loadableGeojson = async (source) => {
@@ -206,7 +226,7 @@ for (const source of __sources) {
     // In-grammar spatial join between already-loaded tables (sources run in
     // spec order, so the join must come after the tables it references):
     // near: { distance } in workspace meters, groupBy as an array of column specs.
-    else if (type === 'join') await db.spatialQuery(rest);
+    else if (type === 'join') await db.spatialQuery(__joinQueryParams(rest));
     else console.log('[autk-grammar] unsupported data source type "' + type + '" - skipped');
   } catch (e) {
     // Recorded, not discarded: this reason is the only account of WHY a layer is

@@ -51,6 +51,22 @@ function destroy(map: KeptMap): void {
 }
 
 /**
+ * Destroy the maps a failed run of *grammar* made, which no node keeps:
+ * autk-grammar's own `destroy()`, which also lets go of its engine, so a
+ * database read from the engine is ended first (`closeGrammarDb`). A grammar
+ * that cannot be torn down must not hide the failure that drops it.
+ */
+export function destroyFailedGrammar(grammar: unknown): void {
+    const destroyGrammar = (grammar as { destroy?: () => void } | null | undefined)?.destroy;
+    if (typeof destroyGrammar !== 'function') return;
+    try {
+        destroyGrammar.call(grammar);
+    } catch (error) {
+        console.warn('[autk-grammar] destroying a failed run failed:', error);
+    }
+}
+
+/**
  * Keep each map *grammar* made, for `renderMapsForReading`, until the node
  * drops it. Returns what destroys the maps, for the node that drops them.
  */

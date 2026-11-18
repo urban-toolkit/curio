@@ -1,5 +1,5 @@
 {
-  "description": "What a grammar node calls its inputs, and which Autark documents hold more than one view, as the node and the backend decide it. inputTableNames: the name a node's input on each circle is read by. oneView: a document, and what it is told, named by its key in autkGrammar.json (\"oneView\"), or null for a document that draws one view or none. Read by src/tests/contracts/autkGrammarCases.test.ts (inputTableName and autkOneViewProblem in contracts/autkGrammar.ts) and by backend/tests/test_agents/test_autk_grammar_cases.py (contracts.input_table_name and autk_one_view_problem, which the agents' document check uses).",
+  "description": "What a grammar node calls its inputs, which Autark documents hold more than one view, and which write a key a node does not run, as the node and the backend decide it. inputTableNames: the name a node's input on each circle is read by. oneView: a document, and what it is told, named by its key in autkGrammar.json (\"oneView\"), or null for a document that draws one view or none. keys: a document, and the sentence it is told (autkGrammar.json's renamedKey or notRunYetKey, filled), or null for a document that writes no such key. Read by src/tests/contracts/autkGrammarCases.test.ts (inputTableName and autkOneViewProblem in contracts/autkGrammar.ts) and src/tests/contracts/autkGrammarKeys.test.ts (autkKeyProblem), and by backend/tests/test_agents/test_autk_grammar_cases.py (contracts.input_table_name and autk_one_view_problem, which the agents' document check uses) and test_autk_grammar_keys.py (autk_key_problem, which it uses too).",
   "inputTableNames": [
     { "position": 0, "name": "input_0" },
     { "position": 1, "name": "input_1" },
@@ -71,6 +71,136 @@
       "name": "null is no document",
       "spec": null,
       "problem": null
+    }
+  ],
+  "keys": [
+    {
+      "name": "a document of autk-grammar 5's keys is run",
+      "spec": {
+        "data": [
+          { "type": "osm", "pbfFileUrl": "a.pbf", "outputTableName": "t", "autoLoadLayers": { "layers": ["roads", "surface"] } },
+          { "type": "join", "dataRef": "t_roads", "joinDataRef": "t_surface", "near": { "distance": 50, "useCentroid": false } },
+          { "type": "geojson", "outputTableName": "g", "layerType": "polylines", "geojsonObject": { "type": "FeatureCollection", "features": [] } }
+        ],
+        "compute": [{ "type": "gpgpu", "dataRef": "t_roads", "attributes": { "h": "height" }, "wgslFunction": ["return h;"], "outputColumnName": "h2" }],
+        "map": { "id": "city", "layerRefs": [{ "dataRef": "t_roads", "pointSize": 2 }] }
+      },
+      "says": null
+    },
+    {
+      "name": "a pass's wglsFunction is named with its new name",
+      "spec": { "compute": [{ "dataRef": "input_0", "attributes": {}, "wglsFunction": "return 1.0;", "outputColumnName": "x" }] },
+      "says": "This spec uses \"wglsFunction\" at compute[0], which autk-grammar 5 renamed to \"wgslFunction\"."
+    },
+    {
+      "name": "a join's tableRootName is named with its new name, where it is written",
+      "spec": { "data": [{ "type": "csv", "csvFileUrl": "a.csv", "outputTableName": "a" }, { "type": "join", "tableRootName": "a", "joinDataRef": "b" }] },
+      "says": "This spec uses \"tableRootName\" at data[1], which autk-grammar 5 renamed to \"dataRef\"."
+    },
+    {
+      "name": "a join's tableJoinName is named with its new name",
+      "spec": { "data": [{ "type": "join", "dataRef": "a", "tableJoinName": "b" }] },
+      "says": "This spec uses \"tableJoinName\" at data[0], which autk-grammar 5 renamed to \"joinDataRef\"."
+    },
+    {
+      "name": "a heatmap's tableJoinName is named with its new name before the heatmap is refused",
+      "spec": { "data": [{ "type": "heatmap", "tableJoinName": "b", "outputTableName": "h", "near": { "distance": 5 }, "grid": { "rows": 2, "columns": 2 } }] },
+      "says": "This spec uses \"tableJoinName\" at data[0], which autk-grammar 5 renamed to \"joinDataRef\"."
+    },
+    {
+      "name": "a renamed key comes before a key a node does not run yet",
+      "spec": { "layout": { "type": "horizontal" }, "compute": [{ "dataRef": "input_0", "wglsFunction": "return 1.0;" }] },
+      "says": "This spec uses \"wglsFunction\" at compute[0], which autk-grammar 5 renamed to \"wgslFunction\"."
+    },
+    {
+      "name": "a layout is not run yet",
+      "spec": { "layout": { "type": "horizontal" }, "map": { "layerRefs": [{ "dataRef": "input_0" }] } },
+      "says": "This spec uses \"layout\", which Curio does not run yet."
+    },
+    {
+      "name": "links are not run yet",
+      "spec": { "links": [{ "source": "heights", "target": "city" }] },
+      "says": "This spec uses \"links\", which Curio does not run yet."
+    },
+    {
+      "name": "a map's camera is not run yet",
+      "spec": { "map": { "camera": { "pitch": 50, "bearing": 30 }, "layerRefs": [{ "dataRef": "input_0" }] } },
+      "says": "This spec uses \"camera\" at map, which Curio does not run yet."
+    },
+    {
+      "name": "a camera in a list of one map is named where it is",
+      "spec": { "map": [{ "camera": { "zoom": 14 }, "layerRefs": [{ "dataRef": "input_0" }] }] },
+      "says": "This spec uses \"camera\" at map[0], which Curio does not run yet."
+    },
+    {
+      "name": "a render pass is not run yet",
+      "spec": { "compute": [{ "type": "render", "outputTableName": "views", "layers": [], "viewpoints": { "dataRef": "input_0" }, "aggregation": { "type": "classes" } }] },
+      "says": "This spec uses a render pass at compute[0], which Curio does not run yet."
+    },
+    {
+      "name": "a compute pass's outputTableName is not run yet",
+      "spec": { "compute": [{ "dataRef": "input_0", "attributes": {}, "wgslFunction": "return 1.0;", "outputColumnName": "x" }, { "dataRef": "input_0", "attributes": {}, "wgslFunction": "return 2.0;", "outputColumnName": "y", "outputTableName": "copy" }] },
+      "says": "This spec uses a compute pass's \"outputTableName\" at compute[1], which Curio does not run yet."
+    },
+    {
+      "name": "a compute pass's layerType is not run yet",
+      "spec": { "compute": [{ "dataRef": "input_0", "attributes": {}, "wgslFunction": "return 1.0;", "outputColumnName": "x", "layerType": "points" }] },
+      "says": "This spec uses a compute pass's \"layerType\" at compute[0], which Curio does not run yet."
+    },
+    {
+      "name": "a heatmap source is not run yet",
+      "spec": { "data": [{ "type": "heatmap", "joinDataRef": "b", "outputTableName": "h", "near": { "distance": 5 }, "grid": { "rows": 2, "columns": 2 } }] },
+      "says": "This spec uses a heatmap source at data[0], which Curio does not run yet."
+    },
+    {
+      "name": "a geotiff source is not run yet",
+      "spec": { "data": [{ "type": "csv", "csvFileUrl": "a.csv", "outputTableName": "a" }, { "type": "json", "jsonFileUrl": "b.json", "outputTableName": "b" }, { "type": "geotiff", "geotiffFileUrl": "lst.tif", "outputTableName": "lst" }] },
+      "says": "This spec uses a geotiff source at data[2], which Curio does not run yet."
+    },
+    {
+      "name": "a source's workspace is not run yet",
+      "spec": { "data": [{ "type": "csv", "csvFileUrl": "a.csv", "outputTableName": "a", "workspace": "east" }] },
+      "says": "This spec uses \"workspace\" at data[0], which Curio does not run yet."
+    },
+    {
+      "name": "a pass's workspace is not run yet",
+      "spec": { "compute": [{ "dataRef": "input_0", "attributes": {}, "wgslFunction": "return 1.0;", "outputColumnName": "x", "workspace": "east" }] },
+      "says": "This spec uses \"workspace\" at compute[0], which Curio does not run yet."
+    },
+    {
+      "name": "a map's workspace is not run yet",
+      "spec": { "map": { "workspace": "east", "layerRefs": [{ "dataRef": "input_0" }] } },
+      "says": "This spec uses \"workspace\" at map, which Curio does not run yet."
+    },
+    {
+      "name": "a plot's workspace is not run yet",
+      "spec": { "plot": { "workspace": "east", "dataRef": "input_0", "mark": "bar", "axis": ["a"] } },
+      "says": "This spec uses \"workspace\" at plot, which Curio does not run yet."
+    },
+    {
+      "name": "a key written null is not written",
+      "spec": { "map": { "camera": null, "workspace": null, "layerRefs": [{ "dataRef": "input_0" }] }, "layout": null },
+      "says": null
+    },
+    {
+      "name": "a source's outputTableName is the table it makes",
+      "spec": { "data": [{ "type": "csv", "csvFileUrl": "a.csv", "outputTableName": "a" }] },
+      "says": null
+    },
+    {
+      "name": "a pass of type gpgpu is run",
+      "spec": { "compute": [{ "type": "gpgpu", "dataRef": "input_0", "attributes": {}, "wgslFunction": "return 1.0;", "outputColumnName": "x" }] },
+      "says": null
+    },
+    {
+      "name": "a list is no document",
+      "spec": [{ "layout": {} }],
+      "says": null
+    },
+    {
+      "name": "null is no document",
+      "spec": null,
+      "says": null
     }
   ]
 }

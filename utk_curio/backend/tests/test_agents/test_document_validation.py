@@ -159,7 +159,7 @@ class TestAutkGrammar:
         {"map": [{"layerRefs": [{"dataRef": "input_0"}]}]},
         {"plot": {"dataRef": "input_0", "mark": "bar", "axis": ["name", "value"]}},
         {"compute": [{"dataRef": "input_0", "attributes": {"h": "properties.height"},
-                      "wglsFunction": "return h * 2.0;", "outputColumnName": "h2"}]},
+                      "wgslFunction": "return h * 2.0;", "outputColumnName": "h2"}]},
         {"data": [{"type": "csv", "csvFileUrl": "a.csv", "outputTableName": "t"}]},
     ], ids=["map-list", "plot", "compute", "data"])
     def test_one_document_per_family_is_valid(self, grammar):
@@ -169,20 +169,59 @@ class TestAutkGrammar:
         ({"plot": {"dataRef": "input_0", "mark": "pie", "axis": ["a"]}}, "pie"),
         ({"plot": {"dataRef": "input_0", "mark": "bar", "axis": []}}, "plot.axis"),
         ({"compute": [{"dataRef": "input_0", "attributes": {},
-                       "wglsFunction": "return 1.0;"}]}, "outputColumnName"),
-        # A heatmap once validated as a csv source; the type now selects its fields.
-        ({"data": [{"type": "heatmap", "outputTableName": "x"}]}, "tableJoinName"),
+                       "wgslFunction": "return 1.0;"}]}, "outputColumnName"),
+        # The type selects a source's fields: a join needs the table it joins.
+        ({"data": [{"type": "join", "dataRef": "x"}]}, "joinDataRef"),
     ], ids=["plot-mark", "plot-axis", "compute-output", "data-type"])
     def test_one_document_per_family_is_invalid_and_says_why(self, grammar, named):
         verdict = dv.validate(AUTK, json.dumps(grammar))
         assert verdict["status"] == dv.STATUS_INVALID
         assert named in verdict["detail"]
 
+    def test_a_compute_pass_is_told_what_its_own_kind_of_pass_lacks(self, monkeypatch):
+        # autk-grammar 5 lists a GPGPU pass and a render pass by reference, and
+        # a GPGPU pass names its output one of two ways.
+        from utk_curio.backend.app.agents.domain import contracts
+        from utk_curio.backend.tests._support import autk_schemas
+
+        schema = autk_schemas.passes_by_reference(contracts.load_autk_schema())
+        monkeypatch.setattr(contracts, "load_autk_schema", lambda *_args, **_kwargs: schema)
+        gpgpu = dv.validate(AUTK, json.dumps({"compute": [
+            {"dataRef": "input_0", "attributes": {}, "wgslFunction": "return 1.0;"}]}))
+        assert gpgpu == {"status": dv.STATUS_INVALID,
+                         "detail": 'compute[0]: missing one of "outputColumnName" or "outputColumns"'}
+        shader = dv.validate(AUTK, json.dumps({"compute": [
+            {"dataRef": "input_0", "attributes": {}, "outputColumnName": "h"}]}))
+        assert shader["status"] == dv.STATUS_INVALID
+        assert shader["detail"].startswith('compute[0]: missing "wgslFunction"')
+        # A render pass is told what a render pass lacks, once a node runs one:
+        # until then the key check refuses it first (test_autk_grammar_keys.py).
+        monkeypatch.setattr(contracts, "AUTK_NOT_RUN_YET", (), raising=False)
+        render = dv.validate(AUTK, json.dumps({"compute": [{"type": "render", "outputTableName": "v"}]}))
+        assert render == {"status": dv.STATUS_INVALID,
+                          "detail": 'compute[0]: missing "layers", "viewpoints" and "aggregation"'}
+
+    @pytest.mark.parametrize("document", [
+        {"layout": {"type": "horizontal"}},
+        {"links": [{"source": "heights", "target": "city"}]},
+    ], ids=["layout", "links"])
+    def test_a_layout_or_links_alone_run_nothing(self, monkeypatch, document):
+        # A layout arranges views and links join them: neither loads, computes
+        # or draws, so a document of one alone runs nothing, once a node runs
+        # them; until then the key check refuses them first.
+        from utk_curio.backend.app.agents.domain import agent_text, contracts
+
+        monkeypatch.setattr(contracts, "AUTK_NOT_RUN_YET", (), raising=False)
+        verdict = dv.validate(AUTK, json.dumps(document))
+        shape = contracts.render_autk_shape(contracts.load_autk_schema())
+        assert verdict == {"status": dv.STATUS_INVALID,
+                           "detail": agent_text.message("document.autk-runs-nothing", shape=shape)}
+
     def test_the_widened_compute_forms_are_valid(self):
         grammar = {"compute": [{
             "dataRef": "input_0",
             "attributes": {"h": "properties.height"},
-            "wglsFunction": ["let x = h;", "// a comment", "return x;"],
+            "wgslFunction": ["let x = h;", "// a comment", "return x;"],
             "uniforms": {"sun": {"fromFeature": {"layer": "sun", "path": "properties.alt",
                                                  "iterate": "batched"}, "default": 0}},
             "uniformMatrices": {"box": {"fromFeature": {"layer": "zones", "path": "geometry"},

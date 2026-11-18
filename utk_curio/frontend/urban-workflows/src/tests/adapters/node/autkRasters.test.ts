@@ -179,15 +179,61 @@ describe("withRasterSources", () => {
     const { grammar } = fakeGrammar();
     const db = fakeDb();
     const getLayer = db.getLayer;
+    const getRaster = db.getRaster;
     withRasterSources(grammar, jest.fn());
     await grammar.dataAdapter.resolveSource(db, source);
 
     const layer = await db.getLayer("input_0");
     expect(getLayer).not.toHaveBeenCalled();
-    expect(db.getRaster).toHaveBeenCalledWith("input_0");
+    expect(getRaster).toHaveBeenCalledWith("input_0");
     expect(layer).toEqual(framedRaster(RASTER));
     expect(layer.bbox).toEqual(RASTER.bbox);
     expect(layer.features[1].geometry).not.toBeNull();
+  });
+
+  // autk-grammar 5's map reads a raster table with getRaster, not getLayer.
+  test("repro: the map's getRaster of a raster Curio loaded is answered with it framed, as it was read after loading", async () => {
+    const { grammar } = fakeGrammar();
+    const db = fakeDb();
+    const getRaster = db.getRaster;
+    withRasterSources(grammar, jest.fn());
+    await grammar.dataAdapter.resolveSource(db, source);
+
+    const raster = await db.getRaster("input_0");
+    expect(raster).toEqual(framedRaster(RASTER));
+    expect(raster.bbox).toEqual(RASTER.bbox);
+    expect(raster.features[1].geometry).not.toBeNull();
+    // Read once, right after loading; the map's read is answered with that.
+    expect(getRaster.mock.calls).toEqual([["input_0"]]);
+  });
+
+  test("guard: any other table's getRaster is the database's to answer, with all it was asked", async () => {
+    const { grammar } = fakeGrammar();
+    const db = fakeDb();
+    const getRaster = db.getRaster;
+    withRasterSources(grammar, jest.fn());
+    await grammar.dataAdapter.resolveSource(db, source);
+
+    // A heatmap, which the grammar's own data adapter builds.
+    const heat = { ...RASTER, bbox: [1, 2, 3, 4] };
+    getRaster.mockResolvedValueOnce(heat);
+    expect(await db.getRaster("noise_density", { a: 1 })).toBe(heat);
+    expect(getRaster).toHaveBeenLastCalledWith("noise_density", { a: 1 });
+  });
+
+  test("repro: a raster loaded again into the same database is read anew, not answered with the first", async () => {
+    const { grammar } = fakeGrammar();
+    const db = fakeDb();
+    const getRaster = db.getRaster;
+    withRasterSources(grammar, jest.fn());
+    await grammar.dataAdapter.resolveSource(db, source);
+    const again = { ...RASTER, bbox: [-9785600, 5106100, -9781600, 5110100] };
+    getRaster.mockResolvedValueOnce(again);
+    await grammar.dataAdapter.resolveSource(db, source);
+
+    expect(getRaster).toHaveBeenCalledTimes(2);
+    expect(await db.getRaster("input_0")).toEqual(framedRaster(again));
+    expect(await db.getLayer("input_0")).toEqual(framedRaster(again));
   });
 
   test("every other table is the database's to answer, with all it was asked", async () => {
@@ -204,13 +250,14 @@ describe("withRasterSources", () => {
   test("a second raster in the same database is served by the same wrapper", async () => {
     const { grammar } = fakeGrammar();
     const db = fakeDb();
+    const getRaster = db.getRaster;
     withRasterSources(grammar, jest.fn());
     await grammar.dataAdapter.resolveSource(db, source);
     const wrapped = db.getLayer;
     await grammar.dataAdapter.resolveSource(db, { ...source, outputTableName: "input_1" });
 
     expect(db.getLayer).toBe(wrapped);
-    expect(db.getRaster).toHaveBeenCalledWith("input_1");
+    expect(getRaster).toHaveBeenCalledWith("input_1");
     expect(await db.getLayer("input_1")).toEqual(framedRaster(RASTER));
   });
 
@@ -246,6 +293,32 @@ describe("withRasterSources", () => {
 
     expect((await heights.getLayer("input_0")).cells).toBe("heights");
     expect((await shadows.getLayer("input_0")).cells).toBe("shadows");
+  });
+
+  test("repro: two maps loading a raster of the same name at once each read their own by getRaster too", async () => {
+    // The same page-wide store as above: a getRaster that went to it would
+    // read whichever raster loaded last.
+    const store = new Map<string, any>();
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const pageDb = (cells: string) => ({
+      loadGeoTiff: jest.fn(async () => { await tick(); store.set("autk.input_0", cells); await tick(); }),
+      getRaster: jest.fn(async (_table: string) => { await tick(); return { ...RASTER, cells: store.get("autk.input_0") }; }),
+      getLayer: jest.fn(),
+    });
+    const heights = pageDb("heights");
+    const shadows = pageDb("shadows");
+    const first = fakeGrammar().grammar;
+    const second = fakeGrammar().grammar;
+    withRasterSources(first, jest.fn());
+    withRasterSources(second, jest.fn());
+
+    await Promise.all([
+      first.dataAdapter.resolveSource(heights, source),
+      second.dataAdapter.resolveSource(shadows, source),
+    ]);
+
+    expect((await heights.getRaster("input_0")).cells).toBe("heights");
+    expect((await shadows.getRaster("input_0")).cells).toBe("shadows");
   });
 
   test("a raster that fails to load does not hold up the next one", async () => {

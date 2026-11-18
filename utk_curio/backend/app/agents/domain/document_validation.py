@@ -361,13 +361,15 @@ def validate_autk_grammar(
     each table with its geometry, so *geometry_columns* change nothing here.
 
     The schema is the vendored copy of what autk-grammar publishes
-    (``contracts.AUTK_SCHEMA_PATH``). Two rules sit on top, because no schema
+    (``contracts.AUTK_SCHEMA_PATH``). Three rules sit on top, because no schema
     form says them. A node draws one view, one map or one plot, so a document
     with a map and a plot, or with a list of more than one map or more than one
     plot, is refused first, with the words the node's own error says
     (``contracts.autk_one_view_problem``): the fix is to split it, whatever its
-    views hold. And the document must load, compute or draw something, and a
-    map must list a layer (``_draws_nothing``).
+    views hold. A document that writes a key autk-grammar 5 renamed, or a key
+    a node does not run yet, is refused next, with the node's words too
+    (``contracts.autk_key_problem``). And the document must load, compute or
+    draw something, and a map must list a layer (``_draws_nothing``).
     """
     from utk_curio.backend.app.agents.domain import contracts
 
@@ -380,6 +382,9 @@ def validate_autk_grammar(
     several_views = contracts.autk_one_view_problem(payload)
     if several_views:
         return {"status": STATUS_INVALID, "detail": _detail(several_views)}
+    key_problem = contracts.autk_key_problem(payload)
+    if key_problem:
+        return {"status": STATUS_INVALID, "detail": _detail(key_problem)}
     try:
         import jsonschema
     except Exception as exc:  # noqa: BLE001
@@ -412,21 +417,29 @@ _JSON_TYPES = {dict: "object", list: "array", str: "string", bool: "boolean",
 
 def _messages(error, jsonschema) -> list[str]:
     """What *error* says. An ``anyOf`` failure (``map`` and ``plot`` are one
-    object or a list of them) is explained by the branch that fits the value."""
+    object or a list of them, a compute pass a GPGPU pass or a render pass) is
+    explained by the branches that fit the value. A branch that is itself an
+    ``anyOf`` of the same value counts as its branches (a GPGPU pass names its
+    output one of two ways), and a branch for another kind of value is left
+    out: one of another JSON type, and one whose constant the value does not
+    have (``_another_kind``), unless every branch is."""
     if error.validator not in ("anyOf", "oneOf") or not error.context:
         return [_schema_message(error)]
     branches: dict = {}
-    for sub in error.context:
-        if sub.validator == "type" and not sub.relative_path:
-            continue  # that branch is for another kind of value
-        branches.setdefault(sub.relative_schema_path[0], []).append(sub)
+    types: list = []
+    for key, subs in _branches(error).items():
+        for sub in subs:
+            if sub.validator == "type" and not sub.relative_path:
+                # That branch is for another kind of value.
+                types += [sub.validator_value] if isinstance(sub.validator_value, str) else sub.validator_value
+            else:
+                branches.setdefault(key, []).append(sub)
     if not branches:
-        types = [t for sub in error.context
-                 for t in ([sub.validator_value] if isinstance(sub.validator_value, str) else sub.validator_value)]
         given = _JSON_TYPES.get(type(error.instance), "value")
         return [agent_text.message(
             "document.autk-wrong-type", where=_where(error), types=_or(dict.fromkeys(types)), given=given,
         )]
+    branches = {key: subs for key, subs in branches.items() if not _another_kind(subs)} or branches
     lacking = [_lacking(subs) for subs in branches.values()]
     if len(lacking) > 1 and all(lacking):
         # Every branch that fits only lacks fields: what all of them need, then the choice.
@@ -436,7 +449,51 @@ def _messages(error, jsonschema) -> list[str]:
             [agent_text.message("document.autk-one-of", choices=_or(dict.fromkeys(choice)))] if choice else [])
         return [f"{_where(error)}: missing " + ", and ".join(needs)]
     best = jsonschema.exceptions.best_match([sub for subs in branches.values() for sub in subs])
-    return [m for sub in branches[best.relative_schema_path[0]] for m in _messages(sub, jsonschema)]
+    return [m for sub in branches[_branch_of(best, branches)] for m in _messages(sub, jsonschema)]
+
+
+def _branches(error) -> dict[tuple, list]:
+    """An ``anyOf`` failure's errors by the branch they came from, keyed by
+    the branch's place in the schema; a branch whose one error is an ``anyOf``
+    failure of the same value is spread into that one's branches."""
+    grouped: dict = {}
+    for sub in error.context:
+        grouped.setdefault(sub.relative_schema_path[0], []).append(sub)
+    branches: dict = {}
+    for key, subs in grouped.items():
+        inner = subs[0]
+        if len(subs) == 1 and inner.validator in ("anyOf", "oneOf") and inner.context and not inner.relative_path:
+            branches.update({(key, *place): errors for place, errors in _branches(inner).items()})
+        else:
+            branches[(key,)] = subs
+    return branches
+
+
+def _another_kind(errors) -> bool:
+    """Whether a branch's *errors* show it is for another kind of value: one
+    of the value's fields is not the constant the branch gives it, or the
+    value lacks a field the branch requires to be a constant (a render pass's
+    ``"type": "render"``)."""
+    for error in errors:
+        if error.validator == "const" and len(error.relative_path) == 1:
+            return True
+        if error.validator == "required" and not error.relative_path:
+            properties = error.schema.get("properties", {}) if isinstance(error.schema, dict) else {}
+            if any(name not in (error.instance or {}) and "const" in properties.get(name, {})
+                   for name in error.validator_value):
+                return True
+    return False
+
+
+def _branch_of(error, branches: dict) -> tuple:
+    """The key of the branch *error* belongs to: ``best_match`` can answer an
+    error from inside one of the branch's errors."""
+    while error is not None:
+        for key, subs in branches.items():
+            if any(error is sub for sub in subs):
+                return key
+        error = error.parent
+    return next(iter(branches))
 
 
 def _lacking(errors) -> list[str]:
@@ -486,7 +543,7 @@ def _draws_nothing(payload: dict, schema: dict) -> str | None:
     """Why a schema-valid document would still run nothing, or None."""
     from utk_curio.backend.app.agents.domain import contracts
 
-    if not any(payload.get(f) not in (None, [], {}) for f in contracts.autk_families(schema)):
+    if not any(payload.get(f) not in (None, [], {}) for f in contracts.autk_step_families(schema)):
         return agent_text.message("document.autk-runs-nothing", shape=contracts.render_autk_shape(schema))
     layers, _ = contracts.map_layers(schema)
     maps = payload.get("map")

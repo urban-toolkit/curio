@@ -6,7 +6,8 @@
  * R key puts it back there: about 8 km of ground across the map's height. A
  * few blocks were a speck in the middle of the map, and a city ran past every
  * edge. autk-map fits its camera to what it shows only in terrain mode
- * (`fitCameraToTerrainBounds`), and the grammar's document has no camera.
+ * (`fitCameraToTerrainBounds`), and a node refuses a document's `camera`
+ * (contracts/autkGrammar's `autkKeyProblem`).
  *
  * `frameMaps` does for each flat map of a grammar what terrain mode does, with
  * the same arithmetic, through the camera's own `resetCamera` and `resize`:
