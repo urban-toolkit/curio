@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the parks of Niterói, each with its area, that example 36 loads.
+"""Build the parks of Niterói, each with its area, that example 37 loads.
 
 ``docs/examples/data/niteroi_parks.geojson`` holds the parks of
 ``docs/examples/data/niteroi.osm.pbf`` that autk-db's ``parks`` layer takes:
@@ -10,7 +10,7 @@ loads, and carries its OpenStreetMap element (``osm_type``, ``osm_id``) and
 ``area``: its area in square metres in an equal-area projection
 (``EQUAL_AREA``), from its geometry as the file writes it. Its outline is
 simplified within ``SIMPLIFY`` degrees (about 5 m, nothing next to the 500 m
-example 36 reaches) and its coordinates keep ``PLACES`` decimals (about 1 m),
+example 37 reaches) and its coordinates keep ``PLACES`` decimals (about 1 m),
 so the file stays small; the features are sorted by element, and nothing in
 the file depends on when it was built.
 

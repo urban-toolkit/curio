@@ -437,15 +437,15 @@ PARK_ACCESS_SHARES = "park-access-shares"
 #: The classes of the Python step's table: how many parks are within reach.
 PARK_ACCESS_CLASSES = ["none", "1", "2 to 4", "5 to 9", "10 or more"]
 
-#: Examples 35 and 36, Niterói's green share and its park area within reach
+#: Examples 36 and 37, Niterói's green share and its park area within reach
 #: against its summer heat, the nodes and columns their own tests read, and
 #: the file their temperatures come from and the parks 36 sums.
-EXAMPLE_35 = "35-autark-green-share-summer-heat.json"
+EXAMPLE_36 = "36-autark-green-share-summer-heat.json"
 GREEN_HEAT_MAP = "green-heat-map"
 GREEN_HEAT_CELLS = "green-heat-cells"
 GREEN_HEAT_SCATTER = "green-heat-scatter"
 GREEN_SHARE = "green share"
-EXAMPLE_36 = "36-autark-park-area-summer-heat.json"
+EXAMPLE_37 = "37-autark-park-area-summer-heat.json"
 PARK_AREA_MAP = "park-area-map"
 PARK_AREA_CELLS = "park-area-cells"
 PARK_AREA_SCATTER = "park-area-scatter"
@@ -551,7 +551,7 @@ def _stored_rows(page, node_id: str) -> list[dict]:
 
 
 def _niteroi_summers_of(cells: list[dict]):
-    """The 2020 to 2024 summer temperatures of examples 35's and 36's cells on
+    """The 2020 to 2024 summer temperatures of examples 36's and 37's cells on
     Niterói's land, as an array, once each is checked against the GeoTIFF the
     data node loads: about 140 cells of its 330, each the mean of the file's
     bands 20 to 24 at its row and column, to the hundredth."""
@@ -1951,10 +1951,10 @@ class TestWorkflowCanvas:
         assert abs(sum(values) - 1) <= 0.005, shares
         assert sum(value > 0 for value in values) >= 4 and max(values) < 1, shares
 
-    @pytest.mark.only_workflows(EXAMPLE_35)
+    @pytest.mark.only_workflows(EXAMPLE_36)
     def test_niteroi_cells_take_their_heat_from_the_geotiff_and_their_green_share_from_the_parks(
             self, loaded_workflow, record_property):
-        """Example 35 as it ships: its data node loads Niterói's layers and its
+        """Example 36 as it ships: its data node loads Niterói's layers and its
         summer land surface temperature from the repository's GeoTIFF. The map
         draws the summer of 2024, and the Python step gives each cell on
         Niterói's land, about 140 of the file's 330, its mean summer
@@ -1978,10 +1978,10 @@ class TestWorkflowCanvas:
         record_property("slope_c_per_share", round(float(np.polyfit(green, heat, 1)[0]), 3))
         record_property("correlation", round(float(np.corrcoef(green, heat)[0, 1]), 3))
 
-    @pytest.mark.only_workflows(EXAMPLE_36)
+    @pytest.mark.only_workflows(EXAMPLE_37)
     def test_niteroi_cells_take_their_heat_from_the_geotiff_and_their_park_area_from_the_heatmaps_sum(
             self, loaded_workflow, record_property):
-        """Example 36 as it ships: its data node loads Niterói's layers, its
+        """Example 37 as it ships: its data node loads Niterói's layers, its
         summer land surface temperature from the repository's GeoTIFF and its
         parks with their areas from the repository's GeoJSON, and sums their
         areas within about 500 m in a heatmap. The map draws that heatmap, and

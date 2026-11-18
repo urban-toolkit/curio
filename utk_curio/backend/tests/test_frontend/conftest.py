@@ -174,11 +174,11 @@ WORKFLOW_FILES = [
     "docs/examples/34-autark-park-access-heatmap.json",
     # Niterói's summer surface temperature, a GeoTIFF, under its parks on a
     # map, and each cell's green share against its heat in Vega-Lite.
-    "docs/examples/35-autark-green-share-summer-heat.json",
+    "docs/examples/36-autark-green-share-summer-heat.json",
     # Niterói's park area within reach, a heatmap summing the areas of a
     # GeoJSON's parks, on a map, and each cell's park area against its heat
     # in Vega-Lite.
-    "docs/examples/36-autark-park-area-summer-heat.json",
+    "docs/examples/37-autark-park-area-summer-heat.json",
 ]
 
 

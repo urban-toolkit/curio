@@ -2270,7 +2270,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       });
 
       // A map that draws an Autark data node's GeoTIFF, then its parks and
-      // roads, as example 35's does. autk-map draws a layer of a base-map type
+      // roads, as example 36's does. autk-map draws a layer of a base-map type
       // (surface, parks, water, roads) under every raster whatever the map's
       // order, and every raster cell is opaque, so the GeoTIFF hid them: the
       // map drew the temperature alone. The parks and roads are handed to the

@@ -31,14 +31,14 @@ BACK_BAY_LAYERS = [
 EXAMPLE_34 = REPO / "docs" / "examples" / "34-autark-park-access-heatmap.json"
 #: The tables example 34's data node makes: the tip's layers, then its heatmap.
 TIP_TABLES = ["tip_surface", "tip_parks", "tip_water", "tip_roads", "park_access"]
-EXAMPLE_35 = REPO / "docs" / "examples" / "35-autark-green-share-summer-heat.json"
-#: The tables example 35's data node makes: Niterói's layers, then its GeoTIFF.
+EXAMPLE_36 = REPO / "docs" / "examples" / "36-autark-green-share-summer-heat.json"
+#: The tables example 36's data node makes: Niterói's layers, then its GeoTIFF.
 GREEN_TABLES = ["table_osm_surface", "table_osm_parks", "table_osm_roads", "lst"]
-EXAMPLE_36 = REPO / "docs" / "examples" / "36-autark-park-area-summer-heat.json"
-#: The tables example 36's data node makes: Niterói's layers, its GeoTIFF, its
+EXAMPLE_37 = REPO / "docs" / "examples" / "37-autark-park-area-summer-heat.json"
+#: The tables example 37's data node makes: Niterói's layers, its GeoTIFF, its
 #: parks with their areas, then the heatmap that sums them.
 PARK_AREA_TABLES = ["table_osm_surface", "table_osm_roads", "lst", "park_areas", "park_area"]
-#: The files examples 35 and 36 load, as their code names them for the sandbox.
+#: The files examples 36 and 37 load, as their code names them for the sandbox.
 NITEROI_EXTRACT = '"pbfFileUrl":"__CURIO_BACKEND_URL__/file/docs/examples/data/niteroi.osm.pbf"'
 NITEROI_SUMMERS = '"geotiffFileUrl":"__CURIO_BACKEND_URL__/file/docs/examples/data/niteroi_lst_verao_2001_2024.tif"'
 NITEROI_PARKS = '"geojsonFileUrl":"__CURIO_BACKEND_URL__/file/docs/examples/data/niteroi_parks.geojson"'
@@ -221,7 +221,7 @@ def test_example_34s_loader_builds_its_heatmap_on_the_server_as_the_browser_does
 
 
 def _niteroi_load(client, token, sandbox, example, prefix):
-    """Example 35's or 36's run on the server: its steps by node, and the one
+    """Example 36's or 37's run on the server: its steps by node, and the one
     load its data node *prefix*-data posted, which must be the code the
     browser's compiler gives, autk-db and then the grammar's ``./data`` entry,
     which loads the GeoTIFF, with the extract's and the GeoTIFF's URLs left for
@@ -263,30 +263,30 @@ def _compiled_sources(code: str) -> list[dict]:
     return json.loads(line[len(prefix):].rstrip(";"))
 
 
-def test_example_35s_loader_reads_its_geotiff_on_the_server_as_the_browser_does(
+def test_example_36s_loader_reads_its_geotiff_on_the_server_as_the_browser_does(
     client, user_and_token, sandbox, recorded,
 ):
-    """Example 35's data node loads Niterói's surface, parks and roads from the
+    """Example 36's data node loads Niterói's surface, parks and roads from the
     repository's extract and its summer land surface temperature from the
     repository's GeoTIFF: on the server, the layers and the GeoTIFF's table
     are expected, and it runs those two sources alone, no GeoJSON among them."""
     user, token = user_and_token
-    load = _niteroi_load(client, token, sandbox, EXAMPLE_35, "green-heat")
+    load = _niteroi_load(client, token, sandbox, EXAMPLE_36, "green-heat")
 
     assert f"const __expectedTables = {json.dumps(GREEN_TABLES, separators=(',', ':'))};" in load["code"]
     assert [source["type"] for source in _compiled_sources(load["code"])] == ["osm", "geotiff"]
 
 
-def test_example_36s_loader_reads_its_parks_and_sums_their_area_on_the_server_as_the_browser_does(
+def test_example_37s_loader_reads_its_parks_and_sums_their_area_on_the_server_as_the_browser_does(
     client, user_and_token, sandbox, recorded,
 ):
-    """Example 36's data node also loads Niterói's parks with their areas from
+    """Example 37's data node also loads Niterói's parks with their areas from
     the repository's GeoJSON, its URL left for the sandbox to resolve, and sums
     their area in a heatmap: on the server, the layers, the GeoTIFF's, the
     parks' and the heatmap's tables are expected, and the heatmap bins a table
     its data section loads before it."""
     user, token = user_and_token
-    load = _niteroi_load(client, token, sandbox, EXAMPLE_36, "park-area")
+    load = _niteroi_load(client, token, sandbox, EXAMPLE_37, "park-area")
 
     assert NITEROI_PARKS in load["code"]
     assert [source["type"] for source in _compiled_sources(load["code"])] == ["osm", "geotiff", "geojson", "heatmap"]

@@ -1,4 +1,4 @@
-"""The parks of Niterói example 36 loads, each with its area
+"""The parks of Niterói example 37 loads, each with its area
 (``scripts/build_example_niteroi_parks.py``).
 
 The committed ``docs/examples/data/niteroi_parks.geojson`` agrees with itself

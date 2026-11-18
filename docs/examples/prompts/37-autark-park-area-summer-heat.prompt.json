@@ -1,11 +1,11 @@
 {
   "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
-  "fixtureId": "36-autark-park-area-summer-heat",
+  "fixtureId": "37-autark-park-area-summer-heat",
   "version": 1,
   "source": {
-    "path": "docs/examples/36-autark-park-area-summer-heat.json",
+    "path": "docs/examples/37-autark-park-area-summer-heat.json",
     "sha256": "0a4b4b457bdb71757dedca1e31082977e41e1113f172033dc8afaa09f6cac357",
-    "walkthrough": "docs/examples/36-autark-park-area-summer-heat.md"
+    "walkthrough": "docs/examples/37-autark-park-area-summer-heat.md"
   },
   "prompt": "Are the parts of Niterói with more park area nearby cooler in summer? Use the OpenStreetMap extract in this checkout, docs/examples/data/niteroi.osm.pbf, for the city of Niterói in the state of Rio de Janeiro, the summer land surface temperature GeoTIFF beside it, docs/examples/data/niteroi_lst_verao_2001_2024.tif, which holds one band for each summer from 2001 to 2024 on cells of about 1 km, and the parks file beside them, docs/examples/data/niteroi_parks.geojson, where each park carries its area in square metres. With Autark, load the city's land and roads, the GeoTIFF and the parks, and sum the parks' area into a grid of 60 rows and 80 columns where each cell holds the area of the parks within about 500 m of its center, measured to the nearest edge of each park. Draw that grid on a map under the parks and roads. Then put the sums on the temperature's grid, each temperature cell taking the mean of the sums that fall in it, in square kilometres, give every temperature cell on land its mean summer temperature from 2020 to 2024, and plot those cells as a scatter of temperature against park area within reach, with a fitted line.",
   "context": null,

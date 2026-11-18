@@ -442,7 +442,7 @@ describe("withOpaqueRasters", () => {
 // autk-map draws a layer of a base-map type (surface, parks, water, roads) in
 // a place of its own under every other layer, a raster included, whatever the
 // order a map lists them in, and every raster cell is opaque, so a GeoTIFF
-// hid the parks and roads drawn on it (example 35's map drew its temperature
+// hid the parks and roads drawn on it (example 36's map drew its temperature
 // alone). A table the map lists after a raster is handed on as plain geometry,
 // which autk-map draws in the map's order.
 describe("withLayersOverRasters", () => {

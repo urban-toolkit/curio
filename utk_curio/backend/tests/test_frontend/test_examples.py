@@ -151,14 +151,14 @@ EXAMPLE_INVARIANTS = [
     # Green share and summer heat in Niterói: its data node hands its layers
     # and a GeoTIFF to a map and to a Python step, whose cells a Vega-Lite
     # scatter plots, with no interaction.
-    ("35-autark-green-share-summer-heat.json", 4, 3,
+    ("36-autark-green-share-summer-heat.json", 4, 3,
      {"curio.builtin/autk-grammar": 2, "curio.builtin/python-computation": 1,
       "curio.builtin/vis-vega": 1}, False),
     # Park area within reach and summer heat in Niterói: its data node hands
     # its layers, a GeoTIFF, a GeoJSON of parks and a heatmap summing their
     # area to a map and to a Python step, whose cells a Vega-Lite scatter
     # plots, with no interaction.
-    ("36-autark-park-area-summer-heat.json", 4, 3,
+    ("37-autark-park-area-summer-heat.json", 4, 3,
      {"curio.builtin/autk-grammar": 2, "curio.builtin/python-computation": 1,
       "curio.builtin/vis-vega": 1}, False),
 ]
