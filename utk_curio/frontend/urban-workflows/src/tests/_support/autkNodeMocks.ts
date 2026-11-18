@@ -48,8 +48,21 @@ export const heldDraws: { until: Promise<void> | null } = { until: null };
  * What autk-db exports of each table the node hands a run, from the features
  * handed, as `grammar.data` holds it: a test that sets it makes autk-db leave
  * rows out or keep them in an order of its own. None unless a test sets it.
+ * As autk-grammar's, `grammar.data` lists the tables of the default workspace
+ * alone; the run's database (`grammarEngine.context`) exports a table of any
+ * workspace, in the workspace it works in.
  */
 export const drawnExports: { of: null | ((table: string, handed: any[]) => any[]) } = { of: null };
+
+/** autk-grammar's `enterWorkspace`, as its data entry has it: autk-db's default workspace is `autk`. */
+export async function enterWorkspace(db: any, workspace?: string): Promise<void> {
+  const name = workspace ?? 'autk';
+  if (db.getCurrentWorkspace() !== name) await db.setWorkspace(name);
+}
+
+/** The workspace a source of a run's document loads into. */
+const workspaceOf = (source: any): string =>
+  typeof source?.workspace === 'string' && source.workspace ? source.workspace : 'autk';
 
 /** What a run fails with once it made its database, for a test of a failed draw; none unless a test sets it. */
 export const failedDraws: { error: Error | null } = { error: null };
@@ -101,19 +114,34 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
     if (maps.length > 0) grammar.maps = maps;
     const exportOf = drawnExports.of;
     if (exportOf) {
-      grammar.data = Object.fromEntries((Array.isArray(spec?.data) ? spec.data : [])
-        .filter((source: any) => Array.isArray(source?.geojsonObject?.features))
-        .map((source: any) => [
-          source.outputTableName,
-          Promise.resolve({ type: 'FeatureCollection', features: exportOf(source.outputTableName, source.geojsonObject.features) }),
-        ]));
+      const sources: any[] = (Array.isArray(spec?.data) ? spec.data : [])
+        .filter((source: any) => Array.isArray(source?.geojsonObject?.features));
+      const exported = (source: any) =>
+        Promise.resolve({ type: 'FeatureCollection', features: exportOf(source.outputTableName, source.geojsonObject.features) });
+      grammar.data = Object.fromEntries(sources
+        .filter((source) => workspaceOf(source) === 'autk')
+        .map((source) => [source.outputTableName, exported(source)]));
       // A table a pass writes, under its outputTableName or in place, is what
       // the pass computed over the table it read, as autk-grammar's compute
-      // cache keeps it: every feature of that table's export.
+      // cache keeps it: every feature of that table's export, listed under its
+      // key (the name in the default workspace, `<workspace>/<name>` in another).
+      const keyOf = (workspace: string, name: string) => (workspace === 'autk' ? name : `${workspace}/${name}`);
       for (const pass of Array.isArray(spec?.compute) ? spec.compute : []) {
-        const read = grammar.data[pass?.dataRef];
-        if (read) grammar.data[pass.outputTableName ?? pass.dataRef] = read;
+        const workspace = workspaceOf(pass);
+        const source = sources.find((s) => s.outputTableName === pass?.dataRef && workspaceOf(s) === workspace);
+        const read = grammar.data[keyOf(workspace, pass?.dataRef)] ?? (source ? exported(source) : undefined);
+        if (read) grammar.data[keyOf(workspace, pass.outputTableName ?? pass.dataRef)] = read;
       }
+      // The run's database, left in the default workspace, as autk-grammar leaves it.
+      const context = grammar.grammarEngine.context;
+      context.workspace = 'autk';
+      context.getCurrentWorkspace = () => context.workspace;
+      context.setWorkspace = async (name: string) => { context.workspace = name; };
+      context.getLayer = async (name: string) => {
+        const source = sources.find((s) => s.outputTableName === name && workspaceOf(s) === context.workspace);
+        if (!source) throw new Error(`Table ${name} not found.`);
+        return exported(source);
+      };
     }
     grammarRuns.push({
       targets,
@@ -169,7 +197,7 @@ export const apiModule = {
   )),
   fetchPreviewData: jest.fn(),
 };
-export const autkGrammarModule = { AutkGrammar };
+export const autkGrammarModule = { AutkGrammar, enterWorkspace };
 
 /** Forget the runs and calls of the last test, read ONE_ROW again, and hold no
  * scenario, node or edge. */

@@ -3,9 +3,11 @@
 
 import type { FeatureCollection } from 'geojson';
 import { autkKeyProblem } from '../../contracts/autkGrammar';
+import { autkWorkspaceOf } from './autkDataCompile';
 import { checkedPasses } from './autkComputeScopes';
 
-type Layer = { name: string; type: string; geojson: FeatureCollection };
+/** A layer a compute step holds, in the workspace it names when it is not the default one. */
+type Layer = { name: string; type: string; geojson: FeatureCollection; workspace?: string };
 
 // Apply a grammar `compute` section to an array of named GeoJSON layers,
 // returning the layers as its passes leave them: each pass's result, a
@@ -18,21 +20,23 @@ type Layer = { name: string; type: string; geojson: FeatureCollection };
 //
 // Each pass runs as the grammar's own run runs it: through autk-grammar's
 // compute adapter (`createComputeAdapter`), a GPGPU pass and a render pass
-// alike, over its caches seeded with the layers by `tableKey`. The adapter
-// keeps a pass's result under its `outputTableName`, leaving the table it
-// computed over as it was, and else in place of that table; a table a pass
+// alike, over its caches seeded with the layers by `tableKey`, each in its own
+// workspace. A pass reads and writes the tables of its own workspace. The
+// adapter keeps a pass's result under its `outputTableName`, leaving the table
+// it computed over as it was, and else in place of that table; a table a pass
 // names has the pass's `layerType`, else that table's type, or `points` for a
 // render pass's building windows (`store` in its adapters/compute.ts). The
 // layers come back in the order the cache holds them: those the step held, as
-// the passes left them, then each table a pass wrote under a new name. Every
-// pass is checked on the GPU's device (`checkedPasses`).
+// the passes left them, then each table a pass wrote under a new name, in the
+// pass's workspace. Every pass is checked on the GPU's device
+// (`checkedPasses`).
 //
 // A pass whose own table (a GPGPU pass's `dataRef`, a render pass's
-// viewpoints) matches no layer is skipped quietly: chained compute nodes can
-// target different layers, and a no-op pass is far less surprising than
-// aborting the whole pipeline. A section that writes a key autk-grammar 5
-// renamed, or one a node does not run yet (contracts/autkGrammar), runs no
-// pass and is a failure, named.
+// viewpoints) matches no layer of its workspace is skipped quietly: chained
+// compute nodes can target different layers, and a no-op pass is far less
+// surprising than aborting the whole pipeline. A section that writes a key
+// autk-grammar 5 renamed, or one a node does not run yet (contracts/autkGrammar),
+// runs no pass and is a failure, named.
 export async function applyComputeBlocks(
     layers: Layer[],
     computeBlocks: any[],
@@ -48,15 +52,17 @@ export async function applyComputeBlocks(
         return layers;
     }
     const { createComputeAdapter, tableKey } = await import('@urban-toolkit/autk-grammar');
-    // The grammar's caches, as its own run keeps them: each table by tableKey.
+    // The grammar's caches, as its own run keeps them: each table by tableKey,
+    // with the name and the workspace it is handed on with.
     const cache = new Map<string, FeatureCollection>();
     const types = new Map<string, any>();
-    const names = new Map<string, string>();
+    const held = new Map<string, { name: string; workspace?: string }>();
     for (const layer of layers) {
-        const key = tableKey(undefined, layer.name);
+        const workspace = autkWorkspaceOf(layer);
+        const key = tableKey(workspace, layer.name);
         cache.set(key, layer.geojson);
         types.set(key, layer.type);
-        names.set(key, layer.name);
+        held.set(key, { name: layer.name, ...(workspace ? { workspace } : {}) });
     }
     const adapter = checkedPasses(createComputeAdapter(cache, types));
     const db = heldTables(types);
@@ -64,10 +70,11 @@ export async function applyComputeBlocks(
         const render = pass?.type === 'render';
         const source = render ? pass?.viewpoints?.dataRef : pass?.dataRef;
         if (!pass || !source || (!render && !pass.wgslFunction)) continue;
-        if (!cache.has(tableKey(pass.workspace, source))) continue;
-        const sourceCrs = (cache.get(tableKey(pass.workspace, source)) as any)?.crs;
+        const workspace = autkWorkspaceOf(pass);
+        if (!cache.has(tableKey(workspace, source))) continue;
+        const sourceCrs = (cache.get(tableKey(workspace, source)) as any)?.crs;
         const name = typeof pass.outputTableName === 'string' && pass.outputTableName ? pass.outputTableName : source;
-        const key = tableKey(pass.workspace, name);
+        const key = tableKey(workspace, name);
         const before = { table: cache.get(key), type: types.get(key) };
         try {
             await adapter.resolveCompute(db, pass);
@@ -85,7 +92,7 @@ export async function applyComputeBlocks(
             failures.push((e as Error)?.message ?? 'compute failed');
             continue;
         }
-        names.set(key, name);
+        held.set(key, { name, ...(workspace ? { workspace } : {}) });
         const result: any = cache.get(key);
         if (!result) continue;
         // The pipelines write each GPGPU output under properties.compute.<col>.
@@ -110,19 +117,20 @@ export async function applyComputeBlocks(
         if (sourceCrs && !result.crs) result.crs = sourceCrs;
     }
     return [...cache].map(([key, geojson]) => ({
-        name: names.get(key) ?? key,
+        name: held.get(key)?.name ?? key,
         type: types.get(key) ?? 'polygons',
         geojson,
+        ...(held.get(key)?.workspace ? { workspace: held.get(key)!.workspace } : {}),
     }));
 }
 
 /**
  * The database a compute step's passes read, as autk-grammar's compute
  * adapter reads one: the tables the step holds, of the types *types* gives,
- * in autk-db's default workspace. The adapter reads a table from its cache
- * first, which holds them all, so one it asks this database for is a table
- * the step does not hold, which fails its pass as autk-db fails a read of a
- * table it does not hold.
+ * the workspace a pass enters its own. The adapter reads a table from its
+ * cache first, which holds them all, so one it asks this database for is a
+ * table the step does not hold, which fails its pass as autk-db fails a read
+ * of a table it does not hold.
  */
 function heldTables(types: Map<string, string>) {
     let workspace: string | undefined;

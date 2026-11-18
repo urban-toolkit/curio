@@ -26,7 +26,8 @@ import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../ut
 import { autkKeyProblem, autkOneViewProblem } from '../../contracts/autkGrammar';
 import {
     autkNeedsInput, autkSourcesFrom, documentTableRefs, drawnFeatures, drawnRows, inputRow, keyValues, loadableSource, ownTableNames,
-    passesAtHand, readAutkInput, selectFieldsOf, selectFieldsProblem, tablePositions, tablesToLoad, writtenTables, type LoadOrder,
+    passesAtHand, readAutkInput, selectFieldsOf, selectFieldsProblem, tableKeyOf, tablePositions, tablesToLoad, writtenTables,
+    type LoadOrder,
     type PreparedAutkInput,
 } from '../../utils/autkInput';
 import { type GrammarInput } from '../../utils/grammarInput';
@@ -37,6 +38,9 @@ import { withChipPlaceholders } from '../../utils/references/codeReferences';
 import { selectionEchoSource } from '../../utils/selectionEcho';
 import {
     SANDBOX_BACKEND_URL_TOKEN,
+    autkTableKey,
+    autkUsesWorkspaces,
+    autkWorkspaceOf,
     compileDataSpecToAutkDbJs,
     requestedLayerTables,
     resolveDataSourceUrls as resolveDataSourceUrlsWithBase,
@@ -46,7 +50,9 @@ import { attachMapPressGuard } from './autkMapPressGuard';
 import {
     countedItem, describeAutkRun, emptyStateWords, featureCount, hasFeatures, totalCount,
 } from './autkRunDescriptions';
-import { loadSpecLayers, materializeBackendLayers, runDataInBackend, toPoolOutput } from './autkLayerMaterialize';
+import {
+    loadSpecLayers, materializeBackendLayers, runDataInBackend, toPoolOutput, type AutkLayer,
+} from './autkLayerMaterialize';
 import {
     bleedRasterEdges, isCurioRasterSource, newAutkDb, resolveRasterInputs, withOpaqueRasters,
     withRasterSources, type CurioRasterSource,
@@ -281,65 +287,110 @@ export const useAutkGrammarBehavior = (
         return reads.get(input)!;
     };
     // How each loaded input table's positions map to the input's rows
-    // (loadableSource), by name: a pick or a highlight goes through it, so a
-    // position always names the row the Data Pool and the other charts mean.
+    // (loadableSource), by key (tableKeyOf): a pick or a highlight goes
+    // through it, so a position always names the row the Data Pool and the
+    // other charts mean.
     const loadOrdersRef = useRef<Record<string, LoadOrder>>({});
-    // Each input table's features as they came, by name: the rows a pick or a
+    // Each input table's features as they came, by key: the rows a pick or a
     // brush reads the key columns of, when its view names them (selectFields).
     const inputFeaturesRef = useRef<Record<string, readonly any[]>>({});
     // What the last draw's maps were handed of each table, as autk-db exported
     // it, which can leave rows out and keep the others in an order of its own,
     // and the input row each position of its layer stands for (`drawnRows`):
-    // read back the first time a pick or a highlight on that layer needs it.
-    // `tagged` holds the tables whose features carry their input row.
+    // read back the first time a pick or a highlight on that layer needs it,
+    // by key. `tagged` holds the keys of the tables whose features carry their
+    // input row. `reads` is the last read of the run's database, and
+    // `enterWorkspace` autk-grammar's, which a read of a table in another
+    // workspace than the default one enters it with.
     const drawnRef = useRef<{
         grammar: unknown;
         tagged: ReadonlySet<string>;
         features: Map<string, Promise<any[] | null>>;
         rows: Map<string, Promise<number[] | null>>;
+        reads: Promise<unknown>;
+        enterWorkspace?: (db: any, workspace?: string) => Promise<void>;
     } | null>(null);
-    const drawnFeaturesOf = (grammar: any, table: string): Promise<any[] | null> | null => {
+    // A table's rows as autk-db exports them, which a map drew, or null when
+    // they cannot be read. autk-grammar's `data` lists the tables of the
+    // default workspace, and each a pass computed, under its key; a table of
+    // another workspace is read from the run's database in that workspace.
+    // The reads go one at a time, and one in another workspace puts the
+    // database back in the default one, where `data` reads.
+    const exportedTable = (grammar: any, workspace: string | undefined, table: string): Promise<any> | null => {
         const drawn = drawnRef.current;
         const exports = grammar?.data;
-        if (!drawn || drawn.grammar !== grammar || !exports || typeof exports !== 'object' || !(table in exports)) return null;
-        // Each read of the grammar's data exports the table again: once per draw.
-        if (!drawn.features.has(table)) {
-            drawn.features.set(table, Promise.resolve(exports[table]).then(drawnFeatures, () => null));
+        if (!drawn || drawn.grammar !== grammar || !exports || typeof exports !== 'object') return null;
+        const key = autkTableKey(workspace, table);
+        const db = grammar?.grammarEngine?.context;
+        const enter = drawn.enterWorkspace;
+        let read: () => Promise<any>;
+        if (key in exports) read = () => Promise.resolve(exports[key]);
+        else if (workspace !== undefined && typeof db?.getLayer === 'function' && typeof enter === 'function') {
+            read = async () => {
+                await enter(db, workspace);
+                try {
+                    return await db.getLayer(table);
+                } finally {
+                    await enter(db);
+                }
+            };
+        } else return null;
+        const next = drawn.reads.then(read, read);
+        drawn.reads = next.catch(() => undefined);
+        return next;
+    };
+    const drawnFeaturesOf = (grammar: any, workspace: string | undefined, table: string): Promise<any[] | null> | null => {
+        const drawn = drawnRef.current;
+        const key = autkTableKey(workspace, table);
+        // Each read of a table exports it again: once per draw.
+        if (drawn && drawn.grammar === grammar && !drawn.features.has(key)) {
+            const exported = exportedTable(grammar, workspace, table);
+            if (!exported) return null;
+            drawn.features.set(key, exported.then(drawnFeatures, () => null));
         }
-        return drawn.features.get(table)!;
+        return drawn && drawn.grammar === grammar ? drawn.features.get(key) ?? null : null;
     };
     // Null for a table whose order is known without it: one a document loads
     // itself, or none of this draw's maps drew.
-    // Each table a pass of the last draw wrote from the input's, by name: the
-    // input table whose rows it holds (writtenTables), followed through passes
-    // that write from one another. A pick on it names that table's rows, and
-    // a selection of them lights it.
+    // Each table a pass of the last draw wrote from the input's, by key
+    // (tableKeyOf): the input table whose rows it holds (writtenTables), by
+    // name, followed through passes that write from one another, in the
+    // pass's workspace. A pick on it names that table's rows, and a selection
+    // of them lights it.
     const writtenFromRef = useRef<Record<string, string>>({});
-    const rowsTableOf = (table: string | undefined): string | undefined =>
-        (table !== undefined && writtenFromRef.current[table]) || table;
-    const drawnRowsOf = (grammar: any, table: string): Promise<number[] | null> | null => {
+    // The input table whose rows *table*, a table of *workspace*, holds, by
+    // name: a pass's root is a table of the pass's own workspace.
+    const rowsTableOf = (table: string | undefined, workspace?: string): string | undefined => {
+        const root = table === undefined ? undefined : writtenFromRef.current[autkTableKey(workspace, table)];
+        if (!root) return table;
+        return workspace !== undefined && root.startsWith(`${workspace}/`) ? root.slice(workspace.length + 1) : root;
+    };
+    const drawnRowsOf = (grammar: any, workspace: string | undefined, table: string): Promise<number[] | null> | null => {
         const drawn = drawnRef.current;
-        const features = drawn?.tagged.has(table) ? drawnFeaturesOf(grammar, table) : null;
+        const key = autkTableKey(workspace, table);
+        const features = drawn?.tagged.has(key) ? drawnFeaturesOf(grammar, workspace, table) : null;
         if (!drawn || !features) return null;
-        if (!drawn.rows.has(table)) {
-            drawn.rows.set(table, features.then((list) => drawnRows(list, mapLayerOf(grammar, table)?.components)));
+        if (!drawn.rows.has(key)) {
+            drawn.rows.set(key, features.then((list) => drawnRows(list, mapLayerOf(grammar, table)?.components)));
         }
-        return drawn.rows.get(table)!;
+        return drawn.rows.get(key)!;
     };
     // The input row each row of a table a pass of this draw wrote stands for,
     // as a plot of it holds them: every feature the pass kept, in the order
     // autk-db stores them, read back from what it exported. Null for any
     // other table, whose rows a plot holds as Curio loads them.
-    const writtenRowsOf = (grammar: any, table: string): Promise<number[] | null> | null => {
+    const writtenRowsOf = (grammar: any, table: string, workspace?: string): Promise<number[] | null> | null => {
         const drawn = drawnRef.current;
         const exports = grammar?.data;
-        if (!drawn || drawn.grammar !== grammar || !writtenFromRef.current[table] || !drawn.tagged.has(table)
-            || !exports || typeof exports !== 'object' || !(table in exports)) return null;
-        const key = `written:${table}`;
-        if (!drawn.rows.has(key)) {
-            drawn.rows.set(key, Promise.resolve(exports[table]).then((fc: any) => drawnRows(fc?.features), () => null));
+        // autk-grammar's `data` lists a table a pass computed under its key.
+        const key = autkTableKey(workspace, table);
+        if (!drawn || drawn.grammar !== grammar || !writtenFromRef.current[key] || !drawn.tagged.has(key)
+            || !exports || typeof exports !== 'object' || !(key in exports)) return null;
+        const rowsKey = `written:${key}`;
+        if (!drawn.rows.has(rowsKey)) {
+            drawn.rows.set(rowsKey, Promise.resolve(exports[key]).then((fc: any) => drawnRows(fc?.features), () => null));
         }
-        return drawn.rows.get(key)!;
+        return drawn.rows.get(rowsKey)!;
     };
 
     // What the node knows about its input edge, asked the way the Vega-Lite
@@ -652,11 +703,13 @@ export const useAutkGrammarBehavior = (
                 }
                 // A table a pass writes from one of the input's holds that
                 // table's rows, as autk-db stores them (writtenTables); a
-                // render pass's building windows hold none of them.
-                const inputTables = new Set(prepared.sources.map((source) => source.outputTableName));
-                for (const { name, from, holdsRows } of writtenTables(spec)) {
-                    const root = writtenFrom[from] ?? from;
-                    if (holdsRows && inputTables.has(root)) writtenFrom[name] = root;
+                // render pass's building windows hold none of them. Both by
+                // key: a pass reads and writes tables of its own workspace.
+                const inputTables = new Set(prepared.sources.map(tableKeyOf));
+                for (const { name, from, holdsRows, workspace } of writtenTables(spec)) {
+                    const fromKey = autkTableKey(workspace, from);
+                    const root = writtenFrom[fromKey] ?? fromKey;
+                    if (holdsRows && inputTables.has(root)) writtenFrom[autkTableKey(workspace, name)] = root;
                 }
                 const passRoots = new Set(Object.values(writtenFrom));
                 const orders: Record<string, LoadOrder> = {};
@@ -664,12 +717,12 @@ export const useAutkGrammarBehavior = (
                 upstreamSources = prepared.sources.map((source) => {
                     // Each feature a map draws, and each a pass computes over,
                     // carries its input row, read back from what autk-db exported.
-                    const loadable = loadableSource(source, { tagRows: hasMaps || passRoots.has(source.outputTableName) });
-                    orders[source.outputTableName] = loadable.order;
-                    features[source.outputTableName] = (source.geojsonObject as any)?.features ?? [];
+                    const loadable = loadableSource(source, { tagRows: hasMaps || passRoots.has(tableKeyOf(source)) });
+                    orders[tableKeyOf(source)] = loadable.order;
+                    features[tableKeyOf(source)] = (source.geojsonObject as any)?.features ?? [];
                     return loadable.source;
                 });
-                taggedTables = prepared.sources.map((source) => source.outputTableName)
+                taggedTables = prepared.sources.map(tableKeyOf)
                     .filter((table) => hasMaps || passRoots.has(table));
                 for (const [name, root] of Object.entries(writtenFrom)) {
                     // A pass's result keeps the rows in the order autk-db
@@ -724,7 +777,7 @@ export const useAutkGrammarBehavior = (
             // artifact reference; backendLayers is set only by the in-browser
             // fallback (sandbox unreachable / source can't run server-side).
             let backendRef: { path: string; dataType: string } | null = null;
-            let backendLayers: Array<{ name: string; type?: string; geojson: any }> | null = null;
+            let backendLayers: AutkLayer[] | null = null;
 
             if (specDataSources.length > 0) {
                 const resolvedForBackend = resolveDataSourceUrls({ data: specDataSources }, true).data;
@@ -774,9 +827,10 @@ export const useAutkGrammarBehavior = (
             // evicted, session changed, or a serialization mismatch), drop the
             // cache and load in-browser so the node draws and computes instead of
             // silently working on nothing. Only applies to the backend-ref path
-            // (backendLayers == null means we did not already fall back).
-            const loadedLayers = async (): Promise<Array<{ name: string; type?: string; geojson: any }>> => {
-                let layers: Array<{ name: string; type?: string; geojson: any }> = [];
+            // (backendLayers == null means we did not already fall back). Each
+            // layer keeps the workspace it was loaded into.
+            const loadedLayers = async (): Promise<AutkLayer[]> => {
+                let layers: AutkLayer[] = [];
                 try {
                     layers = await materializeBackendLayers(backendLayers, backendRef);
                 } catch {
@@ -806,13 +860,16 @@ export const useAutkGrammarBehavior = (
                     // (autk-db returns layers in the workspace CRS, EPSG:3395
                     // meters): the layers carry a crs stamp set by the loader,
                     // which detectCoordinateFormat reads (falling back to the
-                    // coordinate-magnitude heuristic).
+                    // coordinate-magnitude heuristic). Each goes back into the
+                    // workspace it was loaded into, where the grammar's data
+                    // adapter loads it.
                     const backendAsSources = layers.map((l) => ({
                         type: 'geojson',
                         geojsonObject: l.geojson,
                         outputTableName: l.name,
                         coordinateFormat: detectCoordinateFormat(l.geojson as any),
                         ...(l.type && l.type !== 'polygons' ? { layerType: l.type } : {}),
+                        ...(l.workspace ? { workspace: l.workspace } : {}),
                     }));
                     ownSources = backendAsSources;
                     dataSectionSources = [...rasterSources, ...upstreamSources, ...backendAsSources];
@@ -821,11 +878,13 @@ export const useAutkGrammarBehavior = (
                 // dropped: an empty table still exists, so a ref to it is not a
                 // ref to data the dataflow does not produce (that would be rule
                 // 1, `no-layers`, blaming the wrong thing). `rows` is undefined
-                // when the collection could not be counted.
+                // when the collection could not be counted. Tables are known by
+                // key (tableKeyOf), since two workspaces can hold tables of one
+                // name, and each view names a table of its own workspace.
                 const tableRows = new Map<string, { rows: number | undefined; own: boolean }>();
                 for (const s of dataSectionSources) {
                     if (typeof s?.outputTableName !== 'string' || !s.outputTableName) continue;
-                    tableRows.set(s.outputTableName, {
+                    tableRows.set(tableKeyOf(s), {
                         // A raster's rows are its cells.
                         rows: isCurioRasterSource(s) ? s.cells : featureCount(s.geojsonObject),
                         own: ownSources.includes(s),
@@ -848,13 +907,14 @@ export const useAutkGrammarBehavior = (
                 // A table a compute pass of the document writes is a table this
                 // node has: it holds the rows of the table the pass computes
                 // over, and is this node's own when that one is. In pass order,
-                // so one written from another's holds its rows too. A render
-                // pass's building windows are counted as the buildings' rows:
-                // there are none when there are no buildings.
+                // so one written from another's holds its rows too. By key:
+                // a pass reads and writes tables of its own workspace. A
+                // render pass's building windows are counted as the buildings'
+                // rows: there are none when there are no buildings.
                 const written = writtenTables(spec);
-                for (const { name, from } of written) {
-                    const source = tableRows.get(from);
-                    if (source) tableRows.set(name, { ...source });
+                for (const { name, from, workspace } of written) {
+                    const source = tableRows.get(autkTableKey(workspace, from));
+                    if (source) tableRows.set(autkTableKey(workspace, name), { ...source });
                 }
                 // autk-db's loadGeojson throws on an empty FeatureCollection. Two
                 // consequences for sparse data (e.g. a PBF area with no parks, or a
@@ -901,14 +961,17 @@ export const useAutkGrammarBehavior = (
                 // dev/136: what this render ASKED for, before any resolution
                 // drops a thing. A dropped layerRef used to leave a
                 // console.warn as its only trace, so a map whose every ref was
-                // dropped rendered a grey canvas under a green "Done".
+                // dropped rendered a grey canvas under a green "Done". Each is
+                // a table of the map's or the plot's own workspace, by key.
+                const mapRefKey = (r: any) => autkTableKey(autkWorkspaceOf(spec.map), r.dataRef);
+                const plotKey = (table: string) => autkTableKey(autkWorkspaceOf(spec.plot), table);
                 const requestedRefs: string[] = [
                     ...(Array.isArray(spec.map?.layerRefs)
                         ? spec.map.layerRefs
-                            .map((r: any) => r?.dataRef)
-                            .filter((r: any): r is string => typeof r === 'string' && !!r)
+                            .filter((r: any) => typeof r?.dataRef === 'string' && !!r.dataRef)
+                            .map(mapRefKey)
                         : []),
-                    ...(spec.plot?.dataRef ? [String(spec.plot.dataRef)] : []),
+                    ...(spec.plot?.dataRef ? [plotKey(String(spec.plot.dataRef))] : []),
                 ];
                 // Every table this node holds, empty ones included, is what the
                 // document could have named; only the non-empty ones can be
@@ -918,38 +981,40 @@ export const useAutkGrammarBehavior = (
                 if (knownNames.size > 0) {
                     const availableNames = new Set<string>(
                         dataSectionSources
-                            .map((s: any) => s?.outputTableName)
-                            .filter(Boolean),
+                            .filter((s: any) => s?.outputTableName)
+                            .map(tableKeyOf),
                     );
                     // The grammar's run reads each table a pass names from
                     // autk-db, which holds none without rows: a pass over one
                     // does not run, and a render layer of one, which would
                     // draw nothing, is left out of its pass (passesAtHand). A
-                    // pass that runs writes its table.
+                    // pass that runs writes its table, in its own workspace.
                     if (Array.isArray(spec.compute)) {
                         const passes = passesAtHand(spec.compute, knownNames, availableNames);
-                        for (const { name } of writtenTables({ compute: passes })) availableNames.add(name);
+                        for (const { name, workspace } of writtenTables({ compute: passes })) {
+                            availableNames.add(autkTableKey(workspace, name));
+                        }
                         spec = { ...spec, compute: passes };
                     }
                     if (spec.map && Array.isArray(spec.map.layerRefs)) {
                         const dangling = spec.map.layerRefs.filter(
-                            (r: any) => r?.dataRef && !knownNames.has(r.dataRef),
+                            (r: any) => r?.dataRef && !knownNames.has(mapRefKey(r)),
                         );
                         const empty = spec.map.layerRefs.filter(
-                            (r: any) => r?.dataRef && knownNames.has(r.dataRef)
-                                && !availableNames.has(r.dataRef),
+                            (r: any) => r?.dataRef && knownNames.has(mapRefKey(r))
+                                && !availableNames.has(mapRefKey(r)),
                         );
                         if (dangling.length > 0) {
                             console.warn(
                                 '[autk-grammar] dropping map layerRef(s) to unavailable table(s): '
-                                + dangling.map((r: any) => r.dataRef).join(', ')
+                                + dangling.map(mapRefKey).join(', ')
                                 + ' - available: ' + [...availableNames].join(', '),
                             );
                         }
                         if (empty.length > 0) {
                             console.warn(
                                 '[autk-grammar] dropping map layerRef(s) to empty table(s): '
-                                + empty.map((r: any) => r.dataRef).join(', '),
+                                + empty.map(mapRefKey).join(', '),
                             );
                         }
                         if (dangling.length > 0 || empty.length > 0) {
@@ -964,12 +1029,12 @@ export const useAutkGrammarBehavior = (
                     // A plot bound to an unavailable layer has nothing to draw:
                     // drop it rather than fail resolving the missing table.
                     if (spec.plot && (
-                        (spec.plot.dataRef && !availableNames.has(spec.plot.dataRef))
-                        || (spec.plot.mapRef && !availableNames.has(spec.plot.mapRef))
+                        (spec.plot.dataRef && !availableNames.has(plotKey(spec.plot.dataRef)))
+                        || (spec.plot.mapRef && !availableNames.has(plotKey(spec.plot.mapRef)))
                     )) {
                         console.warn(
                             '[autk-grammar] dropping plot bound to unavailable table: '
-                            + (spec.plot.dataRef ?? spec.plot.mapRef)
+                            + plotKey(spec.plot.dataRef ?? spec.plot.mapRef)
                             + ' - available: ' + [...availableNames].join(', '),
                         );
                         const { plot, ...rest } = spec;
@@ -1053,7 +1118,7 @@ export const useAutkGrammarBehavior = (
                 // Every raster draws each cell that has a value opaque.
                 spec = withOpaqueRasters(spec);
 
-                const { AutkGrammar, applyCamera } = await import('@urban-toolkit/autk-grammar');
+                const { AutkGrammar, applyCamera, enterWorkspace } = await import('@urban-toolkit/autk-grammar');
                 // A node that left the page while its data loaded has no
                 // canvas to draw on: its run ends here (see mountedRef).
                 if (leftPage()) return;
@@ -1064,7 +1129,9 @@ export const useAutkGrammarBehavior = (
                 const computes = Array.isArray(spec.compute) && spec.compute.length > 0;
                 const grammar = await withExtensionRetry(async () => {
                     const g = new AutkGrammar(targets);
-                    if (drawsRasters) withRasterSources(g, newAutkDb);
+                    // A raster enters its workspace when the document keeps
+                    // tables in more than the default one (autkUsesWorkspaces).
+                    if (drawsRasters) withRasterSources(g, newAutkDb, autkUsesWorkspaces(spec) ? enterWorkspace : undefined);
                     // Each pass the run computes is checked on the GPU's
                     // device, as a compute step's is (autkComputeScopes).
                     if (computes) withCheckedPasses(g);
@@ -1117,8 +1184,9 @@ export const useAutkGrammarBehavior = (
                         shownMap ?? null,
                         (table) => layerIdFor(spec, table),
                         async (table, key, id) => featurePositions(
-                            inputFeatures[table] ?? [],
-                            (await drawnRowsOf(grammar, table)) ?? loadOrders[table]?.map,
+                            inputFeatures[autkTableKey(autkWorkspaceOf(spec.map), table)] ?? [],
+                            (await drawnRowsOf(grammar, autkWorkspaceOf(spec.map), table))
+                                ?? loadOrders[autkTableKey(autkWorkspaceOf(spec.map), table)]?.map,
                             key,
                             id,
                         ),
@@ -1135,7 +1203,10 @@ export const useAutkGrammarBehavior = (
                 // Store for interaction effects
                 grammarRef.current = grammar;
                 specRef.current    = spec;
-                drawnRef.current   = { grammar, tagged: new Set(taggedTables), features: new Map(), rows: new Map() };
+                drawnRef.current   = {
+                    grammar, tagged: new Set(taggedTables), features: new Map(), rows: new Map(),
+                    reads: Promise.resolve(), enterWorkspace,
+                };
                 writtenFromRef.current = writtenFrom;
 
                 // Grammar → Curio: forward map-picking and plot-selection events to
@@ -1158,6 +1229,9 @@ export const useAutkGrammarBehavior = (
                     const keysOf = (layerRef: string | undefined, from: 'map' | 'plot') => from === 'map'
                         ? selectFieldsOf(mapRefs.find((l: any) => l?.dataRef === layerRef))
                         : selectFieldsOf(spec.plot);
+                    // The workspace a view reads its table from: the map's, or the plot's.
+                    const viewWorkspace = (from: 'map' | 'plot') => autkWorkspaceOf(from === 'map' ? spec.map : spec.plot);
+                    const viewTable = (layerRef: string, from: 'map' | 'plot') => autkTableKey(viewWorkspace(from), layerRef);
 
                     const sendInteraction = (
                         selection: number[],
@@ -1173,7 +1247,7 @@ export const useAutkGrammarBehavior = (
                         // pick on rows that hold none selects nothing.
                         const fields = keysOf(layerRef, from);
                         const data = fields && layerRef
-                            ? keyValues(rows, inputFeaturesRef.current[layerRef] ?? [], fields)
+                            ? keyValues(rows, inputFeaturesRef.current[viewTable(layerRef, from)] ?? [], fields)
                             : rows;
                         sendOwnSelection({
                             autk_selection: {
@@ -1183,7 +1257,7 @@ export const useAutkGrammarBehavior = (
                                 source: NodeType.AUTK_GRAMMAR,
                                 // A table a pass wrote holds the rows of the
                                 // input table it is computed from: named so.
-                                layerRef: rowsTableOf(layerRef),
+                                layerRef: rowsTableOf(layerRef, viewWorkspace(from)),
                             },
                         });
                     };
@@ -1194,10 +1268,12 @@ export const useAutkGrammarBehavior = (
                     ) => {
                         // A pick names positions in the layer as the map drew it,
                         // and a brush positions in the table the plot holds,
-                        // which for a table a pass wrote is what the pass kept.
-                        const loaded = layerRef ? loadOrdersRef.current[layerRef]?.[from === 'map' ? 'map' : 'load'] : null;
+                        // which for a table a pass wrote is what the pass kept,
+                        // each a table of the view's workspace.
+                        const loaded = layerRef ? loadOrdersRef.current[viewTable(layerRef, from)]?.[from === 'map' ? 'map' : 'load'] : null;
                         const drawn = !layerRef ? null
-                            : from === 'map' ? drawnRowsOf(grammar, layerRef) : writtenRowsOf(grammar, layerRef);
+                            : from === 'map' ? drawnRowsOf(grammar, viewWorkspace(from), layerRef)
+                                : writtenRowsOf(grammar, layerRef, viewWorkspace(from));
                         if (!drawn) {
                             sendInteraction(selection, layerRef, from, loaded);
                             return;
@@ -1275,7 +1351,7 @@ export const useAutkGrammarBehavior = (
                     // Their rows are unknown there, so no emptiness is claimed;
                     // only layers in hand are counted.
                     const tables = backendLayers
-                        ? backendLayers.map((l) => countedItem(l.name, featureCount(l.geojson), 'features'))
+                        ? backendLayers.map((l) => countedItem(autkTableKey(l.workspace, l.name), featureCount(l.geojson), 'features'))
                         : requestedLayerTables(specDataSources);
                     summary = describeAutkRun('Loaded', 'table', tables);
                     summaryListsItems = tables.length > 0;
@@ -1314,18 +1390,25 @@ export const useAutkGrammarBehavior = (
                     if (computeInput?.emptyReason && computeInput.sources.length === 0) {
                         inputProblemRef.current = { reason: computeInput.emptyReason, detail: computeInput.detail };
                     }
+                    // Each layer keeps the workspace it came in, which a pass
+                    // names to read it and which it is handed on in.
                     const upstream = (computeInput?.sources ?? []).map((source) => ({
                         name: source.outputTableName,
                         type: source.layerType ?? 'polygons',
                         geojson: source.geojsonObject,
+                        ...(source.workspace ? { workspace: source.workspace } : {}),
                     }));
                     // The layers its data section loaded, which a layer of the
-                    // input by the same name gives way to, as on a map.
+                    // input of the same name and workspace gives way to, as on a map.
                     const own = specDataSources.length > 0
-                        ? (await loadedLayers()).map((l) => ({ name: l.name, type: l.type ?? 'polygons', geojson: l.geojson }))
+                        ? (await loadedLayers()).map((l) => ({
+                            name: l.name, type: l.type ?? 'polygons', geojson: l.geojson,
+                            ...(l.workspace ? { workspace: l.workspace } : {}),
+                        }))
                         : [];
-                    const ownNames = new Set(own.map((l) => l.name));
-                    let layers = [...upstream.filter((l) => !ownNames.has(l.name)), ...own];
+                    const layerKey = (l: { name: string; workspace?: string }) => autkTableKey(l.workspace, l.name);
+                    const ownKeys = new Set(own.map(layerKey));
+                    let layers = [...upstream.filter((l) => !ownKeys.has(layerKey(l))), ...own];
                     // The rows at hand, counted before the empty-layer drop
                     // below hides them, and of those the ones its data section
                     // loaded. No layer at all (nothing connected, or an input
@@ -1340,7 +1423,10 @@ export const useAutkGrammarBehavior = (
                     // FeatureCollection, and an empty layer would surface as a
                     // blank tab in the downstream Data Pool); the compute below
                     // then only runs on layers that have features.
-                    const held = new Set([...layers.map((l) => l.name), ...writtenTables(spec).map((t) => t.name)]);
+                    const held = new Set([
+                        ...layers.map(layerKey),
+                        ...writtenTables(spec).map((t) => autkTableKey(t.workspace, t.name)),
+                    ]);
                     const emptyLayers = layers.filter((l) => !hasFeatures(l.geojson));
                     if (emptyLayers.length > 0) {
                         console.warn(
@@ -1354,8 +1440,8 @@ export const useAutkGrammarBehavior = (
                         // The passes run over the layers that have features, as
                         // a map node's do (passesAtHand): one over a dropped
                         // layer does not run, and a render layer of one is left
-                        // out of its pass.
-                        const runs = passesAtHand(passes, held, new Set(layers.map((l) => l.name)));
+                        // out of its pass. Each by key, in its workspace.
+                        const runs = passesAtHand(passes, held, new Set(layers.map(layerKey)));
                         layers = await applyComputeBlocks(
                             layers, runs, computeFailures,
                         );
@@ -1372,7 +1458,7 @@ export const useAutkGrammarBehavior = (
                     summary = describeAutkRun(
                         'Computed',
                         'layer',
-                        layers.map((l) => countedItem(l.name, featureCount(l.geojson), 'rows')),
+                        layers.map((l) => countedItem(autkTableKey(l.workspace, l.name), featureCount(l.geojson), 'rows')),
                     );
                     summaryListsItems = layers.length > 0;
                     runCounts = {
@@ -1600,53 +1686,61 @@ export const useAutkGrammarBehavior = (
         const incoming: IncomingSelection[] = Array.isArray((current as any).interactions)
             ? (current as any).interactions
             : [];
+        // Each layer by key (tableKeyOf): a selection that names its layer
+        // lands on the first layer of that name.
         const direct = new Map<string, IncomingSelection[]>();
         for (const selection of incoming) {
             const named = (selection as any)?.details?.autk_selection?.layerRef;
-            const target = layers.some((l) => l.outputTableName === named) ? named : layers[0].outputTableName;
+            const target = tableKeyOf(layers.find((l) => l.outputTableName === named) ?? layers[0]);
             direct.set(target, [...(direct.get(target) ?? []), selection]);
         }
 
         // Input rows per layer; each target turns them into its own positions.
         const rowsByLayer = new Map<string, number[]>();
-        for (const { outputTableName: name, geojsonObject: fc } of layers) {
+        for (const layer of layers) {
+            const fc = layer.geojsonObject;
+            const key = tableKeyOf(layer);
             const flagged = ((fc.features ?? []) as any[]).reduce<number[]>((acc, f, i) => {
                 if (f.properties?.interacted === '1') acc.push(i);
                 return acc;
             }, []);
-            const selected = direct.has(name) ? matchSelections(direct.get(name)!, featureRows(fc)) : [];
-            rowsByLayer.set(name, [...new Set([...flagged, ...selected])]);
+            const selected = direct.has(key) ? matchSelections(direct.get(key)!, featureRows(fc)) : [];
+            rowsByLayer.set(key, [...new Set([...flagged, ...selected])]);
         }
-        // A table a pass wrote lights the rows of the table it holds the rows of.
-        for (const [name, root] of Object.entries(writtenFromRef.current)) {
-            rowsByLayer.set(name, rowsByLayer.get(root) ?? []);
+        // A table a pass wrote lights the rows of the table it holds the rows
+        // of, both by key.
+        for (const [key, root] of Object.entries(writtenFromRef.current)) {
+            rowsByLayer.set(key, rowsByLayer.get(root) ?? []);
         }
-        const positions = (name: string, from: 'map' | 'load') =>
-            tablePositions(rowsByLayer.get(name) ?? [], loadOrdersRef.current[name]?.[from]);
+        const positions = (key: string, from: 'map' | 'load') =>
+            tablePositions(rowsByLayer.get(key) ?? [], loadOrdersRef.current[key]?.[from]);
 
         const maps  = spec.map  ? (Array.isArray(spec.map)  ? spec.map  : [spec.map])  : [];
         const plots = spec.plot ? (Array.isArray(spec.plot) ? spec.plot : [spec.plot]) : [];
 
         // A map layer names the rows it lights by the positions it drew them
-        // at, read back once a draw (`drawnRowsOf`).
-        const mapRefs: any[] = maps.flatMap((mapSpec: any) => mapSpec.layerRefs ?? []);
-        const drawnOrders = await Promise.all(mapRefs.map((lr: any) =>
-            ((rowsByLayer.get(lr.dataRef) ?? []).length > 0 ? drawnRowsOf(grammar, lr.dataRef) : null)));
+        // at, read back once a draw (`drawnRowsOf`), in its map's workspace.
+        const mapRefs = maps.flatMap((mapSpec: any) => (mapSpec.layerRefs ?? []).map((lr: any) => ({
+            lr, workspace: autkWorkspaceOf(mapSpec), key: autkTableKey(autkWorkspaceOf(mapSpec), lr.dataRef),
+        })));
+        const drawnOrders = await Promise.all(mapRefs.map(({ lr, workspace, key }: any) =>
+            ((rowsByLayer.get(key) ?? []).length > 0 ? drawnRowsOf(grammar, workspace, lr.dataRef) : null)));
         if (grammarRef.current !== grammar) return;
-        mapRefs.forEach((lr: any, at: number) => {
-            const sel = tablePositions(rowsByLayer.get(lr.dataRef) ?? [], drawnOrders[at] ?? loadOrdersRef.current[lr.dataRef]?.map);
+        mapRefs.forEach(({ lr, key }: any, at: number) => {
+            const sel = tablePositions(rowsByLayer.get(key) ?? [], drawnOrders[at] ?? loadOrdersRef.current[key]?.map);
             sel.length === 0
                 ? grammar.clearHighlightOnMap?.(lr.dataRef)
                 : grammar.highlightOnMap?.(lr.dataRef, sel);
         });
         for (const plotSpec of plots) {
             // A plot of a table a pass wrote holds the rows the pass kept.
-            const written = writtenRowsOf(grammar, plotSpec.dataRef);
+            const plotTable = autkTableKey(autkWorkspaceOf(plotSpec), plotSpec.dataRef);
+            const written = writtenRowsOf(grammar, plotSpec.dataRef, autkWorkspaceOf(plotSpec));
             const kept = written ? await written : null;
             if (grammarRef.current !== grammar) return;
             const sel = kept
-                ? tablePositions(rowsByLayer.get(plotSpec.dataRef) ?? [], kept)
-                : positions(plotSpec.dataRef, 'load');
+                ? tablePositions(rowsByLayer.get(plotTable) ?? [], kept)
+                : positions(plotTable, 'load');
             // The grammar knows a plot by its id, else by its table (plotKey).
             const plot = typeof plotSpec.id === 'string' && plotSpec.id ? plotSpec.id : plotSpec.dataRef;
             sel.length === 0
@@ -1676,9 +1770,10 @@ export const useAutkGrammarBehavior = (
     // What this node's map draws and lights, as autk-map and autk-db hold it,
     // for the e2e tests.
     useEffect(() => {
+        // The map's layers, each a table of the map's workspace.
         const drawn: DrawnTables = {
-            features: (table) => drawnFeaturesOf(grammarRef.current, table),
-            rows: (table) => drawnRowsOf(grammarRef.current, table),
+            features: (table) => drawnFeaturesOf(grammarRef.current, autkWorkspaceOf(specRef.current?.map), table),
+            rows: (table) => drawnRowsOf(grammarRef.current, autkWorkspaceOf(specRef.current?.map), table),
         };
         mapStateReaders.set(data.nodeId, {
             state: () => mapStateOf(grammarRef.current, specRef.current, drawn),
@@ -1705,8 +1800,11 @@ export const useAutkGrammarBehavior = (
                 const input = dataRef.current.input;
                 if (!spec || !input) return null;
                 const sources = autkSourcesFrom(await readDrawnInput(input), spec).sources;
-                const named = rowsTableOf(layer ?? selectionLayerOf(spec));
-                const source = sources.find((s) => s.outputTableName === named) ?? sources[0];
+                // A view's tables are of its workspace: the map's, else the plot's.
+                const workspace = autkWorkspaceOf(spec.map ?? spec.plot);
+                const named = rowsTableOf(layer ?? selectionLayerOf(spec), workspace);
+                const source = sources.find((s) => named !== undefined && tableKeyOf(s) === autkTableKey(workspace, named))
+                    ?? sources[0];
                 if (!source) return null;
                 const fc = source.geojsonObject as { features?: any[] };
                 const first = (fc.features ?? []).find((f) => f?.properties);

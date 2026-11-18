@@ -508,7 +508,7 @@ sudo systemctl reload caddy
 
 This is where the frontend bundle gets compiled. The first build takes 10-15 minutes because it has to install Python and Node dependencies and run the full webpack build, subsequent builds are faster thanks to layer caching.
 
-The build also installs the sandbox's Node.js packages (autk-db) into `node_modules/` beside the repository's `package.json`; `curio.py start` runs `npm install` there on every start.
+The build also installs the sandbox's Node.js packages (autk-db and autk-grammar) into `node_modules/` beside the repository's `package.json`; `curio.py start` runs `npm install` there on every start.
 
 > [!WARNING]
 > **Always deploy with both compose files.** `docker-compose.yml` alone starts

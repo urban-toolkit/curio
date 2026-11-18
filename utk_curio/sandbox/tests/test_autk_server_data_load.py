@@ -152,6 +152,91 @@ def test_the_server_compiled_load_hands_on_the_layers(example, node_id, extract,
         _assert_osm_ids(layer)
 
 
+def _line(x0: float, y0: float) -> dict:
+    return {"type": "Feature", "geometry": {"type": "LineString", "coordinates": [[x0, y0], [x0 + 0.001, y0 + 0.001]]},
+            "properties": {"x": x0}}
+
+
+def _point(x: float, y: float) -> dict:
+    return {"type": "Feature", "geometry": {"type": "Point", "coordinates": [x, y]}, "properties": {"x": x}}
+
+
+def _collection(*features: dict) -> dict:
+    return {"type": "FeatureCollection", "features": list(features)}
+
+
+#: ``lines`` in the default workspace (one, in the Loop) and in ``east`` (three,
+#: 8 km east, inside ``zones``, which east's join counts them in), and
+#: ``points`` in ``autk``, the default workspace named.
+WORKSPACES_SPEC = {"data": [
+    {"type": "geojson", "outputTableName": "lines", "geojsonObject": _collection(_line(-87.600, 41.880))},
+    {"type": "geojson", "outputTableName": "zones", "workspace": "east", "geojsonObject": _collection({
+        "type": "Feature", "properties": {"zone": 1},
+        "geometry": {"type": "Polygon", "coordinates": [[
+            [-87.51, 41.87], [-87.47, 41.87], [-87.47, 41.89], [-87.51, 41.89], [-87.51, 41.87],
+        ]]},
+    })},
+    {"type": "geojson", "outputTableName": "lines", "workspace": "east",
+     "geojsonObject": _collection(_line(-87.500, 41.880), _line(-87.490, 41.880), _line(-87.480, 41.880))},
+    {"type": "geojson", "outputTableName": "points", "workspace": "autk",
+     "geojsonObject": _collection(_point(-87.5998, 41.8802), _point(-87.5995, 41.8805))},
+    {"type": "join", "workspace": "east", "dataRef": "zones", "joinDataRef": "lines",
+     "groupBy": [{"column": "*", "aggregateFn": "count"}]},
+]}
+
+
+def _numbers(value) -> list:
+    """Every number *value* holds, however deep."""
+    if isinstance(value, bool):
+        return []
+    if isinstance(value, (int, float)):
+        return [value]
+    if isinstance(value, dict):
+        return [n for inner in value.values() for n in _numbers(inner)]
+    if isinstance(value, list):
+        return [n for inner in value for n in _numbers(inner)]
+    return []
+
+
+def test_the_server_compiled_load_keeps_each_table_in_its_workspace(tmp_path, monkeypatch):
+    """A server run's data load (autk-grammar 5.0.0's ``workspace``): each
+    source loads into its workspace, entered with autk-grammar's own
+    ``enterWorkspace`` from its ``./data`` entry, so two workspaces hold a
+    ``lines`` each and east's join counts east's three. Each table is handed
+    on with its workspace, one of the default workspace as before. The tables
+    the sandbox reads back are keyed with the grammar's ``tableKey`` and checked
+    against the ones the browser's compiler expects, keyed by its own copy of
+    that rule, so a mismatch fails the load as a short one."""
+    from utk_curio.cli import dependencies
+    from utk_curio.common.autk_data_compiler import compile_data_spec
+    from utk_curio.sandbox.app.worker import _worker_init, execute_js_code
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    code = compile_data_spec(json.dumps(WORKSPACES_SPEC))
+    assert "import { enterWorkspace, tableKey } from '@urban-toolkit/autk-grammar/data';" in code
+    assert 'const __expectedTables = ["lines","east/zones","east/lines","points"];' in code
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setenv("FLASK_BACKEND_HOST", "curio-backend.invalid")
+    monkeypatch.setenv("FLASK_BACKEND_PORT", "1")
+    dependencies.seed_duckdb_extensions()
+    _worker_init()
+    result = execute_js_code(code, "", "AUTK_GRAMMAR", "", launch_dir=str(REPO_ROOT), session_id=None)
+
+    assert result["output"]["path"], result["stderr"]
+    loaded = load_from_duckdb(result["output"]["path"], session_id=None)
+    assert [
+        (layer["name"], layer.get("workspace"), len(layer["geojson"]["features"])) for layer in loaded
+    ] == [("lines", None, 1), ("points", None, 2), ("zones", "east", 1), ("lines", "east", 3)]
+    # A table of the default workspace is handed on as before.
+    assert [sorted(layer) for layer in loaded[:2]] == [["geojson", "name", "type"]] * 2
+    assert all(sorted(layer) == ["geojson", "name", "type", "workspace"] for layer in loaded[2:])
+    # East's join counted east's lines, the three inside its zone.
+    zone = loaded[2]["geojson"]["features"][0]["properties"]
+    assert 3 in _numbers(zone), zone
+
+
 def _assert_osm_ids(layer: dict) -> None:
     """Every feature of *layer* carries its OpenStreetMap id in ``osm_id``: a
     road's, a park's or a water's the id autk-db gives its feature, a building

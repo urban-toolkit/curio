@@ -190,16 +190,24 @@ def _pick_export_entry(node):
 def resolve_pkg_entry_url(specifier, root_node_modules):
     """Map a bare package specifier to an absolute ``file://`` URL, or None.
 
+    A specifier with a subpath (``@urban-toolkit/autk-grammar/data``) resolves
+    as Node resolves it: to the entry the package's ``exports`` map gives
+    ``./<subpath>``, its conditions picked as :func:`_pick_export_entry` picks
+    them, or, for a package with no ``exports``, to that file in the package.
+
     Returns None for anything that is not a bare specifier (relative, absolute,
     URL, ``node:`` builtin), for a package that isn't installed under
-    ``root_node_modules``, or for an entry that escapes it.
+    ``root_node_modules``, for a subpath the package's ``exports`` do not
+    export, or for an entry that escapes ``root_node_modules``.
     """
     # Only bare specifiers (not relative / absolute / URL / node: builtin).
     if not specifier or specifier[0] in './' or ':' in specifier:
         return None
     root_node_modules = pathlib.Path(root_node_modules)
     seg = specifier.split('/')
-    pkg = '/'.join(seg[:2]) if specifier.startswith('@') else seg[0]
+    name_segments = 2 if specifier.startswith('@') else 1
+    pkg = '/'.join(seg[:name_segments])
+    subpath = '/'.join(seg[name_segments:])
     pkg_dir = root_node_modules / pkg
     pj = pkg_dir / 'package.json'
     if not pj.is_file():
@@ -210,13 +218,21 @@ def resolve_pkg_entry_url(specifier, root_node_modules):
         return None
     exp = meta.get('exports')
     entry = None
-    if isinstance(exp, str):
-        entry = exp
-    elif isinstance(exp, dict):
-        # A subpath map keys on "."; a bare condition map has no "." and applies
-        # to the root itself.
-        entry = _pick_export_entry(exp.get('.', exp))
-    entry = entry or meta.get('module') or meta.get('main') or 'index.js'
+    if subpath:
+        # Only a subpath map's own "./<subpath>" key exports a subpath: a string
+        # or a bare condition map exports the root alone.
+        if exp is None:
+            entry = subpath
+        elif isinstance(exp, dict):
+            entry = _pick_export_entry(exp.get('./' + subpath))
+    else:
+        if isinstance(exp, str):
+            entry = exp
+        elif isinstance(exp, dict):
+            # A subpath map keys on "."; a bare condition map has no "." and
+            # applies to the root itself.
+            entry = _pick_export_entry(exp.get('.', exp))
+        entry = entry or meta.get('module') or meta.get('main') or 'index.js'
     if not isinstance(entry, str):
         return None
     try:
