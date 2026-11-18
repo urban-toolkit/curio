@@ -7,8 +7,8 @@ import time
 from playwright.sync_api import Page
 
 from .canvas_authoring import node_execution_timeout_ms
-from .images import _capture_element, _compare_images
-from .screenshots import REMINT_MIN_RATIO, save_workflow_test_screenshot
+from .images import _compare_images
+from .screenshots import save_workflow_test_screenshot
 from .closeups import CLOSEUP_MAX_DIFF_RATIO, CLOSEUP_PIXEL_THRESHOLD
 
 
@@ -413,40 +413,9 @@ def lit_labels(page: Page, selector: str, field: str = "label") -> list[str] | N
     return None if labels is None else sorted(labels)
 
 
-def capture_node(page: Page, node_id: str):
-    """The node as a frame of it shows it, in memory (maps painted, see #427)."""
-    return _capture_element(page, f'.react-flow__node[data-id="{node_id}"]')
-
-
 def changed_pixels(before, after, threshold: int = 40) -> int:
     """Pixels that differ by more than *threshold* in some channel."""
     return _compare_images(after, before, threshold).mismatched
-
-
-def wait_for_node_capture(page: Page, node_id: str, done, *, timeout_ms: int = 15000):
-    """Capture *node_id* until ``done(capture)`` holds. Returns ``(capture, held)``."""
-    deadline = time.monotonic() + timeout_ms / 1000
-    while True:
-        capture = capture_node(page, node_id)
-        if done(capture):
-            return capture, True
-        if time.monotonic() >= deadline:
-            return capture, False
-        page.wait_for_timeout(300)
-
-
-def wait_for_node_still(page: Page, node_id: str, *, timeout_ms: int = 10000):
-    """Capture *node_id* until two captures in a row match; returns the last."""
-    previous = [capture_node(page, node_id)]
-
-    def still(capture):
-        same = _compare_images(capture, previous[0], CLOSEUP_PIXEL_THRESHOLD).ratio <= REMINT_MIN_RATIO
-        previous[0] = capture
-        return same
-
-    capture, held = wait_for_node_capture(page, node_id, still, timeout_ms=timeout_ms)
-    assert held, f"node {node_id} was still changing after {timeout_ms} ms"
-    return capture
 
 
 def save_interaction_frame(

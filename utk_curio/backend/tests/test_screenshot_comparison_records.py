@@ -429,6 +429,44 @@ def test_a_close_up_is_painted_without_the_viewport_layer_hint(dirs, monkeypatch
     assert page.will_change == ["auto", ""]
 
 
+class _WaitingPage(_PointerPage):
+    """A stub page that also takes the waits between two captures of a node."""
+
+    def wait_for_timeout(self, ms):
+        pass
+
+
+def test_a_still_close_up_is_taken_once_two_captures_of_its_node_agree(dirs, monkeypatch):
+    # A chart Vega is still laying out: its node reads 30 pixels off, then
+    # holds still. The frame compared is taken after two captures agree, all
+    # with the node painted at the zoom it is shown at.
+    expected, compare = dirs
+    _baseline(expected)
+    page = _WaitingPage()
+    shown = iter([_white(paint=30), _white(paint=1), _white(paint=1)])
+    waited = []
+
+    def node(p, selector):
+        waited.append((selector, list(page.will_change)))
+        return next(shown)
+
+    monkeypatch.setattr(closeups, "_capture_element", node)
+    monkeypatch.setattr(e2e_utils, "_capture_element", lambda p, selector: _white(paint=1))
+    monkeypatch.setattr(e2e_utils, "_wait_for_reactflow_ready", lambda p, **kw: None)
+    monkeypatch.setattr(e2e_utils, "_wait_for_no_node_running", lambda p: None)
+    closeups.save_node_closeup(page, "scene.json", "n1", test_name="step", still=True)
+
+    assert waited == [('.react-flow__node[data-id="n1"]', ["auto"])] * 3
+    assert page.will_change == ["auto", ""]
+    [(_, record)] = _records(compare)
+    assert (record["status"], record["closeup"]) == ("passed", True)
+
+    # Without it, the node is captured once, for the comparison alone.
+    waited.clear()
+    closeups.save_node_closeup(_WaitingPage(), "scene.json", "n1", test_name="step")
+    assert waited == []
+
+
 def test_a_missing_close_up_says_so_in_its_record(dirs, monkeypatch):
     _, compare = dirs
     with pytest.raises(AssertionError, match="remint=true"):
