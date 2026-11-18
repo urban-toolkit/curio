@@ -99,7 +99,13 @@ jest.mock('../../../utils/formatters', () => ({
   mapTypes: (t: any) => t,
 }));
 
-jest.mock('@urban-toolkit/autk-grammar', () => ({ AutkGrammar: jest.fn().mockImplementation(() => ({ run: jest.fn().mockResolvedValue(undefined), data: {} })) }), { virtual: true });
+jest.mock('@urban-toolkit/autk-grammar', () => ({
+  AutkGrammar: jest.fn().mockImplementation(() => ({ run: jest.fn().mockResolvedValue(undefined), data: {} })),
+  // The grammar's applyCamera, which the node turns a framed map by when the
+  // map's entry writes a camera (adapters/node/autkMapView).
+  applyCamera: (...a: any[]) => mockApplyCamera(...a),
+}), { virtual: true });
+const mockApplyCamera = jest.fn();
 
 // In-browser AutkDb fallback (loadSpecLayers). Mockable per test so the
 // "backend fails → fall back to browser" path can be exercised. `mock`-prefixed
@@ -2778,9 +2784,9 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         'This spec uses "wglsFunction" at compute[0], which autk-grammar 5 renamed to "wgslFunction".',
       ],
       [
-        'a map with a camera',
-        { map: { camera: { pitch: 50 }, layerRefs: [{ dataRef: 'input_0' }] } },
-        'This spec uses "camera" at map, which Curio does not run yet.',
+        'a map in a document with a layout',
+        { layout: { type: 'horizontal' }, map: { layerRefs: [{ dataRef: 'input_0' }] } },
+        'This spec uses "layout", which Curio does not run yet.',
       ],
       [
         'a heatmap source',
@@ -2813,6 +2819,51 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(mockAutkDbSpatialQuery).not.toHaveBeenCalled();
       expect(AutkGrammar.mock.calls.length).toBe(grammarsBefore);
       expect(outputCallback).not.toHaveBeenCalled();
+    });
+
+    // A map's camera runs: the node frames the map on its layers, then turns it
+    // by the camera through the grammar's applyCamera (adapters/node/autkMapView).
+    test('a map with a camera runs: its map is framed on its layers, then turned by the camera', async () => {
+      const camera = { pitch: 50, bearing: 30 };
+      const map: any = {
+        camera: { getFovyRadians: () => Math.PI / 4, getFar: () => 5e5, resetCamera: jest.fn(), resize: jest.fn() },
+        renderer: { pixelWidth: 960, pixelHeight: 600 },
+        canvas: { offsetWidth: 960, offsetHeight: 600 },
+        // What its one layer drew: 100 by 50 world units from the origin.
+        layerManager: { layers: [{ position: new Float32Array([0, 0, 100, 50]), _dimension: 2 }] },
+        resetCamera: jest.fn(),
+        requestRender: jest.fn(),
+        destroy: jest.fn(),
+      };
+      const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+      AutkGrammar.mockImplementationOnce(() => {
+        const grammar: any = { data: {} };
+        grammar.run = jest.fn(async () => { grammar.maps = [map]; });
+        return grammar;
+      });
+      mockApplyCamera.mockClear();
+      const setOutput = jest.fn();
+      const input = {
+        dataType: 'geodataframe',
+        data: { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [0, 0] }, properties: { i: 0 } }] },
+      };
+      const result = await callBehavior(useAutkGrammarBehavior, { outputCallback: jest.fn(), input } as any, { setOutput });
+      await act(async () => {
+        await result.current.applyGrammar!(JSON.stringify({ map: { camera, layerRefs: [{ dataRef: 'input_0' }] } }));
+      });
+
+      expect(setOutput.mock.calls.filter((c: any[]) => c[0]?.code === 'error')).toEqual([]);
+      expect(setOutput).toHaveBeenCalledWith(expect.objectContaining({ code: 'success' }));
+      // Framed first: straight down on the middle of what the layer drew.
+      const [up, lookAt] = map.camera.resetCamera.mock.calls[0];
+      expect(up).toEqual([0, 1, 0]);
+      expect(lookAt).toEqual([50, 25, 0]);
+      // Then turned by the map's camera, and the matrices built after the turn.
+      expect(mockApplyCamera).toHaveBeenCalledTimes(1);
+      expect(mockApplyCamera).toHaveBeenCalledWith(map, camera);
+      const turnedAt = mockApplyCamera.mock.invocationCallOrder[0];
+      expect(turnedAt).toBeGreaterThan(map.camera.resetCamera.mock.invocationCallOrder[0]);
+      expect(Math.max(...map.camera.resize.mock.invocationCallOrder)).toBeGreaterThan(turnedAt);
     });
 
     test('in-browser load: a join with neither near nor groupBy hands autk-db the two names alone', async () => {
