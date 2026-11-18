@@ -839,6 +839,81 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(tabs.map((tab) => tab.textContent)).toEqual(['blocks', 'roads']);
     });
 
+    /** fetchData answers *answer* for one test, and this file's default
+     * answer comes back after it, however the test ends. */
+    async function answering(answer: unknown, body: (fetchData: jest.Mock) => Promise<void>) {
+      const api = jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+      api.fetchData.mockResolvedValueOnce(answer);
+      try {
+        await body(api.fetchData);
+      } finally {
+        api.fetchData.mockReset();
+        api.fetchData.mockResolvedValue({ data: {}, dataType: 'dataframe' });
+      }
+    }
+
+    test("a Python node's tuple, an output that names its artifact, is read for its frames, not taken for a bundle with nothing in yet", async () => {
+      // What /get answers for a node that returned (df, df).
+      const tuple = {
+        dataType: 'outputs',
+        data: [
+          { dataType: 'dataframe', data: { block: ['Brera', 'Duomo'], population: [120, 340] } },
+          { dataType: 'dataframe', data: { block: ['Navigli'], population: [80] } },
+        ],
+      };
+      await answering(tuple, async (fetchData) => {
+        const outputCallback = jest.fn();
+        const result = await callBehavior(useDataPoolBehavior, {
+          nodeId: 'pool-1',
+          outputCallback,
+          input: { path: 'art-tuple', dataType: 'outputs' } as any,
+        });
+        await waitFor(() => expect(result.current.outputOverride).toMatchObject({ code: 'success', content: { dataType: 'outputs' } }));
+
+        expect(fetchData).toHaveBeenCalledWith('art-tuple');
+        const [, emitted] = outputCallback.mock.calls[outputCallback.mock.calls.length - 1];
+        expect(emitted.filename).toBe('art-tuple');
+        expect(emitted.data.map((part: any) => Object.keys(part.data.interacted))).toEqual([['0', '1'], ['0']]);
+      });
+    });
+
+    test('a list of frames is drawn as a tab per frame and passed on as a tuple of them is', async () => {
+      // What /get answers for a node that returned [df, gdf]: each frame in
+      // its envelope, in the list's order.
+      const list = {
+        dataType: 'list',
+        data: [
+          { dataType: 'dataframe', data: { block: ['Brera', 'Duomo'], population: [120, 340] } },
+          {
+            dataType: 'geodataframe',
+            data: {
+              type: 'FeatureCollection',
+              features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [9.186, 45.466] }, properties: { name: 'Via Dante' } }],
+            },
+          },
+        ],
+      };
+      await answering(list, async () => {
+        const outputCallback = jest.fn();
+        const result = await callBehavior(useDataPoolBehavior, {
+          nodeId: 'pool-1',
+          outputCallback,
+          input: { path: 'art-list', dataType: 'list' } as any,
+        });
+        await waitFor(() => expect(result.current.outputOverride).toMatchObject({ code: 'success' }));
+
+        const [, emitted] = outputCallback.mock.calls[outputCallback.mock.calls.length - 1];
+        expect(emitted?.dataType).toBe('outputs');
+        expect(emitted.filename).toBe('art-list');
+        expect(emitted.data.map((part: any) => part.dataType)).toEqual(['dataframe', 'geodataframe']);
+        expect(emitted.data[0].data.interacted).toEqual({ 0: '0', 1: '0' });
+        expect(emitted.data[1].data.features[0].properties.interacted).toBe('0');
+        const { getByTestId } = render(<>{result.current.contentComponent}</>);
+        const tabs = Array.from(getByTestId('data-pool-tabs').querySelectorAll('.nav-link'));
+        expect(tabs.map((tab) => tab.textContent)).toEqual(['Tab 1', 'Tab 2']);
+      });
+    });
+
     test('returns contentComponent and overrides, and no widgets callback', async () => {
       const result = await callBehavior(useDataPoolBehavior);
       assertValidBehaviorResult(result.current);

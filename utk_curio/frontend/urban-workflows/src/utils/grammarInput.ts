@@ -230,8 +230,10 @@ function rasterFrameOf(
 /**
  * The frame for a `{dataType: "raster"}` value: the collection it holds, or,
  * for a Python raster (its data is the file's path), the artifact `source`
- * that holds it, with `part` its place in a tuple, and what the sandbox read
- * of it. Null when rasters are not read or there is nothing to say where it is.
+ * that holds it, with `part` its place in a tuple or a list, and what the
+ * sandbox read of it. A raster a Data Pool took out of an artifact names that
+ * artifact and its part there itself (`artifact`, `part`; hook/useTableData).
+ * Null when rasters are not read or there is nothing to say where it is.
  */
 function rasterFrame(
   item: any,
@@ -243,10 +245,11 @@ function rasterFrame(
   if (isObject(item.data) && item.data.type === "FeatureCollection") {
     return rasterFrameOf({ envelope: item }, name, { ...place, workspace: autkWorkspaceOf(item) });
   }
-  if (typeof item.data === "string" && opts.source) {
-    const payload: RasterPayload = place.part == null
-      ? { artifact: opts.source }
-      : { artifact: opts.source, part: place.part };
+  const named = typeof item.artifact === "string" && item.artifact !== "";
+  const artifact = named ? item.artifact : opts.source;
+  if (typeof item.data === "string" && artifact) {
+    const part = named ? (isCount(item.part) ? item.part : undefined) : place.part;
+    const payload: RasterPayload = part == null ? { artifact } : { artifact, part };
     return rasterFrameOf(payload, name, place, item.meta);
   }
   return null;
@@ -360,12 +363,13 @@ export function framesFromPayload(value: any, opts: RasterOptions = {}): {
   }
 
   // A layer array from an upstream Autark node: `{name, type, geojson}` records,
-  // then a raster table its data section made (a heatmap), in its envelope.
+  // then a raster table its data section made (a heatmap), in its envelope. Or
+  // a Python list, a raster in it read from its place there.
   if (Array.isArray(payload)) {
     payload.forEach((item: any, index: number) => {
       const raster = rasterEnvelopeIn(item);
       if (raster) {
-        const frame = rasterFrame(raster, opts, { fromBundle: true, index });
+        const frame = rasterFrame(raster, opts, { fromBundle: true, index, part: index });
         if (frame) frames.push(frame);
         else skipped.push(`raster at position ${index}`);
         return;

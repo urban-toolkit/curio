@@ -388,8 +388,9 @@ def raster_places(envelope: object, data_type: Optional[str]) -> List[Optional[i
     envelope holds, as ``readGrammarInput`` does. Otherwise its envelope is
     read by ``framesFromPayload``'s rules (``utils/grammarInput.ts``): value
     envelopes are peeled, a dict of frames reads as a tuple of them, a raster
-    by path is the output itself, and one in a tuple is the part at its place.
-    A raster that travels as its collection is in the envelope already.
+    by path is the output itself, and one in a tuple or a list is the part at
+    its place. A raster that travels as its collection is in the envelope
+    already.
     """
     if data_type == "raster":
         return [None]
@@ -409,6 +410,8 @@ def raster_places(envelope: object, data_type: Optional[str]) -> List[Optional[i
             for index, item in enumerate(value["data"])
             if _is_raster_by_path(item) and not (isinstance(item.get("path"), str) and item["path"])
         ]
+    if isinstance(value, list):
+        return [index for index, item in enumerate(value) if _is_raster_by_path(item)]
     return []
 
 
