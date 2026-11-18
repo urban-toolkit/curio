@@ -37,7 +37,17 @@ describe("autk-grammar's tableKey, written out", () => {
 
   test("reads a workspace written as a name, and nothing else, as another workspace", () => {
     expect([{ workspace: "east" }, { workspace: "autk" }, { workspace: "" }, { workspace: null }, {}, null]
-      .map(dataCompile.autkWorkspaceOf)).toEqual(["east", undefined, undefined, undefined, undefined, undefined]);
+      .map((entry) => dataCompile.autkWorkspaceOf(entry))).toEqual(["east", undefined, undefined, undefined, undefined, undefined]);
+  });
+
+  test("tells a document that keeps tables in another workspace by any source, pass, map or plot", () => {
+    const uses = dataCompile.autkUsesWorkspaces;
+    expect(uses({ data: [{ type: "csv", outputTableName: "a", workspace: "east" }] })).toBe(true);
+    expect(uses({ compute: [{ dataRef: "a" }, { dataRef: "a", workspace: "east" }] })).toBe(true);
+    expect(uses({ map: { workspace: "east", layerRefs: [] } })).toBe(true);
+    expect(uses({ plot: [{ workspace: "east", dataRef: "a" }] })).toBe(true);
+    expect(uses({ data: [{ type: "csv", outputTableName: "a", workspace: "autk" }], map: { layerRefs: [] } })).toBe(false);
+    expect(uses({})).toBe(false);
   });
 });
 
