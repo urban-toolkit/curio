@@ -108,10 +108,16 @@ DOCUMENTS = {
 }
 
 
+#: The nodes whose output a save records: those whose Save toggle is on, which
+#: is off by default (``CURIO_DEFAULT_SAVE_NODE_OUTPUT``).
+SAVED = {STEP}
+
+
 def _node(node_id: str, x: int, y: int) -> dict:
     return {
         "id": node_id, "type": AUTK, "x": x, "y": y, "content": json.dumps(DOCUMENTS[node_id], indent=2),
         "in": "DEFAULT", "out": "DEFAULT", "goal": "", "metadata": {"keywords": []},
+        **({"saveOutputDataset": True} if node_id in SAVED else {}),
     }
 
 
@@ -157,7 +163,7 @@ def _play(page, node_id: str) -> None:
 
 def _stored(page, current_server: str, token: str, project_id: str, node_id: str, *, timeout_s: float = 60) -> dict:
     """What *node_id* handed on, as the sandbox stores it: the output a save
-    of the dataflow records for it."""
+    of the dataflow records for it, its Save toggle being on (``SAVED``)."""
     save_dataflow(page)
     deadline = time.monotonic() + timeout_s
     while True:
