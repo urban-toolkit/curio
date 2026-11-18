@@ -1,0 +1,85 @@
+{
+  "about": "What a node fed through a Data Pool receives, against what it receives fed directly by the node upstream of the pool. Each case names what that node made (artifact, which each side's test makes or answers for: raster, a Python node's rasterio dataset; tuple, a Python node's tuple of a GeoDataFrame and a raster; rasters, a Python node's list of two rasters; tables, an Autark data node's tables, a layer and a heatmap; heatmap, an Autark data node's heatmap alone; envelope, the one raster an Autark compute step hands on, as it stores it; text, a Python node's str), what that node hands on (handedOn, its output as the canvas hands it on), how many rasters a node receives from it (rasters), and what a Python or JavaScript node sends the backend as its input (executionInputRef of the node's input), fed directly (sent.direct) and through a Data Pool (sent.pool). src/tests/adapters/node/dataPoolRasters.test.tsx checks that the pool hands on what makes sent.pool and that an Autark node loads the same rasters both ways; utk_curio/backend/tests/test_execution/test_data_pool_hand_on.py runs sent.direct and sent.pool through the backend and the sandbox and checks that the node receives the same rasters both ways: their bands, size, transform, CRS and name.",
+  "cases": [
+    {
+      "name": "a Python node's raster",
+      "artifact": "raster",
+      "handedOn": {"path": "art-raster", "dataType": "raster"},
+      "rasters": 1,
+      "sent": {
+        "direct": {"path": "art-raster", "dataType": "raster"},
+        "pool": {"path": "art-raster", "dataType": "raster"}
+      }
+    },
+    {
+      "name": "a Python node's raster restored with no type",
+      "artifact": "raster",
+      "handedOn": {"path": "art-raster"},
+      "rasters": 1,
+      "sent": {
+        "direct": {"path": "art-raster"},
+        "pool": {"path": "art-raster", "dataType": "raster"}
+      }
+    },
+    {
+      "name": "a Python node's tuple of a table and a raster",
+      "artifact": "tuple",
+      "handedOn": {"path": "art-tuple", "dataType": "outputs"},
+      "rasters": 1,
+      "sent": {
+        "direct": {"path": "art-tuple", "dataType": "outputs"},
+        "pool": {"filename": "art-tuple", "dataType": "outputs"}
+      }
+    },
+    {
+      "name": "a Python node's list of two rasters",
+      "artifact": "rasters",
+      "handedOn": {"path": "art-rasters", "dataType": "list"},
+      "rasters": 2,
+      "sent": {
+        "direct": {"path": "art-rasters", "dataType": "list"},
+        "pool": {"filename": "art-rasters", "dataType": "outputs"}
+      }
+    },
+    {
+      "name": "an Autark data node's layer and heatmap",
+      "artifact": "tables",
+      "handedOn": {"path": "art-tables", "dataType": "list"},
+      "rasters": 1,
+      "sent": {
+        "direct": {"path": "art-tables", "dataType": "list"},
+        "pool": {"filename": "art-tables", "dataType": "outputs"}
+      }
+    },
+    {
+      "name": "an Autark data node's heatmap alone",
+      "artifact": "heatmap",
+      "handedOn": {"path": "art-heatmap", "dataType": "list"},
+      "rasters": 1,
+      "sent": {
+        "direct": {"path": "art-heatmap", "dataType": "list"},
+        "pool": {"filename": "art-heatmap", "dataType": "raster"}
+      }
+    },
+    {
+      "name": "an Autark compute step's raster",
+      "artifact": "envelope",
+      "handedOn": {"path": "art-envelope", "dataType": "dict"},
+      "rasters": 1,
+      "sent": {
+        "direct": {"path": "art-envelope", "dataType": "dict"},
+        "pool": {"filename": "art-envelope", "dataType": "raster"}
+      }
+    },
+    {
+      "name": "a Python node's text",
+      "artifact": "text",
+      "handedOn": {"path": "art-text", "dataType": "str"},
+      "rasters": 0,
+      "sent": {
+        "direct": {"path": "art-text", "dataType": "str"},
+        "pool": {"path": "art-text", "dataType": "str"}
+      }
+    }
+  ]
+}
