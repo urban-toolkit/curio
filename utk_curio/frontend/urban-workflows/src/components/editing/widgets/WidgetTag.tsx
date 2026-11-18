@@ -354,14 +354,18 @@ function layersOf(input: InputScope): LayerScope[] | null {
 }
 
 /** How much *input* holds, once its columns are read: "5 columns", "no
- * columns", "5 layers", "2 values, a tuple". Null before. */
+ * columns", "a raster", "5 layers", "2 values, a tuple". Null before. */
 function heldBy(input: InputScope): string | null {
   if (input.tuple) return `${countOf(input.tuple, "value", "values")}, a tuple`;
   const layers = layersOf(input);
   if (layers) return countOf(layers.length, "layer", "layers");
   if (!Array.isArray(input.columns)) return null;
+  if (isRaster(input)) return "a raster";
   return input.columns.length > 0 ? countOf(input.columns.length, "column", "columns") : "no columns";
 }
+
+/** Whether *input* is a raster on its own, which has no columns. */
+const isRaster = (input: InputScope) => input.dataType === "raster";
 
 /** What keeps an input's list open: the edge that feeds it, so the list stays
  * with its input when the circles above it close up and goes with its edge,
@@ -534,7 +538,11 @@ function InputColumns({
             : `It holds ${countOf(tuple, "value", "values")}, a tuple.`}
         </span>
       ) : null}
-      {flat && flat.length === 0 ? <span className={styles.stripHint}>This input has no columns.</span> : null}
+      {flat && flat.length === 0 ? (
+        <span className={styles.stripHint}>
+          {isRaster(input) ? "This input is a raster: it has no columns." : "This input has no columns."}
+        </span>
+      ) : null}
       {layers ? (
         <div className={styles.layers}>
           {layers.map((layer) => (
@@ -561,7 +569,7 @@ function InputColumns({
                   />
                 </div>
               ) : (
-                <span className={styles.layerEmpty}>no columns</span>
+                <span className={styles.layerEmpty}>{layer.raster ? "a raster" : "no columns"}</span>
               )}
             </div>
           ))}

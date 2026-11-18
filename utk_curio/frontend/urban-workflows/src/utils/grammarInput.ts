@@ -71,6 +71,10 @@ export type GrammarFrame = {
    * (`parseOutput`'s `columns`): its schema and data are JSON objects, whose
    * keys the sandbox sends sorted. */
   columnOrder?: string[];
+  /** What the sandbox read of a Python raster, when its envelope sends it
+   * beside the file's path (`meta`: its size, CRS and transform, and its
+   * bands' labels), as a frame's envelope sends its schema. */
+  rasterMeta?: Record<string, unknown>;
 };
 
 export type GrammarInput = {
@@ -205,6 +209,7 @@ function rasterFrameOf(
   payload: RasterPayload,
   name: string | null,
   place: { fromBundle: boolean; index: number; circle?: number; workspace?: string },
+  meta?: unknown,
 ): GrammarFrame {
   return {
     name,
@@ -218,14 +223,15 @@ function rasterFrameOf(
     fromBundle: place.fromBundle,
     index: place.index,
     circle: place.circle ?? 0,
+    ...(isObject(meta) ? { rasterMeta: meta } : {}),
   };
 }
 
 /**
  * The frame for a `{dataType: "raster"}` value: the collection it holds, or,
  * for a Python raster (its data is the file's path), the artifact `source`
- * that holds it, with `part` its place in a tuple. Null when rasters are not
- * read or there is nothing to say where it is.
+ * that holds it, with `part` its place in a tuple, and what the sandbox read
+ * of it. Null when rasters are not read or there is nothing to say where it is.
  */
 function rasterFrame(
   item: any,
@@ -241,7 +247,7 @@ function rasterFrame(
     const payload: RasterPayload = place.part == null
       ? { artifact: opts.source }
       : { artifact: opts.source, part: place.part };
-    return rasterFrameOf(payload, name, place);
+    return rasterFrameOf(payload, name, place, item.meta);
   }
   return null;
 }

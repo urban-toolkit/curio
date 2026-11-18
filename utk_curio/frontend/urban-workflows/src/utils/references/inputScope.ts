@@ -8,11 +8,18 @@
  * header makes, kept as what the input holds, its first rows and its size,
  * with the state of the node that feeds it (`inputSourcesFor`). The header's
  * lists are a view of the same read (`readInputColumns`).
+ *
+ * A raster is read as a table is, by the grammar nodes' reader with the
+ * input's other frames: a raster among them is one of its layers, by the name
+ * an Autark node gives its table or the key a Python node's dict gives it, or
+ * one of a tuple's values. It has no columns; a preview keeps its size, its
+ * bands and its CRS.
  */
 import type { InputScope, LayerScope } from "./codeReferences";
 import { isReferenceableColumn, isReferenceableLayer } from "./codeReferences";
 import { inputSlotOf, isDataEdge, wiredInputSlots } from "../inputSlots";
 import { readGrammarInput, type GrammarFrame, type GrammarInput } from "../grammarInput";
+import type { RasterMeta } from "../raster/rasterLoad";
 import { toRows } from "../rowSource";
 import { fetchPreviewData } from "../../services/api";
 import { outputStatus } from "../nodeOutputStatus";
@@ -114,15 +121,15 @@ function frameColumns(frame: GrammarFrame): { columns: string[]; dtypes: Record<
 /**
  * The columns of an input's value, from its 100-row preview, as starter specs
  * read it, or the named layers it carries with theirs (an Autark node's
- * tables). A bundle of two values or more none of which is named is a tuple,
- * tables or not, whose values it counts: the frames read from it and the items
- * that are no frame (`skipped`). An input that is not a table has none. A view
- * of `readInputPreview`, so the header's lists and a chip's hover share one
- * read.
+ * tables and rasters). A bundle of two values or more none of which is named
+ * is a tuple, tables or not, whose values it counts: the frames read from it
+ * and the items that are no frame (`skipped`). An input that is not a table
+ * has none. A view of `readInputPreview`, so the header's lists and a chip's
+ * hover share one read.
  */
 export async function readInputColumns(value: unknown): Promise<InputColumns> {
-    // A value is no table: it has no columns, and is not read for them.
-    if (isScalarInput(value)) return { columns: [], dtypes: {} };
+    // A value or a raster is no table: it has no columns, and is not read for them.
+    if (hasNoColumns(value)) return { columns: [], dtypes: {} };
     return columnsOfPreview(await readInputPreview(value));
 }
 
@@ -133,11 +140,22 @@ export function isScalarInput(value: unknown): boolean {
     return isRecord(value) && typeof value.dataType === "string" && SCALAR_TYPES.has(value.dataType);
 }
 
+/** Whether *value* names something with no columns to read: a value
+ * (`isScalarInput`) or a raster on its own. The header lists no columns for it
+ * and reads nothing; its preview reads it when its tooltip shows. */
+export function hasNoColumns(value: unknown): boolean {
+    return isScalarInput(value) || (isRecord(value) && value.dataType === "raster");
+}
+
 /** The header's view of what *preview* holds: its columns, its layers' or how many values its tuple holds. */
 export function columnsOfPreview(preview: InputPreview): InputColumns {
     if (preview.kind === "tuple") return { columns: [], dtypes: {}, layers: [], tuple: preview.size };
     if (preview.kind === "layers") {
-        const layers = preview.layers.map(({ name, table }) => ({ name, columns: table.columns, dtypes: table.dtypes }));
+        const layers = preview.layers.map((layer): LayerScope =>
+            "table" in layer
+                ? { name: layer.name, columns: layer.table.columns, dtypes: layer.table.dtypes }
+                : { name: layer.name, columns: [], dtypes: {}, raster: true },
+        );
         return { columns: [], dtypes: {}, layers };
     }
     if (preview.kind === "frame") return { columns: preview.table.columns, dtypes: preview.table.dtypes };
@@ -183,20 +201,36 @@ export interface PreviewTable {
     geometryType?: string | null;
 }
 
-/** One value of a tuple: a table, or any other value as itself. */
-export type TuplePart = { table: PreviewTable } | { value: unknown; dataType: string | null };
+/** What a preview shows of one raster, as its envelope says it. */
+export interface PreviewRaster {
+    /** Its size in cells: how many across, then how many down. */
+    width: number;
+    height: number;
+    /** Each band's label, in band order. */
+    bands: string[];
+    /** Its coordinate system ("EPSG:3395"), when it names one. */
+    crs: string | null;
+}
+
+/** One layer of an input: a table, or a raster, null when its envelope says
+ * nothing of it. */
+export type PreviewLayer = { name: string; table: PreviewTable } | { name: string; raster: PreviewRaster | null };
+
+/** One value of a tuple: a table, a raster, or any other value as itself. */
+export type TuplePart = { table: PreviewTable } | { raster: PreviewRaster | null } | { value: unknown; dataType: string | null };
 
 /** What an input holds, as a chip's hover shows it. */
 export type InputPreview =
     | { kind: "frame"; table: PreviewTable }
-    /** Named layers, as an Autark node hands on its tables. */
-    | { kind: "layers"; layers: Array<{ name: string; table: PreviewTable }> }
+    /** Named layers, as an Autark node hands on its tables and rasters, or a
+     * Python node's dict of frames. */
+    | { kind: "layers"; layers: PreviewLayer[] }
     /** A bundle of values with no names, as a Python node's `return a, b` gives:
      * how many values it holds, as the header counts them, and each one. */
     | { kind: "tuple"; size: number; parts: TuplePart[] }
     | { kind: "value"; dataType: string; value: unknown }
-    /** Not read: an Autark node or a Python node loads it. */
-    | { kind: "raster" }
+    /** A raster: its size, bands and CRS, once read, when its envelope says them. */
+    | { kind: "raster"; raster?: PreviewRaster }
     /** A list or a dict that holds no table: its size and first items. */
     | { kind: "json"; shape: "list" | "dict"; total: number; items: Array<{ key: string; value: unknown }> }
     | { kind: "empty" }
@@ -233,26 +267,34 @@ const isRecord = (value: unknown): value is Record<string, any> =>
  * What *value*, an input's value, holds, from one read of it: the 100-row
  * preview of the artifact it names, or the value itself when it is inline (a
  * Data Pool hands on its rows). Its first rows, its size, and each column over
- * the rows read; a raster is not read. A failed read throws.
+ * the rows read; of a raster, its size, its bands and its CRS. A failed read
+ * throws.
  */
 export async function readInputPreview(value: unknown): Promise<InputPreview> {
     if (value == null || value === "") return { kind: "empty" };
     const declared = isRecord(value) && typeof value.dataType === "string" ? value.dataType : undefined;
-    if (declared === "raster") return { kind: "raster" };
     const path = isRecord(value) && typeof value.path === "string" && value.path ? value.path : null;
+    if (declared === "raster") {
+        // The reader names a raster on its own without reading it: what it
+        // is, the sandbox's description of it or an Autark raster's grid, is
+        // in its envelope.
+        const raster = rasterOf(path ? await fetchPreviewData(path) : value);
+        return raster ? { kind: "raster", raster } : { kind: "raster" };
+    }
     if (declared !== undefined && SCALAR_TYPES.has(declared)) {
         const envelope = path ? await fetchPreviewData(path) : value;
         return { kind: "value", dataType: declared, value: plainOf(envelope) };
     }
     // The grammar nodes' reader, as the header's columns were read, keeping
-    // what it read: a tuple's values and a list's items are no frame.
+    // what it read: a tuple's values and a list's items are no frame, and a
+    // raster is a frame, as an Autark node reads it.
     const reads = new Map<string, any>();
     const read = async (at: string) => {
         const envelope = await fetchPreviewData(at);
         reads.set(at, envelope);
         return envelope;
     };
-    const grammar = await readGrammarInput(value, { label: "this input", preview: true, bundles: true, read });
+    const grammar = await readGrammarInput(value, { label: "this input", preview: true, bundles: true, rasters: true, read });
     return previewOf(grammar, path ? reads.get(path) : value, declared, reads);
 }
 
@@ -271,11 +313,71 @@ function previewOf(
     if (frames.length > 1) {
         const layers = frames
             .filter((frame) => typeof frame.name === "string" && isReferenceableLayer(frame.name))
-            .map((frame) => ({ name: frame.name as string, table: tableOf(frame) }));
+            .map((frame): PreviewLayer => {
+                const name = frame.name as string;
+                return frame.dataType === "raster" ? { name, raster: rasterOfFrame(frame) } : { name, table: tableOf(frame) };
+            });
         return { kind: "layers", layers };
     }
-    if (frames.length === 1) return { kind: "frame", table: tableOf(frames[0]) };
+    if (frames.length === 1) {
+        if (frames[0].dataType !== "raster") return { kind: "frame", table: tableOf(frames[0]) };
+        const raster = rasterOfFrame(frames[0]);
+        return raster ? { kind: "raster", raster } : { kind: "raster" };
+    }
     return otherValueOf(envelope);
+}
+
+/** A frame of a tuple as its part: a table, or a raster. */
+function partOf(frame: GrammarFrame): TuplePart {
+    return frame.dataType === "raster" ? { raster: rasterOfFrame(frame) } : { table: tableOf(frame) };
+}
+
+const isCount = (value: unknown): value is number => typeof value === "number" && Number.isInteger(value) && value > 0;
+
+/** A raster *width* by *height* cells, with *bands* labelled, in *crs*; null
+ * when its size is not one. */
+function rasterSized(width: unknown, height: unknown, bands: string[], crs: unknown): PreviewRaster | null {
+    if (!isCount(width) || !isCount(height)) return null;
+    return { width, height, bands, crs: typeof crs === "string" && crs ? crs : null };
+}
+
+/** A band's label: its own, else `band_<n>`, the id autk-db gives the band
+ * at *index* when an Autark node loads the raster. */
+const bandLabel = (label: unknown, index: number) =>
+    typeof label === "string" && label ? label : `band_${index + 1}`;
+
+/**
+ * What a preview shows of a raster, from its envelope: an Autark raster's
+ * grid and its bands' labels (utils/raster/rasterWire), or, beside a Python
+ * raster's file, what the sandbox read of it (`meta`: the description the
+ * raster route's header gives, `RasterMeta`, with each band's label). Null
+ * when it says neither.
+ */
+function rasterOf(envelope: unknown): PreviewRaster | null {
+    if (!isRecord(envelope)) return null;
+    const data = envelope.data;
+    if (isRecord(data) && isRecord(data.grid)) {
+        const properties = Array.isArray(data.features) ? data.features[0]?.properties : null;
+        const bands: unknown[] = Array.isArray(properties?.bands) ? properties.bands : [];
+        const labels = bands.map((band, index) => bandLabel(isRecord(band) ? band.label || band.id : null, index));
+        return rasterSized(data.grid.width, data.grid.height, labels, data.grid.crs);
+    }
+    const meta = envelope.meta as Partial<RasterMeta> & { bands?: unknown } | undefined;
+    if (isRecord(meta)) {
+        const labels: unknown[] = Array.isArray(meta.bands)
+            ? meta.bands
+            : Array.from({ length: isCount(meta.count) ? meta.count : 0 }, () => null);
+        return rasterSized(meta.width, meta.height, labels.map(bandLabel), meta.crs);
+    }
+    return null;
+}
+
+/** What a preview shows of a raster frame: from the envelope an Autark node
+ * handed it on in, or from what the sandbox read of a Python one. */
+function rasterOfFrame(frame: GrammarFrame): PreviewRaster | null {
+    const payload = frame.payload;
+    if (isRecord(payload) && "envelope" in payload) return rasterOf(payload.envelope);
+    return frame.rasterMeta ? rasterOf({ meta: frame.rasterMeta }) : null;
 }
 
 /** A value as Python reads it back from its envelope: a list's items each
@@ -291,7 +393,7 @@ function plainOf(item: unknown): unknown {
     return data;
 }
 
-/** Each value of a tuple, in order: the table read at its place, else the value itself. */
+/** Each value of a tuple, in order: the table or the raster read at its place, else the value itself. */
 function tupleParts(frames: GrammarFrame[], envelope: unknown, reads: Map<string, any>): TuplePart[] {
     let bundle: unknown = envelope;
     while (isRecord(bundle) && typeof bundle.dataType === "string" && bundle.dataType !== "outputs"
@@ -299,14 +401,14 @@ function tupleParts(frames: GrammarFrame[], envelope: unknown, reads: Map<string
         bundle = bundle.data;
     }
     const items: unknown[] = isRecord(bundle) && bundle.dataType === "outputs" && Array.isArray(bundle.data) ? bundle.data : [];
-    if (items.length === 0) return frames.map((frame) => ({ table: tableOf(frame) }));
+    if (items.length === 0) return frames.map(partOf);
     const parts: TuplePart[] = [];
     items.forEach((item, index) => {
         // A circle left out brings nothing, as the reader skips it.
         if (item === null) return;
         const frame = frames.find((one) => one.index === index);
         if (frame) {
-            parts.push({ table: tableOf(frame) });
+            parts.push(partOf(frame));
             return;
         }
         const held = isRecord(item) && typeof item.path === "string" && reads.has(item.path) ? reads.get(item.path) : item;

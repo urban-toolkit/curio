@@ -165,15 +165,17 @@ describe("readInputPreview", () => {
     expect(preview.kind).toBe("layers");
     if (preview.kind !== "layers") return;
     expect(preview.layers.map((layer) => layer.name)).toEqual(["table_osm_roads", "table_osm_buildings"]);
-    expect(preview.layers[0].table).toMatchObject({
+    // A layer is a table or a raster: these are tables.
+    const [roads, buildings] = preview.layers.map((layer) => ("table" in layer ? layer.table : undefined));
+    expect(roads).toMatchObject({
       frameType: "geodataframe",
       columns: ["highway"],
       totalRows: 4,
       geometryType: "LineString",
       rows: [{ highway: "primary" }, { highway: "residential" }, { highway: "primary" }, { highway: null }],
     });
-    expect(preview.layers[0].table.summaries.highway).toEqual({ empty: 1, distinct: ["primary", "residential"] });
-    expect(preview.layers[1].table).toMatchObject({ columns: ["height"], totalRows: 2, geometryType: "Polygon" });
+    expect(roads?.summaries.highway).toEqual({ empty: 1, distinct: ["primary", "residential"] });
+    expect(buildings).toMatchObject({ columns: ["height"], totalRows: 2, geometryType: "Polygon" });
   });
 
   test("a value shows itself, from one read", async () => {
