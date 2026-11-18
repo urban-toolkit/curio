@@ -1376,7 +1376,6 @@ one does not run, and the node's error names the key and where it is written:
 
 - `layout` and `links`;
 - a map's `camera`;
-- a render pass (`"type": "render"`);
 - `heatmap` and `geotiff` sources;
 - `workspace`, on a source, a compute pass, a map or a plot.
 
@@ -1461,10 +1460,11 @@ pressing play says why.
 
 ### Compute passes
 
-Each entry of `compute` runs a WGSL function on the GPU over every feature of
-the table its `dataRef` names, and writes the result to each feature as
-`compute.<column>`, under the names `outputColumnName` or `outputColumns`
-give. A pass writes into that table, unless it names a new one:
+Each entry of `compute` is a pass, run in order on the GPU. A GPGPU pass, one
+with no `type`, runs a WGSL function over every feature of the table its
+`dataRef` names, and writes the result to each feature as `compute.<column>`,
+under the names `outputColumnName` or `outputColumns` give. A pass writes into
+that table, unless it names a new one:
 
 ```json
 {"dataRef": "input_0", "attributes": {"v": "value"}, "wgslFunction": "return v * 2.0;",
@@ -1485,6 +1485,53 @@ give. A pass writes into that table, unless it names a new one:
   beside `compute.twice`.
 - A compute step with a `data` section of its own runs its passes on the tables
   it loads, and on its input's tables when a pass names one.
+- A pass over a table with no rows does not run, and the table it would write
+  has no rows.
+- A pass the GPU cannot run fails the node, and the node's error names the
+  table the pass writes.
+
+### Render passes
+
+A pass with `"type": "render"` draws the tables its `layers` name on the GPU,
+from each feature of its `viewpoints` table, and counts what the frames show.
+It writes a new table, `outputTableName`: the viewpoints' features, each with
+what it saw in `compute.render`. This one colors each street by the share of
+sky it sees through the buildings:
+
+```json
+{
+  "compute": [{
+    "type": "render", "outputTableName": "street_sky",
+    "layers": [{"id": "buildings", "dataRef": "table_osm_buildings", "type": "buildings"}],
+    "viewpoints": {"dataRef": "table_osm_roads", "sampling": {"directions": 4, "pitchDeg": 45}},
+    "aggregation": {"type": "classes", "includeBackground": true, "backgroundLayerType": "sky"}
+  }],
+  "map": {"layerRefs": [{"dataRef": "street_sky", "getFnv": "compute.render.classes.sky"}]}
+}
+```
+
+- Each layer names the `type` it is drawn as: `surface`, `parks`, `water`,
+  `roads`, `buildings`, `polygons` or `polylines`, and a building rises to its
+  height. A layer of another type, such as `points`, fails the node, which
+  names the layer. A layer whose table has no rows draws nothing, and the pass
+  runs without it.
+- A viewpoint looks out from its feature's centroid, on the ground, in the
+  directions `sampling` sets: `directions` around it and `pitchDeg` above the
+  horizon. With `"strategy": {"type": "building-windows", "floors": 3}`, the
+  viewpoints are windows along each building's facades instead, three rows of
+  them, and the table holds one point per window.
+- With `"aggregation": {"type": "classes"}`, each feature gets in
+  `compute.render.classes` the share of its frames each layer type covers,
+  from 0 to 1. `includeBackground` counts what no layer covers as one more
+  class, named by `backgroundLayerType`. With `{"type": "objects"}`, each
+  feature gets in `compute.render.objects` the share of its frames that show
+  each object of a layer that names its `objectIdProperty`.
+- `camera` sets each frame's field of view and how near and far it draws, and
+  `tileSize` the frames' size in pixels.
+- The new table has the type of its viewpoints' table, or `points` for
+  windows, unless `layerType` says another. A pick on it names the rows of the
+  viewpoints' table; a pick on windows names the windows.
+- A compute step hands the new table on after the tables it holds.
 
 ### Layer titles and colors
 

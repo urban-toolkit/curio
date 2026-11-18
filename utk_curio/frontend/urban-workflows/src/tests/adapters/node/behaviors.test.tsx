@@ -99,7 +99,8 @@ jest.mock('../../../utils/formatters', () => ({
   mapTypes: (t: any) => t,
 }));
 
-jest.mock('@urban-toolkit/autk-grammar', () => ({ AutkGrammar: jest.fn().mockImplementation(() => ({ run: jest.fn().mockResolvedValue(undefined), data: {} })) }), { virtual: true });
+// The grammar keeps the adapter its run hands each compute pass to, which a node checks.
+jest.mock('@urban-toolkit/autk-grammar', () => ({ AutkGrammar: jest.fn().mockImplementation(() => ({ run: jest.fn().mockResolvedValue(undefined), data: {}, computeAdapter: { resolveCompute: jest.fn() } })) }), { virtual: true });
 
 // In-browser AutkDb fallback (loadSpecLayers). Mockable per test so the
 // "backend fails → fall back to browser" path can be exercised. `mock`-prefixed

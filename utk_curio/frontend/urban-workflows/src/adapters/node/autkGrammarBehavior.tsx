@@ -26,7 +26,7 @@ import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../ut
 import { autkKeyProblem, autkOneViewProblem } from '../../contracts/autkGrammar';
 import {
     autkNeedsInput, autkSourcesFrom, documentTableRefs, drawnFeatures, drawnRows, inputRow, keyValues, loadableSource, ownTableNames,
-    readAutkInput, selectFieldsOf, selectFieldsProblem, tablePositions, tablesToLoad, writtenTables, type LoadOrder,
+    passesAtHand, readAutkInput, selectFieldsOf, selectFieldsProblem, tablePositions, tablesToLoad, writtenTables, type LoadOrder,
     type PreparedAutkInput,
 } from '../../utils/autkInput';
 import { type GrammarInput } from '../../utils/grammarInput';
@@ -52,6 +52,7 @@ import {
     withRasterSources, type CurioRasterSource,
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
+import { withCheckedPasses } from './autkComputeScopes';
 import { frameMaps, keepMapViews, mapViews, type MapView } from './autkMapView';
 import { destroyFailedGrammar, grammarMaps, trackMaps } from './autkMapDrawing';
 import { mapSession, onMapSession, registerEditMap } from '../../utils/editFeatures/mapEditBus';
@@ -622,11 +623,12 @@ export const useAutkGrammarBehavior = (
                 });
                 taggedTables = hasMaps ? prepared.sources.map((source) => source.outputTableName) : [];
                 // A table a pass writes from one of these holds its rows, in
-                // the order the map draws them, each with its input row's tag.
+                // the order the map draws them, each with its input row's tag;
+                // a render pass's building windows hold none of them.
                 const inputTables = new Set(Object.keys(orders));
-                for (const { name, from } of writtenTables(spec)) {
+                for (const { name, from, holdsRows } of writtenTables(spec)) {
                     const root = writtenFrom[from] ?? from;
-                    if (!inputTables.has(root)) continue;
+                    if (!holdsRows || !inputTables.has(root)) continue;
                     writtenFrom[name] = root;
                     orders[name] = orders[root];
                     features[name] = features[root];
@@ -802,7 +804,9 @@ export const useAutkGrammarBehavior = (
                 // A table a compute pass of the document writes is a table this
                 // node has: it holds the rows of the table the pass computes
                 // over, and is this node's own when that one is. In pass order,
-                // so one written from another's holds its rows too.
+                // so one written from another's holds its rows too. A render
+                // pass's building windows are counted as the buildings' rows:
+                // there are none when there are no buildings.
                 const written = writtenTables(spec);
                 for (const { name, from } of written) {
                     const source = tableRows.get(from);
@@ -873,9 +877,15 @@ export const useAutkGrammarBehavior = (
                             .map((s: any) => s?.outputTableName)
                             .filter(Boolean),
                     );
-                    // A pass writes its table when the one it computes over is there.
-                    for (const { name, from } of written) {
-                        if (availableNames.has(from)) availableNames.add(name);
+                    // The grammar's run reads each table a pass names from
+                    // autk-db, which holds none without rows: a pass over one
+                    // does not run, and a render layer of one, which would
+                    // draw nothing, is left out of its pass (passesAtHand). A
+                    // pass that runs writes its table.
+                    if (Array.isArray(spec.compute)) {
+                        const passes = passesAtHand(spec.compute, knownNames, availableNames);
+                        for (const { name } of writtenTables({ compute: passes })) availableNames.add(name);
+                        spec = { ...spec, compute: passes };
                     }
                     if (spec.map && Array.isArray(spec.map.layerRefs)) {
                         const dangling = spec.map.layerRefs.filter(
@@ -1007,9 +1017,13 @@ export const useAutkGrammarBehavior = (
                 // DuckDB worker that failed to fetch the spatial extension keeps
                 // that state, so only a new one can succeed (#318).
                 const drawsRasters = (spec.data as any[]).some(isCurioRasterSource);
+                const computes = Array.isArray(spec.compute) && spec.compute.length > 0;
                 const grammar = await withExtensionRetry(async () => {
                     const g = new AutkGrammar(targets);
                     if (drawsRasters) withRasterSources(g, newAutkDb);
+                    // Each pass the run computes is checked on the GPU's
+                    // device, as a compute step's is (autkComputeScopes).
+                    if (computes) withCheckedPasses(g);
                     try {
                         await g.run(spec);
                     } catch (err) {
@@ -1275,6 +1289,7 @@ export const useAutkGrammarBehavior = (
                     // FeatureCollection, and an empty layer would surface as a
                     // blank tab in the downstream Data Pool); the compute below
                     // then only runs on layers that have features.
+                    const held = new Set([...layers.map((l) => l.name), ...writtenTables(spec).map((t) => t.name)]);
                     const emptyLayers = layers.filter((l) => !hasFeatures(l.geojson));
                     if (emptyLayers.length > 0) {
                         console.warn(
@@ -1285,8 +1300,13 @@ export const useAutkGrammarBehavior = (
                     }
                     if (passes.length > 0) {
                         const computeFailures: string[] = [];
+                        // The passes run over the layers that have features, as
+                        // a map node's do (passesAtHand): one over a dropped
+                        // layer does not run, and a render layer of one is left
+                        // out of its pass.
+                        const runs = passesAtHand(passes, held, new Set(layers.map((l) => l.name)));
                         layers = await applyComputeBlocks(
-                            layers, passes, computeFailures,
+                            layers, runs, computeFailures,
                         );
                         if (computeFailures.length > 0) {
                             // Emitting here would hand downstream nodes the

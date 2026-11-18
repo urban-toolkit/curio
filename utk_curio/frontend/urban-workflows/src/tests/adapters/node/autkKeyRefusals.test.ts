@@ -58,11 +58,6 @@ describe("applyComputeBlocks", () => {
       [{ ...PASS, wgslFunction: undefined, wglsFunction: "return x;" }],
       'This spec uses "wglsFunction" at compute[0], which autk-grammar 5 renamed to "wgslFunction".',
     ],
-    [
-      "a render pass",
-      [{ type: "render", outputTableName: "views", layers: [], viewpoints: { dataRef: "input_0" }, aggregation: { type: "classes" } }],
-      "This spec uses a render pass at compute[0], which Curio does not run yet.",
-    ],
   ])("%s is a failure, named, and no pass runs", async (_what, passes, said) => {
     const failures: string[] = [];
     const layers = await applyComputeBlocks([ROADS], passes as any[], failures);
@@ -91,6 +86,23 @@ describe("applyComputeBlocks", () => {
     expect(computeRuns.gpgpu.mock.calls[1][0]).toEqual(dispatchOf(written));
     // The second dispatch is the pass that writes the new table: its result is that table.
     expect(layers.map((l) => [l.name, l.type])).toEqual([["input_0", "roads"], ["lanes_copy", "points"]]);
+  });
+
+  test("a render pass runs", async () => {
+    const failures: string[] = [];
+    const render = {
+      type: "render", outputTableName: "views", layers: [{ id: "lanes", dataRef: "input_0", type: "roads" }],
+      viewpoints: { dataRef: "input_0" }, aggregation: { type: "classes" },
+    };
+    const layers = await applyComputeBlocks([ROADS], [render], failures);
+    expect(failures).toEqual([]);
+    expect(computeRuns.render).toHaveBeenCalledTimes(1);
+    expect(computeRuns.render.mock.calls[0][0]).toEqual(expect.objectContaining({
+      layers: [expect.objectContaining({ id: "lanes", type: "roads", collection: ROADS.geojson })],
+      viewpoints: expect.objectContaining({ collection: ROADS.geojson }),
+      aggregation: render.aggregation,
+    }));
+    expect(layers.map((l) => [l.name, l.type])).toEqual([["input_0", "roads"], ["views", "roads"]]);
   });
 });
 

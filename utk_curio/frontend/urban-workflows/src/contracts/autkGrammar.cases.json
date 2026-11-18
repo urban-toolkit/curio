@@ -133,9 +133,9 @@
       "says": "This spec uses \"camera\" at map[0], which Curio does not run yet."
     },
     {
-      "name": "a render pass is not run yet",
+      "name": "a render pass is run",
       "spec": { "compute": [{ "type": "render", "outputTableName": "views", "layers": [], "viewpoints": { "dataRef": "input_0" }, "aggregation": { "type": "classes" } }] },
-      "says": "This spec uses a render pass at compute[0], which Curio does not run yet."
+      "says": null
     },
     {
       "name": "a compute pass's outputTableName is run",

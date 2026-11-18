@@ -189,8 +189,9 @@ def autk_one_view_problem(document: object) -> str | None:
 #: object of its list holds the key (``"compute[]"`` a pass).
 AUTK_RENAMED_KEYS: tuple[dict, ...] = tuple(_AUTK_GRAMMAR["renamedKeys"])
 #: The keys of autk-grammar 5 a node does not run yet, each where it is
-#: written; with ``value``, only that value of the key counts (a render pass
-#: is ``"type": "render"``). The step that runs one takes it out of the file.
+#: written; with ``value``, only that value of the key counts (a heatmap
+#: source is ``"type": "heatmap"``). The step that runs one takes it out of the
+#: file.
 AUTK_NOT_RUN_YET: tuple[dict, ...] = tuple(_AUTK_GRAMMAR["notRunYet"])
 
 
@@ -351,8 +352,8 @@ def _drop_kind(schema: dict, node: object, key: str, value: str, seen: set[int])
 def autk_schema_curio_runs(schema: dict) -> dict:
     """A copy of *schema* without what a node does not run yet
     (``AUTK_NOT_RUN_YET``): each such key taken out of the objects that hold
-    it where it is written, and each kind a value names (a render pass, a
-    heatmap source) out of its union. The agents' text and reply schema are
+    it where it is written, and each kind a value names (a heatmap source)
+    out of its union. The agents' text and reply schema are
     made from it, so an agent does not write what a node refuses."""
     schema = json.loads(json.dumps(schema))
     for rule in AUTK_NOT_RUN_YET:
@@ -420,6 +421,31 @@ def _gpgpu_pass(schema: dict) -> tuple[str, list[dict]]:
     return _compute_passes(schema).get(GPGPU_PASS, ("", []))
 
 
+#: The ``type`` of a render pass: it draws tables from each feature of a
+#: viewpoints table and writes what the frames show as a new table.
+RENDER_PASS = "render"
+
+
+def _render_pass(schema: dict) -> dict | None:
+    """What a render pass is and requires, for the agents' text, or None when
+    *schema* has none: its description, without the grammar's note on which
+    adapters read it, the fields it requires, the fields each of its layers
+    requires and the types a layer is drawn as, and the fields its viewpoints
+    require."""
+    description, branches = _compute_passes(schema).get(RENDER_PASS, ("", []))
+    if not branches:
+        return None
+    properties = branches[0].get("properties", {})
+    layer = _definition(schema, properties.get("layers", {}).get("items", {}).get("$ref", ""))
+    return {
+        "description": description.split(" Read by the ", 1)[0],
+        "fields": _every(sorted(branches[0].get("required", []))),
+        "layer_fields": _every(sorted(layer.get("required", []))),
+        "layer_types": _either(layer.get("properties", {}).get("type", {}).get("enum", [])),
+        "viewpoint_fields": _every(sorted(properties.get("viewpoints", {}).get("required", []))),
+    }
+
+
 def _compute_required(schema: dict) -> tuple[list[str], list[str]]:
     """The fields every GPGPU pass needs, and the fields it needs one of."""
     branches = [set(branch.get("required", [])) for branch in _gpgpu_pass(schema)[1]] or [set()]
@@ -455,10 +481,11 @@ def render_autk_shape(schema: dict) -> str:
     source_types = _definition(schema, "DataSourceSpec").get("properties", {}).get("type", {}).get("enum", [])
     first = input_table_name(0)
     example_layer = "{" + ", ".join(f'"{field}": "{first}"' for field in layer_required) + "}"
+    render = _render_pass(schema) or {}
     return agent_text.message(
         "document.autk-shape", layers=layers, example_layer=example_layer, first=first,
         families=_either(autk_step_families(schema)), plot_fields=_every(_plot_required(schema)),
-        compute_fields=_every(common), compute_one_of=_either(either),
+        compute_fields=_every(common), compute_one_of=_either(either), render_fields=render.get("fields", ""),
         source_type=source_types[0] if source_types else "",
     )
 
@@ -523,10 +550,13 @@ def render_autk_region(schema: dict, label: str) -> str:
         description = compute_fields.get(field, {}).get("description")
         if description:
             lines.append(f'  - "{field}": {description}')
+    lines.append(("  - " + _autk_words(
+        "uniform", directive=directive.get("description", ""), iterate=iterate.get("description", ""),
+    )).rstrip())
+    render = _render_pass(schema)
+    if render:
+        lines.append("  - " + _autk_words("render", **render))
     lines += [
-        ("  - " + _autk_words(
-            "uniform", directive=directive.get("description", ""), iterate=iterate.get("description", ""),
-        )).rstrip(),
         # The schema's own descriptions of "map" and "plot" allow several, and a
         # document may name both; a node draws one view.
         ("- " + _autk_words(

@@ -27,11 +27,15 @@ Requires {fields}.
 
 ## compute
 
-"compute": {description} {pass_description} Every pass also requires {fields}.
+"compute": {description} {pass_description} A GPGPU pass also requires {fields}.
 
 ## uniform
 
 A uniform is written inline or as {"fromFeature": {...}}. {directive} Its "iterate": {iterate}
+
+## render
+
+"type": "render": {description} It requires {fields}. Each entry of its "layers" requires {layer_fields}, with a "type" of {layer_types}, and its "viewpoints" requires {viewpoint_fields}.
 
 ## map
 
