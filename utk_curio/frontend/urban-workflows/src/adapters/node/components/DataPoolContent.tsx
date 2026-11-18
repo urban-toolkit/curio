@@ -6,6 +6,7 @@ import { sandboxArtifactId } from '../../../utils/flowOutputRef';
 import { previewTotalRows, rowsFromParseOutput } from '../../../utils/tabularPreview';
 import { NodeEmptyState } from '../../../components/nodes/NodeEmptyState';
 import { isTabularPayload, resolveNodeEmptyReason } from '../../../utils/nodeEmptyState';
+import { poolTabKind, RASTER_TAB_TITLE } from '../../../utils/poolTabs';
 import { ResolutionType } from '../../../constants';
 import nodeSettings from '../../../contracts/nodeSettings.json';
 
@@ -181,16 +182,17 @@ export default function DataPoolContent({
     return [data.input];
   })();
 
-  // Tabs derived from expanding a single artifact (autk-grammar's multi-layer
-  // wrapper persists as one `dict`-kind ref whose payload is an `outputs`
-  // envelope — see useTableData.processDataAsync) have no 1:1 wrapper ref:
-  // wrappers.length === 1 but tabData.length === N. Don't pipe wrappers[0]
-  // into tab 0 in that case — its preview fetch round-trips the whole
-  // multi-MB outputs payload only to fall back to outputTable (the artifact's
-  // dataType is `dict`, which has no previewable shape), so tab 0 lags while
-  // every other tab is instant. Force-empty input on all tabs makes them
-  // uniformly use outputTable, which already holds the active layer's data.
-  const expandedFromSingleRef = wrappers.length === 1 && tabData.length > 1;
+  // A tab is previewed from the server (its first 100 rows, `/get-preview`)
+  // only when it is the one frame its input names: tabs map one to one to
+  // the inputs, and its input is a frame's reference. Tabs a bundle expands
+  // into (a tuple's, a list's, an Autark node's tables; see
+  // useTableData.processDataAsync) are no input of their own: piped the input
+  // at their place, a tab showed another input's rows, or a preview of the
+  // whole bundle, which no table reads (an Autark node's one layer showed a
+  // column "0" of blanks). They use outputTable, which already holds the
+  // active tab's rows.
+  const previewable = (input: any) => !!input && sandboxArtifactId(input) !== null
+    && (input.dataType === undefined || input.dataType === 'dataframe' || input.dataType === 'geodataframe');
 
   // Render only the active tab's content directly instead of via Tab.Pane —
   // react-bootstrap's .tab-pane has display:none/block CSS that fights any
@@ -199,7 +201,12 @@ export default function DataPoolContent({
   // outer flex column → flex:1 content area → ContentComponent's overflow:auto.
   const hasData = Array.isArray(tabData) && tabData.length > 0;
   const activeIndex = parseInt(activeTab) || 0;
-  const activeTabInput = hasData && !expandedFromSingleRef ? (wrappers[activeIndex] ?? '') : '';
+  const activeTabInput = hasData && wrappers.length === tabData.length && previewable(wrappers[activeIndex])
+    ? wrappers[activeIndex]
+    : '';
+  // A raster's tab says it is one, and a value's that it is not tabular: they
+  // have no rows to read or show.
+  const activeKind = hasData ? poolTabKind(tabData[activeIndex]) : 'table';
 
   return (
     // overflow:hidden + height:100% pin this component to the parent's box, so
@@ -256,7 +263,11 @@ export default function DataPoolContent({
         ) : null}
       </Nav>
       <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-        {hasData ? (
+        {hasData && activeKind === 'raster' ? (
+          <NodeEmptyState reason="not-tabular" title={RASTER_TAB_TITLE} hint="" />
+        ) : hasData && activeKind === 'value' ? (
+          <NodeEmptyState reason="not-tabular" />
+        ) : hasData ? (
           <ContentComponent
             key={activeIndex}
             outputTable={tableData}

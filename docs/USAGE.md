@@ -750,9 +750,11 @@ input port allows more than one. Connect an edge to the node's input circle and 
 empty circle appears below it; each new edge takes the next circle. Circles are
 numbered from 0, top to bottom. A Data Loading node needs no input: wire a node into
 it when its code reads a value that node returns, such as the area several loaders
-read. A Data Pool shows each input as a tab, and each frame of
-an input that holds several, a Python tuple or a dict of frames, as a tab too: a
-dict's tab is named after its key.
+read. A Data Pool shows each input as a tab, and each frame or raster of
+an input that holds several (a Python tuple, a list, a dict of frames, or the
+tables an Autark node hands on) as a tab too: a dict's tab is named after its
+key, and an Autark node's table after its name. A raster's tab says it is a
+raster, and the pool passes the raster on as it came.
 
 In code and in a Vega-Lite or Autark spec, each input is a chip:
 
