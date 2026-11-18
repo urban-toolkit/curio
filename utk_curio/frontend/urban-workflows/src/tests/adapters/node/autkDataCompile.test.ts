@@ -13,6 +13,7 @@ import * as fs from "fs";
 import * as path from "path";
 
 import {
+    GRAMMAR_RASTER_SOURCES,
     SANDBOX_BACKEND_URL_TOKEN,
     compileDataSpecToAutkDbJs,
     requestedLayerTables,
@@ -49,6 +50,17 @@ describe("autkDataCompile stays importable outside the browser", () => {
         // Property access only: the emitted sandbox code legitimately mentions
         // words like "fetch" in its comments and error strings.
         expect(source).not.toMatch(/\b(window|document|navigator|localStorage)\s*[.[]/);
+    });
+});
+
+describe("GRAMMAR_RASTER_SOURCES", () => {
+    it("are the raster sources a compute pass is refused over, the node's and the agents' check's", () => {
+        // This module imports nothing, so it holds its own list, which the
+        // contract both sides read must hold too (contracts/autkGrammar.json).
+        const contract = JSON.parse(fs.readFileSync(
+            path.join(__dirname, "..", "..", "..", "contracts", "autkGrammar.json"), "utf8",
+        ));
+        expect(GRAMMAR_RASTER_SOURCES).toEqual(contract.rasterSources);
     });
 });
 

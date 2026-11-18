@@ -2266,7 +2266,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       // A GPGPU pass computes one value for each feature of its table, and a
       // raster holds all its cells in one feature, so a pass over a raster
       // fails the node before anything is loaded, computed or drawn, naming
-      // the pass and the raster (adapters/node/autkRasters rasterPassProblem).
+      // the pass and the raster (contracts/autkGrammar autkRasterPassProblem).
       const warming = (dataRef: string, band: string) => ({
         dataRef, attributes: { t: band }, outputColumns: ['warming'], wgslFunction: 'return t;',
       });
@@ -2352,6 +2352,65 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
           'This spec uses a compute pass over the raster "input_0" at compute[0], which Curio does not run yet.',
         ]);
         expect(outputCallback).not.toHaveBeenCalled();
+      });
+
+      // A GeoTIFF wider than a map holds (8192 cells on a side), as the
+      // sandbox's loader hands it on: autk-db shrinks one to the source's
+      // maxRasterCells as it loads it, so that is what the node says to lower.
+      test('a GeoTIFF the data section loads too large to draw says to lower its source\'s maxRasterCells', async () => {
+        const width = 9000;
+        api().fetchData.mockImplementation(async (path: string) => (path === 'art-wide' ? {
+          dataType: 'list',
+          data: [{
+            dataType: 'dict',
+            data: {
+              dataType: 'raster',
+              layerName: 'lst',
+              data: {
+                type: 'FeatureCollection',
+                bbox: [-4802000, -2604000, -4780000, -2603000],
+                grid: { crs: 'EPSG:3395', width, height: 1, originX: -4802000, originY: -2603000, resX: 22000 / width, resY: -1000 },
+                features: [{
+                  type: 'Feature',
+                  geometry: null,
+                  properties: {
+                    rasterResX: width,
+                    rasterResY: 1,
+                    bands: [{ id: 'band_1', label: 'band_1' }],
+                    band_1: { float32le: Buffer.from(new Float32Array(width).fill(30).buffer).toString('base64') },
+                  },
+                }],
+              },
+            },
+          }],
+        } : { data: {}, dataType: 'dataframe' }));
+        const interpretCode = jest.fn(
+          (_unresolved, _code, _input, _inputTypes, cb) =>
+            cb({ stdout: [], stderr: '', output: { path: 'art-wide', dataType: 'list' } }),
+        );
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const grammarsBefore = AutkGrammar.mock.calls.length;
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback: jest.fn(), jsInterpreter: { interpretCode } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            data: [{
+              type: 'geotiff', geotiffFileUrl: 'docs/examples/data/wide.tif', outputTableName: 'lst',
+              maxRasterCells: 20000000,
+            }],
+            map: { layerRefs: [{ dataRef: 'lst', getFnv: 'band_1' }] },
+          }));
+        });
+        const errors = setOutput.mock.calls.filter((c: any[]) => c[0]?.code === 'error');
+        expect(errors.map((c: any[]) => c[0].content)).toEqual([
+          'lst is 9000 by 1 cells, more than an Autark map loads at its own size (16777216 cells, 8192 on a side). '
+          + 'Give its geotiff source a lower maxRasterCells, which shrinks it as it loads, and run the node again.',
+        ]);
+        expect(AutkGrammar.mock.calls.length).toBe(grammarsBefore);
       });
     });
 

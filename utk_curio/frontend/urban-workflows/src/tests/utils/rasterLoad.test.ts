@@ -3,7 +3,9 @@
  * raster's own size, so autk-db never resamples it; with `nearest`, so a class
  * code or a nodata cell is never blended; and in its own CRS, since autk-db
  * reads one it is not told about as EPSG:4326. Past what a map holds, the node
- * says to crop the raster where it is made.
+ * says how to make the raster smaller where it is made: crop it in the node
+ * that makes it, or give the geotiff source that loads it a lower
+ * maxRasterCells.
  */
 import {
   RASTER_MAX_CELLS,
@@ -98,5 +100,26 @@ test("a raster within the cap of 4096 by 4096 cells is not oversize", () => {
     load: { coordinateFormat: "EPSG:32616", maxRasterCells: 2592 * 2064, resampleMethod: "nearest" },
     grid: { crs: "EPSG:32616", width: 2592, height: 2064, originX: 447000, originY: 4637000, resX: 30, resY: -30 },
     cells: 2592 * 2064,
+  });
+});
+
+describe("a raster too large to load is told how to make it smaller where it is made", () => {
+  const LIMITS = "more than an Autark map loads at its own size (16777216 cells, 8192 on a side).";
+
+  test("one a node makes: crop it in that node", () => {
+    expect(oversizeSentence("input_0", 9000, 1)).toBe(
+      `input_0 is 9000 by 1 cells, ${LIMITS} `
+      + "Crop it in the node that makes it, for example with a rasterio window read, and run that node again.",
+    );
+  });
+
+  test("one a geotiff source loads: a lower maxRasterCells, which autk-db shrinks it to as it loads", () => {
+    // Read when the test runs, so a checkout without who made the raster fails this test alone.
+    const load = require("../../utils/raster/rasterLoad");
+    const sentence = "lst is 9000 by 1 cells, " + LIMITS
+      + " Give its geotiff source a lower maxRasterCells, which shrinks it as it loads, and run the node again.";
+    expect(load.oversizeSentence("lst", 9000, 1, "geotiff")).toBe(sentence);
+    const grid = { crs: "EPSG:3395", width: 9000, height: 1, originX: 0, originY: 1, resX: 1, resY: -1 };
+    expect(load.planForGrid("lst", grid, "geotiff")).toEqual({ refused: sentence });
   });
 });

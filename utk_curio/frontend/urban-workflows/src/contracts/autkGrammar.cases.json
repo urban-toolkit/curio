@@ -201,6 +201,21 @@
       "name": "null is no document",
       "spec": null,
       "says": null
+    },
+    {
+      "name": "a compute pass over the document's own GeoTIFF is not run yet",
+      "spec": { "data": [{ "type": "osm", "pbfFileUrl": "docs/examples/data/niteroi.osm.pbf", "outputTableName": "table_osm", "autoLoadLayers": { "layers": ["parks"] } }, { "type": "geotiff", "geotiffFileUrl": "docs/examples/data/niteroi_lst_verao_2001_2024.tif", "outputTableName": "lst", "resampleMethod": "nearest" }], "compute": [{ "dataRef": "table_osm_parks", "attributes": { "a": "area" }, "wgslFunction": "return a;", "outputColumnName": "x" }, { "dataRef": "lst", "attributes": { "t": "band_24" }, "wgslFunction": "return t;", "outputColumnName": "warming" }] },
+      "says": "This spec uses a compute pass over the raster \"lst\" at compute[1], which Curio does not run yet."
+    },
+    {
+      "name": "a compute pass over the document's own heatmap is not run yet",
+      "spec": { "data": [{ "type": "osm", "pbfFileUrl": "docs/examples/data/niteroi.osm.pbf", "outputTableName": "table_osm", "autoLoadLayers": { "layers": ["parks"] } }, { "type": "heatmap", "joinDataRef": "table_osm_parks", "outputTableName": "park_access", "near": { "distance": 200 }, "grid": { "rows": 15, "columns": 22 } }], "compute": [{ "dataRef": "park_access", "attributes": { "n": "band_1" }, "wgslFunction": "return n;", "outputColumnName": "x" }] },
+      "says": "This spec uses a compute pass over the raster \"park_access\" at compute[0], which Curio does not run yet."
+    },
+    {
+      "name": "a compute pass over a layer beside the document's GeoTIFF is run",
+      "spec": { "data": [{ "type": "osm", "pbfFileUrl": "docs/examples/data/niteroi.osm.pbf", "outputTableName": "table_osm", "autoLoadLayers": { "layers": ["parks"] } }, { "type": "geotiff", "geotiffFileUrl": "docs/examples/data/niteroi_lst_verao_2001_2024.tif", "outputTableName": "lst", "resampleMethod": "nearest" }], "compute": [{ "dataRef": "table_osm_parks", "attributes": { "a": "area" }, "wgslFunction": "return a;", "outputColumnName": "x" }], "map": { "layerRefs": [{ "dataRef": "lst", "getFnv": "band_24" }, { "dataRef": "table_osm_parks" }] } },
+      "says": null
     }
   ]
 }
