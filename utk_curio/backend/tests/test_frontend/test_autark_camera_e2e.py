@@ -78,10 +78,14 @@ FRAMED_MAP = json.dumps({"map": {"layerRefs": [LAYER]}}, indent=2)
 TILTED_MAP = json.dumps({"map": {"camera": {"pitch": PITCH, "bearing": BEARING}, "layerRefs": [LAYER]}}, indent=2)
 
 #: Two views are one when their numbers agree to this share of the eye's
-#: distance from the point it looks at.
-SAME_VIEW = 1e-6
-#: Two angles agree to this many degrees.
-SAME_ANGLE = 1e-6
+#: distance from the point it looks at. autk-map keeps its camera's points in
+#: 32-bit floats, rounded to about 1e-7 of their size.
+SAME_VIEW = 1e-5
+#: Two angles agree to this many degrees: a 32-bit eye turns its angles by a
+#: few millionths of a degree.
+SAME_ANGLE = 1e-3
+#: An up vector's numbers agree to this.
+SAME_UP = 1e-6
 #: A pixel counts as changed when a channel moves by more than this.
 PIXEL_THRESHOLD = 8
 #: The tilted map's picture differs from the framed one's on more than this
@@ -201,7 +205,7 @@ def _apart(a: list, b: list) -> float:
 def _same_view(a: dict, b: dict) -> bool:
     scale = max(_angles(b)[0], 1.0)
     return all(_apart(a[key], b[key]) <= SAME_VIEW * scale for key in ("eye", "lookAt")) and (
-        _apart(a["up"], b["up"]) <= SAME_VIEW
+        _apart(a["up"], b["up"]) <= SAME_UP
     )
 
 
@@ -235,7 +239,7 @@ def test_a_maps_camera_tilts_and_turns_its_framed_view_and_the_r_key_gives_it_ag
         "the map without a camera never looked straight down",
     )
     high = framed["eye"][2] - framed["lookAt"][2]
-    assert high > 0 and _apart(framed["up"], [0, 1, 0]) <= SAME_VIEW, f"the framed map's view is {framed}"
+    assert high > 0 and _apart(framed["up"], [0, 1, 0]) <= SAME_UP, f"the framed map's view is {framed}"
 
     # The tilted one: the same point, as far away, at the camera's angles.
     tilted, tilted_canvas = _view_when(
@@ -254,7 +258,7 @@ def test_a_maps_camera_tilts_and_turns_its_framed_view_and_the_r_key_gives_it_ag
         problems.append(f"its eye is {distance} from where it looks, the framed map's {high} above it")
     if abs(pitch - PITCH) > SAME_ANGLE or abs(bearing - BEARING) > SAME_ANGLE:
         problems.append(f"it stands {pitch} degrees from straight down facing {bearing}, not {PITCH} facing {BEARING}")
-    if _apart(tilted["up"], [math.sin(turn), math.cos(turn), 0]) > SAME_VIEW:
+    if _apart(tilted["up"], [math.sin(turn), math.cos(turn), 0]) > SAME_UP:
         problems.append(f"its up is {tilted['up']}, not the heading {BEARING} degrees east of north")
     assert not problems, "the map's camera did not turn its framed view:\n- " + "\n- ".join(problems)
 
