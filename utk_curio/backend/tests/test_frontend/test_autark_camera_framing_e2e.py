@@ -82,9 +82,6 @@ _VIEWS_JS = "(id) => window.__curio_mapViews(id)"
 
 
 def test_a_map_its_camera_turns_is_checked_framed_then_turned_as_its_camera_says(app_frontend, current_server, page):
-    # A name main lacks is read here, so a checkout without it fails this test alone.
-    from .utils.node_drawings import _drawing_framing
-
     require_project_page()
     require_user_auth()
     stub_login_and_enter_workflow(
@@ -108,18 +105,24 @@ def test_a_map_its_camera_turns_is_checked_framed_then_turned_as_its_camera_says
     assert_autark_map_drawn(page, MAP)
     frame_nodes(page, [MAP])
 
-    # Guard: the camera's view, read as it is, is not framed on the nine blocks.
     turned = page.evaluate(_VIEWS_JS, MAP)
     assert turned and len(turned) == 1 and turned[0].get("camera"), f"the map's view names no camera: {turned}"
+
+    # Framed on its blocks before the turn, and turned as its camera says.
+    framing = autark_map_framing(page, MAP, timeout=30000)
+    assert framing is None, framing
+
+    # Guard: the camera's view the check turned the map back to, read as it
+    # is, is not framed on the nine blocks, so the rule alone refuses it. The
+    # rule is read after the check, so a checkout whose check reads the map
+    # only as it is fails on the check above.
+    from .utils.node_drawings import _drawing_framing
+
     as_turned = _drawing_framing(page, MAP, min_span=AUTK_MAP_MIN_FRAMED_SPAN, timeout=0)
     assert as_turned is not None, (
         "the map's drawing at its camera's view passes the framing rule, so this map cannot show "
         "that the check reads a turned map at its framed view"
     )
-
-    # Framed on its blocks before the turn, and turned as its camera says.
-    framing = autark_map_framing(page, MAP, timeout=30000)
-    assert framing is None, framing
 
     # The check leaves the map at its camera's view.
     after = page.evaluate(_VIEWS_JS, MAP)
