@@ -1,0 +1,74 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "38-autark-solstice-sun-two-cities",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/38-autark-solstice-sun-two-cities.json",
+    "sha256": "91a055f680d42316bb784c0966438b9353e1a51cd5a6e6b8532dbdccd363051b",
+    "walkthrough": "docs/examples/38-autark-solstice-sun-two-cities.md"
+  },
+  "prompt": "Whose streets get more sun on the June solstice, Back Bay's in Boston or the Chicago Loop's? In one Autark node, load the surface, parks, water, roads and buildings of each area from the OpenStreetMap extracts in this checkout, docs/examples/data/back_bay.osm.pbf and docs/examples/data/chicago_loop.osm.pbf, each area into a workspace of its own. On the GPU, add up each road's minutes of sun on June 21, from 7:00 to 19:00, an hour counting when no building's shadow falls on the road, each area at its own latitude and longitude. Draw a map of each area's roads colored by their minutes of sun over its buildings, and under each map a histogram of its roads' minutes of sun that I can brush, linked to that map's roads, the maps side by side on top.",
+  "context": null,
+  "required": {
+    "datasets": [],
+    "packages": [],
+    "paths": [
+      "docs/examples/data/back_bay.osm.pbf",
+      "docs/examples/data/chicago_loop.osm.pbf"
+    ]
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [],
+    "sources": {
+      "datasetIds": [],
+      "paths": [
+        "docs/examples/data/back_bay.osm.pbf",
+        "docs/examples/data/chicago_loop.osm.pbf"
+      ],
+      "urls": []
+    }
+  },
+  "intents": [],
+  "execution": {
+    "mode": "browser",
+    "browserOnlyKinds": [
+      "curio.builtin/autk-grammar"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T1",
+    "needs": [
+      "browser-only-execution"
+    ],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-opus-5-5 from the example JSON and its walkthrough, 2026-11-18",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
+  },
+  "notes": "One grammar node: two workspaces, a pass in each, and four views arranged by its layout, each histogram linked to its map."
+}

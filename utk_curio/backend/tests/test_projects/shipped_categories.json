@@ -412,6 +412,16 @@
       "Rasters"
     ]
   },
+  "38-autark-solstice-sun-two-cities": {
+    "tags": [
+      "Autark",
+      "GPU compute"
+    ],
+    "data_type": [
+      "Geometries",
+      "OpenStreetMap"
+    ]
+  },
   "dataflows/autk-map": {
     "tags": [
       "Autark",
