@@ -9,6 +9,14 @@ import { checkedPasses } from './autkComputeScopes';
 /** A layer a compute step holds, in the workspace it names when it is not the default one. */
 type Layer = { name: string; type: string; geojson: FeatureCollection; workspace?: string };
 
+/**
+ * The CRS a compute step's database says it keeps its tables in: autk-db's
+ * default, World Mercator. A pass compares it only with a data adapter's
+ * cache, which a step does not hand its passes, so it reads every table from
+ * its own cache as the step holds it.
+ */
+const HELD_TABLES_CRS = 'EPSG:3395';
+
 // Apply a grammar `compute` section to an array of named GeoJSON layers,
 // returning the layers as its passes leave them: each pass's result, a
 // FeatureCollection with what the pass computed under
@@ -64,8 +72,10 @@ export async function applyComputeBlocks(
         types.set(key, layer.type);
         held.set(key, { name: layer.name, ...(workspace ? { workspace } : {}) });
     }
+    // The adapter is handed no data adapter's cache: the step's tables are all
+    // in its own cache, which a pass reads first.
     const adapter = checkedPasses(createComputeAdapter(cache, types));
-    const db = heldTables(types);
+    const db = heldTables(types, HELD_TABLES_CRS);
     for (const pass of computeBlocks) {
         const render = pass?.type === 'render';
         const source = render ? pass?.viewpoints?.dataRef : pass?.dataRef;
@@ -127,18 +137,20 @@ export async function applyComputeBlocks(
 /**
  * The database a compute step's passes read, as autk-grammar's compute
  * adapter reads one: the tables the step holds, of the types *types* gives,
- * the workspace a pass enters its own. The adapter reads a table from its
- * cache first, which holds them all, so one it asks this database for is a
- * table the step does not hold, which fails its pass as autk-db fails a read
- * of a table it does not hold.
+ * the workspace a pass enters its own, kept in autk-db's CRS
+ * (*coordinateFormat*), which a GPGPU pass reads before it reads a table. The
+ * adapter reads a table from its cache first, which holds them all, so one it
+ * asks this database for is a table the step does not hold, which fails its
+ * pass as autk-db fails a read of a table it does not hold.
  */
-function heldTables(types: Map<string, string>) {
+function heldTables(types: Map<string, string>, coordinateFormat: string) {
     let workspace: string | undefined;
     return {
         getCurrentWorkspace: () => workspace,
         setWorkspace: async (name: string) => {
             workspace = name;
         },
+        getWorkspaceConfiguration: () => ({ coordinateFormat }),
         getTablesMetadata: () => [...types].map(([name, type]) => ({ name, type })),
         getLayer: async (name: string): Promise<FeatureCollection> => {
             throw new Error(`Table ${name} not found.`);

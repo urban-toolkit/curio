@@ -130,10 +130,14 @@ describe("compileDataSpecToAutkDbJs", () => {
         resolveDataSourceUrls({ data: sources }, SANDBOX_BACKEND_URL_TOKEN).data,
     );
 
-    it("emits a single top-level autk-db import for the sandbox to rewrite", () => {
-        // execute_js_code turns exactly this one import into `await import()`.
-        const imports = code.match(/^import /gm) ?? [];
-        expect(imports).toHaveLength(1);
+    it("emits two top-level imports for the sandbox to rewrite: autk-db's, then the grammar's data adapter's", () => {
+        // execute_js_code turns each into `await import()`: every source loads
+        // through autk-grammar's own data adapter.
+        const imports = code.match(/^import [^\n]*$/gm) ?? [];
+        expect(imports).toEqual([
+            "import { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } from '@urban-toolkit/autk-db';",
+            "import { createDataAdapter } from '@urban-toolkit/autk-grammar/data';",
+        ]);
         expect(code.startsWith("import { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } from '@urban-toolkit/autk-db';")).toBe(true);
     });
 

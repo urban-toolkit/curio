@@ -1,5 +1,5 @@
 {
-  "families": ["compute", "data", "layout", "links", "map", "plot"],
+  "families": ["compute", "data", "layout", "links", "map", "plot", "workspaces"],
   "inputTablePrefix": "input_",
   "viewRules": {
     "emptyId": "A map or plot has an empty id.",
@@ -19,6 +19,7 @@
   "renamedKey": "This spec uses \"{key}\"{at}, which autk-grammar 5 renamed to \"{renamedTo}\".",
   "notRunYet": [],
   "notRunYetKey": "This spec uses {what}{at}, which Curio does not run yet.",
+  "osmElementsMixed": "\"osmElements\" on one view of the OpenStreetMap table \"{table}\" and not on another",
   "keyAt": " at {path}",
   "rasterSources": ["heatmap", "geotiff"],
   "defaultWorkspace": "autk",

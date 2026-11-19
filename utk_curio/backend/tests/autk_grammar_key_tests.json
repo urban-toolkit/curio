@@ -4701,6 +4701,1654 @@
         "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a heatmatrix of every plot key]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       }
+    ],
+    "data[osm].autoLoadLayers.coordinateFormat": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[an OpenStreetMap extract read in the CRS of its coordinates]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an OpenStreetMap extract read in the CRS of its coordinates]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[osm].forceRefresh": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[OpenStreetMap tag sets from an Overpass API the test answers, queried past the answer the browser cached]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[OpenStreetMap tag sets from an Overpass API the test answers, queried past the answer the browser cached]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[osm].tagSets": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[OpenStreetMap tag sets from an Overpass API the test answers, queried past the answer the browser cached]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[OpenStreetMap tag sets from an Overpass API the test answers, queried past the answer the browser cached]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkGrammarDataAdapterLoads.test.ts::%s::fails in the grammar's words on tag sets with an extract, and loads nothing of it"
+      }
+    ],
+    "data[osm].tagSets[].name": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[OpenStreetMap tag sets from an Overpass API the test answers, queried past the answer the browser cached]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[OpenStreetMap tag sets from an Overpass API the test answers, queried past the answer the browser cached]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[osm].tagSets[].tags": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[OpenStreetMap tag sets from an Overpass API the test answers, queried past the answer the browser cached]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[OpenStreetMap tag sets from an Overpass API the test answers, queried past the answer the browser cached]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[osm].tagSets[].tags[].key": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[OpenStreetMap tag sets from an Overpass API the test answers, queried past the answer the browser cached]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[OpenStreetMap tag sets from an Overpass API the test answers, queried past the answer the browser cached]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[osm].tagSets[].tags[].value": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[OpenStreetMap tag sets from an Overpass API the test answers, queried past the answer the browser cached]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[OpenStreetMap tag sets from an Overpass API the test answers, queried past the answer the browser cached]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[osm].tagSets[].type": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[OpenStreetMap tag sets from an Overpass API the test answers, queried past the answer the browser cached]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[OpenStreetMap tag sets from an Overpass API the test answers, queried past the answer the browser cached]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[heatmap].groupBy[].normalize": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a heatmap whose aggregate is normalized]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a heatmap whose aggregate is normalized]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[sql]": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a SQL table, an update and a drop in a workspace]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a SQL table, an update and a drop in a workspace]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_sql_and_plot_keys_e2e.py::test_a_sql_table_is_drawn_and_plotted_in_the_scheme_titles_ticks_and_selection_its_charts_set"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkGrammarDataAdapterLoads.test.ts::%s::hands every source to the grammar's data adapter, in order"
+      }
+    ],
+    "data[sql].layerType": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a SQL table, an update and a drop in a workspace]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a SQL table, an update and a drop in a workspace]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_sql_and_plot_keys_e2e.py::test_a_sql_table_is_drawn_and_plotted_in_the_scheme_titles_ticks_and_selection_its_charts_set"
+      }
+    ],
+    "data[sql].outputTableName": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a SQL table, an update and a drop in a workspace]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a SQL table, an update and a drop in a workspace]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_sql_and_plot_keys_e2e.py::test_a_sql_table_is_drawn_and_plotted_in_the_scheme_titles_ticks_and_selection_its_charts_set"
+      }
+    ],
+    "data[sql].query": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a SQL table, an update and a drop in a workspace]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a SQL table, an update and a drop in a workspace]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_sql_and_plot_keys_e2e.py::test_a_sql_table_is_drawn_and_plotted_in_the_scheme_titles_ticks_and_selection_its_charts_set"
+      }
+    ],
+    "data[sql].workspace": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a SQL table, an update and a drop in a workspace]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a SQL table, an update and a drop in a workspace]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update]": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a SQL table, an update and a drop in a workspace]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a SQL table, an update and a drop in a workspace]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkGrammarDataAdapterLoads.test.ts::%s::hands every source to the grammar's data adapter, in order"
+      }
+    ],
+    "data[update].dataRef": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a SQL table, an update and a drop in a workspace]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a SQL table, an update and a drop in a workspace]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.bbox": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.features": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.features[].bbox": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.features[].geometry": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.features[].geometry(Point)": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.features[].geometry(Point).bbox": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.features[].geometry(Point).coordinates": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.features[].geometry(MultiPoint)": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.features[].geometry(MultiPoint).bbox": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.features[].geometry(MultiPoint).coordinates": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.features[].geometry(LineString)": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.features[].geometry(LineString).bbox": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.features[].geometry(LineString).coordinates": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.features[].geometry(MultiLineString)": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.features[].geometry(MultiLineString).bbox": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.features[].geometry(MultiLineString).coordinates": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.features[].geometry(Polygon)": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.features[].geometry(Polygon).bbox": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.features[].geometry(Polygon).coordinates": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.features[].geometry(MultiPolygon)": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.features[].geometry(MultiPolygon).bbox": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.features[].geometry(MultiPolygon).coordinates": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.features[].geometry(GeometryCollection)": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.features[].geometry(GeometryCollection).bbox": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.features[].geometry(GeometryCollection).geometries": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.features[].id": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.features[].properties": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.features[].type": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].geojsonObject.type": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[update].idColumn": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkGrammarDataAdapterLoads.test.ts::%s::hands on a SQL table without a layer type and an updated CSV table as their rows, and no dropped table"
+      }
+    ],
+    "data[update].jsonObject": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a SQL table, an update and a drop in a workspace]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a SQL table, an update and a drop in a workspace]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkGrammarDataAdapterLoads.test.ts::%s::hands on a SQL table without a layer type and an updated CSV table as their rows, and no dropped table"
+      }
+    ],
+    "data[update].strategy": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a SQL table, an update and a drop in a workspace]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a SQL table, an update and a drop in a workspace]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[an update of a layer by every geometry, with every box]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkGrammarDataAdapterLoads.test.ts::%s::hands on a SQL table without a layer type and an updated CSV table as their rows, and no dropped table"
+      }
+    ],
+    "data[update].workspace": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a SQL table, an update and a drop in a workspace]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a SQL table, an update and a drop in a workspace]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "data[drop]": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a SQL table, an update and a drop in a workspace]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a SQL table, an update and a drop in a workspace]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_sql_and_plot_keys_e2e.py::test_a_sql_table_is_drawn_and_plotted_in_the_scheme_titles_ticks_and_selection_its_charts_set"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkGrammarDataAdapterLoads.test.ts::%s::hands every source to the grammar's data adapter, in order"
+      }
+    ],
+    "data[drop].dataRef": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a SQL table, an update and a drop in a workspace]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a SQL table, an update and a drop in a workspace]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_sql_and_plot_keys_e2e.py::test_a_sql_table_is_drawn_and_plotted_in_the_scheme_titles_ticks_and_selection_its_charts_set"
+      }
+    ],
+    "data[drop].workspace": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a SQL table, an update and a drop in a workspace]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a SQL table, an update and a drop in a workspace]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "map[].layerRefs[].osmElements": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a map of OpenStreetMap elements, in a workspace that workspaces sets]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a map of OpenStreetMap elements, in a workspace that workspaces sets]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkGrammarDataAdapterLoads.test.ts::%s::reads a table a view reads with osmElements as one feature per OpenStreetMap element, and no other"
+      }
+    ],
+    "plot[scatter].axisLabels": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a scatter plot of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a scatter plot of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[scatter].categoricalColorMapInterpolator": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a scatter plot of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a scatter plot of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[scatter].colorMapDomain": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a scatter plot of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a scatter plot of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[scatter].colorMapInterpolator": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a scatter plot of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a scatter plot of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[scatter].colorMapRange": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a plot of every mark colored over one colorMapRange]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a plot of every mark colored over one colorMapRange]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[scatter].highlightColor": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a scatter plot of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a scatter plot of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[scatter].markColor": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a scatter plot of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a scatter plot of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[scatter].normalization": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a scatter plot of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a scatter plot of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[scatter].normalization.lowerPercentile": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a scatter plot of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a scatter plot of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[scatter].normalization.mode": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a scatter plot of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a scatter plot of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[scatter].normalization.upperPercentile": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a scatter plot of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a scatter plot of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[scatter].osmElements": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a scatter plot of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a scatter plot of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[scatter].selection": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a scatter plot of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a scatter plot of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[scatter].tickFormats": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a scatter plot of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a scatter plot of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[bar].axisLabels": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a bar chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a bar chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_sql_and_plot_keys_e2e.py::test_a_sql_table_is_drawn_and_plotted_in_the_scheme_titles_ticks_and_selection_its_charts_set"
+      }
+    ],
+    "plot[bar].categoricalColorMapInterpolator": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a bar chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a bar chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[bar].colorMapDomain": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a bar chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a bar chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[bar].colorMapInterpolator": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a bar chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a bar chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_sql_and_plot_keys_e2e.py::test_a_sql_table_is_drawn_and_plotted_in_the_scheme_titles_ticks_and_selection_its_charts_set"
+      }
+    ],
+    "plot[bar].colorMapRange": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a plot of every mark colored over one colorMapRange]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a plot of every mark colored over one colorMapRange]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_sql_and_plot_keys_e2e.py::test_a_sql_table_is_drawn_and_plotted_in_the_scheme_titles_ticks_and_selection_its_charts_set"
+      }
+    ],
+    "plot[bar].highlightColor": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a bar chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a bar chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_sql_and_plot_keys_e2e.py::test_a_sql_table_is_drawn_and_plotted_in_the_scheme_titles_ticks_and_selection_its_charts_set"
+      }
+    ],
+    "plot[bar].markColor": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a bar chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a bar chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_sql_and_plot_keys_e2e.py::test_a_sql_table_is_drawn_and_plotted_in_the_scheme_titles_ticks_and_selection_its_charts_set"
+      }
+    ],
+    "plot[bar].normalization": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a bar chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a bar chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[bar].normalization.lowerPercentile": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a bar chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a bar chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[bar].normalization.mode": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a bar chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a bar chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[bar].normalization.upperPercentile": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a bar chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a bar chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[bar].osmElements": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a bar chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a bar chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[bar].selection": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a bar chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a bar chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_sql_and_plot_keys_e2e.py::test_a_sql_table_is_drawn_and_plotted_in_the_scheme_titles_ticks_and_selection_its_charts_set"
+      }
+    ],
+    "plot[bar].tickFormats": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a bar chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a bar chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_sql_and_plot_keys_e2e.py::test_a_sql_table_is_drawn_and_plotted_in_the_scheme_titles_ticks_and_selection_its_charts_set"
+      }
+    ],
+    "plot[line|linechart].axisLabels": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a line chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a line chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a linechart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a linechart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[line|linechart].categoricalColorMapInterpolator": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a line chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a line chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a linechart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a linechart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[line|linechart].colorMapDomain": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a line chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a line chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a linechart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a linechart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[line|linechart].colorMapInterpolator": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a line chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a line chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a linechart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a linechart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[line|linechart].colorMapRange": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a plot of every mark colored over one colorMapRange]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a plot of every mark colored over one colorMapRange]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[line|linechart].highlightColor": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a line chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a line chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a linechart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a linechart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[line|linechart].markColor": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a line chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a line chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a linechart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a linechart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[line|linechart].normalization": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a line chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a line chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a linechart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a linechart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[line|linechart].normalization.lowerPercentile": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a line chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a line chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[line|linechart].normalization.mode": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a line chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a line chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a linechart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a linechart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[line|linechart].normalization.upperPercentile": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a linechart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a linechart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[line|linechart].osmElements": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a line chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a line chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a linechart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a linechart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[line|linechart].selection": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a line chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a line chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a linechart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a linechart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[line|linechart].tickFormats": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a line chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a line chart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a linechart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a linechart of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[parallel-coordinates].axisLabels": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[parallel coordinates of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[parallel coordinates of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[parallel-coordinates].categoricalColorMapInterpolator": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[parallel coordinates of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[parallel coordinates of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[parallel-coordinates].colorMapDomain": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[parallel coordinates of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[parallel coordinates of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[parallel-coordinates].colorMapInterpolator": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[parallel coordinates of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[parallel coordinates of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[parallel-coordinates].colorMapRange": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a plot of every mark colored over one colorMapRange]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a plot of every mark colored over one colorMapRange]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[parallel-coordinates].highlightColor": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[parallel coordinates of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[parallel coordinates of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[parallel-coordinates].markColor": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[parallel coordinates of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[parallel coordinates of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[parallel-coordinates].normalization": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[parallel coordinates of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[parallel coordinates of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[parallel-coordinates].normalization.lowerPercentile": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[parallel coordinates of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[parallel coordinates of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[parallel-coordinates].normalization.mode": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[parallel coordinates of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[parallel coordinates of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[parallel-coordinates].normalization.upperPercentile": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[parallel coordinates of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[parallel coordinates of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[parallel-coordinates].osmElements": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[parallel coordinates of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[parallel coordinates of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[parallel-coordinates].selection": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[parallel coordinates of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[parallel coordinates of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[parallel-coordinates].tickFormats": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[parallel coordinates of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[parallel coordinates of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[table].axisLabels": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a table of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a table of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[table].categoricalColorMapInterpolator": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a table of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a table of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[table].colorMapDomain": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a table of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a table of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[table].colorMapInterpolator": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a table of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a table of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[table].colorMapRange": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a plot of every mark colored over one colorMapRange]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a plot of every mark colored over one colorMapRange]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[table].highlightColor": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a table of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a table of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[table].markColor": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a table of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a table of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[table].normalization": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a table of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a table of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[table].normalization.lowerPercentile": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a table of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a table of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[table].normalization.mode": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a table of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a table of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[table].normalization.upperPercentile": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a table of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a table of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[table].osmElements": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a table of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a table of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[table].selection": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a table of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a table of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[table].tickFormats": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a table of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a table of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[heatmatrix].axisLabels": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a heatmatrix of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a heatmatrix of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[heatmatrix].categoricalColorMapInterpolator": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a heatmatrix of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a heatmatrix of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[heatmatrix].colorMapDomain": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a heatmatrix of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a heatmatrix of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[heatmatrix].colorMapInterpolator": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a heatmatrix of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a heatmatrix of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[heatmatrix].colorMapRange": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a plot of every mark colored over one colorMapRange]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a plot of every mark colored over one colorMapRange]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[heatmatrix].highlightColor": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a heatmatrix of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a heatmatrix of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[heatmatrix].markColor": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a heatmatrix of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a heatmatrix of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[heatmatrix].normalization": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a heatmatrix of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a heatmatrix of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[heatmatrix].normalization.lowerPercentile": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a heatmatrix of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a heatmatrix of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[heatmatrix].normalization.mode": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a heatmatrix of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a heatmatrix of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[heatmatrix].normalization.upperPercentile": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a heatmatrix of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a heatmatrix of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[heatmatrix].osmElements": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a heatmatrix of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a heatmatrix of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[heatmatrix].selection": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a heatmatrix of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a heatmatrix of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "plot[heatmatrix].tickFormats": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a heatmatrix of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a heatmatrix of every key of a plot's colors, ticks, titles and selection]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "workspaces": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a map of OpenStreetMap elements, in a workspace that workspaces sets]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a map of OpenStreetMap elements, in a workspace that workspaces sets]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[two workspaces set by workspaces, the default one in Web Mercator to the metre, one named in World Mercator]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[two workspaces set by workspaces, the default one in Web Mercator to the metre, one named in World Mercator]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkGrammarDataAdapterLoads.test.ts::%s::sets the document's workspaces up through the grammar's data adapter before the first source"
+      }
+    ],
+    "workspaces[].coordinateFormat": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a map of OpenStreetMap elements, in a workspace that workspaces sets]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a map of OpenStreetMap elements, in a workspace that workspaces sets]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[two workspaces set by workspaces, the default one in Web Mercator to the metre, one named in World Mercator]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[two workspaces set by workspaces, the default one in Web Mercator to the metre, one named in World Mercator]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkGrammarDataAdapterLoads.test.ts::%s::hands on each table of a workspace in the CRS workspaces sets"
+      }
+    ],
+    "workspaces[].name": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a map of OpenStreetMap elements, in a workspace that workspaces sets]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a map of OpenStreetMap elements, in a workspace that workspaces sets]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[two workspaces set by workspaces, the default one in Web Mercator to the metre, one named in World Mercator]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[two workspaces set by workspaces, the default one in Web Mercator to the metre, one named in World Mercator]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "workspaces[].precisionGrid": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a map of OpenStreetMap elements, in a workspace that workspaces sets]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a map of OpenStreetMap elements, in a workspace that workspaces sets]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[two workspaces set by workspaces, the default one in Web Mercator to the metre, one named in World Mercator]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[two workspaces set by workspaces, the default one in Web Mercator to the metre, one named in World Mercator]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkGrammarDataAdapterLoads.test.ts::%s::hands on each table of a workspace in the CRS workspaces sets"
+      }
     ]
   },
   "renamedKeys": {

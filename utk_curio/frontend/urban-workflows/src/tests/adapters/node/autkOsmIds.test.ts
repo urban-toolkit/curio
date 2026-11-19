@@ -17,8 +17,12 @@ jest.mock("../../../services/api", () => ({ fetchData: jest.fn() }));
 // loader's import of it gets this whatever its `exports` resolve to under Jest.
 jest.mock("@urban-toolkit/autk-db", () => ({
   DEFAULT_WORKSPACE_COORDINATE_FORMAT: "EPSG:3395",
+  DEFAULT_WORKSPACE_NAME: "autk",
   AutkDb: jest.fn().mockImplementation(() => new mockAutkDb()),
 }), { virtual: true });
+
+/** autk-grammar's data adapter, which both loaders load every source with. */
+const { createDataAdapter } = jest.requireActual("@urban-toolkit/autk-grammar/data");
 
 // Back Bay, in EPSG:3395 metres, as autk-db's workspace holds it.
 const X = -7910000;
@@ -97,6 +101,9 @@ let mockGiven: Record<string, () => any> = GIVEN;
 
 class mockAutkDb {
   init() { return Promise.resolve(); }
+  // The default workspace, which the grammar's data adapter enters.
+  getCurrentWorkspace() { return "autk"; }
+  setWorkspace() { return Promise.resolve(); }
   loadOsm() { return Promise.resolve(); }
   loadGeojson() { return Promise.resolve(); }
   getLayersMetadata() { return TABLES.map((table) => ({ ...table, columns: [] })); }
@@ -113,7 +120,9 @@ const SOURCES = [
     autoLoadLayers: { layers: ["surface", "parks", "water", "roads", "buildings"] },
     pbfFileUrl: "docs/examples/data/back_bay.osm.pbf",
   },
-  { type: "geojson", outputTableName: "zones", geojsonObject: GIVEN.zones() },
+  // In World Mercator metres, as its CRS says: the grammar's data adapter
+  // refuses a source in degrees whose coordinates are no degrees.
+  { type: "geojson", outputTableName: "zones", coordinateFormat: "EPSG:3395", geojsonObject: GIVEN.zones() },
 ];
 
 /** Each layer's features, by table name. */
@@ -124,11 +133,14 @@ const byName = (layers: Array<{ name: string; geojson: any }>): Layers =>
 
 /** The layers the sandbox's code hands on, run as the sandbox runs it. */
 async function sandboxLayers(): Promise<Layers> {
-  const body = compileDataSpecToAutkDbJs(SOURCES).replace(/^import [^\n]*\n/, "");
+  // Its imports dropped, theirs handed in: autk-db's and the grammar's data entry's.
+  const body = compileDataSpecToAutkDbJs(SOURCES).replace(/^import [^\n]*\n/gm, "");
   // The engine's own AsyncFunction: babel compiles an `async function` written
   // in this file to a generator, whose constructor is plain Function.
   const AsyncFunction = new Function("return (async () => {}).constructor")();
-  return byName(await new AsyncFunction("AutkDb", "DEFAULT_WORKSPACE_COORDINATE_FORMAT", body)(mockAutkDb, "EPSG:3395"));
+  return byName(await new AsyncFunction("AutkDb", "DEFAULT_WORKSPACE_COORDINATE_FORMAT", "createDataAdapter", body)(
+    mockAutkDb, "EPSG:3395", createDataAdapter,
+  ));
 }
 
 /** The same, from the in-browser loader. */

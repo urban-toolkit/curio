@@ -197,3 +197,10 @@
   font-family: monospace;
   color: #b71c1c;
 }
+
+/* An Autark plot's axis titles: autk-plot draws each inside its axis's group,
+   which d3 fills with none, and leaves the title's fill to the page. They take
+   the text color, as the tick labels do. */
+[id^="autk-grammar-plot-"] .axis-label {
+  fill: currentColor;
+}

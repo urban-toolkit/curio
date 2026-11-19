@@ -15,7 +15,8 @@
 jest.mock("@urban-toolkit/autk-db", () => ({}), { virtual: true });
 jest.mock("@urban-toolkit/autk-map", () => ({}), { virtual: true });
 jest.mock("@urban-toolkit/autk-plot", () => ({}), { virtual: true });
-jest.mock("@urban-toolkit/autk-core", () => ({}), { virtual: true });
+// The one export the grammar's build reads of autk-core as it loads.
+jest.mock("@urban-toolkit/autk-core", () => require("../../_support/autkApplyCamera").autkCoreAtLoad(), { virtual: true });
 jest.mock("@urban-toolkit/autk-compute", () => ({}), { virtual: true });
 
 import { attachSpecCameras, frameMaps, framingCamera, keepMapViews, mapViews } from "../../../adapters/node/autkMapView";
@@ -92,7 +93,9 @@ const HIGH = FRAMED.eye[2];
 /**
  * The view turned round *lookAt* on the ground: the eye *distance* away from
  * it, *pitch* degrees from straight down, facing *bearing* degrees clockwise
- * from north, with that heading up the screen.
+ * from north, with that heading up the screen: its up direction across its
+ * line of sight, toward the far side of the view, as autk-map's own tilt
+ * leaves it.
  */
 function turned(lookAt: number[], distance: number, pitch: number, bearing: number): View {
   const p = pitch * DEGREE;
@@ -104,7 +107,7 @@ function turned(lookAt: number[], distance: number, pitch: number, bearing: numb
       distance * Math.cos(p),
     ],
     lookAt: [lookAt[0], lookAt[1], 0],
-    up: [Math.sin(b), Math.cos(b), 0],
+    up: [Math.cos(p) * Math.sin(b), Math.cos(p) * Math.cos(b), Math.sin(p)],
   };
 }
 

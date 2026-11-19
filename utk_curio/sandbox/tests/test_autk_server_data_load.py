@@ -164,7 +164,7 @@ def test_the_server_compiled_load_hands_on_the_layers(example, node_id, extract,
         _assert_osm_ids(layer)
 
 
-AUTK_GRAMMAR_VERSION = "5.0.0"
+AUTK_GRAMMAR_VERSION = "5.2.0"
 
 #: Four readings at the corners of a box about 1.1 km by 1.5 km in the Chicago
 #: Loop, binned twice into 3 columns by 2 rows over their extent: each cell of
@@ -581,8 +581,10 @@ def _numbers(value) -> list:
 
 def test_the_server_compiled_load_keeps_each_table_in_its_workspace(tmp_path, monkeypatch):
     """A server run's data load (autk-grammar 5.0.0's ``workspace``): each
-    source loads into its workspace, entered with autk-grammar's own
-    ``enterWorkspace`` from its ``./data`` entry, so two workspaces hold a
+    source loads into its workspace through autk-grammar's own data adapter
+    (``createDataAdapter``), which enters it, and each workspace's tables are
+    read back in it, entered with the grammar's ``enterWorkspace``, both from
+    its ``./data`` entry, so two workspaces hold a
     ``lines`` each and east's join counts east's three. Each table is handed
     on with its workspace, one of the default workspace as before. The tables
     the sandbox reads back are keyed with the grammar's ``tableKey`` and checked
@@ -594,7 +596,7 @@ def test_the_server_compiled_load_keeps_each_table_in_its_workspace(tmp_path, mo
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
     code = compile_data_spec(json.dumps(WORKSPACES_SPEC))
-    assert "import { enterWorkspace, tableKey } from '@urban-toolkit/autk-grammar/data';" in code
+    assert "import { createDataAdapter, enterWorkspace, tableKey } from '@urban-toolkit/autk-grammar/data';" in code
     assert 'const __expectedTables = ["lines","east/zones","east/lines","points"];' in code
 
     monkeypatch.setenv("HOME", str(tmp_path))

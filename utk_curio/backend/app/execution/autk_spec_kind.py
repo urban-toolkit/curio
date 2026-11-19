@@ -22,10 +22,11 @@ from utk_curio.common import shared_constants
 DEFAULT_WORKSPACE: str = shared_constants.read("autkGrammar")["defaultWorkspace"]
 
 #: The step each top-level family describes (``FAMILY_KIND``). A family of
-#: None describes none of its own: a layout arranges views and links join
-#: them, so a document with one is the step its other families describe.
+#: None describes none of its own: a layout arranges views, links join them
+#: and workspaces set where the sources load, so a document with one is the
+#: step its other families describe.
 FAMILY_KIND = {
-    "map": "render", "plot": "render", "layout": None, "links": None,
+    "map": "render", "plot": "render", "layout": None, "links": None, "workspaces": None,
     "compute": "compute", "data": "data",
 }
 
@@ -101,42 +102,48 @@ def _table_key(workspace: str | None, name: str) -> str:
 def _loaded_tables(sources: list) -> set[str]:
     """The keys of a data section's own tables: those its sources load and
     make, as ``requestedLayerTables`` names them (an OSM load's layers
-    ``<outputTableName>_<layer>``), and every name a source gives its table
-    (``outputTableName``, an OSM load's included). A join makes none."""
+    ``<outputTableName>_<layer>`` and tag sets ``<outputTableName>_<name>_<type>``),
+    and every name a source gives its table (``outputTableName``, an OSM load's
+    and a SQL source's included). A join, an update and a drop make none."""
     keys: set[str] = set()
     for source in sources:
         if not isinstance(source, dict):
             continue
         kind, out, workspace = source.get("type"), source.get("outputTableName"), _workspace_of(source)
-        if kind == "osm":
+        if kind == "osm" and isinstance(out, str) and out:
             auto = source.get("autoLoadLayers")
             layers = auto.get("layers") if isinstance(auto, dict) else None
-            if out and isinstance(layers, list):
+            if isinstance(layers, list):
                 keys.update(_table_key(workspace, f"{out}_{layer}") for layer in layers)
+            tag_sets = source.get("tagSets")
+            for tag_set in tag_sets if isinstance(tag_sets, list) else []:
+                if isinstance(tag_set, dict) and tag_set.get("name") and tag_set.get("type"):
+                    keys.add(_table_key(workspace, f"{out}_{tag_set['name']}_{tag_set['type']}"))
         if isinstance(out, str) and out:
             keys.add(_table_key(workspace, out))
     return keys
 
 
+#: The tables each kind of source reads by name: a heatmap bins one, a join
+#: joins two, and an update or a drop changes one.
+_READS = {"heatmap": ("joinDataRef",), "join": ("dataRef", "joinDataRef"), "update": ("dataRef",), "drop": ("dataRef",)}
+
+
 def section_input_tables(spec) -> list[str]:
     """The keys of the tables a document's data section reads from the node's
     input, in the order it first reads them: each table a heatmap bins
-    (``joinDataRef``) or a join reads (``dataRef``, ``joinDataRef``), in the
-    entry's workspace, that none of the section's own sources loads."""
+    (``joinDataRef``), a join reads (``dataRef``, ``joinDataRef``) or an update
+    or a drop changes (``dataRef``), in the entry's workspace, that none of the
+    section's own sources loads."""
     sources = spec.get("data") if isinstance(spec, dict) else None
     if not isinstance(sources, list):
         return []
     loaded = _loaded_tables(sources)
     keys: list[str] = []
     for source in sources:
-        if not isinstance(source, dict):
+        if not isinstance(source, dict) or source.get("type") not in _READS:
             continue
-        if source.get("type") == "heatmap":
-            read = [source.get("joinDataRef")]
-        elif source.get("type") == "join":
-            read = [source.get("dataRef"), source.get("joinDataRef")]
-        else:
-            continue
+        read = [source.get(field) for field in _READS[source["type"]]]
         for table in read:
             if not isinstance(table, str) or not table:
                 continue

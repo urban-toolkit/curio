@@ -20,8 +20,12 @@ jest.mock("../../../services/api", () => ({ fetchData: jest.fn() }));
 // loader's import of it gets this whatever its `exports` resolve to under Jest.
 jest.mock("@urban-toolkit/autk-db", () => ({
   DEFAULT_WORKSPACE_COORDINATE_FORMAT: "EPSG:3395",
+  DEFAULT_WORKSPACE_NAME: "autk",
   AutkDb: jest.fn().mockImplementation(() => new mockAutkDb()),
 }), { virtual: true });
+
+/** autk-grammar's data adapter, which both loaders load every source with. */
+const { createDataAdapter } = jest.requireActual("@urban-toolkit/autk-grammar/data");
 
 const EXAMPLES_DIR = path.join(__dirname, "..", "..", "..", "..", "..", "..", "..", "docs", "examples");
 
@@ -85,6 +89,9 @@ const EXPECTED = [
 
 class mockAutkDb {
   init() { return Promise.resolve(); }
+  // The default workspace, which the grammar's data adapter enters.
+  getCurrentWorkspace() { return "autk"; }
+  setWorkspace() { return Promise.resolve(); }
   loadOsm() { return Promise.resolve(); }
   getLayersMetadata() { return [{ name: "table_osm_buildings", type: "buildings" }]; }
   getLayer() { return Promise.resolve(mockBuildings()); }
@@ -101,12 +108,13 @@ const SOURCES = [{
 /** The buildings the sandbox's code hands on, run as the sandbox runs it. */
 async function sandboxParts(): Promise<any[]> {
   const code = compileDataSpecToAutkDbJs(SOURCES);
-  const body = code.replace(/^import [^\n]*\n/, "");
+  // Its imports dropped, theirs handed in: autk-db's and the grammar's data entry's.
+  const body = code.replace(/^import [^\n]*\n/gm, "");
   // The engine's own AsyncFunction: babel compiles an `async function` written
   // in this file to a generator, whose constructor is plain Function.
   const AsyncFunction = new Function("return (async () => {}).constructor")();
-  const run = new AsyncFunction("AutkDb", "DEFAULT_WORKSPACE_COORDINATE_FORMAT", body);
-  const layers = await run(mockAutkDb, "EPSG:3395");
+  const run = new AsyncFunction("AutkDb", "DEFAULT_WORKSPACE_COORDINATE_FORMAT", "createDataAdapter", body);
+  const layers = await run(mockAutkDb, "EPSG:3395", createDataAdapter);
   return layers.find((layer: any) => layer.name === "table_osm_buildings").geojson.features;
 }
 

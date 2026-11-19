@@ -29,7 +29,8 @@ jest.mock(
 jest.mock('@urban-toolkit/autk-db', () => ({}), { virtual: true });
 jest.mock('@urban-toolkit/autk-map', () => ({}), { virtual: true });
 jest.mock('@urban-toolkit/autk-plot', () => ({}), { virtual: true });
-jest.mock('@urban-toolkit/autk-core', () => ({}), { virtual: true });
+// The one export the grammar's build reads of autk-core as it loads.
+jest.mock('@urban-toolkit/autk-core', () => require('../../_support/autkApplyCamera').autkCoreAtLoad(), { virtual: true });
 jest.mock('@urban-toolkit/autk-compute', () => ({ ComputeGpgpu: jest.fn() }), { virtual: true });
 
 import { framingCamera } from '../../../adapters/node/autkMapView';
@@ -79,7 +80,11 @@ function shownMap() {
 const FRAMED = framingCamera({ minX: 0, minY: 0, maxX: 100, maxY: 50, top: 0 }, 960 / 600, FOVY, FAR);
 const HIGH = FRAMED.eye[2];
 
-/** The view turned round *lookAt*, *distance* away, *pitch* from straight down, facing *bearing*. */
+/**
+ * The view turned round *lookAt*, *distance* away, *pitch* from straight down,
+ * facing *bearing*, its up direction across its line of sight, toward the far
+ * side of the view, as autk-map's own tilt leaves it.
+ */
 function turned(lookAt: number[], distance: number, pitch: number, bearing: number): View {
   const p = pitch * DEGREE;
   const b = bearing * DEGREE;
@@ -90,7 +95,7 @@ function turned(lookAt: number[], distance: number, pitch: number, bearing: numb
       distance * Math.cos(p),
     ],
     lookAt: [lookAt[0], lookAt[1], 0],
-    up: [Math.sin(b), Math.cos(b), 0],
+    up: [Math.cos(p) * Math.sin(b), Math.cos(p) * Math.cos(b), Math.sin(p)],
   };
 }
 
@@ -158,4 +163,18 @@ test('a node that keeps its view keeps the view its map was moved to, and turns 
   await node.run({ map: { camera: { pitch: 20, bearing: 270 }, layerRefs: LAYERS } });
   const third = grammarRuns[2].maps[0];
   expectView(third.camera.view, turned(FRAMED.lookAt, HIGH, 20, 270));
+});
+
+// At a pitch of 90 the eye would sit on the ground, edge-on to the map's flat
+// layers: autk-grammar refuses such a camera, and the node fails with its
+// sentence rather than show a map that draws nothing.
+test('a map whose camera stands its eye on the ground fails with the grammar\'s sentence', async () => {
+  const node = mountAutkNode('cam-4');
+  await node.run({ map: { camera: { pitch: 90, bearing: 30 }, layerRefs: LAYERS } });
+
+  expect(node.lastOutput()).toMatchObject({ code: 'error' });
+  expect(node.lastOutput()?.content).toContain(
+    "camera.pitch must be at least 0 and less than 90 degrees, not 90: at 90 the eye would sit on the ground, "
+    + "edge-on to the map's flat layers, and the map could not pan.",
+  );
 });

@@ -33,19 +33,23 @@ const mockFetchData = jest.fn();
 /** What the stand-in database was asked, in order. */
 const mockCalls: any[][] = [];
 
-const mockCreateDataAdapter = jest.fn((..._args: any[]) => ({
-  // As autk-grammar 5's adapter builds a heatmap: autk-db's buildHeatmap, with
-  // the grammar's joinDataRef as autk-db's tableJoinName.
-  resolveSource: jest.fn(async (db: any, source: any) => {
-    if (source.type === "heatmap") {
+const mockCreateDataAdapter = jest.fn((...args: any[]) => {
+  // Every other source as the grammar's own adapter loads it.
+  const grammar = jest.requireActual("@urban-toolkit/autk-grammar/data").createDataAdapter(...args);
+  return {
+    // As autk-grammar 5's adapter builds a heatmap: autk-db's buildHeatmap, with
+    // the grammar's joinDataRef as autk-db's tableJoinName, in its workspace.
+    resolveSource: jest.fn(async (db: any, source: any) => {
+      if (source.type !== "heatmap") return grammar.resolveSource(db, source);
+      await jest.requireActual("@urban-toolkit/autk-grammar/data").enterWorkspace(db, source.workspace);
       await db.buildHeatmap({
         tableJoinName: source.joinDataRef, near: source.near, outputTableName: source.outputTableName,
         grid: source.grid, groupBy: source.groupBy,
       });
-    }
-    return db;
-  }),
-}));
+      return db;
+    }),
+  };
+});
 
 /**
  * autk-db, as far as a loader sees it: each workspace holds its tables, a table

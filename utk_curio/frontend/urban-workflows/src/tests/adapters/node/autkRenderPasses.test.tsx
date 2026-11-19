@@ -54,6 +54,9 @@ jest.mock(
   () => ({
     AutkDb: class {
       async init() { }
+      // The default workspace, which autk-grammar's data adapter enters.
+      getCurrentWorkspace() { return 'autk'; }
+      async setWorkspace() { }
       async loadGeojson() { }
       getLayersMetadata() {
         return mockLoaded.layers.map(({ name, type }) => ({ name, type }));

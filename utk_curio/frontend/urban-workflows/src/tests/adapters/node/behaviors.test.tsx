@@ -137,6 +137,9 @@ const mockAutkDbGetRaster = jest.fn((..._a: unknown[]) => Promise.resolve({
 jest.mock('@urban-toolkit/autk-db', () => ({
   AutkDb: jest.fn().mockImplementation(() => ({
     init: jest.fn().mockResolvedValue(undefined),
+    // The default workspace, which autk-grammar's data adapter enters.
+    getCurrentWorkspace: () => 'autk',
+    setWorkspace: jest.fn().mockResolvedValue(undefined),
     loadGeoTiff: (...a: any[]) => mockAutkDbLoadGeoTiff(...a),
     getRaster: (...a: any[]) => mockAutkDbGetRaster(...a),
     loadOsm: (...a: any[]) => mockAutkDbLoadOsm(...a),
@@ -148,6 +151,7 @@ jest.mock('@urban-toolkit/autk-db', () => ({
     getLayer: (...a: any[]) => mockAutkDbGetLayer(...a),
   })),
   DEFAULT_WORKSPACE_COORDINATE_FORMAT: 'EPSG:3395',
+  DEFAULT_WORKSPACE_NAME: 'autk',
 }), { virtual: true });
 
 import { useCodeNodeBehavior } from '../../../adapters/node/codeNodeBehavior';
@@ -2669,7 +2673,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         );
         await act(async () => {
           await result.current.applyGrammar!(JSON.stringify({
-            data: [{ type: 'osm', pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+            data: [{ type: 'osm', pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf', queryArea: { geocodeArea: 'Rio de Janeiro', areas: ['Niterói'] },
                      outputTableName: 'table_osm', autoLoadLayers: { layers: ['parks'] } }],
           }));
         });
@@ -2748,7 +2752,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         );
         await act(async () => {
           await result.current.applyGrammar!(JSON.stringify({
-            data: [{ type: 'osm', pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+            data: [{ type: 'osm', pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf', queryArea: { geocodeArea: 'Rio de Janeiro', areas: ['Niterói'] },
                      outputTableName: 'table_osm', autoLoadLayers: { layers: ['parks'] } }],
           }));
         });
@@ -2870,6 +2874,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
           data: [{
             type: 'osm',
             pbfFileUrl: 'docs/examples/data/back_bay.osm.pbf',
+            queryArea: { geocodeArea: 'Boston', areas: ['Back Bay'] },
             outputTableName: 'table_osm',
             autoLoadLayers: { layers: ['surface'] },
           }],
@@ -2931,6 +2936,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
           data: [{
             type: 'osm',
             pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+            queryArea: { geocodeArea: 'Rio de Janeiro', areas: ['Niterói'] },
             outputTableName: 'table_osm',
             autoLoadLayers: { dropOsmTable: true, layers: ['surface', 'parks', 'water', 'roads'] },
           }],
@@ -2989,6 +2995,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
           data: [{
             type: 'osm',
             pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+            queryArea: { geocodeArea: 'Rio de Janeiro', areas: ['Niterói'] },
             outputTableName: 'table_osm',
             autoLoadLayers: { layers: ['surface', 'parks', 'water', 'roads'] },
           }],
@@ -3010,6 +3017,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       data: [{
         type: 'osm',
         pbfFileUrl: 'docs/examples/data/back_bay.osm.pbf',
+        queryArea: { geocodeArea: 'Boston', areas: ['Back Bay'] },
         outputTableName: 'table_osm',
         autoLoadLayers: { layers: ['surface', 'roads'] },
       }],
@@ -3126,6 +3134,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
           data: [{
             type: 'osm',
             pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+            queryArea: { geocodeArea: 'Rio de Janeiro', areas: ['Niterói'] },
             outputTableName: 'table_osm',
             autoLoadLayers: { layers: ['parks'] },
           }],
@@ -3163,6 +3172,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       const { AutkDb } = require('@urban-toolkit/autk-db');
       (AutkDb as jest.Mock).mockImplementationOnce(() => ({
         init: jest.fn().mockResolvedValue(undefined),
+        getCurrentWorkspace: () => 'autk',
+        setWorkspace: jest.fn().mockResolvedValue(undefined),
         loadOsm: (...a: any[]) => mockAutkDbLoadOsm(...a),
         loadGeojson: jest.fn().mockResolvedValue(undefined),
         loadCsv: jest.fn().mockResolvedValue(undefined),
@@ -3187,6 +3198,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
           data: [{
             type: 'osm',
             pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+            queryArea: { geocodeArea: 'Rio de Janeiro', areas: ['Niterói'] },
             outputTableName: 'table_osm',
             autoLoadLayers: { layers: ['surface', 'parks', 'water', 'roads'] },
           }],
@@ -3215,6 +3227,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         {
           type: 'osm',
           pbfFileUrl: 'docs/examples/data/niteroi.osm.pbf',
+          queryArea: { geocodeArea: 'Rio de Janeiro', areas: ['Niterói'] },
           outputTableName: 'table_osm',
           autoLoadLayers: { layers: ['surface', 'roads'] },
         },
@@ -3267,19 +3280,25 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
     }
 
     // Run that script the way the sandbox does (an async function body), with a
-    // stand-in for the autk-db module its one import names.
+    // stand-in for the autk-db module its first import names and autk-grammar's
+    // own data adapter, which its second names.
     function runSandboxScript(code: string, db: Record<string, any>): Promise<any> {
-      const body = code.replace(/^import \{ AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT \} from '@urban-toolkit\/autk-db';/, '');
+      const body = code
+        .replace(/^import \{ AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT \} from '@urban-toolkit\/autk-db';/, '')
+        .replace(/^import \{ createDataAdapter \} from '@urban-toolkit\/autk-grammar\/data';$/m, '');
+      const { createDataAdapter } = jest.requireActual('@urban-toolkit/autk-grammar/data');
       // Built from source text rather than `AsyncFunction`: the test transform
       // compiles `async` arrows down, so their constructor is plain Function.
-      return new Function('AutkDb', 'DEFAULT_WORKSPACE_COORDINATE_FORMAT', `return (async () => {\n${body}\n})();`)(
-        function AutkDb() { return db; }, 'EPSG:3395',
-      );
+      return new Function(
+        'AutkDb', 'DEFAULT_WORKSPACE_COORDINATE_FORMAT', 'createDataAdapter', `return (async () => {\n${body}\n})();`,
+      )(function AutkDb() { return db; }, 'EPSG:3395', createDataAdapter);
     }
 
     function fakeSandboxDb(spatialQuery?: (...a: any[]) => Promise<unknown>) {
       return {
         init: async () => {},
+        getCurrentWorkspace: () => 'autk',
+        setWorkspace: async () => {},
         loadOsm: async () => {},
         ...(spatialQuery ? { spatialQuery } : {}),
         getLayersMetadata: () => JOIN_TABLES,
