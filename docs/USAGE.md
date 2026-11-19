@@ -706,7 +706,9 @@ code gets the ids of the selected rows. A selection of key values (see
 
 1. Run the view, so its rows are known.
 2. In the node's **Widgets** tab, under **Selections**, click **Add selection**.
-   Pick the view, and the column whose values identify its rows: `osm_id` or
+   Pick the view (an Autark node of several views is listed whole, its newest
+   selection, then each of its views with an `id`, as `Node · heights`), and
+   the column whose values identify its rows: `osm_id` or
    `building_id` when the rows have them, or any column whose values differ
    from row to row. A view whose rows have no such column is refused. Give the
    tag a name and click **Add selection tag**.
@@ -973,6 +975,7 @@ properties and layers.
    Autark map.
 2. Link them with an interaction edge, from the dot on top of Map Editor to the
    dot on top of the map, so a feature picked on the map is picked in Map Editor.
+   On a node of several views, link it to the dot of the map it edits.
 3. Pick a layer, then **Add**, **Edit**, **Remove** or **Add a property**. Pick
    features on the map with a click (shift-click adds more), or by a rule such
    as `height > 100`.
@@ -1355,7 +1358,9 @@ The chosen modes are saved with the dataflow.
 
 An Autark map takes part the same way: a selection highlights its features, and a pick on the map, or a selection in an Autark plot, is a selection the others receive. A selection from a chart or a Simple View highlights the features of the map's first input table, on the layer marked `"isPick": true`, the one layer a map highlights.
 
-A Map Editor node and the map it edits on are linked the same way, by an interaction edge that carries selections both ways: a feature picked on the map is picked in the node, and what the node picks lights up on the map.
+An Autark node of several views (see [Several views](#several-views)) has a dot of its own for each view with an `id`, beside the node's own dot along its top edge, in the order of its panes. Hovering one names the view and outlines its pane. An interaction edge on a view's dot sends that view's selection alone, and a selection it brings reaches that view alone, as if it were made there: the node's `links` carry it on to the views they join. An edge on the node's own dot sends every view's selections and reaches every view. A node of one view has its own dot alone, and a view without an `id` has no dot.
+
+A Map Editor node and the map it edits on are linked the same way, by an interaction edge that carries selections both ways: a feature picked on the map is picked in the node, and what the node picks lights up on the map. On a node of several views, the Map Editor node edits the map whose dot the edge joins, else the node's first map.
 
 An Autark view names the columns that identify its rows with `selectFields`, on the pickable map layer or on the plot. A pick or a brush on it then sends their values, as a point selection over fields does, and a feature that holds none selects nothing. Without `selectFields`, it matches rows by position.
 
@@ -1405,7 +1410,9 @@ these rules does not run, and the node's error says which.
 
 Each map has its own menu, legend and R key, which reframes the map last
 clicked. Each view's selection reaches the nodes linked to the node by an
-interaction edge, on its own table (see [Linking charts](#linking-charts)).
+interaction edge, on its own table. Each view with an `id` also has an
+interaction dot of its own, which links that view alone (see
+[Linking charts](#linking-charts)).
 
 ### Its input
 
@@ -1950,7 +1957,8 @@ page scrolls.
   and scrolls inside past it.
 - **Connections** run in the bar to the right of the cells. Each cell has its dots on its
   right edge: its inputs at the top, numbered as their chips are (dot 0 is
-  `[!! input_0 !!]`), its interaction dot halfway down, and its output at the bottom.
+  `[!! input_0 !!]`), its interaction dot halfway down, with each view's dot of an Autark
+  node of several views under it, and its output at the bottom.
   The dots follow their cell as it grows. Hover a dot to see what feeds it. Selecting
   a cell rings it in its kind's color and darkens its connections.
 - **Editing.** Nodes and connections are added and removed on the canvas: the notebook

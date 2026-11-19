@@ -6,7 +6,8 @@
   are its one definition on the backend, the twin of the canvas's
   ``contracts/interactionEdges.ts``; both run ``interactionEdges.cases.json``.
   A node's own interaction handle is ``in/out``, and a view of a node has one
-  of its own, ``in/out@<id>`` (:func:`interaction_handle_view`). An edge is an
+  of its own, ``in/out@<id>`` (:func:`interaction_handle_view` reads its id,
+  :func:`interaction_view_handle` makes it from one). An edge is an
   interaction edge when a saved dataflow types it ``Interaction``, an agent's
   plan gives it the kind ``interaction``, or both its handles are interaction
   handles.
