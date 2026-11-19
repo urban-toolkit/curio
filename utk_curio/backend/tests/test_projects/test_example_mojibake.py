@@ -85,6 +85,7 @@ def misread(text: str) -> list[tuple[int, str, str | None]]:
             try:
                 meant = bytes([ord(lead), *(_CONTINUATION[char] for char in run)]).decode("utf-8")
             except UnicodeDecodeError:
+                # Those bytes make no character: the text is as it was written.
                 pass
             else:
                 found.append((at, lead + run, meant))
@@ -110,6 +111,7 @@ def _strings(value, where: str = ""):
             try:
                 inner = json.loads(value)
             except ValueError:
+                # Not a JSON document: the string is read as the text it is.
                 pass
             else:
                 if isinstance(inner, (dict, list)):
