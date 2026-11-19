@@ -32,6 +32,12 @@ from types import SimpleNamespace
 import pytest
 
 from utk_curio.backend.tests._support import tiny_sam3
+from utk_curio.backend.tests._support.progress_bars import (
+    assert_bars_draw,
+    assert_no_bar,
+    stderr_of_a_run,
+    transformers_bars_on,
+)
 from utk_curio.backend.tests.test_packages.test_sam3_package import (
     EVERY,
     HOLED,
@@ -297,6 +303,24 @@ def test_segment_images_finds_each_label_in_each_frame_sample_video_frames_sampl
         assert row["overlay_url"].endswith(f"/media/{video}@{t_ms}-{tag}.png?variant=original"), row["overlay_url"]
         with Image.open(_overlay(row["overlay_url"], tmp_path)) as overlay:
             assert (overlay.format, overlay.size) == ("PNG", (96, 64))
+
+
+def test_a_run_writes_nothing_of_loading_sam3_and_leaves_progress_bars_on(
+        videos, catalog_copy, weights, few_threads, tmp_path, monkeypatch):
+    """Segment Images reads SAM 3's checkpoint as Track Objects does, and
+    Transformers draws the same "Loading weights" progress bar as it reads it,
+    which example 33's Segment Images showed in its output. The node's code,
+    run as the canvas runs it with Transformers' progress bars on, as they are
+    by default, writes nothing of the load to its stderr, and the bars are on
+    after it, for a node's own code."""
+    with _staged(tmp_path) as modules:
+        frames, helpers = _frames(modules, videos)
+        transformers_bars_on(monkeypatch)
+        with stderr_of_a_run() as said:
+            out = _run(frames, helpers, model_folder=catalog_copy, weights=weights, LABELS=TWO)
+    assert len(out) == len(frames), out
+    assert_no_bar(said.getvalue(), "Segment Images")
+    assert_bars_draw()
 
 
 def test_where_sam3_finds_nothing_each_label_counts_none_and_no_label_dominates(

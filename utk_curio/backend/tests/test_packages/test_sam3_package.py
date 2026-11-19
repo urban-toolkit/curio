@@ -46,6 +46,12 @@ from types import SimpleNamespace
 import pytest
 
 from utk_curio.backend.tests._support import tiny_sam3
+from utk_curio.backend.tests._support.progress_bars import (
+    assert_bars_draw,
+    assert_no_bar,
+    stderr_of_a_run,
+    transformers_bars_on,
+)
 from utk_curio.backend.tests._support.tiny_sam3 import CLIP_RATE, CLIP_SECONDS, SIZE
 
 REPO = Path(__file__).resolve().parents[4]
@@ -434,6 +440,26 @@ def test_the_nodes_code_hands_its_settings_to_the_module(videos, catalog_copy, w
     tracks = pd.read_parquet(row["tracks"])
     assert set(tracks["label"]) <= {"pole", "person"}
     assert row["pole_objects"] + row["person_objects"] == len(tracks)
+
+
+def test_a_run_writes_nothing_of_loading_sam3_and_leaves_progress_bars_on(
+        videos, catalog_copy, weights, few_threads, tmp_path, monkeypatch):
+    """Transformers draws a "Loading weights" progress bar as it reads SAM 3's
+    checkpoint, and a run keeps what goes to its stderr as the node's output,
+    where the bar took one line more or fewer from run to run, as the load went
+    faster or slower: example 31's full page moved 0.13% on two of the three
+    GPU runners of #1567's runs. The node's code, run as the canvas runs it with
+    Transformers' progress bars on, as they are by default, writes nothing of
+    the load to its stderr, and the bars are on after it, for a node's own
+    code."""
+    rows, helpers = videos
+    transformers_bars_on(monkeypatch)
+    with stderr_of_a_run() as said:
+        out = _run(rows, helpers, tmp_path, model_folder=catalog_copy, weights=weights,
+                   LABELS=["pole", "person"], EVERY_SECONDS=1.0)
+    assert len(out) == 1, out
+    assert_no_bar(said.getvalue(), "Track Objects")
+    assert_bars_draw()
 
 
 def test_track_objects_follows_each_object_through_a_clip(videos, catalog_copy, weights, few_threads, tmp_path):

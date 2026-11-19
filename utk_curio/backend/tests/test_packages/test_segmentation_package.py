@@ -31,6 +31,13 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from utk_curio.backend.tests._support.progress_bars import (
+    assert_bars_draw,
+    assert_no_bar,
+    stderr_of_a_run,
+    transformers_bars_on,
+)
+
 REPO = Path(__file__).resolve().parents[4]
 PACKAGE_ID = "curio.segmentation"
 PACKAGE = REPO / "packages" / f"{PACKAGE_ID}@1"
@@ -252,6 +259,25 @@ def test_its_derived_ids_are_the_ones_curio_derived_file_names():
         if isinstance(node, ast.Assign) and [getattr(t, "id", None) for t in node.targets] == ["_DERIVED_ID_RE"]
     ]
     assert ast.literal_eval(assigned.args[0]) == DERIVED_ID_RE.pattern
+
+
+def test_it_loads_a_transformers_model_as_sam3s_package_loads_its_own():
+    """A Transformers checkpoint's weights are read by ``_pretrained``, with
+    Transformers' progress bars off while they load, word for word the
+    function SAM 3's package reads its own with. SAM 3's package does not
+    depend on this one, so each holds a copy."""
+    sam3 = REPO / "packages" / "model.curio.sam3@1" / "sources" / "sam3_tracking.py"
+
+    def pretrained(path: Path) -> str:
+        source = path.read_text(encoding="utf-8")
+        found = [
+            node for node in ast.parse(source).body
+            if isinstance(node, ast.FunctionDef) and node.name == "_pretrained"
+        ]
+        assert len(found) == 1, f"{path.name} defines no _pretrained"
+        return ast.get_source_segment(source, found[0])
+
+    assert pretrained(PACKAGE / "sources" / f"{MODULE}.py") == pretrained(sam3)
 
 
 # ---------------------------------------------------------------------------
@@ -709,6 +735,63 @@ def test_a_transformers_model_without_its_libraries_says_what_to_install(segment
     # that names the old one stops finding it.
     message = str(raised.value)
     assert "delete" not in message and "again" not in message
+
+
+#: The classes of the tiny SegFormer ``transformers_model`` saves.
+TINY_CLASSES = ["road", "sidewalk", "sky"]
+
+
+@pytest.fixture()
+def transformers_model(tmp_path):
+    """A model folder around a tiny SegFormer with random weights, as the
+    Discovery Catalog adds a Hugging Face checkpoint of a
+    ``...ForSemanticSegmentation`` architecture: its ``config.json``,
+    ``preprocessor_config.json`` and ``model.safetensors`` where the
+    manifest's entry says, run on Transformers. Its encoder is the size
+    Transformers' own SegFormer tests build, and it reads images at 64 by 64.
+    torch and transformers are imported here, so a stack without them fails
+    each test that builds it."""
+    import torch
+    from transformers import SegformerConfig, SegformerForSemanticSegmentation, SegformerImageProcessor
+
+    model = tmp_path / "segformer"
+    checkpoint = model / "files"
+    config = SegformerConfig(
+        depths=[1, 1, 1, 1], sr_ratios=[8, 4, 2, 1], hidden_sizes=[8, 8, 16, 16],
+        num_attention_heads=[1, 1, 2, 2], decoder_hidden_size=8,
+        id2label=dict(enumerate(TINY_CLASSES)), label2id={label: index for index, label in enumerate(TINY_CLASSES)},
+    )
+    torch.manual_seed(0)
+    SegformerForSemanticSegmentation(config).save_pretrained(checkpoint)
+    SegformerImageProcessor(size={"height": 64, "width": 64}).save_pretrained(checkpoint)
+    (model / "manifest.json").write_text(json.dumps({"runtime": "transformers", "entry": "files"}), encoding="utf-8")
+    return model
+
+
+def test_a_transformers_models_run_writes_nothing_of_its_load_and_leaves_progress_bars_on(
+        segmentation, transformers_model, photos, monkeypatch):
+    """Transformers draws a "Loading weights" progress bar as it reads a
+    checkpoint, and a run keeps what goes to its stderr as the node's output,
+    where the bar took one line more or fewer from run to run, as Track
+    Objects' did in example 31. A Transformers checkpoint's Image
+    Segmentation, run with Transformers' progress bars on, as they are by
+    default, labels the photos and writes nothing of the load to its stderr;
+    the bars are on after it, and after a checkpoint whose weights do not
+    load."""
+    frame, helpers = photos
+    transformers_bars_on(monkeypatch)
+    with stderr_of_a_run() as said:
+        out = segmentation.segment_images(frame, _loaded(transformers_model), helpers["curio_derived_file"])
+    assert out["segment_error"].isna().all(), out["segment_error"]
+    assert set(out["dominant_class"]) <= set(TINY_CLASSES), out["dominant_class"]
+    assert_no_bar(said.getvalue(), "Image Segmentation")
+    assert_bars_draw()
+
+    # A checkpoint whose weights are gone stops the node, and leaves the bars on.
+    (transformers_model / "files" / "model.safetensors").unlink()
+    with pytest.raises(OSError, match="model.safetensors"):
+        segmentation.segment_images(frame, _loaded(transformers_model), None)
+    assert_bars_draw()
 
 
 # ---------------------------------------------------------------------------
