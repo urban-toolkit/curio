@@ -548,7 +548,9 @@ beside its default one: `<name>.utk-gpu.png`, `<name>.arcade-gpu.png` or `<name>
 - A CPU job has no kind because it draws alike on every runner, a utk desktop
   included: its Chrome draws with SwiftShader and keeps Chrome's Vulkan off,
   which would otherwise draw with the desktop's NVIDIA GPU
-  (`../_support/chrome_flags.py`).
+  (`../_support/chrome_flags.py`), and the job runs in UTC, the time zone of
+  GitHub-hosted and arcade runners, where a desktop's own would move every
+  Vega-Lite time axis (`TZ` in e2e-desktop's and test-isolated's environment).
   The report's card names the baseline each comparison used, and a badge marks
   a GPU kind's.
 - A re-mint writes the baseline it compared with, so on utk-gpu it rewrites a
