@@ -847,8 +847,10 @@ const __changed = ${JSON.stringify(sectionChangedTables(sources))};
 ` : '';
     const plain = plainTablesCode(sources, usesWorkspaces);
     const keyOf = usesWorkspaces ? 'tableKey(workspace, t.name)' : 't.name';
-    return `import { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } from '@urban-toolkit/autk-db';
-import { ${fromDataEntry.join(', ')} } from '@urban-toolkit/autk-grammar/data';
+    // The code's second import, the grammar's data entry's, written as a
+    // string so no line of this module starts an import of its own.
+    const dataEntryImport = `\nimport { ${fromDataEntry.join(', ')} } from '@urban-toolkit/autk-grammar/data';`;
+    return `import { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } from '@urban-toolkit/autk-db';${dataEntryImport}
 const __sources = ${JSON.stringify(sources)};
 // The document's workspaces, set up before the first source loads, and the CRS
 // of each, which its tables are handed on in (workspaceCrsOf).
