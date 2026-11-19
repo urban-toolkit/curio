@@ -1564,6 +1564,12 @@ jobs:
     env:
       CURIO_CI_FRESH_STACK: curio-ci
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
+      # GitHub-hosted and arcade runners' time zone, which the baselines were
+      # taken in. A utk desktop keeps America/Chicago, and the browser draws a
+      # Vega-Lite time axis in local time: example 04's two such charts read
+      # 0.44% apart there. Pytest runs in it too, as a test may compute a
+      # date the page shows (ciCpuJobsTimeZone.test.ts).
+      TZ: UTC
       CURIO_E2E_RUNNER: desktop
       CURIO_E2E_PART: ${{ matrix.part }}/${{ strategy.job-total }}
       CURIO_E2E_DATAPOOL_TIMEOUT_MS: "120000"
@@ -1729,6 +1735,8 @@ jobs:
     env:
       CURIO_CI_FRESH_STACK: curio-ci-iso
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci-isolated.yml
+      # As in e2e-desktop, which says why.
+      TZ: UTC
       CURIO_E2E_BACKEND_URL: "http://localhost:5032"
       CURIO_E2E_HOST: localhost
       CURIO_E2E_BACKEND_PORT: "5032"
