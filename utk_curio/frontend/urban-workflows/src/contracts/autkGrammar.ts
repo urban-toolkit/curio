@@ -193,12 +193,14 @@ const tableKeyIn = (workspace: string | undefined, name: string): string => (wor
 /**
  * What a document is told when its views read an OpenStreetMap table its own
  * data section loads both as OpenStreetMap elements (`osmElements`) and row
- * by row, else null (autkGrammar.json's `osmElementsMixed`). A node's loaders
+ * by row, else null: the first view that reads such a table otherwise than
+ * the first view of it did, with where it is written, as a key a node does not
+ * run yet is told (autkGrammar.json's `osmElementsMixed`). A node's loaders
  * read such a table one way, which every view of it then draws. Its tables are
  * an area's layers, `<outputTableName>_<layer>`, and tag sets,
  * `<outputTableName>_<name>_<type>`, each in the source's workspace; a view
  * reads its table in its own. A table of the node's input is read row by row,
- * whatever a view says.
+ * whatever a view says. The maps' layers are read first, then the plots.
  */
 export function autkOsmElementsProblem(spec: unknown): string | null {
   if (spec === null || typeof spec !== "object" || Array.isArray(spec)) return null;
@@ -214,20 +216,30 @@ export function autkOsmElementsProblem(spec: unknown): string | null {
       .map((set: any) => `${out}_${set.name}_${set.type}`);
     for (const table of [...layers, ...tagSets]) own.add(tableKeyIn(workspaceOf(source), table));
   }
-  const reads = new Map<string, Set<boolean>>();
-  const read = (view: unknown, reader: unknown) => {
+  // Each such table and the way its first view reads it, by key.
+  const firstWay = new Map<string, boolean>();
+  const readOtherwise = (view: unknown, reader: unknown): string | null => {
     const table = fieldOf(reader, "dataRef");
-    if (table === undefined) return;
+    if (table === undefined) return null;
     const key = tableKeyIn(workspaceOf(view), table);
-    if (!own.has(key)) return;
-    reads.set(key, (reads.get(key) ?? new Set<boolean>()).add((reader as Record<string, unknown>).osmElements === true));
+    if (!own.has(key)) return null;
+    const asElements = (reader as Record<string, unknown>).osmElements === true;
+    if (!firstWay.has(key)) firstWay.set(key, asElements);
+    return firstWay.get(key) === asElements ? null : key;
   };
-  for (const map of listOf(document.map)) {
-    for (const layer of listOf((map as Record<string, unknown> | null)?.layerRefs)) read(map, layer);
+  for (const { path, object: map } of objectsAt(document, "map[]")) {
+    const layers = (map as Record<string, unknown> | null)?.layerRefs;
+    for (const [i, layer] of listOf(layers).entries()) {
+      const table = readOtherwise(map, layer);
+      if (table !== null) {
+        const at = Array.isArray(layers) ? `${path}.layerRefs[${i}]` : `${path}.layerRefs`;
+        return autkNotRunYet(fill(autkGrammar.osmElementsMixed, { table }), at);
+      }
+    }
   }
-  for (const plot of listOf(document.plot)) read(plot, plot);
-  for (const [table, ways] of reads) {
-    if (ways.size > 1) return fill(autkGrammar.osmElementsMixed, { table });
+  for (const { path, object: plot } of objectsAt(document, "plot[]")) {
+    const table = readOtherwise(plot, plot);
+    if (table !== null) return autkNotRunYet(fill(autkGrammar.osmElementsMixed, { table }), path);
   }
   return null;
 }

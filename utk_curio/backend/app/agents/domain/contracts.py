@@ -355,12 +355,15 @@ def _listed(held: object) -> list:
 def autk_osm_elements_problem(document: object) -> str | None:
     """What a document is told when its views read an OpenStreetMap table its
     own data section loads both as OpenStreetMap elements (``osmElements``) and
-    row by row, else None (the file's ``osmElementsMixed``): a node's loaders
-    read such a table one way, which every view of it then draws. Its tables
-    are an area's layers, ``<outputTableName>_<layer>``, and tag sets,
+    row by row, else None: the first view that reads such a table otherwise
+    than the first view of it did, with where it is written, as a key a node
+    does not run yet is told (the file's ``osmElementsMixed``). A node's
+    loaders read such a table one way, which every view of it then draws. Its
+    tables are an area's layers, ``<outputTableName>_<layer>``, and tag sets,
     ``<outputTableName>_<name>_<type>``, each in the source's workspace; a view
     reads its table in its own. A table of the node's input is read row by row,
-    whatever a view says. ``autkOsmElementsProblem`` is the node's twin."""
+    whatever a view says. The maps' layers are read first, then the plots.
+    ``autkOsmElementsProblem`` is the node's twin."""
     if not isinstance(document, dict):
         return None
 
@@ -380,24 +383,31 @@ def autk_osm_elements_problem(document: object) -> str | None:
         tag_sets = [f"{out}_{tag_set['name']}_{tag_set['type']}" for tag_set in _listed(source.get("tagSets"))
                     if isinstance(tag_set, dict) and tag_set.get("name") and tag_set.get("type")]
         own.update(key(source, table) for table in layers + tag_sets)
-    reads: dict[str, set[bool]] = {}
+    # Each such table and the way its first view reads it, by key.
+    first_way: dict[str, bool] = {}
 
-    def read(view: object, reader: object) -> None:
+    def read_otherwise(view: object, reader: object) -> str | None:
         table = reader.get("dataRef") if isinstance(reader, dict) else None
         if not isinstance(table, str):
-            return
+            return None
         table_key = key(view, table)
-        if table_key in own:
-            reads.setdefault(table_key, set()).add(reader.get("osmElements") is True)
+        if table_key not in own:
+            return None
+        as_elements = reader.get("osmElements") is True
+        first_way.setdefault(table_key, as_elements)
+        return None if first_way[table_key] == as_elements else table_key
 
-    for view in _listed(document.get("map")):
-        for layer in _listed(view.get("layerRefs") if isinstance(view, dict) else None):
-            read(view, layer)
-    for plot in _listed(document.get("plot")):
-        read(plot, plot)
-    for table, ways in reads.items():
-        if len(ways) > 1:
-            return _fill(_AUTK_GRAMMAR["osmElementsMixed"], table=table)
+    for path, view in _objects_at(document, "map[]"):
+        layers = view.get("layerRefs") if isinstance(view, dict) else None
+        for i, layer in enumerate(_listed(layers)):
+            table = read_otherwise(view, layer)
+            if table is not None:
+                at = f"{path}.layerRefs[{i}]" if isinstance(layers, list) else f"{path}.layerRefs"
+                return _not_run_yet(_fill(_AUTK_GRAMMAR["osmElementsMixed"], table=table), at)
+    for path, plot in _objects_at(document, "plot[]"):
+        table = read_otherwise(plot, plot)
+        if table is not None:
+            return _not_run_yet(_fill(_AUTK_GRAMMAR["osmElementsMixed"], table=table), path)
     return None
 
 
