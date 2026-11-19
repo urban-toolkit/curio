@@ -16,6 +16,7 @@
  * Kept in sync with `normalize_selections` and `SELECTION_ID_CAP` in
  * `utk_curio/backend/app/execution/code_references.py`.
  */
+import { autkSelectionLayer } from "../autkSelects";
 import { WIDGET_NAME_RE } from "../widgets/widgetModel";
 import { isActiveSelect, matchSelections, type SelectDetail, type SelectionRows } from "../selectionMatch";
 
@@ -218,10 +219,12 @@ export function changesSelection(previous: unknown, details: unknown): boolean {
   return isNewSelection(details) && (holdsSelection(details) || holdsSelection(previous));
 }
 
-/** The layer an Autark pick names, when the selection names one. */
+/**
+ * The layer an Autark pick names, when the selection names one: that of its
+ * newest select, one view's of a node of several (utils/autkSelects).
+ */
 export function selectionLayer(details: unknown): string | undefined {
-  const layer = (details as any)?.autk_selection?.layerRef;
-  return typeof layer === "string" && layer ? layer : undefined;
+  return autkSelectionLayer(details);
 }
 
 /** A tag name for the view labelled *label*, unlike the names in *taken*. */

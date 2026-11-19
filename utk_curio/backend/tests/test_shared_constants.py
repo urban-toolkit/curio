@@ -118,8 +118,11 @@ def test_the_autark_facts_are_the_files_and_its_families_the_vendored_schemas():
     data = _file("autkGrammar")
     assert contracts.INPUT_TABLE_PREFIX == data["inputTablePrefix"]
     assert contracts.input_table_name(3) == f"{data['inputTablePrefix']}3"
-    assert contracts.AUTK_ONE_VIEW == data["oneView"]
-    assert contracts.autk_one_view_problem({"map": {}, "plot": {}}) == data["oneView"]
+    assert contracts.AUTK_VIEW_RULES == data["viewRules"]
+    # A map and a plot both draw; two views of one id are told the file's words.
+    assert contracts.autk_view_problem({"map": {}, "plot": {}}) is None
+    assert contracts.autk_view_problem({"map": {"id": "a"}, "plot": {"id": "a"}}) == (
+        data["viewRules"]["sharedId"].replace("{id}", "a"))
     # The node routes the families the file lists; the grammar defines them.
     assert data["families"] == list(contracts.autk_families(contracts.load_autk_schema()))
     # What the starter colors a layer with, by the ladder's rules that color one.

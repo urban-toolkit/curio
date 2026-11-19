@@ -2493,118 +2493,128 @@
     ],
     "layout": [
       {
-        "test": "utk_curio/frontend/urban-workflows/src/tests/contracts/autkGrammarKeys.test.ts::autkKeyProblem::%s[a layout is not run yet]",
-        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
-        "refused": true
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a map and a plot laid out in a grid and linked, by every layout and link key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_grammar_keys.py::test_the_document_check_refuses_it_with_that_sentence[a layout is not run yet]",
-        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
-        "refused": true
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a map and a plot laid out in a grid and linked, by every layout and link key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_keys_left_out.py::test_the_reply_schema_lets_no_reply_write_a_refused_key[closed]",
-        "refused": true
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[38-autark-solstice-sun-two-cities.json]",
+        "document": "docs/examples/38-autark-solstice-sun-two-cities.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_views_e2e.py::test_a_plot_linked_by_links_lights_on_its_map_exactly_the_rows_it_brushes_and_a_pick_selects_its_bar"
       }
     ],
     "layout.columns": [
       {
-        "test": "utk_curio/frontend/urban-workflows/src/tests/contracts/autkGrammarKeys.test.ts::autkKeyProblem::%s[a layout is not run yet]",
-        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
-        "refused": true
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a map and a plot laid out in a grid and linked, by every layout and link key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_grammar_keys.py::test_the_document_check_refuses_it_with_that_sentence[a layout is not run yet]",
-        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
-        "refused": true
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a map and a plot laid out in a grid and linked, by every layout and link key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[38-autark-solstice-sun-two-cities.json]",
+        "document": "docs/examples/38-autark-solstice-sun-two-cities.json"
       }
     ],
     "layout.gap": [
       {
-        "test": "utk_curio/frontend/urban-workflows/src/tests/contracts/autkGrammarKeys.test.ts::autkKeyProblem::%s[a layout is not run yet]",
-        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
-        "refused": true
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a map and a plot laid out in a grid and linked, by every layout and link key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_grammar_keys.py::test_the_document_check_refuses_it_with_that_sentence[a layout is not run yet]",
-        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
-        "refused": true
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a map and a plot laid out in a grid and linked, by every layout and link key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[38-autark-solstice-sun-two-cities.json]",
+        "document": "docs/examples/38-autark-solstice-sun-two-cities.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_views_e2e.py::test_a_plot_linked_by_links_lights_on_its_map_exactly_the_rows_it_brushes_and_a_pick_selects_its_bar"
       }
     ],
     "layout.type": [
       {
-        "test": "utk_curio/frontend/urban-workflows/src/tests/contracts/autkGrammarKeys.test.ts::autkKeyProblem::%s[a layout is not run yet]",
-        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
-        "refused": true
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a map and a plot laid out in a grid and linked, by every layout and link key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_grammar_keys.py::test_the_document_check_refuses_it_with_that_sentence[a layout is not run yet]",
-        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
-        "refused": true
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a map and a plot laid out in a grid and linked, by every layout and link key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[38-autark-solstice-sun-two-cities.json]",
+        "document": "docs/examples/38-autark-solstice-sun-two-cities.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_views_e2e.py::test_a_plot_linked_by_links_lights_on_its_map_exactly_the_rows_it_brushes_and_a_pick_selects_its_bar"
       }
     ],
     "links": [
       {
-        "test": "utk_curio/frontend/urban-workflows/src/tests/contracts/autkGrammarKeys.test.ts::autkKeyProblem::%s[links are not run yet]",
-        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
-        "refused": true
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a map and a plot laid out in a grid and linked, by every layout and link key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_grammar_keys.py::test_the_document_check_refuses_it_with_that_sentence[links are not run yet]",
-        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
-        "refused": true
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a map and a plot laid out in a grid and linked, by every layout and link key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_runs/test_autk_data_runs.py::test_a_load_that_writes_a_key_the_node_refuses_fails_with_its_words[not-run-yet]",
-        "refused": true
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[38-autark-solstice-sun-two-cities.json]",
+        "document": "docs/examples/38-autark-solstice-sun-two-cities.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_views_e2e.py::test_a_plot_linked_by_links_lights_on_its_map_exactly_the_rows_it_brushes_and_a_pick_selects_its_bar"
       }
     ],
     "links[].layer": [
       {
-        "test": "utk_curio/frontend/urban-workflows/src/tests/contracts/autkGrammarKeys.test.ts::autkKeyProblem::%s[links are not run yet]",
-        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
-        "refused": true
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a map and a plot laid out in a grid and linked, by every layout and link key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_grammar_keys.py::test_the_document_check_refuses_it_with_that_sentence[links are not run yet]",
-        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
-        "refused": true
-      },
-      {
-        "test": "utk_curio/backend/tests/test_runs/test_autk_data_runs.py::test_a_load_that_writes_a_key_the_node_refuses_fails_with_its_words[not-run-yet]",
-        "refused": true
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a map and a plot laid out in a grid and linked, by every layout and link key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       }
     ],
     "links[].source": [
       {
-        "test": "utk_curio/frontend/urban-workflows/src/tests/contracts/autkGrammarKeys.test.ts::autkKeyProblem::%s[links are not run yet]",
-        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
-        "refused": true
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a map and a plot laid out in a grid and linked, by every layout and link key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_grammar_keys.py::test_the_document_check_refuses_it_with_that_sentence[links are not run yet]",
-        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
-        "refused": true
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a map and a plot laid out in a grid and linked, by every layout and link key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_runs/test_autk_data_runs.py::test_a_load_that_writes_a_key_the_node_refuses_fails_with_its_words[not-run-yet]",
-        "refused": true
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[38-autark-solstice-sun-two-cities.json]",
+        "document": "docs/examples/38-autark-solstice-sun-two-cities.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_views_e2e.py::test_a_plot_linked_by_links_lights_on_its_map_exactly_the_rows_it_brushes_and_a_pick_selects_its_bar"
       }
     ],
     "links[].target": [
       {
-        "test": "utk_curio/frontend/urban-workflows/src/tests/contracts/autkGrammarKeys.test.ts::autkKeyProblem::%s[links are not run yet]",
-        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
-        "refused": true
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[a map and a plot laid out in a grid and linked, by every layout and link key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_grammar_keys.py::test_the_document_check_refuses_it_with_that_sentence[links are not run yet]",
-        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
-        "refused": true
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a map and a plot laid out in a grid and linked, by every layout and link key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_runs/test_autk_data_runs.py::test_a_load_that_writes_a_key_the_node_refuses_fails_with_its_words[not-run-yet]",
-        "refused": true
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[38-autark-solstice-sun-two-cities.json]",
+        "document": "docs/examples/38-autark-solstice-sun-two-cities.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_views_e2e.py::test_a_plot_linked_by_links_lights_on_its_map_exactly_the_rows_it_brushes_and_a_pick_selects_its_bar"
       }
     ],
     "map": [

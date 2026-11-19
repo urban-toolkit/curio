@@ -17,6 +17,14 @@ import pytest
 #: Where each place of a rule is in the schema: the root's property it names.
 _PLACES = ("", "data[]", "compute[]", "map[]", "plot[]")
 
+#: Rules of the shape ``notRunYet`` holds, for the keys a node ran last, a
+#: document's ``layout`` and ``links``: what leaves a key out is tested on
+#: them, whatever the file refuses now.
+_STAND_IN_RULES = (
+    {"in": "", "key": "layout", "what": '"layout"'},
+    {"in": "", "key": "links", "what": '"links"'},
+)
+
 
 def _resolve(defs: dict, node):
     while isinstance(node, dict) and "$ref" in node:
@@ -71,17 +79,22 @@ def _written(schema: dict, rule: dict) -> list[str]:
 
 def test_every_rule_names_a_place_of_the_document():
     from utk_curio.backend.app.agents.domain import contracts
+    from utk_curio.common import shared_constants
 
-    assert contracts.AUTK_NOT_RUN_YET
-    for rule in contracts.AUTK_NOT_RUN_YET:
+    # The rules are the file's, whatever it holds.
+    assert contracts.AUTK_NOT_RUN_YET == tuple(shared_constants.read("autkGrammar")["notRunYet"])
+    for rule in (*contracts.AUTK_NOT_RUN_YET, *_STAND_IN_RULES):
         assert rule["in"] in _PLACES, rule
         # The full schema lets a document write it: the rule refuses a key of the grammar.
         assert _written(contracts.load_autk_schema(), rule), rule
 
 
-def test_the_schema_the_agents_read_lets_no_document_write_a_refused_key():
+@pytest.mark.parametrize("rules", ["the file's", "stand-ins"])
+def test_the_schema_the_agents_read_lets_no_document_write_a_refused_key(rules, monkeypatch):
     from utk_curio.backend.app.agents.domain import contracts
 
+    if rules == "stand-ins":
+        monkeypatch.setattr(contracts, "AUTK_NOT_RUN_YET", _STAND_IN_RULES)
     schema = contracts.autk_schema_curio_runs(contracts.load_autk_schema())
     assert [where for rule in contracts.AUTK_NOT_RUN_YET for where in _written(schema, rule)] == []
     # Leaving them out leaves the rest: a GPGPU pass, a join, a map and a plot.
@@ -90,19 +103,61 @@ def test_the_schema_the_agents_read_lets_no_document_write_a_refused_key():
     assert {"osm", "csv", "json", "geojson", "join"} <= set(types)
 
 
+def test_the_schema_the_agents_read_holds_a_layout_and_links():
+    """A node draws several views, arranged by ``layout`` and linked by
+    ``links``, so the agents read both."""
+    from utk_curio.backend.app.agents.domain import contracts
+
+    schema = contracts.autk_schema_curio_runs(contracts.load_autk_schema())
+    assert {"layout", "links"} <= set(contracts.autk_families(schema))
+    for rule in _STAND_IN_RULES:
+        assert _written(schema, rule), rule
+
+
+#: A document of two views a node draws, arranged and linked.
+LINKED_VIEWS = {
+    "layout": {"type": "horizontal", "gap": 8},
+    "map": {"id": "city", "layerRefs": [{"dataRef": "input_0", "isPick": True}]},
+    "plot": {"id": "heights", "dataRef": "input_0", "mark": "bar", "axis": ["height"], "events": ["brushX"]},
+    "links": [{"source": "heights", "target": "city"}],
+}
+
+
 @pytest.mark.parametrize("flavor", ["closed", "strict"])
-def test_the_reply_schema_lets_no_reply_write_a_refused_key(flavor):
+def test_the_reply_schema_lets_no_reply_write_a_refused_key(flavor, monkeypatch):
     from utk_curio.backend.app.agents.application import reply_schemas as rs
     from utk_curio.backend.app.agents.domain import contracts
 
+    # The schema a reply is held to is made once a process: made again here
+    # with the stand-in rules, and again after them.
+    rs.autk_reply_schema.cache_clear()
+    monkeypatch.setattr(contracts, "AUTK_NOT_RUN_YET", _STAND_IN_RULES)
+    try:
+        reply = rs.autk_reply_schema(rs.FLAVOR_CLOSED if flavor == "closed" else rs.FLAVOR_STRICT)
+        found = [where for rule in contracts.AUTK_NOT_RUN_YET for where in _written(reply.schema, rule)]
+        assert found == []
+        # A refused key in a reply is not kept: the projection drops it.
+        document = {"layout": {"type": "horizontal"}, "map": {"layerRefs": [{"dataRef": "input_0"}]}}
+        encoded, dropped = reply.encode(document)
+        assert dropped == ["$.layout"]
+        assert json.loads(reply.decode(json.dumps(encoded))) == {"map": {"layerRefs": [{"dataRef": "input_0"}]}}
+    finally:
+        rs.autk_reply_schema.cache_clear()
+
+
+@pytest.mark.parametrize("flavor", ["closed", "strict"])
+def test_the_reply_schema_keeps_a_layout_and_links(flavor):
+    """A node runs ``layout`` and ``links``, so a reply that writes them keeps
+    them, whole, and fits the schema a provider holds it to."""
+    import jsonschema
+
+    from utk_curio.backend.app.agents.application import reply_schemas as rs
+
     reply = rs.autk_reply_schema(rs.FLAVOR_CLOSED if flavor == "closed" else rs.FLAVOR_STRICT)
-    found = [where for rule in contracts.AUTK_NOT_RUN_YET for where in _written(reply.schema, rule)]
-    assert found == []
-    # A refused key in a reply is not kept: the projection drops it.
-    document = {"layout": {"type": "horizontal"}, "map": {"layerRefs": [{"dataRef": "input_0"}]}}
-    encoded, dropped = reply.encode(document)
-    assert dropped == ["$.layout"]
-    assert json.loads(reply.decode(json.dumps(encoded))) == {"map": {"layerRefs": [{"dataRef": "input_0"}]}}
+    encoded, dropped = reply.encode(LINKED_VIEWS)
+    assert dropped == []
+    jsonschema.Draft202012Validator(reply.schema).validate(encoded)
+    assert json.loads(reply.decode(json.dumps(encoded))) == LINKED_VIEWS
 
 
 @pytest.mark.parametrize("flavor", ["closed", "strict"])

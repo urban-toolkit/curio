@@ -20,6 +20,12 @@ simple bar chart with embedded data.", though their rows come from the loading
 node before them. Asked to add two bars to that chart, a Node Builder took the
 description's word and wrote the rows into the spec.
 
+And a legend null hides more than its own channel's legend. Vega-Lite draws one
+legend for the channels that encode one field, and for one channel across the
+views of a layer or a concat, so example 23's map, coloured by ``layer`` under
+the title "Layer" and stroked by ``layer`` with ``"legend": null``, drew no
+legend at all.
+
 The specs are read from the example dataflows, their walkthroughs, the default
 preamble and the skills Curio ships as agents read them, and the worked
 examples the builder agents are shown (the base entry's ``examples.md``),
@@ -333,3 +339,218 @@ class TestSegmentationColours:
             ("10-street-vision-cv-analysis.json", "8aaff248"),
             ("10-street-vision-cv-analysis.json", "1aa27f1a"),
         } <= checked
+
+
+#: The channels Vega-Lite draws a legend for.
+LEGEND_CHANNELS = ("color", "size", "shape", "fill", "stroke", "strokeDash", "strokeWidth", "opacity")
+#: The channels Vega-Lite colours with.
+COLOR_CHANNELS = ("color", "fill", "stroke")
+#: The channels whose range Vega-Lite only has a list of values for.
+DISCRETE_RANGE_CHANNELS = ("shape", "strokeDash")
+#: Vega-Lite's kind of each scale type (``SCALE_CATEGORY_INDEX``): the views
+#: of a layer or a concat share one scale of a channel only while theirs are
+#: of one kind.
+SCALE_KINDS = {
+    "linear": "numeric", "log": "numeric", "pow": "numeric", "sqrt": "numeric", "symlog": "numeric",
+    "identity": "numeric", "sequential": "numeric", "time": "time", "utc": "time", "ordinal": "ordinal",
+    "bin-ordinal": "bin-ordinal", "point": "ordinal-position", "band": "ordinal-position",
+    "quantile": "discretizing", "quantize": "discretizing", "threshold": "discretizing",
+}
+#: The scale types with a discrete domain: the legends of two channels on one
+#: field merge only when both scales have one, or neither.
+DISCRETE_SCALES = ("ordinal", "point", "band", "bin-ordinal")
+
+
+def _legend_field(definition):
+    """The field definition a channel's legend comes from: the channel's own,
+    or the one its condition holds; none for a value, a datum or a geometry."""
+    if isinstance(definition, dict) and not isinstance(definition.get("field"), str):
+        definition = definition.get("condition")
+    if not isinstance(definition, dict) or not isinstance(definition.get("field"), str):
+        return None
+    return None if definition.get("type") == "geojson" else definition
+
+
+def _scale_type(channel: str, definition: dict) -> str:
+    """The scale type Vega-Lite gives *definition* on *channel*: the one its
+    scale names, else the default for its field's type (``defaultType``)."""
+    scale = definition.get("scale")
+    if isinstance(scale, dict) and isinstance(scale.get("type"), str):
+        return scale["type"]
+    if definition.get("type") in ("nominal", "ordinal"):
+        return "ordinal" if channel in COLOR_CHANNELS + DISCRETE_RANGE_CHANNELS else "point"
+    if channel in DISCRETE_RANGE_CHANNELS:
+        return "ordinal"
+    if definition.get("type") == "temporal":
+        return "time"
+    return "bin-ordinal" if definition.get("bin") and channel in COLOR_CHANNELS else "linear"
+
+
+def _views(spec: dict, encoding: dict) -> list:
+    """(kind, view, the encoding it is handed) for each view *spec* holds: a
+    layer hands its encoding down, a concat and a facet's or a repeat's spec
+    do not."""
+    views = [("layer", child, encoding) for child in spec.get("layer") or []]
+    for key in ("concat", "hconcat", "vconcat"):
+        views += [(key, child, None) for child in spec.get(key) or []]
+    if isinstance(spec.get("spec"), dict):
+        views.append(("spec", spec["spec"], None))
+    return views
+
+
+def _legend_channels(spec: dict, inherited: dict | None = None, scopes: dict | None = None, path: tuple = ()):
+    """(scope, channel, field definition) for each legend channel of each view
+    of *spec*.
+
+    The views of a layer or a concat share one scale and one legend of a
+    channel, unless its ``resolve`` makes the channel independent, or the
+    views ask for scales of different kinds (a nominal colour beside a
+    quantitative one, as example 04's map and bars do): then each view keeps
+    its own, and *scopes* names, per channel, the view it is kept in."""
+    scopes = scopes or {}
+    encoding = {**(inherited or {}), **(spec.get("encoding") or {})}
+    if "mark" in spec:
+        for channel in LEGEND_CHANNELS:
+            definition = _legend_field(encoding.get(channel))
+            if definition is not None:
+                yield scopes.get(channel, ()), channel, definition
+    views = _views(spec, encoding)
+    kinds: dict = {}
+    for _, child, handed in views:
+        for _, channel, definition in _legend_channels(child, handed):
+            kinds.setdefault(channel, set()).add(SCALE_KINDS.get(_scale_type(channel, definition)))
+    independent = {channel for channel, seen in kinds.items() if len(seen) > 1}
+    resolve = spec.get("resolve") or {}
+    independent |= {channel for part in ("scale", "legend") for channel, mode in (resolve.get(part) or {}).items()
+                    if mode == "independent"}
+    for index, (key, child, handed) in enumerate(views):
+        view = path + ((key, index),)
+        yield from _legend_channels(child, handed, {**scopes, **dict.fromkeys(independent, view)}, view)
+
+
+def _legends_hidden_by_a_null(spec: dict) -> list:
+    """Each legend of *spec* that a ``"legend": null`` hides though another
+    channel of it shows one, as (the channels that hide it, those that show it).
+
+    Vega-Lite draws one legend for the channels that share a scale (one
+    channel across the views that share it) or a field (color and stroke on
+    the same field, both scales with a discrete domain or neither; a channel
+    shared by views that encode different fields has no one field), and a null
+    on any of them hides that legend for all of them, or conflicts with a
+    legend another names."""
+    channels = list(_legend_channels(spec))
+    legend_of = list(range(len(channels)))
+    fields: dict = {}
+    for scope, channel, definition in channels:
+        fields.setdefault((scope, channel), set()).add(definition["field"])
+
+    def legend(index: int) -> int:
+        while legend_of[index] != index:
+            index = legend_of[index]
+        return index
+
+    def field_of(scope: tuple, channel: str, definition: dict):
+        """The one field of the channel's legend, and whether its scale's
+        domain is discrete; none when its views encode different fields."""
+        if len(fields[(scope, channel)]) > 1:
+            return None
+        return definition["field"], _scale_type(channel, definition) in DISCRETE_SCALES
+
+    for i, (scope, channel, definition) in enumerate(channels):
+        for j, (other_scope, other_channel, other) in enumerate(channels[:i]):
+            field = field_of(scope, channel, definition)
+            same_field = field is not None and field == field_of(other_scope, other_channel, other)
+            if scope == other_scope and (channel == other_channel or same_field):
+                legend_of[legend(i)] = legend(j)
+    legends: dict = {}
+    for i, (_, channel, definition) in enumerate(channels):
+        hides = "legend" in definition and definition["legend"] is None
+        legends.setdefault(legend(i), ([], []))[0 if hides else 1].append(f"{channel} ({definition['field']})")
+    return [(hiding, showing) for hiding, showing in legends.values() if hiding and showing]
+
+
+def _circles(encoding: dict) -> dict:
+    return {"mark": "circle", "encoding": encoding}
+
+
+_K = {"field": "k", "type": "nominal"}
+_HIDDEN = {"legend": None}
+
+#: Specs whose legends Vega-Lite 6.5 was seen to draw or hide (each compiled
+#: and drawn to SVG), with whether a legend null hides a legend another
+#: channel shows, as the scan must call it.
+LEGEND_CASES = {
+    "color and stroke on one field, the stroke's legend null, as example 23's map had them": (
+        _circles({"color": {**_K, "title": "K"}, "stroke": {**_K, **_HIDDEN}}), True),
+    "color and stroke on one field, no legend null": (
+        _circles({"color": {**_K, "title": "K"}, "stroke": _K}), False),
+    "color and stroke on two fields, the stroke's legend null": (
+        _circles({"color": {**_K, "title": "K"}, "stroke": {"field": "j", "type": "nominal", **_HIDDEN}}), False),
+    "a discrete color and a continuous size on one field, the size's legend null": (
+        _circles({"color": {"field": "n", "type": "nominal"},
+                  "size": {"field": "n", "type": "quantitative", **_HIDDEN}}), False),
+    "color and stroke on one field, both legends null": (
+        _circles({"color": {**_K, **_HIDDEN}, "stroke": {**_K, **_HIDDEN}}), False),
+    "a legend named on color, the stroke's null on the same field (Vega-Lite warns of the conflict)": (
+        _circles({"color": {**_K, "legend": {"orient": "bottom"}}, "stroke": {**_K, **_HIDDEN}}), True),
+    "a legend null in color's condition, stroke on the same field": (
+        {"params": [{"name": "p", "select": "point"}],
+         **_circles({"color": {"condition": {"param": "p", **_K, **_HIDDEN}, "value": "grey"}, "stroke": _K})}, True),
+    "color in one layer, the stroke's legend null on the same field in another": (
+        {"layer": [_circles({"color": _K}), {"mark": "text", "encoding": {"stroke": {**_K, **_HIDDEN}}}]}, True),
+    "color in one layer, color's legend null in another": (
+        {"layer": [_circles({"color": _K}), {"mark": "text", "encoding": {"color": {**_K, **_HIDDEN}}}]}, True),
+    "color in one view of a concat, the stroke's legend null on the same field in the other": (
+        {"hconcat": [_circles({"color": _K}), _circles({"stroke": {**_K, **_HIDDEN}})]}, True),
+    "the same, with each view's legends its own": (
+        {"resolve": {"legend": {"color": "independent", "stroke": "independent"}},
+         "hconcat": [_circles({"color": _K}), _circles({"stroke": {**_K, **_HIDDEN}})]}, False),
+    "the same, with color on another field in the other view too": (
+        {"hconcat": [_circles({"color": _K}),
+                     _circles({"color": {"field": "j", "type": "nominal"}, "stroke": {**_K, **_HIDDEN}})]}, False),
+    "a nominal color and a size in one view, a quantitative color's legend null on the size's field "
+    "in the other, as example 04's map and bars have them": (
+        {"hconcat": [_circles({"color": _K, "size": {"field": "n", "type": "quantitative"}}),
+                     _circles({"color": {"field": "n", "type": "quantitative", **_HIDDEN}})]}, False),
+}
+
+
+class TestALegendNullHidesNoLegendAnotherChannelShows:
+    def test_no_legend_null_hides_a_legend_another_channel_shows(self):
+        """Every spec Curio ships or shows, and every chart template of a
+        shipped package as written, each chip held by a string of its text."""
+        from utk_curio.backend.app.execution.code_references import with_chip_placeholders
+
+        specs = list(SHIPPED)
+        for where, text in _written_specs():
+            try:
+                specs.append((where, json.loads(with_chip_placeholders(text))))
+            except ValueError:
+                continue  # test_no_shipped_spec_names_the_dataset_inputs_bare names it
+        offenders = sorted({
+            f"{where}: {', '.join(hiding)} hides the legend that {', '.join(showing)} shows"
+            for where, spec in specs for hiding, showing in _legends_hidden_by_a_null(spec)
+        })
+        assert offenders == [], (
+            "Vega-Lite draws one legend for the channels that encode one field, so a legend null on "
+            "one of them hides it for all of them: take the null out, and the one legend stands for "
+            f"them all. In: {offenders}"
+        )
+
+    @pytest.mark.parametrize("case", list(LEGEND_CASES))
+    def test_the_scan_calls_each_case_as_vega_lite_draws_it(self, case):
+        spec, hidden = LEGEND_CASES[case]
+        assert bool(_legends_hidden_by_a_null(spec)) is hidden, _legends_hidden_by_a_null(spec)
+
+    def test_the_scan_reads_example_23s_map_everywhere_it_is_shown(self):
+        layered = {
+            where.split(" node ")[0]
+            for where, spec in SHIPPED
+            if {(channel, definition["field"]) for _, channel, definition in _legend_channels(spec)}
+            >= {("color", "layer"), ("stroke", "layer")}
+        }
+        assert {
+            "23-storage-folder-of-different-files.json",
+            "23-storage-folder-of-different-files.md",
+            "worked example 23-storage-folder-of-different-files",
+        } <= layered

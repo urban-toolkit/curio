@@ -18,6 +18,9 @@
  * ``getDevice`` is protected in its types, hence the cast.
  */
 
+import type { FeatureCollection } from 'geojson';
+import { autkTableKey, autkWorkspaceOf } from './autkDataCompile';
+
 interface GpuErrorLike {
     message: string;
 }
@@ -105,20 +108,71 @@ function tableWrittenBy(pass: any): string {
     return typeof name === 'string' && name ? name : 'compute';
 }
 
+/** The tables a node hands autk-grammar's run as GeoJSON, by key (``autkTableKey``). */
+export type HandedTables = ReadonlyMap<string, FeatureCollection>;
+
+/** The GeoJSON tables of *spec*'s `data`, by key: what a node hands the grammar's run. */
+export function handedTables(spec: any): HandedTables {
+    const sources: any[] = Array.isArray(spec?.data) ? spec.data : [];
+    return new Map(sources
+        .filter((source) => source?.type === 'geojson' && typeof source.outputTableName === 'string'
+            && Array.isArray(source.geojsonObject?.features))
+        .map((source) => [autkTableKey(autkWorkspaceOf(source), source.outputTableName), source.geojsonObject]));
+}
+
+/** The tables *pass* reads through `fromFeature`, its `dataRef` left out. */
+function fromFeatureTables(pass: any): Set<string> {
+    const names = new Set<string>();
+    for (const group of [pass?.uniforms, pass?.uniformMatrices]) {
+        for (const value of Object.values(group ?? {})) {
+            const layer = (value as any)?.fromFeature?.layer;
+            if (typeof layer === 'string' && layer && layer !== pass?.dataRef) names.add(layer);
+        }
+    }
+    return names;
+}
+
+/**
+ * The database *pass* reads, with each table it reads through `fromFeature`,
+ * but its `dataRef`, read as the node handed it (*handed*), in the pass's
+ * workspace. autk-grammar's compute reads a table no pass wrote from autk-db,
+ * which stores a building as a GeometryCollection of its parts, so the node
+ * hands the pass such a table as it loaded it until the grammar reads a handed
+ * table itself.
+ */
+function readingHandedTables(db: any, pass: any, handed: HandedTables): any {
+    const names = fromFeatureTables(pass);
+    if (names.size === 0 || typeof db?.getLayer !== 'function') return db;
+    const workspace = autkWorkspaceOf(pass);
+    const getLayer = async (name: string, ...rest: unknown[]) =>
+        (names.has(name) ? handed.get(autkTableKey(workspace, name)) : undefined) ?? db.getLayer(name, ...rest);
+    return new Proxy(db, {
+        get(target, key) {
+            if (key === 'getLayer') return getLayer;
+            const value = Reflect.get(target, key, target);
+            return typeof value === 'function' ? value.bind(target) : value;
+        },
+    });
+}
+
 /**
  * *adapter* with every pass it runs checked: in error scopes on autk-compute's
  * device (``runComputeChecked``), one pass at a time on the page. A pass that
  * fails, the GPU refusing it or the grammar, is named by the table it writes.
+ * With *handed*, a pass reads its `fromFeature` tables as the node handed them
+ * (``readingHandedTables``), and the database it was given goes on to the next.
  */
-export function checkedPasses(adapter: PassAdapter): PassAdapter {
+export function checkedPasses(adapter: PassAdapter, handed?: HandedTables): PassAdapter {
     return {
         resolveCompute: (context, pass) => onePassAtATime(async () => {
+            const db = handed ? readingHandedTables(context, pass, handed) : context;
             const compute = {
                 getDevice: computeDevice,
-                run: (params: any) => adapter.resolveCompute(context, params),
+                run: (params: any) => adapter.resolveCompute(db, params),
             };
             try {
-                return await runComputeChecked(compute, pass);
+                const resolved = await runComputeChecked(compute, pass);
+                return resolved === db ? context : resolved;
             } catch (e) {
                 throw new Error(`${tableWrittenBy(pass)}: ${e instanceof Error ? e.message : String(e)}`);
             }
@@ -129,10 +183,12 @@ export function checkedPasses(adapter: PassAdapter): PassAdapter {
 /**
  * Let one grammar instance run each pass of its document checked
  * (``checkedPasses``), as a compute step runs its passes: autk-grammar runs
- * them through the compute adapter it keeps.
+ * them through the compute adapter it keeps. *handed* is the tables the node
+ * hands the run (``handedTables``), which a pass reads its `fromFeature`
+ * tables from.
  */
-export function withCheckedPasses(grammar: any): void {
+export function withCheckedPasses(grammar: any, handed?: HandedTables): void {
     const adapter = grammar?.computeAdapter;
     if (!adapter || typeof adapter.resolveCompute !== 'function') throw new Error(COMPUTE_ADAPTER_MISSING);
-    grammar.computeAdapter = checkedPasses(adapter);
+    grammar.computeAdapter = checkedPasses(adapter, handed);
 }

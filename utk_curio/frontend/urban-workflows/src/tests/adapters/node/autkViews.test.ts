@@ -5,22 +5,24 @@
  * else its `dataRef`. A highlight lights each map's layers on that map alone,
  * and a pick is read from the map that picked.
  *
- * A node draws one view while the one-view rule stands, so these tests drive
- * the per-view helpers with a grammar that drew two maps (`grammarThatRan`,
+ * Keys are read from the panes autk-grammar's arrangeViews gives the
+ * document's views (here its stand-in, _support/autkArrangeViews). These
+ * tests drive the per-view helpers with a grammar that drew two maps (`grammarThatRan`,
  * whose highlights address one map as autk-grammar 5.0.0's do), and two
  * plots where it matters. The modules are loaded in each test, so a checkout
  * without them fails each test on its own.
  */
 import { grammarThatRan } from "../../_support/autkGrammarMaps";
+import { panesOf } from "../../_support/autkArrangeViews";
 
 const views = () =>
   require("../../../adapters/node/autkViews") as {
     mapEntries: (spec: unknown) => any[];
     plotEntries: (spec: unknown) => any[];
-    mapKey: (entry: unknown, index: number) => string | number;
-    plotKey: (entry: unknown) => string;
-    mapIndexOf: (spec: unknown, mapId: unknown) => number;
-    plotEntryOf: (spec: unknown, plotId: unknown) => { index: number; entry: any } | null;
+    mapKey: (panes: unknown, index: number) => string | number;
+    plotKey: (panes: unknown, index: number) => string | undefined;
+    mapIndexOf: (panes: unknown, mapId: unknown) => number;
+    plotEntryOf: (spec: unknown, panes: unknown, plotId: unknown) => { index: number; entry: any } | null;
     pickLayerOf: (entry: unknown) => string | undefined;
     mapLayerRefs: (spec: unknown) => Array<{ index: number; entry: any; ref: any }>;
     lightMaps: (
@@ -32,7 +34,9 @@ const views = () =>
 
 const mapState = () =>
   require("../../../adapters/node/autkMapState") as {
-    pickOn: (grammar: unknown, spec: unknown, mapId: unknown) => { index: number; entry: any; table: string | undefined } | null;
+    pickOn: (
+      grammar: unknown, spec: unknown, mapId: unknown, layerId?: string, panes?: unknown,
+    ) => { index: number; entry: any; table: string | undefined } | null;
   };
 
 /** A map as autk-map keeps it for a highlight: what each of its layers lights, by layer id. */
@@ -64,15 +68,16 @@ describe("the views a document draws", () => {
   });
 
   test("a map is known by its id, else its index, and a mapId finds it either way", () => {
-    expect(views().mapKey(TWO_MAPS_OF_ONE_TABLE.map[0], 0)).toBe(0);
-    expect(views().mapKey(TWO_MAPS_OF_ONE_TABLE.map[1], 1)).toBe("south");
-    expect(views().mapIndexOf(TWO_MAPS_OF_ONE_TABLE, 0)).toBe(0);
-    expect(views().mapIndexOf(TWO_MAPS_OF_ONE_TABLE, 1)).toBe(1);
-    expect(views().mapIndexOf(TWO_MAPS_OF_ONE_TABLE, "south")).toBe(1);
+    const panes = panesOf(TWO_MAPS_OF_ONE_TABLE);
+    expect(views().mapKey(panes, 0)).toBe(0);
+    expect(views().mapKey(panes, 1)).toBe("south");
+    expect(views().mapIndexOf(panes, 0)).toBe(0);
+    expect(views().mapIndexOf(panes, 1)).toBe(1);
+    expect(views().mapIndexOf(panes, "south")).toBe(1);
     // A name of no map, an index past the last, and no name at all find none.
-    expect(views().mapIndexOf(TWO_MAPS_OF_ONE_TABLE, "east")).toBe(-1);
-    expect(views().mapIndexOf(TWO_MAPS_OF_ONE_TABLE, 2)).toBe(-1);
-    expect(views().mapIndexOf(TWO_MAPS_OF_ONE_TABLE, undefined)).toBe(-1);
+    expect(views().mapIndexOf(panes, "east")).toBe(-1);
+    expect(views().mapIndexOf(panes, 2)).toBe(-1);
+    expect(views().mapIndexOf(panes, undefined)).toBe(-1);
   });
 
   test("two plots of one table with ids are two views, each found by its id", () => {
@@ -82,12 +87,13 @@ describe("the views a document draws", () => {
         { id: "species", dataRef: "trees", mark: "bar" },
       ],
     };
-    expect(views().plotEntries(spec).map(views().plotKey)).toEqual(["heights", "species"]);
-    expect(views().plotEntryOf(spec, "species")).toEqual({ index: 1, entry: spec.plot[1] });
+    expect(views().plotEntries(spec).map((_, index) => views().plotKey(panesOf(spec), index))).toEqual(["heights", "species"]);
+    expect(views().plotEntryOf(spec, panesOf(spec), "species")).toEqual({ index: 1, entry: spec.plot[1] });
     // A plot without an id is known by its table.
-    expect(views().plotKey({ dataRef: "trees" })).toBe("trees");
-    expect(views().plotEntryOf({ plot: { dataRef: "trees" } }, "trees")).toEqual({ index: 0, entry: { dataRef: "trees" } });
-    expect(views().plotEntryOf(spec, "trees")).toBeNull();
+    const trees = { plot: { dataRef: "trees" } };
+    expect(views().plotKey(panesOf(trees), 0)).toBe("trees");
+    expect(views().plotEntryOf(trees, panesOf(trees), "trees")).toEqual({ index: 0, entry: { dataRef: "trees" } });
+    expect(views().plotEntryOf(spec, panesOf(spec), "trees")).toBeNull();
   });
 
   test("each layer of each map is listed with the index of its map", () => {
@@ -142,19 +148,70 @@ describe("a pick is read from the map that picked", () => {
 
   test("a pick on the second map names its table, though the first map's layer has the same title", () => {
     const grammar = grammarThatRan(spec, pickingMap("Streets"), pickingMap("Streets"));
-    expect(mapState().pickOn(grammar, spec, "detail")).toEqual({ index: 1, entry: spec.map[1], table: "lanes" });
-    expect(mapState().pickOn(grammar, spec, 1)).toEqual({ index: 1, entry: spec.map[1], table: "lanes" });
-    expect(mapState().pickOn(grammar, spec, 0)).toEqual({ index: 0, entry: spec.map[0], table: "roads" });
+    expect(mapState().pickOn(grammar, spec, "detail", undefined, panesOf(spec))).toEqual({ index: 1, entry: spec.map[1], table: "lanes" });
+    expect(mapState().pickOn(grammar, spec, 1, undefined, panesOf(spec))).toEqual({ index: 1, entry: spec.map[1], table: "lanes" });
+    expect(mapState().pickOn(grammar, spec, 0, undefined, panesOf(spec))).toEqual({ index: 0, entry: spec.map[0], table: "roads" });
   });
 
   test("a map with no layer picking now names its entry's own picking layer", () => {
     const grammar = grammarThatRan(spec, pickingMap("Streets"), pickingMap(null));
-    expect(mapState().pickOn(grammar, spec, "detail")).toEqual({ index: 1, entry: spec.map[1], table: "trees" });
+    expect(mapState().pickOn(grammar, spec, "detail", undefined, panesOf(spec))).toEqual({ index: 1, entry: spec.map[1], table: "trees" });
   });
 
   test("a pick that names no map is the first map's, and one that names a map the document has not is none", () => {
     const grammar = grammarThatRan(spec, pickingMap("parks"), pickingMap("Streets"));
-    expect(mapState().pickOn(grammar, spec, undefined)).toEqual({ index: 0, entry: spec.map[0], table: "parks" });
-    expect(mapState().pickOn(grammar, spec, "east")).toBeNull();
+    expect(mapState().pickOn(grammar, spec, undefined, undefined, panesOf(spec))).toEqual({ index: 0, entry: spec.map[0], table: "parks" });
+    expect(mapState().pickOn(grammar, spec, "east", undefined, panesOf(spec))).toBeNull();
+  });
+});
+
+describe("each view's element and the grammar's targets", () => {
+  // Loaded in each test, as the module's first version had none of these.
+  const panesModule = () =>
+    require("../../../adapters/node/autkViews") as {
+      viewElementId: (nodeId: string, kind: "map" | "plot", index: number) => string;
+      viewTargets: (nodeId: string, kept: { maps: number[]; plots: number[] }) => Record<string, string | string[]>;
+      linksAtHand: (spec: unknown) => any[];
+      mapIndexOf: (panes: unknown, mapId: unknown) => number;
+    };
+
+  test("the first view of a kind keeps the node's id, and view k adds its index", () => {
+    expect(panesModule().viewElementId("n1", "map", 0)).toBe("autk-grammar-map-n1");
+    expect(panesModule().viewElementId("n1", "map", 2)).toBe("autk-grammar-map-n1-2");
+    expect(panesModule().viewElementId("n1", "plot", 0)).toBe("autk-grammar-plot-n1");
+    expect(panesModule().viewElementId("n1", "plot", 1)).toBe("autk-grammar-plot-n1-1");
+  });
+
+  test("one view of a kind is named by its id, several by a list, each the element of its place as written", () => {
+    expect(panesModule().viewTargets("n1", { maps: [0], plots: [] })).toEqual({ map: "autk-grammar-map-n1" });
+    expect(panesModule().viewTargets("n1", { maps: [0, 1], plots: [1] })).toEqual({
+      map: ["autk-grammar-map-n1", "autk-grammar-map-n1-1"],
+      plot: "autk-grammar-plot-n1-1",
+    });
+    expect(panesModule().viewTargets("n1", { maps: [], plots: [] })).toEqual({});
+  });
+
+  test("a number names a map by its index, whether or not it has an id, and a string by its id alone", () => {
+    const panes = panesOf(TWO_MAPS_OF_ONE_TABLE);
+    expect(panesModule().mapIndexOf(panes, 1)).toBe(1);
+    expect(panesModule().mapIndexOf(panes, "south")).toBe(1);
+    expect(panesModule().mapIndexOf(panes, "1")).toBe(-1);
+    expect(panesModule().mapIndexOf(null, 0)).toBe(-1);
+  });
+
+  test("the links at hand name a plot, a map and a layer the document draws", () => {
+    const spec = {
+      map: { id: "city", layerRefs: [{ dataRef: "trees" }] },
+      plot: [{ id: "heights", dataRef: "trees" }, { id: "areas", dataRef: "parks" }],
+      links: [
+        { source: "heights", target: "city" },
+        { source: "areas", target: "city" },
+        { source: "gone", target: "city" },
+        { source: "heights", target: "town" },
+        { source: "heights", target: "city", layer: "trees" },
+      ],
+    };
+    expect(panesModule().linksAtHand(spec)).toEqual([spec.links[0], spec.links[4]]);
+    expect(panesModule().linksAtHand({ map: spec.map })).toEqual([]);
   });
 });

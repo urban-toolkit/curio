@@ -100,6 +100,8 @@ jest.mock('../../../utils/formatters', () => ({
 }));
 
 jest.mock('@urban-toolkit/autk-grammar', () => ({
+  // autk-grammar's arrangeViews, which places each view's pane.
+  arrangeViews: require('../../_support/autkArrangeViews').arrangeViews,
   // The grammar keeps the adapter its run hands each compute pass to, which a node checks.
   AutkGrammar: jest.fn().mockImplementation(() => ({ run: jest.fn().mockResolvedValue(undefined), data: {}, computeAdapter: { resolveCompute: jest.fn() } })),
   // The grammar's applyCamera, which the node turns a framed map by when the
@@ -162,6 +164,7 @@ import { PLAYER_SELECT, latestSelect, playedRange, playerSelect } from '../../..
 import { clearPackageNodes, registerNode } from '../../../registry/nodeRegistry';
 import { parseGeoDataframeWithGeometry } from '../../../utils/parsing';
 import { normalizeGeoSpec } from '../../../utils/vegaGeoSpec';
+import { METRES_PER_LEVEL } from '../../../utils/buildingHeight';
 
 function makeMockData(overrides: Partial<NodeBehaviorData> = {}): NodeBehaviorData {
   return {
@@ -209,6 +212,7 @@ const BEHAVIOR_RESULT_KEYS: (keyof NodeBehaviorResult)[] = [
   'untilHandedOn',
   'showLoading',
   'contentComponent',
+  'viewRows',
   'controlsComponent',
   'setOutputCallbackOverride',
   'outputOverride',
@@ -3343,8 +3347,9 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
     });
 
     // A document that writes a key autk-grammar 5 renamed, or one the node does
-    // not run yet, fails before anything is loaded, computed or drawn, with
-    // the sentence the agents' document check says too (contracts/autkGrammar).
+    // not run yet, or whose views autk-grammar refuses, fails before anything
+    // is loaded, computed or drawn, with the sentence the agents' document
+    // check says too (contracts/autkGrammar).
     test.each([
       [
         'a join written with tableRootName',
@@ -3357,14 +3362,23 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         'This spec uses "wglsFunction" at compute[0], which autk-grammar 5 renamed to "wgslFunction".',
       ],
       [
-        'a map in a document with a layout',
-        { layout: { type: 'horizontal' }, map: { layerRefs: [{ dataRef: 'input_0' }] } },
-        'This spec uses "layout", which Curio does not run yet.',
+        'a map in a document with a layout and a link to a map it does not have',
+        {
+          layout: { type: 'horizontal' },
+          map: { id: 'city', layerRefs: [{ dataRef: 'input_0' }] },
+          plot: { id: 'heights', dataRef: 'input_0', mark: 'bar', axis: ['height'] },
+          links: [{ source: 'heights', target: 'town' }],
+        },
+        'Link target "town" is not the id of a map of this specification.',
       ],
       [
-        'a layout beside a data section',
-        { data: [{ type: 'csv', csvFileUrl: 'a.csv', outputTableName: 'a' }], layout: { type: 'horizontal' } },
-        'This spec uses "layout", which Curio does not run yet.',
+        'a layout beside a data section, over two maps of one id',
+        {
+          data: [{ type: 'csv', csvFileUrl: 'a.csv', outputTableName: 'a' }],
+          layout: { type: 'horizontal' },
+          map: [{ id: 'a', layerRefs: [{ dataRef: 'a' }] }, { id: 'a', layerRefs: [{ dataRef: 'a' }] }],
+        },
+        'Two maps or plots have the id "a"; an id names one view.',
       ],
     ])('%s fails the node before anything runs, naming the key', async (_what, spec, said) => {
       // The sandbox answers, as it does for any data-only node, so a node that
@@ -3727,6 +3741,85 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
           expect.any(String),
         ]]);
         expect(interpretCode).not.toHaveBeenCalled();
+      });
+    });
+
+    // A building part the node's own data section loads reaches its maps and
+    // passes with the height autk-map draws for it, as a part of its input
+    // does (utils/autkInput withReadableHeights): a pass that reads every
+    // building's `properties.height` with `required: true` leaves none out.
+    describe('a building part its own data section loads', () => {
+      test('reaches its map and its passes with the height autk-map draws, read back from the sandbox', async () => {
+        const { fetchData } = jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const grammarAsBefore = AutkGrammar.getMockImplementation();
+        const drawn: { spec: any } = { spec: null };
+        AutkGrammar.mockImplementation(() => ({
+          run: jest.fn(async (spec: any) => { drawn.spec = spec; }), data: {}, computeAdapter: { resolveCompute: jest.fn() },
+        }));
+        const footprint = (i: number) => {
+          const x = -9755100 + 20 * i;
+          return { type: 'Polygon', coordinates: [[[x, 5142400], [x + 10, 5142400], [x + 10, 5142410], [x, 5142400]]] };
+        };
+        // The parts as the sandbox's load hands them on: one with a height,
+        // one with only its levels, one with an empty height beside its
+        // levels, one with only a building:height.
+        const parts = [{ height: 12 }, { 'building:levels': 3 }, { height: null, 'building:levels': 2 }, { 'building:height': 30 }];
+        const buildings = {
+          type: 'FeatureCollection',
+          features: parts.map((properties, i) => ({ type: 'Feature', geometry: footprint(i), properties })),
+        };
+        const roads = { type: 'FeatureCollection', features: [
+          { type: 'Feature', geometry: { type: 'LineString', coordinates: [[-9755100, 5142390], [-9755000, 5142390]] }, properties: { highway: 'residential' } },
+        ] };
+        fetchData.mockImplementation(async (path: string) => (path === 'art-city'
+          ? { dataType: 'list', data: [
+            { dataType: 'dict', data: { name: 'city_roads', type: 'roads', geojson: roads } },
+            { dataType: 'dict', data: { name: 'city_buildings', type: 'buildings', geojson: buildings } },
+          ] }
+          : { data: {}, dataType: 'dataframe' }));
+        try {
+          const interpretCode = jest.fn(
+            (_unresolved, _code, _input, _inputTypes, cb) =>
+              cb({ stdout: [], stderr: '', output: { path: 'art-city', dataType: 'list' } }),
+          );
+          const result = await callBehavior(useAutkGrammarBehavior, { jsInterpreter: { interpretCode } as any });
+          await act(async () => {
+            await result.current.applyGrammar!(JSON.stringify({
+              data: [{
+                type: 'osm',
+                pbfFileUrl: 'docs/examples/data/back_bay.osm.pbf',
+                queryArea: { geocodeArea: 'Boston', areas: ['Back Bay'] },
+                outputTableName: 'city',
+                autoLoadLayers: { layers: ['roads', 'buildings'] },
+              }],
+              compute: [{
+                dataRef: 'city_roads',
+                attributes: { seg: 'geometry.coordinates' },
+                attributeMatrices: { seg: { rows: 'auto', cols: 2 } },
+                uniforms: {
+                  bld_height: { fromFeature: { layer: 'city_buildings', iterate: 'batched', path: 'properties.height', required: true } },
+                },
+                wgslFunction: 'return bld_height[0];',
+                outputColumnName: 'sunlight',
+                outputTableName: 'city_road_sun',
+                layerType: 'roads',
+              }],
+              map: { layerRefs: [{ dataRef: 'city_buildings' }, { dataRef: 'city_road_sun', getFnv: 'compute.sunlight' }] },
+            }));
+          });
+          expect(interpretCode).toHaveBeenCalledTimes(1);
+          const loaded = drawn.spec.data.find((s: any) => s.outputTableName === 'city_buildings');
+          expect(loaded.layerType).toBe('buildings');
+          expect(loaded.geojsonObject.features.map((f: any) => f.properties.height))
+            .toEqual([12, 3 * METRES_PER_LEVEL, 2 * METRES_PER_LEVEL, 30]);
+          // Each part keeps its own tags.
+          expect(loaded.geojsonObject.features.map((f: any) => f.properties['building:levels']))
+            .toEqual([undefined, 3, 2, undefined]);
+        } finally {
+          AutkGrammar.mockImplementation(grammarAsBefore);
+          fetchData.mockImplementation(async () => ({ data: {}, dataType: 'dataframe' }));
+        }
       });
     });
   });

@@ -7,6 +7,7 @@
  *
  *     jest.mock("<src>/providers/FlowProvider", () => require("<this file>").flowProviderModule);
  */
+import { arrangeViews } from './autkArrangeViews';
 
 /** One run of the stand-in grammar. */
 export type GrammarRun = {
@@ -75,11 +76,15 @@ export const failedDraws: { error: Error | null } = { error: null };
 
 /**
  * Whether a run hands each pass of its spec's `compute` to the grammar's
- * compute adapter, in order, before it draws, as autk-grammar's engine does:
- * not unless a test sets it. The stand-in adapter runs none of them; a node
- * that wraps the adapter runs its wrapper.
+ * compute adapter, in order, before it draws, each pass on the context the
+ * last one returned, as autk-grammar's engine does: not unless a test sets
+ * it. The stand-in adapter runs none of them, unless a test gives the grammar
+ * an adapter of its own (`adapter`, made as each grammar is, such as
+ * autk-grammar's `createComputeAdapter`); a node that wraps the adapter runs
+ * its wrapper. A run whose database exports its tables (`drawnExports`) has
+ * that database before its passes run.
  */
-export const grammarComputes: { on: boolean } = { on: false };
+export const grammarComputes: { on: boolean; adapter: null | (() => any) } = { on: false, adapter: null };
 
 export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string, unknown>) => {
   const handlers: Record<string, (event: any) => void> = {};
@@ -105,7 +110,9 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
     setPlotSelection: jest.fn((plot: string, positions: number[]) => { plotSelections.push([plot, [...positions]]); }),
     clearHighlightOnPlot: jest.fn((plot: string) => { plotSelections.push([plot, []]); }),
     // Where autk-grammar keeps the adapter its run hands each compute pass to.
-    computeAdapter: { resolveCompute: jest.fn(async (context: unknown) => context) },
+    computeAdapter: grammarComputes.adapter
+      ? grammarComputes.adapter()
+      : { resolveCompute: jest.fn(async (context: unknown) => context) },
   };
   // autk-grammar 5's destroy() lets go of its engine, and with it the database.
   const destroy = jest.fn(() => { grammar.grammarEngine = undefined; });
@@ -121,13 +128,6 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
       });
       throw failedDraws.error;
     }
-    if (grammarComputes.on) {
-      for (const pass of Array.isArray(spec?.compute) ? spec.compute : []) {
-        await grammar.computeAdapter.resolveCompute(grammar.grammarEngine.context, pass);
-      }
-    }
-    const maps = drawnMaps.make && spec?.map ? [drawnMaps.make()] : [];
-    if (maps.length > 0) grammar.maps = maps;
     const exportOf = drawnExports.of;
     if (exportOf) {
       const sources: any[] = (Array.isArray(spec?.data) ? spec.data : [])
@@ -159,6 +159,15 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
         return exported(source);
       };
     }
+    if (grammarComputes.on) {
+      let context = grammar.grammarEngine.context;
+      for (const pass of Array.isArray(spec?.compute) ? spec.compute : []) {
+        context = await grammar.computeAdapter.resolveCompute(context, pass);
+      }
+      grammar.grammarEngine.context = context;
+    }
+    const maps = drawnMaps.make && spec?.map ? [drawnMaps.make()] : [];
+    if (maps.length > 0) grammar.maps = maps;
     grammarRuns.push({
       targets,
       spec,
@@ -216,7 +225,7 @@ export const apiModule = {
   )),
   fetchPreviewData: jest.fn(),
 };
-export const autkGrammarModule = { AutkGrammar, enterWorkspace };
+export const autkGrammarModule = { AutkGrammar, arrangeViews, enterWorkspace };
 
 /** Forget the runs and calls of the last test, read ONE_ROW again, and hold no
  * scenario, node or edge. */
@@ -227,6 +236,7 @@ export function resetAutkNodeMocks(): void {
   drawnExports.of = null;
   failedDraws.error = null;
   grammarComputes.on = false;
+  grammarComputes.adapter = null;
   AutkGrammar.mockClear();
   markNodeErrored.mockClear();
   showToast.mockClear();

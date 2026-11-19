@@ -9,6 +9,7 @@
  * again. The flow records each view's latest selection as the view
  * reports it (`useSelectionTags`), so a tag added later starts from it.
  */
+import { selectsOnLayer } from "../autkSelects";
 import type { SelectDetail, SelectionRows } from "../selectionMatch";
 import { rowsHeldBy, selectedIds, selectionLayer, type SelectionState, type SelectionTag } from "./selectionTags";
 
@@ -80,9 +81,12 @@ export async function selectionStateOf(
   column: string,
   details: ViewDetails | undefined = latestViewSelection(nodeId),
 ): Promise<SelectionState | null> {
-  const held = await viewRowsOf(nodeId, selectionLayer(details));
+  // An Autark node of several views sends one select per view, each on its
+  // own table: the tag reads the newest's, over that table's rows.
+  const layer = selectionLayer(details);
+  const held = await viewRowsOf(nodeId, layer);
   if (!held) return null;
-  return selectedIds(details, held.rows, column);
+  return selectedIds(selectsOnLayer(details, layer), held.rows, column);
 }
 
 /**

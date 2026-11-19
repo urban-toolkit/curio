@@ -191,6 +191,12 @@ export interface NodeBehaviorResult {
   /** Custom React subtree rendered inside the NodeEditor content area. */
   contentComponent?: React.ReactNode;
   /**
+   * The rows of panes an Autark node's views are arranged in (autk-grammar's
+   * `arrangeViews`): a notebook cell gives each row a map's height
+   * (utils/notebookLayout `notebookOutputBox`).
+   */
+  viewRows?: number;
+  /**
    * Controls of the node's own, with its widgets' controls: under their rows
    * on its Widgets tab, and under its dashboard tile's controls. Data Export's
    * Download button.

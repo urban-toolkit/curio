@@ -35,14 +35,14 @@
  * instead: `mapViews` takes each map's camera before the redraw, and
  * `keepMapViews` puts it back on the new maps. A map whose entry now writes
  * another camera than the one it was drawn with shows that camera's view.
- * Given the documents the two draws ran, each view goes back to the map of
- * its key (`autkViews.mapKey`: a map's `id`, else its index), so a map with
- * an id keeps its view wherever the document now lists it; without them, by
- * the maps' order.
+ * Given the panes of the documents the two draws ran, each view goes back to
+ * the map of its key (`autkViews.mapKey`: a map's `id`, else its index), so a
+ * map with an id keeps its view wherever the document now lists it; without
+ * them, by the maps' order.
  */
 import type { CameraSpec } from '@urban-toolkit/autk-grammar';
 import { grammarMaps } from './autkMapDrawing';
-import { mapEntries, mapKey } from './autkViews';
+import { mapKey, type ViewPanes } from './autkViews';
 
 /** autk-grammar's `applyCamera`: turns a map's camera as a `camera` of the document says. */
 export type ApplyCamera = (map: any, camera: CameraSpec) => void;
@@ -270,10 +270,10 @@ function originOf(map: any): number[] | null {
  * The view of each map *grammar* drew, in its order: null for one with no view
  * to keep. A map drawn while hidden and never shown since has autk-map's own
  * camera, which no one framed or moved: the next draw frames its map instead.
- * Given *spec*, the document the grammar ran, each view holds its map's key.
+ * Given *panes*, those of the document the grammar ran, each view holds its
+ * map's key.
  */
-export function mapViews(grammar: any, spec?: any): Array<MapView | null> {
-    const entries = spec === undefined ? null : mapEntries(spec);
+export function mapViews(grammar: any, panes?: ViewPanes | null): Array<MapView | null> {
     return grammarMaps(grammar).map((map, index) => {
         const camera = map?.camera;
         if (!isFlat(map) || typeof camera?.getEye !== 'function') return null;
@@ -289,7 +289,7 @@ export function mapViews(grammar: any, spec?: any): Array<MapView | null> {
             if (written !== undefined) view.camera = written;
             const framed = map[FRAMED_VIEW] as FramedView | undefined;
             if (framed) view.framed = { eye: [...framed.eye], lookAt: [...framed.lookAt], up: [...framed.up] };
-            if (entries) view.key = mapKey(entries[index], index);
+            if (panes) view.key = mapKey(panes, index);
             return view;
         } catch {
             return null;
@@ -359,20 +359,19 @@ export function showFramedViews(grammar: any): () => void {
  * `mapViews` took it from the maps the last draw made, so a draw after an
  * edit keeps the view the person zoomed and panned to, or the one its camera
  * turned it to: the view is put back as it was, never turned again. A view
- * that holds its map's key goes back to the map of that key in *spec*, the
- * document the grammar ran; any other to the map at its place. autk-map
+ * that holds its map's key goes back to the map of that key among *panes*,
+ * those of the document the grammar ran; any other to the map at its place. autk-map
  * draws a map's layers relative to the middle of the first layer it loads,
  * which a removed feature at its edge moves; the camera moves with it. A map
  * with no view to keep, or whose entry writes another camera than the one its
  * view was taken under, is framed and turned by its camera, as `frameMaps`
  * does it, and every map's R key frames and turns it.
  */
-export function keepMapViews(grammar: any, views: ReadonlyArray<MapView | null>, spec?: any): void {
-    const entries = spec === undefined ? null : mapEntries(spec);
-    const byKey = entries !== null && views.some((view) => view?.key !== undefined);
+export function keepMapViews(grammar: any, views: ReadonlyArray<MapView | null>, panes?: ViewPanes | null): void {
+    const byKey = !!panes && views.some((view) => view?.key !== undefined);
     grammarMaps(grammar).forEach((map, index) => {
         const taken = byKey
-            ? views.find((view) => view?.key === mapKey(entries![index], index)) ?? null
+            ? views.find((view) => view?.key === mapKey(panes, index)) ?? null
             : views[index];
         const view = taken && taken.camera === cameraKey(map) ? taken : null;
         if (!view || !isFlat(map) || !putBackView(map, view)) {

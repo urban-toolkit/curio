@@ -1,22 +1,55 @@
 /**
  * An Autark node's views, as its run reads them: a list of maps and a list of
- * plots, each known by the key autk-grammar knows it by.
+ * plots, each in a pane of its own and known by the key autk-grammar knows it
+ * by.
  *
  * A document's `map` and `plot` are each one object or a list; either way the
  * run reads a list (`mapEntries`, `plotEntries`), in the document's order,
- * which is the order autk-grammar draws them in (its `maps`). A map's key is
- * its `id`, else its index, autk-grammar's `MapId`: its `map:picking` events
- * name a map by it, and its calls that address one map (`highlightOnMap`,
- * `mapLayer`, ...) take it, a string by `id` and a number by index. A plot's
- * key is its `id`, else its `dataRef`, which its `plot:selection` events name
- * it by and its plot calls take (`plotKey`).
+ * which is the order autk-grammar draws them in (its `maps`). The grammar's
+ * `arrangeViews` gives each view its pane, in that order, maps first, and the
+ * key the grammar knows it by (`ViewPane.key`): a map's `id`, else its index,
+ * autk-grammar's `MapId`, which its `map:picking` events name a map by and its
+ * calls that address one map (`highlightOnMap`, `mapLayer`, ...) take, a
+ * string by `id` and a number by index; a plot's `id`, else its `dataRef`,
+ * which its `plot:selection` events name it by and its plot calls take. The
+ * run reads every key from the panes of the document it ran (`mapKey`,
+ * `plotKey`).
  *
- * Every per-view step of a run reads them here: each map's layers lit on that
- * map alone (`lightMaps`), a pick read from the map that picked
+ * Every per-view step of a run reads them here: each view's pane and element
+ * (`layOutPanes`, `viewTargets`), each map's layers lit on that map alone
+ * (`lightMaps`), a pick read from the map that picked
  * (`autkMapState.pickOn`), a brush from the plot that brushed (`plotEntryOf`),
  * the views a redraw keeps (`autkMapView.keepMapViews`) and a raster's edges
  * bled on each map (`autkRasters.bleedRasterEdges`).
  */
+import type { ViewArrangement, ViewPane } from '@urban-toolkit/autk-grammar';
+import { autkViewProblem } from '../../contracts/autkGrammar';
+import { autkWorkspaceOf } from './autkDataCompile';
+
+/** A document's views as autk-grammar's `arrangeViews` places them: one pane per view, maps first. */
+export type ViewPanes = readonly ViewPane[];
+
+/**
+ * The links of *spec* that name views and layers it draws: those the grammar
+ * wires. A run that leaves out a plot or a layer whose table it does not have
+ * leaves out the links to it too, which autk-grammar would refuse.
+ */
+export function linksAtHand(spec: any): any[] {
+    const links: any[] = Array.isArray(spec?.links) ? spec.links : [];
+    return links.filter((link) => autkViewProblem({ map: spec?.map, plot: spec?.plot, links: [link] }) === null);
+}
+
+/**
+ * The workspace of the views of *spec* that draw the table *layer*: the first
+ * map whose layers name it, else the first plot of it, else the first view.
+ */
+export function workspaceOfLayer(spec: any, layer: string | undefined): string | undefined {
+    const map = mapEntries(spec).find((entry) =>
+        (Array.isArray(entry?.layerRefs) ? entry.layerRefs : []).some((ref: any) => ref?.dataRef === layer));
+    if (map) return autkWorkspaceOf(map);
+    const plot = plotEntries(spec).find((entry) => entry?.dataRef === layer);
+    return autkWorkspaceOf(plot ?? mapEntries(spec)[0] ?? plotEntries(spec)[0]);
+}
 
 /** *value* as a list: none is an empty list, and one object a list of one. */
 function asList(value: unknown): any[] {
@@ -34,31 +67,137 @@ export function plotEntries(spec: any): any[] {
     return asList(spec?.plot);
 }
 
-/** The key autk-grammar knows the map *entry*, at *index* of its document, by: its `id`, else its index. */
-export function mapKey(entry: any, index: number): string | number {
-    return typeof entry?.id === 'string' ? entry.id : index;
+/** The pane *panes* gives view *index* of kind *kind*, or undefined. */
+function paneOf(panes: ViewPanes | null | undefined, kind: 'map' | 'plot', index: number): ViewPane | undefined {
+    return (panes ?? []).find((pane) => pane.kind === kind && pane.index === index);
 }
 
-/** The key autk-grammar knows the plot *entry* by: its `id`, else its `dataRef`. */
-export function plotKey(entry: any): string {
-    return typeof entry?.id === 'string' && entry.id !== '' ? entry.id : entry?.dataRef;
+/** The key autk-grammar knows map *index* by, from the panes of its document: its `id`, else its index. */
+export function mapKey(panes: ViewPanes | null | undefined, index: number): string | number {
+    return paneOf(panes, 'map', index)?.key ?? index;
+}
+
+/** The key autk-grammar knows plot *index* by, from the panes of its document: its `id`, else its `dataRef`. */
+export function plotKey(panes: ViewPanes | null | undefined, index: number): string | undefined {
+    const key = paneOf(panes, 'plot', index)?.key;
+    return key === undefined ? undefined : String(key);
 }
 
 /**
- * The index of the map *mapId* names in *spec*, as autk-grammar addresses one:
- * a number by its index, a string by its `id`; -1 when it names none.
+ * The index of the map *mapId* names among *panes*, as autk-grammar addresses
+ * one: a number by its index, a string by its `id`; -1 when it names none.
  */
-export function mapIndexOf(spec: any, mapId: unknown): number {
-    const entries = mapEntries(spec);
-    if (typeof mapId === 'number') return Number.isInteger(mapId) && mapId >= 0 && mapId < entries.length ? mapId : -1;
-    if (typeof mapId === 'string') return entries.findIndex((entry, index) => mapKey(entry, index) === mapId);
+export function mapIndexOf(panes: ViewPanes | null | undefined, mapId: unknown): number {
+    const maps = (panes ?? []).filter((pane) => pane.kind === 'map');
+    if (typeof mapId === 'number') return maps.some((pane) => pane.index === mapId) ? mapId : -1;
+    if (typeof mapId === 'string') return maps.find((pane) => pane.id === mapId)?.index ?? -1;
     return -1;
 }
 
-/** The plot *plotId* names in *spec* (its `id`, else its `dataRef`), with its index; null when it names none. */
-export function plotEntryOf(spec: any, plotId: unknown): { index: number; entry: any } | null {
-    const index = plotEntries(spec).findIndex((entry) => plotKey(entry) === plotId);
-    return index < 0 ? null : { index, entry: plotEntries(spec)[index] };
+/**
+ * The plot of *spec* that *plotId* names (its `id`, else its `dataRef`), by
+ * the panes of *spec*, with its index; null when it names none.
+ */
+export function plotEntryOf(spec: any, panes: ViewPanes | null | undefined, plotId: unknown): { index: number; entry: any } | null {
+    const pane = (panes ?? []).find((each) => each.kind === 'plot' && each.key === plotId);
+    const entry = pane ? plotEntries(spec)[pane.index] : undefined;
+    return pane && entry !== undefined ? { index: pane.index, entry } : null;
+}
+
+/**
+ * The element id of view *index* of kind *kind* in node *nodeId*: the first
+ * map draws on `autk-grammar-map-<node>`, map k on `autk-grammar-map-<node>-<k>`,
+ * and plots likewise. e2e paints every canvas whose id starts
+ * `autk-grammar-map-` into its captures.
+ */
+export function viewElementId(nodeId: string, kind: 'map' | 'plot', index: number): string {
+    const id = `autk-grammar-${kind}-${nodeId}`;
+    return index === 0 ? id : `${id}-${index}`;
+}
+
+/** What a run made for its views: each view's element, by its kind and index, and each map's canvas. */
+export type LaidOutViews = {
+    /** The element view `index` of `kind` draws in. */
+    element: (kind: 'map' | 'plot', index: number) => HTMLElement | null;
+    /** The canvases the maps draw on, in map order. */
+    canvases: HTMLCanvasElement[];
+};
+
+/** The element a view of *kind* draws in: a canvas for a map, a div that scrolls a plot larger than it. */
+function viewElement(nodeId: string, kind: 'map' | 'plot', index: number): HTMLElement {
+    const element = document.createElement(kind === 'map' ? 'canvas' : 'div');
+    element.id = viewElementId(nodeId, kind, index);
+    element.style.cssText = kind === 'map'
+        ? 'display:block;width:100%;height:100%;'
+        : 'width:100%;height:100%;overflow:auto;';
+    return element;
+}
+
+/**
+ * Put the views of *arrangement* in *wrapper*, emptied first, each in the
+ * element it draws in. One view fills the wrapper. Several views each get a
+ * pane, placed where autk-grammar's `arrangeViews` says: a grid of its `rows`
+ * and `columns`, `gap` pixels apart, each pane at its `row` and `column`. A
+ * pane is positioned, since autk-map puts a map's menu, legend and watermark
+ * in its canvas's parent, and holds the view's `id`, when it has one, in
+ * `data-view-id`.
+ */
+export function layOutPanes(wrapper: HTMLElement, nodeId: string, arrangement: ViewArrangement): LaidOutViews {
+    while (wrapper.firstChild) wrapper.removeChild(wrapper.firstChild);
+    const elements = new Map<string, HTMLElement>();
+    const canvases: HTMLCanvasElement[] = [];
+    const several = arrangement.panes.length > 1;
+    const holder = several ? document.createElement('div') : wrapper;
+    if (several) {
+        holder.dataset.curioAutkViews = String(arrangement.panes.length);
+        holder.style.cssText = [
+            'display:grid', 'width:100%', 'height:100%',
+            `grid-template-columns:repeat(${arrangement.columns}, minmax(0, 1fr))`,
+            `grid-template-rows:repeat(${Math.max(arrangement.rows, 1)}, minmax(0, 1fr))`,
+            `gap:${arrangement.gap}px`,
+        ].join(';');
+        wrapper.appendChild(holder);
+    }
+    for (const pane of arrangement.panes) {
+        const element = viewElement(nodeId, pane.kind, pane.index);
+        if (pane.id !== undefined) element.dataset.viewId = pane.id;
+        if (several) {
+            const slot = document.createElement('div');
+            slot.dataset.curioAutkPane = `${pane.kind}-${pane.index}`;
+            if (pane.id !== undefined) slot.dataset.viewId = pane.id;
+            slot.style.cssText = [
+                'position:relative', 'overflow:hidden', 'min-width:0', 'min-height:0',
+                `grid-row:${pane.row + 1}`, `grid-column:${pane.column + 1}`,
+            ].join(';');
+            slot.appendChild(element);
+            holder.appendChild(slot);
+        } else {
+            holder.appendChild(element);
+        }
+        elements.set(`${pane.kind}:${pane.index}`, element);
+        if (pane.kind === 'map') canvases[pane.index] = element as HTMLCanvasElement;
+    }
+    return {
+        element: (kind, index) => elements.get(`${kind}:${index}`) ?? null,
+        canvases: canvases.filter(Boolean),
+    };
+}
+
+/**
+ * The targets autk-grammar draws *spec*'s views in: the element of each map
+ * and plot the run hands it, in its order, by the view's index in the
+ * document as written (*kept*): one element is its id, several a list.
+ */
+export function viewTargets(
+    nodeId: string,
+    kept: { maps: readonly number[]; plots: readonly number[] },
+): Record<string, string | string[]> {
+    const targets: Record<string, string | string[]> = {};
+    for (const kind of ['map', 'plot'] as const) {
+        const ids = (kind === 'map' ? kept.maps : kept.plots).map((index) => viewElementId(nodeId, kind, index));
+        if (ids.length > 0) targets[kind] = ids.length === 1 ? ids[0] : ids;
+    }
+    return targets;
 }
 
 /** The table of the map *entry*'s own picking layer: its first layer that picks (`isPick`), else its first. */

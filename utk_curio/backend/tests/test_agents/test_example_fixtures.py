@@ -3,7 +3,7 @@
 The contract these tests enforce is what makes a fixture worth trusting:
 
 *Completeness.* Every shipped example has a fixture and every fixture has an
-example -- 38 both ways, no silent omissions.
+example -- 39 both ways, no silent omissions.
 
 *Drift.* A fixture's ``source.sha256`` matches the example on disk and its
 ``expected`` block equals the recomputed canonical form. The expectation is
@@ -55,12 +55,13 @@ class TestCompleteness:
         fixtures = set(FIXTURE_IDS)
         assert not examples - fixtures, f"examples with no fixture: {sorted(examples - fixtures)}"
         assert not fixtures - examples, f"fixtures with no example: {sorted(fixtures - examples)}"
-        # The 38 numbered examples (24 from #662, 25 from #576, 26 from #819,
+        # The 39 numbered examples (24 from #662, 25 from #576, 26 from #819,
         # 27 to 30 PyTorch on the GPU, 31 SAM 3 along a SideSeeing walk,
         # 32 the SAGE-IDOT rail crossings, 33 SAM 3 on the same walk's frames
         # and its blocks, 34 an Autark heatmap of park access, 35 the sky seen
         # from the street by a render pass, 36 and 37 Niterói's green share and
-        # park area within reach against its summer heat, from a GeoTIFF, and
+        # park area within reach against its summer heat, from a GeoTIFF, 38
+        # Back Bay's and the Loop's solstice sun in one node of four views, and
         # 39 Project Sidewalk's problem labels in the Loop binned as an Autark
         # data node's input)
         # and the 31 test dataflows (#662 added scenarios, quad-cities-flood-vulnerability,
@@ -69,7 +70,7 @@ class TestCompleteness:
         # comparison charts, chicago-loop-layers for the Map Editor node,
         # komar41's crown-heights-1550-bedford-shadow for the Date widget, and
         # filter-rows-with-widgets for rows a widget rule keeps).
-        assert len(fixtures) == 69
+        assert len(fixtures) == 70
 
     def test_fixture_ids_are_unique(self):
         assert len(FIXTURE_IDS) == len(set(FIXTURE_IDS))
@@ -77,7 +78,7 @@ class TestCompleteness:
     def test_the_curated_and_legacy_corpora_are_both_covered(self):
         curated = [f for f in FIXTURES if f.path.parent.name == "prompts"]
         legacy = [f for f in FIXTURES if f.path.parent.name == "dataflows"]
-        assert len(curated) == 38
+        assert len(curated) == 39
         assert len(legacy) == 31
 
     def test_every_split_is_populated_and_heldout_is_a_minority(self):
@@ -314,7 +315,7 @@ class TestFixturesAreNotMistakenForDataflows:
         corpus by glob; the fixture directory must stay outside both."""
         curated = list((REPO_ROOT / "docs" / "examples").glob("[0-9][0-9]-*.json"))
         legacy = list((REPO_ROOT / "docs" / "examples" / "dataflows").glob("*.json"))
-        assert len(curated) == 38
+        assert len(curated) == 39
         assert len(legacy) == 31
         assert not any(".prompt.json" in p.name for p in curated + legacy)
 

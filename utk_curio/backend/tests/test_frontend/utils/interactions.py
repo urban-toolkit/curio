@@ -8,8 +8,9 @@ from playwright.sync_api import Page
 
 from .canvas_authoring import node_execution_timeout_ms
 from .images import _compare_images
+from .node_drawings import autark_view_element
 from .screenshots import save_workflow_test_screenshot
-from .closeups import CLOSEUP_MAX_DIFF_RATIO, CLOSEUP_PIXEL_THRESHOLD
+from .closeups import CLOSEUP_MAX_DIFF_RATIO, CLOSEUP_PIXEL_THRESHOLD, node_selector
 
 
 # ---------------------------------------------------------------- interactions
@@ -170,9 +171,15 @@ _BRUSH_AREA_JS = "async (selector) => {" + _CANVAS_MARKS_JS + """
 }"""
 
 
-def drawing_selector(page: Page, node_id: str) -> str | None:
-    """The selector of the element *node_id* draws into, or None before it drew."""
-    return page.evaluate(_DRAWING_SELECTOR_JS, node_id)
+def drawing_selector(page: Page, node_id: str, *, view: str | None = None) -> str | None:
+    """The selector of the element *node_id* draws into, or None before it drew.
+    With *view* (``map-1``, ``plot-0``, ...), the element of that view of an
+    Autark node of several views."""
+    if view is None:
+        return page.evaluate(_DRAWING_SELECTOR_JS, node_id)
+    kind, _, index = view.partition("-")
+    selector = f"#autk-grammar-{kind}-{autark_view_element(node_id, int(index))}"
+    return selector if page.locator(selector).count() else None
 
 
 def keep_drawing(page: Page, selector: str) -> None:
@@ -425,6 +432,7 @@ def save_interaction_frame(
     *,
     test_name: str,
     interaction: dict,
+    view: str | None = None,
 ) -> str:
     """Compare one node of an interaction, as it is framed now, against its baseline.
 
@@ -434,7 +442,8 @@ def save_interaction_frame(
     ``CLOSEUP_MAX_DIFF_RATIO``, like a close-up, so it is taken inside the
     caller's ``canvas_painted_at_shown_zoom`` block, with the captures it is
     compared against in memory. *interaction* names the frame's place in its
-    pair (step, phase, role, node) for the CI report's Interaction pairs.
+    pair (step, phase, role, node) for the CI report's Interaction pairs. With
+    *view*, the frame is that view's pane of an Autark node of several views.
     """
     return save_workflow_test_screenshot(
         page,
@@ -442,7 +451,7 @@ def save_interaction_frame(
         test_name=test_name,
         pixel_threshold=CLOSEUP_PIXEL_THRESHOLD,
         max_diff_ratio=CLOSEUP_MAX_DIFF_RATIO,
-        clip_selector=f'.react-flow__node[data-id="{node_id}"]',
+        clip_selector=node_selector(node_id, view),
         fit_reactflow=False,
         interaction=interaction,
     )

@@ -1,5 +1,5 @@
 {
-  "description": "Documents that write every key of autk-grammar 5.0.0's maps, plots and compute passes, a family to a document, on the tables an upstream Autark node hands on: `lines`, in the default workspace and in `east`. views: a map of every layer key and a plot of every mark with every plot key, each of which an Autark node hands the grammar as written; passes: a compute step's GPGPU and render passes with every pass key, which reach autk-compute (src/tests/adapters/node/autkEveryKey.test.tsx); data: CSV, JSON, GeoJSON, OpenStreetMap, join and GeoTIFF sources with every source key, which a run on the server loads (utk_curio/sandbox/tests/test_autk_server_data_keys.py). autk-db keeps in a workspace only what lies in the box of the first table loaded into it, and reads a GeoJSON source's boundingBox in the workspace's CRS (World Mercator, metres), so each data document loads its widest table first. Every document passes the agents' document check (backend/tests/test_agents/test_autk_every_key_documents.py). utk_curio/backend/tests/autk_grammar_key_tests.json names these tests for each key.",
+  "description": "Documents that write every key of autk-grammar 5.0.0's maps, plots and compute passes, a family to a document, on the tables an upstream Autark node hands on: `lines`, in the default workspace and in `east`. views: a map of every layer key, a plot of every mark with every plot key, and a map and a plot laid out and linked by every layout and link key, each of which an Autark node hands the grammar as written; passes: a compute step's GPGPU and render passes with every pass key, which reach autk-compute (src/tests/adapters/node/autkEveryKey.test.tsx); data: CSV, JSON, GeoJSON, OpenStreetMap, join and GeoTIFF sources with every source key, which a run on the server loads (utk_curio/sandbox/tests/test_autk_server_data_keys.py). autk-db keeps in a workspace only what lies in the box of the first table loaded into it, and reads a GeoJSON source's boundingBox in the workspace's CRS (World Mercator, metres), so each data document loads its widest table first. Every document passes the agents' document check (backend/tests/test_agents/test_autk_every_key_documents.py). utk_curio/backend/tests/autk_grammar_key_tests.json names these tests for each key.",
   "views": [
     {
       "name": "a map of every layer key",
@@ -110,6 +110,22 @@
           "events": ["click"], "selectFields": ["x"],
           "transform": { "preset": "binning-2d", "options": { "bins": 2 } }
         }
+      }
+    },
+    {
+      "name": "a map and a plot laid out in a grid and linked, by every layout and link key",
+      "document": {
+        "layout": { "type": "grid", "columns": 2, "gap": 8 },
+        "map": {
+          "id": "streets", "workspace": "east",
+          "layerRefs": [{ "dataRef": "lines", "title": "Streets", "isPick": true }]
+        },
+        "plot": {
+          "mark": "bar", "id": "ranks", "dataRef": "lines", "workspace": "east",
+          "axis": ["rank"], "events": ["brushX"],
+          "transform": { "preset": "binning-1d", "options": { "bins": 3 } }
+        },
+        "links": [{ "source": "ranks", "target": "streets", "layer": "Streets" }]
       }
     }
   ],

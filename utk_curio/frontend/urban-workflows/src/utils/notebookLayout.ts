@@ -189,15 +189,16 @@ export interface NotebookOutputBox {
 
 /**
  * The box a cell's output goes in, by the node's kind: a Vega-Lite chart's
- * mount is 320px, an Autark map or plot 400px.
+ * mount is 320px, an Autark map or plot 400px for each row of panes its views
+ * are arranged in (*viewRows*, one when unknown).
  * Kinds whose body has a height of its own take it, up to 360px. Anything
  * else, a package's body made to fill a node, is 360px.
  */
-export function notebookOutputBox(nodeType: string): NotebookOutputBox {
+export function notebookOutputBox(nodeType: string, viewRows = 1): NotebookOutputBox {
   const kind = unversionedNodeType(nodeType);
   // A package's chart too (registry/vegaLiteNodes).
   if (isVegaLiteNodeType(kind)) return { height: CHART_HEIGHT, overflow: "auto" };
-  if (MAP_KINDS.has(kind)) return { height: MAP_HEIGHT };
+  if (MAP_KINDS.has(kind)) return { height: MAP_HEIGHT * Math.max(1, Math.floor(viewRows) || 1) };
   if (NATURAL_HEIGHT_KINDS.has(kind)) return { maxHeight: OUTPUT_CAP, overflow: "auto" };
   return { height: OUTPUT_CAP, overflow: "auto" };
 }

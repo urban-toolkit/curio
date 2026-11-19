@@ -1,6 +1,7 @@
 """``curio test``: its own arguments, translated into scripts/test.sh flags."""
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -112,4 +113,9 @@ def run_tests(argv, command_prefix="curio") -> None:
     cmd = [bash, str(script), *_test_script_flags(args)]
     print(f"==> {' '.join(cmd)}")
     # Not log_info: setup_logging() has not run, and clean.sh wipes .curio/.
-    sys.exit(subprocess.call(cmd, cwd=str(script.parent.parent)))
+    # test.sh runs every python and pip on this interpreter, as the launcher
+    # runs the backend and the sandbox: a virtual environment's interpreter,
+    # started by its path with the environment not active, has no python of
+    # that environment on PATH.
+    env = {**os.environ, "CURIO_TEST_PYTHON": sys.executable}
+    sys.exit(subprocess.call(cmd, cwd=str(script.parent.parent), env=env))

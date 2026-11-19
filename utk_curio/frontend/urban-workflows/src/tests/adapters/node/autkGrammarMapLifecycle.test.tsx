@@ -71,7 +71,11 @@ const mockAutkGrammar = jest.fn().mockImplementation((targets: Record<string, st
 });
 jest.mock(
   '@urban-toolkit/autk-grammar',
-  () => ({ AutkGrammar: mockAutkGrammar }),
+  () => ({
+    AutkGrammar: mockAutkGrammar,
+    // autk-grammar's arrangeViews, which places each view's pane.
+    arrangeViews: require('../../_support/autkArrangeViews').arrangeViews,
+  }),
   { virtual: true },
 );
 jest.mock('@urban-toolkit/autk-compute', () => ({ ComputeGpgpu: jest.fn() }), { virtual: true });

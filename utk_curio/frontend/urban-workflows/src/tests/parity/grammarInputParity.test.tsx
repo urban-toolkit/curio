@@ -56,6 +56,8 @@ jest.mock("../../components/editing/OutputContent", () => ({ __esModule: true, d
 
 const mockAutkRun = jest.fn();
 jest.mock("@urban-toolkit/autk-grammar", () => ({
+  // autk-grammar's arrangeViews, which places each view's pane.
+  arrangeViews: require('../_support/autkArrangeViews').arrangeViews,
   AutkGrammar: jest.fn().mockImplementation(() => ({ run: (...args: any[]) => mockAutkRun(...args), data: {} })),
 }), { virtual: true });
 jest.mock("@urban-toolkit/autk-db", () => ({
