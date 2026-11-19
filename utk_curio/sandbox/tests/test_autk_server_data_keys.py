@@ -4,12 +4,19 @@ The ``data`` documents of ``src/tests/fixtures/autk-every-key.json`` write
 every key of autk-grammar 5.0.0's CSV, JSON, GeoJSON, OpenStreetMap, join and
 GeoTIFF sources between them: files of the repository and tables written
 inline, every geometry column, every GeoJSON geometry with its boxes, a
-workspace on every kind, an OpenStreetMap table dropped, a join of centroids
-with an aggregate normalized. Each is compiled as a run on the server compiles
-an Autark data node (``utk_curio/common/autk_data_compiler.py``) and run here
-through ``execute_js_code``, on autk-db in the sandbox's Node, and what it
-hands on is pinned: each table's name, layer type, rows and workspace, a table
-with no geometry as its rows, a raster in its envelope with its workspace.
+workspace on every kind, an OpenStreetMap table dropped, a join measured from
+each zone's own shape (``"useCentroid": false``) with an aggregate normalized.
+Each is compiled as a run on the server compiles an Autark data node
+(``utk_curio/common/autk_data_compiler.py``) and run here through
+``execute_js_code``, on autk-db in the sandbox's Node, and what it hands on is
+pinned: each table's name, layer type, rows and workspace, a table with no
+geometry as its rows, a raster in its envelope with its workspace, a join's
+aggregates on each row it joins onto.
+
+autk-db keeps in a workspace only what lies in the box of the first table
+loaded into it, and reads a GeoJSON source's ``boundingBox`` in the
+workspace's CRS (World Mercator, metres), so each document loads its widest
+table first, and a bounding box is written in metres.
 
 No socket: the files a document names are served from disk by a ``fetch``
 placed before the compiled code, at the address the sandbox writes for the
@@ -50,19 +57,6 @@ def _cases():
     return [pytest.param(case, id=case["name"]) for case in cases] or [pytest.param(None, id="no-data-cases")]
 
 
-def _numbers_under(value, word: str, path: str = "") -> list:
-    """Each number *value* holds under a key path that names *word*."""
-    if isinstance(value, bool):
-        return []
-    if isinstance(value, (int, float)):
-        return [value] if word in path else []
-    if isinstance(value, dict):
-        return [n for key, inner in value.items() for n in _numbers_under(inner, word, f"{path}.{key}")]
-    if isinstance(value, list):
-        return [n for inner in value for n in _numbers_under(inner, word, path)]
-    return []
-
-
 @pytest.mark.parametrize("case", _cases())
 def test_the_server_compiled_load_runs_every_key_of_a_data_source(case, tmp_path, monkeypatch):
     assert case is not None, f"{FIXTURE} holds no data documents"
@@ -97,6 +91,13 @@ def test_the_server_compiled_load_runs_every_key_of_a_data_source(case, tmp_path
     rasters = [item for item in loaded if item.get("dataType") == "raster"]
     with_geometry = [table for table in tables if any(
         feature.get("geometry") is not None for feature in (table.get("geojson") or {}).get("features", []))]
+    # What it handed on, to read a failure by: each table's name, layer type,
+    # rows, workspace and whether a row has a geometry, and each raster's name.
+    handed = [
+        (table.get("name"), table.get("type"), len((table.get("geojson") or {}).get("features", [])),
+         table.get("workspace"), table in with_geometry)
+        for table in tables
+    ] + [(raster.get("layerName"), "raster", None, raster.get("workspace"), None) for raster in rasters]
 
     # Each table it loads, with its layer type, its rows and its workspace.
     expected = sorted(tuple(row) for row in case.get("handsOn", []))
@@ -104,12 +105,12 @@ def test_the_server_compiled_load_runs_every_key_of_a_data_source(case, tmp_path
         (table["name"], table["type"], len(table["geojson"]["features"]), table.get("workspace"))
         for table in with_geometry
     )
-    assert [row[:2] + row[3:] for row in found] == [row[:2] + row[3:] for row in expected], found
+    assert [row[:2] + row[3:] for row in found] == [row[:2] + row[3:] for row in expected], handed
     for got, want in zip(found, expected):
         if want[2] is None:
-            assert got[2] > 0, got
+            assert got[2] > 0, handed
         else:
-            assert got[2] == want[2], (got, want)
+            assert got[2] == want[2], (got, want, handed)
 
     # A table with no geometry is handed on as its rows: every column of each.
     for name, count, workspace in case.get("rows", []):
@@ -144,13 +145,14 @@ def test_the_server_compiled_load_runs_every_key_of_a_data_source(case, tmp_path
             for dataset in handed:
                 dataset.close()
 
-    # A join's aggregates reach the table it joins onto, one normalized.
-    joins = [s for s in case["document"]["data"] if s.get("type") == "join"]
-    for join in joins:
+    # A join's aggregates reach the rows of the table it joins onto, each zone's
+    # by its own key path: the raw ones, and a normalized one beside its own.
+    for join in [s for s in case["document"]["data"] if s.get("type") == "join"]:
         target = next(t for t in tables if t["name"] == join["dataRef"] and t.get("workspace") == join.get("workspace"))
-        for feature in target["geojson"]["features"]:
-            joined = _numbers_under(feature["properties"], join["groupBy"][0]["column"])
-            assert joined, feature["properties"]
-        normalized = [n for feature in target["geojson"]["features"]
-                      for n in _numbers_under(feature["properties"], "max")]
-        assert normalized and all(0 <= n <= 1 for n in normalized), normalized
+        for zone in case.get("joined", []):
+            row = next(f["properties"] for f in target["geojson"]["features"] if f["properties"].get("zone") == zone["zone"])
+            for path, value in zone["values"]:
+                held = row
+                for key in path:
+                    held = held.get(key) if isinstance(held, dict) else None
+                assert held == pytest.approx(value), (zone["zone"], path, row)

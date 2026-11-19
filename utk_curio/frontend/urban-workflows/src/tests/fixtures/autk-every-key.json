@@ -1,5 +1,5 @@
 {
-  "description": "Documents that write every key of autk-grammar 5.0.0's maps, plots and compute passes, a family to a document, on the tables an upstream Autark node hands on: `lines`, in the default workspace and in `east`. views: a map of every layer key and a plot of every mark with every plot key, each of which an Autark node hands the grammar as written; passes: a compute step's GPGPU and render passes with every pass key, which reach autk-compute (src/tests/adapters/node/autkEveryKey.test.tsx). Every document passes the agents' document check (backend/tests/test_agents/test_autk_every_key_documents.py). utk_curio/backend/tests/autk_grammar_key_tests.json names these tests for each key.",
+  "description": "Documents that write every key of autk-grammar 5.0.0's maps, plots and compute passes, a family to a document, on the tables an upstream Autark node hands on: `lines`, in the default workspace and in `east`. views: a map of every layer key and a plot of every mark with every plot key, each of which an Autark node hands the grammar as written; passes: a compute step's GPGPU and render passes with every pass key, which reach autk-compute (src/tests/adapters/node/autkEveryKey.test.tsx); data: CSV, JSON, GeoJSON, OpenStreetMap, join and GeoTIFF sources with every source key, which a run on the server loads (utk_curio/sandbox/tests/test_autk_server_data_keys.py). autk-db keeps in a workspace only what lies in the box of the first table loaded into it, and reads a GeoJSON source's boundingBox in the workspace's CRS (World Mercator, metres), so each data document loads its widest table first. Every document passes the agents' document check (backend/tests/test_agents/test_autk_every_key_documents.py). utk_curio/backend/tests/autk_grammar_key_tests.json names these tests for each key.",
   "views": [
     {
       "name": "a map of every layer key",
@@ -182,7 +182,7 @@
           },
           {
             "type": "json", "workspace": "east", "outputTableName": "stops_wkt",
-            "jsonObject": [{ "name": "Union", "wkt": "POINT(-87.6403 41.8787)" }, { "name": "Ogilvie", "wkt": "POINT(-87.6402 41.8825)" }],
+            "jsonObject": [{ "name": "Stop 4", "wkt": "POINT(-87.634 41.881)" }, { "name": "Stop 5", "wkt": "POINT(-87.632 41.885)" }],
             "geometryColumns": { "wktColumnName": "wkt", "coordinateFormat": "EPSG:4326" }
           }
         ]
@@ -204,11 +204,21 @@
       "document": {
         "data": [
           {
+            "type": "geojson", "outputTableName": "polygon", "coordinateFormat": "EPSG:4326",
+            "geojsonObject": { "type": "FeatureCollection", "features": [
+              { "type": "Feature", "properties": { "kind": "polygon" },
+                "geometry": { "type": "Polygon", "bbox": [-87.65, 41.87, -87.6, 41.9],
+                  "coordinates": [[[-87.65, 41.87], [-87.6, 41.87], [-87.6, 41.9], [-87.65, 41.9], [-87.65, 41.87]]] } }
+            ] }
+          },
+          {
             "type": "geojson", "outputTableName": "point", "coordinateFormat": "EPSG:4326",
-            "boundingBox": { "minLon": -87.66, "minLat": 41.86, "maxLon": -87.6, "maxLat": 41.9 },
-            "geojsonObject": { "type": "FeatureCollection", "bbox": [-87.64, 41.88, -87.64, 41.88], "features": [
+            "boundingBox": { "minLon": -9756100, "minLat": 5114400, "maxLon": -9755980, "maxLat": 5114580 },
+            "geojsonObject": { "type": "FeatureCollection", "bbox": [-87.64, 41.88, -87.62, 41.89], "features": [
               { "type": "Feature", "id": 1, "bbox": [-87.64, 41.88, -87.64, 41.88], "properties": { "kind": "point" },
-                "geometry": { "type": "Point", "bbox": [-87.64, 41.88, -87.64, 41.88], "coordinates": [-87.64, 41.88] } }
+                "geometry": { "type": "Point", "bbox": [-87.64, 41.88, -87.64, 41.88], "coordinates": [-87.64, 41.88] } },
+              { "type": "Feature", "id": 2, "properties": { "kind": "a point outside the bounding box" },
+                "geometry": { "type": "Point", "coordinates": [-87.62, 41.89] } }
             ] }
           },
           {
@@ -231,14 +241,6 @@
               { "type": "Feature", "properties": { "kind": "multilinestring" },
                 "geometry": { "type": "MultiLineString", "bbox": [-87.64, 41.88, -87.62, 41.89],
                   "coordinates": [[[-87.64, 41.88], [-87.63, 41.885]], [[-87.63, 41.885], [-87.62, 41.89]]] } }
-            ] }
-          },
-          {
-            "type": "geojson", "outputTableName": "polygon", "coordinateFormat": "EPSG:4326",
-            "geojsonObject": { "type": "FeatureCollection", "features": [
-              { "type": "Feature", "properties": { "kind": "polygon" },
-                "geometry": { "type": "Polygon", "bbox": [-87.64, 41.88, -87.63, 41.89],
-                  "coordinates": [[[-87.64, 41.88], [-87.63, 41.88], [-87.63, 41.89], [-87.64, 41.89], [-87.64, 41.88]]] } }
             ] }
           },
           {
@@ -282,7 +284,7 @@
       "files": ["docs/examples/data/lower_mnt.osm.pbf"]
     },
     {
-      "name": "a join of centroids in a workspace, one aggregate normalized",
+      "name": "a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized",
       "document": {
         "data": [
           {
@@ -299,17 +301,22 @@
             "geojsonObject": { "type": "FeatureCollection", "features": [
               { "type": "Feature", "properties": { "riders": 4 }, "geometry": { "type": "Point", "coordinates": [-87.63, 41.88] } },
               { "type": "Feature", "properties": { "riders": 6 }, "geometry": { "type": "Point", "coordinates": [-87.6301, 41.8801] } },
+              { "type": "Feature", "properties": { "riders": 3 }, "geometry": { "type": "Point", "coordinates": [-87.638, 41.888] } },
               { "type": "Feature", "properties": { "riders": 2 }, "geometry": { "type": "Point", "coordinates": [-87.59, 41.88] } }
             ] }
           },
           {
             "type": "join", "workspace": "east", "dataRef": "zones", "joinDataRef": "stops",
-            "near": { "distance": 300, "useCentroid": true },
+            "near": { "distance": 300, "useCentroid": false },
             "groupBy": [{ "column": "riders", "aggregateFn": "sum" }, { "column": "riders", "aggregateFn": "max", "normalize": true }]
           }
         ]
       },
-      "handsOn": [["zones", "polygons", 2, "east"], ["stops", "points", 3, "east"]]
+      "handsOn": [["zones", "polygons", 2, "east"], ["stops", "points", 4, "east"]],
+      "joined": [
+        { "zone": 1, "values": [[["sjoin", "sum", "stops.riders"], 13], [["sjoin", "max", "stops.riders"], 6], [["sjoin", "max", "stops.riders_norm"], 1]] },
+        { "zone": 2, "values": [[["sjoin", "sum", "stops.riders"], 2], [["sjoin", "max", "stops.riders"], 2], [["sjoin", "max", "stops.riders_norm"], 0]] }
+      ]
     },
     {
       "name": "a GeoTIFF in a workspace",

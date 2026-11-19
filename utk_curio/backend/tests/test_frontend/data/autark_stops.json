@@ -1,5 +1,5 @@
 [
-  { "name": "LaSalle", "lat": 41.8757, "lon": -87.6317 },
-  { "name": "Harold Washington Library", "lat": 41.8763, "lon": -87.6282 },
-  { "name": "Jackson", "lat": 41.8782, "lon": -87.6276 }
+  { "name": "Stop 1", "lat": 41.88, "lon": -87.633 },
+  { "name": "Stop 2", "lat": 41.883, "lon": -87.632 },
+  { "name": "Stop 3", "lat": 41.884, "lon": -87.635 }
 ]

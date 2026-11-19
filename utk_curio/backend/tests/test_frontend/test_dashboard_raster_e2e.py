@@ -218,16 +218,26 @@ def test_a_standalone_dashboard_draws_a_pinned_raster_map(
     )
 
 
-#: Four readings in the Chicago Loop, and the heatmap that counts them within
-#: 5 km of each of its cells, which an Autark data node makes and hands on.
+#: The south-west corner of a box 3 km by 2 km in the Chicago Loop, in EPSG:3395
+#: metres, and the readings in it, each east and north of that corner: the
+#: heatmap's six cells of 1 km count none to four of them within 600 m of their
+#: centers, so its cells differ and the map draws more than one colour.
+LOOP = (-9755000.0, 5106000.0)
+READINGS = [
+    (0, 0), (3000, 2000), (500, 500), (1500, 500), (1600, 500), (500, 1500), (600, 1500),
+    (1500, 1500), (1600, 1500), (1400, 1500), (1500, 1600), (2500, 1500),
+]
+#: The readings, and the heatmap that counts them, which an Autark data node
+#: makes and hands on.
 HEATMAP_LOAD = {"data": [
-    {"type": "geojson", "outputTableName": "readings", "coordinateFormat": "EPSG:4326",
+    {"type": "geojson", "outputTableName": "readings", "coordinateFormat": "EPSG:3395",
      "geojsonObject": {"type": "FeatureCollection", "features": [
-         {"type": "Feature", "geometry": {"type": "Point", "coordinates": [lon, lat]}, "properties": {"db": db}}
-         for lon, lat, db in ((-87.64, 41.87, 61), (-87.63, 41.87, 74), (-87.64, 41.88, 58), (-87.63, 41.88, 66))
+         {"type": "Feature", "geometry": {"type": "Point", "coordinates": [LOOP[0] + east, LOOP[1] + north]},
+          "properties": {"reading": index}}
+         for index, (east, north) in enumerate(READINGS)
      ]}},
     {"type": "heatmap", "joinDataRef": "readings", "outputTableName": "density",
-     "near": {"distance": 5000}, "grid": {"rows": 2, "columns": 3},
+     "near": {"distance": 600}, "grid": {"rows": 2, "columns": 3},
      "groupBy": [{"column": "*", "aggregateFn": "count"}]},
 ]}
 #: A GeoTIFF of the repository, in UTM zone 16N with cells of no data, which an
@@ -238,7 +248,8 @@ GEOTIFF_LOAD = {"data": [
 ]}
 #: The map of a raster an Autark data node hands on, by its table's name.
 RASTER_MAP = {
-    "heatmap": {"map": {"layerRefs": [{"dataRef": "density", "getFnv": "count.readings", "title": "Readings"}]}},
+    "heatmap": {"map": {"layerRefs": [{"dataRef": "density", "getFnv": "count.readings",
+                                       "colorMapInterpolator": "interpolateReds", "title": "Readings"}]}},
     "geotiff": {"map": {"layerRefs": [{"dataRef": "heat", "getFnv": "band_1", "title": "Heat"}]}},
 }
 #: The pitch and the bearing a tilted map's camera turns it by, in degrees.
