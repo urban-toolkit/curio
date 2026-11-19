@@ -7,7 +7,7 @@
  * layers, in Curio's raster envelope (utils/raster/rasterWire), the same on
  * both. A heatmap in a workspace is built there and handed on with it.
  */
-import { compileDataSpecToAutkDbJs, heatmapTableProblem } from "../../../adapters/node/autkDataCompile";
+import { compileDataSpecToAutkDbJs, sectionInputTables } from "../../../adapters/node/autkDataCompile";
 import { loadSpecLayers, toPoolOutput } from "../../../adapters/node/autkLayerMaterialize";
 import { decodeRasterEnvelope } from "../../../utils/raster/rasterWire";
 
@@ -324,13 +324,14 @@ test("both loaders hand the heatmap on in the same envelope", async () => {
   expect(fromSandbox).toEqual(fromBrowser);
 });
 
-// A data section loads its own sources into a database of its own, so a
-// heatmap bins only a table one of them loads before it: never the node's
-// input. Both loaders say so, naming the table, before they load anything.
+// A heatmap bins a table one of its data section's sources loads before it,
+// or a table of the node's input (autkInputTables.test.ts). A table that is
+// neither fails both loaders, naming it, before they load anything: here the
+// node's input carries nothing.
 describe("a heatmap of a table its data section does not load", () => {
   const OF_THE_INPUT = { ...HEATMAP, joinDataRef: "input_0" };
-  const SAID = 'The heatmap "density" bins "input_0", a table its data section does not load: '
-    + "a data section loads only its own sources, not the node's input.";
+  const SAID = 'The heatmap "density" bins "input_0", a table its data section does not load '
+    + "and the node's input does not carry.";
 
   test("fails the sandbox's load before anything loads, naming the table", async () => {
     await expect(sandboxLoad([SOURCES[0], OF_THE_INPUT])).rejects.toThrow(SAID);
@@ -431,9 +432,9 @@ describe("a heatmap in a workspace", () => {
 
   test("one that bins a table of another workspace fails both loads, naming each by its key", async () => {
     const elsewhere = [SOURCES[0], { ...HEATMAP, workspace: "east" }];
-    const said = 'The heatmap "east/density" bins "east/readings", a table its data section does not load: '
-      + "a data section loads only its own sources, not the node's input.";
-    expect(heatmapTableProblem(elsewhere)).toBe(said);
+    const said = 'The heatmap "east/density" bins "east/readings", a table its data section does not load '
+      + "and the node's input does not carry.";
+    expect(sectionInputTables(elsewhere).map((table) => table.missing)).toEqual([said]);
     await expect(sandboxLoad(elsewhere)).rejects.toThrow(said);
     await expect(loadSpecLayers({ data: elsewhere })).rejects.toThrow(said);
     expect(mockBuilt).toEqual([]);

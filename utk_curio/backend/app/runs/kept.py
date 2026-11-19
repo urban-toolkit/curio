@@ -207,12 +207,16 @@ class StepCall:
 def step_call(plan, step, code: str, input_ref) -> StepCall:
     """What a run of *step* sends, given its *code* as the engine sends it
     (``run_engine.sent_code``) and its *input_ref*. An Autark node whose
-    document only loads data runs as the JavaScript it compiles to, on no
-    input, as the browser's run of it does (``autkLayerMaterialize.ts``)."""
+    document only loads data runs as the JavaScript it compiles to, as the
+    browser's run of it does (``autkLayerMaterialize.ts``): on no input, or,
+    when its data section reads tables of its input (``step.autk_input``), on
+    its input with no circles named, so the sandbox gives each input under its
+    place among the node's inputs, the name the node reads it by. Its input is
+    then part of the key its output is kept under."""
     if step.autk_data:
         from utk_curio.common.autk_data_compiler import compile_data_spec
 
-        return StepCall(compile_data_spec(code), "javascript", None, None)
+        return StepCall(compile_data_spec(code), "javascript", input_ref if step.autk_input else None, None)
     return StepCall(code, step.engine, input_ref, tuple(plan.spec.input_slots(step.node_id)) or None)
 
 

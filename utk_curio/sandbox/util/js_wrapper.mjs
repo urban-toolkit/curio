@@ -118,7 +118,8 @@ const curio_layer = (value, layer, slot = 0) => {
 };
 
 // The node's inputs, {input_0: ..., input_1: ...}: each wired circle k is the
-// code's input_k (util/input_names.py).
+// code's input_k (util/input_names.py). An Autark node's data load reads the
+// tables of its input here by name (autkDataCompile.ts inputTablesFrom).
 const __inputs = __INPUTS_JSON__;
 const __RESULT_PREFIX = '__CURIO_JSON_RESULT__';
 

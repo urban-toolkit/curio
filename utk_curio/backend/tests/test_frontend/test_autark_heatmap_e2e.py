@@ -134,6 +134,20 @@ return summary
 '''
 
 
+#: The readings as a Python node returns them: a GeoDataFrame in EPSG:3395,
+#: the table its Autark node reads as ``input_0``.
+PYTHON_RETURNS_THE_LEVELS = f'''import geopandas as gpd
+from shapely.geometry import Point
+
+levels = {json.dumps([[LOOP[0] + east, LOOP[1] + north, db] for east, north, db in LEVELS])}
+return gpd.GeoDataFrame(
+    {{"db": [db for _x, _y, db in levels]}},
+    geometry=[Point(x, y) for x, y, _db in levels],
+    crs="EPSG:3395",
+)
+'''
+
+
 def _node(node_id: str, node_type: str, x: int, y: int, content: str) -> dict:
     return {
         "id": node_id, "type": node_type, "x": x, "y": y, "content": content,
@@ -220,4 +234,34 @@ def test_a_heatmap_a_data_node_hands_on_draws_by_its_values_and_reaches_python_a
         f"heatmap {COLUMNS}x{ROWS} EPSG:3395, avg {CELLS['avg']} beside ['levels']"
         in read_node_output_text(page, reader)
     )
+    assert not [e for e in errors if "[autk-grammar] node error" in e], errors
+
+
+def test_a_heatmap_of_the_points_a_python_node_returns_draws_their_cells_by_their_values(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+):
+    """The heatmap bins the node's input, the readings a Python node returns,
+    as ``input_0``: the node loads them into its data section's database and
+    bins them there, so each cell averages the readings near it."""
+    maker, drawer = "heatmap-readings", "heatmap-of-the-input"
+    heatmap = {**DATA[1], "joinDataRef": "input_0"}
+    # The band of the readings' average, the fourth aggregate.
+    layer = {"dataRef": "noise", "getFnv": f"band_{AGGREGATES.index('avg') + 1}", "colorMapInterpolator": "interpolateReds"}
+    errors = _enter(page, app_frontend, current_server, username="autark_heatmap_input", spec=_spec(
+        "AutarkHeatmapOfItsInput",
+        [
+            _node(maker, PYTHON_TYPE, 120, 160, PYTHON_RETURNS_THE_LEVELS),
+            _node(drawer, AUTARK_TYPE, 820, 160, json.dumps({"data": [heatmap], "map": {"layerRefs": [layer]}}, indent=2)),
+        ],
+        [_edge(maker, drawer)],
+    ))
+
+    # Plays the Python node first, then the map.
+    play_node(page, drawer)
+    wait_for_node_done(page, drawer, node_type=AUTARK_TYPE)
+    assert_autark_map_drawn(page, drawer, timeout=60000, attach_as="a heatmap of a Python node's readings")
+    # Each reading's level averaged in its cell: every cell a value of its own.
+    assert_raster_cells_follow_their_values(page, drawer, CELLS["avg"], attach_as="a heatmap of the input's avg cells")
     assert not [e for e in errors if "[autk-grammar] node error" in e], errors

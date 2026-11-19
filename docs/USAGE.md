@@ -1450,9 +1450,14 @@ written.
   the same grid: its bands, origin, cell size and CRS. It keeps its table's
   name in its `metadata`, as a table does, so a layer chip names it, as in
   `[!! input_0:park_access !!]`.
-- A `data` section runs in the sandbox, where the input is not available: its
-  `join` and `heatmap` sources cannot read the input. Join it in a Python node,
-  or name it from a map, plot or compute block.
+- A `heatmap` or a `join` of the document's `data` reads the input's tables
+  too, named as a map names them: a table no source of the `data` loads is
+  one of the input's. The node loads it into that entry's workspace just
+  before the first entry that reads it, so the `data`'s own sources keep their
+  order, and a heatmap that comes first in the `data` covers the input table's
+  area. A table neither the `data` loads nor the input carries fails the node,
+  and the error names it. The node hands on what its `data` loads and makes,
+  and an input table only when a `join` wrote its columns onto it.
 
 ### Workspaces
 
@@ -1740,10 +1745,12 @@ different columns each name their column too, such as `avg_<table>_db` and
 0 in every band. A heatmap without `groupBy` has one band, `count`.
 
 The table a heatmap bins is one its `data` section loads before it, into the
-heatmap's own workspace: a data section loads only its own sources, not the
-node's input, and a heatmap of any other table fails the node with an error
-that names it, by its key (`<workspace>/<table>`) in another workspace than the
-default. A heatmap in a workspace is handed on with it, as a table is.
+heatmap's own workspace, or a table of the node's input, such as the points a
+Python node returns, `"joinDataRef": "input_0"`, which the node loads there
+(see [Its input](#its-input)). A heatmap of any other table fails the node
+with an error that names it, by its key (`<workspace>/<table>`) in another
+workspace than the default. A heatmap in a workspace is handed on with it, as
+a table is.
 
 ```json
 {
