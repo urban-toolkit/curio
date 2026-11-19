@@ -185,6 +185,10 @@ WORKFLOW_FILES = [
     # Back Bay's and the Loop's solstice sun: one node draws two maps and
     # two linked histograms, arranged by its layout.
     "docs/examples/38-autark-solstice-sun-two-cities.json",
+    # Project Sidewalk's problem labels in the Loop, binned as an Autark data
+    # node's input into a heatmap, drawn on a map under the roads and listed
+    # by cell by a Python step.
+    "docs/examples/39-autark-sidewalk-problems-heatmap.json",
 ]
 
 

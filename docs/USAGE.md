@@ -1822,13 +1822,16 @@ Each `groupBy` entry is a band, labelled `<aggregateFn>_<table>`:
 - `count` counts the rows, and `weighted` adds 1 / (distance + 1) for each,
   so a row near the center weighs more; both take `"column": "*"`;
 - `sum`, `avg`, `min` and `max` aggregate the rows' `column`, such as
-  `{"column": "db", "aggregateFn": "avg"}`.
+  `{"column": "db", "aggregateFn": "avg"}`, over the rows that have a value
+  in it.
 
 An entry with `"normalize": true` rescales its band from 0 at its least cell to
 1 at its greatest, and its label ends in `_norm`. Bands of one aggregate over
 different columns each name their column too, such as `avg_<table>_db` and
 `avg_<table>_peak`, so every label names one band. A cell no row reaches holds
-0 in every band. A heatmap without `groupBy` has one band, `count`.
+0 in every band, and so does a `sum`, `avg`, `min` or `max` band in a cell
+whose rows have no value in its column. A heatmap without `groupBy` has one
+band, `count`.
 
 The table a heatmap bins is one its `data` section loads before it, into the
 heatmap's own workspace, or a table of the node's input, such as the points a

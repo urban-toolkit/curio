@@ -169,6 +169,12 @@ EXAMPLE_INVARIANTS = [
     # each in its workspace, computes each road's sun and draws four views.
     ("38-autark-solstice-sun-two-cities.json", 1, 0,
      {"curio.builtin/autk-grammar": 1}, False),
+    # Sidewalk problems in the Loop: a Python step cuts Project Sidewalk's
+    # labels to the Loop, and an Autark data node bins them, as its input, into
+    # a heatmap it hands to a map and to a Python step, with no interaction.
+    ("39-autark-sidewalk-problems-heatmap.json", 5, 4,
+     {"curio.builtin/data-loading": 1, "curio.builtin/python-computation": 2,
+      "curio.builtin/autk-grammar": 2}, False),
 ]
 
 

@@ -271,6 +271,7 @@ from .node_drawings import (  # noqa: F401
     autark_map_framing,
     assert_autark_drawing_fits,
     assert_raster_cells_follow_their_values,
+    assert_raster_darkest_in,
     assert_editor_panes_clear_of_markers,
     assert_vega_charts_fit,
     assert_vega_node_empty_state,
