@@ -112,7 +112,7 @@ Hands on its input with edits applied to the features of its layers: a Map Edito
 
 Engines: python, javascript.
 
-Gives one layer of an input by its name, as a layer chip does: a GeoDataFrame in python and a GeoJSON FeatureCollection in javascript; an input that is one frame with no layer name is that layer.
+Gives one layer of an input by its name, as a layer chip does: a GeoDataFrame in python and a GeoJSON FeatureCollection in javascript, a raster layer such as a heatmap as a rasterio dataset in python, and in a dict of frames a node returns, the frame or raster under that key; an input that is one frame or raster with no layer name is that layer.
 
 - `value`: the input, such as `input_0`.
 - `layer`: the layer's name, as the Autark node that hands it on names its table, such as `table_osm_roads`.

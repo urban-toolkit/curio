@@ -848,7 +848,8 @@ def artifacts_sweep():
 def get_raster():
     """A raster artifact as GeoTIFF bytes, for an Autark node to load.
 
-    ``part`` picks one raster out of a Python tuple. ``maxCells`` and
+    ``part`` picks one raster out of a Python tuple, or a dict counted as the
+    canvas counts it (``rasters.raster_artifact``). ``maxCells`` and
     ``maxSide`` are what the caller can load: a larger raster is answered 413
     with its description, and nothing is written. The description of a served
     raster rides in the ``X-Curio-Raster`` header (see util/rasters.py).

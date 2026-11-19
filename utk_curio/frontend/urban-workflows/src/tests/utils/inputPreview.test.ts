@@ -19,6 +19,7 @@ import {
   type PreviewTable,
 } from "../../utils/references/inputScope";
 import { POOL_INPUT, SUMMARY_REF, SUMMARY_TUPLE } from "../_support/chipPreviewFixtures";
+import { ELEVATION } from "../_support/rasterInputFixtures";
 
 const fc = (type: string, rows: Array<Record<string, unknown>>) => ({
   type: "FeatureCollection",
@@ -164,15 +165,17 @@ describe("readInputPreview", () => {
     expect(preview.kind).toBe("layers");
     if (preview.kind !== "layers") return;
     expect(preview.layers.map((layer) => layer.name)).toEqual(["table_osm_roads", "table_osm_buildings"]);
-    expect(preview.layers[0].table).toMatchObject({
+    // A layer is a table or a raster: these are tables.
+    const [roads, buildings] = preview.layers.map((layer) => ("table" in layer ? layer.table : undefined));
+    expect(roads).toMatchObject({
       frameType: "geodataframe",
       columns: ["highway"],
       totalRows: 4,
       geometryType: "LineString",
       rows: [{ highway: "primary" }, { highway: "residential" }, { highway: "primary" }, { highway: null }],
     });
-    expect(preview.layers[0].table.summaries.highway).toEqual({ empty: 1, distinct: ["primary", "residential"] });
-    expect(preview.layers[1].table).toMatchObject({ columns: ["height"], totalRows: 2, geometryType: "Polygon" });
+    expect(roads?.summaries.highway).toEqual({ empty: 1, distinct: ["primary", "residential"] });
+    expect(buildings).toMatchObject({ columns: ["height"], totalRows: 2, geometryType: "Polygon" });
   });
 
   test("a value shows itself, from one read", async () => {
@@ -185,9 +188,14 @@ describe("readInputPreview", () => {
     expect(mockFetchPreviewData).not.toHaveBeenCalled();
   });
 
-  test("a raster is not read", async () => {
-    expect(await readInputPreview({ path: "r", dataType: "raster" })).toEqual({ kind: "raster" });
-    expect(mockFetchPreviewData).not.toHaveBeenCalled();
+  test("a raster on its own is read once, for what it is: its size, its bands and its CRS", async () => {
+    mockFetchPreviewData.mockResolvedValue(ELEVATION);
+    expect(await readInputPreview({ path: "r", dataType: "raster" })).toEqual({
+      kind: "raster",
+      raster: { width: 40, height: 30, bands: ["elevation_m", "band_2"], crs: "EPSG:3395" },
+    });
+    expect(mockFetchPreviewData).toHaveBeenCalledTimes(1);
+    expect(mockFetchPreviewData).toHaveBeenCalledWith("r");
   });
 
   test("a JSON list or dict shows its first items", async () => {
