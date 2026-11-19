@@ -233,6 +233,11 @@
         "document": "docs/examples/07-autark-gpu-shader.json"
       }
     ],
+    "compute[gpgpu].workspace": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkWorkspaceViews.test.tsx::a compute pass::in a workspace computes over that workspace's table, which keeps its workspace"
+      }
+    ],
     "compute[render]": [
       {
         "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[35-autark-sky-seen-from-the-street.json]",
@@ -837,6 +842,10 @@
         "test": "utk_curio/backend/tests/test_agents/test_autk_grammar_keys.py::test_the_document_check_refuses_it_with_that_sentence[links are not run yet]",
         "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
         "refused": true
+      },
+      {
+        "test": "utk_curio/backend/tests/test_runs/test_autk_data_runs.py::test_a_load_that_writes_a_key_the_node_refuses_fails_with_its_words[not-run-yet]",
+        "refused": true
       }
     ],
     "links[].layer": [
@@ -848,6 +857,10 @@
       {
         "test": "utk_curio/backend/tests/test_agents/test_autk_grammar_keys.py::test_the_document_check_refuses_it_with_that_sentence[links are not run yet]",
         "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
+        "refused": true
+      },
+      {
+        "test": "utk_curio/backend/tests/test_runs/test_autk_data_runs.py::test_a_load_that_writes_a_key_the_node_refuses_fails_with_its_words[not-run-yet]",
         "refused": true
       }
     ],
@@ -861,6 +874,10 @@
         "test": "utk_curio/backend/tests/test_agents/test_autk_grammar_keys.py::test_the_document_check_refuses_it_with_that_sentence[links are not run yet]",
         "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
         "refused": true
+      },
+      {
+        "test": "utk_curio/backend/tests/test_runs/test_autk_data_runs.py::test_a_load_that_writes_a_key_the_node_refuses_fails_with_its_words[not-run-yet]",
+        "refused": true
       }
     ],
     "links[].target": [
@@ -872,6 +889,10 @@
       {
         "test": "utk_curio/backend/tests/test_agents/test_autk_grammar_keys.py::test_the_document_check_refuses_it_with_that_sentence[links are not run yet]",
         "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
+        "refused": true
+      },
+      {
+        "test": "utk_curio/backend/tests/test_runs/test_autk_data_runs.py::test_a_load_that_writes_a_key_the_node_refuses_fails_with_its_words[not-run-yet]",
         "refused": true
       }
     ],
@@ -1111,6 +1132,11 @@
         "document": "docs/examples/35-autark-sky-seen-from-the-street.json"
       }
     ],
+    "map[].workspace": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkWorkspaceViews.test.tsx::a map::in a workspace draws the table of that workspace, and one with none the default's"
+      }
+    ],
     "plot": [
       {
         "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
@@ -1230,6 +1256,11 @@
         "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[11-autark-pbf-loading.json]",
         "document": "docs/examples/11-autark-pbf-loading.json"
       }
+    ],
+    "plot[bar].workspace": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkWorkspaceViews.test.tsx::a plot::in a workspace plots the table of that workspace"
+      }
     ]
   },
   "renamedKeys": {
@@ -1258,6 +1289,10 @@
       {
         "test": "utk_curio/backend/tests/test_agents/test_autk_grammar_keys.py::test_the_document_check_refuses_it_with_that_sentence[a join's tableRootName is named with its new name, where it is written]",
         "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
+        "refused": true
+      },
+      {
+        "test": "utk_curio/backend/tests/test_runs/test_autk_data_runs.py::test_a_load_that_writes_a_key_the_node_refuses_fails_with_its_words[renamed-key]",
         "refused": true
       }
     ],

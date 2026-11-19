@@ -140,7 +140,9 @@ def _python_test_exists(source: str, names: list[str]) -> bool:
 
 
 def _jest_test_exists(source: str, titles: list[str]) -> bool:
-    return all(any(f"{quote}{title}{quote}" in source for quote in ('"', "'", "`")) for title in titles)
+    """Whether each of *titles* is a string of *source*, its quotes escaped or not."""
+    plain = source.replace("\\'", "'").replace('\\"', '"')
+    return all(any(f"{quote}{title}{quote}" in plain for quote in ('"', "'", "`")) for title in titles)
 
 
 def _test_problem(entry: dict) -> str | None:
@@ -199,8 +201,9 @@ def test_every_test_named_writes_its_key():
                 document = entry.get("document")
                 if document is None:
                     text = (REPO_ROOT / entry["test"].partition("::")[0]).read_text(encoding="utf-8")
-                    if not re.search(r"(?<![\w$])" + re.escape(_last_key(path)) + r"(?![\w$])", text):
-                        problems.append(f"{path}: {entry['test']} names no {_last_key(path)!r}")
+                    named = rule["key"] if entry.get("refused") and rule else _last_key(path)
+                    if not re.search(r"(?<![\w$])" + re.escape(named) + r"(?![\w$])", text):
+                        problems.append(f"{path}: {entry['test']} names no {named!r}")
                     continue
                 if not (REPO_ROOT / document).is_file():
                     problems.append(f"{path}: {document} is no file of the repository")
