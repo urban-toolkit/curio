@@ -95,6 +95,12 @@ describe("the column of cells", () => {
 function centerOf(place: NotebookDotPlace, height: number): number {
   if (place.top === "50%") return height / 2;
   if (place.top === "auto") return height - place.bottom - NOTEBOOK_DOT_SIZE;
+  if (typeof place.top === "string") {
+    // `calc(50% + Npx)`: N pixels under the middle.
+    const under = /^calc\(50% \+ (\d+(?:\.\d+)?)px\)$/.exec(place.top);
+    if (!under) throw new Error(`a dot's place this test cannot read: ${place.top}`);
+    return height / 2 + Number(under[1]);
+  }
   return place.top;
 }
 
@@ -129,14 +135,18 @@ describe("the dots on a cell's right edge", () => {
     expect(places.get("in/out")).toEqual({ top: "50%" });
   });
 
-  test("a view's interaction dot sits halfway down beside the node's own, and is no output", () => {
+  test("a view's interaction dot sits under the node's own, one under another in the order given, and is no output", () => {
     const own = { id: "in/out", type: "source" as const };
     const view = { id: "in/out@heights", type: "source" as const };
-    const places = notebookHandlePlaces([...handles, own, view]);
-    expect(places.get("in/out@heights")).toEqual({ top: "50%" });
-    // The outputs alone stack up from the bottom, so the cell is no taller for it.
+    const second = { id: "in/out@city", type: "source" as const };
+    const places = notebookHandlePlaces([...handles, own, view, second]);
+    expect(places.get("in/out")).toEqual({ top: "50%" });
+    expect(places.get("in/out@heights")).toEqual({ top: "calc(50% + 22px)" });
+    expect(places.get("in/out@city")).toEqual({ top: "calc(50% + 44px)" });
+    // The outputs alone stack up from the bottom.
     expect(places.get("out")).toEqual(notebookHandlePlaces([...handles, own]).get("out"));
-    expect(notebookCellMinHeight([...handles, own, view])).toBe(notebookCellMinHeight([...handles, own]));
+    // The cell is tall enough for the dots under the middle.
+    expect(notebookCellMinHeight([...handles, own, view, second])).toBeGreaterThan(notebookCellMinHeight([...handles, own]));
   });
 
   test("several outputs stack up from the bottom", () => {
@@ -158,6 +168,13 @@ describe("the dots on a cell's right edge", () => {
         { id: "in/out", type: "source" as const },
         { id: "out", type: "source" as const },
         { id: "out_1", type: "source" as const },
+      ],
+      // An Autark node of four views: their dots under its own.
+      [
+        { id: "in", type: "target" as const },
+        { id: "out", type: "source" as const },
+        { id: "in/out", type: "source" as const },
+        ...["north", "south", "heights", "counts"].map((view) => ({ id: `in/out@${view}`, type: "source" as const })),
       ],
     ];
     for (const list of cases) {

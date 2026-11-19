@@ -6,28 +6,18 @@ import { isInteractionEdge } from "../../contracts/interactionEdges";
 import { getUnversionedFlowNodeType } from "../../utils/flowNodeCanonicalType";
 import { isActiveSelect } from "../../utils/selectionMatch";
 import type { IInteraction, IPropagation } from "./flowTypes";
-
-type Link = { source: string; target: string };
-
-/** The interaction edges among *edges*, by id (contracts/interactionEdges). */
-function interactionLinks(edges: Edge[]): Map<string, Link> {
-    const links = new Map<string, Link>();
-    for (const edge of edges) {
-        if (isInteractionEdge(edge)) {
-            links.set(edge.id, { source: edge.source, target: edge.target });
-        }
-    }
-    return links;
-}
-
-/** The two nodes *link* joins, the same whichever way it was drawn. */
-function pairOf({ source, target }: Link): string {
-    return JSON.stringify(source < target ? [source, target] : [target, source]);
-}
+import {
+    deliveriesOver, interactionRoutes, routesOfEdge, sameDelivery, type InteractionRoute,
+} from "./interactionRoutes";
 
 /** Whether *interaction* holds a selection that picks something. */
 function holdsSelection(interaction: IInteraction | undefined): boolean {
     return Object.values(interaction?.details ?? {}).some((detail: any) => isActiveSelect(detail));
+}
+
+/** The routes among *routes* out of *sender* into *receiver*. */
+function routesBetween(routes: Iterable<InteractionRoute>, sender: string, receiver: string): InteractionRoute[] {
+    return [...routes].filter((route) => route.from === sender && route.to === receiver);
 }
 
 export function useInteractions({
@@ -70,7 +60,7 @@ export function useInteractions({
             return interaction.priority == 1;
         }); //priority == 1 means that this is a new or updated interaction
 
-        let toSend: any = {}; // {nodeId -> {type: VisInteractionType, data: any}}
+        let toSend: Record<string, IInteraction[]> = {};
         let interactedIds: string[] = newInteractions.map(
             (interaction: IInteraction) => {
                 return interaction.nodeId;
@@ -78,16 +68,11 @@ export function useInteractions({
         );
         let poolsIds: string[] = [];
 
-        let interactionDict: any = {};
-
         // Each selection goes out with the node it came from, so a pool's echo
         // can say whose it is (utils/selectionEcho).
+        const detailsOf = new Map<string, unknown>();
         for (const interaction of newInteractions) {
-            interactionDict[interaction.nodeId] = {
-                nodeId: interaction.nodeId,
-                details: interaction.details,
-                priority: interaction.priority,
-            };
+            detailsOf.set(interaction.nodeId, interaction.details);
         }
 
         for (let i = 0; i < nodes.length; i++) {
@@ -96,11 +81,17 @@ export function useInteractions({
             }
         }
 
-        // A node gets a sender's selection once, however many interaction
-        // edges join the two (a node's own handle and a view's, say).
-        const send = (receiver: string, sender: string) => {
-            const list = toSend[receiver] ?? (toSend[receiver] = []);
-            if (!list.includes(interactionDict[sender])) list.push(interactionDict[sender]);
+        // What a route carries of its sender's selection (providers/flow/
+        // interactionRoutes): every view's selects out of a node's own handle,
+        // one view's out of that view's, to the view a view's handle names or
+        // the whole node. A node gets each once, however many interaction
+        // edges join the two.
+        // A route that carries nothing leaves its receiver as it was.
+        const send = (route: InteractionRoute) => {
+            for (const delivery of deliveriesOver(route.from, detailsOf.get(route.from), [route])) {
+                const list = toSend[route.to] ?? (toSend[route.to] = []);
+                if (!list.some((held) => sameDelivery(held, delivery))) list.push(delivery);
+            }
         };
 
         for (let i = 0; i < edges.length; i++) {
@@ -114,6 +105,7 @@ export function useInteractions({
                         getUnversionedFlowNodeType(sourceNode) == NodeType.DATA_POOL
                     )
                 ) {
+                const [forward, backward] = routesOfEdge(edges[i]);
                 const sourcePool = poolsIds.includes(edges[i].source);
                 const targetPool = poolsIds.includes(edges[i].target);
                 const sourceInteracted = interactedIds.includes(edges[i].source);
@@ -121,15 +113,15 @@ export function useInteractions({
 
                 if (sourceInteracted && targetPool) {
                     // then the target is the pool
-                    send(edges[i].target, edges[i].source);
+                    send(forward);
                 } else if (targetInteracted && sourcePool) {
                     // then the source is the pool
-                    send(edges[i].source, edges[i].target);
+                    send(backward);
                 } else if (!sourcePool && !targetPool) {
                     // Direct interaction edge between two non-pool nodes
                     // (e.g. AutkMap ↔ AutkPlot linked brushing).
-                    if (sourceInteracted) send(edges[i].target, edges[i].source);
-                    if (targetInteracted) send(edges[i].source, edges[i].target);
+                    if (sourceInteracted) send(forward);
+                    if (targetInteracted) send(backward);
                 }
             }
         }
@@ -201,68 +193,66 @@ export function useInteractions({
 
     // A selection follows the interaction edges as they change, however they
     // change: drawn, deleted with a node, opened with a dataflow, or received
-    // from a collaborator or an agent. An edge that goes takes back from each
-    // end what the other end delivered, and a new edge hands each end the
-    // selection the other end already holds, by the routing rules above: a
-    // pool takes a chart's selection, two views take each other's, and two
-    // pools exchange none. Each edge counts on its own: while another
-    // interaction edge still joins the same two nodes (a node's own handle
-    // and a view's, say), one that goes takes nothing back, and one more
-    // between two joined nodes hands nothing over.
-    const linksRef = useRef(new Map<string, Link>());
+    // from a collaborator or an agent. Each edge is two routes, one each way,
+    // out of a node's own handle or a view's and into one
+    // (providers/flow/interactionRoutes). A route that goes takes back from
+    // its receiver what its sender delivered over it, unless a route left
+    // between the two still carries it; a new route hands its receiver what
+    // the sender's latest selection gives it over every route between them,
+    // by the routing rules above: a pool takes a chart's selection, two views
+    // take each other's, and two pools exchange none. A new route that gives
+    // nothing the receiver does not hold already hands nothing over.
+    const routesRef = useRef(new Map<string, InteractionRoute>());
     const interactionsRef = useRef(interactions);
     interactionsRef.current = interactions;
     useEffect(() => {
-        const links = interactionLinks(edges);
-        const before = linksRef.current;
-        linksRef.current = links;
-        const joined = (map: Map<string, Link>) => new Set([...map.values()].map(pairOf));
-        const joinedNow = joined(links);
-        const joinedBefore = joined(before);
-        const removed = [...before]
-            .filter(([id, link]) => !links.has(id) && !joinedNow.has(pairOf(link)))
-            .map(([, link]) => link);
-        const added = [...links]
-            .filter(([id, link]) => !before.has(id) && !joinedBefore.has(pairOf(link)))
-            .map(([, link]) => link);
+        const routes = interactionRoutes(edges);
+        const before = routesRef.current;
+        routesRef.current = routes;
+        const removed = [...before].filter(([key]) => !routes.has(key)).map(([, route]) => route);
+        const added = [...routes].filter(([key]) => !before.has(key)).map(([, route]) => route);
         if (removed.length === 0 && added.length === 0) return;
 
-        const takeBack = new Map<string, Set<string>>();
-        const giveUp = (holder: string, sender: string) =>
-            takeBack.set(holder, new Set([...(takeBack.get(holder) ?? []), sender]));
-        for (const { source, target } of removed) {
-            giveUp(target, source);
-            giveUp(source, target);
+        const latest = new Map(interactionsRef.current.map((interaction) => [interaction.nodeId, interaction]));
+        // What *sender*'s latest selection gives *receiver* over the routes between them now.
+        const carried = (sender: string, receiver: string) =>
+            deliveriesOver(sender, latest.get(sender)?.details, routesBetween(routes.values(), sender, receiver));
+
+        // By receiver, then sender: what the routes left between the two still carry.
+        const takeBack = new Map<string, Map<string, IInteraction[]>>();
+        for (const { from, to } of removed) {
+            const bySender = takeBack.get(to) ?? new Map<string, IInteraction[]>();
+            bySender.set(from, carried(from, to));
+            takeBack.set(to, bySender);
         }
 
-        const latest = new Map(interactionsRef.current.map((interaction) => [interaction.nodeId, interaction]));
-        const deliver = new Map<string, IInteraction>();
-        const hand = (sender: string, receiver: string) => {
-            const selection = latest.get(sender);
-            if (holdsSelection(selection)) {
-                deliver.set(receiver, { nodeId: sender, details: selection!.details, priority: 1 });
-            }
-        };
         const isPool = (id: string) => {
             const node = reactFlow.getNode(id);
             return node != null && getUnversionedFlowNodeType(node) == NodeType.DATA_POOL;
         };
-        for (const { source, target } of added) {
-            const sourcePool = isPool(source);
-            const targetPool = isPool(target);
-            if (!sourcePool) hand(source, target);
-            if (!targetPool) hand(target, source);
+        const deliver = new Map<string, IInteraction[]>();
+        for (const { from, to } of added) {
+            if (isPool(from) || !holdsSelection(latest.get(from))) continue;
+            const given = carried(from, to);
+            if (given.length > 0) deliver.set(to, given);
         }
         if (takeBack.size === 0 && deliver.size === 0) return;
 
         setNodes((nds: any) =>
             nds.map((node: any) => {
-                const given = deliver.get(node.id);
-                if (given) return { ...node, data: { ...node.data, interactions: [given] } };
-                const gone = takeBack.get(node.id);
                 const held: IInteraction[] = Array.isArray(node.data?.interactions) ? node.data.interactions : [];
-                if (!gone || !held.some((entry) => gone.has(entry?.nodeId))) return node;
-                return { ...node, data: { ...node.data, interactions: held.filter((entry) => !gone.has(entry?.nodeId)) } };
+                const given = deliver.get(node.id);
+                if (given && !given.every((delivery) => held.some((entry) => sameDelivery(entry, delivery)))) {
+                    return { ...node, data: { ...node.data, interactions: given } };
+                }
+                const gone = takeBack.get(node.id);
+                if (!gone) return node;
+                const kept = held.filter((entry) => {
+                    const still = gone.get(entry?.nodeId);
+                    return still === undefined || still.some((delivery) => sameDelivery(delivery, entry));
+                });
+                if (kept.length === held.length) return node;
+                return { ...node, data: { ...node.data, interactions: kept } };
             })
         );
     }, [edges]);

@@ -32,8 +32,11 @@ on eight example fixtures rather than as a wrong score.
 """
 from __future__ import annotations
 
+import json
+
 from utk_curio.backend.app.agents.domain import agent_text
-from utk_curio.backend.app.execution import run_plan
+from utk_curio.backend.app.agents.domain.contracts import AUTK_TEMPLATE
+from utk_curio.backend.app.execution import code_references, run_plan
 
 #: The type a saved dataflow gives an interaction edge, as the rule names it.
 INTERACTION_EDGE_TYPE = run_plan.INTERACTION_EDGE_TYPE
@@ -284,4 +287,76 @@ def interaction_edge_errors(plan: dict, type_of_endpoint, templates: dict, data_
                 offender=repr(offender), offender_type=offender_sfx or 'untyped',
             )
         )
+    return errors
+
+
+def document_views(content: object) -> list[dict] | None:
+    """The views an Autark document declares, its maps then its plots, the
+    order its panes take: each with its ``id`` when it has one. A chip in the
+    document holds its place (``code_references.with_chip_placeholders``).
+    None when it does not read as a document. The twin of the canvas's
+    ``utils/autkDocumentViews.ts``."""
+    if not isinstance(content, str) or not content.strip():
+        return None
+    try:
+        spec = json.loads(code_references.with_chip_placeholders(content))
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(spec, dict):
+        return None
+
+    def listed(value) -> list:
+        if value is None:
+            return []
+        return value if isinstance(value, list) else [value]
+
+    views = []
+    for kind in ("map", "plot"):
+        for entry in listed(spec.get(kind)):
+            view_id = entry.get("id") if isinstance(entry, dict) else None
+            views.append({"kind": kind, **({"id": view_id} if isinstance(view_id, str) and view_id else {})})
+    return views
+
+
+def interaction_view_errors(plan: dict, type_of_endpoint, document_of_endpoint) -> list[str]:
+    """Corrective errors for the views the plan's interaction edges name
+    (``fromView`` at the ``from`` node, ``toView`` at the ``to`` node): each
+    must be, by its ``id``, a map or a plot of the Autark node at that end, a
+    node of several views, whose dot the edge then joins (``in/out@<id>``). A
+    node the plan adds has no document yet: a view named on one is what the
+    plan asks of it, so its intent names that id. ``type_of_endpoint(endpoint)``
+    gives a plan ref's or an existing node's (possibly versioned) template id,
+    ``document_of_endpoint(endpoint)`` an existing node's document."""
+    errors: list[str] = []
+    for i, edge in enumerate(plan.get("edges", []) or []):
+        if not is_interaction_edge(edge):
+            continue
+        for field, end in (("fromView", "from"), ("toView", "to")):
+            view = edge.get(field)
+            if not isinstance(view, str) or not view:
+                continue
+            endpoint = edge[end]
+            node_type = strip_type_version(type_of_endpoint(endpoint))
+            if node_type != AUTK_TEMPLATE:
+                errors.append(agent_text.message(
+                    "topology.view-not-on-views", i=i, field=field, view=repr(view), endpoint=repr(endpoint),
+                    node_type=template_suffix(node_type) or "untyped",
+                ))
+                continue
+            views = document_views(document_of_endpoint(endpoint))
+            if views is None:
+                # A node the plan adds, or one whose document does not read: no refusal made up.
+                continue
+            ids = [entry["id"] for entry in views if "id" in entry]
+            if len(views) < 2:
+                errors.append(agent_text.message(
+                    "topology.view-on-one-view", i=i, field=field, view=repr(view), endpoint=repr(endpoint),
+                ))
+            elif view not in ids:
+                errors.append(agent_text.message(
+                    "topology.view-unknown", i=i, field=field, view=repr(view), endpoint=repr(endpoint),
+                    views=", ".join(repr(each) for each in dict.fromkeys(ids)),
+                ) if ids else agent_text.message(
+                    "topology.view-no-ids", i=i, field=field, view=repr(view), endpoint=repr(endpoint),
+                ))
     return errors

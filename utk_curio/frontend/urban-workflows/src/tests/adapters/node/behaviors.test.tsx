@@ -1547,6 +1547,44 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         expect(clearHighlightOnPlot).not.toHaveBeenCalled();
       });
 
+      // The node asks the grammar to light a plot only when its rows change:
+      // a plot lit from another chart, whose own selection comes back empty
+      // through the pool, keeps what it shows, and is asked for the next
+      // chart's selection alone.
+      test("guard: a plot lit by another chart is not cleared by its own empty selection back through a pool", async () => {
+        const setPlotSelection = jest.fn();
+        const clearHighlightOnPlot = jest.fn();
+        grammarMock().AutkGrammar.mockImplementationOnce(() => ({
+          run: jest.fn().mockResolvedValue(undefined), data: {}, setPlotSelection, clearHighlightOnPlot,
+        }));
+        const PLOT = JSON.stringify({ plot: { dataRef: 'input_0', mark: 'bar', axis: ['i', '@transform'],
+          transform: { preset: 'binning-1d' }, events: ['brushX'] } });
+        const base = makeMockData({ nodeId: 'plot-1', outputCallback: jest.fn(), input: INPUT } as any);
+        const state = makeMockNodeState();
+        const { result, rerender } = renderHook(
+          ({ d }: { d: any }) => useAutkGrammarBehavior(d, state),
+          { initialProps: { d: base } },
+        );
+        await act(async () => { await result.current.applyGrammar!(PLOT); });
+        const flagged = (row: number | null) => ({
+          ...INPUT,
+          data: { ...INPUT.data, features: INPUT.data.features.map((f, i) => ({
+            ...f, properties: { ...f.properties, interacted: i === row ? '1' : '0' } })) },
+        });
+        // A map's selection of row 2 lights the plot.
+        await act(async () => { rerender({ d: { ...base, input: markSelectionEcho(flagged(2), 'map-1') } }); });
+        await waitFor(() => expect(setPlotSelection).toHaveBeenLastCalledWith('input_0', [2]));
+        clearHighlightOnPlot.mockClear();
+
+        // The plot's own selection, empty for a moment, back through the pool.
+        await act(async () => { rerender({ d: { ...base, input: markSelectionEcho(flagged(null), 'plot-1') } }); });
+        // Then a map's selection of row 1.
+        await act(async () => { rerender({ d: { ...base, input: markSelectionEcho(flagged(1), 'map-1') } }); });
+        await waitFor(() => expect(setPlotSelection).toHaveBeenLastCalledWith('input_0', [1]));
+        await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+        expect(clearHighlightOnPlot).not.toHaveBeenCalled();
+      });
+
       // autk-grammar 5 knows a plot by its id when it has one, else by its
       // table (plotKey): a selection named by the table reached no plot.
       test('a selection reaches a plot with an id by that id', async () => {

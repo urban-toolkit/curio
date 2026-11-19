@@ -436,6 +436,10 @@ edges[{i}].{label} {endpoint} is neither a plan ref nor an existing node id
 
 the plan wires invalid interaction edges:
 
+## plan.interaction-views-invalid
+
+the plan names views its interaction edges cannot join:
+
 ## plan.edge-closes-cycle
 
 edge {source} → {target} closes a cycle: {cycle}
@@ -668,6 +672,10 @@ edges has {count} entries (max {max_edges})
 
 {where}: an interaction edge has no input circle: drop toHandle
 
+## plan.data-edge-view
+
+{where}: a data edge carries data to a node's input, never one view's selection: drop fromView and toView, or make it an interaction edge
+
 ## plan.edge-to-itself
 
 {where} connects {src} to itself
@@ -675,6 +683,10 @@ edges has {count} entries (max {max_edges})
 ## plan.edge-duplicate
 
 {where} duplicates an earlier {src}→{dst} {kind} edge{on_handle}
+
+## plan.interaction-edge-duplicate
+
+{where} duplicates an earlier {src}→{dst} interaction edge on the same views (fromView {from_view}, toView {to_view})
 
 ## plan.too-big-with-copies
 
@@ -1051,6 +1063,22 @@ edges[{i}]: an interaction edge joins the {editor_type} node to an {map_type} ma
 ## topology.interaction-edge-refused
 
 edges[{i}]: an interaction edge links two views when one of them highlights what it receives ({highlighters}), or links a view ({views}) or a {pool_names} to a {pool_names}; {offender} is {offender_type}: use a data edge, or end the interaction edge at a view that highlights or at a {pool_names}
+
+## topology.view-not-on-views
+
+edges[{i}].{field} {view}: {endpoint} is {node_type}, which has no view of its own to name; only an Autark node of several views has a dot per view: drop {field}
+
+## topology.view-on-one-view
+
+edges[{i}].{field} {view}: {endpoint} draws one view, which its own dot carries: drop {field}
+
+## topology.view-unknown
+
+edges[{i}].{field} {view}: no map or plot of {endpoint} has this id; its views with ids are {views}
+
+## topology.view-no-ids
+
+edges[{i}].{field} {view}: no map or plot of {endpoint} has an id; name the view by its id in the node's document, or drop {field}
 
 ## grounding.unrequested-dataset
 

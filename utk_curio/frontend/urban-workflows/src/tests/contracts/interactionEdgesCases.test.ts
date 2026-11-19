@@ -14,8 +14,9 @@ const CONTRACTS = path.join(__dirname, "../../contracts");
 
 type HandleCase = { name: string; handle: string | null; interaction: boolean; view: string | null };
 type EdgeCase = { name: string; edge: Record<string, unknown> | null; interaction: boolean };
+type ViewHandleCase = { name: string; view: string | null; handle: string };
 
-const CASES: { handles: HandleCase[]; edges: EdgeCase[] } = JSON.parse(
+const CASES: { handles: HandleCase[]; edges: EdgeCase[]; viewHandles: ViewHandleCase[] } = JSON.parse(
   fs.readFileSync(path.join(CONTRACTS, "interactionEdges.cases.json"), "utf8"),
 );
 
@@ -30,6 +31,7 @@ const rule = () =>
     interactionHandleView: (handle: unknown) => string | null;
     interactionHandleOr: (handle: unknown) => string;
     isInteractionEdge: (edge: unknown) => boolean;
+    interactionViewHandle: (view: string | null | undefined) => string;
   };
 
 describe("the contract", () => {
@@ -59,5 +61,21 @@ describe("a handle", () => {
 describe("an edge", () => {
   test.each(CASES.edges.map((c) => [c.name, c] as const))("%s", (_name, c) => {
     expect(rule().isInteractionEdge(c.edge)).toBe(c.interaction);
+  });
+});
+
+// A view's dot, an agent's plan and a load write a view's handle through the
+// rule, from the view's id: the node's own handle for none.
+describe("a view's handle", () => {
+  test("the cases name views and a node's own handle", () => {
+    expect(CASES.viewHandles.some((c) => c.view)).toBe(true);
+    expect(CASES.viewHandles.some((c) => !c.view)).toBe(true);
+  });
+
+  test.each(CASES.viewHandles.map((c) => [c.name, c] as const))("%s", (_name, c) => {
+    expect(rule().interactionViewHandle(c.view)).toBe(c.handle);
+    // It is an interaction handle, and names the view it was made for.
+    expect(rule().isInteractionHandle(c.handle)).toBe(true);
+    expect(rule().interactionHandleView(c.handle)).toBe(c.view ? c.view : null);
   });
 });

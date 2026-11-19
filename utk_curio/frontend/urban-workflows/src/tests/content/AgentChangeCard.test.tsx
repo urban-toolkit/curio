@@ -527,6 +527,23 @@ describe("AgentChangeCard: dev/59 a plan that removed nodes (DEC-049.2)", () => 
     expect(screen.getByText("Metric Distribution ⇄ Time Data Pool · interaction")).toBeInTheDocument();
   });
 
+  // An interaction edge on a view's dot (`fromView`, `toView`) names the view
+  // after its node, as a selection tag on a view does ("Node · heights").
+  it("names the view an interaction edge links at each end that names one", () => {
+    const viewEdges = planChange({
+      goal: "link the views",
+      nodes: [],
+      edgeCount: 2,
+      edges: [
+        { from: "chart", to: "views", kind: "interaction", toView: "heights", fromLabel: "Heights chart", toLabel: "Two views" },
+        { from: "views", to: "pool", kind: "interaction", fromView: "city", fromLabel: "Two views", toLabel: "Pool" },
+      ],
+    });
+    render(<AgentChangeCard part={viewEdges} />);
+    expect(screen.getByText("Heights chart ⇄ Two views · heights · interaction")).toBeInTheDocument();
+    expect(screen.getByText("Two views · city ⇄ Pool · interaction")).toBeInTheDocument();
+  });
+
   it("additive plans render no Removed section", () => {
     const additive = { ...revision, plan: { ...revision.plan!, removals: undefined, cascadeCount: undefined } };
     render(<AgentChangeCard part={additive} />);

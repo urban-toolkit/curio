@@ -12,8 +12,10 @@ export const PlanEdgesList: React.FC<{ part: PlanDisplay }> = ({ part }) => (
     </div>
     <ul className={styles.planEdgesList}>
       {(part.plan?.edges ?? []).map((edge, index) => {
+        // A view an interaction edge names follows its node: "Node · heights".
+        const end = (label: string, view?: string) => (view ? `${label} · ${view}` : label);
         const names =
-          `${edge.fromLabel} ${edge.kind === "interaction" ? "⇄" : "→"} ${edge.toLabel}` +
+          `${end(edge.fromLabel, edge.fromView)} ${edge.kind === "interaction" ? "⇄" : "→"} ${end(edge.toLabel, edge.toView)}` +
           (edge.toHandle ? ` [${edge.toHandle}]` : "") +
           (edge.kind === "interaction" ? " · interaction" : "");
         return (

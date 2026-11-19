@@ -34,6 +34,14 @@
         "The answer says an interaction edge links views, Data Pools or Map Editors, and cannot go into a Data Loading node.",
         "The answer offers another way to get only the clicked zip code's roofs, such as linking the chart to a Data Pool whose marked rows a later node keeps."
       ]
+    },
+    {
+      "case": 5,
+      "assertions": [
+        "The answer writes a dataflow plan (dataflow.plan.write) that adds an edge of kind interaction between the scatterplot (bh-scatter) and the Autark node (bh-views).",
+        "That edge names the histogram's view of the Autark node, \"heights\" (toView, or fromView when the Autark node is the edge's from end), not the node's own dot, which would light the map too.",
+        "The plan adds no new node."
+      ]
     }
   ],
   "answers": [
@@ -486,6 +494,140 @@
               }
             ]
           }
+        }
+      ]
+    },
+    {
+      "case": 5,
+      "name": "golden",
+      "kind": "golden",
+      "source": "skills/interaction-edges/evals/files/buildings-map-and-heights.json: the scatterplot bh-scatter linked by one interaction edge to the dot of the histogram heights of the Autark node bh-views (in/out@heights), the edge a plan's toView draws (utk_curio/backend/app/agents/application/proposals/plans.py _interaction_spec_edge; utk_curio/backend/tests/test_agents/test_plan_views.py)",
+      "fails": [],
+      "reply": "The plan adds one interaction edge from the scatterplot to the height histogram's dot on the node of the map and the histogram (toView \"heights\"), and no new node. A brush on the scatterplot then selects the bars of the brushed buildings in the histogram alone, and the map next to it lights nothing: the edge does not reach the node's own dot, and the node's views are not linked.",
+      "changes": {
+        "changed": {
+          "edges": {
+            "added": [
+              {
+                "id": "5b3a8f1e-3c2d-4d6a-9e8f-1a2b3c4d5e6f",
+                "source": "bh-scatter",
+                "sourceHandle": "in/out",
+                "target": "bh-views",
+                "targetHandle": "in/out@heights",
+                "type": "Interaction"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "dataflow.plan.write",
+            "kind": "plan",
+            "summary": "Plan · 0 nodes, 1 edge",
+            "lines": [
+              "+0 nodes · +1 connection",
+              "0 pending for Build & validate or Solve",
+              "Topology: acyclic."
+            ],
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "dataflow.plan.write",
+          "status": "applied",
+          "arguments": {
+            "goal": "Link the scatterplot to the height histogram alone, so a brush selects its buildings' bars and lights nothing on the map.",
+            "edges": [
+              {
+                "from": "bh-scatter",
+                "to": "bh-views",
+                "kind": "interaction",
+                "toView": "heights"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": 5,
+      "name": "refused-view",
+      "kind": "mutant",
+      "source": "utk_curio/backend/tests/test_agents/test_plan_views.py::TestTheCheck::test_a_view_the_node_does_not_have_is_refused_naming_the_ones_it_has: the plan check refuses an interaction edge naming a view the Autark node does not have, here height for its histogram heights (plan_topology.interaction_view_errors)",
+      "fails": [
+        2
+      ],
+      "reply": "The plan adds one interaction edge from the scatterplot to the height histogram's dot on the node of the map and the histogram (toView \"height\"), and no new node. A brush on the scatterplot then selects the bars of the brushed buildings in the histogram alone.",
+      "changes": {
+        "changed": {
+          "edges": {
+            "added": [
+              {
+                "id": "5b3a8f1e-3c2d-4d6a-9e8f-1a2b3c4d5e6f",
+                "source": "bh-scatter",
+                "sourceHandle": "in/out",
+                "target": "bh-views",
+                "targetHandle": "in/out@height",
+                "type": "Interaction"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "dataflow.plan.write",
+            "kind": "plan",
+            "summary": "Plan · 0 nodes, 1 edge",
+            "lines": [
+              "+0 nodes · +1 connection",
+              "0 pending for Build & validate or Solve",
+              "Topology: acyclic."
+            ],
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "dataflow.plan.write",
+          "status": "applied",
+          "arguments": {
+            "goal": "Link the scatterplot to the height histogram alone, so a brush selects its buildings' bars and lights nothing on the map.",
+            "edges": [
+              {
+                "from": "bh-scatter",
+                "to": "bh-views",
+                "kind": "interaction",
+                "toView": "height"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": 5,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its plan moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2
+      ],
+      "reply": "Here is the plan for the link:\n\n```json\n{\n  \"goal\": \"Link the scatterplot to the height histogram alone, so a brush selects its buildings' bars and lights nothing on the map.\",\n  \"edges\": [\n    {\n      \"from\": \"bh-scatter\",\n      \"to\": \"bh-views\",\n      \"kind\": \"interaction\",\n      \"toView\": \"heights\"\n    }\n  ]\n}\n```\n\nThe edge reaches the histogram's dot alone, so the map next to it lights nothing.",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "dataflow.plan.write",
+          "status": "refused"
         }
       ]
     }

@@ -82,7 +82,7 @@ async function poolAfter(details: Record<string, unknown>) {
 test("each view's select marks its own layer, the map's pick the roads and the plot's brush the parks", async () => {
   const output = await poolAfter({
     "autk_selection@city": pick("roads", [0, 2], 0),
-    "autk_selection@1": pick("parks", [1], 1),
+    "autk_selection#1": pick("parks", [1], 1),
   });
 
   expect(marksOf(output)).toEqual({ roads: ["1", "0", "1"], parks: ["0", "1"] });

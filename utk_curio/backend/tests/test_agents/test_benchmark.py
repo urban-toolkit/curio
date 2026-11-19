@@ -112,6 +112,36 @@ def test_each_kind_of_check_decides_its_assertion_from_the_run_s_record():
         2: True, 3: True}
 
 
+def test_an_interaction_edge_check_reads_the_view_each_end_names_whichever_way_it_was_drawn():
+    """An interaction edge carries selections both ways, so an edge-added check
+    of one holds whichever way the edge was drawn. ``fromView`` and ``toView``
+    name the view the edge's handle names at the ``from`` node and at the
+    ``to`` node (``in/out@<id>``); null is the node's own dot, and a check that
+    leaves one out does not ask."""
+    checks = _checks()
+    vega, autark = "curio.builtin/vis-vega", "curio.builtin/autk-grammar"
+    run = checks.RunRecord(
+        changed={"edges": {"added": [{"id": "e", "source": "chart", "target": "views", "sourceHandle": "in/out",
+                                      "targetHandle": "in/out@heights", "type": "Interaction"}]}},
+        types={"chart": vega, "views": autark},
+    )
+    assert checks.passes(_check("edge-added", **{"from": vega, "to": autark, "interaction": True, "toView": "heights"}), run)
+    assert checks.passes(_check("edge-added", **{"from": autark, "to": vega, "interaction": True, "fromView": "heights"}), run)
+    assert checks.passes(_check("edge-added", **{"from": vega, "to": autark, "interaction": True, "fromView": None}), run)
+    assert checks.passes(_check("edge-added", **{"from": autark, "to": vega, "interaction": True}), run)
+    assert not checks.passes(_check("edge-added", **{"from": vega, "to": autark, "interaction": True, "toView": "city"}), run)
+    assert not checks.passes(_check("edge-added", **{"from": vega, "to": autark, "interaction": True, "toView": None}), run)
+    # A data edge is read only the way it was drawn.
+    data = checks.RunRecord(changed={"edges": {"added": [{"id": "d", "source": "loader", "target": "chart"}]}},
+                            types={"loader": "curio.builtin/data-loading", "chart": vega})
+    assert not checks.passes(_check("edge-added", **{"from": vega, "to": "curio.builtin/data-loading"}), data)
+    # The keys a case's check may hold.
+    problems: list[str] = []
+    read = checks.read([{"assertion": 1, "kind": "edge-added", "from": vega, "to": autark, "interaction": True,
+                         "toView": "heights", "fromView": None}], 1, "case 1", problems)
+    assert problems == [] and read[0].holds["toView"] == "heights" and read[0].holds["fromView"] is None
+
+
 def test_a_run_s_record_is_read_from_its_folder_and_its_case_s_dataflow(tmp_path):
     checks = _checks()
     folder = tmp_path / "run-1"

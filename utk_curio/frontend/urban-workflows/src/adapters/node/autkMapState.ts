@@ -274,20 +274,21 @@ export function drawnFeatureAt(
 }
 
 /**
- * The settings of each layer the first map of *grammar* draws, before a layer
- * is shown alone: with which one a click selects (`isPick`), which a redraw
- * does not keep, since an edit's own pick sets it.
+ * The settings of each layer map *index* of *grammar* draws (the first by
+ * default; a Map Editor node's, the map it edits), before a layer is shown
+ * alone: with which one a click selects (`isPick`), which a redraw does not
+ * keep, since an edit's own pick sets it.
  */
-export function snapshotBeforeSolo(grammar: unknown): MapLayerState | null {
-    const state = snapshotMapLayers(grammar);
-    const picking = idOf(grammarMaps(grammar)[0]?.activePickingLayer);
+export function snapshotBeforeSolo(grammar: unknown, index = 0): MapLayerState | null {
+    const state = snapshotMapLayers(grammar, index);
+    const picking = idOf(grammarMaps(grammar)[index]?.activePickingLayer);
     if (state && picking && state[picking]) state[picking] = { ...state[picking], isPick: true };
     return state;
 }
 
-/** The settings of each layer the first map of *grammar* draws. */
-export function snapshotMapLayers(grammar: unknown): MapLayerState | null {
-    const map = grammarMaps(grammar)[0];
+/** The settings of each layer map *index* of *grammar* draws, the first by default. */
+export function snapshotMapLayers(grammar: unknown, index = 0): MapLayerState | null {
+    const map = grammarMaps(grammar)[index];
     if (!map) return null;
     const out: MapLayerState = {};
     for (const layer of layersOf(map)) {

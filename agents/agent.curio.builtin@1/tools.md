@@ -158,6 +158,8 @@ Change the dataflow graph: the arguments are the plan, which lands step by step;
 - edges.from: A ref from this plan, or an existing node's id.
 - edges.to: A ref from this plan, or an existing node's id.
 - edges.toHandle: The target's input circle: in, in_1, in_2, ... Data edges only.
+- edges.fromView: Interaction edges only: the id of the map or plot of the from node, an Autark node of several views, whose selection alone the edge carries; leave it out for the whole node.
+- edges.toView: Interaction edges only: the id of the map or plot of the to node, an Autark node of several views, that alone receives the selection; leave it out for the whole node.
 - scenarios.name: The scenario's name.
 - scenarios.nodes: A selection's nodes: refs of this plan or existing node ids.
 - scenarios.duplicateOf: A duplicate: the name of a scenario earlier in this list, whose nodes it copies.

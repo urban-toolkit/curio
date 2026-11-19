@@ -128,6 +128,9 @@ _PLAN_EDGE_ID_MAX_CHARS = 200
 # dev/67-3: an edge may name the target's input handle (input circles in,
 # in_1, ...; or a named handle a package declares). The mint validates semantics; this is shape.
 _PLAN_TO_HANDLE_MAX_CHARS = 24
+# An interaction edge may name the view at either end (fromView, toView): the
+# id of a map or a plot of an Autark node of several views.
+_PLAN_VIEW_MAX_CHARS = 64
 # dev/67-5: an optional one-liner of expected input/output for the plan card.
 _PLAN_EXPECTS_MAX_CHARS = 160
 
@@ -675,7 +678,7 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
         errors.append(agent_text.message("plan.too-many-edges", count=len(edges_raw), max_edges=_PLAN_MAX_EDGES))
         edges_raw = []
     edges: list[dict] = []
-    seen_edges: set[tuple[str, str, str, str]] = set()
+    seen_edges: set[tuple[str, str, str, str, str, str]] = set()
     removed = set(remove_nodes)
     for i, edge_raw in enumerate(edges_raw):
         where = f"edges[{i}]"
@@ -724,6 +727,25 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
                 agent_text.message("plan.interaction-edge-to-handle", where=where)
             )
             continue
+        # The views an interaction edge names at each end, an Autark node of
+        # several views' dot (in/out@<id>); a data edge names none.
+        views: dict[str, str] = {}
+        view_errors = []
+        for field in ("fromView", "toView"):
+            raw_view = edge_raw.get(field)
+            if raw_view is None:
+                continue
+            err = _field_error(f"{where}.{field}", raw_view, _PLAN_VIEW_MAX_CHARS)
+            if err:
+                view_errors.append(err)
+            else:
+                views[field] = str(raw_view).strip()
+        if view_errors:
+            errors.extend(view_errors)
+            continue
+        if views and kind != "interaction":
+            errors.append(agent_text.message("plan.data-edge-view", where=where))
+            continue
         src, dst = str(src).strip(), str(dst).strip()
         if src == dst:
             errors.append(agent_text.message("plan.edge-to-itself", where=where, src=repr(src)))
@@ -739,15 +761,26 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
         # whole plan refused. #576: the key includes the circle an edge names,
         # too. One node may feed both inputs of another, as example 25's
         # neighborhoods feed both circles of a Spatial Join; the same circle
-        # twice is still a duplicate.
-        edge_key = (src, dst, kind, to_handle or "")
+        # twice is still a duplicate. And the views an interaction edge names:
+        # two edges between the same nodes on two views of one carry two
+        # views' selections.
+        edge_key = (src, dst, kind, to_handle or "", views.get("fromView", ""), views.get("toView", ""))
         if edge_key in seen_edges:
-            errors.append(
-                agent_text.message(
-                    "plan.edge-duplicate", where=where, src=repr(src), dst=repr(dst), kind=kind,
-                    on_handle=f" on {to_handle!r}" if to_handle else "",
+            if views:
+                errors.append(
+                    agent_text.message(
+                        "plan.interaction-edge-duplicate", where=where, src=repr(src), dst=repr(dst),
+                        from_view=repr(views["fromView"]) if "fromView" in views else "none",
+                        to_view=repr(views["toView"]) if "toView" in views else "none",
+                    )
                 )
-            )
+            else:
+                errors.append(
+                    agent_text.message(
+                        "plan.edge-duplicate", where=where, src=repr(src), dst=repr(dst), kind=kind,
+                        on_handle=f" on {to_handle!r}" if to_handle else "",
+                    )
+                )
             continue
         seen_edges.add(edge_key)
         edge_entry = {"from": src, "to": dst}
@@ -756,6 +789,8 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
             edge_entry["toHandle"] = to_handle
         if kind != "data":
             edge_entry["kind"] = kind  # dev/112: data stays byte-absent
+        # Present only when named, as toHandle.
+        edge_entry.update(views)
         edges.append(edge_entry)
     plan["edges"] = edges
     if not errors:
