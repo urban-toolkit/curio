@@ -794,6 +794,32 @@ def test_a_transformers_models_run_writes_nothing_of_its_load_and_leaves_progres
     assert_bars_draw()
 
 
+def test_a_load_goes_through_where_transformers_switch_cannot_be_imported(segmentation, monkeypatch):
+    """``_pretrained`` imports Transformers' progress bar switch guarded, as the
+    module imports Transformers itself: Transformers stays a library only a
+    Transformers model's package declares, and a Save of this package adds
+    none (``test_shipped_catalog``). Where ``transformers.utils.logging``
+    cannot be imported, the load goes through all the same, with every option
+    handed on."""
+    import builtins
+
+    real_import = builtins.__import__
+
+    def no_transformers(name, *args, **kwargs):
+        if name == "transformers" or name.startswith("transformers."):
+            raise ImportError(name)
+        return real_import(name, *args, **kwargs)
+
+    class Checkpoint:
+        @classmethod
+        def from_pretrained(cls, path, **options):
+            return cls, path, options
+
+    monkeypatch.setattr(builtins, "__import__", no_transformers)
+    loaded = segmentation._pretrained(Checkpoint, "files", local_files_only=True, use_safetensors=True)
+    assert loaded == (Checkpoint, "files", {"local_files_only": True, "use_safetensors": True}), loaded
+
+
 # ---------------------------------------------------------------------------
 # What it refuses
 # ---------------------------------------------------------------------------
