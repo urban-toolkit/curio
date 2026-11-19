@@ -54,16 +54,23 @@ HARDWARE = (
 )
 
 #: Linux otherwise: every CPU job (e2e-desktop, test-isolated) and a local
-#: run on a GPU-less host. Force Chrome's bundled SwiftShader software adapter
-#: so the *map* examples still render; the compute examples crash software
-#: WebGPU and are not expected to run on this path.
+#: run. Force Chrome's bundled SwiftShader software adapter so the *map*
+#: examples still render; the compute examples crash software WebGPU and are
+#: not expected to run on this path.
+#:
+#: Chrome's Vulkan stays off here. Turned on (``--enable-features=Vulkan``),
+#: Chrome takes the Vulkan driver of the machine it runs on: a utk desktop's
+#: NVIDIA GPU, where Skia then draws every page (GaneshVulkan), while a hosted
+#: or arcade CPU runner has no Vulkan driver and draws with GL over
+#: SwiftShader (GaneshGL), so the same chart close-up read up to 15% apart.
+#: Off, every runner draws alike, and WebGL and WebGPU still come up on
+#: SwiftShader.
 SWIFTSHADER = (
     "--headless=new",
     "--enable-unsafe-webgpu",
     "--enable-unsafe-swiftshader",
     "--use-webgpu-adapter=swiftshader",
     "--use-angle=swiftshader",
-    "--enable-features=Vulkan",
     "--ignore-gpu-blocklist",
 )
 

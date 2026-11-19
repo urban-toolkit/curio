@@ -114,7 +114,7 @@ inside its one container).
 
 ### AUTK / WebGPU note
 
-Autark workflows use the single `AUTK_GRAMMAR` node type, which renders its map/plot via WebGPU. The `browser_type_launch_args` fixture in the **parent** [`../conftest.py`](../conftest.py) points `executable_path` at the system-installed Google Chrome and passes a minimal flag set (`--enable-unsafe-webgpu --enable-unsafe-swiftshader`). This is deliberate: Playwright's bundled Chromium on Windows ships without a working Dawn/WebGPU runtime (`requestAdapter()` returns null), whereas real Chrome 113+ returns an adapter. When Chrome can't be found it falls back to bundled Chromium.
+Autark workflows use the single `AUTK_GRAMMAR` node type, which renders its map/plot via WebGPU. The `browser_type_launch_args` fixture in the **parent** [`../conftest.py`](../conftest.py) points `executable_path` at the system-installed Google Chrome and passes the flags `launch_flags` in [`../_support/chrome_flags.py`](../_support/chrome_flags.py) gives each platform: on Windows and macOS a minimal set (`--enable-unsafe-webgpu --enable-unsafe-swiftshader`). This is deliberate: Playwright's bundled Chromium on Windows ships without a working Dawn/WebGPU runtime (`requestAdapter()` returns null), whereas real Chrome 113+ returns an adapter. When Chrome can't be found it falls back to bundled Chromium.
 
 There is **no WebGPU tolerance**: an `AUTK_GRAMMAR` node that errors (including because WebGPU is unavailable) is a hard test failure. To run the autk examples you need a browser that provides WebGPU - which the system-Chrome `executable_path` above ensures. `_webgpu_diagnostics` still probes adapter/device state once per session and attaches it to the failure dump for debugging.
 
@@ -545,6 +545,10 @@ beside its default one: `<name>.utk-gpu.png`, `<name>.arcade-gpu.png` or `<name>
 - The test-gpu job sets `CURIO_E2E_GPU_KIND` from its runner's name. A frame
   with a baseline of that kind is compared with it. Every other frame, and every
   run without a kind (a local run, a CPU runner), uses the default baseline.
+- A CPU job has no kind because it draws alike on every runner, a utk desktop
+  included: its Chrome draws with SwiftShader and keeps Chrome's Vulkan off,
+  which would otherwise draw with the desktop's NVIDIA GPU
+  (`../_support/chrome_flags.py`).
   The report's card names the baseline each comparison used, and a badge marks
   a GPU kind's.
 - A re-mint writes the baseline it compared with, so on utk-gpu it rewrites a
