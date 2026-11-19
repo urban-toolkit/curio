@@ -182,15 +182,45 @@ def test_every_test_named_exists():
     assert not problems, f"{len(problems)} test(s) named that do not exist:\n" + "\n".join(sorted(problems))
 
 
+def _case_of(entry: dict) -> str | None:
+    """The case in brackets at the end of the test *entry* names, or None."""
+    case = re.search(r"\[(.*)\]$", entry["test"].partition("::")[2])
+    return case.group(1) if case else None
+
+
+def _documents_of(document: Path, case: str | None) -> list:
+    """The documents of *document* a test's *case* reads: the document of
+    each case of that name the file holds (a ``spec`` or ``document`` beside
+    its ``name``), when it holds one; else every document of the file."""
+    from utk_curio.backend.tests._support.autk_key_paths import documents_in
+
+    named: list = []
+
+    def collect(value) -> None:
+        if isinstance(value, dict):
+            held = value.get("spec") if isinstance(value.get("spec"), dict) else value.get("document")
+            if case is not None and value.get("name") == case and isinstance(held, dict):
+                named.append(held)
+            for inner in value.values():
+                collect(inner)
+        elif isinstance(value, list):
+            for inner in value:
+                collect(inner)
+
+    collect(json.loads(document.read_text(encoding="utf-8")))
+    return named or documents_in(document)
+
+
 def test_every_test_named_writes_its_key():
     """An entry with a document holds a document that writes the key, by its
-    path (a renamed key, which the schema does not know, by its name); one
-    without names the key in its test's file. A refused key's document writes
-    the key a rule refuses, which refuses every key under it."""
-    from utk_curio.backend.tests._support.autk_key_paths import documents_in, written_paths
+    path (a renamed key, which the schema does not know, by its name): the
+    document of the case it names, when the file holds cases by name. One
+    without a document names the key in its test's file. A refused key's
+    document writes the key a rule refuses, which refuses every key under it."""
+    from utk_curio.backend.tests._support.autk_key_paths import written_paths
 
     schema = _read(SCHEMA_FILE)
-    written: dict[str, set] = {}
+    written: dict[tuple, set] = {}
     problems = []
     for section in ("keys", "renamedKeys"):
         for path, entries in _entries(section).items():
@@ -212,10 +242,11 @@ def test_every_test_named_writes_its_key():
                     if f'"{_last_key(path)}"' not in (REPO_ROOT / document).read_text(encoding="utf-8"):
                         problems.append(f"{path}: no document of {document} writes {_last_key(path)!r}")
                     continue
-                if document not in written:
-                    written[document] = set().union(*[written_paths(schema, held)
-                                                     for held in documents_in(REPO_ROOT / document)])
+                read = (document, _case_of(entry))
+                if read not in written:
+                    written[read] = set().union(*[written_paths(schema, held)
+                                                 for held in _documents_of(REPO_ROOT / document, read[1])])
                 wanted = rule["key"] if entry.get("refused") and rule else path
-                if wanted not in written[document]:
-                    problems.append(f"{path}: no document of {document} writes {wanted}")
+                if wanted not in written[read]:
+                    problems.append(f"{path}: no document of {document} the test reads writes {wanted}")
     assert not problems, f"{len(problems)} test(s) that do not write their key:\n" + "\n".join(sorted(problems))
