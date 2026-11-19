@@ -1,0 +1,351 @@
+{
+  "description": "Documents that write every key of autk-grammar 5.0.0's maps, plots and compute passes, a family to a document, on the tables an upstream Autark node hands on: `lines`, in the default workspace and in `east`. views: a map of every layer key, a plot of every mark with every plot key, and a map and a plot laid out and linked by every layout and link key, each of which an Autark node hands the grammar as written; passes: a compute step's GPGPU and render passes with every pass key, which reach autk-compute (src/tests/adapters/node/autkEveryKey.test.tsx); data: CSV, JSON, GeoJSON, OpenStreetMap, join and GeoTIFF sources with every source key, which a run on the server loads (utk_curio/sandbox/tests/test_autk_server_data_keys.py). autk-db keeps in a workspace only what lies in the box of the first table loaded into it, and reads a GeoJSON source's boundingBox in the workspace's CRS (World Mercator, metres), so each data document loads its widest table first. Every document passes the agents' document check (backend/tests/test_agents/test_autk_every_key_documents.py). utk_curio/backend/tests/autk_grammar_key_tests.json names these tests for each key.",
+  "views": [
+    {
+      "name": "a map of every layer key",
+      "document": {
+        "$schema": "https://autarkjs.org/schema/autk-grammar/v1.json",
+        "map": {
+          "id": "every-layer-key",
+          "style": "light",
+          "workspace": "east",
+          "layerRefs": [
+            {
+              "dataRef": "lines", "title": "By x", "getFnv": "x", "getFnvType": "quantitative", "isColorMap": true,
+              "colorMapInterpolator": "interpolateViridis", "colorMapReverse": true,
+              "colorMapRange": [-87.5, -87.48], "colorMapCenter": -87.49,
+              "normalization": { "mode": "percentile", "lowerPercentile": 5, "upperPercentile": 95 },
+              "transferFunction": { "mode": "linear", "gamma": 1.2, "opacityMin": 0.1, "opacityMax": 1, "zeroCenter": -87.49 },
+              "opacity": 0.8, "width": 3, "stroke": "#333333", "pointSize": 2, "defaultFnv": 0,
+              "isPick": true, "pickedComps": [0], "selectFields": ["x"], "isSkip": false
+            },
+            {
+              "dataRef": "lines", "title": "By kind", "getFnv": "kind", "getFnvType": "categorical", "isColorMap": true,
+              "colorMapInterpolator": "schemeTableau10", "colorMapDomain": ["a", "b"], "colorMapLabels": ["Kind a", "Kind b"],
+              "catchAllCategory": "Other kinds", "color": "#ff7f0e", "stroke": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "a scatter plot of every plot key",
+      "document": {
+        "plot": {
+          "mark": "scatter", "id": "every-scatter-key", "dataRef": "lines", "workspace": "east", "mapRef": "lines",
+          "axis": ["x", "rank"], "color": "#1f77b4", "title": "Scatter", "width": 420, "height": 300,
+          "margins": { "left": 40, "right": 10, "top": 20, "bottom": 30 },
+          "events": ["click", "brush"], "selectFields": ["x"],
+          "transform": { "preset": "sort", "options": { "by": "x" } }
+        }
+      }
+    },
+    {
+      "name": "a bar chart of every plot key",
+      "document": {
+        "plot": {
+          "mark": "bar", "id": "every-bar-key", "dataRef": "lines", "workspace": "east", "mapRef": "lines",
+          "axis": ["x"], "color": "#2ca02c", "title": "Bars", "width": 400, "height": 280,
+          "margins": { "left": 36, "right": 8, "top": 16, "bottom": 32 },
+          "events": ["click", "brushX"], "selectFields": ["x"],
+          "transform": { "preset": "binning-1d", "options": { "bins": 3 } }
+        }
+      }
+    },
+    {
+      "name": "a line chart of every plot key",
+      "document": {
+        "plot": {
+          "mark": "line", "id": "every-line-key", "dataRef": "lines", "workspace": "east", "mapRef": "lines",
+          "axis": ["rank", "x"], "color": "#d62728", "title": "Line", "width": 400, "height": 260,
+          "margins": { "left": 44, "right": 12, "top": 18, "bottom": 28 },
+          "events": ["brushX"], "selectFields": ["x"],
+          "transform": { "preset": "reduce-series", "options": { "series": "kind" } }
+        }
+      }
+    },
+    {
+      "name": "a linechart of every plot key",
+      "document": {
+        "plot": {
+          "mark": "linechart", "id": "every-linechart-key", "dataRef": "lines", "workspace": "east", "mapRef": "lines",
+          "axis": ["rank", "x"], "color": "#9467bd", "title": "Linechart", "width": 380, "height": 240,
+          "margins": { "left": 42, "right": 10, "top": 14, "bottom": 26 },
+          "events": ["brushX"], "selectFields": ["x"],
+          "transform": { "preset": "binning-events", "options": { "bins": 2 } }
+        }
+      }
+    },
+    {
+      "name": "parallel coordinates of every plot key",
+      "document": {
+        "plot": {
+          "mark": "parallel-coordinates", "id": "every-parallel-key", "dataRef": "lines", "workspace": "east", "mapRef": "lines",
+          "axis": ["x", "rank"], "color": "#8c564b", "title": "Parallel", "width": 440, "height": 300,
+          "margins": { "left": 30, "right": 30, "top": 24, "bottom": 20 },
+          "events": ["brushY"], "selectFields": ["x"],
+          "transform": { "preset": "sort", "options": { "by": "rank" } }
+        }
+      }
+    },
+    {
+      "name": "a table of every plot key",
+      "document": {
+        "plot": {
+          "mark": "table", "id": "every-table-key", "dataRef": "lines", "workspace": "east", "mapRef": "lines",
+          "axis": ["x", "kind", "rank"], "color": "#e377c2", "title": "Table", "width": 360, "height": 220,
+          "margins": { "left": 10, "right": 10, "top": 10, "bottom": 10 },
+          "events": ["click"], "selectFields": ["x"],
+          "transform": { "preset": "sort", "options": { "by": "rank" } }
+        }
+      }
+    },
+    {
+      "name": "a heatmatrix of every plot key",
+      "document": {
+        "plot": {
+          "mark": "heatmatrix", "id": "every-heatmatrix-key", "dataRef": "lines", "workspace": "east", "mapRef": "lines",
+          "axis": ["x", "rank"], "color": "#17becf", "title": "Heatmatrix", "width": 400, "height": 400,
+          "margins": { "left": 50, "right": 10, "top": 20, "bottom": 50 },
+          "events": ["click"], "selectFields": ["x"],
+          "transform": { "preset": "binning-2d", "options": { "bins": 2 } }
+        }
+      }
+    },
+    {
+      "name": "a map and a plot laid out in a grid and linked, by every layout and link key",
+      "document": {
+        "layout": { "type": "grid", "columns": 2, "gap": 8 },
+        "map": {
+          "id": "streets", "workspace": "east",
+          "layerRefs": [{ "dataRef": "lines", "title": "Streets", "isPick": true }]
+        },
+        "plot": {
+          "mark": "bar", "id": "ranks", "dataRef": "lines", "workspace": "east",
+          "axis": ["rank"], "events": ["brushX"],
+          "transform": { "preset": "binning-1d", "options": { "bins": 3 } }
+        },
+        "links": [{ "source": "ranks", "target": "streets", "layer": "Streets" }]
+      }
+    }
+  ],
+  "passes": [
+    {
+      "name": "GPGPU passes of every pass key",
+      "document": {
+        "compute": [
+          {
+            "type": "gpgpu", "dataRef": "lines", "workspace": "east",
+            "attributes": { "x": "x", "xs": "xs", "box": "box" },
+            "attributeArrays": { "xs": 2 },
+            "attributeMatrices": { "box": { "rows": "auto", "cols": 2 } },
+            "uniforms": {
+              "scale": 2,
+              "second": { "fromFeature": { "layer": "lines", "path": "properties.x", "index": 1 }, "default": 0, "cols": 1 },
+              "missing": { "fromFeature": { "layer": "lines", "path": "properties.nothing", "index": 0 }, "default": 7 }
+            },
+            "uniformArrays": { "weights": [0.5, 0.25] },
+            "uniformMatrices": {
+              "turn": { "data": [[0, 1], [1, 0]], "cols": 2 },
+              "fallback": { "fromFeature": { "layer": "lines", "path": "properties.nothing", "index": 2, "required": false }, "cols": 2, "default": [[0, 0]] }
+            },
+            "wgslFunction": ["let y = x * scale;", "return y;"],
+            "outputColumnName": "y", "outputTableName": "lines_y", "layerType": "points"
+          },
+          {
+            "dataRef": "lines", "workspace": "east", "attributes": { "x": "x" },
+            "wgslFunction": "return array<f32, 2>(x, x);", "outputColumns": ["a", "b"]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a render pass of every pass key",
+      "document": {
+        "compute": [
+          {
+            "type": "render", "workspace": "east", "outputTableName": "seen", "layerType": "points", "tileSize": 32,
+            "layers": [{ "id": "streets", "dataRef": "lines", "type": "polylines", "objectIdProperty": "rank" }],
+            "viewpoints": {
+              "dataRef": "lines",
+              "strategy": { "type": "centroid" },
+              "sampling": { "directions": 4, "pitchDeg": 10, "azimuthOffsetDeg": 45 }
+            },
+            "aggregation": { "type": "objects" },
+            "camera": { "fov": 60, "clip": { "near": 0.5, "far": 2000 } }
+          }
+        ]
+      }
+    }
+  ],
+  "data": [
+    {
+      "name": "CSV and JSON tables, from files and written inline, by every geometry column",
+      "document": {
+        "data": [
+          {
+            "type": "csv", "csvFileUrl": "utk_curio/backend/tests/test_frontend/data/autark_stations.csv", "delimiter": ";",
+            "outputTableName": "stations_wkt", "geometryColumns": { "wktColumnName": "wkt", "coordinateFormat": "EPSG:4326" }
+          },
+          {
+            "type": "csv", "workspace": "east", "outputTableName": "stations_latlon", "delimiter": "|",
+            "csvObject": [["name", "lat", "lon", "riders"], ["Clark/Lake", 41.8857, -87.6309, 11000], ["Quincy", 41.8788, -87.6378, 7000]],
+            "geometryColumns": { "latColumnName": "lat", "longColumnName": "lon", "coordinateFormat": "EPSG:4326" }
+          },
+          {
+            "type": "json", "jsonFileUrl": "utk_curio/backend/tests/test_frontend/data/autark_stops.json",
+            "outputTableName": "stops_latlon", "geometryColumns": { "latColumnName": "lat", "longColumnName": "lon", "coordinateFormat": "EPSG:4326" }
+          },
+          {
+            "type": "json", "workspace": "east", "outputTableName": "stops_wkt",
+            "jsonObject": [{ "name": "Stop 4", "wkt": "POINT(-87.634 41.881)" }, { "name": "Stop 5", "wkt": "POINT(-87.632 41.885)" }],
+            "geometryColumns": { "wktColumnName": "wkt", "coordinateFormat": "EPSG:4326" }
+          }
+        ]
+      },
+      "handsOn": [["stations_wkt", "points", 3, null], ["stops_latlon", "points", 3, null], ["stations_latlon", "points", 2, "east"], ["stops_wkt", "points", 2, "east"]],
+      "files": ["utk_curio/backend/tests/test_frontend/data/autark_stations.csv", "utk_curio/backend/tests/test_frontend/data/autark_stops.json"]
+    },
+    {
+      "name": "a CSV table with no geometry columns",
+      "document": {
+        "data": [
+          { "type": "csv", "outputTableName": "ridership", "csvObject": [["name", "riders"], ["Clark/Lake", 11000], ["Quincy", 7000]] }
+        ]
+      },
+      "rows": [["ridership", 2, null]]
+    },
+    {
+      "name": "GeoJSON of every geometry, with every box",
+      "document": {
+        "data": [
+          {
+            "type": "geojson", "outputTableName": "polygon", "coordinateFormat": "EPSG:4326",
+            "geojsonObject": { "type": "FeatureCollection", "features": [
+              { "type": "Feature", "properties": { "kind": "polygon" },
+                "geometry": { "type": "Polygon", "bbox": [-87.65, 41.87, -87.6, 41.9],
+                  "coordinates": [[[-87.65, 41.87], [-87.6, 41.87], [-87.6, 41.9], [-87.65, 41.9], [-87.65, 41.87]]] } }
+            ] }
+          },
+          {
+            "type": "geojson", "outputTableName": "point", "coordinateFormat": "EPSG:4326",
+            "boundingBox": { "minLon": -9756100, "minLat": 5114400, "maxLon": -9755980, "maxLat": 5114580 },
+            "geojsonObject": { "type": "FeatureCollection", "bbox": [-87.64, 41.88, -87.62, 41.89], "features": [
+              { "type": "Feature", "id": 1, "bbox": [-87.64, 41.88, -87.64, 41.88], "properties": { "kind": "point" },
+                "geometry": { "type": "Point", "bbox": [-87.64, 41.88, -87.64, 41.88], "coordinates": [-87.64, 41.88] } },
+              { "type": "Feature", "id": 2, "properties": { "kind": "a point outside the bounding box" },
+                "geometry": { "type": "Point", "coordinates": [-87.62, 41.89] } }
+            ] }
+          },
+          {
+            "type": "geojson", "outputTableName": "multipoint", "coordinateFormat": "EPSG:4326",
+            "geojsonObject": { "type": "FeatureCollection", "features": [
+              { "type": "Feature", "id": "mp", "properties": { "kind": "multipoint" },
+                "geometry": { "type": "MultiPoint", "bbox": [-87.64, 41.88, -87.63, 41.885], "coordinates": [[-87.64, 41.88], [-87.63, 41.885]] } }
+            ] }
+          },
+          {
+            "type": "geojson", "outputTableName": "linestring", "coordinateFormat": "EPSG:4326",
+            "geojsonObject": { "type": "FeatureCollection", "features": [
+              { "type": "Feature", "properties": { "kind": "linestring" },
+                "geometry": { "type": "LineString", "bbox": [-87.64, 41.88, -87.63, 41.885], "coordinates": [[-87.64, 41.88], [-87.63, 41.885]] } }
+            ] }
+          },
+          {
+            "type": "geojson", "outputTableName": "multilinestring", "coordinateFormat": "EPSG:4326",
+            "geojsonObject": { "type": "FeatureCollection", "features": [
+              { "type": "Feature", "properties": { "kind": "multilinestring" },
+                "geometry": { "type": "MultiLineString", "bbox": [-87.64, 41.88, -87.62, 41.89],
+                  "coordinates": [[[-87.64, 41.88], [-87.63, 41.885]], [[-87.63, 41.885], [-87.62, 41.89]]] } }
+            ] }
+          },
+          {
+            "type": "geojson", "outputTableName": "multipolygon", "coordinateFormat": "EPSG:4326", "layerType": "parks",
+            "geojsonObject": { "type": "FeatureCollection", "features": [
+              { "type": "Feature", "properties": { "kind": "multipolygon" },
+                "geometry": { "type": "MultiPolygon", "bbox": [-87.64, 41.88, -87.61, 41.89], "coordinates": [
+                  [[[-87.64, 41.88], [-87.63, 41.88], [-87.63, 41.89], [-87.64, 41.89], [-87.64, 41.88]]],
+                  [[[-87.62, 41.88], [-87.61, 41.88], [-87.61, 41.89], [-87.62, 41.89], [-87.62, 41.88]]]
+                ] } }
+            ] }
+          },
+          {
+            "type": "geojson", "outputTableName": "collection", "coordinateFormat": "EPSG:4326", "layerType": "polygons",
+            "geojsonObject": { "type": "FeatureCollection", "features": [
+              { "type": "Feature", "properties": { "kind": "collection" },
+                "geometry": { "type": "GeometryCollection", "bbox": [-87.64, 41.88, -87.61, 41.89], "geometries": [
+                  { "type": "Polygon", "coordinates": [[[-87.64, 41.88], [-87.63, 41.88], [-87.63, 41.89], [-87.64, 41.89], [-87.64, 41.88]]] },
+                  { "type": "Polygon", "coordinates": [[[-87.62, 41.88], [-87.61, 41.88], [-87.61, 41.89], [-87.62, 41.89], [-87.62, 41.88]]] }
+                ] } }
+            ] }
+          }
+        ]
+      },
+      "handsOn": [["point", "points", 1, null], ["multipoint", "points", 1, null], ["linestring", "polylines", 1, null],
+        ["multilinestring", "polylines", 1, null], ["polygon", "polygons", 1, null], ["multipolygon", "parks", 1, null],
+        ["collection", "polygons", 1, null]]
+    },
+    {
+      "name": "an OpenStreetMap load in a workspace, its OpenStreetMap table dropped",
+      "document": {
+        "data": [
+          {
+            "type": "osm", "workspace": "east", "pbfFileUrl": "docs/examples/data/lower_mnt.osm.pbf", "outputTableName": "tip",
+            "queryArea": { "bbox": [-74.0194, 40.7, -74.0085, 40.7085] },
+            "autoLoadLayers": { "layers": ["parks"], "dropOsmTable": true }
+          }
+        ]
+      },
+      "handsOn": [["tip_parks", "parks", null, "east"]],
+      "files": ["docs/examples/data/lower_mnt.osm.pbf"]
+    },
+    {
+      "name": "a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized",
+      "document": {
+        "data": [
+          {
+            "type": "geojson", "workspace": "east", "outputTableName": "zones", "coordinateFormat": "EPSG:4326",
+            "geojsonObject": { "type": "FeatureCollection", "features": [
+              { "type": "Feature", "properties": { "zone": 1 }, "geometry": { "type": "Polygon",
+                "coordinates": [[[-87.64, 41.87], [-87.62, 41.87], [-87.62, 41.89], [-87.64, 41.89], [-87.64, 41.87]]] } },
+              { "type": "Feature", "properties": { "zone": 2 }, "geometry": { "type": "Polygon",
+                "coordinates": [[[-87.60, 41.87], [-87.58, 41.87], [-87.58, 41.89], [-87.60, 41.89], [-87.60, 41.87]]] } }
+            ] }
+          },
+          {
+            "type": "geojson", "workspace": "east", "outputTableName": "stops", "coordinateFormat": "EPSG:4326",
+            "geojsonObject": { "type": "FeatureCollection", "features": [
+              { "type": "Feature", "properties": { "riders": 4 }, "geometry": { "type": "Point", "coordinates": [-87.63, 41.88] } },
+              { "type": "Feature", "properties": { "riders": 6 }, "geometry": { "type": "Point", "coordinates": [-87.6301, 41.8801] } },
+              { "type": "Feature", "properties": { "riders": 3 }, "geometry": { "type": "Point", "coordinates": [-87.638, 41.888] } },
+              { "type": "Feature", "properties": { "riders": 2 }, "geometry": { "type": "Point", "coordinates": [-87.59, 41.88] } }
+            ] }
+          },
+          {
+            "type": "join", "workspace": "east", "dataRef": "zones", "joinDataRef": "stops",
+            "near": { "distance": 300, "useCentroid": false },
+            "groupBy": [{ "column": "riders", "aggregateFn": "sum" }, { "column": "riders", "aggregateFn": "max", "normalize": true }]
+          }
+        ]
+      },
+      "handsOn": [["zones", "polygons", 2, "east"], ["stops", "points", 4, "east"]],
+      "joined": [
+        { "zone": 1, "values": [[["sjoin", "sum", "stops.riders"], 13], [["sjoin", "max", "stops.riders"], 6], [["sjoin", "max", "stops.riders_norm"], 1]] },
+        { "zone": 2, "values": [[["sjoin", "sum", "stops.riders"], 2], [["sjoin", "max", "stops.riders"], 2], [["sjoin", "max", "stops.riders_norm"], 0]] }
+      ]
+    },
+    {
+      "name": "a GeoTIFF in a workspace",
+      "document": {
+        "data": [
+          {
+            "type": "geotiff", "workspace": "east", "geotiffFileUrl": "utk_curio/backend/tests/test_frontend/data/autark_raster_utm16n.tif",
+            "outputTableName": "heat", "coordinateFormat": "EPSG:32616"
+          }
+        ]
+      },
+      "rasters": [["heat", "east", 40, 30]],
+      "files": ["utk_curio/backend/tests/test_frontend/data/autark_raster_utm16n.tif"]
+    }
+  ]
+}

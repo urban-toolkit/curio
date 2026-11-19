@@ -25,17 +25,23 @@ import {
     GRAMMAR_RASTER_SOURCES,
     autkTableKey,
     autkUsesWorkspaces,
-    heatmapTableProblem,
+    autkWorkspaceOf,
+    handedOn,
     inItsWorkspace,
     joinQueryParams,
     loadableFeatures,
     rasterEnvelope,
     requestedLayerTables,
+    sectionInputTables,
+    sectionJoinRoots,
+    sectionTableProblem,
+    withInputTables,
     withOsmIds,
     withRasterGrid,
 } from './autkDataCompile';
 import { oneRasterAtATime } from './autkRasters';
 import { featureCount } from './autkRunDescriptions';
+import { plainTableRecord } from './autkDataCompile';
 
 /** A table an Autark node loaded or hands on: its name, its autk-db layer type, its
  * rows, and the workspace it is in when that is not the default one. */
@@ -76,18 +82,23 @@ function joinFailureMessage(errors: string[]): string {
 
 // Run the compiled autk-db loader in the backend sandbox and resolve to the
 // DuckDB artifact reference ({path, dataType}) the sandbox returns. Wraps the
-// callback-based JavaScriptInterpreter in a Promise. No DuckDB input is loaded
-// (input is ''); the data spec is inlined in the code, which reads no input.
+// callback-based JavaScriptInterpreter in a Promise. The data spec is inlined in
+// the code. *input* is the node's input, sent only for a data section that reads
+// tables of it (sectionInputTables), which its code finds in what the sandbox
+// gives the run; no circles are named, so the sandbox gives each input under
+// its place among the node's inputs, `input_0`, `input_1`, ..., the names the
+// node reads them by. Else it is '', and the sandbox loads no input.
 function runDataInBackendOnce(
     jsInterpreter: JavaScriptInterpreter,
     code: string,
     nodeId: string,
+    input: any,
 ): Promise<{ path: string; dataType: string }> {
     return new Promise((resolve, reject) => {
         jsInterpreter.interpretCode(
             code,            // unresolvedUserCode (provenance only)
             code,            // userCode — runs in the sandbox
-            '',              // input — empty: spec is inlined, no DuckDB input
+            input,           // input: the node's, or '' for a section that reads none of it
             [],              // inputTypes
             (json: any) => { // callback
                 if (!json || !json.output || !json.output.path) {
@@ -116,12 +127,13 @@ export async function runDataInBackend(
     jsInterpreter: JavaScriptInterpreter,
     code: string,
     nodeId: string,
+    input: any = '',
     attempts = 2,
 ): Promise<{ path: string; dataType: string }> {
     let lastErr: any;
     for (let attempt = 1; attempt <= attempts; attempt++) {
         try {
-            return await runDataInBackendOnce(jsInterpreter, code, nodeId);
+            return await runDataInBackendOnce(jsInterpreter, code, nodeId, input);
         } catch (e: any) {
             lastErr = e;
             if (attempt < attempts) {
@@ -275,15 +287,43 @@ async function loadableGeojson(source: any): Promise<any> {
 // yet (contracts/autkGrammar), load nothing: the load fails, naming the key.
 // Each source loads into its workspace, entered with autk-grammar's own
 // `enterWorkspace` as its data adapter enters it, and each layer comes back
-// with the workspace it is in when that is not the default one.
+// with the workspace it is in when that is not the default one. The tables of
+// the node's input the section's heatmaps and joins read (sectionInputTables)
+// come from *input*, the node's input as it reads it (utils/autkInput
+// `autkSourcesFrom`), found by key: each loads just before the first entry that
+// reads it, one the input does not carry fails the load before anything loads,
+// and none comes back unless a join wrote its columns onto it (handedOn), as in
+// the sandbox's loader.
 export async function loadSpecLayers(
     spec: any,
+    input: ReadonlyArray<{
+        outputTableName: string; workspace?: string; geojsonObject: any; coordinateFormat?: string; layerType?: string;
+    }> = [],
 ): Promise<Array<{ name: string; type: string; geojson: FeatureCollection; workspace?: string }>> {
     const keyProblem = autkKeyProblem({ data: spec?.data });
     if (keyProblem) throw new Error(keyProblem);
-    const heatmapProblem = heatmapTableProblem(spec?.data ?? []);
-    if (heatmapProblem) throw new Error(heatmapProblem);
-    const sources: any[] = (spec?.data ?? []).map(inItsWorkspace);
+    const tableProblem = sectionTableProblem(spec?.data ?? []);
+    if (tableProblem) throw new Error(tableProblem);
+    const authored: any[] = (spec?.data ?? []).map(inItsWorkspace);
+    const wanted = sectionInputTables(authored);
+    const inputKeys = wanted.map((table) => autkTableKey(table.workspace, table.name));
+    const joinRoots = sectionJoinRoots(authored);
+    const carried = wanted.map((table, at) => {
+        const found = input.find((source) => autkTableKey(autkWorkspaceOf(source), source.outputTableName) === inputKeys[at]);
+        if (!found) throw new Error(table.missing);
+        return {
+            before: table.before,
+            source: {
+                type: 'geojson',
+                outputTableName: table.name,
+                geojsonObject: found.geojsonObject,
+                coordinateFormat: found.coordinateFormat ?? detectCoordinateFormat(found.geojsonObject),
+                ...(found.layerType ? { layerType: found.layerType } : {}),
+                ...(table.workspace ? { workspace: table.workspace } : {}),
+            },
+        };
+    });
+    const sources: any[] = withInputTables(authored, carried);
     // autk-grammar's data entry, imported once for what the section needs of
     // it, as the sandbox's code imports it: `enterWorkspace` for a section that
     // names a workspace (autkUsesWorkspaces), `createDataAdapter` for a source
@@ -358,7 +398,8 @@ export async function loadSpecLayers(
         let tables: Array<{ name: string; type?: string; source?: string }> = [];
         try {
             await enterWorkspace(db, workspace);
-            tables = db.getLayersMetadata() as Array<{ name: string; type?: string; source?: string }>;
+            tables = (db.getLayersMetadata() as Array<{ name: string; type?: string; source?: string }>)
+                .filter((t) => handedOn(autkTableKey(workspace, t.name), inputKeys, joinRoots));
         } catch (e) {
             // A partially-loaded DB can throw here (rather than return []). Treat it
             // as "no usable tables" and let the empty-result guard below report it,
@@ -402,12 +443,17 @@ export async function loadSpecLayers(
             }),
         ));
     }
+    // The section's own CSV and JSON tables that autk-db made with no geometry,
+    // which the loop above passes over: each as its rows, with no layer type.
+    const read = new Set(layers.flatMap((l) => (l ? [autkTableKey(l.workspace, l.name)] : [])));
+    const plain = await plainTables(db, authored, read, enterWorkspace, loadErrors);
     // Every layer is read: nothing below asks the database again (autkDbClose).
     closeAutkDb(db);
     const usable = [
         ...layers.filter(
             (l): l is { name: string; type: string; geojson: FeatureCollection; workspace?: string } => l != null,
         ),
+        ...(plain as any[]),
         ...rasters,
     ];
     // Same contract check as the sandbox emit: a load that came back short is a
@@ -421,7 +467,7 @@ export async function loadSpecLayers(
     // layer is NOT caught by this, because getLayer returns an empty
     // FeatureCollection for it and it stays in `usable`; only a getLayer that
     // throws counts, and that is a defect rather than sparse data.
-    const requested = requestedLayerTables(sources);
+    const requested = requestedLayerTables(authored);
     if (requested.length > 0) {
         const have = new Set(usable.map((l) => autkTableKey(l.workspace, l.name)));
         const missing = requested.filter((n) => !have.has(n));
@@ -447,6 +493,39 @@ export async function loadSpecLayers(
         throw new Error(`in-browser AutkDb load produced no layers (${loadErrors.join('; ')})`);
     }
     return usable;
+}
+
+/**
+ * The tables a data section's own CSV and JSON *sources* made with no geometry
+ * (loaded without geometry columns), which autk-db lists as no layer, in their
+ * sources' order, each read in its source's workspace (*enterWorkspace*) as
+ * both loaders hand it on (plainTableRecord). A table that is a layer, among
+ * the layers *read* already by its key, is left to them; one that cannot be
+ * read is a load error. The sandbox's loader reads them the same way
+ * (autkDataCompile's plainTablesCode).
+ */
+async function plainTables(
+    db: any,
+    sources: any[],
+    read: ReadonlySet<string>,
+    enterWorkspace: (db: any, workspace?: string) => Promise<void>,
+    loadErrors: string[],
+): Promise<AutkLayer[]> {
+    const plain: AutkLayer[] = [];
+    for (const source of sources) {
+        const { type, workspace, outputTableName } = source ?? {};
+        if ((type !== 'csv' && type !== 'json') || !outputTableName || read.has(autkTableKey(workspace, outputTableName))) continue;
+        try {
+            await enterWorkspace(db, workspace);
+            const table = (db.getTablesMetadata() as Array<{ name: string; type?: string }>)
+                .find((t) => t.name === outputTableName);
+            if (!table || table.type !== undefined) continue;
+            plain.push(plainTableRecord(outputTableName, await db.getTable(outputTableName), workspace));
+        } catch (e) {
+            loadErrors.push(`${type}: ${(e as any)?.message ?? String(e)}`);
+        }
+    }
+    return plain;
 }
 
 // Persist a pool-compatible wrapper (output of `layersToPoolWrapper`) to the

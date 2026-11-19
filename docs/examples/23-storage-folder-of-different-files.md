@@ -88,8 +88,7 @@ return gpd.GeoDataFrame(pd.concat([parks, roads], ignore_index=True), crs=roads.
     },
     "stroke": {
       "field": "layer",
-      "type": "nominal",
-      "legend": null
+      "type": "nominal"
     },
     "tooltip": [
       {

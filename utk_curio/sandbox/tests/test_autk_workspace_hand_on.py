@@ -109,6 +109,28 @@ def test_the_javascript_layer_chip_finds_a_table_by_its_key_or_its_one_name():
     assert run["value"] == 2
 
 
+def test_the_javascript_layer_chip_finds_a_handed_on_frame_by_its_key():
+    """A layer an Autark node hands on in an envelope reaches a JavaScript node
+    as a frame, a FeatureCollection that names its workspace and layer type
+    beside its name (``worker._to_js_value``), so a layer chip finds it by its
+    key, as Python's does (``input_layers.curio_layer``)."""
+    from utk_curio.sandbox.util.stored_inputs import read_stored
+
+    wrapper = {"dataType": "outputs", "data": [
+        {"dataType": "geodataframe", "data": _lines(0), "layerName": "lines", "layerType": "polylines"},
+        {"dataType": "geodataframe", "data": _lines(5, 6), "layerName": "lines", "layerType": "polylines",
+         "workspace": "east"},
+    ]}
+    run = _js(
+        "return [curio_layer(input_0, 'east/lines', 0).features.length, "
+        "curio_layer(input_0, 'autk/lines', 0).features.length, "
+        "input_0.map((frame) => [frame.name, frame.workspace || null, frame.layerType])];",
+        read_stored(wrapper),
+    )
+    assert run["success"], run.get("error")
+    assert run["value"] == [2, 1, [["lines", None, "polylines"], ["lines", "east", "polylines"]]]
+
+
 def test_the_javascript_layer_chip_says_what_python_says_of_a_name_two_workspaces_share():
     from utk_curio.sandbox.util.input_layers import ambiguous_layer_message, missing_layer_message
 

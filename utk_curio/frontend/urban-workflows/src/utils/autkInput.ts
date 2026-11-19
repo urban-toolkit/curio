@@ -30,6 +30,7 @@ import {
   autkWorkspaceOf,
   loadableFeatures,
   requestedLayerTables,
+  sectionInputTables,
 } from "../adapters/node/autkDataCompile";
 import { readableBuildingProperties } from "./buildingHeight";
 import { detectCoordinateFormat } from "./geoCrs";
@@ -347,6 +348,27 @@ export function autkNeedsInput(spec: any): boolean {
   return documentTableRefs(spec).some((name) => !own.has(name));
 }
 
+/**
+ * The tables of the input the document's data section reads, by key: each a
+ * heatmap or a join of the section reads that none of its own sources loads
+ * (`sectionInputTables`). The node finds them among its input's tables by the
+ * names it reads its input by, as it finds a map's.
+ */
+export function sectionInputRefs(spec: any): string[] {
+  return sectionInputTables(Array.isArray(spec?.data) ? spec.data : [])
+    .map((table) => autkTableKey(table.workspace, table.name));
+}
+
+/**
+ * Whether the document needs the node's input: when it names a table it does
+ * not make (`autkNeedsInput`), or when its data section reads tables of the
+ * input (`sectionInputRefs`). Until one arrives, the node says what feeds it,
+ * as any node that reads its input does.
+ */
+export function autkReadsInput(spec: any): boolean {
+  return autkNeedsInput(spec) || sectionInputRefs(spec).length > 0;
+}
+
 /** The table a frame becomes: its own name, else `input_<k>`, after its place
  * among the node's inputs (or in the one bundle it arrived in). */
 export function autkTableName(frame: GrammarFrame): string {
@@ -408,8 +430,10 @@ function featuresOf(frame: GrammarFrame, name: string): FrameResult {
  * A buildings table whose heights autk-map and a compute can read, one feature
  * per row as it came: a feature autk-map would misread, or one with no
  * `height`, gets its `height` written, and every other one is the same object.
+ * A node reads its input's buildings and those its own data section loads
+ * through it.
  */
-function withReadableHeights(fc: FeatureCollection): FeatureCollection {
+export function withReadableHeights(fc: FeatureCollection): FeatureCollection {
   const features: any[] = Array.isArray((fc as any)?.features) ? (fc as any).features : [];
   let changed = false;
   const next = features.map((feature) => {
@@ -732,8 +756,9 @@ export function autkSourcesFrom(
   }
 
   // The alias is added only when the document reads it, as the Vega-Lite node
-  // attaches geometry only when the spec draws it.
-  const refs = new Set(documentTableRefs(spec));
+  // attaches geometry only when the spec draws it: in a map, a plot or a pass,
+  // or in a heatmap or a join of its data section.
+  const refs = new Set([...documentTableRefs(spec), ...sectionInputRefs(spec)]);
   byCircle.forEach((frames, circle) => {
     const alias = aliasOf(circle);
     const key = alias === null ? null : autkTableKey(frames[0].workspace, alias);

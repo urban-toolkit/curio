@@ -164,6 +164,7 @@ import { PLAYER_SELECT, latestSelect, playedRange, playerSelect } from '../../..
 import { clearPackageNodes, registerNode } from '../../../registry/nodeRegistry';
 import { parseGeoDataframeWithGeometry } from '../../../utils/parsing';
 import { normalizeGeoSpec } from '../../../utils/vegaGeoSpec';
+import { METRES_PER_LEVEL } from '../../../utils/buildingHeight';
 
 function makeMockData(overrides: Partial<NodeBehaviorData> = {}): NodeBehaviorData {
   return {
@@ -3537,6 +3538,327 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(sentCode).not.toContain('5002');
       expect(sentCode).not.toContain('127.0.0.1');
       expect(sentCode).not.toContain('localhost');
+    });
+
+    // A data section's heatmap or join reads a table of the node's input: the
+    // node reads its input, finds the table there by the names it reads its
+    // input by, and sends its input with the load the sandbox runs, which
+    // reads the table there (autkDataCompile inputTablesFrom).
+    describe('a data section that reads its input\'s tables', () => {
+      /** Points a Python node returned, as /get answers for its GeoDataFrame. */
+      const POINTS = {
+        dataType: 'geodataframe',
+        data: {
+          type: 'FeatureCollection',
+          crs: { type: 'name', properties: { name: 'urn:ogc:def:crs:EPSG::3395' } },
+          features: [
+            { type: 'Feature', geometry: { type: 'Point', coordinates: [-9755000, 5142500] }, properties: { db: 61 } },
+            { type: 'Feature', geometry: { type: 'Point', coordinates: [-9754000, 5142600] }, properties: { db: 74 } },
+          ],
+        },
+      };
+      const HEATMAP = {
+        type: 'heatmap', joinDataRef: 'input_0', outputTableName: 'density',
+        near: { distance: 400 }, grid: { rows: 2, columns: 3 },
+      };
+      const loads = () => jest.fn(
+        (_unresolved, _code, _input, _inputTypes, cb) =>
+          cb({ stdout: [], stderr: '', output: { path: 'art-heat', dataType: 'list' } }),
+      );
+
+      test('a data-only node whose heatmap bins input_0 reads its input and sends it with its load', async () => {
+        const { fetchData } = jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+        fetchData.mockImplementation(async (path: string) => (path === 'art-points' ? POINTS : { data: {}, dataType: 'dataframe' }));
+        try {
+          const interpretCode = loads();
+          const outputCallback = jest.fn();
+          const input = { path: 'art-points', dataType: 'geodataframe' };
+          const result = await callBehavior(useAutkGrammarBehavior, {
+            outputCallback, input: input as any, jsInterpreter: { interpretCode } as any,
+          });
+          await act(async () => {
+            await result.current.applyGrammar!(JSON.stringify({ data: [HEATMAP] }));
+          });
+          expect(fetchData).toHaveBeenCalledWith('art-points');
+          expect(interpretCode).toHaveBeenCalledTimes(1);
+          const [, code, sentInput] = interpretCode.mock.calls[0];
+          // The node's input goes with the load, and the load reads input_0 from it.
+          expect(sentInput).toEqual(input);
+          expect(code).toContain('const __inputTables = [{"name":"input_0","before":0,');
+          expect(outputCallback).toHaveBeenCalledWith('node-1', { path: 'art-heat', dataType: 'list' });
+        } finally {
+          fetchData.mockImplementation(async () => ({ data: {}, dataType: 'dataframe' }));
+        }
+      });
+
+      test('its load is kept until its input changes, and runs again on a new one', async () => {
+        const { fetchData } = jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+        fetchData.mockImplementation(async () => POINTS);
+        try {
+          const interpretCode = loads();
+          const data = makeMockData({ input: { path: 'art-points', dataType: 'geodataframe' } as any, jsInterpreter: { interpretCode } as any });
+          let rendered: any;
+          await act(async () => {
+            rendered = renderHook(() => useAutkGrammarBehavior(data, makeMockNodeState()));
+          });
+          const run = async () => {
+            await act(async () => { await rendered.result.current.applyGrammar!(JSON.stringify({ data: [HEATMAP] })); });
+          };
+          await run();
+          await run();
+          // The same sources and the same input: the load the sandbox made stands.
+          expect(interpretCode).toHaveBeenCalledTimes(1);
+          // The node above ran again: a new output, so the load runs again on it.
+          (data as any).input = { path: 'art-points-2', dataType: 'geodataframe' };
+          await run();
+          expect(interpretCode).toHaveBeenCalledTimes(2);
+          expect(interpretCode.mock.calls[1][2]).toEqual({ path: 'art-points-2', dataType: 'geodataframe' });
+        } finally {
+          fetchData.mockImplementation(async () => ({ data: {}, dataType: 'dataframe' }));
+        }
+      });
+
+      test('guard: a data section that names no table of its input never reads its input, and sends none', async () => {
+        const { fetchData } = jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+        fetchData.mockClear();
+        const interpretCode = loads();
+        const result = await callBehavior(useAutkGrammarBehavior, {
+          input: { path: 'art-points', dataType: 'geodataframe' } as any, jsInterpreter: { interpretCode } as any,
+        });
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            data: [
+              { type: 'geojson', outputTableName: 'levels', geojsonObject: POINTS.data },
+              { ...HEATMAP, joinDataRef: 'levels' },
+            ],
+          }));
+        });
+        expect(fetchData).not.toHaveBeenCalledWith('art-points');
+        expect(interpretCode).toHaveBeenCalledTimes(1);
+        expect(interpretCode.mock.calls[0][2]).toBe('');
+        expect(interpretCode.mock.calls[0][1]).not.toContain('__inputs');
+      });
+
+      test('a table the input does not carry fails the node with the words both loaders say, before any load', async () => {
+        const { fetchData } = jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+        fetchData.mockImplementation(async () => POINTS);
+        try {
+          const interpretCode = loads();
+          const setOutput = jest.fn();
+          const outputCallback = jest.fn();
+          const result = await callBehavior(
+            useAutkGrammarBehavior,
+            { outputCallback, input: { path: 'art-points', dataType: 'geodataframe' } as any, jsInterpreter: { interpretCode } as any },
+            { setOutput },
+          );
+          await act(async () => {
+            await result.current.applyGrammar!(JSON.stringify({ data: [{ ...HEATMAP, joinDataRef: 'labels' }] }));
+          });
+          const errors = setOutput.mock.calls.filter((c: any[]) => c[0]?.code === 'error');
+          expect(errors.map((c: any[]) => c[0].content)).toEqual([
+            'The heatmap "density" bins "labels", a table its data section does not load and the node\'s input does not carry.',
+          ]);
+          expect(interpretCode).not.toHaveBeenCalled();
+          expect(outputCallback).not.toHaveBeenCalled();
+        } finally {
+          fetchData.mockImplementation(async () => ({ data: {}, dataType: 'dataframe' }));
+        }
+      });
+
+      test('a map reads its input once: the load hands the joined input table back, and nothing else of the input', async () => {
+        const { fetchData } = jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const grammarAsBefore = AutkGrammar.getMockImplementation();
+        const drawn: { spec: any } = { spec: null };
+        AutkGrammar.mockImplementation(() => ({
+          run: jest.fn(async (spec: any) => { drawn.spec = spec; }), data: {}, computeAdapter: { resolveCompute: jest.fn() },
+        }));
+        const roads = { type: 'FeatureCollection', features: [
+          { type: 'Feature', geometry: { type: 'LineString', coordinates: [[-9755100, 5142400], [-9753900, 5142700]] }, properties: { road: 1 } },
+        ] };
+        // What /get answers for the load's list: the section's roads, then the
+        // input table a join wrote its columns onto.
+        const joined = { ...POINTS.data, features: POINTS.data.features.map((f: any) => ({ ...f, properties: { ...f.properties, roads: 1 } })) };
+        fetchData.mockImplementation(async (path: string) => {
+          if (path === 'art-points') return POINTS;
+          if (path === 'art-joined') {
+            return { dataType: 'list', data: [
+              { dataType: 'dict', data: { name: 'roads', type: 'roads', geojson: roads } },
+              { dataType: 'dict', data: { name: 'input_0', type: 'points', geojson: joined } },
+            ] };
+          }
+          return { data: {}, dataType: 'dataframe' };
+        });
+        try {
+          const interpretCode = jest.fn(
+            (_unresolved, _code, _input, _inputTypes, cb) =>
+              cb({ stdout: [], stderr: '', output: { path: 'art-joined', dataType: 'list' } }),
+          );
+          const input = { path: 'art-points', dataType: 'geodataframe' };
+          const result = await callBehavior(useAutkGrammarBehavior, { input: input as any, jsInterpreter: { interpretCode } as any });
+          await act(async () => {
+            await result.current.applyGrammar!(JSON.stringify({
+              data: [
+                { type: 'geojson', outputTableName: 'roads', geojsonObject: roads },
+                { type: 'join', dataRef: 'input_0', joinDataRef: 'roads' },
+              ],
+              map: { layerRefs: [{ dataRef: 'roads' }, { dataRef: 'input_0' }] },
+            }));
+          });
+          expect(interpretCode).toHaveBeenCalledTimes(1);
+          expect(interpretCode.mock.calls[0][2]).toEqual(input);
+          const loaded = drawn.spec.data.map((s: any) => s.outputTableName);
+          // input_0 once, as the join made it.
+          expect(loaded.filter((name: string) => name === 'input_0')).toEqual(['input_0']);
+          const point = drawn.spec.data.find((s: any) => s.outputTableName === 'input_0');
+          expect(point.geojsonObject.features.map((f: any) => f.properties.roads)).toEqual([1, 1]);
+        } finally {
+          AutkGrammar.mockImplementation(grammarAsBefore);
+          fetchData.mockImplementation(async () => ({ data: {}, dataType: 'dataframe' }));
+        }
+      });
+
+      test('guard: a map that does not name the input table its heatmap bins does not load that table', async () => {
+        const { fetchData } = jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const grammarAsBefore = AutkGrammar.getMockImplementation();
+        const drawn: { spec: any } = { spec: null };
+        AutkGrammar.mockImplementation(() => ({
+          run: jest.fn(async (spec: any) => { drawn.spec = spec; }), data: {}, computeAdapter: { resolveCompute: jest.fn() },
+        }));
+        const roads = { type: 'FeatureCollection', features: [
+          { type: 'Feature', geometry: { type: 'LineString', coordinates: [[-9755100, 5142400], [-9753900, 5142700]] }, properties: { road: 1 } },
+        ] };
+        fetchData.mockImplementation(async (path: string) => {
+          if (path === 'art-points') return POINTS;
+          if (path === 'art-roads') return { dataType: 'list', data: [{ dataType: 'dict', data: { name: 'roads', type: 'roads', geojson: roads } }] };
+          return { data: {}, dataType: 'dataframe' };
+        });
+        try {
+          const interpretCode = jest.fn(
+            (_unresolved, _code, _input, _inputTypes, cb) =>
+              cb({ stdout: [], stderr: '', output: { path: 'art-roads', dataType: 'list' } }),
+          );
+          const result = await callBehavior(useAutkGrammarBehavior, {
+            input: { path: 'art-points', dataType: 'geodataframe' } as any, jsInterpreter: { interpretCode } as any,
+          });
+          await act(async () => {
+            await result.current.applyGrammar!(JSON.stringify({
+              data: [
+                { type: 'geojson', outputTableName: 'roads', geojsonObject: roads },
+                { type: 'join', dataRef: 'roads', joinDataRef: 'input_0' },
+              ],
+              map: { layerRefs: [{ dataRef: 'roads' }] },
+            }));
+          });
+          expect(drawn.spec.data.map((s: any) => s.outputTableName)).toEqual(['roads']);
+        } finally {
+          AutkGrammar.mockImplementation(grammarAsBefore);
+          fetchData.mockImplementation(async () => ({ data: {}, dataType: 'dataframe' }));
+        }
+      });
+
+      test('with nothing arrived, it says what feeds it before a run, and a run says nothing arrived', async () => {
+        const interpretCode = loads();
+        const setOutput = jest.fn();
+        const code = JSON.stringify({ data: [HEATMAP] });
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { code, jsInterpreter: { interpretCode } as any } as any,
+          { code, setOutput } as any,
+        );
+        const { container } = render(<>{result.current.contentComponent}</>);
+        expect(container.querySelector('[data-curio-node-empty="disconnected"]')).not.toBeNull();
+        await act(async () => {
+          await result.current.applyGrammar!(code);
+        });
+        const errors = setOutput.mock.calls.filter((c: any[]) => c[0]?.code === 'error');
+        expect(errors.map((c: any[]) => [c[0].content, c[0].kind])).toEqual([[
+          'rendered nothing: 0 rows arrived at this node, so there was nothing to draw. The upstream node that '
+            + 'feeds it is what must change; this document is not at fault.',
+          expect.any(String),
+        ]]);
+        expect(interpretCode).not.toHaveBeenCalled();
+      });
+    });
+
+    // A building part the node's own data section loads reaches its maps and
+    // passes with the height autk-map draws for it, as a part of its input
+    // does (utils/autkInput withReadableHeights): a pass that reads every
+    // building's `properties.height` with `required: true` leaves none out.
+    describe('a building part its own data section loads', () => {
+      test('reaches its map and its passes with the height autk-map draws, read back from the sandbox', async () => {
+        const { fetchData } = jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const grammarAsBefore = AutkGrammar.getMockImplementation();
+        const drawn: { spec: any } = { spec: null };
+        AutkGrammar.mockImplementation(() => ({
+          run: jest.fn(async (spec: any) => { drawn.spec = spec; }), data: {}, computeAdapter: { resolveCompute: jest.fn() },
+        }));
+        const footprint = (i: number) => {
+          const x = -9755100 + 20 * i;
+          return { type: 'Polygon', coordinates: [[[x, 5142400], [x + 10, 5142400], [x + 10, 5142410], [x, 5142400]]] };
+        };
+        // The parts as the sandbox's load hands them on: one with a height,
+        // one with only its levels, one with an empty height beside its
+        // levels, one with only a building:height.
+        const parts = [{ height: 12 }, { 'building:levels': 3 }, { height: null, 'building:levels': 2 }, { 'building:height': 30 }];
+        const buildings = {
+          type: 'FeatureCollection',
+          features: parts.map((properties, i) => ({ type: 'Feature', geometry: footprint(i), properties })),
+        };
+        const roads = { type: 'FeatureCollection', features: [
+          { type: 'Feature', geometry: { type: 'LineString', coordinates: [[-9755100, 5142390], [-9755000, 5142390]] }, properties: { highway: 'residential' } },
+        ] };
+        fetchData.mockImplementation(async (path: string) => (path === 'art-city'
+          ? { dataType: 'list', data: [
+            { dataType: 'dict', data: { name: 'city_roads', type: 'roads', geojson: roads } },
+            { dataType: 'dict', data: { name: 'city_buildings', type: 'buildings', geojson: buildings } },
+          ] }
+          : { data: {}, dataType: 'dataframe' }));
+        try {
+          const interpretCode = jest.fn(
+            (_unresolved, _code, _input, _inputTypes, cb) =>
+              cb({ stdout: [], stderr: '', output: { path: 'art-city', dataType: 'list' } }),
+          );
+          const result = await callBehavior(useAutkGrammarBehavior, { jsInterpreter: { interpretCode } as any });
+          await act(async () => {
+            await result.current.applyGrammar!(JSON.stringify({
+              data: [{
+                type: 'osm',
+                pbfFileUrl: 'docs/examples/data/back_bay.osm.pbf',
+                queryArea: { geocodeArea: 'Boston', areas: ['Back Bay'] },
+                outputTableName: 'city',
+                autoLoadLayers: { layers: ['roads', 'buildings'] },
+              }],
+              compute: [{
+                dataRef: 'city_roads',
+                attributes: { seg: 'geometry.coordinates' },
+                attributeMatrices: { seg: { rows: 'auto', cols: 2 } },
+                uniforms: {
+                  bld_height: { fromFeature: { layer: 'city_buildings', iterate: 'batched', path: 'properties.height', required: true } },
+                },
+                wgslFunction: 'return bld_height[0];',
+                outputColumnName: 'sunlight',
+                outputTableName: 'city_road_sun',
+                layerType: 'roads',
+              }],
+              map: { layerRefs: [{ dataRef: 'city_buildings' }, { dataRef: 'city_road_sun', getFnv: 'compute.sunlight' }] },
+            }));
+          });
+          expect(interpretCode).toHaveBeenCalledTimes(1);
+          const loaded = drawn.spec.data.find((s: any) => s.outputTableName === 'city_buildings');
+          expect(loaded.layerType).toBe('buildings');
+          expect(loaded.geojsonObject.features.map((f: any) => f.properties.height))
+            .toEqual([12, 3 * METRES_PER_LEVEL, 2 * METRES_PER_LEVEL, 30]);
+          // Each part keeps its own tags.
+          expect(loaded.geojsonObject.features.map((f: any) => f.properties['building:levels']))
+            .toEqual([undefined, 3, 2, undefined]);
+        } finally {
+          AutkGrammar.mockImplementation(grammarAsBefore);
+          fetchData.mockImplementation(async () => ({ data: {}, dataType: 'dataframe' }));
+        }
+      });
     });
   });
 

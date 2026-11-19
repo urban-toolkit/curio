@@ -973,19 +973,68 @@ def _missing_candidate(page, capture, directory, expected_path, *, pixel_thresho
     return bool(fields.get("candidate"))
 
 
-def park_pointer(page: Page) -> None:
-    """Move the pointer to the pane's empty bottom-right corner.
+# The point nearest (x, y) on its row or its column where the page shows the
+# bare canvas pane, the page's own (the first: a flow drawn inside a node comes
+# later in document order); (x, y) itself when it is bare, or when there is no
+# pane or no bare point on those lines.
+_BARE_PANE_POINT_JS = """([x, y]) => {
+    const pane = document.querySelector('.react-flow__pane');
+    if (!pane) return [x, y];
+    const bare = (px, py) => document.elementFromPoint(px, py) === pane;
+    if (bare(x, y)) return [x, y];
+    const width = window.innerWidth, height = window.innerHeight;
+    for (let d = 20; d <= Math.max(width, height); d += 20) {
+        for (const [px, py] of [[x - d, y], [x, y - d], [x + d, y], [x, y + d]]) {
+            if (px >= 0 && py >= 0 && px < width && py < height && bare(px, py)) return [px, py];
+        }
+    }
+    return [x, y];
+}"""
+
+
+def _bare_pane_point(page: Page, x: float, y: float) -> tuple[float, float]:
+    """Where near (x, y) the pointer rests on the bare pane (``_BARE_PANE_POINT_JS``).
+
+    Never raises: a page that cannot be asked keeps (x, y).
+    """
+    try:
+        found = page.evaluate(_BARE_PANE_POINT_JS, [x, y])
+        return float(found[0]), float(found[1])
+    except Exception:  # noqa: BLE001 - best effort, like the volatile boxes
+        return float(x), float(y)
+
+
+def park_pointer(page: Page, *, bare: bool = False) -> tuple[float, float]:
+    """Move the pointer to the pane's empty bottom-right corner, and return
+    where it rests.
 
     The pointer is wherever the last click left it, and once a node is framed
-    that spot can be over its map or its chart.
+    that spot can be over its map or its chart. With *bare*, a corner that a
+    node covers at the framing on screen gives way to the nearest point of the
+    bare pane (``_bare_pane_point``).
     """
     viewport = page.viewport_size or {"width": 1280, "height": 720}
-    page.mouse.move(viewport["width"] - 10, viewport["height"] - 60)
+    at = (float(viewport["width"] - 10), float(viewport["height"] - 60))
+    if bare:
+        at = _bare_pane_point(page, *at)
+    page.mouse.move(*at)
+    return at
 
 
 def frame_nodes(page: Page, node_ids) -> None:
-    """Fit the canvas to *node_ids* at up to 100% zoom, the pointer parked first."""
-    park_pointer(page)
+    """Fit the canvas to *node_ids* at up to 100% zoom, the pointer parked first.
+
+    The pointer rests on the bare pane: before the fit, at the framing then on
+    screen, and again after it when the fit brought a node under it. At up to
+    100% zoom the nodes around the ones framed reach the window's corner, and a
+    pointer moved onto a Vega-Lite chart hovers it: a hover selection stays
+    until a double-click takes it back, and lights the views linked to the
+    chart. Example 17's bars did that to its map before its interaction steps
+    (CI run 44403418056).
+    """
+    at = park_pointer(page, bare=True)
     # The full-page fit's padding: less lets a tall node's header reach the
     # dataflow title in the canvas's top-left corner.
     _wait_for_reactflow_ready(page, node_ids=list(node_ids), max_zoom=1.0)
+    if _bare_pane_point(page, *at) != at:
+        park_pointer(page, bare=True)

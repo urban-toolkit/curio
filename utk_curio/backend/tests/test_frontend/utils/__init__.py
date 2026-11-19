@@ -98,6 +98,10 @@ from .closeups import (  # noqa: F401
     watch_viewport_hint,
     viewport_hints,
     canvas_painted_at_shown_zoom,
+    node_selector,
+    capture_node,
+    wait_for_node_capture,
+    wait_for_node_still,
     save_node_closeup,
 )
 from .interactions import (  # noqa: F401
@@ -122,10 +126,7 @@ from .interactions import (  # noqa: F401
     _LIT_MARKS_JS,
     lit_marks,
     lit_labels,
-    capture_node,
     changed_pixels,
-    wait_for_node_capture,
-    wait_for_node_still,
     save_interaction_frame,
 )
 from .tooltips import (  # noqa: F401
@@ -262,6 +263,8 @@ from .node_drawings import (  # noqa: F401
     VEGA_CANVAS_PROBE_JS,
     assert_vega_canvas_rendered,
     _AUTK_MAP_PIXELS_JS,
+    autark_view_element,
+    autark_panes,
     assert_autark_map_drawn,
     assert_autark_plot_drawn,
     AUTK_MAP_MIN_FRAMED_SPAN,

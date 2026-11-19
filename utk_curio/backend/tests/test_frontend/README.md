@@ -114,7 +114,7 @@ inside its one container).
 
 ### AUTK / WebGPU note
 
-Autark workflows use the single `AUTK_GRAMMAR` node type, which renders its map/plot via WebGPU. The `browser_type_launch_args` fixture in the **parent** [`../conftest.py`](../conftest.py) points `executable_path` at the system-installed Google Chrome and passes a minimal flag set (`--enable-unsafe-webgpu --enable-unsafe-swiftshader`). This is deliberate: Playwright's bundled Chromium on Windows ships without a working Dawn/WebGPU runtime (`requestAdapter()` returns null), whereas real Chrome 113+ returns an adapter. When Chrome can't be found it falls back to bundled Chromium.
+Autark workflows use the single `AUTK_GRAMMAR` node type, which renders its map/plot via WebGPU. The `browser_type_launch_args` fixture in the **parent** [`../conftest.py`](../conftest.py) points `executable_path` at the system-installed Google Chrome and passes the flags `launch_flags` in [`../_support/chrome_flags.py`](../_support/chrome_flags.py) gives each platform: on Windows and macOS a minimal set (`--enable-unsafe-webgpu --enable-unsafe-swiftshader`). This is deliberate: Playwright's bundled Chromium on Windows ships without a working Dawn/WebGPU runtime (`requestAdapter()` returns null), whereas real Chrome 113+ returns an adapter. When Chrome can't be found it falls back to bundled Chromium.
 
 There is **no WebGPU tolerance**: an `AUTK_GRAMMAR` node that errors (including because WebGPU is unavailable) is a hard test failure. To run the autk examples you need a browser that provides WebGPU - which the system-Chrome `executable_path` above ensures. `_webgpu_diagnostics` still probes adapter/device state once per session and attaches it to the failure dump for debugging.
 
@@ -463,12 +463,16 @@ Two families of baseline live in that folder:
 - one per bundled dataflow JSON, for `TestWorkflowCanvas` (two per workflow,
   `test_node_type_and_content` and `test_node_execution`), each paired with a
   `_browser_log.txt` because autk swallows its errors into React state. Every
-  Autark node whose grammar has a `map` or `plot` also gets a
+  Autark node whose grammar has a `map` or `plot`, and every Vega-Lite chart but
+  those `EXPECTED_EMPTY` says draw nothing, also gets a
   `test_node_execution_closeup_<node id>` baseline: the node alone, framed at up
   to 100% zoom (`save_node_closeup`) and compared at a per-channel tolerance of
-  5 instead of 30, against a 5% budget instead of 10%. In the full-page frame a
-  map or plot that drew nothing can stay under the budget; up close it cannot. Walkthrough scenes with a drawn map
-  take one with `ctx.capture_node`. A workflow in `INTERACTIONS`
+  5 instead of 30, against a 5% budget instead of 10%, once two captures of it
+  in a row agree (`still=True`). An Autark node of several views also gets one
+  for each view's pane, `test_node_execution_closeup_<node id>_<pane>` (`map-0`
+  and on, then `plot-0` and on; `save_node_closeup`'s `view`). In the full-page frame a
+  map, plot or chart that drew nothing can stay under the budget; up close it cannot. Walkthrough scenes with a drawn map
+  or chart take one with `ctx.capture_node`. A workflow in `INTERACTIONS`
   (test_workflows.py) also gets
   `test_node_interaction_<step>_{before,after}_<node id>` baselines. Each step
   frames its two nodes together, captures both, does its gesture (a hover held
@@ -545,6 +549,12 @@ beside its default one: `<name>.utk-gpu.png`, `<name>.arcade-gpu.png` or `<name>
 - The test-gpu job sets `CURIO_E2E_GPU_KIND` from its runner's name. A frame
   with a baseline of that kind is compared with it. Every other frame, and every
   run without a kind (a local run, a CPU runner), uses the default baseline.
+- A CPU job has no kind because it draws alike on every runner, a utk desktop
+  included: its Chrome draws with SwiftShader and keeps Chrome's Vulkan off,
+  which would otherwise draw with the desktop's NVIDIA GPU
+  (`../_support/chrome_flags.py`), and the job runs in UTC, the time zone of
+  GitHub-hosted and arcade runners, where a desktop's own would move every
+  Vega-Lite time axis (`TZ` in e2e-desktop's and test-isolated's environment).
   The report's card names the baseline each comparison used, and a badge marks
   a GPU kind's.
 - A re-mint writes the baseline it compared with, so on utk-gpu it rewrites a
@@ -621,7 +631,7 @@ test_frontend/
     images.py                 # captures (a Curio tooltip hidden unless kept), _compare_images
     dialogs.py                # accept_confirm_dialog, wait_for_drawer_closed, leave_agent_badge
     screenshots.py            # save_workflow_test_screenshot, mint, re-mint and candidates, frame_nodes
-    closeups.py               # save_node_closeup, close-up budgets, viewport hints
+    closeups.py               # save_node_closeup, node captures (wait_for_node_still), close-up budgets, viewport hints
     interactions.py           # interaction frames, brush and mark probes
     tooltips.py               # the Curio tooltip: hovers, the one on screen, its close-up box
     servers.py                # ports, e2e_existing_servers
