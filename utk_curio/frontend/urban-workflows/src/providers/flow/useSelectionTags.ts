@@ -25,21 +25,35 @@ import {
 
 type NodeLike = { id: string; data?: any };
 
-/** The columns the tags among *nodes* read the view *viewId* by. */
-export function tagColumnsOn(nodes: readonly NodeLike[], viewId: string): string[] {
-    const columns = new Set<string>();
+/**
+ * What a tag reads its view by: the view of its node it names, if any (an
+ * Autark node of several views), and its column. Tags that read alike hold
+ * the same ids.
+ */
+export function tagReadKey(view: string | undefined, column: string): string {
+    return JSON.stringify([view ?? null, column]);
+}
+
+/** What the tags among *nodes* read the view *viewId* by: each tag's view of it and its column, each once. */
+export function tagReadsOn(nodes: readonly NodeLike[], viewId: string): Array<{ view: string | undefined; column: string }> {
+    const reads = new Map<string, { view: string | undefined; column: string }>();
     for (const node of nodes) {
         for (const tag of normalizeSelections(node.data?.selections)) {
-            if (tag.node === viewId) columns.add(tag.column);
+            if (tag.node === viewId) reads.set(tagReadKey(tag.view, tag.column), { view: tag.view, column: tag.column });
         }
     }
-    return [...columns];
+    return [...reads.values()];
+}
+
+/** The columns the tags among *nodes* read the view *viewId* by. */
+export function tagColumnsOn(nodes: readonly NodeLike[], viewId: string): string[] {
+    return [...new Set(tagReadsOn(nodes, viewId).map(({ column }) => column))];
 }
 
 /**
  * *selections* (one node's `data.selections`) with each tag on the view
- * *viewId* holding what *states* says for its column, or null when no tag
- * holds anything new.
+ * *viewId* holding what *states* says for what it reads (`tagReadKey`), or
+ * null when no tag holds anything new.
  */
 export function withViewStates(
     selections: unknown,
@@ -49,7 +63,7 @@ export function withViewStates(
     const tags = normalizeSelections(selections);
     let changed = false;
     const next = tags.map((tag) => {
-        const state = tag.node === viewId ? states.get(tag.column) : undefined;
+        const state = tag.node === viewId ? states.get(tagReadKey(tag.view, tag.column)) : undefined;
         if (state === undefined) return tag;
         const updated = withState(tag, state);
         if (sameState(tag, updated)) return tag;
@@ -59,17 +73,18 @@ export function withViewStates(
     return changed ? next : null;
 }
 
-/** What the selection *details* of the view *viewId* hold for each column
- * the tags among *nodes* read it by. A view that holds no rows yet gives none. */
+/** What the selection *details* of the view *viewId* hold for what each tag
+ * among *nodes* reads of it (`tagReadKey`): its view of it, and its column.
+ * A view that holds no rows yet gives none. */
 export async function viewStates(
     nodes: readonly NodeLike[],
     viewId: string,
     details: ViewDetails,
 ): Promise<Map<string, SelectionState>> {
     const states = new Map<string, SelectionState>();
-    for (const column of tagColumnsOn(nodes, viewId)) {
-        const state = await selectionStateOf(viewId, column, details);
-        if (state !== null) states.set(column, state);
+    for (const { view, column } of tagReadsOn(nodes, viewId)) {
+        const state = await selectionStateOf(viewId, column, details, view);
+        if (state !== null) states.set(tagReadKey(view, column), state);
     }
     return states;
 }
@@ -135,7 +150,7 @@ export function useSelectionTags({
         forgetViewSelection(viewId);
         const nodes = reactFlow.getNodes?.() ?? [];
         const empty = new Map<string, SelectionState>(
-            tagColumnsOn(nodes, viewId).map((column) => [column, { ids: [] }]),
+            tagReadsOn(nodes, viewId).map(({ view, column }) => [tagReadKey(view, column), { ids: [] }]),
         );
         if (empty.size === 0) return;
         const changed = nodes

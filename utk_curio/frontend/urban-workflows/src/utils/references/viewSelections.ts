@@ -9,7 +9,7 @@
  * again. The flow records each view's latest selection as the view
  * reports it (`useSelectionTags`), so a tag added later starts from it.
  */
-import { selectsOnLayer } from "../autkSelects";
+import { selectsOfView, selectsOnLayer } from "../autkSelects";
 import type { SelectDetail, SelectionRows } from "../selectionMatch";
 import { rowsHeldBy, selectedIds, selectionLayer, type SelectionState, type SelectionTag } from "./selectionTags";
 
@@ -72,21 +72,33 @@ export function forgetViewSelection(nodeId: string): void {
 }
 
 /**
+ * The selects of *details* a tag reads: those of the view *view* (its `id`)
+ * of an Autark node of several views, else all of them.
+ */
+function readBy(details: ViewDetails | undefined, view: string | undefined): ViewDetails | undefined {
+  return view === undefined || details === undefined ? details : (selectsOfView(details, view) as ViewDetails);
+}
+
+/**
  * What the selection *details* of the view *nodeId* hold for a tag on
- * *column*: its ids, or how many there were. Null when the view holds no rows
- * yet, so nothing can be read.
+ * *column*, or on *column* of the node's view *view* (its `id`): its ids, or
+ * how many there were. Null when the view holds no rows yet, so nothing can
+ * be read.
  */
 export async function selectionStateOf(
   nodeId: string,
   column: string,
   details: ViewDetails | undefined = latestViewSelection(nodeId),
+  view?: string,
 ): Promise<SelectionState | null> {
   // An Autark node of several views sends one select per view, each on its
-  // own table: the tag reads the newest's, over that table's rows.
-  const layer = selectionLayer(details);
+  // own table: the tag reads the newest's, or its view's, over that table's
+  // rows.
+  const read = readBy(details, view);
+  const layer = selectionLayer(read);
   const held = await viewRowsOf(nodeId, layer);
   if (!held) return null;
-  return selectedIds(selectsOnLayer(details, layer), held.rows, column);
+  return selectedIds(selectsOnLayer(read, layer), held.rows, column);
 }
 
 /**
@@ -99,7 +111,7 @@ export async function readSelectionRows(
   tag: SelectionTag,
   limit = 3,
 ): Promise<{ columns: string[]; rows: Record<string, unknown>[] } | { unreadable: true } | null> {
-  const held = await readViewRows(tag.node, selectionLayer(latestViewSelection(tag.node)));
+  const held = await readViewRows(tag.node, selectionLayer(readBy(latestViewSelection(tag.node), tag.view)));
   if (!held) return null;
   if ("failed" in held) return { unreadable: true };
   const rows = rowsHeldBy([tag], held.rows)
