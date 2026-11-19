@@ -1,5 +1,12 @@
 {
-  "description": "Handles and edges, and what the rule of interactionEdges.json says of each. src/tests/contracts/interactionEdgesCases.test.ts runs every case through interactionEdges.ts, and backend/tests/test_interaction_edges.py through execution/run_plan.py and agents/domain/plan_topology.py. A handle's view is the id it names: null for a node's own handle and for a handle that is no interaction handle.",
+  "description": "Handles and edges, and what the rule of interactionEdges.json says of each. src/tests/contracts/interactionEdgesCases.test.ts runs every case through interactionEdges.ts, and backend/tests/test_interaction_edges.py through execution/run_plan.py and agents/domain/plan_topology.py. A handle's view is the id it names: null for a node's own handle and for a handle that is no interaction handle. viewHandles are the handles made for a view's id, a node's own for no id.",
+  "viewHandles": [
+    {"name": "a view's id makes its handle", "view": "heights", "handle": "in/out@heights"},
+    {"name": "an id may hold the mark", "view": "map@2", "handle": "in/out@map@2"},
+    {"name": "an id may hold a space", "view": "building heights", "handle": "in/out@building heights"},
+    {"name": "no id makes a node's own handle", "view": null, "handle": "in/out"},
+    {"name": "an empty id makes a node's own handle", "view": "", "handle": "in/out"}
+  ],
   "handles": [
     {"name": "a node's own handle", "handle": "in/out", "interaction": true, "view": null},
     {"name": "a view's handle names the view's id", "handle": "in/out@heights", "interaction": true, "view": "heights"},

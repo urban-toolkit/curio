@@ -173,6 +173,17 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   useEffect(() => {
     if (growsCircles) updateNodeInternals(data.nodeId);
   }, [circleIds]);
+  // The handles a behavior adds, as an Autark node of several views adds a dot
+  // per view: React Flow is told when they change, so an edge to a dot that
+  // came with a new view has a handle to attach to. Those the node mounts with
+  // React Flow measures itself.
+  const dynamicIds = (behavior.dynamicHandles ?? []).map((h) => h.id).join(",");
+  const measuredDynamicIdsRef = useRef(dynamicIds);
+  useEffect(() => {
+    if (measuredDynamicIdsRef.current === dynamicIds) return;
+    measuredDynamicIdsRef.current = dynamicIds;
+    updateNodeInternals(data.nodeId);
+  }, [dynamicIds]);
 
   const sendCode = behavior.sendCodeOverride ?? nodeState.sendCode;
   const setSendCodeCallback = behavior.setSendCodeCallbackOverride ?? nodeState.setSendCodeCallback;

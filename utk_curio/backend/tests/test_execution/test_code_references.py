@@ -719,6 +719,28 @@ class TestSelectionTags:
         ]
         assert normalize_selections(raw) == [PICKED, raw[2]]
 
+    def test_a_tag_naming_a_view_of_its_node_keeps_the_view_as_the_browser_keeps_it(self):
+        """A tag can read one view of an Autark node of several views ("Node ·
+        heights"): it keeps the view's id beside the node's, as
+        ``normalizeSelections`` in ``selectionTags.ts`` does, so a save on the
+        server and a run keep it. An empty view or one that is no text names
+        none."""
+        from utk_curio.backend.app.execution.code_references import normalize_selections
+
+        heights = {"name": "heights", "node": "views", "view": "heights", "column": "osm_id", "ids": [7]}
+        raw = [
+            heights,
+            {"name": "blank", "node": "views", "view": "", "column": "osm_id", "ids": []},
+            {"name": "odd", "node": "views", "view": 3, "column": "osm_id", "ids": []},
+        ]
+        assert normalize_selections(raw) == [
+            heights,
+            {"name": "blank", "node": "views", "column": "osm_id", "ids": []},
+            {"name": "odd", "node": "views", "column": "osm_id", "ids": []},
+        ]
+        spec = parse_workflow_dict(_spec([_picker("a", "x", [heights])]))
+        assert spec.nodes[0].selections == [heights]
+
     def test_a_tag_whose_name_ends_in_a_line_break_is_dropped_as_the_browser_drops_it(self):
         """The browser's ``normalizeSelections`` reads the name pattern as
         ECMA-262 does, where ``$`` ends the text. Python's ``re.match`` lets a

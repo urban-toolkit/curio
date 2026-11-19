@@ -50,7 +50,9 @@ A point selection over key columns matches rows by their values, so the two visu
 
 A {{template.label:curio.builtin/vis-simple}} playing a video or a recording sends an interval on "t_s", seconds from the file's start to where its player stands, so a view linked to it marks the rows whose "t_s" lies in it; a table of clock times gets its "t_s" in a {{template.label:curio.builtin/python-computation}} node first. An {{template.label:curio.builtin/autk-grammar}} map marks such a selection, or a chart's, on its first input table, on the layer with "isPick": true.
 
-A {{template.label:curio.builtin/edit-features}} node feeds the {{template.label:curio.builtin/autk-grammar}} map it edits on, and an Interaction edge links the two, so features picked on the map reach it. Its code, one `curio_edit_features(...)` call, is written by the node from its edits.
+An {{template.label:curio.builtin/autk-grammar}} node of several views (maps and plots, each with an "id") has a dot per view with an "id" beside its own. An Interaction edge on a view's dot carries that view's selection alone and lights that view alone, and the node's "links" carry what the view receives on to the views they join; an edge on the node's own dot carries every view's selection to every view. A plan names a view by its id: "fromView" at the edge's "from" node, "toView" at its "to" node, on interaction edges only. A node of one view has its own dot alone, and a view without an "id" has no dot of its own. When the plan adds the Autark node, its intent names the ids its edges use.
+
+A {{template.label:curio.builtin/edit-features}} node feeds the {{template.label:curio.builtin/autk-grammar}} map it edits on, and an Interaction edge links the two, so features picked on the map reach it. On a node of several views it edits the map whose dot the Interaction edge joins, else the node's first map. Its code, one `curio_edit_features(...)` call, is written by the node from its edits.
 
 Nodes that can have interaction connection edge:
 

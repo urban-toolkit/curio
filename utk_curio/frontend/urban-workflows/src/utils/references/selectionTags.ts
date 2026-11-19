@@ -40,6 +40,11 @@ export interface SelectionTag {
   name: string;
   /** The id of the view node whose selection it reads. */
   node: string;
+  /**
+   * The `id` of the view of that node it reads, an Autark node of several
+   * views ("Node · heights"); none, the node's newest selection.
+   */
+  view?: string;
   /** The column whose values identify the selected rows. */
   column: string;
   /** The ids of the selected rows, each once, in row order. */
@@ -56,8 +61,9 @@ const isCount = (value: unknown): value is number =>
 
 /**
  * The well-formed tags in *raw* (a spec's `metadata.selections`), one per
- * name. A tag holds a list of ids, or a count in their place. Kept in sync
- * with `normalize_selections` in `code_references.py`.
+ * name. A tag holds a list of ids, or a count in their place, and names the
+ * view of its node it reads when it reads one. Kept in sync with
+ * `normalize_selections` in `code_references.py`.
  */
 export function normalizeSelections(raw: unknown): SelectionTag[] {
   if (!Array.isArray(raw)) return [];
@@ -70,7 +76,12 @@ export function normalizeSelections(raw: unknown): SelectionTag[] {
     if (!WIDGET_NAME_RE.test(name) || seen.has(name)) continue;
     if (typeof e.node !== "string" || e.node === "") continue;
     if (typeof e.column !== "string" || e.column === "") continue;
-    const tag: SelectionTag = { name, node: e.node, column: e.column };
+    const tag: SelectionTag = {
+      name,
+      node: e.node,
+      ...(typeof e.view === "string" && e.view !== "" ? { view: e.view } : {}),
+      column: e.column,
+    };
     if (Array.isArray(e.ids)) tag.ids = [...(e.ids as SelectionId[])];
     else if (isCount(e.count)) tag.count = e.count;
     else continue;

@@ -49,6 +49,13 @@
   border-radius: 50%;
 }
 
+/* The pane of an Autark view whose dot the pointer is on (NodeHandles):
+   an outline along the pane's own edge, while the pointer stays there. */
+[data-curio-autk-pane][data-curio-ringed="true"] {
+  outline: 2px solid var(--curio-focus-ring);
+  outline-offset: -2px;
+}
+
 /* Notebook view: a cell's dots in the connections bar keep the right-handle
    rules above; an input dot carries the number its chips use. */
 .curio-notebook-dot-label {

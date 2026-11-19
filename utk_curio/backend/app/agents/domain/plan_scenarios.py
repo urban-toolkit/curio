@@ -178,7 +178,10 @@ def _expand(plan: dict, copies: dict, values: dict) -> None:
         if twin.get("widgets") or chosen:
             twin["widgets"] = values_over(twin.get("widgets") or [], chosen)
         plan["nodes"].append(twin)
-    present = {(e["from"], e["to"], e.get("kind", "data")) for e in plan["edges"]}
+    def _key(e: dict) -> tuple:
+        return (e["from"], e["to"], e.get("kind", "data"), e.get("fromView"), e.get("toView"))
+
+    present = {_key(e) for e in plan["edges"]}
     for spec_edge in duplicate["edges"]:
         original = plan["edges"][spec_edge["planEdge"]]
         edge = {"from": spec_edge["source"], "to": spec_edge["target"]}
@@ -186,7 +189,11 @@ def _expand(plan: dict, copies: dict, values: dict) -> None:
             edge["toHandle"] = original["toHandle"]
         if original.get("kind"):
             edge["kind"] = original["kind"]
-        key = (edge["from"], edge["to"], edge.get("kind", "data"))
+        # A copy's interaction edge joins the same views' dots as the original's.
+        for field in ("fromView", "toView"):
+            if original.get(field):
+                edge[field] = original[field]
+        key = _key(edge)
         if key not in present:
             # An edge the plan already names into a copy is not added twice.
             present.add(key)

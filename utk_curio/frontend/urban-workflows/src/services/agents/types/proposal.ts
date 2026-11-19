@@ -248,6 +248,10 @@ export interface AgentProposalPart {
       toHandle?: string;
       /** dev/112 (DEC-069): present only for interaction (feedback) edges. */
       kind?: "data" | "interaction";
+      /** On an interaction edge, the view of the `from` node whose dot it leaves (`in/out@<id>`). */
+      fromView?: string;
+      /** On an interaction edge, the view of the `to` node whose dot it reaches. */
+      toView?: string;
       fromLabel: string;
       toLabel: string;
     }>;

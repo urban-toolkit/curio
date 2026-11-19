@@ -742,6 +742,10 @@ jobs:
       # `docker compose` step below reads COMPOSE_FILE, so setting it here is
       # enough. See docker-compose.ci.yml for why this isn't the deploy overlay.
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml:docker-compose.ci-shards.yml
+      # As in e2e-desktop, which says why: utk-gpu and the utk desktops keep
+      # America/Chicago, where example 26's time axis chart read 0.50% from
+      # the arcade GPU runners' capture.
+      TZ: UTC
       # Hardware WebGPU path (see conftest.py browser_type_launch_args).
       CURIO_WEBGPU_BACKEND: hardware
       CURIO_REQUIRE_HARDWARE_WEBGPU: "1"
@@ -1568,7 +1572,7 @@ jobs:
       # taken in. A utk desktop keeps America/Chicago, and the browser draws a
       # Vega-Lite time axis in local time: example 04's two such charts read
       # 0.44% apart there. Pytest runs in it too, as a test may compute a
-      # date the page shows (ciCpuJobsTimeZone.test.ts).
+      # date the page shows (ciE2eJobsTimeZone.test.ts).
       TZ: UTC
       CURIO_E2E_RUNNER: desktop
       CURIO_E2E_PART: ${{ matrix.part }}/${{ strategy.job-total }}

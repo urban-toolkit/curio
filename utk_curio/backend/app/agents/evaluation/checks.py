@@ -33,7 +33,11 @@ The kinds, each with what it holds (``absent: true`` turns any of them into
 - ``node-added``: the run added a node of ``type`` (``count`` of them, when named).
 - ``edge-added``: the run added a connection from a node of type ``from`` to
   one of type ``to``; an interaction edge when ``interaction`` is true, a data
-  edge when false.
+  edge when false. An interaction edge carries selections both ways, so one
+  drawn the other way counts too. ``fromView`` and ``toView`` name the view
+  of an Autark node of several views the edge's handle names at the ``from``
+  node and at the ``to`` node (``in/out@<id>``); null is that node's own
+  handle, and a check that leaves one out does not ask.
 - ``code``: the content of a node the run wrote (its ``node``, a node of its
   ``type``, or any) matches the regular expression ``pattern``. With
   ``absent``, a node was written and none of what it wrote matches.
@@ -55,6 +59,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from utk_curio.backend.app.execution import code_references
+from utk_curio.backend.app.execution.run_plan import interaction_handle_view
 
 #: The statuses of a call whose work landed: a read's, and a write's.
 LANDED = ("ok", "applied")
@@ -63,7 +68,7 @@ KINDS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "tool": (frozenset({"tool"}), frozenset({"status", "node", "args"})),
     "delegate": (frozenset({"capability"}), frozenset({"status", "node"})),
     "node-added": (frozenset({"type"}), frozenset({"count"})),
-    "edge-added": (frozenset({"from", "to"}), frozenset({"interaction"})),
+    "edge-added": (frozenset({"from", "to"}), frozenset({"interaction", "fromView", "toView"})),
     "code": (frozenset({"pattern"}), frozenset({"node", "type"})),
     "spec": (frozenset({"path"}), frozenset({"node", "type", "equals"})),
     "unchanged": (frozenset(), frozenset()),
@@ -269,7 +274,16 @@ def _holds(check: Check, run: RunRecord) -> bool:
             interaction = edge.get("type") == INTERACTION
             if "interaction" in holds and bool(holds["interaction"]) != interaction:
                 continue
-            if run.type_of(edge.get("source")) == holds["from"] and run.type_of(edge.get("target")) == holds["to"]:
+            ends = [("source", "sourceHandle", "target", "targetHandle")]
+            if interaction:
+                ends.append(("target", "targetHandle", "source", "sourceHandle"))
+            for start, start_handle, end, end_handle in ends:
+                if run.type_of(edge.get(start)) != holds["from"] or run.type_of(edge.get(end)) != holds["to"]:
+                    continue
+                if "fromView" in holds and interaction_handle_view(edge.get(start_handle)) != holds["fromView"]:
+                    continue
+                if "toView" in holds and interaction_handle_view(edge.get(end_handle)) != holds["toView"]:
+                    continue
                 return True
         return False
     if kind == "code":

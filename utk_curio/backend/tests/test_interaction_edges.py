@@ -72,6 +72,17 @@ def test_each_handle_reads_as_the_cases_file_says(case):
     assert run_plan.interaction_handle_view(case["handle"]) == case["view"]
 
 
+@pytest.mark.parametrize("case", CASES["viewHandles"], ids=[case["name"] for case in CASES["viewHandles"]])
+def test_each_view_s_handle_is_made_as_the_cases_file_says(case):
+    """A plan's interaction edge names a view through the handle made from the
+    view's id, a node's own handle for none, as the canvas makes a view's dot."""
+    from utk_curio.backend.app.execution import run_plan
+
+    assert run_plan.interaction_view_handle(case["view"]) == case["handle"]
+    assert run_plan.is_interaction_handle(case["handle"]) is True
+    assert run_plan.interaction_handle_view(case["handle"]) == (case["view"] or None)
+
+
 @pytest.mark.parametrize("case", CASES["edges"], ids=[case["name"] for case in CASES["edges"]])
 def test_each_edge_reads_as_the_cases_file_says_on_a_run_and_in_a_plan(case):
     from utk_curio.backend.app.agents.domain import plan_topology

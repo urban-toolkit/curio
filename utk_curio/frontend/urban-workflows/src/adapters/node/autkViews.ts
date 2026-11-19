@@ -16,8 +16,9 @@
  * `plotKey`).
  *
  * Every per-view step of a run reads them here: each view's pane and element
- * (`layOutPanes`, `viewTargets`), each map's layers lit on that map alone
- * (`lightMaps`), a pick read from the map that picked
+ * (`layOutPanes`, `viewTargets`), the selections each view receives
+ * (`receivedByView`) and what each lights, on its own map or plot alone
+ * (`lightViews`), a pick read from the map that picked
  * (`autkMapState.pickOn`), a brush from the plot that brushed (`plotEntryOf`),
  * the views a redraw keeps (`autkMapView.keepMapViews`) and a raster's edges
  * bled on each map (`autkRasters.bleedRasterEdges`).
@@ -219,20 +220,68 @@ export function mapLayerRefs(spec: any): MapLayerRef[] {
 }
 
 /**
- * Light each layer of each map of *spec* with the positions *positionsOf*
- * gives it (asked once a layer, with the layer's place in `mapLayerRefs`), on
- * its own map alone: each call names the map by its index, so two maps that
- * draw one table, in one workspace or in two, light only their own rows. A
- * layer with no position lit is cleared, on its map alone too.
+ * The selections a node receives (`data.interactions`), by the view each is
+ * for: those delivered on the node's own dot, for every view (`whole`), and
+ * those delivered on a view's dot (`toView`, providers/flow/interactionRoutes),
+ * for that view alone, by its pane (`<kind>:<index>`). A node of one view
+ * takes a delivery on any dot as its own; a node of several drops one for a
+ * view it does not have.
  */
-export function lightMaps(
-    grammar: any,
-    spec: any,
-    positionsOf: (layer: MapLayerRef, at: number) => number[],
-): void {
-    mapLayerRefs(spec).forEach((layer, at) => {
-        const positions = positionsOf(layer, at);
-        if (positions.length === 0) grammar?.clearHighlightOnMap?.(layer.ref.dataRef, layer.index);
-        else grammar?.highlightOnMap?.(layer.ref.dataRef, positions, layer.index);
-    });
+export function receivedByView<T extends { toView?: unknown }>(
+    incoming: readonly T[],
+    panes: ViewPanes | null | undefined,
+): { whole: T[]; byView: Map<string, T[]> } {
+    const all = panes ?? [];
+    const whole: T[] = [];
+    const byView = new Map<string, T[]>();
+    for (const selection of incoming) {
+        const view = typeof selection?.toView === 'string' ? selection.toView : null;
+        if (view === null || all.length <= 1) {
+            whole.push(selection);
+            continue;
+        }
+        const pane = all.find((each) => each.id === view);
+        if (!pane) continue;
+        const key = `${pane.kind}:${pane.index}`;
+        byView.set(key, [...(byView.get(key) ?? []), selection]);
+    }
+    return { whole, byView };
+}
+
+/** What a view of a node lights: a table on one of its maps, by the map's index, or one of its plots, by its key. */
+export type LitView =
+    | { kind: 'map'; index: number; table: string; positions: number[] }
+    | { kind: 'plot'; plot: string; positions: number[] };
+
+const litKey = (view: LitView): string =>
+    view.kind === 'map' ? `map:${view.index}:${view.table}` : `plot:${view.plot}`;
+
+/**
+ * Ask *grammar* to light each of *views* that lights other positions than it
+ * did when it was last asked, by *lit* (each view's positions, by its key; a
+ * view it holds nothing of is asked as one never lit): each map's table on its
+ * own map alone, by the map's index, so two maps of one table light only
+ * their own rows, and each plot by its key. Every clear comes before any
+ * light. autk-grammar carries a selection set on a plot to the map layers its
+ * `links` join it to, and one lit on a map to the plots linked to it, so a
+ * view whose own positions did not change is not asked again, and a clear
+ * never undoes what a view's light carried on to another.
+ */
+export function lightViews(grammar: any, views: readonly LitView[], lit: Map<string, string>): void {
+    const asked = new Map<string, LitView>();
+    for (const view of views) if (!asked.has(litKey(view))) asked.set(litKey(view), view);
+    const changed = [...asked.values()].filter((view) => lit.get(litKey(view)) !== JSON.stringify(view.positions));
+    const call = (view: LitView) => {
+        if (view.kind === 'map') {
+            if (view.positions.length === 0) grammar?.clearHighlightOnMap?.(view.table, view.index);
+            else grammar?.highlightOnMap?.(view.table, view.positions, view.index);
+        } else if (view.positions.length === 0) {
+            grammar?.clearHighlightOnPlot?.(view.plot);
+        } else {
+            grammar?.setPlotSelection?.(view.plot, view.positions);
+        }
+    };
+    for (const view of changed) if (view.positions.length === 0) call(view);
+    for (const view of changed) if (view.positions.length > 0) call(view);
+    for (const view of changed) lit.set(litKey(view), JSON.stringify(view.positions));
 }

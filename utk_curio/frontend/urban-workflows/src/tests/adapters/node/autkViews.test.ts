@@ -25,10 +25,13 @@ const views = () =>
     plotEntryOf: (spec: unknown, panes: unknown, plotId: unknown) => { index: number; entry: any } | null;
     pickLayerOf: (entry: unknown) => string | undefined;
     mapLayerRefs: (spec: unknown) => Array<{ index: number; entry: any; ref: any }>;
-    lightMaps: (
+    lightViews: (
       grammar: unknown,
-      spec: unknown,
-      positionsOf: (layer: { index: number; entry: any; ref: any }, at: number) => number[],
+      views: ReadonlyArray<
+        | { kind: "map"; index: number; table: string; positions: number[] }
+        | { kind: "plot"; plot: string; positions: number[] }
+      >,
+      lit: Map<string, string>,
     ) => void;
   };
 
@@ -113,25 +116,30 @@ describe("a highlight lights each map alone", () => {
     const north = litMap();
     const south = litMap();
     const grammar = grammarThatRan(TWO_MAPS_OF_ONE_TABLE, north.map, south.map);
+    const lit = new Map<string, string>();
+    const trees = (index: number, positions: number[]) => ({ kind: "map" as const, index, table: "trees", positions });
 
-    views().lightMaps(grammar, TWO_MAPS_OF_ONE_TABLE, ({ index }) => (index === 0 ? [1] : [0, 2]));
+    views().lightViews(grammar, [trees(0, [1]), trees(1, [0, 2])], lit);
     expect(north.lit).toEqual({ trees: [1] });
     expect(south.lit).toEqual({ trees: [0, 2] });
 
     // A map whose layer lights nothing is cleared, and the other keeps its rows.
-    views().lightMaps(grammar, TWO_MAPS_OF_ONE_TABLE, ({ index }) => (index === 0 ? [] : [2]));
+    views().lightViews(grammar, [trees(0, []), trees(1, [2])], lit);
     expect(north.lit).toEqual({});
     expect(south.lit).toEqual({ trees: [2] });
   });
 
-  test("each layer is asked for its rows once, in the order the maps list them", () => {
-    const asked: Array<[number, string, number]> = [];
+  test("each layer is lit once, on its own map, in the order the maps list them", () => {
+    const asked: Array<[string, number[], string | number | undefined]> = [];
+    const grammar = {
+      highlightOnMap: (table: string, positions: number[], mapId?: string | number) => { asked.push([table, positions, mapId]); },
+      clearHighlightOnMap: (table: string, mapId?: string | number) => { asked.push([table, [], mapId]); },
+    };
     const spec = { map: [{ layerRefs: [{ dataRef: "roads" }, { dataRef: "trees" }] }, { layerRefs: [{ dataRef: "trees" }] }] };
-    views().lightMaps(grammarThatRan(spec, litMap().map, litMap().map), spec, ({ index, ref }, at) => {
-      asked.push([index, ref.dataRef, at]);
-      return [];
-    });
-    expect(asked).toEqual([[0, "roads", 0], [0, "trees", 1], [1, "trees", 2]]);
+    // Each layer of each map as a run lists them, each lighting its place in that list; the first is listed twice.
+    const layers = views().mapLayerRefs(spec).map(({ index, ref }, at) => ({ kind: "map" as const, index, table: ref.dataRef, positions: [at] }));
+    views().lightViews(grammar, [...layers, layers[0]], new Map());
+    expect(asked).toEqual([["roads", [0], 0], ["trees", [1], 0], ["trees", [2], 1]]);
   });
 });
 

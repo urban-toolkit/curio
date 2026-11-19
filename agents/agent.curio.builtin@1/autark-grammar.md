@@ -57,7 +57,7 @@ Each entry of its "layers" requires {layer_fields}, with a "type" of {layer_type
 
 ## views
 
-A node draws every map and plot of its document, each in a pane of its own: the maps in the order of "map", then the plots in the order of "plot", arranged by "layout" and stacked without it. An "id" names a map or a plot and is unique among them: a link in "links" names a plot by its "id" (else its "dataRef") and a map by its "id", and two plots of one table each need an "id".
+A node draws every map and plot of its document, each in a pane of its own: the maps in the order of "map", then the plots in the order of "plot", arranged by "layout" and stacked without it. An "id" names a map or a plot and is unique among them: a link in "links" names a plot by its "id" (else its "dataRef") and a map by its "id", and two plots of one table each need an "id". In a node of several views, each view with an "id" has an interaction dot of its own, which a plan's interaction edge names with "fromView" or "toView".
 
 ## map
 
