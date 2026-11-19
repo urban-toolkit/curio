@@ -1,0 +1,71 @@
+{
+  "description": "The tables of the node's input a document's data section reads: each table a heatmap bins (joinDataRef) or a join reads (dataRef, joinDataRef), by its key in the entry's workspace, that none of the section's own sources loads, each once, in the order the section first reads them. sectionInputTables in autkDataCompile.ts and section_input_tables in execution/autk_spec_kind.py both run these.",
+  "cases": [
+    {
+      "name": "a section of its own sources reads no input table",
+      "spec": { "data": [
+        { "type": "osm", "pbfFileUrl": "docs/examples/data/chicago_loop.osm.pbf", "outputTableName": "loop", "autoLoadLayers": { "layers": ["surface", "roads"] } },
+        { "type": "geojson", "outputTableName": "labels", "geojsonFileUrl": "labels.geojson" },
+        { "type": "heatmap", "joinDataRef": "labels", "outputTableName": "density", "near": { "distance": 200 }, "grid": { "rows": 2, "columns": 2 } },
+        { "type": "join", "dataRef": "loop_roads", "joinDataRef": "labels", "near": { "distance": 30 } }
+      ] },
+      "reads": []
+    },
+    {
+      "name": "a heatmap of the input's first table",
+      "spec": { "data": [
+        { "type": "heatmap", "joinDataRef": "input_0", "outputTableName": "density", "near": { "distance": 200 }, "grid": { "rows": 2, "columns": 2 } }
+      ] },
+      "reads": ["input_0"]
+    },
+    {
+      "name": "a heatmap of a layer the input carries by its own name, after an OSM load",
+      "spec": { "data": [
+        { "type": "osm", "pbfFileUrl": "docs/examples/data/chicago_loop.osm.pbf", "outputTableName": "loop", "autoLoadLayers": { "layers": ["surface", "roads"] } },
+        { "type": "heatmap", "joinDataRef": "labels", "outputTableName": "density", "near": { "distance": 200 }, "grid": { "rows": 2, "columns": 2 } }
+      ] },
+      "reads": ["labels"]
+    },
+    {
+      "name": "a join reads both its tables, the input's once each",
+      "spec": { "data": [
+        { "type": "osm", "pbfFileUrl": "docs/examples/data/chicago_loop.osm.pbf", "outputTableName": "loop", "autoLoadLayers": { "layers": ["roads"] } },
+        { "type": "join", "dataRef": "input_1", "joinDataRef": "loop_roads" },
+        { "type": "join", "dataRef": "loop_roads", "joinDataRef": "input_0" },
+        { "type": "heatmap", "joinDataRef": "input_0", "outputTableName": "density", "near": { "distance": 200 }, "grid": { "rows": 2, "columns": 2 } }
+      ] },
+      "reads": ["input_1", "input_0"]
+    },
+    {
+      "name": "a table a later source loads is the section's own, not the input's",
+      "spec": { "data": [
+        { "type": "heatmap", "joinDataRef": "labels", "outputTableName": "density", "near": { "distance": 200 }, "grid": { "rows": 2, "columns": 2 } },
+        { "type": "geojson", "outputTableName": "labels", "geojsonFileUrl": "labels.geojson" }
+      ] },
+      "reads": []
+    },
+    {
+      "name": "a table in another workspace is read by its key there",
+      "spec": { "data": [
+        { "type": "geojson", "outputTableName": "labels", "geojsonFileUrl": "labels.geojson" },
+        { "type": "heatmap", "joinDataRef": "labels", "outputTableName": "density", "workspace": "east", "near": { "distance": 200 }, "grid": { "rows": 2, "columns": 2 } },
+        { "type": "heatmap", "joinDataRef": "input_0", "outputTableName": "nearby", "workspace": "autk", "near": { "distance": 200 }, "grid": { "rows": 2, "columns": 2 } }
+      ] },
+      "reads": ["east/labels", "input_0"]
+    },
+    {
+      "name": "a heatmap's own table and a GeoTIFF's are the section's",
+      "spec": { "data": [
+        { "type": "geotiff", "geotiffFileUrl": "lst.tif", "outputTableName": "lst" },
+        { "type": "heatmap", "joinDataRef": "input_0", "outputTableName": "density", "near": { "distance": 200 }, "grid": { "rows": 2, "columns": 2 } },
+        { "type": "join", "dataRef": "density", "joinDataRef": "lst" }
+      ] },
+      "reads": ["input_0"]
+    },
+    {
+      "name": "a document with no data section reads none",
+      "spec": { "map": { "layerRefs": [{ "dataRef": "input_0" }] } },
+      "reads": []
+    }
+  ]
+}

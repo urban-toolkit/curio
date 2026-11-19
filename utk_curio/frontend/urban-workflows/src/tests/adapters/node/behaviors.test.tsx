@@ -3487,6 +3487,155 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(sentCode).not.toContain('127.0.0.1');
       expect(sentCode).not.toContain('localhost');
     });
+
+    // A data section's heatmap or join reads a table of the node's input: the
+    // node reads its input, finds the table there by the names it reads its
+    // input by, and sends its input with the load the sandbox runs, which
+    // reads the table there (autkDataCompile inputTablesFrom).
+    describe('a data section that reads its input\'s tables', () => {
+      /** Points a Python node returned, as /get answers for its GeoDataFrame. */
+      const POINTS = {
+        dataType: 'geodataframe',
+        data: {
+          type: 'FeatureCollection',
+          crs: { type: 'name', properties: { name: 'urn:ogc:def:crs:EPSG::3395' } },
+          features: [
+            { type: 'Feature', geometry: { type: 'Point', coordinates: [-9755000, 5142500] }, properties: { db: 61 } },
+            { type: 'Feature', geometry: { type: 'Point', coordinates: [-9754000, 5142600] }, properties: { db: 74 } },
+          ],
+        },
+      };
+      const HEATMAP = {
+        type: 'heatmap', joinDataRef: 'input_0', outputTableName: 'density',
+        near: { distance: 400 }, grid: { rows: 2, columns: 3 },
+      };
+      const loads = () => jest.fn(
+        (_unresolved, _code, _input, _inputTypes, cb) =>
+          cb({ stdout: [], stderr: '', output: { path: 'art-heat', dataType: 'list' } }),
+      );
+
+      test('a data-only node whose heatmap bins input_0 reads its input and sends it with its load', async () => {
+        const { fetchData } = jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+        fetchData.mockImplementation(async (path: string) => (path === 'art-points' ? POINTS : { data: {}, dataType: 'dataframe' }));
+        try {
+          const interpretCode = loads();
+          const outputCallback = jest.fn();
+          const input = { path: 'art-points', dataType: 'geodataframe' };
+          const result = await callBehavior(useAutkGrammarBehavior, {
+            outputCallback, input: input as any, jsInterpreter: { interpretCode } as any,
+          });
+          await act(async () => {
+            await result.current.applyGrammar!(JSON.stringify({ data: [HEATMAP] }));
+          });
+          expect(fetchData).toHaveBeenCalledWith('art-points');
+          expect(interpretCode).toHaveBeenCalledTimes(1);
+          const [, code, sentInput] = interpretCode.mock.calls[0];
+          // The node's input goes with the load, and the load reads input_0 from it.
+          expect(sentInput).toEqual(input);
+          expect(code).toContain('const __inputTables = [{"name":"input_0","before":0,');
+          expect(outputCallback).toHaveBeenCalledWith('node-1', { path: 'art-heat', dataType: 'list' });
+        } finally {
+          fetchData.mockImplementation(async () => ({ data: {}, dataType: 'dataframe' }));
+        }
+      });
+
+      test('its load is kept until its input changes, and runs again on a new one', async () => {
+        const { fetchData } = jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+        fetchData.mockImplementation(async () => POINTS);
+        try {
+          const interpretCode = loads();
+          const data = makeMockData({ input: { path: 'art-points', dataType: 'geodataframe' } as any, jsInterpreter: { interpretCode } as any });
+          let rendered: any;
+          await act(async () => {
+            rendered = renderHook(() => useAutkGrammarBehavior(data, makeMockNodeState()));
+          });
+          const run = async () => {
+            await act(async () => { await rendered.result.current.applyGrammar!(JSON.stringify({ data: [HEATMAP] })); });
+          };
+          await run();
+          await run();
+          // The same sources and the same input: the load the sandbox made stands.
+          expect(interpretCode).toHaveBeenCalledTimes(1);
+          // The node above ran again: a new output, so the load runs again on it.
+          (data as any).input = { path: 'art-points-2', dataType: 'geodataframe' };
+          await run();
+          expect(interpretCode).toHaveBeenCalledTimes(2);
+          expect(interpretCode.mock.calls[1][2]).toEqual({ path: 'art-points-2', dataType: 'geodataframe' });
+        } finally {
+          fetchData.mockImplementation(async () => ({ data: {}, dataType: 'dataframe' }));
+        }
+      });
+
+      test('guard: a data section that names no table of its input never reads its input, and sends none', async () => {
+        const { fetchData } = jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+        fetchData.mockClear();
+        const interpretCode = loads();
+        const result = await callBehavior(useAutkGrammarBehavior, {
+          input: { path: 'art-points', dataType: 'geodataframe' } as any, jsInterpreter: { interpretCode } as any,
+        });
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            data: [
+              { type: 'geojson', outputTableName: 'levels', geojsonObject: POINTS.data },
+              { ...HEATMAP, joinDataRef: 'levels' },
+            ],
+          }));
+        });
+        expect(fetchData).not.toHaveBeenCalledWith('art-points');
+        expect(interpretCode).toHaveBeenCalledTimes(1);
+        expect(interpretCode.mock.calls[0][2]).toBe('');
+        expect(interpretCode.mock.calls[0][1]).not.toContain('__inputs');
+      });
+
+      test('a table the input does not carry fails the node with the words both loaders say, before any load', async () => {
+        const { fetchData } = jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+        fetchData.mockImplementation(async () => POINTS);
+        try {
+          const interpretCode = loads();
+          const setOutput = jest.fn();
+          const outputCallback = jest.fn();
+          const result = await callBehavior(
+            useAutkGrammarBehavior,
+            { outputCallback, input: { path: 'art-points', dataType: 'geodataframe' } as any, jsInterpreter: { interpretCode } as any },
+            { setOutput },
+          );
+          await act(async () => {
+            await result.current.applyGrammar!(JSON.stringify({ data: [{ ...HEATMAP, joinDataRef: 'labels' }] }));
+          });
+          const errors = setOutput.mock.calls.filter((c: any[]) => c[0]?.code === 'error');
+          expect(errors.map((c: any[]) => c[0].content)).toEqual([
+            'The heatmap "density" bins "labels", a table its data section does not load and the node\'s input does not carry.',
+          ]);
+          expect(interpretCode).not.toHaveBeenCalled();
+          expect(outputCallback).not.toHaveBeenCalled();
+        } finally {
+          fetchData.mockImplementation(async () => ({ data: {}, dataType: 'dataframe' }));
+        }
+      });
+
+      test('with nothing arrived, it says what feeds it before a run, and a run says nothing arrived', async () => {
+        const interpretCode = loads();
+        const setOutput = jest.fn();
+        const code = JSON.stringify({ data: [HEATMAP] });
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { code, jsInterpreter: { interpretCode } as any } as any,
+          { code, setOutput } as any,
+        );
+        const { container } = render(<>{result.current.contentComponent}</>);
+        expect(container.querySelector('[data-curio-node-empty="disconnected"]')).not.toBeNull();
+        await act(async () => {
+          await result.current.applyGrammar!(code);
+        });
+        const errors = setOutput.mock.calls.filter((c: any[]) => c[0]?.code === 'error');
+        expect(errors.map((c: any[]) => [c[0].content, c[0].kind])).toEqual([[
+          'rendered nothing: 0 rows arrived at this node, so there was nothing to draw. The upstream node that '
+            + 'feeds it is what must change; this document is not at fault.',
+          expect.any(String),
+        ]]);
+        expect(interpretCode).not.toHaveBeenCalled();
+      });
+    });
   });
 
   // The naming rules the contract check is built on. Kept as a direct unit test

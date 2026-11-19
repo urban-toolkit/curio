@@ -336,6 +336,101 @@ def test_a_failed_load_is_tried_once_more(client, user_and_token, sandbox, recor
     assert [(ref.node_id, ref.filename, ref.data_type) for ref in recorded] == [("water", LAYERS, "list")]
 
 
+#: Readings a Python node returns, and an Autark data node whose heatmap bins them,
+#: the table the node's input carries as input_0.
+POINTS_CODE = (
+    "import geopandas as gpd\n"
+    "from shapely.geometry import Point\n"
+    "return gpd.GeoDataFrame({'db': [61, 74]}, geometry=[Point(-9755000, 5142500), Point(-9754000, 5142600)], crs=3395)"
+)
+HEATMAP_OF_THE_INPUT = {"data": [{
+    "type": "heatmap", "joinDataRef": "input_0", "outputTableName": "density",
+    "near": {"distance": 400}, "grid": {"rows": 2, "columns": 3},
+}]}
+
+
+def _points_and_heatmap(document=None) -> dict:
+    return {
+        "name": "Binned readings",
+        "nodes": [
+            {"id": "points", "type": CODE, "content": POINTS_CODE},
+            {"id": "heat", "type": AUTARK, "content": json.dumps(document or HEATMAP_OF_THE_INPUT)},
+        ],
+        "edges": [{"id": "points-heat", "source": "points", "target": "heat"}],
+    }
+
+
+def test_a_heatmap_of_an_upstream_python_nodes_table_runs_on_that_table(client, user_and_token, sandbox, recorded):
+    """A data node whose heatmap bins its input's table, ``input_0``, runs on
+    the server as the node's run in the browser does: the code the browser's
+    compiler gives, which finds the table in the run's inputs, posted with the
+    Python node's output as its input and no circles named, so the sandbox
+    gives that output as ``input_0``."""
+    from utk_curio.common.autk_data_compiler import compile_data_spec
+
+    user, token = user_and_token
+    run = _run(client, token, _create(client, token, _points_and_heatmap()))
+    steps = {s["nodeId"]: s for s in run["steps"]}
+    assert [steps[n]["status"] for n in ("points", "heat")] == ["ok", "ok"], steps
+    assert run["status"] == "succeeded"
+
+    (made,) = sandbox.bodies("/exec")
+    (load,) = sandbox.bodies("/execJs")
+    assert load["code"] == compile_data_spec(json.dumps(HEATMAP_OF_THE_INPUT))
+    assert 'const __inputTables = [{"name":"input_0","before":0,' in load["code"]
+    # The Python node's output is the load's input, as the canvas sends it.
+    points = steps["points"]
+    assert points["outputPath"], points
+    assert (load["file_path"], load["dataType"]) == (points["outputPath"], points["outputType"]), load
+    assert "input_slots" not in load
+    assert load["save_dataset"] is False
+    assert made["file_path"] == ""
+    (saved,) = [ref for ref in recorded if ref.node_id == "heat"]
+    assert (saved.filename, saved.data_type) == (LAYERS, "list")
+
+
+def test_a_data_node_that_reads_no_table_of_its_input_still_runs_on_no_input(client, user_and_token, sandbox, recorded):
+    """guard: a data section that loads what it bins reads no input, wired or not."""
+    user, token = user_and_token
+    own = {"data": [BACK_BAY_ROADS, {
+        "type": "heatmap", "joinDataRef": "table_osm_roads", "outputTableName": "density",
+        "near": {"distance": 400}, "grid": {"rows": 2, "columns": 3},
+    }]}
+    run = _run(client, token, _create(client, token, _points_and_heatmap(own)))
+    assert run["status"] == "succeeded", run
+    (load,) = sandbox.bodies("/execJs")
+    assert (load["file_path"], load["dataType"]) == ("", ""), load
+    assert "__inputs" not in load["code"]
+
+
+def test_a_kept_heatmap_of_an_input_table_is_kept_by_its_input(app):
+    """What a run of such a node keeps is keyed by its input too, so a
+    dashboard viewer's run and a reopened dataflow find it only for the input
+    it binned (``kept.step_call``); one that reads no table of its input keeps
+    none in its key."""
+    from utk_curio.backend.app.execution.run_engine import plan_run, sent_code
+    from utk_curio.backend.app.runs import kept
+
+    with app.app_context():
+        plan = plan_run({"dataflow": _points_and_heatmap()})
+        step = plan.steps["heat"]
+        first = {"path": "art-points-1", "dataType": "geodataframe"}
+        second = {"path": "art-points-2", "dataType": "geodataframe"}
+        call = kept.step_call(plan, step, sent_code(plan, step), first)
+        assert (call.engine, call.input, call.slots) == ("javascript", first, None)
+        keys = {
+            kept.call_key(kept.step_call(plan, step, sent_code(plan, step), ref),
+                          packages="p", node_type=step.node_type, datasets={})
+            for ref in (first, second)
+        }
+        assert len(keys) == 2
+
+        own = {"data": [BACK_BAY_ROADS]}
+        plan = plan_run({"dataflow": _points_and_heatmap(own)})
+        step = plan.steps["heat"]
+        assert kept.step_call(plan, step, sent_code(plan, step), first).input is None
+
+
 #: The roads of Back Bay, which each document below loads beside the key it writes.
 BACK_BAY_ROADS = {"type": "osm", "pbfFileUrl": "docs/examples/data/back_bay.osm.pbf", "outputTableName": "table_osm",
                   "autoLoadLayers": {"layers": ["surface", "roads"]}}
