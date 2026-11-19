@@ -179,15 +179,86 @@ describe("withRasterSources", () => {
     const { grammar } = fakeGrammar();
     const db = fakeDb();
     const getLayer = db.getLayer;
+    const getRaster = db.getRaster;
     withRasterSources(grammar, jest.fn());
     await grammar.dataAdapter.resolveSource(db, source);
 
     const layer = await db.getLayer("input_0");
     expect(getLayer).not.toHaveBeenCalled();
-    expect(db.getRaster).toHaveBeenCalledWith("input_0");
+    expect(getRaster).toHaveBeenCalledWith("input_0");
     expect(layer).toEqual(framedRaster(RASTER));
     expect(layer.bbox).toEqual(RASTER.bbox);
     expect(layer.features[1].geometry).not.toBeNull();
+  });
+
+  // autk-grammar 5's map reads a raster table with getRaster, not getLayer.
+  test("repro: the map's getRaster of a raster Curio loaded is answered with it framed, as it was read after loading", async () => {
+    const { grammar } = fakeGrammar();
+    const db = fakeDb();
+    const getRaster = db.getRaster;
+    withRasterSources(grammar, jest.fn());
+    await grammar.dataAdapter.resolveSource(db, source);
+
+    const raster = await db.getRaster("input_0");
+    expect(raster).toEqual(framedRaster(RASTER));
+    expect(raster.bbox).toEqual(RASTER.bbox);
+    expect(raster.features[1].geometry).not.toBeNull();
+    // Read once, right after loading; the map's read is answered with that.
+    expect(getRaster.mock.calls).toEqual([["input_0"]]);
+  });
+
+  // loadGeoTiff labels a band by its id. A heatmap's bands are labelled
+  // `<aggregateFn>_<table>`, and a map's getFnv `count.noise` finds its band
+  // by that label, so the map is served the labels the bands were made with.
+  test("repro: a raster's bands keep the labels they were made with, so a getFnv such as count.noise finds its band", async () => {
+    const { grammar } = fakeGrammar();
+    const db = fakeDb();
+    const asLoaded = {
+      ...RASTER,
+      features: [{
+        type: "Feature",
+        geometry: null,
+        properties: { rasterResX: 40, rasterResY: 30, bands: [{ id: "band_1", label: "band_1" }, { id: "band_2", label: "band_2" }] },
+      }],
+    };
+    db.getRaster.mockResolvedValueOnce(asLoaded);
+    withRasterSources(grammar, jest.fn());
+    const made = [{ id: "band_1", label: "count_noise" }, { id: "band_2", label: "sum_noise" }];
+    await grammar.dataAdapter.resolveSource(db, { ...source, bands: made });
+
+    const raster = await db.getRaster("input_0");
+    expect(raster.features[0].properties.bands).toEqual(made);
+    expect(raster.bbox).toEqual(RASTER.bbox);
+    expect(raster.features[1].geometry).not.toBeNull();
+  });
+
+  test("guard: any other table's getRaster is the database's to answer, with all it was asked", async () => {
+    const { grammar } = fakeGrammar();
+    const db = fakeDb();
+    const getRaster = db.getRaster;
+    withRasterSources(grammar, jest.fn());
+    await grammar.dataAdapter.resolveSource(db, source);
+
+    // A heatmap, which the grammar's own data adapter builds.
+    const heat = { ...RASTER, bbox: [1, 2, 3, 4] };
+    getRaster.mockResolvedValueOnce(heat);
+    expect(await db.getRaster("noise_density", { a: 1 })).toBe(heat);
+    expect(getRaster).toHaveBeenLastCalledWith("noise_density", { a: 1 });
+  });
+
+  test("repro: a raster loaded again into the same database is read anew, not answered with the first", async () => {
+    const { grammar } = fakeGrammar();
+    const db = fakeDb();
+    const getRaster = db.getRaster;
+    withRasterSources(grammar, jest.fn());
+    await grammar.dataAdapter.resolveSource(db, source);
+    const again = { ...RASTER, bbox: [-9785600, 5106100, -9781600, 5110100] };
+    getRaster.mockResolvedValueOnce(again);
+    await grammar.dataAdapter.resolveSource(db, source);
+
+    expect(getRaster).toHaveBeenCalledTimes(2);
+    expect(await db.getRaster("input_0")).toEqual(framedRaster(again));
+    expect(await db.getLayer("input_0")).toEqual(framedRaster(again));
   });
 
   test("every other table is the database's to answer, with all it was asked", async () => {
@@ -204,13 +275,14 @@ describe("withRasterSources", () => {
   test("a second raster in the same database is served by the same wrapper", async () => {
     const { grammar } = fakeGrammar();
     const db = fakeDb();
+    const getRaster = db.getRaster;
     withRasterSources(grammar, jest.fn());
     await grammar.dataAdapter.resolveSource(db, source);
     const wrapped = db.getLayer;
     await grammar.dataAdapter.resolveSource(db, { ...source, outputTableName: "input_1" });
 
     expect(db.getLayer).toBe(wrapped);
-    expect(db.getRaster).toHaveBeenCalledWith("input_1");
+    expect(getRaster).toHaveBeenCalledWith("input_1");
     expect(await db.getLayer("input_1")).toEqual(framedRaster(RASTER));
   });
 
@@ -246,6 +318,32 @@ describe("withRasterSources", () => {
 
     expect((await heights.getLayer("input_0")).cells).toBe("heights");
     expect((await shadows.getLayer("input_0")).cells).toBe("shadows");
+  });
+
+  test("repro: two maps loading a raster of the same name at once each read their own by getRaster too", async () => {
+    // The same page-wide store as above: a getRaster that went to it would
+    // read whichever raster loaded last.
+    const store = new Map<string, any>();
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const pageDb = (cells: string) => ({
+      loadGeoTiff: jest.fn(async () => { await tick(); store.set("autk.input_0", cells); await tick(); }),
+      getRaster: jest.fn(async (_table: string) => { await tick(); return { ...RASTER, cells: store.get("autk.input_0") }; }),
+      getLayer: jest.fn(),
+    });
+    const heights = pageDb("heights");
+    const shadows = pageDb("shadows");
+    const first = fakeGrammar().grammar;
+    const second = fakeGrammar().grammar;
+    withRasterSources(first, jest.fn());
+    withRasterSources(second, jest.fn());
+
+    await Promise.all([
+      first.dataAdapter.resolveSource(heights, source),
+      second.dataAdapter.resolveSource(shadows, source),
+    ]);
+
+    expect((await heights.getRaster("input_0")).cells).toBe("heights");
+    expect((await shadows.getRaster("input_0")).cells).toBe("shadows");
   });
 
   test("a raster that fails to load does not hold up the next one", async () => {
@@ -313,6 +411,15 @@ describe("withOpaqueRasters", () => {
     expect(withOpaqueRasters(spec).map.layerRefs[0].transferFunction).toEqual(OPAQUE);
   });
 
+  test("a GeoTIFF the document loads is a raster too", () => {
+    const { withOpaqueRasters } = require("../../../adapters/node/autkRasters");
+    const spec = {
+      data: [{ type: "geotiff", geotiffFileUrl: "docs/examples/data/lst.tif", outputTableName: "lst" }],
+      map: { layerRefs: [{ dataRef: "lst", getFnv: "band_24", colorMapInterpolator: "interpolateYlOrRd" }] },
+    };
+    expect(withOpaqueRasters(spec).map.layerRefs[0].transferFunction).toEqual(OPAQUE);
+  });
+
   test("repro: what a layer writes of the transfer function is kept, and the rest is opaque", () => {
     const { withOpaqueRasters } = require("../../../adapters/node/autkRasters");
     const spec = {
@@ -329,6 +436,71 @@ describe("withOpaqueRasters", () => {
     expect(withOpaqueRasters(roads)).toBe(roads);
     const plot = { data: [RASTER], plot: { dataRef: "input_0", mark: "bar" } };
     expect(withOpaqueRasters(plot)).toBe(plot);
+  });
+});
+
+// autk-map draws a layer of a base-map type (surface, parks, water, roads) in
+// a place of its own under every other layer, a raster included, whatever the
+// order a map lists them in, and every raster cell is opaque, so a GeoTIFF
+// hid the parks and roads drawn on it (example 36's map drew its temperature
+// alone). A table the map lists after a raster is handed on as plain geometry,
+// which autk-map draws in the map's order.
+describe("withLayersOverRasters", () => {
+  const LST = { type: CURIO_RASTER_SOURCE, outputTableName: "lst" };
+  const layer = (name: string, layerType?: string, workspace?: string) => ({
+    type: "geojson", outputTableName: name, geojsonObject: { type: "FeatureCollection", features: [] },
+    ...(layerType ? { layerType } : {}), ...(workspace ? { workspace } : {}),
+  });
+
+  test("repro: the parks and roads a map lists after a GeoTIFF are drawn over it, as plain geometry", () => {
+    const { withLayersOverRasters } = require("../../../adapters/node/autkRasters");
+    const spec = {
+      data: [LST, layer("table_osm_surface", "surface"), layer("table_osm_parks", "parks"), layer("table_osm_roads", "roads")],
+      map: { layerRefs: [
+        { dataRef: "table_osm_surface" },
+        { dataRef: "lst", getFnv: "band_24" },
+        { dataRef: "table_osm_parks", color: "#2ca02c" },
+        { dataRef: "table_osm_roads" },
+      ] },
+    };
+    const drawn = withLayersOverRasters(spec);
+    expect(drawn.data.map((source: any) => [source.outputTableName, source.layerType])).toEqual([
+      ["lst", undefined],
+      // Listed before the raster, the surface stays under it, typed.
+      ["table_osm_surface", "surface"],
+      ["table_osm_parks", undefined],
+      ["table_osm_roads", undefined],
+    ]);
+    expect(drawn.map).toBe(spec.map);
+    // The document the node holds is not changed.
+    expect(spec.data[2]).toEqual(layer("table_osm_parks", "parks"));
+  });
+
+  test("a heatmap the document builds is a raster too, in its map's workspace, and a table no map draws keeps its type", () => {
+    const { withLayersOverRasters } = require("../../../adapters/node/autkRasters");
+    const spec = {
+      data: [
+        { type: "heatmap", joinDataRef: "table_osm_parks", outputTableName: "park_access", workspace: "east" },
+        layer("table_osm_roads", "roads", "east"),
+        layer("table_osm_water", "water"),
+      ],
+      map: { workspace: "east", layerRefs: [{ dataRef: "park_access" }, { dataRef: "table_osm_roads" }] },
+    };
+    expect(withLayersOverRasters(spec).data.map((source: any) => source.layerType)).toEqual([undefined, undefined, "water"]);
+  });
+
+  test("guard: buildings keep their type, and so does every layer of a map with no raster", () => {
+    const { withLayersOverRasters } = require("../../../adapters/node/autkRasters");
+    const buildings = {
+      data: [LST, layer("table_osm_buildings", "buildings")],
+      map: { layerRefs: [{ dataRef: "lst" }, { dataRef: "table_osm_buildings" }] },
+    };
+    expect(withLayersOverRasters(buildings)).toBe(buildings);
+    const streets = {
+      data: [layer("table_osm_parks", "parks"), layer("table_osm_roads", "roads")],
+      map: { layerRefs: [{ dataRef: "table_osm_parks" }, { dataRef: "table_osm_roads" }] },
+    };
+    expect(withLayersOverRasters(streets)).toBe(streets);
   });
 });
 
@@ -370,6 +542,31 @@ describe("bleedRasterEdges", () => {
     expect(map.requestRender).toHaveBeenCalled();
     expect(layer.makeLayerDataDirty.mock.invocationCallOrder[0]).toBeLessThan(map.requestRender.mock.invocationCallOrder[0]);
     expect(cellsWhenAsked).toEqual([200, 10, 10, 255, 200, 10, 10, 0]);
+  });
+
+  test("repro: two maps that draw a raster of one table each bleed their own cells, once", () => {
+    const { bleedRasterEdges } = require("../../../adapters/node/autkRasters");
+    const first = rasterMap("heat");
+    const second = rasterMap("heat");
+    const spec = { map: [{ layerRefs: [{ dataRef: "heat" }] }, { workspace: "south", layerRefs: [{ dataRef: "heat" }] }] };
+    bleedRasterEdges(grammarThatRan(spec, first.map, second.map), spec);
+    for (const { map, layer } of [first, second]) {
+      expect(Array.from(layer.rasterData)).toEqual([200, 10, 10, 255, 200, 10, 10, 0]);
+      expect(layer.makeLayerDataDirty).toHaveBeenCalledTimes(1);
+      expect(map.requestRender).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  test("repro: two layers of one map that draw one raster under two titles each bleed theirs", () => {
+    const { bleedRasterEdges } = require("../../../adapters/node/autkRasters");
+    const shaded = rasterMap("Shade");
+    const plain = rasterMap("Shade, plain");
+    const layers: Record<string, any> = { Shade: shaded.layer, "Shade, plain": plain.layer };
+    const map = { layerManager: { searchByLayerId: (id: string) => layers[id] ?? null }, requestRender: jest.fn() };
+    const spec = { map: { layerRefs: [{ dataRef: "shade", title: "Shade" }, { dataRef: "shade", title: "Shade, plain" }] } };
+    bleedRasterEdges(grammarThatRan(spec, map), spec);
+    expect(Array.from(shaded.layer.rasterData)).toEqual([200, 10, 10, 255, 200, 10, 10, 0]);
+    expect(Array.from(plain.layer.rasterData)).toEqual([200, 10, 10, 255, 200, 10, 10, 0]);
   });
 
   test("guard: a layer that is not a raster is left as drawn", () => {

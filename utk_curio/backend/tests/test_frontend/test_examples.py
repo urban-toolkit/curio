@@ -124,6 +124,47 @@ EXAMPLE_INVARIANTS = [
     ("30-pytorch-sidewalk-clusters.json", 6, 5,
      {"curio.builtin/data-loading": 1, "curio.builtin/python-computation": 3,
       "curio.builtin/vis-vega": 1, "curio.builtin/autk-grammar": 1}, False),
+    # SAM 3's Track Objects along the SideSeeing walk; Simple View's player
+    # is linked to the swimlane and to the map by interaction edges.
+    ("31-sideseeing-objects-along-a-walk.json", 8, 9,
+     {"curio.builtin/data-loading": 2, "model.curio.sam3/track-objects": 1,
+      "curio.builtin/vis-simple": 1, "curio.builtin/python-computation": 2,
+      "curio.builtin/vis-vega": 1, "curio.builtin/autk-grammar": 1}, True),
+    # A SAGE bucket read in place, with a dashboard: the Settings node's
+    # widgets reach every node, and no tile reads a selection.
+    ("32-sage-idot-rail-crossings.json", 28, 53,
+     {"curio.builtin/data-loading": 2, "curio.builtin/python-computation": 18,
+      "curio.builtin/spatial-join": 1, "curio.builtin/vis-vega": 5,
+      "curio.builtin/vis-simple": 1, "curio.builtin/autk-grammar": 1}, False),
+    # SideSeeing: a walk's frames found in by SAM 3 and placed on it, and the
+    # walk cut into blocks at the corners it passes, the blocks' player linked
+    # to the map by time.
+    ("33-sideseeing-frames-segments-blocks.json", 16, 19,
+     {"curio.builtin/data-loading": 3, "curio.builtin/python-computation": 4,
+      "curio.media/video-frames": 1, "model.curio.sam3/segment-images": 1,
+      "curio.media/split-video": 1, "curio.builtin/autk-grammar": 2,
+      "curio.builtin/vis-simple": 2, "curio.builtin/vis-vega": 2}, True),
+    # An Autark heatmap of park access: its data node hands it to a map, which
+    # draws it by its table's name, and to a Python step, with no interaction.
+    ("34-autark-park-access-heatmap.json", 3, 2,
+     {"curio.builtin/autk-grammar": 2, "curio.builtin/python-computation": 1}, False),
+    # An Autark render pass: the loader's streets and buildings feed a map
+    # node whose pass writes each street's share of sky, which it draws.
+    ("35-autark-sky-seen-from-the-street.json", 2, 1,
+     {"curio.builtin/autk-grammar": 2}, False),
+    # Green share and summer heat in Niterói: its data node hands its layers
+    # and a GeoTIFF to a map and to a Python step, whose cells a Vega-Lite
+    # scatter plots, with no interaction.
+    ("36-autark-green-share-summer-heat.json", 4, 3,
+     {"curio.builtin/autk-grammar": 2, "curio.builtin/python-computation": 1,
+      "curio.builtin/vis-vega": 1}, False),
+    # Park area within reach and summer heat in Niterói: its data node hands
+    # its layers, a GeoTIFF, a GeoJSON of parks and a heatmap summing their
+    # area to a map and to a Python step, whose cells a Vega-Lite scatter
+    # plots, with no interaction.
+    ("37-autark-park-area-summer-heat.json", 4, 3,
+     {"curio.builtin/autk-grammar": 2, "curio.builtin/python-computation": 1,
+      "curio.builtin/vis-vega": 1}, False),
 ]
 
 
@@ -149,6 +190,14 @@ FAN_IN_NODES = {
     "26-several-inputs.json": 6,
     # The network: the pictures on "in", its weights on "in_1".
     "27-pytorch-shape-classifier.json": 1,
+    # Walk track: the walk on "in", the listing of its gps.csv on "in_1".
+    "31-sideseeing-objects-along-a-walk.json": 1,
+    # Settings and the day's records, snapshots and zones meet in the
+    # analysis nodes, the Spatial Join, the occupancy chart and the map.
+    "32-sage-idot-rail-crossings.json": 14,
+    # The GPS fixes, the placed frames, the map, the cuts, Split Video's blocks
+    # and the blocks' shares.
+    "33-sideseeing-frames-segments-blocks.json": 6,
 }
 
 
@@ -567,22 +616,22 @@ def test_example_06_maps_the_sunlight_change_on_a_diverging_scale_centered_on_no
 def test_example_07_drives_compute_gpgpu():
     """Example 07's headline functionality is a WGSL shader run via the
     autk-grammar's ``compute`` block.  Assert the grammar spec contains
-    a ``wglsFunction`` so we catch accidental removals of the GPU step."""
+    a ``wgslFunction`` so we catch accidental removals of the GPU step."""
     path = os.path.join(EXAMPLES_DIR, "07-autark-gpu-shader.json")
     with open(path, "r", encoding="utf-8") as f:
         wf = json.load(f)
     matches = [
         n for n in wf["dataflow"]["nodes"]
         if n["type"] == "curio.builtin/autk-grammar"
-        and "wglsFunction" in n.get("content", "")
+        and "wgslFunction" in n.get("content", "")
     ]
     assert matches, (
         "07-autark-gpu-shader.json no longer has a curio.builtin/autk-grammar "
-        "node with a wglsFunction — the example's GPU compute step is gone."
+        "node with a wgslFunction: the example's GPU compute step is gone."
     )
 
 
-#: The only ``docs/examples/data`` files that legitimately stay put. The four OSM
+#: The only ``docs/examples/data`` files that legitimately stay put. The OSM
 #: extracts are consumed by autk-grammar ``pbfFileUrl`` specs, which take a URL
 #: the *browser* fetches from the unauthenticated ``/file/`` route, not a Python
 #: path a loader can resolve by dataset id -- and ``.pbf`` is not even a catalog
@@ -596,7 +645,13 @@ _DATA_DIR_ALLOWLIST = (
     "chicago_loop.osm.pbf",
     "lower_mnt.osm.pbf",
     "niteroi.osm.pbf",
+    # The streets of the SideSeeing walk (datasets/data.sideseeing.west-loop-walk@1).
+    "west_loop.osm.pbf",
     "niteroi_lst_verao_2001_2024.tif",
+    # Niterói's parks with their areas, a GeoJSON an autk-grammar
+    # geojsonFileUrl reads through /file/ as the extracts are read
+    # (scripts/build_example_niteroi_parks.py builds it from niteroi.osm.pbf).
+    "niteroi_parks.geojson",
     "shape-cnn.npz",
     "ImageTest",
     "access_score.geojson",

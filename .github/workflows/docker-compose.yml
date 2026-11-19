@@ -23,7 +23,10 @@ on:
       # The bucket mount service, which the bucket-mounts job starts.
       - 'docker-compose.bucket-mounts.yml'
       - 'docker-compose.ci-bucket-mounts.yml'
-      - '.github/workflows/docker-compose.yml'
+      # Every workflow, this one among them: Jest reads them all
+      # (ciSparseCheckout.test.ts), and the deploy and CI tests pin lines of
+      # deploy.yml, bump-version.yml, skill-evals.yml and weekly-flake-hunt.yml.
+      - '.github/workflows/**'
       - '.github/actions/**'
       # scripts/test.sh is this workflow's entry point; the authoring helpers
       # (new_package.py, regen_integrity.py) are covered by the test suite too.
@@ -78,7 +81,10 @@ on:
       # The bucket mount service, which the bucket-mounts job starts.
       - 'docker-compose.bucket-mounts.yml'
       - 'docker-compose.ci-bucket-mounts.yml'
-      - '.github/workflows/docker-compose.yml'
+      # Every workflow, this one among them: Jest reads them all
+      # (ciSparseCheckout.test.ts), and the deploy and CI tests pin lines of
+      # deploy.yml, bump-version.yml, skill-evals.yml and weekly-flake-hunt.yml.
+      - '.github/workflows/**'
       - '.github/actions/**'
       # scripts/test.sh is this workflow's entry point; the authoring helpers
       # (new_package.py, regen_integrity.py) are covered by the test suite too.
@@ -555,6 +561,23 @@ jobs:
           if [ "${CURIO_REMINT:-}" = 1 ]; then args+=(--remint --remint-filter "$CURIO_REMINT_FILTER"); fi
           python3 scripts/ci_selected_tests.py split "${args[@]}" | tee -a "$GITHUB_OUTPUT"
 
+      # The collection below runs the image (image-env's helper or its copy,
+      # and the unit suite's listing), so the image is pulled first, the way
+      # start-stack pulls it (scripts/ci_image_slots.py): in an image slot on
+      # arcade, and tried again when the registry fails it. The build above
+      # ran in buildx's own builder and pushed from there, and a reused image
+      # is only a new tag in the registry, so this runner's daemon holds no
+      # copy, and a `docker run` would fetch it itself, once and in no slot.
+      # Like the steps it serves, it may fail: they then fetch the image
+      # themselves, and if the collection fails every part of the selected
+      # suites runs.
+      - name: 📥 Pull the image, for the collection
+        if: steps.suites.outputs.e2e == 'true' || steps.suites.outputs.backend == 'true'
+        continue-on-error: true
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}
+        run: python3 scripts/ci_image_slots.py pull "$IMAGE"
+
       - name: 🐍 The image's Python, for the e2e collection
         if: steps.suites.outputs.e2e == 'true'
         continue-on-error: true
@@ -631,12 +654,13 @@ jobs:
       # On an arcade runner the image's Python above is the image's own folder,
       # mounted in place (scripts/ci_image_python.sh), and this job starts no
       # stack whose stop-stack would let it go and remove the image the
-      # collection pulled, so it does both here, on every self-hosted runner.
+      # collection pulled, so it does both here, on every self-hosted runner,
+      # for whichever suite the collection pulled the image for.
       # It never holds up the pick below: a release that fails leaves the next
       # job's take to finish it, and the next job's first step removes the
       # image.
       - name: 🧹 Let go of the image's Python, remove the image
-        if: always() && steps.suites.outputs.e2e == 'true'
+        if: always() && (steps.suites.outputs.e2e == 'true' || steps.suites.outputs.backend == 'true')
         run: |
           bash scripts/ci_image_python.sh release
           if [ "$RUNNER_ENVIRONMENT" = self-hosted ]; then bash scripts/ci_image_cleanup.sh; fi
@@ -825,6 +849,20 @@ jobs:
           python3 scripts/ci_memory_budget.py --github-env --workers-max "$CURIO_E2E_MAX_PARALLEL" \
             || echo "CURIO_E2E_PARALLEL=$CURIO_E2E_MAX_PARALLEL" >> "$GITHUB_ENV"
 
+      # As in test-isolated, which says why: an arcade GPU runner is a
+      # container on the server arcade's CPU runners are on, with the same 192
+      # CPUs and no CPU quota (uic-evl/evl-github-runners), and this job's
+      # stacks run nodes in the sandbox itself, Deep Umbra's and the weather
+      # GNN's among them, whose onnxruntime sessions took a thread per core.
+      # docker-compose.ci.yml hands the count on as OMP_NUM_THREADS, which
+      # those packages hand onnxruntime; each shard, started in the container
+      # with `docker compose exec`, gets the container's environment.
+      - name: 📏 Size the stack's library threads to this runner
+        run: |
+          threads=$(nproc); [ "$threads" -gt 8 ] && threads=8
+          echo "CURIO_CI_LIBRARY_THREADS=$threads" >> "$GITHUB_ENV"
+          echo "OMP_NUM_THREADS=$threads" >> "$GITHUB_ENV"
+
       # The Node.js major is written in five places (NODE_MAJOR, .nvmrc,
       # .node-version, two package.json "engines", the Dockerfile). The test
       # suite cannot check them: it runs inside the image, which ships
@@ -869,6 +907,21 @@ jobs:
           fi
           echo "OK: the deploy configuration pins isolation fail-closed."
 
+          # Each isolated node's memory is a cgroup at its budget, which the
+          # container may arrange only with a private cgroup namespace and
+          # writable cgroups. Without either line the live instances fall
+          # back to the address-space cap, which SAM 3 cannot run under.
+          if ! echo "$config" | grep -qE '^ +cgroup: "?private"?$'; then
+            echo "::error::docker-compose.deploy.yml no longer asks for a private cgroup namespace (cgroup: private); the live instances' nodes would fall back to the address-space cap" >&2
+            exit 1
+          fi
+          if ! echo "$config" | grep -qE '^ +- "?writable-cgroups=true"?$'; then
+            echo "::error::docker-compose.deploy.yml no longer asks for writable cgroups (security_opt: writable-cgroups=true); the live instances' nodes would fall back to the address-space cap" >&2
+            echo "$config" | grep -A 3 'security_opt:' >&2 || true
+            exit 1
+          fi
+          echo "OK: the deploy configuration gives each node a cgroup at its budget."
+
           # The execution account is DISCOVERED by name rather than passed as a
           # flag, so the command line can no longer be the thing that proves it
           # exists. The image is. Without it the sandbox still refuses to serve
@@ -880,6 +933,11 @@ jobs:
           fi
           echo "OK: the image still carries the execution account isolation discovers."
 
+      # No image slot (scripts/ci_image_slots.py) for the build: it would hold
+      # one for its 2 to 4 minutes, though a build from the runner's cache
+      # writes only its new layers, and replayed with the builds holding slots,
+      # the last CPU job of a run got its image 60 s later instead of 28
+      # (median, 11-15).
       - name: 🔨 Build all service images in parallel
         run: docker compose -p curio-ci build --parallel
 
@@ -1188,6 +1246,11 @@ jobs:
           bash scripts/ci_repeat.sh bash scripts/test.sh --e2e-only --use-existing --skip-setup "${extra[@]}" \
             --parallel "$CURIO_E2E_PARALLEL"
 
+      # After the tests, as test-isolated's, so it never stops them.
+      - name: 🔒 Assert a node of the stack uses the job's thread count
+        if: ${{ !cancelled() && steps.stack_healthy.outcome == 'success' }}
+        run: python3 scripts/ci_library_threads.py
+
       # What a re-mint wrote into this checkout: the baselines whose screen
       # changed, and any it minted. Exactly those files, flat, for review on the
       # report page and then a commit. The *_actual.png a failure leaves behind
@@ -1215,7 +1278,9 @@ jobs:
       # runner's GPU inside the curio container, and its torch multiplies on it, as plain
       # Python (utk_curio/sandbox/tests/test_cuda_mlp.py and test_cuda_torch.py)
       # and as a node in an isolated child that runs as curio-exec under seccomp
-      # at the deploy's budget (test_cuda_isolated.py); only -m cuda selects them. After the e2e
+      # at the deploy's budget (test_cuda_isolated.py), and the tiny SAM 3 Track Objects runs
+      # twice in each of torch's modes, each mode in a process of its own, whose two runs must
+      # agree (test_cuda_sam3.py); only -m cuda selects them. After the e2e
       # tests, so a failure here never hides theirs, and their browsers have
       # let go of the GPU's memory by then. Its JUnit joins this job's results,
       # which ci-report's every-test-ran check reads.
@@ -1228,7 +1293,7 @@ jobs:
           status=0
           docker compose -p curio-ci exec -T curio python -m pytest \
             utk_curio/sandbox/tests/test_cuda_mlp.py utk_curio/sandbox/tests/test_cuda_torch.py \
-            utk_curio/sandbox/tests/test_cuda_isolated.py \
+            utk_curio/sandbox/tests/test_cuda_isolated.py utk_curio/sandbox/tests/test_cuda_sam3.py \
             -m cuda -v -s --junitxml=/app/.curio/ci-report/cuda.xml || status=$?
           cp .curio/ci-report/cuda.xml ci-report/cuda.xml || status=1
           # Every CUDA test passed, both GPU runs among them: an -m expression
@@ -1239,7 +1304,10 @@ jobs:
           passed = [c.get("name") for c in cases if not any(c.find(k) is not None for k in ("failure", "error", "skipped"))]
           needed = {"test_a_tiny_mlp_runs_on_the_gpu_and_matches_numpy",
                     "test_torch_is_the_cuda_12_9_build_and_multiplies_on_the_gpu",
-                    "test_a_node_in_an_isolated_child_reaches_the_gpu_through_torch"}
+                    "test_a_node_in_an_isolated_child_reaches_the_gpu_through_torch",
+                    "test_a_node_holds_more_of_the_gpu_than_the_address_space_cap_allowed",
+                    "test_tiny_track_objects_repeats_run_to_run_on_the_gpu[default]",
+                    "test_tiny_track_objects_repeats_run_to_run_on_the_gpu[deterministic]"}
           if len(passed) != len(cases) or not needed <= set(passed):
               sys.exit(f"::error::the CUDA tests did not all pass: {len(passed)} of {len(cases)}")
           print(f"OK: {len(passed)} CUDA tests passed")
@@ -1496,6 +1564,12 @@ jobs:
     env:
       CURIO_CI_FRESH_STACK: curio-ci
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
+      # GitHub-hosted and arcade runners' time zone, which the baselines were
+      # taken in. A utk desktop keeps America/Chicago, and the browser draws a
+      # Vega-Lite time axis in local time: example 04's two such charts read
+      # 0.44% apart there. Pytest runs in it too, as a test may compute a
+      # date the page shows (ciCpuJobsTimeZone.test.ts).
+      TZ: UTC
       CURIO_E2E_RUNNER: desktop
       CURIO_E2E_PART: ${{ matrix.part }}/${{ strategy.job-total }}
       CURIO_E2E_DATAPOOL_TIMEOUT_MS: "120000"
@@ -1515,6 +1589,9 @@ jobs:
       FLASK_SANDBOX_HOST: localhost
       FLASK_SANDBOX_PORT: "2020"
       CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
+      # Two backend processes behind nginx (docker-compose.ci.yml's command),
+      # where every other job's stack runs one.
+      CURIO_E2E_BACKEND_PROCESSES: "2"
       # A tests run: only the selected e2e tests (scripts/test.sh).
       CURIO_TESTS: ${{ inputs.tests }}
       # Whether this part holds a selected test (build-image's holding, empty
@@ -1527,6 +1604,19 @@ jobs:
 
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
+
+      # As in test-isolated, which says why: this stack runs nodes in the
+      # sandbox itself, where onnxruntime starts a thread per core it sees. At
+      # load 530 to 680 example 10's Image Segmentation ran 129 s there, past
+      # its test's 120 s (run 44027626125), where a quiet arcade runner takes
+      # 11 s. docker-compose.ci.yml hands the count on as OMP_NUM_THREADS, which
+      # the code that makes an onnxruntime session hands onnxruntime.
+      - name: 📏 Size the stack's library threads to this runner
+        if: env.CURIO_CI_HOLDS == 'true'
+        run: |
+          threads=$(nproc); [ "$threads" -gt 8 ] && threads=8
+          echo "CURIO_CI_LIBRARY_THREADS=$threads" >> "$GITHUB_ENV"
+          echo "OMP_NUM_THREADS=$threads" >> "$GITHUB_ENV"
 
       # runner-env: the runner's pytest uses the image's packages
       # (.github/actions/image-env), so test.sh skips its setup.
@@ -1588,6 +1678,11 @@ jobs:
           if [ -n "${CURIO_TESTS:-}" ]; then extra+=(--allow-empty); fi
           bash scripts/ci_repeat.sh bash scripts/test.sh --e2e-only --use-existing --skip-setup "${extra[@]}"
 
+      # After the tests, as test-isolated's, so it never stops them.
+      - name: 🔒 Assert a node of the stack uses the job's thread count
+        if: ${{ !cancelled() && env.CURIO_CI_HOLDS == 'true' }}
+        run: python3 scripts/ci_library_threads.py
+
       - name: 📦 Collect the re-minted baselines
         if: always() && env.CURIO_REMINT == '1' && env.CURIO_CI_HOLDS == 'true'
         shell: bash
@@ -1640,6 +1735,8 @@ jobs:
     env:
       CURIO_CI_FRESH_STACK: curio-ci-iso
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci-isolated.yml
+      # As in e2e-desktop, which says why.
+      TZ: UTC
       CURIO_E2E_BACKEND_URL: "http://localhost:5032"
       CURIO_E2E_HOST: localhost
       CURIO_E2E_BACKEND_PORT: "5032"
@@ -1686,13 +1783,15 @@ jobs:
 
       # The whole point of the job: prove the stack is actually isolated before
       # reading anything into the test results. /version reports the mode the
-      # sandbox resolved, the same answer the UI badge shows.
+      # sandbox resolved, the same answer the UI badge shows, and the memory
+      # limit its nodes get: a cgroup each, as the deploy's, where the
+      # container's cgroups are writable (docker-compose.ci-isolated.yml).
       - name: 🔒 Assert the stack came up configured for isolation
         shell: bash
         run: |
           set -euo pipefail
-          mode="$(curl -sf "http://localhost:${CURIO_E2E_SANDBOX_PORT}/version" \
-                  | python3 -c 'import json,sys; print(json.load(sys.stdin).get("isolation",""))')"
+          version="$(curl -sf "http://localhost:${CURIO_E2E_SANDBOX_PORT}/version")"
+          mode="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("isolation",""))' <<<"$version")"
           if [ "$mode" != "fork" ]; then
             echo "::error::the stack did not come up isolated (/version reported '${mode:-nothing}')" >&2
             docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
@@ -1700,6 +1799,14 @@ jobs:
             exit 1
           fi
           echo "OK: the sandbox reports node execution isolation = fork"
+          limit="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("memory_limit",""))' <<<"$version")"
+          if [ "$limit" != "cgroup" ]; then
+            echo "::error::the stack's nodes get no cgroup at their budget (/version reported memory_limit '${limit:-nothing}')" >&2
+            docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
+              'grep -i "node memory" .curio/messages.log 2>/dev/null | tail -5' >&2 || true
+            exit 1
+          fi
+          echo "OK: the sandbox reports each node's memory limit = cgroup"
 
       - name: 🔧 Give .curio/ permissions for host-side tests
         run: |
@@ -1757,7 +1864,7 @@ jobs:
       # After the workflows, as the check above, so it never stops the tests.
       - name: 🔒 Assert an isolated child's torch uses the job's thread count
         if: ${{ !cancelled() }}
-        run: python3 scripts/ci_isolated_threads.py
+        run: python3 scripts/ci_library_threads.py
 
       - name: 📋 Capture sandbox/backend logs
         if: always()
@@ -1863,8 +1970,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      # Only pytest. The suite talks to the sandbox over HTTP and imports
-      # nothing from the project, deliberately.
+      # Only pytest. The suite talks to the sandbox and the backend over HTTP
+      # and imports nothing from the project, deliberately.
       - name: 📦 Install pytest
         run: python -m pip install --quiet "pytest==9.0.3"
 
@@ -2002,10 +2109,12 @@ jobs:
   # A real FUSE mount, through the bucket mount service of
   # docker-compose.bucket-mounts.yml (docs/ARCHITECTURE.md, "Bucket mounts"),
   # beside a stand-in for Curio's container (docker-compose.ci-bucket-mounts.yml).
-  # The backend's own self-test reads the test mount as a non-root account;
-  # then the service is killed, which leaves its mount dead in the stand-in,
-  # and its next start must clear that mount before the self-test passes again
-  # (scripts/bucket-mounts/ci_check.py).
+  # The backend's own self-test reads the test mount as a non-root account and
+  # has the service reach Curio's proxy, which runs in the stand-in: on the
+  # stand-in's own 127.0.0.1 it must fail, and where the service's HTTPS_PROXY
+  # points it must pass. Then the service is killed, which leaves its mount
+  # dead in the stand-in, and its next start must clear that mount before the
+  # self-test passes again (scripts/bucket-mounts/ci_check.py).
   #
   # On ubuntu-latest only: the job loads the service's AppArmor profile into
   # the runner's kernel (sudo apparmor_parser), which only a VM runner may do;
@@ -2043,7 +2152,9 @@ jobs:
       - name: 🚀 Start the service beside a stand-in for Curio
         run: docker compose up -d --wait --wait-timeout 180
 
-      - name: 🧪 The self-test, reading as a non-root account
+      # Curio's proxy out of the service's reach, then where its HTTPS_PROXY
+      # points: the self-test fails for the way out, then passes.
+      - name: 🧪 The self-test, reading as a non-root account and reaching Curio's proxy
         run: docker compose exec -T curio python /curio/scripts/bucket-mounts/ci_check.py selftest
 
       # Two buckets mounted at once as the backend mounts a source: rclone
@@ -2121,11 +2232,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Through the script start-stack pulls with, which tries a pull again
+      # when the registry fails it (scripts/ci_image_slots.py): one reset of
+      # this pull lost the whole job in run 44017255256. This GitHub-hosted
+      # runner shares no folder with other runners, so it takes no slot.
       - name: 📥 Pull the image
         env:
           IMAGE: ${{ needs.build-image.outputs.image }}
         run: |
-          docker pull --quiet "$IMAGE"
+          python3 scripts/ci_image_slots.py pull "$IMAGE"
           mkdir -p ci-report
 
       - uses: ./.github/actions/image-env
@@ -2197,14 +2312,21 @@ jobs:
         run: kill "$(cat "$GITHUB_WORKSPACE/stats-sampler.pid")" 2>/dev/null || true
 
       # The verdict a laptop user would have given: the OOM killer took nothing.
+      # Docker's OOMKilled and the kernel's log count an isolated node stopped
+      # at its own budget too, so the container's counters say first which it
+      # was (scripts/ci_memory_budget.py kills).
       - name: 🔒 Assert nothing was OOM-killed
         if: always()
         shell: bash
         run: |
           set -euo pipefail
           cid="$(docker compose -p curio-ci-stress ps -a -q curio | head -n1)"
+          docker compose -p curio-ci-stress exec -T curio sh -c 'cat /sys/fs/cgroup/memory.events;
+              echo "# memory.events.local"; cat /sys/fs/cgroup/memory.events.local;
+              echo "# nodes"; cat /sys/fs/cgroup/nodes/memory.events' 2>/dev/null \
+            | python3 scripts/ci_memory_budget.py kills || true
           if [ "$(docker inspect --format '{{.State.OOMKilled}}' "$cid")" = true ]; then
-            echo "::error::the stack's container was OOM-killed" >&2
+            echo "::error::the stack's container was OOM-killed, or an isolated node in it was stopped at its memory budget (the lines above say which)" >&2
             exit 1
           fi
           if sudo dmesg 2>/dev/null | grep -iE 'out of memory|oom-kill|killed process'; then
@@ -2249,9 +2371,14 @@ jobs:
   # types in and plays the dataflow as its tab holds it, and each room's owner
   # runs it on the server and saves it; then the same ten canvases with every
   # member's agent writing its node too (--agents), on Curio's scripted
-  # model, report in stress-agents/. The browser tier is five
+  # model, report in stress-agents/; then 100 hosted guests on one example
+  # (--guests), each typing in a copy of its own and asking Node Builder on
+  # the scripted model, report in stress-guests/. The browser tier is five
   # real Chrome contexts rendering Autark on WebGPU, which is the half that
   # cannot be driven any other way and does not scale past a handful on one GPU.
+  # The stack runs 16 backend processes behind nginx, each owning the dataflows
+  # that hash to it: the count chosen for dev and stable
+  # (CURIO_STRESS_BACKEND_PROCESSES).
   test-gpu-stress:
     needs: test-gpu
     # Not on every push: on the cron above, on a PR labelled `stress`, or on a
@@ -2288,6 +2415,11 @@ jobs:
       CURIO_E2E_FRONTEND_PORT: "8150"
       CURIO_STRESS: "1"
       CURIO_WEBGPU_BACKEND: hardware
+      # The stack's backend processes behind nginx, read only by the overlay's
+      # command: 16, the count chosen for dev and stable, so every stage
+      # measures and guards that shape. Each report gives every process its
+      # rooms, sync and turns.
+      CURIO_STRESS_BACKEND_PROCESSES: "16"
 
     steps:
       - *reclaim
@@ -2430,6 +2562,27 @@ jobs:
             --stats-log "$GITHUB_WORKSPACE/docker-stats.log" \
             --probe "docker exec $cid python"
 
+      # 100 hosted guests on one example, as a workshop's visitors are: each
+      # signs in as a guest, opens the example as its page does, types in a
+      # node's code in a copy of its own through its tab, and asks Node
+      # Builder, on Curio's scripted model, to put a line on top of that code.
+      # Each agent's write must land in its own guest's copy, in no other
+      # guest's and not in the example, which a guest of the stage's own reads
+      # before and after, and no agent or lock may be left in a room. The
+      # report names each copy's backend process and gives each process its
+      # copies, their sync and their turns, and every process's thread stacks,
+      # read 30 s after the first agent turn is asked, are in its folder.
+      - name: 🎫 Run 100 hosted guests on one example with agents
+        if: ${{ !cancelled() }}
+        run: |
+          cid="$(docker compose -p curio-ci-stress ps -q curio | head -n1)"
+          bash scripts/ci_repeat.sh python -m utk_curio.backend.tests.stress \
+            --backend "http://localhost:5072" \
+            --tiers 100 --guests \
+            --out "$GITHUB_WORKSPACE/stress-guests{run}" \
+            --stats-log "$GITHUB_WORKSPACE/docker-stats.log" \
+            --probe "docker exec $cid python"
+
       # Separate step so a red HTTP tier does not hide the state of the WebGPU
       # half, and vice versa: they fail for different reasons and get fixed by
       # different changes.
@@ -2491,6 +2644,8 @@ jobs:
             stress-canvas.run*/
             stress-agents/
             stress-agents.run*/
+            stress-guests/
+            stress-guests.run*/
             stress-stacks/
             docker-stats.log
           if-no-files-found: warn

@@ -64,11 +64,15 @@ RUN set -eu; \
     fi
 
 # Repo-root node_modules for the sandbox's Node.js subprocess
-# (@urban-toolkit/autk-db — see utk_curio/sandbox/app/worker.py).
-# Early layer: only rebuilds when the root lockfile changes; the
-# npm install in utk_curio/cli/dependencies.py::_ensure_root_node_modules at container
-# start then becomes a fast idempotent no-op.
+# (@urban-toolkit/autk-db, see utk_curio/sandbox/app/worker.py), whose
+# package.json installs autk-db from the tarball the frontend vendors
+# (utk_curio/frontend/urban-workflows/vendor/autark/README.md), so that folder
+# comes first too. Early layer: only rebuilds when the root lockfile or that
+# folder changes; the npm install in
+# utk_curio/cli/dependencies.py::_ensure_root_node_modules at container start
+# then becomes a fast idempotent no-op.
 COPY package.json package-lock.json ./
+COPY utk_curio/frontend/urban-workflows/vendor/autark/ utk_curio/frontend/urban-workflows/vendor/autark/
 RUN npm ci --no-audit --no-fund
 
 # Before the source, so a code change reuses this layer: pip needs nothing but
@@ -88,6 +92,16 @@ FROM python_base AS ci_deps_0
 # launcher's (install_python_deps). No browser: the e2e suite drives each
 # runner's own Chrome (browser_type_launch_args in the tests' conftest).
 FROM python_base AS ci_deps_1
+# qemu-user, for its qemu-x86_64: test_packages/test_ddrnet_on_every_cpu.py
+# runs DDRNet23-Slim under it on an emulated AVX2 CPU without VNNI (-cpu
+# Haswell), whose scores must equal this CPU's. The package brings an emulator
+# for each of about thirty architectures, 476 MB in all, so only x86_64's
+# stays, and the build stops if it does not run. Before the requirements, so a
+# change to them reuses this layer.
+RUN apt-get update && apt-get install -y --no-install-recommends qemu-user \
+    && find /usr/bin -name 'qemu-*' ! -name 'qemu-x86_64*' -delete \
+    && qemu-x86_64 --version && ls -l /usr/bin/qemu-x86_64* \
+    && rm -rf /var/lib/apt/lists/*
 COPY scripts/ci-requirements.txt /ci-requirements.txt
 RUN pip install --no-input --no-cache-dir -r /ci-requirements.txt
 
@@ -195,6 +209,13 @@ ENV CURIO_DEV=0
 RUN groupadd --system curio-exec \
     && useradd --system --gid curio-exec --no-create-home \
         --shell /usr/sbin/nologin curio-exec
+
+# nginx, which `curio.py start --backend-processes N` puts in front of the N
+# backend processes (utk_curio/cli/backend_group.py). A layer of its own in
+# this last stage, so the large layers above stay cached.
+RUN apt-get update && apt-get install -y --no-install-recommends nginx \
+    && rm -rf /var/lib/apt/lists/* \
+    && nginx -v
 
 # Adjust these COPY paths if your build outputs to "build/" instead of "dist/"
 COPY --from=frontend_builder /src/utk_curio/frontend/urban-workflows/dist \

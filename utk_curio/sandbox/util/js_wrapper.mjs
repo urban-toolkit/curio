@@ -35,11 +35,45 @@ console.log = (...args) => {
 // A layer chip (#662), `[!! input_0:table_osm_roads !!]`, is written as
 // `curio_layer(input_0, "table_osm_roads", 0)`: the layer of that name among the
 // ones the input carries, as a FeatureCollection, found by its name exactly as
-// an Autark spec finds it. An input that is exactly one FeatureCollection with
-// no layer name (a GeoDataFrame on its own) is that layer. The input's circle
-// names it when it is missing. The Python twin, with what an input may carry,
-// is util/input_layers.py.
+// an Autark spec finds it, whatever workspace its table is in. When two
+// workspaces hold tables of one name, the name names neither, and the chip
+// names one by its key, `<workspace>/<name>` (`autk/<name>` in autk-db's
+// default workspace). An input that is exactly one FeatureCollection with no
+// layer name (a GeoDataFrame on its own) is that layer. A dict of frames a
+// Python node returns gives the frame under the key the chip names. The
+// input's circle names it when it is missing. The Python twin, with what an
+// input may carry, is util/input_layers.py.
+const ambiguousLayerMessage = (slot, layer, keys) =>
+  `[!! input_${slot}:${layer} !!]: input_${slot} has a layer ${layer} in more than one workspace: `
+  + `${keys.join(', ')}. Name one by its key.`;
+const missingLayerMessage = (slot, layer, names) => {
+  const has = names.length > 0 ? `Its layers are ${names.join(', ')}.` : 'It carries no named layers.';
+  return `[!! input_${slot}:${layer} !!]: input_${slot} has no layer ${layer}. ${has}`;
+};
+const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+// A frame as a JavaScript node gets one (worker._to_js_value): a GeoDataFrame
+// as a FeatureCollection, a DataFrame as its rows, which the sandbox reads
+// back as frames (worker._js_value_to_saveable_frame).
+const isFrameValue = (value) => (isPlainObject(value) && value.type === 'FeatureCollection')
+  || (Array.isArray(value) && value.length > 0 && value.every(isPlainObject));
+// The layers of a dict of frames, as a Python node returns one: each frame it
+// holds, named after its key, as the canvas reads such a dict
+// (keyedFramesAsOutputs). Null for anything else: an envelope, a layer record,
+// a FeatureCollection, or a JSON dict, which carries no layers.
+const keyedLayers = (value) => {
+  if (!isPlainObject(value) || 'dataType' in value || isPlainObject(value.geojson) || value.type === 'FeatureCollection') {
+    return null;
+  }
+  const layers = Object.entries(value).filter(([, item]) => isFrameValue(item));
+  return layers.length > 0 ? layers : null;
+};
 const curio_layer = (value, layer, slot = 0) => {
+  const keyed = keyedLayers(value);
+  if (keyed) {
+    const found = keyed.find(([key]) => key === layer);
+    if (found) return found[1];
+    throw new Error(missingLayerMessage(slot, layer, keyed.map(([key]) => key)));
+  }
   const items = value && typeof value === 'object' && !Array.isArray(value)
     && value.dataType === 'outputs' && Array.isArray(value.data)
     ? value.data
@@ -62,20 +96,30 @@ const curio_layer = (value, layer, slot = 0) => {
     } else {
       continue;
     }
-    if (typeof name === 'string' && name) named.push([name, found]);
+    const workspace = typeof item.workspace === 'string' && item.workspace && item.workspace !== 'autk'
+      ? item.workspace
+      : null;
+    if (typeof name === 'string' && name) named.push([name, workspace, found]);
     else unnamed.push(found);
   }
-  for (const [name, found] of named) {
-    if (name === layer) return found;
+  // A layer's key, `<workspace>/<name>`, and that of one in the default workspace, `autk/<name>`.
+  const keyOf = (name, workspace) => (workspace ? `${workspace}/${name}` : name);
+  const workspaceKey = (name, workspace) => `${workspace || 'autk'}/${name}`;
+  for (const [name, workspace, found] of named) {
+    if (workspaceKey(name, workspace) === layer) return found;
+  }
+  const same = named.filter(([name]) => name === layer);
+  if (same.length === 1) return same[0][2];
+  if (same.length > 1) {
+    throw new Error(ambiguousLayerMessage(slot, layer, same.map(([name, workspace]) => workspaceKey(name, workspace))));
   }
   if (items.length === 1 && named.length === 0 && unnamed.length === 1) return unnamed[0];
-  const names = named.map(([name]) => name);
-  const has = names.length > 0 ? `Its layers are ${names.join(', ')}.` : 'It carries no named layers.';
-  throw new Error(`[!! input_${slot}:${layer} !!]: input_${slot} has no layer ${layer}. ${has}`);
+  throw new Error(missingLayerMessage(slot, layer, named.map(([name, workspace]) => keyOf(name, workspace))));
 };
 
 // The node's inputs, {input_0: ..., input_1: ...}: each wired circle k is the
-// code's input_k (util/input_names.py).
+// code's input_k (util/input_names.py). An Autark node's data load reads the
+// tables of its input here by name (autkDataCompile.ts inputTablesFrom).
 const __inputs = __INPUTS_JSON__;
 const __RESULT_PREFIX = '__CURIO_JSON_RESULT__';
 

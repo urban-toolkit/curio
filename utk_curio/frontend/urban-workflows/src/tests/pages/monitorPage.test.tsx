@@ -82,6 +82,7 @@ const monitorPayload = {
   uptimeSeconds: 48213,
   deployment: {
     version: "0.16.114", isolation: "fork", isolationActive: "fork",
+    memoryLimit: "cgroup", memoryLimitReason: null,
     execUserConfigured: true, authEnabled: true, projectsEnabled: true,
     guestLoginAllowed: true,
     factoryPublishAllowed: true, saveNodeOutputDefault: false,
@@ -324,6 +325,26 @@ describe("MonitorPage", () => {
     renderPage();
     const deployment = await screen.findByTestId("monitor-deployment");
     const label = await within(deployment).findByText("Bucket mounts");
+    // The chip shows "…" until the payload lands.
+    await waitFor(() => expect(label.nextElementSibling?.textContent).toBe(text));
+  });
+
+  test.each([
+    ["cgroup", null, "cgroup limit"],
+    [
+      "address space",
+      "the container's cgroups are read-only (Docker's writable-cgroups option)",
+      "address-space cap: the container's cgroups are read-only (Docker's writable-cgroups option)",
+    ],
+    ["none", null, "none"],
+  ])("the deployment names the memory limit isolated nodes run under: %s", async (limit, reason, text) => {
+    (fetchMonitor as jest.Mock).mockResolvedValue({
+      ...monitorPayload,
+      deployment: { ...monitorPayload.deployment, memoryLimit: limit, memoryLimitReason: reason },
+    });
+    renderPage();
+    const deployment = await screen.findByTestId("monitor-deployment");
+    const label = await within(deployment).findByText("Node memory");
     // The chip shows "…" until the payload lands.
     await waitFor(() => expect(label.nextElementSibling?.textContent).toBe(text));
   });

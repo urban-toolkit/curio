@@ -12,7 +12,7 @@ after Curio changes version, every node does.
 
 The nodes are walked in a run's order (``run_engine.plan_run``), so a node's
 input is what the nodes above it show: one a run forwards hands its input on,
-and one only the browser makes (an Autark compute node, a Spatial Join) leaves
+and one only the browser makes (an Autark compute node) leaves
 the nodes below it nothing to key, its data being the tab's. Nothing runs and
 nothing is written.
 """
@@ -69,6 +69,7 @@ def last_results(
         node_input,
         passed_on,
         plan_run,
+        reads_no_input,
         sent_code,
     )
     from utk_curio.backend.app.packages.service import roster_templates
@@ -110,7 +111,7 @@ def last_results(
     for level in plan.levels:
         for node_id in level:
             step = plan.steps[node_id]
-            input_ref = None if step.autk_data else node_input(plan.spec, node_id, outputs)
+            input_ref = None if reads_no_input(step) else node_input(plan.spec, node_id, outputs)
             if step.role == "forward":
                 if input_ref is not None:
                     outputs[node_id] = input_ref
@@ -119,7 +120,7 @@ def last_results(
                 continue
             entry = None
             # A node waiting on a missing input has nothing to key.
-            if node_id in sent and (input_ref is not None or step.autk_data or not plan.spec.upstream_nodes(node_id)):
+            if node_id in sent and (input_ref is not None or reads_no_input(step) or not plan.spec.upstream_nodes(node_id)):
                 call = kept.step_call(plan, step, sent[node_id], input_ref)
                 entry = entries.get(kept.call_key(
                     call, packages=packages, node_type=step.node_type, datasets=datasets[node_id],

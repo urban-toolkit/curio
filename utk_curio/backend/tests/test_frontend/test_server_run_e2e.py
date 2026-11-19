@@ -97,7 +97,7 @@ def _close_every_page(context) -> None:
 def _latest_run(backend: str, token: str, project_id: str) -> dict:
     runs = api_json(f"{backend}/api/projects/{project_id}/runs?limit=1", token)["runs"]
     assert runs, "Run All started no run on the server"
-    return api_json(f"{backend}/api/runs/{runs[0]['id']}", token)
+    return api_json(f"{backend}/api/runs/{runs[0]['id']}", token, dataflow=project_id)
 
 
 def _wait_for_run_to_end(backend: str, token: str, project_id: str, *, timeout_s: float = 180) -> dict:

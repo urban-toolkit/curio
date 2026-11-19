@@ -89,6 +89,8 @@ jest.mock("../../../providers/FlowProvider", () => ({
         signalNodeExecDone: jest.fn(),
         projectId: null,
         defaultSaveOutputDataset: false,
+        // What a Play asks of the flow, which a test that plays the node reaches.
+        isDashboardSource: () => false,
         dashboardOn: mockFlow.dashboardOn,
     }),
 }));
@@ -119,6 +121,7 @@ jest.mock("../../../providers/CollaborationProvider", () => ({
 }));
 jest.mock("../../../utils/saveOutputDataset", () => ({
     resolveSaveOutputDataset: () => false,
+    shouldSaveOutputOnRun: () => false,
 }));
 jest.mock("../../../utils/palettePackageFactoryDraft", () => ({
     resolveNodeDisplayLabel: () => "Node",
@@ -434,6 +437,68 @@ describe("CodeEditor's look", () => {
         expect(lastEditor().props.options.lineNumbers).toBeUndefined();
         expect(outputBox().style.backgroundColor).toBe("rgb(247, 247, 247)");
         expect(outputBox().style.borderTop).toContain("solid");
+    });
+});
+
+describe("a running node's output says what its run does", () => {
+    const outputBox = () => document.querySelector("[data-curio-node-output]") as HTMLElement;
+    const props = (output: { code: string; content: string }) => ({
+        setOutputCallback: jest.fn(),
+        data: { nodeId: "n1", input: "", inputTypes: [], outputCallback: jest.fn() },
+        output,
+        nodeType: "curio.builtin/python-computation@1" as any,
+        replacedCode: "",
+        sendCodeToWidgets: jest.fn(),
+        replacedCodeDirty: 0,
+        readOnly: false,
+        defaultValue: SAVED_CODE,
+        floatCode: jest.fn(),
+    });
+
+    beforeEach(() => {
+        __editors.length = 0;
+    });
+
+    test("Running..., or what its run says it is doing, such as how far its weights have downloaded", () => {
+        const view = render(<CodeEditor {...props({ code: "exec", content: "" })} />);
+        expect(outputBox().textContent).toBe("[*]:Running...");
+
+        const message = "Downloading model.safetensors, a file of the weights of model.curio.sam3: 1.21 of 3.44 GB (35%)";
+        view.rerender(<CodeEditor {...props({ code: "exec", content: message })} />);
+        expect(outputBox().textContent).toBe(`[*]:${message}`);
+
+        view.rerender(<CodeEditor {...props({ code: "exec", content: "" })} />);
+        expect(outputBox().textContent).toBe("[*]:Running...");
+    });
+
+    test("a Play the browser runs, as a hosted guest's does, shows how far its downloads have come while it waits", () => {
+        const interpretCode = jest.fn();
+        const setOutputCallback = jest.fn();
+        const played = (dirty: number) => {
+            const base = props({ code: "exec", content: "" });
+            return (
+                <CodeEditor
+                    {...base}
+                    data={{ ...base.data, pythonInterpreter: { interpretCode } }}
+                    setOutputCallback={setOutputCallback}
+                    replacedCode="return 1"
+                    replacedCodeDirty={dirty}
+                />
+            );
+        };
+        const view = render(played(0));
+        view.rerender(played(1));
+
+        expect(interpretCode).toHaveBeenCalledTimes(1);
+        // What the Play hands its run to say how far the node's downloads have come.
+        const onProgress = interpretCode.mock.calls[0][13];
+        expect(typeof onProgress).toBe("function");
+        const message = "Downloading model.safetensors, a file of the weights of model.curio.sam3: 1.21 of 3.44 GB (35%)";
+        act(() => { onProgress(message); });
+        expect(setOutputCallback).toHaveBeenLastCalledWith({ code: "exec", content: message });
+        // The downloads over, the node runs.
+        act(() => { onProgress(""); });
+        expect(setOutputCallback).toHaveBeenLastCalledWith({ code: "exec", content: "" });
     });
 });
 

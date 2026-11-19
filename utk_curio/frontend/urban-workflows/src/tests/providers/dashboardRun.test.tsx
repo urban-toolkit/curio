@@ -8,6 +8,8 @@
  * - each step reaches its node as a canvas run's does (useStepOutcomes),
  *   restored as a load restores an output, and its artifacts are read on the
  *   dashboard's own routes with the run's token;
+ * - while a step runs, its node says what its run says it does, such as how
+ *   far its weights have downloaded, as on the canvas;
  * - a node a later run does not reach, and every node when nothing needs to
  *   run, shows its saved output again;
  * - Save layout gets the widgets as the page opened with them, never a tried value;
@@ -156,6 +158,31 @@ describe("a change", () => {
 
         run.emit({ kind: "run_finished", status: "succeeded", ok: 1, failed: 0, skipped: 0, waiting: 0 });
         expect(hook.result.current.active).toBe(false);
+    });
+
+    test("a step's progress shows on its node while it runs, as on the canvas: its weights downloading, then Running... again", async () => {
+        mockStart.mockResolvedValue({ runId: "r1", token: "t1", joined: false, nodeIds: ["grid", "chart"] });
+        const { outcomes, hook } = setUp();
+        await act(async () => { hook.result.current.opened("dash-1"); });
+        await act(async () => { await hook.result.current.start(); });
+        const run = followed();
+        const message = "Downloading model.safetensors, a file of the weights of model.curio.sam3: 1.21 of 3.44 GB (35%)";
+
+        run.emit({ kind: "step_started", nodeId: "grid", startedAt: 1 });
+        run.emit({ kind: "step_progress", nodeId: "grid", message, done: 1210000000, total: 3440000000 });
+        expect(outcomes.showOnNode).toHaveBeenLastCalledWith("grid", { code: "exec", content: message });
+
+        // The downloads over, the node runs.
+        run.emit({ kind: "step_progress", nodeId: "grid", message: "" });
+        expect(outcomes.showOnNode).toHaveBeenLastCalledWith("grid", { code: "exec", content: "" });
+
+        run.emit({ kind: "step_finished", nodeId: "grid", status: "ok", output: { path: "art-1", dataType: "str" } });
+        expect(outcomes.showResult).toHaveBeenCalledTimes(1);
+        // A progress replayed after the outcome changes nothing.
+        outcomes.showOnNode.mockClear();
+        run.emit({ kind: "step_progress", nodeId: "grid", message });
+        expect(outcomes.showOnNode).not.toHaveBeenCalled();
+        expect(hook.result.current.active).toBe(true);
     });
 
     test("a picked date reruns the dashboard with that date as its text", async () => {
@@ -629,5 +656,53 @@ describe("four steps only a browser runs, two to a scenario", () => {
         expect(mockFollow).toHaveBeenCalledTimes(1);
         expect(showToast).not.toHaveBeenCalled();
         expect(GPU_STEPS.some((nodeId) => askedOfPage(nodeId))).toBe(false);
+    });
+});
+
+/**
+ * A step whose node downloads what it reads on its first use says how far it
+ * has come, as its progress. The node is often hidden on a dashboard, so the
+ * page keeps what each step says, by node, for the tiles below it to say on a
+ * line under "Computing..." (useGrammarInputState), until the downloads are over.
+ */
+describe("a step's downloads on first use", () => {
+    const MESSAGE = "Downloading model.safetensors, a file of the weights of model.curio.sam3: 1.21 of 3.44 GB (35%)";
+    // What the page keeps, whatever the types of the code under test name.
+    const downloads = (hook: { result: { current: unknown } }) => (hook.result.current as any).downloads;
+
+    test("are kept by node while the step says them, for the tiles below, and taken away once over", async () => {
+        mockStart.mockResolvedValue({ runId: "r1", token: "t1", joined: false, nodeIds: ["grid", "chart"] });
+        const { hook } = setUp();
+        await act(async () => { hook.result.current.opened("dash-1"); });
+        await act(async () => { await hook.result.current.start(); });
+        const run = followed();
+        expect(downloads(hook)).toEqual({});
+
+        run.emit({ kind: "step_started", nodeId: "grid", startedAt: 1 });
+        run.emit({ kind: "step_progress", nodeId: "grid", message: MESSAGE, done: 1210000000, total: 3440000000 });
+        expect(downloads(hook)).toEqual({ grid: MESSAGE });
+        // The downloads over, the node runs: nothing more to say.
+        run.emit({ kind: "step_progress", nodeId: "grid", message: "" });
+        expect(downloads(hook)).toEqual({});
+
+        // A step's outcome ends what it said.
+        run.emit({ kind: "step_progress", nodeId: "grid", message: MESSAGE });
+        run.emit({ kind: "step_finished", nodeId: "grid", status: "ok", output: { path: "art-1", dataType: "str" } });
+        expect(downloads(hook)).toEqual({});
+    });
+
+    test("end with the run, however it ends", async () => {
+        mockStart.mockResolvedValue({ runId: "r1", token: "t1", joined: false, nodeIds: ["grid", "chart"] });
+        const { hook } = setUp();
+        await act(async () => { hook.result.current.opened("dash-1"); });
+        await act(async () => { await hook.result.current.start(); });
+        const run = followed();
+        run.emit({ kind: "step_started", nodeId: "grid", startedAt: 1 });
+        run.emit({ kind: "step_progress", nodeId: "grid", message: MESSAGE });
+        expect(downloads(hook)).toEqual({ grid: MESSAGE });
+
+        run.emit({ kind: "run_finished", status: "cancelled", ok: 0, failed: 0, skipped: 0, waiting: 0 });
+        expect(hook.result.current.active).toBe(false);
+        expect(downloads(hook)).toEqual({});
     });
 });

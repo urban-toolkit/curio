@@ -131,7 +131,7 @@
     {
       "bidirectional": true,
       "category": "data",
-      "description": "Shows its input as a table and passes the rows on to every node it feeds, marking in an interacted column the rows selected in the views linked to it by interaction edges. Linked to another Data Pool, it passes that pool the marks of the rows its linked column names.",
+      "description": "Shows its input as a table and passes the rows on to every node it feeds, marking in an interacted column the rows selected in the views linked to it by interaction edges. A raster it passes on as it came. Linked to another Data Pool, it passes that pool the marks of the rows its linked column names.",
       "editor": "none",
       "engine": "python",
       "hasCode": false,
@@ -144,7 +144,8 @@
           "cardinality": "[1,n]",
           "types": [
             "DATAFRAME",
-            "GEODATAFRAME"
+            "GEODATAFRAME",
+            "RASTER"
           ]
         }
       ],
@@ -155,7 +156,8 @@
           "cardinality": "1",
           "types": [
             "DATAFRAME",
-            "GEODATAFRAME"
+            "GEODATAFRAME",
+            "RASTER"
           ]
         }
       ],
@@ -401,12 +403,12 @@
       "dataflowCategories": {
         "dataTypes": ["Geometries"]
       },
-      "description": "Pairs the rows of two inputs whose shapes meet, such as points and the polygons they fall in. Connect them to the blue circle at the top and the green circle at the bottom, then pick how the shapes meet: intersects, within, contains, touches, overlaps, crosses or nearest. The output is one row per pair, with the bottom input's columns added, or the bottom input's rows with their count of pairs.",
-      "editor": "none",
+      "description": "Pairs the rows of two inputs whose shapes meet, such as points and the polygons they fall in. Connect them to the top circle and the bottom circle, then pick how the shapes meet in Operation: intersects, within, contains, touches, overlaps, crosses or nearest. Output gives one row per pair, with the bottom input's columns added, or the bottom input's rows with their count of pairs.",
+      "editor": "code",
       "engine": "python",
-      "hasCode": false,
+      "hasCode": true,
       "hasGrammar": false,
-      "hasWidgets": false,
+      "hasWidgets": true,
       "iconRef": "fa-solid:object-group",
       "id": "spatial-join",
       "inputPorts": [
@@ -420,14 +422,39 @@
         }
       ],
       "label": "Spatial Join",
-      "behavior": "spatial-join",
+      "behavior": "code",
       "outputPorts": [
         {
           "cardinality": "1",
           "types": ["GEODATAFRAME"]
         }
       ],
-      "paletteOrder": 4
+      "paletteOrder": 4,
+      "source": "sources/spatial-join.py",
+      "starterIsContent": true,
+      "widgets": [
+        {
+          "name": "operation",
+          "type": "choice",
+          "label": "Operation",
+          "default": "intersects",
+          "options": {
+            "choices": ["intersects", "within", "contains", "touches", "overlaps", "crosses", "nearest"],
+            "display": "dropdown"
+          }
+        },
+        {
+          "name": "output",
+          "type": "choice",
+          "label": "Output",
+          "default": "pairs",
+          "options": {
+            "choices": ["pairs", "counts"],
+            "display": "dropdown"
+          }
+        }
+      ],
+      "opensOnControls": true
     },
     {
       "category": "data",

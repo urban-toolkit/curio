@@ -36,6 +36,11 @@ export function forgetDashboardRunFiles(): void {
   files.clear();
 }
 
+/** The dashboard whose viewer's run made *fileName*, if one did. */
+export function dashboardRunProject(fileName: string): string | undefined {
+  return files.get(fileName)?.projectId;
+}
+
 /**
  * Where *fileName* is read, when a dashboard viewer's run made it: the route's
  * address with *query* (its `fileName` included) and the headers to send.

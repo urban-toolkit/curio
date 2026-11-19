@@ -18,9 +18,10 @@ jest.mock('vega', () => ({}), { virtual: true });
 jest.mock('vega-lite', () => ({}), { virtual: true });
 
 const STARTER_CODE = 'import rasterio\nds = rasterio.open("mrt.tif")\n';
-// The cell the backend writes for a segmentation model package's template
-// without a `source` (application/starters.py), named for the template's id.
-const DEFAULT_CELL = 'model = curio_load_model("model.example.tiny")\nclasses = None\n\nreturn curio_segment(input_0, model, classes)\n';
+// The cell the backend writes for a model package's template without a
+// `source` (application/starters.py), named for the template's id: the model's
+// onnxruntime session and a session.run skeleton.
+const DEFAULT_CELL = 'import onnxruntime as ort\n\nmodel = curio_load_model("model.example.tiny")\nsession = ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])\n\noutputs = session.run(None, {})\n\nreturn outputs[0]\n';
 
 jest.mock('../../providers/StarterProvider', () => ({
   useStarterContext: () => ({
@@ -163,8 +164,8 @@ type StarterPack = Omit<typeof FIXTURE_PACK, "templates"> & {
   >;
 };
 
-/** A segmentation model package whose one template ships no `source`, as
- *  DDRNet23-Slim's and every Discovery download's does. */
+/** A segmentation model package whose one template ships no `source`, as a
+ *  person's own can (DDRNet23-Slim's and every Discovery download's ship one). */
 const MODEL_PACK: StarterPack = {
   ...FIXTURE_PACK,
   packageId: 'model.example.tiny',

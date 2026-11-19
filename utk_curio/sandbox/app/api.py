@@ -141,8 +141,9 @@ def _isolation_active_label():
     The two can disagree, and nothing used to report it. The zygote is started
     lazily, on the first ``/exec`` (``_isolated_runner`` below), and a later
     run that finds it exited starts it again
-    (``_restart_the_zygote_if_it_died``); ``server.py`` hardens at boot but
-    starts nothing. A first spawn that fails is not fatal by design - the
+    (``_restart_the_zygote_if_it_died``); ``server.py`` hardens and lays out
+    the container's cgroups at boot but starts no zygote. A first spawn that
+    fails is not fatal by design - the
     node still has to run - so the sandbox degrades to in-process and caches
     that for the life of the process, while the resolved label goes on saying
     ``fork``.
@@ -162,6 +163,24 @@ def _isolation_active_label():
     return 'fork' if state else 'off'
 
 
+def _memory_limit():
+    """The memory limit isolated nodes run under, as ``(kind, why not a
+    cgroup)``: ``cgroup``, ``address space`` with its reason in words from a
+    closed list (``node_cgroups.REASONS``), or ``none`` where nodes run in
+    this process.
+
+    Before the first isolated run it is the outcome of the layout the
+    sandbox made as it started (``lifecycle.memory_limit``), so a deploy
+    checks at once what its nodes get.
+    """
+    if _isolation_label() != 'fork':
+        return 'none', None
+    from utk_curio.sandbox.isolation import lifecycle, node_cgroups
+
+    kind, reason = lifecycle.memory_limit()
+    return kind, node_cgroups.REASONS.get(reason) if reason else None
+
+
 @app.route('/version', methods=['GET'])
 def version():
     from utk_curio import __version__
@@ -172,6 +191,7 @@ def version():
         'version': __version__,
         'isolation': _isolation_label(),
         'isolation_active': _isolation_active_label(),
+        'memory_limit': _memory_limit()[0],
     })
 
 @app.route('/monitor', methods=['GET'])
@@ -193,6 +213,7 @@ def monitor():
     payload = metrics.snapshot()
     payload['isolation'] = _isolation_label()
     payload['isolation_active'] = _isolation_active_label()
+    payload['memory_limit'], payload['memory_limit_reason'] = _memory_limit()
     payload['errors'] = metrics.errors()
 
     # The limits actually in force when a zygote is up, else the ones this
@@ -682,8 +703,8 @@ def artifact_sessions_store():
         abort(400, "value must be an object")
     node_type = body.get('nodeType') if isinstance(body.get('nodeType'), str) else None
     if value.get('dataType') in STORABLE_KINDS and 'layerName' not in value:
-        # A Spatial Join's pairs: kept as a frame, as /artifacts/store keeps
-        # them, so a Python node after it reads a frame, not their envelope.
+        # Rows a node made in the browser: kept as a frame, as /artifacts/store
+        # keeps them, so a Python node after it reads a frame, not their envelope.
         # An Autark layer keeps its envelope, which names the layer.
         try:
             frame = stored_frame(value)
@@ -827,7 +848,8 @@ def artifacts_sweep():
 def get_raster():
     """A raster artifact as GeoTIFF bytes, for an Autark node to load.
 
-    ``part`` picks one raster out of a Python tuple. ``maxCells`` and
+    ``part`` picks one raster out of a Python tuple, or a dict counted as the
+    canvas counts it (``rasters.raster_artifact``). ``maxCells`` and
     ``maxSide`` are what the caller can load: a larger raster is answered 413
     with its description, and nothing is written. The description of a served
     raster rides in the ``X-Curio-Raster`` header (see util/rasters.py).

@@ -33,7 +33,9 @@ everyone's. Its fields:
 per attachment and dataflow, which nested runs share, joining at the first
 entry and leaving at the last. The room's Activity gets :data:`JOINED_EVENT`
 and :data:`LEFT_EVENT`, with what it did, sent to the room's tabs as they
-happen and kept for a join's snapshot (``room_state.record_activity``).
+happen and kept for a join's snapshot (``room_state.record_activity``). A
+join and a leave tell ``placement.py``, which counts the rooms open in this
+process for the placement of new dataflows (:func:`rooms_at_work`).
 
 :func:`act` plays the peer's actions one at a time, in the order they come: it
 waits while someone else holds a node it changes (:func:`wait_for_people`:
@@ -285,10 +287,25 @@ def _enter(user_key, project_id, attachment_id, *, coord, name, category, asked_
             _exit(peer)
             raise
         peer._joined.set()
+        _rooms_changed()
     else:
         peer._joined.wait()
         peer.use_skills(skills)
     return peer
+
+
+def rooms_at_work() -> set:
+    """The rooms an agent is at work in (:func:`at_work`)."""
+    with _lock:
+        return {peer.room for peer in _peers.values()}
+
+
+def _rooms_changed() -> None:
+    """Tell the placement of new dataflows that an agent joined or left a
+    room (``placement.changed``), with this module's lock let go."""
+    from utk_curio.backend.app.collaboration import placement
+
+    placement.changed()
 
 
 def _join(peer: Peer, skills) -> None:
@@ -312,7 +329,10 @@ def _exit(peer: Peer) -> None:
                 del _peers[key]
             _wake.notify_all()
     if leaving:
-        _leave(peer)
+        try:
+            _leave(peer)
+        finally:
+            _rooms_changed()
 
 
 def _leave(peer: Peer) -> None:
@@ -747,7 +767,10 @@ def _renew() -> None:
 
 def reset_for_tests() -> None:
     """Forget every peer at work, telling no room, and end the renewing
-    thread, as a backend that stopped does."""
+    thread, as a backend that stopped does; and the count of open rooms the
+    placement last wrote (``placement.py``)."""
+    from utk_curio.backend.app.collaboration import placement
+
     with _wake:
         for peer in _peers.values():
             peer.left = True
@@ -756,3 +779,4 @@ def reset_for_tests() -> None:
         _wake.notify_all()
     if renewer is not None:
         renewer.join(timeout=10)
+    placement.reset_for_tests()

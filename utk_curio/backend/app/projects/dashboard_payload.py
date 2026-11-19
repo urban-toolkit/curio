@@ -355,6 +355,10 @@ def _refuse_tiles_that_fetch_their_own_data(
 #: The envelope kinds of a frame, which hold rows rather than other envelopes.
 _FRAME_KINDS = frozenset({"dataframe", "geodataframe"})
 
+#: The envelope kinds that make a dict a dict of frames: a frame's, and a
+#: raster's (``keyedFramesAsOutputs``'s ``FRAME_ENVELOPES``).
+_KEYED_KINDS = _FRAME_KINDS | {"raster"}
+
 
 def _is_envelope(value: object) -> bool:
     return isinstance(value, dict) and isinstance(value.get("dataType"), str) and "data" in value
@@ -366,13 +370,17 @@ def _is_raster_by_path(value: object) -> bool:
 
 
 def _keyed_frames_as_outputs(value: object) -> Optional[dict]:
-    """A dict of frames read as a tuple of them (``keyedFramesAsOutputs``)."""
+    """A dict of frames, or of rasters, read as a tuple of them
+    (``keyedFramesAsOutputs``), in the order a page reads a dict's keys, which
+    the page and the sandbox count a dict's parts in (``rasters.page_order``)."""
+    from utk_curio.sandbox.util.rasters import page_order
+
     if not isinstance(value, dict) or not value or _is_envelope(value):
         return None
-    items = list(value.values())
+    items = [value[key] for key in page_order(value)]
     if not all(_is_envelope(item) for item in items):
         return None
-    if not any(item["dataType"] in _FRAME_KINDS for item in items):
+    if not any(item["dataType"] in _KEYED_KINDS for item in items):
         return None
     return {"dataType": "outputs", "data": items}
 
@@ -383,9 +391,10 @@ def raster_places(envelope: object, data_type: Optional[str]) -> List[Optional[i
     An output saved as a raster is asked for whole (``None``), whatever its
     envelope holds, as ``readGrammarInput`` does. Otherwise its envelope is
     read by ``framesFromPayload``'s rules (``utils/grammarInput.ts``): value
-    envelopes are peeled, a dict of frames reads as a tuple of them, a raster
-    by path is the output itself, and one in a tuple is the part at its place.
-    A raster that travels as its collection is in the envelope already.
+    envelopes are peeled, a dict of frames or rasters reads as a tuple of them, a raster
+    by path is the output itself, and one in a tuple or a list is the part at
+    its place. A raster that travels as its collection is in the envelope
+    already.
     """
     if data_type == "raster":
         return [None]
@@ -405,6 +414,8 @@ def raster_places(envelope: object, data_type: Optional[str]) -> List[Optional[i
             for index, item in enumerate(value["data"])
             if _is_raster_by_path(item) and not (isinstance(item.get("path"), str) and item["path"])
         ]
+    if isinstance(value, list):
+        return [index for index, item in enumerate(value) if _is_raster_by_path(item)]
     return []
 
 

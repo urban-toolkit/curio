@@ -578,7 +578,8 @@ describe("AgentChangeCard: dev/71 a landed plan's rows: Solve then Run", () => {
     const solveB = screen.getByRole("button", { name: "Solve node Analyze" });
     expect(solveB).toBeEnabled();
     fireEvent.click(solveB);
-    await waitFor(() => expect(onSolve).toHaveBeenCalledWith("b"));
+    // The ref, and the row's listener for how far a download has come.
+    await waitFor(() => expect(onSolve).toHaveBeenCalledWith("b", expect.any(Function)));
     // Upstream approved rows show Run, not Solve.
     expect(screen.queryByRole("button", { name: "Solve node Load" })).toBeNull();
     expect(screen.getByText("Solved ✓")).toBeInTheDocument();
@@ -600,7 +601,8 @@ describe("AgentChangeCard: dev/71 a landed plan's rows: Solve then Run", () => {
     const onRun = jest.fn().mockResolvedValue(undefined);
     renderRows({ appliedRefs: ["a", "b"], nodeStates: { a: "validated", b: "approved" } }, { onRun });
     fireEvent.click(screen.getByRole("button", { name: "Run through node Analyze" }));
-    await waitFor(() => expect(onRun).toHaveBeenCalledWith("b"));
+    // The ref, and the row's listener for how far a download has come.
+    await waitFor(() => expect(onRun).toHaveBeenCalledWith("b", expect.any(Function)));
     expect(screen.getByRole("button", { name: "Run through node Load" })).toBeInTheDocument();
   });
 
@@ -718,27 +720,42 @@ describe("AgentChangeCard: #662 a landed plan's widgets, copies and scenarios", 
 });
 
 describe("AgentChangeCard: a landed Spatial Join, Data Pool and Simple View say their settings in their own words", () => {
-  it("a join's row names the operation and the output the plan set, and no other row names one", () => {
+  const joinPlan = (join: Record<string, unknown>) =>
+    planChange({
+      goal: "count sidewalk labels per neighborhood",
+      nodes: [
+        { ref: "labels", nodeType: "curio.builtin/data-loading", title: "Labels", intent: "label points" },
+        { ref: "hoods", nodeType: "curio.builtin/data-loading", title: "Neighborhoods", intent: "polygons" },
+        {
+          ref: "join", nodeType: "curio.builtin/spatial-join", title: "Labels per neighborhood",
+          intent: "count the labels within each neighborhood", ...join,
+        },
+      ],
+      edgeCount: 2,
+    } as never);
+
+  it("a join's row names the operation and the output the plan set by name, as its widgets, and no other row names one", () => {
     render(
       <AgentChangeCard
-        part={planChange({
-          goal: "count sidewalk labels per neighborhood",
-          nodes: [
-            { ref: "labels", nodeType: "curio.builtin/data-loading", title: "Labels", intent: "label points" },
-            { ref: "hoods", nodeType: "curio.builtin/data-loading", title: "Neighborhoods", intent: "polygons" },
-            {
-              ref: "join", nodeType: "curio.builtin/spatial-join", title: "Labels per neighborhood",
-              intent: "count the labels within each neighborhood",
-              spatialJoin: { predicate: "within", output: "counts" },
-            },
-          ],
-          edgeCount: 2,
+        part={joinPlan({
+          widgets: [{ name: "operation", type: "choice", value: "within" }, { name: "output", type: "choice", value: "counts" }],
         })}
         planNodeState={{ appliedRefs: ["labels", "hoods", "join"] }}
       />,
     );
-    expect(screen.getByText("operation within, output counts")).toBeInTheDocument();
-    expect(screen.getAllByText(/^operation /)).toHaveLength(1);
+    expect(screen.getByText('widgets: operation (choice, "within"), output (choice, "counts")')).toBeInTheDocument();
+    expect(screen.getAllByText(/^widgets: /)).toHaveLength(1);
+  });
+
+  it("a card kept from when the join had a setting of its own shows no line for it", () => {
+    render(
+      <AgentChangeCard
+        part={joinPlan({ spatialJoin: { predicate: "within", output: "counts" } })}
+        planNodeState={{ appliedRefs: ["labels", "hoods", "join"] }}
+      />,
+    );
+    expect(screen.getByText("count the labels within each neighborhood")).toBeInTheDocument();
+    expect(screen.queryAllByText(/^operation |output counts|^widgets: /)).toHaveLength(0);
   });
 
   it("a pool's row names its modes as its selects do, a view's its image column, and no other row names one", () => {

@@ -6,14 +6,14 @@
 // preview once read, from the same read as its columns.
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useFlowContext } from "../providers/FlowProvider";
-import { emptyWiredSlots } from "../utils/inputSlots";
+import { circleValue, emptyWiredSlots, holdsValuePerCircle } from "../utils/inputSlots";
 import type { InputScope } from "../utils/references/codeReferences";
 import {
     columnsOfPreview,
+    hasNoColumns,
     inputScopeFor,
     inputSourcesFor,
     inputValueKey,
-    isScalarInput,
     readInputPreview,
     type InputColumns,
     type InputPreview,
@@ -65,11 +65,12 @@ export function useInputScope(data: any): {
     const inlineIds = useRef(new WeakMap<object, number>());
     const inlineCount = useRef(0);
 
-    // A growing node holds a value per circle; any other node holds one.
+    // What each circle holds, as the run reads it (utils/inputSlots): a
+    // growing node holds a value per circle, a node with several ports a value
+    // per port, port k on circle k; any other node holds one, on circle 0.
     const valueOf = useCallback(
-        (slot: number): unknown =>
-            Array.isArray(data.inputSlots) ? data.inputSlots[slot] : slot === 0 ? data.input : undefined,
-        [data.inputSlots, data.input],
+        (slot: number): unknown => circleValue(data, slot),
+        [data.inputSlots, data.portInputs, data.input],
     );
     const previewOf = (value: unknown): InputPreview | undefined => {
         const key = inputValueKey(value);
@@ -77,8 +78,8 @@ export function useInputScope(data: any): {
         return value && typeof value === "object" ? inline.current.get(value as object) : undefined;
     };
     const columnsOf = (value: unknown): InputColumns | undefined => {
-        // A value is no table: it has no columns, with nothing to read.
-        if (isScalarInput(value)) return { columns: [], dtypes: {} };
+        // A value or a raster is no table: it has no columns, with nothing to read.
+        if (hasNoColumns(value)) return { columns: [], dtypes: {} };
         const preview = previewOf(value);
         return preview ? columnsOfPreview(preview) : undefined;
     };
@@ -135,20 +136,24 @@ export function useInputScope(data: any): {
         [valueOf],
     );
 
-    // The header reads an input for its columns, which a value has none of: a
-    // value is read only for its preview, as its tooltip shows.
+    // The header reads an input for its columns, which a value or a raster has
+    // none of: either is read only for its preview, as its tooltip shows.
     const loadColumns = useCallback(
         (slot: number) => {
-            if (!isScalarInput(valueOf(slot))) loadPreview(slot);
+            if (!hasNoColumns(valueOf(slot))) loadPreview(slot);
         },
         [valueOf, loadPreview],
     );
 
-    // Only a node holding a value per circle waits for all of them; a node with
-    // one input runs as it always has.
-    const growing = Array.isArray(data.inputSlots) || inputs.length > 1;
-    const emptyInputs = growing
-        ? emptyWiredSlots(Array.isArray(data.inputSlots) ? data.inputSlots : [], inputs.map((i) => i.slot))
-        : [];
+    // Only a node holding a value per circle, a growing node or one with
+    // several ports, waits for all of them; a node with one input runs as it
+    // always has.
+    const wiredSlots = inputs.map((i) => i.slot);
+    const perCircle = holdsValuePerCircle(data);
+    const held: unknown[] = [];
+    if (perCircle) {
+        for (const slot of wiredSlots) held[slot] = valueOf(slot);
+    }
+    const emptyInputs = perCircle || inputs.length > 1 ? emptyWiredSlots(held, wiredSlots) : [];
     return { inputs, emptyInputs, loadColumns, previews, loadPreview };
 }

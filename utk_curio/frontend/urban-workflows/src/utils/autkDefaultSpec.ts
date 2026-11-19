@@ -15,6 +15,7 @@
  *
  * Pure, with no autk import, so it is testable under jest.
  */
+import autkGrammar from "../contracts/autkGrammar.json";
 import visDefaults from "../contracts/visDefaults.json";
 import { autkTableName } from "./autkInput";
 import { resolveGeometryField } from "./geometryField";
@@ -34,6 +35,8 @@ export type StarterLayer = {
   name: string;
   /** Its columns, grouped by role. */
   columns: Record<ColumnRole, string[]>;
+  /** The workspace it is in, when an Autark node handed it on from another than the default one. */
+  workspace?: string;
 };
 
 export interface AutkStarterRule {
@@ -48,7 +51,10 @@ export interface AutkStarterRule {
  * place in the ladder, the layers and columns it needs and the family it
  * writes) is in `autkStarterLadder` of contracts/visDefaults.json, which the
  * agents' shared preamble states too; a test holds these ids to the ladder's,
- * one builder per rule.
+ * one builder per rule. A rule that colors its layer by a column writes the
+ * column's type and color map of `starterColoring` in contracts/autkGrammar.json,
+ * whatever the input, which the backend reads too (the agents' worked examples
+ * leave those lines out of an evaluation's answer).
  */
 export const AUTK_STARTER_BUILDERS: Readonly<
   Record<string, (layers: StarterLayer[]) => Record<string, unknown>>
@@ -59,8 +65,7 @@ export const AUTK_STARTER_BUILDERS: Readonly<
       dataRef: layer.name,
       title: layer.columns.quantitative[0],
       getFnv: layer.columns.quantitative[0],
-      getFnvType: "quantitative",
-      colorMapInterpolator: "interpolateViridis",
+      ...autkGrammar.starterColoring["geometry+quantitative"],
     }],
   }),
   "geometry+nominal": ([layer]) => ({
@@ -68,8 +73,7 @@ export const AUTK_STARTER_BUILDERS: Readonly<
       dataRef: layer.name,
       title: layer.columns.nominal[0],
       getFnv: layer.columns.nominal[0],
-      getFnvType: "categorical",
-      colorMapInterpolator: "schemeTableau10",
+      ...autkGrammar.starterColoring["geometry+nominal"],
     }],
   }),
   geometry: ([layer]) => ({ layerRefs: [{ dataRef: layer.name }] }),
@@ -102,22 +106,33 @@ export function starterLayer(frame: GrammarFrame): StarterLayer | null {
   // A raster has bands, not columns; no rule of the ladder is for it.
   if (frame.dataType === "raster") return null;
   const name = autkTableName(frame);
+  const workspace = frame.workspace ? { workspace: frame.workspace } : {};
   if (frame.dataType === "geodataframe") {
     const features: any[] = frame.payload?.features ?? [];
     if (!features.some((f) => f?.geometry != null)) return null;
     const rows = features.map((f) => f?.properties ?? {});
-    return { name, columns: groupColumns(classifyColumns(frame.schema, rows, frame.geometryName)) };
+    return { name, columns: groupColumns(classifyColumns(frame.schema, rows, frame.geometryName)), ...workspace };
   }
   // A DataFrame: its geometry column, found by value as the input path finds it.
   const rows = toRows({ data: frame.payload });
   const field = resolveGeometryField(rows, null).field;
   if (!field || rows.length === 0) return null;
-  return { name, columns: groupColumns(classifyColumns(frame.schema, rows, field)) };
+  return { name, columns: groupColumns(classifyColumns(frame.schema, rows, field)), ...workspace };
 }
 
-/** The chosen document as the JSON text the editor should hold, or null. */
+/**
+ * The chosen document as the JSON text the editor should hold, or null. A map
+ * or a plot reads the tables of one workspace, so the layers offered are those
+ * in the first drawable layer's workspace, and the document names that
+ * workspace on its view when it is not the default one.
+ */
 export function autkStarterText(read: GrammarInput): string | null {
-  const layers = read.frames.map(starterLayer).filter((layer): layer is StarterLayer => layer != null);
-  const doc = chooseAutkStarter(layers);
-  return doc ? JSON.stringify(doc, null, 2) : null;
+  const drawable = read.frames.map(starterLayer).filter((layer): layer is StarterLayer => layer != null);
+  const workspace = drawable[0]?.workspace;
+  const doc = chooseAutkStarter(drawable.filter((layer) => layer.workspace === workspace));
+  if (!doc) return null;
+  const inWorkspace = workspace
+    ? Object.fromEntries(Object.entries(doc).map(([family, view]) => [family, { workspace, ...(view as object) }]))
+    : doc;
+  return JSON.stringify(inWorkspace, null, 2);
 }

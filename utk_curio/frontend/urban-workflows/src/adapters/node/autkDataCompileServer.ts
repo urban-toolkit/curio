@@ -6,9 +6,14 @@
 // It reads an Autark document on stdin, its references already resolved, and
 // writes the autk-db JavaScript the node's run in the browser posts to the
 // sandbox: the data section's relative file URLs resolved against the sandbox
-// token, then compiled, the two steps autkGrammarBehavior takes.
+// token, then compiled, the two steps autkGrammarBehavior takes. A document
+// that writes a key autk-grammar 5 renamed, or one a node does not run yet, is
+// refused as the node refuses it (contracts/autkGrammar): those words are all
+// it writes, on stderr, and it exits with 1, so autk_data_compiler.py fails
+// the run with them.
 
 import { readFileSync } from 'fs';
+import { autkKeyProblem } from '../../contracts/autkGrammar';
 import {
     SANDBOX_BACKEND_URL_TOKEN,
     compileDataSpecToAutkDbJs,
@@ -16,6 +21,11 @@ import {
 } from './autkDataCompile';
 
 const spec = JSON.parse(readFileSync(0, 'utf8'));
+const keyProblem = autkKeyProblem(spec);
+if (keyProblem) {
+    process.stderr.write(`${keyProblem}\n`);
+    process.exit(1);
+}
 const sources: any[] = Array.isArray(spec?.data) ? spec.data : [];
 const resolved = resolveDataSourceUrls({ data: sources }, SANDBOX_BACKEND_URL_TOKEN).data;
 process.stdout.write(compileDataSpecToAutkDbJs(resolved));

@@ -87,7 +87,7 @@ def set_state_dir(state_dir=None):
         os.environ["CURIO_STATE_DIR"] = str(Path(state_dir).expanduser().resolve())
 
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, agent_search_url=None, backend_url=None, discovery_root=None, save_node_outputs=None, solve_max_attempts=None, solve_node_budget=None, solve_session_deadline=None, solve_batch_deadline=None, validation_exec_timeout=None, validation_node_limit=None, discovery_max_download_mb=None, media_cache_max_gb=None, media_cache_max_file_gb=None, db_pool_size=None, db_pool_overflow=None, db_pool_timeout=None, proxy_hops=None, package_workers=None, js_parallelism=None, js_registry_url=None, js_block_unpinned=None, shared_guest_name=None, shared_guest_username=None, collab_origins=None, collab_namespace=None, log_to_stdout=None, packages_root=None, llm_endpoint_file=None, model_weights_dir=None, bucket_mounts_dir=None, bucket_mount_socket=None):
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, agent_search_url=None, backend_url=None, discovery_root=None, save_node_outputs=None, solve_max_attempts=None, solve_node_budget=None, solve_session_deadline=None, solve_batch_deadline=None, validation_exec_timeout=None, validation_node_limit=None, discovery_max_download_mb=None, media_cache_max_gb=None, media_cache_max_file_gb=None, db_pool_size=None, db_pool_overflow=None, db_pool_timeout=None, proxy_hops=None, package_workers=None, js_parallelism=None, js_registry_url=None, js_block_unpinned=None, shared_guest_name=None, shared_guest_username=None, guest_packages=None, collab_origins=None, collab_namespace=None, log_to_stdout=None, packages_root=None, llm_endpoint_file=None, model_weights_dir=None, bucket_mounts_dir=None, bucket_mount_socket=None):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
@@ -311,6 +311,9 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
         # Both servers take any non-empty value as on, and their .flaskenv
         # turns an unset one on, so off is the empty value.
         os.environ["LOG_TO_STDOUT"] = "1" if log_to_stdout else ""
+    # Last, once --packages-root is in place: the packages are checked against
+    # the catalog it names.
+    _use_guest_packages(guest_packages)
 
     log_always(f"Environment Variables Set:")
     log_always(f"FLASK_BACKEND_HOST={os.environ['FLASK_BACKEND_HOST']}")
@@ -336,11 +339,54 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
         log_always(f"CURIO_DISCOVERY_ROOT={os.environ['CURIO_DISCOVERY_ROOT']}")
     if packages_root:
         log_always(f"CURIO_PACKAGES_ROOT={os.environ['CURIO_PACKAGES_ROOT']}")
+    if os.environ["CURIO_GUEST_PACKAGES"]:
+        log_always(f"CURIO_GUEST_PACKAGES={os.environ['CURIO_GUEST_PACKAGES']}")
     if model_weights_dir:
         log_always(f"CURIO_MODEL_WEIGHTS_DIR={os.environ['CURIO_MODEL_WEIGHTS_DIR']}")
     if bucket_mounts_dir:
         log_always(f"CURIO_BUCKET_MOUNTS_DIR={os.environ['CURIO_BUCKET_MOUNTS_DIR']}")
         log_always(f"CURIO_BUCKET_MOUNT_SOCKET={os.environ['CURIO_BUCKET_MOUNT_SOCKET']}")
+
+
+def _use_guest_packages(value):
+    """``--guest-packages``: the catalog packages every guest has, by folder,
+    into ``CURIO_GUEST_PACKAGES``, comma-separated, each once. Written on every
+    start, empty without the flag, so no environment names them.
+
+    Each must be a package of the shared catalog, the one ``--packages-root``
+    names: a folder there, named ``<id>@<major>``, whose manifest reads and
+    says so. A name that is not stops the start. The check reads the backend's
+    own catalog and manifest readers, so before setup has installed Curio's
+    libraries it is left to the backend, which leaves such a name out.
+    """
+    names = list(dict.fromkeys(name.strip() for name in str(value or "").split(",") if name.strip()))
+    if names:
+        try:
+            from utk_curio.backend.app.packages.service import (
+                PACKAGE_DIR_RE,
+                ManifestError,
+                catalog_root,
+                load_package_manifest,
+            )
+        except ImportError as exc:
+            log_warning(
+                f"--guest-packages is not checked against the catalog before setup installs "
+                f"Curio's libraries ({exc}); the backend leaves out a name that is not a package."
+            )
+        else:
+            root = catalog_root()
+            for name in names:
+                try:
+                    found = bool(PACKAGE_DIR_RE.match(name)) and load_package_manifest(root / name).dir_name == name
+                except (ManifestError, OSError, ValueError):
+                    found = False
+                if not found:
+                    raise SystemExit(
+                        f"Refusing to start: --guest-packages names {name!r}, which is not a package in "
+                        f"{root}, the catalog Curio adds packages from. Name each package by its folder "
+                        "there, <id>@<major>, with commas between them."
+                    )
+    os.environ["CURIO_GUEST_PACKAGES"] = ",".join(names)
 
 
 def _use_bucket_mounts(mounts_dir, socket_path, *, deploy):

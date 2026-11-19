@@ -28,13 +28,3 @@ def upgrade():
             existing_nullable=True,
         )
     op.execute("UPDATE dataset_index_entry SET discovery_source_json = NULL")
-
-
-def downgrade():
-    with op.batch_alter_table("dataset_index_entry", schema=None) as batch_op:
-        batch_op.alter_column(
-            "discovery_source_json",
-            new_column_name="lake_source_json",
-            existing_type=sa.Text(),
-            existing_nullable=True,
-        )

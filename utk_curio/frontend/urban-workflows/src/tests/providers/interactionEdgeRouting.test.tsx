@@ -98,6 +98,7 @@ import { useDataPoolBehavior } from '../../adapters/node/dataPoolBehavior';
 import { selectionViewsOf } from '../../hook/useSelectionViews';
 import { isSelectionEcho, selectionEchoSource, type SelectionEchoOptions } from '../../utils/selectionEcho';
 import { isActiveSelect, objectRows, type SelectDetail } from '../../utils/selectionMatch';
+import { PLAYER_SELECT, latestSelect, playedRange, playerSelect } from '../../utils/playerSelection';
 import {
   latestViewSelection,
   provideViewRows,
@@ -108,6 +109,7 @@ const LOADER = 'curio.builtin/data-loading@1';
 const POOL = 'curio.builtin/data-pool@1';
 const VEGA = 'curio.builtin/vis-vega@1';
 const SIMPLE = 'curio.builtin/vis-simple@1';
+const AUTARK = 'curio.builtin/autk-grammar@1';
 const PYTHON = 'curio.builtin/python-computation@1';
 
 /** The built-in templates as packages/curio.builtin@1/manifest.json declares them. */
@@ -149,7 +151,7 @@ function shippedDescriptor(templateId: string): NodeDescriptor {
 }
 
 beforeAll(() => {
-  for (const templateId of ['data-loading', 'data-pool', 'vis-vega', 'vis-simple']) {
+  for (const templateId of ['data-loading', 'data-pool', 'vis-vega', 'vis-simple', 'autk-grammar']) {
     registerNode(shippedDescriptor(templateId));
   }
 });
@@ -287,7 +289,7 @@ const pick = (rows: number[]) => ({
   pick: { type: VisInteractionType.POINT, data: rows, priority: 1, source: NodeType.VIS_VEGA },
 });
 
-/** A Simple View's click on a card (adapters/node/simpleVisBehavior.tsx:158-167). */
+/** A Simple View's click on a card (adapters/node/simpleVisBehavior.tsx, `clickRow`). */
 const cardClick = (row: number) => ({
   images_click: { type: VisInteractionType.POINT, data: [row], priority: 1, source: NodeType.VIS_SIMPLE },
 });
@@ -586,7 +588,7 @@ describe('a selection follows its edges as they change', () => {
 
 describe('Simple Views', () => {
   // A Simple View marks only the rows whose `interacted` flag a Data Pool set
-  // (adapters/node/simpleVisBehavior.tsx:169-174); it never reads data.interactions.
+  // (adapters/node/simpleVisBehavior.tsx, `interacted`); it never reads data.interactions.
   test("a Simple View linked to a chart sends its clicks to the chart, and none of the Simple View's rows is flagged", async () => {
     await renderFlow();
     await addNodes(makeNode('rows', LOADER), makeNode('S', SIMPLE), makeNode('A', VEGA));
@@ -605,6 +607,24 @@ describe('Simple Views', () => {
 
     await select('A', pick([2]));
     expect(dataOf('S').input).toEqual(frame());
+  });
+
+  // What a Simple View's player has played is a select of the view
+  // (utils/playerSelection), sent over the edges drawn from it as an
+  // interaction edge is drawn from any view.
+  test("a Simple View's player reaches the chart and the map it is linked to as the range it has played", async () => {
+    await renderFlow();
+    await addNodes(makeNode('S', SIMPLE), makeNode('A', VEGA), makeNode('M', AUTARK));
+    await draw('S', 'A', 'interaction');
+    await draw('S', 'M', 'interaction');
+    expectDrawn([['S', 'A', 'interaction'], ['S', 'M', 'interaction']]);
+
+    const played = latestSelect(cardClick(0), PLAYER_SELECT, playerSelect(playedRange({}, 4.5)));
+    await select('S', played);
+
+    expect(heldBy('A')).toEqual([{ nodeId: 'S', details: played, priority: 1 }]);
+    expect(heldBy('M')).toEqual([{ nodeId: 'S', details: played, priority: 1 }]);
+    expect((played as any)[PLAYER_SELECT].data).toEqual({ t_s: [0, 4.5] });
   });
 
   test('an interaction edge between two Simple Views is refused, saying why', async () => {
@@ -675,5 +695,74 @@ describe('a data edge from a pool into a chart linked to it', () => {
 
     expect(drawn()).toEqual([['A', 'B', 'data']]);
     expect(mockShowToast).toHaveBeenCalledWith('Cycles are not allowed in the dataflow', 'warning');
+  });
+});
+
+/**
+ * A view of an Autark node has an interaction handle of its own,
+ * `in/out@<id>`, beside the node's `in/out` (contracts/interactionEdges.ts).
+ * An edge from it is an interaction edge, opened from a saved dataflow or
+ * drawn, and two interaction edges between the same two nodes are two edges:
+ * removing one leaves the selection the other still carries.
+ */
+describe('interaction edges that name a view', () => {
+  /** The edge from the view *view* of *source* to *target*'s own handle, as a dataflow saves it. */
+  const fromView = (id: string, source: string, view: string, target: string) => ({
+    id, source, target, sourceHandle: `in/out@${view}`, targetHandle: 'in/out', type: 'Interaction',
+  });
+
+  test('a saved edge from a view opens as an interaction edge on the handles it names, and carries a selection', async () => {
+    await renderFlow();
+    await addNodes(makeNode('M', AUTARK), makeNode('B', VEGA));
+
+    await load([fromView('link', 'M', 'heights', 'B')]);
+
+    expect(api.edges.map((e) => [e.id, e.sourceHandle, e.targetHandle, e.type])).toEqual([
+      ['link', 'in/out@heights', 'in/out', 'BIDIRECTIONAL_EDGE'],
+    ]);
+    expect(mockShowToast).not.toHaveBeenCalled();
+    await select('M', pick([1]));
+    expect(picksFrom('B', 'M')).toEqual([1]);
+  });
+
+  test('drawn from a view, an edge to a chart is an interaction edge, not a data edge into an input', async () => {
+    await renderFlow();
+    await addNodes(makeNode('M', AUTARK), makeNode('B', VEGA));
+
+    await act(async () => {
+      api.onConnect({ source: 'M', target: 'B', sourceHandle: 'in/out@heights', targetHandle: 'in/out' } as Connection);
+    });
+    await flush();
+
+    expect(api.edges.map((e) => [e.sourceHandle, e.targetHandle, e.type])).toEqual([
+      ['in/out@heights', 'in/out', 'BIDIRECTIONAL_EDGE'],
+    ]);
+    expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  test('two interaction edges between the same two nodes carry one selection, and removing one takes nothing back', async () => {
+    await renderFlow();
+    await addNodes(makeNode('M', AUTARK), makeNode('B', VEGA));
+    await load([saved('own', 'M', 'B', 'interaction'), fromView('view', 'M', 'heights', 'B')]);
+
+    await select('M', pick([1]));
+    expect(heldBy('B')).toHaveLength(1);
+    expect(picksFrom('B', 'M')).toEqual([1]);
+
+    // The view's edge still links the two nodes.
+    await act(async () => {
+      canvas.deleteElements({ edges: [{ id: 'own' }] });
+    });
+    await flush();
+    expect(api.edges.map((e) => e.id)).toEqual(['view']);
+    expect(picksFrom('B', 'M')).toEqual([1]);
+
+    // With no edge left between them, the selection goes.
+    await act(async () => {
+      canvas.deleteElements({ edges: [{ id: 'view' }] });
+    });
+    await flush();
+    expect(api.edges).toEqual([]);
+    expect(picksFrom('B', 'M')).toEqual([]);
   });
 });

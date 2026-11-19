@@ -9,7 +9,8 @@ the same.
 
 Two Data Loading nodes feed a Spatial Join (intersects, pairs), which feeds a
 Python Computation, a JS Computation and a Simple View. Each code node prints
-what arrived on input_0.
+what arrived on input_0. The join is saved as one from before its code, which
+opens with its code and its widgets at their defaults.
 
 Run::
 
@@ -161,9 +162,8 @@ def test_a_spatial_joins_pairs_reach_python_and_javascript(join_canvas):
 
     play_node(page, PYTHON)
     wait_for_node_done(page, JOIN, node_type="SPATIAL_JOIN", timeout_ms=240000)
-    status = node_locator(page, JOIN).locator("[data-curio-spatial-join-status]")
-    status.wait_for(state="visible", timeout=30000)
-    assert status.inner_text() == "1 pair: 1 of 2 input_0 rows matched.", status.inner_text()
+    # What the join's code printed: its call of spatial_join's account.
+    _wait_for_output(page, JOIN, "PYTHON_COMPUTATION", "1 pair: 1 of 2 input_0 rows matched.")
     _wait_for_output(page, PYTHON, "PYTHON_COMPUTATION", "<<P GeoDataFrame 1 ['inside'] ['square']>>")
     wait_for_node_done(page, PYTHON, node_type="PYTHON_COMPUTATION", timeout_ms=120000)
 

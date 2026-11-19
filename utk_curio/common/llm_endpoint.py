@@ -65,7 +65,9 @@ RETIRED_VARIABLES = (
 #: can neither print a key or URL that reached the launcher's environment nor
 #: find the file. Nor the key the backend's sessions are signed with, or its
 #: database's address, which for Postgres carries the password: no sandbox
-#: code reads them, and a JavaScript node has network.
+#: code reads them, and a JavaScript node has network. Nor the secret the
+#: start's backends show each other (``backend_processes.TOKEN_VARIABLE``),
+#: with which a call could change any dataflow.
 BACKEND_ONLY_VARIABLES = (
     "CURIO_DEFAULT_LLM_API_KEY",
     "CURIO_DEFAULT_LLM_BASE_URL",
@@ -75,6 +77,7 @@ BACKEND_ONLY_VARIABLES = (
     "SECRET_KEY",
     "DATABASE_URL",
     "DATABASE_URL_TEST",
+    "CURIO_BACKEND_TOKEN",
 )
 
 #: What the sandbox server holds and node code may not: the token every

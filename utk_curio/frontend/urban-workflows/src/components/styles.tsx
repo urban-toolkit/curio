@@ -1075,9 +1075,9 @@ export const NodeContainer = ({
                         reads the same at rest.
 
                         Info joins Delete here because this shape is exactly the
-                        one that needs it most: Spatial Join is a noContent node,
-                        it is the kind #225 was reported against, and with no
-                        header band this chip is the ONLY surface it has. */}
+                        one that needs it most: Spatial Join was a noContent node
+                        when #225 was reported against it, and with no header
+                        band this chip is the ONLY surface such a node has. */}
                     {noContent && !dashboardOn ? (
                         <div
                             style={{

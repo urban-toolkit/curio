@@ -47,15 +47,46 @@
         "type": "curio.builtin/spatial-join",
         "x": 678,
         "y": 430,
-        "content": "",
+        "content": "from spatial_join import spatial_join\n\nreturn spatial_join(input_0, input_1, operation=[!! operation !!], output=[!! output !!])\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Count the green roofs inside each ZIP polygon. The roofs on input_0 (the top circle), the ZIP polygons on input_1 (the bottom circle); the node is set to the counts output, so each ZIP polygon comes out with a point_count.",
         "metadata": {
           "keywords": [],
-          "spatialJoin": {
-            "output": "counts"
-          }
+          "widgets": [
+            {
+              "name": "operation",
+              "type": "choice",
+              "label": "Operation",
+              "default": "intersects",
+              "options": {
+                "choices": [
+                  "intersects",
+                  "within",
+                  "contains",
+                  "touches",
+                  "overlaps",
+                  "crosses",
+                  "nearest"
+                ],
+                "display": "dropdown"
+              }
+            },
+            {
+              "name": "output",
+              "type": "choice",
+              "label": "Output",
+              "default": "pairs",
+              "options": {
+                "choices": [
+                  "pairs",
+                  "counts"
+                ],
+                "display": "dropdown"
+              },
+              "value": "counts"
+            }
+          ]
         }
       },
       {

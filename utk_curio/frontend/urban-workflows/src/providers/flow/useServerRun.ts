@@ -28,6 +28,7 @@ import {
     reportsToRun,
     reuseFor,
     settledStatus,
+    showRunning,
     type NodeChange,
     type TrackedStep,
 } from "./serverRunSteps";
@@ -143,11 +144,9 @@ export function useServerRun({
 
     const applyChange = (run: FollowedRun, nodeId: string, change: NodeChange | null) => {
         if (!change) return;
-        if (change.kind === "running") {
-            run.started.add(nodeId);
-            if (!run.applied.has(nodeId)) showOnNode(nodeId, { code: "exec", content: "" });
-            return;
-        }
+        // A running node says what its run does, such as how far what it
+        // reads has downloaded, until its outcome lands.
+        if (showRunning(change, nodeId, run, showOnNode)) return;
         if (run.applied.has(nodeId)) return;
         run.applied.add(nodeId);
         if (change.kind === "result") {
@@ -171,6 +170,11 @@ export function useServerRun({
         }
         if (event.kind === "run_finished") {
             finish(run, event.status);
+            return;
+        }
+        if (event.kind === "step_progress") {
+            // The step's state stays running: only what its node says changes.
+            applyChange(run, event.nodeId, nodeChangeFor(event, run.steps.get(event.nodeId), { started: true }));
             return;
         }
         if (event.kind !== "step_started" && event.kind !== "step_finished") return;

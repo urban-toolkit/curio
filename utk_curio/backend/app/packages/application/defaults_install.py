@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 
+from utk_curio.backend.app.collaboration import owner_calls
 from utk_curio.backend.app.projects import repositories as projects_repo
 from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
 from utk_curio.backend.app.packages.repositories import defaults as defaults_io
@@ -68,7 +69,9 @@ def install_to_defaults(user, dir_name: str) -> dict:
     results: list[dict] = []
     for project in projects_repo.list_for_user(user.id):
         try:
-            _current, wrote = packages_project_packages._add_to_lockfile(user_key, project.id, added)
+            # Written by the process that owns the dataflow: the request names none.
+            wrote = owner_calls.run(packages_project_packages.add_to_lockfile, user_key, project.id,
+                                    added=sorted(added))
             results.append({"id": project.id, "ok": True, "alreadyPresent": not wrote})
         except Exception as exc:  # noqa: BLE001 — per-project failure is OK
             log.warning(

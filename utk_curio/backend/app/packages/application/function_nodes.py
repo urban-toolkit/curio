@@ -238,9 +238,10 @@ def node_functions(user_key: str, node_type: object, project_id: str | None = No
     """The functions the code of a node of *node_type* can import: those the
     modules the sandbox makes importable for it offer
     (``python_modules.modules_for_node``), its own package's and those of the
-    packages it names in ``dependencies.packages``. One ``{"package",
-    "module", "problem", "functions"}`` per module, its own package's first.
-    Empty for a built-in node and for a package that ships no modules."""
+    packages it names in ``dependencies.packages``; for a built-in Python
+    node, the built-in package's. One ``{"package", "module", "problem",
+    "functions"}`` per module, its own package's first. Empty for any other
+    built-in node and for a package that ships no modules."""
     return [
         {"package": package, "module": module, "problem": problem, "functions": [_read_row(f) for f in functions]}
         for package, module, problem, functions in _node_modules(user_key, node_type, project_id, owners)

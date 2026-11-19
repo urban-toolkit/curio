@@ -27,6 +27,7 @@ from utk_curio.backend.app.packages.application.defaults_install import (
     install_to_defaults,
     uninstall_from_defaults,
 )
+from utk_curio.backend.app.packages.application.guest_packages import add_guest_packages
 from utk_curio.backend.app.packages.domain.errors import PackageServiceError
 from utk_curio.backend.app.packages.application.project_packages import (
     OwnersPackages,
@@ -42,6 +43,7 @@ from utk_curio.backend.app.packages.application.provisioning import (
     provision_python_deps,
 )
 from utk_curio.backend.app.packages.application.libraries import (
+    give_way_to_the_image,
     install_user_library,
     uninstall_user_library,
     user_library_import_failure,
@@ -73,6 +75,7 @@ from utk_curio.backend.app.packages.application.templates import (
     roster_templates,
     TEMPLATE_FLAGS,
     catalog_template_behaviors,
+    catalog_template_grammars,
     catalog_template_labels,
     template_content_kind,
     template_flags,
@@ -95,6 +98,7 @@ from utk_curio.backend.app.packages.application.store_install import (
     export_package_archive,
 )
 from utk_curio.backend.app.packages.application.starters import (
+    catalog_starters,
     content_starters,
     declared_widgets,
     generate_package_starters,
@@ -108,15 +112,17 @@ from utk_curio.backend.app.packages.application.model_packages import (
     resolve_model_weights,
 )
 from utk_curio.backend.app.packages.application.model_downloads import (
+    ModelNode,
     downloaded_model_ids,
     downloaded_model_package,
     install_downloaded_model,
     install_downloaded_model_deps,
     model_add_refusal,
     model_library_refusal,
+    model_node,
     model_package_row,
 )
-from utk_curio.backend.app.packages.domain.default_cells import model_loader_line, model_template
+from utk_curio.backend.app.packages.domain.default_cells import model_loader_line
 
 # The names other features take from the package (memo dev/143 B5: the agents, the
 # projects service, the launcher and the testing routes import THESE from here, never
@@ -156,6 +162,7 @@ from utk_curio.backend.app.packages.infrastructure.backend_runtime import (
 )
 from utk_curio.backend.app.packages.infrastructure.pip_runner import install_python_deps
 from utk_curio.backend.app.packages.application.seeding import example_dep_package_ids
+from utk_curio.backend.app.packages.application.package_dependencies import catalog_packages_to_add
 
 __all__ = [
     "PACKAGE_DIR_RE",
@@ -179,6 +186,8 @@ __all__ = [
     "dep_destinations_raw",
     "install_python_deps",
     "example_dep_package_ids",
+    "catalog_packages_to_add",
+    "catalog_starters",
     "content_starters",
     "declared_widgets",
     "generate_package_starters",
@@ -194,6 +203,7 @@ __all__ = [
     "template_landscape",
     "install_to_defaults",
     "uninstall_from_defaults",
+    "add_guest_packages",
     "PackageServiceError",
     "InstallerError",
     "get_project_lockfile",
@@ -227,6 +237,7 @@ __all__ = [
     "roster_templates",
     "TEMPLATE_FLAGS",
     "catalog_template_behaviors",
+    "catalog_template_grammars",
     "installed_template",
     "template_behavior",
     "dataflow_skill_folders",
@@ -244,6 +255,7 @@ __all__ = [
     "catalog_root",
     "PackageIdError",
     "assert_may_install",
+    "give_way_to_the_image",
     "install_user_library",
     "uninstall_user_library",
     "user_library_import_failure",
@@ -265,5 +277,6 @@ __all__ = [
     "model_library_refusal",
     "model_package_row",
     "model_loader_line",
-    "model_template",
+    "ModelNode",
+    "model_node",
 ]

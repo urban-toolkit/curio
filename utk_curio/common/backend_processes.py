@@ -1,9 +1,11 @@
-"""Which backend process this is, the start's boot id, and the process a
-dataflow belongs to.
+"""Which backend process this is, the start's boot id, the process a
+dataflow belongs to (:func:`shard_of`), and a new dataflow's id made for the
+process the backend's ``collaboration/placement.py`` picks
+(:func:`dataflow_id_on`).
 
-``curio.py start`` may run several backend processes, and runs one today. It
-starts each with three environment variables, which only the launcher sets
-(:func:`environment`):
+``curio.py start --backend-processes N`` runs N backend processes behind nginx
+(``cli/backend_group.py``), and one by default. It starts each with three
+environment variables, which only the launcher sets (:func:`environment`):
 
 - ``CURIO_BACKEND_PROCESS``: this process's number, from 0;
 - ``CURIO_BACKEND_PROCESSES``: how many backend processes the start runs;
@@ -12,13 +14,28 @@ starts each with three environment variables, which only the launcher sets
 A backend started without them, by hand or by a test, is process 0 of 1 and
 makes its own boot id.
 
+A start of several backends also gives each the two variables a backend
+reaches another with, for a change to a dataflow that other process owns
+(``backend/app/collaboration/owner_calls.py``):
+
+- ``CURIO_BACKEND_PORTS``: every process's port on 127.0.0.1, by number,
+  comma separated (:func:`port_of`);
+- ``CURIO_BACKEND_TOKEN``: the secret the start's backends show each other,
+  made at each start, which only backends hold (:func:`token`).
+
 Process 0 is the home process. It alone does the startup work: the shared
 guest, the hosted guests' copies dropped, the agents and the examples put
-back, the monitor's histories started anew, the guest cleanup and the kept
-outputs' sweep, the open-files sampler, and the bucket mount service's proxy
-and check (``backend/server.py`` and ``create_app``). A launcher that starts
-several backends starts home first and the others once it serves, so that
-work is done before they serve.
+back, the monitor's histories started anew and the other processes' files of
+them removed, the guest cleanup and the kept outputs' sweep, the open-files
+sampler, and the bucket mount service's proxy and check (``backend/server.py``
+and ``create_app``). Each other process starts its own monitor histories and
+samples its own open files (``backend/app/monitor/``). The launcher starts home
+first and the others once it serves, so that work is done before they serve;
+until then home owns every dataflow (``collaboration/owner_guard.py``).
+
+Each process of a start of several writes files of its own, named with its
+number (:func:`own_file`): its thread-stack file, and its log file when it
+logs to one rather than to its output.
 
 The boot id names a start. A run left queued or running under another one was
 cut off by a restart, and a backend's start or any run read marks it
@@ -36,8 +53,11 @@ from __future__ import annotations
 
 import os
 import re
+import secrets
 import uuid
 from collections.abc import Mapping
+
+from utk_curio.common import shared_constants
 
 #: This process's number among the start's backends, from 0.
 PROCESS_VARIABLE = "CURIO_BACKEND_PROCESS"
@@ -45,6 +65,23 @@ PROCESS_VARIABLE = "CURIO_BACKEND_PROCESS"
 PROCESSES_VARIABLE = "CURIO_BACKEND_PROCESSES"
 #: The start's boot id.
 BOOT_ID_VARIABLE = "CURIO_BOOT_ID"
+#: Every backend process's port on 127.0.0.1, by number, comma separated.
+PORTS_VARIABLE = "CURIO_BACKEND_PORTS"
+#: The secret the start's backends show each other on a call between them.
+TOKEN_VARIABLE = "CURIO_BACKEND_TOKEN"
+#: Where nginx listens, the launcher's ``--backend-host``: each process itself
+#: listens on 127.0.0.1, so a server the home process starts for another
+#: container to reach, the bucket mount service's proxy, listens here
+#: (``backend/server.py``).
+ROUTER_HOST_VARIABLE = "CURIO_BACKEND_ROUTER_HOST"
+
+#: The header a request names its dataflow in, and the query argument a
+#: socket's handshake names it in, which nginx routes by
+#: (``cli/backend_group.py``): the names the canvas and the dashboard send
+#: them by (``src/contracts/dataflowRoute.json``).
+_ROUTE = shared_constants.read("dataflowRoute")
+ROUTE_HEADER = _ROUTE["header"]
+ROUTE_QUERY = _ROUTE["query"]
 
 #: The home process's number.
 HOME = 0
@@ -103,9 +140,12 @@ def boot_id(environ: Mapping[str, str] | None = None) -> str:
     return str(uuid.uuid4())
 
 
-def environment(*, process: int, processes: int, boot_id: str) -> dict[str, str]:
+def environment(*, process: int, processes: int, boot_id: str,
+                ports=None, token: str | None = None) -> dict[str, str]:
     """The variables the launcher adds to a backend's environment: it is
-    *process* of *processes*, of the start whose boot id is *boot_id*."""
+    *process* of *processes*, of the start whose boot id is *boot_id*; for a
+    start of several, *ports* lists every process's port on 127.0.0.1, by
+    number, and *token* is the start's secret."""
     given = {
         PROCESS_VARIABLE: str(process),
         PROCESSES_VARIABLE: str(processes),
@@ -114,7 +154,46 @@ def environment(*, process: int, processes: int, boot_id: str) -> dict[str, str]
     this_process(given)
     if not given[BOOT_ID_VARIABLE]:
         raise ValueError("a start's backends need its boot id")
+    if ports is not None:
+        listed = [int(port) for port in ports]
+        if len(listed) != processes:
+            raise ValueError(f"{len(listed)} port(s) for {processes} backend process(es)")
+        given[PORTS_VARIABLE] = ",".join(str(port) for port in listed)
+    if token is not None:
+        if not token.strip():
+            raise ValueError("a start's secret is empty")
+        given[TOKEN_VARIABLE] = token
     return given
+
+
+def own_file(name: str, environ: Mapping[str, str] | None = None) -> str:
+    """This process's own file named *name*: *name* itself in a start of one
+    process, else with this process's number before its suffix
+    (``backend.log`` is process 2's ``backend-2.log``)."""
+    environ = _environ(environ)
+    if process_count(environ) <= 1:
+        return name
+    stem, dot, suffix = name.rpartition(".")
+    number = this_process(environ)
+    return f"{stem}-{number}.{suffix}" if dot and stem else f"{name}-{number}"
+
+
+def port_of(process: int, environ: Mapping[str, str] | None = None) -> int:
+    """The port on 127.0.0.1 the backend numbered *process* serves at, as
+    ``CURIO_BACKEND_PORTS`` lists it. A ``ValueError`` names what is missing
+    when the launcher listed no such port."""
+    environ = _environ(environ)
+    text = (environ.get(PORTS_VARIABLE) or "").strip()
+    listed = [part.strip() for part in text.split(",")] if text else []
+    if not 0 <= process < len(listed) or not listed[process].isdigit():
+        raise ValueError(f"{PORTS_VARIABLE} names no port for backend process {process}: {text!r}")
+    return int(listed[process])
+
+
+def token(environ: Mapping[str, str] | None = None) -> str:
+    """The secret the start's backends show each other, ``""`` when the
+    launcher set none."""
+    return (_environ(environ).get(TOKEN_VARIABLE) or "").strip()
 
 
 def shard_of(dataflow_id, processes: int) -> int:
@@ -127,3 +206,18 @@ def shard_of(dataflow_id, processes: int) -> int:
         return HOME
     lead = _LEAD.match(str(dataflow_id or ""))
     return int(lead.group(0), 16) % processes if lead else HOME
+
+
+def dataflow_id_on(process: int, processes: int) -> str:
+    """A new dataflow id that belongs to the process numbered *process* among
+    *processes* (:func:`shard_of`): a uuid4 whose first two hex digits are
+    one, at random, of those that name that process. Its version and variant
+    are a uuid4's. With one process, a plain uuid4."""
+    made = uuid.uuid4()
+    if processes <= 1:
+        return str(made)
+    leads = range(process, 256, processes)
+    if not 0 <= process < processes or not leads:
+        raise ValueError(f"no dataflow id names backend process {process} of {processes}")
+    lead = leads[secrets.randbelow(len(leads))]
+    return str(uuid.UUID(bytes=bytes([lead]) + made.bytes[1:]))

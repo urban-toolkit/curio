@@ -1,6 +1,7 @@
 """Business logic for project save / load / list / delete."""
 from __future__ import annotations
 
+import dataclasses
 import logging
 import math
 import re
@@ -13,7 +14,7 @@ from typing import Callable, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 from utk_curio.backend.extensions import db
-from utk_curio.backend.app.collaboration import dataflow_docs
+from utk_curio.backend.app.collaboration import dataflow_docs, owner_calls
 from utk_curio.backend.app.projects import concurrency
 from utk_curio.backend.app.projects import repositories as repo
 from utk_curio.backend.app.projects import scenarios
@@ -894,6 +895,9 @@ def _seed_dataset_defaults(user, ukey: str, project_id: str, spec: dict) -> dict
 
     Returns the spec to carry forward: re-read from disk when anything was
     installed, since the installer writes refs through its own repository.
+
+    Each install is made by the backend process that owns the new dataflow
+    (``collaboration/owner_calls.py``), which the create's need not be.
     """
     from utk_curio.backend.app.datasets import defaults as dataset_defaults
 
@@ -904,13 +908,12 @@ def _seed_dataset_defaults(user, ukey: str, project_id: str, spec: dict) -> dict
     if not wanted:
         return spec
 
-    from utk_curio.backend.app.datasets.service import DatasetCatalogService
+    from utk_curio.backend.app.datasets.application import owner_operations as dataset_operations
 
-    service = DatasetCatalogService(user)
     installed_any = False
     for dataset_id in sorted(wanted):
         try:
-            service.install_dataset(project_id, dataset_id)
+            owner_calls.run(dataset_operations.install, ukey, project_id, user_id=user.id, dataset_id=dataset_id)
             installed_any = True
         except Exception as exc:  # noqa: BLE001
             logger.warning(
@@ -1210,8 +1213,13 @@ def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None,
     # Drop dataset refs keyed on visualization/sink nodes (passthrough duplicates).
     effective_spec = _prune_sink_node_dataset_refs(effective_spec, ukey)
     if effective_spec is not data.spec:
-        # The history the create put on record is not written twice.
-        dataflow_docs.put(ukey, project_id, _without_history(effective_spec), over=created, actor=actor)
+        # The history the create put on record is not written twice. Written
+        # by the backend process that owns the new dataflow, which a create
+        # made where the request landed need not be.
+        owner_calls.run(
+            _write_created, ukey, project_id, spec=_without_history(effective_spec), created=dict(created),
+            actor=dataclasses.asdict(actor),
+        )
     # The dataset twin of `seed_spec_with_defaults` above: ids the user put in
     # "all projects" are installed into this brand-new project. Done HERE, after
     # the spec is on disk, and by calling the ordinary install path rather than
@@ -1255,6 +1263,19 @@ def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None,
                       dataset_install_warnings=install_warnings,
                       spec_revision=storage.spec_revision(ukey, project_id),
                       categories=_categories(user, project_id, effective_spec))
+
+
+@owner_calls.operation("projects.write-created")
+def _write_created(ukey: str, project_id: str, *, spec: dict, created: dict, actor: dict) -> None:
+    """The write a create follows with (:func:`save_project`): *spec* over
+    *created*, the dataflow as the create wrote it, by *actor*. The
+    operation ``projects.write-created``, which the new dataflow's owner makes
+    when the create was made in another backend process
+    (``collaboration/owner_calls.py``)."""
+    dataflow_docs.put(
+        ukey, project_id, spec, over=dataflow_docs.Live(created, user_key=ukey, project_id=project_id),
+        actor=dataflow_docs.Actor(**actor),
+    )
 
 
 def _project_to_save(user, project_id: str, *, cleanup: bool = False):
@@ -1747,7 +1768,14 @@ def load_project(user, project_id: str, *, last_results: bool = False) -> dict:
     dataflow (``runs/reopen.py``). A hosted guest who has a copy of the
     dataflow of their own (``visitor_copies.py``) opens that copy, with the
     results their plays kept on it, and opens its own new dataflow
-    (:func:`_load_kept`); another visitor's is not found."""
+    (:func:`_load_kept`); another visitor's is not found.
+
+    ``copy_id`` is, for a hosted guest on a dataflow its account owns, the id
+    of the guest's own copy of it, made or not yet, which nothing here makes
+    (``visitor_copies.own_copy_id``): the id the guest's canvas names in its
+    requests and its room's socket from then on, and the guest's dashboard in
+    its requests, so they reach the process the copy belongs to. ``None`` for
+    anyone else and for a new dataflow."""
     from utk_curio.backend.app.datasets.seed import (
         ensure_dataflow_datasets_installed,
     )
@@ -1806,6 +1834,7 @@ def load_project(user, project_id: str, *, last_results: bool = False) -> dict:
         "project": visitor_copies.with_spec(detail, own) if own is not None else detail,
         "spec": opened,
         "outputs": [_output_ref_dict(r) for r in shown],
+        "copy_id": visitor_copies.own_copy_id(user, project),
     }
 
 
@@ -1826,7 +1855,8 @@ def _load_kept(user, own: str, *, last_results: bool) -> dict:
             shown = kept_results(user, ukey, own, detail.spec, [], kept_on=own)
         except Exception:  # noqa: BLE001 - a dataflow always opens, with no output at least
             logger.exception("could not find the kept results of dataflow %s", own)
-    return {"project": detail, "spec": detail.spec, "outputs": [_output_ref_dict(r) for r in shown]}
+    # Its page names its own id, which copies no dataflow.
+    return {"project": detail, "spec": detail.spec, "outputs": [_output_ref_dict(r) for r in shown], "copy_id": None}
 
 
 # ---------------------------------------------------------------------------
@@ -2183,6 +2213,13 @@ def build_standalone_dashboard(
     page (:func:`_as_the_visitors_copy`), built for their sign-in alone, and
     the page of their own new dataflow is theirs alone too
     (:func:`_visitors_new_dataflow`): for anyone else it is not found.
+
+    ``copy_id`` is, for a hosted guest on a dataflow their account owns, the
+    id of the guest's own copy of it, made or not yet, as the dataflow's load
+    answers it (:func:`load_project`, ``visitor_copies.dashboard_copy_id``):
+    the page names it in every request from then on, so its viewer runs reach
+    the process the copy belongs to. ``None`` for anyone else and for a new
+    dataflow.
     """
     from utk_curio.backend.app.projects.dashboard_payload import (
         DEFAULT_PAYLOAD_LIMIT_BYTES,
@@ -2218,7 +2255,106 @@ def build_standalone_dashboard(
     )
     body = payload.to_dict()
     body["registry"] = registry if registry is not None else _dashboard_registry(project_id)
+    body["copy_id"] = visitor_copies.dashboard_copy_id(project_id)
     return body
+
+
+#: The most files one ask for a dashboard's media links names
+#: (:func:`dashboard_media_links`): a page of cards asks for its own.
+MAX_DASHBOARD_MEDIA_FILES = 500
+
+
+def dashboard_media_links(project_id: str, file_name: str, files, *, visitor: Optional[str] = None) -> list:
+    """Signed links to the files of *files* (``{datasetId, fileId, kept}``)
+    that the rows of *file_name*, an output a pinned tile of *project_id*'s
+    dashboard reads, name: ``[(dataset_id, file_id, kept, token)]``, a file
+    the rows do not name left out. Anyone who opens the dashboard may ask,
+    signed in or not, as for its payload (:func:`build_standalone_dashboard`):
+    the media route needs a sign-in and reads the caller's own collections,
+    so a tile's images and videos reach its viewers through these alone.
+
+    *file_name* is a saved output the page carries (one of a node
+    ``dashboard_source_node_ids`` gives, as the payload chooses them, a hosted
+    guest's copy's among them), or an output a run of the dashboard kept for
+    such a node that every page reads (``viewer.dashboard_output`` with no
+    token): one built on what a page sent (``private_to``) could name any of
+    the owner's files, so it has none. Its rows are read as the page reads
+    them, and every media URL in them counts (``collections.media_refs``).
+    Each link reads its file as the dataflow's owner does (``media.sign``),
+    one a viewer's step derived in that step's own folder (``kept``), and,
+    for a hosted guest who asks, as that visitor (*visitor*). Raises
+    :class:`NotFoundError` for anything else, and :class:`ProjectError` when
+    the output cannot be read now."""
+    from utk_curio.backend.app.discovery.application import media
+    from utk_curio.backend.app.projects.dashboard_payload import dashboard_source_node_ids
+    from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
+    from utk_curio.sandbox.util.collections import media_refs
+
+    project = _dashboard_row(project_id)
+    if project is None or not file_name:
+        raise repo.NotFoundError("No such output on this dashboard.")
+    loaded = _visitors_new_dataflow(project_id) or _as_the_visitors_copy(
+        project_id, load_shared_project(project_id),
+    )
+    owner_key = _owner_user_dir_key(project)
+    tiles_read = dashboard_source_node_ids(loaded["spec"], TemplateGrammars.for_account(owner_key))
+    named = media_refs(_a_tiles_output(project_id, file_name, loaded, tiles_read))
+    links = []
+    for asked in files:
+        ref = (asked["datasetId"], asked["fileId"], asked.get("kept") or None)
+        if ref in named:
+            token = media.sign(project.user_id, owner_key, ref[0], ref[1], visitor=visitor, kept=ref[2])
+            links.append((*ref, token))
+    return links
+
+
+def _a_tiles_output(project_id: str, file_name: str, loaded: dict, tiles_read) -> dict:
+    """*file_name* as ``/get`` sends it, when a pinned tile reads it: a saved
+    output of a node in *tiles_read* that *loaded*, the dataflow as its
+    dashboard shows it, lists, or what a run of the dashboard kept for one,
+    shared with every page. :class:`NotFoundError` for anything else."""
+    from utk_curio.backend.app.runs import viewer
+    from utk_curio.backend.app.runs.service import RunError
+
+    saved = next((ref for ref in loaded["outputs"] if ref.get("filename") == file_name), None)
+    if saved is not None:
+        if saved.get("node_id") not in tiles_read:
+            raise repo.NotFoundError("No tile of this dashboard reads that output.")
+
+        def saved_path_of(filename: str):
+            found = saved_output_of(project_id, filename)
+            return found.path if found is not None else None
+
+        try:
+            return _dashboard_envelope_reader(saved_path_of)(file_name)
+        except Exception as exc:  # noqa: BLE001 - the page asks again
+            raise ProjectError("This output could not be read; try again in a moment.", 503) from exc
+    try:
+        entry = viewer.dashboard_output(project_id, file_name, None)
+    except RunError as exc:
+        raise repo.NotFoundError("No such output on this dashboard.") from exc
+    if entry.private_to is not None or entry.node_id not in tiles_read:
+        raise repo.NotFoundError("No tile of this dashboard reads that output.")
+    return _kept_output_envelope(file_name, entry.session_id)
+
+
+def _kept_output_envelope(file_name: str, session_id: str) -> dict:
+    """The kept output *file_name* as ``/get`` sends it, read in the session
+    that made it, as the dashboard's output routes read it."""
+    from utk_curio.backend.app.api.routes import SANDBOX_GET_TIMEOUT, _sandbox_call
+
+    resp = _sandbox_call(
+        "get", "/get", label="/get (dashboard media)", timeout=SANDBOX_GET_TIMEOUT,
+        params={"fileName": file_name, "sessionId": session_id},
+    )
+    if isinstance(resp, tuple):  # transport failure, already a Flask tuple
+        raise ProjectError("This output could not be read; try again in a moment.", 503)
+    try:
+        if resp.status_code != 200:
+            raise ProjectError("This output could not be read; try again in a moment.", 503)
+        return resp.json()
+    finally:
+        resp.close()
 
 
 # ---------------------------------------------------------------------------
@@ -2420,15 +2556,20 @@ def delete_project(user, project_id: str) -> None:
     again, so there was no way back from the mis-click.
     """
     from utk_curio.backend.app.projects.seed import is_example_project
+    from utk_curio.backend.app.runs import kept
 
     repo.get_for_user(project_id, user.id)  # 404s before anything is touched
     if is_example_project(user, project_id):
         raise ProjectError(
             "Example dataflows ship with Curio and cannot be deleted.", 403
         )
+    # The row's delete takes its kept outputs; what the viewers' steps derived
+    # goes from the owner's media folder with them.
+    viewers = kept.viewers_media(project_id)
     storage.delete_tree(_user_dir_key(user), project_id)
     repo.delete_project_row(project_id, user.id)
     db.session.commit()
+    kept.forget_kept_media(viewers, user_key=_user_dir_key(user))
 
 
 # ---------------------------------------------------------------------------

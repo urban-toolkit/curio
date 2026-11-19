@@ -80,11 +80,11 @@ describe("autkNeedsInput", () => {
   });
 
   test("a compute-only document works on what arrives", () => {
-    expect(autkNeedsInput({ compute: [{ dataRef: "x", wglsFunction: "" }] })).toBe(true);
+    expect(autkNeedsInput({ compute: [{ dataRef: "x", wgslFunction: "" }] })).toBe(true);
   });
 
   test("a heatmap's table is the document's own", () => {
-    const heat = { type: "heatmap", outputTableName: "h", tableJoinName: "t_roads", near: {}, grid: {} };
+    const heat = { type: "heatmap", outputTableName: "h", joinDataRef: "t_roads", near: {}, grid: {} };
     expect(ownTableNames({ data: [osm, heat] }).sort()).toEqual(["h", "t_roads"]);
     expect(autkNeedsInput({ data: [osm, heat], ...MAP_ON("h") })).toBe(false);
   });

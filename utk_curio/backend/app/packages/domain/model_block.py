@@ -8,8 +8,8 @@ own ``license`` is its code's; the block's ``license`` is the weights':
   images in and an image out; ``node-regression``, a graph in (node features
   and edges) and values for each node out; or ``concept-segmentation``, whose
   labels are text prompts and which finds every thing each prompt names. The
-  node that runs an ``image-to-image`` or ``node-regression`` model feeds it
-  itself (``CurioModel.run``), and the node that runs a
+  node that runs an ``image-to-image`` or ``node-regression`` model opens it
+  (``CurioModel.path``) and feeds it itself, and the node that runs a
   ``concept-segmentation`` model, always its package's own code, loads it
   from its folder itself;
 - ``runtime``: ``onnx`` (one ``.onnx`` file, with any external data beside it)

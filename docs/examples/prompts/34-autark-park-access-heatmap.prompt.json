@@ -1,0 +1,111 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "34-autark-park-access-heatmap",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/34-autark-park-access-heatmap.json",
+    "sha256": "8dd8018299fccb2d3b083328546bcbe1c593af84b885d433a7570b0a01fe6935",
+    "walkthrough": "docs/examples/34-autark-park-access-heatmap.md"
+  },
+  "prompt": "How close is every part of the southern tip of Lower Manhattan to a park? Use the OpenStreetMap extract in this checkout, docs/examples/data/lower_mnt.osm.pbf, cut to the box from longitude -74.0194 to -74.0085 and latitude 40.7 to 40.7085. With Autark, load its streets, parks and water, and bin the parks into a 30 by 30 grid where each cell counts the parks within about 150 m of its center, measured to the nearest edge of each park. Draw that grid on a map over the streets, parks and water, and give me a table of the share of the area by how many parks are within reach: none, one, two to four, five to nine, and ten or more.",
+  "context": null,
+  "required": {
+    "datasets": [],
+    "packages": [],
+    "paths": [
+      "docs/examples/data/lower_mnt.osm.pbf"
+    ]
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "visualization1",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "visualization1",
+        "to": "analysis1",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [],
+      "paths": [
+        "docs/examples/data/lower_mnt.osm.pbf"
+      ],
+      "urls": []
+    }
+  },
+  "intents": [
+    {
+      "ref": "analysis1",
+      "mustMention": [
+        "park"
+      ],
+      "outputKind": "dataframe"
+    }
+  ],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/autk-grammar"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T3",
+    "needs": [
+      "gpu"
+    ],
+    "skip": [
+      {
+        "when": "gpu",
+        "reason": "The Autark map needs hardware WebGPU; the plan and apply half of this fixture still runs offline.",
+        "scope": "execution"
+      }
+    ]
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "an agent session, from the example JSON and its walkthrough, 2026-11-18",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
+  },
+  "notes": "One grammar node loads the extract and builds the heatmap; a second draws it on a map, and a Python step reads it as a raster for the shares of the area."
+}

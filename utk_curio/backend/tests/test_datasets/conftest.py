@@ -7,7 +7,6 @@ dataset tests additionally wire ``CURIO_SHARED_DATA`` and bracket the test with
 """
 from __future__ import annotations
 
-import os
 import pytest
 
 from utk_curio.backend.app import create_app
@@ -21,7 +20,7 @@ from utk_curio.backend.tests._unit_fixtures import (  # noqa: F401
 
 
 @pytest.fixture()
-def app(tmp_path):
+def app(tmp_path, monkeypatch):
     # Wire a fresh temp workspace so every test gets its own isolated
     # file-system sandbox (shared data dir, user store, etc.).
     from utk_curio.sandbox.util.db import release_connection
@@ -29,10 +28,13 @@ def app(tmp_path):
     release_connection()
     shared_data = tmp_path / ".curio" / "data"
     shared_data.mkdir(parents=True)
-    prev_cwd = os.environ.get("CURIO_LAUNCH_CWD")
-    prev_shared = os.environ.get("CURIO_SHARED_DATA")
-    os.environ["CURIO_LAUNCH_CWD"] = str(tmp_path)
-    os.environ["CURIO_SHARED_DATA"] = str(shared_data)
+    # Through monkeypatch, as tmp_curio sets its folder: a test that moves
+    # either again through monkeypatch gets both back as they were before the
+    # test. Put back by hand here, they were put back before monkeypatch undid
+    # the test's moves, which wrote this test's folders back for every later
+    # test of the process (test_output_paths.py).
+    monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
+    monkeypatch.setenv("CURIO_SHARED_DATA", str(shared_data))
 
     application = create_app(TestConfig)
     with application.app_context():
@@ -42,15 +44,6 @@ def app(tmp_path):
         _db.drop_all()
 
     release_connection()
-    # Restore env vars so parallel/sequential tests don't interfere.
-    if prev_cwd is not None:
-        os.environ["CURIO_LAUNCH_CWD"] = prev_cwd
-    else:
-        os.environ.pop("CURIO_LAUNCH_CWD", None)
-    if prev_shared is not None:
-        os.environ["CURIO_SHARED_DATA"] = prev_shared
-    else:
-        os.environ.pop("CURIO_SHARED_DATA", None)
 
 
 @pytest.fixture()

@@ -49,6 +49,7 @@ from utk_curio.backend.app.packages.infrastructure import backend_runtime as pac
 from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
 from utk_curio.backend.app.packages.infrastructure.pip_runner import PipInstallError
 from utk_curio.backend.app.packages.application import (
+    libraries as packages_libraries,
     model_packages as packages_model_packages,
     package_dependencies as packages_dependencies,
     provisioning as packages_provisioning,
@@ -182,6 +183,7 @@ def install_package_from_archive(
     *,
     replace: bool = False,
     from_catalog: bool = False,
+    take_back: bool = True,
 ) -> InstallResult:
     """Install (or replace) a ``.curio.zip`` archive for *user_key*.
 
@@ -215,14 +217,17 @@ def install_package_from_archive(
         ``True`` when the archive is the shared catalog's copy, which keeps
         the store copy on the catalog's refresh track (#194). Everything
         else is the user's own content, and the seeder leaves it alone (#564).
+    take_back:
+        Whether a copy it replaces gets what a removal of it gets
+        (:func:`take_back_what_it_replaced`): all but an applied build.
 
     Returns
     -------
     InstallResult
         ``manifest`` (the validated :class:`PackageManifest`),
-        ``integrity`` (the ``{relative_path: sha256_hex}`` map), and
+        ``integrity`` (the ``{relative_path: sha256_hex}`` map),
         ``replaced_existing`` (whether *replace* actually displaced an
-        existing package).
+        existing package), and ``replaced_libraries`` (that copy's).
 
     Raises
     ------
@@ -290,15 +295,7 @@ def install_package_from_archive(
             # to refresh the old copy and then swap it in over this one.
             with package_seed_lock(user_key):
                 refuse_a_module_name_in_use(user_key, staging_root, manifest)
-                replaced = False
-                if final_dest.exists():
-                    if not replace:
-                        raise InstallerError(
-                            f"package {dir_name} already installed; pass replace=True "
-                            f"to overwrite"
-                        )
-                    shutil.rmtree(final_dest)
-                    replaced = True
+                replaced_libraries = _out_of_the_way(user_key, dir_name, final_dest, replace=replace)
                 staging_root.replace(final_dest)
                 _touch_manifest_for_install_recency(final_dest)
                 merged_manifest = load_package_manifest(final_dest)
@@ -314,14 +311,56 @@ def install_package_from_archive(
                 except Exception:  # noqa: BLE001: bookkeeping is best-effort
                     log.exception("Failed to record the install of %s/%s", user_key, dir_name)
 
-            return InstallResult(
+            result = InstallResult(
                 manifest=merged_manifest,
                 integrity=integrity,
-                replaced_existing=replaced,
+                replaced_existing=replaced_libraries is not None,
+                replaced_libraries=replaced_libraries or frozenset(),
             )
         except Exception:
             shutil.rmtree(staging_root, ignore_errors=True)
             raise
+    if result.replaced_existing and take_back:  # once the store lock, a leaf the take-back takes, is let go
+        take_back_what_it_replaced(user_key, result.replaced_libraries)
+    return result
+
+
+def _out_of_the_way(user_key: str, dir_name: str, final_dest: Path, *, replace: bool) -> frozenset[str] | None:
+    """Take the copy of *dir_name* at *final_dest* out of the way of its
+    install, under the store lock, when *replace* lets it: an
+    ``InstallerError`` otherwise. Answers what that copy's install put where
+    node code imports from (``libraries.node_libraries_of``), read before its
+    files go, or None when the store held no copy."""
+    if not final_dest.exists():
+        return None
+    if not replace:
+        raise InstallerError(f"package {dir_name} already installed; pass replace=True to overwrite")
+    libraries = frozenset(packages_libraries.node_libraries_of(user_key, dir_name))
+    shutil.rmtree(final_dest)
+    return libraries
+
+
+def take_back_what_it_replaced(user_key: str, libraries) -> None:
+    """After an install replaced a copy of a package in *user_key*'s store,
+    or the seeder's refresh did (``seeding.seed_dev_packages``), what a
+    removal of that copy gets: an install over a copy is a removal of it as
+    much as an add of the new one, whichever path replaced it (an Update,
+    Import package with replace, the wizard's Save and install, a model
+    downloaded again, an applied build's rollback). *libraries*, those the
+    copy's install put where node code imports from
+    (``InstallResult.replaced_libraries``), are taken back when nothing asks
+    for them now, and the account's tree gives way to the image
+    (``libraries.take_back_after_a_removal``), before the caller installs the
+    new version's. An applied build installs with ``take_back=False`` and
+    calls this once it can no longer roll back
+    (``builder/promotion.confirm_nodes_created``). The copy is replaced
+    already and the install stands, so a failure is logged, and the next
+    start gives way instead."""
+    try:
+        packages_libraries.take_back_after_a_removal(user_key, libraries)
+    except Exception:  # noqa: BLE001 - the new copy is in place, and its install must stand
+        log.warning("Could not take back the libraries %s of a copy an install replaced for %s",
+                    sorted(libraries), user_key, exc_info=True)
 
 
 def uninstall_package(user_key: str, dir_name: str) -> bool:
@@ -342,6 +381,22 @@ def uninstall_package(user_key: str, dir_name: str) -> bool:
         except Exception:  # noqa: BLE001: never block uninstall on bookkeeping
             log.exception("Failed to record uninstall tombstone for %s/%s", user_key, dir_name)
     return True
+
+
+def take_back_copy(user_key: str, dir_name: str) -> bool:
+    """Remove ``<user>/packages/<dir_name>``, a copy an add made that is the
+    add's to take back, with its backend residue and its seed record. Unlike
+    :func:`uninstall_package` it leaves no tombstone: nobody uninstalled the
+    package, so the seeder may copy it in again when the examples come to
+    need it. Returns ``True`` if anything was deleted."""
+    target = package_dir(user_key, dir_name)
+    with package_seed_lock(user_key):  # memo dev/99: the seeder's lock
+        removed = target.exists()
+        if removed:
+            shutil.rmtree(target)
+        seed_state.clear(user_key, dir_name)
+    packages_backend_runtime.remove_backend_residue(user_key, dir_name)
+    return removed
 
 
 def install_package_from_directory(
@@ -455,11 +510,13 @@ def export_package_archive(
         ).read_bytes()
 
 
-def _ensure_user_store_install(user_key: str, dir_name: str) -> InstallOutcome:
+def _ensure_user_store_install(user_key: str, dir_name: str, *, libraries: bool = True) -> InstallOutcome:
     """Copy *dir_name* from the shared catalog when it is missing, with each
     package it needs (``dependencies.packages``, and theirs in turn) that the
     store lacks, install the python deps each declares, and report whether
-    they import.
+    they import. Without *libraries* nothing is installed or probed: the
+    copies land as an add makes them, and their libraries are the launcher's,
+    as a guest package's are (``guest_packages``).
 
     The pip step runs synchronously inside the request — heavy installs like
     ``torch`` can take many minutes (see :mod:`.pip_runner`). The Install button
@@ -495,9 +552,9 @@ def _ensure_user_store_install(user_key: str, dir_name: str) -> InstallOutcome:
     ]
     if missing and not copy_it:
         packages_provisioning.assert_may_install()
-    added = _copy_from_catalog(user_key, missing + ([dir_name] if copy_it else []))
+    added = _copy_from_catalog(user_key, missing + ([dir_name] if copy_it else []), libraries=libraries)
     import_errors = dict(added.import_errors)
-    if not copy_it:
+    if not copy_it and libraries:
         import_errors.update(packages_provisioning._declared_import_failures(user_key, dir_name))
     return InstallOutcome(
         copied=copy_it,
@@ -517,17 +574,18 @@ def _catalog_copy(dir_name: str) -> Path:
     return src
 
 
-def _copy_from_catalog(user_key: str, dir_names: list[str]) -> InstallOutcome:
+def _copy_from_catalog(user_key: str, dir_names: list[str], *, libraries: bool = True) -> InstallOutcome:
     """Copy each of *dir_names* from the shared catalog, in order, and install
-    the python deps each declares. When one fails, every copy this call made
-    is taken back before the failure is raised: an add lands whole or not at
-    all. ``installed`` and ``import_errors`` are every copy's."""
+    the python deps each declares, unless *libraries* is false. When one
+    fails, every copy this call made is taken back before the failure is
+    raised: an add lands whole or not at all. ``installed`` and
+    ``import_errors`` are every copy's."""
     copied: list[str] = []
     installed: set[str] = set()
     import_errors: dict[str, str] = {}
     try:
         for dir_name in dir_names:
-            outcome = _copy_one_from_catalog(user_key, dir_name)
+            outcome = _copy_one_from_catalog(user_key, dir_name, libraries=libraries)
             copied.append(dir_name)
             installed.update(outcome.installed)
             import_errors.update(outcome.import_errors)
@@ -538,9 +596,10 @@ def _copy_from_catalog(user_key: str, dir_names: list[str]) -> InstallOutcome:
     return InstallOutcome(copied=bool(copied), installed=sorted(installed), import_errors=import_errors)
 
 
-def _copy_one_from_catalog(user_key: str, dir_name: str) -> InstallOutcome:
+def _copy_one_from_catalog(user_key: str, dir_name: str, *, libraries: bool = True) -> InstallOutcome:
     """Copy *dir_name* from the shared catalog and install the python deps its
-    manifest declares; when pip fails, the copy is taken back."""
+    manifest declares, unless *libraries* is false; when pip fails, the copy
+    is taken back."""
     src = _catalog_copy(dir_name)
     try:
         result = install_package_from_directory(user_key, src, replace=False)
@@ -552,6 +611,8 @@ def _copy_one_from_catalog(user_key: str, dir_name: str) -> InstallOutcome:
     # verifiable and a reinstall never trips a stale pin.
     packages_backend_runtime.record_entry_pin(user_key, dir_name)
 
+    if not libraries:
+        return InstallOutcome()
     try:
         return packages_provisioning.provision_python_deps(user_key, dir_name, result.manifest)
     except (PipInstallError, packages_backend_runtime.BackendRuntimeError) as exc:
@@ -618,10 +679,7 @@ def install_to_store(user_key: str, dir_name: str) -> InstallOutcome:
         repaired = packages_provisioning.provision_python_deps(user_key, dir_name, manifest)
     except (PipInstallError, packages_backend_runtime.BackendRuntimeError) as exc:
         raise PackageServiceError(f"pip install failed: {exc}", 502) from exc
-    brought = _copy_from_catalog(user_key, [
-        other for other in needed
-        if other != dir_name and not packages_store_reads._is_installed_in_user_store(user_key, other)
-    ])
+    brought = _copy_the_missing(user_key, dir_name, needed)
     return InstallOutcome(
         installed=sorted({*repaired.installed, *brought.installed}),
         import_errors={**brought.import_errors, **repaired.import_errors},
@@ -629,33 +687,111 @@ def install_to_store(user_key: str, dir_name: str) -> InstallOutcome:
     )
 
 
-def install_from_catalog(user_key: str, dir_name: str, *, replace: bool) -> InstallResult:
-    """Install a catalog package by its on-disk directory name (the Node
-    Catalog's Update, with ``replace``). Copies ``<repo_root>/packages/<dir_name>/`` into the
-    user's store through the same validator, size caps and integrity writer the
-    sideload uses; ``InstallerError`` propagates. A missing catalog entry is a
-    :class:`PackageServiceError` 404."""
+def _the_missing(user_key: str, dir_name: str, needed: list[str]) -> list[str]:
+    """Each of *needed*, the packages *dir_name* needs, but *dir_name* and
+    those the store holds."""
+    return [
+        other for other in needed
+        if other != dir_name and not packages_store_reads._is_installed_in_user_store(user_key, other)
+    ]
+
+
+def _copy_the_missing(user_key: str, dir_name: str, needed: list[str]) -> InstallOutcome:
+    """:func:`_copy_from_catalog` of :func:`_the_missing`."""
+    return _copy_from_catalog(user_key, _the_missing(user_key, dir_name, needed))
+
+
+def bring_needed_packages(user_key: str, dir_name: str, *, its_catalog_copy: bool = False) -> InstallOutcome:
+    """Copy from the shared catalog each package *dir_name*, which the store
+    holds, needs (``dependencies.packages``, and theirs in turn) that the
+    store lacks, with the python deps each declares, those it needs first, as
+    ``install_to_store`` brings them: what a model downloaded from the
+    Discovery Catalog needs, its node's code importing their modules. With
+    *its_catalog_copy*, what the catalog's copy of *dir_name* needs, which the
+    store need not hold and which is not copied itself. A package neither the
+    store nor the catalog holds at a version its entry allows refuses the
+    whole step (a ``PackageServiceError``, 409); when one copy fails, every
+    copy this call made is taken back. ``packages`` is *dir_name* with every
+    package it needs."""
+    packages_provisioning.assert_may_install()
+    needed = packages_dependencies.packages_to_add(user_key, dir_name, its_catalog_copy=its_catalog_copy)
+    brought = _copy_the_missing(user_key, dir_name, needed)
+    return InstallOutcome(
+        copied=brought.copied,
+        installed=brought.installed,
+        import_errors=brought.import_errors,
+        packages=tuple(needed),
+    )
+
+
+def install_from_catalog(user_key: str, dir_name: str, *, replace: bool) -> tuple[InstallResult, InstallOutcome]:
+    """Install a catalog package by its on-disk directory name, for its one
+    caller, the catalog route ``POST /api/packages/catalog/install``: the
+    Node and Model Catalogs' Update sends it with ``replace``, and a skill
+    evaluation's worker sends it without, over HTTP, for each model the
+    evaluation's account is to hold (``skill_eval_worker._hold_models``).
+    Copies ``<repo_root>/packages/<dir_name>/`` into the user's store through the same
+    validator, size caps and integrity writer the sideload uses;
+    ``InstallerError`` propagates. A missing catalog entry is a
+    :class:`PackageServiceError` 404.
+
+    The packages the catalog's copy names in ``dependencies.packages``, and
+    theirs in turn, that the store lacks land first, with the python deps each
+    declares, as an add brings them: an Update whose new version names a
+    package anew brings it. They are resolved from that copy before anything
+    is copied, so a package neither the store nor the catalog holds at a
+    version its entry allows refuses the install (409) and nothing lands. When
+    one of their copies fails, every copy this call made is taken back
+    (:func:`_copy_from_catalog`), and so they are when the package's own copy
+    fails. Answers the package's install and what the packages brought for it
+    did (their libraries, for ``provisioning.with_brought``).
+
+    An Update, which replaces the store's copy, is a removal of the version
+    it replaced as much as an add of the new one, as every install over a
+    copy is: the libraries the replaced version's install put where node
+    code imports from are taken back when nothing asks for them now, and a
+    copy in the account's tree that the new version's ranges let the image's
+    win over goes at once, not at the next start
+    (:func:`install_package_from_archive`, *take_back*). The caller installs
+    the new version's libraries after."""
     packages_provisioning.assert_may_install()
     src = packages_catalog_dir.catalog_root() / dir_name
     if not src.is_dir():
         raise PackageServiceError(f"catalog has no package {dir_name}", 404)
-    result = install_package_from_directory(user_key, src, replace=replace)
+    needed = packages_dependencies.packages_to_add(user_key, dir_name, its_catalog_copy=True)
+    missing = _the_missing(user_key, dir_name, needed)
+    brought = _copy_from_catalog(user_key, missing)
+    try:
+        result = install_package_from_directory(user_key, src, replace=replace)
+    except Exception:
+        for other in reversed(missing):
+            _take_back(user_key, other)
+        raise
     # Same as the first copy in _ensure_user_store_install: a replaced backend
     # entry keeps its old pin otherwise, and every invocation is refused.
     packages_backend_runtime.record_entry_pin(user_key, dir_name)
-    return result
+    return result, brought
 
 
 def remove_package(user_key: str, dir_name: str) -> None:
     """Uninstall *dir_name* from the user store with its backend residue
     (dev/97: overlay, data dir, pin — the invocation ledger survives). The
     builtin is refused; a package that is not installed is a 404;
-    ``PackageIdError`` propagates for a malformed name."""
+    ``PackageIdError`` propagates for a malformed name. The libraries its
+    install put where node code imports from leave from there when nothing
+    asks for them now and Curio put them there, as a removal from the
+    package's last dataflow takes them back, and a copy in the account's tree
+    that only the package needed, in front of an image library that meets
+    every range left, goes too, as the next start would take it
+    (``libraries.take_back_after_a_removal``)."""
     if dir_name.startswith(f"{BUILTIN_PACKAGE_ID}@"):
         raise PackageServiceError(f"{BUILTIN_PACKAGE_ID} is built-in and cannot be uninstalled", 400)
+    # Read before its files go.
+    its_libraries = packages_libraries.node_libraries_of(user_key, dir_name)
     if not uninstall_package(user_key, dir_name):
         raise PackageServiceError("package not installed", 404)
     packages_backend_runtime.remove_backend_residue(user_key, dir_name)
+    packages_libraries.take_back_after_a_removal(user_key, its_libraries)
 
 
 def archive_file_for_download(user_key: str, dir_name: str) -> tuple[Path, Callable[[], None]]:

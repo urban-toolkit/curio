@@ -85,7 +85,27 @@ def _attachment_card(spec: dict, record: dict, user_key: str) -> dict:
     }
 
 
-def list_project_attachments(user_key: str, project_id: str) -> list[dict]:
+def list_project_attachments(user_key: str, project_id: str, *, writes: bool = True) -> list[dict]:
+    """The dataflow's attachments, each as its card (:func:`_attachment_card`).
+
+    The listing repairs what it finds, and writes it: an attachment whose node
+    or connection is gone is taken off with its transcript, and a Solve session
+    a process that is gone left ``solving`` reads interrupted. So it reads the
+    dataflow as a writer does (``dataflow_docs.live``), which only the backend
+    process that owns the dataflow may.
+
+    Without *writes* it writes nothing. It reads the dataflow as any process
+    reads one, its owner's log included (``dataflow_docs.read``), and lists
+    what a repair would leave, each Solve session as it stands: a hosted
+    guest's listing of an example before the guest's own copy of it is made
+    (``agents/routes/common.py``'s ``Dataflow.writable``), on the process that
+    copy belongs to, which does not own the example."""
+    if not writes:
+        spec = dataflow_docs.read(user_key, project_id)
+        if spec is None:
+            raise AgentServiceError(f"project {project_id!r} has no spec", 404)
+        attachments.prune_orphaned_attachments(spec)
+        return [_attachment_card(spec, r, user_key) for r in attachments.list_attachments(spec)]
     spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     # A node or a connection removed on a canvas bound to the dataflow's doc
     # takes its attachments with it here, and their transcripts (dev/32): no

@@ -2,7 +2,7 @@
 
 Curio nodes are defined by **packages**, not by code. A package is a directory under [`packages/`](../packages/) that ships a `manifest.json` declaring one or more node *templates*. Each template references a **behavior key** that resolves to a React hook implementing the node's behaviour. Optionally, a behavior hook calls a backend route in Curio for work the browser and the sandbox cannot do.
 
-This guide walks through adding a new node package end-to-end. Its examples are code in this repository: the package `python scripts/new_package.py <id> --with-ui` writes for a node with its own React interface (manifest, behavior hook, `behaviorScript` bundle), [`model.scout.deep-umbra@1`](../packages/model.scout.deep-umbra@1/) for a code node with Python dependencies declared in `manifest.dependencies.python`, a module of its own and sandbox helpers, the built-in Spatial Join for a node that calls a backend route, and the [Discovery Catalog](DISCOVERY-CATALOG.md) for third-party APIs, per-account keys and long downloads. Easier packages can skip several of the steps below.
+This guide walks through adding a new node package end-to-end. Its examples are code in this repository: the package `python scripts/new_package.py <id> --with-ui` writes for a node with its own React interface (manifest, behavior hook, `behaviorScript` bundle), [`model.scout.deep-umbra@1`](../packages/model.scout.deep-umbra@1/) for a code node with Python dependencies declared in `manifest.dependencies.python`, a module of its own and sandbox helpers, the built-in Spatial Join for a node with two input ports whose code calls its package's function, and the [Discovery Catalog](DISCOVERY-CATALOG.md) for third-party APIs, per-account keys and long downloads. Easier packages can skip several of the steps below.
 
 > [!TIP]
 > **Writing your first package?** Start with [`docs/AUTHORING-NODES.md`](AUTHORING-NODES.md), a task-ordered walkthrough from `git clone` to a working node, including the edit → rebuild → reload loop. Scaffold with `python scripts/new_package.py <id> [--with-ui]`; with `--with-ui` it writes a minimal custom-UI node with no API keys or heavy dependencies. Come back here for the reference detail: backend blueprints, external services, dependency declaration, and the manifest's finer points.
@@ -30,7 +30,7 @@ What a package's node does is a function of a module of its package. The node's 
 
 - A module's `__all__` names what it offers, and each function it offers says what it does in the first paragraph of its docstring ([Modules beside your template](AUTHORING-NODES.md#modules-beside-your-template)). The header above a node's code lists those functions under **Functions**, with Curio's own, as agents read them, so a package's nodes list their own package's functions ([NODE-CATALOG](NODE-CATALOG.md#functions-a-node-can-call)). [`test_functions_on_the_node.py`](../utk_curio/backend/tests/test_packages/test_functions_on_the_node.py) fails on a name a shipped module's `__all__` lists that the module neither offers nor defines, and on a function it offers with no docstring.
 - A node's code, its template's source, holds its settings, as constants or widgets, and returns one call. Media's Sample Video Frames ([`packages/curio.media@1/sources/video-frames.py`](../packages/curio.media@1/sources/video-frames.py)) sets `EVERY_SECONDS` and `MAX_FRAMES_PER_VIDEO`, then returns `sample_video_frames(input_0, curio_derived_file, every_seconds=EVERY_SECONDS, max_frames_per_video=MAX_FRAMES_PER_VIDEO)`, from Media's module `media_collections`.
-- A node calls another package's functions when its package names that package in `dependencies.packages`: Media's Mosaic Rasters returns Rasterization's `mosaic_collection(input_0, curio_output_file)`, from `scout_rasters.mosaic`.
+- A node calls another package's functions when its package names that package in `dependencies.packages`: Media's Mosaic Rasters returns Rasterization's `mosaic_collection(input_0, curio_output_file)`, from `scout_rasters.mosaic`, and DDRNet23-Slim's Image Segmentation returns the Segmentation package's `segment_images(input_0, model, curio_derived_file, classes=classes)`, from `semantic_segmentation`. A package of modules alone, such as Segmentation, defines no node (`"templates": []`) and ships at least one module in `sources/`; the nodes of the packages that name it call it. Curio refuses a package with neither a node nor a module.
 - Curio gives node code a function only for what that code cannot do on its own, or must do exactly as Curio's own code does: reach a catalog's item by the id the code names, a saved key, a file Curio serves or keeps after the run, Curio's own file formats, the Map Editor's edits and a layer chip. [`skills/node-functions/SKILL.md`](../skills/node-functions/SKILL.md) lists them. [`test_node_functions_sandbox.py`](../utk_curio/backend/tests/test_node_functions_sandbox.py) fails on a `curio_` function that page does not list, and [`test_sandbox_namespace.py`](../utk_curio/backend/tests/test_sandbox_namespace.py) on any other name in node code's namespace but the libraries it pins.
 - Package sources and the nodes of the shipped examples import nothing from `utk_curio`. [`test_node_code_imports_no_curio.py`](../utk_curio/backend/tests/test_node_code_imports_no_curio.py) fails on such an import.
 - A node that does something new comes in a package, with its functions in the package's modules. Curio adds no built-in node type for it.
@@ -71,8 +71,8 @@ Three patterns cover essentially every node Curio ships:
 | Pattern | Examples | Backend? |
 |---|---|---|
 | **Pure-frontend** | `vis-vega`, `vis-simple`, `autk-grammar`, a node made with `scripts/new_package.py --with-ui` | None. The behavior hook does its work in the browser. |
-| **Sandbox-Python** | `data-loading`, `python-computation`, `data-summary`, `accumulated-shadow` (`model.scout.deep-umbra@1`), `image-segmentation` (`model.curio.ddrnet23-slim@1`) | Reuses Curio's existing code sandbox at [`utk_curio/sandbox/`](../utk_curio/sandbox/) via the `code` behavior. User-provided Python runs out-of-process. A package template does the same with its own starter file and Python dependencies (§4.2). |
-| **Backend route** | `spatial-join` (geopandas `sjoin`) | A route in Curio's backend that the behavior hook calls: Spatial Join's is one handler in [`api/routes.py`](../utk_curio/backend/app/api/routes.py) over a helper in [`common/spatial.py`](../utk_curio/backend/app/common/spatial.py). A feature with several routes gets its own Flask blueprint under [`utk_curio/backend/app/<feature>/`](../utk_curio/backend/app/) (§5). Right call when the node needs server-side work the sandbox can't reasonably do. |
+| **Sandbox-Python** | `data-loading`, `python-computation`, `data-summary`, `spatial-join` (geopandas `sjoin`, in its package's `spatial_join`), `accumulated-shadow` (`model.scout.deep-umbra@1`), `image-segmentation` (`model.curio.ddrnet23-slim@1`) | Reuses Curio's existing code sandbox at [`utk_curio/sandbox/`](../utk_curio/sandbox/) via the `code` behavior. User-provided Python runs out-of-process. A package template does the same with its own starter file and Python dependencies (§4.2). |
+| **Backend route** | `/storeOutput`, which the scaffold's node calls through `window.curio.storeOutput` | A route in Curio's backend that the behavior hook calls: `/storeOutput` is one handler in [`api/routes.py`](../utk_curio/backend/app/api/routes.py), which hands the rows a node made in the browser to the sandbox to keep as an output. A feature with several routes gets its own Flask blueprint under [`utk_curio/backend/app/<feature>/`](../utk_curio/backend/app/) (§5). Right call when the node needs server-side work the sandbox can't reasonably do. |
 
 Pure-frontend is the right default; reach for the sandbox before a blueprint, and only stand up a blueprint when neither covers it. Third-party data and models come in through the Discovery Catalog (§3), and a node reads them from the Data or Model Catalog.
 
@@ -88,7 +88,7 @@ Never call third-party APIs from the browser directly:
 2. **CORS.** Most public APIs (Google, Nominatim) reject browser-origin requests.
 3. **Rate-limit hygiene.** Centralising in the backend lets you add caching, retries, and per-user quota in one place.
 
-Every Discovery request leaves the backend through one transport, [`discovery/infrastructure/transport.py`](../utk_curio/backend/app/discovery/infrastructure/transport.py): `HttpDiscoveryTransport` sends it under the egress policy with a timeout (`METADATA_TIMEOUT_S`) and a size bound, and refuses an answer that is not a 2xx. A source's `limits.requestsPerMinute` bounds each account's requests to it. A behavior hook that needs the backend calls a Curio route, as [`spatialJoinBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/spatialJoinBehavior.tsx) posts to `${backendUrl()}/spatial_join`.
+Every Discovery request leaves the backend through one transport, [`discovery/infrastructure/transport.py`](../utk_curio/backend/app/discovery/infrastructure/transport.py): `HttpDiscoveryTransport` sends it under the egress policy with a timeout (`METADATA_TIMEOUT_S`) and a size bound, and refuses an answer that is not a 2xx. A source's `limits.requestsPerMinute` bounds each account's requests to it. A behavior hook that needs the backend calls a Curio route, as the scaffold's hook keeps its rows with `window.curio.storeOutput`, which posts them to `${backendUrl()}/storeOutput` ([`services/api.ts`](../utk_curio/frontend/urban-workflows/src/services/api.ts)).
 
 ### 3.2 API keys: a row in API Settings
 
@@ -133,9 +133,11 @@ every key with booleans only: `present` (this account saved one) and
 `has_source_keys` maps the `secretId` of each key the account saved to `true`.
 
 A package whose backend needs to know *who* is calling must send the bearer
-token: read `window.curio.getAuthToken()` (a getter, because a package bundle
-evaluates once at boot, before sign-in) and pass it as an `Authorization`
-header. Never check secrets into git.
+token: send `window.curio.requestHeaders()` as its call's headers. It holds
+the token as an `Authorization` header and the dataflow the page shows, which
+a Curio started with several backend processes routes the call by. It is a
+function, because a package bundle evaluates once at boot, before sign-in.
+Never check secrets into git.
 
 ### 3.3 Public APIs without auth
 
@@ -254,8 +256,8 @@ A model in the Model Catalog is a model package, so it declares its runtime's li
 
 #### How the install/uninstall flow handles them
 
-- **Adding a package from the catalog** copies the package files, then runs `pip install` (via [`utk_curio/backend/app/packages/infrastructure/pip_runner.py`](../utk_curio/backend/app/packages/infrastructure/pip_runner.py)) for every dep that isn't already importable. Already-satisfied deps are skipped, so re-adding the same package is near-instant. The request blocks until pip finishes (v1 sync UX); the confirm button stays busy.
-- **Removing a package** (when its user-store copy is being pruned) uninstalls the python deps it declared that **nothing else asks for**: no other installed package declares them and no Installed libraries list names them. They leave from where they were installed: under fork isolation the account's own tree, and nothing else; otherwise the shared interpreter, and there only the ones Curio's pip installed since the backend started. A library that was installed already, such as the image's `torch`, stays.
+- **Adding a package from the catalog** copies the package files, then runs `pip install` (via [`utk_curio/backend/app/packages/infrastructure/pip_runner.py`](../utk_curio/backend/app/packages/infrastructure/pip_runner.py)) for every dep that isn't already importable. Already-satisfied deps are skipped, so re-adding the same package is near-instant. The request blocks until pip finishes (v1 sync UX); the confirm button stays busy. Under fork isolation the deps go to the account's own tree, in front of the image's libraries, which win wherever they meet the range: only what neither holds at a version the package and what it needs accept goes into the tree, so a package declaring `torch>=2.6` runs on the image's CUDA torch, and each start installs nothing the tree or the image already has.
+- **Removing a package** (Remove from project on its last project, Remove from account, any install over your copy of it, for the copy it replaces: an Update, an archive imported with `replace`, Save as package node into it, a model downloaded again, an agent's build applied over it once the canvas has made its nodes, and Curio's refresh of a copy of a catalog package you never changed once the catalog moves on; and a start's take-off of a package `--guest-packages` no longer names) uninstalls the python deps it declared that **nothing else asks for**: no other installed package declares them and no Installed libraries list names them. They leave from where they were installed: under fork isolation the account's own tree, and nothing else; otherwise the shared interpreter, and there only the ones Curio's pip installed since Curio started. A library that was installed already, such as the image's `torch`, stays. Under fork isolation a library another package still declares stays too, and its copy in the account's tree goes when the image's copy meets every range left, so nodes import the image's. Removing a library in Installed libraries follows the same rule.
 - A failed pip install rolls back the package's user-store copy so the user can retry cleanly. The Flask response carries the tail of pip's stderr so the user knows what failed (network error, version conflict, missing wheel, etc.).
 
 #### Packages a package needs
@@ -279,36 +281,30 @@ Its nodes can import the modules the named package ships in `sources/`, and thos
 
 #### When to still lazy-import
 
-Even though deps are installed up front, lazy-import expensive libraries inside the code that needs them so a broken install fails per-request with a clean 503 instead of crashing the backend on startup. The Spatial Join's helper in [`common/spatial.py`](../utk_curio/backend/app/common/spatial.py) imports geopandas inside its functions, and the route turns the `ImportError` into a 503:
+Even though deps are installed up front, lazy-import expensive libraries inside the code that needs them so a broken install fails per-request with a clean error instead of crashing the backend on startup. The GeoPackage reader of the Data Catalog's installer imports geopandas and pyogrio inside the function that needs them, and turns a failed import into an error that says what the server lacks:
 
 ```python
-# api/routes.py
-@bp.route('/spatial_join', methods=['POST'])
-def spatial_join():
-    # ...
+# datasets/install/gpkg.py
+def _import_geo():
     try:
-        result = join(
-            body.get("left"),
-            body.get("right"),
-            predicate=body.get("predicate") or DEFAULT_PREDICATE,
-            output=body.get("output") or DEFAULT_OUTPUT,
-        )
-    except JoinInputError as e:
-        return jsonify({"error": str(e)}), 400
-    except ImportError as e:
-        return jsonify({
-            "error": "spatial extras not installed (geopandas required)",
-            "hint": "pip install geopandas",
-            "detail": str(e),
-        }), 503
+        import geopandas as gpd
+        import pandas as pd
+        import pyogrio
+    except Exception as exc:
+        raise GpkgError(
+            "Importing GeoPackage files requires the geospatial extras "
+            "(geopandas / pyogrio), which aren't available on this server."
+        ) from exc
     # ...
 ```
 
-Sandbox helpers follow the same rule: `curio_segment` imports `onnxruntime`, or `torch` and `transformers`, only when it loads a model of that runtime, and a missing library stops that node's run with a `RuntimeError` saying which runtime is missing (`_OnnxRunner` and `_TransformersRunner` in [`sandbox/util/vision.py`](../utk_curio/sandbox/util/vision.py)).
+Package modules follow the same rule: the Spatial Join's `spatial_join` imports geopandas inside its functions ([`sources/spatial_join.py`](../packages/curio.builtin@1/sources/spatial_join.py)).
+
+A package's module follows the same rule: the Segmentation package's `segment_images` imports `onnxruntime`, or `torch` and `transformers`, only when it runs a model of that runtime, and a missing library stops that node's run with a `RuntimeError` saying which runtime is missing (`_OnnxRunner` and `_TransformersRunner` in [`semantic_segmentation.py`](../packages/curio.segmentation@1/sources/semantic_segmentation.py)). The model's package declares the runtime, so adding the model installs it.
 
 ## 4. Walked example: three nodes
 
-One node per pattern in §2: My Node, the node `python scripts/new_package.py me.my-node --with-ui` writes, renders its own interface, Accumulated Shadow (`model.scout.deep-umbra@1`) is a code node in a package, and Spatial Join (`curio.builtin@1`) calls a backend route.
+One node per pattern in §2: My Node, the node `python scripts/new_package.py me.my-node --with-ui` writes, renders its own interface and keeps its rows through a backend route, Accumulated Shadow (`model.scout.deep-umbra@1`) is a code node in a package, and Spatial Join (`curio.builtin@1`) is a built-in code node with two input ports whose code calls its package's function.
 
 ### 4.1 A custom-UI template in the scaffold's `packages/me.my-node@1/manifest.json`
 
@@ -340,7 +336,7 @@ Each entry names a *behavior key* (a string), not a JS module path. The same key
 ]
 ```
 
-An input port's `cardinality` sets how many edges the node takes. `"1"` takes one. A single port whose maximum is more than one (`"[1,2]"`, `"[1,n]"`) gives the node a new input circle for each edge, up to that maximum; its code receives them as a list in circle order and reads each through an input chip, `[!! input_1 !!]` (USAGE.md, "Several inputs"). Several input ports take one edge each, on the circles `in`, `in_1` and so on, as Spatial Join's input_0 and input_1.
+An input port's `cardinality` sets how many edges the node takes. `"1"` takes one. A single port whose maximum is more than one (`"[1,2]"`, `"[1,n]"`) gives the node a new input circle for each edge, up to that maximum; its code receives them as a list in circle order and reads each through an input chip, `[!! input_1 !!]` (USAGE.md, "Several inputs"). Several input ports take one edge each, each port its fixed circle, `in`, `in_1` and so on, as Spatial Join's input_0 and input_1: its code reads each input by its port, whatever order the inputs arrive in, and an edge taken out empties its own circle and moves no other.
 
 The template reuses the built-in `code` behavior, so the package ships no JavaScript and no `behaviorScript`. `source` is the starter a new node opens with, [`sources/accumulated-shadow.py`](../packages/model.scout.deep-umbra@1/sources/accumulated-shadow.py); it imports the package's own module, `deep_umbra` (`sources/deep_umbra/`), and reads the Season widget through its chip:
 
@@ -354,27 +350,36 @@ return accumulated_shadow(input_0, season=[!! season !!], model=model, output_fi
 
 Agents read the same files. A run that writes an Accumulated Shadow node's code gets the template's whole `description`, this starter, and the functions `deep_umbra` and the `scout_rasters` modules offer (their `__all__`), each by its signature and the first paragraph of its docstring, the functions the starter imports first. The header above the node's code lists the same under **Functions**. They are read from the sources with `ast`, never imported (`read_functions` in [`packages/domain/function_nodes.py`](../utk_curio/backend/app/packages/domain/function_nodes.py)), from the modules the sandbox makes importable for the node (`modules_for_node`), in the run's dataflow block ([ARCHITECTURE.md, Agent Prompt Composition](ARCHITECTURE.md#agent-prompt-composition)). `packages.resolve` gives an agent a package's functions and its `dependencies.packages` too. The preamble names no package's templates or functions, so a package documents its functions in their docstrings and shows their use in its starters: that is what an agent knows of them.
 
-A model package's template may ship no `source`: DDRNet23-Slim's Image Segmentation ([`packages/model.curio.ddrnet23-slim@1`](../packages/model.curio.ddrnet23-slim@1/manifest.json)) opens with the cell the backend writes for its model's type (`model_default_cell` in [`packages/application/model_packages.py`](../utk_curio/backend/app/packages/application/model_packages.py), served with the starters):
+A node may call the module of another package its package names in `dependencies.packages`. DDRNet23-Slim's Image Segmentation ([`packages/model.curio.ddrnet23-slim@1`](../packages/model.curio.ddrnet23-slim@1/manifest.json)) names the Segmentation package ([`packages/curio.segmentation@1`](../packages/curio.segmentation@1/README.md)), a package of one module and no node, and its starter, [`sources/image-segmentation.py`](../packages/model.curio.ddrnet23-slim@1/sources/image-segmentation.py), is its settings and one call:
 
 ```python
+from semantic_segmentation import segment_images
+
 model = curio_load_model("model.curio.ddrnet23-slim")
 classes = None  # every class the model names
 
-return curio_segment(input_0, model, classes)
+return segment_images(input_0, model, curio_derived_file, classes=classes)
 ```
+
+A model downloaded from the Discovery Catalog gets the same node, its code naming the model, and the same entry in `dependencies.packages`: the node the source's manifest names (`provider.options.node`). A model package's template that ships no `source` opens with the onnxruntime session and `session.run` skeleton the backend writes for any model (`model_default_cell` in [`packages/application/model_packages.py`](../utk_curio/backend/app/packages/application/model_packages.py), served with the starters); a new type of model's node is its package's own source, never a cell of the backend's.
 
 These helpers are in the sandbox's namespace for every Python node, with the other functions node code calls, each given with its arguments in [the functions page](../skills/node-functions/SKILL.md):
 
-- `curio_load_model("<model id>")` ([`sandbox/util/catalog_helpers.py`](../utk_curio/sandbox/util/catalog_helpers.py)) loads a model package's model: its `folder`, its `manifest`, its `labels`, its `path` (the `.onnx` file or the checkpoint folder its entry names, for a node that loads the weights itself), the `runner` that labels an image's pixels, opened on first use, and `run`, which feeds an ONNX graph the arrays a node prepared. Before the run the backend resolves every id a node's code names to the folder of a model package in the account's store (`resolve_models` in [`execution/node_exec.py`](../utk_curio/backend/app/execution/node_exec.py), over `packages.service.resolve_model_dirs`); a model the store does not hold gets none, and the call says to add it. Models ship as model packages under [`packages/`](../packages/), or are added from the Discovery Catalog's Hugging Face models source (§3).
+- `curio_load_model("<model id>")` ([`sandbox/util/catalog_helpers.py`](../utk_curio/sandbox/util/catalog_helpers.py)) loads a model package's model: its `id`, its `folder`, its `manifest` (the classes a segmentation model names among it, in `labels`) and its `path` (the `.onnx` file or the checkpoint folder its entry names, which the node's code, or its package's module, opens itself: an ONNX model in an onnxruntime session, `ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])`, a checkpoint with the library its package declares). Before the run the backend resolves every id a node's code names to the folder of a model package in the account's store (`resolve_models` in [`execution/node_exec.py`](../utk_curio/backend/app/execution/node_exec.py), over `packages.service.resolve_model_dirs`); a model the store does not hold gets none, and the call says to add it. Models ship as model packages under [`packages/`](../packages/), or are added from the Discovery Catalog's Hugging Face models source (§3).
 - A model package may ship without its weights and name them in its `model` block's `fetch`: a Hugging Face repository, the commit to read it at, and each file with its digest ([MODEL-CATALOG §6](MODEL-CATALOG.md#6-the-manifest), [`packages/domain/model_fetch.py`](../utk_curio/backend/app/packages/domain/model_fetch.py)). For a package that ships with Curio, a node's first run downloads them ([`packages/infrastructure/fetched_weights.py`](../utk_curio/backend/app/packages/infrastructure/fetched_weights.py)), into the package's entry folder or the folder `--model-weights-dir` names, and a node reads them in place (`resolve_model_weights` beside `resolve_model_dirs`); [`scripts/fetch_model_weights.py`](../scripts/fetch_model_weights.py) fetches them there ahead. While they are not there, `curio_load_model` stops, naming the script.
-- `curio_segment(images, model, classes=None, *, overlays=True)` ([`sandbox/util/vision.py`](../utk_curio/sandbox/util/vision.py)) runs a loaded segmentation model the way its manifest describes (a `runtime` of `onnx` on onnxruntime, `transformers` on Transformers) over every row's `path`, and returns the rows with `dominant_class`, `dominant_pct`, a `<class>_pct` per class, `overlay_url` and `segment_error` first. With `overlays`, each overlay is written with `curio_derived_file` (kind `"image"`, [`sandbox/util/collections.py`](../utk_curio/sandbox/util/collections.py)) and served back by the media route (§3.6).
+- `curio_derived_file(...)` ([`sandbox/util/collections.py`](../utk_curio/sandbox/util/collections.py)) names where a file derived from a collection's file goes, such as an overlay (kind `"image"`), which the media route serves back (§3.6). `segment_images(images, model, derived_file, *, classes=None, overlays=True)`, the Segmentation package's, takes it whole: it runs a loaded segmentation model the way its manifest describes (a `runtime` of `onnx` on onnxruntime, `transformers` on Transformers) over every row's `path`, writes each overlay where `derived_file` says, and returns the rows with `dominant_class`, `dominant_pct`, a `<class>_pct` per class, `overlay_url` and `segment_error` first. `curio_segment`, which did this inside Curio, is a retired name: a call of it raises, naming `segment_images`.
 
 ### 4.3 A built-in template in [`packages/curio.builtin@1/manifest.json`](../packages/curio.builtin@1/manifest.json)
 
 A generic Spatial Join that pairs the rows of two inputs whose shapes meet, by an operation picked on the node (or emits input_1's rows with a count of their pairs):
 
 ```jsonc
-{ "id": "spatial-join", "behavior": "spatial-join",
+{ "id": "spatial-join", "behavior": "code", "editor": "code", "engine": "python",
+  "source": "sources/spatial-join.py", "starterIsContent": true, "opensOnControls": true,
+  "widgets": [
+    {"name": "operation", "type": "choice", "label": "Operation", "default": "intersects", "options": {"choices": ["intersects", "within", "..."]}},
+    {"name": "output", "type": "choice", "label": "Output", "default": "pairs", "options": {"choices": ["pairs", "counts"]}}
+  ],
   "inputPorts": [
     {"types":["GEODATAFRAME"]},   // input_0, the left side (circle `in`, top of node)
     {"types":["GEODATAFRAME"]}    // input_1, the right side (circle `in_1`, bottom of node)
@@ -383,7 +388,7 @@ A generic Spatial Join that pairs the rows of two inputs whose shapes meet, by a
 }
 ```
 
-This one belongs in `curio.builtin@1`, not in a model package, because it's reusable for any spatial workflow. Generally: if a capability is reusable outside the package's narrow theme, factor it out into builtin.
+Its code, `sources/spatial-join.py`, is its settings and a short call, `return spatial_join(input_0, input_1, operation=[!! operation !!], output=[!! output !!])`, of the function of the package's module [`sources/spatial_join.py`](../packages/curio.builtin@1/sources/spatial_join.py), which holds the join, on geopandas `sjoin`. A run hands the built-in package's modules to every built-in Python node, which lists `spatial_join` under Functions. This one belongs in `curio.builtin@1`, not in a model package, because it's reusable for any spatial workflow. Generally: if a capability is reusable outside the package's narrow theme, factor it out into builtin.
 
 The agents' prompts describe every `curio.builtin@1` template from this manifest: the shared preamble gives its label, description, control, port types, how many connections its inputs accept, and interaction support, and other prompts name templates by label. The backend reads them from the manifest when it starts, so those lists follow a built-in template you add or change with no other edit (see [CONTRIBUTING.md, Agent Text](CONTRIBUTING.md#agent-text)).
 
@@ -391,10 +396,10 @@ A new feature of Curio, a built-in template among them, also gets a skill in [`s
 
 ### 4.4 Behavior hooks
 
-My Node's hook ships inside its package, in `sources/`; Spatial Join's lives with the built-ins in [`utk_curio/frontend/urban-workflows/src/adapters/node/`](../utk_curio/frontend/urban-workflows/src/adapters/node/). Accumulated Shadow runs on the built-in `code` behavior and needs no hook of its own.
+My Node's hook ships inside its package, in `sources/`; the built-ins' live in [`utk_curio/frontend/urban-workflows/src/adapters/node/`](../utk_curio/frontend/urban-workflows/src/adapters/node/). Accumulated Shadow and Spatial Join run on the built-in `code` behavior and need no hook of their own.
 
 - `sources/myNodeBehavior.tsx`, the hook the scaffold writes: reads `data.input` with `resolveInput`, which reads a sandbox artifact reference with `window.curio.fetchData` and passes an inline payload through; keeps the column picked in its body in `useState`; keeps that column as an output with `window.curio.storeOutput`, hands on the reference it answers with `data.outputCallback` and reports through `nodeState.setOutput`. It returns only `contentComponent`.
-- [`spatialJoinBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/spatialJoinBehavior.tsx): the only node here with two input ports, whose circles it draws with `handlesOverride`. Keeps what each circle holds apart (`data.portInputs`) and posts both inputs to `/spatial_join` (§4.5). Worth reading if you ever need a 2-input node.
+- A template with several input ports, as Spatial Join's two, needs no hook for them: it gets one fixed circle per port (`buildDescriptor` in [`registry/packagesClient.ts`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts)), keeps what each port holds apart (`data.portInputs`), and its code reads them, port k as `input_k` (`nodeInputFromPorts` in [`utils/inputSlots.ts`](../utk_curio/frontend/urban-workflows/src/utils/inputSlots.ts)).
 
 The package's hook registers from its bundle entry point, `sources/index.tsx`, through `window.curio`:
 
@@ -407,14 +412,14 @@ function registerAll(curio: CurioGlobal) {
 The built-in one registers in [`registry/builtinBehaviors.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinBehaviors.ts):
 
 ```typescript
-registerBehavior('spatial-join', useSpatialJoinBehavior);
+registerBehavior('data-export', useDataExportBehavior);
 ```
 
 Both land in one global registry; packages reference behavior keys by name, not by import.
 
 ### 4.5 The backend route
 
-Spatial Join's route is a single handler at the end of [`api/routes.py`](../utk_curio/backend/app/api/routes.py) (`POST /spatial_join`) that calls the generic `spatial_join` helper at [`utk_curio/backend/app/common/spatial.py`](../utk_curio/backend/app/common/spatial.py), on geopandas `sjoin`. Reusable utilities like that belong under `common/`, not in any specific blueprint. Accumulated Shadow has no route of its own: its work runs in the sandbox.
+My Node's route is a single handler in [`api/routes.py`](../utk_curio/backend/app/api/routes.py) (`POST /storeOutput`), which hands the rows the node made in the browser to the sandbox (`/artifacts/store`), and answers the output reference the node hands on: a Python or JavaScript node reads only a stored output. Reusable utilities a route calls belong under `common/`, not in any specific blueprint. Accumulated Shadow and Spatial Join have no route of their own: their work runs in the sandbox, in their packages' functions.
 
 ### 4.6 Shipping the package
 
@@ -438,11 +443,11 @@ When you install a package that ships its own custom node UIs, Curio needs to fi
 
 This means *adding a new package to a running Curio instance does not require rebuilding Curio*, because the package's `scripts/behaviors.js` is loaded dynamically. Authors bundle once; deployments stay decoupled.
 
-The behaviors in `curio.builtin@1` (`code`, `vega`, `spatial-join`, `data-pool`, …) are an exception: they live in Curio's main bundle because they must be registered before *any* package registry exists.
+The behaviors in `curio.builtin@1` (`code`, `vega`, `data-export`, `data-pool`, …) are an exception: they live in Curio's main bundle because they must be registered before *any* package registry exists.
 
 ## 5. Recipe: add a Flask blueprint
 
-When your node needs server-side capabilities the sandbox can't provide, add a route. A single route can join an existing blueprint, as Spatial Join's joins the `api` blueprint (§4.5). A feature with several routes gets its own blueprint under `utk_curio/backend/app/<feature>/`, as the Scenario Catalog does ([`scenario_catalog/routes.py`](../utk_curio/backend/app/scenario_catalog/routes.py): `scenarios_bp`, under `/api/scenarios`). Third-party APIs and long downloads are Discovery Catalog sources and jobs (§3).
+When your node needs server-side capabilities the sandbox can't provide, add a route. A single route can join an existing blueprint, as `/storeOutput` joins the `api` blueprint (§4.5). A feature with several routes gets its own blueprint under `utk_curio/backend/app/<feature>/`, as the Scenario Catalog does ([`scenario_catalog/routes.py`](../utk_curio/backend/app/scenario_catalog/routes.py): `scenarios_bp`, under `/api/scenarios`). Third-party APIs and long downloads are Discovery Catalog sources and jobs (§3).
 
 1. **Create the directory + entry-point.** `utk_curio/backend/app/<feature>/__init__.py`:
    ```python
@@ -546,7 +551,7 @@ The smallest possible package adds one template plus its behavior hook. Use this
      //   reference it answers to `data.outputCallback`.
      // Return `{ contentComponent: <YourUI /> }` to render a body, or omit for
      //   icon-only nodes (also set `containerStyle.noContent: true` in the
-     //   manifest; see §4.4 for the spatial-join hook).
+     //   manifest; see §4.4 for My Node's hook).
      return { /* contentComponent: ..., dynamicHandles?, handlesOverride? */ };
    };
    ```
@@ -688,7 +693,9 @@ repo's build list:
    space.
 4. The user reviews the justification, the diff, dependencies, and preview; Apply promotes
    the **exact reviewed artifact digest** through the normal installer (backup held,
-   journaled, rollback honest).
+   journaled, rollback honest). An extension's prior copy keeps its libraries until the
+   build's nodes are made; then those only it asked for are taken back, as an Update
+   takes back the old version's.
 
 **Looks are prompt-driven, never repo fixtures**: the package-writing mode's prompt
 carries one generic authoring contract (register exactly the manifest's behavior keys; hook

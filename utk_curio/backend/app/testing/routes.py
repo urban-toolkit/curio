@@ -26,6 +26,17 @@ a normal ``curio.py start`` does not.
 An app built with ``CURIO_TESTING`` also counts the requests it is serving
 (``in_flight.py``), so ``reset-db`` can wait for the ones a test's closed page
 left running before it deletes their user.
+
+In a start of several backend processes (``--backend-processes``) a testing
+route reaches the home process, since it names no dataflow. A route whose
+change lives in a process's memory makes it in every process of the start
+(``every_process.py``): the record clock, Curio's own LLM endpoints, the run
+hold, pip's behaviour, the wheelhouse's pip settings and a broken library's
+import path; and ``reset-db`` closes every process's door before it deletes,
+and opens every one after. Users, projects, the shared catalog and the
+package stores are the database and the disk, which every process reads, so
+those routes act once. The scripted model's queues are the dataflow's own
+process's, so ``agent-script`` is sent there by its dataflow's key.
 """
 
 from __future__ import annotations
@@ -35,7 +46,7 @@ import logging
 import re
 import shutil
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, current_app, jsonify, request
 
@@ -45,12 +56,14 @@ from utk_curio.backend.config import _is_dev, _is_testing
 from utk_curio.backend.app.agents import service as agents_service
 from utk_curio.backend.app.agents.infrastructure import testing_provider
 from utk_curio.backend.extensions import db
+from utk_curio.backend.app.testing import every_process
 from utk_curio.backend.app.testing.in_flight import REFUSAL, RESET_WAIT_SECONDS, InFlightRequests
 from utk_curio.backend.app.users import repositories as user_repo
 from utk_curio.backend.app.users import security
 from utk_curio.backend.app.projects import services as project_services
 from utk_curio.backend.app.projects.schemas import ProjectCreate
 from utk_curio.backend.app.runs import jobs as run_jobs
+from utk_curio.common import backend_processes
 
 
 testing_bp = Blueprint("testing", __name__, url_prefix="/api/testing")
@@ -93,6 +106,9 @@ _IN_FLIGHT_TOKEN = "curio.testing.in_flight_token"
 #: The liveness probe (``api/routes.py``), which says the backend is up. It
 #: reads nothing a reset deletes, and a backend that is resetting is up.
 _PROBE = "api.live"
+#: The harness's own routes, which a reset neither counts nor refuses: these,
+#: and the same changes another backend process of the start sends.
+_HARNESS_BLUEPRINTS = (testing_bp.name, every_process.internal_bp.name)
 
 
 def _count_request_in():
@@ -103,9 +119,12 @@ def _count_request_in():
     a page whose test is over, and it would only run against the next test's
     empty database. The probe answers all the same: the shard isolation e2e
     asks it of the other shards, which reset between their own tests (#1171).
+    The harness's own include the changes another backend process of the start
+    sends (``every_process.py``): a reset's own close would wait for itself,
+    and the call that opens the door would be refused at it.
     """
     in_flight = current_app.extensions.get(_IN_FLIGHT)
-    if in_flight is None or request.blueprint == testing_bp.name or request.endpoint == _PROBE:
+    if in_flight is None or request.blueprint in _HARNESS_BLUEPRINTS or request.endpoint == _PROBE:
         return None
     token = in_flight.enter(f"{request.method} {request.path}")
     if token is None:
@@ -414,6 +433,114 @@ def _wait_for_runs(runs: list, timeout: float) -> list[str]:
     return sorted(_still_going(job) for job in runs if job.live)
 
 
+def _in_flight() -> InFlightRequests:
+    """This app's count of the requests it serves; an app built outside a test
+    rig counts none, and a reset there waits for nothing."""
+    in_flight = current_app.extensions.get(_IN_FLIGHT)
+    return in_flight if in_flight is not None else InFlightRequests()
+
+
+#: What a process's part of a reset names: the requests, agent jobs and runs it
+#: waited for and those still going after the wait.
+_WAIT_LISTS = ("waited_for", "still_running", "agent_jobs", "agent_jobs_still_running", "runs", "runs_still_going")
+
+
+@every_process.step("reset.close")
+def _closed_for_a_reset(_arguments: dict) -> dict:
+    """This process's part of a reset before anything is deleted: its door
+    closed to every new request but the liveness probe, its runs stopped as
+    the user's Stop does and the run hold released, its agent jobs and chat
+    turns stopped, then the requests running when the door closed, those jobs
+    and those runs waited for, within ``RESET_WAIT_SECONDS`` in all. What it
+    waited for and what is still going, by name (:data:`_WAIT_LISTS`), and how
+    long it waited. The door stays closed until ``reset.open``."""
+    in_flight = _in_flight()
+    waited_for = in_flight.close()
+    try:
+        # Stopped before the hold goes, so a run the last test left going
+        # starts no node after those it runs, a held one included.
+        runs = _runs_going([])
+        # A hold a failed test left standing would stop the next test's runs,
+        # and a held run's stream would hold this reset for the whole wait.
+        run_jobs.set_hold(False)
+        # Stopped before the wait: a page's stream of a job is a request in
+        # flight until the job ends. Chat turns too: their scripted holds
+        # released and their waiting asks withdrawn first, so none starts.
+        stopped_jobs = agents_service.stop_agent_jobs() + agents_service.stop_turns()
+        if waited_for:
+            log.info("reset-db waits for %d request(s) in flight: %s",
+                     len(waited_for), ", ".join(waited_for))
+        if stopped_jobs:
+            log.info("reset-db stops %d agent job(s): %s",
+                     len(stopped_jobs), ", ".join(map(_job_name, stopped_jobs)))
+        if runs:
+            log.info("reset-db stops %d run(s): %s", len(runs), ", ".join(map(_job_name, runs)))
+        started = time.monotonic()
+        still_running = in_flight.drain(RESET_WAIT_SECONDS)
+        # And a run a request in flight started after the door closed.
+        runs = _runs_going(runs)
+        jobs_still_running = _wait_for_jobs(
+            stopped_jobs, RESET_WAIT_SECONDS - (time.monotonic() - started),
+        )
+        runs_still_going = _wait_for_runs(runs, RESET_WAIT_SECONDS - (time.monotonic() - started))
+        waited_seconds = round(time.monotonic() - started, 3)
+    except BaseException:
+        in_flight.open()
+        raise
+    if still_running:
+        log.warning("reset-db waited %.1f s and resets under %d request(s) still running: %s",
+                    waited_seconds, len(still_running), ", ".join(still_running))
+    elif waited_for:
+        log.info("reset-db waited %.2f s for %s", waited_seconds, ", ".join(waited_for))
+    if jobs_still_running:
+        log.warning("reset-db waited %.1f s and resets under %d agent job(s) still running: %s",
+                    waited_seconds, len(jobs_still_running), ", ".join(jobs_still_running))
+    return {
+        "waited_for": waited_for,
+        "waited_seconds": waited_seconds,
+        "still_running": still_running,
+        "agent_jobs": sorted(map(_job_name, stopped_jobs)),
+        "agent_jobs_still_running": jobs_still_running,
+        "runs": sorted(map(_job_name, runs)),
+        "runs_still_going": runs_still_going,
+    }
+
+
+@every_process.step("reset.open")
+def _opened_after_a_reset(arguments: dict) -> dict:
+    """This process's door open again after a reset. With ``restore``, after
+    a reset that deleted, its record clock and its LLM endpoints are put back
+    first: a clock a failed test left set would date the next test's records,
+    and a stand-in endpoint would offer the next test Curio's models."""
+    if arguments.get("restore"):
+        record_clock.set_now(None)
+        _restore_llm_deployment()
+    _in_flight().open()
+    return {}
+
+
+def _merged_waits(answers: dict) -> dict:
+    """What every process's part of a reset waited for and left going
+    (``reset.close``), as one reset names it: each list as one, sorted, and
+    the longest wait, since the processes waited at the same time."""
+    merged = {key: sorted(name for answer in answers.values() for name in answer.get(key) or [])
+              for key in _WAIT_LISTS}
+    merged["waited_seconds"] = max((answer.get("waited_seconds") or 0.0 for answer in answers.values()),
+                                   default=0.0)
+    return merged
+
+
+def _open_after_a_reset(restore: bool) -> str | None:
+    """Every process's door open again (``reset.open``): None, or why some
+    process's may not be."""
+    try:
+        every_process.everywhere("reset.open", {"restore": restore})
+    except every_process.NotEveryProcess as exc:
+        log.error("reset-db could not open every backend process after it: %s", exc)
+        return str(exc)
+    return None
+
+
 @testing_bp.route("/reset-db", methods=["POST"])
 def reset_db():
     """Truncate mutable tables so the next test starts with a clean slate.
@@ -457,13 +584,19 @@ def reset_db():
     the log, and the answer is 409 with nothing deleted. The next reset stops
     and waits for it again.
 
+    In a start of several backend processes, every process does all of that
+    at the same time (``reset.close``), and the rows are deleted only once
+    every one has closed with no run going; then every process opens again
+    (``reset.open``), whatever came of the reset. A process that could not
+    close stops the reset: the answer is 502 with nothing deleted.
+
     Response: ``{"truncated": [...], "stores_cleared": [...], "waited_for":
     [...], "waited_seconds": n, "still_running": [...], "agent_jobs": [...],
     "agent_jobs_still_running": [...], "runs": [...], "runs_still_going":
     []}``, each request named by its method and path, each agent job by its
-    kind and execution id, each run by its kind and id. A 409 has the same
-    shape with an ``error`` and the runs still going, and no ``truncated`` or
-    ``stores_cleared``.
+    kind and execution id, each run by its kind and id, those of every
+    process together. A 409 has the same shape with an ``error`` and the runs
+    still going, and no ``truncated`` or ``stores_cleared``.
     """
     body = request.get_json(silent=True) or {}
     requested = body.get("tables")
@@ -485,90 +618,61 @@ def reset_db():
             )
         tables = requested
 
-    in_flight = current_app.extensions.get(_IN_FLIGHT) or InFlightRequests()
-    waited_for = in_flight.close()
     try:
-        # Stopped before the hold goes, so a run the last test left going
-        # starts no node after those it runs, a held one included.
-        runs = _runs_going([])
-        # A hold a failed test left standing would stop the next test's runs,
-        # and a held run's stream would hold this reset for the whole wait.
-        run_jobs.set_hold(False)
-        # Stopped before the wait: a page's stream of a job is a request in
-        # flight until the job ends. Chat turns too: their scripted holds
-        # released and their waiting asks withdrawn first, so none starts.
-        stopped_jobs = agents_service.stop_agent_jobs() + agents_service.stop_turns()
-        if waited_for:
-            log.info("reset-db waits for %d request(s) in flight: %s",
-                     len(waited_for), ", ".join(waited_for))
-        if stopped_jobs:
-            log.info("reset-db stops %d agent job(s): %s",
-                     len(stopped_jobs), ", ".join(map(_job_name, stopped_jobs)))
-        if runs:
-            log.info("reset-db stops %d run(s): %s", len(runs), ", ".join(map(_job_name, runs)))
-        started = time.monotonic()
-        still_running = in_flight.drain(RESET_WAIT_SECONDS)
-        # And a run a request in flight started after the door closed.
-        runs = _runs_going(runs)
-        jobs_still_running = _wait_for_jobs(
-            stopped_jobs, RESET_WAIT_SECONDS - (time.monotonic() - started),
-        )
-        runs_still_going = _wait_for_runs(runs, RESET_WAIT_SECONDS - (time.monotonic() - started))
-        waited_seconds = round(time.monotonic() - started, 3)
-        if still_running:
-            log.warning("reset-db waited %.1f s and resets under %d request(s) still running: %s",
-                        waited_seconds, len(still_running), ", ".join(still_running))
-        elif waited_for:
-            log.info("reset-db waited %.2f s for %s", waited_seconds, ", ".join(waited_for))
-        if jobs_still_running:
-            log.warning("reset-db waited %.1f s and resets under %d agent job(s) still running: %s",
-                        waited_seconds, len(jobs_still_running), ", ".join(jobs_still_running))
-        run_names = sorted(map(_job_name, runs))
-        if runs_still_going:
+        closed, unclosed = every_process.everywhere("reset.close"), {}
+    except every_process.NotEveryProcess as exc:
+        closed, unclosed = exc.answers, exc.problems
+    waited = _merged_waits(closed)
+    answer, status, restore = {}, 200, False
+    try:
+        going = waited["runs_still_going"]
+        if unclosed:
+            # Never while a process may still serve: what it writes next
+            # would land in the next test's tables.
+            why = "; ".join(unclosed[number] for number in sorted(unclosed))
+            log.error("reset-db did not reset: not every backend process closed for it: %s", why)
+            answer, status = {"error": f"Did not reset: not every backend process closed for it: {why}",
+                              **waited}, 502
+        elif going:
             # Never under a live run: its next write would land in the next
             # test's tables, and its node would hold the next test's sandbox.
-            going = "; ".join(runs_still_going)
             log.error("reset-db did not reset: %d run(s) still going after %.1f s: %s",
-                      len(runs_still_going), waited_seconds, going)
-            return jsonify({
-                "error": (f"Did not reset: {len(runs_still_going)} run(s) still going "
-                          f"after {waited_seconds:.1f} s: {going}"),
-                "waited_for": waited_for,
-                "waited_seconds": waited_seconds,
-                "still_running": still_running,
-                "agent_jobs": sorted(map(_job_name, stopped_jobs)),
-                "agent_jobs_still_running": jobs_still_running,
-                "runs": run_names,
-                "runs_still_going": runs_still_going,
-            }), 409
-
-        truncated = []
-        for table in tables:
-            with contextlib.suppress(Exception):
-                db.session.execute(db.text(f'DELETE FROM "{table}"'))
-                truncated.append(table)
-        db.session.commit()
-
-        stores_cleared = []
-        if body.get("stores", True):
-            stores_cleared = _clear_test_user_stores()
-        # A clock a failed test left set would date the next test's records.
-        record_clock.set_now(None)
-        # So would a stand-in LLM endpoint offer the next test Curio's models.
-        _restore_llm_deployment()
+                      len(going), waited["waited_seconds"], "; ".join(going))
+            answer, status = {"error": (f"Did not reset: {len(going)} run(s) still going "
+                                        f"after {waited['waited_seconds']:.1f} s: {'; '.join(going)}"),
+                              **waited}, 409
+        else:
+            truncated = []
+            for table in tables:
+                with contextlib.suppress(Exception):
+                    db.session.execute(db.text(f'DELETE FROM "{table}"'))
+                    truncated.append(table)
+            db.session.commit()
+            stores_cleared = _clear_test_user_stores() if body.get("stores", True) else []
+            restore = True
+            answer = {"truncated": truncated, "stores_cleared": stores_cleared, **waited}
     finally:
-        in_flight.open()
-    return jsonify({
-        "truncated": truncated,
-        "stores_cleared": stores_cleared,
-        "waited_for": waited_for,
-        "waited_seconds": waited_seconds,
-        "still_running": still_running,
-        "agent_jobs": sorted(map(_job_name, stopped_jobs)),
-        "agent_jobs_still_running": jobs_still_running,
-        "runs": run_names,
-        "runs_still_going": [],
-    }), 200
+        unopened = _open_after_a_reset(restore)
+    if unopened:
+        return jsonify({**answer, "error": f"Not every backend process opened after the reset: {unopened}"}), 502
+    return jsonify(answer), status
+
+
+def _not_every_process(exc: every_process.NotEveryProcess):
+    """A change some backend process of the start did not take: 502, naming
+    each."""
+    log.error("[every-process] not every backend process took %s: %s", exc.name, exc)
+    return jsonify({"error": f"Not every backend process took it: {exc}"}), 502
+
+
+@every_process.step("run-hold")
+def _run_hold_here(arguments: dict) -> dict:
+    """This process's run hold, set to ``hold`` when *arguments* name it, else
+    read: whether it holds, and how many nodes wait at it."""
+    if "hold" in arguments:
+        held = bool(arguments["hold"])
+        return {"held": held, "waiting": run_jobs.set_hold(held)}
+    return run_jobs.hold_state()
 
 
 @testing_bp.route("/run-hold", methods=["GET", "POST"])
@@ -577,22 +681,37 @@ def run_hold():
 
     The server-side twin of holding a page's node requests (``run_all.py``): a
     run started by the canvas executes on the server, out of the page's reach.
+    A run executes in its dataflow's process, so the hold is every process's,
+    and the nodes waiting are counted in every process.
 
     Body (POST): ``{"hold": true}`` or ``{"hold": false}``.
     Response: ``{"held": bool, "waiting": n}``. ``waiting`` is how many nodes
     wait right now; on a release, how many it let go.
     """
+    arguments: dict = {}
     if request.method == "POST":
         body = request.get_json(silent=True) or {}
         if not isinstance(body.get("hold"), bool):
             return jsonify({"error": "hold must be true or false"}), 400
-        waiting = run_jobs.set_hold(body["hold"])
-        return jsonify({"held": body["hold"], "waiting": waiting}), 200
-    return jsonify(run_jobs.hold_state()), 200
+        arguments = {"hold": body["hold"]}
+    try:
+        answers = every_process.everywhere("run-hold", arguments)
+    except every_process.NotEveryProcess as exc:
+        return _not_every_process(exc)
+    held = arguments["hold"] if arguments else all(answer.get("held") for answer in answers.values())
+    return jsonify({"held": held, "waiting": sum(int(answer.get("waiting") or 0) for answer in answers.values())}), 200
 
 
 def _iso(moment: datetime) -> str:
     return moment.isoformat().replace("+00:00", "Z")
+
+
+@every_process.step("clock")
+def _clock_here(arguments: dict) -> dict:
+    """This process's record clock ``offsetMicroseconds`` from the system
+    clock, as the process the call reached set its own: its time now."""
+    record_clock.set_offset(timedelta(microseconds=int(arguments.get("offsetMicroseconds") or 0)))
+    return {"now": _iso(record_clock.utc_now())}
 
 
 @testing_bp.route("/clock", methods=["POST", "DELETE"])
@@ -602,25 +721,27 @@ def clock():
     The server-side twin of Playwright's page clock: an e2e test that
     photographs catalog ages runs its browser on a fixed date, and this puts
     the records it makes on the same date, so they read "1m ago" beside the
-    shipped items' fixed dates.
+    shipped items' fixed dates. Every backend process's clock reads the same.
 
     Body (POST): ``{"now": "<ISO 8601 time with a zone>"}``. The clock reads
     that time now and runs on from it. ``DELETE`` puts it back on the system
     clock, as ``reset-db`` does.
     Response: ``{"now": "<the record clock's time>"}``.
     """
-    if request.method == "DELETE":
-        record_clock.set_now(None)
-        return jsonify({"now": _iso(record_clock.utc_now())}), 200
-    body = request.get_json(silent=True) or {}
-    raw = body.get("now")
+    offset = timedelta(0)
+    if request.method == "POST":
+        raw = (request.get_json(silent=True) or {}).get("now")
+        try:
+            moment = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except ValueError:
+            moment = None
+        if moment is None or moment.tzinfo is None:
+            return jsonify({"error": "now must be an ISO 8601 time with a zone"}), 400
+        offset = moment.astimezone(timezone.utc) - datetime.now(timezone.utc)
     try:
-        moment = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
-    except ValueError:
-        moment = None
-    if moment is None or moment.tzinfo is None:
-        return jsonify({"error": "now must be an ISO 8601 time with a zone"}), 400
-    record_clock.set_now(moment.astimezone(timezone.utc))
+        every_process.everywhere("clock", {"offsetMicroseconds": offset // timedelta(microseconds=1)})
+    except every_process.NotEveryProcess as exc:
+        return _not_every_process(exc)
     return jsonify({"now": _iso(record_clock.utc_now())}), 200
 
 
@@ -638,10 +759,41 @@ def _restore_llm_deployment() -> None:
         settings.DEFAULT_LLM_ENDPOINTS = saved
 
 
+def _stand_in_endpoints(arguments: dict) -> tuple:
+    """The endpoints *arguments* name: the scripted one (``scripted``), or
+    those of an endpoint file's text (``file``), read as the launch reads the
+    file; ``EndpointFileError`` for a text the launch would refuse."""
+    from utk_curio.common import llm_endpoint
+
+    if arguments.get("scripted") is True:
+        return (llm_endpoint.Endpoint(name="Scripted", api_type="testing", base_url="",
+                                      api_key="scripted", models=("scripted",)),)
+    return llm_endpoint.parse_endpoints(str(arguments.get("file") or ""), "the test's endpoint file")
+
+
+@every_process.step("llm-deployment")
+def _llm_deployment_here(arguments: dict) -> dict:
+    """This process's own LLM endpoints: the stand-ins *arguments* name, or
+    with ``restore`` the launch's back. What it offers now."""
+    global _llm_deployment_saved
+    from utk_curio.backend import config as settings
+
+    if arguments.get("restore"):
+        _restore_llm_deployment()
+    else:
+        endpoints = _stand_in_endpoints(arguments)
+        if _llm_deployment_saved is None:
+            _llm_deployment_saved = tuple(settings.DEFAULT_LLM_ENDPOINTS)
+        settings.DEFAULT_LLM_ENDPOINTS = endpoints
+    return {"endpoints": [
+        {"name": endpoint.name, "models": list(endpoint.models)} for endpoint in settings.DEFAULT_LLM_ENDPOINTS
+    ]}
+
+
 @testing_bp.route("/llm-deployment", methods=["POST", "DELETE"])
 def llm_deployment():
     """Give this backend stand-in endpoints of its own, as
-    ``--llm-endpoint-file`` does, or take them back.
+    ``--llm-endpoint-file`` does, or take them back, in every backend process.
 
     For a test of what the page is told about Curio's own models (its
     endpoints' names and models, never a host or a key). Nothing is asked of
@@ -655,30 +807,27 @@ def llm_deployment():
     endpoints back, as ``reset-db`` does.
     Response: ``{"endpoints": [{"name", "models"}]}``, what is now offered.
     """
-    global _llm_deployment_saved
-    from utk_curio.backend import config as settings
     from utk_curio.common import llm_endpoint
 
+    arguments: dict = {"restore": True}
     if request.method == "POST":
         body = request.get_json(silent=True) or {}
         if body.get("scripted") is True:
-            endpoints = (llm_endpoint.Endpoint(name="Scripted", api_type="testing", base_url="",
-                                               api_key="scripted", models=("scripted",)),)
+            arguments = {"scripted": True}
         elif not isinstance(body.get("file"), str):
             return jsonify({"error": "file must be an endpoint file's text"}), 400
         else:
+            arguments = {"file": body["file"]}
+            # Read here first, so a text the launch would refuse reaches no process.
             try:
-                endpoints = llm_endpoint.parse_endpoints(body["file"], "the test's endpoint file")
+                _stand_in_endpoints(arguments)
             except llm_endpoint.EndpointFileError as exc:
                 return jsonify({"error": str(exc)}), 400
-        if _llm_deployment_saved is None:
-            _llm_deployment_saved = tuple(settings.DEFAULT_LLM_ENDPOINTS)
-        settings.DEFAULT_LLM_ENDPOINTS = endpoints
-    else:
-        _restore_llm_deployment()
-    return jsonify({"endpoints": [
-        {"name": endpoint.name, "models": list(endpoint.models)} for endpoint in settings.DEFAULT_LLM_ENDPOINTS
-    ]}), 200
+    try:
+        answers = every_process.everywhere("llm-deployment", arguments)
+    except every_process.NotEveryProcess as exc:
+        return _not_every_process(exc)
+    return jsonify(answers[backend_processes.this_process()]), 200
 
 
 @testing_bp.route("/stub-project", methods=["POST"])
@@ -785,6 +934,36 @@ def _scripted_guard():
     return None
 
 
+def _misrouted_script(attachment: str | None = None):
+    """A refusal when this call to the scripted model's queues belongs to
+    another backend process, else ``None``.
+
+    The queues are each process's own, and a dataflow's turns run in the
+    process that owns it. So in a start of several processes a call names the
+    dataflow whose turns it scripts or reads in the ``X-Curio-Dataflow``
+    header, which nginx routes by, and a process that does not own it refuses
+    it (421) rather than leave the turn on the fallback reply. A script for an
+    attachment's runs must name one (400). A call that names none is the
+    home process's, for the calls home makes itself."""
+    if backend_processes.process_count() <= 1:
+        return None
+    dataflow = (request.headers.get(backend_processes.ROUTE_HEADER) or "").strip()
+    if not dataflow:
+        if attachment:
+            return jsonify({"error": (f"The replies for attachment {attachment} name no dataflow: with several "
+                                      f"backend processes, send its dataflow in the {backend_processes.ROUTE_HEADER} "
+                                      "header, so they reach the process that runs its turns.")}), 400
+        return None
+    from utk_curio.backend.app.collaboration import owner_guard
+
+    what = f"the scripted replies for attachment {attachment}" if attachment else "the scripted model's queues"
+    try:
+        owner_guard.refuse(dataflow, what=what)
+    except owner_guard.NotTheOwner as exc:
+        return jsonify({"error": exc.description}), 421
+    return None
+
+
 #: A scripted node id has the shape of the uuid4 the server would mint.
 _UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
@@ -851,6 +1030,10 @@ def agent_script_push():
         previous test would be consumed by this one and the failure would point
         anywhere but at the cause.
 
+    With several backend processes the ``X-Curio-Dataflow`` header names the
+    dataflow whose turns the replies answer, and only the process that owns
+    it queues them (:func:`_misrouted_script`); the reset is that process's.
+
     Response: ``{"pending": n}``
     """
     denied = _scripted_guard()
@@ -886,6 +1069,9 @@ def agent_script_push():
     attachment = body.get("attachmentId")
     if attachment is not None and not (isinstance(attachment, str) and attachment):
         return jsonify({"error": "'attachmentId' must be an attachment's id"}), 400
+    misrouted = _misrouted_script(attachment)
+    if misrouted is not None:
+        return misrouted
     if body.get("reset", True):
         testing_provider.reset()
     testing_provider.push_replies(*replies, attachment=attachment)
@@ -918,9 +1104,10 @@ def agent_script_read():
 
     Response: ``{"pending": n, "captured": [[{role, content}, ...], ...],
     "calls": [{configId, model}, ...], "offered": [{tools, toolChoice}, ...]}``,
-    and ``"held": {name: n}`` while a call is held.
+    and ``"held": {name: n}`` while a call is held: the process's that owns
+    the dataflow the ``X-Curio-Dataflow`` header names.
     """
-    denied = _scripted_guard()
+    denied = _scripted_guard() or _misrouted_script()
     if denied is not None:
         return denied
     body = {
@@ -942,7 +1129,7 @@ def agent_script_release():
     Body: ``{"hold": <name>}``. Response: ``{"held": {name: n}}``, the holds
     calls still wait on.
     """
-    denied = _scripted_guard()
+    denied = _scripted_guard() or _misrouted_script()
     if denied is not None:
         return denied
     name = (request.get_json(silent=True) or {}).get("hold")
@@ -955,7 +1142,7 @@ def agent_script_release():
 @testing_bp.route("/agent-script", methods=["DELETE"])
 def agent_script_reset():
     """Drop the queue and the capture log. ``{"pending": 0}``."""
-    denied = _scripted_guard()
+    denied = _scripted_guard() or _misrouted_script()
     if denied is not None:
         return denied
     testing_provider.reset()
@@ -1015,10 +1202,13 @@ def broken_library():
     Answers ``{"name", "version", "path", "versionSatisfied", "importError"}``
     so a caller can assert the premise — pip WOULD skip this, and the import
     DOES fail — before asserting anything about a user-facing surface.
+
+    The files are the one disk's, so this process writes them; the folder is
+    on every backend process's import path, since whichever process the page
+    reaches installs and probes.
     """
     import importlib
     import importlib.util
-    import os
     import sys
 
     from utk_curio.backend.app.packages.infrastructure import pip_runner
@@ -1058,9 +1248,10 @@ def broken_library():
         ) if root.is_dir() else []
         if not remaining:
             shutil.rmtree(root, ignore_errors=True)
-            _drop_from_import_path(str(root))
-        importlib.invalidate_caches()
-        pip_runner.forget_import_probes()
+        try:
+            every_process.everywhere("broken-library", {"path": str(root), "onPath": bool(remaining)})
+        except every_process.NotEveryProcess as exc:
+            return _not_every_process(exc)
         return jsonify({"name": name, "removed": True, "remaining": remaining}), 200
 
     # Checked here rather than beside the other input validation, because it is
@@ -1092,17 +1283,10 @@ def broken_library():
     )
 
     path = str(root)
-    if path not in sys.path:
-        sys.path.insert(0, path)
-    existing = os.environ.get("PYTHONPATH")
-    if not existing or path not in existing.split(os.pathsep):
-        os.environ["PYTHONPATH"] = (
-            f"{path}{os.pathsep}{existing}" if existing else path
-        )
-    # The metadata finder caches directory listings, and the probe memoises per
-    # (distribution, version) — both would otherwise answer from before this.
-    importlib.invalidate_caches()
-    pip_runner.forget_import_probes()
+    try:
+        every_process.everywhere("broken-library", {"path": path, "onPath": True})
+    except every_process.NotEveryProcess as exc:
+        return _not_every_process(exc)
 
     return jsonify({
         "name": name,
@@ -1113,6 +1297,33 @@ def broken_library():
         # ... and the import is not.
         "importError": pip_runner.import_failures([name]).get(name),
     }), 200
+
+
+@every_process.step("broken-library")
+def _broken_library_here(arguments: dict) -> dict:
+    """The fake libraries' folder ``path`` on this process's import path and
+    its children's (``onPath``), or off both, and its import caches and
+    probes forgotten: the metadata finder caches folder listings, and the
+    probe keeps its answer per distribution and version, so both would
+    otherwise answer from before."""
+    import importlib
+    import os
+    import sys
+
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
+
+    path = str(arguments["path"])
+    if arguments.get("onPath"):
+        if path not in sys.path:
+            sys.path.insert(0, path)
+        existing = os.environ.get("PYTHONPATH")
+        if not existing or path not in existing.split(os.pathsep):
+            os.environ["PYTHONPATH"] = f"{path}{os.pathsep}{existing}" if existing else path
+    else:
+        _drop_from_import_path(path)
+    importlib.invalidate_caches()
+    pip_runner.forget_import_probes()
+    return {}
 
 
 def _drop_from_import_path(path: str) -> None:
@@ -1174,14 +1385,30 @@ def pip_behaviour():
 
     Overriding is idempotent and always restores from the ORIGINALS captured on
     the first call, so repeated or interleaved modes cannot stack wrappers.
-    """
-    from utk_curio.backend.app.packages.infrastructure import pip_runner
 
+    A package is added, and a dataflow's libraries installed, by whichever
+    backend process the page reaches, so every process of the start fails the
+    same way.
+    """
     body = request.get_json(silent=True) or {}
     mode = (body.get("mode") or "normal").strip()
     if mode not in _PIP_MODES:
         return jsonify({"error": f"mode must be one of {list(_PIP_MODES)}"}), 400
+    try:
+        every_process.everywhere("pip-behaviour", {"mode": mode})
+    except every_process.NotEveryProcess as exc:
+        return _not_every_process(exc)
+    return jsonify({"mode": mode}), 200
 
+
+@every_process.step("pip-behaviour")
+def _pip_behaviour_here(arguments: dict) -> dict:
+    """This process's pip made to fail the way ``mode`` names, or put back."""
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
+
+    mode = str(arguments.get("mode") or "normal")
+    if mode not in _PIP_MODES:
+        raise ValueError(f"mode must be one of {list(_PIP_MODES)}")
     if not _PIP_ORIGINALS:
         _PIP_ORIGINALS.update({
             "install_python_deps": pip_runner.install_python_deps,
@@ -1209,7 +1436,7 @@ def pip_behaviour():
         pip_runner.import_failures_in = _no_probe
 
     pip_runner.forget_import_probes()
-    return jsonify({"mode": mode}), 200
+    return {"mode": mode}
 
 
 @testing_bp.route("/package-store", methods=["POST"])
@@ -1422,10 +1649,13 @@ def wheelhouse():
     install a test then sets off is a real one. ``status`` and ``stage`` answer
     ``installed``, per distribution. ``restore`` puts pip's settings back,
     removes the wheelhouse and uninstalls what it held.
+
+    The wheels and the uninstall are the one disk's and the one interpreter's,
+    so this process does them; pip's settings are every backend process's,
+    since whichever process the page reaches installs.
     """
     import base64
     import binascii
-    import os
 
     from utk_curio.backend.app.packages.infrastructure import pip_runner
 
@@ -1445,14 +1675,12 @@ def wheelhouse():
     root = _wheelhouse_root()
     if action == "restore":
         staged = _staged_dists()
-        # Settings first: whatever the uninstall below answers, no later pip in
-        # this process may be left reading only a wheelhouse.
-        for key, value in _WHEELHOUSE_ENV_ORIGINALS.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
-        _WHEELHOUSE_ENV_ORIGINALS.clear()
+        # Settings first, in every process: whatever the uninstall below
+        # answers, no later pip may be left reading only a wheelhouse.
+        try:
+            every_process.everywhere("wheelhouse", {"restore": True})
+        except every_process.NotEveryProcess as exc:
+            return _not_every_process(exc)
         shutil.rmtree(root, ignore_errors=True)
         pip_runner.uninstall_python_deps(staged)
         return jsonify({"restored": True, "installed": _installed_map(staged)}), 200
@@ -1483,17 +1711,43 @@ def wheelhouse():
     # A copy an earlier run left would make pip answer "already satisfied", and
     # a test would pass over an install that never ran.
     pip_runner.uninstall_python_deps(dists)
-
-    if not _WHEELHOUSE_ENV_ORIGINALS:
-        _WHEELHOUSE_ENV_ORIGINALS.update({key: os.environ.get(key) for key in _WHEELHOUSE_ENV_KEYS})
-    os.environ["PIP_NO_INDEX"] = "1"
-    os.environ["PIP_FIND_LINKS"] = str(root)
-    os.environ["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
+    try:
+        every_process.everywhere("wheelhouse", {"root": str(root)})
+    except every_process.NotEveryProcess as exc:
+        return _not_every_process(exc)
     return jsonify({
         "wheelhouse": str(root),
         "wheels": sorted(decoded),
         "installed": _installed_map(dists),
     }), 200
+
+
+@every_process.step("wheelhouse")
+def _wheelhouse_here(arguments: dict) -> dict:
+    """This process's pip pointed at the wheelhouse ``root`` with no index,
+    or with ``restore`` put back as it was before the first, and its import
+    probes forgotten: the next install it runs reads what is there now."""
+    import importlib
+    import os
+
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
+
+    if arguments.get("restore"):
+        for key, value in _WHEELHOUSE_ENV_ORIGINALS.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        _WHEELHOUSE_ENV_ORIGINALS.clear()
+    else:
+        if not _WHEELHOUSE_ENV_ORIGINALS:
+            _WHEELHOUSE_ENV_ORIGINALS.update({key: os.environ.get(key) for key in _WHEELHOUSE_ENV_KEYS})
+        os.environ["PIP_NO_INDEX"] = "1"
+        os.environ["PIP_FIND_LINKS"] = str(arguments["root"])
+        os.environ["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
+    importlib.invalidate_caches()
+    pip_runner.forget_import_probes()
+    return {}
 
 
 #: Only a test package may be planted in the shared catalog or removed from it
@@ -1589,3 +1843,163 @@ def catalog_package():
         path.write_bytes(data)
     refresh_package_integrity(target)
     return jsonify({"planted": dir_name, "files": sorted([*files, *weights])}), 200
+
+
+#: The most a stand-in's files may weigh in all: a tiny model, never real weights.
+_STAND_IN_MAX_BYTES = 128 * 1024 * 1024
+#: The record a plant keeps in the entry folder of what it wrote there, so a
+#: removal takes that alone. A dotfile, which the package's integrity and
+#: archives leave out, as they leave out the stamps.
+_PLANTED_RECORD = ".curio-test-planted.json"
+
+
+def _is_relative(rel: object) -> bool:
+    return (isinstance(rel, str) and bool(rel) and not rel.startswith("/") and "\\" not in rel
+            and ".." not in rel.split("/"))
+
+
+def _remove_planted(root, entry) -> list[str]:
+    """Take out what a plant put in *entry*, the entry folder of the catalog
+    package in *root*, by its record: each file still as planted, with its
+    stamp, then the record, then each folder the plant made, once it is
+    empty. A file that is no longer as planted, such as one a download put
+    in its place, stays. The files removed, by their path in the entry."""
+    import hashlib
+    import json as _json
+
+    from utk_curio.backend.app.packages.domain import model_fetch
+
+    record_path = entry / _PLANTED_RECORD
+    try:
+        record = _json.loads(record_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    removed = []
+    for rel, digest in sorted((record.get("files") or {}).items()):
+        target = entry / rel
+        if not _is_relative(rel) or target.is_symlink() or not target.is_file():
+            continue
+        if hashlib.sha256(target.read_bytes()).hexdigest() == digest:
+            model_fetch.discard(target)
+            removed.append(rel)
+    record_path.unlink(missing_ok=True)
+    for rel in record.get("folders") or []:
+        if _is_relative(rel):
+            with contextlib.suppress(OSError):
+                (root / rel).rmdir()
+    return removed
+
+
+@testing_bp.route("/fetched-weights", methods=["POST"])
+def fetched_weights():
+    """Plant a stand-in for the weights a catalog model package's ``fetch``
+    names, or take it out.
+
+    No CI run holds such weights (SAM 3's are Meta's 3.4 GB) and no test may
+    open a socket to download them, so a test of a dataflow that runs such a
+    model plants a stand-in, a tiny model with random weights
+    (``tests/_support/tiny_sam3.py``), in the catalog's copy of the package,
+    laid out as ``scripts/fetch_model_weights.py`` leaves the real ones: each
+    file the block lists in its entry folder, readable by every account, and
+    stamped with the digest the block names (``model_fetch.write_stamp``),
+    the stamp being what Curio reads to tell they are in place
+    (``model_fetch.is_stamped``). A node then runs on the stand-in, and the
+    Model Catalog says the weights need no download. The catalog is in the
+    stack's own filesystem, which a pytest process talking to a container
+    cannot write, so it is written here.
+
+    Body (JSON):
+      * ``action``  - ``"plant"`` or ``"remove"``.
+      * ``dirName`` - a package of the catalog whose model block has a ``fetch``.
+      * ``files``   - plant: ``{path in the entry: base64}``, every file the
+        ``fetch`` lists and no other.
+
+    A plant is refused (409) where ``--model-weights-dir`` names the folder of
+    the weights, which stacks share, and where a file the block lists, or its
+    stamp, is already in the entry folder: real weights, or a download's,
+    which no plant replaces. It keeps a record of what it wrote, and a
+    ``remove`` takes out that alone (:func:`_remove_planted`); a plant of a
+    package already planted takes the earlier plant out first.
+    """
+    import base64 as _base64
+    import binascii as _binascii
+    import hashlib
+    import json as _json
+    import os
+
+    from utk_curio.backend.app.packages.domain import model_fetch
+    from utk_curio.backend.app.packages.domain.manifest import ManifestError
+    from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
+    from utk_curio.backend.app.packages.repositories.catalog_dir import catalog_root as _catalog_root
+    from utk_curio.backend.app.packages.repositories.catalog_dir import model_weights_dir
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+
+    body = request.get_json(silent=True) or {}
+    action = (body.get("action") or "").strip()
+    dir_name = (body.get("dirName") or "").strip()
+    if action not in ("plant", "remove"):
+        return jsonify({"error": "action must be 'plant' or 'remove'"}), 400
+    if not PACKAGE_DIR_RE.match(dir_name):
+        return jsonify({"error": f"not a package: {dir_name!r}"}), 400
+    root = _catalog_root() / dir_name
+    try:
+        manifest = load_package_manifest(root)
+    except (ManifestError, OSError, ValueError):
+        return jsonify({"error": f"the catalog has no package {dir_name}"}), 404
+    block = manifest.model
+    if manifest.kind != "model" or block is None or block.fetch is None:
+        return jsonify({"error": f"{dir_name} is not a model package whose weights a fetch names"}), 400
+    entry = root / block.entry
+    if action == "remove":
+        return jsonify({"removed": _remove_planted(root, entry), "dirName": dir_name}), 200
+
+    if model_weights_dir() is not None:
+        return jsonify({
+            "error": "--model-weights-dir names the folder of the weights, which stacks share: no stand-in is planted there",
+        }), 409
+    listed = {item.path: item for item in block.fetch.files}
+    files = body.get("files")
+    if not isinstance(files, dict) or set(files) != set(listed):
+        return jsonify({"error": f"files must be every file the fetch lists and no other: {sorted(listed)}"}), 400
+    planted: dict[str, bytes] = {}
+    for rel, encoded in files.items():
+        if not isinstance(encoded, str):
+            return jsonify({"error": f"{rel!r} is not base64"}), 400
+        try:
+            planted[rel] = _base64.b64decode(encoded, validate=True)
+        except (_binascii.Error, ValueError):
+            return jsonify({"error": f"{rel!r} is not base64"}), 400
+    if sum(len(data) for data in planted.values()) > _STAND_IN_MAX_BYTES:
+        return jsonify({"error": "a stand-in is a tiny model, a few files of a few megabytes"}), 400
+
+    _remove_planted(root, entry)
+    in_place = sorted(
+        rel for rel in listed
+        if os.path.lexists(entry / rel) or os.path.lexists(model_fetch.stamp_path(entry / rel))
+    )
+    if in_place:
+        return jsonify({"error": f"the weights of {dir_name} are in place ({', '.join(in_place)}): no stand-in replaces them"}), 409
+
+    made: list[str] = []
+    for rel in listed:
+        folder = (entry / rel).parent
+        missing = []
+        while folder != root and not folder.exists():
+            missing.append(folder)
+            folder = folder.parent
+        for new in reversed(missing):
+            new.mkdir()
+            os.chmod(new, model_fetch.FOLDER_MODE)
+            made.append(new.relative_to(root).as_posix())
+    for rel, data in planted.items():
+        target = entry / rel
+        target.write_bytes(data)
+        os.chmod(target, model_fetch.FILE_MODE)
+        model_fetch.write_stamp(target, listed[rel])
+    record = {
+        "files": {rel: hashlib.sha256(data).hexdigest() for rel, data in planted.items()},
+        # The deepest first, so each is empty when its turn to go comes.
+        "folders": sorted(made, key=lambda rel: rel.count("/"), reverse=True),
+    }
+    (entry / _PLANTED_RECORD).write_text(_json.dumps(record, indent=2), encoding="utf-8")
+    return jsonify({"planted": dir_name, "files": sorted(listed)}), 200

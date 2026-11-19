@@ -147,7 +147,9 @@ def _sandbox_nodejs_folder(root: Path) -> Path | None:
     """The folder npm installs the sandbox's Node.js packages in, or None after
     logging why there is none: *root* when it holds Curio's package.json, else
     ``nodejs/`` in Curio's state directory, not a link, with the package.json
-    and package-lock.json the package ships written into it."""
+    and package-lock.json the package ships written into it, and beside them
+    each file that package.json installs a package from (the vendored autk-db),
+    taken from where the package holds it under *root*."""
     from utk_curio.sandbox.util import node_runtime
 
     folder = node_runtime.nodejs_dir(root)
@@ -168,6 +170,19 @@ def _sandbox_nodejs_folder(root: Path) -> Path | None:
             f"{_WITHOUT_NODE_PACKAGES}."
         )
         return None
+    try:
+        local = node_runtime.local_package_files(shipped / "package.json")
+    except ValueError as exc:
+        log_error(f"[Sandbox] {exc}, so npm is not run and {_WITHOUT_NODE_PACKAGES}.")
+        return None
+    for relative in local:
+        if not (root / relative).is_file():
+            log_error(
+                f"[Sandbox] {root / relative}, which Curio's package.json installs a package from, "
+                f"is missing, so npm is not run and {_WITHOUT_NODE_PACKAGES}. Install Curio from "
+                f"its release on PyPI, or start it from a clone."
+            )
+            return None
     links = [path for path in (folder, folder / "node_modules") if path.is_symlink()]
     if links:
         log_error(
@@ -177,12 +192,14 @@ def _sandbox_nodejs_folder(root: Path) -> Path | None:
         return None
     try:
         folder.mkdir(parents=True, exist_ok=True)
-        for name in node_runtime.PACKAGE_FILES:
-            data = (shipped / name).read_bytes()
-            target = folder / name
+        copies = [(shipped / name, folder / name) for name in node_runtime.PACKAGE_FILES]
+        copies += [(root / relative, folder / relative) for relative in local]
+        for source, target in copies:
+            data = source.read_bytes()
             if target.is_file() and not target.is_symlink() and target.read_bytes() == data:
                 continue
-            partial = folder / f".{name}.partial"
+            _make_folders_inside(folder, target.parent)
+            partial = target.parent / f".{target.name}.partial"
             partial.write_bytes(data)
             os.replace(partial, target)
     except OSError as exc:
@@ -192,6 +209,17 @@ def _sandbox_nodejs_folder(root: Path) -> Path | None:
         )
         return None
     return folder.resolve()
+
+
+def _make_folders_inside(folder: Path, inner: Path) -> None:
+    """Make *inner*, a folder under *folder*, and the folders between them;
+    raise OSError for one of those that is a link, which could lead out."""
+    path = folder
+    for part in inner.relative_to(folder).parts:
+        path = path / part
+        if path.is_symlink():
+            raise OSError(f"{path} is a link to {path.resolve()}")
+        path.mkdir(exist_ok=True)
 
 
 def _run_pip(cmd: list[str], failure_label: str) -> None:
@@ -244,9 +272,16 @@ def _install_user_node_deps_at_boot(user_key: str, entries) -> None:
     One account's unsatisfiable manifest must not stop an instance booting for
     everybody else - the failure belongs to whoever installed that package, and
     they get a plain ImportError naming it the first time a node runs.
+
+    The tree is in front of this interpreter, the image's, whose libraries win
+    wherever they meet a package's range: a copy an earlier start put in front
+    of one goes (``give_way_to_the_image``), and only what neither holds at an
+    accepted version is installed (*in_front*), so a start whose libraries are
+    all there runs no pip, and a package's ``torch>=2.6`` keeps the image's
+    CUDA torch.
     """
     from utk_curio.backend.app.packages.infrastructure import backend_runtime
-    from utk_curio.backend.app.packages.service import merge_python_deps
+    from utk_curio.backend.app.packages.service import give_way_to_the_image, merge_python_deps
     from utk_curio.backend.app.packages.infrastructure.pip_runner import install_python_deps_to_target
     from utk_curio.backend.app.packages.service import PipInstallError
 
@@ -260,6 +295,17 @@ def _install_user_node_deps_at_boot(user_key: str, entries) -> None:
         return
     overlay = backend_runtime.user_node_overlay_dir(user_key)
     overlay.mkdir(parents=True, exist_ok=True)
+    try:
+        taken_out = give_way_to_the_image(user_key)
+    except (PipInstallError, OSError) as exc:
+        log_error(f"[Setup] Could not look over the node deps of user {user_key}: {exc}")
+        taken_out = []
+    if taken_out:
+        log_info(
+            f"[Setup] Took out of user {user_key}'s node deps the copies that hid the image's: "
+            + ", ".join(taken_out),
+            COLOR_BACKEND, 0,
+        )
     log_info(
         f"[Setup] Installing node deps for user {user_key}: "
         + ", ".join(sorted(merged)),
@@ -269,6 +315,7 @@ def _install_user_node_deps_at_boot(user_key: str, entries) -> None:
         install_python_deps_to_target(
             merged, str(overlay),
             on_line=lambda line: log_info(f"[pip] {line}", COLOR_BACKEND, 2),
+            in_front=True,
         )
     except PipInstallError as exc:
         log_error(f"[Setup] Node dep install failed for user {user_key}: {exc}")
@@ -398,6 +445,21 @@ def _walk_manifests(
 
     per_pkg: list[tuple[str, dict[str, str]]] = []
     seen: set[str] = set()  # dir_name dedupe across users
+    # The libraries of each package this walk binds for this interpreter, for
+    # every account's nodes: the built-in, the examples' and the guest packages.
+    for_everyone: dict[str, dict[str, str]] = {}
+
+    def bind_for_everyone(pkg_dir) -> None:
+        try:
+            m = load_package_manifest(pkg_dir)
+        except (ManifestError, OSError):
+            return
+        if m.dir_name in seen:
+            return
+        seen.add(m.dir_name)
+        for_everyone[m.dir_name] = dict(m.python_deps or {})
+        if m.python_deps:
+            per_pkg.append((m.dir_name, dict(m.python_deps)))
 
     # Catalog walk is scoped to ``curio.builtin@*`` by default — the
     # catalog lists every *available* package, but only the built-in is
@@ -420,15 +482,13 @@ def _walk_manifests(
     if catalog.is_dir():
         for pattern in catalog_globs:
             for pkg_dir in sorted(catalog.glob(pattern)):
-                try:
-                    m = load_package_manifest(pkg_dir)
-                except ManifestError:
-                    continue
-                if m.dir_name in seen:
-                    continue
-                seen.add(m.dir_name)
-                if m.python_deps:
-                    per_pkg.append((m.dir_name, dict(m.python_deps)))
+                bind_for_everyone(pkg_dir)
+    # The packages --guest-packages names, with every package they need, by
+    # folder in the catalog the backend copies them from (--packages-root),
+    # which the start puts in the shared guest's account: their libraries
+    # install here with the examples', so no hosted guest installs any.
+    for pkg_dir in _guest_package_dirs():
+        bind_for_everyone(pkg_dir)
 
     # Per-user store walk — every package any user has actually installed.
     #
@@ -472,6 +532,13 @@ def _walk_manifests(
             if not m.python_deps:
                 continue
             if scoped:
+                # A store's copy of a package bound above for every account,
+                # with the same libraries, adds nothing to its account's tree:
+                # node code imports this interpreter behind that tree, and
+                # pip --target ignores what this interpreter holds, so each
+                # start would download them into the tree again.
+                if for_everyone.get(m.dir_name) == dict(m.python_deps):
+                    continue
                 user_key = mf.parent.parent.parent.name
                 per_user.setdefault(user_key, []).append(
                     (m.dir_name, dict(m.python_deps))
@@ -480,6 +547,19 @@ def _walk_manifests(
                 per_pkg.append((m.dir_name, dict(m.python_deps)))
 
     return per_pkg, per_user
+
+
+def _guest_package_dirs() -> list[Path]:
+    """The folders of the packages ``--guest-packages`` names
+    (``CURIO_GUEST_PACKAGES``) and of every package they need, in the shared
+    catalog the backend copies them from (``--packages-root``)."""
+    names = [name.strip() for name in os.environ.get("CURIO_GUEST_PACKAGES", "").split(",") if name.strip()]
+    if not names:
+        return []
+    from utk_curio.backend.app.packages.service import PACKAGE_DIR_RE, catalog_packages_to_add, catalog_root
+
+    root = catalog_root()
+    return [root / dir_name for dir_name in catalog_packages_to_add([name for name in names if PACKAGE_DIR_RE.match(name)])]
 
 
 def _report_unimportable_deps(merged, *, block: bool) -> None:

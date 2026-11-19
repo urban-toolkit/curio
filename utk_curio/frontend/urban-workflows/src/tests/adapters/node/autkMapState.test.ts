@@ -140,6 +140,62 @@ describe("pickingTableOf", () => {
     expect(pickingTableOf(drawnGrammar(layers, null), spec, "input_0")).toBeNull();
     expect(pickingTableOf(null, spec, "input_0")).toBeNull();
   });
+
+  test("guard: a pick named by the picked layer's id, its title or its table, is on that layer", () => {
+    // autk-grammar 5's map:picking names the layer picked by its id: its title,
+    // else its table. The grammar's mapLayer finds a map by a table only, so a
+    // title finds no map there, and the node's one map is the map picked on.
+    const titled = drawnGrammar(layers, "Building height (m)");
+    const byTableOnly = {
+      ...titled,
+      mapLayer: (table: string) => (["input_0", "input_1", "input_2"].includes(table) ? titled.mapLayer(table) : undefined),
+    };
+    expect(pickingTableOf(byTableOnly, spec, "Building height (m)")).toBe("input_1");
+    expect(pickingTableOf(drawnGrammar(layers, "input_2"), spec, "input_2")).toBe("input_2");
+    expect(pickingTableOf(drawnGrammar(layers, "Social vulnerability"), spec, "Social vulnerability")).toBe("input_0");
+  });
+});
+
+describe("a layer of one map of several", () => {
+  // Loaded in each test with the map it names, which the module's first version had no place for.
+  const state = () =>
+    require("../../../adapters/node/autkMapState") as {
+      mapLayerOf: (grammar: unknown, table: string, mapId?: string | number) => any;
+      pickingTableOf: (grammar: unknown, spec: unknown, table: string | undefined, mapId?: string | number) => string | null;
+    };
+  const { grammarThatRan } = require("../../_support/autkGrammarMaps");
+  /** A map whose one layer, of id *id*, is *layer*, and whose picking layer is *picking*. */
+  const oneLayerMap = (id: string, layer: any, picking: string | null = null) => ({
+    layerManager: { layers: [layer] },
+    activePickingLayer: picking ? { layerInfo: { id: picking } } : null,
+  });
+
+  test("two maps of one table each find their own layer of it, by the map's index or id", () => {
+    const north = { layerInfo: { id: "trees" }, components: [{ featureIndex: 0 }] };
+    const south = { layerInfo: { id: "trees" }, components: [{ featureIndex: 1 }, { featureIndex: 0 }] };
+    const twoMaps = { map: [{ layerRefs: [{ dataRef: "trees" }] }, { id: "south", workspace: "south", layerRefs: [{ dataRef: "trees" }] }] };
+    const grammar = grammarThatRan(twoMaps, oneLayerMap("trees", north), oneLayerMap("trees", south));
+    expect(state().mapLayerOf(grammar, "trees", 0)).toBe(north);
+    expect(state().mapLayerOf(grammar, "trees", 1)).toBe(south);
+    expect(state().mapLayerOf(grammar, "trees", "south")).toBe(south);
+    // Without a map named, the last map's, as autk-grammar's mapLayer finds it.
+    expect(state().mapLayerOf(grammar, "trees")).toBe(south);
+  });
+
+  test("a pick on the map it names is on that map's picking layer, among that map's layers alone", () => {
+    // Both maps title a layer Streets, each over another table.
+    const twoMaps = {
+      map: [
+        { layerRefs: [{ dataRef: "roads", title: "Streets" }] },
+        { id: "detail", layerRefs: [{ dataRef: "lanes", title: "Streets" }] },
+      ],
+    };
+    const streets = { layerInfo: { id: "Streets" } };
+    const grammar = grammarThatRan(twoMaps, oneLayerMap("Streets", streets, "Streets"), oneLayerMap("Streets", streets, "Streets"));
+    expect(state().pickingTableOf(grammar, twoMaps, "Streets", "detail")).toBe("lanes");
+    expect(state().pickingTableOf(grammar, twoMaps, "Streets", 1)).toBe("lanes");
+    expect(state().pickingTableOf(grammar, twoMaps, "Streets", 0)).toBe("roads");
+  });
 });
 
 describe("what a map draws and lights, as autk-map and autk-db hold it", () => {

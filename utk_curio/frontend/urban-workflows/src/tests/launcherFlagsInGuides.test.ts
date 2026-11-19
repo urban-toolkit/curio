@@ -69,6 +69,12 @@ test("DEPLOYMENT.md, USAGE.md and AGENT-CATALOG.md name --llm-endpoint-file, the
     );
 });
 
+test("USAGE.md and DEPLOYMENT.md name --guest-packages, the packages every hosted guest has", () => {
+    expect(guidesNaming("--guest-packages", readGuides())).toEqual(
+        expect.arrayContaining(["DEPLOYMENT.md", "USAGE.md"]),
+    );
+});
+
 test.each(REMOVED_LLM_SETTINGS)("no guide names %s", (name) => {
     expect(guidesNaming(name, readGuides())).toEqual([]);
 });

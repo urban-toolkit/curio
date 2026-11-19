@@ -1,0 +1,99 @@
+{
+  "dataflow": {
+    "categories": {
+      "city": [
+        "Niterói"
+      ],
+      "topic": [
+        "Heat and climate",
+        "Greenery"
+      ],
+      "complexity": [
+        "Intermediate"
+      ]
+    },
+    "name": "Autark: green share and summer heat in Niterói",
+    "description": "One Autark node loads Niterói's surface, parks and roads from a local .pbf and its summer land surface temperature from 2001 to 2024 from a GeoTIFF in the repository. A map draws the summer of 2024 under the parks and roads, a Python step gives each cell of about 1 km on land the share of its area that is green, from the outlines of the parks layer, beside its mean summer temperature from 2020 to 2024, and a Vega-Lite scatter plots one against the other with a regression line.",
+    "task": "See whether Niterói's greener cells are cooler in summer.",
+    "timestamp": 0,
+    "provenance_id": "autark-green-share-summer-heat",
+    "packages": [],
+    "nodes": [
+      {
+        "id": "green-heat-data",
+        "type": "curio.builtin/autk-grammar",
+        "x": 0,
+        "y": 215,
+        "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/niteroi.osm.pbf\",\n      \"queryArea\": {\n        \"geocodeArea\": \"Rio de Janeiro\",\n        \"areas\": [\n          \"Niterói\"\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"surface\",\n          \"parks\",\n          \"roads\"\n        ]\n      }\n    },\n    {\n      \"type\": \"geotiff\",\n      \"geotiffFileUrl\": \"docs/examples/data/niteroi_lst_verao_2001_2024.tif\",\n      \"outputTableName\": \"lst\",\n      \"resampleMethod\": \"nearest\"\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load Niterói's surface, parks and roads from the repository's extract and its summer land surface temperature, 2001 to 2024, from the repository's GeoTIFF.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "green-heat-map",
+        "type": "curio.builtin/autk-grammar",
+        "x": 645,
+        "y": 0,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"lst\",\n        \"getFnv\": \"band_24\",\n        \"colorMapInterpolator\": \"interpolateYlOrRd\",\n        \"title\": \"Summer surface temperature, 2024 (°C)\"\n      },\n      {\n        \"dataRef\": \"table_osm_parks\",\n        \"color\": \"#2ca02c\",\n        \"opacity\": 0.45,\n        \"title\": \"Parks\"\n      },\n      {\n        \"dataRef\": \"table_osm_roads\",\n        \"color\": \"#4d4d4d\",\n        \"title\": \"Roads\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the summer of 2024's land surface temperature under the parks and roads.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "green-heat-cells",
+        "type": "curio.builtin/python-computation",
+        "x": 645,
+        "y": 430,
+        "content": "import pandas as pd\nimport rasterio\nfrom shapely.geometry import Point, box, shape\nfrom shapely.ops import unary_union\nfrom shapely.prepared import prep\nfrom shapely.validation import make_valid\n\n# The data node hands on its OpenStreetMap layers, then the land surface\n# temperature, a rasterio dataset in EPSG:3395 with one band a summer from 2001\n# to 2024. The layers are in EPSG:3395 too.\nlst = next(item for item in input_0 if isinstance(item, rasterio.io.DatasetReader))\nfeatures = {item[\"name\"]: item[\"geojson\"][\"features\"] for item in input_0 if isinstance(item, dict)}\n\n# All the green the parks layer holds, parks, woods, grass, scrub and the\n# rest, as one shape, and Niterói's land.\ngreen = unary_union([make_valid(shape(feature[\"geometry\"])) for feature in features[\"table_osm_parks\"]])\non_land = prep(unary_union([make_valid(shape(feature[\"geometry\"])) for feature in features[\"table_osm_surface\"]]))\n# Each cell's mean summer surface temperature over the last five summers.\nsummer = lst.read([20, 21, 22, 23, 24]).mean(axis=0)\n\n# The cells whose center lies on Niterói's land, each with the share of its\n# area that is green.\ncells = []\nfor row in range(lst.height):\n    for col in range(lst.width):\n        if not on_land.contains(Point(lst.xy(row, col))):\n            continue\n        (west, north), (east, south) = lst.xy(row, col, offset=\"ul\"), lst.xy(row, col, offset=\"lr\")\n        cell = box(west, south, east, north)\n        cells.append({\n            \"row\": row,\n            \"column\": col,\n            \"green share\": round(green.intersection(cell).area / cell.area, 3),\n            \"summer temperature, 2020 to 2024 (°C)\": round(float(summer[row, col]), 2),\n        })\nreturn pd.DataFrame(cells)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Give each cell of the temperature's grid on Niterói's land the share of its area that is green, from the parks layer's outlines, and its mean summer temperature from 2020 to 2024.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "green-heat-scatter",
+        "type": "curio.builtin/vis-vega",
+        "x": 1290,
+        "y": 430,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"title\": \"Niterói's land: summer temperature against the share of green\",\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"point\",\n        \"filled\": true,\n        \"opacity\": 0.6\n      },\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"green share\",\n          \"type\": \"quantitative\",\n          \"title\": \"Share of the cell that is green\"\n        },\n        \"y\": {\n          \"field\": \"summer temperature, 2020 to 2024 (°C)\",\n          \"type\": \"quantitative\",\n          \"scale\": {\n            \"zero\": false\n          },\n          \"title\": \"Mean summer surface temperature, 2020 to 2024 (°C)\"\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"line\",\n        \"color\": \"#d62728\",\n        \"strokeWidth\": 2\n      },\n      \"transform\": [\n        {\n          \"regression\": \"summer temperature, 2020 to 2024 (°C)\",\n          \"on\": \"green share\"\n        }\n      ],\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"green share\",\n          \"type\": \"quantitative\"\n        },\n        \"y\": {\n          \"field\": \"summer temperature, 2020 to 2024 (°C)\",\n          \"type\": \"quantitative\"\n        }\n      }\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Plot each cell's mean summer temperature against its green share, with a regression line.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-green-heat-dataout-green-heat-mapin",
+        "source": "green-heat-data",
+        "target": "green-heat-map",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-green-heat-dataout-green-heat-cellsin",
+        "source": "green-heat-data",
+        "target": "green-heat-cells",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-green-heat-cellsout-green-heat-scatterin",
+        "source": "green-heat-cells",
+        "target": "green-heat-scatter",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      }
+    ]
+  }
+}

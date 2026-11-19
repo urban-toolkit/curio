@@ -1,7 +1,9 @@
 import { getToken } from "../utils/authApi";
 import { backendUrl } from "../utils/backendUrl";
+import { requestHeaders } from "../utils/requestHeaders";
 import { embeddedArtifact, EmbeddedEnvelope, embeddedRaster, EmbeddedRaster } from "../standalone/dashboardPayload";
 import { dashboardRunRead } from "./runs/dashboardRunFiles";
+import { noteDashboardOutput } from "./runs/dashboardMedia";
 import { askedOfPage, keepPageResult } from "./runs/dashboardRunSteps";
 import { dataflowRead } from "./dataflowReads";
 
@@ -23,14 +25,13 @@ async function fetchArtifactAsArrow(
     extraHeaders: Record<string, string> = {},
 ) {
     const response = await fetch(url, {
-        headers: {
+        headers: requestHeaders(token, {
             ...extraHeaders,
             Accept: ARROW_IPC_MIME,
             // Geometry arrives as WKB on this path, so the sandbox refuses a
             // geodataframe unless the client says it can decode it (utils/wkb).
             "X-Curio-Accept-Geometry": "wkb",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        }),
     });
     if (!response.ok) {
         // 415 is the sandbox saying "not a tabular kind" (or geometry without
@@ -123,9 +124,12 @@ function previewOfEmbedded(fileName: string, envelope: EmbeddedEnvelope) {
 export async function fetchData(fileName: string) {
     // A standalone dashboard was served with its rows inside it. Checked before
     // the request rather than after a failure, because the whole point is that
-    // the page never reaches the network.
+    // the page never reaches the network. The files its rows name are read
+    // through the dashboard's links (runs/dashboardMedia), as are those of an
+    // output a viewer's run made.
     const embedded = embeddedArtifact(fileName);
     if (embedded) {
+        noteDashboardOutput(fileName, embedded);
         return { ...embedded, filename: fileName };
     }
     try {
@@ -143,6 +147,7 @@ export async function fetchData(fileName: string) {
         try {
             const viaArrow = await fetchArtifactAsArrow(url, _token, extraHeaders);
             if (viaArrow) {
+                if (dashboard) noteDashboardOutput(fileName, viaArrow);
                 return viaArrow;
             }
         } catch (arrowError: unknown) {
@@ -155,11 +160,10 @@ export async function fetchData(fileName: string) {
         }
 
         const response = await fetch(url, {
-            headers: {
+            headers: requestHeaders(_token, {
                 ...extraHeaders,
                 'Content-Type': 'application/json',
-                ...(_token ? { 'Authorization': `Bearer ${_token}` } : {}),
-            },
+            }),
         });
 
         if (!response.ok) {
@@ -169,6 +173,7 @@ export async function fetchData(fileName: string) {
         const jsonData = await response.json();
 
         console.log(`Fetched data`, jsonData);
+        if (dashboard) noteDashboardOutput(fileName, jsonData);
 
         return jsonData;
     } catch (error: unknown) {
@@ -192,13 +197,9 @@ export interface NodeRows {
  */
 export async function storeOutput(nodeId: string, value: NodeRows): Promise<{ path: string; dataType: string }> {
     if (askedOfPage(nodeId)) return keepPageResult(nodeId, value);
-    const token = getToken();
     const response = await fetch(`${backendUrl()}/storeOutput`, {
         method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: requestHeaders(getToken(), { "Content-Type": "application/json" }),
         body: JSON.stringify({ value }),
     });
     const answer = await response.json().catch(() => ({}));
@@ -221,6 +222,7 @@ export async function fetchPreviewData(fileName: string) {
     // is the one thing on it that still calls out.
     const embedded = embeddedArtifact(fileName);
     if (embedded) {
+        noteDashboardOutput(fileName, embedded);
         return previewOfEmbedded(fileName, embedded);
     }
     try {
@@ -233,11 +235,10 @@ export async function fetchPreviewData(fileName: string) {
         console.log(`[fetchPreviewData] Fetching preview from ${url}`);
         const _token = getToken();
         const response = await fetch(url, {
-            headers: {
+            headers: requestHeaders(_token, {
                 ...(dashboard?.headers ?? {}),
                 'Content-Type': 'application/json',
-                ...(_token ? { 'Authorization': `Bearer ${_token}` } : {}),
-            },
+            }),
         });
 
         if (!response.ok) {
@@ -246,6 +247,7 @@ export async function fetchPreviewData(fileName: string) {
 
         const jsonData = await response.json();
         console.log(`[fetchPreviewData] Fetched preview data:`, jsonData);
+        if (dashboard) noteDashboardOutput(fileName, jsonData);
 
         return jsonData;
     } catch (error: unknown) {
@@ -279,9 +281,11 @@ function rasterFromPage(raster: EmbeddedRaster): FetchedRaster {
 /**
  * A raster artifact's GeoTIFF bytes, for an Autark node to load, and what the
  * sandbox read of it (size, CRS, transform) in the `X-Curio-Raster` header.
- * `part` picks one raster out of a Python tuple. A raster larger than
- * `maxCells` cells or `maxSide` on a side is not sent at all: the answer is a
- * 413 with its size, so nothing that large is downloaded only to be refused.
+ * `part` picks one raster out of a Python tuple, or out of a dict by its place
+ * among the dict's values as `keyedFramesAsOutputs` reads them. A raster
+ * larger than `maxCells` cells or `maxSide` on a side is not sent at all: the
+ * answer is a 413 with its size, so nothing that large is downloaded only to
+ * be refused.
  * A standalone dashboard carries the answer, given when the page was built.
  */
 export async function fetchRaster(
@@ -303,10 +307,7 @@ export async function fetchRaster(
     const dashboard = dashboardRunRead(fileName, "raster", params);
     const url = dashboard?.url ?? dataflowRead("raster", params) ?? `${backendUrl()}/raster?${params.toString()}`;
     const response = await fetch(url, {
-        headers: {
-            ...(dashboard?.headers ?? {}),
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: requestHeaders(token, { ...(dashboard?.headers ?? {}) }),
     });
     if (!response.ok) {
         let body: any = null;

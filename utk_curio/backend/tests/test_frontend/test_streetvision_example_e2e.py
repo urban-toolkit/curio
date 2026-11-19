@@ -10,9 +10,11 @@ forever; and because it rendered no ``<Handle>`` children, React Flow had no
 port bounds to attach edges to and dropped every edge touching one
 (``error008``).
 
-The nodes are DDRNet23-Slim's model package's Image Segmentation now. The
-package needs only onnxruntime, so opening the example installs it into the
-account's store, its nodes resolve, and its model runs from that store. The
+The nodes are DDRNet23-Slim's model package's Image Segmentation now, whose
+code calls the Segmentation package's ``segment_images``. The example
+declares both packages, which need only onnxruntime, numpy, pandas and
+pillow, so opening it installs them into the account's store, its nodes
+resolve, and its model runs from that store. The
 placeholder is still what a node of a missing package gets, so it is pinned on
 the same graph with the package swapped for one that exists nowhere.
 
@@ -56,6 +58,8 @@ if TYPE_CHECKING:
 EXAMPLE = "10-street-vision-cv-analysis.json"
 SEGMENTATION = "model.curio.ddrnet23-slim/image-segmentation"
 PACKAGE = "model.curio.ddrnet23-slim@1"
+#: The package whose module the nodes' code calls, which DDRNet23-Slim's names.
+SEGMENTATION_PACKAGE = "curio.segmentation@1"
 #: A package no catalog holds, so its nodes can only ever be placeholders.
 MISSING_PACKAGE_TYPE = "curio.nowhere/image-segmentation"
 
@@ -131,9 +135,9 @@ def test_the_example_declares_the_package_its_nodes_need():
     the UI - so it is worth pinning here beside the behaviour it caused.
     """
     spec = _example_spec()
-    assert spec["dataflow"]["packages"] == [PACKAGE], (
-        "example 10 must declare the package its nodes reference, or nothing "
-        "downstream can resolve them (#233)"
+    assert spec["dataflow"]["packages"] == [SEGMENTATION_PACKAGE, PACKAGE], (
+        "example 10 must declare the package its nodes reference, and the one "
+        "their code imports, or nothing downstream can resolve them (#233)"
     )
     assert {node["type"] for node in spec["dataflow"]["nodes"]} >= {SEGMENTATION}
 
@@ -146,11 +150,11 @@ def test_opening_the_example_installs_its_package(street_vision_canvas, current_
     while time.monotonic() < deadline:
         installed = api_json(f"{current_server}/api/packages", token) or {}
         names = {p.get("dirName") for p in installed.get("packages", [])}
-        if PACKAGE in names:
+        if {PACKAGE, SEGMENTATION_PACKAGE} <= names:
             break
         page.wait_for_timeout(2000)
-    assert PACKAGE in names, (
-        f"opening example 10 did not install the package it declares: {sorted(names)}"
+    assert {PACKAGE, SEGMENTATION_PACKAGE} <= names, (
+        f"opening example 10 did not install the packages it declares: {sorted(names)}"
     )
 
     node_ids = _segmentation_ids(_example_spec())

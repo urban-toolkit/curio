@@ -15,13 +15,14 @@ import json
 from datetime import datetime, timezone
 from urllib.request import Request, urlopen
 
-#: Two days after the newest shipped catalog item (the Chicago Loop layers,
-#: dated 2026-10-22), so every shipped age reads in days, and at 06:00 UTC, six
-#: hours or more from the hour at which a shipped age rounds up to the next
-#: day. ``test_catalog_calendar_e2e.py`` fails when an item dated later ships:
-#: move this date past it, then re-mint the frames of the tests marked
+#: Two weeks after the newest shipped catalog item (the SideSeeing walk's two
+#: listings, dated 2026-11-17), so every shipped age reads in days, items the
+#: next weeks ship among them, and at 06:00 UTC, six hours or more from the
+#: hour at which a shipped age rounds up to the next day.
+#: ``test_catalog_calendar_e2e.py`` fails when an item dated later ships: move
+#: this date past it, then re-mint the frames of the tests marked
 #: ``catalog_calendar``.
-CATALOG_CALENDAR = datetime(2026, 10, 24, 6, 0, tzinfo=timezone.utc)
+CATALOG_CALENDAR = datetime(2026, 12, 1, 6, 0, tzinfo=timezone.utc)
 
 
 def _set_record_clock(backend_url: str, method: str, body: dict | None = None) -> dict:

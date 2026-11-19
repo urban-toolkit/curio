@@ -1,0 +1,85 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "35-autark-sky-seen-from-the-street",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/35-autark-sky-seen-from-the-street.json",
+    "sha256": "7b3b4b97f8b32f7f4164ae01d3e3f8db32426408d61ac8e989a34a4e6da7e107",
+    "walkthrough": "docs/examples/35-autark-sky-seen-from-the-street.md"
+  },
+  "prompt": "How much sky does each street around Wall Street in Lower Manhattan see between its buildings? Load the surface, the roads and the buildings of the box around Wall Street with Autark, from the OpenStreetMap extract in this checkout at docs/examples/data/lower_mnt.osm.pbf. Then, on the GPU, draw the buildings from each road, looking in four directions 45 degrees above the horizon, count the share of each road's view that is sky, and map the roads colored by that share between the buildings, seen at a tilt.",
+  "context": null,
+  "required": {
+    "datasets": [],
+    "packages": [],
+    "paths": [
+      "docs/examples/data/lower_mnt.osm.pbf"
+    ]
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "visualization1",
+        "to": "visualization2",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [],
+      "paths": [
+        "docs/examples/data/lower_mnt.osm.pbf"
+      ],
+      "urls": []
+    }
+  },
+  "intents": [],
+  "execution": {
+    "mode": "browser",
+    "browserOnlyKinds": [
+      "curio.builtin/autk-grammar"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T1",
+    "needs": [
+      "browser-only-execution"
+    ],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-opus-5-5 from the example JSON and its walkthrough, 2026-11-18",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
+  },
+  "notes": "Two grammar nodes: one loads the extract, and a render pass in the other writes the table its map draws."
+}

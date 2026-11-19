@@ -35,6 +35,7 @@ const FILES = [
   "nodeSettings",
   "dashboardRuns",
   "catalogCode",
+  "interactionEdges",
 ];
 
 /** A shared file, read when a test runs, so a checkout without it fails each test on its own. */
@@ -103,7 +104,10 @@ describe("the Autark grammar", () => {
   test("the node routes every family the file lists, and no other key", () => {
     const { families } = shared("autkGrammar");
     expect(families.length).toBeGreaterThan(1);
-    for (const family of families) expect(classifyAutkSpec({ [family]: [{}] })).not.toBe("unknown");
+    // A family is the step its kind says; one of no kind (a layout, links) is no step of its own.
+    const kinds = FAMILY_KIND as Record<string, string | null>;
+    for (const family of families) expect(classifyAutkSpec({ [family]: [{}] })).toBe(kinds[family] ?? "unknown");
+    expect(families.filter((family: string) => kinds[family] != null).length).toBeGreaterThan(1);
     expect(classifyAutkSpec({ title: [{}] })).toBe("unknown");
     // The routing table's keys are the AutkFamily type.
     expect(Object.keys(FAMILY_KIND).sort()).toEqual([...families].sort());

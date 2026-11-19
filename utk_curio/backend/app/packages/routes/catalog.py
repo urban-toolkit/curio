@@ -12,6 +12,7 @@ from flask import jsonify, request
 from utk_curio.backend.app.users.dependencies import require_auth
 from utk_curio.backend.app.packages.application import (
     catalog as packages_catalog,
+    provisioning as packages_provisioning,
     publishing as packages_publishing,
     seeding as packages_seeding,
     store_install as packages_store_install,
@@ -40,13 +41,15 @@ def list_catalog_packages():
 @_map_package_errors
 def install_from_catalog():
     """Install a catalog package by ``dirName`` (with ``replace``, the Node
-    Catalog's Update); its declared python deps are installed and probed as well."""
+    Catalog's Update), with the packages it needs; its declared python deps
+    are installed and probed as well, and the answer's ``importErrors`` and
+    ``restartRecommended`` hold those of the packages it brought too."""
     key = user_key()
     body = request.get_json(silent=True) or {}
-    result = packages_store_install.install_from_catalog(
+    result, brought = packages_store_install.install_from_catalog(
         key, requests.catalog_dir_name(body), replace=requests.replace_flag(body),
     )
-    return jsonify(_installed_payload(key, result)), 201
+    return jsonify(packages_provisioning.with_brought(_installed_payload(key, result), brought)), 201
 
 
 @packages_bp.route("/catalog/<dir_name>", methods=["DELETE"])

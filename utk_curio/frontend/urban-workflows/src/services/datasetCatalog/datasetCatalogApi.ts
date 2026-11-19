@@ -1,4 +1,5 @@
 import { apiFetch, getToken } from "../../utils/authApi";
+import { requestHeaders } from "../../utils/requestHeaders";
 import { invalidateDatasetCatalogCache } from "./datasetCatalogCache";
 import {
   DatasetCatalogItem,
@@ -188,7 +189,6 @@ export const datasetCatalogApi = {
     file: File,
     opts: { dataflowId?: string | null; title?: string; discoverySource?: DatasetDiscoverySourceInput } = {},
   ): Promise<DatasetCatalogItem> {
-    const token = getToken();
     const form = new FormData();
     form.append("file", file);
     if (opts.dataflowId) form.append("dataflowId", opts.dataflowId);
@@ -205,7 +205,7 @@ export const datasetCatalogApi = {
     const res = await fetch(`${BACKEND_URL}/api/datasets/import`, {
       method: "POST",
       body: form,
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      headers: requestHeaders(getToken(), {}, opts.dataflowId),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -330,10 +330,9 @@ export const datasetCatalogApi = {
       params.set("liveOutputs", encodeLiveOutputsParam(opts.liveOutputs));
     }
     const raw = params.toString();
-    const token = getToken();
     const res = await fetch(
       `${BACKEND_URL}/api/datasets/${encodeURIComponent(datasetId)}/download${raw ? `?${raw}` : ""}`,
-      { headers: token ? { Authorization: `Bearer ${token}` } : undefined },
+      { headers: requestHeaders(getToken(), {}, opts.dataflowId) },
     );
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));

@@ -22,7 +22,7 @@ import os
 import pytest
 
 from utk_curio.cli import dependencies as launcher
-from utk_curio.backend.app.common.user_storage import users_base
+from utk_curio.backend.app.common.user_storage import GUEST_KEY, users_base
 
 BASE_TEMPLATE = {
     "id": "demo-node",
@@ -37,8 +37,9 @@ BASE_TEMPLATE = {
 
 
 def _write_package(store: "object", dir_name: str, *, deps: dict,
-                   backend: bool, python_template: bool) -> None:
-    """A minimal installed package under ``<user>/packages/<dir_name>/``.
+                   backend: bool, python_template: bool, needs: dict | None = None) -> None:
+    """A minimal installed package under ``<user>/packages/<dir_name>/``, or
+    under a catalog's folder; *needs* is its ``dependencies.packages``.
 
     ``templates`` is always non-empty - the loader refuses an empty list, and a
     refused manifest is skipped by the walk, which would make these tests pass
@@ -62,7 +63,7 @@ def _write_package(store: "object", dir_name: str, *, deps: dict,
             dict(BASE_TEMPLATE) if python_template
             else {**BASE_TEMPLATE, "id": "demo-js", "engine": "javascript"}
         ],
-        "dependencies": {"js": {}, "packages": {}, "python": deps},
+        "dependencies": {"js": {}, "packages": dict(needs or {}), "python": deps},
     }
     if backend:
         # The loader is strict about this shape: entry must be a .py under
@@ -319,7 +320,7 @@ def installed_per_user(monkeypatch):
     from utk_curio.backend.app.packages.infrastructure import pip_runner
     monkeypatch.setattr(
         pip_runner, "install_python_deps_to_target",
-        lambda merged, target, on_line=None: calls.append((dict(merged), str(target))),
+        lambda merged, target, on_line=None, in_front=False: calls.append((dict(merged), str(target))),
     )
     return calls
 
@@ -383,7 +384,7 @@ def test_one_users_broken_manifest_does_not_stop_the_boot(
 
     done: list[str] = []
 
-    def _maybe_fail(merged, target, on_line=None):
+    def _maybe_fail(merged, target, on_line=None, in_front=False):
         if os.path.basename(target) == "7":
             raise pip_runner.PipInstallError("no such distribution")
         done.append(os.path.basename(target))
@@ -456,3 +457,165 @@ def test_listing_installs_nothing(launch_cwd, installed, installed_per_user, iso
 
     assert installed == [] and installed_per_user == []
     assert not [req for req in listed if req.startswith("inflection")]
+
+
+# ── --guest-packages: their libraries install at launch, for every account ──
+
+
+@pytest.fixture
+def guest_catalog(tmp_path, monkeypatch):
+    """A shared catalog of this module's own, the one ``--packages-root``
+    names, which the backend copies a guest package from."""
+    root = tmp_path / "catalog"
+    root.mkdir()
+    monkeypatch.setenv("CURIO_PACKAGES_ROOT", str(root))
+    monkeypatch.delenv("CURIO_GUEST_PACKAGES", raising=False)
+    return root
+
+
+def test_a_guest_packages_libraries_install_at_launch_with_those_of_the_packages_it_needs(
+    launch_cwd, installed, in_process, guest_catalog, monkeypatch,
+):
+    """With the examples' libraries, into the interpreter every account's
+    nodes import from, so no hosted guest installs any; without the flag,
+    not."""
+    _write_package(guest_catalog, "acme.base@1", deps={"tabulate": ">=0.9"}, backend=False, python_template=True)
+    _write_package(
+        guest_catalog, "acme.tracker@1", deps={"inflection": ">=0.5"}, backend=False, python_template=True,
+        needs={"acme.base@1": "*"},
+    )
+
+    launcher.install_manifest_dependencies()
+    without = {name for call in installed for name in call}
+    installed.clear()
+    monkeypatch.setenv("CURIO_GUEST_PACKAGES", "acme.tracker@1")
+    launcher.install_manifest_dependencies()
+    named = {name for call in installed for name in call}
+
+    assert not {"inflection", "tabulate"} & without
+    assert {"inflection", "tabulate"} <= named
+
+
+def test_with_isolation_a_store_copy_of_a_package_the_launch_installs_for_everyone_adds_nothing_to_its_tree(
+    launch_cwd, installed, installed_per_user, isolated, guest_catalog, monkeypatch,
+):
+    """Under isolation an account's nodes import its own tree, then the
+    interpreter the launch installs the examples' and the guest packages'
+    libraries into. A store's copy of such a package, with the same
+    libraries, adds nothing to its account's tree: ``pip --target`` ignores
+    what the interpreter holds, so every start downloaded them again, into
+    each account's tree, the shared guest's among them. A copy whose
+    libraries differ still goes to its account's tree."""
+    deps = {"inflection": ">=0.5"}
+    _write_package(guest_catalog, "acme.tracker@1", deps=deps, backend=False, python_template=True)
+    for user in (GUEST_KEY, "7"):
+        _write_package(_user_store(launch_cwd, user), "acme.tracker@1", deps=deps, backend=False, python_template=True)
+    _write_package(
+        _user_store(launch_cwd, "8"), "acme.tracker@1", deps={**deps, "tabulate": ">=0.9"},
+        backend=False, python_template=True,
+    )
+    monkeypatch.setenv("CURIO_GUEST_PACKAGES", "acme.tracker@1")
+
+    launcher.install_manifest_dependencies()
+
+    assert "inflection" in {name for call in installed for name in call}
+    trees = {os.path.basename(target): set(tree_deps) for tree_deps, target in installed_per_user}
+    assert trees == {"8": {"inflection", "tabulate"}}, trees
+
+
+# ── An account's tree in front of the image's libraries: the image's win ──
+
+
+def _account_tree(launch_cwd, monkeypatch, user: str):
+    """*user*'s own node libraries, in this test's workspace: the suite's
+    conftest names one shared data folder for every test, and with it one
+    tree per account for the whole session."""
+    from utk_curio.backend.app.packages.infrastructure import backend_runtime
+
+    monkeypatch.setenv("CURIO_SHARED_DATA", str(launch_cwd / ".curio" / "data"))
+    tree = backend_runtime.user_node_overlay_dir(user)
+    assert tree.is_relative_to(launch_cwd.resolve()), f"account {user}'s tree {tree} is outside {launch_cwd}"
+    return tree
+
+
+def test_a_start_puts_no_torch_of_its_own_in_an_accounts_tree_whose_range_the_images_meets(
+    launch_cwd, installed, isolated, tmp_path, monkeypatch,
+):
+    """Under isolation each start installs every account's package libraries
+    into the account's own tree, which its nodes import in front of the
+    image's. ``pip --target`` ignores what the image holds, so a package
+    declaring ``torch>=2.6``, as the Discovery Catalog's Hugging Face models
+    do, or a library that requires it, got a torch of its own at every start,
+    for that account's nodes in front of the image's CUDA torch. Here the
+    package declares both, with the real pip offline: the image's torch meets
+    the range, and the start puts into the tree only the library the image
+    lacks."""
+    from utk_curio.backend.tests._support.front_of_the_image import (
+        NEEDS_TORCH, held, offline_pip, the_images_torch,
+    )
+
+    image_torch = the_images_torch()
+    offline_pip(monkeypatch, tmp_path / "wheelhouse")
+    account_tree = _account_tree(launch_cwd, monkeypatch, "7")
+    _write_package(
+        _user_store(launch_cwd, "7"), "acme.model@1",
+        deps={"torch": ">=2.6", NEEDS_TORCH.dist: f"=={NEEDS_TORCH.version}"}, backend=False, python_template=True,
+    )
+
+    launcher.install_manifest_dependencies()
+
+    tree = held(account_tree)
+    assert "torch" not in tree, (
+        f"the start put torch {tree.get('torch')} into account 7's tree, in front of the image's {image_torch}")
+    assert tree == {NEEDS_TORCH.dist: NEEDS_TORCH.version}, tree
+
+
+def test_a_start_takes_out_a_torch_an_earlier_start_put_in_front_of_the_images(
+    launch_cwd, installed, isolated, tmp_path, monkeypatch,
+):
+    """A tree an earlier start filled keeps its torch: not installing it again
+    leaves it in front of the image's. A start takes out of an account's tree
+    the copy of a library its packages declare where the image's meets every
+    range they declare it at."""
+    from utk_curio.backend.tests._support.front_of_the_image import (
+        OTHER_TORCH, held, offline_pip, the_images_torch,
+    )
+    from utk_curio.backend.tests._support.offline_wheels import unpack_wheel
+
+    image_torch = the_images_torch()
+    offline_pip(monkeypatch, tmp_path / "wheelhouse")
+    _write_package(
+        _user_store(launch_cwd, "7"), "acme.model@1", deps={"torch": ">=2.6"}, backend=False, python_template=True,
+    )
+    tree = _account_tree(launch_cwd, monkeypatch, "7")
+    unpack_wheel(OTHER_TORCH, tree)
+    assert held(tree) == {"torch": OTHER_TORCH.version}
+
+    launcher.install_manifest_dependencies()
+
+    left = held(tree)
+    assert "torch" not in left, (
+        f"account 7's tree still holds torch {left.get('torch')} in front of the image's {image_torch}")
+
+
+def test_a_start_keeps_a_torch_the_accounts_own_list_names(
+    launch_cwd, installed, isolated, tmp_path, monkeypatch,
+):
+    """A library the account installed itself, in Installed libraries, is its
+    own choice: a start leaves its copy in the tree, though a package of the
+    account's declares it at a range the image's meets."""
+    from utk_curio.backend.app.packages.application import libraries
+    from utk_curio.backend.tests._support.front_of_the_image import OTHER_TORCH, held, offline_pip
+    from utk_curio.backend.tests._support.offline_wheels import unpack_wheel
+
+    offline_pip(monkeypatch, tmp_path / "wheelhouse")
+    _write_package(
+        _user_store(launch_cwd, "7"), "acme.model@1", deps={"torch": ">=2.6"}, backend=False, python_template=True,
+    )
+    libraries.add_library("7", "python", f"torch=={OTHER_TORCH.version}")
+    tree = _account_tree(launch_cwd, monkeypatch, "7")
+    unpack_wheel(OTHER_TORCH, tree)
+
+    launcher.install_manifest_dependencies()
+
+    assert held(tree) == {"torch": OTHER_TORCH.version}

@@ -15,9 +15,12 @@ read-only and with ``allow_other``; read the file the service wrote there
 back through ``--bucket-mounts-dir``, AS THE EXECUTION ACCOUNT, in a child
 process with that account's ids; unmount it. FUSE without ``allow_other``
 still lets uid 0 read, and the backend runs as root, like rclone: a read as
-root would pass where node code's reads fail. The test reaches no network,
-and it proves FUSE, the service's AppArmor profile, mount propagation,
-``allow_other`` and the channel.
+root would pass where node code's reads fail. Then THE WAY OUT
+(:func:`reaches_proxy`): the service lists a bucket at a host no network has,
+as it lists a source's, so its request goes out through its ``HTTPS_PROXY``,
+and Curio's proxy, in the process that runs the test, must hear it. The test
+reaches no network past the proxy, and it proves FUSE, the service's AppArmor
+profile, mount propagation, ``allow_other``, the channel and the way out.
 
 A SOURCE'S MOUNT is rclone's ``s3`` backend on a connection string
 (:func:`s3_parameters`, :func:`connection_string`), mounted with
@@ -42,6 +45,7 @@ import hashlib
 import http.client
 import json
 import os
+import secrets
 import socket
 import subprocess
 import sys
@@ -87,6 +91,19 @@ SELFTEST_MOUNT_OPTIONS = {
     "dir_perms": "0555",
 }
 
+#: The self-test's way out (:func:`reaches_proxy`): the service lists a bucket
+#: at a host of this domain, with a name made for that one ask, as it lists a
+#: source's bucket, so its request goes out through its ``HTTPS_PROXY``. The
+#: domain is under ``.invalid``, which no resolver answers (RFC 6761), and
+#: Curio's proxy, told the name, answers the request itself.
+WAY_OUT_DOMAIN = "curio-bucket-mounts.invalid"
+WAY_OUT_PORT = 443
+WAY_OUT_BUCKET = "selftest"
+#: How long that listing may take: rclone tries a refused request three
+#: times, seconds apart, so it answers in seconds even when the proxy refuses
+#: it at once.
+WAY_OUT_SECONDS = 30
+
 #: Each call's deadline, in seconds.
 CALL_TIMEOUT = 30
 #: How long the self-test waits for the service to answer, since it may start
@@ -110,6 +127,7 @@ PROBLEMS = {
     "not-propagated": "the test mount did not reach this container",
     "not-readable": "node code's account could not read the test mount",
     "wrong-file": "the test mount did not hold the test file",
+    "no-way-out": f"the mount service could not reach Curio's proxy on port {PROXY_PORT}",
     "error": "the self-test failed",
 }
 
@@ -370,6 +388,70 @@ def _who(account: Optional[Account]) -> str:
     return "this process"
 
 
+def way_out_host() -> str:
+    """A host of :data:`WAY_OUT_DOMAIN` made for one ask, which no one but
+    this process knows: node code can reach the proxy's port too, and cannot
+    ask for this host in the service's stead."""
+    return f"selftest-{secrets.token_hex(16)}.{WAY_OUT_DOMAIN}"
+
+
+def way_out_fs(host: str) -> str:
+    """The remote the way out lists: a bucket at *host*, made as a source's
+    remote is (:func:`s3_parameters`)."""
+    return connection_string("s3", s3_parameters(f"https://{host}", path_style=True), WAY_OUT_BUCKET)
+
+
+def reaches_proxy(client: RcClient, proxy, *, timeout: float = WAY_OUT_SECONDS) -> tuple[bool, str]:
+    """Whether the service reaches Curio's *proxy*, its one way out, and what
+    rclone answered.
+
+    *proxy* is the one that listens in this process
+    (``mount_proxy.MountProxy``, or anything with its ``expect``, ``heard``
+    and ``forget``). It is told to expect a host made for this ask
+    (:func:`way_out_host`), and the service lists a bucket there
+    (``operations/list``), as a source's mount lists its bucket, so its
+    request goes out through its ``HTTPS_PROXY``. The proxy records the
+    request before it refuses it, and rclone answers only once its requests
+    are over, so the record is read once rclone answers, or once *timeout*
+    has passed with no answer.
+
+    Raises :class:`RcError` when nothing answers on the service's socket.
+    """
+    host = way_out_host()
+    proxy.expect(host, WAY_OUT_PORT)
+    try:
+        try:
+            client.call("operations/list", {"fs": way_out_fs(host), "remote": ""}, timeout=timeout)
+            answered = "the listing succeeded"
+        except RcError as error:
+            if error.kind == "unreachable":
+                raise
+            answered = error.reason
+        return proxy.heard(host, WAY_OUT_PORT), answered
+    finally:
+        proxy.forget(host, WAY_OUT_PORT)
+
+
+def check_way_out(client: RcClient, proxy, *, timeout: float = WAY_OUT_SECONDS) -> None:
+    """The service reaches Curio's *proxy* (:func:`reaches_proxy`), which
+    must listen in this process. Raises :class:`SelfTestFailed`:
+    ``no-way-out`` when the proxy heard nothing, the service's listing
+    outlasting *timeout* among them; never ``no-answer``, after which each
+    call the service answers would run the self-test again."""
+    if proxy is None or not proxy.listening:
+        raise SelfTestFailed("no-way-out", f"Curio's proxy does not listen on port {PROXY_PORT} in this process")
+    try:
+        reached, answered = reaches_proxy(client, proxy, timeout=timeout)
+    except RcError as error:
+        raise _call_failed(error, "no-way-out", "listing a bucket through the service's proxy") from None
+    if not reached:
+        raise SelfTestFailed(
+            "no-way-out",
+            f"the service listed a bucket at {WAY_OUT_DOMAIN} through its proxy, and Curio's proxy on port "
+            f"{PROXY_PORT} heard nothing of it: {answered}",
+        )
+
+
 def _wait_for_service(client: RcClient, wait_seconds: float,
                       sleep: Callable[[float], None], clock: Callable[[], float]) -> None:
     """Ask the service ``rc/noop`` until it answers, for up to *wait_seconds*."""
@@ -384,13 +466,15 @@ def _wait_for_service(client: RcClient, wait_seconds: float,
         sleep(SERVICE_RETRY_SECONDS)
 
 
-def self_test(client: RcClient, mounts_dir, *, account: Optional[Account] = None,
+def self_test(client: RcClient, mounts_dir, *, account: Optional[Account] = None, proxy=None,
               wait_seconds: float = SERVICE_WAIT_SECONDS,
               read: Optional[Callable[[Path, Optional[Account]], str]] = None,
               sleep: Callable[[float], None] = time.sleep,
               clock: Callable[[], float] = time.monotonic) -> SelfTest:
     """Mount the service's test folder, read its file through *mounts_dir*
-    as *account* (as this process when None), and unmount it.
+    as *account* (as this process when None), unmount it, and have the
+    service reach Curio's *proxy*, the one listening in this process
+    (:func:`check_way_out`); with no proxy, the self-test fails.
 
     Waits up to *wait_seconds* for the service to answer first, and
     unmounts a test mount a self-test that stopped halfway left. A step that
@@ -413,26 +497,29 @@ def self_test(client: RcClient, mounts_dir, *, account: Optional[Account] = None
             _unmount_quietly(client)
             raise
         unmount_test_folder(client)
+        check_way_out(client, proxy)
     except SelfTestFailed as failed:
         return SelfTest(False, failed.problem, failed.detail)
     except Exception as exc:  # noqa: BLE001 - the self-test reports a failure, it never raises
         return SelfTest(False, "error", f"the self-test raised {type(exc).__name__}: {exc}")
     return SelfTest(
         True, None,
-        f"mounted {SELFTEST_FOLDER} at {SELFTEST_MOUNT_POINT}, read {path} as {_who(account)}, unmounted it",
+        f"mounted {SELFTEST_FOLDER} at {SELFTEST_MOUNT_POINT}, read {path} as {_who(account)}, unmounted it, "
+        f"and reached Curio's proxy on port {PROXY_PORT}",
     )
 
 
 def self_test_from_env(environ: Optional[Mapping[str, str]] = None, *,
-                       wait_seconds: float = SERVICE_WAIT_SECONDS) -> Optional[SelfTest]:
+                       wait_seconds: float = SERVICE_WAIT_SECONDS, proxy=None) -> Optional[SelfTest]:
     """The self-test of the service the environment names, reading as the
-    execution account (:func:`execution_account`); None when it names none."""
+    execution account (:func:`execution_account`) and reaching *proxy*;
+    None when it names none."""
     environ = os.environ if environ is None else environ
     named = configured(environ)
     if named is None:
         return None
     folder, socket_path = named
-    return self_test(RcClient(socket_path), folder, account=execution_account(environ),
+    return self_test(RcClient(socket_path), folder, account=execution_account(environ), proxy=proxy,
                      wait_seconds=wait_seconds)
 
 

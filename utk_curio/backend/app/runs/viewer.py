@@ -22,9 +22,16 @@ journaled, and the saved spec is never written.
 What is kept: each step's output, under a key of what made it, as viewers
 made it (``runs/kept.py``: ``step_key``, ``keep``), so a visitor who opens
 the page or picks values someone ran before gets the outputs at once, and a
-request for a run already going joins it. Kept outputs go after their time or
-past their budget, with their artifacts, by the sweep ``kept.py`` describes;
-a run sweeps at its end, and at the first start after a restart.
+request for a run already going joins it. The files a step derives from a
+collection's files (an overlay, a video's frame) are kept with its output, in
+a folder of the step's own in the owner's media folder
+(``media_dirs.derived_root``), whose name the URLs of its rows carry: a
+viewer's run never writes where the owner's runs write theirs under the same
+ids. A step that reads an earlier step's output keeps naming that step's
+folder (``kept.folders_named_by``), since its rows may hand on the files there.
+Kept outputs go after their time or past their budget, with their artifacts,
+and a folder goes once no kept output names it, by the sweep ``kept.py``
+describes; a run sweeps at its end, and at the first start after a restart.
 
 A hosted guest's dashboard of a dataflow their account owns, an example, is
 their own copy's once they have one (``projects/visitor_copies.py``,
@@ -32,10 +39,14 @@ their own copy's once they have one (``projects/visitor_copies.py``,
 standing in only for the nodes the copy makes as the dataflow does
 (:func:`made_as_saved`); its steps read the guest's own datasets, as the
 guest's plays do, the request's sign-in served on their threads; and what it
-keeps is kept on the copy, under a dashboard of its own, which no other
-visitor's dashboard reads or joins.
+keeps is kept on the copy, which no other visitor's dashboard reads. Its page
+names the copy, made or not yet, as the guest's canvas does
+(``dashboard_copy_id``), and from the guest's first visit its runs are a
+dashboard of their own, the copy's (``dashboard:<copy id>``), which joins and
+waits on no other visitor's runs: while the guest has no copy they run the
+dataflow and keep on it, as anyone's run of it does.
 
-A step only a browser runs (an Autark compute node, a Spatial Join) is the
+A step only a browser runs (an Autark compute node) is the
 page's. The run ends asking for it (``needs_canvas``), as a canvas's run on
 the server does, or ends ``succeeded`` when only a tile reads it; either way
 the page runs the node and sends what it made (:func:`keep_tab_result`), and
@@ -49,7 +60,13 @@ overall (``common/address_limiter.py``) of the runs of values a visitor tries
 (opening the page costs nothing, nor does the one start that goes on from the
 steps a run left to its page), a few live runs per dashboard, and at most half
 the sandbox's isolated pool running a viewer's node at once, so viewers never
-take every slot from signed-in users.
+take every slot from signed-in users. In a start of several backend processes
+the budget per address, the overall one and the slots hold across them all
+(``common/shared_budgets.py``), since a visitor's dashboards and every viewer's
+steps reach several processes and one pool. A dashboard's live runs are the
+process's that owns the dataflow its page names alone: its dataflow's, or for
+a hosted guest, the guest's own copy's, made or not yet. No other process
+starts one (``owner_guard``).
 """
 from __future__ import annotations
 
@@ -63,6 +80,7 @@ import time
 import uuid
 from typing import Iterator, Optional
 
+from utk_curio.backend.app.common import shared_budgets
 from utk_curio.backend.app.common.address_limiter import AddressLimiter
 from utk_curio.backend.app.common.job_registry import JobRefused, JobRegistry
 from utk_curio.backend.app.execution.sandbox_client import SANDBOX_STORE_TIMEOUT, sandbox_request
@@ -72,6 +90,7 @@ from utk_curio.backend.app.runs.kept import (
     canonical,
     datasets_read,
     digest,
+    folders_named_by,
     forget_sessions,
     keep,
     kept_output,
@@ -127,11 +146,11 @@ REGISTRY = JobRegistry(
     ),
 )
 
-_LIMITER = AddressLimiter(RUNS_PER_ADDRESS_PER_MINUTE, RUNS_PER_MINUTE)
+_LIMITER = AddressLimiter(RUNS_PER_ADDRESS_PER_MINUTE, RUNS_PER_MINUTE, shared="viewer-runs")
 
 #: Nodes a viewer's runs may have running at once, across the server.
 STEP_SLOTS = max(1, exec_parallelism() // 2)
-_SLOTS = threading.BoundedSemaphore(STEP_SLOTS)
+_SLOTS = shared_budgets.Semaphore("viewer-steps", STEP_SLOTS)
 
 _RUNS_LOCK = threading.Lock()
 #: ``{run id: {"projectId", "token", "browserSteps"}}`` of the runs this
@@ -360,17 +379,36 @@ def start_viewer_run(
 
     A hosted guest who has their own copy of the dataflow runs the copy
     (``visitor_copies.dashboard_copy``), with the saved outputs that hold for
-    it (:func:`made_as_saved`), and keeps what the run makes on the copy. The
-    dashboard of a hosted guest's own new dataflow, which has no row, runs it
-    for that guest alone (``visitor_copies.dashboard_new``): as it is now,
-    with no saved output, kept on it; for anyone else it is not found."""
+    it (:func:`made_as_saved`), and keeps what the run makes on the copy. A
+    hosted guest's runs are their own copy's dashboard's from their first
+    visit, made or not yet (``visitor_copies.dashboard_copy_id``): a start of
+    values another visitor's run runs does not join it, nor does it count
+    against that dashboard's live runs. The dashboard of a hosted guest's own
+    new dataflow, which has no row, runs it for that guest alone
+    (``visitor_copies.dashboard_new``): as it is now, with no saved output,
+    kept on it; for anyone else it is not found.
+
+    Refused first of all in a process that does not own the dataflow the
+    dashboard's page names (``collaboration/owner_guard.py``): a hosted
+    guest's own copy of it, made or not yet, which the guest's page names as
+    its canvas does (``visitor_copies.dashboard_copy_id``), else the
+    dashboard's dataflow. So a hosted guest's runs are its copy's process's,
+    whether they run the copy or, while the guest has none, the dataflow,
+    which that process reads as any process reads a dataflow it does not own
+    (``dataflow_docs.read``)."""
     from flask import current_app
 
+    from utk_curio.backend.app.collaboration import owner_guard
     from utk_curio.backend.app.execution.node_names import template_labels
+    from utk_curio.backend.app.projects import storage, visitor_copies
+
+    # The dataflow the dashboard's page names, whose dashboard the run is:
+    # a hosted guest's own copy, made or not yet, else the dashboard's own.
+    named = visitor_copies.dashboard_copy_id(project_id)
+    owner_guard.refuse(named or project_id, what="a dashboard's run")
     from utk_curio.backend.app.execution.run_engine import PlanError
     from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
     from utk_curio.backend.app.packages.service import roster_templates
-    from utk_curio.backend.app.projects import storage, visitor_copies
     from utk_curio.backend.app.projects.dashboard_payload import dashboard_source_node_ids
     from utk_curio.backend.app.projects.models import Project
     from utk_curio.backend.app.projects.services import _owner_user_dir_key
@@ -443,9 +481,12 @@ def start_viewer_run(
         raise RunError(str(exc), 422) from exc
 
     _forget_finished_runs()
-    # A hosted guest's copy is a dashboard of its own: no other visitor's
-    # start joins its runs, nor counts against its live ones.
-    dashboard = f"dashboard:{kept_on}"
+    # A hosted guest's dashboard is its own copy's from the guest's first
+    # visit, made or not yet: its runs join no other visitor's, nor count
+    # against their live ones, and no other visitor's join or count against
+    # its own. What they keep is kept on *kept_on*: the copy once made, else
+    # the dataflow, whose kept outputs anyone's run of the same values reuses.
+    dashboard = f"dashboard:{named or kept_on}"
     run_key = hashlib.sha256(canonical({
         "revision": storage.spec_revision(user_key, kept_on),
         "values": _control_values(dashboard_controls(overlaid)),
@@ -531,6 +572,7 @@ def _run_events(
     guest's datasets as the guest's plays do (``visitor_copies.serving``)."""
     from contextlib import nullcontext
 
+    from utk_curio.backend.app.discovery.infrastructure import media_dirs
     from utk_curio.backend.app.execution import node_exec
     from utk_curio.backend.app.execution.run_engine import run_events
     from utk_curio.backend.app.projects import visitor_copies
@@ -556,21 +598,37 @@ def _run_events(
             output, ids = kept
             return {"stdout": [], "stderr": "", "output": output, "artifactIds": ids}
         session_id = new_session_id()
+        # What the step derives (an overlay, a frame) is its own, in a folder
+        # of its session's that goes with its kept output, never where the
+        # owner's runs write theirs under the same ids.
+        kept_media = media_dirs.kept_media_name(session_id)
         node_run = node_exec.NodeRun(
             code=call.code, node_type=step.node_type,
             # No node id: a viewer's run writes nothing to the owner's runtime
             # journal (``record_runtime_outcome``) and installs nothing.
             node_id=None, input=call.input, dataflow_id=project_id, node_name=step.label,
             save_output_dataset=False, input_slots=call.slots,
-            kept_on=kept_on if kept_on != project_id else None,
+            kept_on=kept_on if kept_on != project_id else None, kept_media=kept_media,
         )
         run_node = node_exec.execute_js_node if call.engine == "javascript" else node_exec.execute_python_node
-        with _SLOTS:
-            reply, _status = run_node(owner, session_id, node_run)
+        try:
+            with _SLOTS:
+                reply, _status = run_node(owner, session_id, node_run)
+        except BaseException:
+            media_dirs.forget_kept(user_key, [kept_media])
+            raise
         output = reply.get("output") if isinstance(reply.get("output"), dict) else {}
         if output.get("path"):
-            return {**reply, "artifactIds": keep(kept_on, step.node_id, key, session_id, output, private)}
+            # Its rows may hand on the rows it read, which name the files
+            # earlier steps derived: those folders stay while this output does.
+            read = node_exec.input_names(node_exec.parse_input_ref(call.input)) if call.input else []
+            ids = keep(
+                kept_on, step.node_id, key, session_id, output, private,
+                media_folders=folders_named_by(kept_on, read),
+            )
+            return {**reply, "artifactIds": ids}
         forget_sessions([session_id])
+        media_dirs.forget_kept(user_key, [kept_media])
         return reply
 
     def wrap(fn):

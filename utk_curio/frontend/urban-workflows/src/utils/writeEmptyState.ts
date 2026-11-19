@@ -20,7 +20,7 @@ import { NODE_EMPTY_COPY, type NodeEmptyReason } from "./nodeEmptyState";
 export function writeEmptyState(
   host: HTMLElement | null,
   reason: NodeEmptyReason | null,
-  words: { title?: string; hint?: string | null } = {},
+  words: { title?: string; hint?: string | null; progress?: readonly string[] | null } = {},
 ): void {
   if (!host || reason == null) return;
 
@@ -35,6 +35,17 @@ export function writeEmptyState(
   title.className = emptyStyles.title;
   title.textContent = words.title ?? copy.title;
   wrapper.appendChild(title);
+
+  // A dashboard's tile below a step that downloads what it reads on its
+  // first use: how far each download has come, each on its line, as
+  // NodeEmptyState says it.
+  for (const said of words.progress ?? []) {
+    const line = document.createElement("span");
+    line.className = emptyStyles.hint;
+    line.setAttribute("data-curio-node-progress", "");
+    line.textContent = said;
+    wrapper.appendChild(line);
+  }
 
   const hint = document.createElement("span");
   hint.className = emptyStyles.hint;

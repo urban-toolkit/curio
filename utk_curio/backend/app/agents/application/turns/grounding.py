@@ -40,61 +40,58 @@ from utk_curio.backend.app.agents.domain import agent_text
 log = logging.getLogger(__name__)
 
 
-def _resolve_catalog_execution_paths(project_id: str, dataset_ids: list) -> dict:
-    """dev/115: ``{datasetId: absolutePath}`` for every id a Solve batch may
-    load — resolved ONCE in the request thread the way ``/processPythonCode``
-    does (contained paths only); fail-open to ``{}``."""
-    ids = [str(i) for i in dataset_ids if i][:64]
-    if not ids:
-        return {}
-    try:
-        from flask import g, has_request_context
+def _dataset_path_topup(
+    project_id: str, user_obj, mapping: dict, ids: list, formats: dict | None = None,
+    unavailable: dict | None = None, failed: dict | None = None, *, by: str | None = None,
+) -> dict:
+    """Resolve dataset ids *mapping* does not have, as *user_obj*.
 
-        from utk_curio.backend.app.datasets.application.catalog_service import (
-            DatasetCatalogService,
-        )
+    A Solve's job holds no request context, so it looks a dataset's path up
+    as the acting user, which it holds from its start, when a round's code
+    reads it (dev/132, which closed dev/131 F4: a dataset that appeared
+    DURING the session, the user importing the file a portal row's steps
+    described or installing one from the catalog, had no path inside the
+    running job). Nothing is looked up before a round reads it: on a pip
+    install a lookup downloads a shipped dataset the pip package leaves out.
+    Each path is kept in *mapping*, so an id costs one lookup per session.
+    *formats*, when given, is filled with how each id it resolves is read,
+    and *unavailable* with why each id whose download failed could not be
+    had (``resolve_execution_paths``).
 
-        user = getattr(g, "user", None) if has_request_context() else None
-        return dict(
-            DatasetCatalogService(user).resolve_execution_paths(ids, dataflow_id=project_id) or {}
-        )
-    except Exception:
-        log.warning("Could not resolve catalog execution paths for project %s",
-                    project_id, exc_info=True)
-        return {}
-
-
-def _dataset_path_topup(project_id: str, user_obj, mapping: dict, ids: list, formats: dict | None = None) -> dict:
-    """Resolve dataset ids the eager mapping does not have, as *user_obj*.
-
-    dev/131 F4, closed by dev/132: the sandbox path mapping is resolved when a
-    Solve starts (dev/115's rule — the job thread holds no request context), so
-    a dataset that appeared DURING the session — the user importing the file a
-    portal row's steps described, or installing one from the catalog — had no
-    path inside the running job and its node stayed pending until the next
-    Solve. The acting user is what the resolution actually needs, and a job can
-    hold that from its start; the top-up caches into the same mapping, so one
-    new id costs one lookup per session. *formats*, when given, is filled
-    with how each id it resolves is read (``resolve_execution_paths``).
+    *failed*, when given, is the Solve's own record of the downloads that
+    failed in its run (``left_out_files.keeping``), which the lookup runs
+    in, under *by*, the node whose round it is: a file whose download failed
+    is not downloaded again, the lookup giving the first failure's reason to
+    *unavailable* at once, until the file is in place, saved by hand where
+    that reason says, which the lookup then reads; a download that fails now
+    joins the record.
     """
     missing = [i for i in ids if i and i not in mapping]
     if not missing or user_obj is None:
         return mapping
+    problems: dict | None = None if unavailable is None else {}
     try:
         from utk_curio.backend.app.datasets.application.catalog_service import (
             DatasetCatalogService,
         )
+        from utk_curio.backend.app.datasets.infrastructure import left_out_files
 
         read_as = {} if formats is None else {"formats": formats}
-        resolved = DatasetCatalogService(user_obj).resolve_execution_paths(
-            missing, dataflow_id=project_id, **read_as
-        ) or {}
+        if problems is not None:
+            read_as["unavailable"] = problems
+        with left_out_files.keeping(failed, by=by):
+            resolved = DatasetCatalogService(user_obj).resolve_execution_paths(
+                missing, dataflow_id=project_id, **read_as
+            ) or {}
     except Exception:  # noqa: BLE001 — an unresolvable id fails loudly IN the sandbox
         log.warning("Could not top up catalog paths for project %s", project_id,
                     exc_info=True)
         return mapping
     for dataset_id, path in resolved.items():
         mapping[str(dataset_id)] = path
+    if unavailable is not None:
+        for dataset_id, reason in (problems or {}).items():
+            unavailable.setdefault(dataset_id, reason)
     return mapping
 
 
@@ -113,19 +110,26 @@ def _dataset_ids_in(codes: list) -> list[str]:
 
 def _session_dataset_paths(
     project_id: str, user_obj, mapping: dict, codes: list, formats: dict | None = None,
+    unavailable: dict | None = None, *, failed: dict | None = None, by: str | None = None,
 ) -> dict:
-    """The paths *codes* need — from the eager mapping, topped up for anything
-    that arrived since the session started (dev/131 F4).
+    """The paths *codes* need: those *mapping*, the Solve's, holds, and the
+    others looked up now (:func:`_dataset_path_topup`), when a round's code
+    reads them, and kept there.
 
     With *formats*, a layer group the codes name gets its layers' paths, and
     *formats* its entry and its layers' (``layer_group_formats``), so
     ``curio_load_data("<group id>")`` runs as on Play. A group's id has no
     path to keep, so it is resolved again for each run; every other dataset
-    is read by its path alone, as before."""
+    is read by its path alone, as before. *unavailable*, when given, gets
+    why each id whose file failed to download could not be had, which the
+    run reports for the node that reads it (``runner.run_through_node``),
+    and *failed*, the Solve's record of its failed downloads, keeps those
+    for its run, under *by*, the node whose round it is, so no later round
+    downloads one again until its file is in place."""
     ids = _dataset_ids_in(codes)
     found: dict | None = None if formats is None else {}
     if ids:
-        _dataset_path_topup(project_id, user_obj, mapping, ids, found)
+        _dataset_path_topup(project_id, user_obj, mapping, ids, found, unavailable, failed, by=by)
     if formats is None:
         return _filter_dataset_paths(mapping, codes)
     groups = layer_group_formats(ids, found)
@@ -147,17 +151,24 @@ def _filter_dataset_paths(mapping: dict, codes: list, formats: dict | None = Non
     return out
 
 
-def _exec_dataset_paths(project_id: str, *codes: str, formats: dict | None = None) -> dict:
+def _exec_dataset_paths(
+    project_id: str, *codes: str, formats: dict | None = None, unavailable: dict | None = None,
+    user=None,
+) -> dict:
     """dev/115: the ``{datasetId: absolutePath}`` mapping the sandbox needs for
     every ``curio_data_path("<id>")`` and ``curio_load_collection("<id>")`` call
     in *codes* — resolved the way ``/processPythonCode`` resolves it
     (``resolve_execution_paths``, contained paths only). Fail-open to ``{}``:
     an unmapped id raises a clear per-id error inside the sandbox, which the
-    correction loop then sees. Needs the request context (``g.user``); a Solve
-    batch precomputes it in the request thread and hands the mapping to its
-    workers. *formats*, when given, gets the entries of the layer groups the
+    correction loop then sees. Looked up as *user*, the account a request
+    took, for a lookup on a thread that holds no request (validate-node's
+    and a Run node's, on the thread their run runs on, where a download says
+    how far it has come), else as the request's (``g.user``); a Solve's
+    rounds keep their paths for the Solve instead (:func:`_session_dataset_paths`).
+    *formats*, when given, gets the entries of the layer groups the
     codes name and of their layers, as :func:`_session_dataset_paths` gives
-    them."""
+    them, and *unavailable* why each id whose file failed to download could
+    not be had, which the run reports for the node that reads it."""
     ids = _dataset_ids_in(list(codes))[:32]
     if not ids:
         return {}
@@ -168,9 +179,12 @@ def _exec_dataset_paths(project_id: str, *codes: str, formats: dict | None = Non
             DatasetCatalogService,
         )
 
-        user = getattr(g, "user", None) if has_request_context() else None
+        if user is None:
+            user = getattr(g, "user", None) if has_request_context() else None
         found: dict = {}
         read_as = {} if formats is None else {"formats": found}
+        if unavailable is not None:
+            read_as["unavailable"] = unavailable
         resolved = DatasetCatalogService(user).resolve_execution_paths(
             ids, dataflow_id=project_id, **read_as
         )
@@ -196,46 +210,25 @@ def _collections_key(user_key: str, user=None) -> str:
     return exec_user_key(user) or user_key
 
 
-def _resolve_catalog_collections(project_id: str, user_key: str, catalog_ids: dict, user=None) -> dict:
-    """The collections twin of :func:`_resolve_catalog_execution_paths`:
-    ``{datasetId: entry | None}`` over *catalog_ids*, a Solve's grounding
-    base's, which say each dataset's format. Resolved ONCE, in the request
-    that starts the Solve, as *user* (else the request's account) under its
-    key (:func:`_collections_key`): the job's threads hold no request, and
-    the thread each attempt runs on holds no app context and serves no
-    sign-in. Each of the first 64 collections gets the entry a run hands the
-    sandbox, or None when the account reads no such collection; every other
-    id gets None, so a run that names it looks nothing up
-    (:func:`_collection_topup`). Fail-open: a collection left out is looked
-    up when a run names it."""
-    if not catalog_ids:
-        return {}
-    if user is None:
-        user = agents_askers.person()
-    mapping: dict = {
-        str(i): None for i, ref in catalog_ids.items() if getattr(ref, "format", "") != "collection"
-    }
-    collections = [str(i) for i, ref in catalog_ids.items() if getattr(ref, "format", "") == "collection"][:64]
-    if not collections:
-        return mapping
-    try:
-        from utk_curio.backend.app.discovery.application.exec_collections import resolve_collections
-
-        found = resolve_collections(collections, _collections_key(user_key, user), user=user, dataflow_id=project_id)
-    except Exception:  # noqa: BLE001 - an unresolved collection fails loudly IN the sandbox
-        log.warning("Could not resolve the collections of project %s", project_id, exc_info=True)
-        return mapping
-    mapping.update({dataset_id: found.get(dataset_id) for dataset_id in collections})
-    return mapping
+def _solve_collections(catalog_ids: dict) -> dict:
+    """The collections a Solve starts from: ``{datasetId: None}`` for each of
+    *catalog_ids*, a Solve's grounding base's, which say each dataset's
+    format, that is no collection, so a run that names it looks nothing up
+    (:func:`_collection_topup`). A collection is looked up only when a
+    round's code reads it (:func:`_session_collections`): a lookup of one of
+    a bucket this deployment mounts mounts its bucket
+    (``exec_collections.resolve_collections``)."""
+    return {str(i): None for i, ref in (catalog_ids or {}).items() if getattr(ref, "format", "") != "collection"}
 
 
 def _collection_topup(project_id: str, user_key: str, user_obj, mapping: dict, ids: list) -> dict:
     """The collections twin of :func:`_dataset_path_topup`: look up, as
-    *user_obj* under its key, the ids *mapping* holds no answer for, such as
-    a collection added while the Solve runs, and keep each answer in it, None
-    for an id that is no collection the account reads. It runs on the thread
-    that starts a run's attempt, which a Solve gives the app's context and
-    the asker's sign-in. A miss is kept too, unlike a dataset path's: every
+    *user_obj* under its key, the ids *mapping* holds no answer for, each
+    collection the first time a round's code reads it, one added while the
+    Solve runs among them, and keep each answer in it, None for an id that
+    is no collection the account reads. It runs on the thread that starts a
+    run's attempt, which a Solve gives the app's context and the asker's
+    sign-in. A miss is kept too, unlike a dataset path's: every
     ``curio_load_data`` id may name a collection, so an id costs one lookup
     per session, not one per attempt."""
     missing = [i for i in ids if i and i not in mapping]
@@ -258,11 +251,12 @@ def _session_collections(
 ) -> tuple[dict, str | None]:
     """The collections twin of :func:`_session_dataset_paths`: ``(collections,
     media_dir)`` for a run's attempt. The collections *codes* read come from
-    the mapping the Solve's request resolved (:func:`_resolve_catalog_collections`),
-    topped up for an id that read did not find (:func:`_collection_topup`);
-    *media_dir* is the media folder of the account that asked. The ids are
-    those ``resolve_spec_collections`` finds in the same codes, within the
-    same cap."""
+    the Solve's mapping, which starts with the ids that are no collection
+    (:func:`_solve_collections`), each looked up the first time a round's
+    code reads it (:func:`_collection_topup`); *media_dir* is the media
+    folder of the account that asked. The ids are those
+    ``resolve_spec_collections`` finds in the same codes, within the same
+    cap."""
     from utk_curio.backend.app.discovery.application.exec_collections import media_dir_for
 
     ids = collection_ids_in_code("\n".join(str(code or "") for code in codes))
@@ -327,8 +321,7 @@ def _catalog_rows_for_discovery(user_key: str, project_id: str) -> list[dict]:
     dev/126, learned from dev/123's field finding: ``catalog.search`` rides the
     request context (the datasets domain is user-object keyed), and a detached
     Solve job has none — so the rows are listed at the entry point and handed
-    to the discovery delegate, exactly as dev/115 already resolves the
-    execution paths eagerly. Empty on failure: the delegate is then TOLD the
+    to the discovery delegate. Empty on failure: the delegate is then TOLD the
     catalog was unavailable rather than left to imagine it.
 
     Every row of the listing: the delegate is shown the first of them
@@ -1159,7 +1152,7 @@ def _reachable_modules(user_key: str, node_type: object, project_id: str,
     """The modules a run hands a node of *node_type* (``packages.modules_for_node``,
     the run's own reader): those of its package and of the packages it
     depends on, for an editor's run (*keys*) as that run gets them. A
-    built-in node gets none."""
+    built-in Python node gets the built-in package's."""
     from utk_curio.backend.app.packages import service as packages_services
 
     owners = _editors_owners(user_key, project_id, keys)

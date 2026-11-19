@@ -144,14 +144,14 @@ def _send(panel, message: str) -> None:
     panel.get_by_role("button", name="Send", exact=True).click()
 
 
-def _wait_until_held(backend: str, name: str, timeout: float = 30.0) -> None:
-    """Wait until a turn's model call waits on the hold *name*."""
+def _wait_until_held(backend: str, name: str, *, dataflow: str, timeout: float = 30.0) -> None:
+    """Wait until a turn of *dataflow* waits at its model call on the hold *name*."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if held_agent_calls(backend).get(name):
+        if held_agent_calls(backend, dataflow=dataflow).get(name):
             return
         time.sleep(0.1)
-    raise AssertionError(f"no turn reached the model's hold {name!r}: {held_agent_calls(backend)}")
+    raise AssertionError(f"no turn reached the model's hold {name!r}: {held_agent_calls(backend, dataflow=dataflow)}")
 
 
 def test_an_editors_turn_goes_on_after_he_leaves_and_a_second_ask_waits_its_turn(room):
@@ -164,7 +164,8 @@ def test_an_editors_turn_goes_on_after_he_leaves_and_a_second_ask_waits_its_turn
     ana, ben = _open_chat(owner), _open_chat(editor)
 
     # Ben asks: Ana's open chat follows his turn, his message named after him.
-    script_agent_replies(room.backend, "The parks are in the loader.", attachment=researcher)
+    script_agent_replies(room.backend, "The parks are in the loader.", attachment=researcher,
+                         dataflow=room.project_id)
     _send(ben, "Where are the parks?")
     expect(ana.locator(f'[data-curio-writer="{EDITOR_NAME}"]', has_text="Where are the parks?")).to_be_visible(
         timeout=30000)
@@ -172,9 +173,9 @@ def test_an_editors_turn_goes_on_after_he_leaves_and_a_second_ask_waits_its_turn
 
     # Ben asks again, and the model takes its time.
     script_agent_replies(room.backend, {"text": "Ben's answer, after he left.", "hold": HOLD},
-                         "Ana's answer.", attachment=researcher)
+                         "Ana's answer.", attachment=researcher, dataflow=room.project_id)
     _send(ben, "And the trees?")
-    _wait_until_held(room.backend, HOLD)
+    _wait_until_held(room.backend, HOLD, dataflow=room.project_id)
 
     # Ana opens the chat mid-turn: Ben's message is there, his turn running.
     owner.reload()
@@ -193,7 +194,7 @@ def test_an_editors_turn_goes_on_after_he_leaves_and_a_second_ask_waits_its_turn
     # Ben closes his tab. His turn goes on, and Ana's waits for it.
     editor.context.close()
     expect(ana.get_by_text("Ana's answer.")).to_have_count(0)
-    release_agent_hold(room.backend, HOLD)
+    release_agent_hold(room.backend, HOLD, dataflow=room.project_id)
     expect(ana.get_by_text("Ben's answer, after he left.")).to_be_visible(timeout=60000)
     expect(ana.get_by_text("Ana's answer.")).to_be_visible(timeout=60000)
     expect(waiting).to_have_count(0)

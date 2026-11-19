@@ -88,10 +88,20 @@ VIEWPORT_WALL_CAP_MS = 120_000
 # the page draws it, has held for *reads* reads in a row. It counts its reads,
 # and returns false while it waits, then 'held', or 'out of reads' once it has
 # made *maxReads*. Its record on window.__curio_fitWait says how the wait went.
+#
+# It also scrolls the canvas's wrapper back to its origin first. React Flow's
+# `.react-flow` hides its overflow and pans by its viewport's transform, but a
+# scroll into view of a node past the pane's edge (Playwright's, before it
+# plays or clicks one) scrolls it, and every node is then drawn that far off
+# where a fit sets it. Example 31's map close-up came out 368 px to the left,
+# under the palette dock, after its test played the swimlane past the pane's
+# edge. The canvas turns such a scroll into the same pan when the browser fires
+# it, at its next frame (#1539); a wait on a runner that draws no frame for a
+# while can read the wrapper before then.
 _FIT_AND_HOLD_JS = """({ options, reads, maxReads }) => {
     const wait = window.__curio_fitWait = window.__curio_fitWait || {
         target: null, shown: null, held: 0,
-        reads: 0, fits: 0, mostHeld: 0, lastReadAt: null, longestGapMs: 0,
+        reads: 0, fits: 0, mostHeld: 0, lastReadAt: null, longestGapMs: 0, unscrolled: 0,
     };
     const now = performance.now();
     if (wait.lastReadAt !== null) wait.longestGapMs = Math.max(wait.longestGapMs, now - wait.lastReadAt);
@@ -101,6 +111,15 @@ _FIT_AND_HOLD_JS = """({ options, reads, maxReads }) => {
         const fit = window.__curio_fitViewWithMenuOffset;
         const flow = window.__curio_reactFlow;
         if (typeof fit !== 'function' || !flow) return false;
+        const wrapper = document.querySelector('.react-flow');
+        if (wrapper && (wrapper.scrollLeft !== 0 || wrapper.scrollTop !== 0)) {
+            wrapper.scrollLeft = 0;
+            wrapper.scrollTop = 0;
+            wait.unscrolled += 1;
+            wait.shown = null;
+            wait.held = 0;
+            return false;
+        }
         const at = flow.getViewport();
         const target = wait.target;
         if (!target || at.x !== target.x || at.y !== target.y || at.zoom !== target.zoom) {
@@ -128,11 +147,14 @@ _FIT_AND_HOLD_JS = """({ options, reads, maxReads }) => {
 
 _FIT_WAIT_STATE_JS = """() => {
     const wait = window.__curio_fitWait || {};
+    const wrapper = document.querySelector('.react-flow');
     return {
         hook: typeof window.__curio_fitViewWithMenuOffset,
         fitSet: wait.target || null,
         viewport: window.__curio_reactFlow ? window.__curio_reactFlow.getViewport() : null,
         drawn: [...document.querySelectorAll('.react-flow__viewport')].map((v) => v.style.transform),
+        scrolled: wrapper ? { left: wrapper.scrollLeft, top: wrapper.scrollTop } : null,
+        unscrolled: wait.unscrolled || 0,
         unmeasured: window.__curio_reactFlow
             ? window.__curio_reactFlow.getNodes()
                 .filter((n) => !(n.width > 0 && n.height > 0) && !(n.style && n.style.display === 'none'))
@@ -205,6 +227,15 @@ def _wait_for_reactflow_ready(
     the dataflow to open, up to ``DATAFLOW_OPEN_TIMEOUT_MS``, as the drop
     helpers do (:func:`_wait_for_the_canvas_dataflow`). *timeout_ms* then
     bounds the wait for a first node.
+
+    The fit lands where it means to only on an unscrolled canvas: React Flow's
+    wrapper hides its overflow, and a scroll into view of a node past the
+    pane's edge, which Playwright makes before it plays or clicks one,
+    scrolls it, so every node is drawn that far off where the fit sets it. The
+    canvas turns that scroll into a pan at the browser's next frame
+    (``useFlowInSight``, #1539); the wait scrolls back a wrapper it finds
+    scrolled before then, before the viewport can hold
+    (``test_frame_nodes_e2e.py``).
     """
     _wait_for_the_canvas_dataflow(page)
     page.wait_for_function(

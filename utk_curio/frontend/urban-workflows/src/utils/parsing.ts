@@ -45,7 +45,7 @@ export type ParsedGeoDataframe = {
  * The sandbox wire shape always declares `geometry_name` (null when the frame
  * has no active geometry, see test_geodataframe_wire_shape.py). A payload
  * without the key never came off that wire: it is plain GeoJSON assembled in
- * the browser or by a backend route, as Spatial Join, a Data Pool layer or a
+ * the browser or by a backend route, as a custom-UI node, a Data Pool layer or a
  * JS node emit. GeoJSON has exactly one geometry per feature, so that IS the
  * active column, and "geometry" is its conventional name (geopandas' default).
  * Before this fallback every geoshape over such a payload ended in

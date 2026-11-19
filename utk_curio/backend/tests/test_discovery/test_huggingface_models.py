@@ -33,6 +33,18 @@ SOURCE = "source.huggingface.models@1"
 ONNX_REPO = "Xenova/segformer-b0-finetuned-ade-512-512"
 TRANSFORMERS_REPO = "openmmlab/upernet-convnext-tiny"
 PICKLE_REPO = "openmmlab/upernet-convnext-small"
+#: The package whose node the source names for the models it adds, and the
+#: package that node's code calls.
+DDRNET_ID = "model.curio.ddrnet23-slim"
+DDRNET_DIR = f"{DDRNET_ID}@1"
+SEGMENTATION_DIR = "curio.segmentation@1"
+
+
+def _ddrnet_code(model_id: str) -> str:
+    """DDRNet23-Slim's node's code, its ``curio_load_model`` call naming *model_id*."""
+    code = (Path(__file__).resolve().parents[4] / "packages" / DDRNET_DIR / "sources" / "image-segmentation.py").read_text(
+        encoding="utf-8")
+    return code.replace(f'curio_load_model("{DDRNET_ID}")', f'curio_load_model("{model_id}")')
 
 
 @pytest.fixture()
@@ -155,9 +167,11 @@ class TestWhatAnAddFetches:
 class TestItLandsAsAModelPackage:
     """An added Hugging Face model is a model package in the user's store: its
     files under ``models/``, its ``model`` block written from the repo's
-    configs, one Image Segmentation node whose cell Curio writes, and its
-    libraries installed by the packages' own path. It replaces the folder the
-    Model Catalog kept downloads in."""
+    configs, one Image Segmentation node, the one the source's manifest names
+    (DDRNet23-Slim's), its code naming the model, the Segmentation package its
+    code calls, which the add brings, and its libraries installed by the
+    packages' own path. It replaces the folder the Model Catalog kept
+    downloads in."""
 
     def _add(self, client, auth, repo):
         res = acquire(client, auth, SOURCE, repo)
@@ -173,10 +187,14 @@ class TestItLandsAsAModelPackage:
 
     def _package(self, user, model_id: str):
         """The model package's folder in *user*'s store, and its manifest."""
+        folder = self._package_folder(user, f"{model_id}@1")
+        return folder, json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+
+    def _package_folder(self, user, dir_name: str) -> Path:
+        """The folder of *dir_name* in *user*'s store."""
         from utk_curio.backend.app.packages.repositories.store import package_dir
 
-        folder = package_dir(self._key(user), f"{model_id}@1")
-        return folder, json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+        return package_dir(self._key(user), dir_name)
 
     @staticmethod
     def _listed(client, auth, model_id: str) -> dict:
@@ -213,49 +231,76 @@ class TestItLandsAsAModelPackage:
         assert block["discoverySource"]["resourceId"] == ONNX_REPO
         assert manifest["dependencies"]["python"] == {"onnxruntime": ">=1.17"}
         assert (folder / "integrity.json").is_file()
-        # Its node is the one DDRNet23-Slim's package ships: no source of its
-        # own, so it opens with the cell Curio writes.
+        # Its node is the one the source names, DDRNet23-Slim's, field for
+        # field, with its code naming this model, and its package names the
+        # package that code calls, which the add brought into the store.
+        node = json.loads((Path(__file__).resolve().parents[4] / "packages" / DDRNET_DIR / "manifest.json")
+                          .read_text(encoding="utf-8"))
         [template] = manifest["templates"]
-        assert (template["id"], template["label"]) == ("image-segmentation", "Image Segmentation")
-        assert "source" not in template and not (folder / "sources").exists()
+        assert template == node["templates"][0]
+        assert (template["id"], template["label"], template["source"]) == (
+            "image-segmentation", "Image Segmentation", "sources/image-segmentation.py")
+        assert (folder / template["source"]).read_text(encoding="utf-8") == _ddrnet_code(model["id"])
+        assert manifest["dependencies"]["packages"] == node["dependencies"]["packages"] == {SEGMENTATION_DIR: "*"}
+        segmentation = self._package_folder(user, SEGMENTATION_DIR)
+        assert (segmentation / "sources" / "semantic_segmentation.py").is_file()
 
-    def test_its_node_opens_with_the_segmentation_cell_that_names_it(self, client, auth, live):
+    def test_its_node_opens_with_ddrnets_code_naming_it(self, client, auth, live):
         """The starters the canvas fills a fresh node from: the package's Image
-        Segmentation node loads the model by its id and segments, as
-        DDRNet23-Slim's does, and runs as it is."""
+        Segmentation node loads the model by its id and segments with the
+        Segmentation package's ``segment_images``, as DDRNet23-Slim's does."""
         model = self._add(client, auth, ONNX_REPO)["model"]
         starters = client.get("/starters", headers=auth).get_json()
         [starter] = [s for s in starters if s["type"] == f"{model['id']}/image-segmentation@1"]
         assert starter["name"] == "image-segmentation"
-        assert starter["code"] == (
-            f'model = curio_load_model("{model["id"]}")\n'
-            "classes = None  # every class the model names\n"
-            "\n"
-            "return curio_segment(input_0, model, classes)\n"
-        )
+        assert starter["code"] == _ddrnet_code(model["id"])
+        assert f'model = curio_load_model("{model["id"]}")' in starter["code"]
+        assert "return segment_images(input_0, model, curio_derived_file, classes=classes)" in starter["code"]
 
-    def test_an_added_model_runs_in_a_node(self, app, client, auth, live, user_and_token, tmp_path):
+    def test_an_added_model_runs_in_its_node(self, app, client, auth, live, user_and_token, tmp_path):
         """The whole route: what an add writes is what the backend resolves for
-        a node from the user's store, and what ``curio_segment`` reads, on two
-        of example 10's photos. The graph is the synthetic stand-in, so the
-        classes are noise; their shares still have to cover the image."""
-        from utk_curio.backend.app.packages.service import resolve_model_dirs
+        a run of its node from the user's store, the model's folder and the
+        modules the node is handed (the Segmentation package's), and the
+        node's own code runs on them as the sandbox runs it, on two of example
+        10's photos. The graph is the synthetic stand-in, so the classes are
+        noise; their shares still have to cover the image."""
+        import importlib.util
+
+        from utk_curio.backend.app.packages.service import modules_for_node, resolve_model_dirs
         from utk_curio.sandbox.util.catalog_helpers import CurioModel
         from utk_curio.sandbox.util.collections import make_collection_helpers
-        from utk_curio.sandbox.util.vision import make_curio_segment
+        from utk_curio.sandbox.util.input_names import call_as_node
+        from utk_curio.sandbox.util.package_modules import importable
+        from utk_curio.sandbox.util.staging import stage_package_modules
 
         model = self._add(client, auth, ONNX_REPO)["model"]
         user, _ = user_and_token
-        folder = resolve_model_dirs(self._key(user), [model["id"]])[model["id"]]
+        key = self._key(user)
+        folder = resolve_model_dirs(key, [model["id"]])[model["id"]]
+        handed = modules_for_node(key, f"{model['id']}/image-segmentation")
+        assert handed == {
+            "root": str(self._package_folder(user, SEGMENTATION_DIR) / "sources"), "names": ["semantic_segmentation"],
+        }, handed
         repo = Path(__file__).resolve().parents[4]
         sample = "data.curio.mapillary-sample"
         index = repo / "datasets" / f"{sample}@1" / "data" / "index.parquet"
         storage = repo / "docs" / "examples" / "data" / "storage"
         helpers = make_collection_helpers(
-            lambda _id: str(index), {sample: {"kind": "images", "root": str(storage)}}, str(tmp_path)
+            lambda _id: str(index), {sample: {"kind": "images", "root": str(storage)}}, str(tmp_path / "media")
         )
         photos = helpers["curio_load_collection"](sample).head(2)
-        out = make_curio_segment(helpers["curio_derived_file"])(photos, CurioModel(model["id"], folder), None)
+        code = (self._package_folder(user, model["dirName"]) / "sources" / "image-segmentation.py").read_text(
+            encoding="utf-8")
+        run = tmp_path / "run"
+        run.mkdir()
+        staged = stage_package_modules(handed, str(run))
+        namespace = {
+            "curio_load_model": lambda model_id: CurioModel(model_id, folder),
+            "curio_derived_file": helpers["curio_derived_file"],
+        }
+        with importable(str(run / staged["root"]), staged["names"]):
+            assert importlib.util.find_spec("semantic_segmentation") is not None
+            out = call_as_node("\n".join("    " + line for line in code.splitlines()), namespace, photos, [0])
         labels = self._listed(client, auth, model["id"])["model"]["labels"]
         shares = out[[f"{label}_pct" for label in labels]]
         assert shares.sum(axis=1).between(99.5, 100.5).all()
@@ -437,6 +482,194 @@ class TestItIsNotData:
         row = next(s for s in listing if s["dirName"] == SOURCE)
         assert row["kind"] == "model"
         assert SOURCE not in {s["dirName"] for s in tools._portal_rows(listing)}
+
+
+class TestTheNodeAModelGets:
+    def test_the_shipped_source_names_ddrnets_node(self):
+        """The node a model this source adds gets is named in its manifest,
+        never in Curio's code: DDRNet23-Slim's Image Segmentation."""
+        assert _manifest().provider.options["node"] == f"{DDRNET_ID}/image-segmentation"
+
+    @pytest.mark.parametrize("node, refusal", [
+        (None, "names no node for the models it adds"),
+        ("model.test.nowhere/segment", "the catalog has no package model.test.nowhere"),
+        (f"{DDRNET_ID}/no-such-node", "has no node no-such-node with code of its own"),
+    ], ids=["no-node", "no-package", "no-template"])
+    def test_a_source_whose_node_the_catalog_lacks_adds_no_model_and_fetches_nothing(self, app, node, refusal):
+        import dataclasses
+
+        from utk_curio.backend.app.discovery.application.model_acquire import ModelAcquire
+
+        manifest = _manifest()
+        options = {key: value for key, value in manifest.provider.options.items() if key != "node"}
+        if node is not None:
+            options["node"] = node
+        source = dataclasses.replace(manifest, provider=dataclasses.replace(manifest.provider, options=options))
+
+        class Unasked:
+            def plan(self, repo):
+                raise AssertionError(f"the Hub was asked for {repo}, which this source gives no node")
+
+        acquire_ = ModelAcquire(user=None, user_key="guest", provider_for=lambda m: Unasked())
+        with pytest.raises(CapabilityUnsupported, match=refusal):
+            acquire_.acquire(source, ONNX_REPO)
+
+
+#: The node Curio wrote for a segmentation model it downloaded before a
+#: source named one, as main's ``domain/default_cells.py`` held it: no
+#: ``source``, so a node of it opened with the ``curio_segment`` call Curio
+#: wrote for it.
+MAINS_NODE = {
+    "behavior": "code",
+    "category": "computation",
+    "description": (
+        "Label every pixel of each image with a Model Catalog model: drag a model onto the node to choose it. "
+        "Input: a collection's rows, each with a path (Data Loading on street-level images). Output: the same "
+        "rows with one column per class asked for (its share of the image's pixels, in percent), "
+        "dominant_class, dominant_pct and an overlay_url a Simple View shows."
+    ),
+    "editor": "code",
+    "engine": "python",
+    "hasCode": True,
+    "hasGrammar": False,
+    "hasWidgets": False,
+    "iconRef": "fa-solid:wand-magic-sparkles",
+    "id": "image-segmentation",
+    "inputPorts": [{"cardinality": "1", "types": ["GEODATAFRAME", "DATAFRAME"]}],
+    "label": "Image Segmentation",
+    "outputPorts": [{"cardinality": "1", "types": ["GEODATAFRAME"]}],
+    "paletteOrder": 0,
+}
+#: The id of a model downloaded before its source named its node.
+OLD_MODEL_ID = "imported.x0123456789ab"
+
+
+class TestADownloadFromBeforeItsSourceNamedANode:
+    """A segmentation model downloaded before this source named the node a
+    model gets kept the node Curio wrote then, with no code of its own, and
+    named no package. A read of the store, the seeder's pass that refreshes a
+    catalog copy the catalog moved on from, brings it to the node a download
+    gets now: DDRNet23-Slim's, its code naming the model, and the
+    Segmentation package that code imports. Nothing else of it changes, it is
+    done once, and a package made otherwise is left as it is."""
+
+    @staticmethod
+    def _key(user) -> str:
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        return _user_dir_key(user)
+
+    @staticmethod
+    def _as_main_built_it(user_key: str, tmp_path: Path, *, downloaded: bool = True, node: dict = MAINS_NODE) -> Path:
+        """The package main's download made of an ONNX export, installed as
+        it installed one: its files under ``models/``, its manifest, and no
+        code of its own, through the store's archive install
+        (``install_downloaded_model``, given no sources)."""
+        import shutil
+
+        from utk_curio.backend.app.packages.repositories.store import package_dir
+        from utk_curio.backend.app.packages.service import install_downloaded_model
+
+        files = tmp_path / "download" / "models"
+        (files / "onnx").mkdir(parents=True)
+        shutil.copyfile(FIXTURES / "huggingface-models" / "synthetic-segmentation.onnx", files / "onnx" / "model.onnx")
+        (files / "config.json").write_text(json.dumps({"id2label": {"0": "wall", "1": "sky"}}), encoding="utf-8")
+        block = {
+            "type": "semantic-segmentation",
+            "runtime": "onnx",
+            "labels": ["wall", "sky"],
+            "license": "other",
+            "publisher": "Xenova",
+            "homepage": f"https://huggingface.co/{ONNX_REPO}",
+            "sizeBytes": sum(path.stat().st_size for path in files.rglob("*") if path.is_file()),
+            "entry": "models/onnx/model.onnx",
+            "input": {"width": 512, "height": 512, "dtype": "float32", "layout": "NCHW", "scale": 1 / 255,
+                      "mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
+        }
+        if downloaded:
+            block["discoverySource"] = {
+                "sourceId": SOURCE, "sourceName": "Hugging Face models", "resourceId": ONNX_REPO,
+                "revision": "0" * 40, "fetchedAt": "2026-11-01T12:00:00Z",
+            }
+        install_downloaded_model(user_key, files, {
+            "id": OLD_MODEL_ID,
+            "kind": "model",
+            "name": ONNX_REPO,
+            "version": "1.0.0",
+            "compatibility": {"major": 1},
+            "createdAt": "2026-11-01T12:00:00Z",
+            "description": f"{ONNX_REPO} from Hugging Face, commit 000000000000.",
+            "publisher": "Xenova",
+            "license": "MIT",
+            "permissions": [],
+            "dependencies": {"js": {}, "packages": {}, "python": {"onnxruntime": ">=1.17"}},
+            "model": block,
+            "templates": [dict(node)],
+        })
+        return package_dir(user_key, f"{OLD_MODEL_ID}@1")
+
+    @staticmethod
+    def _files(folder: Path) -> dict[str, bytes]:
+        return {path.relative_to(folder).as_posix(): path.read_bytes() for path in sorted(folder.rglob("*"))
+                if path.is_file()}
+
+    def test_a_read_of_the_store_brings_it_to_the_node_a_download_gets(
+            self, client, auth, live, user_and_token, tmp_path):
+        from utk_curio.backend.app.packages.repositories.archive import integrity_mismatch
+        from utk_curio.backend.app.packages.repositories.store import package_dir
+
+        user, _ = user_and_token
+        key = self._key(user)
+        folder = self._as_main_built_it(key, tmp_path)
+        before = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+        weights = {rel: data for rel, data in self._files(folder).items() if rel.startswith("models/")}
+        assert not (folder / "sources").exists() and not package_dir(key, SEGMENTATION_DIR).exists()
+
+        listed = client.get("/api/packages?kind=model", headers=auth)
+        assert listed.status_code == 200, listed.get_data(as_text=True)
+
+        after = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+        ddrnet = json.loads((Path(__file__).resolve().parents[4] / "packages" / DDRNET_DIR / "manifest.json")
+                            .read_text(encoding="utf-8"))
+        assert after["templates"] == ddrnet["templates"]
+        assert (folder / "sources" / "image-segmentation.py").read_text(encoding="utf-8") == _ddrnet_code(OLD_MODEL_ID)
+        assert after["dependencies"] == {**before["dependencies"], "packages": {SEGMENTATION_DIR: "*"}}
+        rest = ("templates", "dependencies")
+        assert {k: v for k, v in after.items() if k not in rest} == {k: v for k, v in before.items() if k not in rest}
+        assert {rel: data for rel, data in self._files(folder).items() if rel.startswith("models/")} == weights
+        assert integrity_mismatch(folder) is None
+        assert (package_dir(key, SEGMENTATION_DIR) / "sources" / "semantic_segmentation.py").is_file()
+        # A new node of it opens with that code, as one of a model added now does.
+        starters = client.get("/starters", headers=auth).get_json()
+        [starter] = [s for s in starters if s["type"] == f"{OLD_MODEL_ID}/image-segmentation@1"]
+        assert starter["code"] == _ddrnet_code(OLD_MODEL_ID)
+
+    def test_it_is_brought_once(self, client, auth, live, user_and_token, tmp_path):
+        folder = self._as_main_built_it(self._key(user_and_token[0]), tmp_path)
+        assert client.get("/api/packages", headers=auth).status_code == 200
+        brought = self._files(folder)
+        written = [folder / "manifest.json", folder / "sources" / "image-segmentation.py"]
+        stamps = [path.stat().st_mtime_ns for path in written]
+
+        assert client.get("/api/packages", headers=auth).status_code == 200
+
+        assert self._files(folder) == brought
+        assert [path.stat().st_mtime_ns for path in written] == stamps
+
+    @pytest.mark.parametrize("made", ["with-code-of-its-own", "not-downloaded", "of-another-node"])
+    def test_a_package_made_otherwise_is_left_as_it_is(self, client, auth, live, user_and_token, tmp_path, made):
+        folder = self._as_main_built_it(
+            self._key(user_and_token[0]), tmp_path, downloaded=made != "not-downloaded",
+            node={**MAINS_NODE, "id": "segment-photos"} if made == "of-another-node" else MAINS_NODE,
+        )
+        if made == "with-code-of-its-own":
+            (folder / "sources").mkdir()
+            (folder / "sources" / "image-segmentation.py").write_text("return input_0\n", encoding="utf-8")
+        kept = self._files(folder)
+
+        assert client.get("/api/packages", headers=auth).status_code == 200
+
+        assert self._files(folder) == kept
 
 
 class TestATokenWhereTheHubAsks:

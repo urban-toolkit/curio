@@ -308,10 +308,14 @@ def start_run(
     several nodes (*target_node_ids*: an automatic run, #845), on a thread of
     its own, for its owner or an editor the owner invited
     (:func:`_dataflow_for_runs`). Refused for a guest, for anyone else, while
-    *user* runs the dataflow already, and past *user*'s cap."""
+    *user* runs the dataflow already, and past *user*'s cap, and first of all
+    in a process that does not own the dataflow
+    (``collaboration/owner_guard.py``): nothing of the run is kept there."""
     from flask import current_app
 
-    from utk_curio.backend.app.collaboration import dataflow_docs
+    from utk_curio.backend.app.collaboration import dataflow_docs, owner_guard
+
+    owner_guard.refuse(project_id, what="a run")
     from utk_curio.backend.app.execution.node_names import template_labels
     from utk_curio.backend.app.execution.run_engine import PlanError, plan_run
     from utk_curio.backend.app.packages.service import roster_templates
@@ -424,13 +428,15 @@ def _run_thread(
         user = db.session.get(User, user_id)
         if step.autk_data:
             # The JavaScript the node's run in the browser posts, from the
-            # browser's own compiler, with no input and no dataset of its own
-            # (autkLayerMaterialize.ts runDataInBackend): its output is saved
-            # as the canvas saves it, the layer list as it is.
+            # browser's own compiler, with no dataset of its own and no input,
+            # or, when its data section reads tables of its input, that input
+            # with no circles named (autkLayerMaterialize.ts runDataInBackend):
+            # its output is saved as the canvas saves it, the layer list as it is.
             node_run = node_exec.NodeRun(
                 code=compile_data_spec(code),
                 node_type=step.node_type,
                 node_id=step.node_id,
+                input=input_ref if step.autk_input else None,
                 dataflow_id=project_id,
                 node_name=step.label,
                 save_output_dataset=False,

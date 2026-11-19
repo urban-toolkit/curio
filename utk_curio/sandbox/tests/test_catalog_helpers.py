@@ -3,7 +3,9 @@
 
 ``curio_load_data`` reads a dataset the way its format is read, the reading the
 Data Catalog's loader snippets used to spell out in each node. The names these
-replaced are not aliases: each raises an error naming its replacement.
+replaced are not aliases: each raises an error naming its replacement, and so
+does a loaded model's ``run``, whose graph the node's code runs in an
+onnxruntime session of its own.
 """
 
 from __future__ import annotations
@@ -40,6 +42,27 @@ def _helpers(paths, formats=None, *, collections=None, models=None, media_dir=No
 
 
 BUNDLE_FILES = "frame.csv, count.json, depth.tif"
+
+#: A child's script, run after ``session_threads.RECORD_SESSIONS``: an ONNX
+#: dataset loaded with ``curio_load_data``, as a node's code loads it, and its
+#: session run once on a row of tens.
+LOADS_AN_ONNX_DATASET = """
+import sys
+
+import numpy as np
+
+from utk_curio.sandbox.util.catalog_helpers import install_catalog_helpers
+
+path = sys.argv[1]
+namespace = {}
+install_catalog_helpers(
+    namespace, data_path=lambda dataset_id: path, formats={"m": {"format": "onnx"}}, collections=None,
+    media_dir=None, models=None,
+)
+session = namespace["curio_load_data"]("m")
+(answer,) = session.run(None, {session.get_inputs()[0].name: np.full((1, 3), 10, dtype=np.float32)})
+report(answer=answer.tolist())
+"""
 
 
 def _bundle_dataset(root):
@@ -286,6 +309,34 @@ class TestLoadData:
         (answer,) = session.run(None, {session.get_inputs()[0].name: np.full((1, 3), 10, dtype=np.float32)})
         assert answer.tolist() == [[10 + value for value in ADDEND]]
 
+    def test_an_onnx_models_session_runs_on_the_threads_omp_num_threads_names(self, tmp_path):
+        """onnxruntime reads no ``OMP_NUM_THREADS``: a session that names no
+        thread count starts a thread for every core it sees, the whole
+        machine's where CI's runners share one
+        (``_support/session_threads.py``). ``curio_load_data`` hands the
+        session it opens for an ONNX dataset the count ``OMP_NUM_THREADS``
+        names, which the CI stacks set to their runner's share. With no
+        ``OMP_NUM_THREADS``, as on a user's Curio, the session keeps
+        onnxruntime's own choice."""
+        from utk_curio.backend.tests._support.session_threads import (
+            assert_the_session_takes_the_named_count,
+            sessions_made,
+        )
+
+        path = tmp_path / "tiny.onnx"
+        path.write_bytes(tiny_onnx_model())
+
+        def made(omp_num_threads):
+            return sessions_made(LOADS_AN_ONNX_DATASET, path, omp_num_threads=omp_num_threads)
+
+        reported = assert_the_session_takes_the_named_count(
+            made, "the session curio_load_data opens for an ONNX dataset"
+        )
+        answer = [[10 + value for value in ADDEND]]
+        assert {under: said["answer"] for under, said in reported.items()} == {
+            "1": answer, "2,1": answer, "unset": answer,
+        }, reported
+
     @pytest.mark.parametrize("fmt", list(NETCDF_SIGNATURES))
     def test_a_netcdf_file_is_an_xarray_dataset(self, tmp_path, fmt):
         import xarray as xr
@@ -359,7 +410,10 @@ class TestLoadModel:
         folder = self._model(tmp_path, {"runtime": "onnx", "labels": ["road", "sky"]})
         model = _helpers({}, models={"m": str(folder)})["curio_load_model"]("m")
         assert isinstance(model, CurioModel)
-        assert model.folder == str(folder) and model.labels == ["road", "sky"]
+        assert model.folder == str(folder) and model.manifest["labels"] == ["road", "sky"]
+        # The files node code opens, and no runtime of Curio's: the Segmentation
+        # package's module runs a segmentation model.
+        assert not hasattr(model, "runner") and not hasattr(model, "labels")
 
     def test_a_folder_without_a_manifest_is_refused_when_loaded(self, tmp_path):
         folder = tmp_path / "empty"
@@ -373,11 +427,15 @@ class TestLoadModel:
         with pytest.raises(RuntimeError, match="Model 'gone' is not one of your models: add it with Add in the Model Catalog"):
             _helpers({})["curio_load_model"]("gone")
 
-    def test_an_image_to_image_model_is_run_with_its_own_inputs(self, tmp_path):
-        """``model.run`` feeds the graph the arrays the node made, by input
-        name, and hands back its outputs in order (onnxruntime is imported,
-        not skipped, as ``test_vision.py`` imports it)."""
+    def test_an_image_to_image_model_runs_in_the_session_its_node_opens_on_its_path(self, tmp_path):
+        """``model.path`` is the ``.onnx`` file the manifest's entry names: the
+        node's code opens it in an onnxruntime session on the CPU, as a model
+        package's starter writes it, feeds the graph the arrays it made, by
+        input name, and gets the graph's outputs in order, again on new
+        arrays; a missing input is refused, naming it (onnxruntime is
+        imported, not skipped, as ``test_segmentation_package.py`` imports it)."""
         import numpy as np
+        import onnxruntime as ort
 
         folder = self._model(tmp_path, {
             "runtime": "onnx", "task": "image-to-image", "labels": [], "entry": "files/m.onnx",
@@ -385,29 +443,60 @@ class TestLoadModel:
         (folder / "files").mkdir()
         (folder / "files" / "m.onnx").write_bytes(tiny_onnx_model())
         model = _helpers({}, models={"m": str(folder)})["curio_load_model"]("m")
-        (out,) = model.run({"X": np.zeros((1, 3), dtype=np.float32)})
+        assert model.path == str(folder / "files" / "m.onnx")
+        session = ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])
+        (out,) = session.run(None, {"X": np.zeros((1, 3), dtype=np.float32)})
         assert out.tolist() == [list(ADDEND)]
-        (again,) = model.run({"X": np.ones((1, 3), dtype=np.float32)})
+        (again,) = session.run(None, {"X": np.ones((1, 3), dtype=np.float32)})
         assert again.tolist() == [[value + 1 for value in ADDEND]]
-        with pytest.raises(ValueError, match="needs the inputs X; missing X"):
-            model.run({"Y": np.zeros((1, 3), dtype=np.float32)})
+        with pytest.raises(ValueError) as refused:
+            session.run(None, {"Y": np.zeros((1, 3), dtype=np.float32)})
+        assert "missing" in str(refused.value) and "'X'" in str(refused.value), refused.value
 
-    def test_only_an_onnx_model_has_a_graph_to_run(self, tmp_path):
-        folder = self._model(tmp_path, {"runtime": "transformers", "entry": "files"})
+    @pytest.mark.parametrize("manifest", [
+        {"runtime": "onnx", "task": "image-to-image", "labels": [], "entry": "files/m.onnx"},
+        {"runtime": "transformers", "entry": "files"},
+    ], ids=["onnx", "transformers"])
+    def test_model_run_refuses_and_names_the_session_its_node_opens_instead(self, tmp_path, manifest):
+        """A saved dataflow's ``model.run(...)`` raises, whatever the model and
+        whatever it is handed, with the lines the node's code writes instead."""
+        import numpy as np
+
+        folder = self._model(tmp_path, manifest)
         model = _helpers({}, models={"m": str(folder)})["curio_load_model"]("m")
-        with pytest.raises(RuntimeError, match="not an ONNX model"):
-            model.run({})
+        for args in (({"X": np.zeros((1, 3), dtype=np.float32)},), ()):
+            with pytest.raises(RuntimeError) as refused:
+                model.run(*args)
+            said = str(refused.value)
+            assert said.startswith("model.run was removed: "), said
+            assert "import onnxruntime as ort" in said, said
+            assert 'session = ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])' in said, said
+            assert "session.run(None, {input name: array})" in said, said
 
-    def test_curio_segment_refuses_an_image_to_image_model(self, tmp_path):
-        folder = self._model(tmp_path, {"runtime": "onnx", "task": "image-to-image", "labels": []})
+    @pytest.mark.parametrize("args", [
+        (),
+        ("rows", "model", ["vegetation"]),
+        ("rows", "model", None),
+    ], ids=["no-arguments", "classes", "every-class"])
+    def test_curio_segment_refuses_and_names_the_segmentation_packages_function(self, tmp_path, args):
+        """A saved dataflow's ``curio_segment(...)``, which was Curio's, raises
+        whatever it is handed, in one sentence that names the Segmentation
+        package's module and the call a segmentation model's node returns
+        (:data:`SEGMENT_REMOVED`). Segmenting images is the package's work
+        now (``test_segmentation_package.py`` runs it)."""
+        from utk_curio.sandbox.util.catalog_helpers import SEGMENT_REMOVED
+
+        folder = self._model(tmp_path, {"runtime": "onnx", "labels": ["road", "sky"]})
         helpers = _helpers({}, models={"m": str(folder)})
-        with pytest.raises(ValueError, match="does not label pixels"):
-            helpers["curio_segment"](pd.DataFrame({"path": []}), helpers["curio_load_model"]("m"))
-
-    def test_curio_segment_runs_a_loaded_model_not_a_folder(self, tmp_path):
-        segment = _helpers({})["curio_segment"]
-        with pytest.raises(TypeError, match="curio_load_model"):
-            segment(pd.DataFrame({"path": []}), str(tmp_path))
+        handed = [helpers["curio_load_model"]("m") if arg == "model" else arg for arg in args]
+        with pytest.raises(RuntimeError) as refused:
+            helpers["curio_segment"](*handed)
+        said = str(refused.value)
+        assert said == SEGMENT_REMOVED, said
+        assert said.startswith("curio_segment was removed: "), said
+        assert "from semantic_segmentation import segment_images" in said, said
+        assert "return segment_images(input_0, model, curio_derived_file, classes=classes)" in said, said
+        assert said.count(". ") == 0 and said.endswith("."), "one sentence"
 
 
 def test_an_in_process_node_loads_by_format(tmp_path):

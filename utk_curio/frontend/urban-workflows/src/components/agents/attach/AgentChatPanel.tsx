@@ -124,9 +124,10 @@ export const AgentChatPanel: React.FC<{
   onDismissProposal?: (proposalId: string) => Promise<void>;
   /** Undo a change this agent made; omitted → its change cards offer none. */
   onUndoChange?: (changeId: string) => Promise<unknown>;
-  /** dev/71: per-row Solve/Run on a landed plan's card. */
-  onSolvePlanNode?: (ref: string) => Promise<void>;
-  onRunPlanNode?: (ref: string) => Promise<void>;
+  /** dev/71: per-row Solve/Run on a landed plan's card; each tells the row's
+   *  `onLine` how far a download on first use of what the node reads has come. */
+  onSolvePlanNode?: (ref: string, onLine?: (line: string) => void) => Promise<void>;
+  onRunPlanNode?: (ref: string, onLine?: (line: string) => void) => Promise<void>;
   /** dev/67-9: Build & validate over the landed plan + its narration. */
   onSimulate?: (mode: "step" | "auto") => Promise<unknown>;
   onCancelSimulate?: () => Promise<void>;

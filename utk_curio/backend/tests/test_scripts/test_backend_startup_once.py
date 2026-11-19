@@ -3,11 +3,15 @@ process that serves.
 
 With several backend processes, the launcher names each (``CURIO_BACKEND_PROCESS``
 of ``CURIO_BACKEND_PROCESSES``), and process 0, home, alone does the startup
-work: the shared guest, the hosted guests' copies dropped, the agents and the
-examples put back, the monitor's histories started anew, the timers, the
-open-files sampler and the bucket mount service's proxy and check. Under
-Werkzeug's reloader the process the launcher started only watches the files
-and starts the process that serves, which does that work.
+work: the shared guest, the hosted guests' copies dropped, the agents, the
+packages ``--guest-packages`` names and the examples put back, the monitor's
+histories started anew and every other process's files of them removed, the
+timers, the open-files sampler and the bucket mount service's proxy and check.
+Each other process does two of those pieces for itself alone
+(:data:`EVERY_PROCESS`): it starts its own histories anew, in its own files,
+and samples its own open files. Under Werkzeug's reloader the process the
+launcher started only watches the files and starts the process that serves,
+which does that work.
 
 The server module runs as the launcher runs it, ``python -m backend.server``,
 up to the point where it would serve, with each piece of the startup work
@@ -16,6 +20,7 @@ replaced by a record of its call.
 from __future__ import annotations
 
 import collections
+import os
 import runpy
 from types import SimpleNamespace
 
@@ -25,6 +30,7 @@ import pytest
 #: what the record of its call answers.
 STARTUP_WORK = {
     # create_app
+    "utk_curio.backend.app.monitor.history.clear_other_processes": None,
     "utk_curio.backend.app.monitor.history.start": None,
     "utk_curio.backend.app.packages.seed_dev_packages": [],
     "utk_curio.backend.app.projects.tasks.start_cleanup_scheduler": None,
@@ -34,6 +40,7 @@ STARTUP_WORK = {
     "utk_curio.backend.app.projects.visitor_copies.drop_all": 0,
     "utk_curio.backend.app.projects.services.reconcile_guest_projects": 0,
     "utk_curio.backend.app.projects.services.seed_default_agents": None,
+    "utk_curio.backend.app.packages.service.add_guest_packages": [],
     "utk_curio.backend.app.projects.seed.seed_example_projects": 0,
     "utk_curio.backend.app.datasets.seed.seed_example_datasets": [],
     # serve()
@@ -44,6 +51,15 @@ STARTUP_WORK = {
 
 #: Every piece, once.
 ONCE = {name: 1 for name in STARTUP_WORK}
+
+#: The pieces every other process of a start of several does for itself as it
+#: starts, once each: its own monitor histories anew, in its own files, and the
+#: hourly sample of its own open files (``monitor/history.py``,
+#: ``monitor/open_files.py``).
+EVERY_PROCESS = {
+    "utk_curio.backend.app.monitor.history.start": 1,
+    "utk_curio.backend.app.monitor.open_files.start_sampler": 1,
+}
 
 
 def _record(done: list, name: str, answer):
@@ -101,7 +117,32 @@ def test_only_the_home_process_does_the_startup_work(start):
 
     other = start(CURIO_BACKEND_PROCESS="1", CURIO_BACKEND_PROCESSES="2",
                   FLASK_USE_RELOADER="0", WERKZEUG_RUN_MAIN=None)
-    assert other == {}, f"backend process 1 of 2 did startup work, which is the home process's: {sorted(other)}"
+    assert other == EVERY_PROCESS, (
+        f"backend process 1 of 2 did startup work, which is the home process's, or did not start its own "
+        f"histories and open-files sampler once each: {other}"
+    )
+
+
+def test_the_home_process_of_several_starts_the_bucket_mount_proxy_where_nginx_listens(monkeypatch, start):
+    """A start of several backend processes on ``--backend-host 0.0.0.0``, as
+    the deploy runs: each process listens on 127.0.0.1 behind nginx, and the
+    home process starts the bucket mount service's proxy on 0.0.0.0. The
+    service reaches it from its own container, at ``curio:3128``
+    (``docker-compose.bucket-mounts.yml``), and 127.0.0.1 in Curio's container
+    is out of its reach: no source would mount, and each add of a source's
+    file would fail."""
+    from utk_curio.backend.tests._support.backend_group_fakes import boot
+
+    home = boot(monkeypatch, processes=2, host="0.0.0.0").env(0)
+    assert home["FLASK_BACKEND_HOST"] == "127.0.0.1", "the home process no longer listens on 127.0.0.1 behind nginx"
+    hosts = []
+    monkeypatch.setattr("utk_curio.backend.app.discovery.service.start_bucket_mount_proxy",
+                        lambda host: hosts.append(host) or False)
+    start(WERKZEUG_RUN_MAIN=None, **{name: value for name, value in home.items() if os.environ.get(name) != value})
+    assert hosts == ["0.0.0.0"], (
+        f"the home process of a start of several on 0.0.0.0 started the bucket mount proxy on {hosts}, "
+        "out of the mount service's reach"
+    )
 
 
 def test_under_the_reloader_only_the_process_that_serves_does_the_startup_work(start):

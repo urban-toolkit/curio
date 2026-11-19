@@ -20,7 +20,7 @@
         "type": "curio.builtin/autk-grammar",
         "x": 316.08796292088846,
         "y": 402.2989004634889,
-        "content": "{\n  \"compute\": [\n    {\n      \"dataRef\": \"table_osm_buildings\",\n      \"attributes\": {\n        \"h\": \"height\"\n      },\n      \"outputColumnName\": \"height_m\",\n      \"wglsFunction\": \"if (h <= 0.0) { return 10.0; } return h;\"\n    }\n  ]\n}",
+        "content": "{\n  \"compute\": [\n    {\n      \"dataRef\": \"table_osm_buildings\",\n      \"attributes\": {\n        \"h\": \"height\"\n      },\n      \"outputColumnName\": \"height_m\",\n      \"wgslFunction\": \"if (h <= 0.0) { return 10.0; } return h;\"\n    }\n  ]\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Normalise building heights via GPU — clamp zeros to 10 m. Output lands at feature.properties.compute.height_m (also lifted to feature.properties.height_m).",

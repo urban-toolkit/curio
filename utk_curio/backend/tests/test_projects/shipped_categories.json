@@ -317,6 +317,101 @@
       "Geometries"
     ]
   },
+  "31-sideseeing-objects-along-a-walk": {
+    "tags": [
+      "Autark",
+      "Vega-Lite",
+      "GeoPandas",
+      "Pandas",
+      "PyTorch",
+      "Computer vision"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries",
+      "Imagery",
+      "OpenStreetMap",
+      "Video"
+    ]
+  },
+  "32-sage-idot-rail-crossings": {
+    "tags": [
+      "Autark",
+      "Vega-Lite",
+      "GeoPandas",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries",
+      "Imagery"
+    ]
+  },
+  "33-sideseeing-frames-segments-blocks": {
+    "tags": [
+      "Autark",
+      "Vega-Lite",
+      "GeoPandas",
+      "Pandas",
+      "PyTorch",
+      "Computer vision"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries",
+      "Imagery",
+      "OpenStreetMap",
+      "Video"
+    ]
+  },
+  "34-autark-park-access-heatmap": {
+    "tags": [
+      "Autark",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries",
+      "OpenStreetMap",
+      "Rasters"
+    ]
+  },
+  "35-autark-sky-seen-from-the-street": {
+    "tags": [
+      "Autark",
+      "GPU compute"
+    ],
+    "data_type": [
+      "Geometries",
+      "OpenStreetMap"
+    ]
+  },
+  "36-autark-green-share-summer-heat": {
+    "tags": [
+      "Autark",
+      "Vega-Lite",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries",
+      "OpenStreetMap",
+      "Rasters"
+    ]
+  },
+  "37-autark-park-area-summer-heat": {
+    "tags": [
+      "Autark",
+      "Vega-Lite",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries",
+      "OpenStreetMap",
+      "Rasters"
+    ]
+  },
   "dataflows/autk-map": {
     "tags": [
       "Autark",

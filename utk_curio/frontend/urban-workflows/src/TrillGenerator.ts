@@ -349,23 +349,6 @@ export class TrillGenerator {
                 trill_node.metadata.appearance = node.data.appearance;
             }
 
-            // #576: the Spatial Join's operation and output persist at
-            // metadata.spatialJoin, beside the other per-node settings. The
-            // defaults (intersects, one row per pair) are left out.
-            if(node.data.spatialJoin != undefined){
-                const spatialJoin: any = {};
-                const predicate = node.data.spatialJoin.predicate;
-                if(typeof predicate === "string" && predicate && predicate !== "intersects")
-                    spatialJoin.predicate = predicate;
-                if(node.data.spatialJoin.output === "counts")
-                    spatialJoin.output = "counts";
-                if(Object.keys(spatialJoin).length > 0){
-                    if(trill_node.metadata == undefined)
-                        trill_node.metadata = {};
-                    trill_node.metadata.spatialJoin = spatialJoin;
-                }
-            }
-
             // #276: Simple View's chosen image column persists at
             // metadata.simpleVis, so a node pinned to the overlays stays
             // pinned across a save.

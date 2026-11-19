@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import importlib
+import os
 import subprocess
 import sys
 import uuid
@@ -117,6 +118,42 @@ def test_every_process_owns_a_share_of_the_dataflows():
     assert owners == set(range(8))
 
 
+# A new dataflow's id, made for a process.
+
+
+@pytest.mark.parametrize("processes", range(1, 17))
+def test_an_id_made_for_a_process_belongs_to_it_and_stays_a_uuid4(processes):
+    """The placement of new dataflows picks a process and makes the new
+    dataflow's id for it (``collaboration/placement.py``); the router and the
+    owner guard send it there by ``shard_of``, as they send every id."""
+    processes_module = _processes()
+    for process in range(processes):
+        for _ in range(32):
+            made = processes_module.dataflow_id_on(process, processes)
+            parsed = uuid.UUID(made)
+            assert str(parsed) == made, made
+            assert parsed.version == 4 and parsed.variant == uuid.RFC_4122, f"{made} is not a uuid4"
+            assert processes_module.shard_of(made, processes) == process, (
+                f"{made}, made for process {process} of {processes}, belongs to "
+                f"{processes_module.shard_of(made, processes)}"
+            )
+
+
+def test_the_ids_made_for_a_process_start_with_any_of_its_leads():
+    """Of 256 ids made for process 1 of 2, which 128 leads name, more than
+    half of those leads start one: the lead is drawn, not fixed."""
+    made_for = _processes().dataflow_id_on
+    leads = {made_for(1, 2)[:2] for _ in range(256)}
+    assert all(int(lead, 16) % 2 == 1 for lead in leads), leads
+    assert len(leads) > 64, sorted(leads)
+
+
+@pytest.mark.parametrize("process, processes", [(-1, 2), (2, 2), (8, 8)])
+def test_no_id_is_made_for_a_process_the_start_does_not_run(process, processes):
+    with pytest.raises(ValueError):
+        _processes().dataflow_id_on(process, processes)
+
+
 # What the launcher gives the backend.
 
 
@@ -171,6 +208,35 @@ def test_the_backends_of_one_start_share_its_boot_id(monkeypatch):
         {"CURIO_BACKEND_PROCESS": "0", "CURIO_BACKEND_PROCESSES": "2", "CURIO_BOOT_ID": "start-1"},
         {"CURIO_BACKEND_PROCESS": "1", "CURIO_BACKEND_PROCESSES": "2", "CURIO_BOOT_ID": "start-1"},
     ]
+
+
+ALLOCATOR_NAMES = ("MALLOC_ARENA_MAX", "MALLOC_MMAP_THRESHOLD_", "MALLOC_TRIM_THRESHOLD_",
+                   "ARROW_DEFAULT_MEMORY_POOL")
+
+
+def test_the_launcher_starts_the_backend_with_16_malloc_arenas_whatever_the_node_code_budget(monkeypatch):
+    """The backend starts with the sandbox server's allocator settings, but
+    with a fixed 16 malloc arenas (``sandbox/isolation/lifecycle.py``,
+    ``backend_server_environment``): it runs no node code, so the 24576 MB dev
+    and stable give node code, from which the sandbox's rule makes 96, does
+    not reach it."""
+    for name in ALLOCATOR_NAMES:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("CURIO_EXEC_MEMORY_MB", "24576")
+
+    env = _backend_environment(monkeypatch)
+
+    given = {name: env.get(name) for name in ALLOCATOR_NAMES}
+    assert given == {
+        "MALLOC_ARENA_MAX": "16",
+        "MALLOC_MMAP_THRESHOLD_": str(8 * 2**20),
+        "MALLOC_TRIM_THRESHOLD_": str(16 * 2**20),
+        "ARROW_DEFAULT_MEMORY_POOL": "system",
+    }, f"the launcher starts the backend with {given}"
+    # The sandbox and the page server start from the launcher's own
+    # environment: the backend's 16 never lowers the sandbox's cap.
+    leaked = [name for name in ALLOCATOR_NAMES if name in os.environ]
+    assert leaked == [], f"starting the backend set {leaked} in the launcher's own environment"
 
 
 def test_the_migration_runs_when_no_flask_command_is_on_path(monkeypatch, tmp_path):

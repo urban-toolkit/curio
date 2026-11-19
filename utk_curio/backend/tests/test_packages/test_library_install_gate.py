@@ -155,8 +155,11 @@ class TestSharedInterpreter:
         assert libs.list_standalone(_user_key(bob))["python"] == ["humanize"]
 
     def test_remove_still_uninstalls_when_nobody_else_lists_it(
-        self, client, db, user_and_token, pip_calls,
+        self, client, db, user_and_token, pip_calls, pip_that_installs,
     ):
+        """The add's own pip run installed it (``pip_that_installs``, the real
+        installer over a pip that installs nothing for real): a removal takes
+        back only what this server's pip put into the interpreter."""
         _, alice_token = user_and_token
         _make_user(db, "bob", "bob-token")
         client.post("/api/packages/libraries",
@@ -206,10 +209,12 @@ class TestPerUserTreesChangeWhatRefCountingMeans:
         # Record at the service boundary: under per-user trees the removal goes
         # to the target uninstaller, never to the shared interpreter, so the
         # question is whether the route got past the ref-count gate at all.
+        # The Remove takes the library back as every removal does
+        # (``libs.take_back_after_a_removal``), through this.
         removed = []
         monkeypatch.setattr(
-            libs, "uninstall_user_library",
-            lambda user_key, name: removed.append((user_key, name)),
+            libs, "uninstall_user_libraries",
+            lambda user_key, names: removed.extend((user_key, name) for name in names),
         )
 
         resp = client.delete("/api/packages/libraries/python/humanize",

@@ -28,8 +28,3 @@ def upgrade():
         batch_op.add_column(
             sa.Column("socrata_app_token", sa.String(255), nullable=True)
         )
-
-
-def downgrade():
-    with op.batch_alter_table("user", schema=None) as batch_op:
-        batch_op.drop_column("socrata_app_token")

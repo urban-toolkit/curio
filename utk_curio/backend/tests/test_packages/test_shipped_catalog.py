@@ -12,8 +12,11 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import re
 import shutil
+import subprocess
+import sys
 from pathlib import Path, PurePosixPath
 
 import pytest
@@ -50,9 +53,22 @@ def test_manifest_loads(package_root: Path):
 
 @pytest.mark.parametrize("package_root", PACKAGE_DIRS, ids=IDS)
 def test_manifest_serializes_to_a_catalog_payload(package_root: Path):
-    payload = package_payload(load_package_manifest(package_root))
+    """A package adds a node to the palette, or it is modules alone, which
+    the nodes of a shipped package that names it in ``dependencies.packages``
+    import, as Segmentation's are DDRNet23-Slim's. One that does neither adds
+    nothing; a model package always defines the node that runs its model."""
+    manifest = load_package_manifest(package_root)
+    payload = package_payload(manifest)
     assert payload["dirName"] == package_root.name
-    assert payload["templates"], "a package with no templates adds nothing to the palette"
+    if payload["templates"]:
+        return
+    assert manifest.kind != "model", "a model package defines the node that runs its model"
+    assert module_names(package_root, manifest), "a package with no templates and no modules adds nothing"
+    dependents = [other.name for other in PACKAGE_DIRS if package_root.name in _raw_package_deps(other)]
+    assert dependents, (
+        "a package of modules alone that no shipped package names in dependencies.packages adds nothing"
+    )
+    assert all(load_package_manifest(CATALOG / name).templates for name in dependents), dependents
 
 
 @pytest.mark.parametrize("package_root", PACKAGE_DIRS, ids=IDS)
@@ -153,9 +169,11 @@ def test_each_shipped_dataflow_lists_the_packages_its_packages_need():
     ``dependencies.packages`` to its lockfile too
     (``project_packages.install_to_project``), and a dataflow keeps the
     packages its lockfile lists: each shipped dataflow lists every package a
-    package it lists needs, such as Rasterization beside Media or Deep Umbra."""
+    package it lists needs, such as Rasterization beside Media or Deep Umbra,
+    and Segmentation beside DDRNet23-Slim."""
     needs = {p.name: sorted(_raw_package_deps(p)) for p in PACKAGE_DIRS}
     assert needs["curio.media@1"] == needs["model.scout.deep-umbra@1"] == ["curio.rasterization@1"], needs
+    assert needs["model.curio.ddrnet23-slim@1"] == ["curio.segmentation@1"], needs
     examples = CATALOG.parent / "docs" / "examples"
     read, missing = 0, []
     for path in sorted(examples.rglob("*.json")):
@@ -211,6 +229,39 @@ def shipped_store(tmp_path_factory):
         for package_root in PACKAGE_DIRS:
             install_package_from_directory(GUEST, package_root)
         yield GUEST
+
+
+#: A child that loads the module at its argument by its path, as
+#: ``test_segmentation_package``'s session child loads ``semantic_segmentation``
+#: from the package's sources.
+LOAD_BY_PATH = (
+    "import importlib.util, sys\n"
+    "spec = importlib.util.spec_from_file_location('probe', sys.argv[1])\n"
+    "spec.loader.exec_module(importlib.util.module_from_spec(spec))\n"
+)
+
+
+def test_a_child_python_started_with_the_tests_environment_writes_no_bytecode(tmp_path):
+    """A child Python a test starts with the tests' environment writes no
+    ``__pycache__`` beside a module it loads. In a shipped package's sources
+    that folder is an archive member the installer refuses, so
+    ``shipped_store`` failed every test of this module that a part ran after
+    such a child: main's run 44087383940, unit part 4, refused
+    ``sources/__pycache__/semantic_segmentation.cpython-312.pyc`` ("archive
+    member has unsafe segment '__pycache__'")."""
+    module = tmp_path / "sources" / "probe.py"
+    module.parent.mkdir()
+    module.write_text("VALUE = 1\n", encoding="utf-8")
+    run = subprocess.run(
+        [sys.executable, "-c", LOAD_BY_PATH, str(module)],
+        env=dict(os.environ), capture_output=True, text=True, timeout=120,
+    )
+    assert run.returncode == 0, f"the child exited {run.returncode}:\n{run.stderr[-2000:]}"
+    cache = module.parent / "__pycache__"
+    written = sorted(p.name for p in cache.iterdir()) if cache.exists() else []
+    assert not written, (
+        f"a child Python started with the tests' environment wrote bytecode beside the module it loaded: {written}"
+    )
 
 
 def _libraries_imported_by(source: str, own_modules: frozenset[str]) -> list[str]:

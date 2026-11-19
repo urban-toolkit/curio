@@ -712,7 +712,7 @@ class TestModelsSearch:
         """DDRNet23-Slim added to the user's store, and a model package of the
         user's own with 60 labels, as the Discovery Catalog writes one."""
         from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
-        from utk_curio.backend.app.packages.service import install_downloaded_model, model_template
+        from utk_curio.backend.tests._support.downloaded_models import install_downloaded_segmentation_model
 
         user, _ = user_and_token
         key = self._key(user)
@@ -720,10 +720,9 @@ class TestModelsSearch:
         files = tmp_path / "incoming"
         files.mkdir()
         (files / "m.onnx").write_bytes(b"onnx")
-        install_downloaded_model(key, files, {
+        install_downloaded_segmentation_model(key, files, {
             "id": self.DOWNLOAD, "kind": "model", "name": "Tiny facades", "version": "1.0.0",
             "compatibility": {"major": 1}, "publisher": "org", "license": "MIT",
-            "templates": [model_template("semantic-segmentation")],
             "model": {
                 "type": "semantic-segmentation", "runtime": "onnx", "entry": "models/m.onnx",
                 "labels": [f"class {i}" for i in range(60)],

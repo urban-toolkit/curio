@@ -42,6 +42,7 @@ SHIPPED = {
         "tags": ["GeoPandas", "Pandas"], "dataTypes": ["Tables", "Geometries", "Imagery", "Video"],
     },
     ("curio.media@1", "split-audio"): {"tags": ["Pandas"], "dataTypes": ["Tables", "Audio"]},
+    ("curio.media@1", "split-video"): {"tags": ["GeoPandas", "Pandas"], "dataTypes": ["Tables", "Geometries", "Video"]},
     ("curio.media@1", "mosaic-rasters"): {"dataTypes": ["Rasters"]},
     # Rasterization: SCOUT on every node, Rasters on its two raster nodes. The
     # Vega-Lite package declares none: its charts are not SCOUT's.
@@ -49,6 +50,8 @@ SHIPPED = {
     ("curio.rasterization@1", "raster-calculator"): {"dataTypes": ["Rasters"]},
     ("curio.rasterization@1", "rasterize-buildings"): {"dataTypes": ["Rasters"]},
     ("curio.weather@1", "utci-compute"): {"dataTypes": ["Rasters"]},
+    # SAM 3 runs torch in its package's module, which no import in node code shows.
+    ("model.curio.sam3@1", None): {"tags": ["PyTorch"]},
     ("model.scout.deep-umbra@1", None): {"tags": ["SCOUT"]},
     ("model.scout.weather-gnn@1", None): {"tags": ["SCOUT"]},
 }

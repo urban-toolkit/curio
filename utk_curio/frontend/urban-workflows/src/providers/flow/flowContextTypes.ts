@@ -191,6 +191,12 @@ export interface FlowContextProps {
      * step this browser could not run (useDashboardRun). Null otherwise.
      */
     dashboardStopped: string | null;
+    /**
+     * On a dashboard, how far each step's downloads on first use have come,
+     * by node, as a viewer's run says them (useDashboardRun): what the tiles
+     * below a step say under "Computing..." (useGrammarInputState).
+     */
+    dashboardDownloads?: Record<string, string>;
     /** Stop the run in flight: clears the guard so the next play is accepted. */
     cancelRun: () => void;
     /** Follow a just-opened dataflow's last run on the server if it goes, and offer to finish one that waits for a tab. */

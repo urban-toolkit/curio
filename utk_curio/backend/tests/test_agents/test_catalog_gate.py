@@ -164,15 +164,23 @@ class TestModelIds:
     def test_a_model_the_account_never_added_is_refused_naming_the_model_catalogs_add(self, app, tmp_curio):
         _add_package(USER, f"{DDRNET}@1")
         for added in (DDRNET, f"{DDRNET}@1"):
-            assert _gate(f'model = curio_load_model("{added}")\nreturn curio_segment(input_0, model)') is None, added
+            assert _gate(f'model = curio_load_model("{added}")\nreturn model.path') is None, added
         for made_up in ("model.curio.ghost-segmenter", f"{DDRNET}@2"):
-            refusal = _gate(f'model = curio_load_model("{made_up}")\nreturn curio_segment(input_0, model)')
+            refusal = _gate(f'model = curio_load_model("{made_up}")\nreturn model.path')
             assert refusal and f"curio_load_model({made_up!r}) (line 1)" in refusal, (made_up, refusal)
             assert "Add in the Model Catalog" in refusal, refusal
             # The refusal lists the models the account has, to load one of them,
             # and asks for no data source: none is missing.
             assert DDRNET in refusal, refusal
             assert "Allowed sources" not in refusal and "ask the user for a path" not in refusal, refusal
+
+    def test_curio_segment_is_no_function_node_code_has(self, app, tmp_curio):
+        """Segmentation is the Segmentation package's ``segment_images``: code
+        that calls ``curio_segment`` is refused as a ``curio_`` name the
+        functions page does not give, naming those it does."""
+        _add_package(USER, f"{DDRNET}@1")
+        refusal = _gate(f'model = curio_load_model("{DDRNET}")\nreturn curio_segment(input_0, model)')
+        assert refusal and "curio_segment (line 2)" in refusal and "curio_load_model" in refusal, refusal
 
     def test_node_create_with_a_made_up_model_id_proposes_nothing(
         self, client, user_and_token, tmp_curio, project, monkeypatch,
@@ -183,7 +191,7 @@ class TestModelIds:
         _add_package(_user_dir_key(user), f"{DDRNET}@1")
         grounding_routes._install(client, token, project, NB)
         att = grounding_routes._attach(client, token, project, NB)
-        code = 'model = curio_load_model("model.curio.ghost-segmenter")\nreturn curio_segment(input_0, model)'
+        code = 'model = curio_load_model("model.curio.ghost-segmenter")\nreturn model.path'
         calls = grounding_routes._script(monkeypatch, [
             grounding_routes._create_tail(code, node_type=CA), "That model is not in your account.",
         ])
@@ -338,7 +346,7 @@ class TestChips:
 
     def test_a_chip_names_the_model_its_widget_holds(self, app, tmp_curio):
         _add_package(verified_rounds.KEY, f"{DDRNET}@1")
-        code = "model = curio_load_model([!! model !!])\nreturn curio_segment(input_0, model)"
+        code = "model = curio_load_model([!! model !!])\nreturn model.path"
 
         def solve(model_id):
             node = {
@@ -423,6 +431,31 @@ class TestImports:
         # A module of a package the account has not added is refused too.
         refusal = _gate("from deep_umbra.deep_umbra import season_factor\nreturn season_factor(1)", node_type=CA)
         assert refusal and "import deep_umbra (line 1)" in refusal and "has not added" in refusal, refusal
+
+    def test_a_module_only_the_catalogs_newer_version_ships_is_refused_with_that_version(
+        self, app, tmp_curio, monkeypatch,
+    ):
+        # The account holds a package's 1.0.0, which ships no such module; the
+        # catalog's 1.1.0 does. The refusal names that version, not an add.
+        from utk_curio.backend.app.packages import service as packages_service
+        from utk_curio.backend.app.packages.application.store_install import install_package_from_archive
+        from utk_curio.backend.tests.test_packages import test_missing_import as missing
+
+        catalog = tmp_curio / "catalog"
+        catalog.mkdir()
+        monkeypatch.setenv("CURIO_PACKAGES_ROOT", str(catalog))
+        install_package_from_archive(USER, missing._archive(missing._package_files(ships_module=False)))
+        missing._put_in_catalog(catalog, version="1.1.0")
+        index = packages_service.module_index(USER, PROJECT)
+        home = index.get(missing.MODULE)
+        assert home and home.get("another_version") is True and home.get("newer") is True, index
+
+        ctx = sg.GroundingContext(code_engine="python", reachable_modules=frozenset(), package_modules=index)
+        refusals = sg._import_refusals(f"from {missing.MODULE} import track\nreturn track()", ctx)
+        count = len(refusals)
+        assert count == 1, refusals
+        assert f"import {missing.MODULE} (line 1)" in refusals[0], refusals
+        assert "at version 1.1.0" in refusals[0] and "has not added" not in refusals[0], refusals
 
     def test_solve_refuses_the_import_before_the_sandbox(self, app, tmp_curio):
         routes_proposals.TestNodeCreate()._write_builtin_package(verified_rounds.KEY, templates=verified_rounds.TEMPLATES)

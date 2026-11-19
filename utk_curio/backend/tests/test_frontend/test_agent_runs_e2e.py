@@ -34,6 +34,9 @@ import json
 import re
 import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 import pytest
 
@@ -41,6 +44,7 @@ from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain.manifest import AgentManifest
 
 from .utils import (
+    HTTP_TIMEOUT_S,
     api_json,
     captured_agent_offers,
     captured_agent_prompts,
@@ -53,6 +57,7 @@ from .utils import (
     stub_db_user,
     use_scripted_llm,
 )
+from .utils.servers import relayed_headers
 
 # The nodes every project in this module is seeded with. Two, not one: an agent
 # whose compatibleTargets[].requires names "data-loading" can only attach to a
@@ -108,15 +113,15 @@ BUILTIN_NODE_TYPE = "curio.builtin/python-computation"
 
 VISIBLE_PROSE = "Here is what I found."
 
-#: How long ``api_json`` waits for a quick call by default.
+#: How long ``api_json`` waits for one call by default (``HTTP_TIMEOUT_S``).
 QUICK_CALL_S = inspect.signature(api_json).parameters["timeout"].default
 #: The hold the slow turn's model call waits on.
 SLOW_HOLD = "slow-turn"
 #: How long a turn's answer is waited for. The run route answers once the
 #: turn ended, so its answer is the turn's end, however long the turn's steps
-#: take, and this bounds only a turn that never ends. A quick call's wait is
-#: no turn's: each step of a plan is a synced write of the dataflow, which a
-#: busy disk slows past it. Longer than the scripted model holds a call
+#: take, and this bounds only a turn that never ends. One call's wait is no
+#: turn's: each step of a plan is a synced write of the dataflow, and a busy
+#: disk slows every one of them. Longer than the scripted model holds a call
 #: (``testing_provider.HOLD_MAX_S``).
 TURN_S = 180.0
 
@@ -126,6 +131,12 @@ def _run(base: str, attachment_id: str, token: str, message: str) -> dict:
     once its turn ended, and return that answer."""
     return api_json(f"{base}/attachments/{attachment_id}/run", token, method="POST",
                     payload={"message": message}, timeout=TURN_S)
+
+
+def _dataflow_of(base: str) -> str:
+    """The dataflow an agents base URL (``.../api/agents/projects/<id>``)
+    is about, whose turns the scripted model answers."""
+    return base.rstrip("/").rsplit("/", 1)[-1]
 
 
 def _spec_id(spec: AgentManifest) -> str:
@@ -364,7 +375,7 @@ def test_agent_installs_attaches_and_runs(spec, current_server: str):
 
     # 3. Script the turn and run it.
     leg, tool, replies = _scripted_replies(spec)
-    script_agent_replies(current_server, *replies)
+    script_agent_replies(current_server, *replies, dataflow=project_id)
     run = _run(base, attachment_id, token, f"Hello {spec.name}, do your job.")
 
     # 4. The scripted reply came back through the real route.
@@ -378,7 +389,7 @@ def test_agent_installs_attaches_and_runs(spec, current_server: str):
     assert run["usage"]["inputTokens"] > 0
 
     # 5. THE PER-AGENT CLAIM: this agent's own prompt bytes composed the turn.
-    system = captured_system_prompt(current_server)
+    system = captured_system_prompt(current_server, dataflow=project_id)
     instruction = builtin.read_instruction_text(coord)
     assert instruction, f"{coord} has no instruction prompt on disk"
     assert instruction.strip() in system, (
@@ -441,7 +452,7 @@ def test_agent_installs_attaches_and_runs(spec, current_server: str):
     elif leg == "read":
         # Two provider calls: the request, then the re-prompt carrying its
         # result. One call would mean the tool round never happened.
-        captured = captured_agent_prompts(current_server)
+        captured = captured_agent_prompts(current_server, dataflow=project_id)
         assert len(captured) >= 2, (
             f"{coord} requested {tool!r} but the run never re-prompted with a "
             f"result ({len(captured)} provider call(s))"
@@ -541,16 +552,17 @@ def test_agent_runs_on_native_tools(spec, current_server: str):
     require_project_page()
     require_user_auth()
     token, base, attachment_id = _attached(spec, current_server, "native")
+    dataflow = _dataflow_of(base)
     leg, tool, replies = _native_replies(spec)
-    script_agent_replies(current_server, *replies, native_tools=True)
+    script_agent_replies(current_server, *replies, native_tools=True, dataflow=dataflow)
     run = _run(base, attachment_id, token, f"Hello {spec.name}, do your job.")
     assert VISIBLE_PROSE in run["reply"], run["reply"]
 
-    system = captured_system_prompt(current_server)
+    system = captured_system_prompt(current_server, dataflow=dataflow)
     assert '"toolRequest"' not in system and '"delegateRequest"' not in system, (
         "a run on native tools was still taught the fenced request syntax"
     )
-    offers = captured_agent_offers(current_server)
+    offers = captured_agent_offers(current_server, dataflow=dataflow)
     # Its tools, skill.read, which a chat that lists skills holds, and the
     # delegation tool when it delegates.
     skill_read = tools.wire_name("skill.read")
@@ -560,7 +572,7 @@ def test_agent_runs_on_native_tools(spec, current_server: str):
     if leg == "prompts":
         return
     assert tools.wire_name(tool) in offers[0]["tools"], offers[0]
-    result = captured_agent_prompts(current_server)[1][-1]
+    result = captured_agent_prompts(current_server, dataflow=dataflow)[1][-1]
     assert result["role"] == "tool" and result["is_error"] is False, result
     if leg == "mint":
         changes = [p for p in run["content"] if p.get("type") == "change"]
@@ -572,27 +584,29 @@ def test_agent_runs_on_native_tools(spec, current_server: str):
 
 def test_a_turn_that_outlasts_a_quick_call_is_waited_for_to_its_end(current_server: str):
     """A turn is waited for until it ends, however long that takes. The
-    Dataflow Builder's plan, on native tools, has its model call held past a
-    quick call's wait (``api_json``'s default), as a burst of synced disk
+    Dataflow Builder's plan, on native tools, has its model call held past
+    ``api_json``'s default wait for one call, as a burst of synced disk
     writes on a busy CI host once held its writes: the run still answers with
     the plan landed."""
     require_project_page()
     require_user_auth()
     spec = next(s for s in _CARDS if s.agent_id == "agent.curio.dataflow-builder")
     token, base, attachment_id = _attached(spec, current_server, "slow")
+    dataflow = _dataflow_of(base)
     _leg, tool, (call, follow_up) = _native_replies(spec)
-    script_agent_replies(current_server, {**call, "hold": SLOW_HOLD}, follow_up, native_tools=True)
+    script_agent_replies(current_server, {**call, "hold": SLOW_HOLD}, follow_up, native_tools=True,
+                         dataflow=dataflow)
     asked = time.monotonic()
     over = threading.Event()
 
     def release_after_a_quick_call():
-        # Once the turn waits at the model, and a quick call's wait has passed.
+        # Once the turn waits at the model, and api_json's default wait has passed.
         try:
-            while not over.is_set() and not held_agent_calls(current_server).get(SLOW_HOLD):
+            while not over.is_set() and not held_agent_calls(current_server, dataflow=dataflow).get(SLOW_HOLD):
                 over.wait(0.1)
             over.wait(max(0.0, asked + QUICK_CALL_S + 2.0 - time.monotonic()))
         finally:
-            release_agent_hold(current_server, SLOW_HOLD)
+            release_agent_hold(current_server, SLOW_HOLD, dataflow=dataflow)
 
     releaser = threading.Thread(target=release_after_a_quick_call, daemon=True)
     releaser.start()
@@ -612,6 +626,106 @@ def test_a_turn_that_outlasts_a_quick_call_is_waited_for_to_its_end(current_serv
     assert all(any(goal.startswith(title) for goal in goals) for title in PLAN_NODE_TITLES), goals
 
 
+#: The write a stalled disk held: a new LLM configuration, a synced write of
+#: the account's ``llm-configs.json`` (``owner_only_file.write_json``).
+CONFIG_WRITE = ("POST", "/api/agents/llm/configs")
+#: How long that write's answer comes after it is sent: longer than the 27 s
+#: it took on run 42558359012 (arcade-gpu-03), while the run's 26 arcade CPU
+#: jobs pulled its image onto the host's disk and every synced write waited.
+STALLED_WRITE_S = 30.0
+
+
+class _LateAnswers:
+    """A loopback server in front of the backend that answers one request late,
+    as a host whose disk stalls does. Each request goes to the backend at once,
+    so its work is done on time; the answer to *held* (method, path) is sent
+    *hold_s* later, every other answer as it comes. ``held`` records each held
+    answer and how long it waited, ``unsent`` each answer its caller had
+    stopped waiting for."""
+
+    def __init__(self, backend: str, held: tuple[str, str], hold_s: float):
+        self.held: list[dict] = []
+        self.unsent: list[str] = []
+        self._released = released = threading.Event()
+        log, unsent = self.held, self.unsent
+
+        class Handler(BaseHTTPRequestHandler):
+            def _forward(self) -> None:
+                size = int(self.headers.get("Content-Length") or 0)
+                request = Request(
+                    backend + self.path,
+                    data=self.rfile.read(size) if size else None,
+                    # The dataflow's key among them, which nginx routes by.
+                    headers=relayed_headers(self.headers),
+                    method=self.command,
+                )
+                try:
+                    with urlopen(request, timeout=HTTP_TIMEOUT_S) as answer:  # noqa: S310 (trusted local URL)
+                        status, kind, body = answer.status, answer.headers.get("Content-Type"), answer.read()
+                except HTTPError as refusal:
+                    status, kind, body = refusal.code, refusal.headers.get("Content-Type"), refusal.read()
+                if (self.command, self.path.split("?", 1)[0]) == held:
+                    began = time.monotonic()
+                    released.wait(hold_s)
+                    log.append({"request": f"{self.command} {self.path}", "held_s": time.monotonic() - began})
+                try:
+                    self.send_response(status)
+                    self.send_header("Content-Type", kind or "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                except OSError as gone:
+                    unsent.append(f"{self.command} {self.path}: {gone}")
+
+            do_GET = do_POST = do_PUT = do_DELETE = _forward
+
+        self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self._server.server_port}"
+        self._serving = threading.Thread(target=self._server.serve_forever, daemon=True)
+
+    def __enter__(self) -> "_LateAnswers":
+        self._serving.start()
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        # A held answer goes at once, so no thread outlives the test.
+        self._released.set()
+        self._server.shutdown()
+        self._server.server_close()
+
+
+def test_a_configuration_write_a_stalled_disk_answers_late_is_waited_for(current_server: str):
+    """A scripted LLM configuration is made the account's default, though its
+    write is answered as late as a stalled CI host answered it.
+
+    On run 42558359012 (arcade-gpu-03), test_an_autark_document_is_written_under_its_schema
+    failed in its setup: ``use_scripted_llm``'s ``POST /api/agents/llm/configs``
+    answered 27 s after it was sent, while the run's 26 arcade CPU jobs pulled
+    its image onto the host's disk, and ``api_json`` had given up at 10 s. Here a server in
+    front of the backend holds that answer STALLED_WRITE_S on every run."""
+    require_user_auth()
+    token = stub_db_user(current_server, username="agentrun_stalled_write", name="Stalled Write E2E")["token"]
+    with _LateAnswers(current_server, CONFIG_WRITE, STALLED_WRITE_S) as late:
+        asked = time.monotonic()
+        config = use_scripted_llm(late.url, token)
+        took = time.monotonic() - asked
+    listing = api_json(f"{current_server}/api/agents/llm", token)
+    seen = {
+        "answers held": [answer["request"] for answer in late.held],
+        "setup waited the held answer out": took >= STALLED_WRITE_S,
+        "answers no one waited for": late.unsent,
+        "the account's default": listing["default"],
+        "its configurations": [(c["label"], c["apiType"]) for c in listing["configs"]],
+    }
+    assert seen == {
+        "answers held": [" ".join(CONFIG_WRITE)],
+        "setup waited the held answer out": True,
+        "answers no one waited for": [],
+        "the account's default": config["id"],
+        "its configurations": [("Scripted", "testing")],
+    }, f"{seen}, setup took {took:.1f} s"
+
+
 @pytest.mark.parametrize("native", [False, True], ids=["fenced", "native"])
 def test_a_chat_loads_a_skill_and_holds_it_for_its_next_turn(native: bool, current_server: str):
     """The Node Builder's chat loads ``widgets`` with skill.read, fenced and
@@ -623,14 +737,15 @@ def test_a_chat_loads_a_skill_and_holds_it_for_its_next_turn(native: bool, curre
     require_user_auth()
     spec = next(s for s in _CARDS if s.agent_id == "agent.curio.node-builder")
     token, base, attachment_id = _attached(spec, current_server, "skill" + ("n" if native else "f"))
+    dataflow = _dataflow_of(base)
     if native:
         ask = {"text": VISIBLE_PROSE, "toolCalls": [{"name": "skill.read", "arguments": {"name": "widgets"}}]}
     else:
         ask = _tail({"toolRequest": {"tool": "skill.read", "params": {"name": "widgets"}}})
 
-    script_agent_replies(current_server, ask, "Loaded.", native_tools=native)
+    script_agent_replies(current_server, ask, "Loaded.", native_tools=native, dataflow=dataflow)
     _run(base, attachment_id, token, "Which widgets can a chart have?")
-    first = captured_agent_prompts(current_server)
+    first = captured_agent_prompts(current_server, dataflow=dataflow)
     assert '<available_skills>' in first[0][0]["content"] and "<name>widgets</name>" in first[0][0]["content"]
     result = first[1][-1]
     assert result["role"] == ("tool" if native else "user"), result
@@ -638,9 +753,9 @@ def test_a_chat_loads_a_skill_and_holds_it_for_its_next_turn(native: bool, curre
     turns = api_json(f"{base}/attachments/{attachment_id}/session", token)["turns"]
     assert turns[-1]["execution"]["skillsLoaded"] == ["widgets"], turns[-1]["execution"]
 
-    script_agent_replies(current_server, ask, "Still loaded.", native_tools=native)
+    script_agent_replies(current_server, ask, "Still loaded.", native_tools=native, dataflow=dataflow)
     _run(base, attachment_id, token, "And for a map?")
-    second = captured_agent_prompts(current_server)
+    second = captured_agent_prompts(current_server, dataflow=dataflow)
     assert second[0][0]["content"].count('<skill_content name="widgets">') == 1
     again = second[1][-1]["content"]
     assert "already in this conversation" in again and "<skill_content" not in again, again
@@ -656,18 +771,20 @@ def test_a_refusal_of_native_tools_falls_back_to_the_fenced_protocol(current_ser
     require_user_auth()
     spec = next(s for s in _CARDS if s.agent_id == "agent.curio.researcher")
     token, base, attachment_id = _attached(spec, current_server, "fallback")
+    dataflow = _dataflow_of(base)
     script_agent_replies(
         current_server,
         {"error": "this model does not support tools", "status": 400},
         _tail({"toolRequest": {"tool": "dataflow.read", "params": {}}}),
         "That is what the project currently contains.",
         native_tools=True,
+        dataflow=dataflow,
     )
     run = _run(base, attachment_id, token, "What is in this project?")
     assert run["reply"].endswith("That is what the project currently contains.")
-    offers = captured_agent_offers(current_server)
+    offers = captured_agent_offers(current_server, dataflow=dataflow)
     assert offers[0]["tools"] and offers[1] == {"tools": [], "toolChoice": None, "replySchema": None}, offers
-    assert '"toolRequest"' in captured_system_prompt(current_server, call=1)
+    assert '"toolRequest"' in captured_system_prompt(current_server, dataflow=dataflow, call=1)
     turns = api_json(f"{base}/attachments/{attachment_id}/session", token)["turns"]
     pins = turns[-1]["execution"]["pins"]
     assert pins["toolProtocol"] == "fenced" and pins["nativeToolsRefused"] is True
@@ -679,7 +796,7 @@ AUTK_NODE_ID = "agent-e2e-autk"
 
 #: Drawn from the node's own input, so no source is probed.
 AUTK_DOCUMENT = {
-    "compute": [{"dataRef": "input_0", "wglsFunction": "fn main() {}",
+    "compute": [{"dataRef": "input_0", "wgslFunction": "fn main() {}",
                  "attributes": {"height": "properties.height"}, "outputColumnName": "shade"}],
     "map": {"layerRefs": [{"dataRef": "input_0"}]},
 }
@@ -704,6 +821,7 @@ def test_an_autark_document_is_written_under_its_schema(current_server: str):
     # node.content.generate is the Node Builder's own mode, so the agent
     # attached here is the delegate too.
     token, base, attachment_id = _attached(spec, current_server, "autkschema", project_spec=project)
+    dataflow = _dataflow_of(base)
     constrained, _ = reply_schemas.autk_reply_schema(reply_schemas.FLAVOR_STRICT).encode(AUTK_DOCUMENT)
     script_agent_replies(
         current_server,
@@ -712,11 +830,12 @@ def test_an_autark_document_is_written_under_its_schema(current_server: str):
         json.dumps(constrained),
         "The map is in the node.",
         structured_output=True,
+        dataflow=dataflow,
     )
     run = _run(base, attachment_id, token, "Write the map for the Autark node.")
-    offers = captured_agent_offers(current_server)
+    offers = captured_agent_offers(current_server, dataflow=dataflow)
     assert [o["replySchema"] for o in offers[:3]] == [None, "autk_grammar_document", None], offers
-    assert "held to the Autark document's schema" in captured_system_prompt(current_server, call=1)
+    assert "held to the Autark document's schema" in captured_system_prompt(current_server, dataflow=dataflow, call=1)
     (entry,) = [p for p in run["content"] if p.get("type") == "delegation"]
     assert entry["status"] == "ok", entry
     assert entry["coord"] == builtin.builtin_coord("agent.curio.node-builder"), entry

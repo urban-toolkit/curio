@@ -20,6 +20,7 @@ from utk_curio.backend.app.execution.code_references import (
     normalize_widgets,
     resolve_references,
 )
+from utk_curio.backend.app.execution.run_plan import is_interaction_edge
 
 
 def named_input_slot(edge: dict) -> int | None:
@@ -122,7 +123,9 @@ def package_code_types() -> dict[str, str]:
     editor renders and runs like a Python Computation node, so the e2e suite
     plays it, reads its editor, and executes it for the ground truth like one.
     Without this, a package's code node reads as passive and its output is
-    never computed, so every node downstream compares against its input.
+    never computed, so every node downstream compares against its input. The
+    built-in package's count too (the Spatial Join), after
+    :data:`NAMESPACED_TO_LEGACY`, which names its other ones.
     """
     global _package_code_types
     if _package_code_types is None:
@@ -130,7 +133,7 @@ def package_code_types() -> dict[str, str]:
         found: dict[str, str] = {}
         for entry in sorted(os.listdir(packages_dir)) if os.path.isdir(packages_dir) else []:
             path = os.path.join(packages_dir, entry, "manifest.json")
-            if entry.startswith("curio.builtin@") or not os.path.isfile(path):
+            if not os.path.isfile(path):
                 continue
             with open(path, encoding="utf-8") as handle:
                 manifest = json.load(handle)
@@ -368,9 +371,7 @@ class WorkflowSpec:
                 box_of.setdefault(member, (rank, scenario))
         sources: dict = {}
         for edge in self.edges:
-            if edge.get("target") != node_id or edge.get("type") == "Interaction":
-                continue
-            if edge.get("sourceHandle") == "in/out" and edge.get("targetHandle") == "in/out":
+            if edge.get("target") != node_id or is_interaction_edge(edge):
                 continue
             slot = input_slot(edge)
             if slot >= 0 and slot not in sources:

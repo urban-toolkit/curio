@@ -160,6 +160,11 @@ export interface LoadResponse {
   project: ProjectDetail;
   spec: Record<string, unknown>;
   outputs: OutputRef[];
+  /** A hosted guest's own copy of the dataflow, made or not yet, which its
+   *  edits, plays and agents work on: the id the canvas names the dataflow by
+   *  from then on (`utils/requestHeaders.ts`). Null or absent for anyone
+   *  else, and on the link's read (`getShared`). */
+  copy_id?: string | null;
 }
 
 export interface ListParams {

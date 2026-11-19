@@ -22,6 +22,8 @@ from __future__ import annotations
 import copy as _copy
 from typing import Callable, Iterable
 
+from utk_curio.backend.app.execution.run_plan import INTERACTION_HANDLE
+
 #: What a copy no longer carries: a copy is not a dashboard tile until someone
 #: pins it.
 _DASHBOARD_KEYS = ("dashboardPinned", "dashboardX", "dashboardY")
@@ -89,6 +91,6 @@ def duplicate_selection(
         twin["target"] = target
         # Always explicit: without one, a load reads the circle from the edge id.
         handle = edge.get("targetHandle")
-        twin["targetHandle"] = handle if handle is not None else ("in/out" if _is_interaction(edge) else "in")
+        twin["targetHandle"] = handle if handle is not None else (INTERACTION_HANDLE if _is_interaction(edge) else "in")
         copied_edges.append(twin)
     return {"nodes": copies, "edges": copied_edges, "ids": ids}

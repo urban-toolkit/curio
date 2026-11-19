@@ -24,7 +24,12 @@ from utk_curio.backend.app.packages.application import (
     store_install as packages_store_install,
 )
 from utk_curio.backend.app.packages.repositories.store import package_dir
-from utk_curio.backend.app.packages.routes.common import _map_package_errors, packages_bp, user_key
+from utk_curio.backend.app.packages.routes.common import (
+    _map_package_errors,
+    packages_bp,
+    refuse_a_hosted_guest,
+    user_key,
+)
 from utk_curio.backend.app.packages.schemas import requests
 from utk_curio.backend.app.packages.schemas.responses import package_payload
 
@@ -93,7 +98,9 @@ def _installed_payload(key: str, result) -> dict:
 def remove_package(dir_name: str):
     """Uninstall from the store with the backend residue (dev/97); the builtin is refused.
     ``?unusedOnly=true`` is the catalog pages' Remove from account: a 409 while
-    a dataflow uses the package, else its defaults entry goes with it."""
+    a dataflow uses the package, else its defaults entry goes with it.
+    Refused to a hosted guest."""
+    refuse_a_hosted_guest("remove packages from the account")
     key = user_key()
     if requests.query_flag(request.args, "unusedOnly"):
         packages_project_packages.remove_unused_package(key, dir_name)
@@ -112,7 +119,9 @@ def remove_package(dir_name: str):
 @require_auth
 @_map_package_errors
 def patch_package_metadata(dir_name: str):
-    """Partial-update human-authored package metadata (see ``application.metadata``)."""
+    """Partial-update human-authored package metadata (see ``application.metadata``).
+    Refused to a hosted guest."""
+    refuse_a_hosted_guest("change a package's details")
     manifest, pkg_path = packages_metadata.patch_package_metadata(
         user_key(), dir_name, request.get_json(silent=True),
     )

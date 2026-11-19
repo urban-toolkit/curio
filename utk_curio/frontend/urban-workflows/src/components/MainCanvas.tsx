@@ -44,6 +44,7 @@ import { getFlowNodeCanonicalType } from "../utils/flowNodeCanonicalType";
 import { DEFAULT_DELETE_KEY_CODES } from "./canvasKeyBindings";
 import { useRunSelectedNodeShortcut } from "../hook/useRunSelectedNodeShortcut";
 import { useViewportMotionHint } from "../hook/useViewportMotionHint";
+import { useFlowInSight } from "../hook/useFlowInSight";
 import UniversalNode from "./UniversalNode";
 import BiDirectionalEdge from "./edges/BiDirectionalEdge";
 import { useCode } from "../hook/useCode";
@@ -255,6 +256,12 @@ export function MainCanvas() {
     const reactFlow = useReactFlow();
     const { setViewport, screenToFlowPosition } = useReactFlow();
     const viewportMotionHint = useViewportMotionHint();
+    // A scroll of React Flow's own element, the browser's to show what Tab
+    // reaches past the canvas's edge, becomes the same pan, and a node Tab
+    // reaches on any side is panned into sight. The notebook view holds its
+    // view at the origin and its page scrolls, so there the element is only
+    // put back.
+    const flowInSight = useFlowInSight(!notebookOn);
 
     // The notebook view holds React Flow on its own pane: zoom 1, no gestures,
     // and a translate extent equal to the pane, so the page scrolls instead.
@@ -568,7 +575,8 @@ export function MainCanvas() {
     // drawer's own Add first (the review, then the install of its libraries),
     // and the node is made once it is added; the Models palette lists only
     // the dataflow's models, so its rows make their nodes at once. A hosted
-    // guest's drop is refused, since guests never install. On the owner's
+    // guest's drop of a package its account does not hold is refused, since
+    // guests never install; one it holds goes through the Add. On the owner's
     // dataflow an invited editor's drop of a package the dataflow does not use
     // makes its node at once and asks her to add the package
     // (useAskForPackage): the node waits for her review.
@@ -969,6 +977,7 @@ export function MainCanvas() {
                 onMoveStart={viewportMotionHint.onMoveStart}
                 onMove={viewportMotionHint.onMove}
                 onMoveEnd={viewportMotionHint.onMoveEnd}
+                {...flowInSight}
                 nodesDraggable={!isSharedView}
                 elementsSelectable={true}
                 // Set here, not left to React Flow's default: it keeps a value

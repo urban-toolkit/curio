@@ -423,6 +423,22 @@ describe("the conflict modes are chosen in the pool and applied (#581)", () => {
     expect(dfFlags(alone)).toEqual(["1", "1", "0"]);
   });
 
+  test("a view linked through its own dot drops out of the merge when that edge is removed", async () => {
+    // An Autark node's view links to the pool from its dot, `in/out@<id>`.
+    const viewEdge = { id: "plots-pool", source: "plots", target: "pool-1", sourceHandle: "in/out@heights", targetHandle: "in/out" };
+    mockEdges = [linkEdge("bar"), viewEdge];
+    const pool = mountPool(frame(), { dataPool: { betweenCharts: ResolutionType.MERGE_AND } });
+    await pool.ready();
+    await pool.select("bar", { highlight: point([0, 1]) });
+    const [, both] = await pool.select("plots", { brush: point([1, 2]) });
+    expect(dfFlags(both)).toEqual(["0", "1", "0"]);
+
+    mockEdges = [linkEdge("bar")];
+    await pool.update({});
+    const [, alone] = await pool.select("bar", { highlight: point([0, 1]) });
+    expect(dfFlags(alone)).toEqual(["1", "1", "0"]);
+  });
+
   test("choosing another mode resolves the selections the pool holds again", async () => {
     mockEdges = [linkEdge("bar"), linkEdge("scatter")];
     const pool = mountPool(frame());

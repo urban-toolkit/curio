@@ -24,8 +24,10 @@ a dataflow that does not exist. A hosted guest's join to a dataflow the guest
 account owns (an example every hosted guest opens) is its join to the room of
 its own copy of it (``visitor_copies.room_for``), which it owns: the join
 answers with the copy's id (``projectId``), which every later event of the
-socket names. The copy is made on the guest's first change in its doc, not
-here. A hosted guest joins no other guest's copy (``access.joins_room``). A
+socket names. In a start of several backend processes that room is kept by
+the process the copy's own id names, which the socket's handshake names
+(``owner_guard.py``); another process refuses the join. The copy is made on
+the guest's first change in its doc, not here. A hosted guest joins no other guest's copy (``access.joins_room``). A
 hosted guest's own new dataflow (File > New) has a room of its own, its id's,
 which only that guest joins: to anyone else it is an unknown dataflow.
 
@@ -49,7 +51,7 @@ from typing import Optional
 from flask import request
 from flask_socketio import ConnectionRefusedError, join_room
 
-from utk_curio.backend.app.collaboration import room_state
+from utk_curio.backend.app.collaboration import owner_guard, room_state
 from utk_curio.backend.app.collaboration.auth import authenticate_handshake
 from utk_curio.backend.config import COLLAB_NAMESPACE
 
@@ -230,6 +232,13 @@ def register(sio):
         account = _account(sess)
         # A hosted guest on a dataflow its account owns joins its own copy's room.
         project = visitor_copies.room_for(account, project, account.sign_in) or project
+        # The room, its presence and its locks are kept by the process that
+        # owns the dataflow whose room it is alone: a hosted guest's copy's
+        # process is its own id's, which the socket's handshake names.
+        try:
+            owner_guard.refuse(project.id, what="joining its room")
+        except owner_guard.NotTheOwner as exc:
+            return {"ok": False, "error": "not_the_owner", "message": exc.description}
         if not access.joins_room(account, project):
             # A guest's new dataflow is its own: to anyone else, it is none.
             if isinstance(project, visitor_copies.Copy) and project.new:

@@ -5,7 +5,9 @@ review card, the real apply, the real background Solve with its waves,
 grounding gate and per-wave persist, and the real spec on disk. Only two things
 are replaced, and both are replaced the way every agent test replaces them: the
 provider (scripted) and the sandbox (faked). Package installs keep the real
-service and stub only pip's subprocess.
+service and stub only pip's subprocess. The weights a model package's ``fetch``
+names, which a node's first run downloads and no test may, are a stand-in
+planted where Curio reads them, as example 31's e2e plants its tiny SAM 3.
 
 The suite's job is to prove the harness measures the MODEL. If an oracle -- a
 scripted answer built from the expected graph -- can drive this path to a
@@ -194,6 +196,10 @@ class TestReachability:
             "widget", "scenarios", "quad-cities-flood-vulnerability", "06-back-bay-road-sunlight",
             "chicago-loop-shadow-towers", "24-scout-shadow-model-chicago-loop", "chicago-rain-wind-routing", "lower-manhattan-park-shade",
             "scenario-comparison-charts", "crown-heights-1550-bedford-shadow", "filter-rows-with-widgets",
+            # Each Spatial Join's Operation and Output.
+            "10-street-vision-cv-analysis", "15-vega-lite-spec-forms-and-catalogs", "25-spatial-join-operations",
+            # Its Settings node's widgets, and its Spatial Join's.
+            "32-sage-idot-rail-crossings",
         }
         for fixture in with_widgets:
             example = _example(fixture)

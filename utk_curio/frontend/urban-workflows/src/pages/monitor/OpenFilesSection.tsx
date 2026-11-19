@@ -71,6 +71,12 @@ export const OpenFilesSection: React.FC<{ payload: MonitorOpenFilesPayload | nul
           above {payload.warnAbovePercent}% of its limit adds an entry to Recent errors.
         </p>
       ) : null}
+      {payload?.backendProcesses && payload.backendProcesses.count > 1 ? (
+        <p className={styles.caption} data-testid="monitor-open-files-processes">
+          The backend runs as {payload.backendProcesses.count} processes: its line is the busiest one in each
+          hour, against that process's own limit.
+        </p>
+      ) : null}
     </div>
   );
 };

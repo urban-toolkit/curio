@@ -166,8 +166,11 @@ class TestDuplicates:
             "scenarios[1].copies.shadows 'compare' is already a ref of this plan: a copy needs a ref of its own"]
         assert errors_for({**base, "values": {"shadows": {"height_factor": 2}}}) == [
             "scenarios[1].values.shadows: 'shadows' is not a copy this duplicate makes ('shadows_tall', 'chart_tall')"]
-        assert errors_for({**base, "values": {"shadows_tall": {"height": 2}}}) == [
-            "scenarios[1].values.shadows_tall.height: the node has no widget named 'height' (it has height_factor)"]
+        # A name the plan does not declare on the node may be its template's
+        # widget, which only the mint knows: the mint refuses one neither has
+        # in these words (test_plan_scenario_routes.py,
+        # test_a_value_for_a_widget_the_node_has_not_is_refused_naming_its_widgets).
+        assert errors_for({**base, "values": {"shadows_tall": {"height": 2}}}) == []
         assert errors_for({**base, "values": {"shadows_tall": {"height_factor": 9}}}) == [
             "scenarios[1].values.shadows_tall.height_factor: Enter a number from 0.5 to 4."]
         assert "needs copies" in errors_for({"name": "T", "duplicateOf": "Real heights", "values": {}})[0]

@@ -79,13 +79,18 @@ def readable(index: Mapping[str, object]) -> dict[str, PackageManifest]:
     return {dir_name: manifest for dir_name, manifest in index.items() if isinstance(manifest, PackageManifest)}
 
 
-def packages_to_add(user_key: str, dir_name: str) -> list[str]:
+def packages_to_add(user_key: str, dir_name: str, *, its_catalog_copy: bool = False) -> list[str]:
     """*dir_name* and every package it needs, those it needs first, read from
-    *user_key*'s store and the shared catalog. A package it needs that neither
-    holds at a version its entry allows refuses the add: a
-    :class:`PackageServiceError` (409) naming that package and what needs it."""
+    *user_key*'s store and the shared catalog. With *its_catalog_copy*, the
+    entries of *dir_name* itself are read from the catalog's copy, which an
+    install from the catalog puts in the store in place of the store's (the
+    Node Catalog's Update). A package it needs that neither holds at a version
+    its entry allows refuses the add: a :class:`PackageServiceError` (409)
+    naming that package and what needs it."""
     copies = catalog()
     store = readable(packages_store_reads._locked_store_index(user_key))
+    if its_catalog_copy:
+        store.pop(dir_name, None)
     try:
         return required_packages([dir_name], store, copies)
     except UnmetPackageDependency as exc:

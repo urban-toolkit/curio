@@ -1,5 +1,6 @@
 import { getToken } from "../utils/authApi";
 import { backendUrl } from "../utils/backendUrl";
+import { requestHeaders } from "../utils/requestHeaders";
 
 export default async function useStarters() {
     try {
@@ -8,9 +9,8 @@ export default async function useStarters() {
         // utk_curio/backend/app/api/routes.py → get_starters). Without the Bearer
         // token we'd only ever see the built-in presets, and a freshly-dropped
         // package node would have nothing in its starters dropdown.
-        const token = getToken();
         const response = await fetch(backendUrl() + '/starters', {
-            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            headers: requestHeaders(getToken()),
         });
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);

@@ -187,7 +187,7 @@ def _open_dataflow_with_agent(
 
     # Scripted before the page can send anything, so no turn can race ahead of
     # its reply and pick up the provider's fallback instead.
-    script_agent_replies(backend, *replies, native_tools=native_tools, node_ids=node_ids)
+    script_agent_replies(backend, *replies, native_tools=native_tools, node_ids=node_ids, dataflow=project_id)
 
     _goto_when_served(page, f"{session['frontend']}/dataflow/{project_id}")
     page.wait_for_url(f"**/dataflow/{project_id}", timeout=20000)
@@ -622,9 +622,9 @@ class TestNativeToolCall:
 
         # 2. It really was a native call: the tool was offered, the system turn
         #    taught no fenced syntax, and a tool message answered the call.
-        offers = captured_agent_offers(current_server)
+        offers = captured_agent_offers(current_server, dataflow=project_id)
         assert tools.wire_name(tool) in offers[0]["tools"], offers[0]
-        captured = captured_agent_prompts(current_server)
+        captured = captured_agent_prompts(current_server, dataflow=project_id)
         assert '"toolRequest"' not in captured[0][0]["content"]
         result = captured[1][-1]
         assert result["role"] == "tool" and result["is_error"] is False, result

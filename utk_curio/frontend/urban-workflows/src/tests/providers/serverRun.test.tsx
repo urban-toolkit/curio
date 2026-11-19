@@ -144,6 +144,13 @@ describe("what an event does to its node", () => {
       expect(nodeChangeFor({ kind: "step_finished", nodeId: "a", status }, ran, { started: false })).toBeNull();
     }
   });
+
+  it("a step's progress says what the running node does, such as a download", () => {
+    const message = "Downloading model.safetensors, a file of the weights of model.curio.sam3: 1.21 of 3.44 GB (35%)";
+    // Cast: the event is the stream's, whatever the types of the code under test name.
+    const event = { kind: "step_progress", nodeId: "a", message, done: 1210000000, total: 3440000000 } as any;
+    expect(nodeChangeFor(event, ran, { started: true })).toEqual({ kind: "progress", message });
+  });
 });
 
 describe("which nodes the browser still runs", () => {
@@ -241,6 +248,34 @@ describe("a run started on the canvas", () => {
     // A replayed event is not applied twice.
     live.emit({ kind: "step_finished", nodeId: "a", status: "ok", reply: { output: { path: "art-a" } } });
     expect(deps.applyNewOutput).toHaveBeenCalledTimes(1);
+    expect(hook.result.current.serverRunActive).toBe(true);
+  });
+
+  it("shows a step's progress on its node while it runs, such as its weights downloading, then its outcome", async () => {
+    const live = stream();
+    // "d" keeps the run going to the end of the test.
+    api.start.mockResolvedValue(run("r1", [step("track"), step("d", { level: 1 })]));
+    const { hook, shown } = harness([{ id: "track", data: { code: "return 1" } }, { id: "d" }]);
+    await act(async () => { await hook.result.current.startRun(); });
+    const message = "Downloading model.safetensors, a file of the weights of model.curio.sam3: 1.21 of 3.44 GB (35%)";
+
+    live.emit({ kind: "step_started", nodeId: "track", startedAt: 1700000000 });
+    // Cast: the event is the stream's, whatever the types of the code under test name.
+    live.emit({ kind: "step_progress", nodeId: "track", message, done: 1210000000, total: 3440000000 } as any);
+    expect(shown("track")).toEqual({ code: "exec", content: message });
+
+    // The downloads over, the node runs.
+    live.emit({ kind: "step_progress", nodeId: "track", message: "" } as any);
+    expect(shown("track")).toEqual({ code: "exec", content: "" });
+
+    live.emit({
+      kind: "step_finished", nodeId: "track", status: "ok", startedAt: 1700000000, finishedAt: 1700000060,
+      reply: { stdout: ["ran"], stderr: "", input: null, output: { path: "art-track", dataType: "int" } },
+    });
+    expect(shown("track")).toMatchObject({ code: "success" });
+    // A progress replayed after the outcome changes nothing.
+    live.emit({ kind: "step_progress", nodeId: "track", message } as any);
+    expect(shown("track")).toMatchObject({ code: "success" });
     expect(hook.result.current.serverRunActive).toBe(true);
   });
 

@@ -187,6 +187,16 @@ class TestVersionPassesTheSandboxIsolationFields:
         assert body["isolation_active"] == "unknown"
         assert body["version"]
 
+    def test_the_memory_limit_nodes_run_under_is_forwarded(self, app):
+        """What a deploy checks after it starts the stack: a cgroup."""
+        import requests
+
+        for limit in ("cgroup", "address space", "none"):
+            body = self._get(app, {"isolation": "fork", "isolation_active": "pending", "memory_limit": limit})
+            assert body["memory_limit"] == limit
+        assert self._get(app, {"isolation": "fork"})["memory_limit"] == "unknown"
+        assert self._get(app, None, boom=requests.RequestException("down"))["memory_limit"] == "unknown"
+
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 

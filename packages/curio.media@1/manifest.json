@@ -16,7 +16,7 @@
       "rasterio": ">=1.4"
     }
   },
-  "description": "Nodes for collections of images, video, audio and rasters added from the Discovery Catalog: sample a video's frames, split recordings into windows with their levels, and mosaic raster tiles into one raster. Each takes the rows Data Loading returns for a collection and returns rows or a raster the other nodes already read.",
+  "description": "Nodes for collections of images, video, audio and rasters added from the Discovery Catalog: sample a video's frames, split recordings into windows with their levels, cut videos into blocks, and mosaic raster tiles into one raster. Each takes the rows Data Loading returns for a collection and returns rows or a raster the other nodes already read.",
   "id": "curio.media",
   "license": "MIT",
   "name": "Media",
@@ -87,6 +87,41 @@
         }
       ],
       "source": "sources/split-audio.py"
+    },
+    {
+      "category": "computation",
+      "dataflowCategories": {
+        "tags": ["GeoPandas", "Pandas"],
+        "dataTypes": ["Tables", "Geometries", "Video"]
+      },
+      "description": "Cut every video in a collection, on the top circle, into blocks of BLOCK_SECONDS seconds, or where the table on the bottom circle says: one row per block, with t_s, where it starts in seconds from its video's start, and maybe end_s and video_file_id. Returns one row per block, an MP4 at most WIDTH wide with no sound that Simple View plays, leading with block, the cut's own columns, and t_s and end_s, where the block starts and ends in the video, then the video's fields.",
+      "editor": "code",
+      "engine": "python",
+      "hasCode": true,
+      "hasGrammar": false,
+      "hasWidgets": false,
+      "icon": null,
+      "iconRef": "fa-solid:scissors",
+      "id": "split-video",
+      "inputPorts": [
+        {
+          "cardinality": "1",
+          "types": ["DATAFRAME", "GEODATAFRAME"]
+        },
+        {
+          "cardinality": "[0,1]",
+          "types": ["DATAFRAME", "GEODATAFRAME"]
+        }
+      ],
+      "label": "Split Video",
+      "behavior": "code",
+      "outputPorts": [
+        {
+          "cardinality": "1",
+          "types": ["DATAFRAME", "GEODATAFRAME"]
+        }
+      ],
+      "source": "sources/split-video.py"
     },
     {
       "category": "computation",

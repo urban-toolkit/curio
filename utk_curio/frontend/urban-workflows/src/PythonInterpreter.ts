@@ -31,6 +31,9 @@ export class PythonInterpreter {
         saveOutputDataset = false,
         nodeName?: string,
         inputSlots?: number[],
+        /** Each new word of how far the node's downloads on first use have
+         *  come while the run waits (empty once they are over). */
+        onProgress?: (message: string) => void,
     ) {
         const callbackError = (message: string) => {
             callback({
@@ -89,6 +92,7 @@ export class PythonInterpreter {
                 callback(json);
             },
             callbackError,
+            onProgress,
         );
     }
 }

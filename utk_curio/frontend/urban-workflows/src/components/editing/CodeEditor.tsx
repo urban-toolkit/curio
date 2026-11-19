@@ -460,6 +460,9 @@ function CodeEditor({
             ),
             resolveNodeDisplayLabel(data),
             wiredSlotsRef.current,
+            // While the run waits, how far what the node reads has downloaded
+            // on its first use, as a run on the server says it (useServerRun).
+            (message: string) => setOutputCallback({ code: "exec", content: message }),
         );
     }, [replacedCodeDirty]);
 
@@ -532,8 +535,10 @@ function CodeEditor({
     useEffect(deferResizeObserverCallbacks, []);
 
     const execLabel = output.code === "exec" ? "[*]:" : execCount > 0 ? `[${execCount}]:` : "[ ]:";
+    // A running node says what its run does when the run says so, such as
+    // how far its weights have downloaded on their first use.
     const outputText = output.code === "exec"
-        ? "Running..."
+        ? (typeof output.content === "string" && output.content ? output.content : "Running...")
         : typeof output.content === "string" && output.content
             ? output.content
             : "No output yet";

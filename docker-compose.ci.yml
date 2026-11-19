@@ -42,6 +42,14 @@
 #    torch's CUDA build; the other jobs pull the one build-image built with
 #    the same argument and torch's CPU build. Every CI overlay sets both.
 #
+# 5. The backend's process count is the job's CURIO_E2E_BACKEND_PROCESSES, 1
+#    when it sets none. e2e-desktop sets 2, so its tests reach dataflows split
+#    over two backends behind nginx, and a request that names no dataflow, or
+#    another one, fails there. The count goes only in the command, under a
+#    name of its own: a process that inherited the backends' own
+#    CURIO_BACKEND_PROCESSES, the job's host-side pytest among them, would
+#    take itself for one of N.
+#
 # Deliberately NOT docker-compose.deploy.yml: that overlay also passes
 # --no-allow-publish, which would disable the two catalog mutators that the
 # publish-catalog tests exercise. CI wants auth on and publish still allowed.
@@ -70,6 +78,16 @@ services:
     # the stack; on a small runner test-gpu runs fewer workers instead.
     mem_limit: ${CURIO_CI_MEM_LIMIT:-0}
     memswap_limit: ${CURIO_CI_MEM_LIMIT:-0}
+    # The cgroups below the container's own are its to arrange, as
+    # docker-compose.deploy.yml asks: each isolated node runs in a cgroup at
+    # its budget (utk_curio/sandbox/isolation/node_cgroups.py). This stack
+    # runs its nodes in-process, but the isolation tests that run in it
+    # (test_isolation_linux.py, test-gpu's test_cuda_isolated.py) start
+    # zygotes of their own. Docker Engine 28 or newer; the container cannot
+    # change its own limits.
+    cgroup: private
+    security_opt:
+      - writable-cgroups=true
     environment:
       - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}
       # This is the UNISOLATED baseline stack, which only --testing on the
@@ -102,6 +120,13 @@ services:
       - CURIO_DISCOVERY_FIXTURES=/app/utk_curio/backend/tests/test_discovery/fixtures
       # See 4 above.
       - CURIO_SKIP_DEP_INSTALL=1
+      # The job's share of its runner's CPUs, which e2e-desktop and test-gpu
+      # size, for every library that starts a thread per CPU or core it sees:
+      # torch, OpenBLAS, and onnxruntime through the code that makes its
+      # sessions (the Segmentation, Deep Umbra and weather GNN packages, and
+      # curio_load_data). Passed on only when the job sets it; the other
+      # jobs' stacks keep their default.
+      - OMP_NUM_THREADS
     # The job's own host ports, in place of the base file's 5002/8080, which
     # are the production stack's on the runner.
     ports: !override
@@ -115,3 +140,4 @@ services:
         umask 000 && exec python curio.py start all --deploy --testing --with-examples
         --backend-host 0.0.0.0 --backend-port 5002 --backend-url "${CURIO_E2E_BACKEND_URL:?the host address of this stack's backend}"
         --sandbox-host 0.0.0.0 --sandbox-port 2000
+        --backend-processes "${CURIO_E2E_BACKEND_PROCESSES:-1}"

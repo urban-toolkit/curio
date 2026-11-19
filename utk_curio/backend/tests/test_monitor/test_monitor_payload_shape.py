@@ -27,9 +27,10 @@ class TestTopLevelShape:
 
         deployment = body["deployment"]
         for key in ("version", "isolation", "isolationActive", "env",
-                    "platform", "pythonVersion", "bucketMounts"):
+                    "platform", "pythonVersion", "bucketMounts", "memoryLimit"):
             assert isinstance(deployment[key], str), key
         assert deployment["bucketMountsProblem"] is None or isinstance(deployment["bucketMountsProblem"], str)
+        assert deployment["memoryLimitReason"] is None or isinstance(deployment["memoryLimitReason"], str)
         for key in ("execUserConfigured", "authEnabled", "projectsEnabled",
                     "guestLoginAllowed",
                     "factoryPublishAllowed", "saveNodeOutputDefault",
@@ -218,6 +219,23 @@ class TestSandboxSection:
         # Not "off": a silent sandbox is not evidence that confinement failed.
         assert deployment["isolation"] == "unknown"
         assert deployment["isolationActive"] == "unknown"
+
+    def test_the_deployment_names_the_memory_limit_nodes_run_under(self, client, monkeypatch):
+        """A cgroup, or the address-space cap and why, as the sandbox says;
+        unknown, with no reason, when the sandbox cannot be asked."""
+        from utk_curio.backend.app.monitor import routes
+
+        deployment = client.get("/api/monitor").get_json()["deployment"]
+        assert (deployment["memoryLimit"], deployment["memoryLimitReason"]) == ("unknown", None)
+
+        why = "the container's cgroups are read-only (Docker's writable-cgroups option)"
+        for limit, reason in (("cgroup", None), ("address space", why), ("none", None)):
+            monkeypatch.setattr(routes, "_sandbox_monitor", lambda limit=limit, reason=reason: {
+                "isolation": "fork", "isolation_active": "pending",
+                "memory_limit": limit, "memory_limit_reason": reason,
+            })
+            deployment = client.get("/api/monitor").get_json()["deployment"]
+            assert (deployment["memoryLimit"], deployment["memoryLimitReason"]) == (limit, reason)
 
 
 class TestTimeWindows:

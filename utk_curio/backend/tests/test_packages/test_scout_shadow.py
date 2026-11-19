@@ -36,8 +36,9 @@ sums: ``scripts/scout/export_deep_umbra.py`` measured TensorFlow's own float32
 run up to 0.016 from a float64 run of the same generator, on an output from -1 to
 1, and onnxruntime within 0.0177 of TensorFlow. onnxruntime's output is the same
 on 1 to 16 intra-op threads and moves from 17 on, by up to 0.027, as its sums are
-split differently; Curio leaves the thread count to onnxruntime, so a machine
-with more cores sees the second result. On SCOUT's tiles, up to 16 threads give
+split differently; Curio leaves the thread count to onnxruntime unless
+``OMP_NUM_THREADS`` names one, so a machine with more cores that sets none
+sees the second result. On SCOUT's tiles, up to 16 threads give
 one gray level on up to 686 of a tile's 65,536 pixels (2 on 2 of them) and the
 metrics within 0.013 minutes; 32 threads give up to 5 levels on up to 3,267
 pixels (5%), the mean within 0.052 minutes and the median within 0.012. So a
@@ -687,6 +688,69 @@ def test_the_model_is_the_export_of_scouts_generator():
     )
     assert block.labels == ()
     assert block.size_bytes == MODEL.stat().st_size
+
+
+# ---------------------------------------------------------------------------
+# The threads it runs on
+# ---------------------------------------------------------------------------
+
+#: A child's script, run after ``session_threads.RECORD_SESSIONS``: Deep Umbra
+#: on a height raster as Accumulated Shadow's node runs it (``shadow_tiles``),
+#: the package's modules staged as a run of the node stages them and the model
+#: as ``curio_load_model`` gives it.
+SHADOW_TILES = """
+import importlib
+import sys
+
+import rasterio
+
+from utk_curio.sandbox.util.catalog_helpers import CurioModel
+
+modules, model_id, package, heights = sys.argv[1:]
+sys.path.insert(0, modules)
+outputs = importlib.import_module("deep_umbra.node_outputs")
+with rasterio.open(heights) as raster:
+    shadows = outputs.shadow_tiles(raster, "summer", CurioModel(model_id, package))
+report(tiles=len(shadows))
+"""
+
+
+def test_deep_umbras_session_runs_on_the_threads_omp_num_threads_names(tmp_path):
+    """onnxruntime reads no ``OMP_NUM_THREADS``: a session that names no thread
+    count starts a thread for every core it sees, the whole machine's where
+    CI's runners share one (``_support/session_threads.py``). Accumulated
+    Shadow's node opens Deep Umbra in one session for all its tiles
+    (``shadow_tiles``), which hands onnxruntime the count ``OMP_NUM_THREADS``
+    names: the stacks of e2e-desktop and test-gpu, which run this node, set it
+    to their runner's share. With no ``OMP_NUM_THREADS``, as on a user's Curio,
+    the session keeps onnxruntime's own choice.
+
+    On one of SCOUT's tiles, which the node predicts in each child."""
+    import shutil
+
+    from utk_curio.backend.tests._support.session_threads import (
+        assert_the_session_takes_the_named_count,
+        sessions_made,
+    )
+    from utk_curio.sandbox.util.staging import stage_package_modules
+
+    tile = _tile_name(0, 0)
+    tiles = tmp_path / "one_tile"
+    tiles.mkdir()
+    shutil.copy(FIXTURES / "A_rasters" / tile, tiles / tile)
+    heights = _mosaic_of(tmp_path, tiles, "mosaic-one-tile")
+    run = tmp_path / "run-threads"
+    run.mkdir()
+    staged = stage_package_modules(SHADOW_MODULES, str(run))
+    assert staged == {"root": "package_modules", "names": [MODULE, RASTER_MODULE]}, staged
+
+    def made(omp_num_threads):
+        return sessions_made(
+            SHADOW_TILES, run / staged["root"], MODEL_ID, PACKAGE, heights, omp_num_threads=omp_num_threads,
+        )
+
+    reported = assert_the_session_takes_the_named_count(made, "Deep Umbra's session, made as shadow_tiles makes it,")
+    assert {under: said["tiles"] for under, said in reported.items()} == {"1": 1, "2,1": 1, "unset": 1}, reported
 
 
 def test_the_weights_stay_out_of_the_pip_package(monkeypatch):

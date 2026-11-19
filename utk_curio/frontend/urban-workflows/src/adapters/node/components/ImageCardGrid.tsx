@@ -3,8 +3,10 @@ import CSS from 'csstype';
 import { ImageSource, resolveImageSources } from '../../../utils/imageColumns';
 import { backendUrl } from '../../../utils/backendUrl';
 import { apiFetch } from '../../../utils/authApi';
-import { collectionMediaPath } from '../../../utils/collectionMedia';
+import { collectionMediaPath, collectionMediaRef, mediaPathOfRow } from '../../../utils/collectionMedia';
 import { useAuthedObjectUrl } from '../../../utils/useAuthedObjectUrl';
+import { PLAYER_TELLS_EVERY_MS, partStart, secondsText } from '../../../utils/playerSelection';
+import { dashboardMediaLink, heldOnADashboard } from '../../../services/runs/dashboardMedia';
 
 /**
  * One card per row: every image column of that row side by side, above the
@@ -17,7 +19,12 @@ import { useAuthedObjectUrl } from '../../../utils/useAuthedObjectUrl';
  *
  * Cards are drawn a page at a time, so a collection of thousands of files
  * fetches one page of thumbnails, not all of them. A video or recording of a
- * collection plays in its card.
+ * collection plays in its card, and where its player stands goes to
+ * `onPlayed`, which Simple View sends as a selection (utils/playerSelection).
+ *
+ * On a dashboard, whose viewers need no sign-in, a file an output of the
+ * dashboard names is read through the dashboard's link to it
+ * (services/runs/dashboardMedia), the cards' images and the players alike.
  */
 
 /** Cards per page. */
@@ -35,6 +42,9 @@ interface ImageCardGridProps {
    *  on an invited editor's canvas, the owner's, whose collections the
    *  editor's runs load. */
   dataflowId?: string | null;
+  /** Told where a card's player stands, in seconds into the card's file, as
+   *  it plays, is sought and stops, and null once it closes. */
+  onPlayed?: (row: Record<string, unknown>, at: number | null) => void;
 }
 
 const containerStyle: CSS.Properties = {
@@ -75,12 +85,39 @@ const fieldStyle: CSS.Properties = {
 };
 
 /**
+ * Where a card reads a same-origin image *path*: on a dashboard, through the
+ * dashboard's link to a file an output of it names (`dashboardMediaLink`),
+ * null while the link is asked for; else, and when the dashboard gives no
+ * link, the path itself, read through the canvas's dataflow
+ * (`collectionMediaPath`).
+ */
+function useCardImagePath(path: string | null, dataflowId: string | null): string | null {
+  const onDashboard = path !== null && heldOnADashboard(path);
+  const [linked, setLinked] = useState<{ path: string; url: string | null } | null>(null);
+  useEffect(() => {
+    if (path === null || !onDashboard) return undefined;
+    let cancelled = false;
+    dashboardMediaLink(path)?.then((link) => {
+      if (!cancelled) setLinked({ path, url: link?.url ?? null });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [path, onDashboard]);
+  if (path === null) return null;
+  if (!onDashboard) return collectionMediaPath(path, dataflowId);
+  if (linked?.path !== path) return null;
+  return linked.url ?? collectionMediaPath(path, dataflowId);
+}
+
+/**
  * An `<img>` for one cell. A same-origin `/api/...` image is fetched with the
  * token; see useAuthedObjectUrl. A collection's file is read through the
- * canvas's dataflow (`collectionMediaPath`).
+ * canvas's dataflow (`collectionMediaPath`), or on a dashboard through the
+ * dashboard's link (`useCardImagePath`).
  */
 function FrameImage({ source, alt, dataflowId }: { source: ImageSource; alt: string; dataflowId: string | null }) {
-  const authed = useAuthedObjectUrl(source.kind === 'authed' ? collectionMediaPath(source.path, dataflowId) : null);
+  const authed = useAuthedObjectUrl(useCardImagePath(source.kind === 'authed' ? source.path : null, dataflowId));
   const src = source.kind === 'direct' ? source.src : authed.url;
   if (!src) {
     // Still fetching, or the fetch failed. Hold the slot either way so the
@@ -99,13 +136,35 @@ function FrameImage({ source, alt, dataflowId }: { source: ImageSource; alt: str
   );
 }
 
-/** A collection row that plays: a video or a recording, named by its ids. */
-function playable(row: Record<string, unknown>): { datasetId: string; fileId: string; kind: 'video' | 'audio' } | null {
+/** A collection row that plays: a video or a recording, named by its ids;
+ *  the row's media URL of it (`mediaPathOfRow`), which a dashboard links;
+ *  and the folder of the dashboard viewer's step that derived it, which that
+ *  URL names. */
+function playable(row: Record<string, unknown>): {
+  datasetId: string; fileId: string; kind: 'video' | 'audio'; kept: string | null; mediaPath: string | null;
+} | null {
   const { kind, dataset_id: datasetId, file_id: fileId } = row;
   if ((kind !== 'video' && kind !== 'audio') || typeof datasetId !== 'string' || typeof fileId !== 'string') {
     return null;
   }
-  return { datasetId, fileId, kind };
+  const mediaPath = mediaPathOfRow(row, datasetId, fileId);
+  return { datasetId, fileId, kind, kept: collectionMediaRef(mediaPath)?.kept ?? null, mediaPath };
+}
+
+/**
+ * The name a card's Play is read by: "Play" and the row's file name, or its
+ * kind when the row names none, as Split Audio's windows do. A row that is a
+ * part of a longer file (Split Video's blocks, Split Audio's windows, Track
+ * Objects' overlay) adds where the part starts in that file, the `t_s` its
+ * player's range starts from (utils/playerSelection): "Play video.mp4 from
+ * 152.7 s". So the blocks of one walk, which all carry the walk's name, each
+ * have a name of their own. A whole file keeps "Play <name>". The button
+ * still shows "▶ Play".
+ */
+function playLabel(row: Record<string, unknown>, kind: 'video' | 'audio'): string {
+  const play = `Play ${String(row.name ?? kind)}`;
+  const start = partStart(row);
+  return start === null ? play : `${play} from ${secondsText(start)} s`;
 }
 
 const playButtonStyle: CSS.Properties = {
@@ -154,12 +213,25 @@ const playerStyle: CSS.Properties = { width: '100%', display: 'block' };
  * seek or the next range of a long play fails: the player then asks for a
  * fresh link and goes on from where it stood, playing or paused. A failure
  * while the link is still good is the file's own, and stops the player.
+ *
+ * *onTime* is told where the player stands, in seconds: at once when it
+ * starts, is sought or stops, and while it plays at most every
+ * PLAYER_TELLS_EVERY_MS. A time it already told is not told again, and when
+ * the player closes it is told null.
+ *
+ * *kept* is the folder of the dashboard viewer's step that derived the file,
+ * which the link names, so it plays that step's file. On a dashboard, a file
+ * an output of it names (*mediaPath*, the row's URL of it) plays from the
+ * dashboard's link, asked for again as it lapses.
  */
-function Player({ datasetId, fileId, kind, dataflowId }: {
+function Player({ datasetId, fileId, kind, kept, mediaPath, dataflowId, onTime }: {
   datasetId: string;
   fileId: string;
   kind: 'video' | 'audio';
+  kept: string | null;
+  mediaPath: string | null;
   dataflowId: string | null;
+  onTime?: (at: number | null) => void;
 }) {
   const [link, setLink] = useState<MediaLink | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -168,47 +240,79 @@ function Player({ datasetId, fileId, kind, dataflowId }: {
   // Where the player stands, from its own events: what a browser reports
   // once a fetch has failed is not the same in every browser.
   const stands = useRef({ at: 0, playing: false });
+  // The time last told, and when, by this page's clock.
+  const told = useRef<{ at: number | null; when: number }>({ at: null, when: -Infinity });
+  const onTimeRef = useRef(onTime);
+  onTimeRef.current = onTime;
+  // The fresh link whose element has been taken back to where the lapsed one
+  // stood: until then it stands at its start, which is not where the player is.
+  const resumed = useRef<MediaLink | null>(null);
+  useEffect(() => () => {
+    if (told.current.at !== null) onTimeRef.current?.(null);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    apiFetch<{ url: string; expiresIn: number }>(
+    const where = kept ? `?kept=${encodeURIComponent(kept)}` : '';
+    const signed = (): Promise<{ url: string; lapsesAt: number }> => apiFetch<{ url: string; expiresIn: number }>(
       collectionMediaPath(
-        `/api/datasets/${encodeURIComponent(datasetId)}/media/${encodeURIComponent(fileId)}/link`,
+        `/api/datasets/${encodeURIComponent(datasetId)}/media/${encodeURIComponent(fileId)}/link${where}`,
         dataflowId,
       ),
       { method: 'POST' },
-    )
-      .then((res) => {
-        if (cancelled) return;
-        // A link whose answer gives no life is never taken for lapsed.
-        const life = Number.isFinite(res.expiresIn) ? res.expiresIn * 1000 : Infinity;
-        setLink({ url: `${backendUrl()}${res.url}`, lapsesAt: Date.now() + life, resume: lapse });
+    ).then((res) => {
+      // A link whose answer gives no life is never taken for lapsed.
+      const life = Number.isFinite(res.expiresIn) ? res.expiresIn * 1000 : Infinity;
+      return { url: res.url, lapsesAt: Date.now() + life };
+    });
+    // On a dashboard, the dashboard's link; one it does not give is asked as on a canvas.
+    const onDashboard = mediaPath ? dashboardMediaLink(mediaPath, { variant: 'original', fresh: lapse !== null }) : null;
+    (onDashboard ? onDashboard.then((given) => given ?? signed()) : signed())
+      .then((given) => {
+        if (!cancelled) setLink({ url: `${backendUrl()}${given.url}`, lapsesAt: given.lapsesAt, resume: lapse });
       })
       .catch((err: Error) => !cancelled && setError(err.message || 'This file cannot be played.'));
     return () => {
       cancelled = true;
     };
-  }, [datasetId, fileId, dataflowId, lapse]);
+  }, [datasetId, fileId, kept, mediaPath, dataflowId, lapse]);
 
   if (error) return <div style={{ ...captionStyle, color: '#b42318' }}>{error}</div>;
   if (!link) return <div style={{ ...imgStyle, background: '#f8fafc' }} />;
+  /** Tells where *element* stands: at once when *now*, else once the last
+   *  time told is PLAYER_TELLS_EVERY_MS old. */
+  const tell = (element: HTMLMediaElement, now: boolean) => {
+    if (link.resume !== null && resumed.current !== link) return;
+    const at = element.currentTime;
+    const clock = Date.now();
+    if (!Number.isFinite(at) || at === told.current.at) return;
+    if (!now && clock - told.current.when < PLAYER_TELLS_EVERY_MS) return;
+    told.current = { at, when: clock };
+    onTimeRef.current?.(at);
+  };
   const media = {
     src: link.url,
     controls: true,
     // A fresh link starts where the lapsed one stood, playing only if it played.
     autoPlay: link.resume === null,
     style: playerStyle,
-    onPlay: () => {
+    onPlay: (e: React.SyntheticEvent<HTMLMediaElement>) => {
       stands.current.playing = true;
+      tell(e.currentTarget, true);
     },
-    onPause: () => {
+    onPause: (e: React.SyntheticEvent<HTMLMediaElement>) => {
       stands.current.playing = false;
+      tell(e.currentTarget, true);
     },
     onTimeUpdate: (e: React.SyntheticEvent<HTMLMediaElement>) => {
       stands.current.at = e.currentTarget.currentTime;
+      tell(e.currentTarget, false);
     },
     onSeeking: (e: React.SyntheticEvent<HTMLMediaElement>) => {
       stands.current.at = e.currentTarget.currentTime;
+    },
+    onSeeked: (e: React.SyntheticEvent<HTMLMediaElement>) => {
+      tell(e.currentTarget, true);
     },
     onError: (e: React.SyntheticEvent<HTMLMediaElement>) => {
       if (Date.now() < link.lapsesAt - LAPSE_MARGIN_MS) return;
@@ -218,6 +322,7 @@ function Player({ datasetId, fileId, kind, dataflowId }: {
       const resume = link.resume;
       if (!resume) return;
       const element = e.currentTarget;
+      resumed.current = link;
       element.currentTime = resume.at;
       element.playbackRate = resume.rate;
       // A start the browser refuses leaves the player paused there.
@@ -251,6 +356,7 @@ export default function ImageCardGrid({
   interacted,
   onClickRow,
   dataflowId = null,
+  onPlayed,
 }: ImageCardGridProps) {
   const [page, setPage] = useState(0);
   const [playing, setPlaying] = useState<number | null>(null);
@@ -287,9 +393,10 @@ export default function ImageCardGrid({
               <div onClick={(e) => e.stopPropagation()}>
                 {/* One player per file and dataflow: where it stood belongs to that file. */}
                 <Player
-                  key={`${media.datasetId}/${media.fileId}/${dataflowId ?? ''}`}
+                  key={`${media.datasetId}/${media.fileId}/${media.kept ?? ''}/${dataflowId ?? ''}`}
                   {...media}
                   dataflowId={dataflowId}
+                  onTime={onPlayed ? (at) => onPlayed(row, at) : undefined}
                 />
               </div>
             ) : (
@@ -309,7 +416,7 @@ export default function ImageCardGrid({
                   <button
                     type="button"
                     style={playButtonStyle}
-                    aria-label={`Play ${String(row.name ?? media.kind)}`}
+                    aria-label={playLabel(row, media.kind)}
                     onClick={(e) => {
                       e.stopPropagation();
                       setPlaying(index);

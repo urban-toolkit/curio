@@ -102,22 +102,3 @@ def upgrade():
         "auth_attempt",
         ["identifier", "created_at"],
     )
-
-
-def downgrade():
-    op.drop_index("ix_auth_attempt_ident_created", table_name="auth_attempt")
-    op.drop_index("ix_auth_attempt_ip_created", table_name="auth_attempt")
-    op.drop_table("auth_attempt")
-
-    with op.batch_alter_table("user_session", schema=None) as batch_op:
-        batch_op.drop_column("last_seen_at")
-        batch_op.drop_column("expires_at")
-
-    with op.batch_alter_table("user", schema=None) as batch_op:
-        batch_op.drop_constraint("uq_user_username", type_="unique")
-        batch_op.drop_column("updated_at")
-        batch_op.drop_column("created_at")
-        batch_op.drop_column("is_guest")
-        batch_op.drop_column("password_hash")
-        batch_op.drop_column("username")
-        batch_op.alter_column("email", existing_type=sa.String(120), nullable=False)

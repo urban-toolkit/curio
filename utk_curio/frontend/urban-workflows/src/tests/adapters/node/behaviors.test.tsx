@@ -27,8 +27,12 @@ let mockNodeExecStatus: Record<string, string> = {};
 const mockSignalNodeExecDone = jest.fn();
 const mockPlayNodesUpTo = jest.fn();
 let mockIsRunActive = false;
-// A dashboard's page: a viewer's run going (serverRunActive), or why it stopped.
-let mockDashboard: { dashboardOn?: boolean; serverRunActive?: boolean; dashboardStopped?: string | null } = {};
+// A dashboard's page: a viewer's run going (serverRunActive), or why it stopped,
+// and how far each step's downloads on first use have come, by node.
+let mockDashboard: {
+  dashboardOn?: boolean; serverRunActive?: boolean; dashboardStopped?: string | null;
+  dashboardDownloads?: Record<string, string>;
+} = {};
 jest.mock('../../../providers/FlowProvider', () => ({
   useFlowContext: () => ({
     workflowNameRef: { current: 'test-workflow' },
@@ -95,7 +99,14 @@ jest.mock('../../../utils/formatters', () => ({
   mapTypes: (t: any) => t,
 }));
 
-jest.mock('@urban-toolkit/autk-grammar', () => ({ AutkGrammar: jest.fn().mockImplementation(() => ({ run: jest.fn().mockResolvedValue(undefined), data: {} })) }), { virtual: true });
+jest.mock('@urban-toolkit/autk-grammar', () => ({
+  // The grammar keeps the adapter its run hands each compute pass to, which a node checks.
+  AutkGrammar: jest.fn().mockImplementation(() => ({ run: jest.fn().mockResolvedValue(undefined), data: {}, computeAdapter: { resolveCompute: jest.fn() } })),
+  // The grammar's applyCamera, which the node turns a framed map by when the
+  // map's entry writes a camera (adapters/node/autkMapView).
+  applyCamera: (...a: any[]) => mockApplyCamera(...a),
+}), { virtual: true });
+const mockApplyCamera = jest.fn();
 
 // In-browser AutkDb fallback (loadSpecLayers). Mockable per test so the
 // "backend fails → fall back to browser" path can be exercised. `mock`-prefixed
@@ -147,6 +158,7 @@ import { attachMapInteractionZoomFix } from '../../../adapters/node/autkMapZoom'
 import { describeAutkRun } from '../../../adapters/node/autkRunDescriptions';
 import { __resetWebGpuSupportCache } from '../../../utils/webgpuSupport';
 import { markSelectionEcho } from '../../../utils/selectionEcho';
+import { PLAYER_SELECT, latestSelect, playedRange, playerSelect } from '../../../utils/playerSelection';
 import { clearPackageNodes, registerNode } from '../../../registry/nodeRegistry';
 import { parseGeoDataframeWithGeometry } from '../../../utils/parsing';
 import { normalizeGeoSpec } from '../../../utils/vegaGeoSpec';
@@ -511,6 +523,25 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         expect(container.textContent).not.toContain('Run the node');
       });
 
+      test('while a step above it downloads on its first use, it says how far on a line under Computing...', async () => {
+        // The node that downloads, two steps up, is hidden on the dashboard:
+        // the tile says what that node says, and still names no node to run.
+        const MESSAGE = 'Downloading model.safetensors, a file of the weights of model.curio.sam3: 1.21 of 3.44 GB (35%)';
+        mockEdges = WIRED;
+        mockFlowEdges = [{ id: 'e0', source: 'sam3', target: 'average' }, ...WIRED];
+        mockDashboard = { dashboardOn: true, serverRunActive: true, dashboardDownloads: { sam3: MESSAGE } };
+        try {
+          const result = await callBehavior(useSimpleVisBehavior, { input: '' } as any);
+          const { container } = render(<>{result.current.contentComponent}</>);
+          expect(container.querySelector('[data-curio-node-empty]')?.getAttribute('data-curio-node-empty')).toBe('upstream-running');
+          const lines = Array.from(container.querySelectorAll('[data-curio-node-empty] span')).map((span) => span.textContent);
+          expect(lines).toEqual(['Computing...', MESSAGE, 'Results will be shown here once they are ready.']);
+          expect(container.textContent).not.toContain('Run the node');
+        } finally {
+          mockFlowEdges = [];
+        }
+      });
+
       test('says why the run stopped before it, as the page tells it', async () => {
         mockEdges = WIRED;
         mockDashboard = { dashboardOn: true, dashboardStopped: '"Cast sun rays on the GPU" could not run in this browser.' };
@@ -808,6 +839,81 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(tabs.map((tab) => tab.textContent)).toEqual(['blocks', 'roads']);
     });
 
+    /** fetchData answers *answer* for one test, and this file's default
+     * answer comes back after it, however the test ends. */
+    async function answering(answer: unknown, body: (fetchData: jest.Mock) => Promise<void>) {
+      const api = jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+      api.fetchData.mockResolvedValueOnce(answer);
+      try {
+        await body(api.fetchData);
+      } finally {
+        api.fetchData.mockReset();
+        api.fetchData.mockResolvedValue({ data: {}, dataType: 'dataframe' });
+      }
+    }
+
+    test("a Python node's tuple, an output that names its artifact, is read for its frames, not taken for a bundle with nothing in yet", async () => {
+      // What /get answers for a node that returned (df, df).
+      const tuple = {
+        dataType: 'outputs',
+        data: [
+          { dataType: 'dataframe', data: { block: ['Brera', 'Duomo'], population: [120, 340] } },
+          { dataType: 'dataframe', data: { block: ['Navigli'], population: [80] } },
+        ],
+      };
+      await answering(tuple, async (fetchData) => {
+        const outputCallback = jest.fn();
+        const result = await callBehavior(useDataPoolBehavior, {
+          nodeId: 'pool-1',
+          outputCallback,
+          input: { path: 'art-tuple', dataType: 'outputs' } as any,
+        });
+        await waitFor(() => expect(result.current.outputOverride).toMatchObject({ code: 'success', content: { dataType: 'outputs' } }));
+
+        expect(fetchData).toHaveBeenCalledWith('art-tuple');
+        const [, emitted] = outputCallback.mock.calls[outputCallback.mock.calls.length - 1];
+        expect(emitted.filename).toBe('art-tuple');
+        expect(emitted.data.map((part: any) => Object.keys(part.data.interacted))).toEqual([['0', '1'], ['0']]);
+      });
+    });
+
+    test('a list of frames is drawn as a tab per frame and passed on as a tuple of them is', async () => {
+      // What /get answers for a node that returned [df, gdf]: each frame in
+      // its envelope, in the list's order.
+      const list = {
+        dataType: 'list',
+        data: [
+          { dataType: 'dataframe', data: { block: ['Brera', 'Duomo'], population: [120, 340] } },
+          {
+            dataType: 'geodataframe',
+            data: {
+              type: 'FeatureCollection',
+              features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [9.186, 45.466] }, properties: { name: 'Via Dante' } }],
+            },
+          },
+        ],
+      };
+      await answering(list, async () => {
+        const outputCallback = jest.fn();
+        const result = await callBehavior(useDataPoolBehavior, {
+          nodeId: 'pool-1',
+          outputCallback,
+          input: { path: 'art-list', dataType: 'list' } as any,
+        });
+        await waitFor(() => expect(result.current.outputOverride).toMatchObject({ code: 'success' }));
+
+        const [, emitted] = outputCallback.mock.calls[outputCallback.mock.calls.length - 1];
+        expect(emitted?.dataType).toBe('outputs');
+        expect(emitted.filename).toBe('art-list');
+        expect(emitted.data.map((part: any) => part.dataType)).toEqual(['dataframe', 'geodataframe']);
+        expect(emitted.data[0].data.interacted).toEqual({ 0: '0', 1: '0' });
+        expect(emitted.data[1].data.features[0].properties.interacted).toBe('0');
+        const { getByTestId } = render(<>{result.current.contentComponent}</>);
+        const tabs = Array.from(getByTestId('data-pool-tabs').querySelectorAll('.nav-link'));
+        expect(tabs.map((tab) => tab.textContent)).toEqual(['Tab 1', 'Tab 2']);
+      });
+    });
+
     test('returns contentComponent and overrides, and no widgets callback', async () => {
       const result = await callBehavior(useDataPoolBehavior);
       assertValidBehaviorResult(result.current);
@@ -1041,9 +1147,12 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       // actually survives the DuckDB round-trip into spec.data.
       let runSpec: any = null;
       (AutkGrammar as jest.Mock).mockReset();
+      // It stays the grammar of the tests after this one: like the module's,
+      // it keeps the adapter its run hands each compute pass to.
       (AutkGrammar as jest.Mock).mockImplementation(() => ({
         run: jest.fn((s: any) => { runSpec = s; return Promise.resolve(); }),
         data: {},
+        computeAdapter: { resolveCompute: jest.fn() },
       }));
       // Mock fetchData with the REAL /get shape: parseOutput wraps the 'list'
       // artifact AND each element, so a backend layer array round-trips as
@@ -1127,7 +1236,55 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         const selection = [{ nodeId: 'bar', details: { highlight: { type: 'POINT', data: [1], priority: 1 } }, priority: 1 }];
         await act(async () => { rerender({ d: { ...base, interactions: selection } }); });
 
-        await waitFor(() => expect(highlightOnMap).toHaveBeenCalledWith('input_0', [1]));
+        // On the node's one map, which each highlight names by its index (adapters/node/autkViews).
+        await waitFor(() => expect(highlightOnMap).toHaveBeenCalledWith('input_0', [1], 0));
+        expect(grammarMock().AutkGrammar.mock.calls.length).toBe(constructed);
+      });
+
+      // Simple View's player sends what it has played as an interval on t_s
+      // (utils/playerSelection), which the map matches against its own rows
+      // as it matches a brush's interval: by their time, wherever they sit.
+      test("a player's range across a direct interaction edge lights the features walked up to where it stands", async () => {
+        const highlightOnMap = jest.fn();
+        const clearHighlightOnMap = jest.fn();
+        grammarMock().AutkGrammar.mockImplementationOnce(() => ({
+          run: jest.fn().mockResolvedValue(undefined), data: {}, highlightOnMap, clearHighlightOnMap,
+        }));
+        // The point walked k-th, k / 10 s in, is in the input at its place in ORDER.
+        const ORDER = [3, 0, 4, 1, 2];
+        const WALK = {
+          dataType: 'geodataframe',
+          data: {
+            type: 'FeatureCollection',
+            features: ORDER.map((k) => ({ type: 'Feature', geometry: point(k), properties: { t_s: k / 10 } })),
+          },
+        };
+        const base = makeMockData({ outputCallback: jest.fn(), input: WALK } as any);
+        const state = makeMockNodeState();
+        const { result, rerender } = renderHook(
+          ({ d }: { d: any }) => useAutkGrammarBehavior(d, state),
+          { initialProps: { d: base } },
+        );
+        await act(async () => { await result.current.applyGrammar!(MAP); });
+        const constructed = grammarMock().AutkGrammar.mock.calls.length;
+        const standingAt = (at: number | null) => [{
+          nodeId: 'view',
+          details: latestSelect({}, PLAYER_SELECT, playerSelect(at === null ? null : playedRange({}, at))),
+          priority: 1,
+        }];
+
+        // Each highlight and each clear names the node's one map by its index (adapters/node/autkViews).
+        await act(async () => { rerender({ d: { ...base, interactions: standingAt(0.2) } }); });
+        await waitFor(() => expect(highlightOnMap).toHaveBeenLastCalledWith('input_0', [1, 3, 4], 0));
+        await act(async () => { rerender({ d: { ...base, interactions: standingAt(0.1) } }); });
+        await waitFor(() => expect(highlightOnMap).toHaveBeenLastCalledWith('input_0', [1, 3], 0));
+        // The player closed: the map lights nothing.
+        const cleared = clearHighlightOnMap.mock.calls.length;
+        const lit = highlightOnMap.mock.calls.length;
+        await act(async () => { rerender({ d: { ...base, interactions: standingAt(null) } }); });
+        await waitFor(() => expect(clearHighlightOnMap.mock.calls.length).toBeGreaterThan(cleared));
+        expect(clearHighlightOnMap).toHaveBeenLastCalledWith('input_0', 0);
+        expect(highlightOnMap.mock.calls.length).toBe(lit);
         expect(grammarMock().AutkGrammar.mock.calls.length).toBe(constructed);
       });
 
@@ -1152,7 +1309,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         const selection = [{ nodeId: 'bar', details: { highlight: { type: 'POINT', data: [2], priority: 1 } }, priority: 1 }];
         await act(async () => { rerender({ d: { ...base, interactions: selection } }); });
 
-        await waitFor(() => expect(highlightOnMap).toHaveBeenCalledWith('input_0', [2]));
+        // On the node's one map, which each highlight names by its index (adapters/node/autkViews).
+        await waitFor(() => expect(highlightOnMap).toHaveBeenCalledWith('input_0', [2], 0));
         const named = [...highlightOnMap.mock.calls, ...clearHighlightOnMap.mock.calls].map((call) => call[0]);
         expect(named).not.toContain('Sensors');
       });
@@ -1266,16 +1424,17 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
           await act(async () => { await result.current.applyGrammar!(MAP); });
           const grammar = lastGrammar();
 
-          // The map drew row 2 first and row 1 second.
+          // The map drew row 2 first and row 1 second. Each highlight and each
+          // clear names the node's one map by its index (adapters/node/autkViews).
           await act(async () => { rerender({ d: { ...base, interactions: select(2) } }); });
-          await waitFor(() => expect(grammar.highlightOnMap).toHaveBeenLastCalledWith('input_0', [0]));
+          await waitFor(() => expect(grammar.highlightOnMap).toHaveBeenLastCalledWith('input_0', [0], 0));
           await act(async () => { rerender({ d: { ...base, interactions: select(1) } }); });
-          await waitFor(() => expect(grammar.highlightOnMap).toHaveBeenLastCalledWith('input_0', [1]));
+          await waitFor(() => expect(grammar.highlightOnMap).toHaveBeenLastCalledWith('input_0', [1], 0));
           // Row 0 is not drawn: nothing lights.
           const lit = grammar.highlightOnMap.mock.calls.length;
           grammar.clearHighlightOnMap.mockClear();
           await act(async () => { rerender({ d: { ...base, interactions: select(0) } }); });
-          await waitFor(() => expect(grammar.clearHighlightOnMap).toHaveBeenCalledWith('input_0'));
+          await waitFor(() => expect(grammar.clearHighlightOnMap).toHaveBeenCalledWith('input_0', 0));
           expect(grammar.highlightOnMap.mock.calls.length).toBe(lit);
         });
 
@@ -1309,7 +1468,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
           const both = JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0', isPick: true }, { dataRef: 'input_1', isPick: true }] } });
           await act(async () => { await result.current.applyGrammar!(both); });
 
-          // autk-grammar names the map by a table it draws, here the first.
+          // The event names the map by a layer it draws, here another than the
+          // one that picks: the node goes by the map's layer that picks.
           await act(async () => { listeners['map:picking']({ selection: [0], layerId: 'input_0' }); });
           await waitFor(() => expect(interactionsCallback).toHaveBeenLastCalledWith(
             { autk_selection: expect.objectContaining({ type: 'POINT', data: [2], layerRef: 'input_1' }) }, 'map-1',
@@ -1383,6 +1543,36 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         expect(clearHighlightOnPlot).not.toHaveBeenCalled();
       });
 
+      // autk-grammar 5 knows a plot by its id when it has one, else by its
+      // table (plotKey): a selection named by the table reached no plot.
+      test('a selection reaches a plot with an id by that id', async () => {
+        const setPlotSelection = jest.fn();
+        const clearHighlightOnPlot = jest.fn();
+        grammarMock().AutkGrammar.mockImplementationOnce(() => ({
+          run: jest.fn().mockResolvedValue(undefined), data: {}, setPlotSelection, clearHighlightOnPlot,
+        }));
+        const PLOT = JSON.stringify({ plot: { id: 'heights', dataRef: 'input_0', mark: 'bar', axis: ['i', '@transform'],
+          transform: { preset: 'binning-1d' }, events: ['brushX'] } });
+        const base = makeMockData({ nodeId: 'plot-1', outputCallback: jest.fn(), input: INPUT } as any);
+        const state = makeMockNodeState();
+        const { result, rerender } = renderHook(
+          ({ d }: { d: any }) => useAutkGrammarBehavior(d, state),
+          { initialProps: { d: base } },
+        );
+        await act(async () => { await result.current.applyGrammar!(PLOT); });
+        await waitFor(() => expect(clearHighlightOnPlot).toHaveBeenCalled());
+        expect(clearHighlightOnPlot.mock.calls.every(([plot]) => plot === 'heights')).toBe(true);
+
+        const flagged = {
+          ...INPUT,
+          data: { ...INPUT.data, features: INPUT.data.features.map((f, i) => ({
+            ...f, properties: { ...f.properties, interacted: i === 1 ? '1' : '0' } })) },
+        };
+        await act(async () => { rerender({ d: { ...base, input: markSelectionEcho(flagged, 'map-1') } }); });
+        await waitFor(() => expect(setPlotSelection).toHaveBeenCalledWith('heights', [1]));
+        expect(setPlotSelection.mock.calls.every(([plot]) => plot === 'heights')).toBe(true);
+      });
+
       test('a run asked for while one is under way runs once more afterwards, with the latest document', async () => {
         const base = makeMockData({ outputCallback: jest.fn(), input: INPUT } as any);
         const result = await callBehavior(useAutkGrammarBehavior, base as any);
@@ -1440,7 +1630,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       });
 
       test('a compute step needs its input; a data step does not', async () => {
-        expect((await body(JSON.stringify({ compute: [{ dataRef: 'x', wglsFunction: '' }] }))).reason)
+        expect((await body(JSON.stringify({ compute: [{ dataRef: 'x', wgslFunction: '' }] }))).reason)
           .toBe('disconnected');
         const data = JSON.stringify({ data: [{ type: 'json', jsonObject: [{ a: 1 }], outputTableName: 't' }] });
         expect((await body(data)).reason).toBe('not-run');
@@ -1567,7 +1757,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
           await run(
             { dataType: 'outputs', data: [cells(0, 0, 'a'), cells(1, 1, 'b'), cells(2, 2, 'c')] },
             {
-              compute: [{ dataRef: 'b', wglsFunction: '', uniforms: { near: { fromFeature: { layer: 'c', path: 'pop' } } } }],
+              compute: [{ dataRef: 'b', wgslFunction: '', uniforms: { near: { fromFeature: { layer: 'c', path: 'pop' } } } }],
               map: { layerRefs: [{ dataRef: 'b' }] },
             },
           );
@@ -1809,6 +1999,159 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         expect(setOutput.mock.calls.map((c: any[]) => c[0]?.code)).toContain('success');
       });
 
+      // A heatmap a data section builds, as the sandbox's loader hands it on
+      // (compileDataSpecToAutkDbJs): the layers' records, then the heatmap in
+      // its envelope, each item of the list in the `dict` envelope /get
+      // answers it in. 3 columns by 2 rows of 500 m, rows from south to north.
+      const HEAT_BBOX = [-9785700, 5106000, -9784200, 5107000];
+      const heatList = () => ({
+        dataType: 'list',
+        data: [
+          {
+            dataType: 'dict',
+            data: {
+              name: 'readings',
+              type: 'points',
+              geojson: {
+                type: 'FeatureCollection',
+                crs: { type: 'name', properties: { name: 'urn:ogc:def:crs:EPSG::3395' } },
+                features: [{ type: 'Feature', geometry: point(-9785000, 5106500), properties: { db: 61 } }],
+              },
+            },
+          },
+          {
+            dataType: 'dict',
+            data: {
+              dataType: 'raster',
+              layerName: 'density',
+              data: {
+                type: 'FeatureCollection',
+                bbox: HEAT_BBOX,
+                grid: { crs: 'EPSG:3395', width: 3, height: 2, originX: -9785700, originY: 5107000, resX: 500, resY: -500 },
+                features: [{
+                  type: 'Feature',
+                  geometry: null,
+                  properties: {
+                    rasterResX: 3,
+                    rasterResY: 2,
+                    bands: [{ id: 'band_1', label: 'count_readings' }],
+                    band_1: { float32le: Buffer.from(Float32Array.from([0, 1, 2, 2, 1, 0]).buffer).toString('base64') },
+                  },
+                }],
+              },
+            },
+          },
+        ],
+      });
+      // What the grammar's database reads the heatmap back as once Curio loaded
+      // it with loadGeoTiff: its own extent, its band labelled by its id.
+      const heatAsLoaded = () => ({
+        type: 'FeatureCollection',
+        bbox: HEAT_BBOX,
+        features: [{
+          type: 'Feature',
+          geometry: null,
+          properties: { rasterResX: 3, rasterResY: 2, bands: [{ id: 'band_1', label: 'band_1' }], band_1: new Float32Array(6) },
+        }],
+      });
+      // The grammar as autk-grammar builds it: each data source through its
+      // data adapter, then its map reads the raster table with getRaster. The
+      // sandbox's list is what /get answers for the artifact `art-heat`. Every
+      // mock is put back afterwards, whatever the test reached.
+      async function drawingHeatmaps(table: string, run: (drawn: { spec: any; raster: any }) => Promise<void>) {
+        const drawn: { spec: any; raster: any } = { spec: null, raster: null };
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const grammarAsBefore = AutkGrammar.getMockImplementation();
+        const getRasterAsBefore = mockAutkDbGetRaster.getMockImplementation()!;
+        AutkGrammar.mockImplementation(() => {
+          const grammar: any = { data: {} };
+          grammar.dataAdapter = { resolveSource: jest.fn(async (db: any) => db) };
+          grammar.run = jest.fn(async (spec: any) => {
+            drawn.spec = spec;
+            let db: any;
+            for (const source of spec.data) db = await grammar.dataAdapter.resolveSource(db, source);
+            drawn.raster = await db.getRaster(table);
+          });
+          return grammar;
+        });
+        mockAutkDbGetRaster.mockImplementation(() => Promise.resolve(heatAsLoaded() as any));
+        api().fetchData.mockImplementation(async (path: string) => (
+          path === 'art-heat' ? heatList() : { data: {}, dataType: 'dataframe' }
+        ));
+        mockAutkDbLoadGeoTiff.mockClear();
+        try {
+          await run(drawn);
+        } finally {
+          AutkGrammar.mockImplementation(grammarAsBefore);
+          mockAutkDbGetRaster.mockImplementation(getRasterAsBefore);
+        }
+      }
+
+      test('a heatmap the data section builds is drawn as every raster is: framed, its cells opaque, its band named as it was made', () => drawingHeatmaps('density', async (drawn) => {
+        const interpretCode = jest.fn(
+          (_unresolved, _code, _input, _inputTypes, cb) =>
+            cb({ stdout: [], stderr: '', output: { path: 'art-heat', dataType: 'list' } }),
+        );
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback: jest.fn(), jsInterpreter: { interpretCode } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            data: [
+              { type: 'geojson', outputTableName: 'readings', geojsonObject: { type: 'FeatureCollection', features: [] } },
+              { type: 'heatmap', joinDataRef: 'readings', outputTableName: 'density', near: { distance: 400 }, grid: { rows: 2, columns: 3 } },
+            ],
+            map: { layerRefs: [{ dataRef: 'density', getFnv: 'count.readings' }] },
+          }));
+        });
+
+        expect(setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error')).toBeUndefined();
+        // The sandbox built it: the code it was sent imports the grammar's ./data entry.
+        expect(interpretCode.mock.calls[0][1]).toContain("import { createDataAdapter } from '@urban-toolkit/autk-grammar/data';");
+        // The grammar is handed a raster of Curio's own, loaded at its own size, in its CRS.
+        expect(drawn.spec.data.map((s: any) => [s.type, s.outputTableName])).toEqual([
+          ['curio-raster', 'density'],
+          ['geojson', 'readings'],
+        ]);
+        expect(mockAutkDbLoadGeoTiff).toHaveBeenCalledWith(expect.objectContaining({
+          outputTableName: 'density', coordinateFormat: 'EPSG:3395', maxRasterCells: 6, resampleMethod: 'nearest',
+        }));
+        // Every cell opaque, as every raster layer is drawn.
+        expect(drawn.spec.map.layerRefs).toEqual([
+          { dataRef: 'density', getFnv: 'count.readings', transferFunction: { opacityMin: 1, opacityMax: 1 } },
+        ]);
+        // The map reads it at its own extent, outlined, its band labelled as
+        // the heatmap made it, which `count.readings` names.
+        expect(drawn.raster.bbox).toEqual(HEAT_BBOX);
+        expect(drawn.raster.features[0].geometry).toBeNull();
+        expect(drawn.raster.features[1].geometry.type).toBe('Polygon');
+        expect(drawn.raster.features[0].properties.bands).toEqual([{ id: 'band_1', label: 'count_readings' }]);
+        expect(setOutput.mock.calls.map((c: any[]) => c[0]?.code)).toContain('success');
+      }));
+
+      test('a heatmap an upstream Autark node hands on after its layers is drawn by its table\'s name', () => drawingHeatmaps('density', async (drawn) => {
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback: jest.fn(), input: { path: 'art-heat', dataType: 'list' } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ map: { layerRefs: [{ dataRef: 'density', getFnv: 'count.readings' }] } }));
+        });
+
+        expect(setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error')).toBeUndefined();
+        expect(drawn.spec.data.map((s: any) => [s.type, s.outputTableName])).toEqual([['curio-raster', 'density']]);
+        expect(mockAutkDbLoadGeoTiff).toHaveBeenCalledWith(expect.objectContaining({
+          outputTableName: 'density', coordinateFormat: 'EPSG:3395', maxRasterCells: 6,
+        }));
+        expect(drawn.raster.features[0].properties.bands).toEqual([{ id: 'band_1', label: 'count_readings' }]);
+        expect(drawn.raster.features[1].geometry.type).toBe('Polygon');
+      }));
+
       test('a raster too large to load is not drawn, and the node says to crop it', async () => {
         const { fetchRaster } = jest.requireMock('../../../services/api') as { fetchRaster: jest.Mock };
         fetchRaster.mockResolvedValueOnce({
@@ -1895,6 +2238,343 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
           }));
         });
         expect(api().fetchData.mock.calls.filter((c: any[]) => c[0] === 'art-in')).toHaveLength(0);
+      });
+
+      // A GeoTIFF a data section loads, as the sandbox's loader hands it on
+      // (compileDataSpecToAutkDbJs): in its envelope, the list's one item in
+      // the `dict` envelope /get answers it in. 4 columns by 3 rows of 5.5 by
+      // 5 km over Niterói, rows from south to north, two of its bands.
+      test('a GeoTIFF the data section loads is drawn as every raster is: framed, its cells opaque, its bands named as they were read', async () => {
+        const bbox = [-4802000, -2604000, -4780000, -2589000];
+        const bands = [{ id: 'band_1', label: 'band_1' }, { id: 'band_2', label: 'band_2' }];
+        const wire = (values: number[]) => ({ float32le: Buffer.from(Float32Array.from(values).buffer).toString('base64') });
+        api().fetchData.mockImplementation(async (path: string) => (path === 'art-tif' ? {
+          dataType: 'list',
+          data: [{
+            dataType: 'dict',
+            data: {
+              dataType: 'raster',
+              layerName: 'lst',
+              data: {
+                type: 'FeatureCollection',
+                bbox,
+                grid: { crs: 'EPSG:3395', width: 4, height: 3, originX: -4802000, originY: -2589000, resX: 5500, resY: -5000 },
+                features: [{
+                  type: 'Feature',
+                  geometry: null,
+                  properties: {
+                    rasterResX: 4,
+                    rasterResY: 3,
+                    bands,
+                    band_1: wire([27.5, 28, 28.5, 29, 29.5, 30, 30.5, 31, 31.5, 32, 32.5, 33]),
+                    band_2: wire([26.5, 27, 27.5, 28, 28.5, 29, 29.5, 30, 30.5, 31, 31.5, 32]),
+                  },
+                }],
+              },
+            },
+          }],
+        } : { data: {}, dataType: 'dataframe' }));
+        // The grammar as autk-grammar builds it: each data source through its
+        // data adapter, then its map reads the raster table with getRaster,
+        // which the grammar's database answers, once Curio loaded the raster
+        // with loadGeoTiff, at its own extent, its bands labelled by their ids.
+        // Every mock is put back afterwards, whatever the test reached.
+        const drawn: { spec: any; raster: any } = { spec: null, raster: null };
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const grammarAsBefore = AutkGrammar.getMockImplementation();
+        const getRasterAsBefore = mockAutkDbGetRaster.getMockImplementation()!;
+        AutkGrammar.mockImplementation(() => {
+          const grammar: any = { data: {} };
+          grammar.dataAdapter = { resolveSource: jest.fn(async (db: any) => db) };
+          grammar.run = jest.fn(async (spec: any) => {
+            drawn.spec = spec;
+            let db: any;
+            for (const source of spec.data) db = await grammar.dataAdapter.resolveSource(db, source);
+            drawn.raster = await db.getRaster('lst');
+          });
+          return grammar;
+        });
+        mockAutkDbGetRaster.mockImplementation(() => Promise.resolve({
+          type: 'FeatureCollection',
+          bbox,
+          features: [{
+            type: 'Feature',
+            geometry: null,
+            properties: { rasterResX: 4, rasterResY: 3, bands, band_1: new Float32Array(12), band_2: new Float32Array(12) },
+          }],
+        } as any));
+        mockAutkDbLoadGeoTiff.mockClear();
+        try {
+          const interpretCode = jest.fn(
+            (_unresolved, _code, _input, _inputTypes, cb) =>
+              cb({ stdout: [], stderr: '', output: { path: 'art-tif', dataType: 'list' } }),
+          );
+          const setOutput = jest.fn();
+          const result = await callBehavior(
+            useAutkGrammarBehavior,
+            { outputCallback: jest.fn(), jsInterpreter: { interpretCode } as any },
+            { setOutput },
+          );
+          await act(async () => {
+            await result.current.applyGrammar!(JSON.stringify({
+              data: [{ type: 'geotiff', geotiffFileUrl: 'docs/examples/data/niteroi_lst_verao_2001_2024.tif', outputTableName: 'lst' }],
+              map: { layerRefs: [{ dataRef: 'lst', getFnv: 'band_2', colorMapInterpolator: 'interpolateYlOrRd' }] },
+            }));
+          });
+
+          expect(setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error')).toBeUndefined();
+          // The sandbox loaded it: the code it was sent imports the grammar's
+          // ./data entry and fetches the file from the backend's /file/ route.
+          const code = interpretCode.mock.calls[0][1];
+          expect(code).toContain("import { createDataAdapter } from '@urban-toolkit/autk-grammar/data';");
+          expect(code).toContain(`"geotiffFileUrl":"${SANDBOX_BACKEND_URL_TOKEN}/file/docs/examples/data/niteroi_lst_verao_2001_2024.tif"`);
+          // The grammar is handed a raster of Curio's own, loaded at its own
+          // size, cell for cell, in the CRS of the grid its cells lie on.
+          expect(drawn.spec.data.map((s: any) => [s.type, s.outputTableName])).toEqual([['curio-raster', 'lst']]);
+          expect(mockAutkDbLoadGeoTiff).toHaveBeenCalledWith(expect.objectContaining({
+            outputTableName: 'lst', coordinateFormat: 'EPSG:3395', maxRasterCells: 12, resampleMethod: 'nearest',
+          }));
+          // Every cell opaque, as every raster layer is drawn.
+          expect(drawn.spec.map.layerRefs).toEqual([{
+            dataRef: 'lst', getFnv: 'band_2', colorMapInterpolator: 'interpolateYlOrRd',
+            transferFunction: { opacityMin: 1, opacityMax: 1 },
+          }]);
+          // The map reads it at its own extent, outlined so a map that starts
+          // with it is placed, its bands named as they were read.
+          expect(drawn.raster.bbox).toEqual(bbox);
+          expect(drawn.raster.features[0].geometry).toBeNull();
+          expect(drawn.raster.features[1].geometry.type).toBe('Polygon');
+          expect(drawn.raster.features[0].properties.bands).toEqual(bands);
+          expect(setOutput.mock.calls.map((c: any[]) => c[0]?.code)).toContain('success');
+        } finally {
+          AutkGrammar.mockImplementation(grammarAsBefore);
+          mockAutkDbGetRaster.mockImplementation(getRasterAsBefore);
+        }
+      });
+
+      // A map that draws an Autark data node's GeoTIFF, then its parks and
+      // roads, as example 36's does. autk-map draws a layer of a base-map type
+      // (surface, parks, water, roads) under every raster whatever the map's
+      // order, and every raster cell is opaque, so the GeoTIFF hid them: the
+      // map drew the temperature alone. The parks and roads are handed to the
+      // grammar as plain geometry, which autk-map draws in the map's order.
+      test('the parks and roads a map lists after a GeoTIFF reach the grammar as plain geometry, drawn over it', async () => {
+        const wire = (values: number[]) => ({ float32le: Buffer.from(Float32Array.from(values).buffer).toString('base64') });
+        const area = (x: number) => ({
+          type: 'Polygon',
+          coordinates: [[[x, -2596000], [x + 1000, -2596000], [x + 1000, -2595000], [x, -2595000], [x, -2596000]]],
+        });
+        api().fetchData.mockImplementation(async (path: string) => (path === 'art-lst' ? {
+          dataType: 'list',
+          data: [
+            { dataType: 'dict', data: { name: 'table_osm_parks', type: 'parks', geojson: {
+              type: 'FeatureCollection', features: [{ type: 'Feature', geometry: area(-4790000), properties: {} }] } } },
+            { dataType: 'dict', data: { name: 'table_osm_roads', type: 'roads', geojson: {
+              type: 'FeatureCollection',
+              features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: [[-4795000, -2595000], [-4785000, -2595000]] }, properties: {} }] } } },
+            { dataType: 'dict', data: {
+              dataType: 'raster',
+              layerName: 'lst',
+              data: {
+                type: 'FeatureCollection',
+                bbox: [-4802000, -2604000, -4780000, -2589000],
+                grid: { crs: 'EPSG:3395', width: 2, height: 1, originX: -4802000, originY: -2589000, resX: 11000, resY: -15000 },
+                features: [{
+                  type: 'Feature',
+                  geometry: null,
+                  properties: { rasterResX: 2, rasterResY: 1, bands: [{ id: 'band_1', label: 'band_1' }], band_1: wire([30, 31]) },
+                }],
+              },
+            } },
+          ],
+        } : { data: {}, dataType: 'dataframe' }));
+        const drawn: { spec: any } = { spec: null };
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const grammarAsBefore = AutkGrammar.getMockImplementation();
+        AutkGrammar.mockImplementation(() => {
+          const grammar: any = { data: {} };
+          grammar.dataAdapter = { resolveSource: jest.fn(async (db: any) => db) };
+          grammar.run = jest.fn(async (spec: any) => { drawn.spec = spec; });
+          return grammar;
+        });
+        try {
+          const setOutput = jest.fn();
+          const result = await callBehavior(
+            useAutkGrammarBehavior,
+            { outputCallback: jest.fn(), input: { path: 'art-lst', dataType: 'list' } as any },
+            { setOutput },
+          );
+          await act(async () => {
+            await result.current.applyGrammar!(JSON.stringify({
+              map: { layerRefs: [
+                { dataRef: 'lst', getFnv: 'band_1', colorMapInterpolator: 'interpolateYlOrRd' },
+                { dataRef: 'table_osm_parks', color: '#2ca02c', opacity: 0.45 },
+                { dataRef: 'table_osm_roads', color: '#4d4d4d' },
+              ] },
+            }));
+          });
+
+          expect(setOutput.mock.calls.find((c: any[]) => c[0]?.code === 'error')).toBeUndefined();
+          const handed = Object.fromEntries((drawn.spec.data as any[]).map((s: any) => [s.outputTableName, s]));
+          expect(handed.lst.type).toBe('curio-raster');
+          expect(handed.table_osm_parks).toMatchObject({ type: 'geojson' });
+          expect(handed.table_osm_parks.layerType).toBeUndefined();
+          expect(handed.table_osm_roads.layerType).toBeUndefined();
+          // The map's order is the document's.
+          expect(drawn.spec.map.layerRefs.map((ref: any) => ref.dataRef)).toEqual(['lst', 'table_osm_parks', 'table_osm_roads']);
+        } finally {
+          AutkGrammar.mockImplementation(grammarAsBefore);
+        }
+      });
+
+      // A GPGPU pass computes one value for each feature of its table, and a
+      // raster holds all its cells in one feature, so a pass over a raster
+      // fails the node before anything is loaded, computed or drawn, naming
+      // the pass and the raster (contracts/autkGrammar autkRasterPassProblem).
+      const warming = (dataRef: string, band: string) => ({
+        dataRef, attributes: { t: band }, outputColumns: ['warming'], wgslFunction: 'return t;',
+      });
+
+      test('a compute pass over the GeoTIFF the document loads fails the node before anything runs, naming the pass and the raster', async () => {
+        const interpretCode = jest.fn(
+          (_unresolved, _code, _input, _inputTypes, cb) =>
+            cb({ stdout: [], stderr: '', output: { path: 'art-tif', dataType: 'list' } }),
+        );
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const grammarsBefore = AutkGrammar.mock.calls.length;
+        const setOutput = jest.fn();
+        const outputCallback = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback, jsInterpreter: { interpretCode } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            data: [{
+              type: 'geotiff', geotiffFileUrl: 'docs/examples/data/niteroi_lst_verao_2001_2024.tif',
+              outputTableName: 'lst', resampleMethod: 'nearest',
+            }],
+            compute: [warming('lst', 'band_24')],
+            map: { layerRefs: [{ dataRef: 'lst', getFnv: 'band_24' }] },
+          }));
+        });
+        const errors = setOutput.mock.calls.filter((c: any[]) => c[0]?.code === 'error');
+        expect(errors.map((c: any[]) => c[0].content)).toEqual([
+          'This spec uses a compute pass over the raster "lst" at compute[0], which Curio does not run yet.',
+        ]);
+        expect(interpretCode).not.toHaveBeenCalled();
+        expect(AutkGrammar.mock.calls.length).toBe(grammarsBefore);
+        expect(outputCallback).not.toHaveBeenCalled();
+      });
+
+      test('a compute pass over a raster the input brings fails a map the same way', async () => {
+        const { fetchRaster } = jest.requireMock('../../../services/api') as { fetchRaster: jest.Mock };
+        // A map reads its input's raster as GeoTIFF bytes.
+        fetchRaster.mockResolvedValueOnce({
+          ok: true,
+          bytes: new ArrayBuffer(16),
+          meta: {
+            width: 40, height: 30, count: 1, crs: 'EPSG:32616', crsWkt: null,
+            transform: [100, 0, 447000, 0, -100, 4637000], nodata: -9999,
+          },
+        });
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const grammarsBefore = AutkGrammar.mock.calls.length;
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback: jest.fn(), input: { path: 'art-r', dataType: 'raster' } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            compute: [warming('input_0', 'band_1')],
+            map: { layerRefs: [{ dataRef: 'input_0', getFnv: 'band_1' }] },
+          }));
+        });
+        const errors = setOutput.mock.calls.filter((c: any[]) => c[0]?.code === 'error');
+        expect(errors.map((c: any[]) => c[0].content)).toEqual([
+          'This spec uses a compute pass over the raster "input_0" at compute[0], which Curio does not run yet.',
+        ]);
+        expect(AutkGrammar.mock.calls.length).toBe(grammarsBefore);
+      });
+
+      test('a compute pass over a raster the input brings fails a compute step the same way, and nothing is handed on', async () => {
+        const setOutput = jest.fn();
+        const outputCallback = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback, input: { path: 'art-r', dataType: 'raster' } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({ compute: [warming('input_0', 'band_1')] }));
+        });
+        const errors = setOutput.mock.calls.filter((c: any[]) => c[0]?.code === 'error');
+        expect(errors.map((c: any[]) => c[0].content)).toEqual([
+          'This spec uses a compute pass over the raster "input_0" at compute[0], which Curio does not run yet.',
+        ]);
+        expect(outputCallback).not.toHaveBeenCalled();
+      });
+
+      // A GeoTIFF wider than a map holds (8192 cells on a side), as the
+      // sandbox's loader hands it on: autk-db shrinks one to the source's
+      // maxRasterCells as it loads it, so that is what the node says to lower.
+      test('a GeoTIFF the data section loads too large to draw says to lower its source\'s maxRasterCells', async () => {
+        const width = 9000;
+        api().fetchData.mockImplementation(async (path: string) => (path === 'art-wide' ? {
+          dataType: 'list',
+          data: [{
+            dataType: 'dict',
+            data: {
+              dataType: 'raster',
+              layerName: 'lst',
+              data: {
+                type: 'FeatureCollection',
+                bbox: [-4802000, -2604000, -4780000, -2603000],
+                grid: { crs: 'EPSG:3395', width, height: 1, originX: -4802000, originY: -2603000, resX: 22000 / width, resY: -1000 },
+                features: [{
+                  type: 'Feature',
+                  geometry: null,
+                  properties: {
+                    rasterResX: width,
+                    rasterResY: 1,
+                    bands: [{ id: 'band_1', label: 'band_1' }],
+                    band_1: { float32le: Buffer.from(new Float32Array(width).fill(30).buffer).toString('base64') },
+                  },
+                }],
+              },
+            },
+          }],
+        } : { data: {}, dataType: 'dataframe' }));
+        const interpretCode = jest.fn(
+          (_unresolved, _code, _input, _inputTypes, cb) =>
+            cb({ stdout: [], stderr: '', output: { path: 'art-wide', dataType: 'list' } }),
+        );
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const grammarsBefore = AutkGrammar.mock.calls.length;
+        const setOutput = jest.fn();
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { outputCallback: jest.fn(), jsInterpreter: { interpretCode } as any },
+          { setOutput },
+        );
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            data: [{
+              type: 'geotiff', geotiffFileUrl: 'docs/examples/data/wide.tif', outputTableName: 'lst',
+              maxRasterCells: 20000000,
+            }],
+            map: { layerRefs: [{ dataRef: 'lst', getFnv: 'band_1' }] },
+          }));
+        });
+        const errors = setOutput.mock.calls.filter((c: any[]) => c[0]?.code === 'error');
+        expect(errors.map((c: any[]) => c[0].content)).toEqual([
+          'lst is 9000 by 1 cells, more than an Autark map loads at its own size (16777216 cells, 8192 on a side). '
+          + 'Give its geotiff source a lower maxRasterCells, which shrinks it as it loads, and run the node again.',
+        ]);
+        expect(AutkGrammar.mock.calls.length).toBe(grammarsBefore);
       });
     });
 
@@ -2498,11 +3178,28 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         },
         {
           type: 'join',
-          tableRootName: 'table_osm_roads',
-          tableJoinName: 'table_osm_surface',
+          dataRef: 'table_osm_roads',
+          joinDataRef: 'table_osm_surface',
           near: { distance: 50 },
           groupBy: [{ column: 'osm_id', aggregateFn: 'count' }],
         },
+      ],
+    };
+    // What autk-db's spatialQuery is handed for JOIN_SPEC's join: autk-grammar
+    // 5 names a join's tables `dataRef` and `joinDataRef`, and autk-db takes
+    // them as `tableRootName` and `tableJoinName`, with `near` and `groupBy`,
+    // as the grammar's own data adapter hands them.
+    const JOIN_QUERY = {
+      tableRootName: 'table_osm_roads',
+      tableJoinName: 'table_osm_surface',
+      near: { distance: 50 },
+      groupBy: [{ column: 'osm_id', aggregateFn: 'count' }],
+    };
+    // A join with neither, as autk-db is handed it: the two names alone.
+    const BARE_JOIN_SPEC = {
+      data: [
+        JOIN_SPEC.data[0],
+        { type: 'join', dataRef: 'table_osm_roads', joinDataRef: 'table_osm_surface' },
       ],
     };
     const BINDER_ERROR = 'Binder Error: Referenced column "osm_id" not found in FROM clause!';
@@ -2600,6 +3297,156 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       mockAutkDbGetLayersMetadata.mockReturnValue([]);
     });
 
+    test('sandbox script: a join reaches spatialQuery under the names autk-db takes', async () => {
+      const code = await captureSandboxScript(JOIN_SPEC);
+      const spatialQuery = jest.fn((..._a: unknown[]) => Promise.resolve(undefined));
+      await runSandboxScript(code, fakeSandboxDb(spatialQuery));
+      expect(spatialQuery.mock.calls).toEqual([[JOIN_QUERY]]);
+    });
+
+    test('sandbox script: a join with neither near nor groupBy hands autk-db the two names alone', async () => {
+      const code = await captureSandboxScript(BARE_JOIN_SPEC);
+      const spatialQuery = jest.fn((..._a: unknown[]) => Promise.resolve(undefined));
+      await runSandboxScript(code, fakeSandboxDb(spatialQuery));
+      expect(spatialQuery).toHaveBeenCalledTimes(1);
+      const [query] = spatialQuery.mock.calls[0] as any[];
+      expect(Object.keys(query).sort()).toEqual(['tableJoinName', 'tableRootName']);
+      expect(query).toEqual({ tableRootName: 'table_osm_roads', tableJoinName: 'table_osm_surface' });
+    });
+
+    // The browser's loader, which a node falls back to when the sandbox fails.
+    async function loadInTheBrowser(spec: object) {
+      const interpretCode = jest.fn(
+        (_unresolved, _code, _input, _inputTypes, cb) =>
+          cb({ stdout: [], stderr: 'sandbox down', output: { path: '', dataType: 'str' } }),
+      );
+      mockAutkDbLoadOsm.mockReset();
+      mockAutkDbLoadOsm.mockResolvedValue(undefined);
+      mockAutkDbGetLayersMetadata.mockReset();
+      mockAutkDbGetLayersMetadata.mockReturnValue(JOIN_TABLES);
+      mockAutkDbSpatialQuery.mockReset();
+      mockAutkDbSpatialQuery.mockResolvedValue(undefined);
+      try {
+        const result = await callBehavior(useAutkGrammarBehavior, { jsInterpreter: { interpretCode } as any });
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify(spec));
+        });
+        return [...mockAutkDbSpatialQuery.mock.calls];
+      } finally {
+        mockAutkDbGetLayersMetadata.mockReset();
+        mockAutkDbGetLayersMetadata.mockReturnValue([]);
+      }
+    }
+
+    test('in-browser load: a join reaches spatialQuery under the names autk-db takes', async () => {
+      expect(await loadInTheBrowser(JOIN_SPEC)).toEqual([[JOIN_QUERY]]);
+    });
+
+    // A document that writes a key autk-grammar 5 renamed, or one the node does
+    // not run yet, fails before anything is loaded, computed or drawn, with
+    // the sentence the agents' document check says too (contracts/autkGrammar).
+    test.each([
+      [
+        'a join written with tableRootName',
+        { data: [JOIN_SPEC.data[0], { type: 'join', tableRootName: 'table_osm_roads', joinDataRef: 'table_osm_surface' }] },
+        'This spec uses "tableRootName" at data[1], which autk-grammar 5 renamed to "dataRef".',
+      ],
+      [
+        'a compute pass written with wglsFunction',
+        { compute: [{ dataRef: 'input_0', attributes: {}, wglsFunction: 'return 1.0;', outputColumnName: 'x' }] },
+        'This spec uses "wglsFunction" at compute[0], which autk-grammar 5 renamed to "wgslFunction".',
+      ],
+      [
+        'a map in a document with a layout',
+        { layout: { type: 'horizontal' }, map: { layerRefs: [{ dataRef: 'input_0' }] } },
+        'This spec uses "layout", which Curio does not run yet.',
+      ],
+      [
+        'a layout beside a data section',
+        { data: [{ type: 'csv', csvFileUrl: 'a.csv', outputTableName: 'a' }], layout: { type: 'horizontal' } },
+        'This spec uses "layout", which Curio does not run yet.',
+      ],
+    ])('%s fails the node before anything runs, naming the key', async (_what, spec, said) => {
+      // The sandbox answers, as it does for any data-only node, so a node that
+      // does not refuse fails the checks below at once instead of waiting.
+      const interpretCode = jest.fn(
+        (_unresolved, _code, _input, _inputTypes, cb) =>
+          cb({ stdout: [], stderr: '', output: { path: 'art-1', dataType: 'list' } }),
+      );
+      const setOutput = jest.fn();
+      const outputCallback = jest.fn();
+      mockAutkDbSpatialQuery.mockClear();
+      const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+      const grammarsBefore = AutkGrammar.mock.calls.length;
+      const result = await callBehavior(
+        useAutkGrammarBehavior,
+        { jsInterpreter: { interpretCode } as any, outputCallback },
+        { setOutput },
+      );
+      await act(async () => {
+        await result.current.applyGrammar!(JSON.stringify(spec));
+      });
+      const errors = setOutput.mock.calls.filter((c: any[]) => c[0]?.code === 'error');
+      expect(errors.map((c: any[]) => c[0].content)).toEqual([said]);
+      expect(interpretCode).not.toHaveBeenCalled();
+      expect(mockAutkDbSpatialQuery).not.toHaveBeenCalled();
+      expect(AutkGrammar.mock.calls.length).toBe(grammarsBefore);
+      expect(outputCallback).not.toHaveBeenCalled();
+    });
+
+    // A map's camera runs: the node frames the map on its layers, then turns it
+    // by the camera through the grammar's applyCamera (adapters/node/autkMapView).
+    test('a map with a camera runs: its map is framed on its layers, then turned by the camera', async () => {
+      const camera = { pitch: 50, bearing: 30 };
+      const map: any = {
+        camera: { getFovyRadians: () => Math.PI / 4, getFar: () => 5e5, resetCamera: jest.fn(), resize: jest.fn() },
+        renderer: { pixelWidth: 960, pixelHeight: 600 },
+        canvas: { offsetWidth: 960, offsetHeight: 600 },
+        // What its one layer drew: 100 by 50 world units from the origin.
+        layerManager: { layers: [{ position: new Float32Array([0, 0, 100, 50]), _dimension: 2 }] },
+        resetCamera: jest.fn(),
+        requestRender: jest.fn(),
+        destroy: jest.fn(),
+      };
+      const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+      AutkGrammar.mockImplementationOnce(() => {
+        const grammar: any = { data: {} };
+        grammar.run = jest.fn(async () => { grammar.maps = [map]; });
+        return grammar;
+      });
+      mockApplyCamera.mockClear();
+      const setOutput = jest.fn();
+      const input = {
+        dataType: 'geodataframe',
+        data: { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [0, 0] }, properties: { i: 0 } }] },
+      };
+      const result = await callBehavior(useAutkGrammarBehavior, { outputCallback: jest.fn(), input } as any, { setOutput });
+      await act(async () => {
+        await result.current.applyGrammar!(JSON.stringify({ map: { camera, layerRefs: [{ dataRef: 'input_0' }] } }));
+      });
+
+      expect(setOutput.mock.calls.filter((c: any[]) => c[0]?.code === 'error')).toEqual([]);
+      expect(setOutput).toHaveBeenCalledWith(expect.objectContaining({ code: 'success' }));
+      // Framed first: straight down on the middle of what the layer drew.
+      const [up, lookAt] = map.camera.resetCamera.mock.calls[0];
+      expect(up).toEqual([0, 1, 0]);
+      expect(lookAt).toEqual([50, 25, 0]);
+      // Then turned by the map's camera, and the matrices built after the turn.
+      expect(mockApplyCamera).toHaveBeenCalledTimes(1);
+      expect(mockApplyCamera).toHaveBeenCalledWith(map, camera);
+      const turnedAt = mockApplyCamera.mock.invocationCallOrder[0];
+      expect(turnedAt).toBeGreaterThan(map.camera.resetCamera.mock.invocationCallOrder[0]);
+      expect(Math.max(...map.camera.resize.mock.invocationCallOrder)).toBeGreaterThan(turnedAt);
+    });
+
+    test('in-browser load: a join with neither near nor groupBy hands autk-db the two names alone', async () => {
+      const calls = await loadInTheBrowser(BARE_JOIN_SPEC);
+      expect(calls).toHaveLength(1);
+      const [query] = calls[0] as any[];
+      expect(Object.keys(query).sort()).toEqual(['tableJoinName', 'tableRootName']);
+      expect(query).toEqual({ tableRootName: 'table_osm_roads', tableJoinName: 'table_osm_surface' });
+    });
+
     // The browser must not put a host or port in a URL the SANDBOX will fetch:
     // the two are in different network namespaces under Docker, and on a
     // custom-port stack no constant is right. Forcing :5002 here made every
@@ -2639,6 +3486,248 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(sentCode).not.toContain('5002');
       expect(sentCode).not.toContain('127.0.0.1');
       expect(sentCode).not.toContain('localhost');
+    });
+
+    // A data section's heatmap or join reads a table of the node's input: the
+    // node reads its input, finds the table there by the names it reads its
+    // input by, and sends its input with the load the sandbox runs, which
+    // reads the table there (autkDataCompile inputTablesFrom).
+    describe('a data section that reads its input\'s tables', () => {
+      /** Points a Python node returned, as /get answers for its GeoDataFrame. */
+      const POINTS = {
+        dataType: 'geodataframe',
+        data: {
+          type: 'FeatureCollection',
+          crs: { type: 'name', properties: { name: 'urn:ogc:def:crs:EPSG::3395' } },
+          features: [
+            { type: 'Feature', geometry: { type: 'Point', coordinates: [-9755000, 5142500] }, properties: { db: 61 } },
+            { type: 'Feature', geometry: { type: 'Point', coordinates: [-9754000, 5142600] }, properties: { db: 74 } },
+          ],
+        },
+      };
+      const HEATMAP = {
+        type: 'heatmap', joinDataRef: 'input_0', outputTableName: 'density',
+        near: { distance: 400 }, grid: { rows: 2, columns: 3 },
+      };
+      const loads = () => jest.fn(
+        (_unresolved, _code, _input, _inputTypes, cb) =>
+          cb({ stdout: [], stderr: '', output: { path: 'art-heat', dataType: 'list' } }),
+      );
+
+      test('a data-only node whose heatmap bins input_0 reads its input and sends it with its load', async () => {
+        const { fetchData } = jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+        fetchData.mockImplementation(async (path: string) => (path === 'art-points' ? POINTS : { data: {}, dataType: 'dataframe' }));
+        try {
+          const interpretCode = loads();
+          const outputCallback = jest.fn();
+          const input = { path: 'art-points', dataType: 'geodataframe' };
+          const result = await callBehavior(useAutkGrammarBehavior, {
+            outputCallback, input: input as any, jsInterpreter: { interpretCode } as any,
+          });
+          await act(async () => {
+            await result.current.applyGrammar!(JSON.stringify({ data: [HEATMAP] }));
+          });
+          expect(fetchData).toHaveBeenCalledWith('art-points');
+          expect(interpretCode).toHaveBeenCalledTimes(1);
+          const [, code, sentInput] = interpretCode.mock.calls[0];
+          // The node's input goes with the load, and the load reads input_0 from it.
+          expect(sentInput).toEqual(input);
+          expect(code).toContain('const __inputTables = [{"name":"input_0","before":0,');
+          expect(outputCallback).toHaveBeenCalledWith('node-1', { path: 'art-heat', dataType: 'list' });
+        } finally {
+          fetchData.mockImplementation(async () => ({ data: {}, dataType: 'dataframe' }));
+        }
+      });
+
+      test('its load is kept until its input changes, and runs again on a new one', async () => {
+        const { fetchData } = jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+        fetchData.mockImplementation(async () => POINTS);
+        try {
+          const interpretCode = loads();
+          const data = makeMockData({ input: { path: 'art-points', dataType: 'geodataframe' } as any, jsInterpreter: { interpretCode } as any });
+          let rendered: any;
+          await act(async () => {
+            rendered = renderHook(() => useAutkGrammarBehavior(data, makeMockNodeState()));
+          });
+          const run = async () => {
+            await act(async () => { await rendered.result.current.applyGrammar!(JSON.stringify({ data: [HEATMAP] })); });
+          };
+          await run();
+          await run();
+          // The same sources and the same input: the load the sandbox made stands.
+          expect(interpretCode).toHaveBeenCalledTimes(1);
+          // The node above ran again: a new output, so the load runs again on it.
+          (data as any).input = { path: 'art-points-2', dataType: 'geodataframe' };
+          await run();
+          expect(interpretCode).toHaveBeenCalledTimes(2);
+          expect(interpretCode.mock.calls[1][2]).toEqual({ path: 'art-points-2', dataType: 'geodataframe' });
+        } finally {
+          fetchData.mockImplementation(async () => ({ data: {}, dataType: 'dataframe' }));
+        }
+      });
+
+      test('guard: a data section that names no table of its input never reads its input, and sends none', async () => {
+        const { fetchData } = jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+        fetchData.mockClear();
+        const interpretCode = loads();
+        const result = await callBehavior(useAutkGrammarBehavior, {
+          input: { path: 'art-points', dataType: 'geodataframe' } as any, jsInterpreter: { interpretCode } as any,
+        });
+        await act(async () => {
+          await result.current.applyGrammar!(JSON.stringify({
+            data: [
+              { type: 'geojson', outputTableName: 'levels', geojsonObject: POINTS.data },
+              { ...HEATMAP, joinDataRef: 'levels' },
+            ],
+          }));
+        });
+        expect(fetchData).not.toHaveBeenCalledWith('art-points');
+        expect(interpretCode).toHaveBeenCalledTimes(1);
+        expect(interpretCode.mock.calls[0][2]).toBe('');
+        expect(interpretCode.mock.calls[0][1]).not.toContain('__inputs');
+      });
+
+      test('a table the input does not carry fails the node with the words both loaders say, before any load', async () => {
+        const { fetchData } = jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+        fetchData.mockImplementation(async () => POINTS);
+        try {
+          const interpretCode = loads();
+          const setOutput = jest.fn();
+          const outputCallback = jest.fn();
+          const result = await callBehavior(
+            useAutkGrammarBehavior,
+            { outputCallback, input: { path: 'art-points', dataType: 'geodataframe' } as any, jsInterpreter: { interpretCode } as any },
+            { setOutput },
+          );
+          await act(async () => {
+            await result.current.applyGrammar!(JSON.stringify({ data: [{ ...HEATMAP, joinDataRef: 'labels' }] }));
+          });
+          const errors = setOutput.mock.calls.filter((c: any[]) => c[0]?.code === 'error');
+          expect(errors.map((c: any[]) => c[0].content)).toEqual([
+            'The heatmap "density" bins "labels", a table its data section does not load and the node\'s input does not carry.',
+          ]);
+          expect(interpretCode).not.toHaveBeenCalled();
+          expect(outputCallback).not.toHaveBeenCalled();
+        } finally {
+          fetchData.mockImplementation(async () => ({ data: {}, dataType: 'dataframe' }));
+        }
+      });
+
+      test('a map reads its input once: the load hands the joined input table back, and nothing else of the input', async () => {
+        const { fetchData } = jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const grammarAsBefore = AutkGrammar.getMockImplementation();
+        const drawn: { spec: any } = { spec: null };
+        AutkGrammar.mockImplementation(() => ({
+          run: jest.fn(async (spec: any) => { drawn.spec = spec; }), data: {}, computeAdapter: { resolveCompute: jest.fn() },
+        }));
+        const roads = { type: 'FeatureCollection', features: [
+          { type: 'Feature', geometry: { type: 'LineString', coordinates: [[-9755100, 5142400], [-9753900, 5142700]] }, properties: { road: 1 } },
+        ] };
+        // What /get answers for the load's list: the section's roads, then the
+        // input table a join wrote its columns onto.
+        const joined = { ...POINTS.data, features: POINTS.data.features.map((f: any) => ({ ...f, properties: { ...f.properties, roads: 1 } })) };
+        fetchData.mockImplementation(async (path: string) => {
+          if (path === 'art-points') return POINTS;
+          if (path === 'art-joined') {
+            return { dataType: 'list', data: [
+              { dataType: 'dict', data: { name: 'roads', type: 'roads', geojson: roads } },
+              { dataType: 'dict', data: { name: 'input_0', type: 'points', geojson: joined } },
+            ] };
+          }
+          return { data: {}, dataType: 'dataframe' };
+        });
+        try {
+          const interpretCode = jest.fn(
+            (_unresolved, _code, _input, _inputTypes, cb) =>
+              cb({ stdout: [], stderr: '', output: { path: 'art-joined', dataType: 'list' } }),
+          );
+          const input = { path: 'art-points', dataType: 'geodataframe' };
+          const result = await callBehavior(useAutkGrammarBehavior, { input: input as any, jsInterpreter: { interpretCode } as any });
+          await act(async () => {
+            await result.current.applyGrammar!(JSON.stringify({
+              data: [
+                { type: 'geojson', outputTableName: 'roads', geojsonObject: roads },
+                { type: 'join', dataRef: 'input_0', joinDataRef: 'roads' },
+              ],
+              map: { layerRefs: [{ dataRef: 'roads' }, { dataRef: 'input_0' }] },
+            }));
+          });
+          expect(interpretCode).toHaveBeenCalledTimes(1);
+          expect(interpretCode.mock.calls[0][2]).toEqual(input);
+          const loaded = drawn.spec.data.map((s: any) => s.outputTableName);
+          // input_0 once, as the join made it.
+          expect(loaded.filter((name: string) => name === 'input_0')).toEqual(['input_0']);
+          const point = drawn.spec.data.find((s: any) => s.outputTableName === 'input_0');
+          expect(point.geojsonObject.features.map((f: any) => f.properties.roads)).toEqual([1, 1]);
+        } finally {
+          AutkGrammar.mockImplementation(grammarAsBefore);
+          fetchData.mockImplementation(async () => ({ data: {}, dataType: 'dataframe' }));
+        }
+      });
+
+      test('guard: a map that does not name the input table its heatmap bins does not load that table', async () => {
+        const { fetchData } = jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const grammarAsBefore = AutkGrammar.getMockImplementation();
+        const drawn: { spec: any } = { spec: null };
+        AutkGrammar.mockImplementation(() => ({
+          run: jest.fn(async (spec: any) => { drawn.spec = spec; }), data: {}, computeAdapter: { resolveCompute: jest.fn() },
+        }));
+        const roads = { type: 'FeatureCollection', features: [
+          { type: 'Feature', geometry: { type: 'LineString', coordinates: [[-9755100, 5142400], [-9753900, 5142700]] }, properties: { road: 1 } },
+        ] };
+        fetchData.mockImplementation(async (path: string) => {
+          if (path === 'art-points') return POINTS;
+          if (path === 'art-roads') return { dataType: 'list', data: [{ dataType: 'dict', data: { name: 'roads', type: 'roads', geojson: roads } }] };
+          return { data: {}, dataType: 'dataframe' };
+        });
+        try {
+          const interpretCode = jest.fn(
+            (_unresolved, _code, _input, _inputTypes, cb) =>
+              cb({ stdout: [], stderr: '', output: { path: 'art-roads', dataType: 'list' } }),
+          );
+          const result = await callBehavior(useAutkGrammarBehavior, {
+            input: { path: 'art-points', dataType: 'geodataframe' } as any, jsInterpreter: { interpretCode } as any,
+          });
+          await act(async () => {
+            await result.current.applyGrammar!(JSON.stringify({
+              data: [
+                { type: 'geojson', outputTableName: 'roads', geojsonObject: roads },
+                { type: 'join', dataRef: 'roads', joinDataRef: 'input_0' },
+              ],
+              map: { layerRefs: [{ dataRef: 'roads' }] },
+            }));
+          });
+          expect(drawn.spec.data.map((s: any) => s.outputTableName)).toEqual(['roads']);
+        } finally {
+          AutkGrammar.mockImplementation(grammarAsBefore);
+          fetchData.mockImplementation(async () => ({ data: {}, dataType: 'dataframe' }));
+        }
+      });
+
+      test('with nothing arrived, it says what feeds it before a run, and a run says nothing arrived', async () => {
+        const interpretCode = loads();
+        const setOutput = jest.fn();
+        const code = JSON.stringify({ data: [HEATMAP] });
+        const result = await callBehavior(
+          useAutkGrammarBehavior,
+          { code, jsInterpreter: { interpretCode } as any } as any,
+          { code, setOutput } as any,
+        );
+        const { container } = render(<>{result.current.contentComponent}</>);
+        expect(container.querySelector('[data-curio-node-empty="disconnected"]')).not.toBeNull();
+        await act(async () => {
+          await result.current.applyGrammar!(code);
+        });
+        const errors = setOutput.mock.calls.filter((c: any[]) => c[0]?.code === 'error');
+        expect(errors.map((c: any[]) => [c[0].content, c[0].kind])).toEqual([[
+          'rendered nothing: 0 rows arrived at this node, so there was nothing to draw. The upstream node that '
+            + 'feeds it is what must change; this document is not at fault.',
+          expect.any(String),
+        ]]);
+        expect(interpretCode).not.toHaveBeenCalled();
+      });
     });
   });
 
@@ -2706,8 +3795,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
     test('join: expects nothing (it rewrites a table another source created)', () => {
       expect(requestedLayerTables([{
         type: 'join',
-        tableRootName: 'table_osm_roads',
-        tableJoinName: 'lst',
+        dataRef: 'table_osm_roads',
+        joinDataRef: 'lst',
         output: { type: 'MODIFY_ROOT' },
       }])).toEqual([]);
     });

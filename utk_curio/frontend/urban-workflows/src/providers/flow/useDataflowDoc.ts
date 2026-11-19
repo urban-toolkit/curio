@@ -123,7 +123,6 @@ export const METADATA_FIELD_DATA: Record<string, readonly string[]> = {
     datasetWidgets: ["datasetWidgets"],
     modelRefs: ["modelRefs"],
     appearance: ["appearance"],
-    spatialJoin: ["spatialJoin"],
     simpleVis: ["simpleVis"],
     packageTemplateConfig: ["packageTemplateConfig"],
     dataPool: ["dataPool"],

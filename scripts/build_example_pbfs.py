@@ -82,6 +82,10 @@ AREAS = {
     # boundary. The area keeps it so that the script builds the committed extract, which
     # carries it whole.
     "chicago_downtown": Area(box=(41.859, -87.662, 41.898, -87.613), boundaries=("Chicago",)),
+    # The SideSeeing walk's streets: the box around its GPS fixes
+    # (datasets/data.sideseeing.west-loop-walk-gps@1), 0.002 degrees past them,
+    # as build_example_sideseeing.py prints it.
+    "west_loop": Area(box=(41.8746, -87.6593, 41.8836, -87.6548), boundaries=()),
 }
 
 #: A closed way is a polygon when it has one of these keys, with any value but

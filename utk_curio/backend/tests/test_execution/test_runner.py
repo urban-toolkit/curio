@@ -10,6 +10,12 @@ from utk_curio.backend.app.execution import runner, runtime_journal
 KEY = "4242"
 PID = "p-runner"
 
+#: The Spatial Join's code (``packages/curio.builtin@1/sources/spatial-join.py``).
+JOIN_CODE = (
+    "from spatial_join import spatial_join\n\n"
+    "return spatial_join(input_0, input_1, operation=[!! operation !!], output=[!! output !!])\n"
+)
+
 
 def _node(node_id, node_type="curio.builtin/python-computation", content=None):
     return {"id": node_id, "type": node_type,
@@ -585,7 +591,8 @@ class TestDev119RosterClassification:
     ROSTER = {
         "curio.builtin/data-loading": {"executable": True, "engine": "python"},
         "curio.builtin/python-computation": {"executable": True, "engine": "python"},
-        "curio.builtin/spatial-join": {"executable": False, "engine": "python"},
+        # Its code calls the built-in package's spatial_join.
+        "curio.builtin/spatial-join": {"executable": True, "engine": "python"},
         "some.pkg/custom-python": {"executable": True, "engine": "python"},
         "some.pkg/custom-js": {"executable": True, "engine": "javascript"},
         "some.pkg/surface": {"executable": False, "engine": "python"},
@@ -598,18 +605,21 @@ class TestDev119RosterClassification:
             {"id": "p", "type": "some.pkg/custom-python@1", "content": "x"},
             {"id": "j", "type": "some.pkg/custom-js@2", "content": "x"},
             {"id": "s", "type": "some.pkg/surface@1", "content": "x"},
-            {"id": "sj", "type": "curio.builtin/spatial-join@1", "content": ""},
+            {"id": "sj", "type": "curio.builtin/spatial-join@1", "content": JOIN_CODE},
             {"id": "v", "type": "curio.builtin/vis-vega@1", "content": "{}"},  # not in the roster → legacy
             {"id": "u", "type": "unknown.pkg/thing@1", "content": "x"},       # unknown → legacy passive
         ], "edges": []}}, templates=self.ROSTER)
         by_id = {n.id: n for n in wf.nodes}
         assert by_id["p"].category == "code" and by_id["p"].engine == "python"
         assert by_id["j"].category == "code" and by_id["j"].engine == "javascript"
-        assert by_id["s"].category == "passive" and by_id["sj"].category == "passive"
+        assert by_id["s"].category == "passive"
+        assert by_id["sj"].category == "code" and by_id["sj"].engine == "python"
         assert by_id["v"].category == "grammar" and by_id["u"].category == "passive"
         assert is_executable_kind("some.pkg/custom-python@1", self.ROSTER) is True
         assert is_executable_kind("some.pkg/custom-python@1") is False  # no roster: legacy has no such kind
-        assert is_executable_kind("curio.builtin/spatial-join", self.ROSTER) is False
+        assert is_executable_kind("curio.builtin/spatial-join", self.ROSTER) is True
+        # No roster: the shipped manifest's code templates, the join's among them.
+        assert is_executable_kind("curio.builtin/spatial-join@1") is True
 
     def test_the_roster_overrides_a_legacy_code_name(self):
         # A template whose NAME the legacy table calls code but whose manifest
@@ -637,18 +647,47 @@ class TestDev119RosterClassification:
         report = runner.run_through_node(KEY, PID, spec, "j", exec_fn=rec2)
         assert report["ok"] is False and report["notExecutable"] is True and rec2.calls == []
 
-    def test_spatial_join_is_refused_by_the_roster_with_the_service_wording(self, tmp_curio):
+    def test_a_kind_with_no_code_is_refused_by_the_roster_with_the_service_wording(self, tmp_curio):
         rec = _RecordingExec()
         spec = _spec(
             [_node("a", node_type="curio.builtin/data-loading@1", content="return 1"),
-             _node("sj", node_type="curio.builtin/spatial-join@1", content="")],
-            [{"id": "e1", "source": "a", "target": "sj"}],
+             _node("s", node_type="some.pkg/surface@1", content="")],
+            [{"id": "e1", "source": "a", "target": "s"}],
         )
-        report = runner.run_through_node(KEY, PID, spec, "sj", exec_fn=rec, templates=self.ROSTER)
+        report = runner.run_through_node(KEY, PID, spec, "s", exec_fn=rec, templates=self.ROSTER)
         assert report["ok"] is False and report["notExecutable"] is True
         assert "no code the sandbox could run" in report["error"]
         assert "through its own service" in report["error"] and "Play the dataflow" in report["error"]
         assert rec.calls == []
+
+    def test_a_spatial_join_runs_its_code_with_its_widgets_on_its_two_circles(self, tmp_curio):
+        """Its code is a call of spatial_join with Operation and Output; the
+        run writes the widgets' values and names both circles, input_0 by the
+        port ``in`` and input_1 by ``in_1``, whichever edge came first."""
+        rec = _RecordingExec()
+        join = _node("sj", node_type="curio.builtin/spatial-join@1", content=JOIN_CODE)
+        join["metadata"] = {"widgets": [
+            {"name": "operation", "type": "choice", "default": "intersects", "value": "within",
+             "options": {"choices": ["intersects", "within"]}},
+            {"name": "output", "type": "choice", "default": "pairs", "value": "counts",
+             "options": {"choices": ["pairs", "counts"]}},
+        ]}
+        spec = _spec(
+            [_node("polygons", content="return 1"), _node("points", content="return 2"), join],
+            [{"id": "e1", "source": "polygons", "target": "sj", "targetHandle": "in_1"},
+             {"id": "e2", "source": "points", "target": "sj", "targetHandle": "in"}],
+        )
+        report = runner.run_through_node(KEY, PID, spec, "sj", exec_fn=rec, templates=self.ROSTER)
+        assert report["ok"] is True and report["notExecutable"] is False
+        endpoint, payload = rec.calls[-1]
+        assert (endpoint, payload["nodeType"]) == ("/exec", "curio.builtin/spatial-join@1")
+        assert 'spatial_join(input_0, input_1, operation="within", output="counts")' in payload["code"]
+        assert payload["input_slots"] == [0, 1]
+        # The points, on the port in, are input_0; the polygons, on in_1, input_1.
+        made = {code: f"art-{k + 1}" for k, (_endpoint, sent) in enumerate(rec.calls)
+                for code in ("return 1", "return 2") if code in sent["code"]}
+        assert payload["dataType"] == "outputs"
+        assert payload["file_path"].index(f"'{made['return 2']}'") < payload["file_path"].index(f"'{made['return 1']}'")
 
 
 class TestArtifactPreviewIsBounded:

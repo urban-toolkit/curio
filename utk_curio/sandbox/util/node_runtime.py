@@ -60,6 +60,24 @@ def is_curio_package_json(path):
     return data.get('name') == 'curio' and isinstance(dependencies, dict) and AUTK_DB in dependencies
 
 
+def local_package_files(path):
+    """The files Curio's package.json at *path* installs packages from, by
+    their paths beside it: the ``file:`` spec of each dependency, such as the
+    vendored autk-db's tarball (``utk_curio/frontend/urban-workflows/vendor/autark/``).
+    A pip install's launcher writes each beside the package.json it writes.
+    Raises ValueError for a path that leaves that folder."""
+    data = json.loads(pathlib.Path(path).read_text(encoding='utf-8'))
+    files = []
+    for spec in (data.get('dependencies') or {}).values():
+        if not isinstance(spec, str) or not spec.startswith('file:'):
+            continue
+        relative = pathlib.PurePosixPath(spec[len('file:'):])
+        if not relative.parts or relative.is_absolute() or '..' in relative.parts:
+            raise ValueError(f'{spec!r} in {path} names no file beside it')
+        files.append(relative)
+    return files
+
+
 def state_dir():
     """Curio's state directory: ``CURIO_STATE_DIR``, or ``.curio`` in the
     folder Curio was started from (``CURIO_LAUNCH_CWD``)."""
@@ -190,16 +208,24 @@ def _pick_export_entry(node):
 def resolve_pkg_entry_url(specifier, root_node_modules):
     """Map a bare package specifier to an absolute ``file://`` URL, or None.
 
+    A specifier with a subpath (``@urban-toolkit/autk-grammar/data``) resolves
+    as Node resolves it: to the entry the package's ``exports`` map gives
+    ``./<subpath>``, its conditions picked as :func:`_pick_export_entry` picks
+    them, or, for a package with no ``exports``, to that file in the package.
+
     Returns None for anything that is not a bare specifier (relative, absolute,
     URL, ``node:`` builtin), for a package that isn't installed under
-    ``root_node_modules``, or for an entry that escapes it.
+    ``root_node_modules``, for a subpath the package's ``exports`` do not
+    export, or for an entry that escapes ``root_node_modules``.
     """
     # Only bare specifiers (not relative / absolute / URL / node: builtin).
     if not specifier or specifier[0] in './' or ':' in specifier:
         return None
     root_node_modules = pathlib.Path(root_node_modules)
     seg = specifier.split('/')
-    pkg = '/'.join(seg[:2]) if specifier.startswith('@') else seg[0]
+    name_segments = 2 if specifier.startswith('@') else 1
+    pkg = '/'.join(seg[:name_segments])
+    subpath = '/'.join(seg[name_segments:])
     pkg_dir = root_node_modules / pkg
     pj = pkg_dir / 'package.json'
     if not pj.is_file():
@@ -210,13 +236,21 @@ def resolve_pkg_entry_url(specifier, root_node_modules):
         return None
     exp = meta.get('exports')
     entry = None
-    if isinstance(exp, str):
-        entry = exp
-    elif isinstance(exp, dict):
-        # A subpath map keys on "."; a bare condition map has no "." and applies
-        # to the root itself.
-        entry = _pick_export_entry(exp.get('.', exp))
-    entry = entry or meta.get('module') or meta.get('main') or 'index.js'
+    if subpath:
+        # Only a subpath map's own "./<subpath>" key exports a subpath: a string
+        # or a bare condition map exports the root alone.
+        if exp is None:
+            entry = subpath
+        elif isinstance(exp, dict):
+            entry = _pick_export_entry(exp.get('./' + subpath))
+    else:
+        if isinstance(exp, str):
+            entry = exp
+        elif isinstance(exp, dict):
+            # A subpath map keys on "."; a bare condition map has no "." and
+            # applies to the root itself.
+            entry = _pick_export_entry(exp.get('.', exp))
+        entry = entry or meta.get('module') or meta.get('main') or 'index.js'
     if not isinstance(entry, str):
         return None
     try:

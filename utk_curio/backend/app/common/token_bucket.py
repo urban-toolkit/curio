@@ -35,3 +35,21 @@ class TokenBucket:
             return False
         self.tokens -= 1.0
         return True
+
+    def state(self) -> list[float]:
+        """What a budget the backend processes of a start share keeps of this
+        bucket (``shared_budgets.State``): its tokens and its last refill."""
+        return [self.tokens, self.updated]
+
+    @classmethod
+    def from_state(cls, capacity: int, per_second: float, state, now: float) -> "TokenBucket":
+        """The bucket whose :meth:`state` a shared budget kept, or a full new
+        one when it kept none."""
+        bucket = cls(capacity, per_second, now)
+        try:
+            tokens, updated = (float(value) for value in state)
+        except (TypeError, ValueError):  # none kept, or not one Curio wrote
+            return bucket
+        bucket.tokens = min(bucket.capacity, max(0.0, tokens))
+        bucket.updated = updated
+        return bucket

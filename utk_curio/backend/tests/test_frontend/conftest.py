@@ -158,6 +158,30 @@ WORKFLOW_FILES = [
     "docs/examples/28-pytorch-training-on-the-gpu.json",
     "docs/examples/29-pytorch-street-photos.json",
     "docs/examples/30-pytorch-sidewalk-clusters.json",
+    # SAM 3 along the SideSeeing walk: test-gpu runs it, for its Autark map,
+    # on a tiny SAM 3 planted as fetched and the walk's recorded stand-in,
+    # cached first (utils/stand_ins.py, which loaded_workflow asks).
+    "docs/examples/31-sideseeing-objects-along-a-walk.json",
+    # A SAGE bucket's collections, cached from the recorded corpus before the
+    # run, as a Curio that mounts no bucket reads them.
+    "docs/examples/32-sage-idot-rail-crossings.json",
+    # SAM 3's Segment Images on frames of the same walk, and the walk cut into
+    # blocks by Split Video: test-gpu runs it, for its Autark maps, on the same
+    # stand-ins as example 31.
+    "docs/examples/33-sideseeing-frames-segments-blocks.json",
+    # An Autark heatmap of park access over Lower Manhattan's tip, drawn on a
+    # map and read by a Python step as a raster.
+    "docs/examples/34-autark-park-access-heatmap.json",
+    # An Autark render pass, the sky each street around Wall Street sees:
+    # test-gpu runs it, for its map.
+    "docs/examples/35-autark-sky-seen-from-the-street.json",
+    # Niterói's summer surface temperature, a GeoTIFF, under its parks on a
+    # map, and each cell's green share against its heat in Vega-Lite.
+    "docs/examples/36-autark-green-share-summer-heat.json",
+    # Niterói's park area within reach, a heatmap summing the areas of a
+    # GeoJSON's parks, on a map, and each cell's park area against its heat
+    # in Vega-Lite.
+    "docs/examples/37-autark-park-area-summer-heat.json",
 ]
 
 

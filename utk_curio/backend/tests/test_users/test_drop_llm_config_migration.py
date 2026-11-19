@@ -78,16 +78,6 @@ def test_upgrade_drops_the_columns_and_keeps_the_account():
     assert tuple(row) == ("alice", "hf-token")
 
 
-def test_downgrade_restores_the_columns_empty():
-    engine = sa.create_engine("sqlite://")
-    with engine.begin() as conn:
-        conn.execute(sa.text(_PRE_SCHEMA))
-    module = _load_revision()
-    _run(module, engine)
-    _run(module, engine, "downgrade")
-    assert LLM_COLUMNS <= _columns(engine)
-
-
 def test_the_model_no_longer_declares_them():
     from utk_curio.backend.app.users.models import User
 

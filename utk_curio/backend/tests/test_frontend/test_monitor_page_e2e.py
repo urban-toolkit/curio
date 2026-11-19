@@ -125,15 +125,16 @@ def test_an_agent_turn_shows_its_models_tokens_in_the_llm_section(app_frontend: 
         api_json(f"{base}/install", token, method="POST", payload={"coord": RESEARCHER})
     attachment = api_json(f"{base}/attachments", token, method="POST",
                           payload={"coord": RESEARCHER, "target": {"kind": "canvas"}})
-    script_agent_replies(current_server, "The monitor counts this turn.")
+    script_agent_replies(current_server, "The monitor counts this turn.", dataflow=session["project"]["id"])
     run = api_json(f"{base}/attachments/{attachment['attachmentId']}/run", token, method="POST",
                    payload={"message": "How many tokens did this take?"}, timeout=60.0)
     assert "The monitor counts this turn." in run["reply"], run["reply"]
 
     # 2. The route counts each of its calls once, the conversation's title
     #    among them, at the usage the scripted provider reports for each.
-    calls = [call for call in captured_agent_calls(current_server) if call["model"] == model]
-    assert calls, captured_agent_calls(current_server)
+    calls = [call for call in captured_agent_calls(current_server, dataflow=session["project"]["id"])
+             if call["model"] == model]
+    assert calls, captured_agent_calls(current_server, dataflow=session["project"]["id"])
     counted = {"inputTokens": DEFAULT_USAGE["in"] * len(calls),
                "outputTokens": DEFAULT_USAGE["out"] * len(calls), "requests": len(calls)}
     body = api_json(f"{current_server}/api/monitor/llm", token)

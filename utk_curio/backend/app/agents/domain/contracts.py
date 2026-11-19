@@ -142,6 +142,13 @@ _AUTK_GRAMMAR = shared_constants.read("autkGrammar")
 AUTK_SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schemas" / "autk-grammar.v1.json"
 #: The template whose content is an Autark document.
 AUTK_TEMPLATE = "curio.builtin/autk-grammar"
+#: The grammar an Autark document is written in, as a template names it (``grammarId``).
+AUTK_GRAMMAR_ID = "autk-grammar"
+#: What the Autark starter writes in a layer it colors by a column, past the
+#: column itself, by the starter ladder's rule id (``AUTK_STARTER_LADDER``,
+#: ``utils/autkDefaultSpec.ts``): the column's type and the color map,
+#: whatever the input.
+AUTK_STARTER_COLORING: dict[str, dict[str, str]] = _AUTK_GRAMMAR["starterColoring"]
 #: What a Vega-Lite or Autark node calls its inputs: ``input_0``, ``input_1``,
 #: ... in circle order. An upstream Autark node's layers keep their table names.
 INPUT_TABLE_PREFIX: str = _AUTK_GRAMMAR["inputTablePrefix"]
@@ -177,6 +184,123 @@ def autk_one_view_problem(document: object) -> str | None:
     return AUTK_ONE_VIEW if both or several else None
 
 
+#: The keys autk-grammar 5 renamed, each where it is written and its new name.
+#: ``in`` is ``""`` for the document, or a section whose one object or each
+#: object of its list holds the key (``"compute[]"`` a pass).
+AUTK_RENAMED_KEYS: tuple[dict, ...] = tuple(_AUTK_GRAMMAR["renamedKeys"])
+#: The keys of autk-grammar 5 a node does not run yet, each where it is
+#: written; with ``value``, only that value of the key counts (a heatmap
+#: source is ``"type": "heatmap"``). The step that runs one takes it out of the
+#: file.
+AUTK_NOT_RUN_YET: tuple[dict, ...] = tuple(_AUTK_GRAMMAR["notRunYet"])
+#: The kinds of data source that make a raster table, a heatmap and a GeoTIFF:
+#: a compute pass over one of their tables is not run (``autk_raster_pass_problem``).
+AUTK_RASTER_SOURCES: tuple[str, ...] = tuple(_AUTK_GRAMMAR["rasterSources"])
+#: autk-db's default workspace, where a source or a pass that names none keeps
+#: and reads its tables.
+AUTK_DEFAULT_WORKSPACE: str = _AUTK_GRAMMAR["defaultWorkspace"]
+
+
+def _objects_at(document: dict, place: str) -> list[tuple[str, object]]:
+    """Each object *document* holds where *place* says, with its path
+    (``map``, ``compute[0]``)."""
+    if place == "":
+        return [("", document)]
+    section = place.removesuffix("[]")
+    held = document.get(section)
+    if held is None:
+        return []
+    if isinstance(held, list):
+        return [(f"{section}[{i}]", item) for i, item in enumerate(held)]
+    return [(section, held)]
+
+
+def _written(document: dict, rule: dict) -> str | None:
+    """The path of the first object of *document* that writes *rule*'s key, or None."""
+    for path, held in _objects_at(document, rule["in"]):
+        if not isinstance(held, dict) or held.get(rule["key"]) is None:
+            continue
+        if "value" in rule and held[rule["key"]] != rule["value"]:
+            continue
+        return path
+    return None
+
+
+def _fill(template: str, **values: str) -> str:
+    """*template* with each ``{name}`` replaced by its value."""
+    return re.sub(r"\{(\w+)\}", lambda m: values.get(m.group(1), m.group(0)), template)
+
+
+def _not_run_yet(what: str, path: str) -> str:
+    """What a document is told of *what* it uses that a node does not run yet,
+    written at *path* (``""`` for the document itself)."""
+    at = _fill(_AUTK_GRAMMAR["keyAt"], path=path) if path else ""
+    return _fill(_AUTK_GRAMMAR["notRunYetKey"], what=what, at=at)
+
+
+def _workspace_of(held: object) -> str | None:
+    """The workspace *held* (a source, a pass or a raster) names, or None for
+    the default one (``AUTK_DEFAULT_WORKSPACE``), named or not."""
+    workspace = held.get("workspace") if isinstance(held, dict) else None
+    return workspace if isinstance(workspace, str) and workspace and workspace != AUTK_DEFAULT_WORKSPACE else None
+
+
+def autk_raster_pass_problem(document: object, rasters) -> str | None:
+    """What a document is told when one of its compute passes reads a raster,
+    else None: the first pass whose ``dataRef``, in the pass's workspace, is one
+    of *rasters* (each ``{"name", "workspace"}``, the workspace left out for the
+    default one), with where it is written, as a key a node does not run yet is
+    told (the file's ``rasterPass``). A pass computes one value for each feature
+    of the table it reads, and a raster holds all its cells in one feature.
+    ``autkRasterPassProblem`` is the node's twin."""
+    if not isinstance(document, dict):
+        return None
+    held_rasters = {(raster.get("name"), _workspace_of(raster)) for raster in rasters}
+    for path, held in _objects_at(document, "compute[]"):
+        table = held.get("dataRef") if isinstance(held, dict) else None
+        if isinstance(table, str) and (table, _workspace_of(held)) in held_rasters:
+            return _not_run_yet(_fill(_AUTK_GRAMMAR["rasterPass"], table=table), path)
+    return None
+
+
+def _own_rasters(document: dict) -> list[dict]:
+    """The tables *document*'s own data sources of ``AUTK_RASTER_SOURCES``
+    kinds write, its heatmaps and GeoTIFFs, each with the workspace it is in."""
+    rasters = []
+    for _path, held in _objects_at(document, "data[]"):
+        if not isinstance(held, dict):
+            continue
+        table = held.get("outputTableName")
+        if held.get("type") in AUTK_RASTER_SOURCES and isinstance(table, str) and table:
+            rasters.append({"name": table, "workspace": _workspace_of(held)})
+    return rasters
+
+
+def autk_key_problem(document: object) -> str | None:
+    """What a document that writes a key a node does not run is told, else
+    None: a key autk-grammar 5 renamed first, named with its new name
+    (``AUTK_RENAMED_KEYS``), then a key a node does not run yet
+    (``AUTK_NOT_RUN_YET``), the first the document writes, with where it is
+    written, and last a compute pass over a raster the document's own data
+    writes (``autk_raster_pass_problem``). ``autkKeyProblem`` is the node's
+    twin, held to this function by the cases in ``autkGrammar.cases.json``."""
+    if not isinstance(document, dict):
+        return None
+
+    def at(path: str) -> str:
+        return _fill(_AUTK_GRAMMAR["keyAt"], path=path) if path else ""
+
+    for rule in AUTK_RENAMED_KEYS:
+        path = _written(document, rule)
+        if path is not None:
+            return _fill(_AUTK_GRAMMAR["renamedKey"], key=rule["key"], at=at(path), renamedTo=rule["renamedTo"])
+    for rule in AUTK_NOT_RUN_YET:
+        path = _written(document, rule)
+        if path is not None:
+            return _not_run_yet(rule["what"], path)
+    return autk_raster_pass_problem(document, _own_rasters(document))
+
+
 def load_autk_schema(path: Path = AUTK_SCHEMA_PATH) -> dict:
     """The vendored Autark schema, parsed."""
     return json.loads(Path(path).read_text(encoding="utf-8"))
@@ -193,6 +317,107 @@ def autk_families(schema: dict) -> tuple[str, ...]:
     """The top-level keys a document can name, in schema order."""
     root = _definition(schema, schema.get("$ref", "UrbanSpec"))
     return tuple(key for key in root.get("properties", {}) if not key.startswith("$"))
+
+
+def autk_step_families(schema: dict) -> tuple[str, ...]:
+    """The families of *schema* that make a step: those a node loads, computes
+    or draws with (``execution.autk_spec_kind.FAMILY_KIND``). A layout and
+    links make none of their own, so a document must name one of these."""
+    from utk_curio.backend.app.execution.autk_spec_kind import FAMILY_KIND
+
+    return tuple(family for family in autk_families(schema) if FAMILY_KIND.get(family))
+
+
+def _resolved(schema: dict, node: object) -> object:
+    """*node*, or the definition its ``$ref`` names."""
+    return _definition(schema, node["$ref"]) if isinstance(node, dict) and "$ref" in node else node
+
+
+def _place(schema: dict, place: str) -> object:
+    """The schema of what a document holds where *place* says (``""`` the
+    document, ``"map[]"`` its map or its list of maps)."""
+    root = _definition(schema, schema.get("$ref", "UrbanSpec"))
+    return root if place == "" else root.get("properties", {}).get(place.removesuffix("[]"))
+
+
+def _objects_under(schema: dict, node: object, seen: set[int]) -> list[dict]:
+    """Each object *node* can be, through ``$ref``, ``items``, ``anyOf``,
+    ``oneOf`` and the ``then`` of an ``allOf`` member: the objects that hold
+    a key written there, not the objects inside them."""
+    node = _resolved(schema, node)
+    if not isinstance(node, dict) or id(node) in seen:
+        return []
+    seen.add(id(node))
+    found = [node] if "properties" in node else []
+    if isinstance(node.get("items"), dict):
+        found += _objects_under(schema, node["items"], seen)
+    for member in [*node.get("anyOf", []), *node.get("oneOf", [])]:
+        found += _objects_under(schema, member, seen)
+    for clause in node.get("allOf", []):
+        if isinstance(clause, dict) and "then" in clause:
+            found += _objects_under(schema, clause["then"], seen)
+    return found
+
+
+def _names(condition: object, value: str) -> bool:
+    """Whether a property's schema *condition* is the one value *value*."""
+    return isinstance(condition, dict) and (condition.get("const") == value or condition.get("enum") == [value])
+
+
+def _property(node: object, key: str) -> object:
+    """The schema *node* gives its property *key*, if it is an object that has one."""
+    return node.get("properties", {}).get(key) if isinstance(node, dict) else None
+
+
+def _drop_kind(schema: dict, node: object, key: str, value: str, seen: set[int]) -> None:
+    """Take out of the unions under *node* the members ``key: value`` selects:
+    an ``anyOf`` or ``oneOf`` member whose *key* is that constant, an
+    ``allOf`` member whose ``if`` asks for it, and the value from *key*'s
+    ``enum``."""
+    node = _resolved(schema, node)
+    if not isinstance(node, dict) or id(node) in seen:
+        return
+    seen.add(id(node))
+    choices = _property(node, key)
+    if isinstance(choices, dict) and isinstance(choices.get("enum"), list):
+        choices["enum"] = [choice for choice in choices["enum"] if choice != value]
+    for union in ("anyOf", "oneOf"):
+        if union in node:
+            node[union] = [
+                member for member in node[union]
+                if not _names(_property(_resolved(schema, member), key), value)
+            ]
+            for member in node[union]:
+                _drop_kind(schema, member, key, value, seen)
+    if "allOf" in node:
+        node["allOf"] = [
+            clause for clause in node["allOf"]
+            if not (isinstance(clause, dict) and _names(_property(clause.get("if"), key), value))
+        ]
+        for clause in node["allOf"]:
+            if isinstance(clause, dict) and "then" in clause:
+                _drop_kind(schema, clause["then"], key, value, seen)
+    if isinstance(node.get("items"), dict):
+        _drop_kind(schema, node["items"], key, value, seen)
+
+
+def autk_schema_curio_runs(schema: dict) -> dict:
+    """A copy of *schema* without what a node does not run yet
+    (``AUTK_NOT_RUN_YET``): each such key taken out of the objects that hold
+    it where it is written, and each kind a value names (a heatmap source)
+    out of its union. The agents' text and reply schema are
+    made from it, so an agent does not write what a node refuses."""
+    schema = json.loads(json.dumps(schema))
+    for rule in AUTK_NOT_RUN_YET:
+        place = _place(schema, rule["in"])
+        if "value" in rule:
+            _drop_kind(schema, place, rule["key"], rule["value"], set())
+            continue
+        for holder in _objects_under(schema, place, set()):
+            holder.get("properties", {}).pop(rule["key"], None)
+            if rule["key"] in holder.get("required", []):
+                holder["required"] = [name for name in holder["required"] if name != rule["key"]]
+    return schema
 
 
 def _variants(schema: dict, union: str, key: str) -> list[tuple[list[str], dict]]:
@@ -219,12 +444,84 @@ def _every(values) -> str:
     return quoted[0] if len(quoted) == 1 else ", ".join(quoted[:-1]) + " and " + quoted[-1]
 
 
+#: The compute pass a node runs: autk-grammar's GPGPU pass, a shader over a
+#: table, whose ``type`` is ``gpgpu`` or left out.
+GPGPU_PASS = "gpgpu"
+
+
+def _compute_passes(schema: dict) -> dict[str, tuple[str, list[dict]]]:
+    """Each kind of compute pass by its ``type``: its description and the
+    branches it can be written as. ``ComputeSpec`` lists the passes, inline or
+    by reference (a GPGPU pass and a render pass), and a pass is one branch
+    per way of naming its output. A branch whose ``type`` is no constant is a
+    GPGPU pass, the default; a pass with no description of its own has
+    ``ComputeSpec``'s."""
+    union = _definition(schema, "ComputeSpec")
+    passes: dict[str, tuple[str, list[dict]]] = {}
+    for member in union.get("anyOf", []):
+        target = _definition(schema, member["$ref"]) if "$ref" in member else member
+        description = target.get("description") or union.get("description", "")
+        for listed in target.get("anyOf", [target]):
+            branch = _definition(schema, listed["$ref"]) if "$ref" in listed else listed
+            kind = branch.get("properties", {}).get("type", {}).get("const", GPGPU_PASS)
+            passes.setdefault(kind, (description, []))[1].append(branch)
+    return passes
+
+
+def _gpgpu_pass(schema: dict) -> tuple[str, list[dict]]:
+    """The GPGPU pass's description and branches (``_compute_passes``)."""
+    return _compute_passes(schema).get(GPGPU_PASS, ("", []))
+
+
+#: The ``type`` of a render pass: it draws tables from each feature of a
+#: viewpoints table and writes what the frames show as a new table.
+RENDER_PASS = "render"
+
+
+def _render_pass(schema: dict) -> dict | None:
+    """What a render pass is and requires, for the agents' text, or None when
+    *schema* has none, or one that requires nothing: its description, without
+    the grammar's note on which adapters read it, the fields it requires, and
+    the fields each of its layers requires, the types a layer is drawn as and
+    the fields its viewpoints require, each empty where the schema does not
+    say, inline or by reference."""
+    description, branches = _compute_passes(schema).get(RENDER_PASS, ("", []))
+    required = sorted(branches[0].get("required", [])) if branches else []
+    if not required:
+        return None
+    properties = branches[0].get("properties", {})
+
+    def said(node: object) -> dict:
+        node = _resolved(schema, node)
+        return node if isinstance(node, dict) else {}
+
+    layer = said(said(properties.get("layers")).get("items"))
+    layer_type = said(_property(layer, "type"))
+    return {
+        "description": description.split(" Read by the ", 1)[0],
+        "required": required,
+        "layer_fields": sorted(layer.get("required", [])),
+        "layer_types": list(layer_type.get("enum", [])),
+        "viewpoint_fields": sorted(said(properties.get("viewpoints")).get("required", [])),
+    }
+
+
+def _render_words(render: dict) -> str:
+    """The ``autark`` skill's line on a render pass (``_render_pass``): what it
+    is and requires, then what each of its layers and its viewpoints require,
+    when the schema says all of that."""
+    words = _autk_words("render", description=render["description"], fields=_every(render["required"]))
+    if render["layer_fields"] and render["layer_types"] and render["viewpoint_fields"]:
+        words += " " + _autk_words(
+            "render-layers", layer_fields=_every(render["layer_fields"]),
+            layer_types=_either(render["layer_types"]), viewpoint_fields=_every(render["viewpoint_fields"]),
+        )
+    return words
+
+
 def _compute_required(schema: dict) -> tuple[list[str], list[str]]:
-    """The fields every compute pass needs, and the fields it needs one of."""
-    branches = [
-        set(branch.get("required", []))
-        for branch in _definition(schema, "ComputeSpec").get("anyOf", [])
-    ] or [set()]
+    """The fields every GPGPU pass needs, and the fields it needs one of."""
+    branches = [set(branch.get("required", [])) for branch in _gpgpu_pass(schema)[1]] or [set()]
     common = set.intersection(*branches)
     return sorted(common), sorted(set.union(*branches) - common)
 
@@ -246,19 +543,28 @@ def map_layers(schema: dict) -> tuple[str, list[str]]:
 
 
 def render_autk_shape(schema: dict) -> str:
-    """One line naming what an Autark document is, for a refusal's text. The
-    map example leads, so it survives the attempt trail's shorter cut."""
+    """One line naming what an Autark document is, for a refusal's text, of
+    what a node runs (``autk_schema_curio_runs``). The map example leads, so
+    it survives the attempt trail's shorter cut."""
     from utk_curio.backend.app.agents.domain import agent_text
 
+    schema = autk_schema_curio_runs(schema)
     layers, layer_required = map_layers(schema)
     common, either = _compute_required(schema)
     source_types = _definition(schema, "DataSourceSpec").get("properties", {}).get("type", {}).get("enum", [])
     first = input_table_name(0)
     example_layer = "{" + ", ".join(f'"{field}": "{first}"' for field in layer_required) + "}"
+    # A render pass is a compute pass written with "type": "render", which
+    # its clause names before the other fields it requires.
+    render = _render_pass(schema)
+    render_fields = [field for field in render["required"] if field != "type"] if render else []
+    render_pass = agent_text.message(
+        "document.autk-shape-render", fields=_every(render_fields),
+    ) if render_fields else ""
     return agent_text.message(
         "document.autk-shape", layers=layers, example_layer=example_layer, first=first,
-        families=_either(autk_families(schema)), plot_fields=_every(_plot_required(schema)),
-        compute_fields=_every(common), compute_one_of=_either(either),
+        families=_either(autk_step_families(schema)), plot_fields=_every(_plot_required(schema)),
+        compute_fields=_every(common), compute_one_of=_either(either), render_pass=render_pass,
         source_type=source_types[0] if source_types else "",
     )
 
@@ -278,14 +584,16 @@ def _autk_words(name: str, **values: str) -> str:
 
 def render_autk_region(schema: dict, label: str) -> str:
     """The ``autark`` skill's section on Autark documents: the words of the
-    base entry's ``autark-grammar.md``, filled from the schema, with the lines
-    of the schema's own choices between them."""
+    base entry's ``autark-grammar.md``, filled from the schema of what a node
+    runs (``autk_schema_curio_runs``), with the lines of the schema's own
+    choices between them."""
+    schema = autk_schema_curio_runs(schema)
     root = _definition(schema, schema.get("$ref", "UrbanSpec"))
     props = root.get("properties", {})
     layers, layer_required = map_layers(schema)
     common, either = _compute_required(schema)
-    compute = _definition(schema, "ComputeSpec")
-    compute_fields = compute.get("anyOf", [{}])[0].get("properties", {})
+    pass_description, pass_branches = _gpgpu_pass(schema)
+    compute_fields = (pass_branches or [{}])[0].get("properties", {})
     directive = _definition(schema, "FromFeatureDirective")
     iterate = directive.get("properties", {}).get("fromFeature", {}).get("properties", {}).get("iterate", {})
     layer_spec = _definition(schema, "MapLayerSpec")
@@ -299,7 +607,7 @@ def render_autk_region(schema: dict, label: str) -> str:
     lines = [
         _autk_words(
             "intro", label=label, template=AUTK_TEMPLATE, schema_id=str(schema.get("$id")),
-            families=_either(autk_families(schema)),
+            families=_either(autk_step_families(schema)),
         ),
         _autk_words("inputs", first=input_table_name(0), second=input_table_name(1), label=label),
         "",
@@ -314,17 +622,20 @@ def render_autk_region(schema: dict, label: str) -> str:
     lines += [
         "- " + _autk_words(
             "compute", description=props.get("compute", {}).get("description", ""),
-            pass_description=compute.get("description", ""), fields=_every(common),
+            pass_description=pass_description, fields=_every(common),
         ),
     ]
     for field in common:
         description = compute_fields.get(field, {}).get("description")
         if description:
             lines.append(f'  - "{field}": {description}')
+    lines.append(("  - " + _autk_words(
+        "uniform", directive=directive.get("description", ""), iterate=iterate.get("description", ""),
+    )).rstrip())
+    render = _render_pass(schema)
+    if render:
+        lines.append("  - " + _render_words(render))
     lines += [
-        ("  - " + _autk_words(
-            "uniform", directive=directive.get("description", ""), iterate=iterate.get("description", ""),
-        )).rstrip(),
         # The schema's own descriptions of "map" and "plot" allow several, and a
         # document may name both; a node draws one view.
         ("- " + _autk_words(
@@ -332,11 +643,27 @@ def render_autk_region(schema: dict, label: str) -> str:
             layers=layers, layer_fields=_every(layer_required), interpolators=_either(interpolators),
             layer_title=layer_title,
         )).rstrip(),
-        "- " + _autk_words("plot", one_view=AUTK_ONE_VIEW, plot_fields=_every(_plot_required(schema))),
     ]
+    lines += _camera_lines(schema)
+    lines.append("- " + _autk_words("plot", one_view=AUTK_ONE_VIEW, plot_fields=_every(_plot_required(schema))))
     for values, definition in _variants(schema, "PlotSpec", "mark"):
         lines.append(f"  - {_either(values)}: {definition.get('description', '')}")
     return "\n".join(lines)
+
+
+def _camera_lines(schema: dict) -> list[str]:
+    """The lines of a map's ``camera`` in the ``autark`` skill, which a node
+    turns the map it framed by: what the schema says of it, less its note on
+    which adapters read it, then each of its fields. None when *schema*, the
+    schema of what a node runs, holds no camera."""
+    camera = _resolved(schema, _definition(schema, "MapSpec").get("properties", {}).get("camera"))
+    if not isinstance(camera, dict):
+        return []
+    said = camera.get("description", "").split(" Read by the ", 1)[0]
+    return [f'  - "camera": {said}'] + [
+        f'    - "{name}": {field.get("description", "")}'
+        for name, field in camera.get("properties", {}).items()
+    ]
 
 
 # --- Starter specs and image columns ----------------------------------------
@@ -459,10 +786,10 @@ TRILL_PROMPT_FIELDS: dict[str, tuple[str, ...]] = {
     "dataflowBase": ("nodes", "edges", "name", "task", "scenarios"),
     "node": ("id", "type", "content", "goal", "title", "x", "y", "in", "out", "metadata"),
     # #662: a node's widgets are what an agent declares for its code to read,
-    # and a copy's lineage is how two scenarios' levers pair. A Spatial Join's
-    # operation and output, a Data Pool's conflict modes and a Simple View's
-    # image column are what an agent sets on one.
-    "nodeMetadata": ("keywords", "widgets", "copiedFrom", "spatialJoin", "dataPool", "simpleVis"),
+    # and a copy's lineage is how two scenarios' levers pair. A Data Pool's
+    # conflict modes and a Simple View's image column are what an agent sets
+    # on one.
+    "nodeMetadata": ("keywords", "widgets", "copiedFrom", "dataPool", "simpleVis"),
     "edge": ("id", "source", "target", "type", "sourceHandle", "targetHandle", "metadata"),
     # Where a scenario sits on the canvas and where it came from are the
     # canvas's own bookkeeping, and its description is for people.

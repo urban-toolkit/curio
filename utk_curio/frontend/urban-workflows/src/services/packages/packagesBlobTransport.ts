@@ -8,6 +8,7 @@
 
 import { getToken } from "../../utils/authApi";
 import { backendUrl } from "../../utils/backendUrl";
+import { requestHeaders } from "../../utils/requestHeaders";
 import type { InstallResponse } from "./types";
 
 const BACKEND_URL = backendUrl();
@@ -30,22 +31,22 @@ export function triggerBlobDownload(blob: Blob, filename: string): void {
 
 /**
  * Multipart upload helper — bypasses ``apiFetch`` because the latter
- * always sets ``Content-Type: application/json``. The Bearer header is
- * still attached so the route's ``@require_auth`` decorator passes.
+ * always sets ``Content-Type: application/json``. The headers every request
+ * sends are still attached (``utils/requestHeaders``), the token among them, so
+ * the route's ``@require_auth`` decorator passes.
  */
 export async function uploadArchive(
   file: Blob,
   filename: string,
   replace: boolean,
 ): Promise<InstallResponse> {
-  const token = getToken();
   const form = new FormData();
   form.append("file", file, filename);
   const url = `${BACKEND_URL}/api/packages/upload${replace ? "?replace=true" : ""}`;
   const res = await fetch(url, {
     method: "POST",
     body: form,
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    headers: requestHeaders(getToken()),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -58,9 +59,8 @@ export async function uploadArchive(
 
 /** Download an already-installed package as a ``.curio.zip`` archive. */
 export async function downloadArchive(dirName: string): Promise<void> {
-  const token = getToken();
   const res = await fetch(`${BACKEND_URL}/api/packages/${dirName}/archive`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    headers: requestHeaders(getToken()),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -74,13 +74,9 @@ export async function downloadArchive(dirName: string): Promise<void> {
  * Used by the wizard's "Export package" button.
  */
 export async function factoryBuild(draft: unknown): Promise<{ blob: Blob; filename: string }> {
-  const token = getToken();
   const res = await fetch(`${BACKEND_URL}/api/packages/factory/build`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+    headers: requestHeaders(getToken(), { "Content-Type": "application/json" }),
     body: JSON.stringify(draft),
   });
   if (!res.ok) {

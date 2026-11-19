@@ -11,7 +11,9 @@ A plan's ``scenarios`` list holds two kinds of entry:
   that scenario is copied as a plan node of its own, under the ref ``copies``
   names for it; the edges between those nodes are copied, and every edge
   entering them is wired into the copy too, so both scenarios read the same
-  context. ``values`` sets a copy's widget values, keyed by the copy's ref.
+  context. ``values`` sets a copy's widget values, keyed by the copy's ref:
+  a widget the plan declares on the node it copies, or one that node's
+  template declares, which the mint judges.
   A duplicate copies the nodes this plan adds; a node already on the canvas
   is duplicated on the canvas.
 
@@ -28,7 +30,7 @@ from collections import deque
 from itertools import count
 from typing import Callable
 
-from utk_curio.backend.app.agents.domain.widget_grammar import value_problem, with_values
+from utk_curio.backend.app.agents.domain.widget_grammar import sets_by_name, value_problem, values_over
 from utk_curio.backend.app.agents.domain import agent_text
 
 SCENARIOS_MAX = 16
@@ -114,7 +116,10 @@ def _copy_refs(entry: dict, where: str, source: dict, refs: set,
 
 
 def _value_errors(entry: dict, where: str, copies: dict, nodes_by_ref: dict) -> list[str]:
-    """Why ``values`` cannot be set on the copies, or nothing."""
+    """Why ``values`` cannot be set on the copies, or nothing. A value is
+    judged here against a widget the plan declares whole on the node it
+    copies; one of any other name may be the node's template's, which the
+    mint knows (``proposals/plan_scenarios.mint_errors``)."""
     values = entry.get("values")
     if values is None:
         return []
@@ -135,15 +140,10 @@ def _value_errors(entry: dict, where: str, copies: dict, nodes_by_ref: dict) -> 
             continue
         widgets = {w["name"]: w for w in nodes_by_ref[original_of[ref]].get("widgets") or []}
         for name, value in chosen.items():
-            if name not in widgets:
-                errors.append(agent_text.message(
-                    "scenario.values-unknown-widget", here=here, name=name, widget=repr(name),
-                    widgets_it_has=" " + agent_text.message(
-                        "scenario.values-widgets-it-has", widgets=', '.join(widgets),
-                    ) if widgets else "",
-                ))
+            widget = widgets.get(name)
+            if widget is None or "type" not in widget or sets_by_name(widget):
                 continue
-            problem = value_problem(widgets[name], value, f"{here}.{name}")
+            problem = value_problem(widget, value, f"{here}.{name}")
             if problem:
                 errors.append(problem)
     return errors
@@ -174,8 +174,9 @@ def _expand(plan: dict, copies: dict, values: dict) -> None:
     )
     for ref in order:
         twin = {**nodes_by_ref[ref], "ref": copies[ref], "copyOf": ref}
-        if twin.get("widgets"):
-            twin["widgets"] = with_values(twin["widgets"], values.get(copies[ref]) or {})
+        chosen = values.get(copies[ref]) or {}
+        if twin.get("widgets") or chosen:
+            twin["widgets"] = values_over(twin.get("widgets") or [], chosen)
         plan["nodes"].append(twin)
     present = {(e["from"], e["to"], e.get("kind", "data")) for e in plan["edges"]}
     for spec_edge in duplicate["edges"]:

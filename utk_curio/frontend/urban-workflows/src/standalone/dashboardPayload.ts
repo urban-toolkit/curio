@@ -87,6 +87,12 @@ export interface EmbeddedDashboard {
     /** `"<packageId>@<major>"` to the script text that registers its behaviour. */
     behaviorScripts?: Record<string, string>;
   };
+  /**
+   * The id the page names the dataflow by, as the project load answers it: a
+   * hosted guest's own copy of it, which the page was built for, or null
+   * (`utils/requestHeaders.ts`).
+   */
+  copy_id?: string | null;
 }
 
 const PAYLOAD_ELEMENT_ID = "curio-dashboard-payload";

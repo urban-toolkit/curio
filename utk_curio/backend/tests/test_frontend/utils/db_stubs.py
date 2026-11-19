@@ -3,11 +3,34 @@ the JSON request helpers they use.
 """
 
 import json
+import re
 import time
+from urllib.parse import urlsplit
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError, URLError
 
+from utk_curio.common.backend_processes import ROUTE_HEADER
+
 from .auth import DEFAULT_TEST_PASSWORD
+
+
+#: A dataflow's id after ``/projects/`` or ``/dataflows/`` in a path, which
+#: nginx routes a request by when it names its dataflow no other way
+#: (``cli/backend_group.py``).
+_DATAFLOW_IN_PATH = re.compile(
+    r"/(?:projects|dataflows)/([0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})(?:/|$)"
+)
+
+
+def _route_headers(url: str, dataflow: str | None = None) -> dict:
+    """The header that names the dataflow a call to *url* is about, as the
+    canvas names its own: *dataflow*, else the one the URL's path names, and
+    none for a call about no dataflow. With several backend processes
+    (``--backend-processes``) nginx sends the call to the process that owns
+    the dataflow, where its run, its turns and its scripted replies are."""
+    match = _DATAFLOW_IN_PATH.search(urlsplit(url).path)
+    named = dataflow or (match.group(1) if match else None)
+    return {ROUTE_HEADER: named} if named else {}
 
 
 # ---------------------------------------------------------------------------
@@ -29,18 +52,22 @@ def _request_json(
     method: str = "GET",
     payload: dict | None = None,
     timeout: float = 10.0,
+    dataflow: str | None = None,
 ) -> dict:
     """Unauthenticated JSON request, returning the parsed body.
 
     Uses ``urllib`` (stdlib only) to match the rest of this module instead
     of introducing a ``requests`` dependency. For routes behind ``require_auth``
-    use :func:`api_json`, which carries the bearer token.
+    use :func:`api_json`, which carries the bearer token. *dataflow* names
+    the dataflow the call is about (:func:`_route_headers`).
     """
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    headers = {"Content-Type": "application/json"} if data is not None else {}
+    headers.update(_route_headers(url, dataflow))
     req = Request(
         url,
         data=data,
-        headers={"Content-Type": "application/json"} if data is not None else {},
+        headers=headers,
         method=method,
     )
     with urlopen(req, timeout=timeout) as resp:  # noqa: S310 (trusted local URL)
@@ -50,19 +77,22 @@ def _request_json(
 
 # 60 s, not 10: under ``--parallel`` four backends share the CPU with four
 # Chromiums, and a stub-login that seeds the examples for a fresh user was
-# measured taking 15-48 s to answer. The server does finish; a client that
-# gives up at 10 s turns that into a class-wide setup error.
+# measured taking 15-48 s to answer. A CI host whose disk stalls holds a synced
+# write as long: an LLM configuration's took 27 s on arcade (run 42558359012).
+# The server does finish; a client that gives up at 10 s turns that into a
+# class-wide setup error. ``api_json`` waits as long.
 HTTP_TIMEOUT_S = 60.0
 
 
-def _post_json(url: str, payload: dict, timeout: float = HTTP_TIMEOUT_S) -> dict:
+def _post_json(url: str, payload: dict, timeout: float = HTTP_TIMEOUT_S, *,
+               dataflow: str | None = None) -> dict:
     """POST *payload* as JSON to *url* and return the parsed JSON body."""
-    return _request_json(url, method="POST", payload=payload, timeout=timeout)
+    return _request_json(url, method="POST", payload=payload, timeout=timeout, dataflow=dataflow)
 
 
-def _get_json(url: str, timeout: float = 10.0) -> dict:
+def _get_json(url: str, timeout: float = 10.0, *, dataflow: str | None = None) -> dict:
     """GET *url* and return the parsed JSON body."""
-    return _request_json(url, method="GET", timeout=timeout)
+    return _request_json(url, method="GET", timeout=timeout, dataflow=dataflow)
 
 
 def api_json(
@@ -71,24 +101,30 @@ def api_json(
     *,
     method: str = "GET",
     payload: dict | None = None,
-    timeout: float = 10.0,
+    timeout: float = HTTP_TIMEOUT_S,
     raw: bool = False,
     extra_headers: dict | None = None,
+    dataflow: str | None = None,
 ):
     """Authenticated JSON request against the backend, stdlib only.
 
     The escape hatch for asserting backend state from a browser test: it makes a
     seeding or persistence problem fail in about a second with the offending
     payload, instead of as a 15-second locator timeout that says nothing about
-    which side broke.
+    which side broke. An answer that is only late is waited for, up to
+    ``HTTP_TIMEOUT_S``.
 
     ``extra_headers`` carries anything the target needs beyond the bearer token.
     The sandbox is the case that needs it: its code-execution routes require a
     shared secret rather than a user token (see the ``sandbox_auth_headers``
     fixture).
+
+    The call names its dataflow (:func:`_route_headers`): *dataflow*, which a
+    call whose path holds no dataflow's id gives (``/api/runs/<id>``,
+    ``/processPythonCode``), else the one its path names.
     """
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = {"Authorization": f"Bearer {token}", **_route_headers(url, dataflow)}
     if data is not None:
         headers["Content-Type"] = "application/json"
     if extra_headers:
@@ -99,6 +135,17 @@ def api_json(
         # ``raw`` for binary endpoints (e.g. a .curio.zip archive), where the
         # point is the bytes rather than a JSON document.
         return body if raw else json.loads(body.decode("utf-8") or "{}")
+
+
+def named_dataflow(backend_url: str, token: str, dataflow: str) -> str:
+    """The dataflow the calls about *dataflow* of the one signed in as *token*
+    name, as its canvas names it: a hosted guest's own copy of a dataflow its
+    account owns, which the canvas's load of *dataflow* answers with
+    (``copy_id``), else *dataflow* itself. With several backend processes a
+    copy's turns, its scripted replies and its writes are the process's its
+    own id names, so a call about them passes this as :func:`api_json`'s and
+    the scripted model helpers' *dataflow*."""
+    return api_json(f"{backend_url}/api/projects/{dataflow}", token).get("copy_id") or dataflow
 
 
 #: A made-up agent that attaches to nodes only. Every catalog card accepts the

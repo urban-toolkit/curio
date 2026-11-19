@@ -63,19 +63,64 @@ PLAN = {
 }
 
 
+def idot_example_files() -> dict[str, str]:
+    """Each file of the SAGE-IDOT collections the Data Catalog commits, by
+    relpath, with the stand-in the corpus serves for it, whose writer it puts
+    in ``SYNTHETIC_FILES``."""
+    import functools
+    import importlib.util
+
+    import pandas as pd
+
+    spec = importlib.util.spec_from_file_location("build_example_idot", REPO / "scripts" / "build_example_idot.py")
+    builder = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(builder)
+    base = load_source_manifest(REPO / "discovery" / IDOT_SOURCE).provider.base_url
+    camera, first, last = IDOT_FRAMES
+    files: dict[str, str] = {}
+    for manifest_path in sorted((REPO / "datasets").glob("*/manifest.json")):
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if (manifest.get("collection") or {}).get("sourceId") != IDOT_SOURCE:
+            continue
+        index = pd.read_parquet(manifest_path.parent / manifest["dataFile"])
+        for row in index.itertuples():
+            url = f"{base}/{row.relpath}"
+            if row.ext == "jsonl":
+                day = builder.CAMERAS[row.crossing][0]
+                stand_in = f"{IDOT_EXAMPLE}/{row.name}"
+                SYNTHETIC_FILES[stand_in] = functools.partial(write_thinned_day, url=url, size=row.bytes, day=day)
+            elif row.crossing == camera and first <= row.ns < last:
+                stand_in = f"{IDOT_EXAMPLE}/{row.name}"
+                SYNTHETIC_FILES[stand_in] = functools.partial(write_small_snapshot, url=url)
+            else:
+                stand_in = IDOT_SNAPSHOT
+                SYNTHETIC_FILES[stand_in] = write_snapshot_stand_in
+            files[row.relpath] = stand_in
+    return files
+
+
 #: Storage sources: every listing page is recorded as it arrives. The files
 #: themselves are not: a probe's Range read of a real object is indexed to a
 #: small synthetic file of the same format under ``download/storage/``, so the
 #: corpus carries a bucket's shape and none of its imagery. A table resource
 #: named under ``tables`` has each of its files indexed to a synthetic
 #: stand-in in the real files' format, so its add runs on the corpus too.
+#: A file named under ``files`` is indexed, whole, to a synthetic stand-in
+#: this script writes (``SYNTHETIC_FILES``), so Cache files fetches it on the
+#: corpus: the listing keeps the real file's size, and a cache that finds
+#: another size reads nothing from the file it copied, so a committed index
+#: keeps the details read from the real one. ``files`` may be a function that
+#: gives them.
 #: A bucket too large to keep whole names ``folder_ends``: each listing is
-#: kept as one page of the first and last files of each folder.
+#: kept as one page of the first and last files of each folder, and of the
+#: files named under ``files``.
 STORAGE_PLAN = {
     "source.aws.sentinel-2-chicago@1": {"slug": "s3"},
     "source.huggingface.documentation-images@1": {"slug": "huggingface"},
     "source.sideseeing.street-captures@1": {
         "slug": "sideseeing",
+        # gps-files lists the gps table's files, so Cache files reads its
+        # stand-in too: rows 4.5 to 6.7 s after the walk below began.
         "tables": {
             "gps": "download/storage/sideseeing/gps.csv",
             "sensors-one": "download/storage/sideseeing/sensors.one.csv",
@@ -83,15 +128,22 @@ STORAGE_PLAN = {
             "sensors-three-uncalibrated": "download/storage/sideseeing/sensors.three.uncalibrated.csv",
             "cell": "download/storage/sideseeing/cell.csv",
         },
+        # The walk the Data Catalog commits, datasets/data.sideseeing.west-loop-walk@1.
+        "files": {
+            "chicago/west-loop/2026-10-26-16-03-17-016/video.mp4": "download/storage/sideseeing/walk.mp4",
+        },
     },
     "source.sage.idot-crossings@1": {
         "slug": "idot",
-        # 168,023 objects on 169 listing pages.
+        # 168,023 objects, read a folder at a time: each crossing's months,
+        # then each month's snapshots on up to 9 pages.
         "folder_ends": 1,
         "tables": {
             "detections": "download/storage/idot/detections.jsonl",
             "frames": "download/storage/idot/detections.jsonl",
         },
+        # The files of the SAGE-IDOT example's committed collections.
+        "files": idot_example_files,
     },
 }
 
@@ -111,6 +163,168 @@ SYNTHETIC_HEADS = {
 
 #: What the index probes with, restated here only to spell the fixture key.
 PROBE_RANGE = "bytes=0-65535"
+
+
+def write_walk_clip(path: Path) -> None:
+    """An 8 s clip at 640x360 and 30 fps, H.264 as the storage examples'
+    clips are (``build_example_storage.py``), which browsers play: a sidewalk
+    passing under a camera that looks down at it, its joints and a pole's
+    base going by, as a SideSeeing walk's video shows it."""
+    import av
+    import numpy as np
+
+    width, height, rate, seconds = 640, 360, 30, 8
+    rows, cols = np.mgrid[0:height, 0:width]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    container = av.open(str(path), mode="w")
+    stream = container.add_stream("libx264", rate=rate)
+    stream.width, stream.height, stream.pix_fmt = width, height, "yuv420p"
+    stream.options = {"crf": "30", "preset": "veryfast"}
+    for index in range(rate * seconds):
+        offset = index * 4
+        frame = np.empty((height, width, 3), dtype=np.uint8)
+        # The concrete, lighter where the slabs meet every 120 px.
+        shade = 128 + 10 * np.sin((cols + rows * 0.3) / 23.0) + 6 * np.sin((rows + offset) / 7.0)
+        joints = ((rows + offset) % 120) < 4
+        frame[...] = np.clip(shade, 0, 255).astype(np.uint8)[..., None]
+        frame[joints] = (96, 96, 96)
+        # The curb along the right, and the street beyond it.
+        frame[:, 540:552] = (176, 176, 168)
+        frame[:, 552:] = (64, 66, 70)
+        # A pole's base, passing from the top of the frame to the bottom.
+        y = (index * 3) % (height + 80) - 40
+        disc = (rows - y) ** 2 + (cols - 470) ** 2 < 26**2
+        frame[disc] = (48, 52, 58)
+        video = av.VideoFrame.from_ndarray(frame, format="rgb24")
+        for packet in stream.encode(video):
+            container.mux(packet)
+    for packet in stream.encode():
+        container.mux(packet)
+    container.close()
+
+
+#: Synthetic stand-ins this script writes, by their path in the corpus, for
+#: the files a storage plan names under ``files``.
+SYNTHETIC_FILES = {
+    "download/storage/sideseeing/walk.mp4": write_walk_clip,
+}
+
+
+def whole_file_entry(stand_in: str) -> dict:
+    """The corpus's answer to a whole-file read of a file named under a
+    storage plan's ``files``: its stand-in, with no length of its own, so a
+    download is bounded by the size the listing gives."""
+    return {"file": stand_in, "status": 200, "headers": {"Content-Type": "application/octet-stream"}}
+
+
+#: The SAGE-IDOT example's files (``scripts/build_example_idot.py``) as the
+#: corpus holds them, test data that MANIFEST.in keeps out of both archives:
+#: each team day of its month's records, thinned, and the snapshots of the
+#: half hour its Frames tile shows first, made smaller. Every other snapshot
+#: of the example's days is ``IDOT_SNAPSHOT``, a gray picture of their shape.
+IDOT_EXAMPLE = "download/storage/idot/example"
+IDOT_SNAPSHOT = f"{IDOT_EXAMPLE}/snapshot.jpg"
+#: Of a team day's image lines, each snapshot's and every ``THIN_EVERY``-th
+#: are kept, with the day's other lines (its uploads), and ``AROUND`` lines of
+#: each day beside it, so a bisection for the day does real work.
+THIN_EVERY = 300
+AROUND = 3
+#: The half hour the example's Frames tile shows first: the busiest of W042's
+#: day with the Settings tile's defaults, 4:00 to 4:30 PM in Chicago, as
+#: nanoseconds in UTC (``test_idot_example.py`` pins it).
+IDOT_FRAMES = ("W042", 1_754_773_200_000_000_000, 1_754_775_000_000_000_000)
+#: How wide the corpus's snapshots are, in pixels.
+IDOT_SNAPSHOT_WIDTH = 640
+IDOT_SOURCE = "source.sage.idot-crossings@1"
+
+
+def thin_day(block: bytes, day: str) -> bytes:
+    """The lines of *block*, whole lines of a month's records around its team
+    *day*, that the corpus keeps of it (``THIN_EVERY``, ``AROUND``)."""
+    lines = block.splitlines(keepends=True)
+    records = [json.loads(line) for line in lines]
+    inside = [i for i, record in enumerate(records) if record["timestamp"][:10] == day]
+    first, last = inside[0], inside[-1]
+    snapshots = {
+        int(records[i]["value"].rsplit("/", 1)[-1].split("-")[0]) for i in inside if records[i]["name"] == "upload"
+    }
+    kept, images = lines[max(0, first - AROUND):first], 0
+    for i in range(first, last + 1):
+        if records[i]["name"] == "object.detections.all":
+            ns = json.loads(records[i]["value"])["image_timestamp_ns"]
+            if ns in snapshots or images % THIN_EVERY == 0:
+                kept.append(lines[i])
+            images += 1
+        else:
+            kept.append(lines[i])
+    return b"".join(kept + lines[last + 1:last + 1 + AROUND])
+
+
+def _bytes_at(url: str, start: int, end: int) -> bytes:
+    """Bytes *start* to *end*, not included, of the file at *url*."""
+    import urllib.request
+
+    request = urllib.request.Request(url, headers={"Range": f"bytes={start}-{end - 1}"})
+    with urllib.request.urlopen(request, timeout=600) as response:
+        return response.read()
+
+
+def _first_line_from(url: str, size: int, day: str) -> int:
+    """Where the first line of the file at *url* dated *day* or later starts,
+    by a bisection on its lines' dates, which never go down."""
+
+    def line_after(offset: int) -> tuple[int, bytes]:
+        window = _bytes_at(url, offset, min(size, offset + 65536))
+        start = 0 if offset == 0 else window.index(b"\n") + 1
+        end = window.find(b"\n", start)
+        return offset + start, window[start:end + 1] if end >= 0 else window[start:]
+
+    low, high = 0, size
+    while low < high:
+        middle = (low + high) // 2
+        _start, line = line_after(middle)
+        if line.strip() and json.loads(line)["timestamp"][:10] < day:
+            low = middle + 1
+        else:
+            high = middle
+    return line_after(low)[0] if low < size else size
+
+
+def write_thinned_day(path: Path, url: str, size: int, day: str) -> None:
+    """The corpus's copy of the month file at *url*: its team *day*, thinned."""
+    from datetime import date, timedelta
+
+    start = _first_line_from(url, size, day)
+    end = _first_line_from(url, size, (date.fromisoformat(day) + timedelta(days=1)).isoformat())
+    lo, hi = max(0, start - 65536), min(size, end + 65536)
+    block = _bytes_at(url, lo, hi)
+    # Whole lines only: what comes before the first newline and after the last.
+    block = block[block.index(b"\n") + 1 if lo else 0:block.rindex(b"\n") + 1]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(thin_day(block, day))
+
+
+def write_small_snapshot(path: Path, url: str) -> None:
+    """The snapshot at *url*, ``IDOT_SNAPSHOT_WIDTH`` pixels wide."""
+    import io
+    import urllib.request
+
+    from PIL import Image
+
+    with urllib.request.urlopen(url, timeout=120) as response:
+        image = Image.open(io.BytesIO(response.read())).convert("RGB")
+    height = round(IDOT_SNAPSHOT_WIDTH * image.height / image.width)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    image.resize((IDOT_SNAPSHOT_WIDTH, height), Image.Resampling.LANCZOS).save(path, quality=80)
+
+
+def write_snapshot_stand_in(path: Path) -> None:
+    """A gray picture in the snapshots' shape, 4 by 3."""
+    from PIL import Image
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", (160, 120), (128, 128, 128)).save(path, quality=80)
+
 
 #: Services asked over HTTP: each request is recorded as the service sends it,
 #: with the answers a person gives, normalized as the app normalizes them.
@@ -197,14 +411,17 @@ class CondensedListingTransport(RecordingTransport):
     The real pages are read once, so the scan walks the whole bucket. Once a
     listing's last page is in, its condensed page is recorded under its first
     page's URL and says it is the last, and every later ask of that listing is
-    answered with it.
+    answered with it. A listing of folders, with a delimiter, keeps each one,
+    and a file named in *keep* stays between its folder's ends.
     """
 
-    def __init__(self, slug: str, index: dict, ends: int) -> None:
+    def __init__(self, slug: str, index: dict, ends: int, keep=frozenset()) -> None:
         super().__init__(slug, index)
         self.ends = ends
-        #: Each listing's files so far, by its first page's URL.
+        self.keep = frozenset(keep)
+        #: Each listing's files and folders so far, by its first page's URL.
         self.listed: dict[str, list] = {}
+        self.folders: dict[str, list] = {}
         self.condensed: dict[str, str] = {}
 
     def json_get(self, url, *, credential=None, headers=None):
@@ -216,6 +433,7 @@ class CondensedListingTransport(RecordingTransport):
         body = self.inner.json_get(url, credential=credential, headers=headers)
         page = ET.fromstring(body)
         self.listed.setdefault(first, []).extend(page.iter(f"{{{S3_NS}}}Contents"))
+        self.folders.setdefault(first, []).extend(page.iter(f"{{{S3_NS}}}CommonPrefixes"))
         if (page.findtext(f"{{{S3_NS}}}IsTruncated") or "").lower() != "true":
             self._record(first)
         return body
@@ -231,7 +449,12 @@ class CondensedListingTransport(RecordingTransport):
         page = ET.Element(f"{{{S3_NS}}}ListBucketResult")
         ET.SubElement(page, f"{{{S3_NS}}}IsTruncated").text = "false"
         for items in by_folder.values():
-            page.extend(items if len(items) <= 2 * self.ends else items[:self.ends] + items[-self.ends:])
+            if len(items) <= 2 * self.ends:
+                page.extend(items)
+                continue
+            kept = [item for item in items[self.ends:-self.ends] if item.findtext(f"{{{S3_NS}}}Key") in self.keep]
+            page.extend(items[:self.ends] + kept + items[-self.ends:])
+        page.extend(self.folders.pop(first))
         body = '<?xml version="1.0" encoding="UTF-8"?>' + ET.tostring(page, encoding="unicode")
         self.condensed[first] = body
         name = self._name(first, "xml")
@@ -246,14 +469,23 @@ def record_storage(slug_filter: str | None, index: dict) -> None:
     listing's resources would probe."""
     from utk_curio.backend.app.discovery.application import scan
 
+    # One folder after another, so each listing is numbered in the order asked.
+    scan.LISTING_WORKERS = 1
     for dir_name, plan in STORAGE_PLAN.items():
         if slug_filter and plan["slug"] != slug_filter:
             continue
         manifest = load_source_manifest(REPO / "discovery" / dir_name)
         print(f"\n==  {manifest.name}  ({plan['slug']})")
+        # Its listings are recorded anew, so one a scan no longer asks goes.
+        listings = f"{manifest.provider.base_url}/?list-type=2&"
+        for url in [url for url in index if url.startswith(listings)]:
+            del index[url]
+        whole = plan.get("files", {})
+        if callable(whole):
+            whole = whole()
         ends = plan.get("folder_ends")
         if ends:
-            transport = CondensedListingTransport(plan["slug"], index, ends)
+            transport = CondensedListingTransport(plan["slug"], index, ends, keep=set(whole))
         else:
             transport = RecordingTransport(plan["slug"], index)
         provider = build_storage(manifest, transport)
@@ -268,10 +500,18 @@ def record_storage(slug_filter: str | None, index: dict) -> None:
             result = scan.scan(manifest, provider)
             print(f"    -> kept {result.matched} files in {len(result.groups)} rows")
         tables = plan.get("tables", {})
+        for name in sorted(set(whole.values())):
+            SYNTHETIC_FILES[name](FIXTURES / name)
         for group in result.groups:
             stand_in = tables.get(group.spec.id)
             for found in group.files:
-                if stand_in is not None:
+                if found.relpath in whole:
+                    # Cache files reads the whole file, with no Range; an
+                    # image's add still probes its first bytes, below.
+                    index[provider.file_url(found.relpath)] = whole_file_entry(whole[found.relpath])
+                    if stand_in is not None:
+                        continue
+                elif stand_in is not None:
                     # An add reads the whole file, with no Range.
                     index[provider.file_url(found.relpath)] = {
                         "file": EMPTY_FILE if found.size == 0 else stand_in,

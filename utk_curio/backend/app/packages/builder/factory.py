@@ -278,7 +278,8 @@ class ModelSource:
     #: The model's manifest ``model`` block, copied as it is.
     block: dict
     #: The libraries the model's package declares (``dependencies.python``):
-    #: the model's runtime, which the node's code does not import.
+    #: the model's runtime, at its package's range, which the node's code may
+    #: not import itself (a module of its package does).
     python: dict = field(default_factory=dict)
     #: Its files to copy, by package-relative path: the weights under
     #: ``models/``, and the weights' license file.

@@ -562,6 +562,7 @@ class CatalogListing:
         *,
         dataflow_id: str | None = None,
         formats: dict[str, dict[str, str]] | None = None,
+        unavailable: dict[str, str] | None = None,
     ) -> dict[str, str]:
         """Resolve dataset ids to absolute data-file paths for code execution.
 
@@ -574,7 +575,11 @@ class CatalogListing:
         containment-guarded ``_resolve_item_path`` used by preview/download, so
         the mapping can only ever contain paths the authenticated user may
         read. Ids that don't resolve are omitted - the sandbox raises a clear
-        per-id error for those at call time.
+        per-id error for those at call time. When *unavailable* is given, it
+        is filled with why each id whose file Curio downloads on first use
+        could not be had: the download's own message (``left_out_files``),
+        which a run reports where the sandbox would only say the dataset is
+        not available.
 
         Account-store ids resolve straight from the dataset index, so the common
         case (a loader node reading an imported or computed dataset) costs a
@@ -598,12 +603,19 @@ class CatalogListing:
         if not dataset_ids:
             return {}
         from utk_curio.backend.app.datasets.domain.catalog_item import execution_format
+        from utk_curio.backend.app.datasets.domain.errors import DatasetFileUnavailable
 
         resolved: dict[str, str] = {}
 
         def resolve(dataset_id: str, item: dict[str, Any]) -> None:
             try:
                 path = self._paths._resolve_item_path(item)
+            except DatasetFileUnavailable as exc:
+                # A file Curio downloads on first use that could not be had.
+                if unavailable is not None:
+                    unavailable.setdefault(dataset_id, str(exc))
+                logger.warning("Dataset %s could not be had: %s", dataset_id, exc)
+                return
             except Exception:  # noqa: BLE001 - one bad item must not drop the rest
                 logger.warning(
                     "Could not resolve execution path for dataset %s", dataset_id,
@@ -766,9 +778,30 @@ class CatalogListing:
         # via ``liveOutputs``); the preview service then reports the dataset as
         # unavailable instead of reading the raw path off disk.
         item["path"] = self._paths._resolve_item_path(item)
-        return self.preview_service.preview(
-            item, row_limit=row_limit, offset=offset, part_index=part_index
+        # A collection's files are found by the id its rows are named by: the
+        # item's, whose index this is.
+        collection = (
+            self._collection_files(item["id"], dataflow_id) if item.get("format") == "collection" else None
         )
+        return self.preview_service.preview(
+            item, row_limit=row_limit, offset=offset, part_index=part_index, collection=collection,
+        )
+
+    def _collection_files(self, dataset_id: str, dataflow_id: str | None) -> dict[str, Any]:
+        """Where collection *dataset_id*'s files are for node code of this
+        account in *dataflow_id*, found as a run finds them
+        (``exec_collections.resolve_collections``), so its preview shows the
+        ``path`` node code gets; ``{}`` when none is found."""
+        from utk_curio.backend.app.discovery.application.exec_collections import resolve_collections
+
+        try:
+            found = resolve_collections(
+                [dataset_id], self._paths._user_key(), user=self.user, dataflow_id=dataflow_id,
+            )
+        except Exception:  # noqa: BLE001 - the index previews whatever its files
+            logger.warning("Could not find where collection %s's files are", dataset_id, exc_info=True)
+            return {}
+        return found.get(dataset_id) or {}
 
     def _layer_group_members(
         self,

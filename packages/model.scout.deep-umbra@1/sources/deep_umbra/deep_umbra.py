@@ -7,8 +7,10 @@ makes of its output. Deep Umbra is a generator network that SCOUT restores with
 TensorFlow from its ``tf_model/ckpt-44`` checkpoint. Curio runs the same
 generator as an ONNX file, this package's weights ``models/deep_umbra.onnx``,
 which ``scripts/scout/export_deep_umbra.py`` exported, through onnxruntime. So
-every function here takes the loaded model (``curio_load_model``) where SCOUT's
-took the generator, and the model's ``run`` feeds the graph by input name.
+``predict_shadow`` takes an onnxruntime session of that file where SCOUT's took
+the generator (``node_outputs.shadow_tiles`` opens one on the ``path`` of the
+model ``curio_load_model`` loads, and feeds it every tile), and the session's
+``run`` feeds the graph by input name.
 
 Every function keeps SCOUT's name and arithmetic. The changes:
 
@@ -49,7 +51,7 @@ __all__ = ["INPUTS", "OUTPUT"]  # Curio: __all__ names the ONNX model's inputs a
 
 #: The ONNX model's inputs, in SCOUT's order, and its output; each is
 #: (1, 512, 512, 1) float32.
-INPUTS = ("height", "latitude", "date")  # Curio: the model's run feeds the graph by input name
+INPUTS = ("height", "latitude", "date")  # Curio: the session's run feeds the graph by input name
 OUTPUT = "shadow"
 
 #: A tile's side, in pixels.
@@ -118,7 +120,7 @@ def predict_shadow(generator, neighbourhood, date, zoom, i, j):  # Curio: predic
     input_lat = input_lat.reshape(1, 512, 512, 1)
     input_date = input_date.reshape(1, 512, 512, 1)
 
-    (prediction,) = generator.run(dict(zip(INPUTS, (input_height, input_lat, input_date))))  # Curio: the model's run feeds the graph by input name
+    (prediction,) = generator.run(None, dict(zip(INPUTS, (input_height, input_lat, input_date))))  # Curio: the session's run feeds the graph by input name
     prediction = prediction[:, 128:-128, 128:-128, :]  # Curio: no np.array or .numpy() conversion of a tensor
     prediction = prediction.reshape(256, 256)
 

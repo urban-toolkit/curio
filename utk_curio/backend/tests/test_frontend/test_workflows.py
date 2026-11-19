@@ -1,8 +1,12 @@
+import ast
 import contextlib
 import os
 import re
 import json
+import math
+import time
 from dataclasses import dataclass
+from urllib.parse import quote
 
 import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -74,7 +78,9 @@ from .utils import (
     wait_for_run_guard_released,
     watch_brush,
 )
+from .utils import _OUTPUT_ARTIFACT_JS, frame_node, node_locator
 from .runner_split import TORCH_RE
+from .test_player_linked_by_time_e2e import _KEEP_CANVAS_JS, _SAME_CANVAS_JS, _SEEK_JS
 from .workflow_spec import NodeSpec, CODE_EDITOR_TYPES, parse_workflow
 
 """
@@ -411,6 +417,178 @@ _UNHOLD_MAP_DRAWING_JS = """() => {
 }"""
 
 
+#: Example 31, SAM 3 along the SideSeeing walk, and the nodes its own test reads.
+EXAMPLE_31 = "31-sideseeing-objects-along-a-walk.json"
+WALK_TRACKING = "walk-tracking"
+WALK_OVERLAY = "walk-overlay"
+WALK_OBJECTS = "walk-objects"
+WALK_SWIMLANE = "walk-swimlane"
+WALK_POINTS = "walk-points"
+WALK_MAP = "walk-map"
+WALK_VIDEO = f'.react-flow__node[data-id="{WALK_OVERLAY}"] video'
+#: Where the test seeks the overlay to, then back to. CI's stand-in for the
+#: walk is 8 s long, and its GPS track's three fixes are 4.5 to 6.7 s in.
+WALK_SEEK_S, WALK_SEEK_BACK_S = 7.0, 5.0
+
+#: Example 34, an Autark heatmap of park access, and the nodes its own test reads.
+EXAMPLE_34 = "34-autark-park-access-heatmap.json"
+PARK_ACCESS_MAP = "park-access-map"
+PARK_ACCESS_SHARES = "park-access-shares"
+#: The classes of the Python step's table: how many parks are within reach.
+PARK_ACCESS_CLASSES = ["none", "1", "2 to 4", "5 to 9", "10 or more"]
+
+#: Examples 36 and 37, Niterói's green share and its park area within reach
+#: against its summer heat, the nodes and columns their own tests read, and
+#: the file their temperatures come from and the parks 36 sums.
+EXAMPLE_36 = "36-autark-green-share-summer-heat.json"
+GREEN_HEAT_MAP = "green-heat-map"
+GREEN_HEAT_CELLS = "green-heat-cells"
+GREEN_HEAT_SCATTER = "green-heat-scatter"
+GREEN_SHARE = "green share"
+EXAMPLE_37 = "37-autark-park-area-summer-heat.json"
+PARK_AREA_MAP = "park-area-map"
+PARK_AREA_CELLS = "park-area-cells"
+PARK_AREA_SCATTER = "park-area-scatter"
+PARK_AREA_WITHIN_500_M = "park area within about 500 m (km²)"
+SUMMER_2020_2024 = "summer temperature, 2020 to 2024 (°C)"
+NITEROI_SUMMERS = ("docs", "examples", "data", "niteroi_lst_verao_2001_2024.tif")
+NITEROI_PARKS = ("docs", "examples", "data", "niteroi_parks.geojson")
+
+#: Example 33, SAM 3 on the same walk's frames and the walk cut into blocks,
+#: and the nodes its own test reads.
+EXAMPLE_33 = "33-sideseeing-frames-segments-blocks.json"
+FRAME_SEGMENTS = "frame-segments"
+FRAMES_ON_WALK = "frames-on-walk"
+WALK_CUTS = "walk-cuts"
+WALK_BLOCKS = "walk-blocks"
+BLOCK_SHARES = "block-shares"
+BLOCK_CARDS = "block-cards"
+FRAMES_MAP = "frames-map"
+BLOCK_VIDEO = f'.react-flow__node[data-id="{BLOCK_CARDS}"] video'
+#: Where the test seeks the first block to, then back to, in the block's own
+#: time. On CI's stand-ins the walk's three fixes pass West Madison Street's
+#: corner 5.7 s in, so the walk is cut once there, and its one block runs to
+#: the 8 s clip's end, holding the frame sampled at 6 s.
+BLOCK_SEEK_S, BLOCK_SEEK_BACK_S = 1.0, 0.2
+
+
+def _empty_cell(value) -> bool:
+    """Whether a stored cell holds nothing: None, or a float NaN."""
+    return value is None or (isinstance(value, float) and math.isnan(value))
+
+
+def _same_cell(a, b) -> bool:
+    """Whether two stored cells hold the same value, an empty one (None or
+    NaN) the same as another empty one."""
+    return a == b or (_empty_cell(a) and _empty_cell(b))
+
+
+def _play_name(part: dict) -> str:
+    """The name Simple View's card of *part*, a part of a longer file (a row
+    with ``t_s``), gives its Play: its name, and where it starts in that
+    file, to the millisecond with no trailing zeros, as ImageCardGrid's
+    ``playLabel`` says it ("Play video.mp4 from 5.7 s")."""
+    start = f"{round(float(part['t_s']), 3):.3f}".rstrip("0").rstrip(".")
+    return f"Play {part['name']} from {start} s"
+
+
+# Keeps each Vega view by the element it draws in, from the next view built
+# on (as test_scenario_inputs_e2e.py's init script does at a page's start).
+_KEEP_VEGA_VIEWS_JS = """() => {
+    const module = window.__curio_vega;
+    if (!module || !module.View) return false;
+    if (!module.View.prototype.__curioKeepsViews) {
+        const initialize = module.View.prototype.initialize;
+        module.View.prototype.initialize = function (element, ...rest) {
+            const id = typeof element === "string" ? element.replace(/^#/, "") : element && element.id;
+            if (id) (window.__curioVegaViews = window.__curioVegaViews || {})[id] = this;
+            return initialize.call(this, element, ...rest);
+        };
+        module.View.prototype.__curioKeepsViews = true;
+    }
+    return true;
+}"""
+
+# The object ids of the bars a Vega-Lite chart lights: its rows flagged
+# `interacted`, which its color condition reads.
+_VEGA_LIT_IDS_JS = """(id) => {
+    const view = (window.__curioVegaViews || {})["vega" + id];
+    if (!view) return null;
+    return view.data("input_0").filter((t) => t.interacted === "1").map((t) => t.object_id);
+}"""
+
+# The t_s of the features an Autark map lights on the layer that picks, as
+# autk-map holds the layer (adapters/node/autkMapState.ts).
+_MAP_LIT_T_S_JS = """async (id) => {
+    const state = window.__curio_mapState ? await window.__curio_mapState(id) : null;
+    if (!state) return null;
+    const picks = Object.values(state).filter((table) => table.pick);
+    if (picks.length !== 1) return { picks: picks.length };
+    return { lit: picks[0].lit.map((p) => p.t_s), drawn: picks[0].drawn };
+}"""
+
+# Where the overlay's player stands, and what it plays.
+_PLAYER_JS = """(selector) => {
+    const video = document.querySelector(selector);
+    return video && { src: video.currentSrc, readyState: video.readyState, duration: video.duration };
+}"""
+
+
+def _stored_rows(page, node_id: str) -> list[dict]:
+    """The rows of *node_id*'s saved output as the sandbox stores them: a
+    table's, or a layer's features' properties."""
+    artifact = page.evaluate(_OUTPUT_ARTIFACT_JS, node_id)
+    assert artifact, f"{node_id} shows no saved output"
+    stored = load_artifact_as_dict(artifact)
+    data = stored["data"]
+    if stored["dataType"] == "geodataframe":
+        return [feature["properties"] for feature in data["features"]]
+    assert stored["dataType"] == "dataframe", f"{node_id} saved a {stored['dataType']}"
+    columns = {name: list(values.values()) if isinstance(values, dict) else list(values)
+               for name, values in data.items()}
+    count = len(next(iter(columns.values()), []))
+    return [{name: values[index] for name, values in columns.items()} for index in range(count)]
+
+
+def _niteroi_summers_of(cells: list[dict]):
+    """The 2020 to 2024 summer temperatures of examples 36's and 37's cells on
+    Niterói's land, as an array, once each is checked against the GeoTIFF the
+    data node loads: about 140 cells of its 330, each the mean of the file's
+    bands 20 to 24 at its row and column, to the hundredth."""
+    import numpy as np
+    import rasterio
+
+    from .utils import REPO_ROOT
+
+    assert 100 <= len(cells) <= 220, len(cells)
+    with rasterio.open(os.path.join(REPO_ROOT, *NITEROI_SUMMERS)) as tif:
+        summers = tif.read([20, 21, 22, 23, 24]).mean(axis=0)
+    for cell in cells:
+        expected = float(summers[int(cell["row"]), int(cell["column"])])
+        assert abs(cell[SUMMER_2020_2024] - expected) <= 0.006, (cell, expected)
+    return np.array([cell[SUMMER_2020_2024] for cell in cells], dtype=float)
+
+
+def _code_settings(spec, node_id: str) -> dict:
+    """The settings a node's code tab sets at its top, by name."""
+    code = next(node.content for node in spec.nodes if node.id == node_id)
+    body = ast.parse("def node(input_0):\n" + "\n".join("    " + line for line in code.splitlines())).body[0].body
+    return {
+        statement.targets[0].id: ast.literal_eval(statement.value)
+        for statement in body if isinstance(statement, ast.Assign) and isinstance(statement.targets[0], ast.Name)
+    }
+
+
+def _wait_until(page, read, expected, what: str, timeout_ms: int = 30000):
+    """Read *read()* until it gives *expected*, or fail naming *what*."""
+    deadline = time.monotonic() + timeout_ms / 1000
+    found = read()
+    while found != expected and time.monotonic() < deadline:
+        page.wait_for_timeout(200)
+        found = read()
+    assert found == expected, f"{what}: {found!r}, not {expected!r}"
+
+
 class TestWorkflowCanvas:
     """End-to-end checks for each workflow loaded into the ReactFlow canvas.
 
@@ -648,6 +826,16 @@ class TestWorkflowCanvas:
             if "map" in grammar or "plot" in grammar:
                 drawing.append(node)
         return drawing
+
+    def _closeup_nodes(self) -> list[NodeSpec]:
+        """The nodes compared on their own, up close, after the run: each
+        Autark map or plot (``_drawing_autark_nodes``), then each Vega-Lite
+        chart, in spec order. A chart that is supposed to have nothing on its
+        canvas (``EXPECTED_EMPTY``) is left out, as such a map is."""
+        return self._drawing_autark_nodes() + [
+            node for node in self.spec.nodes
+            if node.type == "VIS_VEGA" and node.id not in self._expected_empty()
+        ]
 
     def _node_execution_timeout_ms(self, node: NodeSpec) -> int:
         """See ``utils.node_execution_timeout_ms``."""
@@ -1012,7 +1200,9 @@ class TestWorkflowCanvas:
         artifacts.  After the browser run, artifact content is compared as
         stored (``snapshot_artifact``: tables over Arrow, lists and dicts by
         their stored JSON, never the JSON envelope, which took example 09 to
-        14 GiB); VIS_VEGA nodes are verified via SVG structural comparison.
+        14 GiB). A VIS_VEGA node must draw marks, or show what EXPECTED_EMPTY
+        says it shows, and each chart, map and plot that draws is compared on
+        its own, up close.
         """
         expected_map = execute_workflow_programmatically(
             self.spec, seed=42, username=getattr(self, "username", None)
@@ -1208,8 +1398,9 @@ class TestWorkflowCanvas:
                     # old SVG structural diff we verify the chart actually
                     # rendered: the canvas exists, has a non-zero backing size,
                     # and drew non-blank content (the upstream data turned into
-                    # marks). Visual regressions are still caught by the per-node
-                    # screenshot comparison in ``_save_screenshot``.
+                    # marks). Visual regressions are still caught by the
+                    # full-page frame (``_save_screenshot``) and by the chart's
+                    # own close-up after it.
                     # The probe and its poll live in ``utils`` so the per-dataset
                     # suite asserts Vega rendering the same way this one does.
                     if node.type == "VIS_VEGA":
@@ -1311,24 +1502,32 @@ class TestWorkflowCanvas:
             [node.id for node in self.spec.nodes if node.type == "VIS_VEGA"],
         )
 
-        # A map or plot that drew nothing leaves a blank node, which in the
-        # full-page frame above can stay under the budget. Each one is also
-        # compared on its own, up close, after checking it fills its node.
-        for node in self._drawing_autark_nodes():
-            assert_autark_drawing_fits(self.page, node.id)
+        # A map, plot or chart that drew nothing leaves a blank node, which in
+        # the full-page frame above can stay under the budget. Each one is also
+        # compared on its own, up close: an Autark map or plot after checking it
+        # fills its node, a Vega-Lite chart after checking it drew marks, as the
+        # interaction steps check it. Each frame waits until two captures of
+        # its node in a row agree, as an interaction's target does.
+        for node in self._closeup_nodes():
+            if node.type == "VIS_VEGA":
+                self._assert_drawn(node.id)
+            else:
+                assert_autark_drawing_fits(self.page, node.id)
             save_node_closeup(
                 self.page,
                 self.spec.filepath,
                 node.id,
                 test_name=f"{request.function.__name__}_closeup_{node.id}",
                 sweep_toasts=bool(self._expected_empty()),
+                still=True,
             )
 
         # Each map opens framed on the layers it draws (#773): not a speck in
         # the middle of the map, nor a crop past its edges. That is every
-        # Autark map, the one a Map Editor node edits on among them. Checked
-        # once every close-up is taken, and for every map before failing on
-        # one.
+        # Autark map, the one a Map Editor node edits on among them; a map its
+        # document's camera turns is read at the view it was framed at, then
+        # its turn. Checked once every close-up is taken, and for every map
+        # before failing on one.
         maps = [
             node.id for node in self._drawing_autark_nodes()
             if "map" in json.loads(self.spec.node_code(node, "json"))
@@ -1628,3 +1827,321 @@ class TestWorkflowCanvas:
         finally:
             if viewport:
                 page.set_viewport_size(viewport)
+
+    @pytest.mark.only_workflows(EXAMPLE_31)
+    def test_the_walks_player_lights_its_objects_and_fixes_up_to_where_it_stands(self, loaded_workflow, request):
+        """Example 31 as it ships, on CI's stand-ins (``utils/stand_ins.py``):
+        the tiny SAM 3 planted as fetched, and the walk's 8 s recorded clip and
+        three GPS fixes, cached for the account.
+
+        Track Objects gives the walk back as its overlay, one video that
+        starts at ``t_s`` 0 and shows a frame every ``EVERY_SECONDS``, which
+        Simple View plays through the media route. Objects gives one row per
+        object of its tracks, which keep the module's invariants, and ``t_s``,
+        its first sighting. The player's range lights exactly the bars and the
+        fixes whose ``t_s`` it holds, read from the nodes' own outputs: none
+        before the overlay plays, and after a seek to 7 s and back to 5 s,
+        fewer fixes than at 7 s. The tiny SAM 3 takes its objects in its first
+        frame, so every bar lights at any seek past 0, and only the fixes tell
+        a seek back. The map is never drawn again for the range.
+
+        Frames, each after the checks of what it shows: the map and the
+        swimlane before the overlay plays and at 5 s, and the overlay's card
+        at 5 s with its video hidden, whose picture the tiny model's random
+        weights draw otherwise on each GPU.
+        """
+        page = self.page
+        self._execute_all_playable_nodes()
+        settings = _code_settings(self.spec, WALK_TRACKING)
+        labels, every = settings["LABELS"], settings["EVERY_SECONDS"]
+
+        # The overlay: the walk as one video that starts where the walk does,
+        # a frame every EVERY_SECONDS.
+        (overlay,) = _stored_rows(page, WALK_TRACKING)
+        assert (overlay["kind"], overlay["t_s"]) == ("video", 0.0), overlay
+        frames = round(overlay["duration_s"] / every)
+        assert frames >= 2 and overlay["fps"] == round(1 / every, 3), overlay
+        # One row per object of its tracks, as Objects reads them.
+        objects = _stored_rows(page, WALK_OBJECTS)
+        counts = {label: int(overlay[label.replace(" ", "_") + "_objects"]) for label in labels}
+        # In the job's results, to compare what the tiny SAM 3 finds on each GPU.
+        request.node.user_properties.append(("walk_objects", json.dumps(counts, sort_keys=True)))
+        assert objects, "Track Objects followed no object, so no bar could light"
+        assert counts == {label: sum(row["label"] == label for row in objects) for label in labels}, counts
+        assert sum(counts.values()) == len(objects) == len({row["object_id"] for row in objects}), objects
+        for row in objects:
+            assert row["t_s"] == row["start_s"] <= row["end_s"] < overlay["duration_s"], row
+            assert all(abs(t / every - round(t / every)) < 1e-6 for t in (row["start_s"], row["end_s"])), row
+            assert 1 <= row["frames"] <= frames, row
+        fixes = sorted(round(point["t_s"], 6) for point in _stored_rows(page, WALK_POINTS))
+
+        def walked(at: float) -> list[float]:
+            return [t for t in fixes if t <= at]
+
+        def seen(at: float) -> list[int]:
+            return sorted(row["object_id"] for row in objects if row["t_s"] <= at)
+
+        # A seek back lights fewer fixes than the seek before it, and some.
+        assert 0 < len(walked(WALK_SEEK_BACK_S)) < len(walked(WALK_SEEK_S)), fixes
+
+        def map_lit():
+            state = page.evaluate(_MAP_LIT_T_S_JS, WALK_MAP)
+            if not state or "lit" not in state or state["drawn"] != len(fixes):
+                return state
+            return sorted(round(t, 6) for t in state["lit"])
+
+        def bars_lit():
+            ids = page.evaluate(_VEGA_LIT_IDS_JS, WALK_SWIMLANE)
+            return None if ids is None else sorted(ids)
+
+        # The swimlane drawn again with its view kept, whose rows' flags say
+        # which bars its color condition lights.
+        assert page.evaluate(_KEEP_VEGA_VIEWS_JS), "the page holds no Vega module"
+        play_node(page, WALK_SWIMLANE)
+        wait_for_node_done(page, WALK_SWIMLANE, node_type="VIS_VEGA")
+        wait_for_run_guard_released(page, timeout_ms=node_execution_timeout_ms("VIS_VEGA"))
+        dismiss_toasts(page)
+        map_canvas = f"#autk-grammar-map-{WALK_MAP}"
+        assert page.evaluate(_KEEP_CANVAS_JS, map_canvas), f"the map has no canvas {map_canvas}"
+
+        _wait_until(page, map_lit, [], "Before the overlay plays, the map lights the fixes at")
+        _wait_until(page, bars_lit, [], "Before the overlay plays, the swimlane lights the objects")
+        save_node_closeup(page, self.spec.filepath, WALK_MAP, test_name="walk_map_before_playing", sweep_toasts=True)
+        save_node_closeup(page, self.spec.filepath, WALK_SWIMLANE, test_name="walk_swimlane_before_playing",
+                          sweep_toasts=True)
+
+        # The overlay plays through the media route: the link its card asks
+        # for the overlay's file is what the player plays.
+        frame_node(page, WALK_OVERLAY)
+        link = f"/api/datasets/{overlay['dataset_id']}/media/{quote(str(overlay['file_id']), safe='')}/link"
+        with page.expect_response(
+            lambda r: r.request.method == "POST" and r.url.split("?")[0].endswith(link), timeout=60000,
+        ) as asked:
+            node_locator(page, WALK_OVERLAY).get_by_role("button", name=_play_name(overlay), exact=True).click()
+        assert asked.value.ok, f"the overlay's link answered {asked.value.status}"
+        url = asked.value.json()["url"]
+        page.wait_for_function(
+            "(selector) => { const v = document.querySelector(selector); return !!v && v.readyState >= 1; }",
+            arg=WALK_VIDEO, timeout=60000,
+        )
+        page.evaluate("(selector) => document.querySelector(selector).pause()", WALK_VIDEO)
+        player = page.evaluate(_PLAYER_JS, WALK_VIDEO)
+        assert player["src"].endswith(url), f"the player plays {player['src']}, not the link {url}"
+        assert abs(player["duration"] - overlay["duration_s"]) < 0.1, (player, overlay["duration_s"])
+
+        def seek(at: float) -> None:
+            stands = page.evaluate(_SEEK_JS, [WALK_VIDEO, at])
+            assert stands == at, f"a seek to {at} s left the player at {stands} s"
+
+        seek(WALK_SEEK_S)
+        _wait_until(page, map_lit, walked(WALK_SEEK_S), f"At {WALK_SEEK_S} s, the map lights the fixes at")
+        _wait_until(page, bars_lit, seen(WALK_SEEK_S), f"At {WALK_SEEK_S} s, the swimlane lights the objects")
+        seek(WALK_SEEK_BACK_S)
+        _wait_until(page, map_lit, walked(WALK_SEEK_BACK_S),
+                    f"Back at {WALK_SEEK_BACK_S} s, the map lights the fixes at")
+        _wait_until(page, bars_lit, seen(WALK_SEEK_BACK_S),
+                    f"Back at {WALK_SEEK_BACK_S} s, the swimlane lights the objects")
+        assert page.evaluate(_SAME_CANVAS_JS, map_canvas), "the map was drawn again for the player's range"
+
+        save_node_closeup(page, self.spec.filepath, WALK_MAP, test_name="walk_map_at_5_s", sweep_toasts=True)
+        save_node_closeup(page, self.spec.filepath, WALK_SWIMLANE, test_name="walk_swimlane_at_5_s",
+                          sweep_toasts=True)
+        page.evaluate("(selector) => { document.querySelector(selector).style.visibility = 'hidden'; }", WALK_VIDEO)
+        try:
+            save_node_closeup(page, self.spec.filepath, WALK_OVERLAY, test_name="walk_overlay_at_5_s",
+                              sweep_toasts=True)
+        finally:
+            page.evaluate("(selector) => { document.querySelector(selector).style.visibility = ''; }", WALK_VIDEO)
+        assert page.evaluate(_SAME_CANVAS_JS, map_canvas), "the map was drawn again for its frames"
+
+    @pytest.mark.only_workflows(EXAMPLE_34)
+    def test_the_park_access_heatmap_is_drawn_and_reaches_python_with_varied_cells(self, loaded_workflow):
+        """Example 34 as it ships: its heatmap counts, for each of its 900
+        cells, the parks within about 150 m of the cell's center, from none to
+        dozens. The map draws it over the streets, and the Python step reads it
+        as a raster: its shares of the area by parks within reach cover the
+        whole area and spread over at least four of their five classes, so the
+        cells hold real, varied counts, not one value."""
+        page = self.page
+        self._execute_all_playable_nodes()
+
+        assert_autark_map_drawn(page, PARK_ACCESS_MAP, timeout=60000, attach_as="the park access heatmap")
+        shares = _stored_rows(page, PARK_ACCESS_SHARES)
+        assert [row["parks within about 150 m"] for row in shares] == PARK_ACCESS_CLASSES, shares
+        values = [row["share of the area"] for row in shares]
+        assert abs(sum(values) - 1) <= 0.005, shares
+        assert sum(value > 0 for value in values) >= 4 and max(values) < 1, shares
+
+    @pytest.mark.only_workflows(EXAMPLE_36)
+    def test_niteroi_cells_take_their_heat_from_the_geotiff_and_their_green_share_from_the_parks(
+            self, loaded_workflow, record_property):
+        """Example 36 as it ships: its data node loads Niterói's layers and its
+        summer land surface temperature from the repository's GeoTIFF. The map
+        draws the summer of 2024, and the Python step gives each cell on
+        Niterói's land, about 140 of the file's 330, its mean summer
+        temperature from 2020 to 2024, the file's own values to the hundredth,
+        and the share of its area the parks layer covers, from 0 to 1 and
+        varying from cell to cell; the scatter draws them. The regression
+        line's slope and the correlation are recorded as the run's
+        properties."""
+        import numpy as np
+
+        page = self.page
+        self._execute_all_playable_nodes()
+
+        assert_autark_map_drawn(page, GREEN_HEAT_MAP, timeout=60000, attach_as="the summer of 2024 under the parks")
+        assert_vega_canvas_rendered(page, GREEN_HEAT_SCATTER)
+        cells = _stored_rows(page, GREEN_HEAT_CELLS)
+        heat = _niteroi_summers_of(cells)
+        green = np.array([cell[GREEN_SHARE] for cell in cells], dtype=float)
+        assert ((green >= 0) & (green <= 1)).all() and len(np.unique(green)) >= 20, sorted(set(green.tolist()))[:30]
+        record_property("cells_on_land", len(cells))
+        record_property("slope_c_per_share", round(float(np.polyfit(green, heat, 1)[0]), 3))
+        record_property("correlation", round(float(np.corrcoef(green, heat)[0, 1]), 3))
+
+    @pytest.mark.only_workflows(EXAMPLE_37)
+    def test_niteroi_cells_take_their_heat_from_the_geotiff_and_their_park_area_from_the_heatmaps_sum(
+            self, loaded_workflow, record_property):
+        """Example 37 as it ships: its data node loads Niterói's layers, its
+        summer land surface temperature from the repository's GeoTIFF and its
+        parks with their areas from the repository's GeoJSON, and sums their
+        areas within about 500 m in a heatmap. The map draws that heatmap, and
+        the Python step gives each cell on Niterói's land, about 140 of the
+        file's 330, its mean summer temperature from 2020 to 2024, the file's
+        own values to the hundredth, and the mean of the heatmap's sums in it,
+        in km²: never more than all the file's parks together, and varying from
+        cell to cell; the scatter draws them. The regression line's slope and
+        the correlation are recorded as the run's properties."""
+        import numpy as np
+
+        from .utils import REPO_ROOT
+
+        page = self.page
+        self._execute_all_playable_nodes()
+
+        assert_autark_map_drawn(page, PARK_AREA_MAP, timeout=60000, attach_as="the park area within reach")
+        assert_vega_canvas_rendered(page, PARK_AREA_SCATTER)
+        cells = _stored_rows(page, PARK_AREA_CELLS)
+        heat = _niteroi_summers_of(cells)
+        with open(os.path.join(REPO_ROOT, *NITEROI_PARKS), encoding="utf-8") as handle:
+            all_parks = sum(park["properties"]["area"] for park in json.load(handle)["features"]) / 1e6
+        area = np.array([cell[PARK_AREA_WITHIN_500_M] for cell in cells], dtype=float)
+        assert (area >= 0).all() and area.max() <= all_parks and len(np.unique(area)) >= 20, (
+            all_parks, sorted(set(area.tolist()))[:30],
+        )
+        record_property("cells_on_land", len(cells))
+        record_property("slope_c_per_km2", round(float(np.polyfit(area, heat, 1)[0]), 3))
+        record_property("correlation", round(float(np.corrcoef(area, heat)[0, 1]), 3))
+
+    @pytest.mark.only_workflows(EXAMPLE_33)
+    def test_a_blocks_player_lights_the_frames_from_its_start_to_where_it_stands(self, loaded_workflow):
+        """Example 33 as it ships, on CI's stand-ins (``utils/stand_ins.py``):
+        the tiny SAM 3 planted as fetched, and the walk's 8 s recorded clip and
+        three GPS fixes, cached for the account.
+
+        Segment Images gives one row per frame Sample Video Frames sampled,
+        and each is placed on the walk. The walk is cut where its fixes first
+        pass a street corner, and Split Video makes a block of each cut, a
+        video whose ``t_s`` is its first frame in the walk's time, within a
+        frame of the cut, with the cut's columns. Each block's shares count
+        the frames whose ``t_s`` it holds. The block's player lights on the
+        map exactly the frames from the block's ``t_s`` to where it stands, in
+        the walk's time, read from the nodes' own outputs: none before it
+        plays, some after a seek to 1 s into the block, and fewer after a seek
+        back to 0.2 s. On CI's stand-ins the one block starts 5.7 s into the
+        walk, so a player that read the block's own time from 0 would light
+        other frames. The map is never drawn again for the range.
+
+        Frames, each after the checks of what it shows: the map before the
+        block plays and at 1 s into it, and the block's card at 1 s with its
+        video hidden, whose picture is wherever the browser's seek landed.
+        """
+        page = self.page
+        self._execute_all_playable_nodes()
+
+        # The frames, each placed on the walk at its t_s.
+        frames = _stored_rows(page, FRAME_SEGMENTS)
+        assert frames, "Segment Images gave no frame"
+        placed = sorted(round(point["t_s"], 6) for point in _stored_rows(page, FRAMES_ON_WALK))
+        assert placed == sorted(round(row["t_s"], 6) for row in frames), placed
+        # One block per cut, from within a frame of it, keeping its columns.
+        cuts = _stored_rows(page, WALK_CUTS)
+        blocks = sorted(_stored_rows(page, WALK_BLOCKS), key=lambda row: row["block"])
+        assert cuts and [row["block"] for row in blocks] == list(range(1, len(cuts) + 1)), (cuts, blocks)
+        for cut, block in zip(cuts, blocks):
+            assert block["kind"] == "video" and block["t_s"] < block["end_s"], block
+            assert abs(block["t_s"] - cut["t_s"]) < 1 / block["fps"], (cut, block)
+            assert all(_same_cell(block[key], cut[key]) for key in ("street", "from", "to")), (cut, block)
+        # Each block's share of frames showing a label, of the frames it holds.
+        labels = _code_settings(self.spec, FRAME_SEGMENTS)["LABELS"]
+        shares = _stored_rows(page, BLOCK_SHARES)
+        assert len(shares) == len(blocks) * len(labels), shares
+        for block in blocks:
+            inside = [row for row in frames if block["t_s"] <= row["t_s"] < block["end_s"]]
+            for label in labels:
+                (share,) = [row for row in shares if row["block"] == block["block"] and row["label"] == label]
+                seen = sum(row[label.replace(" ", "_") + "_objects"] > 0 for row in inside)
+                assert share["frames"] == len(inside), (block, share)
+                expected = 100 * seen / len(inside) if inside else 0.0
+                assert abs(share["share"] - expected) <= 0.05 + 1e-9, (block, label, share, expected)
+
+        block = blocks[0]
+
+        def lit_at(at: float) -> list[float]:
+            return [t for t in placed if block["t_s"] <= t <= block["t_s"] + at]
+
+        # The seek lights some frames, the seek back fewer, and a player that
+        # read the block's own time from 0 would light others.
+        assert 0 < len(lit_at(BLOCK_SEEK_S)), (block["t_s"], placed)
+        assert len(lit_at(BLOCK_SEEK_BACK_S)) < len(lit_at(BLOCK_SEEK_S)), (block["t_s"], placed)
+        assert lit_at(BLOCK_SEEK_S) != [t for t in placed if t <= BLOCK_SEEK_S], (block["t_s"], placed)
+
+        def map_lit():
+            state = page.evaluate(_MAP_LIT_T_S_JS, FRAMES_MAP)
+            if not state or "lit" not in state or state["drawn"] != len(placed):
+                return state
+            return sorted(round(t, 6) for t in state["lit"])
+
+        map_canvas = f"#autk-grammar-map-{FRAMES_MAP}"
+        assert page.evaluate(_KEEP_CANVAS_JS, map_canvas), f"the map has no canvas {map_canvas}"
+        _wait_until(page, map_lit, [], "Before the block plays, the map lights the frames at")
+        save_node_closeup(page, self.spec.filepath, FRAMES_MAP, test_name="frames_map_before_playing",
+                          sweep_toasts=True)
+
+        # The block plays through the media route: the link its card asks for
+        # the block's file is what the player plays.
+        frame_node(page, BLOCK_CARDS)
+        link = f"/api/datasets/{block['dataset_id']}/media/{quote(str(block['file_id']), safe='')}/link"
+        with page.expect_response(
+            lambda r: r.request.method == "POST" and r.url.split("?")[0].endswith(link), timeout=60000,
+        ) as asked:
+            node_locator(page, BLOCK_CARDS).get_by_role("button", name=_play_name(block), exact=True).click()
+        assert asked.value.ok, f"the block's link answered {asked.value.status}"
+        url = asked.value.json()["url"]
+        page.wait_for_function(
+            "(selector) => { const v = document.querySelector(selector); return !!v && v.readyState >= 1; }",
+            arg=BLOCK_VIDEO, timeout=60000,
+        )
+        page.evaluate("(selector) => document.querySelector(selector).pause()", BLOCK_VIDEO)
+        player = page.evaluate(_PLAYER_JS, BLOCK_VIDEO)
+        assert player["src"].endswith(url), f"the player plays {player['src']}, not the link {url}"
+        assert abs(player["duration"] - block["duration_s"]) < 0.1, (player, block["duration_s"])
+
+        def seek(at: float) -> None:
+            stands = page.evaluate(_SEEK_JS, [BLOCK_VIDEO, at])
+            assert stands == at, f"a seek to {at} s left the player at {stands} s"
+
+        seek(BLOCK_SEEK_S)
+        _wait_until(page, map_lit, lit_at(BLOCK_SEEK_S),
+                    f"At {BLOCK_SEEK_S} s into block 1, the map lights the frames at")
+        save_node_closeup(page, self.spec.filepath, FRAMES_MAP, test_name="frames_map_at_1_s", sweep_toasts=True)
+        page.evaluate("(selector) => { document.querySelector(selector).style.visibility = 'hidden'; }", BLOCK_VIDEO)
+        try:
+            save_node_closeup(page, self.spec.filepath, BLOCK_CARDS, test_name="block_card_at_1_s",
+                              sweep_toasts=True)
+        finally:
+            page.evaluate("(selector) => { document.querySelector(selector).style.visibility = ''; }", BLOCK_VIDEO)
+        seek(BLOCK_SEEK_BACK_S)
+        _wait_until(page, map_lit, lit_at(BLOCK_SEEK_BACK_S),
+                    f"Back at {BLOCK_SEEK_BACK_S} s into block 1, the map lights the frames at")
+        assert page.evaluate(_SAME_CANVAS_JS, map_canvas), "the map was drawn again for the player's range"

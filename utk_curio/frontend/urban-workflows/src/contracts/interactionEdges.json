@@ -1,0 +1,7 @@
+{
+  "description": "The one rule for interaction edges, which carry a selection between two views and never data. A node's own interaction handle is handle; a view of a node has one of its own, handle then viewMark then the view's id, as in/out@heights for the view whose id is heights. An edge is an interaction edge when it is typed edgeType (a saved dataflow), or of kind planKind (an agent's plan), or when both its handles are interaction handles. Read by the canvas (interactionEdges.ts) and by the backend (execution/run_plan.py, through utk_curio/common/shared_constants.py); both run interactionEdges.cases.json.",
+  "handle": "in/out",
+  "viewMark": "@",
+  "edgeType": "Interaction",
+  "planKind": "interaction"
+}

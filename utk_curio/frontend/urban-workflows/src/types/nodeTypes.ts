@@ -23,10 +23,11 @@ export interface ICodeDataContent {
  * ``ModuleNotFoundError``.
  *
  * ``installable`` is the whole decision: it means the name is a legal
- * distribution name, is not stdlib, is not Curio's own, and nothing installed
- * already provides it. It does NOT mean the distribution exists on PyPI - the
- * backend deliberately does not ask, so the install is an attempt and pip's own
- * failure is what the user sees when the guess is wrong.
+ * distribution name, is not stdlib, is not Curio's own, is not a module a
+ * package ships, and nothing installed already provides it. It does NOT mean
+ * the distribution exists on PyPI - the backend deliberately does not ask, so
+ * the install is an attempt and pip's own failure is what the user sees when
+ * the guess is wrong.
  */
 export interface MissingModuleNotice {
   module: string;
@@ -40,8 +41,33 @@ export interface MissingModuleNotice {
     | "installed-not-visible"
     // The instance does not allow installs, or this caller may not ask for one.
     | "install-disabled"
+    // A module of a catalog package the account has not added: `package`.
+    | "package-not-added"
+    // A module the catalog's copy of a package the account has ships, and
+    // the account's copy does not: `package`, with the catalog's `version`,
+    // which is newer ("package-update") or not ("package-version").
+    | "package-update"
+    | "package-version"
+    // A module of a package the account has, which only `nodes` import.
+    | "package-module"
     | null;
   detail: string | null;
+  /** The package that ships the module, for the package reasons. */
+  package?: MissingModulePackage | null;
+  /** "package-module": the labels of the nodes that import the module. */
+  nodes?: string[];
+}
+
+/** A package as a missing-module notice names it. */
+export interface MissingModulePackage {
+  /** The package's id, without its major. */
+  id: string;
+  /** "model" for a package of the Model Catalog, "node" for the Node Catalog's. */
+  kind: "node" | "model";
+  /** The name its catalog lists it by. */
+  name: string;
+  /** "package-update" and "package-version": the catalog's version that ships the module. */
+  version?: string | null;
 }
 
 export interface ICodeData {

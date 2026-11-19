@@ -21,10 +21,12 @@
 ``curio_load_collection("<id>")``
     A collection's index, one row per file with a readable ``path``.
 ``curio_load_model("<id>")``
-    A Model Catalog model, ready for ``curio_segment``, or, for an
-    ``image-to-image`` model, for ``model.run({input name: array})``. Its
-    ``path`` is where its weights are, for a node that loads them itself
-    (a ``concept-segmentation`` model's checkpoint folder).
+    A Model Catalog model: its ``id``, ``folder``, ``manifest`` and ``path``,
+    the ``.onnx`` file or checkpoint folder its manifest's entry names. Node
+    code, or its package's module, opens it itself: an ONNX model in an
+    onnxruntime session
+    (``ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])``),
+    a segmentation model with the Segmentation package's ``segment_images``.
 
 The backend resolves each id a node's code names, for the account running it,
 and sends the paths, the formats, the collections and the models with the
@@ -37,7 +39,11 @@ The names these replaced (``curio_dataset_path``, ``curio_collection``,
 replacement, so a saved dataflow says what to change. So do the raster math
 helpers every Python node used to have (``curio_raster_calculate``,
 ``curio_raster_statistics``): raster math is the Rasterization package's, in the
-Raster Calculator's code (``scout_rasters.raster_algebra``).
+Raster Calculator's code (``scout_rasters.raster_algebra``). So does a loaded
+model's ``run`` (:data:`RUN_REMOVED`): node code runs a model's graph in an
+onnxruntime session of its own. So does ``curio_segment``
+(:data:`SEGMENT_REMOVED`): a segmentation model's node calls the Segmentation
+package's ``segment_images``, from its module ``semantic_segmentation``.
 """
 
 from __future__ import annotations
@@ -254,9 +260,18 @@ def files_read_beside(path) -> list[Path]:
     ]
 
 
+def _library_threads():
+    """The thread count ``OMP_NUM_THREADS`` names (its first, when it lists one
+    per level), which torch and OpenBLAS read for themselves and onnxruntime
+    does not; None when it names none."""
+    first = os.environ.get("OMP_NUM_THREADS", "").split(",")[0].strip()
+    return int(first) if first.isdigit() and int(first) > 0 else None
+
+
 def _read_onnx(path: str):
-    """An ONNX model as an onnxruntime session on the CPU, opened the way
-    ``curio_segment`` opens a Model Catalog model's."""
+    """An ONNX model as an onnxruntime session on the CPU, as the shipped
+    model packages' modules open theirs: on as many threads as
+    ``OMP_NUM_THREADS`` names, else on one per core."""
     try:
         import onnxruntime as ort
     except ImportError as exc:
@@ -265,7 +280,13 @@ def _read_onnx(path: str):
             "does not have it: add a model that runs on ONNX, such as DDRNet23-Slim, "
             "with Add in the Model Catalog, which installs it."
         ) from exc
-    return ort.InferenceSession(path, providers=["CPUExecutionProvider"])
+    options = ort.SessionOptions()
+    # A session that names no count starts a thread per core it sees, the
+    # whole machine's where others share its CPUs.
+    threads = _library_threads()
+    if threads:
+        options.intra_op_num_threads = threads
+    return ort.InferenceSession(path, sess_options=options, providers=["CPUExecutionProvider"])
 
 
 def read_dataset(path: str, fmt: str | None, *, layer_type: str | None = None):
@@ -314,8 +335,25 @@ def read_dataset(path: str, fmt: str | None, *, layer_type: str | None = None):
     )
 
 
+#: What a call of a loaded model's ``run`` raises: node code opens the model
+#: in its own onnxruntime session (:class:`CurioModel`).
+RUN_REMOVED = (
+    "model.run was removed: open the model in its node's code with onnxruntime (import onnxruntime as ort), "
+    'session = ort.InferenceSession(model.path, providers=["CPUExecutionProvider"]), '
+    "then session.run(None, {input name: array})."
+)
+
+#: What node code calling ``curio_segment`` gets: a segmentation model's node
+#: calls the Segmentation package's function.
+SEGMENT_REMOVED = (
+    "curio_segment was removed: a segmentation model's node calls the Segmentation package's function instead, "
+    "from semantic_segmentation import segment_images, "
+    "then return segment_images(input_0, model, curio_derived_file, classes=classes)."
+)
+
+
 class CurioModel:
-    """A Model Catalog model, loaded: what ``curio_segment`` runs.
+    """A Model Catalog model, loaded: the files node code opens.
 
     ``folder`` is where its files are and ``manifest`` what its manifest says;
     both are read when the model is loaded, so a folder that is not a model
@@ -324,11 +362,13 @@ class CurioModel:
     *weights*, the folder the backend names for weights a ``fetch`` names,
     kept under ``--model-weights-dir``, read where they are. A model whose
     weights are not here stops at loading, saying how to fetch them
-    (``models.NOT_FETCHED``). ``runner``, the callable that labels one image's
-    pixels, opens the model's runtime the first time it is used, and
-    ``labels`` are the classes it can name. ``run`` feeds an ONNX model's
-    graph the arrays the node prepared itself, as an ``image-to-image`` model
-    is run.
+    (``models.NOT_FETCHED``). Node code, or its package's module, runs an
+    ONNX model in a session it opens on ``path``,
+    ``ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])``,
+    then ``session.run(None, {input name: array})``; ``run`` only refuses,
+    naming those calls (:data:`RUN_REMOVED`), so a saved dataflow that calls
+    it says what to write. A segmentation model's classes are its manifest's
+    ``labels``; the Segmentation package's ``segment_images`` runs it.
     """
 
     def __init__(self, model_id: str, folder: str, weights: str | None = None):
@@ -346,50 +386,23 @@ class CurioModel:
         if missing_fetched_files(self._weights, self.manifest):
             raise RuntimeError(NOT_FETCHED.format(model_id=model_id))
         self.path = os.path.join(self._weights, str(self.manifest.get("entry") or ""))
-        self._runner = None
-        self._session = None
 
-    @property
-    def runner(self):
-        if self._runner is None:
-            from utk_curio.sandbox.util.vision import load_runner
-
-            self._runner, _ = load_runner(self.folder, weights=self._weights)
-        return self._runner
-
-    def run(self, feeds: dict) -> list:
-        """The outputs of an ONNX model's graph for *feeds*, ``{input name:
-        array}``, in the graph's output order. The session opens on the CPU
-        the first time, as ``curio_segment`` opens one, and is kept for the
-        next call; its thread count is onnxruntime's own."""
-        if self.manifest.get("runtime") != "onnx":
-            raise RuntimeError(f"Model '{self.id}' is not an ONNX model, so it has no graph to run.")
-        if self._session is None:
-            try:
-                import onnxruntime as ort
-            except ImportError as exc:
-                raise RuntimeError(
-                    f"Model '{self.id}' runs on onnxruntime, which is not installed here: "
-                    "add the model with Add in the Model Catalog, which installs it."
-                ) from exc
-            self._session = ort.InferenceSession(self.path, providers=["CPUExecutionProvider"])
-        names = [spec.name for spec in self._session.get_inputs()]
-        missing = [name for name in names if name not in feeds]
-        if missing:
-            raise ValueError(f"Model '{self.id}' needs the inputs {', '.join(names)}; missing {', '.join(missing)}")
-        return self._session.run(None, {name: feeds[name] for name in names})
-
-    @property
-    def labels(self) -> list:
-        return list(self.manifest.get("labels") or []) or list(self.runner.labels)
+    def run(self, *_args, **_kwargs):
+        """Refuses, naming what node code writes instead (:data:`RUN_REMOVED`)."""
+        raise RuntimeError(RUN_REMOVED)
 
     def __repr__(self) -> str:
         return f"<CurioModel {self.id}>"
 
 
-def _renamed(old: str, replacement: str) -> Callable[..., Any]:
+def _renamed(old: str, replacement: str, *, message: str | None = None) -> Callable[..., Any]:
+    """What node code calling the retired name *old* gets: a function that
+    raises, saying ``<old> was renamed: use <replacement>.``, or *message*
+    for a name nothing renamed, whose work moved elsewhere."""
+    said = message or f"{old} was renamed: use {replacement}."
+
     def gone(*_args, **_kwargs):
-        raise RuntimeError(f"{old} was renamed: use {replacement}.")
+        raise RuntimeError(said)
 
     gone.__name__ = old
     return gone
@@ -473,7 +486,6 @@ def install_catalog_helpers(
     """
     from utk_curio.sandbox.util.collections import make_collection_helpers
     from utk_curio.sandbox.util.models import make_model_folder
-    from utk_curio.sandbox.util.vision import make_curio_segment
 
     known_formats = {str(k): dict(v) for k, v in (formats or {}).items() if isinstance(v, dict)}
     collection_helpers = make_collection_helpers(
@@ -561,7 +573,7 @@ def install_catalog_helpers(
     namespace["curio_load_data"] = curio_load_data
     namespace.update(collection_helpers)
     namespace["curio_load_model"] = curio_load_model
-    namespace["curio_segment"] = make_curio_segment(collection_helpers["curio_derived_file"])
+    namespace["curio_segment"] = _renamed("curio_segment", "segment_images", message=SEGMENT_REMOVED)
     namespace["curio_dataset_path"] = _renamed(
         "curio_dataset_path",
         'curio_load_data("<id>") for the data, or curio_data_path("<id>") for its file',

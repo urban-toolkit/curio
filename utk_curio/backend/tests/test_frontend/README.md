@@ -114,7 +114,7 @@ inside its one container).
 
 ### AUTK / WebGPU note
 
-Autark workflows use the single `AUTK_GRAMMAR` node type, which renders its map/plot via WebGPU. The `browser_type_launch_args` fixture in the **parent** [`../conftest.py`](../conftest.py) points `executable_path` at the system-installed Google Chrome and passes a minimal flag set (`--enable-unsafe-webgpu --enable-unsafe-swiftshader`). This is deliberate: Playwright's bundled Chromium on Windows ships without a working Dawn/WebGPU runtime (`requestAdapter()` returns null), whereas real Chrome 113+ returns an adapter. When Chrome can't be found it falls back to bundled Chromium.
+Autark workflows use the single `AUTK_GRAMMAR` node type, which renders its map/plot via WebGPU. The `browser_type_launch_args` fixture in the **parent** [`../conftest.py`](../conftest.py) points `executable_path` at the system-installed Google Chrome and passes the flags `launch_flags` in [`../_support/chrome_flags.py`](../_support/chrome_flags.py) gives each platform: on Windows and macOS a minimal set (`--enable-unsafe-webgpu --enable-unsafe-swiftshader`). This is deliberate: Playwright's bundled Chromium on Windows ships without a working Dawn/WebGPU runtime (`requestAdapter()` returns null), whereas real Chrome 113+ returns an adapter. When Chrome can't be found it falls back to bundled Chromium.
 
 There is **no WebGPU tolerance**: an `AUTK_GRAMMAR` node that errors (including because WebGPU is unavailable) is a hard test failure. To run the autk examples you need a browser that provides WebGPU - which the system-Chrome `executable_path` above ensures. `_webgpu_diagnostics` still probes adapter/device state once per session and attaches it to the failure dump for debugging.
 
@@ -125,11 +125,13 @@ A test that needs an adapter asks with `require_webgpu(page)` (fails on CI's GPU
 ## Multi-user stress tiers
 
 `test-gpu-stress` in CI runs the shipped examples with 5, 10, 50 and 100 users
-at once. It has two halves, because a dataflow does.
+at once. It has two halves, because a dataflow does. Its stack runs 16 backend
+processes behind nginx, the count chosen for dev and stable, and each report
+gives every process its rooms, sync and turns.
 
 It is not part of every run. It holds the single GPU runner for ~30 minutes,
-which roughly doubles a build, so it runs on a schedule (08:00 UTC on Monday,
-Wednesday and Friday) and on demand: tick `stress` when dispatching the
+which roughly doubles a build, so it runs on a schedule (3 AM Chicago time on
+Monday, Wednesday and Friday) and on demand: tick `stress` when dispatching the
 workflow by hand, or put the `stress` label on a PR. Label the PR whenever the
 change is concurrency-shaped - the sandbox, the queue, the session or user
 handling - or touches this harness, since the schedule will not cover it
@@ -268,7 +270,7 @@ The DB stub is strictly additive - Strategy A still works against the same test 
 
 | Helper | What it does |
 |---|---|
-| `api_json(url, token, *, method="GET", payload=None, timeout=10.0, raw=False)` | Authenticated JSON request, stdlib only. The escape hatch for asserting backend state from a browser test: a seeding or persistence problem then fails in about a second with the offending payload, instead of as a 15-second locator timeout that says nothing about which side broke. `raw=True` returns bytes, for binary endpoints such as a `.curio.zip`. |
+| `api_json(url, token, *, method="GET", payload=None, timeout=HTTP_TIMEOUT_S, raw=False, dataflow=None)` | Authenticated JSON request, stdlib only. The escape hatch for asserting backend state from a browser test: a seeding or persistence problem then fails in about a second with the offending payload, instead of as a 15-second locator timeout that says nothing about which side broke. An answer that is only late is waited for up to `HTTP_TIMEOUT_S` (60 s), as the stub helpers wait: a CI host whose disk stalls answers a synced write that late. `raw=True` returns bytes, for binary endpoints such as a `.curio.zip`. The call names its dataflow in the `X-Curio-Dataflow` header, by which nginx reaches the backend process that owns it: `dataflow` for a route whose path holds no dataflow's id (`/api/runs/<id>`, `/processPythonCode`), else the id after `/projects/` or `/dataflows/` in its path. |
 | `require_owner_view(page, *, timeout=4000)` | **Fails** unless the tab is the dataflow's owner's: a watcher's canvas shows the read-only banner, and an invited editor's has no save status. Only the owner sees the dataflow's installed packages, datasets and agents, so on anyone else's tab every catalog fetch comes back empty and the test asserts nothing. The usual cause is a stack without user auth, where the browser lands as the shared guest: boot it with `--deploy`. |
 | `open_tools_palette(page, kind)` | Opens one left-rail palette, `"builtin"`, `"packages"`, `"datasets"`, `"agents"` or `"models"`, and returns its panel locator. Re-callable: it matches either the `Open …` or the `Close …` tooltip (`data-tooltip`) and clicks only when the panel is not already showing, so a test that needs two palettes can come back to the first one. They are mutually exclusive (`ToolsMenu` keeps a single `activePalette`), so opening one closes the other. `close_tools_palette(page, kind)` closes one, and `tools_palette_is_open(page, kind)` says whether it shows. |
 
@@ -461,12 +463,14 @@ Two families of baseline live in that folder:
 - one per bundled dataflow JSON, for `TestWorkflowCanvas` (two per workflow,
   `test_node_type_and_content` and `test_node_execution`), each paired with a
   `_browser_log.txt` because autk swallows its errors into React state. Every
-  Autark node whose grammar has a `map` or `plot` also gets a
+  Autark node whose grammar has a `map` or `plot`, and every Vega-Lite chart but
+  those `EXPECTED_EMPTY` says draw nothing, also gets a
   `test_node_execution_closeup_<node id>` baseline: the node alone, framed at up
   to 100% zoom (`save_node_closeup`) and compared at a per-channel tolerance of
-  5 instead of 30, against a 5% budget instead of 10%. In the full-page frame a
-  map or plot that drew nothing can stay under the budget; up close it cannot. Walkthrough scenes with a drawn map
-  take one with `ctx.capture_node`. A workflow in `INTERACTIONS`
+  5 instead of 30, against a 5% budget instead of 10%, once two captures of it
+  in a row agree (`still=True`). In the full-page frame a
+  map, plot or chart that drew nothing can stay under the budget; up close it cannot. Walkthrough scenes with a drawn map
+  or chart take one with `ctx.capture_node`. A workflow in `INTERACTIONS`
   (test_workflows.py) also gets
   `test_node_interaction_<step>_{before,after}_<node id>` baselines. Each step
   frames its two nodes together, captures both, does its gesture (a hover held
@@ -543,6 +547,12 @@ beside its default one: `<name>.utk-gpu.png`, `<name>.arcade-gpu.png` or `<name>
 - The test-gpu job sets `CURIO_E2E_GPU_KIND` from its runner's name. A frame
   with a baseline of that kind is compared with it. Every other frame, and every
   run without a kind (a local run, a CPU runner), uses the default baseline.
+- A CPU job has no kind because it draws alike on every runner, a utk desktop
+  included: its Chrome draws with SwiftShader and keeps Chrome's Vulkan off,
+  which would otherwise draw with the desktop's NVIDIA GPU
+  (`../_support/chrome_flags.py`), and the job runs in UTC, the time zone of
+  GitHub-hosted and arcade runners, where a desktop's own would move every
+  Vega-Lite time axis (`TZ` in e2e-desktop's and test-isolated's environment).
   The report's card names the baseline each comparison used, and a badge marks
   a GPU kind's.
 - A re-mint writes the baseline it compared with, so on utk-gpu it rewrites a
@@ -619,7 +629,7 @@ test_frontend/
     images.py                 # captures (a Curio tooltip hidden unless kept), _compare_images
     dialogs.py                # accept_confirm_dialog, wait_for_drawer_closed, leave_agent_badge
     screenshots.py            # save_workflow_test_screenshot, mint, re-mint and candidates, frame_nodes
-    closeups.py               # save_node_closeup, close-up budgets, viewport hints
+    closeups.py               # save_node_closeup, node captures (wait_for_node_still), close-up budgets, viewport hints
     interactions.py           # interaction frames, brush and mark probes
     tooltips.py               # the Curio tooltip: hovers, the one on screen, its close-up box
     servers.py                # ports, e2e_existing_servers
@@ -631,6 +641,7 @@ test_frontend/
     run_all.py                # Run All state, holding a run open
     node_drawings.py          # assert_vega_canvas_rendered and the other drawing checks
     offline_install.py        # a test package in the catalog, its library in a wheelhouse
+    stand_ins.py              # a tiny model planted as fetched, a bucket collection cached
     page.py                   # FrontendPage
     scripted_llm.py           # scripted agent turns
   packages/                   # test packages, planted in a backend's catalog for one test
@@ -833,7 +844,7 @@ agent arriving by some other path cannot slip past.
 
 | Module | Browser | What it is for |
 |---|---|---|
-| `test_agent_runs_e2e.py` | no | The correctness gate: install -> attach -> run -> the reply, the change that landed or the tool round, and the persisted transcript. ~1-2 s per agent. Each agent runs twice, fenced and on native tools, and one run falls back from native to fenced. One more writes an Autark document under its reply schema, and one holds the Dataflow Builder's model call past `api_json`'s default wait: a turn is waited for until it ends (`TURN_S` bounds only a turn that never does). |
+| `test_agent_runs_e2e.py` | no | The correctness gate: install -> attach -> run -> the reply, the change that landed or the tool round, and the persisted transcript. ~1-2 s per agent. Each agent runs twice, fenced and on native tools, and one run falls back from native to fenced. One more writes an Autark document under its reply schema, and one holds the Dataflow Builder's model call past `api_json`'s default wait: a turn is waited for until it ends (`TURN_S` bounds only a turn that never does). Another answers the scripted LLM configuration's write 30 s late, through a loopback server in front of the backend, as a stalled CI disk did: setup waits for it. |
 | `test_agent_chat_e2e.py` | yes | Drives a real chat turn per agent and captures the baselines below. A mutate-capable agent's **change lands with the reply and is held to the canvas actually changing**; a report-only one is held to the canvas NOT changing. |
 
 **What gets captured, and why it differs by agent.** 3 of the 4 catalog agents
@@ -870,14 +881,22 @@ handed. Three things make that usable from a test:
 | Step | How |
 |---|---|
 | Point the user at it | `use_scripted_llm(backend, token)` - real `/api/agents/llm` calls that add a `testing` LLM configuration and make it the default, so the production `resolve_llm` path is the one under test |
-| Script the replies | `script_agent_replies(backend, *replies)` -> `POST /api/testing/agent-script`. One entry **per provider call**: a reply carrying a `toolRequest` tail is answered by the runtime and the model is prompted again, so script the follow-up too |
-| Script native tool calls | `script_agent_replies(backend, *replies, native_tools=True)`: the scripted endpoint calls tools natively, so runs are offered their tools instead of the fenced syntax (a reset puts it back). A reply is then `{"text", "toolCalls": [{"name", "arguments"}]}`, the name a tool id or its native name; `{"error": ..., "status": 400}` makes the call refuse the tools, which is how a test reaches the fallback tool calls: the same round again on the fenced protocol. `structured_output=True` makes it take a reply schema, so content written for an Autark node is scripted as the constrained JSON (`reply_schemas.autk_reply_schema(...).encode(document)`) |
-| Script a created node's id | `script_agent_replies(backend, *replies, node_ids=(uuid,))`: the next nodes an agent's change creates get these ids, in order, until the next reset. Use it when a capture shows the change card: it prints the id, and a random one wraps that line or not by its width, moving the transcript by a line |
-| Read what reached the model | `captured_system_prompt(backend)` / `captured_agent_prompts(backend)` -> `GET /api/testing/agent-script`; `captured_agent_calls(backend)` says which configuration answered each call, and `captured_agent_offers(backend)` which native tools and which reply schema each call carried |
+| Script the replies | `script_agent_replies(backend, *replies, dataflow=project_id)` -> `POST /api/testing/agent-script`. One entry **per provider call**: a reply carrying a `toolRequest` tail is answered by the runtime and the model is prompted again, so script the follow-up too |
+| Script native tool calls | `script_agent_replies(backend, *replies, native_tools=True, dataflow=project_id)`: the scripted endpoint calls tools natively, so runs are offered their tools instead of the fenced syntax (a reset puts it back). A reply is then `{"text", "toolCalls": [{"name", "arguments"}]}`, the name a tool id or its native name; `{"error": ..., "status": 400}` makes the call refuse the tools, which is how a test reaches the fallback tool calls: the same round again on the fenced protocol. `structured_output=True` makes it take a reply schema, so content written for an Autark node is scripted as the constrained JSON (`reply_schemas.autk_reply_schema(...).encode(document)`) |
+| Script a created node's id | `script_agent_replies(backend, *replies, node_ids=(uuid,), dataflow=project_id)`: the next nodes an agent's change creates get these ids, in order, until the next reset. Use it when a capture shows the change card: it prints the id, and a random one wraps that line or not by its width, moving the transcript by a line |
+| Read what reached the model | `captured_system_prompt(backend, dataflow=project_id)` / `captured_agent_prompts(backend, dataflow=project_id)` -> `GET /api/testing/agent-script`; `captured_agent_calls(...)` says which configuration answered each call, and `captured_agent_offers(...)` which native tools and which reply schema each call carried |
 
 The `agent-script` routes 404 unless `CURIO_TESTING` is set, on top of the
 production guard every route in that blueprint carries - unlike `stub-login`,
 they read prompt text back out of the process.
+
+Every one of these helpers takes `dataflow`, the dataflow whose turns it
+scripts or reads, and none has a default. The scripted model's queues are each
+backend process's own, and a dataflow's turns run in the process that owns it,
+so with several backend processes (`--backend-processes`) the call carries the
+`X-Curio-Dataflow` header that nginx routes it by, and a process that does not
+own the dataflow refuses it. `dataflow=None` is for the calls the home process
+makes for no dataflow.
 
 Things worth knowing before adding to these:
 

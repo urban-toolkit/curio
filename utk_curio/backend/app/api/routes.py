@@ -5,7 +5,7 @@ from flask import request, abort, jsonify, g, Response, current_app
 
 import requests
 
-from utk_curio.backend.app.execution import node_exec
+from utk_curio.backend.app.execution import node_exec, play_progress
 from utk_curio.backend.app.execution.sandbox_client import (
     SANDBOX_STORE_TIMEOUT,
     SandboxTransportError,
@@ -136,11 +136,15 @@ def version():
     the sandbox process without changing what `isolation` reports;
     `isolation_active` is what the sandbox actually did. The badge needs both
     to avoid claiming a confinement that is not there.
+
+    `memory_limit` is the limit isolated nodes run under: `cgroup`,
+    `address space`, or `none` where they run in the sandbox's process.
     """
     from utk_curio import __version__
 
     isolation = 'unknown'
     isolation_active = 'unknown'
+    memory_limit = 'unknown'
     with contextlib.suppress(SandboxTransportError, requests.RequestException, ValueError):
         response = sandbox_request(
             'get', '/version',
@@ -153,11 +157,13 @@ def version():
             # the badge only downgrades on an explicit 'off', so a missing
             # field must not be read as evidence of a failed zygote.
             isolation_active = payload.get('isolation_active', 'unknown')
+            memory_limit = payload.get('memory_limit', 'unknown')
 
     return jsonify({
         'version': __version__,
         'isolation': isolation,
         'isolation_active': isolation_active,
+        'memory_limit': memory_limit,
     })
 
 
@@ -447,11 +453,26 @@ def relay_output_file(file_name, session_id):
 @bp.route('/processPythonCode', methods=['POST'])
 @require_auth
 def process_python_code():
-    run = node_exec.NodeRun.from_request_json(request.json)
+    body = request.json
+    run = node_exec.NodeRun.from_request_json(body)
     try:
-        return node_exec.execute_python_node(g.user, get_current_token(), run)
+        # How far the node's downloads on first use have come, which the page
+        # asks while it waits (``/processPythonCode/progress``), under the id
+        # it gave the Play.
+        with play_progress.kept(get_current_token(), (body or {}).get('progressId')):
+            return node_exec.execute_python_node(g.user, get_current_token(), run)
     except SandboxTransportError as e:
         return jsonify(e.payload), e.status
+
+
+@bp.route('/processPythonCode/progress', methods=['GET'])
+@require_auth
+def process_python_code_progress():
+    """How far the downloads on first use of the caller's Play ``?play=<id>``,
+    the id it posted the Play with, have come: ``{message, done, total}``,
+    an empty message when they say nothing, are over, or the Play is not
+    running. Only the sign-in that posted the Play reads it."""
+    return jsonify(play_progress.said(get_current_token(), request.args.get('play')))
 
 
 @bp.route('/storeOutput', methods=['POST'])
@@ -640,58 +661,3 @@ def get_starters():
         except Exception:  # noqa: BLE001 - never fail /starters over a bad package
             current_app.logger.exception("Package-starter loader failed; returning empty list")
     return jsonify(starters)
-
-@bp.route('/spatial_join', methods=['POST'])
-def spatial_join():
-    """Pair the rows of two GeoJSON inputs whose shapes meet (#576).
-
-    Backs the Spatial Join node in curio.builtin@1. input_0 (the node's top
-    circle) is the left side of the join and input_1 (the bottom circle) the
-    right; either takes any geometry. The work is in ``common/spatial.py``,
-    on geopandas ``sjoin`` and ``sjoin_nearest``.
-
-    Request body:
-        {
-          "left":      FeatureCollection, input_0,
-          "right":     FeatureCollection, input_1,
-          "predicate": optional, one of intersects (default), within,
-                       contains, touches, overlaps, crosses, nearest:
-                       how input_0's shape must meet input_1's,
-          "output":    optional, "pairs" (default) or "counts".
-        }
-
-    Response: a FeatureCollection. "pairs" gives one feature per matching
-    pair, input_0's row and geometry with input_1's columns added
-    (``<column>_right`` on a clash, plus ``distance`` in meters for
-    nearest); "counts" gives input_1's features, each with ``point_count``.
-    ``metadata`` says how many pairs and matched rows there are, and carries
-    ``warnings`` when an operation can never match the shapes given.
-
-    A request the join cannot run (not geodata, an unknown operation) is a
-    400 that says what to change. 503 when geopandas is not installed.
-    """
-    body = request.get_json(silent=True) or {}
-    from utk_curio.backend.app.common.spatial import (
-        DEFAULT_OUTPUT,
-        DEFAULT_PREDICATE,
-        JoinInputError,
-        spatial_join as join,
-    )
-    try:
-        result = join(
-            body.get("left"),
-            body.get("right"),
-            predicate=body.get("predicate") or DEFAULT_PREDICATE,
-            output=body.get("output") or DEFAULT_OUTPUT,
-        )
-    except JoinInputError as e:
-        return jsonify({"error": str(e)}), 400
-    except ImportError as e:
-        return jsonify({
-            "error": "spatial extras not installed (geopandas required)",
-            "hint": "pip install geopandas",
-            "detail": str(e),
-        }), 503
-    except Exception as e:
-        return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
-    return jsonify(result)

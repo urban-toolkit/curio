@@ -3,14 +3,16 @@
  * in sandbox/util/parsers.py), and a list or a tuple of outputs wraps each of
  * its elements too, so `[2, 4, 6]` arrives as three `{data: 2, dataType:
  * "int"}` objects. A dict's values are left as they are, unless the dict holds
- * frames: then each value is wrapped as well, under its key.
+ * frames or rasters: then each value is wrapped as well, under its key.
  */
 
 /** The dataType names of the envelopes around plain values. */
 const VALUE_ENVELOPES = new Set(["int", "float", "bool", "str", "list", "dict", "outputs"]);
 
-/** The dataType names of the envelopes around frames. */
-const FRAME_ENVELOPES = new Set(["dataframe", "geodataframe"]);
+/** The dataType names of the envelopes around frames, and around a raster,
+ * which a dict of frames holds as it holds a frame (`_holds_frames` in
+ * sandbox/util/parsers.py). */
+const FRAME_ENVELOPES = new Set(["dataframe", "geodataframe", "raster"]);
 
 function isEnvelope(value: unknown): value is { dataType: string; data: unknown } {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -22,7 +24,8 @@ function isEnvelope(value: unknown): value is { dataType: string; data: unknown 
  * (`{key: envelope}`, every value in its own envelope), read as the `outputs`
  * envelope a tuple of frames is: each value keeps its envelope and is named
  * after its key (`layerName`), so whatever draws a tuple's frames draws these.
- * `null` for anything else, a JSON dict among them.
+ * A dict that holds rasters, with or without a table, is one too. `null` for
+ * anything else, a JSON dict among them.
  */
 export function keyedFramesAsOutputs(value: unknown): { dataType: "outputs"; data: any[] } | null {
   if (value === null || typeof value !== "object" || Array.isArray(value) || isEnvelope(value)) return null;

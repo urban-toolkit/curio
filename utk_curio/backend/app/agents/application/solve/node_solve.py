@@ -31,7 +31,7 @@ from utk_curio.backend.app.agents.application.turns import policy as agents_poli
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.collaboration import agent_peers
-from utk_curio.backend.app.collaboration import dataflow_docs
+from utk_curio.backend.app.collaboration import dataflow_docs, owner_guard
 
 
 def solve_node_stream(
@@ -60,6 +60,9 @@ def solve_node_stream(
     lands, and ``done {verdict, rounds, attempts, unchanged?, written?,
     changeId?, changeAttachmentId?}``.
     """
+    # Only the process that owns the dataflow runs its Solves, refused before
+    # anything is read or repaired.
+    owner_guard.refuse(project_id, what="a Solve")
     spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
     # DEC-080 (dev/126): as the batch — the per-node Solve resolves the same
@@ -90,11 +93,16 @@ def solve_node_stream(
     except agent_jobs.JobRefused as exc:
         raise AgentServiceError(str(exc), exc.status)
     execution_id = uuid.uuid4().hex
-    # Request-context pieces, resolved before the job thread starts.
+    # Request-context pieces, resolved before the job thread starts. A
+    # dataset's path and a collection are looked up when a round's code reads
+    # them, as the acting user (``grounding._session_dataset_paths``,
+    # ``_session_collections``): on a pip install a lookup downloads a shipped
+    # dataset the pip package leaves out, and one of a collection mounts its
+    # bucket.
     agents_acquire._settle_discovery_acquisitions(user_key, project_id)
     base = agents_grounding._solve_grounding_base(user_key, project_id, spec, {node_id: node}, [node_id])
-    dataset_paths = agents_grounding._resolve_catalog_execution_paths(project_id, list(base.get("catalog_ids") or {}))
-    collections = agents_grounding._resolve_catalog_collections(project_id, user_key, base.get("catalog_ids") or {})
+    dataset_paths: dict = {}
+    collections = agents_grounding._solve_collections(base.get("catalog_ids") or {})
     events = _solve_node_events(
         user_key, project_id, attachment_id, config, spec, node, resolution,
         record.get("coord", ""), record.get("sessionId"), execution_id, exec_fn,
@@ -192,9 +200,9 @@ def _solved_node(
     # the only way to fill such a node.
     if kind not in (workflow_spec.CONTENT_KIND_CODE, workflow_spec.CONTENT_KIND_GRAMMAR):
         # dev/118 (DEC-075) → dev/119 → dev/134: a kind that authors nothing at
-        # all (a pool, a simple view, a spatial join) or presentation
-        # content with no validator. No round, no sandbox, no generation —
-        # nothing this loop could verify; say so and change nothing.
+        # all (a pool, a simple view) or presentation content with no
+        # validator. No round, no sandbox, no generation: nothing this loop
+        # could verify; say so and change nothing.
         outcome = _not_executable_outcome(node, label, kind)
     else:
         outcome = yield from _run_node_loop(
@@ -239,7 +247,7 @@ def _solved_node(
 
 def _not_executable_outcome(node: dict, label: str, kind: str) -> dict:
     """dev/118 (DEC-075) → dev/119 → dev/134: a kind that authors nothing at all (a pool, a
-    simple view, a spatial join) or presentation content with no validator. No round, no
+    simple view) or presentation content with no validator. No round, no
     sandbox, no generation — nothing this loop could verify; say so and change nothing."""
     reason = (
         f"{label!r} ({node.get('type')}) is wired, not written: this kind has no "
@@ -300,14 +308,16 @@ def _run_node_loop(
         grounding_base=grounding_base,
         start_from_current=True,
         delegate_runner=_traced,
-        # dev/132 (closes dev/131 F4): topped up for a dataset that
-        # arrived after this job started — the per-pill Solve and the
-        # Finder's own delegation both come through here.
-        dataset_paths_fn=lambda codes, formats: agents_grounding._session_dataset_paths(
-            project_id, acting_user, dataset_paths, codes, formats
+        # dev/132 (closes dev/131 F4): looked up as the round's code reads
+        # them, a dataset that arrived after this job started among them.
+        # The per-pill Solve and the Finder's own delegation both come
+        # through here.
+        dataset_paths_fn=lambda codes, formats, unavailable=None: agents_grounding._session_dataset_paths(
+            project_id, acting_user, dataset_paths, codes, formats, unavailable,
         ),
-        # The collections the request resolved, topped up the same way, on
-        # the job's thread, and handed to the thread each attempt runs on.
+        # The collections, each looked up the same way when a round's code
+        # reads it, on the job's thread, and handed to the thread each
+        # attempt runs on.
         collections_fn=lambda codes: agents_grounding._session_collections(
             project_id, user_key, acting_user, collections, codes
         ),

@@ -1,14 +1,19 @@
 import {
+  circleValue,
   compactedHandles,
   emptyWiredSlots,
   growsInputCircles,
+  holdsValuePerCircle,
   inputCapacity,
   inputCircleCount,
   inputSlotOf,
+  isDataEdge,
+  nodeInputFromPorts,
   nodeInputFromSlots,
   slotHandleId,
   slotsFedBy,
   wiredInputSlots,
+  withPortValues,
   withoutSlot,
 } from '../../utils/inputSlots';
 
@@ -65,6 +70,16 @@ describe('circles', () => {
     expect(wiredInputSlots(edges, 't')).toEqual([0]);
   });
 
+  test("an interaction edge from a view's handle, or one a dataflow saved with no handles, takes no circle", () => {
+    const edges = [
+      { source: 'a', target: 't', targetHandle: 'in' },
+      { source: 'v', target: 't', sourceHandle: 'in/out@heights', targetHandle: 'in/out' },
+      { source: 'w', target: 't', type: 'Interaction' },
+    ];
+    expect(wiredInputSlots(edges, 't')).toEqual([0]);
+    expect(edges.map(isDataEdge)).toEqual([true, false, false]);
+  });
+
   test("a port's declared maximum is the capacity", () => {
     expect(inputCapacity([{ cardinality: '[1,n]' }])).toBe(Infinity);
     expect(inputCapacity([{ cardinality: '[0,n]' }])).toBe(Infinity);
@@ -106,6 +121,39 @@ describe('the value a growing node reads', () => {
     expect(nodeInputFromSlots([a, ''], [0, 1])).toBe('');
     expect(nodeInputFromSlots([], [])).toBe('');
     expect(emptyWiredSlots([a, undefined, b], [0, 1, 2])).toEqual([1]);
+  });
+});
+
+describe('what a node holds on each circle, as its run reads it', () => {
+  const a = { path: 'a', dataType: 'geodataframe' };
+  const b = { path: 'b', dataType: 'geodataframe' };
+
+  test("a node with several ports: each port's value on its circle, which its one value is read from", () => {
+    // input_1 arrived first, as the Spatial Join's zones did on dev.
+    const portInputs = withPortValues(withPortValues(undefined, ['in_1'], b), ['in'], a);
+    const data = { portInputs, input: nodeInputFromPorts(portInputs, [0, 1]) };
+    expect([circleValue(data, 0), circleValue(data, 1)]).toEqual([a, b]);
+    expect(data.input).toEqual({ dataType: 'outputs', data: [a, b] });
+    expect(holdsValuePerCircle(data)).toBe(true);
+  });
+
+  test('a node with several ports, one still empty: that circle holds nothing', () => {
+    const data = { portInputs: withPortValues(undefined, ['in_1'], b), input: '' };
+    expect([circleValue(data, 0), circleValue(data, 1)]).toEqual([undefined, b]);
+    expect(holdsValuePerCircle(data)).toBe(true);
+  });
+
+  test("a growing node: each circle's value", () => {
+    const data = { inputSlots: [a, undefined, b], input: '' };
+    expect([0, 1, 2].map((slot) => circleValue(data, slot))).toEqual([a, undefined, b]);
+    expect(holdsValuePerCircle(data)).toBe(true);
+  });
+
+  test('any other node: its one input, on circle 0', () => {
+    const data = { input: a };
+    expect([circleValue(data, 0), circleValue(data, 1)]).toEqual([a, undefined]);
+    expect(holdsValuePerCircle(data)).toBe(false);
+    expect(circleValue(undefined, 0)).toBeUndefined();
   });
 });
 

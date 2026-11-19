@@ -20,6 +20,7 @@
  * materialize, and this stays testable under jest.
  */
 import { fetchData, fetchPreviewData } from "../services/api";
+import { autkWorkspaceOf } from "../adapters/node/autkDataCompile";
 import { AUTARK_LAYER_TYPES } from "./autarkLayerTypes";
 import type { NodeEmptyReason } from "./nodeEmptyState";
 import { activeGeometryName } from "./parsing";
@@ -51,6 +52,9 @@ export type GrammarFrame = {
   crsName: string | null;
   /** The autk-db layer type (`roads`, `buildings`, ...) a layer record carries or a geodataframe's metadata names. */
   layerType?: string;
+  /** The autk-db workspace the table is in, when a layer record or an envelope an
+   * Autark node handed on names one other than the default. */
+  workspace?: string;
   /** Came out of a bundle, so it is named by position when it has no name. */
   fromBundle: boolean;
   /** Its position in the bundle. */
@@ -67,6 +71,10 @@ export type GrammarFrame = {
    * (`parseOutput`'s `columns`): its schema and data are JSON objects, whose
    * keys the sandbox sends sorted. */
   columnOrder?: string[];
+  /** What the sandbox read of a Python raster, when its envelope sends it
+   * beside the file's path (`meta`: its size, CRS and transform, and its
+   * bands' labels), as a frame's envelope sends its schema. */
+  rasterMeta?: Record<string, unknown>;
 };
 
 export type GrammarInput = {
@@ -166,11 +174,16 @@ function frameOf(
   payload: any,
   envelope: any,
   input: any,
-  place: { fromBundle: boolean; index: number; circle?: number; name?: string | null; layerType?: string },
+  place: { fromBundle: boolean; index: number; circle?: number; name?: string | null; layerType?: string; workspace?: string },
 ): GrammarFrame {
   const geo = dataType === "geodataframe";
+  // Named by a layer record, an envelope, or a geodataframe's own metadata
+  // (`gdf.metadata = {"workspace": "east"}`), which the sandbox sends with its rows.
+  const workspace = place.workspace ?? autkWorkspaceOf(envelope)
+    ?? (geo && isObject(payload?.metadata) ? autkWorkspaceOf(payload.metadata) : undefined);
   return {
     name: place.name ?? envelope?.layerName ?? null,
+    ...(workspace ? { workspace } : {}),
     dataType,
     payload,
     // The dtypes sit BESIDE `data` on parseOutput's envelope; a FeatureCollection
@@ -195,10 +208,12 @@ type RasterOptions = { rasters?: boolean; source?: string; values?: boolean };
 function rasterFrameOf(
   payload: RasterPayload,
   name: string | null,
-  place: { fromBundle: boolean; index: number; circle?: number },
+  place: { fromBundle: boolean; index: number; circle?: number; workspace?: string },
+  meta?: unknown,
 ): GrammarFrame {
   return {
     name,
+    ...(place.workspace ? { workspace: place.workspace } : {}),
     dataType: "raster",
     payload,
     schema: null,
@@ -208,14 +223,17 @@ function rasterFrameOf(
     fromBundle: place.fromBundle,
     index: place.index,
     circle: place.circle ?? 0,
+    ...(isObject(meta) ? { rasterMeta: meta } : {}),
   };
 }
 
 /**
  * The frame for a `{dataType: "raster"}` value: the collection it holds, or,
  * for a Python raster (its data is the file's path), the artifact `source`
- * that holds it, with `part` its place in a tuple. Null when rasters are not
- * read or there is nothing to say where it is.
+ * that holds it, with `part` its place in a tuple or a list, and what the
+ * sandbox read of it. A raster a Data Pool took out of an artifact names that
+ * artifact and its part there itself (`artifact`, `part`; hook/useTableData).
+ * Null when rasters are not read or there is nothing to say where it is.
  */
 function rasterFrame(
   item: any,
@@ -225,15 +243,35 @@ function rasterFrame(
   if (!opts.rasters || !isObject(item) || item.dataType !== "raster") return null;
   const name = typeof item.layerName === "string" && item.layerName ? item.layerName : null;
   if (isObject(item.data) && item.data.type === "FeatureCollection") {
-    return rasterFrameOf({ envelope: item }, name, place);
+    return rasterFrameOf({ envelope: item }, name, { ...place, workspace: autkWorkspaceOf(item) });
   }
-  if (typeof item.data === "string" && opts.source) {
-    const payload: RasterPayload = place.part == null
-      ? { artifact: opts.source }
-      : { artifact: opts.source, part: place.part };
-    return rasterFrameOf(payload, name, place);
+  const named = typeof item.artifact === "string" && item.artifact !== "";
+  const artifact = named ? item.artifact : opts.source;
+  if (typeof item.data === "string" && artifact) {
+    const part = named ? (isCount(item.part) ? item.part : undefined) : place.part;
+    const payload: RasterPayload = part == null ? { artifact } : { artifact, part };
+    return rasterFrameOf(payload, name, place, item.meta);
   }
   return null;
+}
+
+/**
+ * The raster envelope a list's item is, under the envelopes `parseOutput` writes
+ * a list's items in (`{dataType: "dict", data}`), or null: a raster an Autark
+ * node's data section made, which it hands on after its layers.
+ */
+function rasterEnvelopeIn(item: any): any | null {
+  let value = item;
+  while (
+    isObject(value)
+    && typeof value.dataType === "string"
+    && value.dataType !== "raster"
+    && !FRAME_TYPES.has(value.dataType)
+    && "data" in value
+  ) {
+    value = value.data;
+  }
+  return isObject(value) && value.dataType === "raster" ? value : null;
 }
 
 /** Strip Curio's `{dataType, data}` envelopes down to the value inside. */
@@ -324,9 +362,18 @@ export function framesFromPayload(value: any, opts: RasterOptions = {}): {
     return opts.values ? { frames, refs, skipped, values } : { frames, refs, skipped };
   }
 
-  // A layer array from an upstream Autark node: `{name, type, geojson}` records.
+  // A layer array from an upstream Autark node: `{name, type, geojson}` records,
+  // then a raster table its data section made (a heatmap), in its envelope. Or
+  // a Python list, a raster in it read from its place there.
   if (Array.isArray(payload)) {
     payload.forEach((item: any, index: number) => {
+      const raster = rasterEnvelopeIn(item);
+      if (raster) {
+        const frame = rasterFrame(raster, opts, { fromBundle: true, index, part: index });
+        if (frame) frames.push(frame);
+        else skipped.push(`raster at position ${index}`);
+        return;
+      }
       const fc = asFeatureCollection(item);
       if (!fc) {
         skipped.push(`an item at position ${index}`);
@@ -339,7 +386,9 @@ export function framesFromPayload(value: any, opts: RasterOptions = {}): {
       const layerType = isObject(record) && record.geojson && typeof record.type === "string"
         ? record.type
         : undefined;
-      frames.push(frameOf("geodataframe", fc, null, null, { fromBundle: true, index, name, layerType }));
+      // The workspace a record of a table in another one than the default names.
+      const workspace = isObject(record) && record.geojson ? autkWorkspaceOf(record) : undefined;
+      frames.push(frameOf("geodataframe", fc, null, null, { fromBundle: true, index, name, layerType, workspace }));
     });
     return { frames, refs, skipped };
   }

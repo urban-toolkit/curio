@@ -8,16 +8,18 @@
  * the two a node the dataflow's doc brings to the canvas is made with too.
  *
  * What is pinned is a specific trap. `nodeMetaFromTrill` copies
- * `metadata.spatialJoin` and `metadata.simpleVis` off each spec node into
- * `nodeMeta`, then `buildCodeNode` builds `node.data` from an EXPLICIT list of
- * options. A setting that is read but missing from that list survives every
- * save (TrillGenerator reads `node.data`) and dies on every load. That is how
- * the Spatial Join in example 15 ran with the default `name` property although
- * the file said `zip` (#262), and how a Simple View pinned to one image column
+ * `metadata.simpleVis` off each spec node into `nodeMeta`, then
+ * `buildCodeNode` builds `node.data` from an EXPLICIT list of options. A
+ * setting that is read but missing from that list survives every save
+ * (TrillGenerator reads `node.data`) and dies on every load. That is how the
+ * Spatial Join in example 15 ran with the default `name` property although the
+ * file said `zip` (#262), and how a Simple View pinned to one image column
  * (#276) forgot the choice on reopen. The node's title, its one name, must take
  * the same path, and so must the rest of the node settings modal's config
  * (`metadata.packageTemplateConfig`, #412), which goes through a converter on
- * the way in, and a Data Pool's conflict modes (`metadata.dataPool`, #581).
+ * the way in, and a Data Pool's conflict modes (`metadata.dataPool`, #581). A
+ * Spatial Join keeps its settings in its widgets now: one saved before its
+ * code is read through `contracts/savedSpatialJoin.ts` first.
  */
 import * as fs from "fs";
 import * as path from "path";
@@ -39,8 +41,7 @@ function buildCodeNodeSource(): string {
 }
 
 const RESTORED_KEYS = [
-    "spatialJoin", "simpleVis", "packageTemplateConfig", "dataPool", "widgets", "copiedFrom",
-    "selections",
+    "simpleVis", "packageTemplateConfig", "dataPool", "widgets", "copiedFrom", "selections",
 ];
 
 describe("per-node settings survive a load", () => {
@@ -87,7 +88,6 @@ describe("per-node settings survive a load", () => {
         expect(typeStart).toBeGreaterThan(-1);
         expect(typeEnd).toBeGreaterThan(typeStart);
         const typeBlock = CODE_NODES.slice(typeStart, typeEnd);
-        expect(typeBlock).toMatch(/spatialJoin\?: \{ predicate\?: string; output\?: "pairs" \| "counts" \};/);
         expect(typeBlock).toMatch(/simpleVis\?: \{ imageColumn\?: string \};/);
         expect(typeBlock).toMatch(/title\?: string;/);
         expect(typeBlock).not.toMatch(/packageTemplateLabel/);
@@ -96,6 +96,14 @@ describe("per-node settings survive a load", () => {
         expect(typeBlock).toMatch(/widgets\?: WidgetDef\[\];/);
         expect(typeBlock).toMatch(/copiedFrom\?: string\[\];/);
         expect(typeBlock).toMatch(/selections\?: SelectionTag\[\];/);
+    });
+
+    test("a Spatial Join's settings are its widgets: a join saved before its code is read through its twin", () => {
+        // Every node a load or the doc brings, read first through the
+        // converter the server runs too (projects/saved_joins.py).
+        expect(CODE_NODES).toMatch(/import \{ convertedSavedJoin \} from "\.\.\/contracts\/savedSpatialJoin";/);
+        expect(CODE_NODES).toMatch(/const node = convertedSavedJoin\(saved\);/);
+        expect(CODE_NODES).not.toMatch(/spatialJoin/);
     });
 
     test("a Map Editor node's edits are in its code: an old save's metadata.editFeatures is left out", () => {

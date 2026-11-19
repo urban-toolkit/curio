@@ -1,7 +1,9 @@
 /**
  * Drop-to-Add: what a dropped card does, and how the drop reaches the open
- * catalog drawer that runs the Add. A hosted guest's drop is refused before
- * anything is asked of a drawer: guests never install.
+ * catalog drawer that runs the Add. A hosted guest's drop of a package its
+ * account does not hold is refused before anything is asked of a drawer:
+ * guests never install. One its account holds goes to the drawer's Add,
+ * which installs nothing.
  */
 import React, { useCallback } from "react";
 import { render, renderHook } from "@testing-library/react";
@@ -29,6 +31,9 @@ describe("what a dropped card does", () => {
     [{ inDataflow: true, hostedGuest: true }, "create"],
     [{ inDataflow: false, hostedGuest: false }, "add"],
     [{ inDataflow: false, hostedGuest: true }, "refuse"],
+    [{ inDataflow: false, hostedGuest: true, inAccount: false }, "refuse"],
+    [{ inDataflow: false, hostedGuest: true, inAccount: true }, "add"],
+    [{ inDataflow: true, hostedGuest: true, inAccount: true }, "create"],
   ] as const)("%o: %s", (state, action) => {
     expect(packageDropAction(state)).toBe(action);
   });

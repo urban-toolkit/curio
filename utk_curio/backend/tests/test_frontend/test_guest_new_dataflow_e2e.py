@@ -149,7 +149,7 @@ def test_a_guests_file_new_is_its_own_dataflow_which_a_reload_and_its_gallery_ke
         assert len(attached) == 1, f"the drop did not attach one Dataflow Builder to the canvas: {listed}"
 
         # The agent's plan lands its node in the dataflow, which the tab shows.
-        script_agent_replies(backend, _plan_reply(), attachment=attached[0]["attachmentId"])
+        script_agent_replies(backend, _plan_reply(), attachment=attached[0]["attachmentId"], dataflow=project_id)
         answered = api_json(
             f"{backend}/api/agents/projects/{project_id}/attachments/{attached[0]['attachmentId']}/run",
             my_token, method="POST", payload={"message": "Plan a node that counts the trees."}, timeout=120,

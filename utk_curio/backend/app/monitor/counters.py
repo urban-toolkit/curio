@@ -13,6 +13,13 @@ Memory is O(1) by construction. The duration window is a ``deque`` with a fixed
 ``maxlen`` and the node-type set is capped, so a process serving a million
 executions holds exactly as much as one serving a hundred. That is what makes
 "in-memory only, no new table" a real design rather than a deferred problem.
+
+In a start of several backend processes each holds its own counters, and the
+home process's ``/api/monitor`` adds them up (``processes.py``): each other
+process sends its :func:`part`, and :func:`merged` sums the totals, counts each
+node type once and keeps the newest :data:`DURATION_WINDOW` runs of them all by
+the time each ran, so the backend's window is what one process's would be.
+:func:`snapshot` is the merge of this process's part alone.
 """
 
 from __future__ import annotations
@@ -46,8 +53,13 @@ _python = 0
 _javascript = 0
 _in_flight = 0
 _node_types: set = set()
+#: Each run's ``(time.time(), milliseconds)``: its time orders the runs of
+#: every process when the home process merges them.
 _durations: collections.deque = collections.deque(maxlen=DURATION_WINDOW)
 _last_at = None
+
+#: The counts a process's part carries, which the merge sums.
+_TOTALS = ("total", "ok", "error", "python", "javascript", "inFlight")
 
 
 def record_execution(*, language: str, node_type=None, ok: bool,
@@ -74,7 +86,7 @@ def record_execution(*, language: str, node_type=None, ok: bool,
             if node_type and len(_node_types) < _MAX_NODE_TYPES:
                 _node_types.add(str(node_type))
             if duration_ms is not None:
-                _durations.append(float(duration_ms))
+                _durations.append((time.time(), float(duration_ms)))
             _last_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
@@ -109,30 +121,70 @@ def uptime_seconds() -> int:
 
 
 def snapshot() -> dict:
-    """Counters as plain JSON.
+    """Counters as plain JSON: this process's :func:`part`, :func:`merged`
+    alone."""
+    return merged([part()])
 
-    Takes the lock once, copies the window, releases it, and only then sorts
-    and buckets. Holding the lock across the percentile computation would put
-    an O(n log n) sort on the path of every execution that wants to record.
+
+def part() -> dict:
+    """This process's counters as another backend process of its start sends
+    them to the home process (``processes.py``): the counts, the node types
+    themselves and each run's duration with its time. Not public: the node
+    types are text from clients, and only their count is published.
+
+    Takes the lock once and copies; the sorting is the merge's, after it.
+    Holding the lock across it would put an O(n log n) sort on the path of
+    every execution that wants to record. Empty when it cannot read them.
     """
     try:
         with _LOCK:
-            durations = list(_durations)
-            payload = {
+            counts = {
                 "total": _total,
                 "ok": _ok,
                 "error": _error,
                 "python": _python,
                 "javascript": _javascript,
                 "inFlight": _in_flight,
-                "distinctNodeTypes": len(_node_types),
-                "lastExecutionAt": _last_at,
             }
+            node_types = list(_node_types)
+            durations = [[at, duration] for at, duration in _durations]
+            last_at = _last_at
+    except Exception:
+        return {}
+    return {**counts, "nodeTypes": sorted(node_types), "lastExecutionAt": last_at, "durations": durations}
+
+
+def merged(parts) -> dict:
+    """The counters of every process whose :func:`part` is one of *parts*, as
+    plain JSON, as one process's :func:`snapshot`: the counts summed, each node
+    type counted once up to the cap, the latest run's time, and the duration
+    window the newest :data:`DURATION_WINDOW` runs of them all by the time each
+    ran. Never raises."""
+    try:
+        counts = dict.fromkeys(_TOTALS, 0)
+        node_types: set = set()
+        last_at = None
+        window: list = []
+        for each in parts:
+            if not isinstance(each, dict):
+                continue
+            for name in _TOTALS:
+                counts[name] += _whole(each.get(name))
+            node_types.update(str(node_type) for node_type in each.get("nodeTypes") or ())
+            at = each.get("lastExecutionAt")
+            if isinstance(at, str) and (last_at is None or at > last_at):
+                last_at = at
+            window.extend(_timed(entry) for entry in each.get("durations") or ())
+        timed = sorted((entry for entry in window if entry is not None), key=lambda entry: entry[0])
+        durations = [duration for _at, duration in timed[-DURATION_WINDOW:]]
     except Exception:
         return _empty()
-
-    payload["durations"] = _summarise(durations)
-    return payload
+    return {
+        **counts,
+        "distinctNodeTypes": min(len(node_types), _MAX_NODE_TYPES),
+        "lastExecutionAt": last_at,
+        "durations": _summarise(durations),
+    }
 
 
 def reset() -> None:
@@ -144,6 +196,25 @@ def reset() -> None:
         _durations.clear()
         _last_at = None
         _started = time.monotonic()
+
+
+def _whole(value) -> int:
+    """A count a part carries; anything else counts nothing."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return 0
+    return max(0, value)
+
+
+def _timed(entry):
+    """A part's run, ``[time, milliseconds]``, as ``(time, milliseconds)``;
+    None when it is not one."""
+    if not isinstance(entry, (list, tuple)) or len(entry) != 2:
+        return None
+    at, duration = entry
+    if isinstance(at, bool) or isinstance(duration, bool) or not all(
+            isinstance(value, (int, float)) for value in (at, duration)):
+        return None
+    return float(at), float(duration)
 
 
 def _summarise(durations: list) -> dict:

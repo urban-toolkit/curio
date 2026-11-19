@@ -96,7 +96,7 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 | `--testing` | off | Run against the dedicated test database under `.curio/test/` and mount the test-only `/api/testing/*` routes. Also the one exemption to `--deploy` requiring isolated execution. Never for a real instance: those routes reset the database and sign in as any user without a password |
 | `--with-examples` | off | Seed the use cases, examples and tests from `docs/examples/` |
 | `--reseed` | off | Force re-seeding catalog packages into the guest package store |
-| `--exec-memory-mb` / `--exec-timeout` / `--exec-parallelism` | 4096 / 300 / half the host's cores, from 2 to 8 | Limits for isolated execution. `exec-memory-mb` is what a node may allocate on top of the interpreter its child starts with, with a floor of 64. The real host memory ceiling is `exec-memory-mb x exec-parallelism` |
+| `--exec-memory-mb` / `--exec-timeout` / `--exec-parallelism` | 4096 / 300 / half the host's cores, from 2 to 8 | Limits for isolated execution. `exec-memory-mb` is the memory a node and the processes it starts may use together, the files they read included and the GPU's memory not, with a floor of 64: past it the node is stopped and says so. Where Curio's container cannot give each node a cgroup, it is instead what a node may allocate on top of the interpreter its child starts with. The real host memory ceiling is `exec-memory-mb x exec-parallelism` |
 
 `--deploy` turns on node-execution isolation, and refuses to start on a host that cannot provide it: isolation needs Linux and an unprivileged execution account, which the Docker image creates as `curio-exec`. Two environment variables override that, for test stacks and for an operator who wants it off: `CURIO_ISOLATION=off|fork` and `CURIO_EXEC_USER=<account>` (empty means none). `CURIO_ISOLATION=fork` is fail-closed: a host that cannot provide isolation refuses to start. See [ARCHITECTURE.md](ARCHITECTURE.md#isolated-node-execution-opt-in-linux-only).
 
@@ -105,6 +105,7 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 | Flag | Default | Effect |
 |---|---|---|
 | `--state-dir PATH` | `.curio/` in the directory Curio starts from | Where Curio keeps its state: every user's store, the caches and the launcher's log |
+| `--backend-processes N` | 1 | How many backend processes serve, each keeping the dataflows it owns. Above 1 they serve behind nginx on the backend's host and port, which sends each request to the process that owns its dataflow; nginx must be on `PATH`, and `--dev` runs one. See [DEPLOYMENT.md](DEPLOYMENT.md#3-build-and-run) |
 | `--js-parallelism N` | half the host's cores, from 2 to 16 | How many JavaScript nodes the sandbox runs at once |
 | `--package-workers N` | half the host's cores, from 2 to 8 | How many package backend handlers run at once |
 | `--js-registry-url URL` | none | The npm registry a package build fetches JavaScript dependencies from. Without one, a build that needs a JavaScript dependency is refused |
@@ -112,6 +113,7 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 | `--db-pool-size N` / `--db-pool-overflow N` / `--db-pool-timeout SECONDS` | 64 / 128 / 30 | The backend's database connections: how many it keeps open, how many more it may open while those are all in use, and how long a request waits for one |
 | `--proxy-hops N` | 0 | How many reverse proxies in front of the backend add the visitor's address to `X-Forwarded-For`. The limits per address (sign-in attempts, error reports, a dashboard's runs) then read it there. See [DEPLOYMENT.md](DEPLOYMENT.md#security-checklist) |
 | `--shared-guest-name NAME` / `--shared-guest-username NAME` | `Shared Guest` / `guest_shared` | The shared guest, the one account every guest sign-in uses. A new username gives guests a new, empty account |
+| `--guest-packages PACKAGES` | none | The catalog packages every guest has, by folder name with commas between them, such as `model.curio.sam3@1`. Each start adds them, with the packages they need, to the shared guest's account, installs their libraries with the examples', and takes off what an earlier start added that the list no longer names. A name that is not a package of the catalog stops the start. See [DEPLOYMENT.md](DEPLOYMENT.md#packages-every-guest-has) |
 | `--log-to-stdout` / `--no-log-to-stdout` | on | Whether the backend and sandbox write their logs to their output, which the launcher keeps in its own log, or to `utk_curio/logs/` |
 | `--collab-origins ORIGINS` / `--collab-namespace NAMESPACE` | `*` / `/collab` | The origins whose pages may connect to the backend's Socket.IO, which [real-time collaboration](#real-time-collaboration) travels over, and its namespace. See [COLLABORATION.md](COLLABORATION.md) |
 
@@ -125,7 +127,7 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 > [!NOTE]
 > `--force-rebuild` deletes `node_modules/`, `dist/` and `build/` and rebuilds from source, so it needs the frontend sources and a working npm; the Docker image ships only the built `dist/` and cannot rebuild in place.
 
-Some flags set their variable on every start, passed or not: the backend and sandbox host and port flags, `--backend-url`, `--dev`, `--with-examples`, `--reseed`, `--allow-publish`, `--save-node-outputs`, `--deploy` and `--no-project`. For those, the matching variable in a `.env` has no effect when you launch through `curio.py`; use the flag. Every other flag sets its variable only when it is passed.
+Some flags set their variable on every start, passed or not: the backend and sandbox host and port flags, `--backend-url`, `--dev`, `--with-examples`, `--reseed`, `--allow-publish`, `--save-node-outputs`, `--guest-packages`, `--deploy` and `--no-project`. For those, the matching variable in a `.env` has no effect when you launch through `curio.py`; use the flag. Every other flag sets its variable only when it is passed.
 
 `CURIO_BACKEND_DEBUG=1` turns on Flask's debug mode for the backend, which is off by default. It has no flag of its own, so, unlike the variables above, setting it in a `.env` does work when you launch through `curio.py`. Auto-reload is a separate switch (`FLASK_USE_RELOADER`) and is unaffected.
 
@@ -481,8 +483,9 @@ open. On the canvas the header takes at most half of the node's editor, and the
 open chips scroll inside it. Drag a chip's tag into the code or spec, or click
 it to insert the chip at the cursor. Hover a tag, or its chip in the code or
 spec, to preview what it holds: an input's source, size and first rows, a
-column's first values and its range or distinct count, a widget's value, a
-scenario box's color. An input whose node has not run says which node to run.
+raster's size in cells, its bands and its CRS, a column's first values and its
+range or distinct count, a widget's value, a scenario box's color. An input
+whose node has not run says which node to run.
 
 - **Inputs**: a line for each input, with its tag and what it holds, whose
   chevron lists its columns under the line (see [Several inputs](#several-inputs)),
@@ -542,8 +545,8 @@ saved is saved under its title by its first run.
   compute step) runs on the server, like a code node.
 - A Data Export node writes its file and downloads nothing: its **Download**
   button saves the file.
-- A node that needs data only the browser makes (an Autark compute node, a
-  Spatial Join) runs, with the nodes below it, in a tab. The tab that
+- A node that needs data only the browser makes (an Autark compute node)
+  runs, with the nodes below it, in a tab. The tab that
   started the run runs them by itself; otherwise opening the dataflow offers
   **Finish run**.
 - While a run goes, **Run All** stops it. The run ends before its next node
@@ -554,8 +557,8 @@ any browser and after signing in again, each code node of your own dataflow
 shows the last result you ran it to, for 7 days, as long as its code, its
 inputs, your packages and the datasets it reads are unchanged; charts and maps
 below it draw from it. A node with no such result shows its saved output, if its
-**Save output dataset** toggle is on. Nodes below an Autark compute node or a
-Spatial Join wait for a run. After Curio is upgraded, only saved outputs come
+**Save output dataset** toggle is on. Nodes below an Autark compute node wait
+for a run. After Curio is upgraded, only saved outputs come
 back. A dashboard shows its saved outputs.
 
 An invited editor's runs are the editor's own: their results show on the
@@ -633,8 +636,8 @@ what changed in a node since a run.
 
 A widget is a value a node's code reads that you set in a form, without editing
 the code: a threshold, a season, a list of years. Python, Vega-Lite and Autark
-nodes have them. A Data Loading or Data Export node keeps the widgets it comes
-with: its **Widgets** tab shows only their controls.
+nodes have them. A Data Loading, Data Export or Spatial Join node keeps the
+widgets it comes with: its **Widgets** tab shows only their controls.
 
 1. Open the node's **Widgets** tab (toolbox icon) and click **Add widget**.
 2. Give it a name (letters, digits and underscores), a type, a label, and a
@@ -748,9 +751,14 @@ input port allows more than one. Connect an edge to the node's input circle and 
 empty circle appears below it; each new edge takes the next circle. Circles are
 numbered from 0, top to bottom. A Data Loading node needs no input: wire a node into
 it when its code reads a value that node returns, such as the area several loaders
-read. A Data Pool shows each input as a tab, and each frame of
-an input that holds several, a Python tuple or a dict of frames, as a tab too: a
-dict's tab is named after its key.
+read. A Data Pool shows each input as a tab, and each frame or raster of
+an input that holds several (a Python tuple, a list, a dict of frames or
+rasters, or the tables an Autark node hands on) as a tab too: a dict's tab is
+named after its key, and an Autark node's table after its name. A raster's tab
+says it is a raster, then, as an input chip's hover says them, its size in
+cells, its bands and its CRS, for a raster an Autark node hands on or one a
+Python node's tuple, list or dict holds; the pool passes the raster on as it
+came.
 
 In code and in a Vega-Lite or Autark spec, each input is a chip:
 
@@ -758,8 +766,8 @@ In code and in a Vega-Lite or Autark spec, each input is a chip:
    circle order, with its tag, **input_0**, **input_1**, and so on. The line
    says where the input comes from, its scenario box or else the kind the
    header of the node that feeds it shows, and, once that node has run, what it
-   holds: **from Data Loading: 5 columns**, or **no columns** for an input that
-   is not a table.
+   holds: **from Data Loading: 5 columns**, **a raster**, or **no columns** for
+   an input that is neither a table nor a raster.
 2. Drag a tag into the code, or click it to insert it at the cursor. It appears
    as a green chip, written `[!! input_1 !!]`.
 3. Click the chevron at the start of an input's line to list its columns. The
@@ -768,11 +776,12 @@ In code and in a Vega-Lite or Autark spec, each input is a chip:
    open, with its input when the circles above it close up. Drag a
    column's tag where a column name goes; it is written
    `[!! input_1.population !!]`. Click the chevron again to close the list.
-4. An input that carries several layers (an upstream Autark node's tables)
-   lists a line for each layer: the layer's tag,
-   `[!! input_1:table_osm_roads !!]`, then that layer's columns,
-   `[!! input_1:table_osm_roads.lanes !!]`. A layer is named as the Autark node
-   names its table.
+4. An input that carries several layers (an upstream Autark node's tables and
+   rasters, or a Python node's dict of frames or rasters) lists a line for each layer:
+   the layer's tag, `[!! input_1:table_osm_roads !!]`, then that layer's
+   columns, `[!! input_1:table_osm_roads.lanes !!]`, or **a raster** for a
+   raster, which has no columns. A layer is named as the Autark node names its
+   table, and a frame or raster of a dict after its key.
 5. An input that is a tuple, such as a Python node's `return means, peaks` or
    `return means, 3`, says how many values it holds:
    **from Python Computation: 2 values, a tuple**. In code, read them as
@@ -793,18 +802,21 @@ When the node runs:
   `roads = curio_layer(input_0, "table_osm_roads", 0)`
   ([Functions node code calls](../skills/node-functions/SKILL.md)),
   which gives a GeoDataFrame
-  in Python and a GeoJSON FeatureCollection in JavaScript. An input that is one
-  frame with no layer name, such as a GeoDataFrame a Python node returns, is
-  that layer. An input with several frames needs one of that name; if it has
+  in Python and a GeoJSON FeatureCollection in JavaScript. A raster layer, such
+  as the heatmap an Autark node hands on, `[!! input_0:park_access !!]`, gives
+  a `rasterio` dataset in Python. On a Python node's dict of frames or rasters,
+  a layer chip gives the frame or raster under its key. An input that is one frame or
+  one raster with no layer name, such as a GeoDataFrame a Python node returns,
+  is that layer. An input with several frames needs one of that name; if it has
   none, the node fails with a message naming the input and the layers it has.
 - In a Vega-Lite or Autark spec, an input chip becomes the name the input is read
   by, `"input_1"`: a Vega-Lite dataset or an Autark table (see
   [Vega-Lite node](#vega-lite-node) and [Autark node](#autark-node)). A layer
-  chip becomes the layer's name. On an input that is one frame with no layer
-  name, such as a GeoDataFrame a Python node returns, it is that frame, as in
-  code: `"dataRef": [!! input_0:roads !!]` becomes `"dataRef": "input_0"`. A
-  GeoDataFrame that names its layer only in `gdf.metadata` is that frame too,
-  whatever the chip names.
+  chip becomes the layer's name. On an input that is one frame or one raster
+  with no layer name, such as a GeoDataFrame a Python node returns, it is that
+  frame, as in code: `"dataRef": [!! input_0:roads !!]` becomes
+  `"dataRef": "input_0"`. A GeoDataFrame that names its layer only in
+  `gdf.metadata` is that frame too, whatever the chip names.
 - A column chip becomes the column's name: `df[[!! input_0.population !!]]` runs
   as `df["population"]`, `"field": [!! input_0.population !!]` as
   `"field": "population"`, and inside a quoted text it is the plain name. In a
@@ -1331,6 +1343,8 @@ Removing an interaction edge, or a node at either end, removes the highlight it 
 
 A point selection over fields (`"select": {"type": "point", "fields": ["unit_id"]}`) sends the values of the points picked, such as `{"unit_id": 103}`, and the receiving chart marks every row that holds them, in whatever order it holds its rows. A point selection without fields matches rows by position, so both charts must read the same rows in the same order. An interval selection matches by column name, so the receiving chart needs the columns the interval names.
 
+A Simple View's player is a selection too, an interval on `t_s`, the time in seconds. Draw an interaction edge from the Simple View to a chart or a map: while a video or a recording plays in one of its cards, the view at the other end marks the rows whose `t_s` lies between the file's start and where the player stands, such as a walk's points up to where the walker is. The marks follow the player as it plays and when you seek, and stay where it stands when you pause. They go when another card plays, when the Simple View's rows change, or when the edge or either node is removed. `t_s` is the time in the video as Sample Video Frames and Split Audio write it; a table that holds clock times gets its `t_s` in a Python node before it is linked. A file cut from a longer one, such as Track Objects' overlay, Split Audio's clip or Split Video's block, holds where it starts in its own `t_s`, and its player's range is then in the longer file's time.
+
 When several selections reach a Data Pool, the two selects at the top of the pool decide which rows it marks. **Conflict inside visualization** combines the selections of one chart, and **Conflict between visualizations** combines the latest selection of each linked chart:
 
 - **Overwrite**: the most recent selection alone.
@@ -1339,7 +1353,7 @@ When several selections reach a Data Pool, the two selects at the top of the poo
 
 The chosen modes are saved with the dataflow.
 
-An Autark map takes part the same way: a selection highlights its features, and a pick on the map, or a selection in an Autark plot, is a selection the others receive.
+An Autark map takes part the same way: a selection highlights its features, and a pick on the map, or a selection in an Autark plot, is a selection the others receive. A selection from a chart or a Simple View highlights the features of the map's first input table, on the layer marked `"isPick": true`, the one layer a map highlights.
 
 A Map Editor node and the map it edits on are linked the same way, by an interaction edge that carries selections both ways: a feature picked on the map is picked in the node, and what the node picks lights up on the map.
 
@@ -1356,8 +1370,9 @@ The values are read from the node's input, so the table must come from an input,
 
 The `Autark` node draws an Autark document: map layers or a plot, and GPU
 compute over tables. A table comes from the document's own `data` section (an
-OSM extract, a GeoJSON or CSV file) or from the node's input. The document
-writes no `data` entry for its input; it names the tables the input provides.
+OSM extract, a GeoJSON or CSV file, a GeoTIFF) or from the node's input. The
+document writes no `data` entry for its input; it names the tables the input
+provides.
 
 Each feature of an OpenStreetMap layer the node hands on has its OpenStreetMap
 id in `osm_id`, and a building's parts share its `building_id`.
@@ -1367,6 +1382,10 @@ or whose `map` or `plot` lists more than one, does not run, and the node's
 error says to put each in its own `Autark` node and link them with interaction
 edges (see [Linking charts](#linking-charts)).
 
+A node does not run the Autark grammar's `layout` and `links`. A document that
+writes either does not run, and the node's error names the key and where it is
+written.
+
 ### Its input
 
 - Each input is the table `input_0`, `input_1`, and so on, in the order of the
@@ -1375,7 +1394,7 @@ edges (see [Linking charts](#linking-charts)).
   the name for you. A frame that arrives under its own name (a Data Pool tab, a
   compute step's layer) keeps that name, and `input_<k>` also names it.
 - Several layers keep their own names: a Python tuple, a Python dict of frames
-  (each frame named after its key), a Data Pool with tabs, or the tables of an
+  or rasters (each named after its key), a Data Pool with tabs, or the tables of an
   upstream Autark node. A layer without a name is named after
   its position, `input_0`, `input_1`, and so on. When two inputs bring a layer
   of one name, the name means the first input's layer. The second input's layer
@@ -1390,8 +1409,10 @@ edges (see [Linking charts](#linking-charts)).
   so on, bring its `surface` the same way.
 - Autark clips every table after the first to the box around the first, and to
   the first's outline when it holds polygons. So a map of OpenStreetMap layers
-  is cut to its load's area, and the tables one document draws lie in one
-  area. Draw another area in its own node.
+  is cut to its load's area, and the tables one map draws lie in one area.
+  Load another area in a workspace of its own (see [Workspaces](#workspaces)).
+- A table an upstream Autark node hands on from a workspace stays in it: name
+  that `workspace` on the map, plot or compute pass that reads it.
 - A map draws tables with geometry, and a raster by one of its bands. A
   `DataFrame` is read through the one column that holds geometries; with none,
   or with several, the node draws nothing and says which. Return a
@@ -1413,7 +1434,8 @@ edges (see [Linking charts](#linking-charts)).
   `band_2`, and so on. Every cell with a value is drawn opaque, 0 included, in
   the layerRef's `colorMapInterpolator` (reds without one) from the band's lowest
   value to its highest, and a cell with no value is clear: the raster's nodata,
-  or 0 when the GeoTIFF names no nodata. A raster with
+  or 0 when the GeoTIFF names no nodata. The layers listed after a raster in
+  `layerRefs`, parks and roads included, are drawn over it. A raster with
   a `colorMapInterpolator` shows its legend, with that scheme and range;
   `"isColorMap": false` hides the legend and keeps the colours. It is drawn at
   its own size, cell for cell, up to 4096 by 4096 cells and 8192 on a side. A
@@ -1421,12 +1443,79 @@ edges (see [Linking charts](#linking-charts)).
   crop it in the node that makes it, for example with a rasterio window read or
   the `bounds` of `curio_load_data` (see the [Data Catalog](DATA-CATALOG.md)).
   It needs a CRS with an EPSG code and a north-up grid. A plot or a compute step
-  does not read a raster.
+  does not read a raster, and a document whose compute pass names one, in the
+  pass's own workspace, does not run: the node's error names the pass and the
+  raster. Compute over a raster's cells in a Python node.
 - A raster the node hands on reaches a Python node as a `rasterio` dataset on
-  the same grid: its bands, origin, cell size and CRS.
-- A `data` section runs in the sandbox, where the input is not available: its
-  `join` and `heatmap` sources cannot read the input. Join it in a Python node,
-  or name it from a map, plot or compute block.
+  the same grid: its bands, origin, cell size and CRS. It keeps its table's
+  name in its `metadata`, as a table does, so a layer chip names it, as in
+  `[!! input_0:park_access !!]`.
+- A `heatmap` or a `join` of the document's `data` reads the input's tables
+  too, named as a map names them: a table no source of the `data` loads is
+  one of the input's. The node loads it into that entry's workspace just
+  before the first entry that reads it, so the `data`'s own sources keep their
+  order, and a heatmap that comes first in the `data` covers the input table's
+  area. A table neither the `data` loads nor the input carries fails the node,
+  and the error names it. The node hands on what its `data` loads and makes,
+  and an input table only when a `join` wrote its columns onto it.
+- A `csv` or `json` source loaded without `geometryColumns` makes a table with
+  no geometry. The node hands it on as its rows, each with no geometry: a
+  Python node reads them as a table, a plot keeps them, and a map draws nothing
+  for them.
+
+### Workspaces
+
+A workspace is a set of tables with its own area: Autark clips the tables of
+one workspace to its first table alone. A source's `workspace` loads its table
+there, and the `workspace` of a map, a plot or a compute pass is where it reads
+its tables. Without one, a table is in the default workspace. Two workspaces
+can hold tables of one name, so one document can load two areas, neither
+clipping the other:
+
+```json
+{
+  "data": [
+    {
+      "type": "osm",
+      "pbfFileUrl": "docs/examples/data/back_bay.osm.pbf",
+      "queryArea": {"geocodeArea": "Boston", "areas": ["Back Bay"]},
+      "outputTableName": "area",
+      "autoLoadLayers": {"layers": ["roads"]},
+      "workspace": "boston"
+    },
+    {
+      "type": "osm",
+      "pbfFileUrl": "docs/examples/data/chicago_loop.osm.pbf",
+      "queryArea": {"geocodeArea": "Chicago", "areas": ["Loop"]},
+      "outputTableName": "area",
+      "autoLoadLayers": {"layers": ["roads"]},
+      "workspace": "chicago"
+    }
+  ]
+}
+```
+
+This node hands on `area_roads` twice, once from each workspace. A map in the
+node it feeds draws one of them by naming its workspace:
+
+```json
+{"map": {"workspace": "chicago", "layerRefs": [{"dataRef": "area_roads"}]}}
+```
+
+A table keeps its workspace through a compute step, a Map Editor node and a
+Data Pool, and a Map Editor node makes its new layers in the workspace its
+input's layers share. A Python node reads it as `workspace`: in each layer
+record a data section's tables arrive as (`{"name", "type", "geojson",
+"workspace"}`), and in the `metadata` of a frame read from another Autark
+node's layers or through a layer chip, beside its `name`, which a frame the
+node returns hands on. In code, a layer chip names a table by its name when
+one layer has that name, whatever its workspace. When two workspaces hold
+tables of one name, the name names neither, the node says so with their keys,
+and the chip names one by its key, `<workspace>/<table>`:
+`[!! input_0:east/lines !!]` reads east's `lines`, and
+`[!! input_0:autk/lines !!]` the default workspace's. A map that names a table
+of another workspace than its own draws nothing and says which tables it has,
+each in another workspace written as `<workspace>/<table>`.
 
 Before it runs, a node that reads its input says what a `Vega-Lite` node says:
 connect a node, run the node feeding this one, the node feeding this one
@@ -1434,9 +1523,10 @@ failed, or what this input lacks. A node whose document loads everything it
 draws only says it has not run yet. A run that ends on an input the node
 cannot draw names the reason in the node body and in its error.
 
-A map opens framed on what its layers draw: it looks straight down on their
-middle, with all of them in view and a little room around them. Pressing R on
-the map frames it again.
+A map opens framed on what its layers draw: it looks down on their middle,
+with all of them in view and a little room around them, straight down unless
+its `camera` turns it (see [The map's camera](#the-maps-camera)). Pressing R on
+the map gives it that view again.
 
 A map or a plot redraws on its own when new data reaches it, as a `Vega-Lite`
 chart does: when a project opens with its input restored, and when the node
@@ -1445,6 +1535,81 @@ a run is going, and a selection only highlights it (see
 [Linking charts](#linking-charts)). A data or compute step runs only when you
 press play or run the dataflow. Without WebGPU nothing is drawn on its own;
 pressing play says why.
+
+### Compute passes
+
+Each entry of `compute` is a pass, run in order on the GPU. A GPGPU pass, one
+with no `type`, runs a WGSL function over every feature of the table its
+`dataRef` names, and writes the result to each feature as `compute.<column>`,
+under the names `outputColumnName` or `outputColumns` give. A pass writes into
+that table, unless it names a new one:
+
+```json
+{"dataRef": "input_0", "attributes": {"v": "value"}, "wgslFunction": "return v * 2.0;",
+ "outputColumnName": "twice", "outputTableName": "doubled", "layerType": "points"}
+```
+
+- With `outputTableName`, the pass writes a new table of that name and leaves
+  its `dataRef` table as it was. Later passes, the map and the plot read the
+  new table by its name: `{"dataRef": "doubled", "getFnv": "compute.twice"}`.
+  A pick on it, and a selection that lights it, name the rows of the table it
+  was computed from.
+- `layerType` is the type the new table is drawn and handed on as; without
+  it, the new table has the type of the table it was computed from. A pass
+  without `outputTableName` keeps its table's type.
+- A document with no map or plot is a compute step: it hands on every table it
+  holds, each as its passes left it, with the new tables after them, each with
+  its name and type. Each computed column is also a column of its own, `twice`
+  beside `compute.twice`.
+- A compute step with a `data` section of its own runs its passes on the tables
+  it loads, and on its input's tables when a pass names one.
+- A pass over a table with no rows does not run, and the table it would write
+  has no rows.
+- A pass the GPU cannot run fails the node, and the node's error names the
+  table the pass writes.
+
+### Render passes
+
+A pass with `"type": "render"` draws the tables its `layers` name on the GPU,
+from each feature of its `viewpoints` table, and counts what the frames show.
+It writes a new table, `outputTableName`: the viewpoints' features, each with
+what it saw in `compute.render`. This one colors each street by the share of
+sky it sees through the buildings:
+
+```json
+{
+  "compute": [{
+    "type": "render", "outputTableName": "street_sky",
+    "layers": [{"id": "buildings", "dataRef": "table_osm_buildings", "type": "buildings"}],
+    "viewpoints": {"dataRef": "table_osm_roads", "sampling": {"directions": 4, "pitchDeg": 45}},
+    "aggregation": {"type": "classes", "includeBackground": true, "backgroundLayerType": "sky"}
+  }],
+  "map": {"layerRefs": [{"dataRef": "street_sky", "getFnv": "compute.render.classes.sky"}]}
+}
+```
+
+- Each layer names the `type` it is drawn as: `surface`, `parks`, `water`,
+  `roads`, `buildings`, `polygons` or `polylines`, and a building rises to its
+  height. A layer of another type, such as `points`, fails the node, which
+  names the layer. A layer whose table has no rows draws nothing, and the pass
+  runs without it.
+- A viewpoint looks out from its feature's centroid, on the ground, in the
+  directions `sampling` sets: `directions` around it and `pitchDeg` above the
+  horizon. With `"strategy": {"type": "building-windows", "floors": 3}`, the
+  viewpoints are windows along each building's facades instead, three rows of
+  them, and the table holds one point per window.
+- With `"aggregation": {"type": "classes"}`, each feature gets in
+  `compute.render.classes` the share of its frames each layer type covers,
+  from 0 to 1. `includeBackground` counts what no layer covers as one more
+  class, named by `backgroundLayerType`. With `{"type": "objects"}`, each
+  feature gets in `compute.render.objects` the share of its frames that show
+  each object of a layer that names its `objectIdProperty`.
+- `camera` sets each frame's field of view and how near and far it draws, and
+  `tileSize` the frames' size in pixels.
+- The new table has the type of its viewpoints' table, or `points` for
+  windows, unless `layerType` says another. A pick on it names the rows of the
+  viewpoints' table; a pick on windows names the windows.
+- A compute step hands the new table on after the tables it holds.
 
 ### Layer titles and colors
 
@@ -1469,8 +1634,12 @@ a table the document loads. Two layers of one map cannot have the same title.
 ```
 
 A layer can also be drawn in one `color` (`"#d62728"`), with no legend. A
-line layer takes a `width` in meters, and a polygon layer a `stroke` color, or
-`"stroke": false` for no outline. A raster layer takes `colorMapReverse` to
+line layer takes a `width` in the map's planar units, about three quarters of
+a meter on the ground at Chicago, and a polygon layer a `stroke` color, or
+`"stroke": false` for no outline. A points layer takes a `pointSize`, the
+radius of each point in meters on the ground: `"pointSize": 2` draws each
+point as a disc 4 m across, where without it a point is a disc 64 planar units
+in radius, about 96 m across at Chicago. A raster layer takes `colorMapReverse` to
 run its scheme from its highest value to its lowest, `colorMapCenter` to put a
 value at the middle of its scheme, and `transferFunction` for how opaque its
 cells are; every cell with a value is opaque unless it says otherwise. A
@@ -1489,6 +1658,132 @@ chip as its color, which its tag under **Scenarios** above the spec drags in
 
 The chip writes the box's color, and for an input from no box a gray of its
 own. A box recolored gives the layer its new color on the map's next run.
+
+### The map's camera
+
+A map's `camera` turns the view the map opens framed at, around the point it
+looks at. `pitch` tilts the view from straight down, from 0 to 90 degrees, and
+`bearing` turns it to face a compass heading, in degrees clockwise from north,
+which is then up on the screen. The eye stays as far from that point as the
+framing put it, unless `zoom` sets the distance: `10000 / 2^(zoom - 10)` of the
+map's planar units, half as far for each step up.
+
+```json
+{
+  "map": {
+    "camera": {"pitch": 50, "bearing": 30},
+    "layerRefs": [
+      {"dataRef": "table_osm_buildings", "getFnv": "height", "getFnvType": "quantitative"}
+    ]
+  }
+}
+```
+
+Pressing R on the map frames it and turns it by its camera again. A map a Map
+Editor node feeds keeps the view you zoomed or panned to when an edit draws it
+again, and a change to its `camera` shows that camera's view.
+
+### GeoTIFF rasters
+
+A `geotiff` source loads a raster from a GeoTIFF file. `geotiffFileUrl` is the
+file's path from the folder Curio was started from, as a Python node opens a
+file (`docs/examples/data/...` reads the example data Curio ships), or a URL.
+The file's first image is read, its bands named `band_1`, `band_2`, and so on,
+and a cell holding the file's no-data value has no value. `coordinateFormat`
+is the file's CRS, EPSG:4326 unless the source says otherwise. A file of more
+than `maxRasterCells` cells, one million unless the source says otherwise, is
+shrunk to fit: with `"resampleMethod": "nearest"` each cell keeps a value of
+the file, and with `"bilinear"`, the default, neighboring cells are blended. A
+rotated or sheared grid is refused.
+
+```json
+{
+  "data": [
+    {"type": "osm", "pbfFileUrl": "docs/examples/data/niteroi.osm.pbf", "outputTableName": "table_osm",
+     "queryArea": {"geocodeArea": "Rio de Janeiro", "areas": ["Niterói"]},
+     "autoLoadLayers": {"layers": ["parks"]}},
+    {"type": "geotiff", "geotiffFileUrl": "docs/examples/data/niteroi_lst_verao_2001_2024.tif",
+     "outputTableName": "lst", "resampleMethod": "nearest"}
+  ],
+  "map": {
+    "layerRefs": [
+      {"dataRef": "lst", "getFnv": "band_24", "colorMapInterpolator": "interpolateYlOrRd",
+       "title": "Summer surface temperature, 2024 (°C)"},
+      {"dataRef": "table_osm_parks", "color": "#2ca02c"}
+    ]
+  }
+}
+```
+
+A map draws it as it draws any raster, by one band, cell for cell, up to 4096
+by 4096 cells and 8192 on a side; for a larger one, the node says to give the
+source a lower `maxRasterCells`. A node that only loads data hands it on after
+its layers: an `Autark` node draws it by its table's name, and a Python node
+receives it as a `rasterio` dataset in EPSG:3395, holding the file's cells
+over the file's extent, where the map draws them. A Python node that opens the
+file by its path reads it on the file's own grid. A GeoTIFF in a workspace is
+loaded there and handed on with it, as a table is. A raster of the Data Catalog
+comes in on the node's input, from its Data Loading node.
+
+### Heatmaps
+
+A `heatmap` source bins a table of the document's `data` into a grid over the
+area the document loads. Each cell takes the rows of `joinDataRef` within
+`near.distance` of its center. The distance is in the map's planar units
+(EPSG:3395), as a line's `width` is: 200 reaches about 150 m on the ground in
+Chicago or New York. It is measured to each row's center, or with
+`"useCentroid": false` to the nearest point of its shape, so a long road
+counts in every cell it passes near. `grid` sets the rows and columns.
+
+Each `groupBy` entry is a band, labelled `<aggregateFn>_<table>`:
+
+- `count` counts the rows, and `weighted` adds 1 / (distance + 1) for each,
+  so a row near the center weighs more; both take `"column": "*"`;
+- `sum`, `avg`, `min` and `max` aggregate the rows' `column`, such as
+  `{"column": "db", "aggregateFn": "avg"}`.
+
+An entry with `"normalize": true` rescales its band from 0 at its least cell to
+1 at its greatest, and its label ends in `_norm`. Bands of one aggregate over
+different columns each name their column too, such as `avg_<table>_db` and
+`avg_<table>_peak`, so every label names one band. A cell no row reaches holds
+0 in every band. A heatmap without `groupBy` has one band, `count`.
+
+The table a heatmap bins is one its `data` section loads before it, into the
+heatmap's own workspace, or a table of the node's input, such as the points a
+Python node returns, `"joinDataRef": "input_0"`, which the node loads there
+(see [Its input](#its-input)). A heatmap of any other table fails the node
+with an error that names it, by its key (`<workspace>/<table>`) in another
+workspace than the default. A heatmap in a workspace is handed on with it, as
+a table is.
+
+```json
+{
+  "data": [
+    {"type": "osm", "pbfFileUrl": "docs/examples/data/lower_mnt.osm.pbf", "outputTableName": "tip",
+     "queryArea": {"bbox": [-74.0194, 40.7, -74.0085, 40.7085]},
+     "autoLoadLayers": {"layers": ["surface", "parks", "roads"]}},
+    {"type": "heatmap", "joinDataRef": "tip_parks", "outputTableName": "park_access",
+     "near": {"distance": 200, "useCentroid": false}, "grid": {"rows": 30, "columns": 30},
+     "groupBy": [{"column": "*", "aggregateFn": "count"}]}
+  ],
+  "map": {
+    "layerRefs": [
+      {"dataRef": "tip_roads"},
+      {"dataRef": "park_access", "getFnv": "count.tip_parks", "title": "Parks within about 150 m", "opacity": 0.6}
+    ]
+  }
+}
+```
+
+A heatmap is a raster. A map draws it as it draws any raster, by one band:
+`"getFnv": "band_1"`, or its label written with dots for its underscores, such
+as `"count.tip_parks"` for `count_tip_parks`. Every cell is drawn opaque unless
+the layer writes an `opacity` or a `transferFunction`. A node that only loads
+data hands its heatmaps on after its layers: an `Autark` node draws one by its
+table's name, and a Python node receives it as a `rasterio` dataset on the
+same grid, in the list of the node's tables, each band described by its label
+(`count_tip_parks`). In either, a layer chip names it by its table's name,
+`[!! input_0:park_access !!]`.
 
 ### The starter document
 
@@ -1511,13 +1806,24 @@ The first matching rule wins:
 ## Spatial Join node
 
 The `Spatial Join` node pairs the rows of two GeoDataFrames whose shapes meet.
-It has two input circles: **input_0**, the upper, blue one, and **input_1**,
-the lower, green one. input_0 is the left side of the join and input_1 the
-right. Either circle takes points, lines or polygons, and one node can feed
-both.
+It has two input circles: **input_0**, the upper one, and **input_1**, the
+lower one. input_0 is the left side of the join and input_1 the right, each
+by its circle, whatever order they arrive in. Either circle takes points,
+lines or polygons, and one node can feed both.
 
-Its body reads as a sentence, *Pair each input_0 row with the input_1 rows
-it ...*, finished by the operation you pick. A point on an edge follows
+It opens on its two controls, **Operation** and **Output**. Its code, on the
+Code tab, is the call they set:
+
+```python
+from spatial_join import spatial_join
+
+return spatial_join(input_0, input_1, operation=[!! operation !!], output=[!! output !!])
+```
+
+`spatial_join` is a function of the built-in package, listed under
+**Functions** above the code of every built-in Python node. Play, Run All, a
+run on the server and a dashboard's runs all join. **Operation** pairs each
+input_0 row with the input_1 rows it meets. A point on an edge follows
 [shapely](https://shapely.readthedocs.io/)'s rule for each:
 
 | Operation | Pairs input_0's shape with input_1's when | A point on a polygon's edge |
@@ -1530,19 +1836,21 @@ it ...*, finished by the operation you pick. A point on an edge follows
 | crosses | a line runs through the other shape, partly inside and partly outside it | |
 | nearest | input_1's is the closest to input_0's, ties included | |
 
-The output is one of:
-- **One row per pair**, the default: input_0's row and shape, with input_1's
-  columns added. A column whose name input_0 already has comes in as
+**Output** is one of:
+- **pairs**, the default: one row per pair, input_0's row and shape, with
+  input_1's columns added. A column whose name input_0 already has comes in as
   `<column>_right`. A row with no pair is left out. `nearest` also adds
   `distance`, in meters.
-- **Counts**: input_1's rows, each with `point_count`, the number of input_0
+- **counts**: input_1's rows, each with `point_count`, the number of input_0
   rows paired with it.
 
-When an operation can never match the shapes given, such as polygons within
-points, the node says so and names the operation or the swap that would.
-Example 25 runs every operation, one flow each
-([Spatial Join operations](examples/25-spatial-join-operations.md)). On a
-dashboard the node shows the output saved with the dataflow and never joins.
+The node prints how many rows it paired, such as *359 pairs: 359 of 359
+input_0 rows matched.* When an operation can never match the shapes given,
+such as polygons within points, it prints that too and names the operation or
+the swap that would. Example 25 runs every operation, one flow each
+([Spatial Join operations](examples/25-spatial-join-operations.md)). A join
+saved before it had code opens with its code and its saved operation and
+output in its two controls.
 
 ## Rasters
 
@@ -1666,8 +1974,10 @@ the page opens.
   value, and a node that reads a connection key stops with a message. A code node without widgets shows
   its code, read-only.
 - **What a run makes**, on opening the page or after a change, is kept for 7 days and
-  shown to every later viewer with the same values, without running again. After 7 days
-  it is deleted, and the next viewer who needs it runs the nodes again.
+  shown to every later viewer with the same values, without running again. A frame or
+  overlay it draws is kept apart from the ones your own runs draw, which it never
+  changes. After 7 days it is deleted, and the next viewer who needs it runs the nodes
+  again.
 - **A node only a browser runs**, such as an Autark compute on the GPU, runs in each
   viewer's own browser, which needs WebGPU for it. What it makes there, and what the
   nodes below make from it, serve that viewer's page alone, for an hour.
@@ -1681,8 +1991,10 @@ the page opens.
   layout, **Arrange by scenario** puts every tile back in its column.
 - **Sharing**: the page is served with its data inside it, whether `--backend-url` is an
   address or a path such as `/api`, so a viewer needs no account and the saved tiles draw
-  even when the server is unreachable; a change to a control needs the server. Only its
-  owner edits its layout.
+  even when the server is unreachable; a change to a control needs the server. The images
+  and videos a Simple View tile shows come from the server, to a viewer with no account
+  too: the page reads each through a link to that one file, and no other file of yours.
+  Only its owner edits its layout.
 
 Two dashboards cannot be served this way: one whose data is too large to travel with the
 page (25 MB), and one with a pinned Autark tile that loads its own data. Opening either
@@ -1758,7 +2070,7 @@ For the full guide, covering searching, downloading, storage sources, collection
 
 ## Model Catalog
 
-The **Model Catalog** holds the trained models your nodes can run. A model is a package: its weights and the node that runs it. DDRNet23-Slim, which labels street photos with the 19 Cityscapes classes, ships with Curio, with an **Image Segmentation** node; models you add from the Discovery Catalog's **Hugging Face models** land here too, each with an Image Segmentation node of its own. A node runs the model its code names with `curio_load_model("<id>")`. Drag a model's card from the Model Catalog drawer onto the canvas to add its node, or onto a node to change the node's model for another of the same type. **Model Catalog** in the left Tools panel lists the models added to this dataflow, to drag the same way. **Save as package node…** on a node that loads a model makes a model package of your own, a copy of the model.
+The **Model Catalog** holds the trained models your nodes can run. A model is a package: its weights and the node that runs it. DDRNet23-Slim, which labels street photos with the 19 Cityscapes classes, ships with Curio, with an **Image Segmentation** node; models you add from the Discovery Catalog's **Hugging Face models** land here too, each with an Image Segmentation node of its own. Each of those nodes' code is its settings and a call of `segment_images`, which the **Segmentation** package holds and the header above the code lists under **Functions**; adding the model adds the package. A node runs the model its code names with `curio_load_model("<id>")`. Drag a model's card from the Model Catalog drawer onto the canvas to add its node, or onto a node to change the node's model for another of the same type. **Model Catalog** in the left Tools panel lists the models added to this dataflow, to drag the same way. **Save as package node…** on a node that loads a model makes a model package of your own, a copy of the model.
 
 A node runs a model once the model's package is in your account: added from the Model Catalog (**Add to project** in its canvas drawer, **Add to all projects** on its page), or brought by a dataflow that names it, such as example 10. Shipped models are packages under `<repo_root>/packages/`, relocated with **`--packages-root`**; models you add from the Discovery Catalog are yours, in your package store.
 

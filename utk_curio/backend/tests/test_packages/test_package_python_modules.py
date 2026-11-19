@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import zipfile
 from pathlib import Path
 
@@ -25,6 +26,9 @@ import pytest
 from utk_curio.backend.app.packages.application.store_install import install_package_from_archive
 from utk_curio.backend.app.packages.repositories.archive import InstallerError
 from utk_curio.backend.app.packages.repositories.store import package_dir
+
+#: The built-in package as it ships: its one module is the Spatial Join's.
+BUILTIN_PACKAGE = Path(__file__).resolve().parents[4] / "packages" / "curio.builtin@1"
 
 HEIGHTS = {
     "building_height/__init__.py": "",
@@ -191,6 +195,56 @@ class TestTheInstallerRefusesAModuleNameInUse:
         assert package_dir("7", "ai.test.second@1").is_dir()
 
 
+# ---------------------------------------------------------------------------
+# A package with no node, at install
+# ---------------------------------------------------------------------------
+
+#: The words an install of a package with no template and no module is
+#: refused with, the words main refuses every package with no template with.
+NO_TEMPLATES = r"manifest\.json\.templates must be a non-empty list"
+
+
+class TestAPackageWithNoNode:
+    """A package that defines no template is a library, such as Segmentation:
+    it installs when it ships a module (main refused it), and one that ships
+    no module either is refused as main refuses it."""
+
+    def test_a_package_of_modules_alone_installs(self, tmp_curio):
+        result = install_package_from_archive("guest", _archive("ai.test.library", templates=(), modules=HEIGHTS))
+        assert result.manifest.templates == []
+        assert (package_dir("guest", "ai.test.library@1") / "sources" / "building_height" / "__init__.py").is_file()
+
+    @pytest.mark.parametrize("modules", [
+        None,
+        {"notes/readme.txt": "no Python here\n"},
+        {"not-a-name.py": "X = 1\n"},
+    ], ids=["no-sources", "no-python", "not-a-name"])
+    def test_one_with_no_module_either_is_refused_as_before(self, tmp_curio, modules):
+        with pytest.raises(InstallerError, match=NO_TEMPLATES):
+            install_package_from_archive("guest", _archive("ai.test.nothing", templates=(), modules=modules))
+        assert not package_dir("guest", "ai.test.nothing@1").exists()
+
+    def test_the_upload_route_installs_the_one_and_refuses_the_other(self, client, user_and_token, tmp_curio):
+        _, token = user_and_token
+        headers = {"Authorization": f"Bearer {token}"}
+
+        def upload(package_id: str, modules):
+            return client.post(
+                "/api/packages/upload",
+                data={"file": (io.BytesIO(_archive(package_id, templates=(), modules=modules)), "p.curio.zip")},
+                headers=headers,
+                content_type="multipart/form-data",
+            )
+
+        library = upload("ai.test.library", HEIGHTS)
+        assert library.status_code == 201, library.get_data(as_text=True)
+        package = library.get_json()["package"]
+        assert (package["dirName"], package["templates"]) == ("ai.test.library@1", [])
+        nothing = upload("ai.test.nothing", None)
+        assert nothing.status_code == 400, nothing.get_data(as_text=True)
+        assert re.search(NO_TEMPLATES, nothing.get_json()["error"]), nothing.get_json()
+
+
 class TestArchivesCarryPythonPackages:
     def test_a_module_folder_may_hold_init_py(self, tmp_curio):
         install_package_from_archive("guest", _archive("ai.test.heights", modules=HEIGHTS))
@@ -225,20 +279,80 @@ class TestARunIsHandedItsPackagesModules:
         assert modules_for_node("guest", "ai.test.heights/caller@1") == expected
 
     @pytest.mark.parametrize("node_type", [
-        "curio.builtin/python-computation",
-        "curio.builtin/python-computation@1",
-        "PYTHON_COMPUTATION",
         "ai.test.absent/caller",
         "ai.test.heights/not-a-template",
         "ai.test.heights/caller@2",
         "ai.test.plain/caller",
+        # A built-in node with no Python code: it imports nothing.
+        "curio.builtin/js-computation",
+        "curio.builtin/vis-vega",
+        "curio.builtin/vis-simple",
+        "curio.builtin/data-pool",
+        "curio.builtin/autk-grammar",
+        "curio.builtin/note",
+        "curio.builtin/not-a-template",
     ])
     def test_nothing_for_every_other_node(self, tmp_curio, node_type):
+        from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
         from utk_curio.backend.app.packages.service import modules_for_node
 
+        install_package_from_directory("guest", BUILTIN_PACKAGE)
         install_package_from_archive("guest", _archive("ai.test.heights", modules=HEIGHTS))
         install_package_from_archive("guest", _archive("ai.test.plain"))
         assert modules_for_node("guest", node_type) is None
+
+    @pytest.mark.parametrize("node_type", [
+        "curio.builtin/python-computation",
+        "curio.builtin/python-computation@1",
+        "PYTHON_COMPUTATION",
+        "curio.builtin/data-loading",
+        "curio.builtin/data-export",
+        "curio.builtin/data-summary",
+        "curio.builtin/spatial-join",
+        "curio.builtin/spatial-join@1",
+        "curio.builtin/edit-features",
+    ])
+    def test_a_built_in_python_node_gets_the_built_in_packages_module(self, tmp_curio, node_type):
+        """The Spatial Join's code imports ``spatial_join`` from the built-in
+        package, and every built-in Python node can: a run of one is handed the
+        package's ``sources/`` folder and its one module."""
+        from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
+        from utk_curio.backend.app.packages.service import modules_for_node
+
+        install_package_from_directory("guest", BUILTIN_PACKAGE)
+        install_package_from_archive("guest", _archive("ai.test.heights", modules=HEIGHTS))
+        assert modules_for_node("guest", node_type) == {
+            "root": str(package_dir("guest", "curio.builtin@1") / "sources"),
+            "names": ["spatial_join"],
+        }
+
+    def test_a_package_node_is_not_handed_the_built_in_packages_module(self, tmp_curio):
+        """Only the built-in package's own Python nodes get its module: a
+        package's node gets its own package's, as before."""
+        from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
+        from utk_curio.backend.app.packages.service import modules_for_node
+
+        install_package_from_directory("guest", BUILTIN_PACKAGE)
+        install_package_from_archive("guest", _archive("ai.test.heights", modules=HEIGHTS))
+        assert modules_for_node("guest", "ai.test.heights/caller") == {
+            "root": str(package_dir("guest", "ai.test.heights@1") / "sources"),
+            "names": ["building_height"],
+        }
+
+    def test_the_module_index_names_the_built_in_module_with_its_python_templates(self, tmp_curio):
+        """The agents' grounding gate reads every module by name with the
+        templates whose nodes import it (``module_index``): ``spatial_join``
+        is the built-in package's, imported by its Python code templates."""
+        from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
+        from utk_curio.backend.app.packages.service import module_index
+
+        install_package_from_directory("guest", BUILTIN_PACKAGE)
+        entry = module_index("guest")["spatial_join"]
+        assert (entry["package"], entry["added"]) == ("curio.builtin@1", True)
+        assert sorted(t["id"] for t in entry["templates"]) == [
+            "curio.builtin/data-export", "curio.builtin/data-loading", "curio.builtin/data-summary",
+            "curio.builtin/edit-features", "curio.builtin/python-computation", "curio.builtin/spatial-join",
+        ]
 
     def test_nothing_without_an_account(self, tmp_curio):
         from utk_curio.backend.app.packages.service import modules_for_node

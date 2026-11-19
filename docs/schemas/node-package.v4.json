@@ -10,7 +10,7 @@
     "required": ["kind"],
     "properties": { "kind": { "const": "model" } }
   },
-  "then": { "required": ["model"] },
+  "then": { "required": ["model"], "properties": { "templates": { "minItems": 1 } } },
   "else": { "not": { "anyOf": [{ "required": ["model"] }, { "required": ["downloadOnFirstUse"] }] } },
   "allOf": [
     {
@@ -137,8 +137,7 @@
     },
     "templates": {
       "type": "array",
-      "description": "Node templates this package defines. Each entry becomes a draggable node in the canvas palette.",
-      "minItems": 1,
+      "description": "Node templates this package defines. Each entry becomes a draggable node in the canvas palette. A package that defines none is a library: it ships at least one Python module in sources/, for the packages that name it in dependencies.packages, and Curio refuses one that ships neither. A model package defines at least one, the node that runs its model.",
       "items": { "$ref": "#/$defs/template" }
     },
     "backend": {
@@ -193,7 +192,7 @@
         "type": {
           "type": "string",
           "enum": ["semantic-segmentation", "image-to-image", "node-regression", "concept-segmentation"],
-          "description": "'semantic-segmentation': one label per pixel. 'image-to-image': images in, an image out. 'node-regression': a graph in (node features and edges), values for each node out. 'concept-segmentation': labels that are text prompts, and every thing each prompt names found. The node that runs an image-to-image or node-regression model feeds it itself (model.run), and the node that runs a concept-segmentation model loads its checkpoint itself (model.path)."
+          "description": "'semantic-segmentation': one label per pixel. 'image-to-image': images in, an image out. 'node-regression': a graph in (node features and edges), values for each node out. 'concept-segmentation': labels that are text prompts, and every thing each prompt names found. The node that runs an image-to-image or node-regression model opens its ONNX file (model.path) in an onnxruntime session and feeds it itself, and the node that runs a concept-segmentation model loads its checkpoint itself (model.path)."
         },
         "runtime": {
           "type": "string",

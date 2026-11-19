@@ -14,7 +14,10 @@ as the canvas does:
   event, ``{projectId, message}``, framed as y-protocols frames it, which the
   server answers with step 2 and, to an editor, its own step 1
   (``collaboration/dataflow_docs.py``; its tests drive the same frames from
-  ``test_collaboration/_ydoc_client.py``);
+  ``test_collaboration/_ydoc_client.py``). Every event after the join names
+  the id the join answers with (``projectId``), as the page does: the
+  dataflow's, or for a hosted guest on an example its own copy's
+  (``--guests``, ``guests.py``);
 * types comment lines into a node's code, a keystroke a transaction, and drags
   that node, each change a ``yjs`` update; a node's code and its place are
   where ``src/contracts/dataflowDoc.json`` puts them (``doc_mapping``);
@@ -72,7 +75,7 @@ import uuid
 from collections import deque
 from dataclasses import dataclass
 from typing import Callable, Optional
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 import engineio
 import socketio
@@ -90,6 +93,7 @@ from pycrdt import (
 )
 
 from utk_curio.backend.app.collaboration import doc_mapping
+from utk_curio.common.backend_processes import ROUTE_HEADER, ROUTE_QUERY
 
 #: Tabs per room: its owner and the editors it invites.
 ROOM_SIZE = 5
@@ -294,10 +298,14 @@ class SocketLink:
     again; a drop is a failure instead. *on_yjs* takes the doc's messages and
     the answers to the tab's queued updates (:data:`KEPT_EVENT`); *on_room*,
     given, takes each of :data:`ROOM_EVENTS` and :data:`AGENT_EVENTS` as
-    ``on_room(name, payload)``."""
+    ``on_room(name, payload)``. Its handshake names *dataflow*, the tab's, in
+    its ``dataflow`` query argument, as a browser's does, and in the
+    ``X-Curio-Dataflow`` header: with several backend processes nginx sends
+    the socket to the one that owns it, whose room it joins."""
 
     def __init__(self, backend_url: str, namespace: str, token: str,
-                 on_yjs: Callable, on_close: Callable, on_room: Optional[Callable] = None):
+                 on_yjs: Callable, on_close: Callable, on_room: Optional[Callable] = None,
+                 dataflow: Optional[str] = None):
         self.namespace = namespace
         # emit() is not thread-safe for a message of several packets, which
         # every binary event is; the tab's thread and the socket's both send.
@@ -314,8 +322,12 @@ class SocketLink:
                 self._client.on(name, lambda *args, name=name: on_room(name, args[0] if args else None),
                                 namespace=namespace)
         origin, path = socket_target(backend_url)
+        headers = {}
+        if dataflow:
+            origin = f"{origin}?{urlencode({ROUTE_QUERY: dataflow})}"
+            headers[ROUTE_HEADER] = dataflow
         self._client.connect(
-            origin, namespaces=[namespace], auth={"token": token},
+            origin, headers=headers, namespaces=[namespace], auth={"token": token},
             transports=["websocket"], socketio_path=path,
             wait_timeout=CONNECT_TIMEOUT_S,
         )
@@ -684,7 +696,14 @@ class Tab:
     def __init__(self, name: str, project_id: str, ledger: SyncLedger,
                  record: Callable, on_drop: Callable = lambda: None):
         self.name = name
+        #: The dataflow the tab opened, which its joins name; and the id the
+        #: room's events name, which every other event of the tab names: the
+        #: join answers it (``projectId``), a hosted guest's own copy's on an
+        #: example (``collaboration/events.py``), as the page's provider
+        #: takes it (``CollaborationProvider.tsx``). The dataflow's own until
+        #: the join answers.
         self.project_id = project_id
+        self.room_id = project_id
         self.ledger = ledger
         self.record = record
         self.on_drop = on_drop
@@ -937,7 +956,7 @@ class Tab:
             self._answered(1, None if ok else [f"the server answered {ack!r}"])
 
         try:
-            self.link.emit(EVENT, {"projectId": self.project_id, "message": message}, callback=acked)
+            self.link.emit(EVENT, {"projectId": self.room_id, "message": message}, callback=acked)
         except Exception as exc:  # noqa: BLE001 - a dead socket is a finding
             with self._acks:
                 if sent in self._waiting:
@@ -1021,6 +1040,9 @@ class Tab:
         ack = self._call("socket join_session", "join_session", {"projectId": self.project_id}, problem)
         self.role = ack.get("role")
         self.participant_id = ack.get("participant_id")
+        answered = ack.get("projectId")
+        if isinstance(answered, str) and answered:
+            self.room_id = answered
         # The room's locks when it joined, which the lock events then keep up
         # to date; one told of meanwhile stands.
         locks = (ack.get("snapshot") or {}).get("locks")
@@ -1040,7 +1062,7 @@ class Tab:
         """Sync step 1; returns once the doc holds the server's (its step 2)."""
         with self.lock:
             step1 = create_sync_message(self.doc)
-        ack = self._call("socket yjs sync", EVENT, {"projectId": self.project_id, "message": step1})
+        ack = self._call("socket yjs sync", EVENT, {"projectId": self.room_id, "message": step1})
         self.doc_id = ack.get("docId")
         if not self._have_doc.wait(CALL_TIMEOUT_S):
             self.record("socket yjs sync", 0.0, False,
@@ -1121,7 +1143,7 @@ class Tab:
         how long it took only when it fails to come."""
         started = time.perf_counter()
         try:
-            ack = self.link.call(event, {"projectId": self.project_id, "nodeId": node_id}, CALL_TIMEOUT_S)
+            ack = self.link.call(event, {"projectId": self.room_id, "nodeId": node_id}, CALL_TIMEOUT_S)
         except Exception as exc:  # noqa: BLE001 - a timeout or a dead socket
             self.record(label, time.perf_counter() - started, False,
                         f"{type(exc).__name__}: {exc}", "socket")
@@ -1231,7 +1253,7 @@ class Tab:
 
     def summary(self) -> dict:
         return {
-            "transport": self.transport, "role": self.role, "doc_id": self.doc_id,
+            "transport": self.transport, "role": self.role, "room_id": self.room_id, "doc_id": self.doc_id,
             "synced": self.synced, "keystrokes": self.keystrokes, "drags": self.drags,
             "received": self.received, "state_bytes": self.state_bytes,
             "dropped": self.dropped,
@@ -1320,7 +1342,8 @@ def run_tab(user, room: Room, *, backend_url: str, namespace: str, pacing,
                   on_drop=lambda: room.leave(user.name))
         on_room = tab.room_event
         tab.connect(make_link or (lambda on_yjs, on_close: SocketLink(
-            backend_url, namespace, user.token, on_yjs, on_close, on_room=on_room)))
+            backend_url, namespace, user.token, on_yjs, on_close, on_room=on_room,
+            dataflow=room.project_id)))
         tab.join()
         tab.sync()
         room.ledger.synced(user.name)

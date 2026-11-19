@@ -4,8 +4,9 @@ package ships beside its templates.
 Play (``/processPythonCode``), a run on a thread of its own (what a server
 run calls), and the headless runner (Solve and the agents) all send
 ``package_modules: {"root": <the package's sources folder>, "names": [...]}``
-for a node of a package that ships modules, and nothing for any other node,
-so every other request body is unchanged. The e2e ground-truth harness gets it
+for a node of a package that ships modules, the built-in package's for a
+built-in Python node (the Spatial Join's ``spatial_join``), and nothing for
+any other node, so every other request body is unchanged. The e2e ground-truth harness gets it
 from ``/api/testing/dataset-paths``.
 
 New code is imported inside each test, so a checkout without it fails each
@@ -110,9 +111,28 @@ def test_play_sends_nothing_new_for_any_other_node(client, user_and_token, monke
     sent = []
     _fake_sandbox(monkeypatch, sent)
 
-    for node_type in ("curio.builtin/python-computation", "PYTHON_COMPUTATION", "ai.test.other/caller"):
-        assert _play(client, token, project_id, node_type).status_code == 200
+    assert _play(client, token, project_id, "ai.test.other/caller").status_code == 200
     assert all("package_modules" not in body for _path, body in sent)
+
+
+def test_play_hands_a_built_in_python_node_the_built_in_packages_module(client, user_and_token, monkeypatch):
+    """The Spatial Join's code imports ``spatial_join``, the built-in
+    package's module, and so may any built-in Python node's code: Play hands
+    it the account's copy of the package's ``sources/`` folder."""
+    from utk_curio.backend.app.packages.repositories.store import package_dir
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, token = user_and_token
+    _install(_user_dir_key(user))
+    project_id = create_project(client, token, name="Built-in nodes")
+    sent = []
+    _fake_sandbox(monkeypatch, sent)
+
+    node_types = ("curio.builtin/python-computation", "PYTHON_COMPUTATION", "curio.builtin/spatial-join@1")
+    for node_type in node_types:
+        assert _play(client, token, project_id, node_type).status_code == 200
+    builtin = {"root": str(package_dir(_user_dir_key(user), "curio.builtin@1") / "sources"), "names": ["spatial_join"]}
+    assert [body.get("package_modules") for _path, body in sent] == [builtin] * len(node_types)
 
 
 def test_a_run_on_a_thread_of_its_own_sends_what_play_sends(app, client, user_and_token, monkeypatch):

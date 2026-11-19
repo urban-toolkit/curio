@@ -9,6 +9,7 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import ImageCardGrid, { CARD_PAGE_SIZE } from '../../../../adapters/node/components/ImageCardGrid';
+import { PLAYER_TELLS_EVERY_MS } from '../../../../utils/playerSelection';
 
 jest.mock('../../../../utils/backendUrl', () => ({ backendUrl: () => 'http://backend.test' }));
 jest.mock('../../../../utils/authApi', () => ({ getToken: () => 'tok-123', apiFetch: jest.fn() }));
@@ -339,6 +340,223 @@ describe('ImageCardGrid', () => {
       });
       expect(apiFetch).toHaveBeenCalledTimes(2);
       expect(element).toHaveAttribute('src', linkUrl(2));
+    });
+  });
+
+  // Where a card's player stands goes to `onPlayed`, which Simple View sends
+  // to the views it is linked to as the range it has played.
+  describe('its player tells where it stands', () => {
+    const { apiFetch } = require('../../../../utils/authApi') as { apiFetch: jest.Mock };
+    const MINUTE = 60_000;
+    let clock = 0;
+    let now: jest.SpyInstance;
+    let play: jest.SpyInstance;
+
+    beforeEach(() => {
+      let minted = 0;
+      apiFetch.mockReset();
+      apiFetch.mockImplementation(() => Promise.resolve({ url: `/api/media/link-${++minted}`, expiresIn: 600 }));
+      clock = 1_700_000_000_000;
+      now = jest.spyOn(Date, 'now').mockImplementation(() => clock);
+      play = jest.spyOn(window.HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    });
+
+    afterEach(() => {
+      now.mockRestore();
+      play.mockRestore();
+      apiFetch.mockReset();
+    });
+
+    const fileOf = (name: string, kind: 'video' | 'audio' = 'video') => ({
+      thumbnail: 'https://example.test/poster.png',
+      kind,
+      dataset_id: 'imported.xc1@1',
+      file_id: name.replace(/\W/g, '').padEnd(16, 'f'),
+      name,
+    });
+
+    /** Plays *row*'s card among *rows* and returns its element once its link loaded. */
+    async function playCard(rows: Record<string, unknown>[], row: Record<string, unknown>, onPlayed: jest.Mock) {
+      const view = render(
+        <ImageCardGrid
+          {...defaultProps}
+          rows={rows}
+          imageColumns={['thumbnail']}
+          interacted={rows.map(() => '0')}
+          onPlayed={onPlayed}
+        />,
+      );
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: `Play ${row.name}` }));
+      });
+      const element = await waitFor(() => {
+        const found = view.container.querySelector('video, audio');
+        expect(found).toHaveAttribute('src', 'http://backend.test/api/media/link-1');
+        return found as HTMLMediaElement;
+      });
+      fireEvent.loadedMetadata(element);
+      return { element, view };
+    }
+
+    it.each([
+      { kind: 'video' as const, file: 'a video', name: 'clip.mp4' },
+      { kind: 'audio' as const, file: 'a recording', name: 'birds.wav' },
+    ])(
+      '$file tells where it starts, where a seek takes it and where it stops, at once',
+      async ({ kind, name }) => {
+        const row = fileOf(name, kind);
+        const onPlayed = jest.fn();
+        const { element } = await playCard([row], row, onPlayed);
+        expect(onPlayed).not.toHaveBeenCalled();
+
+        fireEvent.play(element);
+        element.currentTime = 5;
+        fireEvent.seeking(element);
+        fireEvent.seeked(element);
+        element.currentTime = 5.5;
+        fireEvent.pause(element);
+
+        expect(onPlayed.mock.calls).toEqual([[row, 0], [row, 5], [row, 5.5]]);
+      },
+    );
+
+    it('while it plays, tells a time at most every PLAYER_TELLS_EVERY_MS, and none it told already', async () => {
+      const row = fileOf('clip.mp4');
+      const onPlayed = jest.fn();
+      const { element } = await playCard([row], row, onPlayed);
+      fireEvent.play(element);
+
+      clock += PLAYER_TELLS_EVERY_MS / 2;
+      element.currentTime = 0.1;
+      fireEvent.timeUpdate(element);
+      clock += PLAYER_TELLS_EVERY_MS;
+      element.currentTime = 0.35;
+      fireEvent.timeUpdate(element);
+      clock += PLAYER_TELLS_EVERY_MS;
+      fireEvent.timeUpdate(element);
+      // A seek tells at once, however soon after.
+      element.currentTime = 0.2;
+      fireEvent.seeked(element);
+
+      expect(onPlayed.mock.calls).toEqual([[row, 0], [row, 0.35], [row, 0.2]]);
+    });
+
+    it('tells null once it closes, when another card plays', async () => {
+      const first = fileOf('first.mp4');
+      const second = fileOf('second.mp4');
+      const onPlayed = jest.fn();
+      const { element } = await playCard([first, second], first, onPlayed);
+      element.currentTime = 2;
+      fireEvent.seeked(element);
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Play second.mp4' }));
+      });
+
+      expect(onPlayed.mock.calls).toEqual([[first, 2], [first, null]]);
+    });
+
+    it('a player that told nothing tells nothing when it closes', async () => {
+      const row = fileOf('clip.mp4');
+      const onPlayed = jest.fn();
+      const { view } = await playCard([row], row, onPlayed);
+      view.unmount();
+      expect(onPlayed).not.toHaveBeenCalled();
+    });
+
+    it('on a fresh link after a lapse, tells nothing until the element stands where the player stood', async () => {
+      const row = fileOf('clip.mp4');
+      const onPlayed = jest.fn();
+      const { element } = await playCard([row], row, onPlayed);
+      fireEvent.play(element);
+      clock += MINUTE;
+      element.currentTime = 683.2;
+      fireEvent.timeUpdate(element);
+      clock += 11 * MINUTE;
+      await act(async () => {
+        fireEvent.error(element);
+      });
+      await waitFor(() => expect(element).toHaveAttribute('src', 'http://backend.test/api/media/link-2'));
+
+      // The fresh link loads at the start before its metadata takes it back.
+      element.currentTime = 0;
+      fireEvent.timeUpdate(element);
+      fireEvent.pause(element);
+      fireEvent.loadedMetadata(element);
+      expect(element.currentTime).toBe(683.2);
+      fireEvent.seeked(element);
+      clock += MINUTE;
+      element.currentTime = 684;
+      fireEvent.timeUpdate(element);
+
+      expect(onPlayed.mock.calls).toEqual([[row, 0], [row, 683.2], [row, 684]]);
+    });
+  });
+
+  // A card's Play is read by its name. A part of a longer file is named with
+  // where it starts in that file, so the blocks Split Video cuts from one
+  // walk, which all carry the walk's name, and the windows Split Audio cuts,
+  // which carry none, each have a name of their own: a screen reader tells
+  // them apart, and a test finds one by its name.
+  describe("a card's Play names the part it plays", () => {
+    const { apiFetch } = require('../../../../utils/authApi') as { apiFetch: jest.Mock };
+
+    afterEach(() => apiFetch.mockReset());
+
+    const part = (fileId: string, extra: Record<string, unknown>) => ({
+      thumbnail: 'https://example.test/poster.png',
+      kind: 'video',
+      dataset_id: 'imported.xc1@1',
+      file_id: fileId.padEnd(16, 'f'),
+      ...extra,
+    });
+
+    /** Shows *parts* as cards and returns the names their Play buttons are read by. */
+    function playNames(parts: Record<string, unknown>[]): (string | null)[] {
+      render(
+        <ImageCardGrid {...defaultProps} rows={parts} imageColumns={['thumbnail']} interacted={parts.map(() => '0')} />,
+      );
+      return screen.getAllByRole('button').map((button) => button.getAttribute('aria-label'));
+    }
+
+    it('two blocks of one video, both with its name, have names of their own, and each plays its block', async () => {
+      apiFetch.mockResolvedValue({ url: '/api/media/signed-token' });
+      const names = playNames([
+        part('block1', { name: 'walk.mp4', block: 1, t_s: 0, end_s: 60 }),
+        part('block2', { name: 'walk.mp4', block: 2, t_s: 60, end_s: 120 }),
+      ]);
+      expect(names).toEqual(['Play walk.mp4 from 0 s', 'Play walk.mp4 from 60 s']);
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Play walk.mp4 from 60 s' }));
+      });
+      expect(apiFetch.mock.calls).toEqual([
+        [`/api/datasets/imported.xc1%401/media/${'block2'.padEnd(16, 'f')}/link`, { method: 'POST' }],
+      ]);
+    });
+
+    it("Split Audio's windows, which carry no name, are named by their kind and where each starts, to the millisecond", () => {
+      // Windows of 25 ms, as speech is often cut: a tenth of a second would
+      // name the first two alike.
+      const windowAt = (fileId: string, t_s: number) =>
+        part(fileId, { kind: 'audio', recording_file_id: 'birds', recording: 'birds.wav', t_s, duration_s: 0.025 });
+      expect(playNames([windowAt('w1', 152.675), windowAt('w2', 152.7), windowAt('w3', 152.725)])).toEqual([
+        'Play audio from 152.675 s',
+        'Play audio from 152.7 s',
+        'Play audio from 152.725 s',
+      ]);
+    });
+
+    it('a whole file, whose row carries no t_s, keeps "Play" and its name', () => {
+      expect(playNames([part('clip', { name: 'clip.mp4' })])).toEqual(['Play clip.mp4']);
+    });
+
+    it("in a table of whole files and parts, a whole file's empty t_s names no start", () => {
+      // A table that mixes them leaves a whole file's t_s empty, which the
+      // player reads as 0: the file plays from its start, and is not a part.
+      expect(
+        playNames([part('clip', { name: 'clip.mp4', t_s: null }), part('overlay', { name: 'clip.mp4', t_s: 30 })]),
+      ).toEqual(['Play clip.mp4', 'Play clip.mp4 from 30 s']);
     });
   });
 });

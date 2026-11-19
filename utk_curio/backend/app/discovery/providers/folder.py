@@ -18,6 +18,7 @@ from utk_curio.backend.app.discovery.domain.manifest import DiscoverySourceManif
 from utk_curio.backend.app.discovery.infrastructure import storage
 from utk_curio.backend.app.discovery.providers.storage_base import (
     MAX_DEPTH,
+    DeepFolder,
     FileEntry,
     is_skipped,
     validate_relpath,
@@ -32,6 +33,9 @@ class FolderStorage:
         # folder is read from disk, and no request leaves the machine.
         self.manifest = manifest
         self.root = storage.storage_root(manifest)
+        #: Each folder a walk did not read, below the :data:`MAX_DEPTH` levels
+        #: of folders it reads, so a scan says how many it skipped, and where.
+        self.too_deep: list[DeepFolder] = []
 
     # ── guards ─────────────────────────────────────────────────────────────
 
@@ -55,10 +59,17 @@ class FolderStorage:
         for dirpath, dirnames, filenames in os.walk(start, followlinks=False):
             current = Path(dirpath)
             depth = len(current.relative_to(self.root).parts)
-            dirnames[:] = sorted(
-                d for d in dirnames
-                if not is_skipped(d) and depth - base_depth < MAX_DEPTH
-            )
+            folders = sorted(d for d in dirnames if not is_skipped(d))
+            if depth - base_depth >= MAX_DEPTH:
+                # Below the levels a walk reads: none is read, and each is
+                # noted. A link to a folder is followed at no depth.
+                self.too_deep.extend(
+                    DeepFolder((current / d).relative_to(self.root).as_posix(), MAX_DEPTH)
+                    for d in folders
+                    if not (current / d).is_symlink()
+                )
+                folders = []
+            dirnames[:] = folders
             for name in sorted(filenames):
                 if is_skipped(name):
                     continue

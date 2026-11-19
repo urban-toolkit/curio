@@ -190,7 +190,7 @@ class TestTheDataflowBuilderBuildsTwoScenarios:
         page = session["page"]
         project_id = _new_project_with_the_builder(session)
         reply = "Two scenarios over one frame of buildings.\n```curio.v1\n" + json.dumps({"dataflowPlan": PLAN}) + "\n```"
-        script_agent_replies(session["backend"], reply, by_intent=dict(CONTENT))
+        script_agent_replies(session["backend"], reply, by_intent=dict(CONTENT), dataflow=project_id)
 
         page.goto(f"{session['frontend']}/dataflow/{project_id}", timeout=120000)
         page.wait_for_url(f"**/dataflow/{project_id}", timeout=20000)

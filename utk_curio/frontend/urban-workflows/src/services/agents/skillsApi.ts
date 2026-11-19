@@ -12,6 +12,7 @@
 
 import { apiFetch, getToken } from "../../utils/authApi";
 import { backendUrl } from "../../utils/backendUrl";
+import { requestHeaders } from "../../utils/requestHeaders";
 import { triggerBlobDownload } from "../packages/packagesBlobTransport";
 
 import type {
@@ -51,9 +52,8 @@ export function skillUploadForm(
   return form;
 }
 
-function authHeaders(): Record<string, string> | undefined {
-  const token = getToken();
-  return token ? { Authorization: `Bearer ${token}` } : undefined;
+function authHeaders(): Record<string, string> {
+  return requestHeaders(getToken());
 }
 
 /** The error a failed response carries, its server's own words first. */

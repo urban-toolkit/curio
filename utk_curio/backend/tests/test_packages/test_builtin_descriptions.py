@@ -52,8 +52,12 @@ def test_spatial_join_says_what_each_port_expects():
 
     assert "points" in text and "polygons" in text, "does not name the two inputs"
     assert "top" in text and "bottom" in text, "does not say which handle is which"
-    # The circles wear the colours the node's own text names them by.
-    assert "blue circle" in text and "green circle" in text, "does not name the input circles by colour"
+    # Its circles are a code node's two fixed circles, which wear no colour:
+    # the text names them by their place, as its code reads them, input_0 the top.
+    assert "top circle" in text and "bottom circle" in text, "does not name the input circles by place"
+    assert "blue" not in text and "green" not in text, "names the circles by a colour they no longer wear"
+    # Operation and Output are its two widgets, which it opens on.
+    assert "operation" in text and "output" in text, "does not name its two widgets"
     assert "comes out" in text or "output" in text, "does not say what the node produces"
     # #262: no "rename it upstream" workaround. "column", not "property": the
     # node talks about GeoDataFrame columns, the way the rest of Curio does.

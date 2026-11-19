@@ -1,6 +1,7 @@
 import { Position } from 'reactflow';
 import { HandleDef } from '../../registry/types';
 import { inputCircleCount, slotHandleId } from '../../utils/inputSlots';
+import { INTERACTION_HANDLE } from '../../contracts/interactionEdges';
 
 const suggestionGuard = (data: any, isConnectable: boolean) =>
   isConnectable && (data.suggestionType == undefined || data.suggestionType === 'none');
@@ -44,11 +45,11 @@ export function withInputCircles(base: HandleDef[], wired: number[], max: number
   return base.flatMap((h) => (h === input ? circles : [h]));
 }
 
-/** Append a top source handle id="in/out" (grammar + display boxes). */
+/** Append a top source handle, the node's own interaction handle (grammar + display boxes). */
 export function withBidirectional(base: HandleDef[]): HandleDef[] {
   return [
     ...base,
-    { id: 'in/out', type: 'source', position: Position.Top, isConnectableOverride: suggestionGuard },
+    { id: INTERACTION_HANDLE, type: 'source', position: Position.Top, isConnectableOverride: suggestionGuard },
   ];
 }
 

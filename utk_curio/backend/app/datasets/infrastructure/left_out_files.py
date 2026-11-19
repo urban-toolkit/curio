@@ -30,14 +30,18 @@ its weights, a parquet's sidecar beside the parquet.
   ``.partial/`` on the same file system, are checked, are made readable by
   every account (an isolated node's execution account reads a hardlink of the
   file), and are renamed into place. A partial download never sits where a
-  reader looks, and one a process left when it died goes with the next
-  download (:func:`remove_stale_partials`).
+  reader looks.
+- A download that stops, its connection dropped or its process killed by a
+  restart, leaves its partial file, one per file, and the next goes on from
+  where it ends: it asks for the rest alone, and checks the whole file. A
+  file so made that does not match is downloaded again from its first byte.
 - One download per file at a time: a reader that finds another downloading
   the file waits for it (:func:`one_download_at_a_time`), then reads what it
   placed.
 - A download has no time limit of its own: it fails when the network sends
   nothing for :data:`IDLE_TIMEOUT_S`, so a big file takes as long as its bytes
-  take to come.
+  take to come. It says how far it has come to whoever runs what reads it
+  (:func:`reporting`): a run on the server shows it on the node.
 - ``<state>/fetched`` is its owner's alone, as the sandbox's isolation leaves
   the shipped model packages' weights (``sandbox/isolation/hardening.py``
   lists both): an
@@ -50,7 +54,11 @@ its weights, a parquet's sidecar beside the parquet.
 A failure raises :class:`LeftOutFileUnavailable`, whose message says what
 failed and how to get the file by hand. Readers that turn a failure into a
 missing file still report it: :func:`failures` collects them, and a node run
-fails with them (``execution/node_exec``).
+fails with them (``execution/node_exec``). A long run of work, a plan's Solve,
+keeps its failures for the rest of its run (:func:`keeping`): a download a
+failure is kept for is not asked for again, and fails at once with that
+failure, until its file is in place, saved by hand where the failure says,
+which a reader then reads (:func:`appeared` says which files came).
 
 The weights a shipped model package's ``fetch`` names download the first time
 a node needs them through the same code: :func:`download_checked`,
@@ -65,11 +73,14 @@ import contextvars
 import functools
 import hashlib
 import json
+import logging
 import os
+import re
 import shutil
 import tempfile
 import time
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote
 
@@ -95,20 +106,28 @@ FETCHED = "fetched"
 IDLE_TIMEOUT_S = 600
 #: What a partial file's name ends with.
 PARTIAL_SUFFIX = ".part"
+#: What the name of a partial file the next download goes on from ends with:
+#: one per file, whose download's lock makes that download its one writer.
+#: It is never stale (:func:`remove_stale_partials`).
+RESUMABLE_SUFFIX = ".download" + PARTIAL_SUFFIX
 #: A partial file no download has written for this long was left by a
 #: process that died mid-download: a live download writes at least once an
 #: idle timeout, after its connection and its first bytes.
 STALE_PARTIAL_S = 3 * IDLE_TIMEOUT_S
+_CHUNK = 1024 * 1024
 
 #: The transport and the DNS resolver ``egress.download`` uses; ``None`` is
 #: the network. Tests set both, since no test may open a socket.
 request_fn = None
 resolver = None
 
+log = logging.getLogger(__name__)
+
 _HEX = frozenset("0123456789abcdef")
 _failures: contextvars.ContextVar[dict[str, str] | None] = contextvars.ContextVar(
     "left_out_file_failures", default=None,
 )
+_CONTENT_RANGE = re.compile(r"^bytes (\d+)-\d+/(\d+|\*)$")
 
 
 class LeftOutFileUnavailable(RuntimeError):
@@ -129,6 +148,141 @@ class Record:
 
     commit: str
     files: dict[str, RecordedFile]
+
+
+def size_text(size: int) -> str:
+    """*size* bytes as a person reads them: ``3.44 GB``, ``512 B``."""
+    for unit, scale in (("GB", 10**9), ("MB", 10**6), ("kB", 10**3)):
+        if size >= scale:
+            return f"{size / scale:.2f} {unit}"
+    return f"{size} B"
+
+
+def _part_text(done: int, total: int) -> str:
+    """*done* of *total* bytes, in *total*'s unit: ``1.21 of 3.44 GB``."""
+    for unit, scale in (("GB", 10**9), ("MB", 10**6), ("kB", 10**3)):
+        if total >= scale:
+            return f"{done / scale:.2f} of {total / scale:.2f} {unit}"
+    return f"{done} of {total} B"
+
+
+@dataclass(frozen=True)
+class Progress:
+    """How far one download on first use has come: *what* it downloads, as a
+    person reads it, the bytes *done*, the *total*, None when the source
+    names no size, and *resumed*, the bytes an earlier download had left,
+    which this one goes on from."""
+
+    what: str
+    done: int
+    total: int | None
+    resumed: int = 0
+
+    @property
+    def message(self) -> str:
+        """What the node that reads it says while it downloads:
+        ``Downloading <what>: 1.21 of 3.44 GB (35%)``."""
+        if self.total:
+            text = f"Downloading {self.what}: {_part_text(self.done, self.total)} ({self.done * 100 // self.total}%)"
+        else:
+            text = f"Downloading {self.what}: {size_text(self.done)} so far"
+        if self.resumed:
+            text += f", going on from the {size_text(self.resumed)} an earlier download left"
+        return text
+
+
+def progress_fields(progress: Progress | None) -> dict:
+    """What an event of a run says of a download's *progress*, wherever the
+    run shows it: its ``message``, the bytes ``done`` and the ``total``; an
+    empty message once the downloads are over (None, :func:`downloading`)."""
+    if progress is None:
+        return {"message": ""}
+    return {"message": progress.message, "done": progress.done, "total": progress.total}
+
+
+class _Reporter:
+    """Where the downloads of one run report their progress, and whether one
+    has since its downloads began (:func:`downloading`)."""
+
+    def __init__(self, report):
+        self.report = report
+        self.reported = False
+
+    def send(self, progress: Progress | None) -> None:
+        if progress is not None:
+            self.reported = True
+        try:
+            self.report(progress)
+        except Exception:  # noqa: BLE001 - what shows the progress never fails the download
+            log.warning("A download's progress could not be reported", exc_info=True)
+
+
+_progress: contextvars.ContextVar[_Reporter | None] = contextvars.ContextVar(
+    "first_use_download_progress", default=None,
+)
+
+
+@contextlib.contextmanager
+def reporting(report):
+    """Hand *report* the :class:`Progress` of each download on first use made
+    inside the block, on this thread, as it goes: a run's step, which shows
+    it on the node that reads what downloads (``execution/run_engine.py``).
+    *report* gets None once the downloads of a run's resolution are over
+    (:func:`downloading`). A report that raises is logged and never fails a
+    download; *report* None reports nothing."""
+    token = _progress.set(_Reporter(report) if report is not None else None)
+    try:
+        yield
+    finally:
+        _progress.reset(token)
+
+
+@contextlib.contextmanager
+def downloading():
+    """The part of a node's run in which what it reads downloads on first use
+    (``execution/node_exec.py``): once it ends, a reporter one of its
+    downloads reported to (:func:`reporting`) gets None, so what shows the
+    progress says the downloads are over and the node runs."""
+    reporter = _progress.get()
+    if reporter is not None:
+        reporter.reported = False
+    try:
+        yield
+    finally:
+        if reporter is not None and reporter.reported:
+            reporter.reported = False
+            reporter.send(None)
+
+
+class _Meter:
+    """Reports one download's progress to the run's reporter, if any: as it
+    starts, as it passes each whole percent of its size, or of its bound when
+    the source names no size, and as it ends."""
+
+    def __init__(self, what: str, max_bytes: int):
+        self.reporter = _progress.get()
+        self.what = what
+        self.max_bytes = max(int(max_bytes), 1)
+        self.total: int | None = None
+        self.resumed = 0
+        self.last: tuple[int, int] | None = None
+
+    def start(self, total: int | None, resumed: int) -> None:
+        self.total, self.resumed, self.last = total, resumed, None
+        self.at(resumed)
+
+    def at(self, done: int, *, end: bool = False) -> None:
+        """Report *done* bytes: the first time, at each whole percent not
+        reported yet, and with *end* unless that count was just reported."""
+        if self.reporter is None:
+            return
+        whole = done * 100 // (self.total or self.max_bytes)
+        if self.last is not None:
+            last_whole, last_done = self.last
+            if done == last_done or (whole == last_whole and not end):
+                return
+        self.last = (whole, done)
+        self.reporter.send(Progress(self.what, done, self.total, self.resumed))
 
 
 def _shipped_root() -> Path:
@@ -258,6 +412,73 @@ def failures():
         _failures.reset(token)
 
 
+@dataclass
+class KeptFailure:
+    """A download on first use that failed in a long run of work, as the
+    work keeps it (:func:`keeping`): its *message*, *here*, which says
+    whether the file it could not have is in place now, and the *nodes*
+    whose runs it failed."""
+
+    message: str
+    here: Callable[[], bool] | None = None
+    nodes: set[str] = field(default_factory=set)
+
+
+_kept: contextvars.ContextVar[tuple[dict, str | None] | None] = contextvars.ContextVar(
+    "first_use_kept_failures", default=None,
+)
+
+
+@contextlib.contextmanager
+def keeping(kept: dict | None, *, by: str | None = None):
+    """Keep in *kept*, a long run of work's own record of its failures, a
+    plan's Solve's (``{key: KeptFailure}``), each download on first use that
+    fails inside the block, the first for each key, as :func:`failures`
+    collects them. A download inside the block whose key *kept* holds is not
+    asked for again: it fails at once with the kept message
+    (:func:`kept_message`). A reader that finds the file in place reads it,
+    and asks nothing. *by* names the node whose run the block is; each kept
+    failure it meets names that node among its ``nodes``. *kept* None keeps
+    nothing."""
+    token = _kept.set((kept, by) if kept is not None else None)
+    try:
+        yield
+    finally:
+        _kept.reset(token)
+
+
+def kept_message(key: str) -> str | None:
+    """The message of the failure the block (:func:`keeping`) keeps for
+    *key*, which a download of *key* fails with at once; None when it keeps
+    none, or outside such a block."""
+    held = _kept.get()
+    if held is None:
+        return None
+    kept, by = held
+    failure = kept.get(key)
+    if failure is None:
+        return None
+    if by:
+        failure.nodes.add(by)
+    return failure.message
+
+
+def appeared(kept: dict) -> dict:
+    """The failures of *kept* whose file is in place now, saved by hand where
+    the failure says or fetched ahead, each taken out of *kept*, so the next
+    reader reads the file: ``{key: KeptFailure}``. Asks only whether files
+    are there."""
+    came: dict = {}
+    for key, failure in list(kept.items()):
+        try:
+            here = failure.here is not None and failure.here()
+        except OSError:
+            here = False
+        if here:
+            came[key] = kept.pop(key, failure)
+    return came
+
+
 def fetch(repo_path: str, shipped: Path, *, expected_sha256: str | None = None) -> Path:
     """The file to read for *repo_path*, a path in the repository.
 
@@ -267,7 +488,9 @@ def fetch(repo_path: str, shipped: Path, *, expected_sha256: str | None = None) 
     when this is the first read. *expected_sha256*, when given, is a second
     digest the download must have besides the record's: the one a model
     package's ``integrity.json`` names for its weight. Raises
-    :class:`LeftOutFileUnavailable`.
+    :class:`LeftOutFileUnavailable`. In a block that keeps a run's failures
+    (:func:`keeping`), a file whose download failed in that run is not
+    downloaded again, until it is in place.
     """
     shipped = Path(shipped)
     if shipped.is_file():
@@ -280,32 +503,49 @@ def fetch(repo_path: str, shipped: Path, *, expected_sha256: str | None = None) 
         raise unavailable(repo_path, (
             f"Curio could not read the record of its release, {exc}, so it cannot download "
             f"{repo_path}. Start Curio from a clone of {REPOSITORY}, which holds the file."
-        )) from exc
+        ), here=shipped.is_file) from exc
     if record is None:
         raise unavailable(repo_path, (
             f"{repo_path} is not in this Curio, which has no record of a release to download it "
             f"from. Start Curio from a clone of {REPOSITORY}, which holds the file "
             f"(git checkout -- {repo_path} puts it back in a clone)."
-        ))
+        ), here=shipped.is_file)
     entry = record.files.get(repo_path)
     if entry is None:
         raise unavailable(repo_path, (
             f"{repo_path} is not in the record of this Curio's release, so Curio cannot download "
             f"it. Start Curio from a clone of {REPOSITORY}, which holds the file."
-        ))
+        ), here=shipped.is_file)
     root = fetched_root(record.commit)
     target = root / repo_path
     if target.is_file():
         return target
+    _fail_if_kept(repo_path)
     _close_fetched_dir()
-    lock = root / ".locks" / f"{hashlib.sha256(repo_path.encode('utf-8')).hexdigest()[:32]}.lock"
+    lock = root / ".locks" / f"{_path_key(repo_path)}.lock"
     with one_download_at_a_time(lock, key=f"{record.commit}/{repo_path}"):
-        # Another reader may have placed it while this one waited.
+        # Another reader may have placed it while this one waited, or failed
+        # to download it.
         if not target.is_file():
+            _fail_if_kept(repo_path)
             _remove_other_releases(record.commit)
             remove_stale_partials(root / ".partial")
             _download(repo_path, entry, record.commit, Path(shipped), target, expected_sha256=expected_sha256)
     return target
+
+
+def _fail_if_kept(key: str) -> None:
+    """Raise the failure the block keeps for *key* (:func:`keeping`), if it
+    keeps one, rather than download *key* again."""
+    message = kept_message(key)
+    if message is not None:
+        raise unavailable(key, message)
+
+
+def _path_key(repo_path: str) -> str:
+    """The name *repo_path*'s lock and partial file go by in its release's
+    folder: one per file, whatever its name, which another file may share."""
+    return hashlib.sha256(repo_path.encode("utf-8")).hexdigest()[:32]
 
 
 @contextlib.contextmanager
@@ -326,14 +566,16 @@ def one_download_at_a_time(lock: Path, *, key: str):
 def remove_stale_partials(folder: Path) -> None:
     """Remove the partial files in *folder* that no download writes any more:
     each one a process left when it died mid-download, unwritten for
-    :data:`STALE_PARTIAL_S`. A live download's partial is newer, and stays."""
+    :data:`STALE_PARTIAL_S`. A live download's partial is newer, and stays,
+    as does one the next download of its file goes on from
+    (:data:`RESUMABLE_SUFFIX`), however old."""
     now = time.time()
     try:
         entries = list(os.scandir(folder))
     except OSError:
         return
     for entry in entries:
-        if not entry.name.endswith(PARTIAL_SUFFIX):
+        if not entry.name.endswith(PARTIAL_SUFFIX) or entry.name.endswith(RESUMABLE_SUFFIX):
             continue
         try:
             if entry.is_file(follow_symlinks=False) and now - entry.stat(follow_symlinks=False).st_mtime > STALE_PARTIAL_S:
@@ -342,9 +584,146 @@ def remove_stale_partials(folder: Path) -> None:
             continue  # gone already, or not this account's to remove: the next download tries again
 
 
+@dataclass(frozen=True)
+class Received:
+    """What a download wrote to its partial file, as a ``check`` of
+    :func:`download_checked` reads it: the answer's *status*, 200 for a file
+    whose every byte is in the partial file, and its *headers*; and the whole
+    file's *bytes_written* and *sha256*, the bytes an earlier download had
+    left (*resumed*) among them."""
+
+    status: int
+    headers: dict
+    bytes_written: int
+    sha256: str
+    resumed: int = 0
+
+
+class _Refused(Exception):
+    """An answer that is not the file asked for, seen before its body."""
+
+    def __init__(self, status: int, headers: dict):
+        super().__init__(f"HTTP {status}")
+        self.status = status
+        self.headers = headers
+
+
+class _NothingAfter(Exception):
+    """A source that has no byte after the partial file's end (HTTP 416)."""
+
+
+def _content_range(headers: dict) -> tuple[int, int | None] | None:
+    """``(first byte, size or None)`` of a ``Content-Range`` answer header."""
+    raw = (headers or {}).get("Content-Range") or (headers or {}).get("content-range") or ""
+    found = _CONTENT_RANGE.match(str(raw).strip())
+    if found is None:
+        return None
+    return int(found.group(1)), (None if found.group(2) == "*" else int(found.group(2)))
+
+
+def _content_length(headers: dict) -> int | None:
+    raw = (headers or {}).get("Content-Length") or (headers or {}).get("content-length")
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _sha256_of(path: Path, limit: int):
+    """A sha256 of the first *limit* bytes of *path*, to be fed what follows."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as source:
+        left = limit
+        while left > 0:
+            chunk = source.read(min(_CHUNK, left))
+            if not chunk:
+                break
+            digest.update(chunk)
+            left -= len(chunk)
+    return digest
+
+
+def _receive(url: str, partial: Path, *, max_bytes: int, failed, meter: _Meter, go_on: bool) -> Received:
+    """Download *url* into *partial*, from its first byte, or with *go_on*
+    from where *partial* ends: only the rest is asked for (``Range``), and a
+    source that sends the whole file instead writes it over. Up to
+    *max_bytes* in all. An answer that is not the file is returned before a
+    byte of it is written, the partial file as it was. Raises what
+    *failed(reason)* makes of the transport's or the disk's failure, the
+    partial file keeping the bytes that came."""
+    start = 0
+    if go_on:
+        try:
+            start = partial.stat().st_size
+        except OSError:
+            start = 0
+        if start >= max_bytes:
+            start = 0
+    try:
+        digest = _sha256_of(partial, start) if start else hashlib.sha256()
+        handle = os.open(partial, os.O_RDWR | os.O_CREAT, 0o600)
+    except OSError as exc:
+        raise failed(str(exc) or exc.__class__.__name__) from exc
+    state = {"start": start, "written": 0, "digest": digest}
+    with os.fdopen(handle, "r+b") as sink:
+        sink.seek(start)
+        sink.truncate()
+
+        def before_body(headers: dict, _final_url: str, *, status: int) -> None:
+            if status == 206 and start and (_content_range(headers) or (None,))[0] == start:
+                meter.start((_content_range(headers) or (None, None))[1], start)
+                return
+            if status == 200:
+                if start:
+                    # The whole file, whatever was asked: written over from its first byte.
+                    sink.seek(0)
+                    sink.truncate()
+                    state["start"], state["digest"] = 0, hashlib.sha256()
+                meter.start(_content_length(headers), 0)
+                return
+            if status == 416 and start:
+                raise _NothingAfter()
+            raise _Refused(status, dict(headers or {}))
+
+        def write(chunk: bytes) -> None:
+            if state["start"] + state["written"] + len(chunk) > max_bytes:
+                raise egress.EgressTooLarge(f"the file exceeded the {max_bytes}-byte bound while streaming")
+            sink.write(chunk)
+            state["digest"].update(chunk)
+            state["written"] += len(chunk)
+
+        try:
+            try:
+                answer = egress.download(
+                    url, sink=write, max_bytes=max_bytes,
+                    request_fn=request_fn, resolver=resolver, timeout_s=IDLE_TIMEOUT_S,
+                    headers={"Range": f"bytes={start}-"} if start else None,
+                    progress=lambda written, _declared: meter.at(state["start"] + written),
+                    before_body=before_body,
+                )
+            finally:
+                # What came is on disk, for the next download to go on from.
+                sink.flush()
+                os.fsync(sink.fileno())
+        except _Refused as refused:
+            return Received(refused.status, refused.headers, 0, "", resumed=start)
+        except _NothingAfter:
+            # The partial file may be the whole file: checked as it is.
+            return Received(200, {}, start, digest.hexdigest(), resumed=start)
+        except Exception as exc:  # noqa: BLE001 - the policy's refusal, the network's error, a full disk
+            if isinstance(exc, egress.EgressTooLarge):
+                # A file over its bound: nothing of it is gone on from.
+                sink.seek(0)
+                sink.truncate()
+            raise failed(str(exc) or exc.__class__.__name__) from exc
+    done = state["start"] + state["written"]
+    meter.at(done, end=True)
+    return Received(200, dict(answer.headers or {}), done, state["digest"].hexdigest(), resumed=state["start"])
+
+
 def download_checked(
     url: str, target: Path, *, partial_dir: Path, max_bytes: int, check, failed, before_place=None,
-    partial_name: str | None = None,
+    partial_name: str | None = None, what: str | None = None,
 ) -> None:
     """Download *url* and place it at *target*, as Curio places every file it
     downloads on first use.
@@ -353,47 +732,66 @@ def download_checked(
     waits :data:`IDLE_TIMEOUT_S` for each and has no limit on the whole) into
     a file of *partial_dir*, on *target*'s file system, up to *max_bytes*.
     *check(result, partial)* says why they are not the file asked for, or
-    None. Then the file is made readable by every account (an isolated node's
-    execution account reads it), *before_place* runs when given, and the file
-    is renamed into place.
+    None: *result* is what came (:class:`Received`), the whole file's bytes
+    and sha256 when its status is 200. Then the file is made readable by
+    every account (an isolated node's execution account reads it),
+    *before_place* runs when given, and the file is renamed into place. The
+    download reports how far it has come (:func:`reporting`), naming *what*
+    it downloads, *target*'s name unless given.
 
-    The partial file has a name of its own, or *partial_name* when the
-    caller's lock is the only writer of it: then the next download writes
-    over what one that died left there.
+    The partial file has a name of its own, gone when the call ends, or
+    *partial_name* when the caller's lock is the only writer of it. Then a
+    download that stops, its connection dropped or its process killed,
+    leaves it, and the next goes on from where it ends, asking for the rest
+    alone and checking the whole file. A file so made that *check* refuses
+    is downloaded again from its first byte, once. An answer that is not the
+    file leaves the partial file as it was.
 
     Raises what *failed(reason)* makes of a failure, the transport's, the
     disk's or *check*'s, and places nothing.
     """
-    partial = None
+    meter = _Meter(what or target.name, max_bytes)
+    resumable = partial_name is not None
     try:
-        try:
-            partial_dir.mkdir(parents=True, exist_ok=True)
-            if partial_name is None:
-                handle, name = tempfile.mkstemp(dir=partial_dir, prefix=f".{target.name}.", suffix=PARTIAL_SUFFIX)
-            else:
-                name = str(partial_dir / partial_name)
-                handle = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        partial_dir.mkdir(parents=True, exist_ok=True)
+        if resumable:
+            partial = partial_dir / partial_name
+        else:
+            handle, name = tempfile.mkstemp(dir=partial_dir, prefix=f".{target.name}.", suffix=PARTIAL_SUFFIX)
+            os.close(handle)
             partial = Path(name)
-            with os.fdopen(handle, "wb") as sink:
-                result = egress.download(
-                    url, sink=sink.write, max_bytes=max_bytes,
-                    request_fn=request_fn, resolver=resolver, timeout_s=IDLE_TIMEOUT_S,
-                )
-                sink.flush()
-                os.fsync(sink.fileno())
-        except Exception as exc:  # noqa: BLE001 - the policy's refusal, the network's error, a full disk
-            raise failed(str(exc) or exc.__class__.__name__) from exc
+    except OSError as exc:
+        raise failed(str(exc) or exc.__class__.__name__) from exc
+    placed = False
+    try:
+        result = _receive(url, partial, max_bytes=max_bytes, failed=failed, meter=meter, go_on=resumable)
         reason = check(result, partial)
+        if reason is not None and result.status == 200 and result.resumed:
+            # What an earlier download left did not begin the file.
+            result = _receive(url, partial, max_bytes=max_bytes, failed=failed, meter=meter, go_on=False)
+            reason = check(result, partial)
         if reason is not None:
+            if result.status == 200:
+                # Bytes that are not the file: none of them is gone on from.
+                partial.unlink(missing_ok=True)
             raise failed(reason)
         os.chmod(partial, 0o644)
         if before_place is not None:
             before_place()
         target.parent.mkdir(parents=True, exist_ok=True)
         os.replace(partial, target)
+        placed = True
     finally:
-        if partial is not None:
+        if not resumable or (not placed and _is_empty(partial)):
             partial.unlink(missing_ok=True)
+
+
+def _is_empty(path: Path) -> bool:
+    """Whether *path* holds no byte to go on from."""
+    try:
+        return path.stat().st_size == 0
+    except OSError:
+        return False
 
 
 def _close_fetched_dir() -> None:
@@ -456,8 +854,16 @@ def _download(
 
     download_checked(
         url, target, partial_dir=partial_dir, max_bytes=entry.size, check=check,
-        failed=lambda reason: unavailable(repo_path, _could_not_download(repo_path, url, target, reason)),
+        failed=lambda reason: unavailable(
+            repo_path, _could_not_download(repo_path, url, target, reason),
+            # Saved by hand where the message says, or a clone's.
+            here=lambda: target.is_file() or shipped.is_file(),
+        ),
         before_place=lambda: _copy_folder(repo_path, shipped, root, partial_dir),
+        # The file's lock makes this download the one writer of its partial
+        # file, which the next goes on from when this one stops.
+        partial_name=f"{_path_key(repo_path)}{RESUMABLE_SUFFIX}",
+        what=repo_path,
     )
 
 
@@ -500,12 +906,20 @@ def _could_not_download(repo_path: str, url: str, target: Path, reason: str) -> 
     )
 
 
-def unavailable(key: str, message: str) -> LeftOutFileUnavailable:
+def unavailable(key: str, message: str, *, here: Callable[[], bool] | None = None) -> LeftOutFileUnavailable:
     """The error of a file Curio could not download on first use, which
     *message* explains, for its caller to raise. A block that collects
     failures (:func:`failures`) keeps *message* under *key*, the first for
-    each key, so a node's run fails with it."""
+    each key, so a node's run fails with it, and so does a block that keeps
+    a run's failures (:func:`keeping`), with *here*, which says whether the
+    file is in place now."""
     collected = _failures.get()
     if collected is not None:
         collected.setdefault(key, message)
+    held = _kept.get()
+    if held is not None:
+        kept, by = held
+        failure = kept.setdefault(key, KeptFailure(message, here))
+        if by:
+            failure.nodes.add(by)
     return LeftOutFileUnavailable(message)

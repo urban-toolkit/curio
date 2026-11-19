@@ -46,10 +46,6 @@ NOT_FETCHED = (
     "Whoever runs this Curio can fetch them once, with: python scripts/fetch_model_weights.py {model_id}"
 )
 
-#: The model type whose labels are text prompts: its node loads the model's
-#: checkpoint itself, and ``curio_segment`` refuses it.
-CONCEPT_SEGMENTATION = "concept-segmentation"
-
 
 def missing_fetched_files(root, spec: dict) -> list[str]:
     """The files *spec*'s ``fetch`` lists (:func:`model_spec`) that its entry

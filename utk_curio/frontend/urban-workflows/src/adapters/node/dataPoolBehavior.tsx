@@ -14,12 +14,15 @@ import { columnRows, featureRows, isActiveSelect, matchSelections } from '../../
 import { dataPoolMode, DataPoolModes } from '../../utils/dataPoolSpec';
 import { registerNodeSettingWriter } from '../../utils/nodeSettingsWriters';
 import { copyForFlags } from '../../utils/poolFlagCopy';
+import { poolTabKind } from '../../utils/poolTabs';
+import { sandboxArtifactId } from '../../utils/flowOutputRef';
+import { isInteractionEdge } from '../../contracts/interactionEdges';
 
 /** The charts joined to a pool by an interaction edge. */
 function interactionPeers(edges: readonly any[], poolId: string): Set<string> {
   const peers = new Set<string>();
   for (const edge of edges) {
-    if (edge?.sourceHandle !== 'in/out' || edge?.targetHandle !== 'in/out') continue;
+    if (!isInteractionEdge(edge)) continue;
     if (edge.source === poolId) peers.add(edge.target);
     else if (edge.target === poolId) peers.add(edge.source);
   }
@@ -38,8 +41,11 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
   const upstreamErrored = incomingSourceIds(poolEdges, data.nodeId).some(
     (sourceId) => nodeExecStatus?.[sourceId] === "errored",
   );
-  // On a dashboard: a viewer's run making the rows, or why it stopped before them.
-  const { upstreamRunning, upstreamStopped, onDashboard } = useGrammarInputState(data.nodeId);
+  // On a dashboard: a viewer's run making the rows, or why it stopped before
+  // them, and how far the downloads of the steps above have come.
+  const { upstreamRunning, upstreamStopped, upstreamDownloads, onDashboard } = useGrammarInputState(data.nodeId);
+  // A fresh list each render: the content below changes with what it says.
+  const downloadsSaid = upstreamDownloads.join("\n");
   const [output, setOutput] = useState<ICodeData>({ code: '', content: '' });
 
   // How the selections that reach the pool combine: the selects of one chart,
@@ -128,7 +134,9 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
       if (data.input == null || data.input === "") return false;
       if (typeof data.input !== "object") return true;
       const input = data.input as { dataType?: string; data?: unknown[] };
-      if (input.dataType === "outputs") {
+      // A bundle of several inputs holds one once a circle has; a Python
+      // node's tuple, an output that names its artifact, is one.
+      if (input.dataType === "outputs" && sandboxArtifactId(input) === null) {
         return Array.isArray(input.data) && input.data.length > 0;
       }
       return Object.keys(input).length > 0;
@@ -425,22 +433,28 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
   //
   // Only the two REAL failures are reported. A pool that is not wired yet owes
   // nothing, and one whose upstream has not run is waiting rather than broken
-  // — its upstream reports its own outcome.
+  // — its upstream reports its own outcome. Each is judged as its body shows
+  // it: the active tab's rows, a value's tab as no table, and a raster's tab,
+  // which has no rows, as what the pool hands on.
   useEffect(() => {
     const hasInput = data.input != null && data.input !== "";
-    const reason = resolveNodeEmptyReason({
+    const activeKind = tabData.length > 0 ? poolTabKind(tabData[parseInt(activeTab) || 0]) : null;
+    const found = resolveNodeEmptyReason({
       connected,
       upstreamErrored,
       hasInput,
-      tabular: tabData.length > 0,
+      reading,
+      tabular: tabData.length > 0 && activeKind !== "value",
       rowCount: tableData.length,
     });
+    const reason = activeKind === "raster" && found === "no-rows" ? null : found;
     // An upstream failure is the upstream's to report, like a node that has
-    // not run yet (#347).
+    // not run yet (#347), and an input still being read has no outcome yet.
     if (
       reason === "disconnected" ||
       reason === "upstream-not-run" ||
-      reason === "upstream-errored"
+      reason === "upstream-errored" ||
+      reason === "upstream-running"
     )
       return;
     const projectId = (data as { projectId?: string }).projectId ?? flowProjectId;
@@ -460,7 +474,7 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
       message: `${copy.title} — ${copy.hint}`,
       kind: `bad-input:${reason}`,
     });
-  }, [connected, upstreamErrored, data, tabData.length, tableData.length, flowProjectId]);
+  }, [connected, upstreamErrored, data, tabData, activeTab, reading, tableData.length, flowProjectId]);
 
   // Memoize so the JSX reference is stable across re-renders. NodeEditor
   // auto-switches to the "output" tab whenever `contentComponent` changes
@@ -478,6 +492,7 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
         upstreamErrored={upstreamErrored}
         upstreamRunning={upstreamRunning}
         upstreamStopped={upstreamStopped}
+        upstreamDownloads={upstreamDownloads}
         reading={reading}
         onDashboard={onDashboard}
         insideChartMode={insideChartMode}
@@ -486,9 +501,11 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
         onBetweenChartsModeChange={onBetweenChartsModeChange}
       />
     ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       activeTab, setActiveTab, tabData, tableData, data, connected, upstreamErrored, upstreamRunning, upstreamStopped,
-      reading, onDashboard, insideChartMode, betweenChartsMode, onInsideChartModeChange, onBetweenChartsModeChange,
+      downloadsSaid, reading, onDashboard, insideChartMode, betweenChartsMode, onInsideChartModeChange,
+      onBetweenChartsModeChange,
     ],
   );
 

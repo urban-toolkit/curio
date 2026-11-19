@@ -219,15 +219,18 @@ def test_index_failure_does_not_break_the_dataset_write(store, monkeypatch):
     def boom(*_args, **_kwargs):
         raise RuntimeError("index is down")
 
-    monkeypatch.setattr(index_repo, "upsert_from_dir", boom)
+    # The index is down for the install alone. ``monkeypatch.undo()`` would
+    # also take back the folders the app fixture moved into this test's
+    # ``tmp_path``, and the listing below would read the session's.
+    with monkeypatch.context() as index_down:
+        index_down.setattr(index_repo, "upsert_from_dir", boom)
 
-    result = install_imported_file("1", b"a\n1\n", "resilient.csv", "csv")
+        result = install_imported_file("1", b"a\n1\n", "resilient.csv", "csv")
 
-    assert (result.dest / result.manifest.data_file).is_file()
-    assert index_repo.get("1", result.manifest.id) is None
+        assert (result.dest / result.manifest.data_file).is_file()
+        assert index_repo.get("1", result.manifest.id) is None
 
     # And the listing still shows it (disk wins), then reconcile repairs the row.
-    monkeypatch.undo()
     from utk_curio.backend.app.datasets.repositories.user_store import (
         UserDatasetRepository,
     )

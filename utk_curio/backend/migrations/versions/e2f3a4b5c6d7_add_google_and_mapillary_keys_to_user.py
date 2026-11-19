@@ -22,9 +22,3 @@ def upgrade():
     with op.batch_alter_table("user", schema=None) as batch_op:
         batch_op.add_column(sa.Column("google_maps_api_key", sa.String(255), nullable=True))
         batch_op.add_column(sa.Column("mapillary_access_token", sa.String(255), nullable=True))
-
-
-def downgrade():
-    with op.batch_alter_table("user", schema=None) as batch_op:
-        batch_op.drop_column("mapillary_access_token")
-        batch_op.drop_column("google_maps_api_key")

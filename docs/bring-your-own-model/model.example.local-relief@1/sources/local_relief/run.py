@@ -1,12 +1,14 @@
 """Run the Local Relief model on a height raster, and write its answer as one.
 
 The node's code loads the model (``curio_load_model``) and hands it here with
-the input raster; this module prepares the array the model reads, runs it, and
-writes the result on the input's grid. Keeping it in a module, not in the
-node's code, lets a test call it without Curio.
+the input raster; this module prepares the array the model reads, opens the
+model's ONNX file (``model.path``) with onnxruntime, runs it, and writes the
+result on the input's grid. Keeping it in a module, not in the node's code,
+lets a test call it without Curio.
 """
 
 import numpy as np
+import onnxruntime as ort
 import rasterio
 
 #: The model's input and output, as the export named them.
@@ -26,7 +28,8 @@ def local_relief(raster, model, output_file, min_height=0.0):
     heights[heights < min_height] = 0  # lower than the lowest height: ground
 
     # The model reads (1, 1, rows, columns), as it was exported: NCHW.
-    (relief,) = model.run({INPUT: heights[np.newaxis, np.newaxis]})
+    session = ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])
+    (relief,) = session.run(None, {INPUT: heights[np.newaxis, np.newaxis]})
     relief = relief[0, 0].astype(np.float32)
     relief[np.ma.getmaskarray(band)] = np.nan
 

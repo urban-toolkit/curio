@@ -19,6 +19,7 @@ blaming the node under validation.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import textwrap
 import time
@@ -269,6 +270,25 @@ def _acting_store(user_key: str, project_id: str, acting_user) -> tuple[str | No
     return acting_key, OwnersPackages(user_key, project_id)
 
 
+@contextlib.contextmanager
+def _downloads_told(downloads, node_id: str):
+    """Tell *downloads* how far each download on first use made inside the
+    block, the resolution of *node_id*'s run, has come, and that they are
+    over once they are (``left_out_files.reporting``, ``downloading``), in
+    the fields a run's event says (``left_out_files.progress_fields``);
+    nothing without *downloads*."""
+    if downloads is None:
+        yield
+        return
+    from utk_curio.backend.app.datasets.infrastructure import left_out_files
+
+    def told(progress) -> None:
+        downloads(node_id, left_out_files.progress_fields(progress))
+
+    with left_out_files.reporting(told), left_out_files.downloading():
+        yield
+
+
 def run_through_node(
     user_key: str,
     project_id: str,
@@ -284,6 +304,7 @@ def run_through_node(
     as_validation: bool = True,
     dataset_paths: dict | None = None,
     dataset_formats: dict | None = None,
+    dataset_problems: dict | None = None,
     exec_user_key: str | None = None,
     secrets: dict | None = None,
     collections: dict | None = None,
@@ -293,9 +314,23 @@ def run_through_node(
     templates: dict | None = None,
     acting_user=None,
     keep_stdout: bool = False,
+    downloads=None,
+    download_failures: dict | None = None,
 ) -> dict:
     """Execute the dataflow's ancestor slice THROUGH *node_id* and report
     per-node outcomes (memo dev/67-7).
+
+    *downloads*, when given, is told how far each download on first use of
+    what a node of the slice reads has come, as ``downloads(node id,
+    fields)``, the fields a run's event says (``left_out_files.progress_fields``:
+    ``message``, ``done``, ``total``), and an empty message once that node's
+    downloads are over, as a run on the server says its ``step_progress``.
+
+    *download_failures*, when given, is a plan's Solve's record of the
+    downloads on first use that failed in its run (``left_out_files.keeping``):
+    a model's weights it holds are not downloaded again, the node that loads
+    them failing at once with that failure, until they are in place, and a
+    download of them that fails now joins it, under *node_id*.
 
     With *keep_stdout*, the report also holds ``targetStdout``: everything
     the target printed, where its record keeps only the tail. It stays out of
@@ -318,7 +353,11 @@ def run_through_node(
     without them the Data Catalog's portable loader form failed under
     validation while working on Play. ``dataset_formats`` rides with them:
     how ``curio_load_data`` reads each, such as a layer group's entry naming
-    its layers. A sandbox execution timeout is the
+    its layers. ``dataset_problems`` (``{datasetId: message}``, from the
+    same resolution's ``unavailable``) are the datasets whose file Curio
+    downloads on first use and could not: a node whose code names one fails
+    with the download's own message, and the sandbox is not asked, as on
+    Play. A sandbox execution timeout is the
     NODE's failure (``ExecutionTimeout`` → error record, blocker), never
     infrastructure.
 
@@ -494,6 +533,15 @@ def run_through_node(
         if media_dir:
             payload["media_dir"] = media_dir
         download_problem = None
+        if is_py and dataset_problems:
+            # A dataset the node reads whose file failed to download on its
+            # first use: the node fails with the download's own error, as
+            # Play's does, where the sandbox would only say it is not here.
+            from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
+
+            named = [dataset_problems[i] for i in dict.fromkeys(dataset_ids_in_code(seeded)) if i in dataset_problems]
+            if named:
+                download_problem = "\n\n".join(dict.fromkeys(named))
         if is_py and "curio_load_model" in seeded:
             # The model packages the node loads, as /processPythonCode
             # resolves them, from the acting account's store.
@@ -505,8 +553,13 @@ def run_through_node(
             # on their first use, before the sandbox runs the node. A download
             # that fails ends the node's run here with its own error, as Play's
             # does (node_exec), where the sandbox would only say the model is
-            # not here.
-            with left_out_files.failures() as unavailable:
+            # not here. How far each has come goes to *downloads*, and one
+            # that failed in a plan's Solve's run is not asked for again.
+            with (
+                left_out_files.failures() as unavailable,
+                left_out_files.keeping(download_failures, by=node_id),
+                _downloads_told(downloads, node.id),
+            ):
                 if acting_user is not None:
                     models = resolve_models_for(seeded, acting_key, owners=owners)
                     model_weights = resolve_fetched_weights_for(seeded, acting_key, owners=owners) if models else {}
@@ -514,7 +567,9 @@ def run_through_node(
                     models = resolve_models_for(seeded, exec_user_key or user_key)
                     model_weights = resolve_fetched_weights_for(seeded, exec_user_key or user_key) if models else {}
             if unavailable:
-                download_problem = "\n\n".join(unavailable.values())
+                download_problem = "\n\n".join(
+                    message for message in (download_problem, *unavailable.values()) if message
+                )
             if models:
                 payload["models"] = models
             if model_weights:
@@ -585,6 +640,10 @@ def run_through_node(
             },
             "durationMs": duration_ms,
         }
+        if widget_problem is None and download_problem is not None:
+            # What the node reads could not be downloaded: no change to its
+            # code mends that (``validation.validate_candidate``).
+            record["downloadFailed"] = True
         report["nodes"][node.id] = record
         if keep_stdout and node.id == node_id:
             report["targetStdout"] = stdout_text

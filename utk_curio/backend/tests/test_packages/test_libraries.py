@@ -318,9 +318,11 @@ def test_remove_keeps_a_library_a_package_still_declares(
 
 
 def test_remove_uninstalls_a_library_no_package_declares(
-    client, user_and_token, tmp_curio, monkeypatch,
+    client, user_and_token, tmp_curio, monkeypatch, pip_that_installs,
 ):
-    """The mirror case: nothing else needs it, so it really is pip-uninstalled."""
+    """The mirror case: nothing else needs it, so it really is pip-uninstalled.
+    The add's own pip run installed it (``pip_that_installs``): a removal takes
+    back only what this server's pip put into the interpreter."""
     _, token = user_and_token
     uninstalled: list[list[str]] = []
     monkeypatch.setattr(

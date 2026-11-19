@@ -5,7 +5,10 @@
  * owner's Data Catalog keeps, in place, with nothing copied.
  *
  * `ProjectLoader` sets the open dataflow: the one the route opened, the
- * owner's or a shared one, or the id a new dataflow gets on its first save.
+ * owner's or a shared one, or the id a new dataflow gets on its first save,
+ * which the first save's answer sets at once (`useWorkflowOperations`). On
+ * `/dataflow/new` that id is also the dataflow every request of the page
+ * names (`utils/requestHeaders.ts`), where no route names one.
  * A canvas with none reads `/get` and `/raster` as before. A dashboard page
  * reads what it carries, and its viewers' kept files
  * (`runs/dashboardRunFiles.ts`), first: `fetchData`, `fetchPreviewData` and

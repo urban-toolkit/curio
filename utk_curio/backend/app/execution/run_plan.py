@@ -1,8 +1,15 @@
 """The order a run on the server follows, decided as Run All decides it.
 
-- :func:`is_interaction_edge`: a two-way link between charts carries a
-  selection, not data, so a run never orders nodes by it. The canvas knows one
-  by its ``in/out`` handles; a saved dataflow also types it ``Interaction``.
+- :func:`is_interaction_edge`: a two-way link between views carries a
+  selection, not data, so a run never orders nodes by it. The one rule for it
+  is ``src/contracts/interactionEdges.json``, read here, and these functions
+  are its one definition on the backend, the twin of the canvas's
+  ``contracts/interactionEdges.ts``; both run ``interactionEdges.cases.json``.
+  A node's own interaction handle is ``in/out``, and a view of a node has one
+  of its own, ``in/out@<id>`` (:func:`interaction_handle_view`). An edge is an
+  interaction edge when a saved dataflow types it ``Interaction``, an agent's
+  plan gives it the kind ``interaction``, or both its handles are interaction
+  handles.
 - :func:`topological_levels` is the twin of ``computeTopologicalLevels`` in
   ``providers/flow/runLevels.ts``: nodes with no edge at all first, then the
   roots that feed something, then each level whose inputs are all done.
@@ -13,8 +20,8 @@
   loads data (``autk_spec_kind``); ``forward`` passes its input on, as a chart,
   a pool or a download does on the canvas, or has nothing to run, as a Note;
   ``browser`` makes data only the browser can (an Autark compute node, an
-  Autark node with no data of its own to load, a Spatial Join), so nothing
-  below it can run until a tab does; ``missing`` is a node whose type names a
+  Autark node with no data of its own to load), so nothing below it can run
+  until a tab does; ``missing`` is a node whose type names a
   package's template that no installed package provides (a saved Compare
   Scenarios node, a node of a package only another account's store holds):
   the canvas cannot run it either, so a run fails it, naming the
@@ -25,12 +32,23 @@
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Iterable, Optional
+
+from utk_curio.common import shared_constants
 
 if TYPE_CHECKING:
     from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
-INTERACTION_HANDLE = "in/out"
+_RULE = shared_constants.read("interactionEdges")
+#: A node's own interaction handle.
+INTERACTION_HANDLE: str = _RULE["handle"]
+#: What a view's interaction handle starts with: a node's own, then the mark.
+_VIEW_HANDLE_PREFIX: str = _RULE["handle"] + _RULE["viewMark"]
+#: The type a saved dataflow gives an interaction edge.
+INTERACTION_EDGE_TYPE: str = _RULE["edgeType"]
+#: The kind an agent's plan gives an interaction edge.
+INTERACTION_PLAN_KIND: str = _RULE["planKind"]
 
 #: The behaviors of the nodes a run forwards besides the ones a dashboard walk
 #: passes through: a Note only holds text, and has nothing to run. The built-in
@@ -40,12 +58,29 @@ _FORWARD_BEHAVIORS = frozenset({"note"})
 _FORWARD_TYPES = frozenset({"curio.builtin/note"})
 
 
-def is_interaction_edge(edge: dict) -> bool:
-    if edge.get("type") == "Interaction":
-        return True
+def interaction_handle_view(handle: object) -> Optional[str]:
+    """The id of the view *handle* names (``in/out@<id>``): None for a node's
+    own handle, and for any other."""
+    if not isinstance(handle, str) or not handle.startswith(_VIEW_HANDLE_PREFIX):
+        return None
+    return handle[len(_VIEW_HANDLE_PREFIX):] or None
+
+
+def is_interaction_handle(handle: object) -> bool:
+    """Whether *handle* is an interaction handle: a node's own, or a view's."""
+    return handle == INTERACTION_HANDLE or interaction_handle_view(handle) is not None
+
+
+def is_interaction_edge(edge: object) -> bool:
+    """Whether *edge* (a saved dataflow's, the canvas's or a plan's) is an
+    interaction edge: typed so, of that kind, or with an interaction handle at
+    both ends."""
+    if not isinstance(edge, Mapping):
+        return False
     return (
-        edge.get("sourceHandle") == INTERACTION_HANDLE
-        and edge.get("targetHandle") == INTERACTION_HANDLE
+        edge.get("type") == INTERACTION_EDGE_TYPE
+        or edge.get("kind") == INTERACTION_PLAN_KIND
+        or (is_interaction_handle(edge.get("sourceHandle")) and is_interaction_handle(edge.get("targetHandle")))
     )
 
 

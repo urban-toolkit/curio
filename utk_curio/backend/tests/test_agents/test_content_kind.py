@@ -48,14 +48,15 @@ class TestTemplateContentKind:
         assert kinds["data-export"] == "code"
         # Its code is written for it from its edit list, and runs (#662).
         assert kinds["edit-features"] == "code"
+        # Its code calls the built-in package's spatial_join with its two widgets.
+        assert kinds["spatial-join"] == "code"
         # A document: authored, validated, never executed.
         assert kinds["vis-vega"] == "grammar"
         assert kinds["autk-grammar"] == "grammar"
-        # Wired, not written — the three nodes the field log found holding prose
-        # plus the two that would have been next.
+        # Wired, not written: the nodes the field log found holding prose
+        # plus the one that would have been next.
         assert kinds["data-pool"] == "none"       # editor none + an input port
         assert kinds["vis-simple"] == "none"
-        assert kinds["spatial-join"] == "none"
         # Its title and text are what its author wrote: a person, or the
         # Researcher placing its findings.
         assert kinds["note"] == "note"

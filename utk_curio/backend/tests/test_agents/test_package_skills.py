@@ -407,7 +407,7 @@ def test_every_skill_a_shipped_package_ships_serves_its_own_templates_by_names_t
     its own package, behaviors Curio's templates declare, and features
     ``skill_runs`` reads. Rasterization's serves every Rasterization
     template, the Vega-Lite package's every chart of its own, and SAM 3's its
-    Track Objects, and none a behavior, since their templates' behaviors are
+    Track Objects and Segment Images, and none a behavior, since their templates' behaviors are
     those of Curio's Python and Vega-Lite nodes; a package's skill holds no
     marker, since it is read as written."""
     from utk_curio.backend.app.agents.domain import skills

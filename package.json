@@ -1,12 +1,16 @@
 {
   "name": "curio",
   "private": true,
-  "description": "The Node.js packages Curio's sandbox runs (autk-db).",
+  "description": "The Node.js packages Curio's sandbox runs (autk-db, and autk-grammar's data entry).",
   "engines": {
     "node": "^26"
   },
   "dependencies": {
-    "@urban-toolkit/autk-db": "4.1.1",
+    "@urban-toolkit/autk-db": "file:utk_curio/frontend/urban-workflows/vendor/autark/urban-toolkit-autk-db-4.1.1-curio.2.tgz",
+    "@urban-toolkit/autk-grammar": "5.0.0",
     "web-worker": "^1.5.0"
+  },
+  "overrides": {
+    "@urban-toolkit/autk-db": "$@urban-toolkit/autk-db"
   }
 }

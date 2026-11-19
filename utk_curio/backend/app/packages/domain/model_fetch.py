@@ -10,10 +10,12 @@ them) names them in its ``model`` block's ``fetch``, and ships without them:
   LFS, ``gitSha1`` (the git blob hash) for any other.
 
 The files land in the package's entry folder, ``models/<name>/``, a
-Transformers checkpoint, or in ``<folder>/<package id>@<major>/models/<name>/``
-for the folder ``--model-weights-dir`` names (:func:`fetched_root`), where
-Curio reads them in place. Curio downloads them there the first time a node
-runs the model (``packages/infrastructure/fetched_weights.py``), and
+Transformers checkpoint, or, for the folder ``--model-weights-dir`` names, in
+``<folder>/<package id>@<major>/<revision>/models/<name>/`` (:func:`fetched_root`),
+where Curio reads them in place: a folder per revision, so stacks that share
+the folder and run other versions of the package keep their own files.
+Curio downloads them there the first time a node runs the model
+(``packages/infrastructure/fetched_weights.py``), and
 ``scripts/fetch_model_weights.py`` fetches them ahead. Both read each file at
 :func:`source_url`, check it with :func:`digest_of`, and leave its folders
 :data:`FOLDER_MODE` and the file :data:`FILE_MODE`. Both stamp each file they
@@ -21,6 +23,10 @@ place with its digest (:func:`write_stamp`), and read a file as in place only
 when its stamp names the digest the block names (:func:`is_stamped`): a block
 that names other digests, in a later version of its package, downloads its
 files again. A file with no stamp is hashed once (:func:`checked_in_place`).
+A file another folder of the package holds with the digest the block names,
+another revision's or the one a Curio before folders per revision placed it
+in, is linked in rather than downloaded again (:func:`placed_elsewhere`,
+:func:`link_into_place`).
 
 This module imports nothing but the standard library: the fetch script reads
 it by its path, on a host that may hold no Curio dependencies.
@@ -32,6 +38,7 @@ import contextlib
 import hashlib
 import os
 import re
+import stat
 import tempfile
 import urllib.parse
 from dataclasses import dataclass
@@ -188,11 +195,84 @@ def fetch_dict(fetch: ModelFetch) -> dict:
     return {"huggingface": fetch.huggingface, "revision": fetch.revision, "files": files}
 
 
-def fetched_root(weights_dir, package_id: str, major: int) -> Path:
+def package_root(weights_dir, package_id: str, major: int) -> Path:
     """The folder of ``--model-weights-dir`` (*weights_dir*) that holds the
-    fetched weights of package *package_id* at *major*, laid out as the
-    package's own folder: its entry, ``models/<name>/``, is under it."""
+    fetched weights of package *package_id* at *major*: a folder per
+    revision of them (:func:`fetched_root`)."""
     return Path(weights_dir) / f"{package_id}@{major}"
+
+
+def fetched_root(weights_dir, package_id: str, major: int, revision: str) -> Path:
+    """The folder of ``--model-weights-dir`` (*weights_dir*) that holds the
+    weights a block of package *package_id* at *major* names at *revision*,
+    laid out as the package's own folder: its entry, ``models/<name>/``, is
+    under it. Stacks that share *weights_dir* and run other versions of the
+    package so keep their own files, and share one download of a revision."""
+    return package_root(weights_dir, package_id, major) / revision
+
+
+def placed_elsewhere(root: Path, entry: str, item: FetchedFile, *, check_unstamped: bool = True) -> Path | None:
+    """*item*'s file as another folder of its package under
+    ``--model-weights-dir`` holds it, *root* being the folder of its block's
+    revision (:func:`fetched_root`), or None: the file a first use, or the
+    fetch script, links into *root* (:func:`link_into_place`) rather than
+    download again. Looked for first where a Curio before folders per
+    revision placed it, the package's folder's own *entry*, then in each
+    other revision's folder; it must be a regular file there, a link never,
+    stamped with the digest *item* names (:func:`is_stamped`). With
+    *check_unstamped*, a file a Curio before stamps placed in the earlier
+    folder is hashed once, and stamped when it matches
+    (:func:`checked_in_place`); without it, nothing is read but stamps, and
+    nothing is written."""
+    root = Path(root)
+    package = root.parent
+    try:
+        others = sorted(
+            folder for folder in package.iterdir()
+            if folder.name != root.name and is_commit(folder.name)
+            and stat.S_ISDIR(os.lstat(folder).st_mode)
+        )
+    except OSError:
+        others = []
+    candidates = [package / entry / item.path, *(folder / entry / item.path for folder in others)]
+    for index, candidate in enumerate(candidates):
+        try:
+            if not stat.S_ISREG(os.lstat(candidate).st_mode):
+                continue
+            found = (
+                checked_in_place(candidate, item) if index == 0 and check_unstamped
+                else is_stamped(candidate, item)
+            )
+        except OSError:
+            continue
+        if found:
+            return candidate
+    return None
+
+
+def link_into_place(source: Path, target: Path, item: FetchedFile) -> None:
+    """Put *source*, *item*'s file another folder holds
+    (:func:`placed_elsewhere`), at *target* too, as a hard link: no byte is
+    copied, and the folder it was found in keeps it for whoever reads it
+    there. What was at *target* goes first (:func:`discard`); the link is
+    stamped once in place. Curio never writes a placed file again, only
+    puts another in its place, so the two names keep the same bytes. Raises
+    ``OSError``, for a file system that links no file among others, or a
+    *source* another download replaced meanwhile, leaving nothing at
+    *target*."""
+    source, target = Path(source), Path(target)
+    discard(target)
+    os.link(source, target)
+    try:
+        linked, found = os.lstat(target), os.lstat(source)
+        same = (linked.st_ino, linked.st_dev) == (found.st_ino, found.st_dev) and is_stamped(source, item)
+    except OSError:
+        same = False
+    if not same:
+        # Not the file whose stamp names the digest: another took its place.
+        discard(target)
+        raise OSError(f"{source} was replaced while it was linked")
+    write_stamp(target, item)
 
 
 def source_url(fetch: ModelFetch, path: str) -> str:

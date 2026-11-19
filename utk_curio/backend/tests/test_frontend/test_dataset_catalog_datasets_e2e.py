@@ -13,7 +13,9 @@ row/feature counts, column names, the geometry type that came back from
 ``gpd.read_file``. Geo datasets get a third
 node, a Vega-Lite chart of a per-feature measure derived from the parsed
 geometry, so the coordinates are proven to survive all the way to a rendered
-mark rather than merely to a row count.
+mark rather than merely to a row count. A collection whose files are in a
+bucket has them cached from its details before it loads, from the recorded
+corpus, since no e2e stack mounts a bucket.
 
 WHY THIS IS NOT COVERED BY THE EXISTING SUITE
 ---------------------------------------------
@@ -59,6 +61,7 @@ from playwright.sync_api import expect
 
 from utk_curio.backend.tests.dataset_catalog_coverage import (
     CatalogDataset,
+    bucket_source,
     catalog_datasets,
     expected_markers,
     marker_text,
@@ -66,11 +69,15 @@ from utk_curio.backend.tests.dataset_catalog_coverage import (
 )
 
 from .utils import (
+    CARD,
+    DRAWER_ROOT,
     accept_confirm_dialog,
     assert_header_shows_save,
     assert_vega_canvas_rendered,
+    cache_collection_files,
     canvas_node_type,
     connect_nodes,
+    data_catalog_drawer,
     dataset_widget_state,
     drag_to_canvas,
     drag_builtin_to_canvas,
@@ -99,11 +106,6 @@ VEGA_TYPE = "curio.builtin/vis-vega"
 
 TRANSFORM_TILE = "#tile-python-computation"
 VEGA_TILE = "#tile-vis-vega"
-
-DRAWER_ROOT = '[data-curio-dataset-catalog-drawer="true"]'
-# The "Adding…" placeholder is an <article role="status"> carrying the same
-# title as the real card, so every card locator has to exclude it.
-CARD = 'article:not([role="status"])'
 
 # Two nodes at zoom 1: the pair proven by test_canvas_authoring_e2e.py. A node
 # is 525x350 flow units in a 1280x720 viewport, so this is about as close as
@@ -139,21 +141,6 @@ def _username(dataset: CatalogDataset) -> str:
     return f"ds_{tail}"[:30]
 
 
-def _drawer(page):
-    root = page.locator(DRAWER_ROOT)
-    root.wait_for(state="attached", timeout=15000)
-    # aria-hidden IS the presented signal: until the rAF flips it, every role
-    # query inside the subtree returns zero matches, so gating on it is
-    # strictly better than waiting for visibility (the drawer slides in via
-    # translate3d, so it is "visible" before it is usable).
-    expect(root).to_have_attribute("aria-hidden", "false", timeout=10000)
-    dialog = page.get_by_role("dialog").filter(
-        has=page.get_by_role("heading", name="Data Catalog", exact=True)
-    )
-    expect(dialog).to_be_visible(timeout=10000)
-    return dialog
-
-
 def _add_dataset_from_catalog(page, palette, dataset: CatalogDataset):
     """Add *dataset* to the open dataflow, and return its palette row.
 
@@ -161,7 +148,7 @@ def _add_dataset_from_catalog(page, palette, dataset: CatalogDataset):
     open past the drawer.
     """
     palette.get_by_role("button", name="Browse Data Catalog +").click(force=True)
-    drawer = _drawer(page)
+    drawer = data_catalog_drawer(page)
     # The drawer shows a group (a NetCDF file's variables, a PBF's layers) as
     # one card under the group's id, and adding it adds every member.
     card_id = dataset.manifest.group_id or dataset.dataset_id
@@ -189,6 +176,8 @@ def _add_dataset_from_catalog(page, palette, dataset: CatalogDataset):
             "button", name="Remove from project", exact=True
         )
     ).to_be_visible(timeout=20000)
+    if bucket_source(dataset) is not None:
+        cache_collection_files(page, drawer, card_id, int(expected_markers(dataset)["CURIO_E2E_ROWS"]))
 
     # This drawer has no Escape handler, so close through the header button.
     drawer.locator("header").get_by_role(

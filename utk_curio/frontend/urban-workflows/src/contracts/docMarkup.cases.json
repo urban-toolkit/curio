@@ -18,13 +18,13 @@
     },
     {
       "name": "Markdown's code",
-      "doc": "Loads a Model Catalog model: `model.run({input name: array})` runs its graph, and `model.path` is its folder.",
+      "doc": "Loads a Model Catalog model: `model.path` is its file, and `session.run(None, {input name: array})` runs its graph.",
       "parts": [
         ["text", "Loads a Model Catalog model: "],
-        ["code", "model.run({input name: array})"],
-        ["text", " runs its graph, and "],
         ["code", "model.path"],
-        ["text", " is its folder."]
+        ["text", " is its file, and "],
+        ["code", "session.run(None, {input name: array})"],
+        ["text", " runs its graph."]
       ]
     },
     {

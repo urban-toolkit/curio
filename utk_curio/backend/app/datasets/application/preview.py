@@ -6,7 +6,7 @@ import csv
 import json
 import logging
 import math
-from functools import lru_cache
+from functools import lru_cache, partial
 from pathlib import Path
 from typing import Any
 
@@ -137,12 +137,17 @@ class DatasetPreviewService:
         row_limit: int = 50,
         offset: int = 0,
         part_index: int | None = None,
+        collection: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        """*collection*, for a collection, is where its files are for node
+        code, found for ``item["id"]``, the id its rows are named by
+        (``exec_collections.resolve_collections``): its index's rows show as
+        ``curio_load_collection`` gives them."""
         # Paginated payloads are small (<= row_limit rows per part), so sanitizing
         # the whole result is cheap and guarantees no non-finite float escapes to
         # the strict browser JSON parser, regardless of which format handler ran.
         return _json_safe(
-            self._dispatch(item, row_limit=row_limit, offset=offset, part_index=part_index)
+            self._dispatch(item, row_limit=row_limit, offset=offset, part_index=part_index, collection=collection)
         )
 
     def _dispatch(
@@ -152,6 +157,7 @@ class DatasetPreviewService:
         row_limit: int = 50,
         offset: int = 0,
         part_index: int | None = None,
+        collection: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         path_value = item.get("path")
         if not path_value or str(path_value).startswith("curio://"):
@@ -193,9 +199,17 @@ class DatasetPreviewService:
             return self._preview_json(path, row_limit, offset, item, part_index=part_index)
         if fmt == "geojson":
             return self._preview_geojson(path, row_limit, offset, item)
-        if fmt in ("parquet", "collection"):
-            # A collection's data file is its Parquet index.
+        if fmt == "parquet":
             return self._preview_parquet(path, row_limit, offset, item)
+        if fmt == "collection":
+            # A collection's data file is its Parquet index, whose rows show
+            # as node code gets them.
+            from utk_curio.sandbox.util.collections import collection_rows
+
+            return self._preview_parquet(
+                path, row_limit, offset, item,
+                rows_of=partial(collection_rows, dataset_id=item.get("id"), entry=collection or {}),
+            )
         if fmt == "geotiff":
             return {
                 "schema": item.get("schema") or {"fields": []},
@@ -565,7 +579,10 @@ class DatasetPreviewService:
             "truncated": end < self._total_rows(item, total_rows),
         }
 
-    def _preview_parquet(self, path: Path, row_limit: int, offset: int, item: dict[str, Any]) -> dict[str, Any]:
+    def _preview_parquet(
+        self, path: Path, row_limit: int, offset: int, item: dict[str, Any], *, rows_of=None,
+    ) -> dict[str, Any]:
+        """*rows_of*, when given, is what the page shows of its rows."""
         from utk_curio.sandbox.util.tabular_preview import preview_parquet_file
 
         try:
@@ -573,6 +590,7 @@ class DatasetPreviewService:
                 path,
                 row_limit=row_limit,
                 offset=offset,
+                rows_of=rows_of,
             )
         except Exception as exc:  # noqa: BLE001
             return {

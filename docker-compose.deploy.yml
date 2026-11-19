@@ -19,6 +19,18 @@ services:
     # node's child killed when the execution zygote died, or a process a
     # killed node had started, stayed a zombie until the container restarted.
     init: true
+    # The cgroups below the container's own are its to arrange: each isolated
+    # node runs in a cgroup at its budget, --exec-memory-mb
+    # (utk_curio/sandbox/isolation/node_cgroups.py). Root in the container may
+    # make cgroups below its own, move its processes into them and set their
+    # limits, never the container's own limits, which the host keeps
+    # (nsdelegate); node code, as curio-exec, writes no cgroup file. Docker
+    # Engine 28 or newer: an older daemon refuses the option and the
+    # container does not start. Without the two lines nodes keep the
+    # address-space cap, /monitor says why, and the deploy workflow fails.
+    cgroup: private
+    security_opt:
+      - writable-cgroups=true
     # The host's GPU, asked for as test-gpu's docker-compose.ci-shards.yml
     # asks: the host's NVIDIA Container Toolkit hands the container the GPU
     # and the driver's libcuda.so.1, which the image's torch runs node code

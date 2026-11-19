@@ -59,6 +59,20 @@ LOCAL_RELIEF_FOLDER = Path(REPO_ROOT) / "docs" / "bring-your-own-model" / LOCAL_
 RUN_NODE = "runs-local-relief"
 RELIEF_MARKER = "LOCAL_RELIEF_RAN"
 
+#: How a node of these tests opens the model it loaded: the session of the
+#: starter Curio writes for a model's node (``default_cells.run_skeleton``),
+#: given the thread count ``OMP_NUM_THREADS`` names. onnxruntime reads no
+#: ``OMP_NUM_THREADS``, and e2e-desktop's stack sets it to its runner's share,
+#: so the starter's own session would start a thread for every core of a
+#: machine CI's runners share. With none set the count is 0, onnxruntime's own
+#: choice, which is what the starter's session has. The node's code imports
+#: ``os`` and ``onnxruntime as ort`` and names the model ``model``.
+SESSION_ON_THE_STACKS_THREADS = (
+    "options = ort.SessionOptions()\n"
+    'options.intra_op_num_threads = int((os.environ.get("OMP_NUM_THREADS") or "0").split(",")[0])\n'
+    'session = ort.InferenceSession(model.path, sess_options=options, providers=["CPUExecutionProvider"])\n'
+)
+
 
 def _spec(*, code: str = "return [1]", node_id: str = "model-catalog-node") -> dict:
     """One node, so the canvas is not empty (a capture waits for a node)."""
@@ -174,7 +188,8 @@ def test_the_model_catalog_button_opens_its_own_drawer_and_a_card_its_details(
     expect(modal).to_have_count(0, timeout=10000)
 
     # SAM 3's weights download on a node's first run, and no CI run holds
-    # them: its details say so, and name the node its card makes.
+    # them: its details say so, and name both nodes its card makes, the one
+    # picked from the drop's menu; the package's section counts them.
     expect(_card(drawer, SAM3)).to_contain_text("SAM License")
     _card(drawer, SAM3).get_by_role("button", name="View details", exact=True).click()
     modal = page.get_by_role("dialog", name="Model details")
@@ -182,7 +197,8 @@ def test_the_model_catalog_button_opens_its_own_drawer_and_a_card_its_details(
     expect(_row(modal, "Type")).to_have_text("Concept segmentation")
     expect(_row(modal, "Runtime")).to_have_text("Transformers")
     expect(_row(modal, "Labels")).to_have_text("35")
-    expect(_row(modal, "Node")).to_have_text("Track Objects")
+    expect(_row(modal, "Node")).to_have_text("Track Objects or Segment Images")
+    expect(_row(modal, "Nodes")).to_have_text("2")
     expect(_row(modal, "Weights")).to_have_text("Downloads on first use")
     modal.get_by_role("button", name="View license").click()
     expect(modal.locator('[data-curio-model-license="true"]')).to_contain_text("SAM Materials", timeout=10000)
@@ -322,9 +338,12 @@ def test_an_exported_model_package_imports_and_runs_in_another_account(
 
     # Account B imports that archive into a dataflow whose node loads it.
     code = (
+        "import os\n"
         "import numpy as np\n"
+        "import onnxruntime as ort\n"
         f'model = curio_load_model("{LOCAL_RELIEF_ID}")\n'
-        'relief = model.run({"height": np.arange(64, dtype=np.float32).reshape(1, 1, 8, 8)})[0]\n'
+        f"{SESSION_ON_THE_STACKS_THREADS}"
+        'relief = session.run(None, {"height": np.arange(64, dtype=np.float32).reshape(1, 1, 8, 8)})[0]\n'
         f'print("{RELIEF_MARKER}", tuple(relief.shape))\n'
         "return float(np.abs(relief).sum())"
     )

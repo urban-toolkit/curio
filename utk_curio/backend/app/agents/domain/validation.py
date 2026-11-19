@@ -101,6 +101,7 @@ def validate_candidate(
     available_templates: dict | None = None,
     dataset_paths: dict | None = None,
     dataset_formats: dict | None = None,
+    dataset_problems: dict | None = None,
     exec_user_key: str | None = None,
     secrets: dict | None = None,
     prior_outputs: dict | None = None,
@@ -109,12 +110,22 @@ def validate_candidate(
     keep_stdout: bool = False,
     collections: dict | None = None,
     media_dir: str | None = None,
+    downloads=None,
+    download_failures: dict | None = None,
 ) -> dict:
     """Run the dataflow through *node_id* with the candidate overlaid and
-    return ``{"verdict", "evidence"}`` (see module docstring). dev/115:
+    return ``{"verdict", "evidence"}`` (see module docstring). *downloads*
+    rides through to the runner, which tells it how far each download on
+    first use of what a node reads has come (``runner.run_through_node``),
+    and a node that failed because what it reads could not be downloaded
+    marks the evidence ``downloadFailed``. *download_failures*, a plan's
+    Solve's record of the downloads that failed in its run, rides through
+    too: a model's weights it holds are not downloaded again. dev/115:
     ``dataset_paths`` / ``dataset_formats`` / ``exec_user_key`` ride through
     to the runner so the Data Catalog's ``curio_data_path("<id>")`` loaders
-    resolve exactly as on Play. ``acting_user`` (#485) is the account's
+    resolve exactly as on Play, and ``dataset_problems``, why each dataset
+    whose file failed to download could not be had, fails the node that
+    reads it with that reason, as on Play. ``acting_user`` (#485) is the account's
     ``User`` row, captured in
     the request: validation runs on a thread of its own, where the account's
     collections and added models cannot be found without it. With
@@ -153,7 +164,7 @@ def validate_candidate(
         user_key, project_id, spec_dict, node_id,
         candidate_content=candidate_content,
         session_id=session_id, exec_fn=exec_fn, progress=progress,
-        dataset_paths=dataset_paths, dataset_formats=dataset_formats,
+        dataset_paths=dataset_paths, dataset_formats=dataset_formats, dataset_problems=dataset_problems,
         exec_user_key=exec_user_key, secrets=secrets,
         collections=collections, media_dir=media_dir,
         prior_outputs=prior_outputs,
@@ -161,6 +172,8 @@ def validate_candidate(
         templates=templates,  # dev/119: the roster classifies executability
         acting_user=acting_user,
         keep_stdout=keep_stdout,
+        downloads=downloads,
+        download_failures=download_failures,
     )
     executed = [nid for nid, rec in report["nodes"].items() if rec.get("executed")]
     reused = [nid for nid, rec in report["nodes"].items() if rec.get("status") == "reused"]
@@ -209,6 +222,10 @@ def validate_candidate(
             })
         else:
             evidence.update({"kind": "precondition", "detail": report.get("error")})
+        if blocker and (report["nodes"].get(blocker) or {}).get("downloadFailed"):
+            # What the failed node reads could not be downloaded on its first
+            # use: no correction of the code mends that.
+            evidence["downloadFailed"] = True
         return {"verdict": "fail", "evidence": evidence}
     output_data_type = (target_record.get("output") or {}).get("dataType", "")
     evidence["outputDataType"] = output_data_type

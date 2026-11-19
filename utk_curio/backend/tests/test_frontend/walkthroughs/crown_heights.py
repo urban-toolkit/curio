@@ -487,7 +487,7 @@ def _solve(ctx: Ctx, agent, panel, token: str, project_id: str, titles: list[str
             when = "ended" if ended else f"was still solving after {SOLVE_S:.0f} s"
             raise AssertionError(
                 f"Solve {when} with the outcomes {outcomes}, and {empty or 'no node'} empty. Its progress "
-                f"list reads {said!r}, and the model was called {len(captured_agent_prompts(ctx.backend))} times."
+                f"list reads {said!r}, and the model was called {len(captured_agent_prompts(ctx.backend, dataflow=project_id))} times."
             )
         page.wait_for_timeout(1000)
     ctx.mark("cut", "end")
@@ -898,7 +898,7 @@ def crown_heights_first_version(ctx: Ctx) -> None:
         "sun's rays across. A table shows the grid's cells, to check them.",
         plan,
     )
-    script_agent_replies(ctx.backend, reply, FIRST_TITLE, by_intent=_solve_replies(spec, refs))
+    script_agent_replies(ctx.backend, reply, FIRST_TITLE, by_intent=_solve_replies(spec, refs), dataflow=project_id)
     _reload(page)
 
     ctx.mark("clip", "start")
@@ -1167,6 +1167,7 @@ def crown_heights_map_editor(ctx: Ctx) -> None:
         ),
         "The two parts are in the Map Editor.",
         TOWER_TITLE,
+        dataflow=project_id,
     )
     _reload(page)
     page.wait_for_selector(".react-flow__node", timeout=45000)
@@ -1254,6 +1255,7 @@ def crown_heights_plot_and_map(ctx: Ctx) -> None:
         ),
         PLOT_AND_MAP_TITLE,
         by_intent=_solve_replies(spec, refs),
+        dataflow=project_id,
     )
     _reload(page)
     page.wait_for_selector(".react-flow__node", timeout=45000)

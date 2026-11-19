@@ -68,6 +68,19 @@ describe('DataPoolContent', () => {
     expect(screen.queryByText('Run the node feeding this one.')).toBeNull();
   });
 
+  test('as a dashboard tile whose upstream downloads on its first use, it says how far on a line under Computing...', () => {
+    // The node that downloads is often hidden on a dashboard: the tile says
+    // what that node says, between "Computing..." and its hint.
+    const message = 'Downloading model.safetensors, a file of the weights of model.curio.sam3: 1.21 of 3.44 GB (35%)';
+    // The upstream's downloads, whatever the types of the code under test name.
+    const downloading = { upstreamDownloads: [message] } as any;
+    const { container } = render(
+      <DataPoolContent {...defaultProps} tabData={[]} connected onDashboard upstreamRunning {...downloading} />
+    );
+    const lines = Array.from(container.querySelectorAll('[data-curio-node-empty] span')).map((span) => span.textContent);
+    expect(lines).toEqual(['Computing...', message, 'Results will be shown here once they are ready.']);
+  });
+
   test('says the input is not tabular when the upstream ran but made no table', () => {
     // The empty branch passed `tabular: true`, so a connected pool handed a
     // payload it cannot tabulate reported "The input ran, but came back empty" —
@@ -255,6 +268,52 @@ describe('DataPoolContent', () => {
     await waitFor(() => expect(mockFetchPreviewData).toHaveBeenCalledWith('artifact_id'));
     await act(async () => {}); // flush state updates from resolved preview fetch
     expect(screen.getAllByText('Alice').length).toBeGreaterThanOrEqual(1);
+  });
+
+  test("a tab of one input that holds several frames shows its own rows, not another input's preview", async () => {
+    // Circle 0 is a tuple of two frames, circle 1 a GeoDataFrame: three tabs.
+    // The tuple's second tab is no input of its own to preview.
+    mockFetchPreviewData.mockResolvedValue({ dataType: 'dataframe', data: { name: ['Somewhere else'] } } as any);
+    render(
+      <DataPoolContent
+        {...defaultProps}
+        activeTab="1"
+        tabData={[{ col: 1 }, { col: 2 }, { col: 3 }]}
+        tableData={[{ name: 'Tuple B' }]}
+        data={{
+          nodeId: 'test-node',
+          input: {
+            dataType: 'outputs',
+            data: [{ path: 'art-tuple', dataType: 'outputs' }, { path: 'art-gdf', dataType: 'geodataframe' }],
+          },
+        }}
+      />
+    );
+
+    // Long enough for a preview fetch to land, had one been sent.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(screen.getAllByText('Tuple B').length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText('Somewhere else')).toBeNull();
+  });
+
+  test("the one table of an input that holds several shows its own rows, not a preview of the whole input", async () => {
+    // An Autark data node that loaded one layer hands on its list of tables.
+    mockFetchPreviewData.mockResolvedValue({
+      dataType: 'list',
+      data: [{ dataType: 'dict', data: { name: 'roads', type: 'roads', geojson: { type: 'FeatureCollection', features: [] } } }],
+    } as any);
+    render(
+      <DataPoolContent
+        {...defaultProps}
+        tabData={[{ col: 1 }]}
+        tableData={[{ highway: 'primary' }]}
+        data={{ nodeId: 'test-node', input: { path: 'art-roads', dataType: 'list' } }}
+      />
+    );
+
+    // Long enough for a preview fetch to land, had one been sent.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(screen.getAllByText('primary').length).toBeGreaterThanOrEqual(1);
   });
 
   // ---- #517: the pool shows at most 100 rows and must say so ---------------

@@ -124,7 +124,7 @@ name so the surface/parks/water context layers pass through untouched.
   "attributes": { "bands": "lst_timeseries" },
   "attributeArrays": { "bands": 24 },
   "outputColumns": ["angle", "intercept"],
-  "wglsFunction": "... OLS slope/intercept over the 24 bands; angle = atan(slope) in degrees ..."
+  "wgslFunction": "... OLS slope/intercept over the 24 bands; angle = atan(slope) in degrees ..."
 }]
 ```
 

@@ -3,7 +3,8 @@
 The script reads a shipped package's ``model.fetch`` and downloads each file
 it lists from ``https://huggingface.co/<repo>/resolve/<revision>/<path>``,
 into the package's entry folder or, with ``--into <dir>``, into
-``<dir>/<id>@<major>/<entry>``, the folder ``--model-weights-dir`` reads. Each
+``<dir>/<id>@<major>/<revision>/<entry>``, the folder ``--model-weights-dir``
+reads, linking a file another revision's folder holds with its digest. Each
 file streams to a temporary file, is checked against its digest, and only
 then is moved into place, readable by every account, and stamped with that
 digest as Curio's own download stamps it: a stamped file is skipped unread,
@@ -64,19 +65,20 @@ def _script():
 
 class _HuggingFace:
     """The opener the script is handed: answers each request with the bytes
-    *files* hold for the path its URL names, or refuses every request with
-    *status*; keeps each request."""
+    *files* hold for the path its URL names at *revision*, or refuses every
+    request with *status*; keeps each request."""
 
-    def __init__(self, files=None, status=None):
+    def __init__(self, files=None, status=None, revision=REVISION):
         self.files = dict(files or {})
         self.status = status
+        self.revision = revision
         self.requests = []
 
     def open(self, request, timeout=None):
         self.requests.append(request)
         if self.status is not None:
             raise urllib.error.HTTPError(request.full_url, self.status, "refused", {}, io.BytesIO())
-        path = urllib.parse.unquote(request.full_url.split(f"/resolve/{REVISION}/", 1)[1])
+        path = urllib.parse.unquote(request.full_url.split(f"/resolve/{self.revision}/", 1)[1])
         if path not in self.files:
             raise AssertionError(f"the script asked for {path}, which was already in place")
         return io.BytesIO(self.files[path])
@@ -270,9 +272,9 @@ def test_a_gated_repository_says_how_to_get_access_and_never_prints_the_token(sh
 
 
 def test_into_writes_the_folder_model_weights_dir_reads(shipped, tmp_path):
-    """``<dir>/<package id>@<major>/<entry>``, where the backend looks with
-    ``--model-weights-dir <dir>`` (``model_fetch.fetched_root``); the package's
-    own folder is left as it was."""
+    """``<dir>/<package id>@<major>/<revision>/<entry>``, where the backend
+    looks with ``--model-weights-dir <dir>`` (``model_fetch.fetched_root``);
+    the package's own folder is left as it was."""
     from utk_curio.backend.app.packages.domain.model_fetch import fetched_root
 
     into = tmp_path / "model-weights"
@@ -280,12 +282,52 @@ def test_into_writes_the_folder_model_weights_dir_reads(shipped, tmp_path):
     code, out, err = _run(shipped, f"{PACKAGE_ID}@1", "--into", str(into), opener=_HuggingFace(FILES))
 
     assert (code, err) == (0, "")
-    root = fetched_root(into.resolve(), PACKAGE_ID, 1)
-    assert root == into.resolve() / DIR
+    root = fetched_root(into.resolve(), PACKAGE_ID, 1, REVISION)
+    assert root == into.resolve() / DIR / REVISION
     assert {name: (root / ENTRY / name).read_bytes() for name in FILES} == FILES
-    assert [_mode(into), _mode(root), _mode(root / ENTRY)] == [0o755, 0o755, 0o755]
+    assert [_mode(into), _mode(root.parent), _mode(root), _mode(root / ENTRY)] == [0o755, 0o755, 0o755, 0o755]
     assert not (shipped / "packages" / DIR / "models").exists()
     assert str(root / ENTRY) in out, out
+
+
+#: The package's next version: config.json changes, the weights do not.
+NEXT_REVISION = "9d1f0e6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e"
+NEXT_CONFIG = b'{"model_type": "tiny", "layers": 2}'
+
+
+def test_into_keeps_each_revision_in_a_folder_of_its_own_and_fetches_only_what_none_holds(shipped, tmp_path):
+    """``<dir>/<package id>@<major>/<revision>/<entry>``: two stacks that
+    share the folder and run two versions of the package each read their
+    own. The next version's fetch asks only for the file whose digest
+    changed, and links the other from the first revision's folder, which
+    stays as it was."""
+    into = tmp_path / "model-weights"
+
+    code, _out, err = _run(shipped, PACKAGE_ID, "--into", str(into), opener=_HuggingFace(FILES))
+
+    assert (code, err) == (0, "")
+    first = into.resolve() / DIR / REVISION / ENTRY
+    assert first.is_dir(), sorted(path.relative_to(into).as_posix() for path in into.rglob("*"))
+    assert {name: (first / name).read_bytes() for name in FILES} == FILES
+
+    manifest = shipped / "packages" / DIR / "manifest.json"
+    raw = json.loads(manifest.read_text(encoding="utf-8"))
+    raw["model"]["fetch"]["revision"] = NEXT_REVISION
+    raw["model"]["fetch"]["files"][0]["gitSha1"] = _git_blob_sha1(NEXT_CONFIG)
+    manifest.write_text(json.dumps(raw), encoding="utf-8")
+    hugging_face = _HuggingFace({"config.json": NEXT_CONFIG}, revision=NEXT_REVISION)
+
+    code, out, err = _run(shipped, PACKAGE_ID, "--into", str(into), opener=hugging_face)
+
+    assert (code, err) == (0, "")
+    assert [request.full_url.rsplit("/", 1)[1] for request in hugging_face.requests] == ["config.json"]
+    second = into.resolve() / DIR / NEXT_REVISION / ENTRY
+    assert {name: (second / name).read_bytes() for name in FILES} == {**FILES, "config.json": NEXT_CONFIG}
+    assert os.stat(second / "model.safetensors").st_ino == os.stat(first / "model.safetensors").st_ino
+    assert (second / ".model.safetensors.digest").read_text(encoding="utf-8") == STAMPS[".model.safetensors.digest"]
+    assert {name: (first / name).read_bytes() for name in FILES} == FILES
+    assert {name: (first / name).read_text(encoding="utf-8") for name in STAMPS} == STAMPS
+    assert "Done: 1 fetched, 1 already here." in out, out
 
 
 def test_a_package_that_names_nothing_to_fetch_or_that_curio_does_not_ship_is_refused(shipped):

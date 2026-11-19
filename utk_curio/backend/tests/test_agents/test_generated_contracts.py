@@ -500,8 +500,13 @@ class TestTheAutarkRenderers:
         schema = contracts.load_autk_schema()
         shape = contracts.render_autk_shape(schema)
         assert "\n" not in shape
+        # Every family that makes a step and that a node runs, and no other: a
+        # layout and links make no step, and a refused key is not named.
+        refused = {rule["key"] for rule in contracts.AUTK_NOT_RUN_YET if rule["in"] == ""}
+        steps = set(contracts.autk_step_families(schema)) - refused
+        assert steps >= {"compute", "data", "map", "plot"}
         for family in contracts.autk_families(schema):
-            assert f'"{family}"' in shape
+            assert (f'"{family}"' in shape) is (family in steps), family
         assert f'"dataRef": "{contracts.input_table_name(0)}"' in shape
         # The whole shape survives the refusal's 600-character cut.
         assert shape in dv.validate(contracts.AUTK_TEMPLATE, "not controllable")["detail"]
@@ -512,10 +517,55 @@ class TestTheAutarkRenderers:
         assert schema["$id"] in region
         assert contracts.AUTK_TEMPLATE in region
         assert f'"{contracts.input_table_name(0)}"' in region
-        for union, key in (("DataSourceSpec", "type"), ("PlotSpec", "mark")):
+        # A document names one of the families that make a step a node runs.
+        intro = next(line for line in region.splitlines() if "A document names at least one of" in line)
+        refused = {rule["key"] for rule in contracts.AUTK_NOT_RUN_YET if rule["in"] == ""}
+        steps = set(contracts.autk_step_families(schema)) - refused
+        for family in contracts.autk_families(schema):
+            assert (f'"{family}"' in intro) is (family in steps), family
+        # Every kind of source and plot a node runs, and none it does not run yet.
+        refused = {(rule["in"], rule["value"]) for rule in contracts.AUTK_NOT_RUN_YET if "value" in rule}
+        for union, key, place in (("DataSourceSpec", "type", "data[]"), ("PlotSpec", "mark", "plot[]")):
             for values, _ in contracts._variants(schema, union, key):
                 for value in values:
-                    assert f'"{value}"' in region, (union, value)
+                    assert (f'"{value}"' in region) is ((place, value) not in refused), (union, value)
+
+    def test_compute_passes_listed_by_reference_are_read_through_the_gpgpu_pass(self, monkeypatch):
+        from utk_curio.backend.tests._support import autk_schemas
+
+        schema = autk_schemas.passes_by_reference(contracts.load_autk_schema())
+        shape = contracts.render_autk_shape(schema)
+        gpgpu = ('a compute pass needs "attributes", "dataRef" and "wgslFunction", '
+                 'plus "outputColumnName" or "outputColumns"')
+        assert gpgpu in shape
+        region = contracts.render_autk_region(schema, "Autark")
+        assert autk_schemas.GPGPU_DESCRIPTION in region
+        assert f'"wgslFunction": {autk_schemas.SHADER_DESCRIPTION}' in region
+        render_only = ("viewpoints", "aggregation", autk_schemas.RENDER_DESCRIPTION)
+        # The render pass is no GPGPU pass: none of its fields is a pass's. A
+        # node runs it, so it is read through its own reference, and named in
+        # a clause and a line of its own, after the GPGPU pass's.
+        assert (gpgpu + ', or, as "type": "render", "aggregation", "layers", "outputTableName" '
+                'and "viewpoints"; a loader is ') in shape
+        assert autk_schemas.RENDER_DESCRIPTION not in shape
+        render_line = (f'  - "type": "render": {autk_schemas.RENDER_DESCRIPTION} It requires "aggregation", '
+                       '"layers", "outputTableName", "type" and "viewpoints".')
+        lines = region.splitlines()
+        assert lines.count(render_line) == 1, region
+        for line in lines:
+            if line != render_line:
+                assert not any(word in line for word in render_only), line
+        # A node that ran no render pass would name none of it, listed by
+        # reference as it is.
+        not_run = {"in": "compute[]", "key": "type", "value": "render", "what": "a render pass"}
+        monkeypatch.setattr(contracts, "AUTK_NOT_RUN_YET", (*contracts.AUTK_NOT_RUN_YET, not_run))
+        shape = contracts.render_autk_shape(schema)
+        region = contracts.render_autk_region(schema, "Autark")
+        assert gpgpu + "; a loader is " in shape
+        assert autk_schemas.GPGPU_DESCRIPTION in region
+        for word in render_only:
+            assert word not in shape
+            assert word not in region
 
     def test_the_region_says_a_node_draws_one_view(self):
         schema = contracts.load_autk_schema()
@@ -663,12 +713,13 @@ class TestTheTrillBlock:
         text = contracts.render_trill_block(_trill())
         for phantom in ('"annotations"', '"Data"', '"warnings"'):
             assert phantom not in text, phantom
-        # "output" is a field of a Spatial Join's setting, and of nothing else.
+        # A Spatial Join's operation and output are its widgets: the setting
+        # it kept before, the one place "predicate" and "output" were fields,
+        # is no field of a node's metadata the block shows.
         block = json.loads(text)
         metadata = block["properties"]["dataflow"]["properties"]["nodes"]["items"]["properties"]["metadata"]
-        spatial_join = metadata["properties"].pop("spatialJoin")
-        assert list(spatial_join["properties"]) == ["predicate", "output"]
-        assert '"output"' not in json.dumps(block)
+        assert "spatialJoin" not in metadata["properties"]
+        assert '"predicate"' not in text and '"output"' not in text
         assert "description" not in text
 
     def test_the_preamble_carries_it(self):

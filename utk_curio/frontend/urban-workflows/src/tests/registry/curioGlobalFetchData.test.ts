@@ -4,6 +4,9 @@
  * `window.curio`. While a dataflow is open it reads on that dataflow's output
  * route (`services/dataflowReads.ts`), which reads an output the dataflow saved
  * from its owner's Data Catalog under any sign-in; with none open, on `/get`.
+ * A package's own call to the backend sends the headers every request of the
+ * page sends (`window.curio.requestHeaders`): its sign-in, and the dataflow
+ * the page shows, by which a start of several backend processes routes it.
  *
  * The registry's side-effect imports (built-in behaviors, icons, grammar
  * adapters) are stubbed: only the `window.curio` it publishes is under test.
@@ -71,6 +74,17 @@ test("while a dataflow is open, a package reads an output on that dataflow's rou
     expect(asked).toHaveLength(2);
     for (const url of asked) {
         expect(url).toContain("/api/projects/df-1/outputs/get?fileName=art-1");
+    }
+});
+
+test("a package's own call sends the headers every request of the page sends, its dataflow among them", () => {
+    const dataflow = "11111111-2222-4333-8444-555555555555";
+    window.history.replaceState(null, "", `/dataflow/${dataflow}`);
+    try {
+        expect(typeof curio()?.requestHeaders).toBe("function");
+        expect(curio().requestHeaders()).toEqual({ "X-Curio-Dataflow": dataflow });
+    } finally {
+        window.history.replaceState(null, "", "/");
     }
 });
 

@@ -5,7 +5,7 @@ kept run keeps them in (``runs/kept.py``), with ``made_by`` saying whose run
 made each one: the dataflow's owner's or a viewer's, each with a budget of its
 own. Its sessions take a new shape (``common/kept_sessions.py``), so the table
 starts empty: a kept output is scratch for seven days, and the next run that
-needs one makes it again. ``downgrade()`` puts the empty viewer's table back.
+needs one makes it again.
 
 Revision ID: e3f4a5b6c7d8
 Revises: d2e3f4a5b6c7
@@ -56,8 +56,3 @@ def _drop(table: str) -> None:
 def upgrade():
     _drop("dashboard_step_output")
     _create("kept_step_output", sa.Column("made_by", sa.String(16), nullable=False, server_default="viewer"))
-
-
-def downgrade():
-    _drop("kept_step_output")
-    _create("dashboard_step_output")

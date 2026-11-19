@@ -4,6 +4,7 @@ Autark map or plot and its legend, an empty state.
 
 import contextlib
 import json
+import math
 import time
 from io import BytesIO
 
@@ -244,6 +245,22 @@ def assert_autark_plot_drawn(page, node_id: str, *, timeout: float = 30000) -> N
 AUTK_MAP_MIN_FRAMED_SPAN = 0.75
 
 
+#: A map its camera turned stands where the camera says when its points agree
+#: with that view to this share of the eye's distance from the point it looks
+#: at, its up vector to this, and its angles to this many degrees: autk-map
+#: keeps its camera in 32-bit floats.
+TURNED_SAME_VIEW = 1e-4
+TURNED_SAME_UP = 1e-5
+TURNED_SAME_ANGLE = 0.01
+
+# The view of each map an Autark node drew (adapters/node/autkMapView's
+# mapViews), and the hook that shows the maps a camera turns at their framed
+# views (true) or turns them back (false).
+_AUTK_MAP_VIEWS_JS = """(id) => typeof window.__curio_mapViews === 'function' ? window.__curio_mapViews(id) : null"""
+_AUTK_SHOW_FRAMED_JS = """([id, framed]) => typeof window.__curio_showMapsFramed === 'function'
+    && window.__curio_showMapsFramed(id, framed)"""
+
+
 def autark_map_framing(page, node_id: str, *, min_span: float = AUTK_MAP_MIN_FRAMED_SPAN,
                        timeout: float = 5000) -> str | None:
     """Why an Autark map is not framed on what it draws, or None when it is (#773).
@@ -255,7 +272,74 @@ def autark_map_framing(page, node_id: str, *, min_span: float = AUTK_MAP_MIN_FRA
     middle nor a crop that runs past the canvas's edges. Read in the page, in
     the frame that renders the map, as the captures read it: the framing is the
     camera the map has now.
+
+    A map whose document writes a ``camera`` opens framed, then turned by it,
+    which can tilt its drawing past the canvas's edges. Its drawing is read at
+    the view the node framed it at, before the turn (``__curio_showMapsFramed``),
+    and then its turn (``__curio_mapViews``): the view it is turned back to
+    looks at the point the framed view looks at, from as far as the framed eye
+    is high, or as the camera's ``zoom`` says, ``pitch`` degrees from straight
+    down, facing ``bearing`` degrees clockwise from north, which is up the map.
     """
+    views = page.evaluate(_AUTK_MAP_VIEWS_JS, node_id) or []
+    if not any(view and view.get("camera") for view in views):
+        return _drawing_framing(page, node_id, min_span=min_span, timeout=timeout)
+    if not page.evaluate(_AUTK_SHOW_FRAMED_JS, [node_id, True]):
+        return f"Autark node {node_id}: its maps cannot be shown at the view they were framed at"
+    try:
+        framed = page.evaluate(_AUTK_MAP_VIEWS_JS, node_id) or []
+        problem = _drawing_framing(page, node_id, min_span=min_span, timeout=timeout)
+    finally:
+        page.evaluate(_AUTK_SHOW_FRAMED_JS, [node_id, False])
+    if problem:
+        return f"{problem}, at the view it was framed at before its camera turned it"
+    return _turn_problem(node_id, framed, page.evaluate(_AUTK_MAP_VIEWS_JS, node_id) or [])
+
+
+def _view_angles(view: dict) -> tuple[float, float, float]:
+    """How far *view*'s eye is from the point it looks at, and its pitch from
+    straight down and its bearing clockwise from north, in degrees."""
+    eye, look = view["eye"], view["lookAt"]
+    dx, dy, dz = look[0] - eye[0], look[1] - eye[1], look[2] - eye[2]
+    distance = math.sqrt(dx * dx + dy * dy + dz * dz)
+    pitch = math.degrees(math.acos(max(-1.0, min(1.0, -dz / distance)))) if distance else 0.0
+    bearing = math.degrees(math.atan2(dx, dy)) % 360
+    return distance, pitch, bearing
+
+
+def _turn_problem(node_id: str, framed: list, turned: list) -> str | None:
+    """Why a map its camera turns does not stand where the camera puts its
+    framed view (*framed*, each map's view before the turn; *turned*, after),
+    or None when each does."""
+    problems = []
+    for index, (before, after) in enumerate(zip(framed, turned)):
+        if not before or not after or not after.get("camera"):
+            continue
+        zoom, pitch, bearing = json.loads(after["camera"])
+        pitch, bearing = pitch or 0, (bearing or 0) % 360
+        high = before["eye"][2] - before["lookAt"][2]
+        far = 10000 / 2 ** (zoom - 10) if zoom is not None else high
+        distance, at_pitch, at_bearing = _view_angles(after)
+        turn = math.radians(bearing)
+        apart = lambda a, b: max(abs(x - y) for x, y in zip(a, b))  # noqa: E731
+        if apart(after["lookAt"], before["lookAt"]) > TURNED_SAME_VIEW * far:
+            problems.append(f"map {index} looks at {after['lookAt']}, framed at {before['lookAt']}")
+        if abs(distance - far) > TURNED_SAME_VIEW * far:
+            problems.append(f"map {index}'s eye is {distance} from where it looks, not {far}")
+        bearing_off = abs((at_bearing - bearing + 180) % 360 - 180)
+        if abs(at_pitch - pitch) > TURNED_SAME_ANGLE or (pitch > TURNED_SAME_ANGLE and bearing_off > TURNED_SAME_ANGLE):
+            problems.append(f"map {index} stands {at_pitch} degrees from straight down facing {at_bearing}, "
+                            f"not {pitch} facing {bearing}")
+        if apart(after["up"], [math.sin(turn), math.cos(turn), 0]) > TURNED_SAME_UP:
+            problems.append(f"map {index}'s up is {after['up']}, not the heading {bearing} degrees east of north")
+    if not problems:
+        return None
+    return f"Autark node {node_id}: its camera did not turn the view it was framed at: " + "; ".join(problems)
+
+
+def _drawing_framing(page, node_id: str, *, min_span: float, timeout: float) -> str | None:
+    """Why the drawing of an Autark map, at the view it has now, is not framed
+    on what it draws, or None when it is (``autark_map_framing``)."""
     import base64
 
     from PIL import Image, ImageChops
@@ -295,6 +379,88 @@ def autark_map_framing(page, node_id: str, *, min_span: float = AUTK_MAP_MIN_FRA
         if problem is None or time.monotonic() >= deadline:
             return problem
         page.wait_for_timeout(500)
+
+
+def _luminance(colour) -> float:
+    red, green, blue = colour
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+
+def _raster_cell_colours(png: bytes, rows: int, columns: int):
+    """``(colours, box)``: the colour an Autark map draws at the center of each
+    cell of a raster that fills its drawing, north row first, and the
+    drawing's box; or ``(None, why)``. The drawing is the box of the pixels
+    that differ from the canvas's top-left corner, as ``autark_map_framing``
+    finds it, split into *rows* by *columns* cells; a cell's colour is the
+    median of each channel over 5 by 5 pixels at its center."""
+    from PIL import Image, ImageChops
+
+    image = Image.open(BytesIO(png)).convert("RGB")
+    channels = ImageChops.difference(image, Image.new("RGB", image.size, image.getpixel((0, 0)))).split()
+    moved = ImageChops.lighter(ImageChops.lighter(channels[0], channels[1]), channels[2])
+    box = moved.point(lambda v: 255 if v > 8 else 0).getbbox()
+    if not box:
+        return None, f"its {image.size[0]}x{image.size[1]} map canvas is one colour"
+    left, top, right, bottom = box
+    width, height = (right - left) / columns, (bottom - top) / rows
+    if min(width, height) < 10:
+        return None, f"its drawing, box {box}, is too small to hold {rows} by {columns} cells"
+    colours = []
+    for row in range(rows):
+        line = []
+        for column in range(columns):
+            x, y = int(left + (column + 0.5) * width), int(top + (row + 0.5) * height)
+            patch = [image.getpixel((x + dx, y + dy)) for dx in range(-2, 3) for dy in range(-2, 3)]
+            line.append(tuple(sorted(pixel[channel] for pixel in patch)[12] for channel in range(3)))
+        colours.append(line)
+    return colours, box
+
+
+def assert_raster_cells_follow_their_values(
+    page, node_id: str, values, *, timeout: float = 30000, attach_as: str = "",
+) -> None:
+    """Assert an Autark map draws a raster's cells in colours that follow
+    their values on a sequential scheme that darkens as values grow (such as
+    ``interpolateReds``), the raster filling the map's drawing.
+
+    *values* holds the cells, north row first. Cells with one value share a
+    colour (each channel within 6), cells with different values do not, and a
+    cell with a higher value is darker (lower luminance). So a raster drawn as
+    one flat colour, or with its cells in another order, fails. Read in the
+    frame that renders the map, as captures read it.
+    """
+    import base64
+
+    rows, columns = len(values), len(values[0])
+    cells = [(values[row][column], (row, column)) for row in range(rows) for column in range(columns)]
+    deadline = time.monotonic() + timeout / 1000
+    png, problem = None, None
+    while True:
+        url = page.evaluate(_AUTK_MAP_PIXELS_IN_FRAME_JS, node_id)
+        if not url:
+            problem = "it has no map canvas"
+        else:
+            png = base64.b64decode(url.split(",", 1)[1])
+            colours, box = _raster_cell_colours(png, rows, columns)
+            problem = box if colours is None else None
+            if colours is not None:
+                colour = {place: colours[place[0]][place[1]] for _value, place in cells}
+                for value, place in cells:
+                    for other, other_place in cells:
+                        apart = max(abs(a - b) for a, b in zip(colour[place], colour[other_place]))
+                        if value == other and apart > 6:
+                            problem = f"cells {place} and {other_place} hold {value} but are drawn {colour[place]} and {colour[other_place]}"
+                        elif value < other and _luminance(colour[place]) <= _luminance(colour[other_place]):
+                            problem = (f"cell {place} holds {value}, less than {other} at {other_place}, but is drawn "
+                                       f"{colour[place]}, no lighter than {colour[other_place]}")
+                if problem:
+                    problem += f" (every cell, north row first: {colours}, drawing box {box})"
+        if problem is None or time.monotonic() >= deadline:
+            break
+        page.wait_for_timeout(500)
+    if problem and attach_as and png:
+        allure.attach(png, name=f"{attach_as}: canvas pixels", attachment_type=allure.attachment_type.PNG)
+    assert problem is None, f"Autark node {node_id}: {problem}, so the raster's cells are not drawn by their values {values}"
 
 
 # An Autark node's drawing (its map canvas or plot div) and the content mount it

@@ -35,6 +35,7 @@
   "collectionKinds": {
     "rasters": { "dataTypes": ["Imagery", "Rasters"] },
     "frames": { "dataTypes": ["Imagery", "Video"] },
+    "videos": { "dataTypes": ["Video"] },
     "media": { "dataTypes": ["Imagery", "Video"] },
     "images": { "dataTypes": ["Imagery"] },
     "audio": { "dataTypes": ["Audio"] }

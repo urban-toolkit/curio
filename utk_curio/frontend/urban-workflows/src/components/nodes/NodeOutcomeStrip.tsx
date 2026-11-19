@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { getToken } from "../../utils/authApi";
 import { backendUrl } from "../../utils/backendUrl";
+import { requestHeaders } from "../../utils/requestHeaders";
 import styles from "./NodeOutcomeStrip.module.css";
 
 /**
@@ -128,11 +129,10 @@ export const NodeOutcomeStrip: React.FC<NodeOutcomeStripProps> = ({
     }
     if (!projectId || !nodeId) return;
     let cancelled = false;
-    const token = getToken();
     fetch(
       `${backendUrl()}/nodeRuntime?dataflowId=${encodeURIComponent(projectId)}` +
         `&nodeId=${encodeURIComponent(nodeId)}`,
-      { headers: token ? { Authorization: `Bearer ${token}` } : undefined },
+      { headers: requestHeaders(getToken(), {}, projectId) },
     )
       .then((r) => (r.ok ? r.json() : null))
       .then((body) => {

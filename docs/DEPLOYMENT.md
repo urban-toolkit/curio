@@ -4,13 +4,14 @@ How to deploy Curio on a server you already have, behind HTTPS. For local develo
 
 This guide deploys Curio under a `/curio` path prefix on a hostname you already control (e.g. `https://lab-name.your-uni.edu/curio/`). The path prefix lets you share the hostname with other apps. Replace `lab-name.your-uni.edu` with whatever hostname your server uses, the rest of the steps don't change.
 
-Assumed setup: a Linux server with the hostname already pointing at it, Docker + Compose installed, and [Caddy](https://caddyserver.com) installed as the reverse proxy.
+Assumed setup: a Linux server with the hostname already pointing at it, Docker Engine 28 or newer and Compose installed, and [Caddy](https://caddyserver.com) installed as the reverse proxy.
 
 ## Contents
 
 - [1. Configure the stack](#1-configure-the-stack)
   - [LLM configurations](#llm-configurations)
   - [Model weights a package fetches](#model-weights-a-package-fetches)
+  - [Packages every guest has](#packages-every-guest-has)
   - [Bucket mounts](#bucket-mounts)
 - [2. Configure Caddy](#2-configure-caddy)
 - [3. Build and run](#3-build-and-run)
@@ -35,7 +36,7 @@ cd /srv/curio
 mkdir -p instance .curio datasets
 ```
 
-Create `/srv/curio/docker-compose.site.yml` with Curio's arguments for this site: the address the browser reaches the backend at, the path the app is served under, and the memory each node may allocate. The address and the path must match the Caddy paths in step 2. `--exec-memory-mb 24576` gives a node room to run PyTorch on the GPU: under the default 4096, `import torch` fails in a node. The `ports` line publishes the backend and the frontend on loopback only, so they are reached through Caddy (`!override` needs Docker Compose 2.24.4 or newer).
+Create `/srv/curio/docker-compose.site.yml` with Curio's arguments for this site: the address the browser reaches the backend at, the path the app is served under, and the memory each node may use. The address and the path must match the Caddy paths in step 2. `--exec-memory-mb 24576` gives a node room to run PyTorch models on the GPU. The `ports` line publishes the backend and the frontend on loopback only, so they are reached through Caddy (`!override` needs Docker Compose 2.24.4 or newer).
 
 ```yaml
 services:
@@ -262,7 +263,10 @@ repository and commit the block names, with no token, and checks each file
 against the digest the manifest names; a file that does not match is never
 placed. The node runs once they are in place, and later runs read them there.
 Until then the model's details in the Model Catalog say *Downloads on first
-use*. SAM 3's 3.4 GB come from an identical copy of Meta's files.
+use*. SAM 3's 3.4 GB come from an identical copy of Meta's files. While they
+download, the node says which file comes and how far it has come. A download
+a restart cut, such as a deploy's, goes on from where it stopped the next time
+a node needs the model, and the whole file is checked.
 
 Each placed file is stamped with its digest, in `.<file>.digest` beside it,
 and is in place only while its stamp names the digest the manifest names. So
@@ -270,6 +274,14 @@ a later Curio whose manifest names other files downloads them the first time
 a node runs the model on it, and a file placed with no stamp, by hand or by
 an older Curio, is checked once: stamped when it matches, downloaded again
 when it does not.
+
+Under `--model-weights-dir`, each revision of a package's weights has a folder
+of its own, `<dir>/<package id>@<major>/<revision>/models/<name>/`. Stacks
+that share the folder and run different versions of a package keep their own
+files, and stacks on the same version share one download. A file that two
+revisions name with one digest is linked into the second one's folder, not
+downloaded again. A revision that no stack runs any more can be removed by
+hand.
 
 1. Pass `--model-weights-dir` to `curio.py start`, so the weights go to a
    folder of their own, which isolated node code reads in place.
@@ -327,6 +339,29 @@ when it does not.
   without `--into`: for a clone run with `curio.py start`.
 - Git, the image and the pip package hold none of these weights, and
   **Export**, **Publish** and **Save as package node** refuse such a model.
+
+### Packages every guest has
+
+A guest adds no package and installs no library. Its nodes are those of the
+built-in package, of the examples' packages with `--with-examples`, and of the
+packages `--guest-packages` names, each by its folder in the catalog, with
+commas between them. To give every guest SAM 3, add to the `command` in
+`docker-compose.site.yml`:
+
+```yaml
+    command: ["--backend-url", "https://lab-name.your-uni.edu/curio/api", "--base-path", "/curio", "--exec-memory-mb", "24576", "--model-weights-dir", "/model-weights", "--guest-packages", "model.curio.sam3@1"]
+```
+
+- Each start adds the packages, with the packages they need, to the shared
+  guest's account. The Node Catalog and Model Catalog pages show them in all
+  projects, a dataflow a guest makes with **File > New** starts with them, and
+  a guest adds them to an example from the catalog drawer, or by dropping one
+  of their cards on the canvas.
+- Their libraries install with the examples' as the stack starts.
+- A start takes off what an earlier start added that the list no longer
+  names, unless an example uses it, and the libraries only it asked for go
+  with it.
+- A name that is not a package of the catalog stops the start.
 
 ### Bucket mounts
 
@@ -418,8 +453,10 @@ To start a stack with the service:
 
 It works when `docker compose ps` shows `bucket-mounts` as `(healthy)` and
 `/monitor`'s **Deployment** shows **Bucket mounts** *on, self-test passed*.
-While Curio tests the service after a start, the line says *on, self-test
-running*.
+The self-test passes when the service mounts a test folder, node code's
+account reads it in Curio's container, and the service reaches Curio's proxy,
+its one way out to the buckets. While Curio tests the service after a start,
+the line says *on, self-test running*.
 
 ## 2. Configure Caddy
 
@@ -471,7 +508,7 @@ sudo systemctl reload caddy
 
 This is where the frontend bundle gets compiled. The first build takes 10-15 minutes because it has to install Python and Node dependencies and run the full webpack build, subsequent builds are faster thanks to layer caching.
 
-The build also installs the sandbox's Node.js packages (autk-db) into `node_modules/` beside the repository's `package.json`; `curio.py start` runs `npm install` there on every start.
+The build also installs the sandbox's Node.js packages (autk-db, from the tarball in `utk_curio/frontend/urban-workflows/vendor/autark/`, and autk-grammar) into `node_modules/` beside the repository's `package.json`; `curio.py start` runs `npm install` there on every start.
 
 > [!WARNING]
 > **Always deploy with both compose files.** `docker-compose.yml` alone starts
@@ -483,6 +520,8 @@ The build also installs the sandbox's Node.js packages (autk-db) into `node_modu
 > catalog mutators), and `restart: unless-stopped`, and `docker-compose.site.yml`
 > adds the site's own arguments. Exporting `COMPOSE_FILE` once
 > per shell applies it to every later `docker compose` command.
+
+The overlay also lets the container arrange the cgroups below its own (`cgroup: private` and `security_opt: [writable-cgroups=true]`), so that each isolated node runs in a cgroup at its memory budget. Docker Engine 28 or newer grants this; an older Docker refuses the option, and the stack does not start. Root in the container can make cgroups below its own and set their limits, never the container's own limits, and node code can write no cgroup at all.
 
 ```bash
 cd /srv/curio
@@ -506,7 +545,9 @@ curl https://lab-name.your-uni.edu/curio/api/live
 
 Then load `https://lab-name.your-uni.edu/curio/` in a browser. If something looks off, `docker compose logs -f` shows the running container's output.
 
-**Run one backend process.** The backend keeps each open dataflow's live copy, the one everyone editing it shares, in its own memory. So one backend process serves a deployment's data directories: never run a second process, worker or replica on them, where each would keep its own copy of a dataflow and the two would drift apart.
+**One backend process for each dataflow.** The backend keeps each open dataflow's live copy, the one everyone editing it shares, in its own memory. So one backend process serves each dataflow: never run a second Curio, worker or replica on a deployment's data directories, where each would keep its own copy of a dataflow and the two would drift apart.
+
+`--backend-processes N` runs N backend processes in the one container, each keeping the dataflows it owns, behind nginx on the backend's port, which sends each request to the process that owns its dataflow. The Docker image has nginx. A desktop runs one, the default, with no nginx; a hosted stack adds `"--backend-processes", "N"` to the `command` of its `docker-compose.site.yml`, and Caddy needs no change. Each process holds its own memory, so N processes take about N times what one idle backend does. Limits stay those of one process at any N: a dashboard's visitors, an account, a portal and Nominatim are allowed what one backend allows them. If any of them exits, Curio stops them all and exits, and Docker starts the container again.
 
 ### The GPU
 
@@ -605,13 +646,19 @@ To give both stacks an LLM endpoint of their own (the **Curio** rows and Curio's
 
 Without both secrets, the deploy removes `.secrets/llm-endpoint` and the stack has no endpoint of its own.
 
-Both stacks mount `/srv/curio-model-weights` at `/model-weights` and start with `--model-weights-dir /model-weights`, so a model's weights download there once, on the first node that runs it on either stack ([Model weights a package fetches](#model-weights-a-package-fetches)). Each deploy gives the folder to root, the account both containers' servers run as, readable by every account and writable by no other.
+Both stacks mount `/srv/curio-model-weights` at `/model-weights` and start with `--model-weights-dir /model-weights`, so a model's weights download there once for each revision, on the first node that runs it on either stack, into a folder of that revision: a stack on another version of the package never downloads over the other's ([Model weights a package fetches](#model-weights-a-package-fetches)). Each deploy gives the folder to root, the account both containers' servers run as, readable by every account and writable by no other.
 
 Both stacks also start with `--media-cache-max-file-gb 8`, so **Cache files** copies the SideSeeing walks, videos of up to 7 GiB, from data.urbantk.org. Each account still holds at most 20 GB of cached files.
 
 They also start with `--discovery-max-download-mb 2048`, so a download, or a file of a bucket table, may be up to 2 GiB on them: a month of detections in data.urbantk.org's `idot` bucket is a JSON Lines file of up to 1.7 GB.
 
+Both stacks start with `--guest-packages model.curio.sam3@1`, so every guest runs SAM 3's **Track Objects** and **Segment Images** on the host's GPU ([Packages every guest has](#packages-every-guest-has)).
+
 Each stack runs its own [bucket mount service](#bucket-mounts) when the deployed release has it, mounting in `/srv/curio-bucket-mounts/dev` or `/srv/curio-bucket-mounts/stable`. Before a deploy stops the running stack, it checks the host: `/dev/fuse`, a shared mount at `/srv`, and the AppArmor profile, loaded and with `/etc/apparmor.d/curio-bucket-mounts` the same as the checkout's `scripts/bucket-mounts/curio-bucket-mounts.apparmor`. A failed check fails the deploy with the command to run. Once the new stack is up, the deploy fails unless `bucket-mounts` is healthy and **Bucket mounts** says *on, self-test passed*.
+
+Before a deploy stops the running stack, it also checks that Docker Engine is 28 or newer, and once the new stack is up, it fails unless `/version` says `"memory_limit": "cgroup"`.
+
+Both stacks start with `--backend-processes 16` when the deployed release has the flag, so each serves on 16 backend processes behind nginx ([Build and run](#3-build-and-run)). Once the new stack is up, the deploy fails unless all 16 answer `/api/monitor`.
 
 A merge to `main` deploys the dev stack once: Bump version bumps the patch version and dispatches the dev deploy of that commit. Stable runs manually via Actions → Deploy → Run workflow.
 
@@ -632,8 +679,6 @@ So a routine merge quietly ships to `curio-dev` and nothing else. Cutting a stab
 > [!NOTE]
 > Pushes made with `GITHUB_TOKEN` never trigger workflows, which is why the bump job dispatches `deploy.yml` over the API rather than relying on its own commit to set things off. `workflow_dispatch` events are exempt from that recursion guard, so no PAT is needed.
 
-To roll back, dispatch Deploy with `ref` set to the previous tag and `target: stable`.
-
 ## The monitor page
 
 Every instance serves `/monitor`, a page that reports what the deployment is
@@ -644,8 +689,9 @@ the dataflow stays open.
 
 It shows:
 
-- **Deployment** - version, the requested and active isolation mode, and which
-  optional features are configured. Settings that have a value somebody chose
+- **Deployment** - version, the requested and active isolation mode, the
+  memory limit isolated nodes run under (**Node memory**: a cgroup limit, or
+  the address-space cap and why), and which optional features are configured. Settings that have a value somebody chose
   (the execution account, and whether Curio offers LLM models of its own) are
   reported only as "configured" or "none", never as their value.
 - **Hardware** - CPU model and core count, memory, swap, load average (raw and
@@ -681,6 +727,12 @@ and a restart resets them. The LLM tokens are also written to
 `.curio/monitor/llm-tokens.json` as they are counted, and the open-files
 samples to `.curio/monitor/open-files.json`. Each file holds at most the last
 90 days, and a restart starts it over.
+
+With `--backend-processes N` the page shows the whole backend: node runs,
+backend memory, errors and LLM tokens of every process, and in each hour the
+open files of the busiest process against its own limit. Process 1 and the
+others write their own files, such as `llm-tokens.1.json`. A process that
+does not answer is named at the top of the page, and its numbers are left out.
 
 ### What the page exposes, and who can read it
 
@@ -723,11 +775,16 @@ flooding it cannot push real errors out of the log.
 | `systemctl reload caddy` hangs | Caddy stuck in cert-fetch retry. Use `restart` instead, then check `journalctl -u caddy`. |
 | Mixed-content errors in browser console | `--backend-url` in `docker-compose.site.yml` is an `http://` address. Use the `https://` one and run `docker compose up -d --force-recreate`. |
 | `could not select device driver "nvidia"` when the stack starts | The host has no NVIDIA Container Toolkit, or no NVIDIA GPU. Set up the toolkit ([The GPU](#the-gpu)), or add `deploy: !reset {}` to the `curio` service in `docker-compose.site.yml`. |
-| A node that imports torch fails with `failed to map segment from shared object` | Its memory budget is too small for PyTorch's CUDA libraries. Pass `--exec-memory-mb 24576` in `docker-compose.site.yml`. |
+| `/monitor`'s **Node memory** says *address-space cap* | The container's cgroups are not writable, for the reason the line gives: start it with `docker-compose.deploy.yml`, on Docker Engine 28 or newer. |
+| The stack does not start, and Docker's error names `writable-cgroups` | Docker Engine is older than 28. Upgrade it. |
+| A node that imports torch fails with `failed to map segment from shared object` | Its nodes run under the address-space cap (**Node memory** on `/monitor`), and its memory budget is too small for PyTorch's CUDA libraries. Give the container writable cgroups, or pass `--exec-memory-mb 24576` in `docker-compose.site.yml`. |
+| `docker events` shows an `oom` event for the container, or a stopped container's `docker inspect` says `"OOMKilled": true` | A node used more than its memory budget and was stopped, with every process it started; the node's error says so. The container and its servers kept running. |
 | A node says *Curio could not download ..., a file of the weights of ...* | Its model's first run could not download the weights, for the reason the message gives. When the server cannot reach huggingface.co, or the repository asks for a token, fetch them ahead with the script the message names ([Model weights a package fetches](#model-weights-a-package-fetches)). |
 | A node says *Curio could not write the weights of ...* | The server cannot write the folder the weights download into: give the folder `--model-weights-dir` names to the container's root ([Model weights a package fetches](#model-weights-a-package-fetches)). |
 | `docker compose up` cannot start `bucket-mounts` | The host lacks one of the three things [Bucket mounts](#bucket-mounts) checks: `/dev/fuse`, a shared mount where the mounts live, or the loaded AppArmor profile. |
 | `/monitor` shows **Bucket mounts** *unavailable* | Curio's test of the mount service failed, for the reason the line gives. Recent errors holds the details, and `docker compose logs bucket-mounts` the service's side. |
+| **Bucket mounts** says the mount service *could not reach Curio's proxy on port 3128*, or adding a bucket's files says it *cannot reach* it | The service's container does not reach port 3128 of Curio's container, where Curio's proxy listens on the backend's `--backend-host`. Keep both containers on the overlay's `bucket-mounts` network, and the backend on `--backend-host 0.0.0.0`, as `docker-compose.deploy.yml` starts it. |
+| Adding a bucket's files says *Curio's bucket mount proxy refused the requests to the bucket* | Curio's proxy refused the bucket's host, for the reason that follows: an address that is not public, a host that takes no connection, or 64 tunnels open at once. The bucket is tried again a minute later. |
 | Nodes fail and you cannot see why | Open `/monitor`. The error log there holds the last failures with their tracebacks, and survives longer than `.curio/messages.log`, which is truncated on every launch. |
 | `/monitor` says the sandbox is unreachable | The sandbox process is down or not answering within 3s. The rest of the page stays current; check `docker compose logs curio`. |
 
@@ -735,8 +792,8 @@ flooding it cannot push real errors out of the log.
 
 - **Decide who may read `/monitor`.** It is public and unauthenticated on every instance, and its error log carries raw tracebacks including server paths and fragments of user node code. Block it at the reverse proxy if that is not acceptable; see [The monitor page](#the-monitor-page).
 - **Anyone with a dashboard link can start runs**, whatever the guest setting. A tile with no saved output runs the nodes before it when the page opens, and a viewer who changes a pinned control runs the dataflow again, on the server, with its owner's data, models and packages and never the owner's keys; a viewer never changes the dataflow. The limits are fixed: 10 runs a minute per visitor address of the values visitors try and 120 overall (opening the page costs nothing), two runs at once per dashboard, and half the isolated pool (`--exec-parallelism`) for every viewer's nodes together. What a run makes is kept 7 days, at most 2 GiB of viewers' runs per dashboard, and made again by the next visit that needs it. To refuse such runs, block the backend's `/api/projects/<id>/dashboard/runs` at the reverse proxy.
-- **Guests' work is kept until the backend starts again.** Every guest signs in to one shared account. What a guest changes in an example, and each dataflow it makes with File > New, is a folder of its own under `.curio/users/guest/projects/` that only that guest's sign-in opens, and the files it uploads and the datasets it downloads go to that account's store, listed for that guest alone. Each start of the backend deletes them all, and there is no quota between two starts. A guest's agents run its own dataflows on the server, under the limits of isolated node execution below.
-- **Say how many proxies add `X-Forwarded-For`.** The limits per visitor address (sign-in attempts, the monitor's error reports, a dashboard's runs) read the address there when `--proxy-hops N` names the proxies in front of the backend that add it; the overlay passes 1, for the site's Caddy. Pass one more for each other proxy that adds it, such as a CDN in front of Caddy, and keep the backend reachable only through them. Without the flag the header is not read, and each request counts as the address it came from.
+- **Guests' work is kept until the backend starts again.** Every guest signs in to one shared account. What a guest changes in an example, and each dataflow it makes with File > New, is a folder of its own under `.curio/users/guest/projects/` that only that guest's sign-in opens, and the files it uploads and the datasets it downloads go to that account's store, listed for that guest alone. The frames, clips and overlays its nodes derive from a collection's files go to a media folder of its own, which only that guest reads. Each start of the backend deletes them all, and there is no quota between two starts. A guest's agents run its own dataflows on the server, under the limits of isolated node execution below.
+- **Say how many proxies add `X-Forwarded-For`.** The limits per visitor address (sign-in attempts, the monitor's error reports, a dashboard's runs) read the address there when `--proxy-hops N` names the proxies in front of the backend that add it; the overlay passes 1, for the site's Caddy. Pass one more for each other proxy that adds it, such as a CDN in front of Caddy, and keep the backend reachable only through them. The nginx of `--backend-processes` is not one to count: the backend processes count it themselves. Without the flag the header is not read, and each request counts as the address it came from.
 - **Verify auth is on**: `docker compose logs curio | grep CURIO_NO_AUTH` must print `CURIO_NO_AUTH=0`. If it prints `1`, you started without the `docker-compose.deploy.yml` overlay and the instance is open to anyone.
 - Keep `--no-allow-publish` (the overlay supplies it). Without it, any signed-in user can publish into the shared node catalog, including over a package already there. See [NODE-CATALOG.md § Operator notes](NODE-CATALOG.md#operator-notes).
 - `--no-allow-publish` covers the shared Data Catalog too. Without it, any signed-in user other than a guest can publish a dataset there; only the original publisher can unpublish or delete it. See [DATA-CATALOG.md](DATA-CATALOG.md#operator-notes).
@@ -747,13 +804,13 @@ flooding it cannot push real errors out of the log.
 - **A deployment that cannot isolate does not start.** `--deploy` needs Linux, fork, setrlimit, pyseccomp and the `curio-exec` account; without them it exits with what is missing instead of serving accounts that share one interpreter. Run the Docker image, which has all of it, or drop `--deploy` and run Curio as the single-user tool it then is.
 - **Verify the sandbox is not exposed**: `docker compose ps` must not list a published port for 2000. The sandbox executes arbitrary node code; only the backend inside the container should reach it. The image binds it to `127.0.0.1` and publishes nothing, so a published 2000 means a local override added one.
 - **Verify the sandbox token is set**: `docker compose logs curio | grep CURIO_SANDBOX_TOKEN` must print `CURIO_SANDBOX_TOKEN=<set>` (the value itself is never logged). A deployment with auth on refuses to start without it.
-- **Isolated node execution is on.** `--deploy` turns it on: Linux, plus the unprivileged `curio-exec` account the image creates. Each node's Python then runs in a confined child process: memory and CPU capped, network, `ptrace` and new sessions or process groups denied by seccomp, and no read access to `instance/` or `.curio/data`. A JavaScript node's Node.js runs as `curio-exec` too, under the same seccomp denials but the network's, with a home folder of its own that ends with the node, and reads neither. Every process a node starts ends when the node does: when it returns, fails or reaches its time limit. `docker-compose.deploy.yml` also passes `CURIO_ISOLATION=fork`, which makes the sandbox **fail-closed** too: if it cannot confine, it refuses to start. The deploy workflow checks the result over `/version` and fails the deployment if it is not `fork`. To check a running instance yourself:
+- **Isolated node execution is on.** `--deploy` turns it on: Linux, plus the unprivileged `curio-exec` account the image creates. Each node's Python then runs in a confined child process: memory and CPU capped, network, `ptrace` and new sessions or process groups denied by seccomp, and no read access to `instance/` or `.curio/data`. Its memory is a cgroup at `--exec-memory-mb`, for the node and every process it starts together, the files they read included and the GPU's memory not. Past it the node stops with all it started and says so, and Docker records an `oom` event for the container, and `"OOMKilled": true` once the container stops, though only the node stopped. Where the container's cgroups are not writable, each node has an address-space cap instead, its interpreter's footprint plus the budget, and **Node memory** on `/monitor` says why. A JavaScript node's Node.js runs as `curio-exec` too, under the same seccomp denials but the network's, with a home folder of its own that ends with the node, and reads neither. Every process a node starts ends when the node does: when it returns, fails or reaches its time limit. `docker-compose.deploy.yml` also passes `CURIO_ISOLATION=fork`, which makes the sandbox **fail-closed** too: if it cannot confine, it refuses to start. The deploy workflow checks the result over `/version` and fails the deployment if it is not `fork`, or if its nodes have no cgroup. To check a running instance yourself:
 
   ```bash
   docker compose -p curio exec -T curio curl -sf http://127.0.0.1:2000/version
   ```
 
-  The `isolation` field must read `fork`. The version badge in the UI shows the same answer.
+  The `isolation` field must read `fork`, and `memory_limit` `cgroup`. The version badge in the UI shows the same isolation.
 - **Every process a JavaScript node starts ends when the node does**: when it returns, fails or reaches its time limit, a `detached` one too. On Linux, seccomp denies Node and every process it starts a new session or process group: `setsid` and `setpgid` fail with `EPERM`, and a `detached` child starts in Node's process group. With `CURIO_ISOLATION=fork`, a JavaScript node fails instead of running where that filter cannot be installed. On Windows, only Node itself is stopped.
 - **Isolation chmods several paths on the host, permanently.** At every boot the sandbox tightens the bind-mounted `./instance` to `0700` with its files at `0600`, the three stores `./.curio/data`, `./.curio/users` and `./datasets` to `0700`. It changes **modes only, never ownership**, so each path keeps whatever user created it. The three stores keep their *file* modes because a staged input reaches the child as a hardlink, which shares its source's inode. The one file the sandbox gives an owner is a node's output: once it moves into `./.curio/data`, it belongs to the account the sandbox runs as, at `0644`, so no later node can write it. Any other host process that reads these paths, such as a backup job or an operator shell as a third user, loses access and needs to run as root or as the owning account. The folder `--model-weights-dir` names goes the other way: every folder in it opens to `0755` and every file to `0644`, with no group or other write.
 - **The boundary is node code against the host, not user against user.** One OS account (`curio-exec`) is what every Curio user's nodes run as, Python and JavaScript. What keeps two users' data apart is session scoping in the parent process, which no child can reach. Because all children share a uid, two nodes running concurrently can reach each other's scratch directories and find each other through `/proc`. Treat "another user's node ran at the same time" as within reach, and "another user's stored artifacts" as not, with one exception: the outputs a project SAVED are readable by anyone who can load that project, because that is what a shared dataflow or dashboard link shows.

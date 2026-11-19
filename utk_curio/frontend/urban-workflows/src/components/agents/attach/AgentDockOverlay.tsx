@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useReactFlow, useStore } from "reactflow";
+import { downloadLines } from "../../../utils/downloadLine";
 import { resolveNodeDisplayLabel } from "../../../utils/palettePackageFactoryDraft";
 import { AgentDock } from "./AgentDock";
 import { AgentChatPanel } from "./AgentChatPanel";
@@ -212,11 +213,14 @@ export const AgentDockOverlay: React.FC = () => {
                 ctx.applyProposal(shown.attachmentId, proposalId)
               }
               onUndoChange={(changeId) => ctx.undoChange(shown.attachmentId, changeId)}
-              onSolvePlanNode={async (ref) => {
-                await ctx.validateNode(shown.attachmentId, { ref });
+              // A plan row's Solve and Run: how far a download on first use
+              // of what the node reads has come reaches the row's own line,
+              // as a node's Solve narrates it.
+              onSolvePlanNode={async (ref, onLine) => {
+                await ctx.validateNode(shown.attachmentId, { ref }, downloadLines(onLine));
               }}
-              onRunPlanNode={async (ref) => {
-                await ctx.runNode(shown.attachmentId, { ref });
+              onRunPlanNode={async (ref, onLine) => {
+                await ctx.runNode(shown.attachmentId, { ref }, downloadLines(onLine));
               }}
               onSimulate={(mode) => ctx.runSimulation(shown.attachmentId, mode)}
               onCancelSimulate={() => ctx.cancelSimulation(shown.attachmentId)}

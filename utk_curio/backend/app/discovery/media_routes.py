@@ -5,14 +5,19 @@ poster or the file itself to a signed-in caller, who fetches it with their
 token (the way Simple View already fetches every ``/api/`` image).
 ``<video>`` and ``<audio>`` cannot send a token, so
 ``POST .../link`` hands back a short-lived signed URL for one file, and
-``GET /api/media/<token>`` serves it, with Range, to whoever holds it. A
+``GET /api/media/<token>`` serves it, with Range, or its thumbnail or poster,
+to whoever holds it. A dashboard's page, whose viewers need no sign-in, has
+links of the same kind for the files its tiles' rows name
+(``projects/services.dashboard_media_links``). A
 hosted guest's link names the visitor who asked for it as the names of their
 datasets do (``visitor_copies.visitor_of``), never by the sign-in, and its
 file is read as that visitor's (``visitor_copies.serving_visitor``).
 
 ``?dataflowId=`` reads the collection through that dataflow
 (``DiscoveryService.collection``): its owner and an editor she invited read
-the files of a collection it lists, from her store.
+the files of a collection it lists, from her store. ``?kept=`` is the folder
+of the dashboard viewer's step that derived the file, which the URL of its row
+names (``collections.KEPT_MEDIA``), and a link to it says the same.
 """
 
 from __future__ import annotations
@@ -36,8 +41,8 @@ def _served(path, mimetype: str, *, cache_seconds: int = 3600):
     return response
 
 
-def _serve(service, dataset_id: str, file_id: str, variant: str):
-    found = media.locate(service, dataset_id, file_id)
+def _serve(service, dataset_id: str, file_id: str, variant: str, *, kept: str | None = None):
+    found = media.locate(service, dataset_id, file_id, kept=kept)
     if variant == "original":
         path, mimetype = media.original(found)
         return _served(path, mimetype)
@@ -49,6 +54,11 @@ def _dataflow_id() -> str | None:
     return request.args.get("dataflowId") or None
 
 
+def _kept() -> str | None:
+    """The folder of the dashboard viewer's step a read names, ``?kept=``."""
+    return request.args.get("kept") or None
+
+
 @media_bp.route("/datasets/<dataset_id>/media/<file_id>", methods=["GET"])
 @require_auth
 @_map_discovery_errors
@@ -56,7 +66,7 @@ def collection_media(dataset_id: str, file_id: str):
     variant = request.args.get("variant") or "thumb"
     if variant not in _VARIANTS:
         return jsonify({"error": f"variant must be one of {', '.join(_VARIANTS)}"}), 400
-    return _serve(_service(dataflow_id=_dataflow_id()), dataset_id, file_id, variant)
+    return _serve(_service(dataflow_id=_dataflow_id()), dataset_id, file_id, variant, kept=_kept())
 
 
 @media_bp.route("/datasets/<dataset_id>/media/<file_id>/link", methods=["POST"])
@@ -67,11 +77,12 @@ def collection_media_link(dataset_id: str, file_id: str):
     from utk_curio.backend.app.projects import visitor_copies
 
     service = _service(dataflow_id=_dataflow_id())
-    media.original(media.locate(service, dataset_id, file_id))
+    media.original(media.locate(service, dataset_id, file_id, kept=_kept()))
     user = getattr(g, "user", None)
     visitor = visitor_copies.visitor_of() if visitor_copies.copies_for(user) else None
     token = media.sign(
         getattr(user, "id", None), service.user_key, dataset_id, file_id, service.dataflow_id, visitor=visitor,
+        kept=_kept(),
     )
     return jsonify({
         "url": url_for("collection_media.signed_media", token=token),
@@ -84,15 +95,24 @@ def collection_media_link(dataset_id: str, file_id: str):
 def signed_media(token: str):
     """One file, to whoever holds a link minted by its owner in the last ten
     minutes, found as the link's account finds it: a hosted guest's as the
-    visitor the link names, whatever sign-in the request sends."""
+    visitor the link names, whatever sign-in the request sends, and one a
+    dashboard viewer's step derived in the folder the link names.
+    ``?variant=`` asks for its ``thumb`` or ``poster``, as the media route
+    serves them; the file itself, ``original``, with none."""
     from utk_curio.backend.app.discovery.service import DiscoveryService, _user_by_id
     from utk_curio.backend.app.projects import visitor_copies
 
+    variant = request.args.get("variant") or "original"
+    if variant not in _VARIANTS:
+        return jsonify({"error": f"variant must be one of {', '.join(_VARIANTS)}"}), 400
     claims = media.verify(token)
     user = _user_by_id(claims.get("u")) if claims.get("u") is not None else None
     service = DiscoveryService(claims["k"], user=user, dataflow_id=claims.get("df"))
     with visitor_copies.serving_visitor(claims.get("v")):
-        path, mimetype = media.original(media.locate(service, claims["d"], claims["f"]))
+        found = media.locate(service, claims["d"], claims["f"], kept=claims.get("kept"))
+        if variant != "original":
+            return _served(media.thumbnail(service, found, variant=variant), "image/jpeg", cache_seconds=0)
+        path, mimetype = media.original(found)
     return _served(path, mimetype, cache_seconds=0)
 
 

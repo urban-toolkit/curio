@@ -1,0 +1,25 @@
+{
+  "id": "data.sideseeing.west-loop-corners",
+  "name": "West Loop street corners",
+  "version": "1.0.0",
+  "format": "geojson",
+  "description": "The corners of the named streets in the West Loop extract the SideSeeing examples map: each corner's point, where two named streets meet, with their names sorted in street_a and street_b, and its OpenStreetMap node in corner_id. The SideSeeing frames example cuts its walk where it passes one.",
+  "publisher": "OpenStreetMap contributors",
+  "license": "ODbL-1.0 (OpenStreetMap)",
+  "tags": [
+    "sideseeing",
+    "chicago",
+    "streets",
+    "osm"
+  ],
+  "dataFile": "data/corners.geojson",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "OpenStreetMap",
+  "createdAt": "2026-11-17T00:00:00Z",
+  "updatedAt": "2026-11-17T00:00:00Z",
+  "rowCount": null,
+  "schema": null,
+  "featureCount": 15
+}

@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 
 import requests
 
+from utk_curio.common.backend_processes import ROUTE_HEADER
+
 from ..test_frontend.workflow_spec import (
     PY_CODE_TYPES,
     parse_workflow_dict,
@@ -221,9 +223,17 @@ class Sample:
 #                   was never told that a turn ended
 # agent_present   - once the room's work was over, an agent was still in the
 #                   room, on the server or in a tab
+# With hosted guests on one example (--guests, guests.py):
+# not_in_copy     - a guest's own copy, read back as its page reads it, lacked
+#                   the lines it typed or its agent's write
+# leaked          - work landed outside a guest's own copy: lines that are not
+#                   its own in its copy, or in the example as it opened it; its
+#                   tab in a room that is not its own copy's; or, once the tier
+#                   was over, the example changed or two guests shared a room
 FAILURE_KINDS = ("http_error", "empty_output", "timeout", "transport", "mismatch",
                  "socket", "unsynced", "diverged", "locked", "server_run", "unsaved",
-                 "agent_turn", "changed_meanwhile", "agent_unsynced", "agent_present")
+                 "agent_turn", "changed_meanwhile", "agent_unsynced", "agent_present",
+                 "not_in_copy", "leaked")
 
 
 @dataclass
@@ -368,6 +378,12 @@ class VirtualUser:
         h = {"Content-Type": "application/json"}
         if self.token:
             h["Authorization"] = f"Bearer {self.token}"
+        # Once the user has a dataflow, each call names it, as the canvas
+        # does: with several backend processes nginx sends the call to the
+        # one that owns it, and a run's stream and /processPythonCode name
+        # none in their path.
+        if self.project_id:
+            h[ROUTE_HEADER] = self.project_id
         return h
 
     def _call(

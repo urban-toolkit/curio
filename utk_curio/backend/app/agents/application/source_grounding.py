@@ -50,8 +50,8 @@ The rules (all runtime-enforced; prompt wording only teaches them):
   hold code (:func:`code_engine`); a ``curio_`` name it does not give, which
   the code neither defines nor imports, is no function at all;
 - an **import** of a module a package ships is grounded only in a node a run
-  hands that module to (``packages.modules_for_node``): a built-in node gets
-  none. An import of a library is the sandbox's to judge;
+  hands that module to (``packages.modules_for_node``): a built-in Python node
+  gets the built-in package's. An import of a library is the sandbox's to judge;
 - anything else is **refused with the correction named**: never landed,
   never written, never described as existing.
 
@@ -1759,7 +1759,9 @@ def _judge_calls(
 
 def _import_refusals(code: object, ctx: GroundingContext) -> list[str]:
     """One refusal per module a package ships that *code* imports and that a
-    run does not hand this node: the nodes that import it are named."""
+    run does not hand this node: the nodes that import it are named, and a
+    module only the catalog's copy of a package the account has ships names
+    that copy's version (``module_index``'s ``another_version``)."""
     if ctx.code_engine != "python" or ctx.reachable_modules is None or not ctx.package_modules:
         return []
     refusals: list[str] = []
@@ -1772,6 +1774,13 @@ def _import_refusals(code: object, ctx: GroundingContext) -> list[str]:
             refusals.append(
                 agent_text.message(
                     "grounding.import-not-reachable", name=name, line=line, package=home['package'], nodes=nodes,
+                )
+            )
+        elif home.get("another_version"):
+            refusals.append(
+                agent_text.message(
+                    "grounding.import-package-version", name=name, line=line, package=home['package'],
+                    version=home.get('version'), nodes=nodes,
                 )
             )
         else:

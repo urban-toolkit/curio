@@ -56,6 +56,10 @@ class NodeRun:
     # they are not *dataflow_id*'s: a hosted guest's own copy of it, which a
     # dashboard viewer's step on that guest's dashboard runs (runs/viewer.py).
     kept_on: str | None = None
+    # A dashboard viewer's step's own media folder (media_dirs.kept_media_name
+    # of its kept session): the files it derives go there, never where the
+    # owner's runs write theirs (runs/viewer.py).
+    kept_media: str | None = None
 
     @classmethod
     def from_request_json(cls, body: dict) -> "NodeRun":
@@ -86,19 +90,22 @@ def parse_input_slots(raw) -> tuple[int, ...] | None:
 
 
 def parse_input_ref(req_input: dict | None) -> dict:
-    """Normalize the input reference field from execution requests."""
+    """Normalize the input reference field from execution requests. A reference
+    that names no type (an output a dataflow saved before outputs carried
+    theirs restores as its path alone) is read by its path, as any is."""
     result = {'path': '', 'dataType': ''}
     if not req_input:
         return result
-    if req_input.get('dataType') == 'outputs' and 'data' in req_input:
+    data_type = req_input.get('dataType') or ''
+    if data_type == 'outputs' and 'data' in req_input:
         result['path'] = req_input['data']
         result['dataType'] = 'outputs'
     elif 'filename' in req_input:
         result['path'] = req_input['filename']
-        result['dataType'] = req_input['dataType'] if req_input['dataType'] != 'outputs' else 'file'
+        result['dataType'] = data_type if data_type != 'outputs' else 'file'
     elif 'path' in req_input:
         result['path'] = req_input['path']
-        result['dataType'] = req_input['dataType'] if req_input['dataType'] != 'outputs' else 'file'
+        result['dataType'] = data_type if data_type != 'outputs' else 'file'
     return result
 
 
@@ -831,6 +838,7 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         body["saved_paths"] = saved_inputs
     dataset_paths = None
     exec_secrets = None
+    owners = None
     if language == "python":
         from utk_curio.backend.app.datasets.infrastructure import left_out_files
 
@@ -841,8 +849,9 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         # package's fetch names on their first use, before the sandbox runs
         # the node and its time limit starts. A download that fails ends the
         # run here, with its own error, where the sandbox would only say "not
-        # available".
-        with left_out_files.failures() as unavailable:
+        # available". A run on the server shows how far each has come on the
+        # node, and that they are over once this block ends.
+        with left_out_files.failures() as unavailable, left_out_files.downloading():
             dataset_paths = resolve_dataset_paths(run.code, run.dataflow_id, user, dataset_formats)
             exec_models = resolve_models(run.code, user, run.dataflow_id)
             exec_model_weights = resolve_fetched_weights(run.code, user, run.dataflow_id) if exec_models else {}
@@ -857,9 +866,10 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         # the in-process path ignores it entirely.
         user_key = exec_user_key(user)
         # The dataflow's collections, as its datasets above: for its owner and
-        # an editor she invited, those it lists, from her store.
+        # an editor she invited, those it lists, from her store. A dashboard
+        # viewer's step derives into a folder of its own.
         collections, media_dir = resolve_exec_collections(
-            run.code, user_key, user=user, dataflow_id=run.dataflow_id,
+            run.code, user_key, user=user, dataflow_id=run.dataflow_id, kept=run.kept_media,
         )
         exec_secrets = resolve_secrets(run.code, user)
         owners = owners_packages_for(user, run.dataflow_id)
@@ -1022,7 +1032,9 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         'datasetDiagnostic': dataset_diagnostic,
     }
     if language == "python":
-        reply['missingModule'] = _missing_module(user, output, stderr)
+        reply['missingModule'] = _missing_module(
+            user, output, stderr, dataflow_id=run.dataflow_id, owners=owners,
+        )
     return reply, 200
 
 
@@ -1063,20 +1075,35 @@ def _unavailable_reply(
     }
 
 
-def _missing_module(user, output, stderr):
+def _missing_module(user, output, stderr, *, dataflow_id=None, owners=None):
     """Which library the run was missing, when that is why it failed (#299).
 
     Gated on the canonical failure contract - an EMPTY output path, not a
     non-empty stderr, because warnings land in stderr too. `detect` never
     raises: a diagnostic that turned one failure into two would be worse than
     none, and the traceback is reported either way.
+
+    A module a package ships is read as the run of *user* on *dataflow_id*
+    gets its modules (*owners*: :func:`owners_packages_for`), and is answered
+    with the package, never an install. When that package is one to add or to
+    update and *user* may not install packages, ``detail`` says why, as an
+    install refusal does for a library (#309).
     """
     if not (isinstance(output, dict) and not output.get('path')):
         return None
     from utk_curio.backend.app.packages.application import missing_import
-    from utk_curio.backend.app.users.capabilities import library_install_refusal
+    from utk_curio.backend.app.users.capabilities import library_install_refusal, package_install_refusal
 
-    missing_module = missing_import.detect(stderr)
+    missing_module = missing_import.detect(
+        stderr, user_key=exec_user_key(user), project_id=dataflow_id, owners=owners,
+    )
+    if missing_module and missing_module.get("reason") in (
+        missing_import.PACKAGE_NOT_ADDED, missing_import.PACKAGE_UPDATE,
+    ):
+        # Never point at an add or an update the package routes would refuse.
+        refusal = package_install_refusal(user)
+        if refusal:
+            missing_module = {**missing_module, "detail": refusal}
     # Never offer an install the libraries route would refuse (#309).
     refusal = library_install_refusal(user)
     if missing_module and missing_module.get("installable") and refusal:

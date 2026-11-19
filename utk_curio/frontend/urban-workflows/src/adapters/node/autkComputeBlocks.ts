@@ -1,76 +1,147 @@
-// A compute-only Autark node's `compute` section, applied to the layers it
-// receives. Used by the node behavior (autkGrammarBehavior.tsx).
+// A compute step's `compute` section, applied to the layers it holds. Used by
+// the node behavior (autkGrammarBehavior.tsx).
 
 import type { FeatureCollection } from 'geojson';
-import { runComputeChecked } from './autkComputeScopes';
+import { autkKeyProblem } from '../../contracts/autkGrammar';
+import { autkWorkspaceOf } from './autkDataCompile';
+import { checkedPasses } from './autkComputeScopes';
+
+/** A layer a compute step holds, in the workspace it names when it is not the default one. */
+type Layer = { name: string; type: string; geojson: FeatureCollection; workspace?: string };
 
 // Apply a grammar `compute` section to an array of named GeoJSON layers,
-// returning a new array where each block's target layer has been replaced by a
-// FeatureCollection enriched with the WGSL output under `feature.properties.compute.<col>`.
-// This is what makes a compute-only autk-grammar node useful: the grammar engine
-// only runs compute when it's part of a render pipeline (map/plot), so without
-// this helper, a node whose spec contains *only* a `compute` block would pass
-// upstream through unchanged.
+// returning the layers as its passes leave them: each pass's result, a
+// FeatureCollection with what the pass computed under
+// `feature.properties.compute`, is written where autk-grammar writes it. This
+// is what makes a compute step useful: the grammar engine only runs compute
+// when it's part of a render pipeline (map/plot), so without this helper, a
+// node whose spec computes and draws nothing would pass its layers through
+// unchanged.
 //
-// autk-grammar's `runCompute` does the work the grammar defines: `fromFeature`
-// directives, the `all` and `batched` iterations, and the packing of batched
-// features. Curio hands it the dispatch, which checks the GPU accepted the pass.
+// Each pass runs as the grammar's own run runs it: through autk-grammar's
+// compute adapter (`createComputeAdapter`), a GPGPU pass and a render pass
+// alike, over its caches seeded with the layers by `tableKey`, each in its own
+// workspace. A pass reads and writes the tables of its own workspace. The
+// adapter keeps a pass's result under its `outputTableName`, leaving the table
+// it computed over as it was, and else in place of that table; a table a pass
+// names has the pass's `layerType`, else that table's type, or `points` for a
+// render pass's building windows (`store` in its adapters/compute.ts). The
+// layers come back in the order the cache holds them: those the step held, as
+// the passes left them, then each table a pass wrote under a new name, in the
+// pass's workspace. Every pass is checked on the GPU's device
+// (`checkedPasses`).
 //
-// A block whose `dataRef` doesn't match any upstream layer is skipped quietly:
-// chained compute nodes can target different layers, and a no-op block is far
-// less surprising than aborting the whole pipeline.
+// A pass whose own table (a GPGPU pass's `dataRef`, a render pass's
+// viewpoints) matches no layer of its workspace is skipped quietly: chained
+// compute nodes can target different layers, and a no-op pass is far less
+// surprising than aborting the whole pipeline. A section that writes a key
+// autk-grammar 5 renamed, or one a node does not run yet (contracts/autkGrammar),
+// runs no pass and is a failure, named.
 export async function applyComputeBlocks(
-    layers: Array<{ name: string; type: string; geojson: FeatureCollection }>,
+    layers: Layer[],
     computeBlocks: any[],
-    /** Appended to for every block that failed, so the caller can refuse to
-     *  report success. A block whose ``dataRef`` matches no upstream layer is
-     *  still skipped quietly - that is a no-op, not a failure. */
+    /** Appended to for every pass that failed, named by the table it writes,
+     *  so the caller can refuse to report success. A pass whose table matches
+     *  no layer is still skipped quietly - that is a no-op, not a failure. */
     failures: string[] = [],
-): Promise<Array<{ name: string; type: string; geojson: FeatureCollection }>> {
+): Promise<Layer[]> {
     if (!Array.isArray(computeBlocks) || computeBlocks.length === 0) return layers;
-    const [{ ComputeGpgpu }, { runCompute }] = await Promise.all([
-        import('@urban-toolkit/autk-compute'),
-        import('@urban-toolkit/autk-grammar'),
-    ]);
-    let result = layers;
-    for (const block of computeBlocks) {
-        if (!block || !block.dataRef || !block.wglsFunction) continue;
-        const idx = result.findIndex((l) => l.name === block.dataRef);
-        if (idx < 0) continue;
-        const outCols: string[] = block.outputColumns ?? (block.outputColumnName ? [block.outputColumnName] : []);
+    const keyProblem = autkKeyProblem({ compute: computeBlocks });
+    if (keyProblem) {
+        failures.push(keyProblem);
+        return layers;
+    }
+    const { createComputeAdapter, tableKey } = await import('@urban-toolkit/autk-grammar');
+    // The grammar's caches, as its own run keeps them: each table by tableKey,
+    // with the name and the workspace it is handed on with.
+    const cache = new Map<string, FeatureCollection>();
+    const types = new Map<string, any>();
+    const held = new Map<string, { name: string; workspace?: string }>();
+    for (const layer of layers) {
+        const workspace = autkWorkspaceOf(layer);
+        const key = tableKey(workspace, layer.name);
+        cache.set(key, layer.geojson);
+        types.set(key, layer.type);
+        held.set(key, { name: layer.name, ...(workspace ? { workspace } : {}) });
+    }
+    const adapter = checkedPasses(createComputeAdapter(cache, types));
+    const db = heldTables(types);
+    for (const pass of computeBlocks) {
+        const render = pass?.type === 'render';
+        const source = render ? pass?.viewpoints?.dataRef : pass?.dataRef;
+        if (!pass || !source || (!render && !pass.wgslFunction)) continue;
+        const workspace = autkWorkspaceOf(pass);
+        if (!cache.has(tableKey(workspace, source))) continue;
+        const sourceCrs = (cache.get(tableKey(workspace, source)) as any)?.crs;
+        const name = typeof pass.outputTableName === 'string' && pass.outputTableName ? pass.outputTableName : source;
+        const key = tableKey(workspace, name);
+        const before = { table: cache.get(key), type: types.get(key) };
         try {
-            const gpgpu = new ComputeGpgpu();
-            const tables = new Map(result.map((l) => [l.name, l.geojson]));
-            const augmented = await runCompute(block, tables, (params) => runComputeChecked(gpgpu, params));
-            // ComputeGpgpu writes outputs under properties.compute.<col>. Also lift them
-            // to top-level properties so downstream nodes can reference the column by
-            // its bare name (e.g. `height_m`) without worrying about whether the nested
-            // `compute` object round-trips through AutkDb's DuckDB storage. Both
-            // `compute.<col>` and `<col>` dot-paths then resolve.
-            if (outCols.length > 0 && augmented?.features) {
-                for (const f of augmented.features) {
-                    const p: any = f?.properties;
-                    const c = p?.compute;
-                    if (!p || !c) continue;
-                    for (const col of outCols) {
-                        if (col in c && !(col in p)) p[col] = c[col];
-                    }
+            await adapter.resolveCompute(db, pass);
+        } catch (e) {
+            // A failed pass leaves the layers as they were: one the GPU
+            // refused has stored what it read back. And it is recorded, not
+            // just warned (#201): the caller turns a non-empty list into an
+            // error, so the node never hands on, under a green "Done", layers
+            // a pass did not compute.
+            if (before.table === undefined) cache.delete(key);
+            else cache.set(key, before.table);
+            if (before.type === undefined) types.delete(key);
+            else types.set(key, before.type);
+            console.warn('[autk-grammar] compute pass failed', e);
+            failures.push((e as Error)?.message ?? 'compute failed');
+            continue;
+        }
+        held.set(key, { name, ...(workspace ? { workspace } : {}) });
+        const result: any = cache.get(key);
+        if (!result) continue;
+        // The pipelines write each GPGPU output under properties.compute.<col>.
+        // Also lift them to top-level properties so downstream nodes, and later
+        // passes, can reference the column by its bare name (e.g. `height_m`)
+        // without worrying about whether the nested `compute` object
+        // round-trips through AutkDb's DuckDB storage. Both `compute.<col>`
+        // and `<col>` dot-paths then resolve.
+        const outCols: string[] = render ? [] : (pass.outputColumns ?? (pass.outputColumnName ? [pass.outputColumnName] : []));
+        if (outCols.length > 0 && Array.isArray(result.features)) {
+            for (const f of result.features) {
+                const p: any = f?.properties;
+                const c = p?.compute;
+                if (!p || !c) continue;
+                for (const col of outCols) {
+                    if (col in c && !(col in p)) p[col] = c[col];
                 }
             }
-            // Re-attach the source crs hint so downstream re-loads keep coords aligned.
-            const sourceCrs = (result[idx].geojson as any)?.crs;
-            if (sourceCrs && augmented) (augmented as any).crs = sourceCrs;
-            result = result.map((l, i) => (i === idx ? { ...l, geojson: augmented } : l));
-        } catch (e) {
-            // Recorded, not just warned (#201). A failed block leaves the layer
-            // exactly as it arrived, so swallowing this emitted UNCOMPUTED data
-            // under a green "Done" badge - the node reported success for work
-            // it had not done. The caller turns a non-empty list into an error.
-            console.warn(`[autk-grammar] compute block on '${block.dataRef}' failed`, e);
-            failures.push(
-                `${block.dataRef}: ${(e as Error)?.message ?? "compute failed"}`,
-            );
         }
+        // Re-attach the source crs hint so downstream re-loads keep coords
+        // aligned: a render pass's windows are a new collection.
+        if (sourceCrs && !result.crs) result.crs = sourceCrs;
     }
-    return result;
+    return [...cache].map(([key, geojson]) => ({
+        name: held.get(key)?.name ?? key,
+        type: types.get(key) ?? 'polygons',
+        geojson,
+        ...(held.get(key)?.workspace ? { workspace: held.get(key)!.workspace } : {}),
+    }));
+}
+
+/**
+ * The database a compute step's passes read, as autk-grammar's compute
+ * adapter reads one: the tables the step holds, of the types *types* gives,
+ * the workspace a pass enters its own. The adapter reads a table from its
+ * cache first, which holds them all, so one it asks this database for is a
+ * table the step does not hold, which fails its pass as autk-db fails a read
+ * of a table it does not hold.
+ */
+function heldTables(types: Map<string, string>) {
+    let workspace: string | undefined;
+    return {
+        getCurrentWorkspace: () => workspace,
+        setWorkspace: async (name: string) => {
+            workspace = name;
+        },
+        getTablesMetadata: () => [...types].map(([name, type]) => ({ name, type })),
+        getLayer: async (name: string): Promise<FeatureCollection> => {
+            throw new Error(`Table ${name} not found.`);
+        },
+    };
 }

@@ -80,7 +80,10 @@ def test_ancestors_follow_data_edges_only():
     ("curio.builtin/autk-grammar", COMPUTE_SPEC, "browser"),
     ("curio.builtin/autk-grammar", DATA_AND_COMPUTE_SPEC, "browser"),
     ("curio.builtin/autk-grammar", EMPTY_DATA_SPEC, "browser"),
-    ("curio.builtin/spatial-join", "", "browser"),
+    # Its code calls the built-in package's spatial_join: a run joins.
+    ("curio.builtin/spatial-join", "", "run"),
+    ("curio.builtin/spatial-join@1", "from spatial_join import spatial_join\n\n"
+     "return spatial_join(input_0, input_1, operation=[!! operation !!], output=[!! output !!])\n", "run"),
 ])
 def test_each_kind_has_the_role_the_canvas_gives_it(node_type, content, role):
     from utk_curio.backend.app.execution.run_plan import node_role

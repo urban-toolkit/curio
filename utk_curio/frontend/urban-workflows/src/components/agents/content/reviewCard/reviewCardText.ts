@@ -173,14 +173,6 @@ function widgetText(widget: { name: string; type: string; default?: unknown; val
   return `${widget.name} (${widget.type}${value !== undefined ? `, ${JSON.stringify(value)}` : ""})`;
 }
 
-/** A Spatial Join's operation and output, as its row reads them. */
-function spatialJoinText(setting: { predicate?: string; output?: string }): string {
-  const parts: string[] = [];
-  if (setting.predicate !== undefined) parts.push(`operation ${setting.predicate}`);
-  if (setting.output !== undefined) parts.push(`output ${setting.output}`);
-  return parts.join(", ");
-}
-
 /** A setting as its node's own control words it, `<label>: <value>`, each
  * set one in the node's order, joined as the backend's preview joins them. */
 function settingText(
@@ -194,9 +186,9 @@ function settingText(
     .join("; ");
 }
 
-/** #662: a planned node's widgets, its scenario, and the node a copy copies;
- * a Spatial Join's operation and output; a Data Pool's modes and a Simple
- * View's image column, in the pool's and the view's own words. */
+/** #662: a planned node's widgets, a Spatial Join's operation and output
+ * among them, its scenario, and the node a copy copies; a Data Pool's modes
+ * and a Simple View's image column, in the pool's and the view's own words. */
 export function planNodeExtras(part: PlanDisplay, node: { ref: string }): string[] {
   const row = part.plan!.nodes.find((n) => n.ref === node.ref);
   if (!row) return [];
@@ -206,7 +198,6 @@ export function planNodeExtras(part: PlanDisplay, node: { ref: string }): string
     lines.push(`in ${row.scenario}` + (original ? ` · a copy of ${original.title}` : ""));
   }
   if (row.widgets?.length) lines.push(`widgets: ${row.widgets.map(widgetText).join(", ")}`);
-  if (row.spatialJoin) lines.push(spatialJoinText(row.spatialJoin));
   if (row.dataPool) {
     lines.push(settingText({ ...row.dataPool }, nodeSettings.dataPool.settings, nodeSettings.dataPool.modes));
   }

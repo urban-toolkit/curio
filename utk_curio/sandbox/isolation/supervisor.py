@@ -131,6 +131,10 @@ class ZygoteClient:
     def __init__(self, socket_path, *, connect_timeout=10.0):
         self.socket_path = socket_path
         self.connect_timeout = connect_timeout
+        # What the run's place said of it once :meth:`run` returns, when it
+        # had a place (zygote.py): whether it reached its memory budget, and
+        # its peak where the kernel can say it. None for a run without one.
+        self.memory = None
 
     def _connect(self):
         connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -194,6 +198,8 @@ class ZygoteClient:
                 raise IsolatedExecutionError(
                     "the zygote closed the connection before reporting the child"
                 )
+            memory = status.get("memory")
+            self.memory = memory if isinstance(memory, dict) else None
             return (
                 status.get("exit"),
                 status.get("signal"),
@@ -422,17 +428,25 @@ def read_child_manifest(scratch_dir):
 DEATH_REASONS = ("timeout", "oom", "cpu", "signal", "refused", "exit", "unknown")
 
 
-def classify_child_death(exit_code, signal_number, timed_out):
+def classify_child_death(exit_code, signal_number, timed_out, *, memory=None):
     """One stable token per branch of ``describe_child_death`` below.
 
     Split out so a tally of how children die and the sentence a user reads
     cannot drift apart: both come from this single branch order. The tokens
     are a closed vocabulary (``DEATH_REASONS``), which is what lets a caller
     put them in a payload without leaking anything a user typed.
+
+    *memory* is what the run's place said of it (``ZygoteClient.memory``),
+    None for a run without one. A place tells a node stopped at its budget
+    from one killed for another reason, so there a SIGKILL with no budget
+    reached is a signal like any other; without one, the budget is a
+    SIGKILL's usual cause.
     """
     if timed_out:
         return "timeout"
-    if signal_number == SIGKILL:
+    if memory is not None and memory.get("budget_hit"):
+        return "oom"
+    if signal_number == SIGKILL and memory is None:
         return "oom"
     if signal_number == SIGXCPU:
         return "cpu"
@@ -446,13 +460,14 @@ def classify_child_death(exit_code, signal_number, timed_out):
 
 
 def describe_child_death(exit_code, signal_number, timed_out, *, wall_timeout,
-                         limits):
+                         limits, memory=None):
     """Turn an abnormal child exit into a sentence a user can act on.
 
     A bare "killed by signal 9" tells a data scientist nothing. Each branch
-    names the limit that fired and what to do next.
+    names the limit that fired and what to do next. *memory* is what the
+    run's place said of it, as for :func:`classify_child_death`.
     """
-    reason = classify_child_death(exit_code, signal_number, timed_out)
+    reason = classify_child_death(exit_code, signal_number, timed_out, memory=memory)
     if reason == "timeout":
         return (
             f"This node was stopped after {wall_timeout}s. It is still counted "
@@ -460,6 +475,8 @@ def describe_child_death(exit_code, signal_number, timed_out, *, wall_timeout,
             "needs longer, raise --exec-timeout; if it is stuck, look for an "
             "unbounded loop or a wait on something that never arrives."
         )
+    if reason == "oom" and memory is not None:
+        return _over_its_budget(limits.get("memory_mb"), memory.get("peak_bytes"))
     if reason == "oom":
         memory_mb = limits.get("memory_mb")
         return (
@@ -489,6 +506,17 @@ def describe_child_death(exit_code, signal_number, timed_out, *, wall_timeout,
             "extension, that would do it."
         )
     return "This node's process ended without reporting a result."
+
+
+def _over_its_budget(memory_mb, peak_bytes):
+    """What a node stopped at its memory budget is told: the budget, and the
+    peak its place reached where the kernel can say it."""
+    peak = f" Its peak was {peak_bytes // (1024 * 1024)} MB." if isinstance(peak_bytes, int) else ""
+    return (
+        f"This node used more than its memory budget of {memory_mb} MB "
+        f"(--exec-memory-mb), so it was stopped.{peak} Try selecting fewer "
+        "columns or filtering rows before returning."
+    )
 
 
 def cleanup_scratch(scratch_dir):

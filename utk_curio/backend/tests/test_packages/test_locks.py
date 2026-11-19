@@ -77,10 +77,13 @@ def test_lock_file_path_namespace_and_key_are_the_seeders(tmp_curio, monkeypatch
 
 
 def test_lock_is_released_when_the_body_raises(tmp_curio):
+    # Taken first and kept, so it is the very lock the hold below takes: a
+    # resource's lock goes once nothing references it (file_locks.py).
+    thread_lock = file_locks.keyed_thread_lock("package-seed", "guest")
     with pytest.raises(RuntimeError):
         with package_seed_lock("guest"):
+            assert thread_lock.locked(), "the hold took another lock than the resource's"
             raise RuntimeError("snapshot code failed")
-    thread_lock = file_locks.keyed_thread_lock("package-seed", "guest")
     assert not thread_lock.locked(), "the in-process layer must be released"
     # And the interprocess layer: re-acquisition on this thread must not block.
     acquired = threading.Event()
@@ -271,6 +274,21 @@ def test_build_deps_review_is_one_snapshot(
     assert counter["shared"] == [True], "a read of the store holds the lock shared"
 
 
+def test_the_downloaded_models_upgrade_walks_the_store_under_a_shared_hold(
+    user_and_token, alice_project, tmp_curio, monkeypatch
+):
+    """The seeder brings old downloads to their node on each read of the
+    store (``model_downloads.upgrade_downloaded_models``). Its walk of the
+    store is a reader's: one shared hold, and none exclusive when no package
+    needs bringing."""
+    from utk_curio.backend.app.packages.application import model_downloads
+
+    key, _ = _two_packages(user_and_token, alice_project)
+    counter = _count_acquisitions(monkeypatch, model_downloads)
+    assert model_downloads.upgrade_downloaded_models(key) == []
+    assert counter["shared"] == [True], "a walk of the store holds the lock shared"
+
+
 # ---------------------------------------------------------------------------
 # §7.8 — structural audit: every raw store enumeration is accounted for
 # ---------------------------------------------------------------------------
@@ -292,10 +310,13 @@ _ACCOUNTED_ENUMERATORS = {
     "app/packages/application/starters.py": {"_generate_unlocked"},  # unlocked core
     "app/packages/application/libraries.py": {"package_derived",  # lock owners
                                               "any_package_declares",
-                                              "not_asked_for"},
+                                              "not_asked_for",
+                                              "give_way_to_the_image"},
     "app/packages/builder/deps.py": {"installed_manifests"},  # lock owner
     "app/packages/application/function_nodes.py": {"package_functions"},  # lock owner
     "app/packages/application/model_packages.py": {"held_model_packages"},  # lock owner
+    "app/packages/application/model_downloads.py": {"upgrade_downloaded_models"},  # lock owner
+    "app/packages/application/guest_packages.py": {"_give"},  # lock owner
 }
 
 

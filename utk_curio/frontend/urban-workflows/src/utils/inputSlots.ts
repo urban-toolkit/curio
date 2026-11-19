@@ -9,10 +9,17 @@
  * move up one.
  *
  * A template with several input ports (the Spatial Join's `in` and `in_1`)
- * keeps what each port holds the same way, by handle.
+ * has one fixed circle per port, port k on circle k, and keeps what each port
+ * holds by handle (`data.portInputs`). Its code reads them as a growing node's
+ * code reads its circles, by circle, whatever order the inputs arrive in; a
+ * deleted edge empties its circle and moves no other.
+ *
+ * A node's editor reads each circle as its run does (`circleValue`): its
+ * chips, their hover and the inputs a run waits for.
  *
  * Duck-typed edges, so this module needs no `reactflow` import.
  */
+import { isInteractionEdge } from "../contracts/interactionEdges";
 
 type SlotEdge = {
     id?: string | null;
@@ -20,6 +27,8 @@ type SlotEdge = {
     target?: string | null;
     sourceHandle?: string | null;
     targetHandle?: string | null;
+    /** A saved dataflow's `Interaction`, which an edge with no handles can carry. */
+    type?: string | null;
 };
 
 const SLOT_ARRAY_MIN_SIZE = 6;
@@ -56,9 +65,9 @@ export function slotHandleId(slot: number): string {
     return slot === 0 ? "in" : `in_${slot}`;
 }
 
-/** Whether an edge carries data rather than an interaction. */
+/** Whether an edge carries data rather than an interaction (contracts/interactionEdges). */
 export function isDataEdge(edge: SlotEdge): boolean {
-    return !(edge.sourceHandle === "in/out" && edge.targetHandle === "in/out");
+    return !isInteractionEdge(edge);
 }
 
 /** True when a slot holds a propagated upstream artifact. */
@@ -122,10 +131,7 @@ export function portsFedBy(edges: SlotEdge[], nodeId: string, sourceNodeId: stri
  * overwrite each other as they do in `data.input`, which names the latest.
  */
 export function withPortValues(portInputs: unknown, handles: string[], value: unknown): Record<string, unknown> {
-    const next: Record<string, unknown> =
-        portInputs && typeof portInputs === "object" && !Array.isArray(portInputs)
-            ? { ...(portInputs as Record<string, unknown>) }
-            : {};
+    const next: Record<string, unknown> = isPortRecord(portInputs) ? { ...portInputs } : {};
     for (const handle of handles) {
         if (isFilledSlot(value)) next[handle] = value;
         else delete next[handle];
@@ -192,6 +198,55 @@ export function nodeInputFromSlots(inputSlots: unknown, wired: number[]): unknow
     if (!values.every(isFilledSlot)) return "";
     if (values.length === 1) return values[0];
     return { dataType: "outputs", data: values };
+}
+
+/** Whether *portInputs* is what a node with several input ports holds: a
+ *  value per handle (`withPortValues`). */
+function isPortRecord(portInputs: unknown): portInputs is Record<string, unknown> {
+    return portInputs != null && typeof portInputs === "object" && !Array.isArray(portInputs);
+}
+
+/** What a node with several input ports holds on circle *slot*: the value of
+ *  its port of that circle, port k (`in`, `in_k`) on circle k. */
+function portValueOn(portInputs: unknown, slot: number): unknown {
+    return isPortRecord(portInputs) ? portInputs[slotHandleId(slot)] : undefined;
+}
+
+/**
+ * The one value a node with several input ports reads, from what each port
+ * holds (`data.portInputs`): its circles' values as `nodeInputFromSlots` reads
+ * a growing node's, port k on circle k.
+ */
+export function nodeInputFromPorts(portInputs: unknown, wired: number[]): unknown {
+    const slots: unknown[] = [];
+    for (const slot of wired) slots[slot] = portValueOn(portInputs, slot);
+    return nodeInputFromSlots(slots, wired);
+}
+
+/** What a node holds of its inputs: one value, or a value per circle. */
+type CircleData = { input?: unknown; inputSlots?: unknown; portInputs?: unknown };
+
+/**
+ * Whether a node holds a value per circle, which its one value is read from:
+ * a node with several input ports, by handle (`data.portInputs`), or a growing
+ * node (`data.inputSlots`). Its run waits until every wired circle holds one.
+ */
+export function holdsValuePerCircle(data: CircleData | null | undefined): boolean {
+    return isPortRecord(data?.portInputs) || Array.isArray(data?.inputSlots);
+}
+
+/**
+ * What circle *slot* of a node holds, as its run reads it: on a node with
+ * several input ports, the value of its port of that circle
+ * (`nodeInputFromPorts`); on a growing node, the circle's (`nodeInputFromSlots`).
+ * Any other node holds one value, its input, on circle 0.
+ */
+export function circleValue(data: CircleData | null | undefined, slot: number): unknown {
+    const ports = data?.portInputs;
+    if (isPortRecord(ports)) return portValueOn(ports, slot);
+    const circles = data?.inputSlots;
+    if (Array.isArray(circles)) return circles[slot];
+    return slot === 0 ? data?.input : undefined;
 }
 
 /** The wired circles that hold no value yet. */

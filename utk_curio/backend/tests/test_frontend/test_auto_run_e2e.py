@@ -210,7 +210,7 @@ def test_a_slider_move_runs_the_stale_nodes_only_when_auto_run_is_on(
     time.sleep(2)
     runs = _runs(current_server, token, project_id)
     assert len(runs) == runs_before + 1, f"the slider move started {len(runs) - runs_before} runs: {runs[:3]}"
-    auto = api_json(f"{current_server}/api/runs/{runs[0]['id']}", token)
+    auto = api_json(f"{current_server}/api/runs/{runs[0]['id']}", token, dataflow=project_id)
     assert auto["trigger"] == "auto", auto
     assert sorted(s["nodeId"] for s in auto["steps"]) == sorted([READS_ID, BELOW_ID]), auto["steps"]
     _frame(page, "slider-auto-run")

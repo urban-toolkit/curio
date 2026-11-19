@@ -27,6 +27,7 @@ from utk_curio.backend.app.agents.domain.counts import count_label
 from utk_curio.backend.app.agents.repositories import project_agents
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
+from utk_curio.backend.app.execution.run_plan import INTERACTION_HANDLE
 from utk_curio.backend.app.execution.workflow_spec import slot_handle_id
 from utk_curio.backend.app.agents.application.proposals import changes as agents_changes
 from utk_curio.backend.app.agents.application.proposals import plan_scenarios
@@ -239,14 +240,14 @@ def _validate_plan_fanin(
 
 def _interaction_spec_edge(source: str, target: str) -> dict:
     """dev/112: the spec shape of a Trill Interaction edge — what
-    ``TrillGenerator`` writes and ``loadTrill`` reads (``in/out`` both ends,
-    bidirectional on the canvas)."""
+    ``TrillGenerator`` writes and ``loadTrill`` reads (a node's own
+    interaction handle at both ends, bidirectional on the canvas)."""
     return {
         "id": str(uuid.uuid4()),
         "source": source,
         "target": target,
-        "sourceHandle": "in/out",
-        "targetHandle": "in/out",
+        "sourceHandle": INTERACTION_HANDLE,
+        "targetHandle": INTERACTION_HANDLE,
         "type": plan_topology.INTERACTION_EDGE_TYPE,
     }
 
@@ -354,7 +355,11 @@ def _mint_dataflow_plan(
     # #662: widgets and scenarios against the saved dataflow; each scenario
     # takes its color here, so the plan's card shows it.
     scenarios = plan_scenarios.existing_scenarios(spec)
-    scenario_errors = plan_scenarios.mint_errors(plan, available, existing_nodes, scenarios)
+    scenario_errors = plan_scenarios.mint_errors(
+        plan, available, existing_nodes, scenarios,
+        starters=_content_starters(user_key, project_id, plan["nodes"]),
+        declared=_declared_widgets(user_key, project_id, plan["nodes"]),
+    )
     if scenario_errors:
         return "refused", "\n- ".join([agent_text.message("plan.widgets-scenarios-invalid")] + scenario_errors), None
     plan_scenarios.assign_colors(plan, scenarios)
@@ -1008,8 +1013,7 @@ def _plan_review_part(proposal_id: str, plan: dict, existing_nodes: dict, existi
         f"{node['title']} · {node['nodeType']} — {node['intent']}" for node in plan["nodes"]
     ]
     # A node's settings, each in its node's words, on its own line's end: a
-    # Spatial Join's operation and output, a Data Pool's modes, a Simple
-    # View's image column.
+    # Data Pool's modes, a Simple View's image column.
     for index, node in enumerate(plan["nodes"]):
         for words in node_settings.describe(node):
             preview_lines[index] += f" · {words}"

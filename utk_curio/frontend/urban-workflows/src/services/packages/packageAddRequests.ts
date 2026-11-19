@@ -7,9 +7,11 @@ import type { PackageKind } from "./types";
  * the dataflow has not added the package, the drop asks the open catalog
  * drawer of the package's kind to run that drawer's own Add (the review, then
  * the install of the package and its libraries), and the node is made once
- * the package is added. A hosted guest's drop is refused before any of it:
- * guests never install. On the owner's dataflow, an invited editor's drop
- * makes the node at once and asks the owner to add the package
+ * the package is added. A hosted guest's drop of a package its account does
+ * not hold is refused before any of it: guests never install. One its account
+ * holds, such as a package the operator gives every guest, goes through the
+ * drawer's Add, which installs nothing. On the owner's dataflow, an invited
+ * editor's drop makes the node at once and asks the owner to add the package
  * (`useAskForPackage`), whose review she applies.
  */
 
@@ -17,13 +19,16 @@ import type { PackageKind } from "./types";
 export type PackageDropAction = "create" | "refuse" | "add" | "ask";
 
 /** Make the node when the dataflow has the package; otherwise refuse a
- *  hosted guest, make it and ask the owner on an invited editor's canvas
- *  (*asksTheOwner*), and ask anyone else to add it first. */
+ *  hosted guest unless its account holds the package (*inAccount*), make it
+ *  and ask the owner on an invited editor's canvas (*asksTheOwner*), and ask
+ *  anyone else to add it first. */
 export function packageDropAction(
-  { inDataflow, hostedGuest, asksTheOwner = false }: { inDataflow: boolean; hostedGuest: boolean; asksTheOwner?: boolean },
+  { inDataflow, hostedGuest, inAccount = false, asksTheOwner = false }: {
+    inDataflow: boolean; hostedGuest: boolean; inAccount?: boolean; asksTheOwner?: boolean;
+  },
 ): PackageDropAction {
   if (inDataflow) return "create";
-  if (hostedGuest) return "refuse";
+  if (hostedGuest) return inAccount ? "add" : "refuse";
   return asksTheOwner ? "ask" : "add";
 }
 

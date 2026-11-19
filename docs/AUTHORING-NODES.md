@@ -139,7 +139,9 @@ return input_0.rolling([!! window !!]).agg([!! method !!])
 ```
 
 A node dropped from the palette starts with these widgets and their defaults,
-and so does a node an agent creates from the template. **Save as package
+and so does a node an agent creates from the template. An agent sets a value
+by the widget's name, and the widget keeps its type, its default, its choices
+and its minimum, maximum and step. **Save as package
 node…** writes the node's widgets into the template, with the values it had as
 the defaults. The shape of each entry is the `widget` definition in
 [docs/schemas/node-package.v4.json](schemas/node-package.v4.json).

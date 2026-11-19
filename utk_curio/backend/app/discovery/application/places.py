@@ -8,6 +8,12 @@ so through the egress policy, with the usage policy Nominatim asks of every clie
 User-Agent, at most one request a second from this server, and answers kept
 rather than asked for again.
 
+The area field's searches go to the home process of a start of several
+backend processes, but an agent's download of a named area runs in its
+dataflow's process, so the next free second is the start's, kept for all of
+them (``common/shared_budgets.py``). Each process keeps the answers it was
+given.
+
 Each answer gives what both forms of an area need:
 
 - ``box``: ``[west, south, east, north]`` in WGS84, for a box;
@@ -24,6 +30,7 @@ import time
 from typing import Any
 from urllib.parse import quote
 
+from utk_curio.backend.app.common import shared_budgets
 from utk_curio.backend.app.discovery.domain.errors import ProviderError
 
 NOMINATIM = "https://nominatim.openstreetmap.org"
@@ -41,6 +48,8 @@ CACHE_ENTRIES = 256
 _lock = threading.Lock()
 #: When the next request may leave.
 _next_slot = 0.0
+#: When the next request may leave, in a start of several backend processes.
+_PACE = shared_budgets.State("nominatim")
 _cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 
 
@@ -106,15 +115,24 @@ def reset() -> None:
     with _lock:
         _cache.clear()
         _next_slot = 0.0
+        _PACE.clear()
 
 
 def _take_slot() -> float:
     """When this search's request may leave: a second after the one before.
 
     Called with ``_lock`` held, so two searches never take the same second;
-    the caller waits for its slot after letting go of the lock.
+    the caller waits for its slot after letting go of the lock. In a start of
+    several processes, the second before is the start's: its state is held
+    while the slot is taken, so no two processes take one second either.
     """
     global _next_slot
+    if shared_budgets.across_processes():
+        with _PACE.held() as pace:
+            kept = pace.get("next")
+            slot = max(time.monotonic(), float(kept) if isinstance(kept, (int, float)) else 0.0)
+            pace["next"] = slot + MIN_INTERVAL_S
+        return slot
     slot = max(time.monotonic(), _next_slot)
     _next_slot = slot + MIN_INTERVAL_S
     return slot

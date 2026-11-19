@@ -117,14 +117,16 @@ class Located:
     problem: str | None = None
 
 
-def locate(service, dataset_id: str, file_id: str) -> Located:
+def locate(service, dataset_id: str, file_id: str, *, kept: str | None = None) -> Located:
     """Find one file of this account's collection, by id.
 
     ``<file_id>@<t_ms>``, or ``<file_id>@<t_ms>-<tag>``, names a file a node
     derived from one of the collection's: a video's frame, a recording's
     window or an image's overlay (its tag names the model that drew it),
     written where ``curio_derived_file`` put it, in this account's media
-    folder. A file of any type but the first its kind derives adds its
+    folder, a hosted guest's in their own folder in it, a dashboard viewer's
+    step's in the step's own folder, which its row's URL names as *kept*
+    (:func:`_locate_derived`). A file of any type but the first its kind derives adds its
     extension: ``<file_id>@<t_ms>-<tag>.mp4`` is a video a node made from a
     video. A collection the service's dataflow lists from its owner's store
     (``DiscoveryService.collection``) has its cached files read from that
@@ -142,7 +144,7 @@ def locate(service, dataset_id: str, file_id: str) -> Located:
     rows = index_cache.rows(path)
     derived = DERIVED_ID_RE.match(file_id)
     if derived:
-        return _locate_derived(service, dataset_id, rows, file_id, *derived.groups())
+        return _locate_derived(service, dataset_id, rows, file_id, *derived.groups(), kept=kept)
     row = rows.get(file_id)
     if row is None:
         raise ResourceNotFound(f"{file_id!r} is not a file of {dataset_id!r}")
@@ -168,11 +170,23 @@ def locate(service, dataset_id: str, file_id: str) -> Located:
 
 def _locate_derived(
     service, dataset_id: str, rows, file_id: str, source_id: str, t_ms: str, tag: str | None, ext: str | None,
+    *, kept: str | None = None,
 ) -> Located:
     """The file *file_id* names, which ``curio_derived_file`` wrote from the
     collection's file *source_id*: one type of what a file of its kind
     derives (``DERIVED``), the one its id's extension names, and only under
-    the id ``curio_derived_file`` gives it."""
+    the id ``curio_derived_file`` gives it.
+
+    It is read where the reader's runs write it (``media_dirs.derived_root``):
+    a hosted guest's in their own folder, else in the account's, where only a
+    run that serves no visitor writes. Never in another visitor's folder: one
+    id names a file in each visitor's.
+
+    *kept*, which the URL of a row a dashboard viewer's step derived names,
+    is that step's own folder, and the file is read there alone: one its kept
+    output took with it is not found, never read as the owner's file of the
+    same id."""
+    from utk_curio.backend.app.projects import visitor_copies
     from utk_curio.sandbox.util.collections import DERIVED, derived_id, derived_relpath, derived_type
 
     source = rows.get(source_id)
@@ -184,10 +198,19 @@ def _locate_derived(
         raise ResourceNotFound(f"{file_id!r} names no file a node derives from a {source.kind}") from None
     if derived_id(source_id, t_ms, tag, suffix) != file_id:
         raise ResourceNotFound(f"{file_id!r} names no file a node derives from a {source.kind}")
-    path = media_dirs.media_work_root(service.user_key) / derived_relpath(
-        folder, dataset_id, source_id, t_ms, ext, tag
-    )
-    if not path.is_file():
+    relpath = derived_relpath(folder, dataset_id, source_id, t_ms, ext, tag)
+    if kept is not None:
+        try:
+            roots = [media_dirs.derived_root(service.user_key, kept=kept)]
+        except ValueError:
+            raise ResourceNotFound(f"{kept!r} is not the folder of a dashboard viewer's step") from None
+    else:
+        visitor = visitor_copies.media_visitor(service.user_key)
+        roots = [media_dirs.derived_root(service.user_key, visitor)]
+        if visitor:
+            roots.append(media_dirs.derived_root(service.user_key))
+    path = next((root / relpath for root in roots if (root / relpath).is_file()), None)
+    if path is None:
         raise ResourceNotFound("this file has not been made; run the node that makes it again")
     stat = path.stat()
     row = IndexRow(
@@ -215,8 +238,14 @@ def original(found: Located) -> tuple[Path, str]:
 
 
 def thumbnail(service, found: Located, *, variant: str = "thumb") -> Path:
-    """A cached JPEG for the file, drawn on first request."""
-    stamp = hashlib.sha1(f"{found.row.bytes}:{found.row.mtime}".encode()).hexdigest()[:10]
+    """A cached JPEG for the file, drawn on first request, keyed by the
+    file's size and time. A file a node derived is keyed by where it is too:
+    its id names a file in each hosted guest's own folder
+    (:func:`_locate_derived`), and each guest's is drawn from their own."""
+    from utk_curio.sandbox.util.collections import DERIVED_ID_RE
+
+    where = f":{found.local}" if DERIVED_ID_RE.match(found.row.file_id) else ""
+    stamp = hashlib.sha1(f"{found.row.bytes}:{found.row.mtime}{where}".encode()).hexdigest()[:10]
     cache = media_dirs.media_cache_dir(service.user_key, found.dataset_id)
     target = cache / f"{found.row.file_id}-{variant}-{stamp}.jpg"
     if target.is_file():
@@ -492,19 +521,23 @@ def _serializer():
 
 def sign(
     user_id: int | None, user_key: str, dataset_id: str, file_id: str, dataflow_id: str | None = None,
-    visitor: str | None = None,
+    visitor: str | None = None, kept: str | None = None,
 ) -> str:
     """A link to one file, for ten minutes: *dataflow_id*, when the file was
     found through a dataflow's collections, is the dataflow its use reads
-    through again, and *visitor*, for a hosted guest, the visitor it is read
+    through again, *visitor*, for a hosted guest, the visitor it is read
     as again (``visitor_copies.visitor_of``, the middle of the names of the
-    datasets they add). Whoever holds a link can read what it says, so it
-    never says the sign-in."""
+    datasets they add), and *kept*, for a file a dashboard viewer's step
+    derived, that step's own folder, which its row's URL names
+    (:func:`_locate_derived`). Whoever holds a link can read what it says, so
+    it never says the sign-in."""
     claims = {"u": user_id, "k": user_key, "d": dataset_id, "f": file_id}
     if dataflow_id:
         claims["df"] = dataflow_id
     if visitor:
         claims["v"] = visitor
+    if kept:
+        claims["kept"] = kept
     return _serializer().dumps(claims)
 
 

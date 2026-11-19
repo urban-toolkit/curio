@@ -15,7 +15,11 @@ the files its package leaves out, through the same code
   with no token, through the egress policy;
 - each file streamed to a partial file in the entry folder, checked against the
   digest the block names, made readable by every account and renamed into
-  place; a file that does not match is never placed;
+  place; a file that does not match is never placed. A download that stops,
+  its connection dropped or its process killed by a restart, leaves its
+  partial file, and the next goes on from where it ends, checking the whole
+  file; each says how far it has come (``left_out_files.reporting``), which
+  a run on the server shows on the node;
 - each placed file stamped with that digest beside it
   (``model_fetch.write_stamp``), as ``scripts/fetch_model_weights.py`` stamps
   it: a file is in place only when its stamp names the digest the block
@@ -31,10 +35,19 @@ the files its package leaves out, through the same code
 - into the folder reads already use (``model_packages.fetched_weights_folder``),
   its folders :data:`model_fetch.FOLDER_MODE`, which an isolated node enters to
   read them in place, and in the catalog's own copy its ``models/`` closed to
-  its owner, as the sandbox's isolation leaves it;
+  its owner, as the sandbox's isolation leaves it. Under
+  ``--model-weights-dir`` that is the folder of the block's revision
+  (``model_fetch.fetched_root``), so stacks that share the folder and run
+  other versions of the package keep their own files; a file another folder
+  of the package holds with the digest the block names, another revision's
+  or the entry a Curio before folders per revision placed it in, is linked
+  in rather than downloaded again (``model_fetch.placed_elsewhere``);
 - a failure raises ``LeftOutFileUnavailable``, which the node's run reports
   (``left_out_files.failures``), naming ``scripts/fetch_model_weights.py``,
-  which fetches them ahead.
+  which fetches them ahead. A long run of work, a plan's Solve, keeps it
+  (``left_out_files.keeping``): no node of its run downloads the weights
+  again, each failing at once with it, until every file is in the entry,
+  fetched ahead or saved by hand, whose files are then checked and read.
 """
 
 from __future__ import annotations
@@ -55,6 +68,8 @@ from utk_curio.backend.app.packages.domain.model_fetch import (
     digest_of,
     discard,
     is_stamped,
+    link_into_place,
+    placed_elsewhere,
     source_url,
     write_stamp,
 )
@@ -79,10 +94,26 @@ def missing_files(fetch: ModelFetch, entry: Path) -> list[FetchedFile]:
     return [item for item in fetch.files if not is_stamped(entry / item.path, item)]
 
 
+def to_download(manifest: PackageManifest, root: Path) -> list[FetchedFile]:
+    """The files *manifest*'s ``fetch`` lists that a first use downloads
+    into *root*: those :func:`missing_files` names, but, under
+    ``--model-weights-dir``, any another folder of the package holds
+    stamped with the digest the block names, which it links in instead
+    (``model_fetch.placed_elsewhere``). Reads the stamps, never a file."""
+    block = manifest.model
+    missing = missing_files(block.fetch, Path(root) / block.entry)
+    if packages_catalog_dir.model_weights_dir() is None:
+        return missing
+    return [item for item in missing if placed_elsewhere(root, block.entry, item, check_unstamped=False) is None]
+
+
 def download(manifest: PackageManifest, root: Path) -> Path:
     """*root*, whose entry holds every file *manifest*'s ``fetch`` lists,
     those missing downloaded now. *manifest* is the catalog's copy of the
     package: a shipped manifest is the one whose source a download trusts.
+    Under ``--model-weights-dir``, *root* is the folder of the block's
+    revision, and a file another folder of the package holds is linked in
+    rather than downloaded (:func:`_linked`).
 
     Raises ``LeftOutFileUnavailable`` (collected for the node's run by
     ``left_out_files.failures``), and places no file that failed."""
@@ -97,19 +128,60 @@ def download(manifest: PackageManifest, root: Path) -> Path:
     lock = entry / LOCK
     # The catalog's own copy, with no --model-weights-dir: its models/ stays
     # its owner's, as the sandbox's isolation leaves a shipped package's.
-    closed = folder / MODELS_DIR if packages_catalog_dir.model_weights_dir() is None else None
+    shared = packages_catalog_dir.model_weights_dir() is not None
+    closed = None if shared else folder / MODELS_DIR
     try:
         _make_folders(entry, closed=closed)
         os.close(os.open(lock, os.O_WRONLY | os.O_CREAT, 0o644))
     except OSError as exc:
-        raise left_out_files.unavailable(package, _cannot_write(manifest, entry, exc)) from exc
+        raise left_out_files.unavailable(
+            package, _cannot_write(manifest, entry, exc), here=_here(manifest, entry),
+        ) from exc
     with left_out_files.one_download_at_a_time(lock, key=str(entry)):
         # Another first use may have placed them while this one waited.
         left_out_files.remove_stale_partials(entry)
         for item in block.fetch.files:
-            if not _checked(left_out_files, manifest, item, entry):
-                _download(left_out_files, manifest, item, entry)
+            if _checked(left_out_files, manifest, item, entry):
+                continue
+            if shared and _linked(manifest, item, folder):
+                continue
+            kept = left_out_files.kept_message(package)
+            if kept is not None:
+                # They failed to download in this run of work, which keeps
+                # that failure until they are here (left_out_files.keeping).
+                raise left_out_files.unavailable(package, kept)
+            _download(left_out_files, manifest, item, entry)
     return folder
+
+
+def _here(manifest: PackageManifest, entry: Path):
+    """What says whether every file *manifest*'s ``fetch`` lists is in the
+    folder *entry* now, fetched ahead or saved by hand, which ends a failure
+    of their download a run keeps (``left_out_files.keeping``). Their digests
+    are checked when they are read."""
+    files = [entry / item.path for item in manifest.model.fetch.files]
+    return lambda: all(path.is_file() for path in files)
+
+
+def _linked(manifest: PackageManifest, item: FetchedFile, folder: Path) -> bool:
+    """Under the model's lock: whether *item*'s file, which *folder*, its
+    revision's folder under ``--model-weights-dir``, lacks, was found in
+    another folder of the package there and linked in
+    (``model_fetch.placed_elsewhere``, ``link_into_place``), so that no byte
+    of it downloads again. A link that cannot be made downloads it."""
+    source = placed_elsewhere(folder, manifest.model.entry, item)
+    if source is None:
+        return False
+    target = folder / manifest.model.entry / item.path
+    try:
+        _make_folders(target.parent, closed=None)
+        link_into_place(source, target, item)
+    except OSError as exc:
+        log.warning("Could not link %s of %s from %s, so it downloads: %s",
+                    item.path, manifest.package_id, source, exc.strerror or exc)
+        return False
+    log.info("Linked %s of %s from %s", item.path, manifest.package_id, source)
+    return True
 
 
 def _checked(left_out_files, manifest: PackageManifest, item: FetchedFile, entry: Path) -> bool:
@@ -120,7 +192,9 @@ def _checked(left_out_files, manifest: PackageManifest, item: FetchedFile, entry
         return checked_in_place(entry / item.path, item)
     except OSError as exc:
         package = f"{manifest.package_id}@{manifest.major}"
-        raise left_out_files.unavailable(package, _cannot_write(manifest, entry, exc)) from exc
+        raise left_out_files.unavailable(
+            package, _cannot_write(manifest, entry, exc), here=_here(manifest, entry),
+        ) from exc
 
 
 def _make_folders(entry: Path, *, closed: Path | None) -> None:
@@ -150,10 +224,11 @@ def _download(left_out_files, manifest: PackageManifest, item: FetchedFile, entr
     package = f"{manifest.package_id}@{manifest.major}"
     target = entry / item.path
     url = source_url(block.fetch, item.path)
+    here = _here(manifest, entry)
     if block.size_bytes <= 0:
         raise left_out_files.unavailable(package, _could_not_download(
             manifest, item, url, "its manifest gives no sizeBytes to bound the download", gated=False,
-        ))
+        ), here=here)
     gated = False
 
     def check(result, partial: Path) -> str | None:
@@ -176,24 +251,24 @@ def _download(left_out_files, manifest: PackageManifest, item: FetchedFile, entr
         # one downloads, nor after a download that fails.
         discard(target)
     except OSError as exc:
-        raise left_out_files.unavailable(package, _cannot_write(manifest, entry, exc)) from exc
+        raise left_out_files.unavailable(package, _cannot_write(manifest, entry, exc), here=here) from exc
     log.info("Downloading %s of %s from %s", item.path, package, url)
     left_out_files.download_checked(
         url, target, partial_dir=entry, max_bytes=block.size_bytes, check=check,
         failed=lambda reason: left_out_files.unavailable(
-            package, _could_not_download(manifest, item, url, reason, gated=gated),
+            package, _could_not_download(manifest, item, url, reason, gated=gated), here=here,
         ),
         # The model's lock makes this download the one writer of its partial
-        # file, so one a restart killed mid-download is written over, never
-        # left beside the weights.
-        partial_name=f".{target.name}.download{left_out_files.PARTIAL_SUFFIX}",
+        # file, so the next goes on from what one a restart killed left.
+        partial_name=f".{target.name}{left_out_files.RESUMABLE_SUFFIX}",
+        what=f"{item.path}, a file of the weights of {manifest.package_id}",
     )
     try:
         # Only once the file is in place: a stamp never names bytes that are
         # not there. A file a restart left unstamped is hashed once instead.
         write_stamp(target, item)
     except OSError as exc:
-        raise left_out_files.unavailable(package, _cannot_write(manifest, entry, exc)) from exc
+        raise left_out_files.unavailable(package, _cannot_write(manifest, entry, exc), here=here) from exc
     log.info("Placed %s of %s at %s", item.path, package, target)
 
 

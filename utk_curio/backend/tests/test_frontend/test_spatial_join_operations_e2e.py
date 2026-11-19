@@ -7,10 +7,11 @@
 - two joins over a point on a shared edge, which show the boundary rule.
 
 Each test opens the example, plays one flow's chart (which runs its loaders
-and its join), or for a Simple View, which has no play button, the loaders.
-It pins the join's own account of what it paired, then checks that the view
-drew. ``test_spatial_join_example.py`` runs the same
-flows through the route alone.
+and its join), or for a Simple View, which has no play button, the join. It
+pins the join's own account of what it paired, the line its code's call of
+``spatial_join`` prints, then checks that the view drew.
+``test_spatial_join_example.py`` calls the function on the same flows' data,
+and ``test_server_run_spatial_joins_e2e.py`` runs them on the server.
 
 Run::
 
@@ -32,6 +33,7 @@ from .utils import (
     dismiss_toasts,
     node_locator,
     play_node,
+    read_node_output_text,
     require_owner_view,
     require_project_page,
     require_user_auth,
@@ -46,7 +48,7 @@ if TYPE_CHECKING:
 
 EXAMPLE = os.path.join(REPO_ROOT, "docs", "examples", "25-spatial-join-operations.json")
 
-#: Each case: its join, the view the join feeds, and the join's status line.
+#: Each case: its join, the view the join feeds, and the line the join prints.
 CASES = {
     "intersects": ("3269d5de-21d6-57e4-b811-e3ee90a27f49", "bb22d6d9-2c09-52a1-9ab5-e84f0155c0a6",
                    "359 pairs: 359 of 359 input_0 rows matched."),
@@ -117,18 +119,17 @@ def test_each_spatial_join_case_pairs_and_draws(operations_canvas, case):
     simple_view = _node_type(spec, view) == "curio.builtin/vis-simple"
 
     if simple_view:
-        # A Simple View has no play button. Run the loaders its join reads;
-        # the join and the view follow on their own.
-        for edge in spec["dataflow"]["edges"]:
-            if edge["target"] == join:
-                run_node_and_wait(page, edge["source"], node_type="DATA_LOADING", timeout_ms=120000)
+        # A Simple View has no play button. Play the join, which runs the
+        # loaders it reads first; the view shows what the join hands it.
+        printed = run_node_and_wait(page, join, node_type="SPATIAL_JOIN", timeout_ms=240000)
     else:
         play_node(page, view)
-    wait_for_node_done(page, join, node_type="SPATIAL_JOIN", timeout_ms=240000)
-    status = node_locator(page, join).locator("[data-curio-spatial-join-status]")
-    status.wait_for(state="visible", timeout=30000)
-    assert status.inner_text() == expected_status, f"{case}: {status.inner_text()!r}"
-    assert node_locator(page, join).locator("[data-curio-spatial-join-warning]").count() == 0
+        wait_for_node_done(page, join, node_type="SPATIAL_JOIN", timeout_ms=240000)
+        printed = read_node_output_text(page, join)
+    # The join's account of what it paired, as its code printed it, and no
+    # hint of an operation that can never match these shapes.
+    assert expected_status in printed, f"{case}: {printed!r}"
+    assert "No pairs:" not in printed, f"{case}: {printed!r}"
 
     if not simple_view:
         wait_for_node_done(page, view, node_type="VIS_VEGA", timeout_ms=120000)

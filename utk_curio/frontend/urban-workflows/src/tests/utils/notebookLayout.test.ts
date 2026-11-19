@@ -129,6 +129,16 @@ describe("the dots on a cell's right edge", () => {
     expect(places.get("in/out")).toEqual({ top: "50%" });
   });
 
+  test("a view's interaction dot sits halfway down beside the node's own, and is no output", () => {
+    const own = { id: "in/out", type: "source" as const };
+    const view = { id: "in/out@heights", type: "source" as const };
+    const places = notebookHandlePlaces([...handles, own, view]);
+    expect(places.get("in/out@heights")).toEqual({ top: "50%" });
+    // The outputs alone stack up from the bottom, so the cell is no taller for it.
+    expect(places.get("out")).toEqual(notebookHandlePlaces([...handles, own]).get("out"));
+    expect(notebookCellMinHeight([...handles, own, view])).toBe(notebookCellMinHeight([...handles, own]));
+  });
+
   test("several outputs stack up from the bottom", () => {
     const places = notebookHandlePlaces([
       { id: "out", type: "source" },
@@ -185,7 +195,7 @@ describe("the height of a cell's output", () => {
   });
 
   test("a table, a summary or a note takes its own height up to 360px", () => {
-    for (const kind of ["data-pool", "vis-simple", "data-summary", "spatial-join", "note"]) {
+    for (const kind of ["data-pool", "vis-simple", "data-summary", "note"]) {
       expect(notebookOutputBox(`curio.builtin/${kind}@1`)).toEqual({ maxHeight: 360, overflow: "auto" });
     }
   });
@@ -195,6 +205,13 @@ describe("the height of a cell's output", () => {
       notebookOutputBox("curio.builtin/python-computation@1"),
     );
     expect(notebookOutputBox("curio.builtin/data-export@1")).toEqual({ height: 360, overflow: "auto" });
+  });
+
+  test("a Spatial Join is a code node: its box is a code node's", () => {
+    expect(notebookOutputBox("curio.builtin/spatial-join@1")).toEqual(
+      notebookOutputBox("curio.builtin/python-computation@1"),
+    );
+    expect(notebookOutputBox("curio.builtin/spatial-join@1")).toEqual({ height: 360, overflow: "auto" });
   });
 
   test("anything else, made to fill a node, gets a definite 360px", () => {

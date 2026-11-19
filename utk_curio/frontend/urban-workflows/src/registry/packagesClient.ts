@@ -33,10 +33,12 @@ import {
   useCodeNodeBehavior,
   usePackageNodeBehavior,
   withBidirectional,
+  withInputCircles,
   withPackageStarter,
 } from '../adapters/node';
 import { packagesApi } from '../services/packages';
 import { getToken } from '../utils/authApi';
+import { requestHeaders } from '../utils/requestHeaders';
 import {
   getEmbeddedDashboard,
   isStandaloneDashboard,
@@ -210,6 +212,11 @@ function buildDescriptor(pkg: RawPackage, template: RawPackageTemplate, order: n
   else if (inputPorts.length === 0) handles = outputOnly();
   else if (outputPorts.length === 0) handles = inputOnly();
   else handles = standardInOut();
+  // Several input ports are as many fixed circles, port k on circle k
+  // (`in`, `in_1`, ...): the Spatial Join's input_0 and input_1.
+  if (inputPorts.length > 1) {
+    handles = withInputCircles(handles, inputPorts.map((_port, slot) => slot), inputPorts.length);
+  }
   if (template.bidirectional) handles = withBidirectional(handles);
 
   const isBuiltin = pkg.packageId === BUILTIN_PACKAGE_ID;
@@ -425,8 +432,7 @@ async function loadPackageBehaviorScripts(packages: RawPackage[]): Promise<void>
       // then blocks the resulting 401 response and the bundle never
       // evaluates. Fetch via ``fetch`` (with the Bearer token) and
       // inject the body as inline script text instead.
-      const headers: Record<string, string> = {};
-      if (token) headers.Authorization = `Bearer ${token}`;
+      const headers = requestHeaders(token);
       // ``cache: 'no-store'`` bypasses the HTTP cache entirely. Without it,
       // a stale bundle (e.g. an earlier broken build still in the disk
       // cache) gets re-evaluated forever — the file-serving endpoint

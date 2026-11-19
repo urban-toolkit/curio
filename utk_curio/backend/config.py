@@ -68,6 +68,12 @@ CURIO_DEFAULT_SAVE_NODE_OUTPUT = _env_flag("CURIO_DEFAULT_SAVE_NODE_OUTPUT", Fal
 CURIO_RESEED_PACKAGES = _env_flag("CURIO_RESEED_PACKAGES", False)
 # Seed example projects from docs/examples/ on startup.
 CURIO_SEED_EXAMPLES = _env_flag("CURIO_SEED_EXAMPLES", False)
+# The catalog packages every hosted guest has (--guest-packages), by folder:
+# each start adds them to the shared guest's account
+# (packages/application/guest_packages.py).
+CURIO_GUEST_PACKAGES = tuple(
+    name.strip() for name in os.environ.get("CURIO_GUEST_PACKAGES", "").split(",") if name.strip()
+)
 
 # Flask debug mode on the backend's dev server. Off by default, and the reason
 # is throughput rather than safety: Flask's DefaultJSONProvider pretty-prints

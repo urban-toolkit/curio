@@ -96,6 +96,40 @@ class Capture:
         return raw
 
 
+def _converted(captures: tuple[Capture, ...], m: re.Match) -> dict[str, Any] | None:
+    """The typed value of each of *captures* in *m*, or None when one cannot
+    be read."""
+    out: dict[str, Any] = {}
+    for capture in captures:
+        raw = m.group(capture.name)
+        try:
+            out[capture.name] = capture.convert(raw)
+        except ValueError:
+            # ``2024-13-40`` has the right shape and is not a date. A file
+            # the template cannot read is not one of its files.
+            return None
+    return out
+
+
+@dataclass(frozen=True)
+class Folder:
+    """One folder of a template's path, before its file name: a name of its
+    own, or a pattern the whole name of a folder matches, with the captures
+    it holds."""
+
+    text: str
+    regex: re.Pattern
+    captures: tuple[Capture, ...]
+    #: A name of its own: no capture and no ``*``.
+    literal: bool
+
+    def match(self, name: str) -> dict[str, Any] | None:
+        """The typed captures of a folder named *name*, or None when it is
+        not one of this folder's, as :meth:`Template.match` reads a file's."""
+        m = self.regex.match(name)
+        return None if m is None else _converted(self.captures, m)
+
+
 @dataclass(frozen=True)
 class Template:
     source: str
@@ -104,6 +138,9 @@ class Template:
     #: The leading folders every match shares, e.g. ``orthos/`` for
     #: ``orthos/{year:int}/{tile}.tif``. A bucket lists under this prefix only.
     literal_prefix: str
+    #: Its folders before the file name, up to a ``**``, from the first: how a
+    #: bucket is read a folder at a time (``application/scan.py``).
+    folders: tuple[Folder, ...] = ()
 
     @property
     def names(self) -> tuple[str, ...]:
@@ -112,18 +149,7 @@ class Template:
     def match(self, relpath: str) -> dict[str, Any] | None:
         """The typed captures for *relpath*, or None when it does not match."""
         m = self.regex.match(relpath)
-        if m is None:
-            return None
-        out: dict[str, Any] = {}
-        for capture in self.captures:
-            raw = m.group(capture.name)
-            try:
-                out[capture.name] = capture.convert(raw)
-            except ValueError:
-                # ``2024-13-40`` has the right shape and is not a date. A file
-                # the template cannot read is not one of its files.
-                return None
-        return out
+        return None if m is None else _converted(self.captures, m)
 
 
 def _capture_type(spec: str | None) -> tuple[str, str | None, str]:
@@ -181,6 +207,9 @@ def compile_template(text: str, *, reserved: frozenset[str] = RESERVED_NAMES) ->
     pattern_parts: list[str] = []
     literal_prefix: list[str] = []
     prefix_open = True
+    folders: list[Folder] = []
+    # A ``**`` spans any number of folders, so none after it is one level.
+    folders_open = True
 
     for index, segment in enumerate(segments):
         last = index == len(segments) - 1
@@ -191,11 +220,13 @@ def compile_template(text: str, *, reserved: frozenset[str] = RESERVED_NAMES) ->
                 raise TemplateError("'**' spans folders; the last part must name the files")
             pattern_parts.append(r"(?:[^/]+/)*")
             prefix_open = False
+            folders_open = False
             continue
         if "**" in segment:
             raise TemplateError("'**' must be a folder of its own")
 
         regex = []
+        held: list[Capture] = []
         literal = True
         position = 0
         for token in _TOKEN_RE.finditer(segment):
@@ -219,6 +250,7 @@ def compile_template(text: str, *, reserved: frozenset[str] = RESERVED_NAMES) ->
                 seen.add(name)
                 kind, fmt, capture_regex = _capture_type(spec)
                 captures.append(Capture(name=name, type=kind, fmt=fmt))
+                held.append(captures[-1])
                 regex.append(f"(?P<{name}>{capture_regex})")
                 literal = False
             else:
@@ -233,6 +265,10 @@ def compile_template(text: str, *, reserved: frozenset[str] = RESERVED_NAMES) ->
             literal_prefix.append(segment + "/")
         else:
             prefix_open = False
+        if folders_open and not last:
+            folders.append(Folder(
+                text=segment, regex=re.compile("^" + joined + r"\Z"), captures=tuple(held), literal=literal,
+            ))
 
     return Template(
         source=text,
@@ -240,4 +276,5 @@ def compile_template(text: str, *, reserved: frozenset[str] = RESERVED_NAMES) ->
         regex=re.compile("^" + "".join(pattern_parts) + r"\Z"),
         captures=tuple(captures),
         literal_prefix="".join(literal_prefix),
+        folders=tuple(folders),
     )

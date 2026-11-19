@@ -27,6 +27,14 @@
       "time": { "capture": "began", "timezone": "America/Chicago" }
     },
     {
+      "id": "gps-files",
+      "name": "GPS track files",
+      "description": "Each walk's gps.csv, its GPS fixes: latitude, longitude and accuracy in meters, at datetime_utc. Node code opens it from its row's path, where it is in the bucket; GPS tracks copies the same rows into a table when it is added.",
+      "kind": "files",
+      "path": "chicago/west-loop/{began:%Y-%m-%d-%H-%M-%S-%f}/gps.csv",
+      "time": { "capture": "began", "timezone": "America/Chicago" }
+    },
+    {
       "id": "gps",
       "name": "GPS tracks",
       "description": "About one fix a second: latitude, longitude and accuracy in meters, at datetime_utc. began names the walk.",

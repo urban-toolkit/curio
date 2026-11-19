@@ -30,7 +30,7 @@
         "type": "model.curio.ddrnet23-slim/image-segmentation",
         "x": 645,
         "y": 320,
-        "content": "\"\"\"Label every pixel of each image with a Model Catalog model.\n\nThe input is a collection's rows, each with a ``path``, as a Data Loading\nnode gives them for street-level images from the Data or Discovery Catalog.\nTo use another model, drag it from the Model Catalog onto this node.\n\n``classes`` are the model's labels to report; each becomes a\n``<class>_pct`` column, its share of the image's pixels in percent. ``None``\nreports every label.\n``dominant_class`` and ``dominant_pct`` name the one of them covering most,\nand ``overlay_url`` shows the image tinted by class.\n\"\"\"\n\nmodel = curio_load_model(\"model.curio.ddrnet23-slim\")\nclasses = [\"vegetation\", \"terrain\", \"sky\", \"road\", \"sidewalk\", \"building\"]\n\nreturn curio_segment(input_0, model, classes)\n",
+        "content": "\"\"\"Label every pixel of each image with a Model Catalog model.\n\nThe input is a collection's rows, each with a ``path``, as a Data Loading\nnode gives them for street-level images from the Data or Discovery Catalog.\nTo use another model, drag it from the Model Catalog onto this node.\n\n``classes`` are the model's labels to report; each becomes a\n``<class>_pct`` column, its share of the image's pixels in percent. ``None``\nreports every label.\n``dominant_class`` and ``dominant_pct`` name the one of them covering most,\nand ``overlay_url`` shows the image tinted by class.\n\"\"\"\n\nfrom semantic_segmentation import segment_images\n\nmodel = curio_load_model(\"model.curio.ddrnet23-slim\")\nclasses = [\"vegetation\", \"terrain\", \"sky\", \"road\", \"sidewalk\", \"building\"]\n\nreturn segment_images(input_0, model, curio_derived_file, classes=classes)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Label every pixel of each photo with DDRNet23-Slim, the model that ships with Curio, and report the share of vegetation, terrain, sky, road, sidewalk and building in each.",
@@ -82,12 +82,45 @@
         "type": "curio.builtin/spatial-join",
         "x": 1935,
         "y": 585,
-        "content": "",
+        "content": "from spatial_join import spatial_join\n\nreturn spatial_join(input_0, input_1, operation=[!! operation !!], output=[!! output !!])\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Pair each photo with the neighborhood it falls in, adding the neighborhood's columns. Wire Simple View to input_0 (the top circle) and Python Computation to input_1 (the bottom circle).",
         "metadata": {
-          "keywords": []
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "operation",
+              "type": "choice",
+              "label": "Operation",
+              "default": "intersects",
+              "options": {
+                "choices": [
+                  "intersects",
+                  "within",
+                  "contains",
+                  "touches",
+                  "overlaps",
+                  "crosses",
+                  "nearest"
+                ],
+                "display": "dropdown"
+              }
+            },
+            {
+              "name": "output",
+              "type": "choice",
+              "label": "Output",
+              "default": "pairs",
+              "options": {
+                "choices": [
+                  "pairs",
+                  "counts"
+                ],
+                "display": "dropdown"
+              }
+            }
+          ]
         }
       },
       {
@@ -125,7 +158,7 @@
         "type": "model.curio.ddrnet23-slim/image-segmentation",
         "x": 645,
         "y": 1180,
-        "content": "\"\"\"The same photos, with a model from Hugging Face.\n\nAdd one in the Discovery Catalog (Hugging Face models, for example\nopenmmlab/upernet-convnext-tiny), then drag it from the Model Catalog onto\nthis node. Until then it runs DDRNet23-Slim, the model that ships with Curio.\n\"\"\"\n\nmodel = curio_load_model(\"model.curio.ddrnet23-slim\")\nclasses = None  # every class the model names\n\nreturn curio_segment(input_0, model, classes)\n",
+        "content": "\"\"\"The same photos, with a model from Hugging Face.\n\nAdd one in the Discovery Catalog (Hugging Face models, for example\nopenmmlab/upernet-convnext-tiny), then drag it from the Model Catalog onto\nthis node. Until then it runs DDRNet23-Slim, the model that ships with Curio.\n\"\"\"\n\nfrom semantic_segmentation import segment_images\n\nmodel = curio_load_model(\"model.curio.ddrnet23-slim\")\nclasses = None  # every class the model names\n\nreturn segment_images(input_0, model, curio_derived_file, classes=classes)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Run a Hugging Face model on the same photos: add it from the Discovery Catalog, then drag it from the Model Catalog onto this node.",
@@ -151,12 +184,45 @@
         "type": "curio.builtin/spatial-join",
         "x": 1935,
         "y": 965,
-        "content": "",
+        "content": "from spatial_join import spatial_join\n\nreturn spatial_join(input_0, input_1, operation=[!! operation !!], output=[!! output !!])\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Pair the second model's photos with their neighborhood. Wire Simple View to input_0 (the top circle) and Python Computation to input_1 (the bottom circle).",
         "metadata": {
-          "keywords": []
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "operation",
+              "type": "choice",
+              "label": "Operation",
+              "default": "intersects",
+              "options": {
+                "choices": [
+                  "intersects",
+                  "within",
+                  "contains",
+                  "touches",
+                  "overlaps",
+                  "crosses",
+                  "nearest"
+                ],
+                "display": "dropdown"
+              }
+            },
+            {
+              "name": "output",
+              "type": "choice",
+              "label": "Output",
+              "default": "pairs",
+              "options": {
+                "choices": [
+                  "pairs",
+                  "counts"
+                ],
+                "display": "dropdown"
+              }
+            }
+          ]
         }
       },
       {
@@ -267,6 +333,7 @@
     "timestamp": 1778306678524,
     "provenance_id": "Street-level computer vision",
     "packages": [
+      "curio.segmentation@1",
       "model.curio.ddrnet23-slim@1"
     ],
     "datasets": [

@@ -21,6 +21,16 @@ counts: once per crossing, and again only after the server's count fell below
 :data:`CLEAR_BELOW` of its limit. A sample with no count (a sandbox that did not
 answer, a platform that cannot count) leaves the warning as it stands.
 
+SEVERAL BACKEND PROCESSES. In a start of several, every backend process
+samples its own open files on its own timer, from when it serves, and warns of
+its own, naming itself by its number; only the home process asks the sandbox,
+whose files one count covers (:func:`sampler_starts_here`, :func:`sample`).
+Each process keeps its samples in its own file (``history.py``), and the home
+process's route merges them by hour (:func:`merged`): in each hour, the sample
+of the busiest process, the one with the largest share of its own limit, which
+it names, with the sandbox's count from the home process's sample of that
+hour.
+
 Never raises, as the rest of the monitor never does.
 """
 
@@ -34,7 +44,7 @@ from typing import Optional
 
 from utk_curio.backend.app.monitor import errors
 from utk_curio.backend.app.monitor import history as monitor_history
-from utk_curio.common import open_files
+from utk_curio.common import backend_processes, open_files
 
 log = logging.getLogger(__name__)
 
@@ -67,15 +77,16 @@ _sleep = time.sleep
 
 
 def sample(*, wait_for_sandbox: float = 0) -> dict:
-    """Count both servers' open files and limits now, keep the sample, and
-    warn of a server above :data:`WARN_ABOVE` of its limit. Returns the
-    sample's row.
+    """Count this process's open files and limit now, and in the home process
+    the sandbox's, keep the sample, and warn of a server above
+    :data:`WARN_ABOVE` of its limit. Returns the sample's row, whose sandbox
+    part is None in every other process.
 
     While the sandbox does not answer, it is asked again every
     :data:`SANDBOX_RETRY_SECONDS`, for up to *wait_for_sandbox* seconds. Runs
     in an app context, as the sandbox's call answers a failure through Flask.
     """
-    sandbox = _sandbox_counts(wait_for_sandbox)
+    sandbox = _sandbox_counts(wait_for_sandbox) if _this_process() == backend_processes.HOME else None
     backend = _counts(*open_files.in_use())
     now = _now()
     row = {
@@ -107,11 +118,70 @@ def snapshot() -> dict:
     }
 
 
+def part() -> dict:
+    """This process's samples as another backend process of its start sends
+    them to the home process (``processes.py``): every sample kept, oldest
+    first, and when this process's history began."""
+    return {"startedAt": HISTORY.started_at.strftime(monitor_history.STAMP), "samples": HISTORY.rows()}
+
+
+def merged(parts: dict) -> dict:
+    """The route's body in a start of several backend processes, from the
+    :func:`part` of each process that answered, by its number: a sample an
+    hour, the busiest process's in that hour (the largest share of its own
+    limit, else the most files), naming it (``backendProcess``), with the
+    sandbox's count from the home process's sample of that hour. A process's
+    latest sample of an hour stands for it."""
+    hours: dict = {}
+    started = HISTORY.started_at.strftime(monitor_history.STAMP)
+    for number, each in parts.items():
+        if not isinstance(each, dict):
+            continue
+        begun = each.get("startedAt")
+        if isinstance(begun, str) and begun < started:
+            started = begun
+        for row in each.get("samples") or ():
+            if not isinstance(row, dict) or monitor_history.hour_of(row.get("hour")) is None:
+                continue
+            held = hours.setdefault(row["hour"], {})
+            if number not in held or str(row.get("at") or "") >= str(held[number].get("at") or ""):
+                held[number] = row
+    samples = []
+    for hour in sorted(hours):
+        held = hours[hour]
+        busiest = _busiest(held)
+        home = held.get(backend_processes.HOME) or {}
+        samples.append({
+            "at": held[busiest].get("at"),
+            "backend": held[busiest].get("backend"),
+            "backendProcess": busiest,
+            "sandbox": home.get("sandbox"),
+        })
+    return {
+        "computedAt": _now().strftime(monitor_history.STAMP),
+        "startedAt": started,
+        "maxDays": HISTORY.max_days,
+        "intervalSeconds": INTERVAL_SECONDS,
+        "warnAbovePercent": round(WARN_ABOVE * 100),
+        "clearBelowPercent": round(CLEAR_BELOW * 100),
+        "samples": samples,
+    }
+
+
+def sampler_starts_here(does_startup_work: bool) -> bool:
+    """Whether this process samples its open files: the home process when it
+    does the startup work, which under Werkzeug's reloader only the process
+    that serves does, and every other process of a start of several, which
+    serves without the reloader (``server.py``)."""
+    return bool(does_startup_work) or _this_process() != backend_processes.HOME
+
+
 def start_sampler(app) -> None:
     """Sample every :data:`INTERVAL_SECONDS` on a timer thread, the first time
-    now, giving the sandbox up to :data:`FIRST_SAMPLE_WAIT_SECONDS` to answer.
-    A sample that fails is logged, and the next comes an hour later. Off under
-    ``--testing``, whose tests call :func:`sample` themselves."""
+    now, giving the sandbox up to :data:`FIRST_SAMPLE_WAIT_SECONDS` to answer
+    (in the home process, which alone asks it). A sample that fails is
+    logged, and the next comes an hour later. Off under ``--testing``, whose
+    tests call :func:`sample` themselves."""
     from utk_curio.backend.config import _is_testing
 
     global _timer
@@ -160,6 +230,47 @@ def _counts(count, limit) -> dict:
     return {"open": _number(count), "limit": _number(limit)}
 
 
+def _this_process() -> int:
+    """This process's number among the start's backends, home's when the
+    launcher's variables cannot be read: a sample never fails over them."""
+    try:
+        return backend_processes.this_process()
+    except ValueError:
+        return backend_processes.HOME
+
+
+def _busiest(held: dict) -> int:
+    """The number of the busiest process of *held*, each process's sample of
+    one hour by its number."""
+    return max(held, key=lambda number: _load(held[number].get("backend"), number))
+
+
+def _load(counts, number: int) -> tuple:
+    """How busy the process *number* is in a sample whose backend part is
+    *counts*, to compare: the share of its limit where both are known, else
+    its count, else nothing; the lower number first on a tie."""
+    count = counts.get("open") if isinstance(counts, dict) else None
+    limit = counts.get("limit") if isinstance(counts, dict) else None
+    if _number(count) is not None and _number(limit):
+        return 2, count / limit, -number
+    if _number(count) is not None:
+        return 1, float(count), -number
+    return 0, 0.0, -number
+
+
+def _named(server: str) -> str:
+    """How a warning names *server*: the sandbox, the backend, or in a start of
+    several backend processes this one, by its number."""
+    if server == "backend":
+        try:
+            several = backend_processes.process_count() > 1
+        except ValueError:
+            several = False
+        if several:
+            return f"backend process {_this_process()}"
+    return f"the {server}"
+
+
 def _sandbox_counts(wait: float) -> dict | None:
     """The sandbox's part of a sample, from its ``/monitor`` reply, or None
     when it did not answer within *wait* seconds."""
@@ -191,11 +302,12 @@ def _warn_of(server: str, counts: dict | None, at: str) -> None:
         if share <= WARN_ABOVE or server in _warned:
             return
         _warned.add(server)
+    name = _named(server)
     errors.record(
         server,
-        summary=f"The {server} has {count:,} open files, {share:.1%} of its limit of {limit:,}",
+        summary=f"{name[:1].upper()}{name[1:]} has {count:,} open files, {share:.1%} of its limit of {limit:,}",
         detail=(
-            f"Sampled at {at}. At its limit, each file or connection the {server} opens fails with "
+            f"Sampled at {at}. At its limit, each file or connection {name} opens fails with "
             f'"[Errno 24] Too many open files". The Open files chart under Hardware shows its count '
             "over time."
         ),

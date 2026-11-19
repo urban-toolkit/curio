@@ -5,7 +5,9 @@
  * (one million by default), shrinks it with bilinear resampling, which blends
  * class codes and nodata into values the raster never held. So Curio asks for
  * the raster's own size, up to what a map can hold, and refuses a larger one
- * with a sentence that says to crop it where it is made. `nearest` is passed
+ * with a sentence that says how to make it smaller where it is made: crop it
+ * in the node that makes it, or give the `geotiff` source that loads it a
+ * lower `maxRasterCells`. `nearest` is passed
  * as well, so a resample, if autk-db ever needs one, picks cell values rather
  * than mixing them.
  *
@@ -51,17 +53,29 @@ export type GeotiffLoad = {
 
 export type RasterLoadPlan = { load: GeotiffLoad; grid: RasterGrid; cells: number };
 
+/**
+ * Who loads a raster: a node that makes one (a Python node, an Autark node
+ * that hands one on), or a `geotiff` source of the document, which autk-db
+ * shrinks to its `maxRasterCells` as it loads the file.
+ */
+export type RasterMaker = "node" | "geotiff";
+
+/** How a raster too large to load is told to make it smaller, by who makes it. */
+const MAKE_IT_SMALLER: Record<RasterMaker, string> = {
+  node: "Crop it in the node that makes it, for example with a rasterio window read, and run that node again.",
+  geotiff: "Give its geotiff source a lower maxRasterCells, which shrinks it as it loads, and run the node again.",
+};
+
 /** Why a raster of this size is not loaded, or null when it fits. */
-export function oversizeSentence(name: string, width: number, height: number): string | null {
+export function oversizeSentence(name: string, width: number, height: number, madeBy: RasterMaker = "node"): string | null {
   if (width * height <= RASTER_MAX_CELLS && width <= RASTER_MAX_SIDE && height <= RASTER_MAX_SIDE) return null;
   return `${name} is ${width} by ${height} cells, more than an Autark map loads at its own size `
-    + `(${RASTER_MAX_CELLS} cells, ${RASTER_MAX_SIDE} on a side). Crop it in the node that makes it, `
-    + "for example with a rasterio window read, and run that node again.";
+    + `(${RASTER_MAX_CELLS} cells, ${RASTER_MAX_SIDE} on a side). ${MAKE_IT_SMALLER[madeBy]}`;
 }
 
 /** The parameters for a grid already known, at its own size. */
-export function planForGrid(name: string, grid: RasterGrid): RasterLoadPlan | { refused: string } {
-  const oversize = oversizeSentence(name, grid.width, grid.height);
+export function planForGrid(name: string, grid: RasterGrid, madeBy: RasterMaker = "node"): RasterLoadPlan | { refused: string } {
+  const oversize = oversizeSentence(name, grid.width, grid.height, madeBy);
   if (oversize) return { refused: oversize };
   if (epsgCode(grid.crs) == null) {
     return { refused: `${name} is in ${grid.crs}, which has no EPSG code, so Autark cannot place it.` };

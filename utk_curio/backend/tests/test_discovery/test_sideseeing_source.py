@@ -4,7 +4,8 @@
 bucket's listing on data.urbantk.org: the two West Loop walks of 2026-10-26,
 each a folder named by when it began in Chicago. Each CSV the source declares
 is indexed to a synthetic stand-in with the real file's header
-(``fixtures/download/storage/sideseeing/``), so its add runs here too.
+(``fixtures/download/storage/sideseeing/``), so its add runs here too, and so
+does a cache of each walk's ``gps.csv`` as a file.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from datetime import datetime
 
 import pytest
 
-from utk_curio.backend.tests.test_discovery.test_storage_buckets import add, listing
+from utk_curio.backend.tests.test_discovery.test_storage_buckets import add, listing, wait_for
 
 SOURCE = "source.sideseeing.street-captures@1"
 
@@ -65,11 +66,13 @@ class TestTheListing:
         body = listing(client, auth, SOURCE)
         assert body["sources"][0]["status"] == "ok", body["sources"]
         rows = {r["resourceId"]: r for r in body["resources"]}
-        assert list(rows) == ["walks", "records", *TABLES]
+        assert list(rows) == ["walks", "records", "gps-files", *TABLES]
         assert (rows["walks"]["kind"], rows["walks"]["fileCount"]) == ("videos", 2)
         assert (rows["records"]["kind"], rows["records"]["fileCount"]) == ("files", 4)
+        # Each walk's gps.csv as a file, beside the table GPS tracks copies it into.
+        assert (rows["gps-files"]["kind"], rows["gps-files"]["fileCount"]) == ("files", 2)
         # A files row has no preview, so no sample files to draw.
-        assert rows["records"]["samples"] == []
+        assert rows["records"]["samples"] == rows["gps-files"]["samples"] == []
         for resource_id in TABLES:
             assert (rows[resource_id]["kind"], rows[resource_id]["fileCount"]) == ("table", 2), resource_id
         # No resource takes each walk's wifi.csv, which is no CSV DuckDB reads
@@ -104,6 +107,57 @@ class TestTheWalks:
         )
         for _folder, (local, utc) in WALKS.items():
             assert set(index.loc[index["began"] == local, "taken_at"]) == {utc}
+
+
+class TestTheGpsTrackFiles:
+    def test_each_walks_gps_csv_is_a_file_for_node_code_timed_like_its_video(
+        self, client, auth, app, shipped_root, fixture_corpus
+    ):
+        import pandas as pd
+
+        dataset = _added(client, auth, "gps-files")
+        index = pd.read_parquet(dataset["path"]).set_index("relpath")
+        assert len(index) == 2
+        for folder, (local, utc) in WALKS.items():
+            row = index.loc[f"chicago/west-loop/{folder}/gps.csv"]
+            assert row["kind"] == "file"
+            assert (row["began"], row["taken_at"]) == (local, utc)
+        assert (dataset["collection"]["kind"], dataset["collection"]["provider"]) == ("files", "s3")
+
+    def test_node_code_reads_in_each_file_the_rows_the_gps_table_copies(
+        self, client, auth, app, shipped_root, fixture_corpus, user_and_token
+    ):
+        """Where no mount reads the bucket, the files are cached first; node
+        code then opens each from its row's path and finds the fixes an add
+        of GPS tracks copies into a table for that walk."""
+        import pandas as pd
+
+        from utk_curio.backend.app.discovery.application.exec_collections import resolve_collections
+        from utk_curio.backend.app.discovery.infrastructure import media_dirs
+        from utk_curio.sandbox.util.collections import make_collection_helpers
+
+        user, _token = user_and_token
+        files = _added(client, auth, "gps-files")
+        table = pd.read_parquet(_added(client, auth, "gps")["path"])
+        res = client.post(f"/api/discovery/collections/{files['id']}/cache", headers=auth)
+        assert res.status_code == 202, res.get_data(as_text=True)
+        done = wait_for(client, auth, res.get_json()["jobId"])
+        assert done["status"] == "completed", done.get("error")
+
+        with app.test_request_context():
+            collections = resolve_collections([files["id"]], str(user.id), user=user)
+        helpers = make_collection_helpers(
+            lambda _id: files["path"], collections, str(media_dirs.media_work_root(str(user.id)))
+        )
+        rows = helpers["curio_load_collection"](files["id"])
+
+        assert len(rows) == len(WALKS)
+        for _, row in rows.iterrows():
+            fixes = pd.read_csv(row["path"])
+            copied = table[table["began"] == row["began"]]
+            assert list(fixes.columns) == TABLES["gps"]
+            assert pd.to_datetime(fixes["datetime_utc"], utc=True).tolist() == copied["datetime_utc"].tolist()
+            assert fixes[["latitude", "longitude"]].values.tolist() == copied[["latitude", "longitude"]].values.tolist()
 
 
 class TestTheTables:

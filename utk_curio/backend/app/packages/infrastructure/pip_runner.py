@@ -4,7 +4,7 @@ A package's ``manifest.dependencies.python`` declares the libraries the
 package's behavior hooks need at runtime. The catalog install flow calls
 :func:`install_python_deps` after copying the package files; a package's
 removal (``application/prune.py``) uninstalls from this interpreter only
-libraries this process's pip installed into it (:func:`installed_here`) that
+libraries this start's pip installed into it (:func:`installed_here`) that
 nothing else still asks for.
 
 Design choices:
@@ -25,6 +25,15 @@ Design choices:
   Curio's requirements, the image's torch, the shipped catalog's libraries
   the launcher installs, and the user's own. Package manifests name several
   of those too, so a manifest is no evidence that Curio put a library here.
+  A start of several backend processes keeps one record for all of them, so
+  a removal any of them serves takes back what another's pip installed.
+- **The image's libraries win in an account's tree.** Under isolation an
+  account's node libraries are a ``--target`` tree its nodes import in front
+  of this interpreter, the image's. ``--target`` ignores what this
+  interpreter holds, so an install into such a tree (*in_front*) resolves
+  with the tree in front of this interpreter, as node code imports them, and
+  puts into the tree only what neither holds at a version the requirements
+  accept: a package's ``torch>=2.6`` keeps the image's CUDA torch.
 - **One run at a time per environment.** A pip run that changes this
   interpreter, or a ``--target`` tree, holds that environment's lock across
   threads and backend processes (:func:`_one_run_into`), and an install
@@ -44,8 +53,10 @@ import logging
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
+import tempfile
 import threading
 import uuid
 from dataclasses import dataclass
@@ -53,6 +64,7 @@ from pathlib import Path
 from importlib.metadata import PackageNotFoundError, version as installed_version
 from typing import Callable, Iterable, Mapping, Optional
 
+from utk_curio.backend.app.common import shared_budgets
 from utk_curio.backend.app.common.file_locks import exclusive_lock
 
 from .bounded_exec import bounded_argv
@@ -149,6 +161,49 @@ def _bounded(cmd: list[str]) -> list[str]:
     """
     bounds = _pip_bounds()
     return bounded_argv(cmd, bounds) if bounds is not None else list(cmd)
+
+
+def _pip_account() -> tuple[int, int] | None:
+    """``(uid, gid)`` of the account pip runs as when it is not this
+    process's: the execution account :func:`_bounded` drops to, which
+    ``bounded_exec`` does only from root. None when pip runs as this process."""
+    if os.name != "posix" or os.getuid() != 0:
+        return None
+    drop = (_pip_bounds() or {}).get("drop")
+    return (int(drop[0]), int(drop[1])) if drop else None
+
+
+def _place_installed(staging: Path, target: Path) -> None:
+    """Move what pip installed into *staging* into *target*, item by item, as
+    pip's own ``--target`` moves them: an item *target* already holds stays
+    as it is, since pip replaces one only with ``--upgrade``, which Curio
+    never passes. Each item moved becomes this process's, with no write for
+    group or others (:func:`_make_own`), so the account pip ran as cannot
+    write it."""
+    target.mkdir(parents=True, exist_ok=True)
+    for name in sorted(os.listdir(staging)):
+        placed = target / name
+        if os.path.lexists(placed):
+            log.warning("%s already exists; left as it is, as pip's --target leaves it", placed)
+            continue
+        shutil.move(str(staging / name), str(placed))
+        _make_own(placed)
+
+
+def _make_own(path: Path) -> None:
+    """*path*, and everything under it, this process's, with no write for
+    group or others. A link is given to it as a link, never followed."""
+    uid, gid = os.getuid(), os.getgid()
+    paths = [str(path)]
+    if path.is_dir() and not path.is_symlink():
+        for root, dirs, files in os.walk(path):
+            paths.extend(os.path.join(root, name) for name in dirs + files)
+    for current in paths:
+        os.chown(current, uid, gid, follow_symlinks=False)
+        if not os.path.islink(current):
+            mode = stat.S_IMODE(os.lstat(current).st_mode)
+            if mode & 0o022:
+                os.chmod(current, mode & ~0o022)
 
 
 def _looks_like_no_wheel(output: str) -> bool:
@@ -258,13 +313,19 @@ def _is_satisfied(name: str, spec: str) -> bool:
     evaluated — not just whether the package is importable. Falls back to
     True (let pip decide) if the installed version string can't be parsed.
     """
-    from packaging.specifiers import SpecifierSet
-    from packaging.version import Version, InvalidVersion
-
     try:
         ver_str = installed_version(name)
     except PackageNotFoundError:
         return False
+    return accepts(name, spec, ver_str)
+
+
+def accepts(name: str, spec: str, version: str) -> bool:
+    """Whether *spec*, a manifest's range for *name*, accepts *version* of it:
+    any version when it names none, and, when the version or the range does
+    not parse, yes, so that pip is the authority (:func:`_is_satisfied`)."""
+    from packaging.specifiers import SpecifierSet
+    from packaging.version import Version, InvalidVersion
 
     spec = (spec or "").strip()
     if not spec or spec == "*":
@@ -276,19 +337,148 @@ def _is_satisfied(name: str, spec: str) -> bool:
     pep440 = full[len(name):]            # e.g. ">=3.7.3"  or  "==3.0.2"
 
     try:
-        return Version(ver_str) in SpecifierSet(pep440)
+        return Version(version) in SpecifierSet(pep440)
     except (InvalidVersion, Exception):
         return True  # unparseable — let pip be the authority
 
 
+def tree_versions(target_dir) -> dict[str, str]:
+    """The version of each distribution a ``--target`` tree holds, by PEP 503
+    name: those its ``*.dist-info`` folders record. A folder whose metadata
+    does not read is left out."""
+    from importlib.metadata import distributions
+
+    found: dict[str, str] = {}
+    for dist in distributions(path=[str(target_dir)]):
+        try:
+            name, version = dist.metadata["Name"], dist.version
+        except Exception:  # noqa: BLE001 - a broken dist-info records no version to go by
+            continue
+        if name and version:
+            found.setdefault(_canonical_dist_name(name), version)
+    return found
+
+
+def version_in_front(name: str, target_dir, in_tree: Optional[Mapping[str, str]] = None) -> Optional[str]:
+    """The version of *name* node code imports with the tree *target_dir* in
+    front of this interpreter: the tree's copy when it holds one, else this
+    interpreter's, the image's; None when neither holds it. *in_tree* is the
+    tree's :func:`tree_versions`, when the caller has read them."""
+    in_tree = tree_versions(target_dir) if in_tree is None else in_tree
+    version = in_tree.get(_canonical_dist_name(name))
+    return version if version is not None else interpreter_version(name)
+
+
+def interpreter_version(name: str) -> Optional[str]:
+    """The version of *name* this interpreter, the image's, holds, or None."""
+    try:
+        return installed_version(name)
+    except PackageNotFoundError:
+        return None
+
+
+def copies_this_interpreter_meets(declared: Mapping[str, Iterable[str]], target_dir, *, keep=()) -> list[str]:
+    """The names of *declared*, each with the ranges asked of it, whose copy
+    in the tree *target_dir* stands in front of this interpreter's, the
+    image's, where the image's meets every one of those ranges and every
+    requirement on it of the distributions the tree keeps, sorted; *keep*
+    names libraries whose copies stay whatever their versions. A copy that a
+    distribution the tree keeps needs at a version the image's is not stays."""
+    from importlib.metadata import distributions
+    from packaging.requirements import InvalidRequirement, Requirement
+
+    in_tree = tree_versions(target_dir)
+    kept = {_canonical_dist_name(name) for name in keep}
+    # Each distribution of the tree, with what it requires here (its
+    # requirements whose markers hold, none of an extra).
+    needs: list[tuple[str, str, object]] = []
+    for dist in distributions(path=[str(target_dir)]):
+        try:
+            requirer, lines = _canonical_dist_name(dist.metadata["Name"] or ""), dist.requires or []
+        except Exception:  # noqa: BLE001 - a broken dist-info requires nothing to go by
+            continue
+        for line in lines:
+            try:
+                requirement = Requirement(line)
+            except InvalidRequirement:
+                continue  # a line pip would not read either
+            if requirement.marker is None or requirement.marker.evaluate({"extra": ""}):
+                needs.append((requirer, _canonical_dist_name(requirement.name), requirement.specifier))
+    # A library this interpreter lacks keeps the tree's copy, node code's only one.
+    image = {}
+    for name in declared:
+        version = interpreter_version(name)
+        if version is not None:
+            image[name] = version
+    # A copy that goes no longer needs what it required: so on until no
+    # other copy can go.
+    going: set[str] = set()
+    while True:
+        more = []
+        for name, ranges in declared.items():
+            canonical = _canonical_dist_name(name)
+            if canonical not in in_tree or canonical in kept or canonical in going or name not in image:
+                continue
+            if not all(accepts(name, spec, image[name]) for spec in ranges):
+                continue
+            if all(specifier.contains(image[name], prereleases=True)
+                   for requirer, needed, specifier in needs if needed == canonical and requirer not in going):
+                more.append(canonical)
+        if not more:
+            break
+        going.update(more)
+    return sorted(name for name in declared if _canonical_dist_name(name) in going)
+
+
+def outside_their_ranges_in_front(deps: Mapping[str, str], target_dir) -> list[str]:
+    """The names of *deps* that node code, with the tree *target_dir* in front
+    of this interpreter, imports at a version their range does not accept,
+    sorted. A library neither holds is not one: whether it imports is the
+    import probe's question."""
+    in_tree = tree_versions(target_dir)
+    outside = []
+    for name, spec in deps.items():
+        version = version_in_front(name, target_dir, in_tree)
+        if version is not None and not accepts(name, spec, version):
+            outside.append(name)
+    return sorted(outside)
+
+
 #: Each library :func:`install_python_deps` installed into this interpreter
 #: where it held none, by PEP 503 name: the only ones a package's removal may
-#: uninstall from it (:func:`installed_here`). This process's own record, so a
+#: uninstall from it (:func:`installed_here`). The start's own record, so a
 #: restart forgets it and those libraries stay, and nothing the interpreter
-#: held before this process ran pip can be in it. A library another backend
-#: process installed is not in it either, so this one never takes it back.
+#: held before the start's pip ran can be in it. With one backend process it
+#: is held here, in its memory, as it is in the launcher, whose installs at a
+#: start come before any backend runs; a start of several keeps one for all
+#: its backends (:data:`_THE_STARTS_RECORD`), since a removal one of them
+#: serves may take back what another's pip installed.
 _installed_here: set[str] = set()
 _installed_here_lock = threading.Lock()
+#: The record of a start of several backend processes, in the start's state,
+#: under its own lock (``common/shared_budgets.State``): its names, sorted,
+#: under :data:`_INSTALLED`.
+_THE_STARTS_RECORD = shared_budgets.State("pip-installed-here")
+_INSTALLED = "installed"
+
+
+@contextlib.contextmanager
+def _the_record():
+    """The record of what :func:`install_python_deps` installed, held: this
+    process's, or in a start of several backend processes the start's, which
+    no process reads or changes until the block ends. Raises ``OSError`` when
+    the start's cannot be read or written."""
+    with _installed_here_lock:
+        if not shared_budgets.across_processes():
+            yield _installed_here
+            return
+        with _THE_STARTS_RECORD.held() as state:
+            kept = state.get(_INSTALLED)
+            names = {name for name in kept if isinstance(name, str)} if isinstance(kept, list) else set()
+            noted = set(names)
+            yield noted
+            if noted != names:
+                state[_INSTALLED] = sorted(noted)
 
 
 def _is_installed(name: str) -> bool:
@@ -302,18 +492,23 @@ def _is_installed(name: str) -> bool:
 
 def installed_here(names: Iterable[str]) -> list[str]:
     """The names among *names* that :func:`install_python_deps` installed into
-    this interpreter where it held none before, since this process started,
-    and that are installed still, sorted.
+    this interpreter where it held none before, since this start, in any of
+    its backend processes, and that are installed still, sorted.
 
     A package's removal uninstalls from the shared interpreter only these
     (``application/prune.py``). A library that was there before is not
     Curio's to take back, whoever declares it: Curio's requirements, the
     image's torch, the shipped catalog's libraries, the user's own. Nor is one
     pip only upgraded: uninstalling it would remove it, not put back the
-    version it replaced.
+    version it replaced. A record that cannot be read names none, so every
+    library stays.
     """
-    with _installed_here_lock:
-        noted = set(_installed_here)
+    try:
+        with _the_record() as record:
+            noted = set(record)
+    except OSError as exc:
+        log.warning("The record of what Curio's pip installed did not read, so no library is taken back: %s", exc)
+        return []
     return sorted(
         name for name in set(names)
         if _canonical_dist_name(name) in noted and _is_installed(name)
@@ -321,9 +516,27 @@ def installed_here(names: Iterable[str]) -> list[str]:
 
 
 def _note_installed_here(names: Iterable[str]) -> None:
-    """Note *names*, which this process's pip just installed fresh."""
-    with _installed_here_lock:
-        _installed_here.update(_canonical_dist_name(name) for name in names)
+    """Note *names*, which this start's pip just installed fresh. When the
+    start's record cannot be written they go unnoted, and stay installed
+    through a removal."""
+    names = {_canonical_dist_name(name) for name in names}
+    if not names:
+        return
+    try:
+        with _the_record() as record:
+            record.update(names)
+    except OSError as exc:
+        log.warning("Could not note %s in the record of what Curio's pip installed: %s", sorted(names), exc)
+
+
+def _forget_installed_here(names: Iterable[str]) -> None:
+    """Take *names*, which pip just uninstalled, off the record."""
+    names = {_canonical_dist_name(name) for name in names}
+    try:
+        with _the_record() as record:
+            record.difference_update(names)
+    except OSError as exc:
+        log.warning("Could not take %s off the record of what Curio's pip installed: %s", sorted(names), exc)
 
 
 #: Top-level modules a distribution ships that are never the import people mean.
@@ -404,6 +617,15 @@ def holding_tree(target_dir) -> contextlib.AbstractContextManager:
     wipe to the check of what pip left. A pip run into it from inside the hold,
     on the same thread, holds it on."""
     return _one_run_into(str(target_dir))
+
+
+def holding_the_interpreter() -> contextlib.AbstractContextManager:
+    """Hold this interpreter as a pip run into it does, for a decision a
+    change of it is made on, as :func:`install_python_deps` decides what to
+    install inside its hold: a removal's take-back of the libraries nothing
+    asks for now. A pip run from inside the hold, on the same thread, holds
+    it on."""
+    return _one_run_into()
 
 
 def _pip_ran() -> None:
@@ -926,6 +1148,7 @@ def install_python_deps_to_target(
     target_dir: str,
     *,
     on_line: Optional[Callable[[str], None]] = None,
+    in_front: bool = False,
 ) -> InstallReport:
     """dev/97: pip-install *deps* (and their transitive closure) into
     *target_dir* via ``pip install --target`` — the backend sandbox's
@@ -940,20 +1163,145 @@ def install_python_deps_to_target(
 
     Holds the tree's lock (:func:`_one_run_into`): a user's node libraries
     are one tree that the libraries dialog and a package's install both
-    change, perhaps in two backend processes."""
+    change, perhaps in two backend processes.
+
+    Where pip runs as the execution account (:func:`_pip_account`), the
+    target is not that account's to write: an account's node libraries
+    belong to this process, so the nodes that import them cannot rewrite
+    them (``backend_runtime.user_node_overlay_dir``), and a package's handler
+    overlay sits in the account's own 0700 store. pip then installs into a
+    folder the account owns, and this process moves what it installed into
+    *target_dir* and makes it its own (:func:`_place_installed`).
+
+    With *in_front*, *target_dir* is a tree node code imports in front of this
+    interpreter, an account's own node libraries, and the image's libraries
+    win wherever they meet a range (:func:`_install_in_front`): only what
+    neither holds at a version the requirements accept goes into the tree,
+    ``installed`` names the requested specs pip installed and ``skipped``
+    the requirements already met."""
     if not deps:
         return InstallReport(installed=[], skipped=[])
     with _one_run_into(target_dir):
-        return _install_to_target(deps, target_dir, on_line)
+        if in_front:
+            return _install_in_front(deps, target_dir, on_line)
+        return _install_into(deps, target_dir, on_line)
+
+
+def _install_into(
+    deps: Mapping[str, str], target_dir: str, on_line: Optional[Callable[[str], None]], *, no_deps: bool = False,
+) -> InstallReport:
+    """:func:`_install_to_target` into *target_dir*, through a folder of the
+    execution account's where pip runs as that account, for
+    :func:`install_python_deps_to_target`, which holds the tree's lock."""
+    account = _pip_account()
+    if account is None:
+        return _install_to_target(deps, target_dir, on_line, no_deps=no_deps)
+    staging = tempfile.mkdtemp(prefix="curio-pip-target-")
+    try:
+        os.chown(staging, *account)
+        report = _install_to_target(deps, staging, on_line, no_deps=no_deps)
+        _place_installed(Path(staging), Path(target_dir))
+        return report
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+
+def _install_in_front(
+    deps: Mapping[str, str], target_dir: str, on_line: Optional[Callable[[str], None]],
+) -> InstallReport:
+    """*deps* into the tree *target_dir*, which node code imports in front of
+    this interpreter, for :func:`install_python_deps_to_target`, which holds
+    the tree's lock.
+
+    ``pip install --target`` ignores what this interpreter holds, so it put
+    every requirement and every library they need into the tree, the image's
+    CUDA torch among them, in front of the image's copy. Here a requirement
+    the tree or this interpreter already meets is skipped
+    (:func:`version_in_front`), pip resolves the others with the tree in
+    front of this interpreter, as node code imports them, and only the
+    distributions it would install go into the tree, each at the version pip
+    chose and without its own requirements, which that resolution met. A
+    distribution the tree holds at another version is taken out first, since
+    ``--target`` leaves one it holds as it is; so is a requirement's copy in
+    the tree at a version its range does not accept where this interpreter's
+    meets it, which then wins."""
+    in_tree = tree_versions(target_dir)
+    wanted, hiding = {}, []
+    for name, spec in deps.items():
+        version = version_in_front(name, target_dir, in_tree)
+        if version is not None and accepts(name, spec, version):
+            continue
+        image = interpreter_version(name)
+        if _canonical_dist_name(name) in in_tree and image is not None and accepts(name, spec, image):
+            hiding.append(name)
+            continue
+        wanted[name] = spec
+    if hiding:
+        uninstall_python_deps_from_target(hiding, target_dir)
+        in_tree = tree_versions(target_dir)
+    plan = _resolved_in_front(wanted, target_dir) if wanted else []
+    planned = {_canonical_dist_name(name) for name, _version in plan}
+    skipped = sorted(name for name in deps if _canonical_dist_name(name) not in planned)
+    if not plan:
+        return InstallReport(installed=[], skipped=skipped)
+    replaced = [name for name, _version in plan if _canonical_dist_name(name) in in_tree]
+    if replaced:
+        uninstall_python_deps_from_target(replaced, target_dir)
+    _install_into({name: f"=={version}" for name, version in plan}, target_dir, on_line, no_deps=True)
+    return InstallReport(
+        installed=[_spec_argv(name, spec) for name, spec in sorted(deps.items())
+                   if _canonical_dist_name(name) in planned],
+        skipped=skipped,
+    )
+
+
+def _resolved_in_front(deps: Mapping[str, str], target_dir: str) -> list[tuple[str, str]]:
+    """``(name, version)`` of each distribution pip would install for *deps*
+    in an environment of the tree *target_dir* in front of this interpreter:
+    those the requirements and what they need ask for that neither holds at
+    an accepted version. pip's dry run, bounded as an install is: wheels
+    only first, then, where one has no wheel, with builds, whose metadata a
+    build backend makes."""
+    specs = [_spec_argv(name, spec) for name, spec in sorted(deps.items())]
+    env = dict(os.environ)
+    existing = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = f"{target_dir}{os.pathsep}{existing}" if existing else str(target_dir)
+    base = [sys.executable, "-m", "pip", "install", "--no-input", "--dry-run", "--quiet", "--report", "-"]
+
+    def dry_run(cmd):
+        log.info("Running %s", " ".join(cmd))
+        try:
+            return subprocess.run(
+                _bounded(cmd), capture_output=True, text=True, env=env, timeout=_PIP_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise PipInstallError(
+                f"pip install --dry-run timed out after {_PIP_TIMEOUT_SECONDS}s (packages: {specs})"
+            ) from exc
+
+    proc = dry_run([*base, WHEEL_ONLY_ARG, *specs])
+    if proc.returncode != 0 and _looks_like_no_wheel((proc.stderr or "") + (proc.stdout or "")):
+        proc = dry_run([*base, *specs])
+    if proc.returncode != 0:
+        tail = (proc.stderr or proc.stdout or "")[-2000:]
+        raise PipInstallError(f"pip install --dry-run failed (exit {proc.returncode}): {tail.strip()}")
+    try:
+        report = json.loads(proc.stdout)
+        return [(item["metadata"]["name"], item["metadata"]["version"]) for item in report.get("install") or []]
+    except (ValueError, KeyError, TypeError) as exc:
+        raise PipInstallError(f"pip's report of what it would install did not read: {exc}") from exc
 
 
 def _install_to_target(
-    deps: Mapping[str, str], target_dir: str, on_line: Optional[Callable[[str], None]],
+    deps: Mapping[str, str], target_dir: str, on_line: Optional[Callable[[str], None]], *, no_deps: bool = False,
 ) -> InstallReport:
-    """:func:`install_python_deps_to_target`, holding the tree's lock."""
+    """``pip install --target`` *target_dir* for
+    :func:`install_python_deps_to_target`, which holds the tree's lock:
+    wheels only, then a build where a dependency has no wheel. With
+    *no_deps*, the requirements alone, none of what they need."""
     specs = [_spec_argv(name, spec) for name, spec in sorted(deps.items())]
     base = [sys.executable, "-m", "pip", "install", "--no-input",
-            "--target", str(target_dir)]
+            "--target", str(target_dir), *(["--no-deps"] if no_deps else [])]
 
     # Wheels first, so no setup.py runs at all in the common case (#309). A
     # dependency with no wheel for this platform still has to install, so a
@@ -1123,8 +1471,7 @@ def _uninstall_python_deps(names: list[str]) -> UninstallReport:
             f"pip uninstall failed (exit {proc.returncode}): {tail.strip()}"
         )
     _pip_ran()
-    with _installed_here_lock:
-        _installed_here.difference_update(_canonical_dist_name(name) for name in names)
+    _forget_installed_here(names)
     return UninstallReport(removed=list(names), kept=[])
 
 

@@ -98,6 +98,9 @@ from .closeups import (  # noqa: F401
     watch_viewport_hint,
     viewport_hints,
     canvas_painted_at_shown_zoom,
+    capture_node,
+    wait_for_node_capture,
+    wait_for_node_still,
     save_node_closeup,
 )
 from .interactions import (  # noqa: F401
@@ -122,10 +125,7 @@ from .interactions import (  # noqa: F401
     _LIT_MARKS_JS,
     lit_marks,
     lit_labels,
-    capture_node,
     changed_pixels,
-    wait_for_node_capture,
-    wait_for_node_still,
     save_interaction_frame,
 )
 from .tooltips import (  # noqa: F401
@@ -172,6 +172,7 @@ from .db_stubs import (  # noqa: F401
     api_json,
     ensure_node_only_agent,
     install_session_cookie,
+    named_dataflow,
     take_agents_out,
     stub_db_user,
     stub_db_login,
@@ -187,6 +188,14 @@ from .palettes import (  # noqa: F401
     click_package_summary_action,
     close_tools_palette,
     tools_palette_is_open,
+)
+from .collection_cache import (  # noqa: F401
+    CARD,
+    DRAWER_ROOT,
+    bucket_collections_of,
+    cache_bucket_collections_from_the_drawer,
+    cache_collection_files,
+    data_catalog_drawer,
 )
 from .upload import upload_workflow  # noqa: F401
 from .canvas_authoring import (  # noqa: F401
@@ -258,6 +267,7 @@ from .node_drawings import (  # noqa: F401
     AUTK_MAP_MIN_FRAMED_SPAN,
     autark_map_framing,
     assert_autark_drawing_fits,
+    assert_raster_cells_follow_their_values,
     assert_editor_panes_clear_of_markers,
     assert_vega_charts_fit,
     assert_vega_node_empty_state,
@@ -288,6 +298,13 @@ from .offline_install import (  # noqa: F401
     remove_catalog_package,
     offline_catalog_package,
     catalog_test_package,
+)
+from .stand_ins import (  # noqa: F401
+    STAND_INS,
+    declared_stand_ins,
+    fetched_weights_planted,
+    declared_bucket_collections,
+    cache_bucket_collections,
 )
 from .page import FrontendPage  # noqa: F401
 from .scripted_llm import (  # noqa: F401

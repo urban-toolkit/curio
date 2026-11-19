@@ -508,6 +508,14 @@
       "expected": "{\"map\": {\"layerRefs\": [{\"dataRef\": \"input_0\", \"getFnv\": \"lanes\", \"getFnvType\": \"quantitative\"}]}}"
     },
     {
+      "name": "a layer chip in a spec on an input of one raster with no layer name is that raster, as on one frame: the name the input is read by",
+      "language": "json",
+      "code": "{\"map\": {\"layerRefs\": [{\"dataRef\": [!! input_0:elevation !!], \"getFnv\": \"band_1\"}]}}",
+      "widgets": [],
+      "inputs": [{"slot": 0, "dataType": "raster", "columns": []}],
+      "expected": "{\"map\": {\"layerRefs\": [{\"dataRef\": \"input_0\", \"getFnv\": \"band_1\"}]}}"
+    },
+    {
       "name": "a layer chip in a spec counts a one-frame input in circle order, beside an input of several layers read by their names",
       "language": "json",
       "code": "{\"map\": {\"layerRefs\": [{\"dataRef\": [!! input_2:table_osm_parks !!]}, {\"dataRef\": [!! input_1:anything !!]}]}}",

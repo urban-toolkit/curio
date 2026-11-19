@@ -43,7 +43,9 @@ reading at all the job keeps the maximum and no limit, with a warning.
     python3 scripts/ci_memory_budget.py --github-env
     python3 scripts/ci_memory_budget.py sample --out ci-report/memory.tsv
     python3 scripts/ci_memory_budget.py report --samples ci-report/memory.tsv
-    docker compose -p curio-ci exec -T curio cat /sys/fs/cgroup/memory.events \\
+    docker compose -p curio-ci exec -T curio sh -c 'cat /sys/fs/cgroup/memory.events; \\
+        echo "# memory.events.local"; cat /sys/fs/cgroup/memory.events.local; \\
+        echo "# nodes"; cat /sys/fs/cgroup/nodes/memory.events' \\
         | python3 scripts/ci_memory_budget.py kills
 """
 
@@ -371,31 +373,73 @@ def report(args) -> int:
 
 def oom_kills(text: str) -> int | None:
     """The ``oom_kill`` count in the text of a cgroup's ``memory.events``."""
-    match = re.search(r"^oom_kill\s+(\d+)\s*$", text, re.MULTILINE)
+    return _counter(text, "oom_kill")
+
+
+def _counter(text: str, name: str) -> int | None:
+    match = re.search(rf"^{name}\s+(\d+)\s*$", text, re.MULTILINE)
     return int(match.group(1)) if match else None
+
+
+def memory_events(text: str) -> dict[str, str]:
+    """The sections of what stop-stack reads in the CI container: its
+    ``memory.events`` first, then a section after each ``# <name>`` line
+    (``memory.events.local``, the container's own; ``nodes``, its isolated
+    nodes' places, ``utk_curio/sandbox/isolation/node_cgroups.py``)."""
+    sections, name = {"": []}, ""
+    for line in text.splitlines():
+        if line.startswith("# "):
+            name = line[2:].strip()
+            sections[name] = []
+        else:
+            sections[name].append(line)
+    return {key: "\n".join(lines) for key, lines in sections.items()}
 
 
 def kills(args) -> int:
     """Say how many processes the kernel killed in the CI container at its
     memory limit, from its ``memory.events`` on stdin. A test sees such a kill
-    only as a server that stopped answering ("Could not reach the sandbox")."""
-    count = oom_kills(sys.stdin.read())
+    only as a server that stopped answering ("Could not reach the sandbox").
+
+    The container's ``memory.events`` counts every kill below it too, so an
+    isolated node stopped at its own budget, in its place under ``nodes``,
+    is counted apart from it: what the node's test reads is its budget's
+    message, which a test may well ask for. Kills at the container's limit
+    are those outside ``nodes``, and the container's own OOMs
+    (``memory.events.local``) whichever process went.
+    """
+    sections = memory_events(sys.stdin.read())
+    total = oom_kills(sections[""])
+    nodes = sections.get("nodes", "")
+    node_kills = oom_kills(nodes) or 0
+    budget_stops = _counter(nodes, "oom") or 0
+    at_the_limit = _counter(sections.get("memory.events.local", ""), "oom") or 0
     limit = os.environ.get("CURIO_CI_MEM_LIMIT", "")
     at = (f"its {int(limit[:-1]) / 1024:.1f} GiB memory limit"
           if re.fullmatch(r"\d+m", limit) else "its memory limit")
+    count = None if total is None else max(total - node_kills, 0)
+    lines = []
     if count is None:
-        line = "No memory.events reading for the CI container"
+        lines.append("No memory.events reading for the CI container")
     elif count:
-        line = (f"The kernel killed {count} process(es) in the CI container at {at} "
-                "(memory.events oom_kill): a server there stopped, and the tests that "
-                "needed it failed")
-        print(f"::error::{line}")
+        lines.append(f"The kernel killed {count} process(es) in the CI container at {at} "
+                     "(memory.events oom_kill): a server there stopped, and the tests that "
+                     "needed it failed")
+        print(f"::error::{lines[-1]}")
+    elif at_the_limit:
+        lines.append(f"The CI container reached {at} {at_the_limit} time(s) (memory.events.local oom): "
+                     "the kernel killed isolated nodes there, and their tests failed")
+        print(f"::error::{lines[-1]}")
     else:
-        line = f"The kernel killed no process in the CI container at {at}"
-    print(line)
+        lines.append(f"The kernel killed no process in the CI container at {at}")
+    if budget_stops:
+        lines.append(f"Isolated nodes stopped at their own memory budget (--exec-memory-mb): "
+                     f"{budget_stops} (nodes' memory.events oom)")
+    for line in lines:
+        print(line)
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
-            fh.write(f"### Memory limit\n\n- {line}\n\n")
+            fh.write("### Memory limit\n\n" + "".join(f"- {line}\n" for line in lines) + "\n")
     return 0
 
 

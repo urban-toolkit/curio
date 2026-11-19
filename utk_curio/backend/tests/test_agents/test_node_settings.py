@@ -2,9 +2,9 @@
 sets them on a node it places: shaped as a node's ``metadata.dataPool`` and
 ``metadata.simpleVis`` in the Trill schema, judged by each node's own rule and
 worded as the node's own controls word them, with an error the model can act
-on for each one that is wrong. What a saved node's settings make it do,
-a Spatial Join's operation and output among them, is what ``dataflow.read``
-shows of it.
+on for each one that is wrong. What a saved node's settings make it do is
+what ``dataflow.read`` shows of it; a Spatial Join's operation and output
+are its widgets' values.
 
 The pool's rule is ``utils/dataPoolSpec.ts``: a value that names no mode reads
 as OVERWRITE, and only the modes that are not OVERWRITE are written.
@@ -279,24 +279,29 @@ def _row(metadata: dict) -> dict:
 def test_dataflow_read_shows_what_each_nodes_settings_make_it_do():
     """What an agent reads of a saved node is what the node does with it: the
     pool's modes other than Overwrite, the view's image column as the view
-    trims it, and the join's operation and output other than its defaults."""
+    trims it, and the join's operation and output, its widgets' values."""
+    from utk_curio.backend.tests.test_agents.test_node_settings_write import OPERATION, OUTPUT
+
     pool = _row({"dataPool": {"insideChart": "OVERWRITE", "betweenCharts": "MERGE_AND"}})
     assert pool["dataPool"] == {"betweenCharts": "MERGE_AND"}
     view = _row({"simpleVis": {"imageColumn": " overlay_url "}})
     assert view["simpleVis"] == {"imageColumn": "overlay_url"}
-    join = _row({"spatialJoin": {"predicate": "within", "output": "counts"}})
-    assert join["spatialJoin"] == {"predicate": "within", "output": "counts"}
-    assert _row({"spatialJoin": {"predicate": "nearest"}})["spatialJoin"] == {"predicate": "nearest"}
+    join = _row({"widgets": [OPERATION, {**OUTPUT, "value": "counts"}]})
+    assert join["widgets"] == [
+        {"name": "operation", "type": "choice", "value": "intersects"},
+        {"name": "output", "type": "choice", "value": "counts"},
+    ]
+    assert "spatialJoin" not in join
 
 
 def test_dataflow_read_shows_no_setting_a_node_reads_as_its_default():
-    # The pool reads a value that names no mode as Overwrite, the view an
-    # empty name as every image column, and the join a predicate it does not
-    # run as intersects.
+    # The pool reads a value that names no mode as Overwrite, and the view an
+    # empty name as every image column. The setting a Spatial Join kept before
+    # its operation and output were its widgets makes no node do anything.
     plain = _row({
         "dataPool": {"insideChart": "OVERWRITE", "betweenCharts": "MERGE_(AND)"},
         "simpleVis": {"imageColumn": "  "},
-        "spatialJoin": {"predicate": "near", "output": "pairs"},
+        "spatialJoin": {"predicate": "within", "output": "counts"},
     })
     assert not {"dataPool", "simpleVis", "spatialJoin"} & set(plain), plain
     assert not {"dataPool", "simpleVis", "spatialJoin"} & set(_row({})), _row({})

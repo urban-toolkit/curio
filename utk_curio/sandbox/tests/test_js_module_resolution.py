@@ -133,15 +133,6 @@ class TestResolvePkgEntryUrl(unittest.TestCase):
         self.assertIsNotNone(url)
         self.assertIn('/autk-db/', url)
 
-    def test_subpath_specifier_resolves_the_package_root(self):
-        # Only the top-level specifier is rewritten; the package's own internal
-        # imports still resolve relative to its installed location.
-        _skip_unless_installed(self, 'quickselect', 'index.js')
-        self.assertEqual(
-            resolve_pkg_entry_url('quickselect/whatever', _ROOT_NODE_MODULES),
-            resolve_pkg_entry_url('quickselect', _ROOT_NODE_MODULES),
-        )
-
     def test_non_bare_specifiers_are_rejected(self):
         for spec in ('', './local.js', '../up.js', '/abs.js',
                      'node:fs', 'https://cdn.example/x.js'):
@@ -225,6 +216,65 @@ class TestResolvePkgEntryUrlSynthetic(unittest.TestCase):
         )
         url = resolve_pkg_entry_url('types-only', self.root)
         self.assertTrue(url.endswith('/fallback.js'), url)
+
+    def _write_grammar_shaped_pkg(self):
+        # autk-grammar 5's shape: a main entry, and a "./data" entry of its own.
+        return self._write_pkg(
+            '@scope/grammar',
+            {'exports': {
+                '.': {
+                    'types': './dist/index.d.ts',
+                    'import': './dist/grammar.js',
+                    'require': './dist/grammar.cjs',
+                },
+                './data': {
+                    'types': './dist/data/data.d.ts',
+                    'import': './dist/data/data.js',
+                    'require': './dist/data/data.cjs',
+                },
+            }},
+            files=('dist/grammar.js', 'dist/grammar.cjs', 'dist/data/data.js', 'dist/data/data.cjs'),
+        )
+
+    def test_an_exported_subpath_resolves_to_its_own_file(self):
+        pkg_dir = self._write_grammar_shaped_pkg()
+        self.assertEqual(
+            resolve_pkg_entry_url('@scope/grammar/data', self.root),
+            (pkg_dir / 'dist' / 'data' / 'data.js').resolve().as_uri(),
+            msg="'@scope/grammar/data' must load the package's './data' entry, not its main one",
+        )
+        self.assertEqual(
+            resolve_pkg_entry_url('@scope/grammar', self.root),
+            (pkg_dir / 'dist' / 'grammar.js').resolve().as_uri(),
+        )
+
+    def test_a_subpath_the_exports_do_not_export_resolves_to_none(self):
+        self._write_grammar_shaped_pkg()
+        # A string, or a condition map with no "." key, exports the root alone.
+        self._write_pkg('string-exports', {'exports': './index.js'})
+        self._write_pkg('condition-exports', {'exports': {'import': './index.js'}})
+        for spec in ('@scope/grammar/map', '@scope/grammar/dist/grammar.js',
+                     '@scope/grammar/data/more', 'string-exports/index.js',
+                     'condition-exports/index.js'):
+            self.assertIsNone(resolve_pkg_entry_url(spec, self.root), msg=spec)
+
+    def test_a_subpath_of_a_package_without_exports_is_a_file_in_it(self):
+        pkg_dir = self._write_pkg('no-exports', {'main': 'index.js'},
+                                  files=('index.js', 'lib/util.js'))
+        self.assertEqual(
+            resolve_pkg_entry_url('no-exports/lib/util.js', self.root),
+            (pkg_dir / 'lib' / 'util.js').resolve().as_uri(),
+        )
+        self.assertIsNone(resolve_pkg_entry_url('no-exports/lib/missing.js', self.root))
+
+    def test_an_escaping_subpath_is_refused(self):
+        outside = pathlib.Path(self._tmp.name) / 'outside.js'
+        outside.write_text('export default 1;\n', encoding='utf-8')
+        self._write_pkg('plain-escaper', {'main': 'index.js'})
+        self._write_pkg('exports-escaper',
+                        {'exports': {'.': './index.js', './out': '../../outside.js'}})
+        for spec in ('plain-escaper/../../outside.js', 'exports-escaper/out'):
+            self.assertIsNone(resolve_pkg_entry_url(spec, self.root), msg=spec)
 
 
 class TestJsImportIsCwdIndependent(unittest.TestCase):

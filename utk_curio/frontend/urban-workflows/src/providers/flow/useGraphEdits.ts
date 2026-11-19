@@ -12,6 +12,7 @@ import {
     portsFedBy,
     withPortValues,
     wiredInputSlots,
+    nodeInputFromPorts,
     nodeInputFromSlots,
     compactedHandles,
     withoutSlot,
@@ -22,6 +23,7 @@ import { normalizeFlowInput } from "../../utils/flowOutputRef";
 import { markSelectionEcho, SelectionEchoOptions } from "../../utils/selectionEcho";
 import { nodeCodeWriter } from "../../utils/nodeCodeWriters";
 import { nodeCode } from "../../utils/editFeatures/mapLayerEdits";
+import { isInteractionEdge } from "../../contracts/interactionEdges";
 import type { IOutput } from "./flowTypes";
 import { nodeGrowsInputs, nodeHasSeveralPorts } from "./growingInputs";
 
@@ -56,11 +58,14 @@ function withoutCircles(node: Node, deleted: Edge[], remaining: Edge[]): Node {
     return { ...node, data: { ...node.data, inputSlots, sourceSlots, input: nodeInputFromSlots(inputSlots, wired) } };
 }
 
-/** *node* without the inputs the *deleted* connections into it handed it. */
-function withoutInputs(node: Node, deleted: Edge[]): Node {
+/** *node* without the inputs the *deleted* connections into it handed it.
+ *  *remaining* are the connections the canvas holds without them: a node with
+ *  several ports reads what its other ports still hold, each on its circle. */
+function withoutInputs(node: Node, deleted: Edge[], remaining: Edge[]): Node {
     const data = { ...node.data, input: "", source: "" };
     if (nodeHasSeveralPorts(node)) {
         data.portInputs = withPortValues(node.data.portInputs, deleted.map((e) => e.targetHandle ?? "in"), "");
+        data.input = nodeInputFromPorts(data.portInputs, wiredInputSlots(remaining, node.id));
     }
     return { ...node, data };
 }
@@ -175,7 +180,7 @@ export function useGraphEdits({
         const currentEdges = (edgesOverride ?? reactFlow.getEdges()) as any[];
         const nodesAffected: string[] = [];
         for (const edge of currentEdges) {
-            if (edge.sourceHandle == "in/out" && edge.targetHandle == "in/out") continue;
+            if (isInteractionEdge(edge)) continue;
             if (sourceId == edge.source) {
                 nodesAffected.push(edge.target);
             }
@@ -206,9 +211,10 @@ export function useGraphEdits({
                     : { ...node.data, input: inputPayload, source: sourceId };
                 // `input` names only the latest arrival: two that land in one
                 // render leave it the second. A node with several ports reads
-                // what each of them holds.
+                // what each of them holds, each on its circle.
                 if (nodeHasSeveralPorts(node)) {
                     data.portInputs = withPortValues(node.data.portInputs, portsFedBy(currentEdges, node.id, sourceId), inputPayload);
+                    data.input = nodeInputFromPorts(data.portInputs, wiredInputSlots(currentEdges, node.id));
                 }
                 return { ...node, data };
             })
@@ -229,7 +235,7 @@ export function useGraphEdits({
         targetHandle: string,
         edges: Edge[],
     ) => {
-        if (sourceHandle == "in/out" && targetHandle == "in/out") return;
+        if (isInteractionEdge({ sourceHandle, targetHandle })) return;
 
         // Why: previously this read `outputs` via a side effect inside a
         // setOutputs reducer. React Flow's setNodes (zustand) flushes its
@@ -255,6 +261,11 @@ export function useGraphEdits({
                 const data = { ...node.data, input: normalized, source: outId };
                 if (nodeHasSeveralPorts(node)) {
                     data.portInputs = withPortValues(node.data.portInputs, [targetHandle ?? "in"], normalized);
+                    // The new edge is not in *edges* yet: its circle counts as wired.
+                    const slot = inputSlotOf(targetHandle);
+                    const wired = Array.from(new Set([...wiredInputSlots(edges, node.id), ...(slot >= 0 ? [slot] : [])]))
+                        .sort((a, b) => a - b);
+                    data.input = nodeInputFromPorts(data.portInputs, wired);
                 }
                 return { ...node, data };
             })
@@ -347,23 +358,16 @@ export function useGraphEdits({
                 const resetInput = connection.target;
                 markNodeStaleRef.current(connection.target);
 
-                // skiping syncronized connections
-                if (
-                    connection.sourceHandle != "in/out" &&
-                    connection.targetHandle != "in/out"
-                ) {
+                // An interaction edge leaves no version and resets no input:
+                // it carries selections, never data. onConnect joins an
+                // interaction handle to an interaction handle alone, so an
+                // edge has one at both ends or at neither.
+                if (!isInteractionEdge(connection)) {
                     TrillGenerator.addNewVersionProvenance(
                         reactFlow.getNodes(),
                         reactFlow.getEdges().filter((e: Edge) => e.id !== connection.id),
                         workflowNameRef.current, "", "Connection deleted"
                     );
-                }
-
-                // skiping syncronized connections
-                if (
-                    connection.sourceHandle != "in/out" ||
-                    connection.targetHandle != "in/out"
-                ) {
                     if (options?.remote) {
                         remote.set(connection.target, [...(remote.get(connection.target) ?? []), connection]);
                         continue;
@@ -373,15 +377,9 @@ export function useGraphEdits({
                         growing.set(connection.target, [...(growing.get(connection.target) ?? []), connection]);
                         continue;
                     }
+                    const remaining = reactFlow.getEdges().filter((e: Edge) => !deletedIds.has(e.id));
                     setNodes((nds: any) =>
-                        nds.map((node: any) => {
-                            if (node.id !== resetInput) return node;
-                            const data = { ...node.data, input: "", source: "" };
-                            if (nodeHasSeveralPorts(node)) {
-                                data.portInputs = withPortValues(node.data.portInputs, [connection.targetHandle ?? "in"], "");
-                            }
-                            return { ...node, data };
-                        })
+                        nds.map((node: any) => (node.id === resetInput ? withoutInputs(node, [connection], remaining) : node))
                     );
                 }
             }
@@ -391,7 +389,7 @@ export function useGraphEdits({
                     nds.map((node: any) => {
                         const deleted = remote.get(node.id);
                         if (!deleted) return node;
-                        return nodeGrowsInputs(node) ? withoutCircles(node, deleted, remaining) : withoutInputs(node, deleted);
+                        return nodeGrowsInputs(node) ? withoutCircles(node, deleted, remaining) : withoutInputs(node, deleted, remaining);
                     })
                 );
             }

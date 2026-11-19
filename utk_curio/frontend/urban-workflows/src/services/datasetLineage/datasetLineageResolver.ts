@@ -34,6 +34,7 @@ import {
 import { datasetIdsInCode } from "../datasetCatalog/datasetLoaderSnippets";
 import { nodeDisplayLabel } from "../../utils/nodeDisplayLabel";
 import { loadsData } from "../../registry/declaredNodes";
+import { isInteractionEdge } from "../../contracts/interactionEdges";
 
 export interface LineageCanvasNode {
   /** ReactFlow node id (used for edge matching); usually equal to data.nodeId. */
@@ -298,7 +299,7 @@ export function selectDatasetDownstreamUsage(
     for (const edge of edges || []) {
       if (!edge || !edge.source || !carrierIds.has(edge.source)) continue;
       // Skip bidirectional interaction/sync edges — not data consumption.
-      if (edge.sourceHandle === "in/out" && edge.targetHandle === "in/out") continue;
+      if (isInteractionEdge(edge)) continue;
       const targetId = edge.target;
       if (!targetId || carrierIds.has(targetId) || seenNodeIds.has(targetId)) continue;
       seenNodeIds.add(targetId);

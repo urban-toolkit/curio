@@ -35,7 +35,7 @@ from utk_curio.backend.app.agents.application.solve import budgets as agents_bud
 from utk_curio.backend.app.agents.application.solve import batch as agents_batch
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
-from utk_curio.backend.app.collaboration import dataflow_docs
+from utk_curio.backend.app.collaboration import dataflow_docs, owner_guard
 
 log = logging.getLogger(__name__)
 
@@ -228,6 +228,9 @@ def solve_attachment_stream(
     path.
     """
 
+    # Only the process that owns the dataflow runs its Solves, refused before
+    # anything is read or repaired.
+    owner_guard.refuse(project_id, what="a Solve")
     spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
     # DEC-080 (dev/126): Solve hard-invokes node.content.generate and, for a
@@ -302,15 +305,14 @@ def solve_attachment_stream(
         session_id = record.get("sessionId")
         # dev/115: everything that needs the REQUEST context is resolved here, as
         # the job thread holds no ``g``: the batch's grounding base (catalog refs,
-        # mission + plan texts), the sandbox's dataset-path mapping and collections.
+        # mission + plan texts). A dataset's path and a collection are looked
+        # up when a round's code reads them, as the acting user below
+        # (``grounding._session_dataset_paths``, ``_session_collections``): on
+        # a pip install a lookup downloads a shipped dataset the pip package
+        # leaves out, and one of a collection mounts its bucket.
         solve_ground = agents_grounding._solve_grounding_base(user_key, project_id, spec, nodes_by_id, targets)
-        solve_dataset_paths = (
-            agents_grounding._resolve_catalog_execution_paths(project_id, list(solve_ground.get("catalog_ids") or {}))
-            if verify else {}
-        )
         solve_collections = (
-            agents_grounding._resolve_catalog_collections(project_id, user_key, solve_ground.get("catalog_ids") or {})
-            if verify else {}
+            agents_grounding._solve_collections(solve_ground.get("catalog_ids") or {}) if verify else {}
         )
         # dev/126: and the Data Catalog rows the discovery delegate is handed.
         agents_acquire._settle_discovery_acquisitions(user_key, project_id)
@@ -322,7 +324,7 @@ def solve_attachment_stream(
             user_key, project_id, attachment_id, config, targets, nodes_by_id,
             manifest, coord, session_id, solve_execution_id, stop,
             spec=spec, verify=verify,
-            grounding_base=solve_ground, dataset_paths=solve_dataset_paths, collections=solve_collections,
+            grounding_base=solve_ground, collections=solve_collections,
             catalog_rows=solve_catalog_rows, acting_user=solve_user,
             retry_of=retry_of if isinstance(retry_of, str) else None,
             # Who asked, as the room names them, read here: the job's thread holds no request.
@@ -630,5 +632,7 @@ def _artifact_summary_fn():
 SOLVE_PROGRESS_EVENTS = {
     "generation_round": "node_round",
     "node_executed": "node_executed",
+    # How far a download on first use of what a node reads has come.
+    "node_download": "node_download",
     "round_verdict": "node_verdict",
 }

@@ -4,6 +4,7 @@ from werkzeug.serving import WSGIRequestHandler, is_running_from_reloader
 
 from utk_curio.backend import thread_stacks
 from utk_curio.backend.app import create_app
+from utk_curio.backend.app.collaboration import owner_guard
 from utk_curio.backend.config import CURIO_SEED_EXAMPLES
 from utk_curio.common import backend_processes
 from utk_curio.common.request_deadline import RequestHeadDeadline
@@ -23,8 +24,6 @@ DOES_STARTUP_WORK = backend_processes.is_home() and (
     not _uses_reloader() or is_running_from_reloader()
 )
 
-app = create_app(startup_work=DOES_STARTUP_WORK)
-
 
 # Shared with sandbox/server.py; see utk_curio/backend/reloader.py.
 from utk_curio.backend.reloader import (  # noqa: E402,F401  (re-exported)
@@ -36,8 +35,9 @@ from utk_curio.backend.reloader import (  # noqa: E402,F401  (re-exported)
 def _seed_the_shared_guest():
     """The shared guest at a start: its row, its hosted guests' copies
     dropped, its projects read back from the files, the agents every account
-    has, and with ``--with-examples`` the examples and their datasets put
-    back. Startup work (``DOES_STARTUP_WORK``)."""
+    has, the packages ``--guest-packages`` names, and with ``--with-examples``
+    the examples and their datasets put back. Startup work
+    (``DOES_STARTUP_WORK``)."""
     with app.app_context():
         try:
             from utk_curio.backend.app.users.services import _shared_guest_user
@@ -58,6 +58,17 @@ def _seed_the_shared_guest():
             # The agents every account has by default, before the examples are put
             # back, so each example gets them, and every guest's copy of one too.
             seed_default_agents(guest)
+            # The catalog packages every hosted guest has, put in the account as
+            # an add puts them there; what the flag no longer names is taken off.
+            # A failure here leaves the examples to be put back all the same.
+            try:
+                from utk_curio.backend.app.packages.service import add_guest_packages
+
+                given = add_guest_packages(_user_dir_key(guest))
+                if given:
+                    app.logger.info("Hosted guests have the package(s) %s", ", ".join(given))
+            except Exception:
+                app.logger.warning("Could not give hosted guests the --guest-packages packages", exc_info=True)
             if CURIO_SEED_EXAMPLES:
                 from utk_curio.backend.app.projects.seed import seed_example_projects
                 s = seed_example_projects(guest)
@@ -78,8 +89,14 @@ def _seed_the_shared_guest():
             app.logger.warning("Could not ensure guest user on startup", exc_info=True)
 
 
-if DOES_STARTUP_WORK:
-    _seed_the_shared_guest()
+# In a start of several processes the launcher starts the others once this
+# one serves, so while it does the startup work it owns every dataflow, then
+# keeps no doc of one another process owns (owner_guard.py).
+with owner_guard.before_the_others_serve(DOES_STARTUP_WORK):
+    app = create_app(startup_work=DOES_STARTUP_WORK)
+    if DOES_STARTUP_WORK:
+        _seed_the_shared_guest()
+
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -137,6 +154,15 @@ def _socketio_run_kwargs():
     }
 
 
+def _bucket_mount_proxy_host(run_kwargs):
+    """Where the bucket mount service's proxy listens: where the backend
+    listens, the launcher's ``--backend-host``. In a start of several
+    processes that is where nginx listens (``ROUTER_HOST_VARIABLE``), not
+    this process's own 127.0.0.1, which the service's container cannot
+    reach."""
+    return os.getenv(backend_processes.ROUTER_HOST_VARIABLE) or run_kwargs["host"]
+
+
 def serve():
     """Serve the backend, Socket.IO included, until it is stopped."""
     # SIGUSR1 writes every thread's stack to a file (thread_stacks.py), which
@@ -152,19 +178,22 @@ def serve():
     )
 
     run_kwargs = _socketio_run_kwargs()
-    # The hourly sample of both servers' open files, from now: startup work,
-    # in the home process when it serves (DOES_STARTUP_WORK). Under the
-    # reloader this function also runs in the process that only watches the
-    # files, which serves nothing.
+    # The hourly sample of this process's open files, from now: in the home
+    # process when it serves (DOES_STARTUP_WORK), the sandbox's with it, and
+    # in every other process of a start of several. Under the reloader this
+    # function also runs in the process that only watches the files, which
+    # serves nothing.
+    from utk_curio.backend.app.monitor import open_files as monitor_open_files
+
+    if monitor_open_files.sampler_starts_here(DOES_STARTUP_WORK):
+        monitor_open_files.start_sampler(app)
     if DOES_STARTUP_WORK:
         from utk_curio.backend.app.discovery import service as discovery_service
-        from utk_curio.backend.app.monitor import open_files as monitor_open_files
 
-        monitor_open_files.start_sampler(app)
         # When --bucket-mounts-dir and --bucket-mount-socket name a bucket
-        # mount service: its one way out, a proxy on the backend's own host,
+        # mount service: its one way out, a proxy where the backend listens,
         # then its self-test, once; /monitor shows how it went.
-        discovery_service.start_bucket_mount_proxy(run_kwargs["host"])
+        discovery_service.start_bucket_mount_proxy(_bucket_mount_proxy_host(run_kwargs))
         discovery_service.start_bucket_mount_check()
 
     # The app's own SocketIO server (extensions.init_socketio), which

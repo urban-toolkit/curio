@@ -137,6 +137,20 @@ def project_write(project_id: str) -> str:
     return own
 
 
+def refuse_a_hosted_guest(action: str) -> None:
+    """Refuse *action*, such as "add packages to all projects", to a hosted
+    guest with a 403 before anything is written
+    (``capabilities.catalog_entry_refusal``): every guest shares one account,
+    whose store every guest's nodes run from and whose defaults every guest's
+    catalog reads as added, so one guest's change would be every guest's.
+    Without ``--deploy`` the shared guest is the one local user, which may."""
+    from utk_curio.backend.app.users.capabilities import catalog_entry_refusal
+
+    refusal = catalog_entry_refusal(g.user, action)
+    if refusal:
+        raise PackageServiceError(refusal, 403)
+
+
 def prunes_the_store() -> bool:
     """Whether a package's removal from a dataflow may prune the caller's
     store and its defaults: only for a caller who may install into it

@@ -11,7 +11,7 @@
 // (dashboardRunFiles). A node a later change no longer reaches gets its saved
 // output back, and so does every node when the values are the saved ones.
 //
-// A step only a browser runs (an Autark compute node, a Spatial Join) is the
+// A step only a browser runs (an Autark compute node) is the
 // page's. The run ends asking for it (`needs_canvas`); the page runs the node
 // as a canvas's run on the server walks its browser part
 // (usePlayAll.playNodes), sends what it made to the run (dashboardRunSteps),
@@ -23,12 +23,13 @@ import type { ReactFlowInstance } from "reactflow";
 import type { useToastContext } from "../ToastProvider";
 import { dashboardRunsApi, type DashboardRunEvent } from "../../services/runs/dashboardRunsApi";
 import { forgetDashboardRunFiles, rememberDashboardRunFiles } from "../../services/runs/dashboardRunFiles";
+import { forgetDashboardMedia } from "../../services/runs/dashboardMedia";
 import { askPage, forgetPageSteps, keepPageResult, pageResultNotKept } from "../../services/runs/dashboardRunSteps";
 import { dashboardSourceNodeIds } from "../../utils/dashboardLayout";
 import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft";
 import { dashboardValues, type DashboardValues } from "../../utils/widgets/dashboardControls";
 import type { IOutput } from "./flowTypes";
-import { STOPPED_MESSAGE, nodeChangeFor, type NodeChange } from "./serverRunSteps";
+import { STOPPED_MESSAGE, nodeChangeFor, showRunning, type NodeChange } from "./serverRunSteps";
 import type { StepOutcomes } from "./useStepOutcomes";
 
 interface FollowedDashboardRun {
@@ -86,6 +87,21 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
     // left with nothing says (useGrammarInputState), where "Computing..."
     // would wait for nothing. The next start clears it.
     const [stopped, setStopped] = useState<string | null>(null);
+    // How far each step's downloads on first use have come, by node, as its
+    // progress says (owner, 11-17, "2b"): the node that downloads is often
+    // hidden, so the tiles below it say it under "Computing..."
+    // (useGrammarInputState). A step's empty message, its outcome and the
+    // run's end take it away.
+    const [downloads, setDownloads] = useState<Record<string, string>>({});
+    const sayDownload = (nodeId: string, message: string) => {
+        setDownloads((prev) => {
+            if (message) return prev[nodeId] === message ? prev : { ...prev, [nodeId]: message };
+            if (!(nodeId in prev)) return prev;
+            const rest = { ...prev };
+            delete rest[nodeId];
+            return rest;
+        });
+    };
     const projectIdRef = useRef<string | null>(null);
     // Between a start and its answer.
     const startingRef = useRef(false);
@@ -109,11 +125,9 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
 
     const apply = (run: FollowedDashboardRun, nodeId: string, change: NodeChange | null) => {
         if (!change) return;
-        if (change.kind === "running") {
-            run.started.add(nodeId);
-            if (!run.applied.has(nodeId)) outcomes.showOnNode(nodeId, { code: "exec", content: "" });
-            return;
-        }
+        // A running node says what its run does, such as how far what it
+        // reads has downloaded, as on the canvas (useServerRun).
+        if (showRunning(change, nodeId, run, outcomes.showOnNode)) return;
         if (run.applied.has(nodeId)) return;
         run.applied.add(nodeId);
         if (change.kind === "result") {
@@ -133,12 +147,13 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
         run.controller.abort();
         if (followedRef.current === run) followedRef.current = null;
         setActive(false);
+        setDownloads({});
     };
 
     /**
      * What the page made of *nodeId*, which it just ran for a run: the output
      * the node sent the run itself (an Autark node does), or its output held
-     * on the page, sent to the run now (a Spatial Join's rows).
+     * on the page, sent to the run now (rows a node made on the page).
      */
     const pageResultOf = async (nodeId: string): Promise<string | null> => {
         const output: any = outputsRef.current.find((o) => o.nodeId === nodeId)?.output;
@@ -258,6 +273,14 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
             }
             return;
         }
+        if (event.kind === "step_progress") {
+            // The step still runs: only what its node says changes, and what
+            // the tiles below it say, until its outcome lands.
+            if (!run.applied.has(event.nodeId)) sayDownload(event.nodeId, event.message ?? "");
+            apply(run, event.nodeId, nodeChangeFor(event, undefined, { started: true }));
+            return;
+        }
+        if (event.kind === "step_finished") sayDownload(event.nodeId, "");
         if (event.kind === "step_finished" && event.status === "error") run.failed.push(event.nodeId);
         if (event.kind !== "step_started" && event.kind !== "step_finished") return;
         if (event.kind === "step_finished" && event.status === "browser") {
@@ -309,6 +332,7 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
         startingRef.current = true;
         setActive(true);
         setStopped(null);
+        setDownloads({});
         const values = dashboardValues(reactFlow.getNodes());
         let started;
         try {
@@ -347,13 +371,15 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
         if ([...sources].some((nodeId) => !savedRef.current?.outputs.has(nodeId))) void start();
     };
 
-    // Leaving the page stops following; what the runs made is not read again.
+    // Leaving the page stops following; what the runs made is not read again,
+    // nor are the files the dashboard's outputs name.
     useEffect(() => () => {
         const run = followedRef.current;
         if (run) { run.done = true; run.controller.abort(); }
         forgetDashboardRunFiles();
+        forgetDashboardMedia();
         forgetPageSteps();
     }, []);
 
-    return { active, stopped, start, opened };
+    return { active, stopped, downloads, start, opened };
 }

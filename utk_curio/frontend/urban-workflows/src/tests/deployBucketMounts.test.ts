@@ -92,8 +92,11 @@ describe("The deploy's bucket mount service", () => {
     });
 
     test("each stack's command line passes them, after setting them", () => {
+        // Each also names its backend processes, after the mounts.
         for (const [, , job] of STACKS) {
-            const command = job.search(/printf ' {4}command: \[[^\n]*"\$mounts_args" >> docker-compose\.site\.yml\n/);
+            const command = job.search(
+                /printf ' {4}command: \[[^\n]*"\$mounts_args" "\$processes_args" >> docker-compose\.site\.yml\n/,
+            );
             expect(command).toBeGreaterThan(-1);
             expect(job.indexOf(`grep -q -e '"--bucket-mounts-dir"'`)).toBeLessThan(command);
         }

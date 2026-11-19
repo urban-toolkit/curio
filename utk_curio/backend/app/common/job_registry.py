@@ -15,6 +15,12 @@ source of truth for liveness and the event log only, and whatever owns the work
 persists its own record. A job can be registered before it runs
 (:meth:`JobRegistry.register`, then :meth:`JobRegistry.run`), so a record its
 caller writes in between already names a live job.
+
+A key's jobs are its dataflow's, which one backend process owns, so one live
+job per key holds in this process alone. A user's jobs can run in several, so
+a registry made *shared* counts its cap in every backend process of a start
+that runs several (``shared_budgets.Places``), each live job holding its place
+there until it ends.
 """
 
 from __future__ import annotations
@@ -27,6 +33,8 @@ import traceback
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Iterator
+
+from utk_curio.backend.app.common import shared_budgets
 
 log = logging.getLogger(__name__)
 
@@ -92,6 +100,9 @@ class Job:
     thread: threading.Thread | None = None
     # Secret values taken out of a failure before it is published or logged.
     redact_values: dict = field(default_factory=dict, repr=False)
+    #: Its place in its user's cap across processes, while it is live
+    #: (``shared_budgets.Place``), when the registry counts the cap there.
+    place: Any = field(default=None, repr=False, compare=False)
 
     def __post_init__(self):
         if self.events is None:
@@ -119,7 +130,8 @@ class JobRegistry:
 
     *busy_message* is the refusal when a job already runs for a key,
     *cap_message* the one when a user is at *max_active_per_user*, which is
-    None for a registry that caps no user.
+    None for a registry that caps no user. A *shared* registry counts that
+    cap in every backend process of a start that runs several.
     """
 
     def __init__(
@@ -132,6 +144,7 @@ class JobRegistry:
         max_events: int,
         busy_message: str,
         cap_message: str,
+        shared: bool = False,
     ):
         self.name = name
         self.kinds = tuple(kinds)
@@ -140,15 +153,28 @@ class JobRegistry:
         self.max_events = max_events
         self.busy_message = busy_message
         self.cap_message = cap_message
+        self._places = (
+            shared_budgets.Places(f"{name}-jobs") if shared and max_active_per_user is not None else None
+        )
         self._lock = threading.Lock()
         self._jobs: dict[str, Job] = {}
         self._by_key: dict[tuple[str, str], str] = {}
 
     def reset(self) -> None:
-        """Test seam: drop every job (threads already running finish unobserved)."""
+        """Test seam: drop every job (threads already running finish
+        unobserved), and give back the places they held."""
         with self._lock:
+            dropped = list(self._jobs.values())
             self._jobs.clear()
             self._by_key.clear()
+        for job in dropped:
+            if job.place is not None:
+                job.place.release()
+
+    def _capped_across_processes(self) -> bool:
+        """Whether the cap counts every backend process's jobs: a shared
+        registry's, in a start of several."""
+        return self._places is not None and shared_budgets.across_processes()
 
     def is_live(self, job_id: object) -> bool:
         """True iff this process holds a running job with that id."""
@@ -188,12 +214,16 @@ class JobRegistry:
         """Raise :class:`JobRefused` when a job may not start. Called before the
         caller persists anything, so a refusal leaves nothing behind."""
         self.sweep_finished()
+        across = self._capped_across_processes()
         with self._lock:
             current = self._by_key.get((user_key, key))
             if current and (job := self._jobs.get(current)) is not None and job.live:
                 raise JobRefused(self.busy_message, 409, job_id=job.job_id)
-            if self.max_active_per_user is not None and self._active_count(user_key) >= self.max_active_per_user:
+            if (not across and self.max_active_per_user is not None
+                    and self._active_count(user_key) >= self.max_active_per_user):
                 raise JobRefused(self.cap_message, 429)
+        if across and self._places.count(user_key) >= self.max_active_per_user:
+            raise JobRefused(self.cap_message, 429)
 
     def start(
         self,
@@ -237,9 +267,16 @@ class JobRegistry:
         if kind not in self.kinds:
             raise ValueError(f"unknown job kind {kind!r}")
         self.check_can_start(user_key, key)
+        place = None
+        if self._capped_across_processes():
+            # The check and the hold in one step, in every process.
+            place = self._places.take(user_key, self.max_active_per_user)
+            if place is None:
+                raise JobRefused(self.cap_message, 429)
         job = Job(
             job_id=job_id, kind=kind, user_key=user_key, project_id=project_id,
             key=key, max_events=self.max_events, redact_values=dict(redact_values or {}),
+            place=place,
         )
         with self._lock:
             self._jobs[job_id] = job
@@ -311,6 +348,8 @@ class JobRegistry:
             for q in job.subscribers:
                 q.put(_SENTINEL)
             job.subscribers.clear()
+        if job.place is not None:
+            job.place.release()
 
     @staticmethod
     def publish(job: Job, item: tuple[str, Any]) -> None:

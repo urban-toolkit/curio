@@ -54,6 +54,21 @@ def why(response):
     return response.get_data().decode("utf-8", "replace")[:500]
 
 
+def elevation(folder, name="elevation.tif", width=4, height=3):
+    """A Python node's raster: a GeoTIFF of two bands, the first described as
+    ``elevation_m``, with no nodata, 10 m cells from (0, 10 * height)."""
+    import numpy as np
+    import rasterio
+    from rasterio.transform import from_origin
+
+    path = str(Path(folder) / name)
+    with rasterio.open(path, "w", driver="GTiff", width=width, height=height, count=2, dtype="float32",
+                       crs="EPSG:3395", transform=from_origin(0, height * 10, 10, 10)) as target:
+        target.write(np.ones((2, height, width), dtype="float32"))
+        target.set_band_description(1, "elevation_m")
+    return rasterio.open(path)
+
+
 class StoreTestCase(unittest.TestCase):
     """A sandbox with its own launch directory, store and artifacts."""
 
@@ -118,6 +133,27 @@ class TheEnvelopeTest(unittest.TestCase):
             first.close()
             second.close()
             self.assertEqual(len(list(Path(folder).glob("*.tif"))), 1)
+
+    def test_repro_each_band_is_named_by_its_label(self):
+        """A heatmap labels its bands ``<aggregateFn>_<table>``: a Python node
+        gets each band described by its label, so it can tell them apart, and
+        the same cells under other labels are a raster of their own."""
+        case = next(case for case in cases() if len(case["bands"]) == 2)
+        labelled = json.loads(json.dumps(case["envelope"]))
+        properties = labelled["data"]["features"][0]["properties"]
+        properties["bands"] = [{"id": "band_1", "label": "sum_noise"}, {"id": "band_2", "label": "avg_noise"}]
+        with TemporaryDirectory() as folder:
+            dataset = rasters().raster_from_envelope(labelled, folder)
+            plain = rasters().raster_from_envelope(case["envelope"], folder)
+            try:
+                self.assertEqual(dataset.descriptions, ("sum_noise", "avg_noise"))
+                self.assertEqual(plain.descriptions, ("band_1", "band_2"))
+                self.assertNotEqual(dataset.name, plain.name)
+                for index, band in enumerate(case["bands"], start=1):
+                    self.assertEqual(as_lists(dataset.read(index)), case["rows_north_to_south"][band])
+            finally:
+                dataset.close()
+                plain.close()
 
     def test_the_geotiff_the_frontend_writes_is_the_same_grid_to_gdal(self):
         """``writeGeoTiff`` (utils/raster/geotiffWriter.ts) is what autk-db
@@ -267,6 +303,87 @@ class APythonNodeReceivesTheRasterTest(StoreTestCase):
             self.assertEqual(len(list(Path(scratch).glob("autark-raster-*.tif"))), 1)
 
 
+class ALayerChipReadsARasterTest(StoreTestCase):
+    """End to end in the sandbox: a layer chip, which runs as ``curio_layer``,
+    reads a raster an input carries by its name, as it reads a table of that
+    name: an Autark node's raster handed on beside its tables, in process and
+    in an isolated child, and a raster a Python node's dict holds, by its key."""
+
+    CHIPS = (
+        "    heat = curio_layer(input_0, \"heat\", 0)\n"
+        "    roads = curio_layer(input_0, \"roads\", 0)\n"
+        "    return f'{heat.width}x{heat.height} {heat.crs.to_epsg()} {heat.metadata} {len(roads)}'\n"
+    )
+    READ = "4x3 32616 {'name': 'heat'} 1"
+
+    def handed_on(self):
+        """An Autark node's table and its raster ``heat``, in the one
+        ``outputs`` envelope a run in the browser hands them on in."""
+        roads = {
+            "type": "FeatureCollection",
+            "features": [{"type": "Feature", "properties": {"highway": "primary"},
+                          "geometry": {"type": "Point", "coordinates": [447010, 4636990]}}],
+        }
+        return {"dataType": "outputs", "data": [
+            {"dataType": "geodataframe", "data": roads, "layerName": "roads", "layerType": "roads"},
+            cases()[0]["envelope"],
+        ]}
+
+    def test_in_process(self):
+        from utk_curio.sandbox.app.worker import _worker_init, execute_code
+        from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
+
+        _worker_init()
+        art_id = save_to_duckdb(self.handed_on(), "autark-node")
+        result = execute_code(self.CHIPS, art_id, "curio.builtin/python-computation", "dict", save_dataset=False)
+        self.assertEqual(result["stderr"], "")
+        self.assertEqual(load_from_duckdb(result["output"]["path"]), self.READ)
+
+    def test_in_an_isolated_child(self):
+        """The output staged from the store as the parent stages a node's one
+        input (``staging.stage_input``), and read back by the child as it reads
+        a stored value (``rebuild_input``)."""
+        from utk_curio.sandbox.isolation import child, zygote
+        from utk_curio.sandbox.util import staging
+        from utk_curio.sandbox.util.parsers import save_to_duckdb
+
+        art_id = save_to_duckdb(self.handed_on(), "autark-node")
+        with TemporaryDirectory() as scratch:
+            request = {
+                "code": self.CHIPS,
+                "node_type": "curio.builtin/python-computation",
+                "data_type": "dict",
+                "scratch_dir": scratch,
+                "input": staging.stage_input(art_id, scratch),
+                "input_slots": [0],
+                "dataset_paths": {},
+                "session_imports": [],
+                "limits": {},
+            }
+            result = child.run_node(request, zygote.build_namespace_template)
+            self.assertTrue(result["ok"], result["stderr"])
+            self.assertEqual(result["output"], {"kind": "str", "value": self.READ})
+
+    def test_a_raster_a_python_nodes_dict_holds_by_its_key(self):
+        import pandas as pd
+
+        from utk_curio.sandbox.app.worker import _worker_init, execute_code
+        from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
+
+        _worker_init()
+        dem = elevation(self.root)
+        self.addCleanup(dem.close)
+        art_id = save_to_duckdb({"means": pd.DataFrame({"a": [1, 2]}), "dem": dem}, "python-node")
+        code = (
+            "    dem = curio_layer(input_0, \"dem\", 0)\n"
+            "    means = curio_layer(input_0, \"means\", 0)\n"
+            "    return f'{dem.descriptions[0]} {dem.width}x{dem.height} {len(means)}'\n"
+        )
+        result = execute_code(code, art_id, "curio.builtin/python-computation", "dict", save_dataset=False)
+        self.assertEqual(result["stderr"], "")
+        self.assertEqual(load_from_duckdb(result["output"]["path"]), "elevation_m 4x3 2")
+
+
 class TheRasterRouteTest(StoreTestCase):
     """``GET /raster``: a raster artifact as GeoTIFF bytes, by its id."""
 
@@ -337,6 +454,69 @@ class TheRasterRouteTest(StoreTestCase):
         self.assertEqual(self.get(art_id, part=1).status_code, 200)
         self.assertEqual(self.get(art_id, part=0).status_code, 422)
         self.assertEqual(self.get(art_id, part=5).status_code, 404)
+
+    def test_a_raster_in_a_dict_is_served_by_its_part_as_the_canvas_counts_the_dict(self):
+        """An Autark node draws a raster a Python node's dict holds: the canvas
+        reads the dict as a tuple of its frames (``keyedFramesAsOutputs``), in
+        the order a page reads a dict's keys, whole numbers first by their
+        value, then the others as the dict holds them, and asks for the raster
+        by its place there. So ``part`` counts a dict's values in that order."""
+        import pandas as pd
+        import rasterio
+
+        from utk_curio.sandbox.util.parsers import save_to_duckdb
+
+        earlier = rasterio.open(FIXTURE)
+        self.addCleanup(earlier.close)
+        later = elevation(self.root)
+        self.addCleanup(later.close)
+        art_id = save_to_duckdb({"roads": pd.DataFrame({"a": [1]}), "2021": later, "2020": earlier}, "python-node")
+
+        def served_size(part):
+            response = self.get(art_id, part=part)
+            self.assertEqual(response.status_code, 200, why(response))
+            meta = json.loads(response.headers["X-Curio-Raster"])
+            return meta["width"], meta["height"]
+
+        self.assertEqual(served_size(0), (40, 30), "part 0 is the dict's 2020")
+        self.assertEqual(served_size(1), (4, 3), "part 1 is the dict's 2021")
+        self.assertEqual(self.get(art_id, part=2).status_code, 422, "part 2 is its table")
+        self.assertEqual(self.get(art_id, part=3).status_code, 404)
+
+    def test_get_describes_a_raster_beside_its_file(self):
+        """What a chip's preview shows of a raster: ``/get`` sends its file and
+        what the sandbox read of it, the description the raster route's header
+        gives (``raster_meta``) with each band's label, its description or
+        none. The same for a raster in a dict, whose values ``/get`` sends as
+        it sends a tuple's."""
+        import pandas as pd
+
+        from utk_curio.sandbox.util.parsers import save_to_duckdb
+
+        dem = elevation(self.root)
+        self.addCleanup(dem.close)
+        described = {
+            "width": 4,
+            "height": 3,
+            "count": 2,
+            "crs": "EPSG:3395",
+            "crsWkt": None,
+            "transform": [10.0, 0.0, 0.0, 0.0, -10.0, 30.0],
+            "nodata": None,
+            "dtype": "float32",
+            "bands": ["elevation_m", None],
+        }
+        for value, read in (
+            (dem, lambda body: body),
+            ({"roads": pd.DataFrame({"a": [1]}), "dem": dem}, lambda body: body["data"]["dem"]),
+        ):
+            art_id = save_to_duckdb(value, "python-node")
+            response = self.client.get("/get", query_string={"fileName": art_id, "maxRows": 100})
+            self.assertEqual(response.status_code, 200, why(response))
+            envelope = read(response.get_json())
+            self.assertEqual(envelope["dataType"], "raster")
+            self.assertEqual(envelope["data"], dem.name)
+            self.assertEqual(envelope["meta"], described)
 
     def test_a_virtual_raster_is_served_as_a_geotiff(self):
         """geotiff.js reads no VRT, which is what Mosaic Rasters returns."""

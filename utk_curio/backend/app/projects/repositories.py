@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from utk_curio.backend.extensions import db, retry_on_write_conflict
+from utk_curio.backend.app.collaboration import placement
 from utk_curio.backend.app.projects.models import Project, ProjectEditor
 from utk_curio.backend.app.projects.schemas import _slugify
 
@@ -67,7 +68,14 @@ def upsert_project(
     row has to be rebuilt from these arguments to be written at all. Saving a
     dataflow while other people are saving theirs is the commonest way to hit
     that -- 25 of the failures in the first 100-user run were this flush.
+
+    A new dataflow's id is taken once, before that write: it names the backend
+    process with the fewest open rooms and recent placements, and each take
+    counts as one of those placements and passes the turn on
+    (``collaboration/placement.py``), which a retried write must not do again.
     """
+    new_id = None if project_id else placement.new_dataflow_id()
+
     def _apply() -> Project:
         if project_id:
             project = get_for_user(project_id, user_id)
@@ -84,6 +92,7 @@ def upsert_project(
         else:
             slug = _unique_slug(user_id, _slugify(name))
             project = Project(
+                id=new_id,
                 user_id=user_id,
                 name=name,
                 slug=slug,

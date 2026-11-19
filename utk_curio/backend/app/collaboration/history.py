@@ -64,7 +64,7 @@ from pycrdt import Map, write_message
 
 from utk_curio.backend.app.collaboration import dataflow_docs, doc_mapping, room_state
 from utk_curio.backend.app.common import record_clock
-from utk_curio.backend.app.projects import storage
+from utk_curio.backend.app.projects import saved_joins, storage
 from utk_curio.backend.config import COLLAB_NAMESPACE
 
 logger = logging.getLogger(__name__)
@@ -1230,13 +1230,15 @@ def follows(user_key: str, project_id: str, earlier: dict, later: dict) -> bool:
 
 def dataflow_at(user_key: str, project_id: str, point_id: str) -> Optional[dict]:
     """The dataflow as it stood at the point *point_id*, the part the doc
-    holds; ``None`` for no such point, or one whose log cannot be read."""
+    holds; ``None`` for no such point, or one whose log cannot be read. A
+    version from before the Spatial Join had code reads with each join saved
+    so converted (``saved_joins``), so putting it back puts back its code."""
     folder = _folder(user_key, project_id)
     point = next((p for p in _read_points(folder) if p["id"] == point_id), None)
     if point is None or "doc" not in point:
         return None
     place = (point["doc"], point["day"], point["end"])
-    return copy.deepcopy(_dataflows_at(folder, [place]).get(place))
+    return saved_joins.converted_dataflow(copy.deepcopy(_dataflows_at(folder, [place]).get(place)))
 
 
 def _node_code(flow: Optional[dict], node_id: str) -> Optional[str]:

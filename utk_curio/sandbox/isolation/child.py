@@ -10,6 +10,11 @@ Order is the whole game here. Each step gives up a capability, and once given
 up it cannot be taken back, so anything that needs a capability must happen
 before the step that drops it:
 
+0. its place           the child moves into its run's cgroup, whose memory.max
+                       is the node's budget (``node_cgroups``), when the zygote
+                       gave it one. First, while it is root: a cgroup file is
+                       root's to write. Its oom_score_adj goes up with it, so
+                       a host out of memory stops a node before a server.
 1. ``setsid``          the child leads its own process group, so the parent can
                        kill the child *and anything it spawned* with one
                        ``killpg``. Must precede the seccomp filter, which
@@ -31,7 +36,8 @@ before the step that drops it:
                        node code starts loses it at its fork, so the
                        sandbox kills the child's group then
                        (``ZygoteClient.run``).
-6. ``setrlimit``       memory, CPU, processes, file size. Applied after the uid
+6. ``setrlimit``       CPU, processes, file size, and memory where the child
+                       has no place. Applied after the uid
                        drop so the child cannot raise its own soft limits back
                        to the (higher) hard limits.
 7. ``chdir``           into the launch directory, so relative paths in node
@@ -54,7 +60,7 @@ import os
 import sys
 
 from utk_curio.common.redaction import redact
-from utk_curio.sandbox.isolation import seccomp_filter
+from utk_curio.sandbox.isolation import node_cgroups, seccomp_filter
 from utk_curio.sandbox.util import input_names
 from utk_curio.sandbox.util.secrets import make_curio_secret, shape_secrets
 from utk_curio.sandbox.util.user_code import compile_user_code
@@ -75,6 +81,10 @@ THREAD_STACK_MB = 2
 
 # Room for a pthread_attr_t, which is 56 bytes on x86_64 and 64 on aarch64.
 _PTHREAD_ATTR_BYTES = 128
+
+# A child's oom_score_adj in its place: a host out of memory kills it, and what
+# it started, before the servers, whose score is 0.
+OOM_SCORE_ADJ = 500
 
 # Kept in step with protocol.MAX_* so a child never writes a manifest the
 # parent will reject wholesale for being oversized.
@@ -211,6 +221,24 @@ def _die_with_the_zygote(zygote_pid):
         )
 
 
+def _join_place(place):
+    """Move this child into *place*, its run's cgroup, and raise its
+    oom_score_adj.
+
+    The place's memory.max is the node's budget, and what the child starts is
+    in the place too, so the budget is what they all use together, and at it
+    the kernel stops them all. A child that cannot join must not run: it
+    would run with no budget at all. The score is best effort.
+    """
+    try:
+        node_cgroups.join(place)
+    except OSError as exc:
+        raise ChildSetupError(f"could not join the cgroup of its run, {place}: {exc}") from exc
+    with contextlib.suppress(OSError):
+        with open("/proc/self/oom_score_adj", "w", encoding="ascii") as handle:
+            handle.write(str(OOM_SCORE_ADJ))
+
+
 def _address_space_baseline_bytes():
     """Virtual address space this process already occupies, or None.
 
@@ -290,8 +318,13 @@ def _shrink_default_thread_stack():
         libc.pthread_attr_destroy(attr)
 
 
-def _apply_rlimits(limits):
+def _apply_rlimits(limits, *, address_space=True):
     """Cap memory, CPU, processes, file size, fds, and core dumps.
+
+    Memory is capped here only with *address_space*, for a child that has no
+    place (``node_cgroups``): where the container's cgroups cannot hold its
+    nodes. A child in a place has its budget there, and neither the
+    address-space cap nor the smaller thread stacks it needs.
 
     ``RLIMIT_AS`` is what turns a runaway allocation into a ``MemoryError``
     inside the child instead of the kernel's OOM killer picking a victim, which
@@ -321,7 +354,7 @@ def _apply_rlimits(limits):
             raise ChildSetupError(f"could not set {name}: {exc}") from exc
 
     memory_mb = limits.get("memory_mb")
-    if memory_mb:
+    if memory_mb and address_space:
         budget = memory_mb * 1024 * 1024
         baseline = _address_space_baseline_bytes()
         # Without /proc there is no way to read the baseline. Skip the cap
@@ -357,7 +390,8 @@ def _apply_rlimits(limits):
 
 
 def confine(*, limits, uid=None, gid=None, scratch_dir, require_seccomp,
-            work_dir=None, overlay_dir=None, keep_fds=(), zygote_pid=None):
+            work_dir=None, overlay_dir=None, keep_fds=(), zygote_pid=None,
+            place=None):
     """Apply every confinement step, in the order the module docstring sets out.
 
     Raises :class:`ChildSetupError` if any step fails. The caller must treat
@@ -390,14 +424,20 @@ def confine(*, limits, uid=None, gid=None, scratch_dir, require_seccomp,
 
     ``zygote_pid``, the zygote's pid as it was before the fork, ties the
     child's life to the zygote's (:func:`_die_with_the_zygote`).
+
+    ``place``, the path of the run's cgroup when the zygote gave it one, is
+    joined first (:func:`_join_place`), and then holds the node's memory
+    budget in place of ``RLIMIT_AS``.
     """
+    if place is not None:
+        _join_place(place)
     os.setsid()
     _set_no_new_privs()
     seccomp_active = _install_seccomp_filter(required=require_seccomp)
     _drop_privileges(uid, gid)
     if zygote_pid is not None:
         _die_with_the_zygote(zygote_pid)
-    _apply_rlimits(limits)
+    _apply_rlimits(limits, address_space=place is None)
     # *work_dir*, not *scratch_dir*. Node code addresses its inputs by paths
     # relative to the launch directory -- the bundled examples all do
     # `gpd.read_file("docs/examples/data/...")` -- and the in-process path runs
@@ -890,7 +930,7 @@ def point_numba_at_scratch(scratch_dir):
 
 
 def main(request, namespace_factory, *, uid=None, gid=None, require_seccomp=False,
-         zygote_pid=None):
+         zygote_pid=None, place=None):
     """Full child lifecycle: confine, run, write, exit. Never returns.
 
     Uses ``os._exit`` so no ``atexit`` handler inherited from the parent runs in
@@ -919,6 +959,7 @@ def main(request, namespace_factory, *, uid=None, gid=None, require_seccomp=Fals
             work_dir=request.get("work_dir"),
             overlay_dir=request.get("overlay_dir"),
             zygote_pid=zygote_pid,
+            place=place,
         )
         point_numba_at_scratch(scratch_dir)
     except BaseException:

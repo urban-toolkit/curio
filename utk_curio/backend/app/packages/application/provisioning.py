@@ -26,6 +26,7 @@ from utk_curio.backend.app.packages.infrastructure.pip_runner import (
     PipInstallError,
     PipSpecError,
 )
+from utk_curio.backend.app.packages.infrastructure.target_locks import target_lock
 from utk_curio.backend.app.packages.application import store_reads as packages_store_reads
 from utk_curio.backend.app.packages.domain.errors import PackageServiceError
 
@@ -207,18 +208,33 @@ def provision_user_node_deps(
     one library would re-run pip over their whole environment - and leave them
     with nothing at all if that run failed offline.
 
-    So the probe decides the work: only names that cannot already be imported
-    from the tree are handed to pip. That is also what keeps a re-install of an
-    already-satisfied package from making pip rewrite a tree it is happy with.
+    So the probe and the versions decide the work: only names that cannot
+    already be imported from the tree, and names imported at a version their
+    range does not accept, are handed to pip, which installs into the tree
+    only what neither the tree nor the image holds at an accepted version
+    (``pip_runner.install_python_deps_to_target`` *in_front*). That is also
+    what keeps a re-install of an already-satisfied package from making pip
+    rewrite a tree it is happy with.
+
+    The probe and the versions are read holding the tree, as a removal's
+    give-way reads it (``libraries.give_way_to_the_image``): the lock its
+    changes take in this process (``target_locks``), then the one pip's runs
+    into it take across processes (``pip_runner.holding_tree``). Read before
+    them, an add racing a removal, in this process or another, could find a
+    copy there that the removal then took out, install nothing, and leave
+    its package's nodes the image's copy, outside its range.
     """
     overlay = packages_backend_runtime.user_node_overlay_dir(user_key)
     overlay.mkdir(parents=True, exist_ok=True)
-    before = node_overlay_import_failures(user_key, py_deps)
-    missing = {name: spec for name, spec in py_deps.items() if name in before}
     installed: list[str] = []
-    if missing:
-        report = packages_pip_runner.install_python_deps_to_target(missing, str(overlay))
-        installed = sorted(report.installed)
+    with target_lock(user_key, NODE_OVERLAY_LOCK):
+        with packages_pip_runner.holding_tree(overlay):
+            before = node_overlay_import_failures(user_key, py_deps)
+            outside = set(packages_pip_runner.outside_their_ranges_in_front(py_deps, str(overlay)))
+            missing = {name: spec for name, spec in py_deps.items() if name in before or name in outside}
+            if missing:
+                report = packages_pip_runner.install_python_deps_to_target(missing, str(overlay), in_front=True)
+                installed = sorted(report.installed)
     failures.update(node_overlay_import_failures(user_key, py_deps))
     return installed
 
@@ -370,3 +386,16 @@ def provision_declared_deps(user_key: str, dir_name: str, manifest) -> dict:
     if outcome.installed:
         fields["restartRecommended"] = {"libs": outcome.installed}
     return fields
+
+
+def with_brought(report: dict, brought: InstallOutcome) -> dict:
+    """*report*, the fields :func:`provision_declared_deps` answers for a
+    package, with what the packages copied in for it did (*brought*): a
+    library of theirs that does not import joins ``importErrors``, and one
+    their pip runs installed joins ``restartRecommended``."""
+    if brought.import_errors:
+        report["importErrors"] = {**brought.import_errors, **(report.get("importErrors") or {})}
+    if brought.installed:
+        libs = sorted({*brought.installed, *((report.get("restartRecommended") or {}).get("libs") or [])})
+        report["restartRecommended"] = {"libs": libs}
+    return report

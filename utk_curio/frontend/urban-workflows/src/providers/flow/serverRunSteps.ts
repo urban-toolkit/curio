@@ -3,6 +3,7 @@
 // outputs a reopened canvas takes from the run, and which ancestor outputs a
 // play reuses. useServerRun applies them.
 import type { Edge, Node } from "reactflow";
+import type { NodeOutput } from "../../hook/useNodeState";
 import type { RunEvent, RunStatus, RunStep, StepRole, StepStatus } from "../../services/runs/runsApi";
 import type { IOutput } from "./flowTypes";
 import { directedEdgesOf, nodesToRunUpTo } from "./runLevels";
@@ -15,6 +16,8 @@ export type TrackedStep = { role: StepRole; status: StepStatus };
 
 export type NodeChange =
   | { kind: "running" }
+  /** Still running, and saying what it does, such as a download's progress; nothing to say once that is over. */
+  | { kind: "progress"; message: string }
   | { kind: "result"; reply: any; startedAt?: number; finishedAt?: number }
   | { kind: "skipped"; reason: string }
   | { kind: "stopped" };
@@ -30,6 +33,7 @@ export function nodeChangeFor(
   { started }: { started: boolean },
 ): NodeChange | null {
   if (event.kind === "step_started") return { kind: "running" };
+  if (event.kind === "step_progress") return { kind: "progress", message: event.message ?? "" };
   if (event.kind !== "step_finished") return null;
   switch (event.status) {
     case "ok":
@@ -50,6 +54,26 @@ export function nodeChangeFor(
     default:
       return null;
   }
+}
+
+/**
+ * What a running step shows on its node, on the canvas and on a dashboard
+ * alike: running, saying what its run says it does, such as how far what it
+ * reads has downloaded, until its outcome lands; after that, a replayed event
+ * shows nothing. *run* holds the nodes it showed as running (`started`) and
+ * those its outcome reached (`applied`). Whether *change* is a running one.
+ */
+export function showRunning(
+  change: NodeChange,
+  nodeId: string,
+  run: { started: Set<string>; applied: Set<string> },
+  showOnNode: (nodeId: string, output: NodeOutput) => void,
+): boolean {
+  if (change.kind !== "running" && change.kind !== "progress") return false;
+  run.started.add(nodeId);
+  const content = change.kind === "progress" ? change.message : "";
+  if (!run.applied.has(nodeId)) showOnNode(nodeId, { code: "exec", content });
+  return true;
 }
 
 /** The reply a step stands for when the run kept only its tails: an engine-made failure, or a record. */

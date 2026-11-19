@@ -476,32 +476,45 @@ with nothing to run. An object that names one key twice is refused.
 
 To add, remove or reorder a starter rule, edit its ladder in `visDefaults.json`
 and add or remove its builder in `vegaDefaultSpec.ts` or `autkDefaultSpec.ts`,
-keyed by the rule's id. `inputTableName` and `autkOneViewProblem` are code over
-`autkGrammar.json` on both sides, in `contracts/autkGrammar.ts` and
-`contracts.py`; a change to either goes into both, with a case for it in
-`autkGrammar.cases.json`, which Jest and the backend suite both run. See
+keyed by the rule's id. `inputTableName`, `autkOneViewProblem`,
+`autkKeyProblem` and `autkRasterPassProblem` are code over `autkGrammar.json`
+on both sides, in
+`contracts/autkGrammar.ts` and `contracts.py`; a change to any of them goes
+into both, with a case for it in `autkGrammar.cases.json`, which Jest and the
+backend suite both run. A step that makes a node run a key of `notRunYet`
+takes its entry out of `autkGrammar.json`, and its cases out of the `keys`
+cases or to `null`. See
 [ARCHITECTURE.md, Shared Constants](ARCHITECTURE.md#shared-constants).
 
 ### Vendored Autark Schema
 
 Autark documents are validated against the JSON Schema that autk-grammar
 publishes. `utk_curio/backend/app/agents/schemas/autk-grammar.v1.json` is a
-byte-for-byte copy of the released file, and `autk-grammar.v1.source.json`
-records its version and digest. To move to a new release:
+byte-for-byte copy of the released file, or of the file in the autk-grammar
+tarball the frontend installs from
+`utk_curio/frontend/urban-workflows/vendor/autark/` while Curio vendors one,
+and `autk-grammar.v1.source.json` records where it came from, its version and
+its digest. To move to a new release:
 
 ```bash
 # vendor the schema from the release on npm
 python scripts/sync_autk_schema.py --version <version>
 ```
 
-`--from PATH` vendors a local build of that version instead.
+`--from PATH` vendors a local build of that version instead, and
+`--tarball PATH` the schema of the vendored tarball at PATH, whose
+package.json gives the version; the record then names the tarball.
 `test_autk_schema_vendored.py` checks the copy against its record in the
-backend suite, and the weekly `autk-schema` workflow runs
-`python scripts/sync_autk_schema.py --check` against npm. A release that adds
+backend suite, and that the record names the autk-grammar the frontend's
+lockfile installs. The weekly `autk-schema` workflow runs
+`python scripts/sync_autk_schema.py --check`, which compares the copy with
+the release on npm, or with the recorded tarball. A release that adds
 or drops a top-level family needs it in `families` of
 `src/contracts/autkGrammar.json` too: `test_shared_constants.py` fails until
 the file lists the schema's families, and Jest until `FAMILY_KIND` in
-`utils/autkSpecKind.ts` routes each one.
+`utils/autkSpecKind.ts` routes each one, as `autk_spec_kind.py` does: to the
+step it makes, or to none (`null`) for a family that makes no step of its own,
+such as `layout` and `links`.
 
 ## Organizing Contributions
 

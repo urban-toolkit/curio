@@ -81,20 +81,9 @@ Writes data to a file the node returns, a table as CSV, a GeoDataFrame as GeoJSO
 
 Engines: python.
 
-Loads a Model Catalog model: `curio_segment` runs a segmentation model, `model.run({input name: array})` runs an ONNX model's graph and returns its outputs in order, and `model.path` is its weights' folder.
+Gives a model's `id`, `folder`, `manifest` and `path`, which node code or its package's module opens: an ONNX model with `ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])`.
 
 - `model_id` (a Model Catalog model): the model's id.
-
-### curio_segment(images, model, classes=None, *, overlays=True)
-
-Engines: python.
-
-Labels the pixels of each image with a segmentation model and returns the images' rows with the results as their first columns: `dominant_class`, `dominant_pct`, a `<class>_pct` per class, `overlay_url` and `segment_error`.
-
-- `images`: rows with a `path`, as `curio_load_collection` gives them.
-- `model`: a model `curio_load_model` loaded.
-- `classes`: the classes to report; every class the model labels when it is None.
-- `overlays`: whether to write each image's overlay, linked in `overlay_url`.
 
 ### curio_secret(name)
 
@@ -123,7 +112,7 @@ Hands on its input with edits applied to the features of its layers: a Map Edito
 
 Engines: python, javascript.
 
-Gives one layer of an input by its name, as a layer chip does: a GeoDataFrame in python and a GeoJSON FeatureCollection in javascript; an input that is one frame with no layer name is that layer.
+Gives one layer of an input by its name, as a layer chip does: a GeoDataFrame in python and a GeoJSON FeatureCollection in javascript, a raster layer such as a heatmap as a rasterio dataset in python, and in a dict of frames a node returns, the frame or raster under that key; an input that is one frame or raster with no layer name is that layer.
 
 - `value`: the input, such as `input_0`.
 - `layer`: the layer's name, as the Autark node that hands it on names its table, such as `table_osm_roads`.

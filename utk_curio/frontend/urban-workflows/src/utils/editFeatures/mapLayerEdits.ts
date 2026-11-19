@@ -10,6 +10,7 @@
  * at once, and hands on what it was fed: the edits the last Commit ran.
  */
 import { EdgeType, NodeType } from "../../constants";
+import { isInteractionEdge as followsInteractionRule } from "../../contracts/interactionEdges";
 import { getUnversionedFlowNodeType } from "../flowNodeCanonicalType";
 import { readEditFeaturesCode, type EditFeaturesSettings } from "./editFeatures";
 
@@ -23,9 +24,13 @@ export const isAutkMap = (node: any) => !!node && getUnversionedFlowNodeType(nod
 /** Whether *node* is a Map Editor node (its type id is still Edit Features'). */
 export const isInteraction = (node: any) => !!node && getUnversionedFlowNodeType(node) === NodeType.EDIT_FEATURES;
 
-/** Whether *edge* is an interaction edge: the in/out link, not a data edge. */
+/**
+ * Whether *edge* is an interaction edge, not a data edge: the canvas's
+ * two-way edge, or one the shared rule names so (contracts/interactionEdges),
+ * a link from a view's own handle among them.
+ */
 export function isInteractionEdge(edge: any): boolean {
-  return edge?.type === EdgeType.BIDIRECTIONAL_EDGE || (edge?.sourceHandle === "in/out" && edge?.targetHandle === "in/out");
+  return edge?.type === EdgeType.BIDIRECTIONAL_EDGE || followsInteractionRule(edge);
 }
 
 /** The code a node's data holds: what its editor floats, else what it loaded with. */

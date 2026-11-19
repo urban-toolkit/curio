@@ -748,3 +748,50 @@ class TestWhatDoesNotMount:
         assert cache_refusal(found) is None
         assert S3Storage(manifest, None, reads=BucketReads(manifest)).local_path(WALKS[0]) is None
         assert rig.service.calls == []
+
+
+# ── The Data Catalog's preview shows what node code gets ────────────────────
+
+
+def _previewed(client, auth, dataset) -> list[dict]:
+    """The rows the Data Catalog's preview of *dataset*'s index shows."""
+    res = client.get(f"/api/datasets/{dataset['id']}/preview?rowLimit=50", headers=auth)
+    assert res.status_code == 200, res.get_data(as_text=True)
+    preview = res.get_json()
+    assert not preview.get("unsupported"), preview.get("message")
+    return preview["rows"]
+
+
+class TestTheDataCatalogsPreview:
+    """The preview of a collection's index shows its rows as
+    ``curio_load_collection`` gives them to node code: a row's ``path`` is
+    the file node code opens."""
+
+    def test_each_rows_path_is_its_file_in_the_mount(self, client, auth, app, rig, user_and_token):
+        user, _token = user_and_token
+        dataset = _add(client, auth, SOURCE, "walks")
+        _entry, load = _node_collections(app, user, dataset)
+        node_rows = load()
+
+        rows = _previewed(client, auth, dataset)
+
+        shown = {row["relpath"]: row.get("path") for row in rows}
+        assert shown == dict(zip(node_rows["relpath"], node_rows["path"])), shown
+        assert sorted(shown.values()) == sorted(os.path.join(str(rig.folder()), *path.split("/")) for path in WALKS)
+        # Every column node code gets, the ones that locate a file among them.
+        assert set(rows[0]) == set(node_rows.columns)
+
+    def test_a_cached_copy_shows_once_cached_as_node_code_reads_it(self, client, auth, app, rig, user_and_token):
+        user, _token = user_and_token
+        dataset = _add(client, auth, ELSEWHERE, "sounds")
+        _entry, load = _node_collections(app, user, dataset)
+        # Not cached yet: no file to open, on either side.
+        assert [row.get("path") for row in _previewed(client, auth, dataset)] == list(load()["path"]) == [None]
+
+        res = client.post(f"/api/discovery/collections/{dataset['id']}/cache", headers=auth)
+        assert res.status_code == 202, res.get_data(as_text=True)
+        assert _wait(client, auth, res.get_json()["jobId"])["status"] == "completed"
+
+        [cached] = list(load()["path"])
+        assert cached is not None and Path(cached).is_file()
+        assert [row.get("path") for row in _previewed(client, auth, dataset)] == [cached]

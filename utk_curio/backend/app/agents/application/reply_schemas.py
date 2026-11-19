@@ -383,11 +383,12 @@ class _Codec:
 
 @lru_cache(maxsize=None)
 def autk_reply_schema(flavor: str) -> ReplySchema:
-    """The Autark document's reply schema in *flavor*, projected from the
-    vendored schema once per process."""
+    """The Autark document's reply schema in *flavor*, projected once per
+    process from the vendored schema without what a node does not run yet
+    (``contracts.autk_schema_curio_runs``)."""
     from utk_curio.backend.app.agents.domain import contracts
 
-    source = contracts.load_autk_schema()
+    source = contracts.autk_schema_curio_runs(contracts.load_autk_schema())
     projector = _Projector(source, flavor)
     root = projector.project(projector.source_defs[_def_name(source.get("$ref", "UrbanSpec"))])
     if root.get("type") != "object":

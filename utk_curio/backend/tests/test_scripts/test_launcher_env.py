@@ -1523,3 +1523,115 @@ def _parser_flags():
 @pytest.mark.parametrize("flag", OPERATOR_FLAG_NAMES)
 def test_each_operator_flag_is_a_curio_py_argument(flag):
     assert flag in _parser_flags()
+
+
+# ── --guest-packages: the catalog packages every hosted guest has ───────────
+#
+# Written on every start, empty without the flag, so only the flag names them;
+# what the start then does with them is test_packages/test_guest_packages.py.
+
+
+@pytest.fixture(autouse=True)
+def _isolate_guest_packages_env():
+    """Clear CURIO_GUEST_PACKAGES before AND after, for the reason
+    _isolate_agent_env gives: every start writes it."""
+    saved = os.environ.pop("CURIO_GUEST_PACKAGES", None)
+    try:
+        yield
+    finally:
+        os.environ.pop("CURIO_GUEST_PACKAGES", None)
+        if saved is not None:
+            os.environ["CURIO_GUEST_PACKAGES"] = saved
+
+
+def _catalog_of(tmp_path, *dir_names):
+    """A shared catalog holding a package at each folder named."""
+    root = tmp_path / "catalog"
+    root.mkdir()
+    for dir_name in dir_names:
+        package_id, major = dir_name.split("@")
+        (root / dir_name).mkdir()
+        (root / dir_name / "manifest.json").write_text(json.dumps({
+            "id": package_id, "version": "1.0.0", "name": package_id, "publisher": "Test",
+            "description": "Test package", "license": "MIT",
+            "compatibility": {"curioRuntime": ">=0.5.0", "major": int(major)},
+            "permissions": [], "dependencies": {"packages": {}, "python": {}, "js": {}},
+            "templates": [{
+                "id": "demo", "label": "Demo", "category": "computation", "editor": "code",
+                "engine": "python", "hasCode": True, "inputPorts": [], "outputPorts": [],
+            }],
+        }), encoding="utf-8")
+    return root
+
+
+def test_the_guest_packages_flag_reaches_the_setting_the_backend_reads(tmp_path):
+    """Each named by its folder in the catalog --packages-root names, which is
+    applied first, and read by a backend started now."""
+    root = _catalog_of(tmp_path, "ai.test.first@1", "ai.test.second@1")
+
+    set_environment_variables(**BASE, packages_root=str(root), guest_packages="ai.test.first@1, ai.test.second@1")
+
+    read = _backend("list(m.CURIO_GUEST_PACKAGES)")()
+    assert os.environ["CURIO_GUEST_PACKAGES"] == "ai.test.first@1,ai.test.second@1"
+    assert read == ["ai.test.first@1", "ai.test.second@1"]
+
+
+def test_without_the_guest_packages_flag_guests_have_none_whatever_the_environment_held():
+    os.environ["CURIO_GUEST_PACKAGES"] = "ai.test.first@1"
+
+    set_environment_variables(**BASE)
+
+    read = _backend("list(m.CURIO_GUEST_PACKAGES)")()
+    assert os.environ["CURIO_GUEST_PACKAGES"] == ""
+    assert read == []
+
+
+@pytest.mark.parametrize("name", [
+    pytest.param("ai.test.nowhere@1", id="not-in-the-catalog"),
+    pytest.param("ai.test.first", id="no-major"),
+    pytest.param("../ai.test.first@1", id="not-a-folder-name"),
+    pytest.param("ai.test.broken@1", id="a-manifest-that-does-not-read"),
+])
+def test_a_guest_package_that_is_no_package_of_the_catalog_refuses_the_start(tmp_path, name):
+    root = _catalog_of(tmp_path, "ai.test.first@1")
+    (root / "ai.test.broken@1").mkdir()
+    (root / "ai.test.broken@1" / "manifest.json").write_text("{not json", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as refused:
+        set_environment_variables(**BASE, packages_root=str(root), guest_packages=f"ai.test.first@1,{name}")
+
+    message = str(refused.value)
+    assert message.startswith(f"Refusing to start: --guest-packages names '{name}', "), message
+    assert str(root.resolve()) in message, message
+    assert "CURIO_GUEST_PACKAGES" not in os.environ
+
+
+def test_the_guest_packages_flag_is_a_curio_py_argument():
+    flags = _parser_flags()
+    assert "--guest-packages" in flags
+
+
+def test_curio_py_start_hands_its_guest_packages_to_the_launcher(monkeypatch):
+    """The flag's value, one token with commas, reaches set_environment_variables."""
+    import utk_curio.main as launcher
+
+    class _Handed(Exception):
+        pass
+
+    def handed(**kwargs):
+        raise _Handed(kwargs.get("guest_packages"))
+
+    monkeypatch.setenv("CURIO_DEV", "0")
+    monkeypatch.setattr(
+        "sys.argv", ["curio.py", "start", "--guest-packages", "ai.test.first@1,ai.test.second@1"],
+    )
+    monkeypatch.setattr(launcher, "signal", SimpleNamespace(
+        SIGINT=signal.SIGINT, SIGTERM=signal.SIGTERM, signal=lambda *args: None,
+    ))
+    monkeypatch.setattr(launcher, "setup_logging", lambda server: None)
+    monkeypatch.setattr(launcher, "set_environment_variables", handed)
+
+    with pytest.raises(_Handed) as caught:
+        launcher.main()
+
+    assert caught.value.args[0] == "ai.test.first@1,ai.test.second@1"

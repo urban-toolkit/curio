@@ -20,6 +20,8 @@ import { toRows } from '../../utils/rowSource';
 import { unwrapValueEnvelopes } from '../../utils/sandboxEnvelope';
 import { registerNodeSettingWriter } from '../../utils/nodeSettingsWriters';
 import nodeSettings from '../../contracts/nodeSettings.json';
+import type { SelectDetail } from '../../utils/selectionMatch';
+import { CARD_SELECT, PLAYER_SELECT, latestSelect, playedRange, playerSelect } from '../../utils/playerSelection';
 
 /** The picker's label, and its word for every image column, which an agent's
  *  review card and the backend say the setting in too
@@ -98,8 +100,10 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   const connected = hasIncomingEdge(edges, data.nodeId);
   // Whether the node feeding it ran and failed, asked as the Data Pool asks it
   // (#347); on a dashboard, a viewer's run making the rows, or why it stopped
-  // before them.
-  const { upstreamErrored, upstreamRunning, upstreamStopped, onDashboard } = useGrammarInputState(data.nodeId);
+  // before them, and how far the downloads of the steps above have come.
+  const { upstreamErrored, upstreamRunning, upstreamStopped, upstreamDownloads, onDashboard } = useGrammarInputState(data.nodeId);
+  // A fresh list each render: the content below changes with what it says.
+  const downloadsSaid = upstreamDownloads.join("\n");
   // Lazy init: if input is already present on mount seed the view so the
   // first render already produces a contentComponent. One that carries its
   // rows shows at once; the effect reads one that names its artifact.
@@ -108,7 +112,7 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   const [rows, setRows] = useState<any[]>(initial.rows);
   const [imageColumns, setImageColumns] = useState<string[]>(initial.imageColumns);
   const [textContent, setTextContent] = useState<string>(initial.textContent);
-  const [interactions, _setInteractions] = useState<any>({});
+  const [interactions, setInteractions] = useState<Record<string, SelectDetail>>({});
   const interactionsRef = useRef(interactions);
   const dataInputBypass = useRef(false);
   // While the rows of the input that just arrived are read (a fetch of its
@@ -121,10 +125,14 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   const latestInputRef = useRef<unknown>(data.input);
   const reading = data.input != null && data.input !== '' && data.input !== readInput;
 
-  const setInteractions = (newData: any) => {
-    interactionsRef.current = newData;
-    _setInteractions(newData);
-  };
+  // A select of this view made the latest of its selects (utils/playerSelection),
+  // which the flow sends over its interaction edges: a click on a card, or
+  // what a card's player has played.
+  const tellSelect = useCallback((name: string, select: SelectDetail) => {
+    const next = latestSelect(interactionsRef.current, name, select);
+    interactionsRef.current = next;
+    setInteractions(next);
+  }, []);
 
   const { nodeExecProv } = useProvenanceContext();
   const { workflowNameRef, updateDataNode } = useFlowContext();
@@ -216,15 +224,19 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   // be the position in a flattened image list, which only matched when every
   // cell held exactly one image.
   const clickRow = useCallback((rowIndex: number) => {
-    setInteractions({
-      images_click: {
-        type: VisInteractionType.POINT,
-        data: [rowIndex],
-        priority: 1,
-        source: NodeType.VIS_SIMPLE,
-      },
-    });
-  }, []);
+    tellSelect(CARD_SELECT, {
+      type: VisInteractionType.POINT,
+      data: [rowIndex],
+      source: NodeType.VIS_SIMPLE,
+    } as SelectDetail);
+  }, [tellSelect]);
+
+  // What a card's player has played, from its file's start to where it
+  // stands, as an interval on `t_s`; one that holds nothing once it closes.
+  // A selection this view receives moves no player.
+  const played = useCallback((row: Record<string, unknown>, at: number | null) => {
+    tellSelect(PLAYER_SELECT, playerSelect(at === null ? null : playedRange(row, at)));
+  }, [tellSelect]);
 
   // Written back by a linked Data Pool, onto the row itself for both frame
   // shapes, so this no longer has to know which shape it came from.
@@ -304,6 +316,7 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
               interacted={interacted}
               onClickRow={clickRow}
               dataflowId={dataflowId}
+              onPlayed={played}
             />
           </div>
         </div>
@@ -367,9 +380,11 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
       <NodeEmptyState
         reason={reason}
         hint={reason === 'upstream-stopped' ? upstreamStopped ?? undefined : undefined}
+        progress={reason === 'upstream-running' ? upstreamDownloads : undefined}
       />
     );
-  }, [currentMode, rows, imageColumns, shownImageColumns, choice, interacted, textContent, data.nodeId, data.input, connected, upstreamErrored, upstreamRunning, upstreamStopped, reading, onDashboard, clickRow, pickColumn]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentMode, rows, imageColumns, shownImageColumns, choice, interacted, textContent, data.nodeId, data.input, connected, upstreamErrored, upstreamRunning, upstreamStopped, downloadsSaid, reading, onDashboard, clickRow, played, pickColumn]);
 
   return {
     contentComponent,

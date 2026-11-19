@@ -22,9 +22,3 @@ def upgrade():
     with op.batch_alter_table("dataflow_run_step", schema=None) as batch_op:
         batch_op.add_column(sa.Column("missing_module", sa.Text(), nullable=True))
         batch_op.add_column(sa.Column("install_warnings", sa.Text(), nullable=True))
-
-
-def downgrade():
-    with op.batch_alter_table("dataflow_run_step", schema=None) as batch_op:
-        batch_op.drop_column("install_warnings")
-        batch_op.drop_column("missing_module")

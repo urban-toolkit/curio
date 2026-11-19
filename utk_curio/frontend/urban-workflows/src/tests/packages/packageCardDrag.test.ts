@@ -125,6 +125,29 @@ describe("the drag", () => {
     expect(readPackageCardDragPayload(dataTransfer)).toBeNull();
   });
 
+  it("says when the account holds the package, which a hosted guest's drop asks", () => {
+    const held = createPackageCardDragPayload(pkg([PROBE], { installed: true }))!;
+    expect(held).toMatchObject({ dirName: "test.wheelhouse-probe@1", inAccount: true });
+    expect(createPackageCardDragPayload(pkg([PROBE], { installed: false }))!.inAccount).toBeUndefined();
+    expect(createPackageCardDragPayload(pkg([PROBE]))!.inAccount).toBeUndefined();
+    const dataTransfer = fakeDataTransfer();
+    writePackageCardDragData(dataTransfer, held);
+    endPackageCardDrag();
+    expect(readPackageCardDragPayload(dataTransfer)).toEqual(held);
+  });
+
+  it("reads only true as the account holding the package", () => {
+    const dataTransfer = fakeDataTransfer();
+    dataTransfer.setData(
+      PACKAGE_CARD_DRAG_MIME,
+      JSON.stringify({
+        dirName: "test.wheelhouse-probe@1", name: "Wheelhouse Probe", kind: "node", inAccount: "yes",
+        nodes: [{ nodeType: "test.wheelhouse-probe/probe@1", label: "Wheelhouse Probe" }],
+      }),
+    );
+    expect(readPackageCardDragPayload(dataTransfer)!.inAccount).toBeUndefined();
+  });
+
   it("is not read from data that names no node", () => {
     const dataTransfer = fakeDataTransfer();
     dataTransfer.setData(

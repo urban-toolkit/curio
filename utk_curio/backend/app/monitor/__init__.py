@@ -25,4 +25,9 @@ hourly histories (`history.py`: the LLM tokens of `llm_tokens.py`, and the
 servers' open files that `open_files.py` samples every hour) are also written
 to `.curio/monitor/<name>.json` as they change, hold at most 90 days, and start
 over, file included, when the backend starts.
+
+In a start of several backend processes each process holds its own numbers
+and files, and the home process, which nginx sends every monitor route to,
+asks the others for their parts and merges them (`processes.py`); with one
+process every route answers as it always has.
 """

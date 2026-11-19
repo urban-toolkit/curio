@@ -705,8 +705,8 @@ def _insert_node(
     ``metadata.appearance.backgroundColor`` shape; callers that omit it stay
     byte-for-byte identical. ``widgets`` (#662), checked at mint, persist at
     ``metadata.widgets`` the same way, and the node's ``settings``, by key
-    (``node_settings``: a Spatial Join's operation and output, a Data Pool's
-    modes, a Simple View's image column), each at ``metadata.<key>``.
+    (``node_settings``: a Data Pool's modes, a Simple View's image column),
+    each at ``metadata.<key>``.
     """
     dataflow = spec.setdefault("dataflow", {})
     nodes = dataflow.setdefault("nodes", [])
@@ -752,7 +752,7 @@ def land_node(user_key: str, project_id: str, loop_ctx: dict, spec: dict, propos
         appearance=proposal.get("appearance"),  # dev/89: typed round-trip
         title=proposal.get("title"),  # dev/105 A2: the header the note renders
         widgets=proposal.get("widgets"),  # #662: what its code's references name
-        settings=node_settings.of(proposal),  # a join's operation, a pool's modes, a view's image column
+        settings=node_settings.of(proposal),  # a pool's modes, a view's image column
     )
     change = agents_changes.new_change(
         "node.create", proposal["summary"], nodeId=created["id"],

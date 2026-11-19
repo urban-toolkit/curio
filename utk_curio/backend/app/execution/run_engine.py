@@ -12,6 +12,10 @@ outputs the canvas could not reuse, in the levels
 - a node fed by one that failed or was skipped is skipped, with a reason that
   names that node, and the other branches go on;
 - a node fed by one only the browser can make waits for a tab;
+- while a node runs, what it reads that downloads on first use says how far
+  it has come, as ``step_progress`` events of its step
+  (``left_out_files.reporting``), with no message once those downloads are
+  over and the node runs;
 - each executed node gets its code and input the way Play shapes them:
   references resolved (``WorkflowSpec.node_code``), every line indented by
   four spaces, one upstream's output as it is, several as an ``outputs``
@@ -33,13 +37,14 @@ upstreams, input circles, references and roles from the same places.
 """
 from __future__ import annotations
 
+import queue
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Callable, Iterator, Optional
 
-from utk_curio.backend.app.execution.autk_spec_kind import is_autk_data_node
+from utk_curio.backend.app.execution.autk_spec_kind import is_autk_data_node, reads_input_tables
 from utk_curio.backend.app.execution.code_references import CodeReferenceError
 from utk_curio.backend.app.execution.run_plan import (
     ancestors,
@@ -76,8 +81,19 @@ class Step:
     node: dict = field(repr=False)
     content: str = field(default="", repr=False)
     #: An Autark node whose document only loads data (``autk_spec_kind``): run
-    #: as the JavaScript its document compiles to, on no input.
+    #: as the JavaScript its document compiles to, on no input, unless
+    #: :attr:`autk_input`.
     autk_data: bool = False
+    #: Such a node whose data section reads tables of its input
+    #: (``autk_spec_kind.reads_input_tables``): its compiled document finds
+    #: them in the input, which it runs on, as the node's run in the browser does.
+    autk_input: bool = False
+
+
+def reads_no_input(step: "Step") -> bool:
+    """Whether *step* runs on no input: an Autark data node whose data section
+    reads no table of its input."""
+    return step.autk_data and not step.autk_input
 
 
 @dataclass
@@ -200,6 +216,7 @@ def plan_run(
             node=node,
             content=parsed.content or "",
             autk_data=autk_data,
+            autk_input=autk_data and reads_input_tables(node),
         )
     return Plan(
         spec=spec, steps=steps, levels=levels, unplanned=unplanned,
@@ -240,7 +257,11 @@ class _Outcome:
     finished_at: float = 0.0
 
 
-def _execute_step(plan: Plan, step: Step, input_ref, execute) -> _Outcome:
+def _execute_step(plan: Plan, step: Step, input_ref, execute, report=None) -> _Outcome:
+    """Run *step* on this thread, a thread of the level's pool; each download
+    on first use its run makes reports its progress to *report*."""
+    from utk_curio.backend.app.datasets.infrastructure import left_out_files
+
     started = time.time()
     try:
         sent = sent_code(plan, step)
@@ -248,11 +269,36 @@ def _execute_step(plan: Plan, step: Step, input_ref, execute) -> _Outcome:
         # The node's own failure, reported without asking the sandbox.
         return _Outcome("error", {}, stderr=str(exc), started_at=started, finished_at=time.time())
     attempts = AUTK_DATA_ATTEMPTS if step.autk_data else 1
-    for _attempt in range(attempts):
-        outcome = _attempt_step(step, sent, input_ref, execute, started)
-        if outcome.status == "ok":
-            break
+    with left_out_files.reporting(report):
+        for _attempt in range(attempts):
+            outcome = _attempt_step(step, sent, input_ref, execute, started)
+            if outcome.status == "ok":
+                break
     return outcome
+
+
+def _progress_payload(step: Step, progress) -> dict:
+    """A ``step_progress`` event of *step*: what its node does as it runs,
+    the *progress* of a download (``left_out_files.Progress``), or no message
+    once its downloads are over (None)."""
+    from utk_curio.backend.app.datasets.infrastructure import left_out_files
+
+    return {"nodeId": step.node_id, **left_out_files.progress_fields(progress)}
+
+
+def _handed_back(work: Callable, step: Step, arrivals: "queue.Queue") -> None:
+    """Run *work* and hand what it made to the run's thread, its outcome or
+    what it raised, which that thread raises as a future's result would.
+    Something is always handed back, so the run's thread never waits for a
+    step that ended."""
+    try:
+        handed = ("finished", step, work())
+    except Exception as exc:  # noqa: BLE001 - raised again on the run's thread
+        handed = ("raised", step, exc)
+    except BaseException:
+        arrivals.put(("raised", step, RuntimeError(f"the step of node {step.node_id!r} ended with no outcome")))
+        raise
+    arrivals.put(handed)
 
 
 def _attempt_step(step: Step, sent: str, input_ref, execute, started: float) -> _Outcome:
@@ -352,8 +398,9 @@ def run_events(
             if blocked is not None:
                 yield settle(step, blocked[0], skipReason=blocked[1])
                 continue
-            # A document that only loads data reads no input.
-            input_ref = None if step.autk_data else node_input(plan.spec, node_id, outputs)
+            # A document that only loads data reads no input, unless its data
+            # section reads tables of it.
+            input_ref = None if reads_no_input(step) else node_input(plan.spec, node_id, outputs)
             if step.role == "forward":
                 if input_ref is not None:
                     outputs[node_id] = input_ref
@@ -369,17 +416,30 @@ def run_events(
         if not ready:
             continue
         with ThreadPoolExecutor(max_workers=len(ready)) as pool:
-            futures = {}
+            # What the level's steps hand back, in the order they do: the
+            # progress of their downloads as they go, then their outcomes.
+            arrivals: queue.Queue = queue.Queue()
+            running = 0
             for step, input_ref in ready:
                 if cancelled.is_set():
                     yield settle(step, "cancelled")
                     continue
                 yield "step_started", {"nodeId": step.node_id, "startedAt": time.time()}
-                work = wrap(lambda s=step, i=input_ref: _execute_step(plan, s, i, execute))
-                futures[pool.submit(work)] = step
-            for future in as_completed(futures):
-                step = futures[future]
-                outcome = future.result()
+                work = wrap(lambda s=step, i=input_ref: _execute_step(
+                    plan, s, i, execute, report=lambda progress, s=s: arrivals.put(("progress", s, progress)),
+                ))
+                pool.submit(_handed_back, work, step, arrivals)
+                running += 1
+            while running:
+                kind, step, handed = arrivals.get()
+                if kind == "progress":
+                    if not cancelled.is_set():
+                        yield "step_progress", _progress_payload(step, handed)
+                    continue
+                running -= 1
+                if kind == "raised":
+                    raise handed
+                outcome = handed
                 timing = {
                     "startedAt": outcome.started_at,
                     "finishedAt": outcome.finished_at,

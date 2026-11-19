@@ -28,7 +28,7 @@ from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 from utk_curio.backend.app.discovery.application import probe as probing
-from utk_curio.backend.app.discovery.application.scan import MatchedFile
+from utk_curio.backend.app.discovery.application.scan import MatchedFile, Noted, bounds_said, may_hold
 from utk_curio.backend.app.discovery.domain.errors import DiscoveryError
 from utk_curio.backend.app.discovery.domain.manifest import DiscoverySourceManifest, ResourceSpec
 from utk_curio.backend.app.discovery.domain.templates import compile_template
@@ -235,18 +235,31 @@ def _number_frames(spec: ResourceSpec, rows: list[dict[str, Any]]) -> None:
 def join_metadata(
     manifest: DiscoverySourceManifest, provider, spec: ResourceSpec, frame
 ):
-    """Join the resource's declared metadata table onto its index."""
+    """Join the resource's declared metadata table onto its index.
+
+    The table's files are listed first, after the add's own scan. A listing
+    the provider read short of the source (``scan.Noted``) would join the
+    table in part: the add is refused, and says which limit the listing met,
+    as it does when its scan stops there."""
     if not spec.metadata:
         return frame
     import pandas as pd
 
     template = compile_template(spec.metadata["path"], reserved=frozenset())
     on = spec.metadata.get("on") or "file_name"
+    noted = Noted(provider)
+    found = [
+        (entry, values)
+        for entry in provider.scan(template.literal_prefix)
+        if (values := template.match(entry.relpath)) is not None
+    ]
+    met = noted.stops(lambda folder: may_hold(template, folder))
+    if met:
+        raise IndexError_(
+            f"{spec.name}: the listing of its metadata table was cut short ({'; '.join(bounds_said(met))})"
+        )
     tables = []
-    for entry in provider.scan(template.literal_prefix):
-        values = template.match(entry.relpath)
-        if values is None:
-            continue
+    for entry, values in found:
         table = _read_metadata_table(spec, provider, entry)
         for name, value in values.items():
             table[name] = value

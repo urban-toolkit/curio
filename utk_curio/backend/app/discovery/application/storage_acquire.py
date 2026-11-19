@@ -158,6 +158,45 @@ def add_refusal(manifest: DiscoverySourceManifest, spec, files, *, for_area: boo
     return None
 
 
+def _stopped_short(manifest: DiscoverySourceManifest, spec, stopped_at: dict[str, Any]) -> str:
+    """Why an add of *spec* is refused when its scan stopped short of the
+    source: each bound it met (``ScanResult.stopped_at``). Part of the row
+    holds fewer files, lies in fewer folders, or leaves out the folders too
+    deep to read; no part of it lists a long folder in fewer pages, or reads
+    a next page that is not at the source's address."""
+    said = []
+    if scanning.ROW_FILES in stopped_at:
+        said.append(
+            f"{spec.name} has more than {stopped_at[scanning.ROW_FILES]:,} files, the most "
+            f"{manifest.name} adds at once"
+        )
+    if scanning.LISTING_FILES in stopped_at:
+        files = scanning._counted(stopped_at[scanning.LISTING_FILES], "file", "files")
+        said.append(f"{spec.name} is past the {files} one listing of {manifest.name} holds")
+    if scanning.FOLDERS in stopped_at:
+        folders = scanning._counted(stopped_at[scanning.FOLDERS], "folder", "folders")
+        said.append(f"{spec.name} is in more than {folders}, the most {manifest.name} reads at once")
+    if scanning.PAGES in stopped_at:
+        pages = scanning._counted(stopped_at[scanning.PAGES], "page", "pages")
+        said.append(
+            f"{spec.name} has a folder whose listing runs past {pages}, the most {manifest.name} reads of one folder"
+        )
+    if scanning.ELSEWHERE in stopped_at:
+        pages = scanning._counted(stopped_at[scanning.ELSEWHERE], "page", "pages")
+        said.append(
+            f"{spec.name} has a listing that stops after {pages}, because its next page is not at the source's address"
+        )
+    if scanning.DEPTH in stopped_at:
+        skipped = stopped_at[scanning.DEPTH]
+        levels = scanning._counted(skipped.levels, "level", "levels")
+        said.append(
+            f"{spec.name} has {scanning.skipped_text(skipped)}, below the {levels} of folders {manifest.name} reads"
+        )
+    if any(bound in stopped_at for bound in (scanning.ROW_FILES, scanning.FOLDERS, scanning.DEPTH)):
+        said.append("add part of it")
+    return "; ".join(said)
+
+
 def _check_copy(found, fmt: str | None, bound: int) -> None:
     """Refuse a file whose copy, or whose shapefile parts' copies, *bound* stops."""
     if found.size > bound:
@@ -251,10 +290,7 @@ class StorageAcquire:
         if cancelled is not None and cancelled():
             raise Cancelled()
         if result.truncated:
-            raise DownloadTooLarge(
-                f"{spec.name} has more than {manifest.max_files:,} files, the most "
-                f"{manifest.name} adds at once; add part of it"
-            )
+            raise DownloadTooLarge(_stopped_short(manifest, spec, result.stopped_at))
         files = [f for group in result.groups for f in group.files]
         if not files:
             raise ResourceNotFound(f"no files of {manifest.name} match {resource_id}")

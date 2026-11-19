@@ -21,6 +21,7 @@ import {
   faServer,
   faUpload,
 } from '@fortawesome/free-solid-svg-icons';
+import { Position } from 'reactflow';
 
 // vega and vega-lite ship ESM that Jest's default transform skips. Stubbing
 // them here is safe: this suite only exercises manifest → descriptor wiring,
@@ -214,9 +215,50 @@ describe('the built-in behaviors', () => {
   test('hold no Parameter node: Builtin has no such template, so a saved one draws the removed type card', () => {
     expect(getBehavior('parameter')).toBeUndefined();
     for (const key of ['code', 'data-export', 'data-pool', 'data-summary', 'vega', 'simple-vis', 'autk-grammar',
-      'spatial-join', 'edit-features', 'note']) {
+      'edit-features', 'note']) {
       expect([key, getBehavior(key) !== undefined]).toEqual([key, true]);
     }
+  });
+
+  test('hold no Spatial Join of its own: the join is a code node, of the code behavior', () => {
+    expect(getBehavior('spatial-join')).toBeUndefined();
+  });
+});
+
+describe('a template with several input ports', () => {
+  afterEach(() => clearPackageNodes());
+
+  test('has one fixed circle per port, in order down the left edge, beside its output', () => {
+    // The Spatial Join's ports, as packages/curio.builtin@1/manifest.json declares them.
+    const join = {
+      ...FIXTURE_PACK.templates[0],
+      id: 'ai.example.foo/two-ports@1',
+      templateId: 'two-ports',
+      behavior: 'code',
+      inputPorts: [
+        { types: ['GEODATAFRAME'], cardinality: '1' },
+        { types: ['GEODATAFRAME'], cardinality: '1' },
+      ],
+      outputPorts: [{ types: ['GEODATAFRAME'], cardinality: '1' }],
+    };
+    const [descriptor] = registerPackageTemplates([{ ...FIXTURE_PACK, templates: [join] }]);
+    expect(descriptor.adapter.handles.map((h) => [h.id, h.type, h.position, h.style?.top])).toEqual([
+      ['in', 'target', Position.Left, `${100 / 3}%`],
+      ['in_1', 'target', Position.Left, `${200 / 3}%`],
+      ['out', 'source', Position.Right, undefined],
+    ]);
+  });
+
+  test('of one port that takes many edges keeps its one circle: it grows them as edges come', () => {
+    const many = {
+      ...FIXTURE_PACK.templates[0],
+      id: 'ai.example.foo/many@1',
+      templateId: 'many',
+      inputPorts: [{ types: ['DATAFRAME'], cardinality: '[1,n]' }],
+      outputPorts: [{ types: ['DATAFRAME'], cardinality: '1' }],
+    };
+    const [descriptor] = registerPackageTemplates([{ ...FIXTURE_PACK, templates: [many] }]);
+    expect(descriptor.adapter.handles.map((h) => h.id)).toEqual(['in', 'out']);
   });
 });
 

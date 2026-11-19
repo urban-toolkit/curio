@@ -252,7 +252,10 @@ def _written_by_generate_trill() -> dict[str, list[str]]:
 
 
 #: Fewer than these would mean the reading of the sources broke, not the layout.
-_AT_LEAST = {"dataflow": 12, "node": 19, "metadata": 13, "edge": 7, "scenario": 8, "widget": 6}
+#: How many fields of each level generateTrill writes, so a scan that finds
+#: fewer fails: twelve metadata settings since a Spatial Join's operation and
+#: output are its widgets (``metadata.spatialJoin`` is no longer written).
+_AT_LEAST = {"dataflow": 12, "node": 19, "metadata": 12, "edge": 7, "scenario": 8, "widget": 6}
 
 
 def test_every_field_generate_trill_writes_has_its_place_in_the_doc():
@@ -328,7 +331,7 @@ def test_numbers_and_key_orders_keep_the_form_they_were_written_in():
     dataflow = {
         # In the order generateTrill writes, so the whole text compares.
         "nodes": [{"id": "n", "type": "t", "x": 1.5, "y": 2, "metadata": {
-            "spatialJoin": {"predicate": "within", "output": "counts"},
+            "dataPool": {"insideChart": "MERGE_AND", "betweenCharts": "MERGE_OR"},
             "widgets": [
                 {"name": "w", "type": "slider", "default": 5.0, "options": {"step": 0.5, "min": 0}, "value": 5},
             ],

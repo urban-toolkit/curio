@@ -448,18 +448,6 @@ the plan creates a cycle in the dataflow (data edges must form a DAG):
 
 remove one data edge of the loop, or, where it should carry selections between two views, make that edge "kind": "interaction"
 
-## spatial-join.not-object
-
-{where} must be an object, such as {"predicate": "within", "output": "counts"}
-
-## spatial-join.unknown-keys
-
-{where} has keys a Spatial Join does not: {unknown} (it has {setting_keys})
-
-## spatial-join.not-a-join
-
-{where}: a {label} node has no operation or output; only a Spatial Join node takes {key}
-
 ## data-pool.not-object
 
 {where} must be an object, such as {"betweenCharts": "MERGE_AND"}
@@ -511,6 +499,10 @@ params names no setting to change: give {keys}
 ## node-settings.changes-nothing
 
 params changes nothing: the {label} node already has {settings}
+
+## node-settings.join-widgets
+
+{where}: a Spatial Join keeps its operation and output in its widgets operation and output: set them by name in widgets in a plan or a node.create, such as {"name": "operation", "type": "choice", "value": "within"}
 
 ## plan.widgets-not-placeable
 
@@ -844,6 +836,22 @@ scenarios has {count} entries (max {scenarios_max})
 
 {where}.display must be one of {choice_displays}
 
+## widget.not-a-choice
+
+{where} must be one of the {widget} widget's choices: {choices}; got {value}
+
+## widget.template-choices
+
+{where}: {widget} is the template's {kind} widget, and the node keeps its type and its choices, {choices}: write it with type {kind}, no other choices, and a value among them
+
+## widget.template-bounds
+
+{where}: {widget} is the template's {kind} widget, and the node keeps its type and its bounds ({bounds}): write it with type {kind}, no other min, max or step, and a value within them
+
+## widget.template-type
+
+{where}: {widget} is the template's {kind} widget, and the node keeps its type: write it with type {kind}
+
 ## widget.option-not-number
 
 {where}.{key} must be a number
@@ -950,7 +958,11 @@ document refused: this node's content is a {what} document and it does not valid
 
 ## document.autk-shape
 
-an Autark grammar JSON document, such as the map {"map": {"{layers}": [{example_layer}]}}, where "{first}" is this node's first input. A document names at least one of {families}; a plot needs {plot_fields}; a compute pass needs {compute_fields}, plus {compute_one_of}; a loader is {"data": [{"type": "{source_type}", ...}]}
+an Autark grammar JSON document, such as the map {"map": {"{layers}": [{example_layer}]}}, where "{first}" is this node's first input. A document names at least one of {families}; a plot needs {plot_fields}; a compute pass needs {compute_fields}, plus {compute_one_of}{render_pass}; a loader is {"data": [{"type": "{source_type}", ...}]}
+
+## document.autk-shape-render
+
+, or, as "type": "render", {fields}
 
 ## result-shape.consumer-no-output
 
@@ -1123,6 +1135,10 @@ import {name} (line {line}): {name} is a module of the package {package}, and on
 ## grounding.import-package-not-added
 
 import {name} (line {line}): {name} is a module of the package {package}, which this account has not added; once the user adds it, these nodes import it: {nodes}
+
+## grounding.import-package-version
+
+import {name} (line {line}): {name} is a module of the package {package} at version {version}, as the catalog has it, and this account's copy of that package does not ship it; only nodes of the catalog's copy import it: {nodes}
 
 ## grounding.code-refused
 

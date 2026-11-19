@@ -1,5 +1,24 @@
 {
-  "families": ["compute", "data", "map", "plot"],
+  "families": ["compute", "data", "layout", "links", "map", "plot"],
   "inputTablePrefix": "input_",
-  "oneView": "An Autark node draws one view: one map or one plot. Put each in its own Autark node, and link them with interaction edges."
+  "oneView": "An Autark node draws one view: one map or one plot. Put each in its own Autark node, and link them with interaction edges.",
+  "renamedKeys": [
+    { "in": "compute[]", "key": "wglsFunction", "renamedTo": "wgslFunction" },
+    { "in": "data[]", "key": "tableRootName", "renamedTo": "dataRef" },
+    { "in": "data[]", "key": "tableJoinName", "renamedTo": "joinDataRef" }
+  ],
+  "renamedKey": "This spec uses \"{key}\"{at}, which autk-grammar 5 renamed to \"{renamedTo}\".",
+  "notRunYet": [
+    { "in": "", "key": "layout", "what": "\"layout\"" },
+    { "in": "", "key": "links", "what": "\"links\"" }
+  ],
+  "notRunYetKey": "This spec uses {what}{at}, which Curio does not run yet.",
+  "keyAt": " at {path}",
+  "rasterSources": ["heatmap", "geotiff"],
+  "defaultWorkspace": "autk",
+  "rasterPass": "a compute pass over the raster \"{table}\"",
+  "starterColoring": {
+    "geometry+quantitative": { "getFnvType": "quantitative", "colorMapInterpolator": "interpolateViridis" },
+    "geometry+nominal": { "getFnvType": "categorical", "colorMapInterpolator": "schemeTableau10" }
+  }
 }

@@ -181,12 +181,13 @@ from pycrdt import (
     write_message,
 )
 
-from utk_curio.backend.app.collaboration import doc_mapping, history, owner_uses, roles, room_state
+from utk_curio.backend.app.collaboration import doc_mapping, history, owner_guard, owner_uses, roles, room_state
 from utk_curio.backend.app.collaboration.events import (
     READ_ONLY_REFUSAL,
     _project,
     _valid_project_id,
 )
+from utk_curio.backend.app.projects import saved_joins
 from utk_curio.backend.app.projects import scenarios as project_scenarios
 from utk_curio.backend.app.projects import storage
 from utk_curio.backend.config import COLLAB_NAMESPACE
@@ -413,9 +414,11 @@ def _write_atomically(path: Path, data: bytes) -> None:
                 tmp.unlink()
 
 
-def _records(data: bytes) -> list[tuple[int, bytes]]:
+def _records(data: bytes, *, quiet: bool = False) -> list[tuple[int, bytes]]:
     """The updates in a segment, each with the place its record ends at. A
-    record cut short, by a crash in the middle of an append, ends the segment."""
+    record cut short, by a crash in the middle of an append, ends the segment.
+    *quiet*: the segment is another process's, which may be appending the
+    record still, so one cut short is no damage to warn of."""
     records: list[tuple[int, bytes]] = []
     i, end = 0, len(data)
     while i < end:
@@ -430,7 +433,8 @@ def _records(data: bytes) -> list[tuple[int, bytes]]:
             if byte < 0x80:
                 break
         if i + length > end:
-            logger.warning("a segment of an update log ends with an update cut short; the rest is dropped")
+            if not quiet:
+                logger.warning("a segment of an update log ends with an update cut short; the rest is dropped")
             return records
         records.append((i + length, data[i:i + length]))
         i += length
@@ -441,9 +445,10 @@ def _segment_files(log_dir: Path, day: str) -> tuple[Path, Path]:
     return log_dir / f"{day}.bin", log_dir / f"{day}.updates"
 
 
-def _rebuild(folder: Path, doc_id: str, day: str, *, upto: Optional[int] = None):
+def _rebuild(folder: Path, doc_id: str, day: str, *, upto: Optional[int] = None, quiet: bool = False):
     """The doc *doc_id* as its log holds it at the end of *day*'s segment, or
-    *upto* bytes into its updates: the day's checkpoint, then its updates."""
+    *upto* bytes into its updates: the day's checkpoint, then its updates.
+    *quiet*: another process writes the log (:func:`_records`)."""
     checkpoint, updates = _segment_files(folder / LOG_DIR / doc_id, day)
     doc = doc_mapping.new_doc()
     doc.apply_update(checkpoint.read_bytes())
@@ -451,7 +456,7 @@ def _rebuild(folder: Path, doc_id: str, day: str, *, upto: Optional[int] = None)
         data = updates.read_bytes()
     except FileNotFoundError:
         data = b""
-    for end, record in _records(data):
+    for end, record in _records(data, quiet=quiet):
         if upto is not None and end > upto:
             break
         try:
@@ -817,6 +822,7 @@ def _load(entry: _OpenDoc) -> None:
     history.first_points(entry)
     _catch_up(entry, file)
     if not entry.tabs:
+        _built_anew_with_saved_joins(entry)
         _built_anew_if_grown(entry)
     with _lock:
         # Idle until a tab starts its sync (a read opens a doc with none).
@@ -825,6 +831,21 @@ def _load(entry: _OpenDoc) -> None:
         _changed(entry)  # the spec is behind the doc
     else:
         _ensure_flusher()
+
+
+def _built_anew_with_saved_joins(entry: _OpenDoc) -> None:
+    """Build anew a doc its log kept from before the Spatial Join had code
+    that holds a join saved so: from its dataflow with each such join's code
+    and widgets (``saved_joins``), as a read of the doc gives it, so the doc
+    the tabs edit holds them. A doc built from the spec file holds them
+    already (``storage.read_spec_file``)."""
+    dataflow = doc_mapping.doc_to_dataflow(entry.doc)
+    converted = saved_joins.converted_dataflow(dataflow)
+    if converted is dataflow:
+        return
+    logger.info("the doc of dataflow %s holds a Spatial Join saved before its code; it is built anew",
+                entry.project_id)
+    _built_anew(entry, converted)
 
 
 def _built_anew_if_grown(entry: _OpenDoc) -> None:
@@ -849,8 +870,11 @@ def _held(project_id: str, user_key: str, *, unmade: Optional[dict] = None) -> I
     (only tests reuse an id across accounts): it is dropped, writing nothing.
     *unmade*, for a hosted guest's copy with no spec yet, is the spec of the
     dataflow it copies, which a doc this opens is built from in memory
-    (:func:`_load_unmade`)."""
+    (:func:`_load_unmade`). Only the process that owns the dataflow keeps its
+    doc, a copy's being the process its own id names: any other is refused
+    (``owner_guard.NotTheOwner``)."""
     user_key = str(user_key)
+    owner_guard.refuse(project_id, what="opening its doc")
     while True:
         with _lock:
             entry = _docs.get(project_id)
@@ -1199,6 +1223,31 @@ def close_all() -> None:
         _sid_docs.clear()
 
 
+def close_others() -> list[str]:
+    """Write and take out of memory every open doc of a dataflow another
+    process owns (``owner_guard.elsewhere``): what the home process holds
+    once it has done the startup work alone
+    (``owner_guard.before_the_others_serve``), which no tab syncs since
+    nothing served yet. The ids of the dataflows it closed."""
+    with _lock:
+        entries = list(_docs.values())
+    closed: list[str] = []
+    for entry in entries:
+        if entry.closed or owner_guard.elsewhere(entry.project_id) is None:
+            continue
+        if entry.dirty_since is not None:
+            _flush(entry)
+        with entry.lock:
+            if not entry.closed:
+                history.close_typing(entry)
+            entry.closed = True
+            with _lock:
+                if _docs.get(entry.project_id) is entry:
+                    del _docs[entry.project_id]
+        closed.append(entry.project_id)
+    return closed
+
+
 def reset_for_tests() -> None:
     """Forget every open doc, writing nothing, as a backend that stopped does.
     A doc's thread still draining its queue refuses what is left and ends
@@ -1224,10 +1273,18 @@ def reset_for_tests() -> None:
 def read(user_key: str, project_id: str) -> Optional[dict]:
     """The dataflow's spec as it is now: its open doc's dataflow over the file.
     A doc that is not open but whose log holds changes its spec does not, which
-    a stopped backend can leave, is opened to read them."""
+    a stopped backend can leave, is opened to read them. In a process that
+    does not own the dataflow (``owner_guard.py``), whose owner may hold the
+    doc open, the file and its log are replayed into a doc this process does
+    not keep (:func:`_replayed`)."""
+    user_key = str(user_key)
     spec = storage.read_spec(user_key, project_id)
     if spec is None:
         return None
+    owner = owner_guard.elsewhere(project_id)
+    if owner is not None:
+        owner_guard.noted("read", project_id, owner)
+        return _replayed(user_key, project_id, spec)
     if _open_entry(project_id, user_key) is None and not _behind(user_key, project_id):
         return spec
     try:
@@ -1242,10 +1299,83 @@ def _as_read(spec: dict, entry: _OpenDoc) -> dict:
     """*spec*, what the file holds, with the open doc's dataflow as its own,
     each part of it that reads as the file holds it as the file holds it: a
     read of an open doc reads as the file the doc will write."""
+    return _read_with(spec, entry.doc)
+
+
+def _read_with(spec: dict, doc) -> dict:
+    """*spec* with *doc*'s dataflow as its own, as :func:`_as_read` reads it.
+    A doc its log kept from before the Spatial Join had code reads with each
+    join saved so converted (``saved_joins``), as the spec file reads."""
     dataflow = _dataflow_of(spec)
     out = dict(spec)
-    out["dataflow"] = _as_the_file_holds(doc_mapping.doc_to_dataflow(entry.doc), dataflow, dataflow)
+    read = saved_joins.converted_dataflow(doc_mapping.doc_to_dataflow(doc))
+    out["dataflow"] = _as_the_file_holds(read, dataflow, dataflow)
     return out
+
+
+#: How many times a replay reads the pointer, the file and the pointer again
+#: before it takes the file alone: each time the owner wrote meanwhile.
+REPLAY_TRIES = 3
+
+
+def _replayed(user_key: str, project_id: str, spec: dict) -> dict:
+    """The dataflow as it is now, read by a process that does not own it:
+    *spec*, the file, with the doc its log holds as its dataflow, as the
+    owner's doc reads it (:func:`_load`, :func:`_catch_up`). The doc is built
+    in memory and dropped: nothing is opened, kept, written or relayed here.
+
+    The owner may append to the log while this reads it: a record it is
+    still writing ends the replay, and a pointer that moved between this
+    read's two looks at it, a write of the file meanwhile, has it read again.
+    A dataflow whose log is no further than its file, or whose log does not
+    read, reads as its file."""
+    if not _behind(user_key, project_id):
+        return spec
+    try:
+        folder = storage.project_dir(user_key, project_id)
+    except ValueError:
+        return spec
+    for _try in range(REPLAY_TRIES):
+        pointer = _read_pointer(folder)
+        if pointer is None:
+            return spec
+        file = storage.read_spec_file(user_key, project_id)
+        if not isinstance(file.spec, dict):
+            return spec
+        if _read_pointer(folder) != pointer:
+            continue
+        try:
+            doc = _replay_doc(folder, pointer, file)
+        except (OSError, ValueError, RuntimeError, doc_mapping.DocMappingError):
+            logger.warning("dataflow %s: its log could not be replayed here; its file is read", project_id,
+                           exc_info=True)
+            return spec
+        return spec if doc is None else _read_with(spec, doc)
+    logger.warning("dataflow %s: its owner wrote it through each of %d replays; its file is read",
+                   project_id, REPLAY_TRIES)
+    return spec
+
+
+def _replay_doc(folder: Path, pointer: dict, file: "storage.SpecFile"):
+    """The doc the log *pointer* names holds, with what *file* holds that was
+    written outside the doc since the doc last wrote it carried in, as
+    :func:`_load` and :func:`_catch_up` carry it in; ``None`` when the log
+    holds another doc than its pointer names."""
+    doc = _rebuild(folder, pointer["doc"], pointer["segment"], quiet=True)
+    if doc_mapping.doc_id(doc) != pointer["doc"]:
+        return None
+    if file.revision != pointer["specRevision"]:
+        folded = pointer["folded"]
+        try:
+            base = doc_mapping.doc_to_dataflow(
+                _rebuild(folder, pointer["doc"], folded["segment"], upto=folded["offset"], quiet=True)
+            )
+        except (OSError, ValueError, RuntimeError):
+            base = doc_mapping.doc_to_dataflow(doc)
+        with doc.transaction(origin=SPEC_ORIGIN):
+            doc_mapping.apply_dataflow(doc, base, _owned(_in_sets(file.spec)))
+            _take_out(doc, tuple(_dangling(doc)))
+    return doc
 
 
 def is_open(project_id: str) -> bool:
@@ -1382,8 +1512,11 @@ def live(user_key: str, project_id: str) -> Optional[Live]:
     """The dataflow's spec as it is now, for a writer to change and hand to
     :func:`write`: its open doc's dataflow over what ``spec.trill.json``
     holds (a doc whose log holds changes the file does not is opened to read
-    them), without the history. ``None`` when the dataflow has no spec."""
+    them), without the history. ``None`` when the dataflow has no spec. A
+    writer's read is refused in a process that does not own the dataflow
+    (``owner_guard.NotTheOwner``): only its owner writes it."""
     user_key = str(user_key)
+    owner_guard.refuse(project_id, what="a writer's read of it")
     file = storage.read_spec_file(user_key, project_id)
     if not isinstance(file.spec, dict):
         return None
@@ -1510,9 +1643,22 @@ def create(user_key: str, project_id: str, spec: dict, actor: Actor) -> Live:
 
     A hosted guest's copy whose doc a room opened before the copy was made
     (:attr:`_OpenDoc.unmade`) is made from that doc (:func:`_made_from_its_doc`),
-    so the tabs that hold it sync on."""
+    so the tabs that hold it sync on.
+
+    In a process that does not own the dataflow (``owner_guard.py``), as
+    signup's examples are made in one process for every process's dataflows,
+    the files are written and no doc is kept: the owner builds the doc when it
+    first opens it, or, holding one open, carries the file in as a write
+    outside its doc (:func:`_catch_up`)."""
     user_key = str(user_key)
     mine = _writable(spec)
+    owner = owner_guard.elsewhere(project_id)
+    if owner is not None:
+        owner_guard.noted("create", project_id, owner)
+        storage.write_spec(user_key, project_id, spec)
+        _drop_pointer(user_key, project_id)
+        _made_anew(user_key, project_id, actor)
+        return Live(mine, user_key=user_key, project_id=project_id)
     if _made_from_its_doc(user_key, project_id, spec, actor):
         return Live(mine, user_key=user_key, project_id=project_id)
     if _open_entry(project_id, user_key) is not None and doc_mapping.mappable(doc_mapping.owned(_dataflow_of(mine))):
@@ -1618,7 +1764,10 @@ def _write(user_key: str, project_id: str, base: dict, mine, actor: Actor, *,
     *mine*, under the spec lock. A connection it leaves pointing at a node
     the doc no longer holds, one it draws or one a tab drew to a node it
     removes, is taken out in its own transaction
-    (:func:`_drop_dangling_connections`)."""
+    (:func:`_drop_dangling_connections`). Refused in a process that does not
+    own the dataflow (``owner_guard.NotTheOwner``), whatever it changes: the
+    owner's doc and tabs must have it."""
+    owner_guard.refuse(project_id, what="a write to it")
     if not _has_spec(user_key, project_id):
         return Written(False)
     with _spec_lock(user_key, project_id):
@@ -2165,13 +2314,19 @@ def _copied(project, user_key: str) -> Optional[dict]:
 
 
 def _start(sid: str, me: dict, project_id: str, message: bytes, held_id) -> dict:
-    """A tab's sync step 1."""
+    """A tab's sync step 1. Refused, naming the dataflow's owner and this
+    process, in a process that does not own the dataflow (``owner_guard.py``):
+    a hosted guest's copy, made or not yet, belongs where its own id names."""
     from utk_curio.backend.app.projects.services import _owner_user_dir_key
 
     project = _project(project_id)
     if project is None:
         return _refused("unknown_project")
     user_key = _owner_user_dir_key(project)
+    try:
+        owner_guard.refuse(project_id, what="a tab's sync")
+    except owner_guard.NotTheOwner as exc:
+        return _refused("not_the_owner", message=exc.description)
     try:
         with _held(project_id, user_key, unmade=_copied(project, user_key)) as entry:
             if held_id is not None and held_id != entry.doc_id:
