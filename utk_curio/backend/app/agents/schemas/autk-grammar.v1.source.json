@@ -1,7 +1,7 @@
 {
   "package": "@urban-toolkit/autk-grammar",
-  "version": "5.0.0",
+  "version": "5.2.0",
   "source": "npm",
   "id": "https://autarkjs.org/schema/autk-grammar/v1.json",
-  "sha256": "52909e46c186f16078c7ce85963ab2018baa24864ae59f33efde4909644afaa0"
+  "sha256": "cf003026b0ef2fd97ce2b96b8595fafc2dc08297b52fc27812cfee85bc324a22"
 }

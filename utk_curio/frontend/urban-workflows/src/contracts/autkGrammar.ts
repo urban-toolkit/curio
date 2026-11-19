@@ -187,13 +187,59 @@ function ownRasters(document: Record<string, unknown>): AutkRasterTable[] {
   return rasters;
 }
 
+/** The key of a table in a workspace: its name in the default one, `<workspace>/<name>` in another. */
+const tableKeyIn = (workspace: string | undefined, name: string): string => (workspace ? `${workspace}/${name}` : name);
+
+/**
+ * What a document is told when its views read an OpenStreetMap table its own
+ * data section loads both as OpenStreetMap elements (`osmElements`) and row
+ * by row, else null (autkGrammar.json's `osmElementsMixed`). A node's loaders
+ * read such a table one way, which every view of it then draws. Its tables are
+ * an area's layers, `<outputTableName>_<layer>`, and tag sets,
+ * `<outputTableName>_<name>_<type>`, each in the source's workspace; a view
+ * reads its table in its own. A table of the node's input is read row by row,
+ * whatever a view says.
+ */
+export function autkOsmElementsProblem(spec: unknown): string | null {
+  if (spec === null || typeof spec !== "object" || Array.isArray(spec)) return null;
+  const document = spec as Record<string, unknown>;
+  const own = new Set<string>();
+  for (const { object } of objectsAt(document, "data[]")) {
+    const source = object as Record<string, any> | null;
+    if (source?.type !== "osm" || typeof source.outputTableName !== "string" || !source.outputTableName) continue;
+    const out = source.outputTableName;
+    const layers = listOf(source.autoLoadLayers?.layers).map((layer) => `${out}_${layer}`);
+    const tagSets = listOf(source.tagSets)
+      .filter((set: any) => set?.name && set?.type)
+      .map((set: any) => `${out}_${set.name}_${set.type}`);
+    for (const table of [...layers, ...tagSets]) own.add(tableKeyIn(workspaceOf(source), table));
+  }
+  const reads = new Map<string, Set<boolean>>();
+  const read = (view: unknown, reader: unknown) => {
+    const table = fieldOf(reader, "dataRef");
+    if (table === undefined) return;
+    const key = tableKeyIn(workspaceOf(view), table);
+    if (!own.has(key)) return;
+    reads.set(key, (reads.get(key) ?? new Set<boolean>()).add((reader as Record<string, unknown>).osmElements === true));
+  };
+  for (const map of listOf(document.map)) {
+    for (const layer of listOf((map as Record<string, unknown> | null)?.layerRefs)) read(map, layer);
+  }
+  for (const plot of listOf(document.plot)) read(plot, plot);
+  for (const [table, ways] of reads) {
+    if (ways.size > 1) return fill(autkGrammar.osmElementsMixed, { table });
+  }
+  return null;
+}
+
 /**
  * What a document that writes a key a node does not run is told, else null.
  * A key autk-grammar 5 renamed comes first, named with its new name; then a
  * key of autk-grammar 5 a node does not run yet. The first of autkGrammar.json's
  * keys the document writes is the one it is told of, with where it is written.
- * Last, a compute pass over a raster the document's own data writes, which a
- * node does not run either (autkRasterPassProblem).
+ * Then an OpenStreetMap table of its own read both as elements and row by row
+ * (autkOsmElementsProblem). Last, a compute pass over a raster the document's
+ * own data writes, which a node does not run either (autkRasterPassProblem).
  */
 export function autkKeyProblem(spec: unknown): string | null {
   if (spec === null || typeof spec !== "object" || Array.isArray(spec)) return null;
@@ -207,5 +253,5 @@ export function autkKeyProblem(spec: unknown): string | null {
     const path = written(document, rule);
     if (path !== null) return autkNotRunYet(rule.what, path);
   }
-  return autkRasterPassProblem(document, ownRasters(document));
+  return autkOsmElementsProblem(document) ?? autkRasterPassProblem(document, ownRasters(document));
 }

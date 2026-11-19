@@ -345,14 +345,72 @@ def _own_rasters(document: dict) -> list[dict]:
     return rasters
 
 
+def _listed(held: object) -> list:
+    """*held* as a list: none is an empty list, and one value a list of one."""
+    if held is None:
+        return []
+    return held if isinstance(held, list) else [held]
+
+
+def autk_osm_elements_problem(document: object) -> str | None:
+    """What a document is told when its views read an OpenStreetMap table its
+    own data section loads both as OpenStreetMap elements (``osmElements``) and
+    row by row, else None (the file's ``osmElementsMixed``): a node's loaders
+    read such a table one way, which every view of it then draws. Its tables
+    are an area's layers, ``<outputTableName>_<layer>``, and tag sets,
+    ``<outputTableName>_<name>_<type>``, each in the source's workspace; a view
+    reads its table in its own. A table of the node's input is read row by row,
+    whatever a view says. ``autkOsmElementsProblem`` is the node's twin."""
+    if not isinstance(document, dict):
+        return None
+
+    def key(held: object, table: str) -> str:
+        workspace = _workspace_of(held)
+        return table if workspace is None else f"{workspace}/{table}"
+
+    own: set[str] = set()
+    for _path, source in _objects_at(document, "data[]"):
+        if not isinstance(source, dict) or source.get("type") != "osm":
+            continue
+        out = source.get("outputTableName")
+        if not isinstance(out, str) or not out:
+            continue
+        auto = source.get("autoLoadLayers")
+        layers = [f"{out}_{layer}" for layer in _listed(auto.get("layers") if isinstance(auto, dict) else None)]
+        tag_sets = [f"{out}_{tag_set['name']}_{tag_set['type']}" for tag_set in _listed(source.get("tagSets"))
+                    if isinstance(tag_set, dict) and tag_set.get("name") and tag_set.get("type")]
+        own.update(key(source, table) for table in layers + tag_sets)
+    reads: dict[str, set[bool]] = {}
+
+    def read(view: object, reader: object) -> None:
+        table = reader.get("dataRef") if isinstance(reader, dict) else None
+        if not isinstance(table, str):
+            return
+        table_key = key(view, table)
+        if table_key in own:
+            reads.setdefault(table_key, set()).add(reader.get("osmElements") is True)
+
+    for view in _listed(document.get("map")):
+        for layer in _listed(view.get("layerRefs") if isinstance(view, dict) else None):
+            read(view, layer)
+    for plot in _listed(document.get("plot")):
+        read(plot, plot)
+    for table, ways in reads.items():
+        if len(ways) > 1:
+            return _fill(_AUTK_GRAMMAR["osmElementsMixed"], table=table)
+    return None
+
+
 def autk_key_problem(document: object) -> str | None:
     """What a document that writes a key a node does not run is told, else
     None: a key autk-grammar 5 renamed first, named with its new name
     (``AUTK_RENAMED_KEYS``), then a key a node does not run yet
     (``AUTK_NOT_RUN_YET``), the first the document writes, with where it is
-    written, and last a compute pass over a raster the document's own data
-    writes (``autk_raster_pass_problem``). ``autkKeyProblem`` is the node's
-    twin, held to this function by the cases in ``autkGrammar.cases.json``."""
+    written, then an OpenStreetMap table of its own read both as elements and
+    row by row (``autk_osm_elements_problem``), and last a compute pass over a
+    raster the document's own data writes (``autk_raster_pass_problem``).
+    ``autkKeyProblem`` is the node's twin, held to this function by the cases
+    in ``autkGrammar.cases.json``."""
     if not isinstance(document, dict):
         return None
 
@@ -367,7 +425,7 @@ def autk_key_problem(document: object) -> str | None:
         path = _written(document, rule)
         if path is not None:
             return _not_run_yet(rule["what"], path)
-    return autk_raster_pass_problem(document, _own_rasters(document))
+    return autk_osm_elements_problem(document) or autk_raster_pass_problem(document, _own_rasters(document))
 
 
 def load_autk_schema(path: Path = AUTK_SCHEMA_PATH) -> dict:
@@ -684,10 +742,13 @@ def render_autk_region(schema: dict, label: str) -> str:
     ]
     for values, definition in _variants(schema, "DataSourceSpec", "type"):
         required = [f for f in definition.get("required", []) if f != "type"]
+        fields = _source_words(schema, values, definition)
         lines.append(
             f"  - {_either(values)}: {definition.get('description', '')}"
             + (" " + _autk_words("requires", fields=_every(required)) if required else "")
+            + (" " + fields if fields else "")
         )
+    lines += _workspace_lines(schema)
     lines += [
         "- " + _autk_words(
             "compute", description=props.get("compute", {}).get("description", ""),
@@ -719,8 +780,68 @@ def render_autk_region(schema: dict, label: str) -> str:
     ))
     for values, definition in _variants(schema, "PlotSpec", "mark"):
         lines.append(f"  - {_either(values)}: {definition.get('description', '')}")
+    lines.append("  - " + _autk_words("plot-keys"))
+    elements = _said(schema, _definition(schema, "MapLayerSpec"), "osmElements")
+    if elements:
+        lines.append("  - " + _autk_words("elements", elements=elements))
     lines += _view_lines(schema)
     return "\n".join(lines)
+
+
+#: The fields of a data source whose schema's words the ``autark`` skill's
+#: words on that source give (the section ``source-<type>`` of
+#: ``AUTK_GRAMMAR_PAGE``), by the place each fills: the field's path in the
+#: source, through the objects it holds.
+AUTK_SOURCE_FIELDS = {
+    "osm": {
+        "tag_sets": "tagSets", "force_refresh": "forceRefresh",
+        "coordinate_format": "autoLoadLayers.coordinateFormat",
+    },
+    "sql": {"query": "query", "layer_type": "layerType"},
+    "update": {"strategy": "strategy", "id_column": "idColumn"},
+}
+
+
+def _said(schema: dict, definition: object, path: str) -> str:
+    """What the field of *definition* at *path* (dotted, through the objects
+    it holds) is, in the schema's words, less its note on which adapters read
+    it; "" when *definition* has no such field."""
+    node: object = definition
+    for key in path.split("."):
+        node = _property(_resolved(schema, node), key)
+    said = node.get("description", "") if isinstance(node, dict) else ""
+    return said.split(" Read by the ", 1)[0]
+
+
+def _source_words(schema: dict, values: list[str], definition: dict) -> str:
+    """The ``autark`` skill's words on the fields of the data source
+    *definition*, whose ``type`` is one of *values* (``AUTK_SOURCE_FIELDS``),
+    each place the schema's words on its field; "" for a source it says
+    nothing more of, or when the schema lacks one of those fields."""
+    for value in values:
+        fields = AUTK_SOURCE_FIELDS.get(value)
+        if not fields:
+            continue
+        said = {place: _said(schema, definition, path) for place, path in fields.items()}
+        return _autk_words(f"source-{value}", **said) if all(said.values()) else ""
+    return ""
+
+
+def _workspace_lines(schema: dict) -> list[str]:
+    """The lines of a document's ``workspaces`` in the ``autark`` skill: what
+    the schema says of it, less its note on which adapters read it, then each
+    field of a workspace's entry. None when *schema*, the schema of what a node
+    runs, holds no ``workspaces``."""
+    root = _definition(schema, schema.get("$ref", "UrbanSpec"))
+    prop = root.get("properties", {}).get("workspaces")
+    if not isinstance(prop, dict):
+        return []
+    entry = _resolved(schema, prop.get("items"))
+    said = prop.get("description", "").split(" Read by the ", 1)[0]
+    return [f'- "workspaces": {said}'] + [
+        f'  - "{name}": {field.get("description", "")}'
+        for name, field in (entry.get("properties", {}) if isinstance(entry, dict) else {}).items()
+    ]
 
 
 def _view_lines(schema: dict) -> list[str]:

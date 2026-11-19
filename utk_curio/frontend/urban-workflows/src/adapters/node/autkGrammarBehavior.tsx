@@ -43,10 +43,11 @@ import {
     autkUsesWorkspaces,
     autkWorkspaceOf,
     compileDataSpecToAutkDbJs,
+    osmElementTables,
     requestedLayerTables,
     resolveDataSourceUrls as resolveDataSourceUrlsWithBase,
+    sectionChangedTables,
     sectionInputTables,
-    sectionJoinRoots,
     sectionTablesHandedOn,
 } from './autkDataCompile';
 import { executionInputRef } from '../../utils/flowOutputRef';
@@ -64,7 +65,7 @@ import {
     withOpaqueRasters, withRasterSources, type CurioRasterSource,
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
-import { handedTables, withCheckedPasses } from './autkComputeScopes';
+import { withCheckedPasses } from './autkComputeScopes';
 import { attachSpecCameras, frameMaps, keepMapViews, mapViews, showFramedViews, type MapView } from './autkMapView';
 import { destroyFailedGrammar, grammarMaps, trackMaps } from './autkMapDrawing';
 import {
@@ -718,15 +719,23 @@ export const useAutkGrammarBehavior = (
         // autk-db. Capture them before we touch spec.data.
         const specDataSources: any[] = Array.isArray(spec.data) ? spec.data : [];
 
-        // The tables of the node's input its data section's heatmaps and joins
-        // read (sectionInputTables): none for a section that reads only what
-        // its own sources load. Of them, those a join writes its columns onto
-        // (sectionJoinRoots), which the section's load hands back as its own.
+        // The tables of the node's input its data section's heatmaps, joins,
+        // updates and drops read (sectionInputTables): none for a section that
+        // reads only what its own sources load. Of them, those a join writes
+        // its columns onto or an update changes (sectionChangedTables), which
+        // the section's load hands back as its own.
         const sectionInputs = sectionInputTables(specDataSources);
-        const joinRoots = new Set(sectionJoinRoots(specDataSources));
+        const changedTables = new Set(sectionChangedTables(specDataSources));
         const joinedInputs = new Set(sectionInputs
             .map((table) => autkTableKey(table.workspace, table.name))
-            .filter((key) => joinRoots.has(key)));
+            .filter((key) => changedTables.has(key)));
+        // The document's workspaces, which both loaders set up before the
+        // first source, and the OpenStreetMap tables of its own a view reads
+        // as OpenStreetMap elements, which both loaders read so.
+        const loadOptions = {
+            workspaces: Array.isArray(spec.workspaces) ? spec.workspaces : undefined,
+            elements: osmElementTables(spec),
+        };
 
         // The input as the tables the document reads (utils/autkInput): each
         // input is `input_<k>`, the layers an input carries keep their own
@@ -904,23 +913,25 @@ export const useAutkGrammarBehavior = (
             const inputTables = sectionInputs.length > 0 ? preparedInput?.sources ?? [] : [];
             if (specDataSources.length > 0) {
                 const resolvedForBackend = resolveDataSourceUrls({ data: specDataSources }, true).data;
-                // The load the sandbox runs is the authored data sources, and,
-                // for a section that reads tables of the node's input, that
-                // input, which the sandbox reads by reference: the DuckDB
-                // artifact is a pure function of them, so they are its key. A
-                // section that reads none is keyed on its sources alone, and an
-                // upstream that runs again reloads only the section that reads it.
+                // The load the sandbox runs is the authored data sources, with
+                // the document's workspaces and the tables its views read as
+                // OpenStreetMap elements, and, for a section that reads tables
+                // of the node's input, that input, which the sandbox reads by
+                // reference: the DuckDB artifact is a pure function of them, so
+                // they are its key. A section that reads none is keyed on its
+                // sources alone, and an upstream that runs again reloads only
+                // the section that reads it.
                 const sentInput = sectionInputs.length > 0 ? data.input : '';
                 const cacheKey = sectionInputs.length > 0
-                    ? JSON.stringify([resolvedForBackend, executionInputRef(sentInput)])
-                    : JSON.stringify(resolvedForBackend);
+                    ? JSON.stringify([resolvedForBackend, loadOptions, executionInputRef(sentInput)])
+                    : JSON.stringify([resolvedForBackend, loadOptions]);
 
                 if (dataCacheRef.current && dataCacheRef.current.key === cacheKey) {
                     backendRef = dataCacheRef.current.ref;
                 } else {
                     try {
                         if (!data.jsInterpreter) throw new Error('No JS interpreter available for backend data load.');
-                        const code = compileDataSpecToAutkDbJs(resolvedForBackend);
+                        const code = compileDataSpecToAutkDbJs(resolvedForBackend, loadOptions);
                         backendRef = await runDataInBackend(data.jsInterpreter, code, data.nodeId, sentInput);
                         dataCacheRef.current = { key: cacheKey, ref: backendRef };
                     } catch (e: any) {
@@ -931,7 +942,10 @@ export const useAutkGrammarBehavior = (
                         const resolvedForFrontend = resolveDataSourceUrls({ data: specDataSources }, false).data;
                         dataCacheRef.current = null;
                         try {
-                            backendLayers = await loadSpecLayers({ data: resolvedForFrontend }, inputTables);
+                            backendLayers = await loadSpecLayers(
+                                { data: resolvedForFrontend, workspaces: loadOptions.workspaces }, inputTables,
+                                { elements: loadOptions.elements },
+                            );
                         } catch (fe: any) {
                             // Both paths failed. Surface BOTH reasons: the backend
                             // failure is otherwise swallowed here, and the e2e log
@@ -971,7 +985,10 @@ export const useAutkGrammarBehavior = (
                     console.warn('[autk-grammar] backend layers empty/unresolvable; falling back to in-browser AutkDb');
                     dataCacheRef.current = null;
                     const resolvedForFrontend = resolveDataSourceUrls({ data: specDataSources }, false).data;
-                    layers = await loadSpecLayers({ data: resolvedForFrontend }, inputTables);
+                    layers = await loadSpecLayers(
+                        { data: resolvedForFrontend, workspaces: loadOptions.workspaces }, inputTables,
+                        { elements: loadOptions.elements },
+                    );
                 }
                 return layers.map((layer) => (layer.type === 'buildings'
                     ? { ...layer, geojson: withReadableHeights(layer.geojson) }
@@ -1310,12 +1327,12 @@ export const useAutkGrammarBehavior = (
                     // tables in more than the default one (autkUsesWorkspaces).
                     if (drawsRasters) withRasterSources(g, newAutkDb, autkUsesWorkspaces(spec) ? enterWorkspace : undefined);
                     // Each pass the run computes is checked on the GPU's
-                    // device, as a compute step's is, and reads its
-                    // fromFeature tables as the node hands them, as a compute
-                    // step's does: the grammar's compute reads them from
-                    // autk-db, which stores a building as a GeometryCollection
-                    // (autkComputeScopes).
-                    if (computes) withCheckedPasses(g, handedTables(spec));
+                    // device, as a compute step's is (autkComputeScopes). It
+                    // runs on the run's own database, and reads a fromFeature
+                    // table as the GeoJSON the node handed the run, from the
+                    // cache of the grammar's own data adapter, of the same
+                    // entry as its compute adapter.
+                    if (computes) withCheckedPasses(g);
                     try {
                         await g.run(spec);
                     } catch (err) {
@@ -1946,9 +1963,14 @@ export const useAutkGrammarBehavior = (
                 : positions(plotTable, 'load');
             // The grammar knows a plot by its id, else by its table (plotKey).
             const plot = plotKey(panesRef.current, index) ?? plotSpec.dataRef;
-            sel.length === 0
-                ? grammar.clearHighlightOnPlot?.(plot)
-                : grammar.setPlotSelection?.(plot, sel);
+            // With nothing coming in, a plot keeps the selection its document
+            // writes (`selection`), which the grammar's run applied as it drew
+            // it: the plot selects those rows again, and the layers it is
+            // linked to light them, as a selection set in the plot does.
+            const own: number[] = Array.isArray(plotSpec.selection) ? plotSpec.selection : [];
+            if (sel.length > 0) grammar.setPlotSelection?.(plot, sel);
+            else if (own.length > 0) grammar.setPlotSelection?.(plot, own);
+            else grammar.clearHighlightOnPlot?.(plot);
         }
     };
     const syncHighlightsNow = () => {

@@ -48,8 +48,49 @@
           "minItems": 1,
           "type": "array"
         },
+        "axisLabels": {
+          "description": "Titles of the plot's axes, in the order of `axis`, in place of the column names: the x and y axes' titles of a scatter plot, a bar chart, a line chart and a heat matrix, each axis's title of parallel coordinates, and a table's column headers. An axis without a title keeps its column's name, and an axis that holds a transform's output, `@transform`, is titled `value`. A run refuses more titles than `axis` has columns, and two titles alike, since a table finds the column to sort by its header. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "categoricalColorMapInterpolator": {
+          "$ref": "#/definitions/CategoricalColorMapInterpolator",
+          "description": "Color scheme of marks colored by categories: a categorical `scheme*` scheme, `schemeObservable10` by default. The categories take the scheme's colors in the order they first appear, or in `colorMapDomain`'s order, and those past the scheme's last color take that one. A sequential or diverging `interpolate*` name is refused. Read by the Autark adapter; the deck.gl adapter ignores it."
+        },
         "color": {
+          "description": "Column whose values color the marks: a scatter plot's points, a bar chart's bars, and the lines of parallel coordinates, which a click on an axis's title colors by that axis instead. When every value is a number, or a string that reads as one, the marks take `colorMapInterpolator`'s scheme; otherwise the values are categories, and take `categoricalColorMapInterpolator`'s. A heat matrix colors its cells by their values, which `@transform` names. Line charts and tables color no mark by value.",
           "type": "string"
+        },
+        "colorMapDomain": {
+          "description": "Categories the plot is colored over, in order: the first takes the categorical scheme's first color, and so on. The values are read as categories, numbers too, and a mark whose value is not among them is drawn in the mark color. It cannot be set with `colorMapRange`. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "colorMapInterpolator": {
+          "$ref": "#/definitions/ContinuousColorMapInterpolator",
+          "description": "Color scheme of marks colored by numbers: a sequential or diverging `interpolate*` scheme, `interpolateReds` by default. The scale's low end takes the scheme's first color and its high end its last: the lowest and highest values, unless `colorMapRange` or `normalization` sets them. A categorical `scheme*` name is refused, since categories take `categoricalColorMapInterpolator`. Read by the Autark adapter; the deck.gl adapter ignores it."
+        },
+        "colorMapRange": {
+          "description": "Ends of the color scale of numbers, as `[low, high]` with low less than high. The plot is colored over this range instead of its lowest and highest values, so plots and map layers that set the same range color the same value alike. Values that are categories ignore it, as a layer with a categorical scheme does, and it cannot be set with `colorMapDomain`. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": [
+            {
+              "title": "low",
+              "type": "number"
+            },
+            {
+              "title": "high",
+              "type": "number"
+            }
+          ],
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array",
+          "uniqueItems": true
         },
         "dataRef": {
           "description": "Name of the table to plot.",
@@ -64,6 +105,10 @@
         },
         "height": {
           "type": "number"
+        },
+        "highlightColor": {
+          "$ref": "#/definitions/HexColor",
+          "description": "Color of the selected marks, and of a table's selected rows, as `#rrggbb`: `#5dade2` by default. autk-plot keeps one highlight color for the page, so every plot it draws there takes it: a run refuses two plots that set different ones, and a run whose plots set none gives back autk-plot's. Read by the Autark adapter; the deck.gl adapter ignores it."
         },
         "id": {
           "description": "Name of the plot, which a link in `links` uses as its `source`. Unique among the ids of the maps and plots. Without it a plot is known by its `dataRef`, so two plots of one table need ids: a run refuses two plots known by one name.",
@@ -101,12 +146,68 @@
           "const": "bar",
           "type": "string"
         },
+        "markColor": {
+          "$ref": "#/definitions/HexColor",
+          "description": "Color of the marks that are neither colored by value nor selected, as `#rrggbb`: `#bfbfbf` by default. autk-plot keeps one mark color for the page, so every plot it draws there takes it: a run refuses two plots that set different ones, and a run whose plots set none gives back autk-plot's. Read by the Autark adapter; the deck.gl adapter ignores it."
+        },
+        "normalization": {
+          "description": "How the ends of the color scale of numbers are found: `minMax`, the default, takes the lowest and highest values; `percentile` takes the values at the `lowerPercentile` and `upperPercentile` percentiles, 2 and 98 when it gives neither, else 0 and 100 for the one it leaves out. Categories ignore it. A map layer's `normalization` reads the same way. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "properties": {
+            "lowerPercentile": {
+              "type": "number"
+            },
+            "mode": {
+              "$ref": "#/definitions/NormalizationMode"
+            },
+            "upperPercentile": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "type": "object"
+        },
+        "osmElements": {
+          "description": "Plot an OpenStreetMap layer table as one row per OSM element it was built from, each with the element's tags, `osm_type` and `osm_id` (and `building_id` in a buildings table), rather than one row per table row. A table that is not an OSM layer, a surface, and an OSM table an update changed are plotted row by row, as without it. Read by the Autark adapter only.",
+          "type": "boolean"
+        },
         "selectFields": {
           "description": "Columns whose values name the rows a selection in this plot selects, so an app can link the selection to other tables that hold those columns. Neither adapter reads it: the Autark adapter's `plot:selection` events still report feature ids.",
           "items": {
             "type": "string"
           },
           "minItems": 1,
+          "type": "array"
+        },
+        "selection": {
+          "description": "Rows selected when the plot is drawn, by their positions among the rows it draws, as `plot:selection` events and `setPlotSelection` name them. The plot draws them in its highlight color (a binned plot, the bins that hold them), and the map layers it is linked to, by `mapRef` or `links`, highlight the same rows, as after `setPlotSelection`. No `plot:selection` event reports it. A run refuses a position past the plot's last row. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": {
+            "description": "A row of a table as a view draws it: its position among the rows the view draws, from 0.",
+            "minimum": 0,
+            "multipleOf": 1,
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "tickFormats": {
+          "description": "d3-format specifiers of the tick labels of the plot's axes, `[x, y]`: a scatter plot's x and y axes; a bar or line chart's x axis, for labels that read as numbers, and its y axis; and every axis of numbers of parallel coordinates, which read only the first. Heat matrices and tables ignore it. Without it, `['~s', '~s']`. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": [
+            {
+              "description": "A d3-format specifier, such as `~s`, `,d`, `.2f` or `.0%`: d3-format's `[[fill]align][sign][symbol][0][width][,][.precision][~][type]`.",
+              "pattern": "^(?:.?[<>=^])?[-+( ]?[$#]?0?\\d*,?(?:\\.\\d+)?~?[a-zA-Z%]?$",
+              "title": "x",
+              "type": "string"
+            },
+            {
+              "description": "A d3-format specifier, such as `~s`, `,d`, `.2f` or `.0%`: d3-format's `[[fill]align][sign][symbol][0][width][,][.precision][~][type]`.",
+              "pattern": "^(?:.?[<>=^])?[-+( ]?[$#]?0?\\d*,?(?:\\.\\d+)?~?[a-zA-Z%]?$",
+              "title": "y",
+              "type": "string"
+            }
+          ],
+          "maxItems": 2,
+          "minItems": 2,
           "type": "array"
         },
         "title": {
@@ -163,8 +264,8 @@
           "type": "number"
         },
         "pitch": {
-          "description": "Tilt from straight down, in degrees.",
-          "maximum": 90,
+          "description": "Tilt from straight down, in degrees, less than 90: at 90 the eye would sit on the ground, edge-on to the map's flat layers, and the map could not pan.",
+          "exclusiveMaximum": 90,
           "minimum": 0,
           "type": "number"
         },
@@ -175,6 +276,23 @@
         }
       },
       "type": "object"
+    },
+    "CategoricalColorMapInterpolator": {
+      "description": "A categorical color scheme: a `scheme*` name, one color for each category.",
+      "enum": [
+        "schemeAccent",
+        "schemeDark2",
+        "schemeCategory10",
+        "schemeObservable10",
+        "schemePaired",
+        "schemePastel1",
+        "schemePastel2",
+        "schemeSet1",
+        "schemeSet2",
+        "schemeSet3",
+        "schemeTableau10"
+      ],
+      "type": "string"
     },
     "ColorMapInterpolator": {
       "description": "Color scheme for a colored map layer: `scheme*` names are categorical, `interpolate*` names are sequential or diverging.",
@@ -239,6 +357,48 @@
         }
       ],
       "description": "One entry of `compute`. A pass with `type: 'render'` is a  {@link  RenderComputeSpec } , any other a  {@link  GpgpuComputeSpec } ."
+    },
+    "ContinuousColorMapInterpolator": {
+      "description": "A sequential or diverging color scheme: an `interpolate*` name, a color for each number of a scale.",
+      "enum": [
+        "interpolateReds",
+        "interpolateBlues",
+        "interpolateGreens",
+        "interpolateGreys",
+        "interpolateOranges",
+        "interpolatePurples",
+        "interpolateTurbo",
+        "interpolateViridis",
+        "interpolateInferno",
+        "interpolateMagma",
+        "interpolatePlasma",
+        "interpolateCividis",
+        "interpolateWarm",
+        "interpolateCool",
+        "interpolateCubehelixDefault",
+        "interpolateBuGn",
+        "interpolateBuPu",
+        "interpolateGnBu",
+        "interpolateOrRd",
+        "interpolatePuBuGn",
+        "interpolatePuBu",
+        "interpolatePuRd",
+        "interpolateRdPu",
+        "interpolateYlGnBu",
+        "interpolateYlGn",
+        "interpolateYlOrBr",
+        "interpolateYlOrRd",
+        "interpolateBrBG",
+        "interpolatePRGn",
+        "interpolatePiYG",
+        "interpolatePuOr",
+        "interpolateRdBu",
+        "interpolateRdGy",
+        "interpolateRdYlBu",
+        "interpolateRdYlGn",
+        "interpolateSpectral"
+      ],
+      "type": "string"
     },
     "CsvDataSourceSpec": {
       "description": "Loads a CSV table from exactly one of `csvFileUrl` or `csvObject`.",
@@ -440,6 +600,45 @@
           "then": {
             "$ref": "#/definitions/JoinSourceSpec"
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "sql",
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/definitions/SqlSourceSpec"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "update",
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/definitions/UpdateSourceSpec"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "drop",
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/definitions/DropSourceSpec"
+          }
         }
       ],
       "description": "One entry of `data`. The `type` field selects which fields apply.",
@@ -452,12 +651,37 @@
             "geojson",
             "geotiff",
             "heatmap",
-            "join"
+            "join",
+            "sql",
+            "update",
+            "drop"
           ]
         }
       },
       "required": [
         "type"
+      ],
+      "type": "object"
+    },
+    "DropSourceSpec": {
+      "description": "Drops a table, so the sources, compute passes, maps and plots after it no longer find it, and `AutkGrammar.data` no longer lists it. Read by the Autark adapter only.",
+      "properties": {
+        "dataRef": {
+          "description": "The table to drop.",
+          "type": "string"
+        },
+        "type": {
+          "const": "drop",
+          "type": "string"
+        },
+        "workspace": {
+          "$ref": "#/definitions/WorkspaceName",
+          "description": "Workspace of the table."
+        }
+      },
+      "required": [
+        "type",
+        "dataRef"
       ],
       "type": "object"
     },
@@ -500,7 +724,7 @@
               "type": "string"
             },
             "layer": {
-              "description": "Table to read from.",
+              "description": "Table to read from. The Autark adapter reads it as an earlier compute pass wrote it; else, when a GeoJSON source loaded it with its coordinates in its workspace's CRS, as the source gave its features, each building part with its own outline; else as autk-db keeps it, a buildings table's geometry inside a GeometryCollection.",
               "type": "string"
             },
             "path": {
@@ -991,6 +1215,10 @@
               },
               "column": {
                 "type": "string"
+              },
+              "normalize": {
+                "description": "Rescale the band's values from 0 to 1 across the grid's cells. It needs an autk-db with urban-toolkit/autark#132, which also adds `_norm` to the band's label; autk-db 4.1.1 builds the band from the values as they are.",
+                "type": "boolean"
               }
             },
             "required": [
@@ -1054,8 +1282,49 @@
           "minItems": 1,
           "type": "array"
         },
+        "axisLabels": {
+          "description": "Titles of the plot's axes, in the order of `axis`, in place of the column names: the x and y axes' titles of a scatter plot, a bar chart, a line chart and a heat matrix, each axis's title of parallel coordinates, and a table's column headers. An axis without a title keeps its column's name, and an axis that holds a transform's output, `@transform`, is titled `value`. A run refuses more titles than `axis` has columns, and two titles alike, since a table finds the column to sort by its header. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "categoricalColorMapInterpolator": {
+          "$ref": "#/definitions/CategoricalColorMapInterpolator",
+          "description": "Color scheme of marks colored by categories: a categorical `scheme*` scheme, `schemeObservable10` by default. The categories take the scheme's colors in the order they first appear, or in `colorMapDomain`'s order, and those past the scheme's last color take that one. A sequential or diverging `interpolate*` name is refused. Read by the Autark adapter; the deck.gl adapter ignores it."
+        },
         "color": {
+          "description": "Column whose values color the marks: a scatter plot's points, a bar chart's bars, and the lines of parallel coordinates, which a click on an axis's title colors by that axis instead. When every value is a number, or a string that reads as one, the marks take `colorMapInterpolator`'s scheme; otherwise the values are categories, and take `categoricalColorMapInterpolator`'s. A heat matrix colors its cells by their values, which `@transform` names. Line charts and tables color no mark by value.",
           "type": "string"
+        },
+        "colorMapDomain": {
+          "description": "Categories the plot is colored over, in order: the first takes the categorical scheme's first color, and so on. The values are read as categories, numbers too, and a mark whose value is not among them is drawn in the mark color. It cannot be set with `colorMapRange`. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "colorMapInterpolator": {
+          "$ref": "#/definitions/ContinuousColorMapInterpolator",
+          "description": "Color scheme of marks colored by numbers: a sequential or diverging `interpolate*` scheme, `interpolateReds` by default. The scale's low end takes the scheme's first color and its high end its last: the lowest and highest values, unless `colorMapRange` or `normalization` sets them. A categorical `scheme*` name is refused, since categories take `categoricalColorMapInterpolator`. Read by the Autark adapter; the deck.gl adapter ignores it."
+        },
+        "colorMapRange": {
+          "description": "Ends of the color scale of numbers, as `[low, high]` with low less than high. The plot is colored over this range instead of its lowest and highest values, so plots and map layers that set the same range color the same value alike. Values that are categories ignore it, as a layer with a categorical scheme does, and it cannot be set with `colorMapDomain`. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": [
+            {
+              "title": "low",
+              "type": "number"
+            },
+            {
+              "title": "high",
+              "type": "number"
+            }
+          ],
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array",
+          "uniqueItems": true
         },
         "dataRef": {
           "description": "Name of the table to plot.",
@@ -1070,6 +1339,10 @@
         },
         "height": {
           "type": "number"
+        },
+        "highlightColor": {
+          "$ref": "#/definitions/HexColor",
+          "description": "Color of the selected marks, and of a table's selected rows, as `#rrggbb`: `#5dade2` by default. autk-plot keeps one highlight color for the page, so every plot it draws there takes it: a run refuses two plots that set different ones, and a run whose plots set none gives back autk-plot's. Read by the Autark adapter; the deck.gl adapter ignores it."
         },
         "id": {
           "description": "Name of the plot, which a link in `links` uses as its `source`. Unique among the ids of the maps and plots. Without it a plot is known by its `dataRef`, so two plots of one table need ids: a run refuses two plots known by one name.",
@@ -1107,12 +1380,68 @@
           "const": "heatmatrix",
           "type": "string"
         },
+        "markColor": {
+          "$ref": "#/definitions/HexColor",
+          "description": "Color of the marks that are neither colored by value nor selected, as `#rrggbb`: `#bfbfbf` by default. autk-plot keeps one mark color for the page, so every plot it draws there takes it: a run refuses two plots that set different ones, and a run whose plots set none gives back autk-plot's. Read by the Autark adapter; the deck.gl adapter ignores it."
+        },
+        "normalization": {
+          "description": "How the ends of the color scale of numbers are found: `minMax`, the default, takes the lowest and highest values; `percentile` takes the values at the `lowerPercentile` and `upperPercentile` percentiles, 2 and 98 when it gives neither, else 0 and 100 for the one it leaves out. Categories ignore it. A map layer's `normalization` reads the same way. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "properties": {
+            "lowerPercentile": {
+              "type": "number"
+            },
+            "mode": {
+              "$ref": "#/definitions/NormalizationMode"
+            },
+            "upperPercentile": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "type": "object"
+        },
+        "osmElements": {
+          "description": "Plot an OpenStreetMap layer table as one row per OSM element it was built from, each with the element's tags, `osm_type` and `osm_id` (and `building_id` in a buildings table), rather than one row per table row. A table that is not an OSM layer, a surface, and an OSM table an update changed are plotted row by row, as without it. Read by the Autark adapter only.",
+          "type": "boolean"
+        },
         "selectFields": {
           "description": "Columns whose values name the rows a selection in this plot selects, so an app can link the selection to other tables that hold those columns. Neither adapter reads it: the Autark adapter's `plot:selection` events still report feature ids.",
           "items": {
             "type": "string"
           },
           "minItems": 1,
+          "type": "array"
+        },
+        "selection": {
+          "description": "Rows selected when the plot is drawn, by their positions among the rows it draws, as `plot:selection` events and `setPlotSelection` name them. The plot draws them in its highlight color (a binned plot, the bins that hold them), and the map layers it is linked to, by `mapRef` or `links`, highlight the same rows, as after `setPlotSelection`. No `plot:selection` event reports it. A run refuses a position past the plot's last row. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": {
+            "description": "A row of a table as a view draws it: its position among the rows the view draws, from 0.",
+            "minimum": 0,
+            "multipleOf": 1,
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "tickFormats": {
+          "description": "d3-format specifiers of the tick labels of the plot's axes, `[x, y]`: a scatter plot's x and y axes; a bar or line chart's x axis, for labels that read as numbers, and its y axis; and every axis of numbers of parallel coordinates, which read only the first. Heat matrices and tables ignore it. Without it, `['~s', '~s']`. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": [
+            {
+              "description": "A d3-format specifier, such as `~s`, `,d`, `.2f` or `.0%`: d3-format's `[[fill]align][sign][symbol][0][width][,][.precision][~][type]`.",
+              "pattern": "^(?:.?[<>=^])?[-+( ]?[$#]?0?\\d*,?(?:\\.\\d+)?~?[a-zA-Z%]?$",
+              "title": "x",
+              "type": "string"
+            },
+            {
+              "description": "A d3-format specifier, such as `~s`, `,d`, `.2f` or `.0%`: d3-format's `[[fill]align][sign][symbol][0][width][,][.precision][~][type]`.",
+              "pattern": "^(?:.?[<>=^])?[-+( ]?[$#]?0?\\d*,?(?:\\.\\d+)?~?[a-zA-Z%]?$",
+              "title": "y",
+              "type": "string"
+            }
+          ],
+          "maxItems": 2,
+          "minItems": 2,
           "type": "array"
         },
         "title": {
@@ -1388,8 +1717,49 @@
           "minItems": 1,
           "type": "array"
         },
+        "axisLabels": {
+          "description": "Titles of the plot's axes, in the order of `axis`, in place of the column names: the x and y axes' titles of a scatter plot, a bar chart, a line chart and a heat matrix, each axis's title of parallel coordinates, and a table's column headers. An axis without a title keeps its column's name, and an axis that holds a transform's output, `@transform`, is titled `value`. A run refuses more titles than `axis` has columns, and two titles alike, since a table finds the column to sort by its header. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "categoricalColorMapInterpolator": {
+          "$ref": "#/definitions/CategoricalColorMapInterpolator",
+          "description": "Color scheme of marks colored by categories: a categorical `scheme*` scheme, `schemeObservable10` by default. The categories take the scheme's colors in the order they first appear, or in `colorMapDomain`'s order, and those past the scheme's last color take that one. A sequential or diverging `interpolate*` name is refused. Read by the Autark adapter; the deck.gl adapter ignores it."
+        },
         "color": {
+          "description": "Column whose values color the marks: a scatter plot's points, a bar chart's bars, and the lines of parallel coordinates, which a click on an axis's title colors by that axis instead. When every value is a number, or a string that reads as one, the marks take `colorMapInterpolator`'s scheme; otherwise the values are categories, and take `categoricalColorMapInterpolator`'s. A heat matrix colors its cells by their values, which `@transform` names. Line charts and tables color no mark by value.",
           "type": "string"
+        },
+        "colorMapDomain": {
+          "description": "Categories the plot is colored over, in order: the first takes the categorical scheme's first color, and so on. The values are read as categories, numbers too, and a mark whose value is not among them is drawn in the mark color. It cannot be set with `colorMapRange`. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "colorMapInterpolator": {
+          "$ref": "#/definitions/ContinuousColorMapInterpolator",
+          "description": "Color scheme of marks colored by numbers: a sequential or diverging `interpolate*` scheme, `interpolateReds` by default. The scale's low end takes the scheme's first color and its high end its last: the lowest and highest values, unless `colorMapRange` or `normalization` sets them. A categorical `scheme*` name is refused, since categories take `categoricalColorMapInterpolator`. Read by the Autark adapter; the deck.gl adapter ignores it."
+        },
+        "colorMapRange": {
+          "description": "Ends of the color scale of numbers, as `[low, high]` with low less than high. The plot is colored over this range instead of its lowest and highest values, so plots and map layers that set the same range color the same value alike. Values that are categories ignore it, as a layer with a categorical scheme does, and it cannot be set with `colorMapDomain`. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": [
+            {
+              "title": "low",
+              "type": "number"
+            },
+            {
+              "title": "high",
+              "type": "number"
+            }
+          ],
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array",
+          "uniqueItems": true
         },
         "dataRef": {
           "description": "Name of the table to plot.",
@@ -1404,6 +1774,10 @@
         },
         "height": {
           "type": "number"
+        },
+        "highlightColor": {
+          "$ref": "#/definitions/HexColor",
+          "description": "Color of the selected marks, and of a table's selected rows, as `#rrggbb`: `#5dade2` by default. autk-plot keeps one highlight color for the page, so every plot it draws there takes it: a run refuses two plots that set different ones, and a run whose plots set none gives back autk-plot's. Read by the Autark adapter; the deck.gl adapter ignores it."
         },
         "id": {
           "description": "Name of the plot, which a link in `links` uses as its `source`. Unique among the ids of the maps and plots. Without it a plot is known by its `dataRef`, so two plots of one table need ids: a run refuses two plots known by one name.",
@@ -1444,12 +1818,68 @@
           ],
           "type": "string"
         },
+        "markColor": {
+          "$ref": "#/definitions/HexColor",
+          "description": "Color of the marks that are neither colored by value nor selected, as `#rrggbb`: `#bfbfbf` by default. autk-plot keeps one mark color for the page, so every plot it draws there takes it: a run refuses two plots that set different ones, and a run whose plots set none gives back autk-plot's. Read by the Autark adapter; the deck.gl adapter ignores it."
+        },
+        "normalization": {
+          "description": "How the ends of the color scale of numbers are found: `minMax`, the default, takes the lowest and highest values; `percentile` takes the values at the `lowerPercentile` and `upperPercentile` percentiles, 2 and 98 when it gives neither, else 0 and 100 for the one it leaves out. Categories ignore it. A map layer's `normalization` reads the same way. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "properties": {
+            "lowerPercentile": {
+              "type": "number"
+            },
+            "mode": {
+              "$ref": "#/definitions/NormalizationMode"
+            },
+            "upperPercentile": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "type": "object"
+        },
+        "osmElements": {
+          "description": "Plot an OpenStreetMap layer table as one row per OSM element it was built from, each with the element's tags, `osm_type` and `osm_id` (and `building_id` in a buildings table), rather than one row per table row. A table that is not an OSM layer, a surface, and an OSM table an update changed are plotted row by row, as without it. Read by the Autark adapter only.",
+          "type": "boolean"
+        },
         "selectFields": {
           "description": "Columns whose values name the rows a selection in this plot selects, so an app can link the selection to other tables that hold those columns. Neither adapter reads it: the Autark adapter's `plot:selection` events still report feature ids.",
           "items": {
             "type": "string"
           },
           "minItems": 1,
+          "type": "array"
+        },
+        "selection": {
+          "description": "Rows selected when the plot is drawn, by their positions among the rows it draws, as `plot:selection` events and `setPlotSelection` name them. The plot draws them in its highlight color (a binned plot, the bins that hold them), and the map layers it is linked to, by `mapRef` or `links`, highlight the same rows, as after `setPlotSelection`. No `plot:selection` event reports it. A run refuses a position past the plot's last row. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": {
+            "description": "A row of a table as a view draws it: its position among the rows the view draws, from 0.",
+            "minimum": 0,
+            "multipleOf": 1,
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "tickFormats": {
+          "description": "d3-format specifiers of the tick labels of the plot's axes, `[x, y]`: a scatter plot's x and y axes; a bar or line chart's x axis, for labels that read as numbers, and its y axis; and every axis of numbers of parallel coordinates, which read only the first. Heat matrices and tables ignore it. Without it, `['~s', '~s']`. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": [
+            {
+              "description": "A d3-format specifier, such as `~s`, `,d`, `.2f` or `.0%`: d3-format's `[[fill]align][sign][symbol][0][width][,][.precision][~][type]`.",
+              "pattern": "^(?:.?[<>=^])?[-+( ]?[$#]?0?\\d*,?(?:\\.\\d+)?~?[a-zA-Z%]?$",
+              "title": "x",
+              "type": "string"
+            },
+            {
+              "description": "A d3-format specifier, such as `~s`, `,d`, `.2f` or `.0%`: d3-format's `[[fill]align][sign][symbol][0][width][,][.precision][~][type]`.",
+              "pattern": "^(?:.?[<>=^])?[-+( ]?[$#]?0?\\d*,?(?:\\.\\d+)?~?[a-zA-Z%]?$",
+              "title": "y",
+              "type": "string"
+            }
+          ],
+          "maxItems": 2,
+          "minItems": 2,
           "type": "array"
         },
         "title": {
@@ -1638,6 +2068,10 @@
         "opacity": {
           "description": "Layer opacity, from 0 to 1.",
           "type": "number"
+        },
+        "osmElements": {
+          "description": "Draw an OpenStreetMap layer table as one feature per OSM element it was built from, each with the element's tags, `osm_type` and `osm_id` as its properties (and `building_id` in a buildings table, whose parts are elements of their own), rather than one feature per row. A table that is not an OSM layer, a surface, and an OSM table an update changed are drawn row by row, as without it. Read by the Autark adapter only.",
+          "type": "boolean"
         },
         "pickedComps": {
           "description": "Feature ids drawn as picked. Read by the deck.gl adapter; the Autark adapter ignores it.",
@@ -1878,10 +2312,19 @@
     },
     "OsmDataSourceSpec": {
       "description": "Loads OpenStreetMap data for a named area or a box, from Overpass or from a PBF extract.",
+      "if": {
+        "required": [
+          "pbfFileUrl"
+        ]
+      },
       "properties": {
         "autoLoadLayers": {
           "description": "Split the raw OSM table into one table per layer, named `<outputTableName>_<layer>`.",
           "properties": {
+            "coordinateFormat": {
+              "description": "CRS of the OpenStreetMap data's coordinates, as an EPSG string. Defaults to `'EPSG:4326'`, the degrees the Overpass API and OpenStreetMap's extracts give. The layers and the tag sets are read in it. Read by the Autark adapter only.",
+              "type": "string"
+            },
             "dropOsmTable": {
               "description": "Currently ignored by both adapters.",
               "type": "boolean"
@@ -1897,6 +2340,10 @@
             "layers"
           ],
           "type": "object"
+        },
+        "forceRefresh": {
+          "description": "Query the Overpass API again rather than read the answer the browser cached for this area, its layers and its tag sets, which autk-db keeps for 24 hours. A source with `pbfFileUrl` reads its file each time and ignores it. Read by the Autark adapter only.",
+          "type": "boolean"
         },
         "outputTableName": {
           "description": "Name of the table this source creates. Later sources, compute passes, maps and plots refer to it by this name.",
@@ -1917,6 +2364,14 @@
           ],
           "description": "Area to load: sub-areas inside a geocoded region (`geocodeArea` with `areas`), or a box (`bbox`), not both."
         },
+        "tagSets": {
+          "description": "Features chosen by their tags, each set as a table of its own, `<outputTableName>_<name>_<type>`, cut to the area. A set that matches no feature in the area makes no table. Read from the Overpass API only: a source with `pbfFileUrl` cannot take them. Read by the Autark adapter only.",
+          "items": {
+            "$ref": "#/definitions/OsmTagSet"
+          },
+          "maxItems": 8,
+          "type": "array"
+        },
         "type": {
           "const": "osm",
           "type": "string"
@@ -1931,6 +2386,18 @@
         "queryArea",
         "type"
       ],
+      "then": {
+        "not": {
+          "properties": {
+            "tagSets": {
+              "minItems": 1
+            }
+          },
+          "required": [
+            "tagSets"
+          ]
+        }
+      },
       "type": "object"
     },
     "OsmNamedArea": {
@@ -1958,6 +2425,60 @@
       ],
       "type": "object"
     },
+    "OsmTagFilter": {
+      "description": "An OpenStreetMap tag a tag set matches: the tag `key` with the value `value`, or with any value when `value` is omitted.",
+      "properties": {
+        "key": {
+          "description": "The tag's key, such as `amenity` or `addr:street`: letters, digits, `_`, `:`, `.` and `-`, starting with a letter or a digit.",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_:.-]{0,254}$",
+          "type": "string"
+        },
+        "value": {
+          "description": "The tag's value, such as `cafe`. Without it, the key with any value matches.",
+          "maxLength": 255,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object"
+    },
+    "OsmTagSet": {
+      "description": "OpenStreetMap features chosen by their tags, as one table of one geometry type.",
+      "properties": {
+        "name": {
+          "description": "Names the set's table, `<outputTableName>_<name>_<type>`: a lowercase letter, then up to 31 lowercase letters, digits or `_`. No two sets of a source share a name.",
+          "pattern": "^[a-z][a-z0-9_]{0,31}$",
+          "type": "string"
+        },
+        "tags": {
+          "description": "The tags a feature is chosen by: it is in the set when it has any one of them.",
+          "items": {
+            "$ref": "#/definitions/OsmTagFilter"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "type": "array"
+        },
+        "type": {
+          "description": "The geometry the table holds: `points`, the tagged nodes; `polylines`, the open ways and the ways tagged as lines (`highway`, `barrier`, `railway`, `waterway`, or `area=no`); `polygons`, the other closed ways and the multipolygon relations.",
+          "enum": [
+            "points",
+            "polylines",
+            "polygons"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "type",
+        "tags"
+      ],
+      "type": "object"
+    },
     "ParallelCoordinatesPlotSpec": {
       "description": "Parallel coordinates over the plotted columns.",
       "properties": {
@@ -1969,8 +2490,49 @@
           "minItems": 1,
           "type": "array"
         },
+        "axisLabels": {
+          "description": "Titles of the plot's axes, in the order of `axis`, in place of the column names: the x and y axes' titles of a scatter plot, a bar chart, a line chart and a heat matrix, each axis's title of parallel coordinates, and a table's column headers. An axis without a title keeps its column's name, and an axis that holds a transform's output, `@transform`, is titled `value`. A run refuses more titles than `axis` has columns, and two titles alike, since a table finds the column to sort by its header. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "categoricalColorMapInterpolator": {
+          "$ref": "#/definitions/CategoricalColorMapInterpolator",
+          "description": "Color scheme of marks colored by categories: a categorical `scheme*` scheme, `schemeObservable10` by default. The categories take the scheme's colors in the order they first appear, or in `colorMapDomain`'s order, and those past the scheme's last color take that one. A sequential or diverging `interpolate*` name is refused. Read by the Autark adapter; the deck.gl adapter ignores it."
+        },
         "color": {
+          "description": "Column whose values color the marks: a scatter plot's points, a bar chart's bars, and the lines of parallel coordinates, which a click on an axis's title colors by that axis instead. When every value is a number, or a string that reads as one, the marks take `colorMapInterpolator`'s scheme; otherwise the values are categories, and take `categoricalColorMapInterpolator`'s. A heat matrix colors its cells by their values, which `@transform` names. Line charts and tables color no mark by value.",
           "type": "string"
+        },
+        "colorMapDomain": {
+          "description": "Categories the plot is colored over, in order: the first takes the categorical scheme's first color, and so on. The values are read as categories, numbers too, and a mark whose value is not among them is drawn in the mark color. It cannot be set with `colorMapRange`. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "colorMapInterpolator": {
+          "$ref": "#/definitions/ContinuousColorMapInterpolator",
+          "description": "Color scheme of marks colored by numbers: a sequential or diverging `interpolate*` scheme, `interpolateReds` by default. The scale's low end takes the scheme's first color and its high end its last: the lowest and highest values, unless `colorMapRange` or `normalization` sets them. A categorical `scheme*` name is refused, since categories take `categoricalColorMapInterpolator`. Read by the Autark adapter; the deck.gl adapter ignores it."
+        },
+        "colorMapRange": {
+          "description": "Ends of the color scale of numbers, as `[low, high]` with low less than high. The plot is colored over this range instead of its lowest and highest values, so plots and map layers that set the same range color the same value alike. Values that are categories ignore it, as a layer with a categorical scheme does, and it cannot be set with `colorMapDomain`. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": [
+            {
+              "title": "low",
+              "type": "number"
+            },
+            {
+              "title": "high",
+              "type": "number"
+            }
+          ],
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array",
+          "uniqueItems": true
         },
         "dataRef": {
           "description": "Name of the table to plot.",
@@ -1985,6 +2547,10 @@
         },
         "height": {
           "type": "number"
+        },
+        "highlightColor": {
+          "$ref": "#/definitions/HexColor",
+          "description": "Color of the selected marks, and of a table's selected rows, as `#rrggbb`: `#5dade2` by default. autk-plot keeps one highlight color for the page, so every plot it draws there takes it: a run refuses two plots that set different ones, and a run whose plots set none gives back autk-plot's. Read by the Autark adapter; the deck.gl adapter ignores it."
         },
         "id": {
           "description": "Name of the plot, which a link in `links` uses as its `source`. Unique among the ids of the maps and plots. Without it a plot is known by its `dataRef`, so two plots of one table need ids: a run refuses two plots known by one name.",
@@ -2022,12 +2588,68 @@
           "const": "parallel-coordinates",
           "type": "string"
         },
+        "markColor": {
+          "$ref": "#/definitions/HexColor",
+          "description": "Color of the marks that are neither colored by value nor selected, as `#rrggbb`: `#bfbfbf` by default. autk-plot keeps one mark color for the page, so every plot it draws there takes it: a run refuses two plots that set different ones, and a run whose plots set none gives back autk-plot's. Read by the Autark adapter; the deck.gl adapter ignores it."
+        },
+        "normalization": {
+          "description": "How the ends of the color scale of numbers are found: `minMax`, the default, takes the lowest and highest values; `percentile` takes the values at the `lowerPercentile` and `upperPercentile` percentiles, 2 and 98 when it gives neither, else 0 and 100 for the one it leaves out. Categories ignore it. A map layer's `normalization` reads the same way. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "properties": {
+            "lowerPercentile": {
+              "type": "number"
+            },
+            "mode": {
+              "$ref": "#/definitions/NormalizationMode"
+            },
+            "upperPercentile": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "type": "object"
+        },
+        "osmElements": {
+          "description": "Plot an OpenStreetMap layer table as one row per OSM element it was built from, each with the element's tags, `osm_type` and `osm_id` (and `building_id` in a buildings table), rather than one row per table row. A table that is not an OSM layer, a surface, and an OSM table an update changed are plotted row by row, as without it. Read by the Autark adapter only.",
+          "type": "boolean"
+        },
         "selectFields": {
           "description": "Columns whose values name the rows a selection in this plot selects, so an app can link the selection to other tables that hold those columns. Neither adapter reads it: the Autark adapter's `plot:selection` events still report feature ids.",
           "items": {
             "type": "string"
           },
           "minItems": 1,
+          "type": "array"
+        },
+        "selection": {
+          "description": "Rows selected when the plot is drawn, by their positions among the rows it draws, as `plot:selection` events and `setPlotSelection` name them. The plot draws them in its highlight color (a binned plot, the bins that hold them), and the map layers it is linked to, by `mapRef` or `links`, highlight the same rows, as after `setPlotSelection`. No `plot:selection` event reports it. A run refuses a position past the plot's last row. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": {
+            "description": "A row of a table as a view draws it: its position among the rows the view draws, from 0.",
+            "minimum": 0,
+            "multipleOf": 1,
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "tickFormats": {
+          "description": "d3-format specifiers of the tick labels of the plot's axes, `[x, y]`: a scatter plot's x and y axes; a bar or line chart's x axis, for labels that read as numbers, and its y axis; and every axis of numbers of parallel coordinates, which read only the first. Heat matrices and tables ignore it. Without it, `['~s', '~s']`. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": [
+            {
+              "description": "A d3-format specifier, such as `~s`, `,d`, `.2f` or `.0%`: d3-format's `[[fill]align][sign][symbol][0][width][,][.precision][~][type]`.",
+              "pattern": "^(?:.?[<>=^])?[-+( ]?[$#]?0?\\d*,?(?:\\.\\d+)?~?[a-zA-Z%]?$",
+              "title": "x",
+              "type": "string"
+            },
+            {
+              "description": "A d3-format specifier, such as `~s`, `,d`, `.2f` or `.0%`: d3-format's `[[fill]align][sign][symbol][0][width][,][.precision][~][type]`.",
+              "pattern": "^(?:.?[<>=^])?[-+( ]?[$#]?0?\\d*,?(?:\\.\\d+)?~?[a-zA-Z%]?$",
+              "title": "y",
+              "type": "string"
+            }
+          ],
+          "maxItems": 2,
+          "minItems": 2,
           "type": "array"
         },
         "title": {
@@ -2146,6 +2768,11 @@
         }
       ],
       "description": "A plot view. The `mark` field selects which transforms apply.",
+      "if": {
+        "required": [
+          "colorMapRange"
+        ]
+      },
       "properties": {
         "mark": {
           "enum": [
@@ -2162,6 +2789,13 @@
       "required": [
         "mark"
       ],
+      "then": {
+        "not": {
+          "required": [
+            "colorMapDomain"
+          ]
+        }
+      },
       "type": "object"
     },
     "PlotTransformPreset": {
@@ -2573,8 +3207,49 @@
           "minItems": 2,
           "type": "array"
         },
+        "axisLabels": {
+          "description": "Titles of the plot's axes, in the order of `axis`, in place of the column names: the x and y axes' titles of a scatter plot, a bar chart, a line chart and a heat matrix, each axis's title of parallel coordinates, and a table's column headers. An axis without a title keeps its column's name, and an axis that holds a transform's output, `@transform`, is titled `value`. A run refuses more titles than `axis` has columns, and two titles alike, since a table finds the column to sort by its header. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "categoricalColorMapInterpolator": {
+          "$ref": "#/definitions/CategoricalColorMapInterpolator",
+          "description": "Color scheme of marks colored by categories: a categorical `scheme*` scheme, `schemeObservable10` by default. The categories take the scheme's colors in the order they first appear, or in `colorMapDomain`'s order, and those past the scheme's last color take that one. A sequential or diverging `interpolate*` name is refused. Read by the Autark adapter; the deck.gl adapter ignores it."
+        },
         "color": {
+          "description": "Column whose values color the marks: a scatter plot's points, a bar chart's bars, and the lines of parallel coordinates, which a click on an axis's title colors by that axis instead. When every value is a number, or a string that reads as one, the marks take `colorMapInterpolator`'s scheme; otherwise the values are categories, and take `categoricalColorMapInterpolator`'s. A heat matrix colors its cells by their values, which `@transform` names. Line charts and tables color no mark by value.",
           "type": "string"
+        },
+        "colorMapDomain": {
+          "description": "Categories the plot is colored over, in order: the first takes the categorical scheme's first color, and so on. The values are read as categories, numbers too, and a mark whose value is not among them is drawn in the mark color. It cannot be set with `colorMapRange`. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "colorMapInterpolator": {
+          "$ref": "#/definitions/ContinuousColorMapInterpolator",
+          "description": "Color scheme of marks colored by numbers: a sequential or diverging `interpolate*` scheme, `interpolateReds` by default. The scale's low end takes the scheme's first color and its high end its last: the lowest and highest values, unless `colorMapRange` or `normalization` sets them. A categorical `scheme*` name is refused, since categories take `categoricalColorMapInterpolator`. Read by the Autark adapter; the deck.gl adapter ignores it."
+        },
+        "colorMapRange": {
+          "description": "Ends of the color scale of numbers, as `[low, high]` with low less than high. The plot is colored over this range instead of its lowest and highest values, so plots and map layers that set the same range color the same value alike. Values that are categories ignore it, as a layer with a categorical scheme does, and it cannot be set with `colorMapDomain`. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": [
+            {
+              "title": "low",
+              "type": "number"
+            },
+            {
+              "title": "high",
+              "type": "number"
+            }
+          ],
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array",
+          "uniqueItems": true
         },
         "dataRef": {
           "description": "Name of the table to plot.",
@@ -2589,6 +3264,10 @@
         },
         "height": {
           "type": "number"
+        },
+        "highlightColor": {
+          "$ref": "#/definitions/HexColor",
+          "description": "Color of the selected marks, and of a table's selected rows, as `#rrggbb`: `#5dade2` by default. autk-plot keeps one highlight color for the page, so every plot it draws there takes it: a run refuses two plots that set different ones, and a run whose plots set none gives back autk-plot's. Read by the Autark adapter; the deck.gl adapter ignores it."
         },
         "id": {
           "description": "Name of the plot, which a link in `links` uses as its `source`. Unique among the ids of the maps and plots. Without it a plot is known by its `dataRef`, so two plots of one table need ids: a run refuses two plots known by one name.",
@@ -2626,12 +3305,68 @@
           "const": "scatter",
           "type": "string"
         },
+        "markColor": {
+          "$ref": "#/definitions/HexColor",
+          "description": "Color of the marks that are neither colored by value nor selected, as `#rrggbb`: `#bfbfbf` by default. autk-plot keeps one mark color for the page, so every plot it draws there takes it: a run refuses two plots that set different ones, and a run whose plots set none gives back autk-plot's. Read by the Autark adapter; the deck.gl adapter ignores it."
+        },
+        "normalization": {
+          "description": "How the ends of the color scale of numbers are found: `minMax`, the default, takes the lowest and highest values; `percentile` takes the values at the `lowerPercentile` and `upperPercentile` percentiles, 2 and 98 when it gives neither, else 0 and 100 for the one it leaves out. Categories ignore it. A map layer's `normalization` reads the same way. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "properties": {
+            "lowerPercentile": {
+              "type": "number"
+            },
+            "mode": {
+              "$ref": "#/definitions/NormalizationMode"
+            },
+            "upperPercentile": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "type": "object"
+        },
+        "osmElements": {
+          "description": "Plot an OpenStreetMap layer table as one row per OSM element it was built from, each with the element's tags, `osm_type` and `osm_id` (and `building_id` in a buildings table), rather than one row per table row. A table that is not an OSM layer, a surface, and an OSM table an update changed are plotted row by row, as without it. Read by the Autark adapter only.",
+          "type": "boolean"
+        },
         "selectFields": {
           "description": "Columns whose values name the rows a selection in this plot selects, so an app can link the selection to other tables that hold those columns. Neither adapter reads it: the Autark adapter's `plot:selection` events still report feature ids.",
           "items": {
             "type": "string"
           },
           "minItems": 1,
+          "type": "array"
+        },
+        "selection": {
+          "description": "Rows selected when the plot is drawn, by their positions among the rows it draws, as `plot:selection` events and `setPlotSelection` name them. The plot draws them in its highlight color (a binned plot, the bins that hold them), and the map layers it is linked to, by `mapRef` or `links`, highlight the same rows, as after `setPlotSelection`. No `plot:selection` event reports it. A run refuses a position past the plot's last row. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": {
+            "description": "A row of a table as a view draws it: its position among the rows the view draws, from 0.",
+            "minimum": 0,
+            "multipleOf": 1,
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "tickFormats": {
+          "description": "d3-format specifiers of the tick labels of the plot's axes, `[x, y]`: a scatter plot's x and y axes; a bar or line chart's x axis, for labels that read as numbers, and its y axis; and every axis of numbers of parallel coordinates, which read only the first. Heat matrices and tables ignore it. Without it, `['~s', '~s']`. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": [
+            {
+              "description": "A d3-format specifier, such as `~s`, `,d`, `.2f` or `.0%`: d3-format's `[[fill]align][sign][symbol][0][width][,][.precision][~][type]`.",
+              "pattern": "^(?:.?[<>=^])?[-+( ]?[$#]?0?\\d*,?(?:\\.\\d+)?~?[a-zA-Z%]?$",
+              "title": "x",
+              "type": "string"
+            },
+            {
+              "description": "A d3-format specifier, such as `~s`, `,d`, `.2f` or `.0%`: d3-format's `[[fill]align][sign][symbol][0][width][,][.precision][~][type]`.",
+              "pattern": "^(?:.?[<>=^])?[-+( ]?[$#]?0?\\d*,?(?:\\.\\d+)?~?[a-zA-Z%]?$",
+              "title": "y",
+              "type": "string"
+            }
+          ],
+          "maxItems": 2,
+          "minItems": 2,
           "type": "array"
         },
         "title": {
@@ -2655,6 +3390,38 @@
       ],
       "type": "object"
     },
+    "SqlSourceSpec": {
+      "description": "Saves the rows of a SQL query over the workspace's tables as a new table. Read by the Autark adapter only.",
+      "properties": {
+        "layerType": {
+          "$ref": "#/definitions/LayerType",
+          "description": "How a map draws the new table, whose geometry must then be in a column named `geometry`, in the workspace's CRS, as the workspace's tables hold it. Without it, the table has no layer type: a plot draws its rows, while a map does not draw it and `AutkGrammar.data` does not list it."
+        },
+        "outputTableName": {
+          "description": "Name of the table this source creates. Later sources, compute passes, maps and plots refer to it by this name.",
+          "type": "string"
+        },
+        "query": {
+          "description": "A `SELECT`, or a `WITH` query that ends in one, in DuckDB's SQL, over the tables of the source's workspace by their names. autk-db refuses any other statement, and any query in which `insert`, `update`, `delete`, `create`, `alter`, `drop`, `truncate` or `replace` appears as a word, even inside a string.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "type": {
+          "const": "sql",
+          "type": "string"
+        },
+        "workspace": {
+          "$ref": "#/definitions/WorkspaceName",
+          "description": "Workspace the table is created in."
+        }
+      },
+      "required": [
+        "outputTableName",
+        "query",
+        "type"
+      ],
+      "type": "object"
+    },
     "TablePlotSpec": {
       "description": "A table. A transform, when given, must be `sort`.",
       "properties": {
@@ -2666,8 +3433,49 @@
           "minItems": 1,
           "type": "array"
         },
+        "axisLabels": {
+          "description": "Titles of the plot's axes, in the order of `axis`, in place of the column names: the x and y axes' titles of a scatter plot, a bar chart, a line chart and a heat matrix, each axis's title of parallel coordinates, and a table's column headers. An axis without a title keeps its column's name, and an axis that holds a transform's output, `@transform`, is titled `value`. A run refuses more titles than `axis` has columns, and two titles alike, since a table finds the column to sort by its header. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "categoricalColorMapInterpolator": {
+          "$ref": "#/definitions/CategoricalColorMapInterpolator",
+          "description": "Color scheme of marks colored by categories: a categorical `scheme*` scheme, `schemeObservable10` by default. The categories take the scheme's colors in the order they first appear, or in `colorMapDomain`'s order, and those past the scheme's last color take that one. A sequential or diverging `interpolate*` name is refused. Read by the Autark adapter; the deck.gl adapter ignores it."
+        },
         "color": {
+          "description": "Column whose values color the marks: a scatter plot's points, a bar chart's bars, and the lines of parallel coordinates, which a click on an axis's title colors by that axis instead. When every value is a number, or a string that reads as one, the marks take `colorMapInterpolator`'s scheme; otherwise the values are categories, and take `categoricalColorMapInterpolator`'s. A heat matrix colors its cells by their values, which `@transform` names. Line charts and tables color no mark by value.",
           "type": "string"
+        },
+        "colorMapDomain": {
+          "description": "Categories the plot is colored over, in order: the first takes the categorical scheme's first color, and so on. The values are read as categories, numbers too, and a mark whose value is not among them is drawn in the mark color. It cannot be set with `colorMapRange`. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "colorMapInterpolator": {
+          "$ref": "#/definitions/ContinuousColorMapInterpolator",
+          "description": "Color scheme of marks colored by numbers: a sequential or diverging `interpolate*` scheme, `interpolateReds` by default. The scale's low end takes the scheme's first color and its high end its last: the lowest and highest values, unless `colorMapRange` or `normalization` sets them. A categorical `scheme*` name is refused, since categories take `categoricalColorMapInterpolator`. Read by the Autark adapter; the deck.gl adapter ignores it."
+        },
+        "colorMapRange": {
+          "description": "Ends of the color scale of numbers, as `[low, high]` with low less than high. The plot is colored over this range instead of its lowest and highest values, so plots and map layers that set the same range color the same value alike. Values that are categories ignore it, as a layer with a categorical scheme does, and it cannot be set with `colorMapDomain`. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": [
+            {
+              "title": "low",
+              "type": "number"
+            },
+            {
+              "title": "high",
+              "type": "number"
+            }
+          ],
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array",
+          "uniqueItems": true
         },
         "dataRef": {
           "description": "Name of the table to plot.",
@@ -2682,6 +3490,10 @@
         },
         "height": {
           "type": "number"
+        },
+        "highlightColor": {
+          "$ref": "#/definitions/HexColor",
+          "description": "Color of the selected marks, and of a table's selected rows, as `#rrggbb`: `#5dade2` by default. autk-plot keeps one highlight color for the page, so every plot it draws there takes it: a run refuses two plots that set different ones, and a run whose plots set none gives back autk-plot's. Read by the Autark adapter; the deck.gl adapter ignores it."
         },
         "id": {
           "description": "Name of the plot, which a link in `links` uses as its `source`. Unique among the ids of the maps and plots. Without it a plot is known by its `dataRef`, so two plots of one table need ids: a run refuses two plots known by one name.",
@@ -2719,12 +3531,68 @@
           "const": "table",
           "type": "string"
         },
+        "markColor": {
+          "$ref": "#/definitions/HexColor",
+          "description": "Color of the marks that are neither colored by value nor selected, as `#rrggbb`: `#bfbfbf` by default. autk-plot keeps one mark color for the page, so every plot it draws there takes it: a run refuses two plots that set different ones, and a run whose plots set none gives back autk-plot's. Read by the Autark adapter; the deck.gl adapter ignores it."
+        },
+        "normalization": {
+          "description": "How the ends of the color scale of numbers are found: `minMax`, the default, takes the lowest and highest values; `percentile` takes the values at the `lowerPercentile` and `upperPercentile` percentiles, 2 and 98 when it gives neither, else 0 and 100 for the one it leaves out. Categories ignore it. A map layer's `normalization` reads the same way. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "properties": {
+            "lowerPercentile": {
+              "type": "number"
+            },
+            "mode": {
+              "$ref": "#/definitions/NormalizationMode"
+            },
+            "upperPercentile": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "type": "object"
+        },
+        "osmElements": {
+          "description": "Plot an OpenStreetMap layer table as one row per OSM element it was built from, each with the element's tags, `osm_type` and `osm_id` (and `building_id` in a buildings table), rather than one row per table row. A table that is not an OSM layer, a surface, and an OSM table an update changed are plotted row by row, as without it. Read by the Autark adapter only.",
+          "type": "boolean"
+        },
         "selectFields": {
           "description": "Columns whose values name the rows a selection in this plot selects, so an app can link the selection to other tables that hold those columns. Neither adapter reads it: the Autark adapter's `plot:selection` events still report feature ids.",
           "items": {
             "type": "string"
           },
           "minItems": 1,
+          "type": "array"
+        },
+        "selection": {
+          "description": "Rows selected when the plot is drawn, by their positions among the rows it draws, as `plot:selection` events and `setPlotSelection` name them. The plot draws them in its highlight color (a binned plot, the bins that hold them), and the map layers it is linked to, by `mapRef` or `links`, highlight the same rows, as after `setPlotSelection`. No `plot:selection` event reports it. A run refuses a position past the plot's last row. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": {
+            "description": "A row of a table as a view draws it: its position among the rows the view draws, from 0.",
+            "minimum": 0,
+            "multipleOf": 1,
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "tickFormats": {
+          "description": "d3-format specifiers of the tick labels of the plot's axes, `[x, y]`: a scatter plot's x and y axes; a bar or line chart's x axis, for labels that read as numbers, and its y axis; and every axis of numbers of parallel coordinates, which read only the first. Heat matrices and tables ignore it. Without it, `['~s', '~s']`. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": [
+            {
+              "description": "A d3-format specifier, such as `~s`, `,d`, `.2f` or `.0%`: d3-format's `[[fill]align][sign][symbol][0][width][,][.precision][~][type]`.",
+              "pattern": "^(?:.?[<>=^])?[-+( ]?[$#]?0?\\d*,?(?:\\.\\d+)?~?[a-zA-Z%]?$",
+              "title": "x",
+              "type": "string"
+            },
+            {
+              "description": "A d3-format specifier, such as `~s`, `,d`, `.2f` or `.0%`: d3-format's `[[fill]align][sign][symbol][0][width][,][.precision][~][type]`.",
+              "pattern": "^(?:.?[<>=^])?[-+( ]?[$#]?0?\\d*,?(?:\\.\\d+)?~?[a-zA-Z%]?$",
+              "title": "y",
+              "type": "string"
+            }
+          ],
+          "maxItems": 2,
+          "minItems": 2,
           "type": "array"
         },
         "title": {
@@ -2746,6 +3614,102 @@
         "dataRef",
         "mark"
       ],
+      "type": "object"
+    },
+    "UpdateSourceSpec": {
+      "description": "Replaces or changes the rows of a table already loaded, with rows given inline: a FeatureCollection for a table with a geometry, an array of objects for a table without one. Read by the Autark adapter only.",
+      "else": {
+        "if": {
+          "properties": {
+            "strategy": {
+              "const": "update"
+            }
+          },
+          "required": [
+            "strategy"
+          ]
+        },
+        "required": [
+          "jsonObject"
+        ],
+        "then": {
+          "required": [
+            "idColumn"
+          ]
+        }
+      },
+      "if": {
+        "required": [
+          "geojsonObject"
+        ]
+      },
+      "properties": {
+        "dataRef": {
+          "description": "The table to change.",
+          "type": "string"
+        },
+        "geojsonObject": {
+          "$ref": "#/definitions/InlineFeatureCollection",
+          "description": "The rows of a table with a geometry. autk-db stores their coordinates as they come, so they are in the workspace's CRS, as `AutkGrammar.data` gives a table's features."
+        },
+        "idColumn": {
+          "description": "With `update`, the column that matches a given row to the table's rows: a column such as `month`, or a feature property as `properties.<name>`, such as `properties.parcel_id`.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "jsonObject": {
+          "description": "The rows of a table without a geometry, such as a CSV or JSON table loaded without `geometryColumns`.",
+          "items": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "strategy": {
+          "description": "`replace` swaps every row of the table for the given rows. `update` changes the rows whose `idColumn` value a given row has: in a table with a geometry, each takes the given row's geometry and properties, and no row is added; in a table without one, the given rows replace them, and those that match no row are added.",
+          "enum": [
+            "replace",
+            "update"
+          ],
+          "type": "string"
+        },
+        "type": {
+          "const": "update",
+          "type": "string"
+        },
+        "workspace": {
+          "$ref": "#/definitions/WorkspaceName",
+          "description": "Workspace of the table."
+        }
+      },
+      "required": [
+        "type",
+        "dataRef",
+        "strategy"
+      ],
+      "then": {
+        "if": {
+          "properties": {
+            "strategy": {
+              "const": "update"
+            }
+          },
+          "required": [
+            "strategy"
+          ]
+        },
+        "not": {
+          "required": [
+            "jsonObject"
+          ]
+        },
+        "then": {
+          "required": [
+            "idColumn"
+          ]
+        }
+      },
       "type": "object"
     },
     "UrbanSpec": {
@@ -2807,6 +3771,13 @@
             }
           ],
           "description": "One plot, or several."
+        },
+        "workspaces": {
+          "description": "How workspaces store their tables, one entry per workspace, set before the first source loads. A workspace without an entry keeps autk-db's CRS and grid. Read by the Autark adapter only.",
+          "items": {
+            "$ref": "#/definitions/WorkspaceSpec"
+          },
+          "type": "array"
         }
       },
       "type": "object"
@@ -2831,6 +3802,30 @@
       "description": "Name of a workspace: an isolated set of tables with its own extent. The first source loaded into a workspace sets its extent and later sources are cut to it, so two areas that must not clip each other go in two workspaces. A table is found by its name inside its workspace, so two workspaces may hold tables of the same name. Entries without a workspace use the default one. Read by the Autark adapter only.",
       "minLength": 1,
       "type": "string"
+    },
+    "WorkspaceSpec": {
+      "description": "How a workspace stores its tables: the coordinate system they are kept in, and the grid their coordinates are rounded to. Read by the Autark adapter only.",
+      "properties": {
+        "coordinateFormat": {
+          "description": "CRS the workspace stores its tables in, as an EPSG string such as `'EPSG:3857'`. Each source is transformed to it as it loads, its maps draw in its units, and so are the lengths given in workspace units, such as a join's `near.distance`. autk-db's default is `'EPSG:3395'`, World Mercator, in meters.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "name": {
+          "$ref": "#/definitions/WorkspaceName",
+          "description": "The workspace, by the name sources, compute passes, maps and plots give as their `workspace`. Without it, the default workspace."
+        },
+        "precisionGrid": {
+          "description": "Grid every stored coordinate is rounded to, in the CRS's units. autk-db's default is `0.01`, a centimeter in World Mercator. A geometry the grid collapses is refused as it loads.",
+          "exclusiveMinimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "coordinateFormat",
+        "precisionGrid"
+      ],
+      "type": "object"
     }
   }
 }
