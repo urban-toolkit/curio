@@ -551,8 +551,8 @@ beside its default one: `<name>.utk-gpu.png`, `<name>.arcade-gpu.png` or `<name>
   a GPU kind's.
 - A kind is for what a GPU model draws, never for a time zone: test-gpu runs in
   UTC, the time zone of GitHub-hosted and arcade runners, where the time zone
-  of utk-gpu and the desktops would move every Vega-Lite time axis (`TZ` in its
-  environment, as in the CPU jobs').
+  of utk-gpu and the desktops would move a Vega-Lite time axis whose times
+  carry no offset (`TZ` in its environment, as in the CPU jobs').
 - A CPU job has no kind because it draws alike on every runner, a utk desktop
   included: its Chrome draws with SwiftShader and keeps Chrome's Vulkan off,
   which would otherwise draw with the desktop's NVIDIA GPU
