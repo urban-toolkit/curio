@@ -29,7 +29,8 @@ jest.mock(
 jest.mock('@urban-toolkit/autk-db', () => ({}), { virtual: true });
 jest.mock('@urban-toolkit/autk-map', () => ({}), { virtual: true });
 jest.mock('@urban-toolkit/autk-plot', () => ({}), { virtual: true });
-jest.mock('@urban-toolkit/autk-core', () => ({}), { virtual: true });
+// The one export the grammar's build reads of autk-core as it loads.
+jest.mock('@urban-toolkit/autk-core', () => require('../../_support/autkApplyCamera').autkCoreAtLoad(), { virtual: true });
 jest.mock('@urban-toolkit/autk-compute', () => ({ ComputeGpgpu: jest.fn() }), { virtual: true });
 
 import { framingCamera } from '../../../adapters/node/autkMapView';
