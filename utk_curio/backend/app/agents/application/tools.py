@@ -620,6 +620,8 @@ REGISTRY: dict[str, ToolContract] = {
                             "to": _text(say("edges.to")),
                             "kind": {"type": "string", "enum": ["data", "interaction"]},
                             "toHandle": _text(say("edges.toHandle")),
+                            "fromView": _text(say("edges.fromView")),
+                            "toView": _text(say("edges.toView")),
                         },
                         "from", "to",
                     ),
@@ -1162,7 +1164,10 @@ def _node_row(node: dict, goal_cap: int | None, *, lineage: bool = True, values:
         selections = normalize_selections((node.get("metadata") or {}).get("selections"))
         if selections:
             row["selections"] = [
-                {"name": tag["name"], "view": tag["node"], "column": tag["column"],
+                {"name": tag["name"], "view": tag["node"],
+                 # The view of that node it reads, an Autark node of several views.
+                 **({"viewId": tag["view"]} if tag.get("view") else {}),
+                 "column": tag["column"],
                  "selected": len(tag["ids"]) if "ids" in tag else tag["count"]}
                 for tag in selections
             ]
