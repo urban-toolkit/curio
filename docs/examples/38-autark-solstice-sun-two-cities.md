@@ -60,20 +60,22 @@ azimuth at the area's latitude and longitude, projects every building's footprin
 height, and counts 60 minutes for the hour when no building's shadow touches the road. The Back Bay
 pass writes example 06's latitude and longitude into the shader (`lat_rad = 0.7393`,
 `lon_loc = -71.06`), and the Loop pass example 07's (`lat_rad = 0.73027`, `lon_loc = -87.65`). Each
-pass writes `sunlight` on its roads, from 0 to 780 minutes.
+pass writes its roads with their `sunlight`, from 0 to 780 minutes, as a new table of roads,
+`back_bay_road_sun` and `loop_road_sun`, which the area's map and histogram read.
 
 ```json
-{
-  "dataRef": "back_bay_roads", "workspace": "boston",
-  "attributes": { "seg": "geometry.coordinates" },
-  "uniforms": {
-    "bld_height": { "fromFeature": { "layer": "back_bay_buildings", "iterate": "batched",
-                                     "path": "properties.height", "required": true } },
-    "doy": 172
-  },
-  "outputColumnName": "sunlight",
-  "wgslFunction": ["let pi      = 3.14159265359;", "let lat_rad = 0.7393;", "..."]
-}
+"compute": [
+  {
+    "dataRef": "back_bay_roads", "workspace": "boston",
+    "attributes": { "seg": "geometry.coordinates" },
+    "uniforms": {
+      "bld_height": { "fromFeature": { "layer": "back_bay_buildings", "iterate": "batched",
+                                       "path": "properties.height", "required": true } },
+      "doy": 172
+    },
+    "outputColumnName": "sunlight", "outputTableName": "back_bay_road_sun", "layerType": "roads"
+  }
+]
 ```
 
 ## Step 3: Four views, arranged and linked
@@ -87,12 +89,12 @@ and the two histograms under them:
 ```
 
 - Each map has an `id`, `back_bay` and `loop`, and reads its own workspace. It draws the area's
-  surface, parks, water and buildings, and its roads colored by `sunlight` on one range, 0 to 780
-  minutes, so a color means the same in both maps.
-- Each histogram, `back_bay_sun` and `loop_sun`, bins its area's roads by their minutes of sun into 13
-  bins and lets you brush them (`"events": ["brushX"]`).
+  surface, parks, water and buildings, and the pass's table of its roads colored by `sunlight` on one
+  range, 0 to 780 minutes, so a color means the same in both maps.
+- Each histogram, `back_bay_sun` and `loop_sun`, bins the same table's roads by their minutes of sun
+  into 13 bins and lets you brush them (`"events": ["brushX"]`).
 - `links` joins each histogram to its own map: a link names the plot as its `source` and the map as its
-  `target`, and the layer it lights is the map's layer of the plot's table, the roads.
+  `target`, and the layer it lights is the map's layer of the plot's table, its roads with their sun.
 
 ```json
 "links": [
