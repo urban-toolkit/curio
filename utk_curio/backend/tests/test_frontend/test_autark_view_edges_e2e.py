@@ -119,6 +119,11 @@ _RINGED_JS = """(id) => Object.fromEntries([...document.querySelectorAll(
     `.react-flow__node[data-id="${id}"] [data-curio-autk-pane]`)].map((p) => [p.dataset.viewId, p.dataset.curioRinged === 'true']))"""
 # The box of node *id*.
 _NODE_BOX_JS = """(id) => document.querySelector(`.react-flow__node[data-id="${id}"]`).getBoundingClientRect().toJSON()"""
+# The box of the pane *pane* (`<kind>-<index>`) of node *id*.
+_PANE_BOX_JS = """([id, pane]) => {
+    const el = document.querySelector(`.react-flow__node[data-id="${id}"] [data-curio-autk-pane="${pane}"]`);
+    return el ? el.getBoundingClientRect().toJSON() : null;
+}"""
 
 
 def _node(node_id: str, node_type: str, x: int, y: int, content: str) -> dict:
@@ -281,9 +286,16 @@ def test_a_node_of_two_views_shows_a_dot_per_view_and_a_dot_s_hover_names_its_vi
     tip = hover_until_tooltip_says(page, selector, "the histogram's dot", ["interaction · values"])
     ringed = _wait_for(lambda: page.evaluate(_RINGED_JS, VIEWS), {"city": False, "values": True})
     assert ringed == {"city": False, "values": True}, f"a hover of the histogram's dot rang the panes {ringed}"
+    # The dot, its tooltip and the histogram's pane, the map left out.
+    dot = page.locator(selector).bounding_box()
+    pane = page.evaluate(_PANE_BOX_JS, [VIEWS, "plot-0"])
+    assert dot and pane, f"the histogram's dot {dot} or pane {pane} is not on the page"
+    shown = {
+        "left": min(dot["x"], pane["left"]), "top": min(dot["y"], pane["top"]),
+        "right": max(dot["x"] + dot["width"], pane["right"]), "bottom": max(dot["y"] + dot["height"], pane["bottom"]),
+    }
     save_workflow_test_screenshot(
         page, STEM, test_name="dot-rings-its-pane",
-        fit_reactflow=False, keep_tooltip=True,
-        clip_rect=tooltip_close_up(page, tip, page.evaluate(_NODE_BOX_JS, VIEWS)),
+        fit_reactflow=False, keep_tooltip=True, clip_rect=tooltip_close_up(page, tip, shown),
         pixel_threshold=CLOSEUP_PIXEL_THRESHOLD, max_diff_ratio=CLOSEUP_MAX_DIFF_RATIO, closeup=True,
     )
