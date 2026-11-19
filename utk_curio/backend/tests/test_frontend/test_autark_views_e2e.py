@@ -3,8 +3,10 @@ and linked by its `links`.
 
 1. A map and a plot linked by `links`, over a table whose first row has no
    geometry: a pick on the map's middle square selects the bar that holds it,
-   and a brush on the plot's first bar lights exactly the feature of that bar
-   the map draws. autk-map picks on a double click.
+   and a brush on the plot's first bar lights exactly that bar's rows on the
+   map. The row with no place is one of them: Curio hands it to autk-db with an
+   empty geometry, so the map holds it and draws nothing of it, and the west
+   square is all that shows. autk-map picks on a double click.
 2. Two maps of one table, side by side: the R key on the second reframes it
    alone, and a pick on the first is sent under the first map's key
    (`autk_selection@<id>`) to a node linked to the views' node.
@@ -126,7 +128,7 @@ _DRAWN_VALUES_JS = """async ([id, table, view, column]) => {
     const values = [];
     for (let at = 0; at < drawn; at++) {
         const feature = await window.__curio_mapFeatureAt(id, table, at, view);
-        const value = feature ? (feature[column] ?? (feature.compute || {})[column]) : undefined;
+        const value = feature ? (feature.compute || {})[column] : undefined;
         if (typeof value === 'number') values.push(value);
     }
     return { drawn, values };
@@ -226,7 +228,7 @@ def test_a_plot_linked_by_links_lights_on_its_map_exactly_the_rows_it_brushes_an
     assert lit_bars == [False, True, False], f"a pick on the middle square lit the bars {lit_bars}, not the second"
 
     # The first bar holds the row with no place and the west square: the map
-    # draws the west square alone, and lights it alone.
+    # lights exactly those two rows, and draws only the west square of them.
     area, bars = brush_area(page, plot), bar_boxes(page, plot)
     assert area and len(bars) == 3, f"the histogram drew {len(bars)} bars, not 3, or no brush: {area}"
     y = area["y"] + area["height"] / 2
@@ -234,8 +236,10 @@ def test_a_plot_linked_by_links_lights_on_its_map_exactly_the_rows_it_brushes_an
     page.mouse.down()
     page.mouse.move((bars[0]["right"] + bars[1]["left"]) / 2, y, steps=12)
     page.mouse.up()
-    lit = _wait_for(lambda: _lit_names(page, "city"), ["west"])
-    assert lit == ["west"], f"a brush of the first bar lit {lit} on the linked map, not exactly ['west']"
+    lit = _wait_for(lambda: _lit_names(page, "city"), ["no place", "west"])
+    assert lit == ["no place", "west"], (
+        f"a brush of the first bar lit {lit} on the linked map, not exactly its rows ['no place', 'west']"
+    )
 
 
 def test_two_maps_of_one_table_each_reframe_alone_and_a_pick_is_sent_under_the_map_s_key(
