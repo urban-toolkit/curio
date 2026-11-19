@@ -84,7 +84,7 @@ Under `utk_curio/backend/app/`:
 
 Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
 
-- Backend pytest: `utk_curio/backend/tests/`. `conftest.py` at its root and in `test_agents/`, `test_datasets/`, `test_discovery/`, `test_execution/`, `test_frontend/`, `test_model_catalog/`, `test_monitor/`, `test_packages/`, `test_projects/`, `test_runs/`, `test_scenario_catalog/`, `test_users/`. Shared helpers in `_support/`.
+- Backend pytest: `utk_curio/backend/tests/`. `conftest.py` at its root and in `test_agents/`, `test_datasets/`, `test_discovery/`, `test_execution/`, `test_frontend/`, `test_model_catalog/`, `test_monitor/`, `test_packages/`, `test_projects/`, `test_runs/`, `test_scenario_catalog/`, `test_users/`. Shared helpers in `_support/`. `autk_grammar_key_tests.json`: each key of the vendored Autark grammar schema, by its path (`_support/autk_key_paths.py`), with the tests that run it, which `test_agents/test_autk_every_key_tested.py` checks.
 - E2E (Playwright): `utk_curio/backend/tests/test_frontend/`. Helpers in the `utils/` package (below), scripted walkthroughs in the `walkthroughs/` package (below), runner assignment in `runner_split.py`, sign-in skips before a test's fixtures in `early_guards.py`, author guide in `README.md`.
 - E2E helpers, `test_frontend/utils/`: `from .utils import X` works for every public name; X is defined in one module, and a patch goes on the module whose code calls X (`screenshots.py` for what `save_workflow_test_screenshot` and `frame_nodes` call):
   - `environment.py`: `REPO_ROOT`, `state_root`, stack flags and public config, `require_*` skips, `debug_log`.
