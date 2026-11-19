@@ -96,6 +96,13 @@ export interface HandleDef {
   dynamicStyle?: (data: any, edges: Edge[]) => React.CSSProperties;
   /** Override default connectable logic per-handle. */
   isConnectableOverride?: (data: any, isConnectable: boolean, edges: Edge[]) => boolean;
+  /** What the handle says on hover, through Curio's one tooltip, and to a screen reader. */
+  tooltip?: string;
+  /**
+   * The id of the view of the node the handle is the dot of (an Autark node's
+   * `in/out@<id>`): a hover of it rings that view's pane (`data-view-id`).
+   */
+  view?: string;
 }
 
 /* ── NodeEditor configuration ──────────────────────────────────────── */
