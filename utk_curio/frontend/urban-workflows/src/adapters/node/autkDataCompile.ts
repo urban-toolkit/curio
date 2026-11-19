@@ -644,6 +644,57 @@ const __have = new Set(__tables.map((t) => tableKey(t.workspace, t.table.name))
     };
 }
 
+// A table a data section's own CSV or JSON source made with no geometry (loaded
+// without geometry columns), which autk-db lists as no layer, as both loaders
+// hand it on: its rows, each a feature with no geometry and the row as its
+// properties, as autk-grammar reads such a table for a plot, under its name and
+// with no layer type, in its workspace when that is another than the default
+// one. Both loaders go through this one function (compileDataSpecToAutkDbJs
+// embeds its source), so the body avoids what loadableFeatures avoids.
+export function plainTableRecord(name: string, rows: any[], workspace?: string): any {
+    const geojson = {
+        type: 'FeatureCollection',
+        features: rows.map(function (properties: any) {
+            return { type: 'Feature', geometry: null, properties: properties };
+        }),
+    };
+    return workspace === undefined ? { name: name, geojson: geojson } : { name: name, geojson: geojson, workspace: workspace };
+}
+
+// The sandbox's code that reads back the tables of the section's own CSV and
+// JSON sources that autk-db made with no geometry, each in its source's
+// workspace (`enterWorkspace` when the section names one), and counts each as a
+// table the load made (`__have`), then hands them on after the layers, in their
+// sources' order (plainTableRecord). The browser's loader reads them the same
+// way (autkLayerMaterialize's plainTables). A section with no CSV or JSON
+// source compiles without it.
+function plainTablesCode(sources: any[], usesWorkspaces: boolean) {
+    if (!sources.some((source) => source?.type === 'csv' || source?.type === 'json')) return { readBack: '', handOn: '' };
+    const enter = usesWorkspaces ? '\n    await enterWorkspace(db, workspace);' : '';
+    const key = usesWorkspaces ? 'tableKey(__plain.workspace, __plain.name)' : '__plain.name';
+    const read = usesWorkspaces ? 'tableKey(workspace, outputTableName)' : 'outputTableName';
+    return {
+        readBack: `
+// The tables of the section's own CSV and JSON sources that autk-db made with no
+// geometry: autk-db lists none of them among its layers, which are read already.
+const __plainTableRecord = ${plainTableRecord.toString()};
+const __plainTables = [];
+for (const source of __sources) {
+  const { type, workspace, outputTableName } = source ?? {};
+  if ((type !== 'csv' && type !== 'json') || !outputTableName || __have.has(${read})) continue;
+  try {${enter}
+    const table = db.getTablesMetadata().find((t) => t.name === outputTableName);
+    if (!table || table.type !== undefined) continue;
+    __plainTables.push(__plainTableRecord(outputTableName, await db.getTable(outputTableName), workspace));
+  } catch (e) {
+    __loadErrors.push(type + ': ' + ((e && e.message) || String(e)));
+  }
+}
+for (const __plain of __plainTables) __have.add(${key});`,
+        handOn: '// Each table with no geometry, as its rows.\nfor (const __plain of __plainTables) __out.push(__plain);\n',
+    };
+}
+
 // Compile a grammar `data` section into autk-db JavaScript to run in the backend
 // Node.js sandbox. The top-level `import` is rewritten to `await import()` by
 // execute_js_code, and so is autk-grammar's data entry's, the one line that
@@ -725,6 +776,7 @@ const __rasterEnvelope = ${rasterEnvelope.toString()};
       __rasters.push(__envelope);
     }
 ` : '';
+    const plain = plainTablesCode(sources, autkUsesWorkspaces({ data: sources }));
     return `import { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } from '@urban-toolkit/autk-db';${dataEntryImport}
 const __sources = ${JSON.stringify(sources)};
 // Computed host-side by requestedLayerTables so the naming rules live in ONE
@@ -770,7 +822,7 @@ ${grammarLoad}    else console.log('[autk-grammar] unsupported data source type 
     console.log('[autk-grammar] data load failed for source type "' + type + '": ' + (e && e.message));
   }
 }
-${parts.readBack}
+${parts.readBack}${plain.readBack}
 const __missing = __expectedTables.filter((n) => !__have.has(n));
 if (__missing.length > 0) {
   const __detail = 'missing: ' + __missing.join(', ')
@@ -881,6 +933,6 @@ ${wanted.length > 0 ? `${parts.skip}\n` : ''}  const geojson = await db.getLayer
   if (geojson && typeof geojson === 'object') geojson.crs = __crsFor(geojson);
 ${parts.handOn}
 }
-for (const __raster of __rasters) __out.push(__raster);
+${plain.handOn}for (const __raster of __rasters) __out.push(__raster);
 return __out;`;
 }

@@ -41,6 +41,7 @@ import {
 } from './autkDataCompile';
 import { oneRasterAtATime } from './autkRasters';
 import { featureCount } from './autkRunDescriptions';
+import { plainTableRecord } from './autkDataCompile';
 
 /** A table an Autark node loaded or hands on: its name, its autk-db layer type, its
  * rows, and the workspace it is in when that is not the default one. */
@@ -442,12 +443,17 @@ export async function loadSpecLayers(
             }),
         ));
     }
+    // The section's own CSV and JSON tables that autk-db made with no geometry,
+    // which the loop above passes over: each as its rows, with no layer type.
+    const read = new Set(layers.flatMap((l) => (l ? [autkTableKey(l.workspace, l.name)] : [])));
+    const plain = await plainTables(db, authored, read, enterWorkspace, loadErrors);
     // Every layer is read: nothing below asks the database again (autkDbClose).
     closeAutkDb(db);
     const usable = [
         ...layers.filter(
             (l): l is { name: string; type: string; geojson: FeatureCollection; workspace?: string } => l != null,
         ),
+        ...(plain as any[]),
         ...rasters,
     ];
     // Same contract check as the sandbox emit: a load that came back short is a
@@ -487,6 +493,39 @@ export async function loadSpecLayers(
         throw new Error(`in-browser AutkDb load produced no layers (${loadErrors.join('; ')})`);
     }
     return usable;
+}
+
+/**
+ * The tables a data section's own CSV and JSON *sources* made with no geometry
+ * (loaded without geometry columns), which autk-db lists as no layer, in their
+ * sources' order, each read in its source's workspace (*enterWorkspace*) as
+ * both loaders hand it on (plainTableRecord). A table that is a layer, among
+ * the layers *read* already by its key, is left to them; one that cannot be
+ * read is a load error. The sandbox's loader reads them the same way
+ * (autkDataCompile's plainTablesCode).
+ */
+async function plainTables(
+    db: any,
+    sources: any[],
+    read: ReadonlySet<string>,
+    enterWorkspace: (db: any, workspace?: string) => Promise<void>,
+    loadErrors: string[],
+): Promise<AutkLayer[]> {
+    const plain: AutkLayer[] = [];
+    for (const source of sources) {
+        const { type, workspace, outputTableName } = source ?? {};
+        if ((type !== 'csv' && type !== 'json') || !outputTableName || read.has(autkTableKey(workspace, outputTableName))) continue;
+        try {
+            await enterWorkspace(db, workspace);
+            const table = (db.getTablesMetadata() as Array<{ name: string; type?: string }>)
+                .find((t) => t.name === outputTableName);
+            if (!table || table.type !== undefined) continue;
+            plain.push(plainTableRecord(outputTableName, await db.getTable(outputTableName), workspace));
+        } catch (e) {
+            loadErrors.push(`${type}: ${(e as any)?.message ?? String(e)}`);
+        }
+    }
+    return plain;
 }
 
 // Persist a pool-compatible wrapper (output of `layersToPoolWrapper`) to the

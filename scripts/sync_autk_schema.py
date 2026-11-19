@@ -24,6 +24,10 @@ A tarball's record names the tarball by its repository path, and the version
 its package.json gives, so ``--check`` compares the copy with that tarball and
 never asks npm, which has no such version.
 
+``utk_curio/backend/tests/autk_grammar_key_tests.json`` names the tests that
+run each key of the copy, and ``test_autk_every_key_tested.py`` fails on a key
+it does not name: a key a new release adds needs a test that runs it there.
+
 ``test_autk_schema_vendored`` checks the copy against the record offline; the
 scheduled ``autk-schema`` workflow runs ``--check``.
 """
