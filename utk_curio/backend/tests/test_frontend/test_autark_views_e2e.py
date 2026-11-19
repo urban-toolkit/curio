@@ -274,7 +274,8 @@ def test_two_maps_of_one_table_each_reframe_alone_and_a_pick_is_sent_under_the_m
     reframed = _wait_for(lambda: [close(eye, start) for eye, start in zip(eyes(), framed)], [False, True])
     assert reframed == [False, True], f"R after a click on the second map reframed {reframed}, not the second alone"
     first_eye = eyes()[0]
-    assert close(first_eye, held[0]), f"R on the second map moved the first: {first_eye} from {held[0]}"
+    first_held = close(first_eye, held[0])
+    assert first_held, f"R on the second map moved the first: {first_eye} from {held[0]}"
 
     # A pick (a double click, as autk-map picks) on the first map's middle
     # square reaches the linked node under the first map's key, naming the
