@@ -30,7 +30,7 @@
         "type": "curio.builtin/python-computation",
         "x": 645,
         "y": 215,
-        "content": "# The Loop's box, the box its OpenStreetMap extract is cut at: west, south,\n# east and north.\nWEST, SOUTH, EAST, NORTH = -87.6382474, 41.8673, -87.6024757, 41.8906361\n# Project Sidewalk's problem labels: a missing curb ramp, a missing sidewalk,\n# an obstacle in the path and a surface problem.\nPROBLEMS = [\"NoCurbRamp\", \"NoSidewalk\", \"Obstacle\", \"SurfaceProblem\"]\n\n# The problem labels in the box, except those Project Sidewalk's validators\n# marked wrong: their correct is 0, and a label no one validated has none.\nloop = input_0.cx[WEST:EAST, SOUTH:NORTH]\nproblems = loop[loop[\"label_type\"].isin(PROBLEMS) & loop[\"correct\"].ne(0)]\n\nreturn problems[[\"label_type\", \"severity\", \"geometry\"]]\n",
+        "content": "# The Loop's box, the box its OpenStreetMap extract is cut at: west, south,\n# east and north.\nWEST, SOUTH, EAST, NORTH = -87.6382474, 41.8673, -87.6024757, 41.8906361\n# Project Sidewalk's problem labels: a missing curb ramp, a missing sidewalk,\n# an obstacle in the path and a surface problem.\nPROBLEMS = [\"NoCurbRamp\", \"NoSidewalk\", \"Obstacle\", \"SurfaceProblem\"]\n\n# The problem labels in the box, except those Project Sidewalk's validators\n# marked wrong: their correct is 0, and a label without a verdict has none.\nloop = input_0.cx[WEST:EAST, SOUTH:NORTH]\nproblems = loop[loop[\"label_type\"].isin(PROBLEMS) & loop[\"correct\"].ne(0)]\n\nreturn problems[[\"label_type\", \"severity\", \"geometry\"]]\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Keep the problem labels in the Loop's box that the validators did not mark wrong.",

@@ -31,8 +31,9 @@ the tables by their names, and the Python node gets the layers and the heatmap i
 
 - `data.projectsidewalk.chicago-labels`, in the Data Catalog: Project Sidewalk's 145,880 labels of
   Chicago and its suburbs, a GeoParquet of points. Each label has a type, a severity from 1 to 3 (some
-  have none) and `correct`, what Project Sidewalk's validators said of it: 1 when they agreed, 0 when
-  they marked it wrong, empty when no one validated it. The file downloads on first use.
+  have none) and `correct`, the verdict of Project Sidewalk's validators: 1 when more of them agreed
+  with the label than disagreed, 0 when more disagreed, and empty when there is no verdict (no one
+  validated it, the votes are tied, or they are all unsure). The file downloads on first use.
 - `docs/examples/data/chicago_loop.osm.pbf`: an OpenStreetMap extract for the Chicago Loop
   (© OpenStreetMap contributors, ODbL 1.0), built by `scripts/build_example_pbfs.py` and cut at the
   Loop's box, from longitude -87.6382474 to -87.6024757 and latitude 41.8673 to 41.8906361.
@@ -52,7 +53,7 @@ return labels[["label_type", "severity", "correct", "geometry"]]
 The step keeps the labels in the Loop's box, the box the extract is cut at, of the four types Project
 Sidewalk gives a problem: `NoCurbRamp`, a missing curb ramp; `NoSidewalk`; `Obstacle`, something in
 the path; and `SurfaceProblem`. Labels that mark a curb ramp, a crosswalk or a pedestrian signal are
-left out, and so are the labels the validators marked wrong. A label no one validated stays.
+left out, and so are the labels the validators marked wrong. A label without a verdict stays.
 
 ```python
 # The Loop's box, the box its OpenStreetMap extract is cut at: west, south,
@@ -63,7 +64,7 @@ WEST, SOUTH, EAST, NORTH = -87.6382474, 41.8673, -87.6024757, 41.8906361
 PROBLEMS = ["NoCurbRamp", "NoSidewalk", "Obstacle", "SurfaceProblem"]
 
 # The problem labels in the box, except those Project Sidewalk's validators
-# marked wrong: their correct is 0, and a label no one validated has none.
+# marked wrong: their correct is 0, and a label without a verdict has none.
 loop = input_0.cx[WEST:EAST, SOUTH:NORTH]
 problems = loop[loop["label_type"].isin(PROBLEMS) & loop["correct"].ne(0)]
 
