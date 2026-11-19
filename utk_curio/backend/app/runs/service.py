@@ -428,13 +428,15 @@ def _run_thread(
         user = db.session.get(User, user_id)
         if step.autk_data:
             # The JavaScript the node's run in the browser posts, from the
-            # browser's own compiler, with no input and no dataset of its own
-            # (autkLayerMaterialize.ts runDataInBackend): its output is saved
-            # as the canvas saves it, the layer list as it is.
+            # browser's own compiler, with no dataset of its own and no input,
+            # or, when its data section reads tables of its input, that input
+            # with no circles named (autkLayerMaterialize.ts runDataInBackend):
+            # its output is saved as the canvas saves it, the layer list as it is.
             node_run = node_exec.NodeRun(
                 code=compile_data_spec(code),
                 node_type=step.node_type,
                 node_id=step.node_id,
+                input=input_ref if step.autk_input else None,
                 dataflow_id=project_id,
                 node_name=step.label,
                 save_output_dataset=False,

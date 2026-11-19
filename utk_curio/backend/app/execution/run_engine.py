@@ -44,7 +44,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Callable, Iterator, Optional
 
-from utk_curio.backend.app.execution.autk_spec_kind import is_autk_data_node
+from utk_curio.backend.app.execution.autk_spec_kind import is_autk_data_node, reads_input_tables
 from utk_curio.backend.app.execution.code_references import CodeReferenceError
 from utk_curio.backend.app.execution.run_plan import (
     ancestors,
@@ -81,8 +81,19 @@ class Step:
     node: dict = field(repr=False)
     content: str = field(default="", repr=False)
     #: An Autark node whose document only loads data (``autk_spec_kind``): run
-    #: as the JavaScript its document compiles to, on no input.
+    #: as the JavaScript its document compiles to, on no input, unless
+    #: :attr:`autk_input`.
     autk_data: bool = False
+    #: Such a node whose data section reads tables of its input
+    #: (``autk_spec_kind.reads_input_tables``): its compiled document finds
+    #: them in the input, which it runs on, as the node's run in the browser does.
+    autk_input: bool = False
+
+
+def reads_no_input(step: "Step") -> bool:
+    """Whether *step* runs on no input: an Autark data node whose data section
+    reads no table of its input."""
+    return step.autk_data and not step.autk_input
 
 
 @dataclass
@@ -205,6 +216,7 @@ def plan_run(
             node=node,
             content=parsed.content or "",
             autk_data=autk_data,
+            autk_input=autk_data and reads_input_tables(node),
         )
     return Plan(
         spec=spec, steps=steps, levels=levels, unplanned=unplanned,
@@ -386,8 +398,9 @@ def run_events(
             if blocked is not None:
                 yield settle(step, blocked[0], skipReason=blocked[1])
                 continue
-            # A document that only loads data reads no input.
-            input_ref = None if step.autk_data else node_input(plan.spec, node_id, outputs)
+            # A document that only loads data reads no input, unless its data
+            # section reads tables of it.
+            input_ref = None if reads_no_input(step) else node_input(plan.spec, node_id, outputs)
             if step.role == "forward":
                 if input_ref is not None:
                     outputs[node_id] = input_ref

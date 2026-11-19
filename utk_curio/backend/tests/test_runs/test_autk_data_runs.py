@@ -210,7 +210,7 @@ def test_example_34s_loader_builds_its_heatmap_on_the_server_as_the_browser_does
     ]
     assert '"pbfFileUrl":"__CURIO_BACKEND_URL__/file/docs/examples/data/lower_mnt.osm.pbf"' in load["code"]
     assert f"const __expectedTables = {json.dumps(TIP_TABLES, separators=(',', ':'))};" in load["code"]
-    assert "const __heatmapProblem = null;" in load["code"]
+    assert "const __tableProblem = null;" in load["code"]
 
     # The Python step reads the load's list, which holds the heatmap.
     (shares,) = sandbox.bodies("/exec")
@@ -291,7 +291,7 @@ def test_example_37s_loader_reads_its_parks_and_sums_their_area_on_the_server_as
     assert NITEROI_PARKS in load["code"]
     assert [source["type"] for source in _compiled_sources(load["code"])] == ["osm", "geotiff", "geojson", "heatmap"]
     assert f"const __expectedTables = {json.dumps(PARK_AREA_TABLES, separators=(',', ':'))};" in load["code"]
-    assert "const __heatmapProblem = null;" in load["code"]
+    assert "const __tableProblem = null;" in load["code"]
 
 
 def test_a_node_below_a_pool_reads_the_layers_the_load_made(client, user_and_token, sandbox, recorded):
