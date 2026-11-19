@@ -64,7 +64,7 @@ import {
     withOpaqueRasters, withRasterSources, type CurioRasterSource,
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
-import { withCheckedPasses } from './autkComputeScopes';
+import { handedTables, withCheckedPasses } from './autkComputeScopes';
 import { attachSpecCameras, frameMaps, keepMapViews, mapViews, showFramedViews, type MapView } from './autkMapView';
 import { destroyFailedGrammar, grammarMaps, trackMaps } from './autkMapDrawing';
 import {
@@ -1310,8 +1310,12 @@ export const useAutkGrammarBehavior = (
                     // tables in more than the default one (autkUsesWorkspaces).
                     if (drawsRasters) withRasterSources(g, newAutkDb, autkUsesWorkspaces(spec) ? enterWorkspace : undefined);
                     // Each pass the run computes is checked on the GPU's
-                    // device, as a compute step's is (autkComputeScopes).
-                    if (computes) withCheckedPasses(g);
+                    // device, as a compute step's is, and reads its
+                    // fromFeature tables as the node hands them, as a compute
+                    // step's does: the grammar's compute reads them from
+                    // autk-db, which stores a building as a GeometryCollection
+                    // (autkComputeScopes).
+                    if (computes) withCheckedPasses(g, handedTables(spec));
                     try {
                         await g.run(spec);
                     } catch (err) {
