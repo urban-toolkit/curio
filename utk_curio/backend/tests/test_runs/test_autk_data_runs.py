@@ -385,3 +385,51 @@ def test_a_load_that_fails_twice_fails_the_node(client, user_and_token, sandbox,
     assert len(sandbox.bodies("/execJs")) == 2
     assert recorded == []
     assert run["status"] == "failed"
+
+
+#: Readings and the heatmap that bins them, both in the workspace ``east``, as
+#: a document of autk-grammar 5.0.0's ``workspace`` writes them.
+EAST_READINGS = {"data": [
+    {"type": "geojson", "outputTableName": "readings", "workspace": "east", "coordinateFormat": "EPSG:4326",
+     "geojsonObject": {"type": "FeatureCollection", "features": [
+         {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.64, 41.87]}, "properties": {"db": 61}},
+         {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.63, 41.88]}, "properties": {"db": 74}},
+     ]}},
+    {"type": "heatmap", "workspace": "east", "joinDataRef": "readings", "outputTableName": "density",
+     "near": {"distance": 5000}, "grid": {"rows": 2, "columns": 3}, "groupBy": [{"column": "*", "aggregateFn": "count"}]},
+]}
+
+
+def test_a_load_in_a_workspace_runs_on_the_server_and_a_python_node_reads_it(
+    client, user_and_token, sandbox, recorded,
+):
+    """A data node whose sources and heatmap are in a workspace runs on the
+    server as the browser runs it: the code the browser's compiler gives,
+    which enters each source's workspace with the grammar's own
+    ``enterWorkspace`` and expects each table by its key there, and the
+    Python node below it reads the load's list."""
+    from utk_curio.common.autk_data_compiler import compile_data_spec
+
+    user, token = user_and_token
+    content = json.dumps(EAST_READINGS)
+    run = _run(client, token, _create(client, token, {
+        "name": "Readings in east",
+        "nodes": [
+            {"id": "east-load", "type": AUTARK, "content": content},
+            {"id": "east-cells", "type": CODE, "content": "return len(input_0)"},
+        ],
+        "edges": [{"id": "load-cells", "source": "east-load", "target": "east-cells"}],
+    }))
+    steps = {s["nodeId"]: s for s in run["steps"]}
+    assert (steps["east-load"]["role"], steps["east-load"]["status"]) == ("run", "ok"), steps["east-load"]
+    (load,) = sandbox.bodies("/execJs")
+    assert load["code"] == compile_data_spec(content)
+    assert load["code"].splitlines()[:2] == [
+        "import { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } from '@urban-toolkit/autk-db';",
+        "import { createDataAdapter, enterWorkspace, tableKey } from '@urban-toolkit/autk-grammar/data';",
+    ]
+    assert 'const __expectedTables = ["east/readings","east/density"];' in load["code"]
+    (cells,) = sandbox.bodies("/exec")
+    assert (cells["file_path"], cells["dataType"]) == (LAYERS, "list"), cells
+    assert steps["east-cells"]["status"] == "ok", steps["east-cells"]
+    assert run["status"] == "succeeded"
