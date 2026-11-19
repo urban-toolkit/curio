@@ -1471,18 +1471,19 @@ interaction edge, on its own table (see [Linking charts](#linking-charts)).
   the same grid: its bands, origin, cell size and CRS. It keeps its table's
   name in its `metadata`, as a table does, so a layer chip names it, as in
   `[!! input_0:park_access !!]`.
-- A `heatmap` or a `join` of the document's `data` reads the input's tables
-  too, named as a map names them: a table no source of the `data` loads is
-  one of the input's. The node loads it into that entry's workspace just
-  before the first entry that reads it, so the `data`'s own sources keep their
-  order, and a heatmap that comes first in the `data` covers the input table's
-  area. A table neither the `data` loads nor the input carries fails the node,
-  and the error names it. The node hands on what its `data` loads and makes,
-  and an input table only when a `join` wrote its columns onto it.
-- A `csv` or `json` source loaded without `geometryColumns` makes a table with
-  no geometry. The node hands it on as its rows, each with no geometry: a
-  Python node reads them as a table, a plot keeps them, and a map draws nothing
-  for them.
+- A `heatmap`, a `join`, an `update` or a `drop` of the document's `data`
+  reads the input's tables too, named as a map names them: a table no source
+  of the `data` loads is one of the input's. The node loads it into that
+  entry's workspace just before the first entry that reads it, so the
+  `data`'s own sources keep their order, and a heatmap that comes first in the
+  `data` covers the input table's area. A table neither the `data` loads nor
+  the input carries fails the node, and the error names it. The node hands on
+  what its `data` loads and makes, and an input table only when a `join` wrote
+  its columns onto it or an `update` changed it.
+- A `csv` or `json` source loaded without `geometryColumns`, and a `sql`
+  source without `layerType`, make a table with no geometry. The node hands it
+  on as its rows, each with no geometry: a Python node reads them as a table, a
+  plot keeps them, and a map draws nothing for them.
 
 ### Workspaces
 
@@ -1521,6 +1522,23 @@ node it feeds draws one of them by naming its workspace:
 
 ```json
 {"map": {"workspace": "chicago", "layerRefs": [{"dataRef": "area_roads"}]}}
+```
+
+`workspaces` sets how a workspace stores its tables, one entry per workspace,
+before the first source loads: `coordinateFormat` is the CRS its tables are
+kept in, its maps draw in, and its lengths are measured in, such as a
+heatmap's `near.distance`, and `precisionGrid` is the grid every coordinate is
+rounded to, in that CRS's units. An entry with no `name` sets the default
+workspace. A workspace without an entry keeps EPSG:3395, World Mercator, and a
+grid of 0.01 m. The node hands each table on in its workspace's CRS.
+
+```json
+{
+  "workspaces": [
+    {"coordinateFormat": "EPSG:3857", "precisionGrid": 1},
+    {"name": "chicago", "coordinateFormat": "EPSG:3395", "precisionGrid": 0.01}
+  ]
+}
 ```
 
 A table keeps its workspace through a compute step, a Map Editor node and a
@@ -1680,12 +1698,48 @@ chip as its color, which its tag under **Scenarios** above the spec drags in
 The chip writes the box's color, and for an input from no box a gray of its
 own. A box recolored gives the layer its new color on the map's next run.
 
+### Plot colors, ticks, titles and selection
+
+A plot colors its marks by the column `color` names. Numbers take
+`colorMapInterpolator`'s scheme, `interpolateReds` by default, from the lowest
+value to the highest, over `colorMapRange`, `[low, high]`, when it is given,
+or between the percentiles `normalization` names, such as
+`{"mode": "percentile", "lowerPercentile": 5, "upperPercentile": 95}`.
+Categories take `categoricalColorMapInterpolator`'s scheme,
+`schemeObservable10` by default, in the order of `colorMapDomain` when it is
+given. `tickFormats` holds the d3-format specifiers of the x and y tick
+labels, `axisLabels` the axes' titles in the order of `axis`, and `selection`
+the rows drawn selected, by their positions among the rows the plot draws,
+from 0; the map layers the plot links to light the same rows.
+
+```json
+{
+  "plot": {
+    "dataRef": "busy", "mark": "bar", "axis": ["zone", "riders"], "color": "riders",
+    "colorMapInterpolator": "interpolateViridis", "colorMapRange": [0, 100],
+    "tickFormats": [",d", ".1f"], "axisLabels": ["Zone", "Riders"], "selection": [3]
+  }
+}
+```
+
+A selection that reaches the node over an interaction edge takes the place of
+`selection`, and with none the plot shows its `selection`.
+
+`markColor` colors the marks no value colors, `#bfbfbf` by default, and
+`highlightColor` the selected ones, `#5dade2` by default. A page holds one of
+each for every Autark plot on it: each node's run sets them, back to the
+defaults when its plots set none, and every plot draws in the last ones set.
+Give every plot of a dataflow the same `markColor` and `highlightColor`, or
+none. Two plots of one node that set different ones fail the node.
+
 ### The map's camera
 
 A map's `camera` turns the view the map opens framed at, around the point it
-looks at. `pitch` tilts the view from straight down, from 0 to 90 degrees, and
-`bearing` turns it to face a compass heading, in degrees clockwise from north,
-which is then up on the screen. The eye stays as far from that point as the
+looks at. `pitch` tilts the view from straight down, at least 0 and less than
+90 degrees, and `bearing` turns it to face a compass heading, in degrees
+clockwise from north, which is then up on the screen. A map whose `pitch` is
+90, which would set its eye on the ground, does not run, and the node's error
+says why. The eye stays as far from that point as the
 framing put it, unless `zoom` sets the distance: `10000 / 2^(zoom - 10)` of the
 map's planar units, half as far for each step up.
 
@@ -1805,6 +1859,80 @@ table's name, and a Python node receives it as a `rasterio` dataset on the
 same grid, in the list of the node's tables, each band described by its label
 (`count_tip_parks`). In either, a layer chip names it by its table's name,
 `[!! input_0:park_access !!]`.
+
+### SQL, updates and drops
+
+A `sql` source saves the rows of its `query` as a new table, `outputTableName`:
+a `SELECT`, or a `WITH` query that ends in one, in DuckDB's SQL, over the
+tables loaded before it in its workspace. A query in which `insert`, `update`,
+`delete`, `create`, `alter`, `drop`, `truncate` or `replace` appears as a
+word, even inside a string, does not run. Without `layerType`, the new table is
+rows with no geometry. With it, the new table is a layer of that type, its
+geometry the column named `geometry`; a layer's columns are its `properties`,
+read as JSON, and its `geometry`, so over a layer `zones` a `geojson` source
+loads:
+
+```json
+{"type": "sql", "outputTableName": "busy", "layerType": "polygons",
+ "query": "SELECT properties->>'zone' AS zone, geometry FROM zones WHERE CAST(properties->>'riders' AS INTEGER) > 5"}
+```
+
+An `update` source changes a table loaded before it. `"strategy": "replace"`
+swaps every row for the rows it gives, and `"strategy": "update"` changes the
+rows whose `idColumn` value a given row has: a column such as `month`, or a
+layer's property as `properties.zone`. Its rows go in `jsonObject` for a table
+without geometry and in `geojsonObject` for a layer, in the workspace's CRS. A
+`drop` source removes the table its `dataRef` names: the sources, passes, maps
+and plots after it do not find it, and the node does not hand it on. An
+`update` or a `drop` that fails fails the node.
+
+```json
+{
+  "data": [
+    {"type": "csv", "outputTableName": "sales", "csvObject": [["month", "total"], ["Jan", 3], ["Feb", 5]]},
+    {"type": "update", "dataRef": "sales", "strategy": "update", "idColumn": "month",
+     "jsonObject": [{"month": "Jan", "total": 4}]},
+    {"type": "sql", "outputTableName": "months", "query": "SELECT month, total FROM sales ORDER BY month"},
+    {"type": "drop", "dataRef": "sales"}
+  ]
+}
+```
+
+This node hands on `months` alone: Feb with 5, then Jan with 4.
+
+### OpenStreetMap tag sets
+
+An `osm` source that queries the Overpass API, one with no `pbfFileUrl`, takes
+`tagSets`: features chosen by their tags, each set a table of its own,
+`<outputTableName>_<name>_<type>`, cut to the area. A set's `type` is
+`points`, `polylines` or `polygons`, and a feature is in it when it has any one
+of its `tags`, each a `key` with the `value` it must have, or with any value
+when it gives none. A set that matches nothing in the area makes no table. A
+source with both `pbfFileUrl` and `tagSets` does not run, and the node's error
+says why.
+
+```json
+{"type": "osm", "outputTableName": "downtown", "queryArea": {"bbox": [-74.0125, 40.705, -74.008, 40.7085]},
+ "tagSets": [{"name": "cafes", "type": "points", "tags": [{"key": "amenity", "value": "cafe"}]}]}
+```
+
+This source makes `downtown_cafes_points`. A browser keeps the Overpass API's
+answer for an area for 24 hours, and `"forceRefresh": true` asks the API
+again; a source with `pbfFileUrl` reads its file each time. `autoLoadLayers`
+takes `coordinateFormat`, the CRS of the OpenStreetMap data's coordinates:
+EPSG:4326 by default, the degrees the Overpass API and OpenStreetMap's
+extracts give.
+
+### OpenStreetMap elements
+
+A map layer or a plot with `"osmElements": true` reads an OpenStreetMap layer
+table the document's own `osm` source loads as one feature per OpenStreetMap
+element it was built from, each with the element's tags, `osm_type` and
+`osm_id` (and `building_id` in a buildings table) as its properties. A table
+of the node's input, a surface and a table an `update` changed are read row by
+row. Every view of the node that reads one table writes `osmElements` alike: a
+document where one view of a table writes it and another does not, does not
+run, and the node's error names the table.
 
 ### The starter document
 
