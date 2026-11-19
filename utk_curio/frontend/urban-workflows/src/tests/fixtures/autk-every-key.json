@@ -549,7 +549,8 @@
             "tagSets": [
               { "name": "cafes", "type": "points", "tags": [{ "key": "amenity", "value": "cafe" }] },
               { "name": "paths", "type": "polylines", "tags": [{ "key": "highway" }] },
-              { "name": "parks", "type": "polygons", "tags": [{ "key": "leisure", "value": "park" }] }
+              { "name": "parks", "type": "polygons", "tags": [{ "key": "leisure", "value": "park" }] },
+              { "name": "fountains", "type": "points", "tags": [{ "key": "amenity", "value": "drinking_water" }] }
             ]
           }
         ]
