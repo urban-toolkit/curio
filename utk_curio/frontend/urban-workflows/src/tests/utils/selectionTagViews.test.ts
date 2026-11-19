@@ -10,7 +10,7 @@
 // The views' list reads the flow's nodes, handed to it here.
 jest.mock("../../providers/FlowProvider", () => ({ useFlowContext: () => ({}) }));
 
-import { NodeType, VisInteractionType } from "../../constants";
+import { CURIO_UNIVERSAL_NODE_TYPE, NodeType, VisInteractionType } from "../../constants";
 import { objectRows } from "../../utils/selectionMatch";
 import { normalizeSelections, type SelectionTag } from "../../utils/references/selectionTags";
 import { provideViewRows, readSelectionRows, recordViewSelection, resetViewSelections, selectionStateOf } from "../../utils/references/viewSelections";
@@ -81,8 +81,8 @@ describe("the views a tag can name", () => {
       plot: { id: "greens", dataRef: "parks", mark: "bar" },
     });
     const views = selectionViewsOf([
-      { id: "views", type: "universal", data: { nodeType: AUTARK, defaultCode: code } },
-      { id: "T", type: "universal", data: { nodeType: "curio.builtin/python-computation@1" } },
+      { id: "views", type: CURIO_UNIVERSAL_NODE_TYPE, data: { nodeType: AUTARK, defaultCode: code } },
+      { id: "T", type: CURIO_UNIVERSAL_NODE_TYPE, data: { nodeType: "curio.builtin/python-computation@1" } },
     ], "T");
 
     expect(views.map((v) => [v.id, v.view ?? null, v.layer ?? null])).toEqual([
@@ -96,7 +96,7 @@ describe("the views a tag can name", () => {
 
   test("a node of one view is offered whole alone", () => {
     const code = JSON.stringify({ map: { id: "city", layerRefs: [{ dataRef: "buildings" }] } });
-    const views = selectionViewsOf([{ id: "views", type: "universal", data: { nodeType: AUTARK, defaultCode: code } }], "T");
+    const views = selectionViewsOf([{ id: "views", type: CURIO_UNIVERSAL_NODE_TYPE, data: { nodeType: AUTARK, defaultCode: code } }], "T");
     expect(views.map((v) => [v.id, v.view ?? null])).toEqual([["views", null]]);
   });
 });
