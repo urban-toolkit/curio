@@ -2,9 +2,9 @@
 and linked by its `links`.
 
 1. A map and a plot linked by `links`, over a table whose first row has no
-   geometry: a brush on the plot's first bar lights exactly the feature of
-   that bar the map draws, and a pick on the map's middle square selects the
-   bar that holds it.
+   geometry: a pick on the map's middle square selects the bar that holds it,
+   and a brush on the plot's first bar lights exactly the feature of that bar
+   the map draws. autk-map picks on a double click.
 2. Two maps of one table, side by side: the R key on the second reframes it
    alone, and a pick on the first is sent under the first map's key
    (`autk_selection@<id>`) to a node linked to the views' node.
@@ -217,6 +217,14 @@ def test_a_plot_linked_by_links_lights_on_its_map_exactly_the_rows_it_brushes_an
     frame_nodes(page, [VIEWS])
     plot = f"#autk-grammar-plot-{VIEWS}"
 
+    # A pick on the middle square selects the second bar alone.
+    page.mouse.dblclick(*_center(page, f"autk-grammar-map-{VIEWS}"))
+    lit_bars = _wait_for(
+        lambda: page.evaluate(_BARS_LIT_JS, {"selector": plot, "highlight": AUTK_PLOT_HIGHLIGHT}),
+        [False, True, False],
+    )
+    assert lit_bars == [False, True, False], f"a pick on the middle square lit the bars {lit_bars}, not the second"
+
     # The first bar holds the row with no place and the west square: the map
     # draws the west square alone, and lights it alone.
     area, bars = brush_area(page, plot), bar_boxes(page, plot)
@@ -224,18 +232,10 @@ def test_a_plot_linked_by_links_lights_on_its_map_exactly_the_rows_it_brushes_an
     y = area["y"] + area["height"] / 2
     page.mouse.move(area["x"] + 1, y)
     page.mouse.down()
-    page.mouse.move((bars[0]["x"] + bars[0]["width"] + bars[1]["x"]) / 2, y, steps=12)
+    page.mouse.move((bars[0]["right"] + bars[1]["left"]) / 2, y, steps=12)
     page.mouse.up()
     lit = _wait_for(lambda: _lit_names(page, "city"), ["west"])
     assert lit == ["west"], f"a brush of the first bar lit {lit} on the linked map, not exactly ['west']"
-
-    # A pick on the middle square selects the second bar alone.
-    page.mouse.click(*_center(page, f"autk-grammar-map-{VIEWS}"))
-    lit_bars = _wait_for(
-        lambda: page.evaluate(_BARS_LIT_JS, {"selector": plot, "highlight": AUTK_PLOT_HIGHLIGHT}),
-        [False, True, False],
-    )
-    assert lit_bars == [False, True, False], f"a pick on the middle square lit the bars {lit_bars}, not the second"
 
 
 def test_two_maps_of_one_table_each_reframe_alone_and_a_pick_is_sent_under_the_map_s_key(
@@ -270,9 +270,10 @@ def test_two_maps_of_one_table_each_reframe_alone_and_a_pick_is_sent_under_the_m
     assert reframed == [False, True], f"R after a click on the second map reframed {reframed}, not the second alone"
     assert close(eyes()[0], held[0]), f"R on the second map moved the first: {eyes()[0]} from {held[0]}"
 
-    # A pick on the first map's middle square reaches the linked node under
-    # the first map's key, naming the middle square's row of the input.
-    page.mouse.click(*_center(page, first))
+    # A pick (a double click, as autk-map picks) on the first map's middle
+    # square reaches the linked node under the first map's key, naming the
+    # middle square's row of the input.
+    page.mouse.dblclick(*_center(page, first))
 
     def sent():
         for entry in page.evaluate(_INTERACTIONS_JS, RECEIVER) or []:
@@ -345,7 +346,7 @@ def test_example_38_draws_each_view_in_its_pane_and_records_each_area_s_sun(
         if problem:
             problems.append(problem)
     assert not problems, "; ".join(problems)
-    for view, table in (("back_bay", "back_bay_roads"), ("loop", "loop_roads")):
+    for view, table in (("back_bay", "back_bay_road_sun"), ("loop", "loop_road_sun")):
         read = page.evaluate(_DRAWN_VALUES_JS, [EXAMPLE_38_NODE, table, view, "sunlight"])
         values = read["values"]
         assert read["drawn"] > 0 and len(values) == read["drawn"], (
