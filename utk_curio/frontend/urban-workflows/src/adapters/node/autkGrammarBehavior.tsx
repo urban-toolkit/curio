@@ -284,7 +284,17 @@ export const useAutkGrammarBehavior = (
     // under its view's key, the one made now at priority 1 and the others at
     // 0, oldest first (utils/autkSelects). Each is kept, so a draw that is
     // not an edit's says each selection is gone (below).
+    // The sync whose rows light: the last asked, which reads the newest selections.
+    const syncTurnRef = useRef(0);
+    // What the node last asked a grammar to light on each view, by the view's
+    // key (autkViews `lightViews`), for the grammar it asked.
+    const litRef = useRef<{ grammar: any; lit: Map<string, string> }>({ grammar: null, lit: new Map() });
     const sendOwnSelection = useCallback((selection: SentSelection, view?: Pick<DrawnView, 'kind' | 'index'>) => {
+        // autk-map lights a pick on the map that made it, and the grammar's
+        // links carry a pick or a brush on to the views they join: what the
+        // views light is no longer what the node last asked, so the next
+        // selection it receives lights every view again.
+        litRef.current = { grammar: null, lit: new Map() };
         const detail = selection[EDIT_SELECTION];
         const key = selectionKeyOf(panesRef.current, view);
         const held = heldSelectsRef.current;
@@ -296,11 +306,6 @@ export const useAutkGrammarBehavior = (
         const d = dataRef.current;
         d.interactionsCallback?.(details, d.nodeId);
     }, []);
-    // A pick a Map Editor node's tools make on the map they lie over: the map
-    // the node edits (`editIndexOf`), whose select it is.
-    const sendEditSelection = useCallback((selection: SentSelection) => {
-        sendOwnSelection(selection, { kind: 'map', index: editIndexOf(panesRef.current) });
-    }, [sendOwnSelection]);
     // The document as written, its chips unresolved: what a run's record
     // holds, since the provenance drawer puts a run's code back in the editor.
     // Read as a run starts, so a run queued behind another reads its own.
@@ -494,6 +499,12 @@ export const useAutkGrammarBehavior = (
     editViewRef.current = editView;
     /** The index of the map the Map Editor node edits among *panes*: the map its edge names, else the first. */
     const editIndexOf = (panes: ViewPanes | null): number => Math.max(mapIndexOf(panes, editViewRef.current), 0);
+    // A pick a Map Editor node's tools make on the map they lie over: the map
+    // the node edits, whose select it is.
+    const sendEditSelection = useCallback((selection: SentSelection) => {
+        sendOwnSelection(selection, { kind: 'map', index: editIndexOf(panesRef.current) });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sendOwnSelection]);
 
     // The dots of the node's views (contracts/interactionEdges `in/out@<id>`):
     // a node of several views has one per view with an `id`, beside its own,
@@ -1882,12 +1893,6 @@ export const useAutkGrammarBehavior = (
             setGpuChecking(false);
         }
     };
-
-    // The sync whose rows light: the last asked, which reads the newest selections.
-    const syncTurnRef = useRef(0);
-    // What the node last asked a grammar to light on each view, by the view's
-    // key (autkViews `lightViews`), for the grammar it asked.
-    const litRef = useRef<{ grammar: any; lit: Map<string, string> }>({ grammar: null, lit: new Map() });
 
     // Curio → grammar: which rows to highlight, from two places. A Data Pool
     // marks each feature interacted:'1'/'0' and re-emits its rows, so the input
