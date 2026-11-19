@@ -81,6 +81,16 @@ def _cases():
     return [pytest.param(case, id=case["name"]) for case in cases] or [pytest.param(None, id="no-data-cases")]
 
 
+def _by_table(row: tuple) -> tuple:
+    """Where a handed-on table, ``(name, layer type, rows, workspace)``, sorts:
+    by its name, its layer type and its workspace, the default one (None)
+    first, so None is never compared with a workspace's name. A table is one
+    of a name in a workspace, so its rows decide nothing; they are compared
+    pair by pair after."""
+    name, kind, _rows, workspace = row
+    return (name, kind, workspace is not None, workspace or "")
+
+
 @pytest.mark.parametrize("case", _cases())
 def test_the_server_compiled_load_runs_every_key_of_a_data_source(case, tmp_path, monkeypatch):
     assert case is not None, f"{FIXTURE} holds no data documents"
@@ -127,11 +137,14 @@ def test_the_server_compiled_load_runs_every_key_of_a_data_source(case, tmp_path
         for table in tables
     ] + [(raster.get("layerName"), "raster", None, raster.get("workspace"), None) for raster in rasters]
 
-    # Each table it loads, with its layer type, its rows and its workspace.
-    expected = sorted(tuple(row) for row in case.get("handsOn", []))
+    # Each table it loads, with its layer type, its rows and its workspace,
+    # both lists in one order: by name, layer type and workspace, the default
+    # one (None) first, so None is never compared with a workspace's name.
+    expected = sorted((tuple(row) for row in case.get("handsOn", [])), key=_by_table)
     found = sorted(
-        (table["name"], table["type"], len(table["geojson"]["features"]), table.get("workspace"))
-        for table in with_geometry
+        ((table["name"], table["type"], len(table["geojson"]["features"]), table.get("workspace"))
+         for table in with_geometry),
+        key=_by_table,
     )
     assert [row[:2] + row[3:] for row in found] == [row[:2] + row[3:] for row in expected], handed
     for got, want in zip(found, expected):
