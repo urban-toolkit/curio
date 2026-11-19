@@ -45,6 +45,7 @@ import {
     requestedLayerTables,
     resolveDataSourceUrls as resolveDataSourceUrlsWithBase,
     sectionInputTables,
+    sectionJoinRoots,
     sectionTablesHandedOn,
 } from './autkDataCompile';
 import { executionInputRef } from '../../utils/flowOutputRef';
@@ -668,8 +669,13 @@ export const useAutkGrammarBehavior = (
 
         // The tables of the node's input its data section's heatmaps and joins
         // read (sectionInputTables): none for a section that reads only what
-        // its own sources load.
+        // its own sources load. Of them, those a join writes its columns onto
+        // (sectionJoinRoots), which the section's load hands back as its own.
         const sectionInputs = sectionInputTables(specDataSources);
+        const joinRoots = new Set(sectionJoinRoots(specDataSources));
+        const joinedInputs = new Set(sectionInputs
+            .map((table) => autkTableKey(table.workspace, table.name))
+            .filter((key) => joinRoots.has(key)));
 
         // The input as the tables the document reads (utils/autkInput): each
         // input is `input_<k>`, the layers an input carries keep their own
@@ -721,11 +727,15 @@ export const useAutkGrammarBehavior = (
                 if (prepared.emptyReason && prepared.sources.length === 0 && rasterSources.length === 0) {
                     inputProblemRef.current = { reason: prepared.emptyReason, detail: prepared.detail };
                 }
+                // An input table a join of the data section writes its columns
+                // onto comes back from the section's load as the join made it,
+                // a table of the node's own: the input's is not drawn beside it.
+                const drawnFromInput = prepared.sources.filter((source) => !joinedInputs.has(tableKeyOf(source)));
                 // A table a pass writes from one of the input's holds that
                 // table's rows, as autk-db stores them (writtenTables); a
                 // render pass's building windows hold none of them. Both by
                 // key: a pass reads and writes tables of its own workspace.
-                const inputTables = new Set(prepared.sources.map(tableKeyOf));
+                const inputTables = new Set(drawnFromInput.map(tableKeyOf));
                 for (const { name, from, holdsRows, workspace } of writtenTables(spec)) {
                     const fromKey = autkTableKey(workspace, from);
                     const root = writtenFrom[fromKey] ?? fromKey;
@@ -734,7 +744,7 @@ export const useAutkGrammarBehavior = (
                 const passRoots = new Set(Object.values(writtenFrom));
                 const orders: Record<string, LoadOrder> = {};
                 const features: Record<string, readonly any[]> = {};
-                upstreamSources = prepared.sources.map((source) => {
+                upstreamSources = drawnFromInput.map((source) => {
                     // Each feature a map draws, and each a pass computes over,
                     // carries its input row, read back from what autk-db exported.
                     const loadable = loadableSource(source, { tagRows: hasMaps || passRoots.has(tableKeyOf(source)) });
@@ -742,7 +752,7 @@ export const useAutkGrammarBehavior = (
                     features[tableKeyOf(source)] = (source.geojsonObject as any)?.features ?? [];
                     return loadable.source;
                 });
-                taggedTables = prepared.sources.map(tableKeyOf)
+                taggedTables = drawnFromInput.map(tableKeyOf)
                     .filter((table) => hasMaps || passRoots.has(table));
                 for (const [name, root] of Object.entries(writtenFrom)) {
                     // A pass's result keeps the rows in the order autk-db

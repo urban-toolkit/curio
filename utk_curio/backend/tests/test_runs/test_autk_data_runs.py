@@ -368,7 +368,7 @@ def test_a_heatmap_of_an_upstream_python_nodes_table_runs_on_that_table(client, 
     gives that output as ``input_0``."""
     from utk_curio.common.autk_data_compiler import compile_data_spec
 
-    user, token = user_and_token
+    _user, token = user_and_token
     run = _run(client, token, _create(client, token, _points_and_heatmap()))
     steps = {s["nodeId"]: s for s in run["steps"]}
     assert [steps[n]["status"] for n in ("points", "heat")] == ["ok", "ok"], steps
@@ -391,7 +391,7 @@ def test_a_heatmap_of_an_upstream_python_nodes_table_runs_on_that_table(client, 
 
 def test_a_data_node_that_reads_no_table_of_its_input_still_runs_on_no_input(client, user_and_token, sandbox, recorded):
     """guard: a data section that loads what it bins reads no input, wired or not."""
-    user, token = user_and_token
+    _user, token = user_and_token
     own = {"data": [BACK_BAY_ROADS, {
         "type": "heatmap", "joinDataRef": "table_osm_roads", "outputTableName": "density",
         "near": {"distance": 400}, "grid": {"rows": 2, "columns": 3},

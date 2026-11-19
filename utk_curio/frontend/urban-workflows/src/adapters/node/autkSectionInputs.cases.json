@@ -63,6 +63,16 @@
       "reads": ["input_0"]
     },
     {
+      "name": "a name a source gives its table is the section's, an OSM load's included",
+      "spec": { "data": [
+        { "type": "osm", "pbfFileUrl": "docs/examples/data/chicago_loop.osm.pbf", "outputTableName": "loop", "autoLoadLayers": { "layers": ["roads"] } },
+        { "type": "osm", "pbfFileUrl": "docs/examples/data/back_bay.osm.pbf", "outputTableName": "bay" },
+        { "type": "join", "dataRef": "loop", "joinDataRef": "bay" },
+        { "type": "heatmap", "joinDataRef": "loop_parks", "outputTableName": "density", "near": { "distance": 200 }, "grid": { "rows": 2, "columns": 2 } }
+      ] },
+      "reads": ["loop_parks"]
+    },
+    {
       "name": "a document with no data section reads none",
       "spec": { "map": { "layerRefs": [{ "dataRef": "input_0" }] } },
       "reads": []

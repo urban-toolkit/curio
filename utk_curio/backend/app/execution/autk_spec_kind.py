@@ -18,11 +18,8 @@ import json
 
 from utk_curio.common import shared_constants
 
-_AUTK_GRAMMAR = shared_constants.read("autkGrammar")
 #: autk-db's default workspace: a source that names none, or names it, is in it.
-DEFAULT_WORKSPACE: str = _AUTK_GRAMMAR["defaultWorkspace"]
-#: The kinds of data source that make a raster table: a heatmap and a GeoTIFF.
-RASTER_SOURCES: tuple[str, ...] = tuple(_AUTK_GRAMMAR["rasterSources"])
+DEFAULT_WORKSPACE: str = shared_constants.read("autkGrammar")["defaultWorkspace"]
 
 #: The step each top-level family describes (``FAMILY_KIND``). A family of
 #: None describes none of its own: a layout arranges views and links join
@@ -102,10 +99,10 @@ def _table_key(workspace: str | None, name: str) -> str:
 
 
 def _loaded_tables(sources: list) -> set[str]:
-    """The keys of the tables a data section's own sources load and make, as
-    ``requestedLayerTables`` names them: an OSM load's layers
-    ``<outputTableName>_<layer>``, and a GeoJSON's, a CSV's, a JSON's, a
-    heatmap's or a GeoTIFF's ``outputTableName``. A join makes none."""
+    """The keys of a data section's own tables: those its sources load and
+    make, as ``requestedLayerTables`` names them (an OSM load's layers
+    ``<outputTableName>_<layer>``), and every name a source gives its table
+    (``outputTableName``, an OSM load's included). A join makes none."""
     keys: set[str] = set()
     for source in sources:
         if not isinstance(source, dict):
@@ -116,7 +113,7 @@ def _loaded_tables(sources: list) -> set[str]:
             layers = auto.get("layers") if isinstance(auto, dict) else None
             if out and isinstance(layers, list):
                 keys.update(_table_key(workspace, f"{out}_{layer}") for layer in layers)
-        elif kind in ("geojson", "csv", "json", *RASTER_SOURCES) and out:
+        if isinstance(out, str) and out:
             keys.add(_table_key(workspace, out))
     return keys
 

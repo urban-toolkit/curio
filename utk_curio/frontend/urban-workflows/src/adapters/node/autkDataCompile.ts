@@ -207,13 +207,20 @@ export type SectionInputTable = { name: string; workspace?: string; before: numb
 
 // The tables a data section's heatmaps and joins read that none of its own
 // sources loads, which the node's input carries, each once, by key, in the
-// order the section first reads them. The input names them as the node reads
-// its input everywhere (utils/autkInput autkSourcesFrom): `input_<k>` for what
-// arrives on circle k, a layer by its own name. A section that reads none of
-// them reads no input.
+// order the section first reads them. A section's own are the tables its
+// sources load and make (requestedLayerTables) and every name a source of it
+// gives its table (`outputTableName`, an OSM load's included). The input names
+// them as the node reads its input everywhere (utils/autkInput
+// autkSourcesFrom): `input_<k>` for what arrives on circle k, a layer by its
+// own name. A section that reads none of them reads no input.
 export function sectionInputTables(dataSources: any[]): SectionInputTable[] {
     const sources: any[] = Array.isArray(dataSources) ? dataSources : [];
-    const loaded = new Set(requestedLayerTables(sources));
+    const loaded = new Set([
+        ...requestedLayerTables(sources),
+        ...sources
+            .filter((source) => typeof source?.outputTableName === 'string' && source.outputTableName !== '')
+            .map((source) => autkTableKey(autkWorkspaceOf(source), source.outputTableName)),
+    ]);
     const seen = new Set<string>();
     const tables: SectionInputTable[] = [];
     for (const read of sectionReads(sources)) {
