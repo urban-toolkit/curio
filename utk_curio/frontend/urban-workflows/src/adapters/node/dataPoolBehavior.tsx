@@ -16,12 +16,13 @@ import { registerNodeSettingWriter } from '../../utils/nodeSettingsWriters';
 import { copyForFlags } from '../../utils/poolFlagCopy';
 import { poolTabKind } from '../../utils/poolTabs';
 import { sandboxArtifactId } from '../../utils/flowOutputRef';
+import { isInteractionEdge } from '../../contracts/interactionEdges';
 
 /** The charts joined to a pool by an interaction edge. */
 function interactionPeers(edges: readonly any[], poolId: string): Set<string> {
   const peers = new Set<string>();
   for (const edge of edges) {
-    if (edge?.sourceHandle !== 'in/out' || edge?.targetHandle !== 'in/out') continue;
+    if (!isInteractionEdge(edge)) continue;
     if (edge.source === poolId) peers.add(edge.target);
     else if (edge.target === poolId) peers.add(edge.source);
   }

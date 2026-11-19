@@ -1236,7 +1236,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         const selection = [{ nodeId: 'bar', details: { highlight: { type: 'POINT', data: [1], priority: 1 } }, priority: 1 }];
         await act(async () => { rerender({ d: { ...base, interactions: selection } }); });
 
-        await waitFor(() => expect(highlightOnMap).toHaveBeenCalledWith('input_0', [1]));
+        // On the node's one map, which each highlight names by its index (adapters/node/autkViews).
+        await waitFor(() => expect(highlightOnMap).toHaveBeenCalledWith('input_0', [1], 0));
         expect(grammarMock().AutkGrammar.mock.calls.length).toBe(constructed);
       });
 
@@ -1272,16 +1273,17 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
           priority: 1,
         }];
 
+        // Each highlight and each clear names the node's one map by its index (adapters/node/autkViews).
         await act(async () => { rerender({ d: { ...base, interactions: standingAt(0.2) } }); });
-        await waitFor(() => expect(highlightOnMap).toHaveBeenLastCalledWith('input_0', [1, 3, 4]));
+        await waitFor(() => expect(highlightOnMap).toHaveBeenLastCalledWith('input_0', [1, 3, 4], 0));
         await act(async () => { rerender({ d: { ...base, interactions: standingAt(0.1) } }); });
-        await waitFor(() => expect(highlightOnMap).toHaveBeenLastCalledWith('input_0', [1, 3]));
+        await waitFor(() => expect(highlightOnMap).toHaveBeenLastCalledWith('input_0', [1, 3], 0));
         // The player closed: the map lights nothing.
         const cleared = clearHighlightOnMap.mock.calls.length;
         const lit = highlightOnMap.mock.calls.length;
         await act(async () => { rerender({ d: { ...base, interactions: standingAt(null) } }); });
         await waitFor(() => expect(clearHighlightOnMap.mock.calls.length).toBeGreaterThan(cleared));
-        expect(clearHighlightOnMap).toHaveBeenLastCalledWith('input_0');
+        expect(clearHighlightOnMap).toHaveBeenLastCalledWith('input_0', 0);
         expect(highlightOnMap.mock.calls.length).toBe(lit);
         expect(grammarMock().AutkGrammar.mock.calls.length).toBe(constructed);
       });
@@ -1307,7 +1309,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         const selection = [{ nodeId: 'bar', details: { highlight: { type: 'POINT', data: [2], priority: 1 } }, priority: 1 }];
         await act(async () => { rerender({ d: { ...base, interactions: selection } }); });
 
-        await waitFor(() => expect(highlightOnMap).toHaveBeenCalledWith('input_0', [2]));
+        // On the node's one map, which each highlight names by its index (adapters/node/autkViews).
+        await waitFor(() => expect(highlightOnMap).toHaveBeenCalledWith('input_0', [2], 0));
         const named = [...highlightOnMap.mock.calls, ...clearHighlightOnMap.mock.calls].map((call) => call[0]);
         expect(named).not.toContain('Sensors');
       });
@@ -1421,16 +1424,17 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
           await act(async () => { await result.current.applyGrammar!(MAP); });
           const grammar = lastGrammar();
 
-          // The map drew row 2 first and row 1 second.
+          // The map drew row 2 first and row 1 second. Each highlight and each
+          // clear names the node's one map by its index (adapters/node/autkViews).
           await act(async () => { rerender({ d: { ...base, interactions: select(2) } }); });
-          await waitFor(() => expect(grammar.highlightOnMap).toHaveBeenLastCalledWith('input_0', [0]));
+          await waitFor(() => expect(grammar.highlightOnMap).toHaveBeenLastCalledWith('input_0', [0], 0));
           await act(async () => { rerender({ d: { ...base, interactions: select(1) } }); });
-          await waitFor(() => expect(grammar.highlightOnMap).toHaveBeenLastCalledWith('input_0', [1]));
+          await waitFor(() => expect(grammar.highlightOnMap).toHaveBeenLastCalledWith('input_0', [1], 0));
           // Row 0 is not drawn: nothing lights.
           const lit = grammar.highlightOnMap.mock.calls.length;
           grammar.clearHighlightOnMap.mockClear();
           await act(async () => { rerender({ d: { ...base, interactions: select(0) } }); });
-          await waitFor(() => expect(grammar.clearHighlightOnMap).toHaveBeenCalledWith('input_0'));
+          await waitFor(() => expect(grammar.clearHighlightOnMap).toHaveBeenCalledWith('input_0', 0));
           expect(grammar.highlightOnMap.mock.calls.length).toBe(lit);
         });
 

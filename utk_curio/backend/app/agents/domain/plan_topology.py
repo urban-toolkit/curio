@@ -6,9 +6,11 @@ saved spec, so the mint, both apply paths, and the applied summary agree:
 1. Is the NET data graph — saved nodes minus ``removeNodes`` plus plan refs,
    saved edges minus ``removeEdges`` minus the removal cascade plus plan
    edges — acyclic?  Only DATA edges count: interaction edges are the Trill's
-   feedback channel (``type: "Interaction"``, ``in/out`` handles) and are
-   excluded exactly as the canvas's ``hasCycle`` and the execution runner
-   exclude them.
+   feedback channel and are excluded exactly as the canvas's ``hasCycle`` and
+   the execution runner exclude them, by the one rule both read
+   (``is_interaction_edge``, ``execution/run_plan.py``): typed
+   ``Interaction``, of the plan kind ``interaction``, or an interaction handle
+   at both ends, a node's own ``in/out`` or a view's ``in/out@<id>``.
 2. Are the plan's interaction edges legal?  An interaction edge carries
    selections, never data, so one of its ends must show what it receives: it
    links two visualizations of which one highlights, a visualization and a
@@ -31,8 +33,13 @@ on eight example fixtures rather than as a wrong score.
 from __future__ import annotations
 
 from utk_curio.backend.app.agents.domain import agent_text
+from utk_curio.backend.app.execution import run_plan
 
-INTERACTION_EDGE_TYPE = "Interaction"
+#: The type a saved dataflow gives an interaction edge, as the rule names it.
+INTERACTION_EDGE_TYPE = run_plan.INTERACTION_EDGE_TYPE
+#: Whether an edge, of a saved dataflow or of a plan, is an interaction edge:
+#: the one rule, ``run_plan.is_interaction_edge``.
+is_interaction_edge = run_plan.is_interaction_edge
 #: The behavior a Map Editor template names: its node is linked by an
 #: interaction edge to a map it feeds on a data edge, and to no other node
 #: (``interaction_edge_errors``). Read off each template's roster row, never
@@ -83,14 +90,6 @@ def strip_type_version(node_type: object) -> str:
 def template_suffix(node_type: object) -> str:
     """``curio.builtin/vis-vega@1`` → ``vis-vega``."""
     return strip_type_version(node_type).rsplit("/", 1)[-1]
-
-
-def is_interaction_edge(edge: dict) -> bool:
-    """Spec edge (``type: "Interaction"``) or plan edge (``kind: "interaction"``)."""
-    return (
-        str(edge.get("type") or "") == INTERACTION_EDGE_TYPE
-        or str(edge.get("kind") or "") == "interaction"
-    )
 
 
 def removal_cascade(existing_edges: list, remove_node_set: set, remove_edge_set: set) -> set[str]:

@@ -1,0 +1,37 @@
+{
+  "description": "Handles and edges, and what the rule of interactionEdges.json says of each. src/tests/contracts/interactionEdgesCases.test.ts runs every case through interactionEdges.ts, and backend/tests/test_interaction_edges.py through execution/run_plan.py and agents/domain/plan_topology.py. A handle's view is the id it names: null for a node's own handle and for a handle that is no interaction handle.",
+  "handles": [
+    {"name": "a node's own handle", "handle": "in/out", "interaction": true, "view": null},
+    {"name": "a view's handle names the view's id", "handle": "in/out@heights", "interaction": true, "view": "heights"},
+    {"name": "an id is everything after the mark, a second mark included", "handle": "in/out@map@2", "interaction": true, "view": "map@2"},
+    {"name": "an id may hold a space", "handle": "in/out@building heights", "interaction": true, "view": "building heights"},
+    {"name": "the mark with no id names no view", "handle": "in/out@", "interaction": false, "view": null},
+    {"name": "an input circle", "handle": "in", "interaction": false, "view": null},
+    {"name": "a later input circle", "handle": "in_1", "interaction": false, "view": null},
+    {"name": "an output", "handle": "out", "interaction": false, "view": null},
+    {"name": "a handle that only starts like one", "handle": "in/outer", "interaction": false, "view": null},
+    {"name": "another case", "handle": "IN/OUT", "interaction": false, "view": null},
+    {"name": "an empty handle", "handle": "", "interaction": false, "view": null},
+    {"name": "no handle", "handle": null, "interaction": false, "view": null}
+  ],
+  "edges": [
+    {"name": "a saved interaction edge", "edge": {"source": "a", "target": "b", "type": "Interaction", "sourceHandle": "in/out", "targetHandle": "in/out"}, "interaction": true},
+    {"name": "a saved interaction edge with no handles", "edge": {"source": "a", "target": "b", "type": "Interaction"}, "interaction": true},
+    {"name": "a saved interaction edge whose handles name views", "edge": {"source": "a", "target": "b", "type": "Interaction", "sourceHandle": "in/out@heights", "targetHandle": "in/out@buildings"}, "interaction": true},
+    {"name": "an interaction edge of an agent's plan", "edge": {"from": "a", "to": "b", "kind": "interaction"}, "interaction": true},
+    {"name": "both ends on a node's own handle", "edge": {"source": "a", "target": "b", "sourceHandle": "in/out", "targetHandle": "in/out"}, "interaction": true},
+    {"name": "a view's handle to a node's own", "edge": {"source": "a", "target": "b", "sourceHandle": "in/out@heights", "targetHandle": "in/out"}, "interaction": true},
+    {"name": "a node's own handle to a view's", "edge": {"source": "a", "target": "b", "sourceHandle": "in/out", "targetHandle": "in/out@heights"}, "interaction": true},
+    {"name": "a view's handle to another view's", "edge": {"source": "a", "target": "b", "sourceHandle": "in/out@heights", "targetHandle": "in/out@buildings"}, "interaction": true},
+    {"name": "an interaction handle at the target alone is data", "edge": {"source": "a", "target": "b", "sourceHandle": "out", "targetHandle": "in/out"}, "interaction": false},
+    {"name": "an interaction handle at the source alone is data", "edge": {"source": "a", "target": "b", "sourceHandle": "in/out", "targetHandle": "in"}, "interaction": false},
+    {"name": "a view's handle at one end alone is data", "edge": {"source": "a", "target": "b", "sourceHandle": "in/out@heights", "targetHandle": "in_1"}, "interaction": false},
+    {"name": "the mark with no id at one end is data", "edge": {"source": "a", "target": "b", "sourceHandle": "in/out@", "targetHandle": "in/out"}, "interaction": false},
+    {"name": "a data edge", "edge": {"source": "a", "target": "b", "sourceHandle": "out", "targetHandle": "in_1"}, "interaction": false},
+    {"name": "an edge with no type, kind or handles is data", "edge": {"source": "a", "target": "b"}, "interaction": false},
+    {"name": "a data edge of an agent's plan", "edge": {"from": "a", "to": "b"}, "interaction": false},
+    {"name": "a plan edge of the data kind", "edge": {"from": "a", "to": "b", "kind": "data"}, "interaction": false},
+    {"name": "another type", "edge": {"source": "a", "target": "b", "type": "Data"}, "interaction": false},
+    {"name": "no edge", "edge": null, "interaction": false}
+  ]
+}

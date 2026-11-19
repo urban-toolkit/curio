@@ -8,6 +8,7 @@ import type { Node } from "reactflow";
 import { v4 as uuid } from "uuid";
 
 import { AccessLevelType, CURIO_UNIVERSAL_NODE_TYPE, EdgeType } from "../constants";
+import { interactionHandleOr } from "../contracts/interactionEdges";
 import { convertedSavedJoin } from "../contracts/savedSpatialJoin";
 import type { DatasetNodeSource } from "../services/datasetCatalog";
 import type { CanvasTemplateConfig } from "../utils/canvasTemplateConfig";
@@ -379,10 +380,13 @@ export function canvasEdgeFromTrill(edge: any, suggestionType?: string): any {
     if (edge.metadata != undefined && edge.metadata.keywords != undefined)
         add_edge.data.keywords = edge.metadata.keywords;
 
+    // An interaction edge keeps the interaction handles it was saved with, a
+    // view's (`in/out@<id>`) among them, and a node's own at an end that
+    // names none (contracts/interactionEdges).
     if (edge.type == "Interaction") {
         add_edge.markerStart = { type: "arrow" };
-        add_edge.sourceHandle = "in/out";
-        add_edge.targetHandle = "in/out";
+        add_edge.sourceHandle = interactionHandleOr(edge.sourceHandle);
+        add_edge.targetHandle = interactionHandleOr(edge.targetHandle);
         add_edge.type = EdgeType.BIDIRECTIONAL_EDGE;
     }
 

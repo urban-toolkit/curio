@@ -27,6 +27,7 @@ from utk_curio.backend.app.agents.domain.counts import count_label
 from utk_curio.backend.app.agents.repositories import project_agents
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
+from utk_curio.backend.app.execution.run_plan import INTERACTION_HANDLE
 from utk_curio.backend.app.execution.workflow_spec import slot_handle_id
 from utk_curio.backend.app.agents.application.proposals import changes as agents_changes
 from utk_curio.backend.app.agents.application.proposals import plan_scenarios
@@ -239,14 +240,14 @@ def _validate_plan_fanin(
 
 def _interaction_spec_edge(source: str, target: str) -> dict:
     """dev/112: the spec shape of a Trill Interaction edge — what
-    ``TrillGenerator`` writes and ``loadTrill`` reads (``in/out`` both ends,
-    bidirectional on the canvas)."""
+    ``TrillGenerator`` writes and ``loadTrill`` reads (a node's own
+    interaction handle at both ends, bidirectional on the canvas)."""
     return {
         "id": str(uuid.uuid4()),
         "source": source,
         "target": target,
-        "sourceHandle": "in/out",
-        "targetHandle": "in/out",
+        "sourceHandle": INTERACTION_HANDLE,
+        "targetHandle": INTERACTION_HANDLE,
         "type": plan_topology.INTERACTION_EDGE_TYPE,
     }
 

@@ -11,6 +11,7 @@
  * document's: never kept, hidden or picked on.
  */
 import { grammarMaps } from './autkMapDrawing';
+import { mapEntries, mapIndexOf, pickLayerOf } from './autkViews';
 import { INPUT_ROW, tablePositions } from '../../utils/autkInput';
 import { idKey } from '../../utils/editFeatures/applyEdits';
 import { isMapEditToolLayer } from '../../utils/editFeatures/mapEditLayers';
@@ -55,30 +56,79 @@ function layerRefsOf(spec: any): any[] {
 const bareRef = (ref: unknown) => String(ref ?? '').replace(/^\[!!\s*(.*?)\s*!!\]$/, '$1');
 
 /**
- * The autk-map layer that draws *table* on a map of *grammar*, the last one
- * when several do, as the grammar's `mapLayer` finds it, or null.
+ * The autk-map layer that draws *table* on a map of *grammar*, as the
+ * grammar's `mapLayer` finds it, or null: on the map *mapId* names (its index,
+ * or its `id`), else the last one when several maps draw it.
  */
-export function mapLayerOf(grammar: any, table: string): any | null {
-    const found = typeof grammar?.mapLayer === 'function' ? grammar.mapLayer(table) : undefined;
+export function mapLayerOf(grammar: any, table: string, mapId?: string | number): any | null {
+    const found = typeof grammar?.mapLayer === 'function' ? grammar.mapLayer(table, mapId) : undefined;
     if (!found) return null;
     return layersOf(found.map).find((layer) => idOf(layer) === found.layerId) ?? null;
 }
 
+/** The id a layer of a document has in its map, as autk-grammar names it: its `title`, else its table. */
+const layerIdOfRef = (ref: any): string =>
+    typeof ref?.title === 'string' && ref.title !== '' ? ref.title : bareRef(ref?.dataRef);
+
+/** The layers the map *entry* of a document draws. */
+const refsOf = (entry: any): any[] => (Array.isArray(entry?.layerRefs) ? entry.layerRefs : []);
+
 /**
- * The table of the layer that picks on the map of *grammar* that draws
- * *table*: autk-map has one, the last a document marks `isPick`, or the one
- * picked in its layer menu or shown alone by a Map Editor node. Null when the
- * map has none or it draws a table *spec* does not name.
+ * The map of *grammar* a pick was made on, and the layers of *spec* it draws:
+ * the map *mapId* names (its index, or its `id`), as autk-grammar's
+ * `map:picking` names it; without one, the map that draws *table*, else the
+ * first. A map the grammar does not list as one of its maps reads every layer
+ * of *spec*.
  */
-export function pickingTableOf(grammar: any, spec: any, table: string | undefined): string | null {
-    const map = (table ? grammar?.mapLayer?.(table)?.map : undefined) ?? grammarMaps(grammar)[0];
+function pickedMap(grammar: any, spec: any, table: string | undefined, mapId: string | number | undefined) {
+    const maps = grammarMaps(grammar);
+    if (mapId !== undefined) {
+        const index = mapIndexOf(spec, mapId);
+        return { index, map: index < 0 ? undefined : maps[index], refs: index < 0 ? [] : refsOf(mapEntries(spec)[index]) };
+    }
+    const map = (table ? grammar?.mapLayer?.(table)?.map : undefined) ?? maps[0];
+    const index = maps.indexOf(map);
+    return { index: Math.max(index, 0), map, refs: index < 0 ? layerRefsOf(spec) : refsOf(mapEntries(spec)[index]) };
+}
+
+/**
+ * The table of the layer that picks on a map of *grammar*: autk-map has one,
+ * the last a document marks `isPick`, or the one picked in its layer menu or
+ * shown alone by a Map Editor node. The map is the one *mapId* names (its
+ * index, or its `id`), as autk-grammar's `map:picking` names the map picked
+ * on; without one, the map that draws *table*, else the first. Only that
+ * map's layers are read, so two maps whose layers share a title stay apart.
+ * Null when the map has none or it draws a table its entry of *spec* does not
+ * name.
+ */
+export function pickingTableOf(grammar: any, spec: any, table: string | undefined, mapId?: string | number): string | null {
+    const { map, refs } = pickedMap(grammar, spec, table, mapId);
     const picking = idOf(map?.activePickingLayer);
     if (!picking) return null;
-    for (const ref of layerRefsOf(spec)) {
+    for (const ref of refs) {
         const named = bareRef(ref?.dataRef);
-        if (named && layerIdFor(spec, named) === picking) return named;
+        if (named && layerIdOfRef(ref) === picking) return named;
     }
     return null;
+}
+
+/**
+ * The map a pick was made on, by the `mapId` autk-grammar names it with, else
+ * the map that draws the picked layer *layerId*, else the first; with its
+ * entry of *spec* and the table picked: the one its layer that picks now
+ * draws, else its entry's own picking layer's. Null for a `mapId` that names
+ * no map of *spec*.
+ */
+export function pickOn(
+    grammar: any,
+    spec: any,
+    mapId: string | number | undefined,
+    layerId?: string,
+): { index: number; entry: any; table: string | undefined } | null {
+    const { index } = pickedMap(grammar, spec, layerId, mapId);
+    if (index < 0) return null;
+    const entry = mapEntries(spec)[index];
+    return { index, entry, table: pickingTableOf(grammar, spec, layerId, mapId) ?? pickLayerOf(entry) };
 }
 
 /** The features a map draws of each table, and the input row each of its positions stands for, read back once a draw. */

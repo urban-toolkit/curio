@@ -544,6 +544,31 @@ describe("bleedRasterEdges", () => {
     expect(cellsWhenAsked).toEqual([200, 10, 10, 255, 200, 10, 10, 0]);
   });
 
+  test("repro: two maps that draw a raster of one table each bleed their own cells, once", () => {
+    const { bleedRasterEdges } = require("../../../adapters/node/autkRasters");
+    const first = rasterMap("heat");
+    const second = rasterMap("heat");
+    const spec = { map: [{ layerRefs: [{ dataRef: "heat" }] }, { workspace: "south", layerRefs: [{ dataRef: "heat" }] }] };
+    bleedRasterEdges(grammarThatRan(spec, first.map, second.map), spec);
+    for (const { map, layer } of [first, second]) {
+      expect(Array.from(layer.rasterData)).toEqual([200, 10, 10, 255, 200, 10, 10, 0]);
+      expect(layer.makeLayerDataDirty).toHaveBeenCalledTimes(1);
+      expect(map.requestRender).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  test("repro: two layers of one map that draw one raster under two titles each bleed theirs", () => {
+    const { bleedRasterEdges } = require("../../../adapters/node/autkRasters");
+    const shaded = rasterMap("Shade");
+    const plain = rasterMap("Shade, plain");
+    const layers: Record<string, any> = { Shade: shaded.layer, "Shade, plain": plain.layer };
+    const map = { layerManager: { searchByLayerId: (id: string) => layers[id] ?? null }, requestRender: jest.fn() };
+    const spec = { map: { layerRefs: [{ dataRef: "shade", title: "Shade" }, { dataRef: "shade", title: "Shade, plain" }] } };
+    bleedRasterEdges(grammarThatRan(spec, map), spec);
+    expect(Array.from(shaded.layer.rasterData)).toEqual([200, 10, 10, 255, 200, 10, 10, 0]);
+    expect(Array.from(plain.layer.rasterData)).toEqual([200, 10, 10, 255, 200, 10, 10, 0]);
+  });
+
   test("guard: a layer that is not a raster is left as drawn", () => {
     const { bleedRasterEdges } = require("../../../adapters/node/autkRasters");
     const { map, layer } = rasterMap("buildings", "buildings");

@@ -158,9 +158,7 @@ def circles_into(node_id, edges) -> int:
     for edge in edges or ():
         if not isinstance(edge, dict) or edge.get("target") != node_id:
             continue
-        if plan_topology.is_interaction_edge(edge) or (
-            edge.get("sourceHandle") == "in/out" and edge.get("targetHandle") == "in/out"
-        ):
+        if plan_topology.is_interaction_edge(edge):
             continue
         highest = max(highest, workflow_spec.input_slot(edge) + 1)
     return max(highest, 1)

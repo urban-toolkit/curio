@@ -16,6 +16,7 @@ import {
   setCurrentProjectPackages,
 } from "../../../registry/projectPackagesStore";
 import { EdgeType } from "../../../constants";
+import { interactionHandleOr } from "../../../contracts/interactionEdges";
 import { normalizeWidgets } from "../../../utils/widgets/widgetModel";
 import { dataPoolFromSpec } from "../../../utils/dataPoolSpec";
 import { lineageFromSpec } from "../../../utils/scenarios/duplicateSelection";
@@ -57,8 +58,9 @@ const CENTER_ANIMATION_MS = 400;
  */
 /** dev/112: ONE materialization of an applied spec edge for the live canvas —
  * parity with loadTrill's `add_edge` (useCode): a Trill `Interaction` edge is
- * bidirectional on `in/out` handles with arrows both ends; a data edge keeps
- * the explicit handles the plan assigned (input circles, dev/67-3). */
+ * bidirectional with arrows both ends, on the interaction handles it names (a
+ * view's among them), else a node's own (contracts/interactionEdges); a data
+ * edge keeps the explicit handles the plan assigned (input circles, dev/67-3). */
 function appliedEdgeToCanvasEdge(edge: {
   id: string;
   source: string;
@@ -72,8 +74,8 @@ function appliedEdgeToCanvasEdge(edge: {
     id: edge.id,
     source: edge.source,
     target: edge.target,
-    sourceHandle: interaction ? "in/out" : edge.sourceHandle ?? "out",
-    targetHandle: interaction ? "in/out" : edge.targetHandle ?? "in",
+    sourceHandle: interaction ? interactionHandleOr(edge.sourceHandle) : edge.sourceHandle ?? "out",
+    targetHandle: interaction ? interactionHandleOr(edge.targetHandle) : edge.targetHandle ?? "in",
     type: interaction ? EdgeType.BIDIRECTIONAL_EDGE : EdgeType.UNIDIRECTIONAL_EDGE,
     markerEnd: { type: "arrow" },
     ...(interaction ? { markerStart: { type: "arrow" } } : {}),

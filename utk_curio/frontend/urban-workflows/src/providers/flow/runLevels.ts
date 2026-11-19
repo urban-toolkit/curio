@@ -1,13 +1,12 @@
 // The order Run All runs a dataflow in: the edges it follows, the levels of
 // nodes it runs one after another, and the nodes a play runs.
 import type { Edge, Node } from "reactflow";
+import { isInteractionEdge, type EdgeLike } from "../../contracts/interactionEdges";
 import { runKeyOf } from "../../utils/references/runKeys";
 
-/** The edges a run orders nodes by: every edge but a two-way interaction link. */
-export function directedEdgesOf<E extends { sourceHandle?: string | null; targetHandle?: string | null }>(
-    edges: E[],
-): E[] {
-    return edges.filter(e => !(e.sourceHandle === "in/out" && e.targetHandle === "in/out"));
+/** The edges a run orders nodes by: every edge but a two-way interaction link (contracts/interactionEdges). */
+export function directedEdgesOf<E extends EdgeLike>(edges: E[]): E[] {
+    return edges.filter(e => !isInteractionEdge(e));
 }
 
 export function computeTopologicalLevels(nodes: Node[], edges: Edge[]): string[][] {

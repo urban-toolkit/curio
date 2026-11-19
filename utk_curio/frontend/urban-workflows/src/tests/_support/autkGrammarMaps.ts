@@ -8,7 +8,10 @@
  * index), the layer's id there (its `title`, else its `dataRef`), the table it
  * draws and the rows it draws (none here). `mapLayers(dataRef, mapId?)` lists
  * the layers that draw a table, on every map or on the one `mapId` names, and
- * `mapLayer(dataRef, mapId?)` is the last of them.
+ * `mapLayer(dataRef, mapId?)` is the last of them. `highlightOnMap` and
+ * `clearHighlightOnMap` light and clear those layers through each map's
+ * `setHighlightedIds` and `clearHighlightedIds`, as autk-grammar 5.0.0's do,
+ * the plots linked to them left out.
  */
 export type DrawnLayer = {
   map: any;
@@ -24,6 +27,10 @@ export type GrammarThatRan = {
   _layers: DrawnLayer[];
   mapLayers: (dataRef: string, mapId?: string | number) => Array<{ map: any; layerId: string }>;
   mapLayer: (dataRef: string, mapId?: string | number) => { map: any; layerId: string } | undefined;
+  /** Lights *featureIds* on every layer that draws *dataRef*, on every map or on the one *mapId* names. */
+  highlightOnMap: (dataRef: string, featureIds: number[], mapId?: string | number) => void;
+  /** Clears what every layer that draws *dataRef* lights, on every map or on the one *mapId* names. */
+  clearHighlightOnMap: (dataRef: string, mapId?: string | number) => void;
 };
 
 /** The id a layer has in its map: its `title`, else its `dataRef`. */
@@ -62,5 +69,11 @@ export function grammarThatRan(spec: any, ...drawn: any[]): GrammarThatRan {
     _layers: layers,
     mapLayers,
     mapLayer: (dataRef, mapId) => mapLayers(dataRef, mapId).pop(),
+    highlightOnMap: (dataRef, featureIds, mapId) => {
+      for (const { map, layerId } of mapLayers(dataRef, mapId)) map.setHighlightedIds?.(layerId, featureIds);
+    },
+    clearHighlightOnMap: (dataRef, mapId) => {
+      for (const { map, layerId } of mapLayers(dataRef, mapId)) map.clearHighlightedIds?.(layerId);
+    },
   };
 }

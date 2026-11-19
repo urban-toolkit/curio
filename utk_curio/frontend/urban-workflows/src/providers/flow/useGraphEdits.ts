@@ -23,6 +23,7 @@ import { normalizeFlowInput } from "../../utils/flowOutputRef";
 import { markSelectionEcho, SelectionEchoOptions } from "../../utils/selectionEcho";
 import { nodeCodeWriter } from "../../utils/nodeCodeWriters";
 import { nodeCode } from "../../utils/editFeatures/mapLayerEdits";
+import { isInteractionEdge } from "../../contracts/interactionEdges";
 import type { IOutput } from "./flowTypes";
 import { nodeGrowsInputs, nodeHasSeveralPorts } from "./growingInputs";
 
@@ -179,7 +180,7 @@ export function useGraphEdits({
         const currentEdges = (edgesOverride ?? reactFlow.getEdges()) as any[];
         const nodesAffected: string[] = [];
         for (const edge of currentEdges) {
-            if (edge.sourceHandle == "in/out" && edge.targetHandle == "in/out") continue;
+            if (isInteractionEdge(edge)) continue;
             if (sourceId == edge.source) {
                 nodesAffected.push(edge.target);
             }
@@ -234,7 +235,7 @@ export function useGraphEdits({
         targetHandle: string,
         edges: Edge[],
     ) => {
-        if (sourceHandle == "in/out" && targetHandle == "in/out") return;
+        if (isInteractionEdge({ sourceHandle, targetHandle })) return;
 
         // Why: previously this read `outputs` via a side effect inside a
         // setOutputs reducer. React Flow's setNodes (zustand) flushes its
@@ -357,23 +358,16 @@ export function useGraphEdits({
                 const resetInput = connection.target;
                 markNodeStaleRef.current(connection.target);
 
-                // skiping syncronized connections
-                if (
-                    connection.sourceHandle != "in/out" &&
-                    connection.targetHandle != "in/out"
-                ) {
+                // An interaction edge leaves no version and resets no input:
+                // it carries selections, never data. onConnect joins an
+                // interaction handle to an interaction handle alone, so an
+                // edge has one at both ends or at neither.
+                if (!isInteractionEdge(connection)) {
                     TrillGenerator.addNewVersionProvenance(
                         reactFlow.getNodes(),
                         reactFlow.getEdges().filter((e: Edge) => e.id !== connection.id),
                         workflowNameRef.current, "", "Connection deleted"
                     );
-                }
-
-                // skiping syncronized connections
-                if (
-                    connection.sourceHandle != "in/out" ||
-                    connection.targetHandle != "in/out"
-                ) {
                     if (options?.remote) {
                         remote.set(connection.target, [...(remote.get(connection.target) ?? []), connection]);
                         continue;

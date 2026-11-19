@@ -26,12 +26,12 @@ from __future__ import annotations
 
 from typing import Iterable, Optional
 
+from utk_curio.backend.app.execution.run_plan import is_interaction_edge
+
 
 def _is_interaction(edge: dict) -> bool:
-    """A two-way link between views, which a run does not follow."""
-    return edge.get("type") == "Interaction" or (
-        edge.get("sourceHandle") == "in/out" and edge.get("targetHandle") == "in/out"
-    )
+    """A two-way link between views, which a run does not follow (the one rule, ``run_plan``'s)."""
+    return is_interaction_edge(edge)
 
 
 def _walk(start: Iterable[str], step: dict[str, list[str]], boxed: set[str]) -> set[str]:

@@ -129,6 +129,16 @@ describe("the dots on a cell's right edge", () => {
     expect(places.get("in/out")).toEqual({ top: "50%" });
   });
 
+  test("a view's interaction dot sits halfway down beside the node's own, and is no output", () => {
+    const own = { id: "in/out", type: "source" as const };
+    const view = { id: "in/out@heights", type: "source" as const };
+    const places = notebookHandlePlaces([...handles, own, view]);
+    expect(places.get("in/out@heights")).toEqual({ top: "50%" });
+    // The outputs alone stack up from the bottom, so the cell is no taller for it.
+    expect(places.get("out")).toEqual(notebookHandlePlaces([...handles, own]).get("out"));
+    expect(notebookCellMinHeight([...handles, own, view])).toBe(notebookCellMinHeight([...handles, own]));
+  });
+
   test("several outputs stack up from the bottom", () => {
     const places = notebookHandlePlaces([
       { id: "out", type: "source" },

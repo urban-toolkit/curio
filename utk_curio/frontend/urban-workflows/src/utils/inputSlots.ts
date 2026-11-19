@@ -19,6 +19,7 @@
  *
  * Duck-typed edges, so this module needs no `reactflow` import.
  */
+import { isInteractionEdge } from "../contracts/interactionEdges";
 
 type SlotEdge = {
     id?: string | null;
@@ -26,6 +27,8 @@ type SlotEdge = {
     target?: string | null;
     sourceHandle?: string | null;
     targetHandle?: string | null;
+    /** A saved dataflow's `Interaction`, which an edge with no handles can carry. */
+    type?: string | null;
 };
 
 const SLOT_ARRAY_MIN_SIZE = 6;
@@ -62,9 +65,9 @@ export function slotHandleId(slot: number): string {
     return slot === 0 ? "in" : `in_${slot}`;
 }
 
-/** Whether an edge carries data rather than an interaction. */
+/** Whether an edge carries data rather than an interaction (contracts/interactionEdges). */
 export function isDataEdge(edge: SlotEdge): boolean {
-    return !(edge.sourceHandle === "in/out" && edge.targetHandle === "in/out");
+    return !isInteractionEdge(edge);
 }
 
 /** True when a slot holds a propagated upstream artifact. */

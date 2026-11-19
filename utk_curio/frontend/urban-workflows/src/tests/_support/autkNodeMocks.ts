@@ -16,8 +16,14 @@ export type GrammarRun = {
   pick: (selection: number[]) => void;
   /** A brush on the plot, as autk-grammar reports one: positions in the plot's table. */
   brush: (selection: number[]) => void;
+  /** A pick as autk-grammar 5.0.0 reports one: on the map *mapId* names, on its layer *layerId*, drawn positions. */
+  pickOn: (mapId: string | number, layerId: string, selection: number[]) => void;
+  /** A brush as autk-grammar 5.0.0 reports one: on the plot *plotId* names (its `id`, else its `dataRef`). */
+  brushOn: (plotId: string, selection: number[]) => void;
   /** Each highlight the node asked of this run's map, in order: the table and the positions lit up (none: cleared). */
   highlights: Array<[string, number[]]>;
+  /** The map each of `highlights` named, by autk-grammar's `mapId` (none: every map that draws the table). */
+  highlightMaps: Array<string | number | undefined>;
   /** Each selection the node asked of this run's plot, in order: the plot and its positions (none: cleared). */
   plotSelections: Array<[string, number[]]>;
   /** The maps this run drew, made by `drawnMaps.make` when a test sets it. */
@@ -78,6 +84,7 @@ export const grammarComputes: { on: boolean } = { on: false };
 export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string, unknown>) => {
   const handlers: Record<string, (event: any) => void> = {};
   const highlights: Array<[string, number[]]> = [];
+  const highlightMaps: Array<string | number | undefined> = [];
   const plotSelections: Array<[string, number[]]> = [];
   const grammar: any = {
     data: {},
@@ -87,8 +94,14 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
         return () => { delete handlers[event]; };
       },
     },
-    highlightOnMap: jest.fn((table: string, positions: number[]) => { highlights.push([table, [...positions]]); }),
-    clearHighlightOnMap: jest.fn((table: string) => { highlights.push([table, []]); }),
+    highlightOnMap: jest.fn((table: string, positions: number[], mapId?: string | number) => {
+      highlights.push([table, [...positions]]);
+      highlightMaps.push(mapId);
+    }),
+    clearHighlightOnMap: jest.fn((table: string, mapId?: string | number) => {
+      highlights.push([table, []]);
+      highlightMaps.push(mapId);
+    }),
     setPlotSelection: jest.fn((plot: string, positions: number[]) => { plotSelections.push([plot, [...positions]]); }),
     clearHighlightOnPlot: jest.fn((plot: string) => { plotSelections.push([plot, []]); }),
     // Where autk-grammar keeps the adapter its run hands each compute pass to.
@@ -102,7 +115,10 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
     const terminate = jest.fn(async () => undefined);
     grammar.grammarEngine = { context: { db: { terminate } } };
     if (failedDraws.error) {
-      grammarRuns.push({ targets, spec, pick: () => {}, brush: () => {}, highlights, plotSelections, maps: [], terminate, destroy });
+      grammarRuns.push({
+        targets, spec, pick: () => {}, brush: () => {}, pickOn: () => {}, brushOn: () => {},
+        highlights, highlightMaps, plotSelections, maps: [], terminate, destroy,
+      });
       throw failedDraws.error;
     }
     if (grammarComputes.on) {
@@ -148,7 +164,10 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
       spec,
       pick: (selection) => handlers['map:picking']?.({ selection }),
       brush: (selection) => handlers['plot:selection']?.({ selection }),
+      pickOn: (mapId, layerId, selection) => handlers['map:picking']?.({ mapId, layerId, selection }),
+      brushOn: (plotId, selection) => handlers['plot:selection']?.({ plotId, event: 'brush', selection }),
       highlights,
+      highlightMaps,
       plotSelections,
       maps,
       terminate,

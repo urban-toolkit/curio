@@ -3,6 +3,7 @@
 // path it draws there, and how tall a cell's output is. Pure, so the view and
 // its tests share one set of numbers.
 import { NodeType } from "../constants";
+import { isInteractionHandle } from "../contracts/interactionEdges";
 import { isVegaLiteNodeType } from "../registry/vegaLiteNodes";
 import { unversionedNodeType } from "./flowNodeCanonicalType";
 import { inputSlotOf } from "./inputSlots";
@@ -123,15 +124,16 @@ export type NotebookDotPlace = { top: number } | { top: "50%" } | { top: "auto";
 function splitHandles(handles: readonly NotebookHandle[]) {
   return {
     inputs: handles.filter((h) => h.type === "target"),
-    outputs: handles.filter((h) => h.type === "source" && h.id !== "in/out"),
-    interaction: handles.some((h) => h.id === "in/out"),
+    outputs: handles.filter((h) => h.type === "source" && !isInteractionHandle(h.id)),
+    // The node's own interaction dot, and a view's (contracts/interactionEdges).
+    interaction: handles.filter((h) => isInteractionHandle(h.id)),
   };
 }
 
 /**
  * Where each of a cell's dots sits, so it follows the cell as it grows. Inputs
  * keep the order the node lists them in (circle 0 first) at fixed offsets from
- * the top, the interaction dot is halfway down, and outputs go up from the
+ * the top, the interaction dots are halfway down, and outputs go up from the
  * bottom. React Flow centers a right-side dot on its `top`, so a dot anchored
  * to the bottom sits one dot higher than its `bottom` says.
  */
@@ -139,7 +141,7 @@ export function notebookHandlePlaces(handles: readonly NotebookHandle[]): Map<st
   const { inputs, outputs, interaction } = splitHandles(handles);
   const places = new Map<string, NotebookDotPlace>();
   inputs.forEach((h, k) => places.set(h.id, { top: FIRST_INPUT + k * DOT_PITCH }));
-  if (interaction) places.set("in/out", { top: "50%" });
+  interaction.forEach((h) => places.set(h.id, { top: "50%" }));
   outputs.forEach((h, k) =>
     places.set(h.id, { top: "auto", bottom: OUTPUT_INSET + k * DOT_PITCH - NOTEBOOK_DOT_SIZE }));
   return places;
@@ -153,7 +155,7 @@ export function notebookCellMinHeight(handles: readonly NotebookHandle[]): numbe
   const above = inputs.length > 0 ? FIRST_INPUT + (inputs.length - 1) * DOT_PITCH + DOT_GAP : DOT_GAP;
   const below = outputs.length > 0 ? OUTPUT_INSET + (outputs.length - 1) * DOT_PITCH + DOT_GAP : DOT_GAP;
   // The interaction dot sits halfway, so each half holds one of the stacks.
-  return interaction ? 2 * Math.max(above, below) : above + below;
+  return interaction.length > 0 ? 2 * Math.max(above, below) : above + below;
 }
 
 /** A cell's box: the page's cell width, and at least tall enough for its dots. */
@@ -216,7 +218,7 @@ export interface NotebookEdge {
 
 /** Where along its row an end of a connection sits, in rows, for telling spans apart. */
 function rowPoint(row: number, handle: string | null | undefined, end: "source" | "target"): number {
-  if (handle === "in/out") return row + 0.5;
+  if (isInteractionHandle(handle)) return row + 0.5;
   if (end === "source") return row + 0.9;
   return row + 0.1 + Math.max(0, inputSlotOf(handle)) * 0.001;
 }

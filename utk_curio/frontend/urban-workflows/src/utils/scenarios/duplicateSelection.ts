@@ -9,6 +9,7 @@
  * original's own lineage, then the original. Two nodes pair when their ids
  * and lineages meet, which is how two scenarios' levers line up.
  */
+import { INTERACTION_HANDLE } from "../../contracts/interactionEdges";
 
 export interface SpecNode {
   id: string;
@@ -82,7 +83,7 @@ export function duplicateSelection(
     copy.source = source ?? edge.source;
     copy.target = target;
     // Always explicit: without one, a load reads the circle from the edge id.
-    copy.targetHandle = edge.targetHandle ?? (isInteraction(edge) ? "in/out" : "in");
+    copy.targetHandle = edge.targetHandle ?? (isInteraction(edge) ? INTERACTION_HANDLE : "in");
     edges.push(copy);
   }
   return { nodes, edges, ids };
