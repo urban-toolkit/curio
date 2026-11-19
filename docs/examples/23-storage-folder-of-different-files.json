@@ -70,7 +70,7 @@
         "type": "curio.builtin/vis-vega",
         "x": 1290,
         "y": 215,
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Parks and roads on one map.\",\n  \"mark\": {\n    \"type\": \"geoshape\",\n    \"strokeWidth\": 3,\n    \"fillOpacity\": 0.4\n  },\n  \"encoding\": {\n    \"color\": {\n      \"field\": \"layer\",\n      \"type\": \"nominal\",\n      \"title\": \"Layer\"\n    },\n    \"stroke\": {\n      \"field\": \"layer\",\n      \"type\": \"nominal\",\n      \"legend\": null\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"name\",\n        \"type\": \"nominal\"\n      }\n    ]\n  }\n}\n",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Parks and roads on one map.\",\n  \"mark\": {\n    \"type\": \"geoshape\",\n    \"strokeWidth\": 3,\n    \"fillOpacity\": 0.4\n  },\n  \"encoding\": {\n    \"color\": {\n      \"field\": \"layer\",\n      \"type\": \"nominal\",\n      \"title\": \"Layer\"\n    },\n    \"stroke\": {\n      \"field\": \"layer\",\n      \"type\": \"nominal\"\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"name\",\n        \"type\": \"nominal\"\n      }\n    ]\n  }\n}\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Draw both layers.",
