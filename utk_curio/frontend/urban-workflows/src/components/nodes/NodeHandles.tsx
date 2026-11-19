@@ -17,6 +17,8 @@ function notebookDotTitle(
   edges: readonly Edge[],
   nodes: readonly Node[] | undefined,
 ): string {
+  // A view's dot names its view, as on the canvas.
+  if (handle.tooltip) return handle.tooltip;
   if (isInteractionHandle(handle.id)) return "interaction";
   if (handle.type === "source") return "output";
   const edge = edges.find((e) => e.target === nodeId && (e.targetHandle ?? "in") === handle.id);
@@ -31,6 +33,36 @@ function notebookDotTitle(
   const label = notebookInputLabel(handle.id);
   const input = /^\d+$/.test(label) ? `input_${label}` : `input ${label}`;
   return name ? `${input} · ${name}` : input;
+}
+
+/**
+ * Ring the pane of the view *view* (`data-view-id`, adapters/node/autkViews
+ * `layOutPanes`) in the node the dot *dot* is on, or take the ring off. The
+ * ring is an outline along the pane's own edge (Node.css), shown only while
+ * the pointer is on the dot.
+ */
+function ringPane(dot: Element, view: string, on: boolean): void {
+  const node = dot.closest(".react-flow__node");
+  const pane = node
+    ? Array.from(node.querySelectorAll<HTMLElement>("[data-curio-autk-pane]")).find((each) => each.dataset.viewId === view)
+    : undefined;
+  if (!pane) return;
+  if (on) pane.dataset.curioRinged = "true";
+  else delete pane.dataset.curioRinged;
+}
+
+/** What a view's dot adds to its handle: hover text through Curio's one tooltip, its name for a screen reader, and its pane's ring. */
+function viewDotProps(handle: HandleDef) {
+  const view = handle.view;
+  return {
+    ...(handle.tooltip ? { "data-tooltip": handle.tooltip, "aria-label": handle.tooltip } : {}),
+    ...(view
+      ? {
+          onMouseEnter: (event: React.MouseEvent<HTMLDivElement>) => ringPane(event.currentTarget, view, true),
+          onMouseLeave: (event: React.MouseEvent<HTMLDivElement>) => ringPane(event.currentTarget, view, false),
+        }
+      : {}),
+  };
 }
 
 export function NodeHandles({
@@ -67,6 +99,8 @@ export function NodeHandles({
           // follows the cell as it grows. React Flow measures the dots again
           // whenever the cell resizes, and the arcs follow them.
           const label = h.type === "target" && !isInteractionHandle(h.id) ? notebookInputLabel(h.id) : "";
+          // A view's dot leaves its place along the canvas's top edge there.
+          const { left: _left, ...edgeStyle } = style ?? {};
           return (
             <Handle
               key={h.id}
@@ -74,7 +108,8 @@ export function NodeHandles({
               type={h.type}
               position={Position.Right}
               isConnectable={connectable}
-              style={{ ...(style ?? {}), ...notebookPlaces.get(h.id) }}
+              style={{ ...(h.view ? edgeStyle : style ?? {}), ...notebookPlaces.get(h.id) }}
+              {...viewDotProps(h)}
               data-tooltip={notebookDotTitle(h, nodeId, edges, nodes)}
               className="curio-notebook-dot"
             >
@@ -92,6 +127,7 @@ export function NodeHandles({
             position={h.position}
             isConnectable={connectable}
             style={style}
+            {...viewDotProps(h)}
           />
         );
       })}

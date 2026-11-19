@@ -1273,8 +1273,9 @@ def normalize_selections(raw) -> list:
     """The well-formed selection tags in *raw* (a spec's
     ``metadata.selections``), one per name, of the :data:`WIDGET_NAME_RE`
     shape matched whole, as the browser matches it: ``{name, node, column,
-    ids}``, or ``count`` in place of ``ids``. Kept in sync with
-    ``normalizeSelections`` in ``selectionTags.ts``."""
+    ids}``, or ``count`` in place of ``ids``, and ``view``, the id of the
+    view of an Autark node of several views it reads, when it names one.
+    Kept in sync with ``normalizeSelections`` in ``selectionTags.ts``."""
     if not isinstance(raw, list):
         return []
     out, seen = [], set()
@@ -1288,7 +1289,10 @@ def normalize_selections(raw) -> list:
             continue
         if not isinstance(entry.get("column"), str) or not entry["column"]:
             continue
-        tag = {"name": name, "node": entry["node"], "column": entry["column"]}
+        tag = {"name": name, "node": entry["node"]}
+        if isinstance(entry.get("view"), str) and entry["view"]:
+            tag["view"] = entry["view"]
+        tag["column"] = entry["column"]
         count = entry.get("count")
         if isinstance(entry.get("ids"), list):
             tag["ids"] = list(entry["ids"])

@@ -289,6 +289,11 @@ const pick = (rows: number[]) => ({
   pick: { type: VisInteractionType.POINT, data: rows, priority: 1, source: NodeType.VIS_VEGA },
 });
 
+/** An Autark view's pick on *rows* of its table (adapters/node/autkGrammarBehavior, utils/autkSelects). */
+const autkPick = (rows: number[], priority: number) => ({
+  type: VisInteractionType.POINT, data: rows, priority, source: NodeType.AUTK_GRAMMAR, layerRef: 'input_0',
+});
+
 /** A Simple View's click on a card (adapters/node/simpleVisBehavior.tsx, `clickRow`). */
 const cardClick = (row: number) => ({
   images_click: { type: VisInteractionType.POINT, data: [row], priority: 1, source: NodeType.VIS_SIMPLE },
@@ -721,7 +726,8 @@ describe('interaction edges that name a view', () => {
       ['link', 'in/out@heights', 'in/out', 'BIDIRECTIONAL_EDGE'],
     ]);
     expect(mockShowToast).not.toHaveBeenCalled();
-    await select('M', pick([1]));
+    // The view's own select, which its edge carries.
+    await select('M', { 'autk_selection@heights': autkPick([1], 1) });
     expect(picksFrom('B', 'M')).toEqual([1]);
   });
 
@@ -740,12 +746,14 @@ describe('interaction edges that name a view', () => {
     expect(mockShowToast).not.toHaveBeenCalled();
   });
 
+  // Both edges carry the view heights' select: the node's own handle sends
+  // every view's, and the view's handle sends that view's alone.
   test('two interaction edges between the same two nodes carry one selection, and removing one takes nothing back', async () => {
     await renderFlow();
     await addNodes(makeNode('M', AUTARK), makeNode('B', VEGA));
     await load([saved('own', 'M', 'B', 'interaction'), fromView('view', 'M', 'heights', 'B')]);
 
-    await select('M', pick([1]));
+    await select('M', { 'autk_selection@heights': autkPick([1], 1) });
     expect(heldBy('B')).toHaveLength(1);
     expect(picksFrom('B', 'M')).toEqual([1]);
 
@@ -764,5 +772,118 @@ describe('interaction edges that name a view', () => {
     await flush();
     expect(api.edges).toEqual([]);
     expect(picksFrom('B', 'M')).toEqual([]);
+  });
+});
+
+/**
+ * An edge on a view's dot routes that view's selection alone
+ * (providers/flow/interactionRoutes): out of the view, only its select goes,
+ * at priority 1; into it, the selection is delivered to that view, which the
+ * delivery names (`toView`). A node's own dot carries every view's selects,
+ * out and in, so an edge between two nodes' own dots works as before.
+ */
+describe('routing per view', () => {
+  /** An interaction edge as a saved dataflow holds it, a view's handle at an end that names one. */
+  const link = (id: string, source: string, sourceView: string | null, target: string, targetView: string | null) => ({
+    id,
+    source,
+    target,
+    sourceHandle: sourceView === null ? 'in/out' : `in/out@${sourceView}`,
+    targetHandle: targetView === null ? 'in/out' : `in/out@${targetView}`,
+    type: 'Interaction',
+  });
+  /** What a node of a map `city` and a plot `heights` sends: a pick on the map, then a brush on the plot. */
+  const BOTH = { 'autk_selection@city': autkPick([2], 0), 'autk_selection@heights': autkPick([0, 1], 1) };
+  const CITY = { nodeId: 'M', details: { 'autk_selection@city': autkPick([2], 1) }, priority: 1, fromView: 'city' };
+  const HEIGHTS = { nodeId: 'M', details: { 'autk_selection@heights': autkPick([0, 1], 1) }, priority: 1, fromView: 'heights' };
+
+  test("an edge from a view's dot sends that view's select alone, at priority 1 though another view's is newer", async () => {
+    await renderFlow();
+    await addNodes(makeNode('M', AUTARK), makeNode('B', VEGA));
+    await load([link('link', 'M', 'city', 'B', null)]);
+
+    await select('M', BOTH);
+
+    expect(heldBy('B')).toEqual([CITY]);
+    expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  test("an edge from a view's dot sends nothing while that view holds no select", async () => {
+    await renderFlow();
+    await addNodes(makeNode('M', AUTARK), makeNode('B', VEGA));
+    await load([link('link', 'M', 'city', 'B', null)]);
+
+    await select('M', { 'autk_selection@heights': autkPick([0, 1], 1) });
+
+    expect(heldBy('B')).toEqual([]);
+  });
+
+  test("an edge into a view's dot delivers to that view alone, which the delivery names", async () => {
+    await renderFlow();
+    await addNodes(makeNode('A', VEGA), makeNode('M', AUTARK));
+    await load([link('link', 'A', null, 'M', 'heights')]);
+
+    await select('A', pick([1]));
+
+    expect(heldBy('M')).toEqual([{ nodeId: 'A', details: pick([1]), priority: 1, toView: 'heights' }]);
+  });
+
+  test("an edge between two nodes' own dots carries every view's selects to the whole node, as before", async () => {
+    await renderFlow();
+    await addNodes(makeNode('M', AUTARK), makeNode('B', VEGA));
+    await load([saved('link', 'M', 'B', 'interaction')]);
+
+    await select('M', BOTH);
+
+    expect(heldBy('B')).toEqual([{ nodeId: 'M', details: BOTH, priority: 1 }]);
+  });
+
+  test("two edges from two views of one node each carry their own view's select, and removing one takes back that view's alone", async () => {
+    await renderFlow();
+    await addNodes(makeNode('M', AUTARK), makeNode('B', VEGA));
+    await load([link('city', 'M', 'city', 'B', null), link('heights', 'M', 'heights', 'B', null)]);
+    await select('M', BOTH);
+    expect(heldBy('B')).toEqual([CITY, HEIGHTS]);
+
+    await act(async () => {
+      canvas.deleteElements({ edges: [{ id: 'city' }] });
+    });
+    await flush();
+
+    expect(api.edges.map((e) => e.id)).toEqual(['heights']);
+    expect(heldBy('B')).toEqual([HEIGHTS]);
+  });
+
+  test("an edge drawn into a view's dot after a selection hands that view the selection already made", async () => {
+    await renderFlow();
+    await addNodes(makeNode('A', VEGA), makeNode('M', AUTARK));
+    await select('A', pick([1]));
+
+    await act(async () => {
+      api.onConnect({ source: 'A', target: 'M', sourceHandle: 'in/out', targetHandle: 'in/out@heights' } as Connection);
+    });
+    await flush();
+
+    expect(api.edges.map((e) => [e.sourceHandle, e.targetHandle])).toEqual([['in/out', 'in/out@heights']]);
+    expect(mockShowToast).not.toHaveBeenCalled();
+    expect(heldBy('M')).toEqual([{ nodeId: 'A', details: pick([1]), priority: 1, toView: 'heights' }]);
+  });
+
+  test("an edge drawn into a second view of a node already linked hands that view the selection too", async () => {
+    await renderFlow();
+    await addNodes(makeNode('A', VEGA), makeNode('M', AUTARK));
+    await load([link('city', 'A', null, 'M', 'city')]);
+    await select('A', pick([1]));
+    expect(heldBy('M')).toEqual([{ nodeId: 'A', details: pick([1]), priority: 1, toView: 'city' }]);
+
+    await act(async () => {
+      api.onConnect({ source: 'A', target: 'M', sourceHandle: 'in/out', targetHandle: 'in/out@heights' } as Connection);
+    });
+    await flush();
+
+    expect(heldBy('M')).toEqual([
+      { nodeId: 'A', details: pick([1]), priority: 1, toView: 'city' },
+      { nodeId: 'A', details: pick([1]), priority: 1, toView: 'heights' },
+    ]);
   });
 });

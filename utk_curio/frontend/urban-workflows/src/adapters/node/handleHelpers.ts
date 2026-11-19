@@ -1,7 +1,7 @@
 import { Position } from 'reactflow';
 import { HandleDef } from '../../registry/types';
 import { inputCircleCount, slotHandleId } from '../../utils/inputSlots';
-import { INTERACTION_HANDLE } from '../../contracts/interactionEdges';
+import { INTERACTION_HANDLE, interactionViewHandle } from '../../contracts/interactionEdges';
 
 const suggestionGuard = (data: any, isConnectable: boolean) =>
   isConnectable && (data.suggestionType == undefined || data.suggestionType === 'none');
@@ -51,5 +51,38 @@ export function withBidirectional(base: HandleDef[]): HandleDef[] {
     ...base,
     { id: INTERACTION_HANDLE, type: 'source', position: Position.Top, isConnectableOverride: suggestionGuard },
   ];
+}
+
+/** How far apart two view dots sit, center to center, and how far the last keeps from the node's corner. */
+const VIEW_DOT_PITCH_PX = 28;
+const VIEW_DOT_CORNER_PX = 24;
+
+/**
+ * Where view dot *k* of *n* sits along a node's top edge: right of the node's
+ * own interaction dot, which is in the middle, the first a step away and each
+ * next one a step further. The step shrinks when the dots would pass the
+ * node's corner, so however many views a node has, every dot stays on its top
+ * edge.
+ */
+export function viewDotLeft(k: number, n: number): string {
+  return `calc(50% + ${k + 1} * min(${VIEW_DOT_PITCH_PX}px, (50% - ${VIEW_DOT_CORNER_PX}px) / ${Math.max(n, 1)}))`;
+}
+
+/**
+ * The interaction dots of the views *views* (their ids), in their panes'
+ * order, each a top source handle `in/out@<id>` like the node's own, placed
+ * by `viewDotLeft`, its hover text naming the view (*tooltipOf*) and ringing
+ * its pane.
+ */
+export function viewDots(views: readonly string[], tooltipOf: (view: string) => string): HandleDef[] {
+  return views.map((view, k) => ({
+    id: interactionViewHandle(view),
+    type: 'source',
+    position: Position.Top,
+    isConnectableOverride: suggestionGuard,
+    style: { left: viewDotLeft(k, views.length) },
+    tooltip: tooltipOf(view),
+    view,
+  }));
 }
 

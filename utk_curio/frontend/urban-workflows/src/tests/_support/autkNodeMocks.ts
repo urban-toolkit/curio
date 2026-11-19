@@ -27,6 +27,12 @@ export type GrammarRun = {
   highlightMaps: Array<string | number | undefined>;
   /** Each selection the node asked of this run's plot, in order: the plot and its positions (none: cleared). */
   plotSelections: Array<[string, number[]]>;
+  /**
+   * Every highlight and plot selection the node asked of this run, in the
+   * order asked: a map's table, its positions (none: cleared) and the map
+   * named, or a plot and its positions (none: cleared).
+   */
+  calls: Array<['map', string, number[], string | number | undefined] | ['plot', string, number[]]>;
   /** The maps this run drew, made by `drawnMaps.make` when a test sets it. */
   maps: any[];
   /**
@@ -41,8 +47,12 @@ export type GrammarRun = {
 /** Every run of the stand-in grammar, in order. */
 export const grammarRuns: GrammarRun[] = [];
 
-/** What makes the map a run draws, for a test that reads its camera; none unless a test sets it. */
-export const drawnMaps: { make: null | (() => any) } = { make: null };
+/**
+ * What makes the map a run draws, for a test that reads its camera; none
+ * unless a test sets it. With `makeEach`, a run draws one map per map of its
+ * spec, the k-th made by `makeEach(k)`.
+ */
+export const drawnMaps: { make: null | (() => any); makeEach: null | ((index: number) => any) } = { make: null, makeEach: null };
 
 /**
  * What a run waits for once it made its maps, for a test that holds a draw
@@ -91,6 +101,7 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
   const highlights: Array<[string, number[]]> = [];
   const highlightMaps: Array<string | number | undefined> = [];
   const plotSelections: Array<[string, number[]]> = [];
+  const calls: GrammarRun['calls'] = [];
   const grammar: any = {
     data: {},
     interactions: {
@@ -102,13 +113,21 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
     highlightOnMap: jest.fn((table: string, positions: number[], mapId?: string | number) => {
       highlights.push([table, [...positions]]);
       highlightMaps.push(mapId);
+      calls.push(['map', table, [...positions], mapId]);
     }),
     clearHighlightOnMap: jest.fn((table: string, mapId?: string | number) => {
       highlights.push([table, []]);
       highlightMaps.push(mapId);
+      calls.push(['map', table, [], mapId]);
     }),
-    setPlotSelection: jest.fn((plot: string, positions: number[]) => { plotSelections.push([plot, [...positions]]); }),
-    clearHighlightOnPlot: jest.fn((plot: string) => { plotSelections.push([plot, []]); }),
+    setPlotSelection: jest.fn((plot: string, positions: number[]) => {
+      plotSelections.push([plot, [...positions]]);
+      calls.push(['plot', plot, [...positions]]);
+    }),
+    clearHighlightOnPlot: jest.fn((plot: string) => {
+      plotSelections.push([plot, []]);
+      calls.push(['plot', plot, []]);
+    }),
     // Where autk-grammar keeps the adapter its run hands each compute pass to.
     computeAdapter: grammarComputes.adapter
       ? grammarComputes.adapter()
@@ -124,7 +143,7 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
     if (failedDraws.error) {
       grammarRuns.push({
         targets, spec, pick: () => {}, brush: () => {}, pickOn: () => {}, brushOn: () => {},
-        highlights, highlightMaps, plotSelections, maps: [], terminate, destroy,
+        highlights, highlightMaps, plotSelections, calls, maps: [], terminate, destroy,
       });
       throw failedDraws.error;
     }
@@ -166,7 +185,11 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
       }
       grammar.grammarEngine.context = context;
     }
-    const maps = drawnMaps.make && spec?.map ? [drawnMaps.make()] : [];
+    const mapsOfSpec: any[] = spec?.map === undefined || spec?.map === null ? [] : Array.isArray(spec.map) ? spec.map : [spec.map];
+    const makeEach = drawnMaps.makeEach;
+    const maps = makeEach
+      ? mapsOfSpec.map((_entry, index) => makeEach(index))
+      : drawnMaps.make && spec?.map ? [drawnMaps.make()] : [];
     if (maps.length > 0) grammar.maps = maps;
     grammarRuns.push({
       targets,
@@ -178,6 +201,7 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
       highlights,
       highlightMaps,
       plotSelections,
+      calls,
       maps,
       terminate,
       destroy,
@@ -232,6 +256,7 @@ export const autkGrammarModule = { AutkGrammar, arrangeViews, enterWorkspace };
 export function resetAutkNodeMocks(): void {
   grammarRuns.length = 0;
   drawnMaps.make = null;
+  drawnMaps.makeEach = null;
   heldDraws.until = null;
   drawnExports.of = null;
   failedDraws.error = null;

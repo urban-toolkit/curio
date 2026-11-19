@@ -27,7 +27,7 @@ from utk_curio.backend.app.agents.domain.counts import count_label
 from utk_curio.backend.app.agents.repositories import project_agents
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
-from utk_curio.backend.app.execution.run_plan import INTERACTION_HANDLE
+from utk_curio.backend.app.execution import run_plan
 from utk_curio.backend.app.execution.workflow_spec import slot_handle_id
 from utk_curio.backend.app.agents.application.proposals import changes as agents_changes
 from utk_curio.backend.app.agents.application.proposals import plan_scenarios
@@ -238,16 +238,18 @@ def _validate_plan_fanin(
     return errors
 
 
-def _interaction_spec_edge(source: str, target: str) -> dict:
+def _interaction_spec_edge(source: str, target: str, from_view: str | None = None, to_view: str | None = None) -> dict:
     """dev/112: the spec shape of a Trill Interaction edge — what
-    ``TrillGenerator`` writes and ``loadTrill`` reads (a node's own
-    interaction handle at both ends, bidirectional on the canvas)."""
+    ``TrillGenerator`` writes and ``loadTrill`` reads (an interaction handle
+    at both ends, bidirectional on the canvas): a node's own, or the dot of
+    the view the plan names at that end (``fromView``, ``toView``,
+    ``in/out@<id>``)."""
     return {
         "id": str(uuid.uuid4()),
         "source": source,
         "target": target,
-        "sourceHandle": INTERACTION_HANDLE,
-        "targetHandle": INTERACTION_HANDLE,
+        "sourceHandle": run_plan.interaction_view_handle(from_view),
+        "targetHandle": run_plan.interaction_view_handle(to_view),
         "type": plan_topology.INTERACTION_EDGE_TYPE,
     }
 
@@ -914,6 +916,13 @@ def _plan_topology_refusal(plan: dict, existing_nodes: dict, existing_edges: lis
     kind_errors = plan_topology.interaction_edge_errors(plan, _type_of_endpoint, available, net_pairs)
     if kind_errors:
         return "\n- ".join([agent_text.message("plan.interaction-edges-invalid")] + kind_errors)
+    # A view an interaction edge names is a view, by its id, of the Autark
+    # node at that end: the edge joins that view's dot.
+    view_errors = plan_topology.interaction_view_errors(
+        plan, _type_of_endpoint, lambda endpoint: (existing_nodes.get(endpoint) or {}).get("content"),
+    )
+    if view_errors:
+        return "\n- ".join([agent_text.message("plan.interaction-views-invalid")] + view_errors)
     closing = plan_topology.closing_plan_edges(net_pairs, plan)
     if closing:
         def _label(node_id: str) -> str:
@@ -1054,6 +1063,8 @@ def _plan_review_part(proposal_id: str, plan: dict, existing_nodes: dict, existi
                 "to": e["to"],
                 **({"toHandle": e["toHandle"]} if e.get("toHandle") else {}),
                 **({"kind": e["kind"]} if e.get("kind") else {}),  # dev/112
+                # The views an interaction edge names at each end, which the card names after their nodes.
+                **{field: e[field] for field in ("fromView", "toView") if e.get(field)},
                 "fromLabel": _plan_endpoint_label(e["from"], plan, existing_nodes),
                 "toLabel": _plan_endpoint_label(e["to"], plan, existing_nodes),
             }
@@ -1296,11 +1307,17 @@ def _existing_plan_edge(edges: list, plan_edges: list, index: int, source: str, 
     the same two ends, kind and input circle. An edge that names its circle
     (``toHandle``) is on that circle; one that names none is on a circle no
     other plan edge between the same two ends names, so a node fed twice by
-    one node (a Spatial Join of a layer with itself) keeps both feeds. An edge
-    the plan removes (*doomed*) does not count. A plan that lands creates none
-    for such an edge."""
+    one node (a Spatial Join of a layer with itself) keeps both feeds. An
+    interaction edge is on the dots of the views it names (``fromView``,
+    ``toView``), each node's own dot where it names none, so two edges between
+    the same nodes on two views stay two. An edge the plan removes (*doomed*)
+    does not count. A plan that lands creates none for such an edge."""
     plan_edge = plan_edges[index]
     interaction = plan_topology.is_interaction_edge(plan_edge)
+    views = (
+        run_plan.interaction_view_handle(plan_edge.get("fromView")),
+        run_plan.interaction_view_handle(plan_edge.get("toView")),
+    )
     named = plan_edge.get("toHandle")
     taken = {
         other.get("toHandle") for i, other in enumerate(plan_edges)
@@ -1315,8 +1332,15 @@ def _existing_plan_edge(edges: list, plan_edges: list, index: int, source: str, 
             continue
         if plan_topology.is_interaction_edge(e) != interaction:
             continue
+        if interaction:
+            # Each end's interaction handle, a node's own where a saved edge names none.
+            ends = tuple(run_plan.interaction_view_handle(run_plan.interaction_handle_view(e.get(side)))
+                         for side in ("sourceHandle", "targetHandle"))
+            if ends == views:
+                return e
+            continue
         circle = e.get("targetHandle") or "in"
-        if interaction or (circle == named if named else circle not in taken):
+        if circle == named if named else circle not in taken:
             return e
     return None
 
@@ -1501,10 +1525,11 @@ def _create_plan_edges(user_key, project_id, proposal_id, spec: dict, proposal: 
         ) is not None:
             continue
         if plan_topology.is_interaction_edge(plan_edge):
-            # dev/112: the Trill's feedback edge — in/out handles both ends,
-            # type Interaction (what loadTrill/TrillGenerator round-trip); no
-            # input port, no input circle.
-            edge = _interaction_spec_edge(source, target)
+            # dev/112: the Trill's feedback edge, interaction handles both
+            # ends, type Interaction (what loadTrill/TrillGenerator
+            # round-trip), on the dots of the views it names; no input port,
+            # no input circle.
+            edge = _interaction_spec_edge(source, target, plan_edge.get("fromView"), plan_edge.get("toView"))
             edges.append(edge)
             created_edges.append(edge)
             continue

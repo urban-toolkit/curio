@@ -13,6 +13,16 @@ export interface IInteraction {
     nodeId: string;
     details: any;
     priority: number; // used to solve conflicts of interactions 1 has more priority than 0
+    /**
+     * On a selection a node received: the view of the sending node whose
+     * selection it is, when the edge leaves that view's dot (`in/out@<id>`).
+     */
+    fromView?: string;
+    /**
+     * On a selection a node received: the view of the receiving node it is
+     * for, when the edge reaches that view's dot; none, the whole node.
+     */
+    toView?: string;
 }
 
 // propagating interactions between pools at different resolutions

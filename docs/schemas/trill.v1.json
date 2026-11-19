@@ -377,6 +377,7 @@
       "properties": {
         "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$", "description": "What the code's `[!! selection name !!]` references name." },
         "node": { "type": "string", "minLength": 1, "description": "The id of the view whose selection the tag reads." },
+        "view": { "type": "string", "minLength": 1, "description": "The `id` of one map or plot of that node, an Autark node of several views, whose selection alone the tag reads. Without it, the tag reads the node's newest selection." },
         "column": { "type": "string", "minLength": 1, "description": "The column whose values identify the selected rows, such as `osm_id` or `building_id`." },
         "ids": {
           "type": "array",
@@ -643,11 +644,11 @@
         },
         "sourceHandle": {
           "type": "string",
-          "description": "Explicit source handle id, normally 'out' or 'in/out' on an interaction edge. Persisted since dev/64; before that a save dropped it."
+          "description": "Explicit source handle id, normally 'out', or on an interaction edge 'in/out', or 'in/out@<id>' for the dot of the view of an Autark node of several views whose `id` it names. Persisted since dev/64; before that a save dropped it."
         },
         "targetHandle": {
           "type": "string",
-          "description": "Explicit target handle id. The observed vocabulary is 'in', 'in/out', the input circles 'in_1', 'in_2', ... of a node whose one input port takes several edges ('in' is its first circle, and a node's code reads circle N as [!! input_N !!]), and any named port a package template declares. A node with several input ports, such as the Spatial Join, takes one edge on each of 'in' and 'in_1'. Deliberately NOT pattern-constrained: the legal set is derived from the template's inputPorts in its package manifest, so a third-party package may name its ports anything. When absent, the reader infers a circle from an 'in_N' suffix of edge.id and otherwise falls back to 'in', which cannot recover a named port."
+          "description": "Explicit target handle id. The observed vocabulary is 'in', 'in/out' and 'in/out@<id>' (the dot of the view of an Autark node of several views whose `id` it names), the input circles 'in_1', 'in_2', ... of a node whose one input port takes several edges ('in' is its first circle, and a node's code reads circle N as [!! input_N !!]), and any named port a package template declares. A node with several input ports, such as the Spatial Join, takes one edge on each of 'in' and 'in_1'. Deliberately NOT pattern-constrained: the legal set is derived from the template's inputPorts in its package manifest, so a third-party package may name its ports anything. When absent, the reader infers a circle from an 'in_N' suffix of edge.id and otherwise falls back to 'in', which cannot recover a named port."
         },
         "metadata": {
           "type": "object",

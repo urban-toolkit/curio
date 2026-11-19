@@ -14,6 +14,7 @@
  * names whether it draws the edits made now or those the last run made.
  */
 import { inputTableName } from "../../contracts/autkGrammar";
+import { interactionHandleView } from "../../contracts/interactionEdges";
 import { autkSourcesFrom } from "../autkInput";
 import { framesFromPayload, type GrammarFrame, type GrammarInput } from "../grammarInput";
 import { inputSlotOf, wiredInputSlots } from "../inputSlots";
@@ -48,6 +49,23 @@ export interface EditFeed {
 /** Whether a Map Editor node feeds *mapId* on a data edge, whatever its code holds. */
 export function fedByInteraction(mapId: string, nodes: readonly any[], edges: readonly any[]): boolean {
   return edges.some((edge) => edge.target === mapId && !isInteractionEdge(edge) && isInteraction(nodes.find((n) => n.id === edge.source)));
+}
+
+/**
+ * The view of the Autark node *mapId* a Map Editor node edits: the one the
+ * interaction edge between the two names at the map node's end
+ * (`in/out@<id>`), the first such edge's; null when it names none, and the
+ * Map Editor works on the node's first map.
+ */
+export function editedMapView(mapId: string, nodes: readonly any[], edges: readonly any[]): string | null {
+  for (const edge of edges) {
+    if (!isInteractionEdge(edge)) continue;
+    const other = edge.source === mapId ? edge.target : edge.target === mapId ? edge.source : null;
+    if (other === null || !isInteraction(nodes.find((n) => n.id === other))) continue;
+    const view = interactionHandleView(edge.source === mapId ? edge.sourceHandle : edge.targetHandle);
+    if (view !== null) return view;
+  }
+  return null;
 }
 
 /**

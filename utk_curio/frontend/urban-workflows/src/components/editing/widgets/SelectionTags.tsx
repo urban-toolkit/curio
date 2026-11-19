@@ -29,6 +29,10 @@ type Read =
   | { status: "none" }
   | { status: "ready"; columns: string[] };
 
+/** The choice a view is in the form's list: its node's id, or for one view of a node, the node's and the view's. */
+const choiceOf = (view: SelectionView | undefined): string =>
+  view === undefined ? "" : view.view === undefined ? view.id : JSON.stringify([view.id, view.view]);
+
 /**
  * The form that adds a selection tag: a view, the column whose values identify
  * its rows, and a name. A view whose rows have no such column is refused.
@@ -44,20 +48,21 @@ export function SelectionForm({
   onSave: (tag: SelectionTagDef) => void;
   onCancel: () => void;
 }) {
-  const [viewId, setViewId] = useState(views[0]?.id ?? "");
+  const [choice, setChoice] = useState(choiceOf(views[0]));
   const [read, setRead] = useState<Read>({ status: "reading" });
   const [column, setColumn] = useState("");
   const [name, setName] = useState(() => suggestTagName(views[0]?.label, taken));
   const [named, setNamed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const view = views.find((v) => v.id === viewId);
+  const view = views.find((v) => choiceOf(v) === choice);
+  const viewId = view?.id ?? "";
 
   useEffect(() => {
     let current = true;
     setRead({ status: "reading" });
     setError(null);
-    viewRowsOf(viewId).then((held) => {
+    viewRowsOf(viewId, view?.layer).then((held) => {
       if (!current) return;
       if (!held || held.rows.count === 0) {
         setRead({ status: "none" });
@@ -71,7 +76,7 @@ export function SelectionForm({
     return () => {
       current = false;
     };
-  }, [viewId]);
+  }, [choice]);
 
   const label = view?.label ?? viewId;
   const refusal =
@@ -90,13 +95,13 @@ export function SelectionForm({
 
   const save = () => {
     setSaving(true);
-    selectionStateOf(viewId, column).then((state) => {
+    selectionStateOf(viewId, column, undefined, view?.view).then((state) => {
       setSaving(false);
       if (state === null) {
         setError(`Run ${label} first: its rows are not known yet.`);
         return;
       }
-      onSave({ name, node: viewId, column, ...state });
+      onSave({ name, node: viewId, ...(view?.view ? { view: view.view } : {}), column, ...state });
     });
   };
 
@@ -104,9 +109,9 @@ export function SelectionForm({
     <div className={styles.form} data-selection-form="true">
       <label>
         View
-        <select aria-label="Selection view" value={viewId} onChange={(e) => setViewId(e.target.value)}>
+        <select aria-label="Selection view" value={choice} onChange={(e) => setChoice(e.target.value)}>
           {views.map((v) => (
-            <option key={v.id} value={v.id}>
+            <option key={choiceOf(v)} value={choiceOf(v)}>
               {v.label}
             </option>
           ))}
@@ -178,7 +183,13 @@ export function SelectionSection({
 }) {
   const [adding, setAdding] = useState(false);
   if (selections.length === 0 && views.length === 0) return null;
-  const labelOf = (id: string) => views.find((v) => v.id === id)?.label ?? id;
+  // A tag on one view of a node is named after the node, then the view ("Node · heights").
+  const labelOf = (id: string, view?: string) => {
+    const own = views.find((v) => v.id === id && v.view === view)?.label;
+    if (own) return own;
+    const node = views.find((v) => v.id === id && v.view === undefined)?.label ?? id;
+    return view === undefined ? node : `${node} · ${view}`;
+  };
   return (
     <div className={styles.shared} data-selections-panel="true">
       <p className={styles.sharedHeading}>Selections</p>
@@ -188,7 +199,7 @@ export function SelectionSection({
         return (
           <div key={tag.name} className={styles.row} data-selection-row={tag.name}>
             <span className={styles.rowLabel}>
-              {exists ? labelOf(tag.node) : "A deleted view"}, by {tag.column}
+              {exists ? labelOf(tag.node, tag.view) : "A deleted view"}, by {tag.column}
             </span>
             <SelectionTag name={tag.name} disabled={disabled} />
             <span
