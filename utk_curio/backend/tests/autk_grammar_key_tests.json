@@ -1,0 +1,1293 @@
+{
+  "description": "Each key of the vendored Autark grammar schema (utk_curio/backend/app/agents/schemas/autk-grammar.v1.json), by its path (utk_curio/backend/tests/_support/autk_key_paths.py), with the tests that run it on a path Curio runs a document on: a node's run, a run on the server, a compute step, the agents' document check. renamedKeys holds the keys autk-grammar 5 renamed, by their old names, with the tests that refuse them. An entry's test is a file of the repository and the test in it, :: between them; its document, the file the test reads its documents from; refused, a test that shows the key refused. utk_curio/backend/tests/test_agents/test_autk_every_key_tested.py checks it.",
+  "keys": {
+    "compute": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "compute[gpgpu]": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "compute[gpgpu].attributeArrays": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[08-autark-spatial-join-regression.json]",
+        "document": "docs/examples/08-autark-spatial-join-regression.json"
+      }
+    ],
+    "compute[gpgpu].attributeMatrices": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "compute[gpgpu].attributeMatrices.*.cols": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "compute[gpgpu].attributeMatrices.*.rows": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "compute[gpgpu].attributes": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "compute[gpgpu].dataRef": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "compute[gpgpu].layerType": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkKeyRefusals.test.ts::applyComputeBlocks::a pass that writes a new table, with its type, runs"
+      }
+    ],
+    "compute[gpgpu].outputColumnName": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "compute[gpgpu].outputColumns": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[08-autark-spatial-join-regression.json]",
+        "document": "docs/examples/08-autark-spatial-join-regression.json"
+      }
+    ],
+    "compute[gpgpu].outputTableName": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkKeyRefusals.test.ts::applyComputeBlocks::a pass that writes a new table, with its type, runs"
+      }
+    ],
+    "compute[gpgpu].uniformMatrices": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "compute[gpgpu].uniformMatrices.*.cols": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "compute[gpgpu].uniformMatrices.*.fromFeature": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "compute[gpgpu].uniformMatrices.*.fromFeature.iterate": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "compute[gpgpu].uniformMatrices.*.fromFeature.layer": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "compute[gpgpu].uniformMatrices.*.fromFeature.path": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "compute[gpgpu].uniforms": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "compute[gpgpu].uniforms.*.fromFeature": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "compute[gpgpu].uniforms.*.fromFeature.iterate": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "compute[gpgpu].uniforms.*.fromFeature.layer": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "compute[gpgpu].uniforms.*.fromFeature.path": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "compute[gpgpu].uniforms.*.fromFeature.required": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "compute[gpgpu].wgslFunction": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "compute[render]": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[35-autark-sky-seen-from-the-street.json]",
+        "document": "docs/examples/35-autark-sky-seen-from-the-street.json"
+      }
+    ],
+    "compute[render].aggregation": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[35-autark-sky-seen-from-the-street.json]",
+        "document": "docs/examples/35-autark-sky-seen-from-the-street.json"
+      }
+    ],
+    "compute[render].aggregation(classes)": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[35-autark-sky-seen-from-the-street.json]",
+        "document": "docs/examples/35-autark-sky-seen-from-the-street.json"
+      }
+    ],
+    "compute[render].aggregation(classes).backgroundLayerType": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[35-autark-sky-seen-from-the-street.json]",
+        "document": "docs/examples/35-autark-sky-seen-from-the-street.json"
+      }
+    ],
+    "compute[render].aggregation(classes).includeBackground": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[35-autark-sky-seen-from-the-street.json]",
+        "document": "docs/examples/35-autark-sky-seen-from-the-street.json"
+      }
+    ],
+    "compute[render].layers": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[35-autark-sky-seen-from-the-street.json]",
+        "document": "docs/examples/35-autark-sky-seen-from-the-street.json"
+      }
+    ],
+    "compute[render].layers[].dataRef": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[35-autark-sky-seen-from-the-street.json]",
+        "document": "docs/examples/35-autark-sky-seen-from-the-street.json"
+      }
+    ],
+    "compute[render].layers[].id": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[35-autark-sky-seen-from-the-street.json]",
+        "document": "docs/examples/35-autark-sky-seen-from-the-street.json"
+      }
+    ],
+    "compute[render].layers[].type": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[35-autark-sky-seen-from-the-street.json]",
+        "document": "docs/examples/35-autark-sky-seen-from-the-street.json"
+      }
+    ],
+    "compute[render].outputTableName": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[35-autark-sky-seen-from-the-street.json]",
+        "document": "docs/examples/35-autark-sky-seen-from-the-street.json"
+      }
+    ],
+    "compute[render].tileSize": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[35-autark-sky-seen-from-the-street.json]",
+        "document": "docs/examples/35-autark-sky-seen-from-the-street.json"
+      }
+    ],
+    "compute[render].viewpoints": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[35-autark-sky-seen-from-the-street.json]",
+        "document": "docs/examples/35-autark-sky-seen-from-the-street.json"
+      }
+    ],
+    "compute[render].viewpoints.dataRef": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[35-autark-sky-seen-from-the-street.json]",
+        "document": "docs/examples/35-autark-sky-seen-from-the-street.json"
+      }
+    ],
+    "compute[render].viewpoints.sampling": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[35-autark-sky-seen-from-the-street.json]",
+        "document": "docs/examples/35-autark-sky-seen-from-the-street.json"
+      }
+    ],
+    "compute[render].viewpoints.sampling.directions": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[35-autark-sky-seen-from-the-street.json]",
+        "document": "docs/examples/35-autark-sky-seen-from-the-street.json"
+      }
+    ],
+    "compute[render].viewpoints.sampling.pitchDeg": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[35-autark-sky-seen-from-the-street.json]",
+        "document": "docs/examples/35-autark-sky-seen-from-the-street.json"
+      }
+    ],
+    "compute[render].viewpoints.strategy": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkRenderPasses.test.tsx::it hands on a table of building windows as points, one per window"
+      }
+    ],
+    "compute[render].viewpoints.strategy(building-windows)": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkRenderPasses.test.tsx::it hands on a table of building windows as points, one per window"
+      }
+    ],
+    "compute[render].viewpoints.strategy(building-windows).floors": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkRenderPasses.test.tsx::it hands on a table of building windows as points, one per window"
+      }
+    ],
+    "data": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "data[osm]": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "data[osm].autoLoadLayers": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "data[osm].autoLoadLayers.dropOsmTable": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/behaviors.test.tsx::osm: dropOsmTable does not make the raw osm tables expected"
+      }
+    ],
+    "data[osm].autoLoadLayers.layers": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "data[osm].outputTableName": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "data[osm].pbfFileUrl": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "data[osm].queryArea": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "data[osm].queryArea.areas": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "data[osm].queryArea.geocodeArea": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "data[osm].queryArea.bbox": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[31-sideseeing-objects-along-a-walk.json]",
+        "document": "docs/examples/31-sideseeing-objects-along-a-walk.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[33-sideseeing-frames-segments-blocks.json]",
+        "document": "docs/examples/33-sideseeing-frames-segments-blocks.json"
+      }
+    ],
+    "data[geojson]": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[37-autark-park-area-summer-heat.json]",
+        "document": "docs/examples/37-autark-park-area-summer-heat.json"
+      }
+    ],
+    "data[geojson].coordinateFormat": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_load.py::test_the_server_compiled_load_builds_a_heatmap_and_hands_it_on_as_a_raster"
+      }
+    ],
+    "data[geojson].geojsonFileUrl": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[37-autark-park-area-summer-heat.json]",
+        "document": "docs/examples/37-autark-park-area-summer-heat.json"
+      }
+    ],
+    "data[geojson].geojsonObject": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_load.py::test_the_server_compiled_load_builds_a_heatmap_and_hands_it_on_as_a_raster"
+      }
+    ],
+    "data[geojson].geojsonObject.features": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_load.py::test_the_server_compiled_load_builds_a_heatmap_and_hands_it_on_as_a_raster"
+      }
+    ],
+    "data[geojson].geojsonObject.features[].geometry": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_load.py::test_the_server_compiled_load_builds_a_heatmap_and_hands_it_on_as_a_raster"
+      }
+    ],
+    "data[geojson].geojsonObject.features[].geometry(Point)": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_load.py::test_the_server_compiled_load_builds_a_heatmap_and_hands_it_on_as_a_raster"
+      }
+    ],
+    "data[geojson].geojsonObject.features[].geometry(Point).coordinates": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_load.py::test_the_server_compiled_load_builds_a_heatmap_and_hands_it_on_as_a_raster"
+      }
+    ],
+    "data[geojson].geojsonObject.features[].geometry(LineString)": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_load.py::test_the_server_compiled_load_keeps_each_table_in_its_workspace"
+      }
+    ],
+    "data[geojson].geojsonObject.features[].geometry(LineString).coordinates": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_load.py::test_the_server_compiled_load_keeps_each_table_in_its_workspace"
+      }
+    ],
+    "data[geojson].geojsonObject.features[].geometry(Polygon)": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_load.py::test_the_server_compiled_load_keeps_each_table_in_its_workspace"
+      }
+    ],
+    "data[geojson].geojsonObject.features[].geometry(Polygon).coordinates": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_load.py::test_the_server_compiled_load_keeps_each_table_in_its_workspace"
+      }
+    ],
+    "data[geojson].geojsonObject.features[].properties": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_load.py::test_the_server_compiled_load_builds_a_heatmap_and_hands_it_on_as_a_raster"
+      }
+    ],
+    "data[geojson].geojsonObject.features[].type": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_load.py::test_the_server_compiled_load_builds_a_heatmap_and_hands_it_on_as_a_raster"
+      }
+    ],
+    "data[geojson].geojsonObject.type": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_load.py::test_the_server_compiled_load_builds_a_heatmap_and_hands_it_on_as_a_raster"
+      }
+    ],
+    "data[geojson].outputTableName": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[37-autark-park-area-summer-heat.json]",
+        "document": "docs/examples/37-autark-park-area-summer-heat.json"
+      }
+    ],
+    "data[geojson].workspace": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_load.py::test_the_server_compiled_load_keeps_each_table_in_its_workspace"
+      }
+    ],
+    "data[geotiff]": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[36-autark-green-share-summer-heat.json]",
+        "document": "docs/examples/36-autark-green-share-summer-heat.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[37-autark-park-area-summer-heat.json]",
+        "document": "docs/examples/37-autark-park-area-summer-heat.json"
+      },
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_load.py::test_the_server_compiled_load_reads_a_geotiff_of_the_repository_and_hands_it_on_as_a_raster"
+      }
+    ],
+    "data[geotiff].coordinateFormat": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_load.py::test_the_server_compiled_load_reads_a_geotiff_of_the_repository_and_hands_it_on_as_a_raster"
+      }
+    ],
+    "data[geotiff].geotiffFileUrl": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[36-autark-green-share-summer-heat.json]",
+        "document": "docs/examples/36-autark-green-share-summer-heat.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[37-autark-park-area-summer-heat.json]",
+        "document": "docs/examples/37-autark-park-area-summer-heat.json"
+      },
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_load.py::test_the_server_compiled_load_reads_a_geotiff_of_the_repository_and_hands_it_on_as_a_raster"
+      }
+    ],
+    "data[geotiff].maxRasterCells": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_load.py::test_the_server_compiled_load_reads_a_geotiff_of_the_repository_and_hands_it_on_as_a_raster"
+      }
+    ],
+    "data[geotiff].outputTableName": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[36-autark-green-share-summer-heat.json]",
+        "document": "docs/examples/36-autark-green-share-summer-heat.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[37-autark-park-area-summer-heat.json]",
+        "document": "docs/examples/37-autark-park-area-summer-heat.json"
+      },
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_load.py::test_the_server_compiled_load_reads_a_geotiff_of_the_repository_and_hands_it_on_as_a_raster"
+      }
+    ],
+    "data[geotiff].resampleMethod": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[36-autark-green-share-summer-heat.json]",
+        "document": "docs/examples/36-autark-green-share-summer-heat.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[37-autark-park-area-summer-heat.json]",
+        "document": "docs/examples/37-autark-park-area-summer-heat.json"
+      },
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_load.py::test_the_server_compiled_load_reads_a_geotiff_of_the_repository_and_hands_it_on_as_a_raster"
+      }
+    ],
+    "data[heatmap]": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[34-autark-park-access-heatmap.json]",
+        "document": "docs/examples/34-autark-park-access-heatmap.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[37-autark-park-area-summer-heat.json]",
+        "document": "docs/examples/37-autark-park-area-summer-heat.json"
+      }
+    ],
+    "data[heatmap].grid": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[34-autark-park-access-heatmap.json]",
+        "document": "docs/examples/34-autark-park-access-heatmap.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[37-autark-park-area-summer-heat.json]",
+        "document": "docs/examples/37-autark-park-area-summer-heat.json"
+      }
+    ],
+    "data[heatmap].grid.columns": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[34-autark-park-access-heatmap.json]",
+        "document": "docs/examples/34-autark-park-access-heatmap.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[37-autark-park-area-summer-heat.json]",
+        "document": "docs/examples/37-autark-park-area-summer-heat.json"
+      }
+    ],
+    "data[heatmap].grid.rows": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[34-autark-park-access-heatmap.json]",
+        "document": "docs/examples/34-autark-park-access-heatmap.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[37-autark-park-area-summer-heat.json]",
+        "document": "docs/examples/37-autark-park-area-summer-heat.json"
+      }
+    ],
+    "data[heatmap].groupBy": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[34-autark-park-access-heatmap.json]",
+        "document": "docs/examples/34-autark-park-access-heatmap.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[37-autark-park-area-summer-heat.json]",
+        "document": "docs/examples/37-autark-park-area-summer-heat.json"
+      }
+    ],
+    "data[heatmap].groupBy[].aggregateFn": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[34-autark-park-access-heatmap.json]",
+        "document": "docs/examples/34-autark-park-access-heatmap.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[37-autark-park-area-summer-heat.json]",
+        "document": "docs/examples/37-autark-park-area-summer-heat.json"
+      },
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_load.py::test_the_server_compiled_load_builds_every_heatmap_aggregate_from_the_readings"
+      }
+    ],
+    "data[heatmap].groupBy[].column": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[34-autark-park-access-heatmap.json]",
+        "document": "docs/examples/34-autark-park-access-heatmap.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[37-autark-park-area-summer-heat.json]",
+        "document": "docs/examples/37-autark-park-area-summer-heat.json"
+      }
+    ],
+    "data[heatmap].joinDataRef": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[34-autark-park-access-heatmap.json]",
+        "document": "docs/examples/34-autark-park-access-heatmap.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[37-autark-park-area-summer-heat.json]",
+        "document": "docs/examples/37-autark-park-area-summer-heat.json"
+      }
+    ],
+    "data[heatmap].near": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[34-autark-park-access-heatmap.json]",
+        "document": "docs/examples/34-autark-park-access-heatmap.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[37-autark-park-area-summer-heat.json]",
+        "document": "docs/examples/37-autark-park-area-summer-heat.json"
+      }
+    ],
+    "data[heatmap].near.distance": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[34-autark-park-access-heatmap.json]",
+        "document": "docs/examples/34-autark-park-access-heatmap.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[37-autark-park-area-summer-heat.json]",
+        "document": "docs/examples/37-autark-park-area-summer-heat.json"
+      }
+    ],
+    "data[heatmap].near.useCentroid": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[34-autark-park-access-heatmap.json]",
+        "document": "docs/examples/34-autark-park-access-heatmap.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[37-autark-park-area-summer-heat.json]",
+        "document": "docs/examples/37-autark-park-area-summer-heat.json"
+      }
+    ],
+    "data[heatmap].outputTableName": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[34-autark-park-access-heatmap.json]",
+        "document": "docs/examples/34-autark-park-access-heatmap.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[37-autark-park-area-summer-heat.json]",
+        "document": "docs/examples/37-autark-park-area-summer-heat.json"
+      }
+    ],
+    "data[join]": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[regression.json]",
+        "document": "docs/examples/dataflows/regression.json"
+      }
+    ],
+    "data[join].dataRef": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[regression.json]",
+        "document": "docs/examples/dataflows/regression.json"
+      }
+    ],
+    "data[join].groupBy": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[regression.json]",
+        "document": "docs/examples/dataflows/regression.json"
+      }
+    ],
+    "data[join].groupBy[].aggregateFn": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[regression.json]",
+        "document": "docs/examples/dataflows/regression.json"
+      }
+    ],
+    "data[join].groupBy[].column": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[regression.json]",
+        "document": "docs/examples/dataflows/regression.json"
+      }
+    ],
+    "data[join].joinDataRef": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[regression.json]",
+        "document": "docs/examples/dataflows/regression.json"
+      }
+    ],
+    "data[join].near": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[regression.json]",
+        "document": "docs/examples/dataflows/regression.json"
+      }
+    ],
+    "data[join].near.distance": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[regression.json]",
+        "document": "docs/examples/dataflows/regression.json"
+      }
+    ],
+    "data[join].workspace": [
+      {
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_load.py::test_the_server_compiled_load_keeps_each_table_in_its_workspace"
+      }
+    ],
+    "layout": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/contracts/autkGrammarKeys.test.ts::autkKeyProblem::%s[a layout is not run yet]",
+        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
+        "refused": true
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_grammar_keys.py::test_the_document_check_refuses_it_with_that_sentence[a layout is not run yet]",
+        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
+        "refused": true
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_keys_left_out.py::test_the_reply_schema_lets_no_reply_write_a_refused_key[closed]",
+        "refused": true
+      }
+    ],
+    "layout.columns": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/contracts/autkGrammarKeys.test.ts::autkKeyProblem::%s[a layout is not run yet]",
+        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
+        "refused": true
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_grammar_keys.py::test_the_document_check_refuses_it_with_that_sentence[a layout is not run yet]",
+        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
+        "refused": true
+      }
+    ],
+    "layout.gap": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/contracts/autkGrammarKeys.test.ts::autkKeyProblem::%s[a layout is not run yet]",
+        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
+        "refused": true
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_grammar_keys.py::test_the_document_check_refuses_it_with_that_sentence[a layout is not run yet]",
+        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
+        "refused": true
+      }
+    ],
+    "layout.type": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/contracts/autkGrammarKeys.test.ts::autkKeyProblem::%s[a layout is not run yet]",
+        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
+        "refused": true
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_grammar_keys.py::test_the_document_check_refuses_it_with_that_sentence[a layout is not run yet]",
+        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
+        "refused": true
+      }
+    ],
+    "links": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/contracts/autkGrammarKeys.test.ts::autkKeyProblem::%s[links are not run yet]",
+        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
+        "refused": true
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_grammar_keys.py::test_the_document_check_refuses_it_with_that_sentence[links are not run yet]",
+        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
+        "refused": true
+      }
+    ],
+    "links[].layer": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/contracts/autkGrammarKeys.test.ts::autkKeyProblem::%s[links are not run yet]",
+        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
+        "refused": true
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_grammar_keys.py::test_the_document_check_refuses_it_with_that_sentence[links are not run yet]",
+        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
+        "refused": true
+      }
+    ],
+    "links[].source": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/contracts/autkGrammarKeys.test.ts::autkKeyProblem::%s[links are not run yet]",
+        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
+        "refused": true
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_grammar_keys.py::test_the_document_check_refuses_it_with_that_sentence[links are not run yet]",
+        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
+        "refused": true
+      }
+    ],
+    "links[].target": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/contracts/autkGrammarKeys.test.ts::autkKeyProblem::%s[links are not run yet]",
+        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
+        "refused": true
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_grammar_keys.py::test_the_document_check_refuses_it_with_that_sentence[links are not run yet]",
+        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
+        "refused": true
+      }
+    ],
+    "map": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "map[].camera": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[35-autark-sky-seen-from-the-street.json]",
+        "document": "docs/examples/35-autark-sky-seen-from-the-street.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkMapCamera.test.ts::turns the framed view: round the middle of the layers, as far as the framing put the eye, pitch from straight down, facing bearing"
+      }
+    ],
+    "map[].camera.bearing": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[35-autark-sky-seen-from-the-street.json]",
+        "document": "docs/examples/35-autark-sky-seen-from-the-street.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkMapCamera.test.ts::turns the framed view: round the middle of the layers, as far as the framing put the eye, pitch from straight down, facing bearing"
+      }
+    ],
+    "map[].camera.pitch": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[35-autark-sky-seen-from-the-street.json]",
+        "document": "docs/examples/35-autark-sky-seen-from-the-street.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkMapCamera.test.ts::turns the framed view: round the middle of the layers, as far as the framing put the eye, pitch from straight down, facing bearing"
+      }
+    ],
+    "map[].camera.zoom": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkMapCamera.test.ts::with a zoom, the eye is 10000 / 2^(zoom - 10) units from the middle: 625 at zoom 14, 312.5 at zoom 15"
+      }
+    ],
+    "map[].layerRefs": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "map[].layerRefs[].color": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[32-sage-idot-rail-crossings.json]",
+        "document": "docs/examples/32-sage-idot-rail-crossings.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[35-autark-sky-seen-from-the-street.json]",
+        "document": "docs/examples/35-autark-sky-seen-from-the-street.json"
+      }
+    ],
+    "map[].layerRefs[].colorMapCenter": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_lower_manhattan_park_shade_e2e.py::test_three_scenarios_of_lower_manhattans_park_shade_are_charted_and_mapped",
+        "document": "docs/examples/dataflows/lower-manhattan-park-shade.json"
+      }
+    ],
+    "map[].layerRefs[].colorMapInterpolator": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[17-autark-geodataframe-maps.json]",
+        "document": "docs/examples/17-autark-geodataframe-maps.json"
+      }
+    ],
+    "map[].layerRefs[].colorMapRange": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[32-sage-idot-rail-crossings.json]",
+        "document": "docs/examples/32-sage-idot-rail-crossings.json"
+      }
+    ],
+    "map[].layerRefs[].dataRef": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "map[].layerRefs[].defaultFnv": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "map[].layerRefs[].getFnv": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "map[].layerRefs[].getFnvType": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "map[].layerRefs[].isColorMap": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "map[].layerRefs[].isPick": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "map[].layerRefs[].isSkip": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_crown_heights_dashboard_e2e.py::test_the_owner_shares_the_crown_heights_dashboard_and_each_visitor_tries_a_day",
+        "document": "docs/examples/dataflows/crown-heights-1550-bedford-shadow.json"
+      }
+    ],
+    "map[].layerRefs[].opacity": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[34-autark-park-access-heatmap.json]",
+        "document": "docs/examples/34-autark-park-access-heatmap.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[35-autark-sky-seen-from-the-street.json]",
+        "document": "docs/examples/35-autark-sky-seen-from-the-street.json"
+      }
+    ],
+    "map[].layerRefs[].pointSize": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[31-sideseeing-objects-along-a-walk.json]",
+        "document": "docs/examples/31-sideseeing-objects-along-a-walk.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[32-sage-idot-rail-crossings.json]",
+        "document": "docs/examples/32-sage-idot-rail-crossings.json"
+      }
+    ],
+    "map[].layerRefs[].selectFields": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      }
+    ],
+    "map[].layerRefs[].stroke": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[30-pytorch-sidewalk-clusters.json]",
+        "document": "docs/examples/30-pytorch-sidewalk-clusters.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[32-sage-idot-rail-crossings.json]",
+        "document": "docs/examples/32-sage-idot-rail-crossings.json"
+      }
+    ],
+    "map[].layerRefs[].title": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[06-back-bay-road-sunlight.json]",
+        "document": "docs/examples/06-back-bay-road-sunlight.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      }
+    ],
+    "map[].layerRefs[].transferFunction": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[24-scout-shadow-model-chicago-loop.json]",
+        "document": "docs/examples/24-scout-shadow-model-chicago-loop.json"
+      }
+    ],
+    "map[].layerRefs[].transferFunction.gamma": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[24-scout-shadow-model-chicago-loop.json]",
+        "document": "docs/examples/24-scout-shadow-model-chicago-loop.json"
+      }
+    ],
+    "map[].layerRefs[].transferFunction.mode": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[24-scout-shadow-model-chicago-loop.json]",
+        "document": "docs/examples/24-scout-shadow-model-chicago-loop.json"
+      }
+    ],
+    "map[].layerRefs[].transferFunction.opacityMax": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[24-scout-shadow-model-chicago-loop.json]",
+        "document": "docs/examples/24-scout-shadow-model-chicago-loop.json"
+      }
+    ],
+    "map[].layerRefs[].transferFunction.opacityMin": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[24-scout-shadow-model-chicago-loop.json]",
+        "document": "docs/examples/24-scout-shadow-model-chicago-loop.json"
+      }
+    ],
+    "map[].layerRefs[].width": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[35-autark-sky-seen-from-the-street.json]",
+        "document": "docs/examples/35-autark-sky-seen-from-the-street.json"
+      }
+    ],
+    "plot": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[08-autark-spatial-join-regression.json]",
+        "document": "docs/examples/08-autark-spatial-join-regression.json"
+      }
+    ],
+    "plot[scatter]": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[08-autark-spatial-join-regression.json]",
+        "document": "docs/examples/08-autark-spatial-join-regression.json"
+      }
+    ],
+    "plot[scatter].axis": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[08-autark-spatial-join-regression.json]",
+        "document": "docs/examples/08-autark-spatial-join-regression.json"
+      }
+    ],
+    "plot[scatter].dataRef": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[08-autark-spatial-join-regression.json]",
+        "document": "docs/examples/08-autark-spatial-join-regression.json"
+      }
+    ],
+    "plot[scatter].events": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[08-autark-spatial-join-regression.json]",
+        "document": "docs/examples/08-autark-spatial-join-regression.json"
+      }
+    ],
+    "plot[scatter].title": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[08-autark-spatial-join-regression.json]",
+        "document": "docs/examples/08-autark-spatial-join-regression.json"
+      }
+    ],
+    "plot[bar]": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[11-autark-pbf-loading.json]",
+        "document": "docs/examples/11-autark-pbf-loading.json"
+      }
+    ],
+    "plot[bar].axis": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[11-autark-pbf-loading.json]",
+        "document": "docs/examples/11-autark-pbf-loading.json"
+      }
+    ],
+    "plot[bar].dataRef": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[11-autark-pbf-loading.json]",
+        "document": "docs/examples/11-autark-pbf-loading.json"
+      }
+    ],
+    "plot[bar].events": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[11-autark-pbf-loading.json]",
+        "document": "docs/examples/11-autark-pbf-loading.json"
+      }
+    ],
+    "plot[bar].title": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[11-autark-pbf-loading.json]",
+        "document": "docs/examples/11-autark-pbf-loading.json"
+      }
+    ],
+    "plot[bar].transform": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[11-autark-pbf-loading.json]",
+        "document": "docs/examples/11-autark-pbf-loading.json"
+      }
+    ],
+    "plot[bar].transform.options": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[11-autark-pbf-loading.json]",
+        "document": "docs/examples/11-autark-pbf-loading.json"
+      }
+    ],
+    "plot[bar].transform.preset": [
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[07-autark-gpu-shader.json]",
+        "document": "docs/examples/07-autark-gpu-shader.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_execution[11-autark-pbf-loading.json]",
+        "document": "docs/examples/11-autark-pbf-loading.json"
+      }
+    ]
+  },
+  "renamedKeys": {
+    "compute[gpgpu].wglsFunction": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkKeyRefusals.test.ts::applyComputeBlocks::%s is a failure, named, and no pass runs[a pass written with wglsFunction]",
+        "refused": true
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/contracts/autkGrammarKeys.test.ts::autkKeyProblem::%s[a pass's wglsFunction is named with its new name]",
+        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
+        "refused": true
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_grammar_keys.py::test_the_document_check_refuses_it_with_that_sentence[a pass's wglsFunction is named with its new name]",
+        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
+        "refused": true
+      }
+    ],
+    "data[join].tableRootName": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/contracts/autkGrammarKeys.test.ts::autkKeyProblem::%s[a join's tableRootName is named with its new name, where it is written]",
+        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
+        "refused": true
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_grammar_keys.py::test_the_document_check_refuses_it_with_that_sentence[a join's tableRootName is named with its new name, where it is written]",
+        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
+        "refused": true
+      }
+    ],
+    "data[join].tableJoinName": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkKeyRefusals.test.ts::loadSpecLayers::%s fails the load, named, and makes no database[a join written with tableJoinName]",
+        "refused": true
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/contracts/autkGrammarKeys.test.ts::autkKeyProblem::%s[a join's tableJoinName is named with its new name]",
+        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
+        "refused": true
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_grammar_keys.py::test_the_document_check_refuses_it_with_that_sentence[a join's tableJoinName is named with its new name]",
+        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
+        "refused": true
+      }
+    ],
+    "data[heatmap].tableJoinName": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/contracts/autkGrammarKeys.test.ts::autkKeyProblem::%s[a heatmap's tableJoinName is named with its new name]",
+        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
+        "refused": true
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_grammar_keys.py::test_the_document_check_refuses_it_with_that_sentence[a heatmap's tableJoinName is named with its new name]",
+        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
+        "refused": true
+      }
+    ]
+  }
+}
