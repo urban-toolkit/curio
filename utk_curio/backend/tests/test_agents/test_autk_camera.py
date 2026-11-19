@@ -33,9 +33,10 @@ def test_the_document_check_accepts_a_maps_camera(document):
 def test_the_document_check_holds_a_camera_to_the_grammars_schema():
     from utk_curio.backend.app.agents.domain import document_validation as dv
 
+    # A pitch is less than 90: at 90 the eye would sit on the ground.
     verdict = dv.validate(AUTK, json.dumps({"map": {"camera": {"pitch": 120}, "layerRefs": LAYERS}}))
     assert verdict["status"] == dv.STATUS_INVALID
-    assert "map.camera.pitch: 120 is greater than the maximum of 90" in verdict["detail"]
+    assert "map.camera.pitch: 120 is greater than or equal to the maximum of 90" in verdict["detail"]
 
 
 @pytest.mark.parametrize("flavor", ["closed", "strict"])

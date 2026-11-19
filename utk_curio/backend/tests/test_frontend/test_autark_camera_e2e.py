@@ -7,8 +7,10 @@ document writes ``"camera": {"pitch": 50, "bearing": 30}``. The tilted map
 draws, and its picture is not the framed one's. Its camera, read through
 ``window.__curio_mapViews``, looks at the point the framed map looks at, from as
 far as the framed map's eye is high, 50 degrees from straight down, facing 30
-degrees east of north, with that heading up the screen. A drag pans it; the R
-key puts it back at that view, and R again leaves it there.
+degrees east of north, with that heading up the screen and its up direction
+across its line of sight. A drag pans it; the R key puts it back at that view,
+and R again leaves it there. A map whose camera writes ``"pitch": 90``, which
+would stand its eye on the ground, fails with autk-grammar's own sentence.
 
 The maps need WebGPU, so this test runs on CI's GPU job and fails without an
 adapter.
@@ -43,7 +45,7 @@ from .utils import (
     wait_for_node_settled,
     webgpu_adapter,
 )
-from .utils.node_drawings import _AUTK_MAP_PIXELS_IN_FRAME_JS
+from .utils.node_drawings import _AUTK_MAP_PIXELS_IN_FRAME_JS, true_up
 
 if TYPE_CHECKING:
     from .utils import FrontendPage
@@ -250,7 +252,6 @@ def test_a_maps_camera_tilts_and_turns_its_framed_view_and_the_r_key_gives_it_ag
         f"the two maps' canvases are {tilted_canvas} and {framed_canvas}: one framing needs one size"
     )
     distance, pitch, bearing = _angles(tilted)
-    turn = math.radians(BEARING)
     problems = []
     if _apart(tilted["lookAt"], framed["lookAt"]) > SAME_VIEW * high:
         problems.append(f"it looks at {tilted['lookAt']}, the framed map at {framed['lookAt']}")
@@ -258,8 +259,11 @@ def test_a_maps_camera_tilts_and_turns_its_framed_view_and_the_r_key_gives_it_ag
         problems.append(f"its eye is {distance} from where it looks, the framed map's {high} above it")
     if abs(pitch - PITCH) > SAME_ANGLE or abs(bearing - BEARING) > SAME_ANGLE:
         problems.append(f"it stands {pitch} degrees from straight down facing {bearing}, not {PITCH} facing {BEARING}")
-    if _apart(tilted["up"], [math.sin(turn), math.cos(turn), 0]) > SAME_UP:
-        problems.append(f"its up is {tilted['up']}, not the heading {BEARING} degrees east of north")
+    # Its up direction lies across its line of sight, toward the far side of
+    # the view, facing the camera's heading, as autk-map's own tilt leaves it.
+    if _apart(tilted["up"], true_up(PITCH, BEARING)) > SAME_UP:
+        problems.append(f"its up is {tilted['up']}, not {true_up(PITCH, BEARING)}, across its line of sight "
+                        f"facing the heading {BEARING} degrees east of north")
     assert not problems, "the map's camera did not turn its framed view:\n- " + "\n- ".join(problems)
 
     # It draws, and not the framed map's picture.
@@ -294,3 +298,56 @@ def test_a_maps_camera_tilts_and_turns_its_framed_view_and_the_r_key_gives_it_ag
     again, _ = _view_when(page, TILTED, lambda view: True, "the map lost its view")
     assert _same_view(again, back), f"a second R moved the map from {back} to {again}"
     assert_autark_map_drawn(page, TILTED)
+
+
+#: A map whose camera stands its eye on the ground, edge-on to the flat layers.
+EDGE_ON = "camera-edge-on"
+EDGE_ON_MAP = json.dumps({"map": {"camera": {"pitch": 90, "bearing": BEARING}, "layerRefs": [LAYER]}}, indent=2)
+#: What autk-grammar says of that camera, as its run refuses it before the map is made.
+EDGE_ON_REFUSAL = (
+    "camera.pitch must be at least 0 and less than 90 degrees, not 90: at 90 the eye would sit on the ground, "
+    "edge-on to the map's flat layers, and the map could not pan."
+)
+
+
+def test_a_map_whose_camera_pitch_is_90_fails_with_the_grammars_sentence_and_draws_nothing(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """``"pitch": 90`` puts the eye on the ground: autk-grammar refuses it
+    before it makes the map, and the node fails with its sentence, where the
+    map was drawn edge-on, showing nothing, under a green Done."""
+    require_project_page()
+    require_user_auth()
+    spec = _spec()
+    spec["dataflow"]["name"] = spec["dataflow"]["provenance_id"] = "Map camera edge-on"
+    spec["dataflow"]["nodes"] = [
+        node for node in spec["dataflow"]["nodes"] if node["id"] == LOADER
+    ] + [{
+        "id": EDGE_ON, "type": "curio.builtin/autk-grammar", "x": 700, "y": 0, "content": EDGE_ON_MAP,
+        "in": "DEFAULT", "out": "DEFAULT", "goal": "", "metadata": {"keywords": []},
+    }]
+    spec["dataflow"]["edges"] = [{
+        "id": f"e-{LOADER}-{EDGE_ON}", "source": LOADER, "target": EDGE_ON,
+        "sourceHandle": "out", "targetHandle": "in",
+    }]
+    stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Map Camera Edge-on",
+        username="autark_map_camera_edge_on",
+        project_name="Map camera edge-on",
+        project_spec=spec,
+    )
+    require_owner_view(page)
+    for node_id in (LOADER, EDGE_ON):
+        node_locator(page, node_id).wait_for(state="visible", timeout=45000)
+    adapter = webgpu_adapter(page)
+    assert adapter, f"drawing an Autark map needs a WebGPU adapter, which CI's GPU job has: {adapter}"
+
+    run_node_and_wait(page, LOADER, node_type="DATA_LOADING", timeout_ms=120000)
+    play_node(page, EDGE_ON)
+    status = wait_for_node_settled(page, EDGE_ON, node_type="autk-grammar", timeout_ms=120000)
+    detail = read_node_error_text(node_locator(page, EDGE_ON)) or ""
+    assert status == "error", f"the map with a camera pitch of 90 ran: {status} {detail}"
+    assert EDGE_ON_REFUSAL in detail, f"the map with a camera pitch of 90 failed with {detail!r}, not the grammar's sentence"

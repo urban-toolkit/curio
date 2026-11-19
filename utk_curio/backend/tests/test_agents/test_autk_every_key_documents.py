@@ -1,12 +1,14 @@
 """The agents' document check takes every key a node runs.
 
 The documents of ``src/tests/fixtures/autk-every-key.json`` write every key of
-autk-grammar 5.0.0's maps, plots, compute passes and data sources between
-them, and an Autark node runs each (``src/tests/adapters/node/autkEveryKey.test.tsx``
-and ``utk_curio/sandbox/tests/test_autk_server_data_keys.py``). So the check
-the agents' documents go through (``document_validation.validate``) takes each
-as it is, and an agent may write any of those keys. The fixture is read inside
-each test, so a checkout without it fails each test on its own.
+autk-grammar 5.2.0's maps, plots, compute passes, data sources and workspaces
+between them, and an Autark node runs each (``src/tests/adapters/node/autkEveryKey.test.tsx``
+and ``utk_curio/sandbox/tests/test_autk_server_data_keys.py``), and its
+``checked`` documents write the rest, which this check alone runs: an update
+of a layer by every GeoJSON geometry, with every box. So the check the agents'
+documents go through (``document_validation.validate``) takes each as it is,
+and an agent may write any of those keys. The fixture is read inside each
+test, so a checkout without it fails each test on its own.
 """
 from __future__ import annotations
 
@@ -20,7 +22,7 @@ FIXTURE = (
     / "frontend" / "urban-workflows" / "src" / "tests" / "fixtures" / "autk-every-key.json"
 )
 AUTK = "curio.builtin/autk-grammar"
-SECTIONS = ("views", "passes", "data")
+SECTIONS = ("views", "passes", "data", "checked")
 
 
 def _cases():

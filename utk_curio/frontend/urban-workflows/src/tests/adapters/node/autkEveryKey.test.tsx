@@ -1,13 +1,15 @@
 /**
- * Every key of autk-grammar 5.0.0's maps, plots and compute passes, as a node
- * runs it, from the documents of fixtures/autk-every-key.json, on the tables an
- * upstream Autark node hands on: `lines`, in the default workspace and in
- * `east`.
+ * Every key of autk-grammar 5.2.0's maps, plots, compute passes and
+ * workspaces, as a node runs it, from the documents of
+ * fixtures/autk-every-key.json, on the tables an upstream Autark node hands
+ * on: `lines`, in the default workspace and in `east`.
  *
- * - A map of every layer key, a plot of every mark with every plot key, and a
- *   map and a plot laid out and linked by every layout and link key: the node
- *   hands the grammar each key as the document writes it, whatever it adds (a
- *   plot's size, the tables it reads).
+ * - A map of every layer key, a map of OpenStreetMap elements in a workspace
+ *   `workspaces` sets, a plot of every mark with every plot key and with every
+ *   key of its colors, ticks, titles and selection, plots of every mark over
+ *   one `colorMapRange`, and a map and a plot laid out and linked by every
+ *   layout and link key: the node hands the grammar each key as the document
+ *   writes it, whatever it adds (a plot's size, the tables it reads).
  * - A compute step's GPGPU and render passes with every pass key: they run
  *   through autk-grammar's own compute code, the build the app bundles, and
  *   reach a stand-in autk-compute that records each dispatch
@@ -115,7 +117,7 @@ describe('a node hands the grammar every key of its map or its plot as its docum
     expect(node.lastOutput()?.code === 'error' ? node.lastOutput()?.content : null).toBeNull();
     expect(mockRuns).toHaveLength(1);
     const handed = mockRuns[0].spec;
-    const problems = ['$schema', 'map', 'plot', 'layout', 'links']
+    const problems = ['$schema', 'workspaces', 'map', 'plot', 'layout', 'links']
       .filter((section) => section in document)
       .flatMap((section) => notHanded(document[section], handed[section], section));
     expect(problems).toEqual([]);

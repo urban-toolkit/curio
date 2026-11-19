@@ -1,5 +1,5 @@
 {
-  "description": "Documents that write every key of autk-grammar 5.0.0's maps, plots and compute passes, a family to a document, on the tables an upstream Autark node hands on: `lines`, in the default workspace and in `east`. views: a map of every layer key, a plot of every mark with every plot key, and a map and a plot laid out and linked by every layout and link key, each of which an Autark node hands the grammar as written; passes: a compute step's GPGPU and render passes with every pass key, which reach autk-compute (src/tests/adapters/node/autkEveryKey.test.tsx); data: CSV, JSON, GeoJSON, OpenStreetMap, join and GeoTIFF sources with every source key, which a run on the server loads (utk_curio/sandbox/tests/test_autk_server_data_keys.py). autk-db keeps in a workspace only what lies in the box of the first table loaded into it, and reads a GeoJSON source's boundingBox in the workspace's CRS (World Mercator, metres), so each data document loads its widest table first. Every document passes the agents' document check (backend/tests/test_agents/test_autk_every_key_documents.py). utk_curio/backend/tests/autk_grammar_key_tests.json names these tests for each key.",
+  "description": "Documents that write every key of autk-grammar 5.2.0's maps, plots, compute passes, data sources and workspaces, a family to a document, on the tables an upstream Autark node hands on: `lines`, in the default workspace and in `east`. views: a map of every layer key, a map of OpenStreetMap elements in a workspace that `workspaces` sets, a plot of every mark with every plot key, a plot of every mark with every key of its colors, ticks, titles and selection, plots of every mark over one colorMapRange, and a map and a plot laid out and linked by every layout and link key, each of which an Autark node hands the grammar as written; passes: a compute step's GPGPU and render passes with every pass key, which reach autk-compute (src/tests/adapters/node/autkEveryKey.test.tsx); data: CSV, JSON, GeoJSON, OpenStreetMap (an extract, and tag sets from an Overpass API the test answers, its `overpass`), join, GeoTIFF, heatmap, SQL, update and drop sources with every source key, and `workspaces`, which a run on the server loads (utk_curio/sandbox/tests/test_autk_server_data_keys.py); checked: an update of a layer by every GeoJSON geometry, with every box, which the agents' document check alone runs. autk-db keeps in a workspace only what lies in the box of the first table loaded into it, and reads a GeoJSON source's boundingBox in the workspace's CRS (World Mercator, metres), so each data document loads its widest table first. Every document passes the agents' document check (backend/tests/test_agents/test_autk_every_key_documents.py). utk_curio/backend/tests/autk_grammar_key_tests.json names these tests for each key.",
   "views": [
     {
       "name": "a map of every layer key",
@@ -126,6 +126,123 @@
           "transform": { "preset": "binning-1d", "options": { "bins": 3 } }
         },
         "links": [{ "source": "ranks", "target": "streets", "layer": "Streets" }]
+      }
+    },
+    {
+      "name": "a map of OpenStreetMap elements, in a workspace that workspaces sets",
+      "document": {
+        "workspaces": [{ "name": "east", "coordinateFormat": "EPSG:3395", "precisionGrid": 0.01 }],
+        "map": { "id": "elements", "workspace": "east", "layerRefs": [{ "dataRef": "lines", "osmElements": true }] }
+      }
+    },
+    {
+      "name": "a scatter plot of every key of a plot's colors, ticks, titles and selection",
+      "document": {
+        "plot": {
+          "mark": "scatter", "id": "every-scatter-style", "dataRef": "lines", "workspace": "east", "axis": ["x", "rank"], "color": "kind",
+          "colorMapInterpolator": "interpolateViridis", "categoricalColorMapInterpolator": "schemeSet1", "colorMapDomain": ["a", "b"],
+          "normalization": { "mode": "percentile", "lowerPercentile": 5, "upperPercentile": 95 },
+          "tickFormats": [",.2f", "d"], "axisLabels": ["X", "Rank"], "selection": [0],
+          "markColor": "#2ca02c", "highlightColor": "#d62728", "osmElements": true
+        }
+      }
+    },
+    {
+      "name": "a bar chart of every key of a plot's colors, ticks, titles and selection",
+      "document": {
+        "plot": {
+          "mark": "bar", "id": "every-bar-style", "dataRef": "lines", "workspace": "east", "axis": ["kind", "x"], "color": "kind",
+          "colorMapInterpolator": "interpolateBlues", "categoricalColorMapInterpolator": "schemeTableau10", "colorMapDomain": ["b", "a"],
+          "normalization": { "mode": "percentile", "lowerPercentile": 1, "upperPercentile": 99 },
+          "tickFormats": ["d", ".1f"], "axisLabels": ["Kind", "X"], "selection": [1],
+          "markColor": "#2ca02c", "highlightColor": "#d62728", "osmElements": true
+        }
+      }
+    },
+    {
+      "name": "a line chart of every key of a plot's colors, ticks, titles and selection",
+      "document": {
+        "plot": {
+          "mark": "line", "id": "every-line-style", "dataRef": "lines", "workspace": "east", "axis": ["rank", "x"], "color": "kind",
+          "colorMapInterpolator": "interpolateGreens", "categoricalColorMapInterpolator": "schemeSet2", "colorMapDomain": ["a", "b"],
+          "normalization": { "mode": "percentile", "lowerPercentile": 10 },
+          "tickFormats": ["d", ".2f"], "axisLabels": ["Rank", "X"], "selection": [0],
+          "markColor": "#2ca02c", "highlightColor": "#d62728", "osmElements": true,
+          "transform": { "preset": "reduce-series", "options": { "series": "kind" } }
+        }
+      }
+    },
+    {
+      "name": "a linechart of every key of a plot's colors, ticks, titles and selection",
+      "document": {
+        "plot": {
+          "mark": "linechart", "id": "every-linechart-style", "dataRef": "lines", "workspace": "east", "axis": ["rank", "x"], "color": "kind",
+          "colorMapInterpolator": "interpolateOranges", "categoricalColorMapInterpolator": "schemeDark2", "colorMapDomain": ["a", "b"],
+          "normalization": { "mode": "percentile", "upperPercentile": 90 },
+          "tickFormats": ["d", "~s"], "axisLabels": ["Rank", "X"], "selection": [0],
+          "markColor": "#2ca02c", "highlightColor": "#d62728", "osmElements": true,
+          "transform": { "preset": "binning-events", "options": { "bins": 2 } }
+        }
+      }
+    },
+    {
+      "name": "parallel coordinates of every key of a plot's colors, ticks, titles and selection",
+      "document": {
+        "plot": {
+          "mark": "parallel-coordinates", "id": "every-parallel-style", "dataRef": "lines", "workspace": "east", "axis": ["x", "rank"], "color": "kind",
+          "colorMapInterpolator": "interpolatePurples", "categoricalColorMapInterpolator": "schemePaired", "colorMapDomain": ["a", "b"],
+          "normalization": { "mode": "percentile", "lowerPercentile": 3, "upperPercentile": 97 },
+          "tickFormats": [".3f", "d"], "axisLabels": ["X", "Rank"], "selection": [2],
+          "markColor": "#2ca02c", "highlightColor": "#d62728", "osmElements": true
+        }
+      }
+    },
+    {
+      "name": "a table of every key of a plot's colors, ticks, titles and selection",
+      "document": {
+        "plot": {
+          "mark": "table", "id": "every-table-style", "dataRef": "lines", "workspace": "east", "axis": ["x", "kind", "rank"], "color": "kind",
+          "colorMapInterpolator": "interpolateGreys", "categoricalColorMapInterpolator": "schemeAccent", "colorMapDomain": ["a", "b"],
+          "normalization": { "mode": "percentile", "lowerPercentile": 4, "upperPercentile": 96 },
+          "tickFormats": ["d", "d"], "axisLabels": ["X", "Kind", "Rank"], "selection": [1],
+          "markColor": "#2ca02c", "highlightColor": "#d62728", "osmElements": true
+        }
+      }
+    },
+    {
+      "name": "a heatmatrix of every key of a plot's colors, ticks, titles and selection",
+      "document": {
+        "plot": {
+          "mark": "heatmatrix", "id": "every-heatmatrix-style", "dataRef": "lines", "workspace": "east", "axis": ["x", "rank"], "color": "kind",
+          "colorMapInterpolator": "interpolateReds", "categoricalColorMapInterpolator": "schemePastel1", "colorMapDomain": ["a", "b"],
+          "normalization": { "mode": "percentile", "lowerPercentile": 2, "upperPercentile": 98 },
+          "tickFormats": ["d", "d"], "axisLabels": ["X", "Rank"], "selection": [0],
+          "markColor": "#2ca02c", "highlightColor": "#d62728", "osmElements": true,
+          "transform": { "preset": "binning-2d", "options": { "bins": 2 } }
+        }
+      }
+    },
+    {
+      "name": "a plot of every mark colored over one colorMapRange",
+      "document": {
+        "plot": [
+          { "mark": "scatter", "id": "range-scatter", "dataRef": "lines", "workspace": "east", "axis": ["x", "rank"], "color": "x", "colorMapRange": [-87.5, -87.48] },
+          { "mark": "bar", "id": "range-bar", "dataRef": "lines", "workspace": "east", "axis": ["kind", "x"], "color": "x", "colorMapRange": [-87.5, -87.48] },
+          {
+            "mark": "line", "id": "range-line", "dataRef": "lines", "workspace": "east", "axis": ["rank", "x"], "color": "x", "colorMapRange": [-87.5, -87.48],
+            "transform": { "preset": "reduce-series", "options": { "series": "kind" } }
+          },
+          {
+            "mark": "linechart", "id": "range-linechart", "dataRef": "lines", "workspace": "east", "axis": ["rank", "x"], "color": "x", "colorMapRange": [-87.5, -87.48],
+            "transform": { "preset": "binning-events", "options": { "bins": 2 } }
+          },
+          { "mark": "parallel-coordinates", "id": "range-parallel", "dataRef": "lines", "workspace": "east", "axis": ["x", "rank"], "color": "x", "colorMapRange": [-87.5, -87.48] },
+          { "mark": "table", "id": "range-table", "dataRef": "lines", "workspace": "east", "axis": ["x", "kind"], "color": "x", "colorMapRange": [-87.5, -87.48] },
+          {
+            "mark": "heatmatrix", "id": "range-heatmatrix", "dataRef": "lines", "workspace": "east", "axis": ["x", "rank"], "color": "x", "colorMapRange": [-87.5, -87.48],
+            "transform": { "preset": "binning-2d", "options": { "bins": 2 } }
+          }
+        ]
       }
     }
   ],
@@ -346,6 +463,218 @@
       },
       "rasters": [["heat", "east", 40, 30]],
       "files": ["utk_curio/backend/tests/test_frontend/data/autark_raster_utm16n.tif"]
+    },
+    {
+      "name": "SQL tables with a layer type and without, CSV tables updated and replaced, a layer updated by a property, a table dropped",
+      "document": {
+        "data": [
+          {
+            "type": "geojson", "outputTableName": "zones", "coordinateFormat": "EPSG:4326",
+            "geojsonObject": { "type": "FeatureCollection", "features": [
+              { "type": "Feature", "properties": { "zone": 1, "riders": 4 }, "geometry": { "type": "Polygon",
+                "coordinates": [[[-87.64, 41.87], [-87.62, 41.87], [-87.62, 41.89], [-87.64, 41.89], [-87.64, 41.87]]] } },
+              { "type": "Feature", "properties": { "zone": 2, "riders": 9 }, "geometry": { "type": "Polygon",
+                "coordinates": [[[-87.60, 41.87], [-87.58, 41.87], [-87.58, 41.89], [-87.60, 41.89], [-87.60, 41.87]]] } }
+            ] }
+          },
+          { "type": "csv", "outputTableName": "scratch", "csvObject": [["note"], ["read once"]] },
+          { "type": "drop", "dataRef": "scratch" },
+          {
+            "type": "sql", "outputTableName": "busy", "layerType": "polygons",
+            "query": "SELECT properties->>'zone' AS zone, CAST(properties->>'riders' AS INTEGER) AS riders, geometry FROM zones WHERE CAST(properties->>'riders' AS INTEGER) > 5"
+          },
+          { "type": "sql", "outputTableName": "zone_names", "query": "SELECT properties->>'zone' AS zone FROM zones ORDER BY zone" },
+          { "type": "csv", "outputTableName": "sales", "csvObject": [["month", "total"], ["Jan", 3], ["Feb", 5]] },
+          {
+            "type": "update", "dataRef": "sales", "strategy": "update", "idColumn": "month",
+            "jsonObject": [{ "month": "Feb", "total": 9 }, { "month": "Mar", "total": 4 }]
+          },
+          { "type": "csv", "outputTableName": "prices", "csvObject": [["item", "price"], ["tea", 2]] },
+          { "type": "update", "dataRef": "prices", "strategy": "replace", "jsonObject": [{ "item": "coffee", "price": 3 }] },
+          {
+            "type": "update", "dataRef": "zones", "strategy": "update", "idColumn": "properties.zone",
+            "geojsonObject": { "type": "FeatureCollection", "features": [
+              { "type": "Feature", "properties": { "zone": 2, "riders": 12 }, "geometry": { "type": "Polygon", "coordinates": [[
+                [-9751587.39, 5112999.29], [-9749361.0, 5112999.29], [-9749361.0, 5115978.43], [-9751587.39, 5115978.43], [-9751587.39, 5112999.29]
+              ]] } }
+            ] }
+          }
+        ]
+      },
+      "handsOn": [["zones", "polygons", 2, null], ["busy", "polygons", 1, null]],
+      "properties": [
+        ["zones", null, "zone", { "1": { "riders": 4 }, "2": { "riders": 12 } }],
+        ["busy", null, "zone", { "2": { "riders": 9 } }]
+      ],
+      "tables": [
+        ["zone_names", null, [{ "zone": "1" }, { "zone": "2" }]],
+        ["sales", null, [{ "month": "Feb", "total": 9 }, { "month": "Jan", "total": 3 }, { "month": "Mar", "total": 4 }]],
+        ["prices", null, [{ "item": "coffee", "price": 3 }]]
+      ]
+    },
+    {
+      "name": "two workspaces set by workspaces, the default one in Web Mercator to the metre, one named in World Mercator",
+      "document": {
+        "workspaces": [
+          { "coordinateFormat": "EPSG:3857", "precisionGrid": 1 },
+          { "name": "east", "coordinateFormat": "EPSG:3395", "precisionGrid": 0.01 }
+        ],
+        "data": [
+          {
+            "type": "geojson", "outputTableName": "spot", "coordinateFormat": "EPSG:4326",
+            "geojsonObject": { "type": "FeatureCollection", "features": [
+              { "type": "Feature", "properties": { "name": "Loop" }, "geometry": { "type": "Point", "coordinates": [-87.63, 41.88] } }
+            ] }
+          },
+          {
+            "type": "geojson", "workspace": "east", "outputTableName": "spot", "coordinateFormat": "EPSG:4326",
+            "geojsonObject": { "type": "FeatureCollection", "features": [
+              { "type": "Feature", "properties": { "name": "Loop" }, "geometry": { "type": "Point", "coordinates": [-87.63, 41.88] } }
+            ] }
+          }
+        ]
+      },
+      "handsOn": [["spot", "points", 1, null], ["spot", "points", 1, "east"]],
+      "coordinates": [
+        ["spot", null, [-9754927.0, 5143021.0], 1, "EPSG:3857"],
+        ["spot", "east", [-9754926.98, 5114488.74], 0.01, "EPSG:3395"]
+      ]
+    },
+    {
+      "name": "OpenStreetMap tag sets from an Overpass API the test answers, queried past the answer the browser cached",
+      "document": {
+        "data": [
+          {
+            "type": "osm", "outputTableName": "box", "queryArea": { "bbox": [-74.0125, 40.705, -74.008, 40.7085] }, "forceRefresh": true,
+            "tagSets": [
+              { "name": "cafes", "type": "points", "tags": [{ "key": "amenity", "value": "cafe" }] },
+              { "name": "paths", "type": "polylines", "tags": [{ "key": "highway" }] },
+              { "name": "parks", "type": "polygons", "tags": [{ "key": "leisure", "value": "park" }] }
+            ]
+          }
+        ]
+      },
+      "overpass": {
+        "version": 0.6,
+        "elements": [
+          { "type": "node", "id": 1, "lat": 40.706, "lon": -74.011, "tags": { "amenity": "cafe", "name": "Cafe One" } },
+          { "type": "node", "id": 2, "lat": 40.707, "lon": -74.01, "tags": { "amenity": "cafe", "name": "Cafe Two" } },
+          { "type": "node", "id": 3, "lat": 40.7075, "lon": -74.0095, "tags": { "amenity": "bench" } },
+          {
+            "type": "way", "id": 10, "nodes": [11, 12, 13], "tags": { "highway": "footway" },
+            "geometry": [{ "lat": 40.7055, "lon": -74.012 }, { "lat": 40.7065, "lon": -74.0105 }, { "lat": 40.708, "lon": -74.009 }]
+          },
+          {
+            "type": "way", "id": 20, "nodes": [21, 22, 23, 24, 21], "tags": { "leisure": "park", "name": "Pocket Park" },
+            "geometry": [
+              { "lat": 40.7062, "lon": -74.0115 }, { "lat": 40.7062, "lon": -74.0105 }, { "lat": 40.7072, "lon": -74.0105 },
+              { "lat": 40.7072, "lon": -74.0115 }, { "lat": 40.7062, "lon": -74.0115 }
+            ]
+          }
+        ]
+      },
+      "handsOn": [["box_cafes_points", "points", 2, null], ["box_paths_polylines", "polylines", 1, null], ["box_parks_polygons", "polygons", 1, null]]
+    },
+    {
+      "name": "an OpenStreetMap extract read in the CRS of its coordinates",
+      "document": {
+        "data": [
+          {
+            "type": "osm", "pbfFileUrl": "docs/examples/data/lower_mnt.osm.pbf", "outputTableName": "tip",
+            "queryArea": { "bbox": [-74.0194, 40.7, -74.0085, 40.7085] },
+            "autoLoadLayers": { "layers": ["parks"], "coordinateFormat": "EPSG:4326" }
+          }
+        ]
+      },
+      "handsOn": [["tip_parks", "parks", null, null]],
+      "files": ["docs/examples/data/lower_mnt.osm.pbf"]
+    },
+    {
+      "name": "a heatmap whose aggregate is normalized",
+      "document": {
+        "data": [
+          {
+            "type": "geojson", "outputTableName": "stops", "coordinateFormat": "EPSG:4326",
+            "geojsonObject": { "type": "FeatureCollection", "features": [
+              { "type": "Feature", "properties": { "riders": 4 }, "geometry": { "type": "Point", "coordinates": [-87.64, 41.87] } },
+              { "type": "Feature", "properties": { "riders": 6 }, "geometry": { "type": "Point", "coordinates": [-87.62, 41.87] } },
+              { "type": "Feature", "properties": { "riders": 3 }, "geometry": { "type": "Point", "coordinates": [-87.64, 41.89] } },
+              { "type": "Feature", "properties": { "riders": 2 }, "geometry": { "type": "Point", "coordinates": [-87.62, 41.89] } }
+            ] }
+          },
+          {
+            "type": "heatmap", "outputTableName": "heat", "joinDataRef": "stops", "near": { "distance": 2000 }, "grid": { "rows": 2, "columns": 2 },
+            "groupBy": [{ "column": "riders", "aggregateFn": "sum", "normalize": true }]
+          }
+        ]
+      },
+      "handsOn": [["stops", "points", 4, null]],
+      "rasters": [["heat", null, 2, 2]]
+    },
+    {
+      "name": "a SQL table, an update and a drop in a workspace",
+      "document": {
+        "data": [
+          {
+            "type": "geojson", "workspace": "east", "outputTableName": "stops", "coordinateFormat": "EPSG:4326",
+            "geojsonObject": { "type": "FeatureCollection", "features": [
+              { "type": "Feature", "properties": { "riders": 4 }, "geometry": { "type": "Point", "coordinates": [-87.64, 41.87] } },
+              { "type": "Feature", "properties": { "riders": 9 }, "geometry": { "type": "Point", "coordinates": [-87.62, 41.89] } }
+            ] }
+          },
+          { "type": "csv", "workspace": "east", "outputTableName": "counts", "csvObject": [["stop", "riders"], ["a", 4]] },
+          { "type": "update", "workspace": "east", "dataRef": "counts", "strategy": "replace", "jsonObject": [{ "stop": "b", "riders": 9 }] },
+          {
+            "type": "sql", "workspace": "east", "outputTableName": "busy_stops", "layerType": "points",
+            "query": "SELECT CAST(properties->>'riders' AS INTEGER) AS riders, geometry FROM stops WHERE CAST(properties->>'riders' AS INTEGER) > 5"
+          },
+          { "type": "drop", "workspace": "east", "dataRef": "stops" }
+        ]
+      },
+      "handsOn": [["busy_stops", "points", 1, "east"]],
+      "tables": [["counts", "east", [{ "stop": "b", "riders": 9 }]]]
+    }
+  ],
+  "checked": [
+    {
+      "name": "an update of a layer by every geometry, with every box",
+      "document": {
+        "data": [
+          {
+            "type": "geojson", "outputTableName": "shapes", "coordinateFormat": "EPSG:4326",
+            "geojsonObject": { "type": "FeatureCollection", "features": [
+              { "type": "Feature", "properties": { "kind": "point" }, "geometry": { "type": "Point", "coordinates": [-87.63, 41.88] } }
+            ] }
+          },
+          {
+            "type": "update", "dataRef": "shapes", "strategy": "replace",
+            "geojsonObject": { "type": "FeatureCollection", "bbox": [-9755000, 5114000, -9753000, 5116000], "features": [
+              { "type": "Feature", "id": 1, "bbox": [-9755000, 5114000, -9755000, 5114000], "properties": { "kind": "point" },
+                "geometry": { "type": "Point", "bbox": [-9755000, 5114000, -9755000, 5114000], "coordinates": [-9755000, 5114000] } },
+              { "type": "Feature", "id": 2, "properties": { "kind": "multipoint" },
+                "geometry": { "type": "MultiPoint", "bbox": [-9755000, 5114000, -9754000, 5115000], "coordinates": [[-9755000, 5114000], [-9754000, 5115000]] } },
+              { "type": "Feature", "id": 3, "properties": { "kind": "linestring" },
+                "geometry": { "type": "LineString", "bbox": [-9755000, 5114000, -9754000, 5115000], "coordinates": [[-9755000, 5114000], [-9754000, 5115000]] } },
+              { "type": "Feature", "id": 4, "properties": { "kind": "multilinestring" },
+                "geometry": { "type": "MultiLineString", "bbox": [-9755000, 5114000, -9753000, 5116000],
+                  "coordinates": [[[-9755000, 5114000], [-9754000, 5115000]], [[-9754000, 5115000], [-9753000, 5116000]]] } },
+              { "type": "Feature", "id": 5, "properties": { "kind": "polygon" },
+                "geometry": { "type": "Polygon", "bbox": [-9755000, 5114000, -9754000, 5115000],
+                  "coordinates": [[[-9755000, 5114000], [-9754000, 5114000], [-9754000, 5115000], [-9755000, 5114000]]] } },
+              { "type": "Feature", "id": 6, "properties": { "kind": "multipolygon" },
+                "geometry": { "type": "MultiPolygon", "bbox": [-9755000, 5114000, -9753000, 5116000], "coordinates": [
+                  [[[-9755000, 5114000], [-9754000, 5114000], [-9754000, 5115000], [-9755000, 5114000]]],
+                  [[[-9754000, 5115000], [-9753000, 5115000], [-9753000, 5116000], [-9754000, 5115000]]]
+                ] } },
+              { "type": "Feature", "id": 7, "properties": { "kind": "collection" },
+                "geometry": { "type": "GeometryCollection", "bbox": [-9755000, 5114000, -9754000, 5115000], "geometries": [
+                  { "type": "Point", "coordinates": [-9755000, 5114000] },
+                  { "type": "LineString", "coordinates": [[-9755000, 5114000], [-9754000, 5115000]] }
+                ] } }
+            ] }
+          }
+        ]
+      }
     }
   ]
 }

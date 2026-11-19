@@ -312,7 +312,8 @@ def autark_map_framing(page, node_id: str, *, view: int = 0, min_span: float = A
     and then its turn (``__curio_mapViews``): the view it is turned back to
     looks at the point the framed view looks at, from as far as the framed eye
     is high, or as the camera's ``zoom`` says, ``pitch`` degrees from straight
-    down, facing ``bearing`` degrees clockwise from north, which is up the map.
+    down, facing ``bearing`` degrees clockwise from north, its up direction
+    across its line of sight toward the far side of the view (``true_up``).
     *view* is the map's place among the node's maps.
     """
     element = autark_view_element(node_id, view)
@@ -344,6 +345,15 @@ def _view_angles(view: dict) -> tuple[float, float, float]:
     return distance, pitch, bearing
 
 
+def true_up(pitch: float, bearing: float) -> list[float]:
+    """The up direction autk-grammar's ``applyCamera`` gives a view *pitch*
+    degrees from straight down, facing *bearing* degrees clockwise from north:
+    across its line of sight, toward the far side of the view,
+    ``(cos p sin b, cos p cos b, sin p)``."""
+    p, b = math.radians(pitch), math.radians(bearing)
+    return [math.cos(p) * math.sin(b), math.cos(p) * math.cos(b), math.sin(p)]
+
+
 def _turn_problem(node_id: str, framed: list, turned: list, *, first: int = 0) -> str | None:
     """Why a map its camera turns does not stand where the camera puts its
     framed view (*framed*, each map's view before the turn; *turned*, after),
@@ -358,7 +368,6 @@ def _turn_problem(node_id: str, framed: list, turned: list, *, first: int = 0) -
         high = before["eye"][2] - before["lookAt"][2]
         far = 10000 / 2 ** (zoom - 10) if zoom is not None else high
         distance, at_pitch, at_bearing = _view_angles(after)
-        turn = math.radians(bearing)
         apart = lambda a, b: max(abs(x - y) for x, y in zip(a, b))  # noqa: E731
         if apart(after["lookAt"], before["lookAt"]) > TURNED_SAME_VIEW * far:
             problems.append(f"map {index} looks at {after['lookAt']}, framed at {before['lookAt']}")
@@ -368,8 +377,9 @@ def _turn_problem(node_id: str, framed: list, turned: list, *, first: int = 0) -
         if abs(at_pitch - pitch) > TURNED_SAME_ANGLE or (pitch > TURNED_SAME_ANGLE and bearing_off > TURNED_SAME_ANGLE):
             problems.append(f"map {index} stands {at_pitch} degrees from straight down facing {at_bearing}, "
                             f"not {pitch} facing {bearing}")
-        if apart(after["up"], [math.sin(turn), math.cos(turn), 0]) > TURNED_SAME_UP:
-            problems.append(f"map {index}'s up is {after['up']}, not the heading {bearing} degrees east of north")
+        if apart(after["up"], true_up(pitch, bearing)) > TURNED_SAME_UP:
+            problems.append(f"map {index}'s up is {after['up']}, not {true_up(pitch, bearing)}, across its line of "
+                            f"sight toward the far side of the view, facing {bearing} degrees east of north")
     if not problems:
         return None
     return f"Autark node {node_id}: its camera did not turn the view it was framed at: " + "; ".join(problems)
