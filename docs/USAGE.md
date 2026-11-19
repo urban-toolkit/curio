@@ -1458,6 +1458,10 @@ written.
   area. A table neither the `data` loads nor the input carries fails the node,
   and the error names it. The node hands on what its `data` loads and makes,
   and an input table only when a `join` wrote its columns onto it.
+- A `csv` or `json` source loaded without `geometryColumns` makes a table with
+  no geometry. The node hands it on as its rows, each with no geometry: a
+  Python node reads them as a table, a plot keeps them, and a map draws nothing
+  for them.
 
 ### Workspaces
 
