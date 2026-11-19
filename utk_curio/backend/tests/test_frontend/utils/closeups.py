@@ -1,12 +1,15 @@
-"""Node close-ups, compared tighter than a full page, and probes of the canvas
+"""Node close-ups, compared tighter than a full page, the captures of one node
+that close-ups and interaction frames wait on, and probes of the canvas
 viewport's will-change hint.
 """
 
+import time
 from contextlib import contextmanager
 
 from playwright.sync_api import Page
 
-from .screenshots import frame_nodes, save_workflow_test_screenshot
+from .images import _capture_element, _compare_images
+from .screenshots import REMINT_MIN_RATIO, frame_nodes, save_workflow_test_screenshot
 
 
 #: Per-channel tolerance of a node close-up. A map that drew nothing shows the
@@ -122,6 +125,37 @@ def canvas_painted_at_shown_zoom(page: Page):
         page.evaluate(_VIEWPORT_WILL_CHANGE_JS, "")
 
 
+def capture_node(page: Page, node_id: str):
+    """The node as a frame of it shows it, in memory (maps painted, see #427)."""
+    return _capture_element(page, f'.react-flow__node[data-id="{node_id}"]')
+
+
+def wait_for_node_capture(page: Page, node_id: str, done, *, timeout_ms: int = 15000):
+    """Capture *node_id* until ``done(capture)`` holds. Returns ``(capture, held)``."""
+    deadline = time.monotonic() + timeout_ms / 1000
+    while True:
+        capture = capture_node(page, node_id)
+        if done(capture):
+            return capture, True
+        if time.monotonic() >= deadline:
+            return capture, False
+        page.wait_for_timeout(300)
+
+
+def wait_for_node_still(page: Page, node_id: str, *, timeout_ms: int = 10000):
+    """Capture *node_id* until two captures in a row match; returns the last."""
+    previous = [capture_node(page, node_id)]
+
+    def still(capture):
+        same = _compare_images(capture, previous[0], CLOSEUP_PIXEL_THRESHOLD).ratio <= REMINT_MIN_RATIO
+        previous[0] = capture
+        return same
+
+    capture, held = wait_for_node_capture(page, node_id, still, timeout_ms=timeout_ms)
+    assert held, f"node {node_id} was still changing after {timeout_ms} ms"
+    return capture
+
+
 def save_node_closeup(
     page: Page,
     workflow_filepath: str,
@@ -129,20 +163,30 @@ def save_node_closeup(
     *,
     test_name: str,
     sweep_toasts: bool = False,
+    still: bool = False,
 ) -> str:
     """Compare one node, framed at up to 100% zoom, against its own baseline.
 
-    For a node whose drawing is the claim: an Autark map or plot. In a
-    full-page frame that node is a thumbnail, so one that drew nothing and
-    left its body blank moves the frame by less than the 10% budget, and the
-    comparison passes. Cropped to the node and compared at
+    For a node whose drawing is the claim: an Autark map or plot, or a
+    Vega-Lite chart. In a full-page frame that node is a thumbnail, so one
+    that drew nothing and left its body blank moves the frame by less than the
+    10% budget, and the comparison passes. Cropped to the node and compared at
     ``CLOSEUP_PIXEL_THRESHOLD`` against ``CLOSEUP_MAX_DIFF_RATIO``, the same
     blank is several times the budget.
+
+    With *still*, the shutter waits, once the node is framed, until two
+    captures of it in a row agree (``wait_for_node_still``), as an
+    interaction's target does before its frames. A node can say Done and still
+    be drawing: Vega draws a chart again on its own runs, which a capture
+    cannot drive, after a resize of its pane or new rows, and then lays it out
+    again for its axis labels (useVega's settle).
 
     Leaves the viewport on the node; a later full-page capture fits it again.
     """
     with canvas_painted_at_shown_zoom(page):
         frame_nodes(page, [node_id])
+        if still:
+            wait_for_node_still(page, node_id)
         return save_workflow_test_screenshot(
             page,
             workflow_filepath,

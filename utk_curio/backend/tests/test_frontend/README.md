@@ -463,12 +463,14 @@ Two families of baseline live in that folder:
 - one per bundled dataflow JSON, for `TestWorkflowCanvas` (two per workflow,
   `test_node_type_and_content` and `test_node_execution`), each paired with a
   `_browser_log.txt` because autk swallows its errors into React state. Every
-  Autark node whose grammar has a `map` or `plot` also gets a
+  Autark node whose grammar has a `map` or `plot`, and every Vega-Lite chart but
+  those `EXPECTED_EMPTY` says draw nothing, also gets a
   `test_node_execution_closeup_<node id>` baseline: the node alone, framed at up
   to 100% zoom (`save_node_closeup`) and compared at a per-channel tolerance of
-  5 instead of 30, against a 5% budget instead of 10%. In the full-page frame a
-  map or plot that drew nothing can stay under the budget; up close it cannot. Walkthrough scenes with a drawn map
-  take one with `ctx.capture_node`. A workflow in `INTERACTIONS`
+  5 instead of 30, against a 5% budget instead of 10%, once two captures of it
+  in a row agree (`still=True`). In the full-page frame a
+  map, plot or chart that drew nothing can stay under the budget; up close it cannot. Walkthrough scenes with a drawn map
+  or chart take one with `ctx.capture_node`. A workflow in `INTERACTIONS`
   (test_workflows.py) also gets
   `test_node_interaction_<step>_{before,after}_<node id>` baselines. Each step
   frames its two nodes together, captures both, does its gesture (a hover held
@@ -627,7 +629,7 @@ test_frontend/
     images.py                 # captures (a Curio tooltip hidden unless kept), _compare_images
     dialogs.py                # accept_confirm_dialog, wait_for_drawer_closed, leave_agent_badge
     screenshots.py            # save_workflow_test_screenshot, mint, re-mint and candidates, frame_nodes
-    closeups.py               # save_node_closeup, close-up budgets, viewport hints
+    closeups.py               # save_node_closeup, node captures (wait_for_node_still), close-up budgets, viewport hints
     interactions.py           # interaction frames, brush and mark probes
     tooltips.py               # the Curio tooltip: hovers, the one on screen, its close-up box
     servers.py                # ports, e2e_existing_servers
