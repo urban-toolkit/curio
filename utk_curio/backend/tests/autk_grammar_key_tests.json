@@ -889,7 +889,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
@@ -913,7 +913,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
@@ -1106,6 +1106,12 @@
       {
         "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a CSV table with no geometry columns]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkPlainTables.test.ts::%s::hands on a CSV or JSON table with no geometry as its rows, in its workspace, beside a CSV's layer[the sandbox's loader]"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkPlainTables.test.ts::%s::hands on a CSV or JSON table with no geometry as its rows, in its workspace, beside a CSV's layer[the browser's loader]"
       }
     ],
     "data[csv].csvFileUrl": [
@@ -1134,6 +1140,12 @@
       {
         "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a CSV table with no geometry columns]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkPlainTables.test.ts::%s::hands on a CSV or JSON table with no geometry as its rows, in its workspace, beside a CSV's layer[the sandbox's loader]"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkPlainTables.test.ts::%s::hands on a CSV or JSON table with no geometry as its rows, in its workspace, beside a CSV's layer[the browser's loader]"
       }
     ],
     "data[csv].delimiter": [
@@ -1154,6 +1166,12 @@
       {
         "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[CSV and JSON tables, from files and written inline, by every geometry column]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkPlainTables.test.ts::%s::hands on a CSV or JSON table with no geometry as its rows, in its workspace, beside a CSV's layer[the sandbox's loader]"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkPlainTables.test.ts::%s::hands on a CSV or JSON table with no geometry as its rows, in its workspace, beside a CSV's layer[the browser's loader]"
       }
     ],
     "data[csv].geometryColumns.coordinateFormat": [
@@ -1174,6 +1192,12 @@
       {
         "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[CSV and JSON tables, from files and written inline, by every geometry column]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkPlainTables.test.ts::%s::hands on a CSV or JSON table with no geometry as its rows, in its workspace, beside a CSV's layer[the sandbox's loader]"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkPlainTables.test.ts::%s::hands on a CSV or JSON table with no geometry as its rows, in its workspace, beside a CSV's layer[the browser's loader]"
       }
     ],
     "data[csv].geometryColumns.longColumnName": [
@@ -1184,6 +1208,12 @@
       {
         "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[CSV and JSON tables, from files and written inline, by every geometry column]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkPlainTables.test.ts::%s::hands on a CSV or JSON table with no geometry as its rows, in its workspace, beside a CSV's layer[the sandbox's loader]"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkPlainTables.test.ts::%s::hands on a CSV or JSON table with no geometry as its rows, in its workspace, beside a CSV's layer[the browser's loader]"
       }
     ],
     "data[csv].geometryColumns.wktColumnName": [
@@ -1212,6 +1242,12 @@
       {
         "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a CSV table with no geometry columns]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkPlainTables.test.ts::%s::hands on a CSV or JSON table with no geometry as its rows, in its workspace, beside a CSV's layer[the sandbox's loader]"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkPlainTables.test.ts::%s::hands on a CSV or JSON table with no geometry as its rows, in its workspace, beside a CSV's layer[the browser's loader]"
       }
     ],
     "data[csv].workspace": [
@@ -1232,6 +1268,12 @@
       {
         "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[CSV and JSON tables, from files and written inline, by every geometry column]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkPlainTables.test.ts::%s::hands on a CSV or JSON table with no geometry as its rows, in its workspace, beside a CSV's layer[the sandbox's loader]"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkPlainTables.test.ts::%s::hands on a CSV or JSON table with no geometry as its rows, in its workspace, beside a CSV's layer[the browser's loader]"
       }
     ],
     "data[json].geometryColumns": [
@@ -1302,6 +1344,12 @@
       {
         "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[CSV and JSON tables, from files and written inline, by every geometry column]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkPlainTables.test.ts::%s::hands on a CSV or JSON table with no geometry as its rows, in its workspace, beside a CSV's layer[the sandbox's loader]"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkPlainTables.test.ts::%s::hands on a CSV or JSON table with no geometry as its rows, in its workspace, beside a CSV's layer[the browser's loader]"
       }
     ],
     "data[json].outputTableName": [
@@ -1312,6 +1360,12 @@
       {
         "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[CSV and JSON tables, from files and written inline, by every geometry column]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkPlainTables.test.ts::%s::hands on a CSV or JSON table with no geometry as its rows, in its workspace, beside a CSV's layer[the sandbox's loader]"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkPlainTables.test.ts::%s::hands on a CSV or JSON table with no geometry as its rows, in its workspace, beside a CSV's layer[the browser's loader]"
       }
     ],
     "data[json].workspace": [
@@ -1322,6 +1376,12 @@
       {
         "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[CSV and JSON tables, from files and written inline, by every geometry column]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkPlainTables.test.ts::%s::hands on a CSV or JSON table with no geometry as its rows, in its workspace, beside a CSV's layer[the sandbox's loader]"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkPlainTables.test.ts::%s::hands on a CSV or JSON table with no geometry as its rows, in its workspace, beside a CSV's layer[the browser's loader]"
       }
     ],
     "data[geojson]": [
@@ -1334,7 +1394,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
@@ -1342,7 +1402,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
@@ -1409,7 +1469,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
@@ -1417,7 +1477,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       }
     ],
@@ -1440,7 +1500,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
@@ -1448,7 +1508,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       }
     ],
@@ -1471,7 +1531,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
@@ -1479,7 +1539,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       }
     ],
@@ -1502,7 +1562,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
@@ -1510,7 +1570,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       }
     ],
@@ -1523,7 +1583,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
@@ -1531,7 +1591,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       }
     ],
@@ -1554,7 +1614,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
@@ -1562,7 +1622,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       }
     ],
@@ -1671,7 +1731,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
@@ -1679,7 +1739,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       }
     ],
@@ -1702,7 +1762,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
@@ -1710,7 +1770,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       }
     ],
@@ -1793,7 +1853,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
@@ -1801,7 +1861,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       }
     ],
@@ -1814,7 +1874,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
@@ -1822,7 +1882,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       }
     ],
@@ -1835,7 +1895,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
@@ -1843,7 +1903,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       }
     ],
@@ -1867,7 +1927,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
@@ -1875,7 +1935,7 @@
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
@@ -1888,11 +1948,11 @@
         "test": "utk_curio/sandbox/tests/test_autk_server_data_load.py::test_the_server_compiled_load_keeps_each_table_in_its_workspace"
       },
       {
-        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
@@ -2292,11 +2352,11 @@
         "document": "docs/examples/dataflows/regression.json"
       },
       {
-        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       }
     ],
@@ -2306,11 +2366,11 @@
         "document": "docs/examples/dataflows/regression.json"
       },
       {
-        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       }
     ],
@@ -2320,11 +2380,11 @@
         "document": "docs/examples/dataflows/regression.json"
       },
       {
-        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       }
     ],
@@ -2334,11 +2394,11 @@
         "document": "docs/examples/dataflows/regression.json"
       },
       {
-        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       }
     ],
@@ -2348,21 +2408,21 @@
         "document": "docs/examples/dataflows/regression.json"
       },
       {
-        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       }
     ],
     "data[join].groupBy[].normalize": [
       {
-        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       }
     ],
@@ -2372,11 +2432,11 @@
         "document": "docs/examples/dataflows/regression.json"
       },
       {
-        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       }
     ],
@@ -2386,11 +2446,11 @@
         "document": "docs/examples/dataflows/regression.json"
       },
       {
-        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       }
     ],
@@ -2400,21 +2460,21 @@
         "document": "docs/examples/dataflows/regression.json"
       },
       {
-        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       }
     ],
     "data[join].near.useCentroid": [
       {
-        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       }
     ],
@@ -2423,11 +2483,11 @@
         "test": "utk_curio/sandbox/tests/test_autk_server_data_load.py::test_the_server_compiled_load_keeps_each_table_in_its_workspace"
       },
       {
-        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/sandbox/tests/test_autk_server_data_keys.py::test_the_server_compiled_load_runs_every_key_of_a_data_source[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join of centroids in a workspace, one aggregate normalized]",
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a join in a workspace from each zone's own shape, not its centroid, one aggregate normalized]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       }
     ],
