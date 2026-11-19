@@ -13,7 +13,10 @@
  * of them lights it.
  *
  * A document with data and compute and no view runs its compute on what its
- * data section loaded and hands on the result, as a compute step does.
+ * data section loaded and hands on the result, as a compute step does. A
+ * building part it loaded reaches its passes with the height autk-map draws
+ * for it, as a part of its input does, so a batched pass that reads every
+ * building's height with `required: true` leaves none out.
  *
  * A node's map is drawn by a stand-in grammar that records what the node
  * hands it (_support/autkNodeMocks). Its passes run through autk-grammar's own
@@ -93,6 +96,7 @@ import { applyComputeBlocks } from '../../../adapters/node/autkComputeBlocks';
 import { useAutkGrammarBehavior } from '../../../adapters/node/autkGrammarBehavior';
 import { withOpaqueRasters } from '../../../adapters/node/autkRasters';
 import { autkNeedsInput } from '../../../utils/autkInput';
+import { METRES_PER_LEVEL } from '../../../utils/buildingHeight';
 import {
   drawnExports,
   grammarRuns as mockRuns,
@@ -432,5 +436,43 @@ describe('a document with data and compute and no view', () => {
     expect(step.lastOutput()).toEqual({ code: 'success', content: 'Computed 2 layers: spots (3 rows), lst (12 cells)' });
     const [handed] = step.handedOn();
     expect(handed.data.map((l: any) => [l.dataType, l.layerName])).toEqual([['geodataframe', 'spots'], ['raster', 'lst']]);
+  });
+
+  test('a batched pass that reads every building part it loaded with required: true reads each with the height autk-map draws', async () => {
+    const footprint = (i: number) => ({
+      type: 'Polygon',
+      coordinates: [[[10 * i, 0], [10 * i + 5, 0], [10 * i + 5, 5], [10 * i, 0]]],
+    });
+    // One part with a height, one with only its levels, one with an empty
+    // height beside its levels, one with only a building:height, one with none.
+    const parts = [{ height: 12 }, { 'building:levels': 3 }, { height: null, 'building:levels': 2 }, { 'building:height': 30 }, {}];
+    const features = parts.map((properties, i) => ({ type: 'Feature', geometry: footprint(i), properties }));
+    mockLoaded.layers = [
+      { name: 'spots', type: 'points', features: spots().features },
+      { name: 'blocks', type: 'buildings', features },
+    ];
+    const info = jest.spyOn(console, 'info').mockImplementation(() => { });
+    try {
+      const step = mountStep('data-compute');
+
+      await step.run({
+        data: [...DATA, { type: 'geojson', outputTableName: 'blocks', geojsonObject: { type: 'FeatureCollection', features } }],
+        compute: [pass('spots', 'twice', {
+          uniforms: {
+            heights: { fromFeature: { layer: 'blocks', iterate: 'batched', path: 'properties.height', required: true } },
+          },
+        })],
+      });
+
+      expect(step.lastOutput()).toEqual({ code: 'success', content: 'Computed 2 layers: spots (3 rows), blocks (5 rows)' });
+      // autk-grammar says so when a batched pass leaves a feature out.
+      expect(info.mock.calls.filter(([text]) => String(text).includes('batched compute'))).toEqual([]);
+      expect(computeRuns.gpgpu).toHaveBeenCalledTimes(1);
+      const { uniforms, uniformArrays } = computeRuns.gpgpu.mock.calls[0][0];
+      expect(uniforms.num_features).toBe(parts.length);
+      expect(uniformArrays.heights).toEqual([12, 3 * METRES_PER_LEVEL, 2 * METRES_PER_LEVEL, 30, 6]);
+    } finally {
+      info.mockRestore();
+    }
   });
 });
