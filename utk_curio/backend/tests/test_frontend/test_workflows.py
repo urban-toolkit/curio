@@ -827,6 +827,16 @@ class TestWorkflowCanvas:
                 drawing.append(node)
         return drawing
 
+    def _closeup_nodes(self) -> list[NodeSpec]:
+        """The nodes compared on their own, up close, after the run: each
+        Autark map or plot (``_drawing_autark_nodes``), then each Vega-Lite
+        chart, in spec order. A chart that is supposed to have nothing on its
+        canvas (``EXPECTED_EMPTY``) is left out, as such a map is."""
+        return self._drawing_autark_nodes() + [
+            node for node in self.spec.nodes
+            if node.type == "VIS_VEGA" and node.id not in self._expected_empty()
+        ]
+
     def _node_execution_timeout_ms(self, node: NodeSpec) -> int:
         """See ``utils.node_execution_timeout_ms``."""
         return node_execution_timeout_ms(node.type)
@@ -1190,7 +1200,9 @@ class TestWorkflowCanvas:
         artifacts.  After the browser run, artifact content is compared as
         stored (``snapshot_artifact``: tables over Arrow, lists and dicts by
         their stored JSON, never the JSON envelope, which took example 09 to
-        14 GiB); VIS_VEGA nodes are verified via SVG structural comparison.
+        14 GiB). A VIS_VEGA node must draw marks, or show what EXPECTED_EMPTY
+        says it shows, and each chart, map and plot that draws is compared on
+        its own, up close.
         """
         expected_map = execute_workflow_programmatically(
             self.spec, seed=42, username=getattr(self, "username", None)
@@ -1386,8 +1398,9 @@ class TestWorkflowCanvas:
                     # old SVG structural diff we verify the chart actually
                     # rendered: the canvas exists, has a non-zero backing size,
                     # and drew non-blank content (the upstream data turned into
-                    # marks). Visual regressions are still caught by the per-node
-                    # screenshot comparison in ``_save_screenshot``.
+                    # marks). Visual regressions are still caught by the
+                    # full-page frame (``_save_screenshot``) and by the chart's
+                    # own close-up after it.
                     # The probe and its poll live in ``utils`` so the per-dataset
                     # suite asserts Vega rendering the same way this one does.
                     if node.type == "VIS_VEGA":
@@ -1489,17 +1502,24 @@ class TestWorkflowCanvas:
             [node.id for node in self.spec.nodes if node.type == "VIS_VEGA"],
         )
 
-        # A map or plot that drew nothing leaves a blank node, which in the
-        # full-page frame above can stay under the budget. Each one is also
-        # compared on its own, up close, after checking it fills its node.
-        for node in self._drawing_autark_nodes():
-            assert_autark_drawing_fits(self.page, node.id)
+        # A map, plot or chart that drew nothing leaves a blank node, which in
+        # the full-page frame above can stay under the budget. Each one is also
+        # compared on its own, up close: an Autark map or plot after checking it
+        # fills its node, a Vega-Lite chart after checking it drew marks, as the
+        # interaction steps check it. Each frame waits until two captures of
+        # its node in a row agree, as an interaction's target does.
+        for node in self._closeup_nodes():
+            if node.type == "VIS_VEGA":
+                self._assert_drawn(node.id)
+            else:
+                assert_autark_drawing_fits(self.page, node.id)
             save_node_closeup(
                 self.page,
                 self.spec.filepath,
                 node.id,
                 test_name=f"{request.function.__name__}_closeup_{node.id}",
                 sweep_toasts=bool(self._expected_empty()),
+                still=True,
             )
 
         # Each map opens framed on the layers it draws (#773): not a speck in

@@ -135,8 +135,9 @@ class Ctx:
     def capture_node(self, label: str, node_id: str) -> None:
         """Pin one node, framed up close, as a baseline called *label*.
 
-        For a node whose drawing is the claim: an Autark map, which in a
-        full-page frame is a thumbnail (see ``utils.save_node_closeup``).
+        For a node whose drawing is the claim: an Autark map or a Vega-Lite
+        chart, which in a full-page frame is a thumbnail (see
+        ``utils.save_node_closeup``).
         """
         self.node_snapshot(label, node_id)
 

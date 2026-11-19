@@ -429,6 +429,94 @@ def test_a_close_up_is_painted_without_the_viewport_layer_hint(dirs, monkeypatch
     assert page.will_change == ["auto", ""]
 
 
+class _WaitingPage(_PointerPage):
+    """A stub page that also takes the waits between two captures of a node."""
+
+    def wait_for_timeout(self, ms):
+        pass
+
+
+def test_a_still_close_up_is_taken_once_two_captures_of_its_node_agree(dirs, monkeypatch):
+    # A chart Vega is still laying out: its node reads 30 pixels off, then
+    # holds still. The frame compared is taken after two captures agree, all
+    # with the node painted at the zoom it is shown at.
+    expected, compare = dirs
+    _baseline(expected)
+    page = _WaitingPage()
+    shown = iter([_white(paint=30), _white(paint=1), _white(paint=1)])
+    waited = []
+
+    def node(p, selector):
+        waited.append((selector, list(page.will_change)))
+        return next(shown)
+
+    monkeypatch.setattr(closeups, "_capture_element", node)
+    monkeypatch.setattr(e2e_utils, "_capture_element", lambda p, selector: _white(paint=1))
+    monkeypatch.setattr(e2e_utils, "_wait_for_reactflow_ready", lambda p, **kw: None)
+    monkeypatch.setattr(e2e_utils, "_wait_for_no_node_running", lambda p: None)
+    closeups.save_node_closeup(page, "scene.json", "n1", test_name="step", still=True)
+
+    assert waited == [('.react-flow__node[data-id="n1"]', ["auto"])] * 3
+    assert page.will_change == ["auto", ""]
+    [(_, record)] = _records(compare)
+    assert (record["status"], record["closeup"]) == ("passed", True)
+
+    # Without it, the node is captured once, for the comparison alone.
+    waited.clear()
+    closeups.save_node_closeup(_WaitingPage(), "scene.json", "n1", test_name="step")
+    assert waited == []
+
+
+class _PaneProbePage:
+    """A page that answers the bare-pane probe with *answers*, in turn, and
+    keeps where the pointer was moved."""
+    viewport_size = {"width": 1280, "height": 720}
+
+    def __init__(self, answers):
+        self.answers = list(answers)
+        self.moves = []
+        moves = self.moves
+
+        class mouse:  # noqa: N801 - stands in for Page.mouse
+            @staticmethod
+            def move(x, y):
+                moves.append((x, y))
+
+        self.mouse = mouse
+
+    def evaluate(self, script, arg=None, **k):
+        assert script == e2e_utils._BARE_PANE_POINT_JS, script
+        return self.answers.pop(0)
+
+
+def test_a_framing_parks_the_pointer_on_the_bare_pane_nearest_the_corner(monkeypatch):
+    # A node lies under the corner (1270, 660) at the framing on screen, so the
+    # pointer rests on the nearest point of the bare pane, which the fit leaves
+    # bare: one move, there.
+    monkeypatch.setattr(e2e_utils, "_wait_for_reactflow_ready", lambda page, **kw: None)
+    page = _PaneProbePage([[1110, 660], [1110, 660]])
+    e2e_utils.frame_nodes(page, ["n1"])
+    assert page.moves == [(1110.0, 660.0)]
+    assert page.answers == []
+
+
+def test_a_fit_that_brings_a_node_under_the_pointer_parks_it_again(monkeypatch):
+    # The corner is bare before the fit; the fit brings a node under it, so the
+    # pointer moves on to the bare pane of the new framing.
+    monkeypatch.setattr(e2e_utils, "_wait_for_reactflow_ready", lambda page, **kw: None)
+    page = _PaneProbePage([[1270, 660], [1250, 660], [1230, 660]])
+    e2e_utils.frame_nodes(page, ["n1"])
+    assert page.moves == [(1270.0, 660.0), (1230.0, 660.0)]
+    assert page.answers == []
+
+
+def test_a_parked_pointer_asks_for_the_bare_pane_only_when_told_to(monkeypatch):
+    # The other callers of park_pointer keep the corner as it is.
+    page = _PaneProbePage([])
+    assert e2e_utils.park_pointer(page) == (1270.0, 660.0)
+    assert page.moves == [(1270.0, 660.0)]
+
+
 def test_a_missing_close_up_says_so_in_its_record(dirs, monkeypatch):
     _, compare = dirs
     with pytest.raises(AssertionError, match="remint=true"):

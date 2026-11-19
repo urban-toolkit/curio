@@ -98,6 +98,9 @@ from .closeups import (  # noqa: F401
     watch_viewport_hint,
     viewport_hints,
     canvas_painted_at_shown_zoom,
+    capture_node,
+    wait_for_node_capture,
+    wait_for_node_still,
     save_node_closeup,
 )
 from .interactions import (  # noqa: F401
@@ -122,10 +125,7 @@ from .interactions import (  # noqa: F401
     _LIT_MARKS_JS,
     lit_marks,
     lit_labels,
-    capture_node,
     changed_pixels,
-    wait_for_node_capture,
-    wait_for_node_still,
     save_interaction_frame,
 )
 from .tooltips import (  # noqa: F401
