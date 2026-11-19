@@ -126,15 +126,17 @@ if (typeof window !== 'undefined') {
 /**
  * The key the select of *view* (none: the node's first map, where a Map
  * Editor node picks) is sent under: `autk_selection` for a node of one view,
- * else the view's own, by its `id`, else its place among the views of
- * *panes*, the panes of the document the grammar drew (utils/autkSelects).
+ * else the view's own, by its `id`, else by its place among the views of
+ * *panes*, the panes of the document the grammar drew (utils/autkSelects,
+ * which keeps the two forms apart).
  */
 function selectionKeyOf(panes: ViewPanes | null, view: Pick<DrawnView, 'kind' | 'index'> | null | undefined): string {
     const all = panes ?? [];
     if (all.length <= 1) return AUTK_SELECTION;
     const where = view ?? { kind: 'map' as const, index: 0 };
     const at = Math.max(all.findIndex((pane) => pane.kind === where.kind && pane.index === where.index), 0);
-    return autkSelectionKey(all[at].id ?? at);
+    const id = all[at].id;
+    return autkSelectionKey(typeof id === 'string' && id !== '' ? id : at);
 }
 
 /** Whether *select* holds a selection: a pick or a brush of rows, or of key values. */

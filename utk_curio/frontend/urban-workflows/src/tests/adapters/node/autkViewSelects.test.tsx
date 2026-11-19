@@ -2,7 +2,7 @@
  * An Autark node of several views sends one select per view, as a Vega-Lite
  * chart sends one per param (adapters/node/autkGrammarBehavior,
  * utils/autkSelects): a view with an `id` under `autk_selection@<id>`, one
- * without under `autk_selection@<place>`, its place among the node's views,
+ * without under `autk_selection#<place>`, its place among the node's views,
  * maps first. Each pick or brush sends every view's select the node holds,
  * oldest first, the one made now at priority 1, and a draw empties each that
  * held a selection. A node of one view sends `autk_selection`, as before.
@@ -81,13 +81,28 @@ test("a view without an id is keyed by its place, and each pick or brush sends e
   act(() => mockRuns[0].brushOn('input_0', [0, 1]));
 
   const sent = lastSent(node);
-  expect(Object.keys(sent)).toEqual(['autk_selection@city', 'autk_selection@1']);
-  expect(sent).toEqual({ 'autk_selection@city': select([2], 0), 'autk_selection@1': select([0, 1], 1) });
+  expect(Object.keys(sent)).toEqual(['autk_selection@city', 'autk_selection#1']);
+  expect(sent).toEqual({ 'autk_selection@city': select([2], 0), 'autk_selection#1': select([0, 1], 1) });
 
   // The map picks again: it is the newest, sent last.
   act(() => mockRuns[0].pickOn('city', 'input_0', [1]));
-  expect(Object.keys(lastSent(node))).toEqual(['autk_selection@1', 'autk_selection@city']);
-  expect(lastSent(node)).toEqual({ 'autk_selection@1': select([0, 1], 0), 'autk_selection@city': select([1], 1) });
+  expect(Object.keys(lastSent(node))).toEqual(['autk_selection#1', 'autk_selection@city']);
+  expect(lastSent(node)).toEqual({ 'autk_selection#1': select([0, 1], 0), 'autk_selection@city': select([1], 1) });
+});
+
+test('a view whose id is "1" and the view without an id at place 1 send under two keys, each its own selection', async () => {
+  const node = mountAutkNode(NODE, ROWS);
+  // The map's id reads as the plot's place among the node's views.
+  const views = { ...TWO_VIEWS, map: { ...TWO_VIEWS.map, id: '1' } };
+  await node.run(views);
+  expect(node.lastOutput()).toEqual({ code: 'success', content: '' });
+
+  act(() => mockRuns[0].pickOn('1', 'input_0', [2]));
+  act(() => mockRuns[0].brushOn('input_0', [0, 1]));
+
+  // The plot's brush keeps the map's pick: an interaction edge on the map's
+  // dot (`in/out@1`) carries the map's selection, not the plot's.
+  expect(lastSent(node)).toEqual({ 'autk_selection@1': select([2], 0), 'autk_selection#1': select([0, 1], 1) });
 });
 
 test('a draw empties each view select that held a selection, under its own key', async () => {
@@ -97,10 +112,10 @@ test('a draw empties each view select that held a selection, under its own key',
 
   await node.run(TWO_VIEWS);
 
-  expect(lastSent(node)).toEqual({ 'autk_selection@city': select([], 1), 'autk_selection@1': select([], 1) });
+  expect(lastSent(node)).toEqual({ 'autk_selection@city': select([], 1), 'autk_selection#1': select([], 1) });
   // A select made after the draw is sent alone: the draw held none.
   act(() => mockRuns[1].brushOn('input_0', [2]));
-  expect(lastSent(node)).toEqual({ 'autk_selection@1': select([2], 1) });
+  expect(lastSent(node)).toEqual({ 'autk_selection#1': select([2], 1) });
 });
 
 test('a node of one view sends its select under autk_selection, as before', async () => {

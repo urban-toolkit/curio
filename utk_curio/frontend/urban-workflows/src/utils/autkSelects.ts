@@ -2,10 +2,13 @@
  * The selects an Autark node sends, as a Vega-Lite chart sends one per param:
  * one per view. A node of one view sends its select under `autk_selection`.
  * A node of several sends each view's under `autk_selection@<id>` for a view
- * with an `id`, else `autk_selection@<n>`, n the view's place among the
- * node's views, maps first (autk-grammar's `arrangeViews` order). The mark is
- * the one a view's interaction handle carries (contracts/interactionEdges.json
- * `viewMark`, as in `in/out@heights`).
+ * with an `id`, else `autk_selection#<n>`, n the view's place among the
+ * node's views, maps first (autk-grammar's `arrangeViews` order). The `@` is
+ * the mark a view's interaction handle carries (contracts/interactionEdges.json
+ * `viewMark`, as in `in/out@heights`). The `#` keeps a place's key apart from
+ * every id's, whatever the id holds, as autk-grammar keeps a map's index (a
+ * number) apart from its `id` (a string): `autk_selection@1` is the view whose
+ * `id` is "1", `autk_selection#1` the view without one at place 1.
  *
  * Each select names the table it was made on (`layerRef`). Every reader of an
  * Autark selection reads it here: the Data Pool's buckets by layer, the
@@ -20,23 +23,38 @@ export const AUTK_SELECTION = "autk_selection";
 /** An Autark select: a select, with the table it was made on and the node type that sent it. */
 export type AutkSelect = SelectDetail & { source?: string; layerRef?: string };
 
-/** The key the view *view* (its `id`, or its place among the node's views) sends its select under; none, a node's one view. */
+/** What a view's key starts with when it names the view by its `id`. */
+const BY_ID = `${AUTK_SELECTION}${interactionEdges.viewMark}`;
+/** What a view's key starts with when it names a view without an `id` by its place: `#` where an id's key has `@`. */
+const BY_PLACE = `${AUTK_SELECTION}#`;
+
+/**
+ * The key a view sends its select under: *view* is its `id`, a string, or its
+ * place among the node's views, a number, for a view without an `id`, as
+ * autk-grammar names a map by its `id` or by its index; none, a node's one
+ * view.
+ */
 export function autkSelectionKey(view?: string | number | null): string {
-  return view === undefined || view === null ? AUTK_SELECTION : `${AUTK_SELECTION}${interactionEdges.viewMark}${view}`;
+  if (view === undefined || view === null) return AUTK_SELECTION;
+  return typeof view === "number" ? `${BY_PLACE}${view}` : `${BY_ID}${view}`;
 }
 
-/** Whether *key* is the key of an Autark select: a node's one view's, or a view's of several. */
+/** Whether *key* is the key of an Autark select: a node's one view's, or a view's of several, by its `id` or its place. */
 export function isAutkSelectionKey(key: string): boolean {
-  return key === AUTK_SELECTION || (key.startsWith(`${AUTK_SELECTION}${interactionEdges.viewMark}`)
-    && key.length > AUTK_SELECTION.length + interactionEdges.viewMark.length);
+  return key === AUTK_SELECTION
+    || (key.startsWith(BY_ID) && key.length > BY_ID.length)
+    || (key.startsWith(BY_PLACE) && /^\d+$/.test(key.slice(BY_PLACE.length)));
 }
 
-/** The view an Autark select's *key* names (its id or place, as text), null for a node's one view. */
+/**
+ * The `id` of the view an Autark select's *key* names; null for a node's one
+ * view and for a view without an `id`, whose key names its place.
+ */
 export function autkSelectionView(key: string): string | null {
-  return key === AUTK_SELECTION ? null : key.slice(AUTK_SELECTION.length + interactionEdges.viewMark.length);
+  return key.startsWith(BY_ID) && key.length > BY_ID.length ? key.slice(BY_ID.length) : null;
 }
 
-/** Each Autark select of *details*, in its order: its key, the view it names, and the select. */
+/** Each Autark select of *details*, in its order: its key, the `id` of the view it names (`autkSelectionView`), and the select. */
 export function autkSelects(details: unknown): Array<{ key: string; view: string | null; select: AutkSelect }> {
   if (!details || typeof details !== "object") return [];
   return Object.entries(details as Record<string, unknown>)
@@ -97,7 +115,8 @@ export function selectsOfView(details: unknown, view: string): Record<string, Au
   const selects = autkSelects(details);
   const one = selects.find(({ key }) => key === AUTK_SELECTION);
   if (one) return { [AUTK_SELECTION]: one.select };
-  const own = selects.find(({ view: named }) => named === view);
+  // The view's own key: a view without an id, keyed by its place, is never the view whose id reads as that place.
+  const own = selects.find(({ key }) => key === autkSelectionKey(view));
   return own ? { [own.key]: own.select.priority === 1 ? own.select : { ...own.select, priority: 1 } } : {};
 }
 
