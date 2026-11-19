@@ -60,8 +60,9 @@ azimuth at the area's latitude and longitude, projects every building's footprin
 height, and counts 60 minutes for the hour when no building's shadow touches the road. The Back Bay
 pass writes example 06's latitude and longitude into the shader (`lat_rad = 0.7393`,
 `lon_loc = -71.06`), and the Loop pass example 07's (`lat_rad = 0.73027`, `lon_loc = -87.65`). Each
-pass writes its roads with their `sunlight`, from 0 to 780 minutes, as a new table of roads,
-`back_bay_road_sun` and `loop_road_sun`, which the area's map and histogram read.
+pass writes its roads with their minutes of sun, from 0 to 780, as a new table of roads,
+`back_bay_road_sun` and `loop_road_sun`, which the area's map and histogram read. The pass writes
+each road's `sunlight` under its feature's `compute`, so the document names it `compute.sunlight`.
 
 ```json
 "compute": [
@@ -89,8 +90,8 @@ and the two histograms under them:
 ```
 
 - Each map has an `id`, `back_bay` and `loop`, and reads its own workspace. It draws the area's
-  surface, parks, water and buildings, and the pass's table of its roads colored by `sunlight` on one
-  range, 0 to 780 minutes, so a color means the same in both maps.
+  surface, parks, water and buildings, and the pass's table of its roads colored by
+  `compute.sunlight` on one range, 0 to 780 minutes, so a color means the same in both maps.
 - Each histogram, `back_bay_sun` and `loop_sun`, bins the same table's roads by their minutes of sun
   into 13 bins and lets you brush them (`"events": ["brushX"]`).
 - `links` joins each histogram to its own map: a link names the plot as its `source` and the map as its
