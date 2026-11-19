@@ -48,12 +48,16 @@ const mockBuiltIn: string[] = [];
 /** A heatmap build that fails, when set. */
 let mockBuildFails: Error | null = null;
 
-const mockCreateDataAdapter = jest.fn((..._args: any[]) => ({
-  // As autk-grammar 5's adapter loads a heatmap: autk-db's buildHeatmap, with
-  // the grammar's joinDataRef as autk-db's tableJoinName.
-  resolveSource: jest.fn(async (db: any, source: any) => {
-    mockResolved.push({ db, source });
-    if (source.type === "heatmap") {
+const mockCreateDataAdapter = jest.fn((...args: any[]) => {
+  // Every other source as the grammar's own adapter loads it.
+  const grammar = jest.requireActual("@urban-toolkit/autk-grammar/data").createDataAdapter(...args);
+  return {
+    // As autk-grammar 5's adapter loads a heatmap: autk-db's buildHeatmap, with
+    // the grammar's joinDataRef as autk-db's tableJoinName, in its workspace.
+    resolveSource: jest.fn(async (db: any, source: any) => {
+      mockResolved.push({ db, source });
+      if (source.type !== "heatmap") return grammar.resolveSource(db, source);
+      await jest.requireActual("@urban-toolkit/autk-grammar/data").enterWorkspace(db, source.workspace);
       await db.buildHeatmap({
         tableJoinName: source.joinDataRef,
         near: source.near,
@@ -61,10 +65,10 @@ const mockCreateDataAdapter = jest.fn((..._args: any[]) => ({
         grid: source.grid,
         groupBy: source.groupBy,
       });
-    }
-    return db;
-  }),
-}));
+      return db;
+    }),
+  };
+});
 
 // Sound levels in EPSG:3395 metres, in a box 3 km by 2 km at the Chicago Loop
 // binned into 3 by 2 cells of 1 km, as test_autk_server_data_load.py builds
@@ -242,17 +246,18 @@ describe("the sandbox's loader", () => {
     expect(code.match(/^import [^\n]*$/gm)).toEqual([IMPORT_AUTK_DB, IMPORT_GRAMMAR_DATA]);
   });
 
-  test("guard: a document with no heatmap compiles with autk-db's import alone", () => {
+  test("a document with no heatmap compiles with the same imports: every source loads through the grammar's data adapter", () => {
     const code = compileDataSpecToAutkDbJs([SOURCES[0]]);
-    expect(code.match(/^import [^\n]*$/gm)).toEqual([IMPORT_AUTK_DB]);
-    expect(code).not.toContain("createDataAdapter");
+    expect(code.match(/^import [^\n]*$/gm)).toEqual([IMPORT_AUTK_DB, IMPORT_GRAMMAR_DATA]);
   });
 
   test("builds a heatmap through the grammar's data adapter, in the database it loaded the table into", async () => {
     await sandboxLoad(SOURCES);
     expect(mockCreateDataAdapter).toHaveBeenCalledTimes(1);
-    expect(mockResolved.map(({ source }) => source)).toEqual([HEATMAP]);
+    // The readings, then the heatmap of them, in one database.
+    expect(mockResolved.map(({ source }) => source)).toEqual(SOURCES);
     expect(mockResolved[0].db).toBeInstanceOf(mockAutkDb);
+    expect(mockResolved[1].db).toBe(mockResolved[0].db);
     expect(mockBuilt).toEqual([{
       tableJoinName: "readings", near: { distance: 400 }, outputTableName: "density",
       grid: { rows: 2, columns: 3 }, groupBy: [{ column: "*", aggregateFn: "count" }],
@@ -284,8 +289,10 @@ describe("the in-browser loader", () => {
   test("builds a heatmap through the data entry's data adapter, in the database it loaded the table into", async () => {
     await loadSpecLayers({ data: SOURCES });
     expect(mockCreateDataAdapter).toHaveBeenCalledTimes(1);
-    expect(mockResolved.map(({ source }) => source)).toEqual([HEATMAP]);
+    // The readings, then the heatmap of them, in one database.
+    expect(mockResolved.map(({ source }) => source)).toEqual(SOURCES);
     expect(mockResolved[0].db).toBeInstanceOf(mockAutkDb);
+    expect(mockResolved[1].db).toBe(mockResolved[0].db);
     expect(mockBuilt.map((params) => params.outputTableName)).toEqual(["density"]);
   });
 

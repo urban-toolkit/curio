@@ -63,7 +63,7 @@ import { CURIO_RASTER_SOURCE, withRasterSources } from "../../../adapters/node/a
 import { framesFromPayload } from "../../../utils/grammarInput";
 
 /** What the sandbox's code imports of autk-grammar's data entry, its own. */
-const { enterWorkspace, tableKey } = require("@urban-toolkit/autk-grammar/data");
+const { createDataAdapter, enterWorkspace, tableKey } = require("@urban-toolkit/autk-grammar/data");
 
 const line = (x: number) => ({
   type: "Feature",
@@ -95,9 +95,9 @@ async function runInSandbox(sources: any[]): Promise<any[]> {
   // The engine's own AsyncFunction: babel compiles an `async function` written
   // in this file to a generator, whose constructor is plain Function.
   const AsyncFunction = new Function("return (async () => {}).constructor")();
-  return new AsyncFunction("AutkDb", "DEFAULT_WORKSPACE_COORDINATE_FORMAT", "enterWorkspace", "tableKey", body)(
-    mockWorkspacesDb, "EPSG:3395", enterWorkspace, tableKey,
-  );
+  return new AsyncFunction(
+    "AutkDb", "DEFAULT_WORKSPACE_COORDINATE_FORMAT", "createDataAdapter", "enterWorkspace", "tableKey", body,
+  )(mockWorkspacesDb, "EPSG:3395", createDataAdapter, enterWorkspace, tableKey);
 }
 
 beforeEach(() => {
@@ -106,11 +106,13 @@ beforeEach(() => {
 });
 
 describe("the sandbox's loader", () => {
-  test("imports autk-grammar's data entry for a data section that names a workspace, and only then", () => {
+  test("imports autk-grammar's enterWorkspace and tableKey for a data section that names a workspace, and only then", () => {
+    // Every section loads its sources with the grammar's data adapter.
     expect(compileDataSpecToAutkDbJs(SOURCES))
-      .toContain("\nimport { enterWorkspace, tableKey } from '@urban-toolkit/autk-grammar/data';\n");
+      .toContain("\nimport { createDataAdapter, enterWorkspace, tableKey } from '@urban-toolkit/autk-grammar/data';\n");
     // The default workspace, named or not, is no other workspace.
-    expect(compileDataSpecToAutkDbJs([SOURCES[0], SOURCES[2]])).not.toContain("@urban-toolkit/autk-grammar/data");
+    expect(compileDataSpecToAutkDbJs([SOURCES[0], SOURCES[2]]))
+      .toContain("\nimport { createDataAdapter } from '@urban-toolkit/autk-grammar/data';\n");
   });
 
   test("loads each source into its workspace", async () => {

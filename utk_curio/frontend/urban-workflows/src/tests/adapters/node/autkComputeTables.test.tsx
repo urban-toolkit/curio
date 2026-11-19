@@ -479,11 +479,11 @@ describe('a document with data and compute and no view', () => {
   });
 });
 
-// A map node's run hands each pass to autk-grammar's own compute adapter,
-// which reads a table no pass wrote from the run's database, autk-db, where a
-// building is a GeometryCollection of its parts. So a pass of one document
-// that draws reads each `fromFeature` table but its `dataRef` as the node
-// loaded it, as a compute step's pass does (autkComputeScopes).
+// A map node's run hands each pass to autk-grammar's own compute adapter. The
+// run's database, autk-db, keeps a building as a GeometryCollection of its
+// parts, so the adapter reads a `fromFeature` table but its `dataRef` as the
+// node handed it to the run, from its data adapter's cache (autk-grammar
+// 5.2.0), as a compute step's pass reads it.
 describe("a map node's pass reads its fromFeature tables as a compute step's pass reads them", () => {
   /** A building as autk-db keeps one: a GeometryCollection of its parts, their tags in `properties.parts`. */
   const asAutkDbBuilding = (feature: any) => ({
@@ -526,11 +526,12 @@ describe("a map node's pass reads its fromFeature tables as a compute step's pas
       { name: 'blocks', type: 'buildings', features: BLOCKS },
       { name: 'streets', type: 'roads', features: STREETS },
     ];
-    // The map node's run: autk-grammar's own compute adapter, over a database
-    // that exports each table as autk-db does.
+    // The map node's run: autk-grammar's own compute adapter, made as the
+    // grammar makes it, with its data adapter's cache, over a database that
+    // exports each table as autk-db does.
     const { createComputeAdapter } = jest.requireMock('@urban-toolkit/autk-grammar');
     grammarComputes.on = true;
-    grammarComputes.adapter = () => createComputeAdapter(new Map(), new Map());
+    grammarComputes.adapter = (sources) => createComputeAdapter(new Map(), new Map(), sources);
     drawnExports.of = (table, handed) => (table === 'blocks' ? handed.map(asAutkDbBuilding) : handed);
   });
 

@@ -346,6 +346,26 @@
       "name": "a compute pass over a table of a GeoTIFF's name in another workspace is run",
       "spec": { "data": [{ "type": "geotiff", "geotiffFileUrl": "docs/examples/data/niteroi_lst_verao_2001_2024.tif", "outputTableName": "lst", "workspace": "heat" }, { "type": "csv", "csvFileUrl": "lst.csv", "outputTableName": "lst" }], "compute": [{ "dataRef": "lst", "attributes": { "t": "temperature" }, "wgslFunction": "return t;", "outputColumnName": "warming" }] },
       "says": null
+    },
+    {
+      "name": "an OpenStreetMap table the document loads, read as elements by every view of it, is run",
+      "spec": { "data": [{ "type": "osm", "pbfFileUrl": "a.pbf", "outputTableName": "t", "autoLoadLayers": { "layers": ["roads"] } }], "map": { "layerRefs": [{ "dataRef": "t_roads", "osmElements": true }] }, "plot": { "dataRef": "t_roads", "mark": "table", "axis": ["osm_id"], "osmElements": true } },
+      "says": null
+    },
+    {
+      "name": "a table of the node's input read as elements by one view and row by row by another is run",
+      "spec": { "map": { "layerRefs": [{ "dataRef": "input_0", "osmElements": true }, { "dataRef": "input_0", "title": "Rows" }] } },
+      "says": null
+    },
+    {
+      "name": "an OpenStreetMap table the document loads, read as elements by a layer and row by row by a plot, is told so",
+      "spec": { "data": [{ "type": "osm", "pbfFileUrl": "a.pbf", "outputTableName": "t", "autoLoadLayers": { "layers": ["roads"] } }], "map": { "layerRefs": [{ "dataRef": "t_roads", "osmElements": true }] }, "plot": { "dataRef": "t_roads", "mark": "table", "axis": ["highway"] } },
+      "says": "The OpenStreetMap table \"t_roads\" is read as elements (osmElements) by one view of this spec and row by row by another, and a node reads a table its data section loads one way: give every view of it osmElements, or none."
+    },
+    {
+      "name": "a tag set's table in a workspace, read as elements by one layer and row by row by another, is told so by its key",
+      "spec": { "data": [{ "type": "osm", "outputTableName": "box", "workspace": "east", "queryArea": { "bbox": [-74.0125, 40.705, -74.008, 40.7085] }, "tagSets": [{ "name": "cafes", "type": "points", "tags": [{ "key": "amenity" }] }] }], "map": { "workspace": "east", "layerRefs": [{ "dataRef": "box_cafes_points", "osmElements": true }, { "dataRef": "box_cafes_points", "title": "Rows", "osmElements": false }] } },
+      "says": "The OpenStreetMap table \"east/box_cafes_points\" is read as elements (osmElements) by one view of this spec and row by row by another, and a node reads a table its data section loads one way: give every view of it osmElements, or none."
     }
   ]
 }

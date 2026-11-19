@@ -92,7 +92,9 @@ const HIGH = FRAMED.eye[2];
 /**
  * The view turned round *lookAt* on the ground: the eye *distance* away from
  * it, *pitch* degrees from straight down, facing *bearing* degrees clockwise
- * from north, with that heading up the screen.
+ * from north, with that heading up the screen: its up direction across its
+ * line of sight, toward the far side of the view, as autk-map's own tilt
+ * leaves it.
  */
 function turned(lookAt: number[], distance: number, pitch: number, bearing: number): View {
   const p = pitch * DEGREE;
@@ -104,7 +106,7 @@ function turned(lookAt: number[], distance: number, pitch: number, bearing: numb
       distance * Math.cos(p),
     ],
     lookAt: [lookAt[0], lookAt[1], 0],
-    up: [Math.sin(b), Math.cos(b), 0],
+    up: [Math.cos(p) * Math.sin(b), Math.cos(p) * Math.cos(b), Math.sin(p)],
   };
 }
 

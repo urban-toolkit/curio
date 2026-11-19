@@ -12,6 +12,16 @@
       "kind": "data"
     },
     {
+      "name": "workspaces set where the sources load, and describe no step of their own",
+      "spec": "{\"workspaces\": [{\"coordinateFormat\": \"EPSG:3857\", \"precisionGrid\": 1}], \"data\": [{\"type\": \"sql\", \"outputTableName\": \"a\", \"query\": \"SELECT 1 AS a\"}]}",
+      "kind": "data"
+    },
+    {
+      "name": "workspaces alone describe no step",
+      "spec": "{\"workspaces\": [{\"coordinateFormat\": \"EPSG:3857\", \"precisionGrid\": 1}]}",
+      "kind": "unknown"
+    },
+    {
       "name": "a key no family names changes nothing",
       "spec": "{\"data\": [{\"type\": \"osm\"}], \"title\": \"Loop\"}",
       "kind": "data"

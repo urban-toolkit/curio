@@ -164,7 +164,7 @@ def test_the_server_compiled_load_hands_on_the_layers(example, node_id, extract,
         _assert_osm_ids(layer)
 
 
-AUTK_GRAMMAR_VERSION = "5.0.0"
+AUTK_GRAMMAR_VERSION = "5.2.0"
 
 #: Four readings at the corners of a box about 1.1 km by 1.5 km in the Chicago
 #: Loop, binned twice into 3 columns by 2 rows over their extent: each cell of

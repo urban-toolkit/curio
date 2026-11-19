@@ -80,17 +80,41 @@ export const failedDraws: { error: Error | null } = { error: null };
  * last one returned, as autk-grammar's engine does: not unless a test sets
  * it. The stand-in adapter runs none of them, unless a test gives the grammar
  * an adapter of its own (`adapter`, made as each grammar is, such as
- * autk-grammar's `createComputeAdapter`); a node that wraps the adapter runs
- * its wrapper. A run whose database exports its tables (`drawnExports`) has
- * that database before its passes run.
+ * autk-grammar's `createComputeAdapter`, handed the cache of the grammar's
+ * data adapter, `sources`, as autk-grammar 5.2.0 makes its own); a node that
+ * wraps the adapter runs its wrapper. A run whose database exports its tables
+ * (`drawnExports`) has that database before its passes run, and puts each
+ * GeoJSON source of its spec in `sources` through the grammar's own data
+ * adapter (`createDataAdapter`, the build the app bundles), as its run loads
+ * one, so a pass reads a `fromFeature` table as the source gave it.
  */
-export const grammarComputes: { on: boolean; adapter: null | (() => any) } = { on: false, adapter: null };
+export const grammarComputes: { on: boolean; adapter: null | ((sources: Map<string, any>) => any) } = {
+  on: false, adapter: null,
+};
+
+/**
+ * Put each GeoJSON source of *spec* in *sources*, the cache of the grammar's
+ * data adapter, through the grammar's own `createDataAdapter`, on *context*,
+ * a database that exports its tables (`drawnExports`); nothing when the
+ * grammar module offers no data adapter.
+ */
+async function handedToTheDataAdapter(sources: Map<string, any>, spec: any, context: any): Promise<void> {
+  const { createDataAdapter } = jest.requireMock('@urban-toolkit/autk-grammar') as { createDataAdapter?: any };
+  if (typeof createDataAdapter !== 'function') return;
+  const adapter = createDataAdapter(undefined, sources);
+  for (const source of Array.isArray(spec?.data) ? spec.data : []) {
+    if (source?.type === 'geojson' && Array.isArray(source.geojsonObject?.features)) await adapter.resolveSource(context, source);
+  }
+  await context.setWorkspace('autk');
+}
 
 export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string, unknown>) => {
   const handlers: Record<string, (event: any) => void> = {};
   const highlights: Array<[string, number[]]> = [];
   const highlightMaps: Array<string | number | undefined> = [];
   const plotSelections: Array<[string, number[]]> = [];
+  // The cache of the grammar's data adapter, which its compute adapter reads.
+  const grammarSources = new Map<string, any>();
   const grammar: any = {
     data: {},
     interactions: {
@@ -111,7 +135,7 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
     clearHighlightOnPlot: jest.fn((plot: string) => { plotSelections.push([plot, []]); }),
     // Where autk-grammar keeps the adapter its run hands each compute pass to.
     computeAdapter: grammarComputes.adapter
-      ? grammarComputes.adapter()
+      ? grammarComputes.adapter(grammarSources)
       : { resolveCompute: jest.fn(async (context: unknown) => context) },
   };
   // autk-grammar 5's destroy() lets go of its engine, and with it the database.
@@ -153,6 +177,9 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
       context.workspace = 'autk';
       context.getCurrentWorkspace = () => context.workspace;
       context.setWorkspace = async (name: string) => { context.workspace = name; };
+      // autk-db's CRS, and a load whose table the export above stands for.
+      context.getWorkspaceConfiguration = () => ({ coordinateFormat: 'EPSG:3395', precisionGrid: 0.01 });
+      context.loadGeojson = async () => undefined;
       context.getLayer = async (name: string) => {
         const source = sources.find((s) => s.outputTableName === name && workspaceOf(s) === context.workspace);
         if (!source) throw new Error(`Table ${name} not found.`);
@@ -161,6 +188,7 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
     }
     if (grammarComputes.on) {
       let context = grammar.grammarEngine.context;
+      if (exportOf) await handedToTheDataAdapter(grammarSources, spec, context);
       for (const pass of Array.isArray(spec?.compute) ? spec.compute : []) {
         context = await grammar.computeAdapter.resolveCompute(context, pass);
       }

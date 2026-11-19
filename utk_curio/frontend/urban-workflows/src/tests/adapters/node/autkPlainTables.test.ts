@@ -9,7 +9,8 @@
  *
  * The sandbox's loader is the JavaScript `compileDataSpecToAutkDbJs` writes,
  * run here as the sandbox runs it: its imports dropped, autk-db's stood in and
- * autk-grammar's data entry's own `enterWorkspace` and `tableKey` handed in.
+ * autk-grammar's data entry's own `createDataAdapter`, `enterWorkspace` and
+ * `tableKey` handed in.
  * The browser's loader is `loadSpecLayers`. autk-db is a stand-in that keeps
  * each table in the workspace it was loaded into, a CSV or JSON table a layer
  * of points when its source names geometry columns and a table with no layer
@@ -70,7 +71,7 @@ import { compileDataSpecToAutkDbJs } from "../../../adapters/node/autkDataCompil
 import { loadSpecLayers } from "../../../adapters/node/autkLayerMaterialize";
 
 /** What the sandbox's code imports of autk-grammar's data entry, its own. */
-const { enterWorkspace, tableKey } = require("@urban-toolkit/autk-grammar/data");
+const { createDataAdapter, enterWorkspace, tableKey } = require("@urban-toolkit/autk-grammar/data");
 
 /** Ridership by station, a CSV with no geometry columns; the stations, one with them; and stops, JSON with none, in `east`. */
 const SECTION = [
@@ -111,9 +112,9 @@ async function runInSandbox(sources: any[]): Promise<any[]> {
   // The engine's own AsyncFunction: babel compiles an `async function` written
   // in this file to a generator, whose constructor is plain Function.
   const AsyncFunction = new Function("return (async () => {}).constructor")();
-  return new AsyncFunction("AutkDb", "DEFAULT_WORKSPACE_COORDINATE_FORMAT", "enterWorkspace", "tableKey", body)(
-    mockPlainTablesDb, "EPSG:3395", enterWorkspace, tableKey,
-  );
+  return new AsyncFunction(
+    "AutkDb", "DEFAULT_WORKSPACE_COORDINATE_FORMAT", "createDataAdapter", "enterWorkspace", "tableKey", body,
+  )(mockPlainTablesDb, "EPSG:3395", createDataAdapter, enterWorkspace, tableKey);
 }
 
 beforeEach(() => {

@@ -63,18 +63,22 @@ const mockLoadedIn: string[] = [];
 /** Whether loadGeoTiff fails, as autk-db's does for a file the server does not have. */
 let mockFileMissing = false;
 
-const mockCreateDataAdapter = jest.fn((..._args: any[]) => ({
-  // As autk-grammar 5's adapter loads a geotiff source: autk-db's loadGeoTiff,
-  // with every key of the source but its type and its workspace.
-  resolveSource: jest.fn(async (db: any, source: any) => {
-    mockResolved.push({ db, source });
-    if (source.type === "geotiff") {
-      const { type: _type, workspace: _workspace, ...params } = source;
+const mockCreateDataAdapter = jest.fn((...args: any[]) => {
+  // Every other source as the grammar's own adapter loads it.
+  const grammar = jest.requireActual("@urban-toolkit/autk-grammar/data").createDataAdapter(...args);
+  return {
+    // As autk-grammar 5's adapter loads a geotiff source: autk-db's loadGeoTiff,
+    // with every key of the source but its type and its workspace, in its workspace.
+    resolveSource: jest.fn(async (db: any, source: any) => {
+      mockResolved.push({ db, source });
+      if (source.type !== "geotiff") return grammar.resolveSource(db, source);
+      const { type: _type, workspace, ...params } = source;
+      await jest.requireActual("@urban-toolkit/autk-grammar/data").enterWorkspace(db, workspace);
       await db.loadGeoTiff(params);
-    }
-    return db;
-  }),
-}));
+      return db;
+    }),
+  };
+});
 
 class mockAutkDb {
   /** The workspace the database works in; autk-db finds a table in it alone. */
@@ -205,8 +209,10 @@ describe("the sandbox's loader", () => {
     await sandboxLoad(SOURCES);
     expect(mockCreateDataAdapter).toHaveBeenCalledTimes(1);
     const url = `${SANDBOX_BACKEND_URL_TOKEN}/file/${FILE}`;
-    expect(mockResolved.map(({ source }) => source)).toEqual([{ ...GEOTIFF, geotiffFileUrl: url }]);
+    // The extent's layer, then the GeoTIFF, in one database.
+    expect(mockResolved.map(({ source }) => source)).toEqual([SOURCES[0], { ...GEOTIFF, geotiffFileUrl: url }]);
     expect(mockResolved[0].db).toBeInstanceOf(mockAutkDb);
+    expect(mockResolved[1].db).toBe(mockResolved[0].db);
     // autk-db is handed the source's own keys: the file's CRS, the most cells
     // it decodes and how it shrinks a larger raster.
     expect(mockLoaded).toEqual([{
@@ -249,8 +255,12 @@ describe("the in-browser loader", () => {
   test("loads a file of the repository through the data entry's data adapter, fetched from the backend", async () => {
     await loadSpecLayers({ data: forTheBrowser(SOURCES) });
     expect(mockCreateDataAdapter).toHaveBeenCalledTimes(1);
-    expect(mockResolved.map(({ source }) => source)).toEqual([{ ...GEOTIFF, geotiffFileUrl: `${BACKEND}/file/${FILE}` }]);
+    // The extent's layer, then the GeoTIFF, in one database.
+    expect(mockResolved.map(({ source }) => source)).toEqual([
+      SOURCES[0], { ...GEOTIFF, geotiffFileUrl: `${BACKEND}/file/${FILE}` },
+    ]);
     expect(mockResolved[0].db).toBeInstanceOf(mockAutkDb);
+    expect(mockResolved[1].db).toBe(mockResolved[0].db);
     expect(mockLoaded.map((params) => [params.outputTableName, params.geotiffFileUrl])).toEqual([
       ["lst", `${BACKEND}/file/${FILE}`],
     ]);

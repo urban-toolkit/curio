@@ -1,5 +1,5 @@
 {
-  "description": "The tables of the node's input a document's data section reads: each table a heatmap bins (joinDataRef) or a join reads (dataRef, joinDataRef), by its key in the entry's workspace, that none of the section's own sources loads, each once, in the order the section first reads them. sectionInputTables in autkDataCompile.ts and section_input_tables in execution/autk_spec_kind.py both run these.",
+  "description": "The tables of the node's input a document's data section reads: each table a heatmap bins (joinDataRef), a join reads (dataRef, joinDataRef), or an update or a drop changes (dataRef), by its key in the entry's workspace, that none of the section's own sources loads (an OSM area's layers and tag sets among them), each once, in the order the section first reads them. sectionInputTables in autkDataCompile.ts and section_input_tables in execution/autk_spec_kind.py both run these.",
   "cases": [
     {
       "name": "a section of its own sources reads no input table",
@@ -75,6 +75,27 @@
     {
       "name": "a document with no data section reads none",
       "spec": { "map": { "layerRefs": [{ "dataRef": "input_0" }] } },
+      "reads": []
+    },
+    {
+      "name": "an update and a drop read a table of the input, and a SQL source's table is the section's",
+      "spec": { "data": [
+        { "type": "update", "dataRef": "input_0", "strategy": "update", "idColumn": "properties.zone", "geojsonObject": { "type": "FeatureCollection", "features": [] } },
+        { "type": "sql", "outputTableName": "busy", "query": "SELECT * FROM input_0", "layerType": "polygons" },
+        { "type": "heatmap", "joinDataRef": "busy", "outputTableName": "density", "near": { "distance": 200 }, "grid": { "rows": 2, "columns": 2 } },
+        { "type": "drop", "dataRef": "input_1", "workspace": "east" }
+      ] },
+      "reads": ["input_0", "east/input_1"]
+    },
+    {
+      "name": "an OSM area's tag sets are the section's tables",
+      "spec": { "data": [
+        {
+          "type": "osm", "outputTableName": "box", "queryArea": { "bbox": [-74.0125, 40.705, -74.008, 40.7085] },
+          "tagSets": [{ "name": "cafes", "type": "points", "tags": [{ "key": "amenity", "value": "cafe" }] }]
+        },
+        { "type": "heatmap", "joinDataRef": "box_cafes_points", "outputTableName": "density", "near": { "distance": 200 }, "grid": { "rows": 2, "columns": 2 } }
+      ] },
       "reads": []
     }
   ]

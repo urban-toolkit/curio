@@ -29,8 +29,9 @@ DOCUMENTS = {
             {"type": "update", "dataRef": "sales", "strategy": "update", "idColumn": "month",
              "jsonObject": [{"month": "Jan", "total": 4}]},
             {"type": "sql", "outputTableName": "totals", "query": "SELECT month, total FROM sales"},
+            {"type": "geojson", "outputTableName": "zones", "geojsonFileUrl": "data/zones.geojson"},
             {"type": "sql", "outputTableName": "busy", "layerType": "polygons",
-             "query": "SELECT properties->>'zone' AS zone, geometry FROM input_0"},
+             "query": "SELECT properties->>'zone' AS zone, geometry FROM zones"},
             {"type": "drop", "dataRef": "sales"},
         ],
         "plot": {"dataRef": "totals", "mark": "bar", "axis": ["month", "total"]},
@@ -117,6 +118,7 @@ def test_the_reply_schema_keeps_each_key(flavor, name):
 
 
 def test_the_autark_skill_names_each_key():
+    from utk_curio.backend.app.agents.domain import contracts
     from utk_curio.backend.tests._support.prompt_files import prompt_text
 
     text = prompt_text("autark/SKILL.md")
@@ -125,11 +127,16 @@ def test_the_autark_skill_names_each_key():
     # Each new source is a kind of its own, in the schema's words.
     for kind in ("sql", "update", "drop"):
         assert any(line.startswith(f'  - "{kind}": ') for line in text.splitlines()), kind
-    # A document's workspaces, each with every field the schema gives one.
+    # A document's workspaces, then each field the schema gives a workspace's
+    # entry, in the schema's words.
     lines = text.splitlines()
     [line] = [row for row in lines if row.startswith('- "workspaces":')]
     at = lines.index(line)
-    assert [row.split('"')[1] for row in lines[at + 1:at + 4]] == ["name", "coordinateFormat", "precisionGrid"], lines[at:at + 4]
+    fields = contracts._definition(contracts.load_autk_schema(), "WorkspaceSpec")["properties"]
+    assert {"name", "coordinateFormat", "precisionGrid"} <= set(fields)
+    assert lines[at + 1:at + 1 + len(fields)] == [
+        f'  - "{name}": {field["description"]}' for name, field in fields.items()
+    ], lines[at:at + 1 + len(fields)]
 
 
 @pytest.mark.parametrize("document, said", [
