@@ -468,8 +468,20 @@ def assert_raster_cells_follow_their_values(
 # drawing's and the port markers' horizontal extents on screen.
 _AUTK_DRAWING_FIT_JS = """(id) => {
     const map = document.getElementById('autk-grammar-map-' + id);
-    const drawing = map || document.getElementById('autk-grammar-plot-' + id);
-    if (!drawing) return null;
+    const first = map || document.getElementById('autk-grammar-plot-' + id);
+    if (!first) return null;
+    // A node of several views draws them in a grid of panes, which fills the
+    // body as one view does, each view filling its own pane.
+    const grid = first.closest('[data-curio-autk-views]');
+    const drawing = grid || first;
+    const panes = grid ? [...grid.querySelectorAll('[data-curio-autk-pane]')].map((pane) => {
+        const view = pane.firstElementChild;
+        return {
+            pane: pane.dataset.curioAutkPane,
+            size: [pane.clientWidth, pane.clientHeight],
+            drawing: view ? [view.offsetWidth, view.offsetHeight] : null,
+        };
+    }) : [];
     const mount = drawing.closest('.curio-content-mount');
     const node = drawing.closest('.react-flow__node');
     const box = drawing.getBoundingClientRect();
@@ -478,11 +490,12 @@ _AUTK_DRAWING_FIT_JS = """(id) => {
         return {side: m.dataset.curioPortMarker, x: [r.left, r.right]};
     }) : [];
     return {
-        kind: map ? 'map' : 'plot',
+        kind: grid ? 'views' : map ? 'map' : 'plot',
         drawing: [drawing.offsetWidth, drawing.offsetHeight],
         body: mount ? [mount.clientWidth, mount.clientHeight] : null,
         x: [box.left, box.right],
         markers,
+        panes,
     };
 }"""
 
@@ -495,7 +508,8 @@ def assert_autark_drawing_fits(page, node_id: str, *, timeout: float = 5000) -> 
     a map's edge or a plot's axis. A drawing taller than the body runs on under the
     node's footer, where it cannot be seen or picked, and a map is then centred
     below the middle of what shows (#534). A node with no drawing is left to
-    the checks that expect one.
+    the checks that expect one. A node of several views is held to the same
+    rule twice: its grid of panes fills the body, and each view fills its pane.
     """
     deadline = time.monotonic() + timeout / 1000
     while True:
@@ -517,6 +531,12 @@ def assert_autark_drawing_fits(page, node_id: str, *, timeout: float = 5000) -> 
         f"Autark node {node_id}: its {fit['kind']} is {dw}x{dh} px in a {bw}x{bh} px "
         f"node body, so it does not fill the body"
         + (f" and {dh - bh} px of it are hidden" if dh > bh else "")
+    )
+    unfilled = [pane for pane in fit.get("panes") or []
+                if not pane["drawing"] or not all(abs(d - s) <= 1 for d, s in zip(pane["drawing"], pane["size"]))]
+    assert not unfilled, (
+        f"Autark node {node_id}: views that do not fill their panes: "
+        + "; ".join(f"{pane['pane']} is {pane['drawing']} px in a {pane['size']} px pane" for pane in unfilled)
     )
     assert fit["markers"], (
         f"Autark node {node_id}: no port markers found, so nothing shows they clear its {fit['kind']}"
