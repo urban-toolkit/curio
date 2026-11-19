@@ -369,6 +369,88 @@ def test_the_server_compiled_load_builds_every_heatmap_aggregate_from_the_readin
             item.close()
 
 
+def test_the_server_compiled_load_bins_a_table_of_the_nodes_input(tmp_path, monkeypatch):
+    """A heatmap that bins ``input_0``, the node's input: the readings a Python
+    node returned, stored as their GeoDataFrame is, which the sandbox gives the
+    run as ``input_0``, as it gives a JavaScript node its input. The load finds
+    them there, loads them first, so they give the workspace its extent as a
+    table the section loads first does, bins them, and hands on the heatmap
+    alone, not the readings again."""
+    import geopandas as gpd
+    import numpy as np
+    from shapely.geometry import Point
+
+    from utk_curio.cli import dependencies
+    from utk_curio.common.autk_data_compiler import compile_data_spec
+    from utk_curio.sandbox.app.worker import _worker_init, execute_js_code
+    from utk_curio.sandbox.util.parsers import load_from_duckdb, save_to_duckdb
+    from utk_curio.sandbox.util.rasters import envelope_arrays
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setenv("FLASK_BACKEND_HOST", "curio-backend.invalid")
+    monkeypatch.setenv("FLASK_BACKEND_PORT", "1")
+    dependencies.seed_duckdb_extensions()
+    _worker_init()
+    readings = gpd.GeoDataFrame(
+        {"db": [db for _east, _north, db in LEVELS]},
+        geometry=[Point(LOOP[0] + east, LOOP[1] + north) for east, north, _db in LEVELS],
+        crs="EPSG:3395",
+    )
+    stored = save_to_duckdb(readings, node_id="readings", session_id=None)
+    of_the_input = {"data": [{**LEVEL_HEATMAP["data"][1], "joinDataRef": "input_0"}]}
+    result = execute_js_code(
+        _NO_SOCKET + compile_data_spec(json.dumps(of_the_input)), stored, "AUTK_GRAMMAR", "geodataframe",
+        launch_dir=str(REPO_ROOT), session_id=None,
+    )
+
+    assert result["output"]["path"], result["stderr"]
+    loaded = load_from_duckdb(result["output"]["path"], session_id=None)
+    assert [(item.get("dataType"), item.get("layerName")) for item in loaded] == [("raster", "noise")]
+    grid, _bands, cells = envelope_arrays(loaded[0])
+    assert grid == {"crs": "EPSG:3395", "width": COLUMNS, "height": ROWS, "originX": LOOP[0],
+                    "originY": LOOP[1] + ROWS * CELL, "resX": CELL, "resY": -CELL}
+    assert [band["label"] for band in loaded[0]["data"]["features"][0]["properties"]["bands"]] == [
+        f"{fn}_input_0" for fn in AGGREGATES
+    ]
+    expected = _cells_from_the_levels()
+    for fn, band in zip(AGGREGATES, cells):
+        np.testing.assert_allclose(band, expected[fn], rtol=1e-6, err_msg=f"the {fn} band's cells")
+
+
+def test_the_server_compiled_load_fails_on_a_table_its_input_does_not_carry(tmp_path, monkeypatch):
+    """A heatmap of a table neither the section loads nor the input carries
+    fails the load, naming it, before anything loads."""
+    import geopandas as gpd
+    from shapely.geometry import Point
+
+    from utk_curio.cli import dependencies
+    from utk_curio.common.autk_data_compiler import compile_data_spec
+    from utk_curio.sandbox.app.worker import _worker_init, execute_js_code
+    from utk_curio.sandbox.util.parsers import save_to_duckdb
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setenv("FLASK_BACKEND_HOST", "curio-backend.invalid")
+    monkeypatch.setenv("FLASK_BACKEND_PORT", "1")
+    dependencies.seed_duckdb_extensions()
+    _worker_init()
+    stored = save_to_duckdb(
+        gpd.GeoDataFrame({"db": [61]}, geometry=[Point(LOOP[0], LOOP[1])], crs="EPSG:3395"),
+        node_id="readings", session_id=None,
+    )
+    of_another = {"data": [{**LEVEL_HEATMAP["data"][1], "joinDataRef": "labels"}]}
+    result = execute_js_code(
+        _NO_SOCKET + compile_data_spec(json.dumps(of_another)), stored, "AUTK_GRAMMAR", "geodataframe",
+        launch_dir=str(REPO_ROOT), session_id=None,
+    )
+    assert not result["output"]["path"]
+    assert result["stderr"].startswith(
+        'The heatmap "noise" bins "labels", a table its data section does not load '
+        "and the node's input does not carry."
+    ), result["stderr"]
+
+
 #: Each reading's peak, this many decibels above its level.
 PEAK = 10
 
