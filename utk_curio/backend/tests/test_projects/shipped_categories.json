@@ -412,6 +412,18 @@
       "Rasters"
     ]
   },
+  "39-autark-sidewalk-problems-heatmap": {
+    "tags": [
+      "Autark",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries",
+      "OpenStreetMap",
+      "Rasters"
+    ]
+  },
   "dataflows/autk-map": {
     "tags": [
       "Autark",

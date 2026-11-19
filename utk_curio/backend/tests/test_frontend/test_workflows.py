@@ -39,6 +39,9 @@ from .utils import (
     autark_map_framing,
     assert_editor_panes_clear_of_markers,
     assert_in_view,
+    assert_raster_darkest_in,
+    _assert_legend_reads,
+    _assert_legend_title,
     at_fraction,
     bar_boxes,
     brush_area,
@@ -453,6 +456,20 @@ PARK_AREA_WITHIN_500_M = "park area within about 500 m (km²)"
 SUMMER_2020_2024 = "summer temperature, 2020 to 2024 (°C)"
 NITEROI_SUMMERS = ("docs", "examples", "data", "niteroi_lst_verao_2001_2024.tif")
 NITEROI_PARKS = ("docs", "examples", "data", "niteroi_parks.geojson")
+
+#: Example 39, where sidewalk problems cluster in the Loop, and the nodes its
+#: own test reads: the Python step that keeps the Loop's problem labels, the
+#: data node that bins them into a heatmap, the map of the heatmap and the
+#: Python step that lists its cells; the label types the first step keeps, and
+#: the columns of the cells' table.
+EXAMPLE_39 = "39-autark-sidewalk-problems-heatmap.json"
+LOOP_PROBLEMS = "loop-problems"
+PROBLEM_HEATMAP = "problem-heatmap"
+PROBLEM_MAP = "problem-map"
+PROBLEM_CELLS = "problem-cells"
+PROBLEM_TYPES = {"NoCurbRamp", "NoSidewalk", "Obstacle", "SurfaceProblem"}
+PROBLEM_LABELS = "problem labels within about 100 m"
+MEAN_SEVERITY = "mean severity"
 
 #: Example 33, SAM 3 on the same walk's frames and the walk cut into blocks,
 #: and the nodes its own test reads.
@@ -2032,6 +2049,60 @@ class TestWorkflowCanvas:
         record_property("cells_on_land", len(cells))
         record_property("slope_c_per_km2", round(float(np.polyfit(area, heat, 1)[0]), 3))
         record_property("correlation", round(float(np.corrcoef(area, heat)[0, 1]), 3))
+
+    @pytest.mark.only_workflows(EXAMPLE_39)
+    def test_the_loops_problem_labels_are_binned_drawn_and_listed_by_cell(self, loaded_workflow, record_property):
+        """Example 39 as it ships: its Python step keeps Project Sidewalk's
+        problem labels in the Loop's box, and its Autark data node bins them,
+        the table of its input, into a heatmap whose cells count the labels
+        within about 100 m of their center. The map draws the counts in reds:
+        its legend, titled as its layer, runs from 0 to the greatest count, and
+        its darkest pixels lie in a cell that holds it. The Python step lists
+        each cell that holds labels once, the most first: each count a whole
+        number no greater than the labels kept, each mean severity on Project
+        Sidewalk's 1 to 3 where the labels have one. The labels kept, the cells
+        that hold labels and the greatest count with its place are recorded as
+        the run's properties, which the walkthrough states."""
+        page = self.page
+        self._execute_all_playable_nodes()
+
+        documents = {node.id: json.loads(node.content) for node in self.spec.nodes
+                     if node.id in (PROBLEM_HEATMAP, PROBLEM_MAP)}
+        grid = documents[PROBLEM_HEATMAP]["data"][1]["grid"]
+        rows, columns = grid["rows"], grid["columns"]
+        title = documents[PROBLEM_MAP]["map"]["layerRefs"][0]["title"]
+
+        assert_autark_map_drawn(page, PROBLEM_MAP, timeout=60000, attach_as="the problem labels' heatmap")
+        kept = _stored_rows(page, LOOP_PROBLEMS)
+        kept_types = {label["label_type"] for label in kept}
+        assert kept and kept_types <= PROBLEM_TYPES, sorted(kept_types)
+        cells = _stored_rows(page, PROBLEM_CELLS)
+        counts = [cell[PROBLEM_LABELS] for cell in cells]
+        places = [(int(cell["row"]), int(cell["column"])) for cell in cells]
+        assert 0 < len(cells) < rows * columns, (len(cells), rows, columns)
+        assert all(float(count).is_integer() and 1 <= count <= len(kept) for count in counts), counts
+        assert counts == sorted(counts, reverse=True), counts
+        assert len(set(places)) == len(places), places
+        assert all(0 <= row < rows and 0 <= column < columns for row, column in places), places
+        severities = [cell[MEAN_SEVERITY] for cell in cells if not _empty_cell(cell[MEAN_SEVERITY])]
+        assert severities and all(1 <= severity <= 3 for severity in severities), severities
+
+        # The map's legend runs from no label to the greatest count, and the
+        # darkest of the map's pixels lie in a cell that holds it.
+        peak = cells[0]
+        _assert_legend_title(page, PROBLEM_MAP, title)
+        _assert_legend_reads(page, PROBLEM_MAP, (0, peak[PROBLEM_LABELS]))
+        assert_raster_darkest_in(
+            page, PROBLEM_MAP, rows, columns,
+            [place for place, count in zip(places, counts) if count == counts[0]],
+            attach_as="the heatmap's greatest cell",
+        )
+        record_property("labels_kept", len(kept))
+        record_property("cells_with_labels", len(cells))
+        record_property("cells", rows * columns)
+        record_property("peak_labels", int(peak[PROBLEM_LABELS]))
+        record_property("peak_cell", json.dumps(peak))
+        record_property("top_cells", json.dumps(cells[:8]))
 
     @pytest.mark.only_workflows(EXAMPLE_33)
     def test_a_blocks_player_lights_the_frames_from_its_start_to_where_it_stands(self, loaded_workflow):

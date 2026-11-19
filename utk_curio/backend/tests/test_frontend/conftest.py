@@ -182,6 +182,10 @@ WORKFLOW_FILES = [
     # GeoJSON's parks, on a map, and each cell's park area against its heat
     # in Vega-Lite.
     "docs/examples/37-autark-park-area-summer-heat.json",
+    # Project Sidewalk's problem labels in the Loop, binned as an Autark data
+    # node's input into a heatmap, drawn on a map under the roads and listed
+    # by cell by a Python step.
+    "docs/examples/39-autark-sidewalk-problems-heatmap.json",
 ]
 
 

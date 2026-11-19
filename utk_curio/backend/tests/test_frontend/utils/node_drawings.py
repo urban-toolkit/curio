@@ -463,6 +463,70 @@ def assert_raster_cells_follow_their_values(
     assert problem is None, f"Autark node {node_id}: {problem}, so the raster's cells are not drawn by their values {values}"
 
 
+def _darkest_raster_cells(png: bytes, rows: int, columns: int):
+    """``(cells, box)``: the cells, ``(row, column)`` with the north row and
+    the west column 0, that hold the darkest pixels of an Autark map whose
+    drawing a raster of *rows* by *columns* fills, and the drawing's box; or
+    ``(None, why)``. The drawing is the box of the pixels that differ from the
+    canvas's top-left corner, as ``_raster_cell_colours`` finds it, and a
+    pixel's darkness is its luminance (``_luminance``)."""
+    import numpy as np
+    from PIL import Image, ImageChops
+
+    image = Image.open(BytesIO(png)).convert("RGB")
+    channels = ImageChops.difference(image, Image.new("RGB", image.size, image.getpixel((0, 0)))).split()
+    moved = ImageChops.lighter(ImageChops.lighter(channels[0], channels[1]), channels[2])
+    box = moved.point(lambda v: 255 if v > 8 else 0).getbbox()
+    if not box:
+        return None, f"its {image.size[0]}x{image.size[1]} map canvas is one colour"
+    luminance = np.asarray(image.crop(box), dtype=float) @ np.array([0.2126, 0.7152, 0.0722])
+    height, width = luminance.shape
+    darkest = zip(*np.nonzero(luminance == luminance.min()))
+    return {(int(y) * rows // height, int(x) * columns // width) for y, x in darkest}, box
+
+
+def assert_raster_darkest_in(
+    page, node_id: str, rows: int, columns: int, cells, *, timeout: float = 30000, attach_as: str = "",
+) -> None:
+    """Assert the darkest pixels an Autark map draws lie in *cells*,
+    ``(row, column)`` pairs with the north row and the west column 0, of a
+    raster of *rows* by *columns* that fills the map's drawing, on a
+    sequential scheme that darkens as values grow (such as
+    ``interpolateReds``): *cells* are the cells that hold its greatest value.
+
+    autk-map samples a raster linearly, so the darkest of its pixels is at the
+    center of a greatest cell; a layer drawn over the raster in a lighter
+    colour than the scheme's darkest, such as roads, leaves it so. A raster
+    drawn by another band, on another grid or upside down puts it elsewhere.
+    Read in the frame that renders the map, as captures read it.
+    """
+    import base64
+
+    wanted = {tuple(cell) for cell in cells}
+    deadline = time.monotonic() + timeout / 1000
+    png, problem = None, None
+    while True:
+        url = page.evaluate(_AUTK_MAP_PIXELS_IN_FRAME_JS, node_id)
+        if not url:
+            problem = "it has no map canvas"
+        else:
+            png = base64.b64decode(url.split(",", 1)[1])
+            found, box = _darkest_raster_cells(png, rows, columns)
+            if found is None:
+                problem = box
+            elif not found <= wanted:
+                problem = (f"its darkest pixels lie in the cells {sorted(found)}, not only in {sorted(wanted)} "
+                           f"(drawing box {box}, {rows} rows by {columns} columns)")
+            else:
+                problem = None
+        if problem is None or time.monotonic() >= deadline:
+            break
+        page.wait_for_timeout(500)
+    if problem and attach_as and png:
+        allure.attach(png, name=f"{attach_as}: canvas pixels", attachment_type=allure.attachment_type.PNG)
+    assert problem is None, f"Autark node {node_id}: {problem}, so the raster's greatest cells are not drawn darkest"
+
+
 # An Autark node's drawing (its map canvas or plot div) and the content mount it
 # is shown in, in layout pixels, which the canvas zoom does not scale; then the
 # drawing's and the port markers' horizontal extents on screen.
