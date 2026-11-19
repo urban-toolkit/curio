@@ -718,10 +718,16 @@ def _to_js_value(obj):
     if isinstance(obj, gpd.GeoDataFrame):
         fc = json.loads(obj.to_json())
         # A frame's layer name rides as the FeatureCollection's own `name`, so
-        # a layer chip finds it (curio_layer in util/js_wrapper.mjs).
+        # a layer chip finds it (curio_layer in util/js_wrapper.mjs), and so do
+        # the workspace its table is in and its layer type, as a layer record
+        # names them: a chip finds a table of another workspace by its key, and
+        # an Autark node's data section loads it there (autkDataCompile.ts
+        # inputTablesFrom).
         meta = obj.__dict__.get('metadata')
-        if isinstance(meta, dict) and isinstance(meta.get('name'), str) and meta['name']:
-            fc['name'] = meta['name']
+        if isinstance(meta, dict):
+            for key in ('name', 'workspace', 'layerType'):
+                if isinstance(meta.get(key), str) and meta[key]:
+                    fc[key] = meta[key]
         return fc
     if isinstance(obj, pd.DataFrame):
         return obj.to_dict(orient='records')
