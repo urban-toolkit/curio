@@ -21,6 +21,7 @@ const selects = () =>
     newestAutkSelect: (details: unknown) => any;
     selectsOnLayer: <T>(details: T, layer: string | undefined) => T;
     byAutkLayer: (selections: any[]) => Array<{ layer: string | undefined; selection: any }>;
+    selectsOfView: (details: unknown, view: string) => Record<string, any>;
   };
 
 const pick = (layerRef: string, data: unknown[], priority: number) =>
@@ -97,6 +98,32 @@ describe("reading the selects", () => {
       { layer: "buildings", selection: { ...autark, details: { "autk_selection@city": { ...SEVERAL["autk_selection@city"], priority: 1 } } } },
       { layer: "parks", selection: { ...autark, details: { "autk_selection@1": SEVERAL["autk_selection@1"] } } },
     ]);
+  });
+});
+
+// An interaction edge on a view's dot (`in/out@<id>`) carries that view's
+// selection alone (providers/flow/interactionRoutes).
+describe("the selects one view sent", () => {
+  test("of a node of several views, the view's own select, at priority 1 though another view's is newer", () => {
+    expect(selects().selectsOfView(SEVERAL, "city")).toEqual({
+      "autk_selection@city": { ...SEVERAL["autk_selection@city"], priority: 1 },
+    });
+    // Its own select, newest or not, unchanged when it is the newest.
+    const newest = { "autk_selection@city": pick("buildings", [2], 1), "autk_selection@roads": pick("roads", [0], 0) };
+    expect(selects().selectsOfView(newest, "city")).toEqual({ "autk_selection@city": newest["autk_selection@city"] });
+  });
+
+  test("none of a view that sent none, nor of another node's selects", () => {
+    expect(selects().selectsOfView(SEVERAL, "parks")).toEqual({});
+    // Nor of a view the node does not have.
+    expect(selects().selectsOfView(SEVERAL, "heights")).toEqual({});
+    expect(selects().selectsOfView({ brush: pick("x", [1], 1) }, "city")).toEqual({});
+    expect(selects().selectsOfView(undefined, "city")).toEqual({});
+  });
+
+  test("a node of one view sends its one view's select, which any view's dot carries", () => {
+    const one = { autk_selection: pick("buildings", [1], 1) };
+    expect(selects().selectsOfView(one, "city")).toEqual(one);
   });
 });
 
