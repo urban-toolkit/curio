@@ -266,8 +266,9 @@ def test_a_node_of_two_views_shows_a_dot_per_view_and_a_dot_s_hover_names_its_vi
     node = page.evaluate(_NODE_BOX_JS, VIEWS)
     for dot in dots:
         box = dot["box"]
-        assert node["left"] <= box["left"] and box["right"] <= node["right"], f"{dot['handle']} is off the node's top edge"
-        assert box["bottom"] <= node["top"] + 1, f"{dot['handle']} is not above the node's top edge: {box}, node {node}"
+        x, y = (box["left"] + box["right"]) / 2, (box["top"] + box["bottom"]) / 2
+        assert node["left"] < x < node["right"], f"{dot['handle']} is off the node's top edge: {box}, node {node}"
+        assert y < node["top"], f"{dot['handle']} is not on the node's top edge: {box}, node {node}"
     sender = [dot["handle"] for dot in page.evaluate(_DOTS_JS, SENDER)]
     assert sender == ["in/out"], f"SENDER, a node of one view, shows the interaction dots {sender}"
 

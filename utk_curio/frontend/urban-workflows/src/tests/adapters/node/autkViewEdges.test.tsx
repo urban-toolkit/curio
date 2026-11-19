@@ -160,6 +160,21 @@ test("a selection a plot receives is carried on by the node's links: the plot's 
   await callsFrom(run, from, [['map', 'input_0', [], 0], ['plot', 'heights', [2]]]);
 });
 
+// autk-map lights a pick on the map that made it, and the grammar's links
+// carry it on: after a pick of the node's own, a selection it receives is
+// lit again, though it lights what it lit before, as every selection was.
+test("guard: after a pick of the node's own, the same selection delivered again lights the map again", async () => {
+  const { node, run } = await drawn({ map: VIEWS.map });
+  await node.receive(delivered(2));
+  await waitFor(() => expect(run.calls[run.calls.length - 1]).toEqual(['map', 'input_0', [2], 0]));
+
+  act(() => run.pickOn('city', 'input_0', [0]));
+  const from = run.calls.length;
+  await node.receive(delivered(2));
+
+  await callsFrom(run, from, [['map', 'input_0', [2], 0]]);
+});
+
 test('a draw starts the views over: the next selection lights each view it reaches again', async () => {
   const { node, run } = await drawn(VIEWS);
   await node.receive(delivered(1, 'heights'));
