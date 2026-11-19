@@ -35,9 +35,9 @@ const MAP_ID = '3f2a9c1e-7b4d-4e8a-9c1f-2d6b8e0a4c57';
 const INPUT = { path: 'art-1', dataType: 'geodataframe' };
 /** A map of the node's input. */
 const MAP = JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0' }] } });
-/** Two maps in one document, which a node refuses before anything runs. */
-const TWO_MAPS = JSON.stringify({
-  map: [{ layerRefs: [{ dataRef: 'input_0' }] }, { layerRefs: [{ dataRef: 'input_0' }] }],
+/** Two maps of one id in one document, which a node refuses before anything runs. */
+const TWO_MAPS_OF_ONE_ID = JSON.stringify({
+  map: [{ id: 'city', layerRefs: [{ dataRef: 'input_0' }] }, { id: 'city', layerRefs: [{ dataRef: 'input_0' }] }],
 });
 
 /** An Autark map holding *written*, fed INPUT, inside the real provenance provider. */
@@ -87,7 +87,7 @@ test("an Autark map's run is filed with the kind of the layer it drew, which it 
 });
 
 test('an Autark run that fails is filed with what it read, and as returning an error', async () => {
-  const node = mountMap(TWO_MAPS);
+  const node = mountMap(TWO_MAPS_OF_ONE_ID);
 
   await node.run();
 

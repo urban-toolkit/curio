@@ -211,6 +211,7 @@ const BEHAVIOR_RESULT_KEYS: (keyof NodeBehaviorResult)[] = [
   'untilHandedOn',
   'showLoading',
   'contentComponent',
+  'viewRows',
   'controlsComponent',
   'setOutputCallbackOverride',
   'outputOverride',
@@ -3345,8 +3346,9 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
     });
 
     // A document that writes a key autk-grammar 5 renamed, or one the node does
-    // not run yet, fails before anything is loaded, computed or drawn, with
-    // the sentence the agents' document check says too (contracts/autkGrammar).
+    // not run yet, or whose views autk-grammar refuses, fails before anything
+    // is loaded, computed or drawn, with the sentence the agents' document
+    // check says too (contracts/autkGrammar).
     test.each([
       [
         'a join written with tableRootName',
@@ -3359,14 +3361,23 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         'This spec uses "wglsFunction" at compute[0], which autk-grammar 5 renamed to "wgslFunction".',
       ],
       [
-        'a map in a document with a layout',
-        { layout: { type: 'horizontal' }, map: { layerRefs: [{ dataRef: 'input_0' }] } },
-        'This spec uses "layout", which Curio does not run yet.',
+        'a map in a document with a layout and a link to a map it does not have',
+        {
+          layout: { type: 'horizontal' },
+          map: { id: 'city', layerRefs: [{ dataRef: 'input_0' }] },
+          plot: { id: 'heights', dataRef: 'input_0', mark: 'bar', axis: ['height'] },
+          links: [{ source: 'heights', target: 'town' }],
+        },
+        'Link target "town" is not the id of a map of this specification.',
       ],
       [
-        'a layout beside a data section',
-        { data: [{ type: 'csv', csvFileUrl: 'a.csv', outputTableName: 'a' }], layout: { type: 'horizontal' } },
-        'This spec uses "layout", which Curio does not run yet.',
+        'a layout beside a data section, over two maps of one id',
+        {
+          data: [{ type: 'csv', csvFileUrl: 'a.csv', outputTableName: 'a' }],
+          layout: { type: 'horizontal' },
+          map: [{ id: 'a', layerRefs: [{ dataRef: 'a' }] }, { id: 'a', layerRefs: [{ dataRef: 'a' }] }],
+        },
+        'Two maps or plots have the id "a"; an id names one view.',
       ],
     ])('%s fails the node before anything runs, naming the key', async (_what, spec, said) => {
       // The sandbox answers, as it does for any data-only node, so a node that

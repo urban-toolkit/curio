@@ -71,9 +71,9 @@ const INPUT = { path: 'art-1', dataType: 'geodataframe' };
 const MAP_WRITTEN = '{\n  "map": { "layerRefs": [{ "dataRef": [!! input_0 !!] }] }\n}';
 /** The same document as the editor hands it to a run, the chip resolved. */
 const MAP_RAN = JSON.stringify({ map: { layerRefs: [{ dataRef: 'input_0' }] } });
-/** Two maps in one document, which a node refuses before anything runs. */
-const TWO_MAPS = JSON.stringify({
-  map: [{ layerRefs: [{ dataRef: 'input_0' }] }, { layerRefs: [{ dataRef: 'input_0' }] }],
+/** Two maps of one id in one document, which a node refuses before anything runs. */
+const TWO_MAPS_OF_ONE_ID = JSON.stringify({
+  map: [{ id: 'city', layerRefs: [{ dataRef: 'input_0' }] }, { id: 'city', layerRefs: [{ dataRef: 'input_0' }] }],
 });
 /** Example 06's data node: Back Bay's layers from its extract. */
 const DATA_WRITTEN = JSON.stringify({
@@ -162,13 +162,13 @@ test("a run of an Autark map is filed under the node's own id, with its document
 });
 
 test("a run that fails is listed too, as a code node's failed run is", async () => {
-  const node = mountAutkNode(MAP_ID, TWO_MAPS, { input: INPUT });
+  const node = mountAutkNode(MAP_ID, TWO_MAPS_OF_ONE_ID, { input: INPUT });
 
-  await node.run(TWO_MAPS);
+  await node.run(TWO_MAPS_OF_ONE_ID);
 
   expect(node.lastOutput()).toMatchObject({ code: 'error' });
   expect(node.runs()).toHaveLength(1);
-  expect(node.runs()[0].code).toBe(TWO_MAPS);
+  expect(node.runs()[0].code).toBe(TWO_MAPS_OF_ONE_ID);
 });
 
 test('a data node run in the browser is filed once, though its data section reached the sandbox twice', async () => {

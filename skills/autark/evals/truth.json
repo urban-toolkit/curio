@@ -110,7 +110,7 @@
       "case": 1,
       "name": "refused-spec",
       "kind": "mutant",
-      "source": "utk_curio/backend/tests/test_agents/test_document_validation.py::TestOneViewPerNode::test_a_document_with_a_map_and_a_plot_is_refused_with_the_fix: a document with a map and a plot is refused by the document check",
+      "source": "utk_curio/backend/tests/test_agents/test_autk_grammar_cases.py::test_the_document_check_refuses_it_with_that_sentence[a link whose target names no map]: a link whose target names no map of the document is refused by the document check: the histogram's document with a map of the buildings added, linked to a map id it does not have",
       "fails": [
         4
       ],
@@ -120,7 +120,7 @@
           "nodes": {
             "added": [
               {
-                "content": "{\n  \"plot\": {\n    \"dataRef\": \"table_osm_buildings\",\n    \"mark\": \"bar\",\n    \"axis\": [\n      \"height\",\n      \"@transform\"\n    ],\n    \"title\": \"Chicago Loop building heights\",\n    \"transform\": {\n      \"preset\": \"binning-1d\",\n      \"options\": {\n        \"bins\": 12\n      }\n    },\n    \"events\": [\n      \"brushX\"\n    ]\n  },\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_buildings\"\n      }\n    ]\n  }\n}",
+                "content": "{\n  \"plot\": {\n    \"dataRef\": \"table_osm_buildings\",\n    \"mark\": \"bar\",\n    \"axis\": [\n      \"height\",\n      \"@transform\"\n    ],\n    \"title\": \"Chicago Loop building heights\",\n    \"transform\": {\n      \"preset\": \"binning-1d\",\n      \"options\": {\n        \"bins\": 12\n      }\n    },\n    \"events\": [\n      \"brushX\"\n    ]\n  },\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_buildings\"\n      }\n    ]\n  },\n  \"links\": [\n    {\n      \"source\": \"table_osm_buildings\",\n      \"target\": \"buildings\"\n    }\n  ]\n}",
                 "goal": "Show a brushable histogram of building heights.",
                 "id": "389eda52-e6cf-4c2a-8a6b-c337d5859650",
                 "title": "Building heights",
@@ -153,7 +153,7 @@
             "nodeType": "curio.builtin/autk-grammar",
             "title": "Building heights",
             "goal": "Show a brushable histogram of building heights.",
-            "content": "{\n  \"plot\": {\n    \"dataRef\": \"table_osm_buildings\",\n    \"mark\": \"bar\",\n    \"axis\": [\n      \"height\",\n      \"@transform\"\n    ],\n    \"title\": \"Chicago Loop building heights\",\n    \"transform\": {\n      \"preset\": \"binning-1d\",\n      \"options\": {\n        \"bins\": 12\n      }\n    },\n    \"events\": [\n      \"brushX\"\n    ]\n  },\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_buildings\"\n      }\n    ]\n  }\n}"
+            "content": "{\n  \"plot\": {\n    \"dataRef\": \"table_osm_buildings\",\n    \"mark\": \"bar\",\n    \"axis\": [\n      \"height\",\n      \"@transform\"\n    ],\n    \"title\": \"Chicago Loop building heights\",\n    \"transform\": {\n      \"preset\": \"binning-1d\",\n      \"options\": {\n        \"bins\": 12\n      }\n    },\n    \"events\": [\n      \"brushX\"\n    ]\n  },\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_buildings\"\n      }\n    ]\n  },\n  \"links\": [\n    {\n      \"source\": \"table_osm_buildings\",\n      \"target\": \"buildings\"\n    }\n  ]\n}"
           }
         }
       ]

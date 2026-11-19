@@ -178,6 +178,11 @@
       "says": "Link target \"town\" is not the id of a map of this specification."
     },
     {
+      "name": "links in a document that draws no view are left to the document check",
+      "spec": {"links": [{"source": "heights", "target": "city"}]},
+      "says": null
+    },
+    {
       "name": "links written null are none",
       "spec": {"map": {"id": "city", "layerRefs": [{"dataRef": "buildings"}]}, "plot": {"id": "heights", "dataRef": "buildings", "mark": "bar", "axis": ["height"]}, "links": null},
       "says": null
