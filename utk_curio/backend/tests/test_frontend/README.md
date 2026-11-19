@@ -547,14 +547,18 @@ beside its default one: `<name>.utk-gpu.png`, `<name>.arcade-gpu.png` or `<name>
 - The test-gpu job sets `CURIO_E2E_GPU_KIND` from its runner's name. A frame
   with a baseline of that kind is compared with it. Every other frame, and every
   run without a kind (a local run, a CPU runner), uses the default baseline.
+  The report's card names the baseline each comparison used, and a badge marks
+  a GPU kind's.
+- A kind is for what a GPU model draws, never for a time zone: test-gpu runs in
+  UTC, the time zone of GitHub-hosted and arcade runners, where the time zone
+  of utk-gpu and the desktops would move every Vega-Lite time axis (`TZ` in its
+  environment, as in the CPU jobs').
 - A CPU job has no kind because it draws alike on every runner, a utk desktop
   included: its Chrome draws with SwiftShader and keeps Chrome's Vulkan off,
   which would otherwise draw with the desktop's NVIDIA GPU
   (`../_support/chrome_flags.py`), and the job runs in UTC, the time zone of
   GitHub-hosted and arcade runners, where a desktop's own would move every
   Vega-Lite time axis (`TZ` in e2e-desktop's and test-isolated's environment).
-  The report's card names the baseline each comparison used, and a badge marks
-  a GPU kind's.
 - A re-mint writes the baseline it compared with, so on utk-gpu it rewrites a
   frame's `.utk-gpu.png` and never its default. When the screen of such a frame
   changes, re-mint it on each kind: the run on the other kind refreshes the
