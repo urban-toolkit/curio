@@ -31,6 +31,8 @@ package's node, is placed by the same rules (2026-11-17), and so is example
 dataflows it is in (2026-11-17). Example 35, the sky seen from the street, is
 placed by the same rules (2026-11-18): its render pass is a GPU compute,
 and so is example 38, Back Bay's and the Loop's solstice sun (2026-11-18).
+Example 39, the sidewalk problems in the Loop, is placed by the same rules
+(2026-11-19).
 The automatic sections must reproduce it from the files alone, and the
 hand-set ones live in the files themselves.
 """
@@ -78,7 +80,7 @@ def _spec(key: str) -> dict:
 
 def test_the_golden_file_covers_every_shipped_dataflow():
     assert set(GOLDEN) == set(SHIPPED)
-    assert len(SHIPPED) == 69
+    assert len(SHIPPED) == 70
 
 
 @pytest.mark.parametrize("key", sorted(SHIPPED))
@@ -104,7 +106,7 @@ def test_sources():
     for entry in SHIPPED.values():
         by_source.setdefault(entry.source, []).append(entry.key)
     assert sorted(by_source[SOURCE_USE_CASE]) == ["09-heterogeneous-data-linked-views"]
-    assert len(by_source[SOURCE_EXAMPLE]) == 37
+    assert len(by_source[SOURCE_EXAMPLE]) == 38
     assert len(by_source[SOURCE_TEST]) == 31
 
 

@@ -1,0 +1,152 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "39-autark-sidewalk-problems-heatmap",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/39-autark-sidewalk-problems-heatmap.json",
+    "sha256": "69bbe531a340e87c705e64ab66858a9cfc57ff0f4e1110be4a9c32cf4d02f93e",
+    "walkthrough": "docs/examples/39-autark-sidewalk-problems-heatmap.md"
+  },
+  "prompt": "Where do sidewalk problems cluster in Chicago's Loop? Load Project Sidewalk's Chicago labels from the Data Catalog, and keep the problem labels (missing curb ramps, missing sidewalks, obstacles and surface problems) inside the Loop's box, from longitude -87.6382474 to -87.6024757 and latitude 41.8673 to 41.8906361, leaving out the ones the validators marked wrong. With Autark, load the Loop's surface and roads from the OpenStreetMap extract in this checkout, docs/examples/data/chicago_loop.osm.pbf, cut to that box, and bin the labels into a heatmap of 24 columns by 21 rows where each cell counts the labels within about 100 m of its center and averages their severity. Draw the counts in reds on a map, under the roads, and give me a table of the cells that hold labels, the most first, with each cell's row and column, the longitude and latitude of its center, its count and the labels' mean severity.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.projectsidewalk.chicago-labels"
+    ],
+    "packages": [],
+    "paths": [
+      "docs/examples/data/chicago_loop.osm.pbf"
+    ]
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "visualization2",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "visualization2",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "visualization2",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.projectsidewalk.chicago-labels"
+      ],
+      "paths": [
+        "docs/examples/data/chicago_loop.osm.pbf"
+      ],
+      "urls": []
+    }
+  },
+  "intents": [
+    {
+      "ref": "analysis2",
+      "mustMention": [
+        "SurfaceProblem"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "analysis1",
+      "mustMention": [
+        "rasterio"
+      ],
+      "outputKind": "dataframe"
+    }
+  ],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/autk-grammar"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T3",
+    "needs": [
+      "gpu"
+    ],
+    "skip": [
+      {
+        "when": "gpu",
+        "reason": "The Autark map needs hardware WebGPU; the plan and apply half of this fixture still runs offline.",
+        "scope": "execution"
+      }
+    ]
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "an agent session, from the example JSON and its walkthrough, 2026-11-19",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids.",
+    "sourceLicences": [
+      {
+        "datasetId": "data.projectsidewalk.chicago-labels",
+        "licence": "Project Sidewalk API terms"
+      }
+    ]
+  },
+  "notes": "A Python step cuts the Data Catalog's labels to the Loop; one grammar node loads the extract and bins the labels of its input into a heatmap, a second draws it, and a Python step reads it as a raster for the cells that hold labels."
+}

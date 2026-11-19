@@ -456,7 +456,9 @@ def test_a_box_spec_loads_the_box_its_extract_is_cut_at_or_one_inside_it():
     the load keeps. The maps of examples 31 and 33 load the West Loop's box
     around the walk, their extract's own, and chicago-rain-wind-routing's loader and
     chicago-loop-layers' OpenStreetMap layers load SCOUT's routing box, their
-    extract's own. Example 34's heatmap loads the tip of Lower Manhattan, a box
+    extract's own. Example 39's heatmap loads the Loop's box, its extract's
+    own, the box its Python step cuts the labels to. Example 34's heatmap
+    loads the tip of Lower Manhattan, a box
     inside that extract. The park shade test dataflow's loader loads two boxes of
     Lower Manhattan's extract: its parks' box, and the box of the buildings
     around them, which reaches the extract's edge; example 35's loader loads
@@ -469,6 +471,7 @@ def test_a_box_spec_loads_the_box_its_extract_is_cut_at_or_one_inside_it():
         ("33-sideseeing-frames-segments-blocks.json", "docs/examples/data/west_loop.osm.pbf"),
         ("34-autark-park-access-heatmap.json", "docs/examples/data/lower_mnt.osm.pbf"),
         ("35-autark-sky-seen-from-the-street.json", "docs/examples/data/lower_mnt.osm.pbf"),
+        ("39-autark-sidewalk-problems-heatmap.json", "docs/examples/data/chicago_loop.osm.pbf"),
         ("dataflows/chicago-loop-layers.json", "docs/examples/data/chicago_downtown.osm.pbf"),
         ("dataflows/chicago-rain-wind-routing.json", "docs/examples/data/chicago_downtown.osm.pbf"),
         ("dataflows/lower-manhattan-park-shade.json", "docs/examples/data/lower_mnt.osm.pbf"),
@@ -479,6 +482,7 @@ def test_a_box_spec_loads_the_box_its_extract_is_cut_at_or_one_inside_it():
         if dataflow in (
             "31-sideseeing-objects-along-a-walk.json",
             "33-sideseeing-frames-segments-blocks.json",
+            "39-autark-sidewalk-problems-heatmap.json",
             "dataflows/chicago-loop-layers.json",
             "dataflows/chicago-rain-wind-routing.json",
         ):
