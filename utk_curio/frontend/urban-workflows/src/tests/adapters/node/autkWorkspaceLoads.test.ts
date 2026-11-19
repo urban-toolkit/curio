@@ -130,16 +130,23 @@ describe("the sandbox's loader", () => {
   });
 
   test("joins the tables of the join's own workspace", async () => {
-    // `east` holds no `lines`: the default workspace's is not east's.
+    // `east` holds no `lines`: the default workspace's is not east's, so the
+    // join reads a table its section does not load, named by its key there.
     const sources = [
       { type: "geojson", outputTableName: "lines", geojsonObject: lines(-87.6) },
       { type: "join", dataRef: "lines", joinDataRef: "lines", workspace: "east" },
     ];
-    await expect(runInSandbox(sources)).rejects.toThrow("spatial join failed - Table lines not found.");
-    // In its own workspace it joins.
+    await expect(runInSandbox(sources)).rejects.toThrow(JOIN_IN_EAST_SAID);
+    // In its own workspace it joins: the default one's lines in the default
+    // one, and east's in east, where the default one holds none.
     await expect(runInSandbox([sources[0], { ...sources[1], workspace: undefined }])).resolves.toHaveLength(1);
+    await expect(runInSandbox([{ ...sources[0], workspace: "east" }, sources[1]])).resolves.toHaveLength(1);
   });
 });
+
+/** What a join in `east` of a table only the default workspace holds fails with. */
+const JOIN_IN_EAST_SAID = 'The join of "east/lines" onto "east/lines" reads "east/lines", a table its data section '
+  + "does not load and the node's input does not carry.";
 
 describe("the browser's loader", () => {
   test("loads each source into its workspace", async () => {
@@ -156,7 +163,8 @@ describe("the browser's loader", () => {
       { type: "geojson", outputTableName: "lines", geojsonObject: lines(-87.6) },
       { type: "join", dataRef: "lines", joinDataRef: "lines", workspace: "east" },
     ];
-    await expect(loadSpecLayers({ data: sources })).rejects.toThrow("spatial join failed - Table lines not found.");
+    await expect(loadSpecLayers({ data: sources })).rejects.toThrow(JOIN_IN_EAST_SAID);
+    await expect(loadSpecLayers({ data: [{ ...sources[0], workspace: "east" }, sources[1]] })).resolves.toHaveLength(1);
   });
 
   test("keeps two workspaces' tables of one name apart, each handed on with its workspace", async () => {
