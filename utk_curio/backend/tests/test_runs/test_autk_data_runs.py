@@ -350,11 +350,14 @@ HEATMAP_OF_THE_INPUT = {"data": [{
 
 
 def _points_and_heatmap(document=None) -> dict:
+    """The readings and the data node below them, whose Save is on, so a run
+    records what it hands on (``save_policy``)."""
     return {
         "name": "Binned readings",
         "nodes": [
             {"id": "points", "type": CODE, "content": POINTS_CODE},
-            {"id": "heat", "type": AUTARK, "content": json.dumps(document or HEATMAP_OF_THE_INPUT)},
+            {"id": "heat", "type": AUTARK, "content": json.dumps(document or HEATMAP_OF_THE_INPUT),
+             "saveOutputDataset": True},
         ],
         "edges": [{"id": "points-heat", "source": "points", "target": "heat"}],
     }

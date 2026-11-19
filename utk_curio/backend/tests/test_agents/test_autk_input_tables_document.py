@@ -17,7 +17,9 @@ import pytest
 AUTK = "curio.builtin/autk-grammar"
 HEATMAP = {"type": "heatmap", "joinDataRef": "input_0", "outputTableName": "density",
            "near": {"distance": 200}, "grid": {"rows": 2, "columns": 3}}
+#: The Loop's surface and roads, loaded as example 07 loads them.
 ROADS = {"type": "osm", "pbfFileUrl": "docs/examples/data/chicago_loop.osm.pbf", "outputTableName": "loop",
+         "queryArea": {"geocodeArea": "Chicago", "areas": ["Loop"]},
          "autoLoadLayers": {"layers": ["surface", "roads"]}}
 
 
