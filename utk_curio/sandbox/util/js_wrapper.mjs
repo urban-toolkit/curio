@@ -39,13 +39,41 @@ console.log = (...args) => {
 // workspaces hold tables of one name, the name names neither, and the chip
 // names one by its key, `<workspace>/<name>` (`autk/<name>` in autk-db's
 // default workspace). An input that is exactly one FeatureCollection with no
-// layer name (a GeoDataFrame on its own) is that layer. The input's circle
-// names it when it is missing. The Python twin, with what an input may carry,
-// is util/input_layers.py.
+// layer name (a GeoDataFrame on its own) is that layer. A dict of frames a
+// Python node returns gives the frame under the key the chip names. The
+// input's circle names it when it is missing. The Python twin, with what an
+// input may carry, is util/input_layers.py.
 const ambiguousLayerMessage = (slot, layer, keys) =>
   `[!! input_${slot}:${layer} !!]: input_${slot} has a layer ${layer} in more than one workspace: `
   + `${keys.join(', ')}. Name one by its key.`;
+const missingLayerMessage = (slot, layer, names) => {
+  const has = names.length > 0 ? `Its layers are ${names.join(', ')}.` : 'It carries no named layers.';
+  return `[!! input_${slot}:${layer} !!]: input_${slot} has no layer ${layer}. ${has}`;
+};
+const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+// A frame as a JavaScript node gets one (worker._to_js_value): a GeoDataFrame
+// as a FeatureCollection, a DataFrame as its rows, which the sandbox reads
+// back as frames (worker._js_value_to_saveable_frame).
+const isFrameValue = (value) => (isPlainObject(value) && value.type === 'FeatureCollection')
+  || (Array.isArray(value) && value.length > 0 && value.every(isPlainObject));
+// The layers of a dict of frames, as a Python node returns one: each frame it
+// holds, named after its key, as the canvas reads such a dict
+// (keyedFramesAsOutputs). Null for anything else: an envelope, a layer record,
+// a FeatureCollection, or a JSON dict, which carries no layers.
+const keyedLayers = (value) => {
+  if (!isPlainObject(value) || 'dataType' in value || isPlainObject(value.geojson) || value.type === 'FeatureCollection') {
+    return null;
+  }
+  const layers = Object.entries(value).filter(([, item]) => isFrameValue(item));
+  return layers.length > 0 ? layers : null;
+};
 const curio_layer = (value, layer, slot = 0) => {
+  const keyed = keyedLayers(value);
+  if (keyed) {
+    const found = keyed.find(([key]) => key === layer);
+    if (found) return found[1];
+    throw new Error(missingLayerMessage(slot, layer, keyed.map(([key]) => key)));
+  }
   const items = value && typeof value === 'object' && !Array.isArray(value)
     && value.dataType === 'outputs' && Array.isArray(value.data)
     ? value.data
@@ -86,9 +114,7 @@ const curio_layer = (value, layer, slot = 0) => {
     throw new Error(ambiguousLayerMessage(slot, layer, same.map(([name, workspace]) => workspaceKey(name, workspace))));
   }
   if (items.length === 1 && named.length === 0 && unnamed.length === 1) return unnamed[0];
-  const names = named.map(([name, workspace]) => keyOf(name, workspace));
-  const has = names.length > 0 ? `Its layers are ${names.join(', ')}.` : 'It carries no named layers.';
-  throw new Error(`[!! input_${slot}:${layer} !!]: input_${slot} has no layer ${layer}. ${has}`);
+  throw new Error(missingLayerMessage(slot, layer, named.map(([name, workspace]) => keyOf(name, workspace))));
 };
 
 // The node's inputs, {input_0: ..., input_1: ...}: each wired circle k is the

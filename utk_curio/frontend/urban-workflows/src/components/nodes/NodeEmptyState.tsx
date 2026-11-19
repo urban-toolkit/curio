@@ -17,6 +17,12 @@ export interface NodeEmptyStateProps {
    * has come, in the step's own words, each on its line under the title.
    */
   progress?: readonly string[];
+  /**
+   * What the node holds that it cannot show, each on its line under the
+   * title: a Data Pool's raster tab gives the raster's size, bands and CRS
+   * (utils/raster/rasterDescription).
+   */
+  lines?: readonly string[];
 }
 
 /**
@@ -34,11 +40,15 @@ export const NodeEmptyState = memo(function NodeEmptyState({
   hint,
   title,
   progress,
+  lines,
 }: NodeEmptyStateProps) {
   const copy = NODE_EMPTY_COPY[reason];
   return (
     <div className={styles.root} data-curio-node-empty={reason}>
       <span className={styles.title}>{title ?? copy.title}</span>
+      {(lines ?? []).map((line, index) => (
+        <span key={`line-${index}`} className={styles.hint} data-curio-node-line="">{line}</span>
+      ))}
       {(progress ?? []).map((line, index) => (
         <span key={index} className={styles.hint} data-curio-node-progress="">{line}</span>
       ))}

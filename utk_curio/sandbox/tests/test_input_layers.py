@@ -56,6 +56,49 @@ def envelopes():
     }
 
 
+def heatmap():
+    """The heatmap example 34's data node builds, ``park_access``, in the
+    envelope a raster is handed on in (``rasterEnvelope`` in
+    ``autkDataCompile.ts``): 3 by 2 cells and one band, the parks within reach
+    of each cell, labelled as autk-db labels a ``count`` over ``tip_parks``.
+    Its cells are 0, 1, 4 on the south row and 2, 7, 12 on the north one,
+    base64 of little-endian float32."""
+    return {
+        "dataType": "raster",
+        "layerName": "park_access",
+        "data": {
+            "type": "FeatureCollection",
+            "bbox": [-8239800, 4968800, -8239500, 4969000],
+            "grid": {"crs": "EPSG:3395", "width": 3, "height": 2, "originX": -8239800, "originY": 4969000,
+                     "resX": 100, "resY": -100},
+            "features": [{
+                "type": "Feature",
+                "geometry": None,
+                "properties": {
+                    "rasterResX": 3,
+                    "rasterResY": 2,
+                    "bands": [{"id": "band_1", "label": "count_tip_parks"}],
+                    "band_1": {"float32le": "AAAAAAAAgD8AAIBAAAAAQAAA4EAAAEBB"},
+                },
+            }],
+        },
+    }
+
+
+def elevation(folder, name="elevation.tif", width=4, height=3):
+    """A Python node's raster: a GeoTIFF of two bands, the first described."""
+    import numpy as np
+    import rasterio
+    from rasterio.transform import from_origin
+
+    path = str(folder / name)
+    with rasterio.open(path, "w", driver="GTiff", width=width, height=height, count=2, dtype="float32",
+                       crs="EPSG:3395", transform=from_origin(0, height * 10, 10, 10)) as target:
+        target.write(np.ones((2, height, width), dtype="float32"))
+        target.set_band_description(1, "elevation_m")
+    return rasterio.open(path)
+
+
 def _layer(value, name, slot=0):
     from utk_curio.sandbox.util.input_layers import curio_layer
 
@@ -193,6 +236,104 @@ class TestAMissingLayer:
             assert str(raised.value) == "[!! input_1:roads !!]: input_1 has no layer roads. It carries no named layers."
 
 
+class TestARasterIsALayer:
+    """A raster an input carries is one of its layers, found by its name as a
+    table is (the editor lists it among them): example 34's heatmap reaches a
+    Python node as a rasterio dataset that keeps its table's name, and a
+    raster on its own with no layer name is that layer, as one frame is."""
+
+    def _handed_on(self):
+        """Example 34's data node's tables and its heatmap: as a run in the
+        browser hands them on, one ``outputs`` envelope, and as a run on the
+        server does, a list of layer records then the heatmap's envelope."""
+        return (
+            {"dataType": "outputs", "data": [*envelopes()["data"], heatmap()]},
+            [*records(), heatmap()],
+        )
+
+    def test_a_heatmap_handed_on_with_tables_is_found_by_its_name(self, tmp_path):
+        import rasterio
+
+        from utk_curio.sandbox.app.worker import _expand_outputs_wrapper
+        from utk_curio.sandbox.util.rasters import rasters_for_python
+
+        for handed_on in self._handed_on():
+            value = rasters_for_python(_expand_outputs_wrapper(handed_on), tmp_path)
+            heat = _layer(value, "park_access")
+            assert isinstance(heat, rasterio.io.DatasetReader)
+            assert heat.descriptions == ("count_tip_parks",)
+            assert heat.read(1).tolist() == [[2.0, 7.0, 12.0], [0.0, 1.0, 4.0]]
+            assert heat.metadata == {"name": "park_access"}
+            # Its tables are found as before.
+            assert _layer(value, "table_osm_roads")["highway"].tolist() == ["primary", "service"]
+
+    def test_a_missing_layer_names_the_heatmap_among_the_layers(self, tmp_path):
+        from utk_curio.sandbox.app.worker import _expand_outputs_wrapper
+        from utk_curio.sandbox.util.rasters import rasters_for_python
+
+        value = rasters_for_python(_expand_outputs_wrapper(self._handed_on()[0]), tmp_path)
+        with pytest.raises(LookupError) as raised:
+            _layer(value, "table_osm_water", 0)
+        assert str(raised.value) == (
+            "[!! input_0:table_osm_water !!]: input_0 has no layer table_osm_water. "
+            "Its layers are table_osm_roads, table_osm_buildings, park_access."
+        )
+
+    def test_a_raster_on_its_own_with_no_layer_name_is_the_layer(self, tmp_path):
+        dem = elevation(tmp_path)
+        try:
+            assert _layer(dem, "elevation") is dem
+            assert _layer([dem], "anything") is dem
+            assert _layer((dem,), "table_osm_roads") is dem
+        finally:
+            dem.close()
+
+    def test_a_raster_named_otherwise_is_not_it(self, tmp_path):
+        from utk_curio.sandbox.util.rasters import rasters_for_python
+
+        heat = rasters_for_python(heatmap(), tmp_path)
+        assert _layer(heat, "park_access") is heat
+        with pytest.raises(LookupError) as raised:
+            _layer(heat, "elevation", 1)
+        assert str(raised.value).endswith("has no layer elevation. Its layers are park_access.")
+
+
+class TestADictOfFrames:
+    """A Python node's dict of frames, as the next Python node gets it: each
+    frame or raster it holds is a layer named after its key, as the editor
+    lists it (``keyedFramesAsOutputs``). A JSON dict carries no layers."""
+
+    def test_a_layer_chip_reads_a_frame_or_a_raster_by_its_key(self, tmp_path):
+        import geopandas as gpd
+        from shapely.geometry import Point
+
+        parks = gpd.GeoDataFrame({"leisure": ["park"]}, geometry=[Point(0, 0)], crs="EPSG:3395")
+        roads = gpd.GeoDataFrame({"highway": ["primary"]}, geometry=[Point(1, 1)], crs="EPSG:3395")
+        dem = elevation(tmp_path)
+        try:
+            value = {"tip_parks": parks, "tip_roads": roads, "elevation": dem}
+            assert _layer(value, "tip_roads") is roads
+            assert _layer(value, "elevation") is dem
+            # One table and a raster are two layers too.
+            assert _layer({"tip_parks": parks, "elevation": dem}, "tip_parks") is parks
+        finally:
+            dem.close()
+
+    def test_a_key_it_does_not_have_names_the_ones_that_are_layers(self, tmp_path):
+        import pandas as pd
+
+        dem = elevation(tmp_path)
+        try:
+            value = {"means": pd.DataFrame({"a": [1]}), "elevation": dem, "count": 3}
+            with pytest.raises(LookupError) as raised:
+                _layer(value, "count", 2)
+            assert str(raised.value) == (
+                "[!! input_2:count !!]: input_2 has no layer count. Its layers are means, elevation."
+            )
+        finally:
+            dem.close()
+
+
 class TestNodeCodeReachesIt:
     """The node's code calls it by name, in process and under isolation."""
 
@@ -316,3 +457,28 @@ class TestTheJavaScriptTwin:
         assert run["error"].startswith(message + "\n"), run["error"]
         run = self._run("return curio_layer(input_0, \"roads\", 1);", {"a": 1})
         assert run["error"].startswith(missing_layer_message(1, "roads", []) + "\n"), run["error"]
+
+    def test_a_dict_of_frames_is_read_by_its_keys(self):
+        """As in Python: each frame of a Python node's dict is a layer named
+        after its key, a GeoDataFrame's as a FeatureCollection and a
+        DataFrame's as its rows, as a JavaScript node gets them."""
+        import geopandas as gpd
+        import pandas as pd
+        from shapely.geometry import Point
+
+        from utk_curio.sandbox.util.input_layers import missing_layer_message
+
+        parks = gpd.GeoDataFrame({"v": [7]}, geometry=[Point(0, 0)], crs="EPSG:4326")
+        roads = gpd.GeoDataFrame({"v": [8]}, geometry=[Point(1, 1)], crs="EPSG:4326")
+        value = {"tip_parks": parks, "tip_roads": roads}
+        run = self._run("return curio_layer(input_0, \"tip_roads\", 0).features[0].properties.v;", value)
+        assert run["success"], run.get("error")
+        assert run["value"] == 8
+        run = self._run("return curio_layer(input_0, \"tip_water\", 1);", value)
+        assert not run["success"]
+        message = missing_layer_message(1, "tip_water", ["tip_parks", "tip_roads"])
+        assert run["error"].startswith(message + "\n"), run["error"]
+        tables = {"means": pd.DataFrame({"a": [1, 2]}), "peaks": pd.DataFrame({"a": [3, 4]})}
+        run = self._run("return curio_layer(input_0, \"peaks\", 0).map((row) => row.a);", tables)
+        assert run["success"], run.get("error")
+        assert run["value"] == [3, 4]

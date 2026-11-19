@@ -131,7 +131,7 @@
     {
       "bidirectional": true,
       "category": "data",
-      "description": "Shows its input as a table and passes the rows on to every node it feeds, marking in an interacted column the rows selected in the views linked to it by interaction edges. Linked to another Data Pool, it passes that pool the marks of the rows its linked column names.",
+      "description": "Shows its input as a table and passes the rows on to every node it feeds, marking in an interacted column the rows selected in the views linked to it by interaction edges. A raster it passes on as it came. Linked to another Data Pool, it passes that pool the marks of the rows its linked column names.",
       "editor": "none",
       "engine": "python",
       "hasCode": false,
@@ -144,7 +144,8 @@
           "cardinality": "[1,n]",
           "types": [
             "DATAFRAME",
-            "GEODATAFRAME"
+            "GEODATAFRAME",
+            "RASTER"
           ]
         }
       ],
@@ -155,7 +156,8 @@
           "cardinality": "1",
           "types": [
             "DATAFRAME",
-            "GEODATAFRAME"
+            "GEODATAFRAME",
+            "RASTER"
           ]
         }
       ],

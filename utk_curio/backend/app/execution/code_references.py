@@ -148,9 +148,10 @@ INPUT_TABLE_PREFIX = "input_"
 #: ``util/input_layers.py``.
 LAYER_HELPER = "curio_layer"
 
-#: The data types of an input that is one frame: a table, as ``curio_layer``
-#: counts one. Kept in sync with ``ONE_FRAME_TYPES`` in ``codeReferences.ts``.
-ONE_FRAME_TYPES = ("dataframe", "geodataframe")
+#: The data types of an input that is one frame: a table or a raster, as
+#: ``curio_layer`` counts one. Kept in sync with ``ONE_FRAME_TYPES`` in
+#: ``codeReferences.ts``.
+ONE_FRAME_TYPES = ("dataframe", "geodataframe", "raster")
 
 #: The grammar of a Vega-Lite chart's spec, as a template names it
 #: (``grammarId``): a JSON document of it writes a name where Vega-Lite reads a

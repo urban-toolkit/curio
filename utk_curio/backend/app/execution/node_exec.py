@@ -90,19 +90,22 @@ def parse_input_slots(raw) -> tuple[int, ...] | None:
 
 
 def parse_input_ref(req_input: dict | None) -> dict:
-    """Normalize the input reference field from execution requests."""
+    """Normalize the input reference field from execution requests. A reference
+    that names no type (an output a dataflow saved before outputs carried
+    theirs restores as its path alone) is read by its path, as any is."""
     result = {'path': '', 'dataType': ''}
     if not req_input:
         return result
-    if req_input.get('dataType') == 'outputs' and 'data' in req_input:
+    data_type = req_input.get('dataType') or ''
+    if data_type == 'outputs' and 'data' in req_input:
         result['path'] = req_input['data']
         result['dataType'] = 'outputs'
     elif 'filename' in req_input:
         result['path'] = req_input['filename']
-        result['dataType'] = req_input['dataType'] if req_input['dataType'] != 'outputs' else 'file'
+        result['dataType'] = data_type if data_type != 'outputs' else 'file'
     elif 'path' in req_input:
         result['path'] = req_input['path']
-        result['dataType'] = req_input['dataType'] if req_input['dataType'] != 'outputs' else 'file'
+        result['dataType'] = data_type if data_type != 'outputs' else 'file'
     return result
 
 
