@@ -46,6 +46,11 @@
 
 set -uo pipefail
 
+# Every python and pip below runs on this interpreter: the one `curio test` runs
+# on (utk_curio/cli/test_runner.py), else the python on PATH, which CI, calling
+# this script directly, keeps.
+PYTHON="${CURIO_TEST_PYTHON:-python}"
+
 USE_EXISTING=0
 SKIP_SETUP=0
 HEADED=0
@@ -97,7 +102,7 @@ export CURIO_E2E_SANDBOX_PORT="${CURIO_E2E_SANDBOX_PORT:-$SANDBOX_PORT}"
 export CURIO_E2E_FRONTEND_PORT="${CURIO_E2E_FRONTEND_PORT:-$FRONTEND_PORT}"
 
 if [[ "$PARALLEL" == "auto" ]]; then
-  cores=$(python -c 'import os; print(os.cpu_count() or 4)')
+  cores=$("$PYTHON" -c 'import os; print(os.cpu_count() or 4)')
   PARALLEL=$(( cores / 4 )); (( PARALLEL < 1 )) && PARALLEL=1; (( PARALLEL > 4 )) && PARALLEL=4
 fi
 if ! [[ "$PARALLEL" =~ ^[0-9]+$ ]] || (( PARALLEL < 1 )); then
@@ -170,7 +175,7 @@ TARGETS=()
 selected_targets() {
   local suite=$1 label=$2 listed line
   TARGETS=()
-  listed=$(python "$REPO_ROOT/scripts/ci_selected_tests.py" targets "$suite")
+  listed=$("$PYTHON" "$REPO_ROOT/scripts/ci_selected_tests.py" targets "$suite")
   die "the selected tests (CURIO_TESTS)" $?
   while IFS= read -r line; do
     [[ -n "$line" ]] && TARGETS+=("$line")
@@ -194,7 +199,7 @@ wait_for_port() {
       RESULTS+=("  FAIL  stack boot ($name never came up; launcher exited)"); OVERALL=1
       exit 1
     fi
-    if python -c "import socket; s=socket.socket(); s.settimeout(1); s.connect(('localhost', $port)); s.close()" 2>/dev/null; then
+    if "$PYTHON" -c "import socket; s=socket.socket(); s.settimeout(1); s.connect(('localhost', $port)); s.close()" 2>/dev/null; then
       echo "    $name is ready."
       return
     fi
@@ -211,8 +216,8 @@ wait_for_port() {
 # worker uses to find ITS pair, so driver and worker cannot disagree. Shard 0 is
 # the base stack itself.
 shard_facts() {   # -> "<backend port> <sandbox port> <state dir>" for shard $1
-  PYTHONPATH="$REPO_ROOT" python -m utk_curio.backend.tests.shards "$1" --json \
-    | python -c 'import json,sys; d=json.load(sys.stdin); print(d["CURIO_E2E_BACKEND_PORT"], d["CURIO_E2E_SANDBOX_PORT"], d["CURIO_STATE_DIR"])'
+  PYTHONPATH="$REPO_ROOT" "$PYTHON" -m utk_curio.backend.tests.shards "$1" --json \
+    | "$PYTHON" -c 'import json,sys; d=json.load(sys.stdin); print(d["CURIO_E2E_BACKEND_PORT"], d["CURIO_E2E_SANDBOX_PORT"], d["CURIO_STATE_DIR"])'
 }
 start_extra_shards() {
   local k bport sport state
@@ -221,16 +226,16 @@ start_extra_shards() {
     echo "==> Starting shard $k: backend $bport, sandbox $sport, state $state"
     rm -rf "$state"
     (
-      eval "$(PYTHONPATH="$REPO_ROOT" python -m utk_curio.backend.tests.shards "$k")"
+      eval "$(PYTHONPATH="$REPO_ROOT" "$PYTHON" -m utk_curio.backend.tests.shards "$k")"
       mkdir -p "$CURIO_CATALOG_ROOT" "$CURIO_SHARED_DATA"
       # A COPY, not an empty dir: the catalog tests assert the shipped datasets exist.
       cp -r "$REPO_ROOT/datasets/." "$CURIO_CATALOG_ROOT/"
       export CURIO_NO_OPEN=1 FLASK_USE_RELOADER=0 CURIO_DEV=1
-      python "$REPO_ROOT/curio.py" start backend --deploy --testing --with-examples \
+      "$PYTHON" "$REPO_ROOT/curio.py" start backend --deploy --testing --with-examples \
         --backend-port "$BACKEND_PORT" --sandbox-port "$SANDBOX_PORT" \
         > "$CURIO_STATE_DIR/launch-backend.out" 2>&1 &
       echo $! > "$CURIO_STATE_DIR/backend.pid"
-      python "$REPO_ROOT/curio.py" start sandbox \
+      "$PYTHON" "$REPO_ROOT/curio.py" start sandbox \
         --backend-port "$BACKEND_PORT" --sandbox-port "$SANDBOX_PORT" \
         > "$CURIO_STATE_DIR/launch-sandbox.out" 2>&1 &
       echo $! > "$CURIO_STATE_DIR/sandbox.pid"
@@ -271,7 +276,7 @@ stop_own_stacks() {
       pkill -f "$REPO_ROOT/curio.py start" 2>/dev/null || true
       ;;
   esac
-  PYTHONPATH="$REPO_ROOT" python - "${ports[@]}" <<'PY' >/dev/null 2>&1 || true
+  PYTHONPATH="$REPO_ROOT" "$PYTHON" - "${ports[@]}" <<'PY' >/dev/null 2>&1 || true
 import sys
 from utk_curio.cli.services import _kill_port
 for port in sys.argv[1:]:
@@ -345,14 +350,14 @@ fi
 # 2. Install dependencies (needed by both unit tests and E2E)
 # ---------------------------------------------------------------------------
 if [[ $SKIP_SETUP -eq 1 ]]; then
-  echo "==> --skip-setup: installing nothing, using $(command -v python)"
+  echo "==> --skip-setup: installing nothing, using $(command -v "$PYTHON")"
 else
   echo "==> Installing Python dependencies..."
-  pip install -r "$REPO_ROOT/requirements.txt" -q
-  die "pip install -r requirements.txt" $?
+  "$PYTHON" -m pip install -r "$REPO_ROOT/requirements.txt" -q
+  die "$PYTHON -m pip install -r requirements.txt" $?
 
   echo "==> Installing manifest python deps via curio setup..."
-  PYTHONPATH="$REPO_ROOT" python "$REPO_ROOT/curio.py" setup
+  PYTHONPATH="$REPO_ROOT" "$PYTHON" "$REPO_ROOT/curio.py" setup
   die "curio.py setup" $?
 
   if [[ $USE_EXISTING -eq 0 ]]; then
@@ -388,7 +393,7 @@ if [[ $USE_EXISTING -eq 0 ]]; then
   # environment only, which this script and the pytest process could not
   # then read. Two e2e tests call the sandbox directly.
   # utk_curio/cli/environment.py honours a pre-set value.
-  export CURIO_SANDBOX_TOKEN="${CURIO_SANDBOX_TOKEN:-$(python -c 'import secrets; print(secrets.token_urlsafe(32))')}"
+  export CURIO_SANDBOX_TOKEN="${CURIO_SANDBOX_TOKEN:-$("$PYTHON" -c 'import secrets; print(secrets.token_urlsafe(32))')}"
   # --deploy is REQUIRED, not optional. The E2E suite exercises the real signup /
   # signin / guest flows and most of it acts as an authenticated OWNER: a
   # dataflow's own packages, datasets and agents are visible only to the user
@@ -410,7 +415,7 @@ if [[ $USE_EXISTING -eq 0 ]]; then
   set -m
   CURIO_NO_OPEN=1 FLASK_USE_RELOADER=0 CURIO_DEV=1 \
   CURIO_LAUNCH_CWD="$REPO_ROOT" \
-    python "$REPO_ROOT/curio.py" start --deploy --testing --with-examples \
+    "$PYTHON" "$REPO_ROOT/curio.py" start --deploy --testing --with-examples \
       --backend-port "$BACKEND_PORT" --sandbox-port "$SANDBOX_PORT" \
       --frontend-port "$FRONTEND_PORT" &
   CURIO_PID=$!
@@ -433,7 +438,7 @@ if [[ $RUN_BACKEND -eq 1 ]]; then
     [[ -n "${CURIO_TESTS:-}" ]] && BACKEND_TARGETS=("${TARGETS[@]/#/$REPO_ROOT/}")
     echo ""
     echo "==> Running backend unit tests..."
-    PYTHONPATH="$REPO_ROOT" python -m pytest \
+    PYTHONPATH="$REPO_ROOT" "$PYTHON" -m pytest \
       "${BACKEND_TARGETS[@]}" -v \
       --ignore="$REPO_ROOT/utk_curio/backend/tests/test_frontend"
     record_pytest "Backend unit tests" $?
@@ -457,7 +462,7 @@ if [[ $RUN_SANDBOX -eq 1 ]]; then
   SANDBOX_TARGETS=("$REPO_ROOT/utk_curio/sandbox/tests")
   if [[ -z "${CURIO_TESTS:-}" ]] || selected_targets sandbox "Sandbox unit tests"; then
     [[ -n "${CURIO_TESTS:-}" ]] && SANDBOX_TARGETS=("${TARGETS[@]/#/$REPO_ROOT/}")
-    PYTHONPATH="$REPO_ROOT" python -m pytest "${SANDBOX_TARGETS[@]}" -v
+    PYTHONPATH="$REPO_ROOT" "$PYTHON" -m pytest "${SANDBOX_TARGETS[@]}" -v
     record_pytest "Sandbox unit tests" $?
   fi
 fi
@@ -484,7 +489,7 @@ if [[ $RUN_E2E -eq 1 ]]; then
   if [[ $SKIP_SETUP -eq 0 ]]; then
     echo ""
     echo "==> Installing Playwright browser..."
-    python -m playwright install chromium
+    "$PYTHON" -m playwright install chromium
     die "playwright install chromium" $?
   fi
 
@@ -512,10 +517,10 @@ if [[ $RUN_E2E -eq 1 ]]; then
   die "cd to utk_curio/backend" $?
   if [[ -z "${CURIO_TESTS:-}" ]]; then
     # CURIO_E2E_TARGETS narrows the run to specific files (smoke runs); default is the suite.
-    env $E2E_ENV python -m pytest ${CURIO_E2E_TARGETS:-tests/test_frontend/} $PYTEST_ARGS
+    env $E2E_ENV "$PYTHON" -m pytest ${CURIO_E2E_TARGETS:-tests/test_frontend/} $PYTEST_ARGS
     record_pytest "E2E tests" $?
   elif selected_targets e2e "E2E tests"; then
-    env $E2E_ENV python -m pytest "${TARGETS[@]/#/$REPO_ROOT/}" $PYTEST_ARGS
+    env $E2E_ENV "$PYTHON" -m pytest "${TARGETS[@]/#/$REPO_ROOT/}" $PYTEST_ARGS
     record_pytest "E2E tests" $?
   fi
 fi
