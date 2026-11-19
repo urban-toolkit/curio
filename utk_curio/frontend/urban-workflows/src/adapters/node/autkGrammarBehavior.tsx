@@ -26,7 +26,7 @@ import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../ut
 import { autkKeyProblem, autkRasterPassProblem, autkViewProblem } from '../../contracts/autkGrammar';
 import {
     autkNeedsInput, autkReadsInput, autkSourcesFrom, documentTableRefs, drawnFeatures, drawnRows, inputRow, keyValues, loadableSource, ownTableNames,
-    passesAtHand, readAutkInput, selectFieldsOf, selectFieldsProblem, tableKeyOf, tablePositions, tablesToLoad, writtenTables,
+    passesAtHand, readAutkInput, selectFieldsOf, selectFieldsProblem, tableKeyOf, tablePositions, tablesToLoad, withReadableHeights, writtenTables,
     type LoadOrder,
     type PreparedAutkInput,
 } from '../../utils/autkInput';
@@ -957,7 +957,9 @@ export const useAutkGrammarBehavior = (
             // cache and load in-browser so the node draws and computes instead of
             // silently working on nothing. Only applies to the backend-ref path
             // (backendLayers == null means we did not already fall back). Each
-            // layer keeps the workspace it was loaded into.
+            // layer keeps the workspace it was loaded into. A buildings layer
+            // gets the heights autk-map and a pass read, as one of the input
+            // does (withReadableHeights).
             const loadedLayers = async (): Promise<AutkLayer[]> => {
                 let layers: AutkLayer[] = [];
                 try {
@@ -971,7 +973,9 @@ export const useAutkGrammarBehavior = (
                     const resolvedForFrontend = resolveDataSourceUrls({ data: specDataSources }, false).data;
                     layers = await loadSpecLayers({ data: resolvedForFrontend }, inputTables);
                 }
-                return layers;
+                return layers.map((layer) => (layer.type === 'buildings'
+                    ? { ...layer, geojson: withReadableHeights(layer.geojson) }
+                    : layer));
             };
 
             if (hasMaps || hasPlot) {
