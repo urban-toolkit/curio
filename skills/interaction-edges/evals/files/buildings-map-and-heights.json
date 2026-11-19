@@ -1,0 +1,50 @@
+{
+  "dataflow": {
+    "name": "Buildings, their map and their heights",
+    "task": "",
+    "timestamp": 1795000000000,
+    "provenance_id": "buildings-map-and-heights",
+    "categories": [],
+    "nodes": [
+      {
+        "id": "bh-loader",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 240,
+        "content": "import geopandas as gpd\nfrom shapely.geometry import box\n\nbuildings = gpd.GeoDataFrame(\n    {\n        \"building_id\": [1, 2, 3, 4],\n        \"height\": [12.0, 30.0, 55.0, 80.0],\n        \"area\": [400.0, 950.0, 610.0, 1200.0],\n        \"geometry\": [\n            box(-87.6360, 41.8800, -87.6350, 41.8810),\n            box(-87.6345, 41.8800, -87.6335, 41.8810),\n            box(-87.6330, 41.8800, -87.6320, 41.8810),\n            box(-87.6315, 41.8800, -87.6305, 41.8810),\n        ],\n    },\n    crs=\"EPSG:4326\",\n)\nbuildings.metadata = {\"layerType\": \"polygons\"}\nreturn buildings\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {"keywords": []}
+      },
+      {
+        "id": "bh-views",
+        "type": "curio.builtin/autk-grammar",
+        "x": 645,
+        "y": 0,
+        "width": 900,
+        "height": 420,
+        "content": "{\n  \"layout\": {\"type\": \"horizontal\", \"gap\": 8},\n  \"map\": {\n    \"id\": \"buildings\",\n    \"layerRefs\": [{\"dataRef\": \"input_0\", \"isPick\": true, \"getFnv\": \"height\", \"getFnvType\": \"quantitative\", \"selectFields\": [\"building_id\"]}]\n  },\n  \"plot\": {\n    \"id\": \"heights\",\n    \"dataRef\": \"input_0\",\n    \"mark\": \"bar\",\n    \"axis\": [\"height\", \"@transform\"],\n    \"transform\": {\"preset\": \"binning-1d\", \"options\": {\"bins\": 4}},\n    \"events\": [\"brushX\"],\n    \"selectFields\": [\"building_id\"]\n  }\n}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {"keywords": []}
+      },
+      {
+        "id": "bh-scatter",
+        "type": "curio.builtin/vis-vega",
+        "x": 645,
+        "y": 520,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"params\": [{\"name\": \"brush\", \"select\": {\"type\": \"interval\", \"fields\": [\"area\", \"height\"]}}],\n  \"mark\": {\"type\": \"point\", \"cursor\": \"crosshair\"},\n  \"encoding\": {\n    \"x\": {\"field\": \"area\", \"type\": \"quantitative\"},\n    \"y\": {\"field\": \"height\", \"type\": \"quantitative\"}\n  }\n}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {"keywords": []}
+      }
+    ],
+    "edges": [
+      {"id": "reactflow__edge-bh-loaderout-bh-viewsin", "source": "bh-loader", "sourceHandle": "out", "target": "bh-views", "targetHandle": "in"},
+      {"id": "reactflow__edge-bh-loaderout-bh-scatterin", "source": "bh-loader", "sourceHandle": "out", "target": "bh-scatter", "targetHandle": "in"}
+    ]
+  }
+}

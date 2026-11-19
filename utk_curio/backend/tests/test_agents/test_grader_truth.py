@@ -254,6 +254,27 @@ def _plan_refuses(dataflow: str):
     return refused
 
 
+def _plan_view_refuses(dataflow: str):
+    """The plan check refuses a view the plan's interaction edges name that the
+    Autark node at that end of the case's *dataflow* does not have
+    (``plan_topology.interaction_view_errors``)."""
+    def refused(answer) -> bool:
+        from utk_curio.backend.app.agents.domain import plan_topology
+
+        nodes = {node["id"]: node for node in json.loads((REPO_ROOT / dataflow).read_text(encoding="utf-8"))["dataflow"]["nodes"]}
+        plans = [c["arguments"] for c in answer.calls if c["tool"] == "dataflow.plan.write" and c["status"] == "applied"]
+        for plan in plans:
+            planned = {node["ref"]: node["nodeType"] for node in plan.get("nodes") or []}
+            if plan_topology.interaction_view_errors(
+                plan,
+                lambda end: planned.get(end) or (nodes.get(end) or {}).get("type"),
+                lambda end: (nodes.get(end) or {}).get("content"),
+            ):
+                return True
+        return False
+    return refused
+
+
 def _grounding_refuses(*, datasets=(), models=None, data_loading: bool = False):
     """The grounding gate, on an account with *datasets* in its Data Catalog
     and *models* added, refuses the code the answer wrote."""
@@ -317,6 +338,8 @@ def _refusals() -> dict:
             datasets=["data.curio.mapillary-sample"], models=["model.curio.ddrnet23-slim"]),
         ("interaction-edges", 1, "refused-edge"): _plan_refuses(POOL_VEGA),
         ("interaction-edges", 4, "refused-edge"): _plan_refuses(POOL_VEGA),
+        ("interaction-edges", 5, "refused-view"): _plan_view_refuses(
+            "skills/interaction-edges/evals/files/buildings-map-and-heights.json"),
         ("selection-chips", 2, "refused-code"): _reference_refuses(
             "skills/selection-chips/evals/files/roofs-picked-zips.json", "e8d24b91-3f05-4c7a-b6d1-0a9c27e5f413"),
         ("map-edits", 1, "refused-map-edit"): _map_edits_refuses(LAYERS_EDITOR),

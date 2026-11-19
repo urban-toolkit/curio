@@ -62,6 +62,21 @@
         "The answer says an interaction edge links views, Data Pools or Map Editors, and cannot go into a Data Loading node.",
         "The answer offers another way to get only the clicked zip code's roofs, such as linking the chart to a Data Pool whose marked rows a later node keeps."
       ]
+    },
+    {
+      "id": 5,
+      "dataflow": "evals/files/buildings-map-and-heights.json",
+      "prompt": "Link the scatterplot to the height histogram only: brushing points should select their bars in the histogram, but light nothing on the map next to it.",
+      "expected_output": "A dataflow plan with one interaction edge between the scatterplot (bh-scatter) and the Autark node of a map and a histogram (bh-views), on the histogram's dot: toView \"heights\" when the edge goes from the scatterplot to the node, so the brush reaches the histogram alone, and no new node.",
+      "assertions": [
+        "The answer writes a dataflow plan (dataflow.plan.write) that adds an edge of kind interaction between the scatterplot (bh-scatter) and the Autark node (bh-views).",
+        "That edge names the histogram's view of the Autark node, \"heights\" (toView, or fromView when the Autark node is the edge's from end), not the node's own dot, which would light the map too.",
+        "The plan adds no new node."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "tool", "tool": "dataflow.plan.write"},
+        {"assertion": 2, "kind": "edge-added", "from": "curio.builtin/vis-vega", "to": "curio.builtin/autk-grammar", "interaction": true, "toView": "heights"}
+      ]
     }
   ],
   "trigger_queries": [
