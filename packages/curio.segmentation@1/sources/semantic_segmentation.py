@@ -86,6 +86,27 @@ def _library_threads():
     return int(first) if first.isdigit() and int(first) > 0 else None
 
 
+def _pretrained(model_class, path, **options):
+    """``model_class.from_pretrained(path, **options)``, with Transformers'
+    progress bars off while it loads and on again after, when they were on.
+
+    Transformers draws a bar as it reads a checkpoint's weights, and a run
+    keeps what goes to stderr as its node's output, where the bar took a line
+    more or fewer from run to run, as the load went faster or slower. A bar a
+    node's code draws, with tqdm or with Transformers once the load is over,
+    shows as before."""
+    from transformers.utils import logging as transformers_logging
+
+    bars_were_on = transformers_logging.is_progress_bar_enabled()
+    if bars_were_on:
+        transformers_logging.disable_progress_bar()
+    try:
+        return model_class.from_pretrained(path, **options)
+    finally:
+        if bars_were_on:
+            transformers_logging.enable_progress_bar()
+
+
 class _OnnxRunner:
     def __init__(self, path: str, manifest: dict) -> None:
         try:
@@ -140,8 +161,8 @@ class _TransformersRunner:
             ) from exc
         self.torch = torch
         self.processor = AutoImageProcessor.from_pretrained(path, local_files_only=True)
-        self.model = AutoModelForSemanticSegmentation.from_pretrained(
-            path, local_files_only=True, use_safetensors=True
+        self.model = _pretrained(
+            AutoModelForSemanticSegmentation, path, local_files_only=True, use_safetensors=True
         ).eval()
         id2label = getattr(self.model.config, "id2label", None) or {}
         self.labels = list(manifest.get("labels") or []) or [

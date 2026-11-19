@@ -122,7 +122,7 @@ def track_objects(media, model, derived_file, *, labels, every_seconds=0.5, forg
         device, dtype = _device()
         run = _Run(
             processor=Sam3VideoProcessor.from_pretrained(model.path, local_files_only=True),
-            sam3=Sam3VideoModel.from_pretrained(model.path, local_files_only=True, dtype=dtype).to(device).eval(),
+            sam3=_pretrained(Sam3VideoModel, model.path, local_files_only=True, dtype=dtype).to(device).eval(),
             device=device, dtype=dtype, labels=list(labels), colors=_colors(labels),
             every_seconds=every_seconds, forget_seconds=forget_seconds, from_seconds=from_seconds, width=width,
             derived_file=derived_file,
@@ -142,6 +142,27 @@ def _device():
     if torch.backends.mps.is_available():
         return "mps", torch.float32
     return "cpu", torch.float32
+
+
+def _pretrained(model_class, path, **options):
+    """``model_class.from_pretrained(path, **options)``, with Transformers'
+    progress bars off while it loads and on again after, when they were on.
+
+    Transformers draws a bar as it reads a checkpoint's weights, and a run
+    keeps what goes to stderr as its node's output, where the bar took a line
+    more or fewer from run to run, as the load went faster or slower. A bar a
+    node's code draws, with tqdm or with Transformers once the load is over,
+    shows as before."""
+    from transformers.utils import logging as transformers_logging
+
+    bars_were_on = transformers_logging.is_progress_bar_enabled()
+    if bars_were_on:
+        transformers_logging.disable_progress_bar()
+    try:
+        return model_class.from_pretrained(path, **options)
+    finally:
+        if bars_were_on:
+            transformers_logging.enable_progress_bar()
 
 
 def _colors(labels):

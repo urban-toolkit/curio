@@ -25,7 +25,7 @@ from PIL import Image
 from transformers import Sam3Model, Sam3Processor, Sam3VideoConfig
 from transformers.modeling_outputs import BaseModelOutputWithPooling
 
-from sam3_tracking import _cleaned, _colors, _device, _draw, _kept_by_nms
+from sam3_tracking import _cleaned, _colors, _device, _draw, _kept_by_nms, _pretrained
 
 #: What node code calls.
 __all__ = ["find_in_images"]
@@ -140,7 +140,7 @@ def _loaded(model, labels, threshold, width):
     reads them."""
     device, dtype = _device()
     processor = Sam3Processor.from_pretrained(model.path, local_files_only=True)
-    sam3 = Sam3Model.from_pretrained(model.path, local_files_only=True, dtype=dtype).to(device).eval()
+    sam3 = _pretrained(Sam3Model, model.path, local_files_only=True, dtype=dtype).to(device).eval()
     settings = Sam3VideoConfig.from_pretrained(model.path, local_files_only=True)
     with torch.inference_mode():
         words = processor(text=labels, return_tensors="pt")
