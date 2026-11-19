@@ -25,7 +25,7 @@ import { closeGrammarDb } from './autkDbClose';
 import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
 import { autkKeyProblem, autkOneViewProblem, autkRasterPassProblem } from '../../contracts/autkGrammar';
 import {
-    autkNeedsInput, autkSourcesFrom, documentTableRefs, drawnFeatures, drawnRows, inputRow, keyValues, loadableSource, ownTableNames,
+    autkNeedsInput, autkReadsInput, autkSourcesFrom, documentTableRefs, drawnFeatures, drawnRows, inputRow, keyValues, loadableSource, ownTableNames,
     passesAtHand, readAutkInput, selectFieldsOf, selectFieldsProblem, tableKeyOf, tablePositions, tablesToLoad, writtenTables,
     type LoadOrder,
     type PreparedAutkInput,
@@ -44,7 +44,10 @@ import {
     compileDataSpecToAutkDbJs,
     requestedLayerTables,
     resolveDataSourceUrls as resolveDataSourceUrlsWithBase,
+    sectionInputTables,
+    sectionTablesHandedOn,
 } from './autkDataCompile';
+import { executionInputRef } from '../../utils/flowOutputRef';
 import { attachMapInteractionZoomFix } from './autkMapZoom';
 import { attachMapPressGuard } from './autkMapPressGuard';
 import {
@@ -544,7 +547,7 @@ export const useAutkGrammarBehavior = (
         }
         // The document as the node holds it: a chip standing on its own holds
         // its place, as it does where the document's kind is read.
-        setRunSummary(describeAutkRun('Loaded', 'table', requestedLayerTables(JSON.parse(withChipPlaceholders(code as string)).data)));
+        setRunSummary(describeAutkRun('Loaded', 'table', sectionTablesHandedOn(JSON.parse(withChipPlaceholders(code as string)).data)));
     };
 
     const runGrammar = async (
@@ -663,12 +666,18 @@ export const useAutkGrammarBehavior = (
         // autk-db. Capture them before we touch spec.data.
         const specDataSources: any[] = Array.isArray(spec.data) ? spec.data : [];
 
+        // The tables of the node's input its data section's heatmaps and joins
+        // read (sectionInputTables): none for a section that reads only what
+        // its own sources load.
+        const sectionInputs = sectionInputTables(specDataSources);
+
         // The input as the tables the document reads (utils/autkInput): each
         // input is `input_<k>`, the layers an input carries keep their own
         // names, and `input_<k>` also names an input of one named layer when
         // the document names it. Upstream geojson
         // is data the browser already holds, so it stays client-side and is NOT
-        // sent to the backend. A data-only document does not read it.
+        // sent to the backend. A data-only document reads it only when its data
+        // section reads tables of it, which its load then reads in the sandbox.
         let upstreamSources: any[] = [];
         // Those whose features carry their input row, for a document that draws a map.
         let taggedTables: string[] = [];
@@ -678,7 +687,7 @@ export const useAutkGrammarBehavior = (
         let preparedInput: PreparedAutkInput | null = null;
         // The input table each table a pass writes holds the rows of (writtenFromRef).
         const writtenFrom: Record<string, string> = {};
-        const readsInput = hasMaps || hasPlot || specDataSources.length === 0;
+        const readsInput = hasMaps || hasPlot || specDataSources.length === 0 || sectionInputs.length > 0;
         if (data.input && readsInput) {
             try {
                 // A map draws each circle a Map Editor node feeds from that
@@ -786,6 +795,31 @@ export const useAutkGrammarBehavior = (
             showToast(rasterPass, 'error');
             return;
         }
+        // The tables of the input its data section's heatmaps and joins read
+        // are found among the input's, by key, before anything loads. With no
+        // input, or with an input that names one it cannot give (a frame with
+        // no geometry), nothing arrived to read, and the upstream is what must
+        // change, as for a compute step fed nothing. A table the input does
+        // not carry fails the run with the words both loaders say.
+        if (sectionInputs.length > 0) {
+            const carried = new Set((preparedInput?.sources ?? []).map(tableKeyOf));
+            const unusable = new Set(preparedInput?.unusable ?? []);
+            const absent = sectionInputs.find((table) => !carried.has(autkTableKey(table.workspace, table.name)));
+            const nothingArrived = data.input == null || data.input === ''
+                || (absent !== undefined && unusable.has(autkTableKey(absent.workspace, absent.name)));
+            const refusal = nothingArrived
+                ? renderOutcome({ rowsIn: 0, ...(preparedInput?.inputProblem ? { inputProblem: preparedInput.inputProblem } : {}) })
+                : null;
+            if (refusal || absent) {
+                grammarRef.current = null;
+                specRef.current = null;
+                if (refusal) showInputProblem(classifyAutkSpec(spec));
+                const message = refusal ? refusal.message : absent!.missing;
+                emit({ code: 'error', content: message, ...(refusal ? { kind: emptyRenderKind(refusal.cause) } : {}) } as any);
+                showToast(message, 'error');
+                return;
+            }
+        }
 
         emit({ code: 'exec', content: '' });
         let summary: string | null = null;
@@ -806,12 +840,21 @@ export const useAutkGrammarBehavior = (
             let backendRef: { path: string; dataType: string } | null = null;
             let backendLayers: AutkLayer[] | null = null;
 
+            // The tables of the input the data section reads, as the node
+            // reads its input, for the in-browser loader.
+            const inputTables = sectionInputs.length > 0 ? preparedInput?.sources ?? [] : [];
             if (specDataSources.length > 0) {
                 const resolvedForBackend = resolveDataSourceUrls({ data: specDataSources }, true).data;
-                // Key only on the authored data sources: the backend load inlines
-                // exactly these (upstream input stays client-side and never reaches the
-                // sandbox), so the DuckDB artifact is a pure function of them.
-                const cacheKey = JSON.stringify(resolvedForBackend);
+                // The load the sandbox runs is the authored data sources, and,
+                // for a section that reads tables of the node's input, that
+                // input, which the sandbox reads by reference: the DuckDB
+                // artifact is a pure function of them, so they are its key. A
+                // section that reads none is keyed on its sources alone, and an
+                // upstream that runs again reloads only the section that reads it.
+                const sentInput = sectionInputs.length > 0 ? data.input : '';
+                const cacheKey = sectionInputs.length > 0
+                    ? JSON.stringify([resolvedForBackend, executionInputRef(sentInput)])
+                    : JSON.stringify(resolvedForBackend);
 
                 if (dataCacheRef.current && dataCacheRef.current.key === cacheKey) {
                     backendRef = dataCacheRef.current.ref;
@@ -819,7 +862,7 @@ export const useAutkGrammarBehavior = (
                     try {
                         if (!data.jsInterpreter) throw new Error('No JS interpreter available for backend data load.');
                         const code = compileDataSpecToAutkDbJs(resolvedForBackend);
-                        backendRef = await runDataInBackend(data.jsInterpreter, code, data.nodeId);
+                        backendRef = await runDataInBackend(data.jsInterpreter, code, data.nodeId, sentInput);
                         dataCacheRef.current = { key: cacheKey, ref: backendRef };
                     } catch (e: any) {
                         // Graceful fallback: load the data in-browser (the original
@@ -829,7 +872,7 @@ export const useAutkGrammarBehavior = (
                         const resolvedForFrontend = resolveDataSourceUrls({ data: specDataSources }, false).data;
                         dataCacheRef.current = null;
                         try {
-                            backendLayers = await loadSpecLayers({ data: resolvedForFrontend });
+                            backendLayers = await loadSpecLayers({ data: resolvedForFrontend }, inputTables);
                         } catch (fe: any) {
                             // Both paths failed. Surface BOTH reasons: the backend
                             // failure is otherwise swallowed here, and the e2e log
@@ -867,7 +910,7 @@ export const useAutkGrammarBehavior = (
                     console.warn('[autk-grammar] backend layers empty/unresolvable; falling back to in-browser AutkDb');
                     dataCacheRef.current = null;
                     const resolvedForFrontend = resolveDataSourceUrls({ data: specDataSources }, false).data;
-                    layers = await loadSpecLayers({ data: resolvedForFrontend });
+                    layers = await loadSpecLayers({ data: resolvedForFrontend }, inputTables);
                 }
                 return layers;
             };
@@ -1396,7 +1439,8 @@ export const useAutkGrammarBehavior = (
                             : null);
                     handOnRun(out);
                     // The backend path hands back an artifact ref, not the
-                    // tables, so name what the spec asked autk-db to create -
+                    // tables, so name what the spec asked autk-db to create,
+                    // and each input table a join wrote its columns onto -
                     // a short load has already failed above, so these exist.
                     // Their rows are unknown there, so no emptiness is claimed;
                     // only layers in hand are counted.
@@ -1404,7 +1448,7 @@ export const useAutkGrammarBehavior = (
                         ? backendLayers.map((l) => countedItem(
                             autkTableKey(l.workspace, l.name), loadedRows(l), l.type === RASTER_TABLE ? 'cells' : 'features',
                         ))
-                        : requestedLayerTables(specDataSources);
+                        : sectionTablesHandedOn(specDataSources);
                     summary = describeAutkRun('Loaded', 'table', tables);
                     summaryListsItems = tables.length > 0;
                     runCounts = {
@@ -1903,7 +1947,7 @@ export const useAutkGrammarBehavior = (
         if (!hasSpec) return true;
         try {
             // A chip standing on its own holds its place (utils/autkSpecKind).
-            return autkNeedsInput(JSON.parse(withChipPlaceholders(liveCode)));
+            return autkReadsInput(JSON.parse(withChipPlaceholders(liveCode)));
         } catch {
             return true;
         }
