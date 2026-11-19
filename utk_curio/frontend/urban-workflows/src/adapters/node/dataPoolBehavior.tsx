@@ -237,8 +237,8 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
       // wrappers can route a brush on (say) roads to the roads features only,
       // not surface. An Autark node of several views sends a select per
       // view, each in the bucket of its own layer (utils/autkSelects).
-      // Interactions without a `layerRef` — Vega, plain Python
-      // dataframes — go to the `undefined` bucket and fall back to the legacy
+      // Interactions without a `layerRef` (Vega, plain Python
+      // dataframes) go to the `undefined` bucket and fall back to the legacy
       // first-layer behavior so existing single-layer flows are unaffected.
       const interactionsByLayer = new Map<string | undefined, any[]>();
       for (const { layer: layerRef, selection: interaction } of byAutkLayer(interactions)) {
