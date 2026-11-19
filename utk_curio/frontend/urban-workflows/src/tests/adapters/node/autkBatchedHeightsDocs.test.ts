@@ -2,13 +2,13 @@
  * Do the shipped texts about a shadow step say what happens to a building part
  * with no `height` tag?
  *
- * The shadow steps of examples 06 and 07 read every building's
+ * The shadow steps of examples 06, 07 and 38 read every building's
  * `properties.height` with `required: true`, so autk-grammar would leave out a
  * building whose height is not a number. Curio first gives every building part
  * the height autk-map draws for it (`readableBuildingProperties`), so the
  * shader reads every part and no Autark compute meets a building with no
  * height. The texts say the same:
- * - no text of either dataflow says a building is skipped;
+ * - no text of their dataflows says a building is skipped;
  * - each shadow step's goal, which an agent reads when the example is a worked
  *   example, gives the heights the code gives, and so does example 07's
  *   walkthrough;
@@ -31,6 +31,7 @@ const WORKED_EXAMPLES_INDEX = path.join(REPO_ROOT, "agents", "agent.curio.builti
 const SHADOW_EXAMPLES: [string, string, number][] = [
     ["example 06", "06-back-bay-road-sunlight", 3],
     ["example 07", "07-autark-gpu-shader", 1],
+    ["example 38", "38-autark-solstice-sun-two-cities", 1],
 ];
 
 /** Words that say a building is not counted. */
