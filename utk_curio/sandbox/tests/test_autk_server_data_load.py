@@ -737,3 +737,58 @@ def test_the_server_compiled_load_reads_a_geotiff_of_the_repository_and_hands_it
     finally:
         for item in handed:
             item.close()
+
+
+#: The readings of ``HEATMAPS`` and their ``density`` heatmap, both in the
+#: workspace ``east``: a heatmap bins the table of its own workspace.
+EAST_HEATMAP = {"data": [
+    {**HEATMAPS["data"][0], "workspace": "east"},
+    {**HEATMAPS["data"][1], "workspace": "east"},
+]}
+
+
+def test_the_server_compiled_load_builds_a_heatmap_in_its_workspace_and_hands_it_on_there(tmp_path, monkeypatch):
+    """A heatmap in a workspace (autk-grammar 5.0.0's ``workspace``) bins the
+    readings of its own workspace on a run on the server, and is handed on in
+    it: the raster's envelope names the workspace, as the readings' table
+    does, and a Python node downstream finds it in the dataset's ``metadata``
+    beside the raster's name."""
+    from utk_curio.cli import dependencies
+    from utk_curio.common.autk_data_compiler import compile_data_spec
+    from utk_curio.sandbox.app.worker import _worker_init, execute_js_code
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+    from utk_curio.sandbox.util.rasters import envelope_arrays, rasters_for_python
+
+    code = compile_data_spec(json.dumps(EAST_HEATMAP))
+    assert "import { createDataAdapter, enterWorkspace, tableKey } from '@urban-toolkit/autk-grammar/data';" in code
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setenv("FLASK_BACKEND_HOST", "curio-backend.invalid")
+    monkeypatch.setenv("FLASK_BACKEND_PORT", "1")
+    dependencies.seed_duckdb_extensions()
+    _worker_init()
+    result = execute_js_code(
+        _NO_SOCKET + code, "", "AUTK_GRAMMAR", "", launch_dir=str(REPO_ROOT), session_id=None,
+    )
+
+    assert result["output"]["path"], result["stderr"]
+    loaded = load_from_duckdb(result["output"]["path"], session_id=None)
+    assert [(item.get("name"), item.get("type"), item.get("workspace")) for item in loaded[:1]] == [
+        ("readings", "points", "east"),
+    ]
+    assert [(item.get("dataType"), item.get("layerName"), item.get("workspace")) for item in loaded[1:]] == [
+        ("raster", "density", "east"),
+    ]
+    grid, bands, counts = envelope_arrays(loaded[1])
+    assert (grid["crs"], grid["width"], grid["height"]) == ("EPSG:3395", 3, 2), grid
+    assert bands == ["band_1"]
+    assert counts.tolist() == [[[4.0, 4.0, 4.0], [4.0, 4.0, 4.0]]]
+
+    handed = rasters_for_python(loaded, tmp_path / "rasters")
+    try:
+        heat = handed[1]
+        assert heat.__dict__["metadata"] == {"name": "density", "workspace": "east"}
+        assert heat.read(1).tolist() == [[4.0, 4.0, 4.0], [4.0, 4.0, 4.0]]
+    finally:
+        handed[1].close()
