@@ -154,9 +154,10 @@ export const STACKED_FIELDS = [SCENARIO_NAME_FIELD, SCENARIO_FIELD, INPUT_FIELD]
  * `util/input_layers.py`. */
 export const LAYER_HELPER = "curio_layer";
 
-/** The data types of an input that is one frame: a table, as `curio_layer`
- * counts one. Kept in sync with `ONE_FRAME_TYPES` in `code_references.py`. */
-const ONE_FRAME_TYPES = new Set(["dataframe", "geodataframe"]);
+/** The data types of an input that is one frame: a table or a raster, as
+ * `curio_layer` counts one. Kept in sync with `ONE_FRAME_TYPES` in
+ * `code_references.py`. */
+const ONE_FRAME_TYPES = new Set(["dataframe", "geodataframe", "raster"]);
 
 /** The grammar of a Vega-Lite chart's spec, as a template names it
  * (`grammarId`): a JSON document of it writes a name where Vega-Lite reads a
@@ -214,6 +215,8 @@ export interface LayerScope {
   name: string;
   columns?: string[] | null;
   dtypes?: Record<string, string>;
+  /** A raster, which has no columns. */
+  raster?: boolean;
 }
 
 /** What a node's references can name: its widgets, its wired inputs and its

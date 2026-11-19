@@ -20,14 +20,19 @@ workspace). What an input may carry:
 - the layers an Autark compute step hands on together, an ``outputs``
   envelope of ``{dataType, data, layerName}`` layers, or one such layer;
 - frames that carry their name in ``metadata`` (``gdf.metadata = {"name":
-  "roads"}``), on their own or in a list or tuple.
+  "roads"}``), on their own or in a list or tuple, a raster an Autark node
+  hands on among them: a rasterio dataset that keeps its table's name there
+  (``rasters.rasters_for_python``);
+- a dict of frames a Python node returns, ``{"roads": gdf, "dem": raster}``:
+  each frame or raster it holds is a layer named after its key, as the canvas
+  lists it (``keyedFramesAsOutputs``).
 
 The layer keeps its name and type in ``metadata``, and the workspace a table
 in another than autk-db's default one names (``workspace``). An input that carries
-exactly one frame with no layer name (a GeoDataFrame a Python node returns, or
-one Data Loading reads) is that layer, whatever name the chip gives. Otherwise
-a name the input does not have fails the node with a message naming the input
-and the layers it has.
+exactly one frame or raster with no layer name (a GeoDataFrame a Python node
+returns, or one Data Loading reads) is that layer, whatever name the chip
+gives. Otherwise a name the input does not have fails the node with a message
+naming the input and the layers it has.
 """
 from __future__ import annotations
 
@@ -141,14 +146,31 @@ def _read(item, name: str):
 
 
 def _is_frame(item) -> bool:
-    """Whether *item* is one frame: a table, a layer record or envelope."""
+    """Whether *item* is one frame: a table, a raster, a layer record or
+    envelope."""
     import pandas as pd
 
-    if isinstance(item, pd.DataFrame):
+    from utk_curio.sandbox.util.rasters import is_dataset
+
+    if isinstance(item, pd.DataFrame) or is_dataset(item):
         return True
     return isinstance(item, dict) and (
         _is_record(item) or item.get("dataType") in ("geodataframe", "dataframe")
     )
+
+
+def _keyed_layers(value):
+    """The layers of *value* when it is a dict of frames, as a Python node
+    returns one and the store keeps it (``parsers._holds_frames``): each frame
+    or raster it holds, named after its key, as the canvas reads such a dict
+    (``keyedFramesAsOutputs``). None for anything else: a layer record, an
+    envelope, or a JSON dict, which carries no layers."""
+    from utk_curio.sandbox.util.parsers import _is_frame_or_raster
+
+    if not isinstance(value, dict) or "dataType" in value or _is_record(value):
+        return None
+    layers = [(str(key), item) for key, item in value.items() if _is_frame_or_raster(item)]
+    return layers or None
 
 
 def _read_unnamed(item):
@@ -183,7 +205,14 @@ def curio_layer(value, layer: str, slot=0):
     key it is (``<workspace>/<name>``, ``autk/<name>`` in the default
     workspace), else the one layer of that name, whatever its workspace; or the
     one frame *value* carries, when that frame has no layer name. A name two
-    workspaces' layers share names neither, and fails naming their keys."""
+    workspaces' layers share names neither, and fails naming their keys. A
+    dict of frames gives the frame or raster under the key *layer* is."""
+    keyed = _keyed_layers(value)
+    if keyed is not None:
+        for key, item in keyed:
+            if key == layer:
+                return item
+        raise LookupError(missing_layer_message(slot, layer, [key for key, _ in keyed]))
     items = _items(value)
     named = [(name, item) for item in items for name in [_name_of(item)] if name is not None]
     for name, item in named:

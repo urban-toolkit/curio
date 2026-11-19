@@ -10,10 +10,10 @@ import { circleValue, emptyWiredSlots, holdsValuePerCircle } from "../utils/inpu
 import type { InputScope } from "../utils/references/codeReferences";
 import {
     columnsOfPreview,
+    hasNoColumns,
     inputScopeFor,
     inputSourcesFor,
     inputValueKey,
-    isScalarInput,
     readInputPreview,
     type InputColumns,
     type InputPreview,
@@ -78,8 +78,8 @@ export function useInputScope(data: any): {
         return value && typeof value === "object" ? inline.current.get(value as object) : undefined;
     };
     const columnsOf = (value: unknown): InputColumns | undefined => {
-        // A value is no table: it has no columns, with nothing to read.
-        if (isScalarInput(value)) return { columns: [], dtypes: {} };
+        // A value or a raster is no table: it has no columns, with nothing to read.
+        if (hasNoColumns(value)) return { columns: [], dtypes: {} };
         const preview = previewOf(value);
         return preview ? columnsOfPreview(preview) : undefined;
     };
@@ -136,11 +136,11 @@ export function useInputScope(data: any): {
         [valueOf],
     );
 
-    // The header reads an input for its columns, which a value has none of: a
-    // value is read only for its preview, as its tooltip shows.
+    // The header reads an input for its columns, which a value or a raster has
+    // none of: either is read only for its preview, as its tooltip shows.
     const loadColumns = useCallback(
         (slot: number) => {
-            if (!isScalarInput(valueOf(slot))) loadPreview(slot);
+            if (!hasNoColumns(valueOf(slot))) loadPreview(slot);
         },
         [valueOf, loadPreview],
     );

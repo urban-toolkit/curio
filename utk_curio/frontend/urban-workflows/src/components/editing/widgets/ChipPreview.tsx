@@ -9,10 +9,12 @@
  *   size and kind, and its first rows, each column with its dtype and a
  *   geometry as its type. A tuple says how code reads its values, then each
  *   one; layers, each layer's size and geometry type; a value, itself; a JSON
- *   list or dict, its first items; a raster, that it is one.
+ *   list or dict, its first items; a raster, its size in cells, its bands and
+ *   its CRS, then its bands' labels.
  * - A column: its dtype, its first values, and over the rows read its range
  *   (a number) or its distinct values (anything else), with the empty ones.
- *   A layer: its feature count, geometry type and first rows.
+ *   A layer: its feature count, geometry type and first rows, or, a raster,
+ *   what a raster on its own shows.
  * - The stacked `inputs` (utils/scenarios/stackedInputs): the inputs it stacks
  *   and its first rows, which begin with scenario_name, scenario and
  *   __input__; `inputs.<field>` reads like a column.
@@ -59,8 +61,10 @@ import {
   type InputPreview,
   type InputPreviewState,
   type InputSource,
+  type PreviewRaster,
   type PreviewTable,
 } from "../../../utils/references/inputScope";
+import { rasterBandsText, rasterCaption, rasterCutText, rasterSizeText } from "../../../utils/raster/rasterDescription";
 import { INPUT_FIELD, stackInputs, type StackEntry } from "../../../utils/scenarios/stackedInputs";
 import {
   SCENARIO_FIELD,
@@ -410,6 +414,25 @@ function staleLine(state: InputPreviewState | undefined): React.ReactNode {
   ) : null;
 }
 
+/** What a raster holds, under its head, in the words a Data Pool's raster tab
+ * says it in too (utils/raster/rasterDescription): its size, its bands and its
+ * CRS, then its first bands by their labels; "A raster" when nothing is known
+ * of it. */
+function rasterHolding(raster: PreviewRaster | null | undefined): { body: React.ReactNode; foot: string[] } {
+  if (!raster) return { body: <Line>A raster</Line>, foot: [] };
+  const bands = rasterBandsText(raster);
+  const cut = rasterCutText(raster);
+  return {
+    body: (
+      <>
+        <Line tone="muted">{rasterSizeText(raster)}</Line>
+        {bands ? <Line>{bands}</Line> : null}
+      </>
+    ),
+    foot: cut ? [cut] : [],
+  };
+}
+
 const VALUE_WORDS: Record<string, string> = {
   int: "A number",
   float: "A number",
@@ -457,6 +480,10 @@ function holdingOf(name: string, preview: InputPreview, language: CodeLanguage):
                 rows={part.table.rows}
                 maxRows={PART_ROWS}
               />
+            ) : "raster" in part ? (
+              <Line key={i}>
+                {name}[{i}] · {rasterCaption(part.raster)}
+              </Line>
             ) : (
               <Line key={i} tone="mono">
                 {name}[{i}] = <Cell value={part.value} limit={VALUE_CHARS} />
@@ -473,16 +500,22 @@ function holdingOf(name: string, preview: InputPreview, language: CodeLanguage):
       body: (
         <>
           <Line>{countOf(preview.layers.length, "layer", "layers")}</Line>
-          {preview.layers.slice(0, SHOWN_PARTS).map(({ name: layer, table }) => (
-            <Table
-              key={layer}
-              caption={`${layer} · ${countOf(table.totalRows, "feature", "features")}${table.geometryType ? `, ${table.geometryType}` : ""}`}
-              columns={table.columns}
-              dtypes={table.dtypes}
-              rows={table.rows}
-              maxRows={PART_ROWS}
-            />
-          ))}
+          {preview.layers.slice(0, SHOWN_PARTS).map((layer) =>
+            "table" in layer ? (
+              <Table
+                key={layer.name}
+                caption={`${layer.name} · ${countOf(layer.table.totalRows, "feature", "features")}${layer.table.geometryType ? `, ${layer.table.geometryType}` : ""}`}
+                columns={layer.table.columns}
+                dtypes={layer.table.dtypes}
+                rows={layer.table.rows}
+                maxRows={PART_ROWS}
+              />
+            ) : (
+              <Line key={layer.name}>
+                {layer.name} · {rasterCaption(layer.raster)}
+              </Line>
+            ),
+          )}
         </>
       ),
       foot: preview.layers.length > SHOWN_PARTS ? [`first ${SHOWN_PARTS} of ${count(preview.layers.length)} layers`] : [],
@@ -519,7 +552,7 @@ function holdingOf(name: string, preview: InputPreview, language: CodeLanguage):
       foot: preview.total > preview.items.length ? [`first ${preview.items.length} of ${count(preview.total)} ${word}`] : [],
     };
   }
-  if (preview.kind === "raster") return { body: <Line>A raster</Line>, foot: [] };
+  if (preview.kind === "raster") return rasterHolding(preview.raster);
   if (preview.kind === "unreadable") return { body: <Line>Curio could not read {name}.</Line>, foot: [] };
   return { body: <Line>It holds no value.</Line>, foot: [] };
 }
@@ -553,7 +586,22 @@ function inputParts(slot: number | null, scope: ReferenceScope, language: CodeLa
  * holds, or its layer *layer*. */
 function tableFor(preview: InputPreview | undefined, layer?: string): PreviewTable | undefined {
   if (preview?.kind === "frame") return preview.table;
-  if (preview?.kind === "layers" && layer !== undefined) return preview.layers.find((one) => one.name === layer)?.table;
+  if (preview?.kind === "layers" && layer !== undefined) {
+    const found = preview.layers.find((one) => one.name === layer);
+    return found && "table" in found ? found.table : undefined;
+  }
+  return undefined;
+}
+
+/** The raster of *preview* a layer chip reads, as `tableFor` finds a table:
+ * the one raster it holds, or its raster layer *layer*; null when nothing is
+ * known of it, undefined when the chip reads no raster. */
+function rasterFor(preview: InputPreview | undefined, layer: string): PreviewRaster | null | undefined {
+  if (preview?.kind === "raster") return preview.raster ?? null;
+  if (preview?.kind === "layers") {
+    const found = preview.layers.find((one) => one.name === layer);
+    return found && "raster" in found ? found.raster : undefined;
+  }
   return undefined;
 }
 
@@ -613,6 +661,21 @@ function layerParts(slot: number | null, layer: string, scope: ReferenceScope, d
   );
   const waiting = waitingLine(name, scope.inputs.some((input) => input.slot === slot), state);
   if (waiting) return { kind: "layer", head, body: waiting };
+  const raster = rasterFor(state?.preview, layer);
+  if (raster !== undefined) {
+    const { body, foot } = rasterHolding(raster);
+    return {
+      kind: "layer",
+      head,
+      body: (
+        <>
+          {staleLine(state)}
+          {body}
+        </>
+      ),
+      foot,
+    };
+  }
   const table = tableFor(state?.preview, layer);
   if (!table) return { kind: "layer", head, body: <Line>{name} has no layer {layer}.</Line> };
   const shown = Math.min(table.rows.length, PART_ROWS);
@@ -659,9 +722,9 @@ function stackValueOf(preview: InputPreview): unknown {
   };
   if (preview.kind === "frame") return rowsOf(preview.table);
   if (preview.kind === "layers") {
-    return preview.layers.length === 1
-      ? rowsOf(preview.layers[0].table)
-      : { dataType: "outputs", data: preview.layers.map((layer) => ({ layerName: layer.name })) };
+    const [only] = preview.layers;
+    if (preview.layers.length === 1) return "table" in only ? rowsOf(only.table) : null;
+    return { dataType: "outputs", data: preview.layers.map((layer) => ({ layerName: layer.name })) };
   }
   if (preview.kind === "tuple") return { dataType: "outputs", data: Array.from({ length: preview.size }, () => ({})) };
   if (preview.kind === "value") return preview.value;
@@ -675,7 +738,7 @@ function stackValueOf(preview: InputPreview): unknown {
 
 /** How many rows one input adds to the stack, and how many of them were read. */
 function stackSizeOf(preview: InputPreview, rows: number): { total: number; read: number } {
-  const table = preview.kind === "frame" ? preview.table : preview.kind === "layers" && preview.layers.length === 1 ? preview.layers[0].table : null;
+  const table = tableFor(preview, preview.kind === "layers" && preview.layers.length === 1 ? preview.layers[0].name : undefined);
   if (table) return { total: table.totalRows, read: table.readRows };
   if (preview.kind === "json" && preview.shape === "list") return { total: preview.total, read: rows };
   return { total: rows, read: rows };
@@ -704,7 +767,10 @@ function stackedOf(scope: ReferenceScope, data?: ChipPreviewData): Stacked {
     name: input.scenario?.name ?? states[i]?.source.title ?? "",
     value: stackValueOf(previews[i]),
   }));
-  const raster = previews.findIndex((preview) => preview.kind === "raster");
+  // A raster on its own, or the one layer an input carries.
+  const raster = previews.findIndex(
+    (preview) => preview.kind === "raster" || (preview.kind === "layers" && preview.layers.length === 1 && "raster" in preview.layers[0]),
+  );
   if (raster >= 0) {
     const label = entries[raster].name ? `${inputName(raster)} (${entries[raster].name})` : inputName(raster);
     return { lines: [`The dataset "inputs": ${label} is a raster, which a chart does not read.`] };

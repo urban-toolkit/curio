@@ -281,9 +281,11 @@ function rasterFromPage(raster: EmbeddedRaster): FetchedRaster {
 /**
  * A raster artifact's GeoTIFF bytes, for an Autark node to load, and what the
  * sandbox read of it (size, CRS, transform) in the `X-Curio-Raster` header.
- * `part` picks one raster out of a Python tuple. A raster larger than
- * `maxCells` cells or `maxSide` on a side is not sent at all: the answer is a
- * 413 with its size, so nothing that large is downloaded only to be refused.
+ * `part` picks one raster out of a Python tuple, or out of a dict by its place
+ * among the dict's values as `keyedFramesAsOutputs` reads them. A raster
+ * larger than `maxCells` cells or `maxSide` on a side is not sent at all: the
+ * answer is a 413 with its size, so nothing that large is downloaded only to
+ * be refused.
  * A standalone dashboard carries the answer, given when the page was built.
  */
 export async function fetchRaster(

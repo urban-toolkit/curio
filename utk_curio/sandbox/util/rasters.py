@@ -25,6 +25,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -70,7 +71,8 @@ def epsg_name(crs) -> str | None:
 
 
 def raster_meta(dataset) -> dict:
-    """What the browser needs to know of a raster to load and place it."""
+    """What the browser needs to know of a raster to load and place it, which
+    the raster route's ``X-Curio-Raster`` header gives."""
     crs = dataset.crs
     name = epsg_name(crs)
     t = dataset.transform
@@ -91,6 +93,14 @@ def raster_meta(dataset) -> dict:
     }
 
 
+def described(dataset) -> dict:
+    """What ``/get`` says of a raster beside its file's path, which a chip's
+    preview shows (``readInputPreview``): what the raster route's header says
+    of it (:func:`raster_meta`), with each band's label, its description,
+    else None."""
+    return {**raster_meta(dataset), "bands": [label or None for label in dataset.descriptions]}
+
+
 def close_datasets(value) -> None:
     """Close the rasterio dataset *value* is, or each one it holds as a list,
     a tuple or a dict; anything else is left as it is."""
@@ -101,10 +111,38 @@ def close_datasets(value) -> None:
             item.close()
 
 
+#: A key a page reads as a whole number, an array index: 0 to 2**32 - 2,
+#: written with no sign and no leading zero.
+_INDEX_KEY = re.compile(r"^(0|[1-9][0-9]*)$")
+
+
+def page_order(keys) -> list:
+    """*keys*, a dict's, in the order a page reads them (JavaScript's
+    ``Object.entries``): the keys that are whole numbers first, by their
+    value, then the others as the dict holds them."""
+    keys = list(keys)
+    numbers = [key for key in keys if _INDEX_KEY.match(str(key)) and int(str(key)) < 2 ** 32 - 1]
+    return sorted(numbers, key=lambda key: int(str(key))) + [key for key in keys if key not in numbers]
+
+
+def _parts(value):
+    """The parts ``part`` counts in *value*: a tuple's or a list's items, or a
+    dict's values in the order a page reads its keys (:func:`page_order`),
+    which is the order the canvas reads a dict of frames in, a tuple of them
+    named by key (``keyedFramesAsOutputs``), and so counts its parts in. None
+    for anything else."""
+    if isinstance(value, (list, tuple)):
+        return list(value)
+    if isinstance(value, dict):
+        return [value[key] for key in page_order(value)]
+    return None
+
+
 def raster_artifact(art_id, *, session_id=None, part=None, saved_paths=None):
     """The rasterio dataset an artifact holds, by the one reader rule.
 
-    ``part`` picks one item of a Python tuple. The store first, then a saved
+    ``part`` picks one item of a Python tuple, or one value of a dict, counted
+    as the canvas counts them (:func:`_parts`). The store first, then a saved
     output's own file (*saved_paths*, ``parsers.load_artifact``), as ``/get``
     reads.
     """
@@ -112,11 +150,12 @@ def raster_artifact(art_id, *, session_id=None, part=None, saved_paths=None):
 
     value = load_artifact(art_id, session_id=session_id, saved_paths=saved_paths)
     if part is not None:
-        if not isinstance(value, (list, tuple)) or not 0 <= part < len(value):
+        parts = _parts(value)
+        if parts is None or not 0 <= part < len(parts):
             close_datasets(value)
             raise RasterRefused(404, "not-found", f"artifact {art_id} has no part {part}")
-        chosen = value[part]
-        close_datasets([item for index, item in enumerate(value) if index != part])
+        chosen = parts[part]
+        close_datasets([item for index, item in enumerate(parts) if index != part])
         value = chosen
     if not is_dataset(value):
         close_datasets(value)
@@ -254,19 +293,27 @@ def raster_from_envelope(envelope, directory):
 def rasters_for_python(value, directory):
     """A Python node's input with each Autark raster envelope in it, at the top
     or one of its parts, made a rasterio dataset; anything else as it came.
+    The dataset keeps the name, the layer type and the workspace its envelope
+    gives it in its ``metadata``, as a table an Autark node hands on does
+    (``stored_inputs.keep_layer_identity``), so a layer chip finds it by its
+    name (``input_layers.curio_layer``).
 
     *directory* is where the rebuilt files go, or a function that returns it,
     called only when there is one to write.
     """
+    from utk_curio.sandbox.util.stored_inputs import keep_layer_identity
+
     def folder():
         return directory() if callable(directory) else directory
 
+    def opened(envelope, target):
+        return keep_layer_identity(raster_from_envelope(envelope, target), envelope)
+
     if is_raster_envelope(value):
-        return raster_from_envelope(value, folder())
+        return opened(value, folder())
     if isinstance(value, (list, tuple)) and any(is_raster_envelope(item) for item in value):
         target = folder()
-        items = [raster_from_envelope(item, target) if is_raster_envelope(item) else item
-                 for item in value]
+        items = [opened(item, target) if is_raster_envelope(item) else item for item in value]
         return tuple(items) if isinstance(value, tuple) else items
     return value
 
