@@ -10,11 +10,12 @@
  */
 import { NodeType, VisInteractionType } from "../../constants";
 import { featureRows, matchSelections, type IncomingSelection, type SelectDetail } from "../selectionMatch";
-import { selectionLayer, type SelectionId } from "../references/selectionTags";
+import { type SelectionId } from "../references/selectionTags";
+import { AUTK_SELECTION, byAutkLayer } from "../autkSelects";
 import { idKey } from "./applyEdits";
 
 /** The detail a map's pick, and the Map Editor node's own, is sent as: the one an Autark map's pick is. */
-export const EDIT_SELECTION = "autk_selection";
+export const EDIT_SELECTION = AUTK_SELECTION;
 
 /** A selection as a view sends it: by its detail, which names the node type it came from and its layer. */
 export type SentSelection = Record<string, SelectDetail & { source?: string; layerRef?: string }>;
@@ -53,9 +54,11 @@ export function selectedIdsIn(
   accepts: (nodeId: string | undefined, layer: string | undefined) => boolean,
   features: readonly SelectableFeature[],
 ): SelectionId[] | null {
-  const selections = (Array.isArray(incoming) ? incoming : []).filter(
-    (selection: any) => accepts(selection?.nodeId, selectionLayer(selection?.details)),
-  ) as IncomingSelection[];
+  // An Autark node of several views sends a select per view, each on its own
+  // table: each table's selects are taken or left apart (utils/autkSelects).
+  const selections = byAutkLayer(Array.isArray(incoming) ? incoming : [])
+    .filter(({ layer, selection }: any) => accepts(selection?.nodeId, layer))
+    .map(({ selection }) => selection) as IncomingSelection[];
   if (selections.length === 0) return null;
   const rows = featureRows({ features: features.map((feature) => ({ properties: feature.properties })) });
   const ids: SelectionId[] = [];

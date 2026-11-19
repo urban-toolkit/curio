@@ -362,14 +362,14 @@ def validate_autk_grammar(
 
     The schema is the vendored copy of what autk-grammar publishes
     (``contracts.AUTK_SCHEMA_PATH``). Three rules sit on top, because no schema
-    form says them. A node draws one view, one map or one plot, so a document
-    with a map and a plot, or with a list of more than one map or more than one
-    plot, is refused first, with the words the node's own error says
-    (``contracts.autk_one_view_problem``): the fix is to split it, whatever its
-    views hold. A document that writes a key autk-grammar 5 renamed, or a key
-    a node does not run yet, is refused next, with the node's words too
-    (``contracts.autk_key_problem``). And the document must load, compute or
-    draw something, and a map must list a layer (``_draws_nothing``).
+    form says them. A document whose views autk-grammar refuses (an id two
+    views share, two plots known by one name, a link that names no view or
+    layer) is refused first, in the grammar's words, which the node's own
+    error says too (``contracts.autk_view_problem``). A document that writes a
+    key autk-grammar 5 renamed, or a key a node does not run yet, is refused
+    next, with the node's words too (``contracts.autk_key_problem``). And the
+    document must load, compute or draw something, and a map must list a
+    layer (``_draws_nothing``).
     """
     from utk_curio.backend.app.agents.domain import contracts
 
@@ -379,9 +379,9 @@ def validate_autk_grammar(
     if not isinstance(payload, dict):
         return {"status": STATUS_INVALID,
                 "detail": agent_text.message("document.autk-not-object")}
-    several_views = contracts.autk_one_view_problem(payload)
-    if several_views:
-        return {"status": STATUS_INVALID, "detail": _detail(several_views)}
+    view_problem = contracts.autk_view_problem(payload)
+    if view_problem:
+        return {"status": STATUS_INVALID, "detail": _detail(view_problem)}
     key_problem = contracts.autk_key_problem(payload)
     if key_problem:
         return {"status": STATUS_INVALID, "detail": _detail(key_problem)}

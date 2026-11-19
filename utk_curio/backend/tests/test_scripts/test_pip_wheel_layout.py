@@ -357,7 +357,7 @@ def test_a_pip_install_reads_the_constants_it_shares_with_the_browser_from_the_f
     files = {path.name: _sha256(path.read_bytes()) for path in sorted(checkout.glob("*.json"))}
     assert len(files) >= 6 and found["files"] == files
     assert found["stopped_by"] == contracts.STOPPED_BY_PHRASES
-    assert found["one_view"] == contracts.AUTK_ONE_VIEW
+    assert found["view_rules"] == contracts.AUTK_VIEW_RULES
     assert found["categories"] == list(manifest.AGENT_CATEGORIES)
     assert found["palette"] == dict(NOTE_PALETTE.colors)
 

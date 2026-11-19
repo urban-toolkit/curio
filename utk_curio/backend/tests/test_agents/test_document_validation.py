@@ -305,46 +305,52 @@ class TestAutkGrammar:
         assert "could not be read" in verdict["why"]
 
 
-#: What an Autark node's error says of a document with more than one view
-#: (``src/tests/adapters/node/autkOneView.test.tsx``).
-ONE_VIEW = ("An Autark node draws one view: one map or one plot. Put each in its own "
-            "Autark node, and link them with interaction edges.")
+#: What autk-grammar says, and so an Autark node's error and the agents'
+#: document check, of two plots of one table without ids, and of a link whose
+#: target names no map (``src/tests/adapters/node/autkOneView.test.tsx``).
+PLOTS_WITHOUT_IDS = 'Two plots of the table "input_0" have no id; give each plot an id.'
+NO_SUCH_MAP = 'Link target "town" is not the id of a map of this specification.'
 A_MAP = {"layerRefs": [{"dataRef": "input_0"}]}
 A_PLOT = {"dataRef": "input_0", "mark": "bar", "axis": ["name", "value"]}
 
 
-class TestOneViewPerNode:
-    """An Autark node draws one view, one map or one plot, so a document with
-    more is refused before it is written, with the words the node's own error
-    says."""
+class TestSeveralViewsPerNode:
+    """An Autark node draws every map and plot of its document, so a document
+    with several is valid, unless its views break a rule of autk-grammar's,
+    which is refused before it is written, with the words the node's own
+    error says."""
 
     @pytest.mark.parametrize("count", [2, 3])
-    def test_a_document_with_several_maps_is_refused_with_the_fix(self, count):
+    def test_a_document_with_several_maps_is_valid(self, count):
         verdict = dv.validate(AUTK, json.dumps({"map": [A_MAP] * count}))
-        assert verdict == {"status": dv.STATUS_INVALID, "detail": ONE_VIEW}
+        assert verdict == {"status": dv.STATUS_VALID}
 
     @pytest.mark.parametrize("count", [2, 3])
-    def test_a_document_with_several_plots_is_refused_with_the_fix(self, count):
+    def test_several_plots_of_one_table_without_ids_are_refused_with_the_fix(self, count):
         verdict = dv.validate(AUTK, json.dumps({"plot": [A_PLOT] * count}))
-        assert verdict == {"status": dv.STATUS_INVALID, "detail": ONE_VIEW}
+        assert verdict == {"status": dv.STATUS_INVALID, "detail": PLOTS_WITHOUT_IDS}
+
+    @pytest.mark.parametrize("count", [2, 3])
+    def test_several_plots_of_one_table_with_ids_are_valid(self, count):
+        plots = [{**A_PLOT, "id": f"plot{n}"} for n in range(count)]
+        assert dv.validate(AUTK, json.dumps({"plot": plots})) == {"status": dv.STATUS_VALID}
 
     @pytest.mark.parametrize("grammar", [
         {"map": A_MAP, "plot": A_PLOT},
         {"map": [A_MAP], "plot": A_PLOT},
         {"map": A_MAP, "plot": [A_PLOT]},
     ], ids=["map-and-plot", "map-list-and-plot", "map-and-plot-list"])
-    def test_a_document_with_a_map_and_a_plot_is_refused_with_the_fix(self, grammar):
-        verdict = dv.validate(AUTK, json.dumps(grammar))
-        assert verdict == {"status": dv.STATUS_INVALID, "detail": ONE_VIEW}
+    def test_a_document_with_a_map_and_a_plot_is_valid(self, grammar):
+        assert dv.validate(AUTK, json.dumps(grammar)) == {"status": dv.STATUS_VALID}
 
     @pytest.mark.parametrize("grammar", [
-        {"map": [A_MAP, {"layerRefs": [{}]}]},
+        {"map": [A_MAP, {"layerRefs": [{}]}], "plot": [A_PLOT, A_PLOT]},
         {"plot": [A_PLOT, {"dataRef": "input_0", "mark": "pie", "axis": ["a"]}]},
-        {"map": {"layerRefs": [{}]}, "plot": {"mark": "pie"}},
+        {"map": {"layerRefs": [{}]}, "plot": [A_PLOT, {**A_PLOT, "mark": "pie"}]},
     ], ids=["maps", "plots", "map-and-plot"])
-    def test_the_views_are_counted_before_the_schema_is_applied(self, grammar):
-        # The fix is to split the document, so its views' own errors wait.
-        assert dv.validate(AUTK, json.dumps(grammar)) == {"status": dv.STATUS_INVALID, "detail": ONE_VIEW}
+    def test_the_views_are_checked_before_the_schema_is_applied(self, grammar):
+        # The fix is to name the plots, so the views' own errors wait.
+        assert dv.validate(AUTK, json.dumps(grammar)) == {"status": dv.STATUS_INVALID, "detail": PLOTS_WITHOUT_IDS}
 
     @pytest.mark.parametrize("grammar", [
         {"map": A_MAP}, {"map": [A_MAP]}, {"plot": A_PLOT}, {"plot": [A_PLOT]},
@@ -352,13 +358,24 @@ class TestOneViewPerNode:
     def test_one_view_and_a_list_of_one_are_valid(self, grammar):
         assert dv.validate(AUTK, json.dumps(grammar)) == {"status": dv.STATUS_VALID}, grammar
 
-    @pytest.mark.parametrize("grammar", [
-        {"map": [A_MAP, A_MAP]}, {"map": A_MAP, "plot": A_PLOT},
-    ], ids=["maps", "map-and-plot"])
-    def test_the_refusal_says_the_fix_in_its_own_sentence(self, grammar):
+    def test_a_layout_and_links_between_the_views_are_valid(self):
+        grammar = {
+            "layout": {"type": "grid", "columns": 2, "gap": 8},
+            "map": [{**A_MAP, "id": "city"}, {**A_MAP, "id": "town"}],
+            "plot": {**A_PLOT, "id": "heights"},
+            "links": [{"source": "heights", "target": "city"}, {"source": "heights", "target": "town", "layer": "input_0"}],
+        }
+        assert dv.validate(AUTK, json.dumps(grammar)) == {"status": dv.STATUS_VALID}
+
+    @pytest.mark.parametrize(("grammar", "sentence"), [
+        ({"plot": [A_PLOT, A_PLOT]}, PLOTS_WITHOUT_IDS),
+        ({"map": {**A_MAP, "id": "city"}, "plot": {**A_PLOT, "id": "heights"},
+          "links": [{"source": "heights", "target": "town"}]}, NO_SUCH_MAP),
+    ], ids=["plots", "link"])
+    def test_the_refusal_says_the_fix_in_its_own_sentence(self, grammar, sentence):
         verdict = dv.validate(AUTK, json.dumps(grammar))
         text = dv.refusal_text(AUTK, verdict)
-        assert f"does not validate: {ONE_VIEW.removesuffix('.')}. Fix exactly that" in text
+        assert f"does not validate: {sentence.removesuffix('.')}. Fix exactly that" in text
 
 
 def _shipped_autk_documents() -> list:

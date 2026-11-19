@@ -23,16 +23,17 @@ import { UNREPORTED_MESSAGE, describeError, runAndAlwaysSettle } from './autkRun
 import { withExtensionRetry } from './duckdbExtensionRetry';
 import { closeGrammarDb } from './autkDbClose';
 import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
-import { autkKeyProblem, autkOneViewProblem, autkRasterPassProblem } from '../../contracts/autkGrammar';
+import { autkKeyProblem, autkRasterPassProblem, autkViewProblem } from '../../contracts/autkGrammar';
 import {
     autkNeedsInput, autkReadsInput, autkSourcesFrom, documentTableRefs, drawnFeatures, drawnRows, inputRow, keyValues, loadableSource, ownTableNames,
-    passesAtHand, readAutkInput, selectFieldsOf, selectFieldsProblem, tableKeyOf, tablePositions, tablesToLoad, writtenTables,
+    passesAtHand, readAutkInput, selectFieldsOf, selectFieldsProblem, tableKeyOf, tablePositions, tablesToLoad, withReadableHeights, writtenTables,
     type LoadOrder,
     type PreparedAutkInput,
 } from '../../utils/autkInput';
 import { type GrammarInput } from '../../utils/grammarInput';
 import { featureRows, matchSelections, type IncomingSelection } from '../../utils/selectionMatch';
 import { EDIT_SELECTION, type SentSelection } from '../../utils/editFeatures/mapEditSelection';
+import { AUTK_SELECTION, autkSelectionKey, byAutkLayer, type AutkSelect } from '../../utils/autkSelects';
 import { provideViewRows } from '../../utils/references/viewSelections';
 import { withChipPlaceholders } from '../../utils/references/codeReferences';
 import { selectionEchoSource } from '../../utils/selectionEcho';
@@ -63,12 +64,14 @@ import {
     withOpaqueRasters, withRasterSources, type CurioRasterSource,
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
-import { withCheckedPasses } from './autkComputeScopes';
+import { handedTables, withCheckedPasses } from './autkComputeScopes';
 import { attachSpecCameras, frameMaps, keepMapViews, mapViews, showFramedViews, type MapView } from './autkMapView';
 import { destroyFailedGrammar, grammarMaps, trackMaps } from './autkMapDrawing';
 import {
-    lightMaps, mapEntries, mapLayerRefs, pickLayerOf, plotEntries, plotEntryOf, plotKey, type DrawnView,
+    layOutPanes, lightMaps, linksAtHand, mapEntries, mapIndexOf, mapLayerRefs, pickLayerOf, plotEntries, plotEntryOf, plotKey,
+    viewTargets, workspaceOfLayer, type DrawnView, type LaidOutViews, type ViewPanes,
 } from './autkViews';
+import type { ViewArrangement } from '@urban-toolkit/autk-grammar';
 import { mapSession, onMapSession, registerEditMap } from '../../utils/editFeatures/mapEditBus';
 import {
     drawnFeatureAt, featurePositions, layerIdFor, mapLayerOf, mapStateOf, pickOn, restoreMapLayers, showForEdits,
@@ -88,8 +91,8 @@ const NO_REVISION = () => 0;
  * `drawnFeatureAt`; autkMapView `mapViews`).
  */
 const mapStateReaders = new Map<string, {
-    state: () => Promise<Record<string, MapTableState> | null>;
-    featureAt: (table: string, position: number) => Promise<Record<string, unknown> | null>;
+    state: (view?: string | number) => Promise<Record<string, MapTableState> | null>;
+    featureAt: (table: string, position: number, view?: string | number) => Promise<Record<string, unknown> | null>;
     views: () => Array<MapView | null>;
     showFramed: () => () => void;
 }>();
@@ -101,9 +104,12 @@ const turnBack = new Map<string, () => void>();
 // shows a map its camera turns at its framed view, then turns it back
 // (test_frontend/utils/node_drawings.py, autark_map_framing).
 if (typeof window !== 'undefined') {
-    (window as any).__curio_mapState = (nodeId: string) => mapStateReaders.get(nodeId)?.state() ?? null;
-    (window as any).__curio_mapFeatureAt = (nodeId: string, table: string, position: number) =>
-        mapStateReaders.get(nodeId)?.featureAt(table, position) ?? null;
+    // A map of a node of several is named by *view*: its key, the map's `id`,
+    // else its index (autkViews `mapIndexOf`); without one, the first map.
+    (window as any).__curio_mapState = (nodeId: string, view?: string | number) =>
+        mapStateReaders.get(nodeId)?.state(view) ?? null;
+    (window as any).__curio_mapFeatureAt = (nodeId: string, table: string, position: number, view?: string | number) =>
+        mapStateReaders.get(nodeId)?.featureAt(table, position, view) ?? null;
     (window as any).__curio_mapViews = (nodeId: string) => mapStateReaders.get(nodeId)?.views() ?? null;
     (window as any).__curio_showMapsFramed = (nodeId: string, framed: boolean): boolean => {
         turnBack.get(nodeId)?.();
@@ -113,6 +119,25 @@ if (typeof window !== 'undefined') {
         if (framed) turnBack.set(nodeId, reader.showFramed());
         return true;
     };
+}
+
+/**
+ * The key the select of *view* (none: the node's first map, where a Map
+ * Editor node picks) is sent under: `autk_selection` for a node of one view,
+ * else the view's own, by its `id`, else its place among the views of
+ * *panes*, the panes of the document the grammar drew (utils/autkSelects).
+ */
+function selectionKeyOf(panes: ViewPanes | null, view: Pick<DrawnView, 'kind' | 'index'> | null | undefined): string {
+    const all = panes ?? [];
+    if (all.length <= 1) return AUTK_SELECTION;
+    const where = view ?? { kind: 'map' as const, index: 0 };
+    const at = Math.max(all.findIndex((pane) => pane.kind === where.kind && pane.index === where.index), 0);
+    return autkSelectionKey(all[at].id ?? at);
+}
+
+/** Whether *select* holds a selection: a pick or a brush of rows, or of key values. */
+function holdsSelection(select: AutkSelect | undefined): boolean {
+    return Array.isArray(select?.data) && select!.data.length > 0;
 }
 
 /**
@@ -187,14 +212,22 @@ export const useAutkGrammarBehavior = (
     // them without causing re-renders.
     const grammarRef = useRef<any>(null);
     const specRef    = useRef<any>(null);
+    // The panes of the views of the document the grammar ran, as its
+    // arrangeViews places them, which give each view the key the grammar
+    // knows it by (autkViews `mapKey`, `plotKey`).
+    const panesRef   = useRef<ViewPanes | null>(null);
+    // The rows of panes the last run arranged its views in: a notebook cell
+    // gives each row a map's height (utils/notebookLayout).
+    const [viewRows, setViewRows] = useState(1);
     // Unsubscribe functions returned by grammar.interactions.on(); cleared and
     // re-populated on every applyGrammar call and on unmount.
     const interactionOffRef = useRef<Array<() => void>>([]);
-    // The layer of the pick or brush this node last sent that picked
-    // something, and the view it was made in (none for a Map Editor node's
-    // pick, made on the node's first map), until it sends an empty one or is
-    // drawn again.
-    const ownSelectionRef = useRef<{ layerRef: string | undefined; view: Pick<DrawnView, 'kind' | 'index'> | null } | null>(null);
+    // The select each view of the last draw sent, by the key it is sent
+    // under (utils/autkSelects): `autk_selection` for a node of one view, one
+    // per view for a node of several, as a Vega-Lite chart keeps one per
+    // param. Kept until the node is drawn again, which empties those that
+    // held a selection.
+    const heldSelectsRef = useRef<Map<string, AutkSelect>>(new Map());
     // Disposer for the map canvas's window-bound pointer listeners (the
     // interaction zoom fix and the press guard), cleared and re-populated on
     // each applyGrammar run with a map, and on unmount.
@@ -241,18 +274,25 @@ export const useAutkGrammarBehavior = (
     // stale data object (grammar subscriptions outlive individual renders).
     const dataRef = useRef(data);
     useEffect(() => { dataRef.current = data; });
-    // The map's own selection, sent as the map's: a pick or a brush of
-    // autk-map's, in the view that made it, or a pick a Map Editor node's
-    // overlay makes on the map. The layer it names and its view are kept until
-    // it is emptied, so a draw that is not an edit's says that selection is
-    // gone (below).
-    const sendOwnSelection = useCallback((selection: SentSelection, view?: DrawnView) => {
+    // The node's own selection, sent as its view's: a pick or a brush of
+    // autk-map's or autk-plot's, in the view that made it, or a pick a Map
+    // Editor node's overlay makes on the node's first map. A node of one
+    // view sends it under `autk_selection`; a node of several sends every
+    // view's select it holds, as a Vega-Lite chart sends its params, each
+    // under its view's key, the one made now at priority 1 and the others at
+    // 0, oldest first (utils/autkSelects). Each is kept, so a draw that is
+    // not an edit's says each selection is gone (below).
+    const sendOwnSelection = useCallback((selection: SentSelection, view?: Pick<DrawnView, 'kind' | 'index'>) => {
         const detail = selection[EDIT_SELECTION];
-        ownSelectionRef.current = Array.isArray(detail?.data) && detail.data.length > 0
-            ? { layerRef: detail.layerRef, view: view ? { kind: view.kind, index: view.index } : null }
-            : null;
+        const key = selectionKeyOf(panesRef.current, view);
+        const held = heldSelectsRef.current;
+        held.delete(key);
+        if (detail) held.set(key, detail);
+        const details = key === AUTK_SELECTION
+            ? selection
+            : Object.fromEntries([...held].map(([k, select]) => [k, { ...select, priority: k === key ? 1 : 0 }]));
         const d = dataRef.current;
-        d.interactionsCallback?.(selection, d.nodeId);
+        d.interactionsCallback?.(details, d.nodeId);
     }, []);
     // The document as written, its chips unresolved: what a run's record
     // holds, since the provenance drawer puts a run's code back in the editor.
@@ -571,15 +611,14 @@ export const useAutkGrammarBehavior = (
         setSpecKind(classifyAutkSpec(spec));
         setRunSummary(null);
 
-        // A node draws one view, a map on its one canvas or a plot in its one
-        // pane: a document with a map and a plot, or with more than one of
-        // either, is refused before anything runs, with the words the agents'
-        // document check says too (contracts/autkGrammar). A list of one map
-        // or one plot is that view, so the checks below read it.
-        const severalViews = autkOneViewProblem(spec);
-        if (severalViews) {
-            emit({ code: 'error', content: severalViews });
-            showToast(severalViews, 'error');
+        // Views autk-grammar refuses (an id two views share, two plots known
+        // by one name, a link that names no view or layer) are refused before
+        // anything runs, in the grammar's words, which the agents' document
+        // check says too (contracts/autkGrammar autkViewProblem).
+        const viewProblem = autkViewProblem(spec);
+        if (viewProblem) {
+            emit({ code: 'error', content: viewProblem });
+            showToast(viewProblem, 'error');
             return;
         }
         // A key autk-grammar 5 renamed, or one a node does not run yet, is
@@ -590,6 +629,7 @@ export const useAutkGrammarBehavior = (
             showToast(unrunKey, 'error');
             return;
         }
+        // A list of one map or one plot is that view.
         for (const view of ['map', 'plot'] as const) {
             if (Array.isArray(spec?.[view]) && spec[view].length === 1) {
                 spec = { ...spec, [view]: spec[view][0] };
@@ -621,19 +661,39 @@ export const useAutkGrammarBehavior = (
         setGpuBlocked(null);
 
         const nodeId = data.nodeId;
-        const mapCanvasId = 'autk-grammar-map-' + nodeId;
-        const plotDivId = 'autk-grammar-plot-' + nodeId;
         const hasMaps = spec.map != null;
         const hasPlot = spec.plot != null;
 
-        // Each run draws on a canvas of its own. The previous run's maps are
-        // destroyed with theirs (AutkGrammar has no destroy() of its own),
-        // their view taken first where the next draw keeps it, each by its
-        // map's key in the document it was drawn from.
+        // A document that draws loads the grammar, whose arrangeViews gives
+        // each view its pane, as every host of the grammar arranges a
+        // document's views: by its `layout`, stacked without one. A layout
+        // the grammar cannot arrange is refused in its words.
+        const grammarModule = hasMaps || hasPlot ? await import('@urban-toolkit/autk-grammar') : null;
+        // A node that left the page while the grammar loaded has no canvas
+        // to draw on: its run ends here (see mountedRef).
+        if (leftPage()) return;
+        let arrangement: ViewArrangement | null = null;
+        if (grammarModule) {
+            try {
+                arrangement = grammarModule.arrangeViews(spec);
+            } catch (err) {
+                const message = describeError(err);
+                emit({ code: 'error', content: message });
+                showToast(message, 'error');
+                return;
+            }
+            setViewRows(Math.max(arrangement.rows, 1));
+        }
+
+        // Each run draws on canvases of its own. The previous run's maps are
+        // destroyed with theirs, their view taken first where the next draw
+        // keeps it, each by its map's key in the document it was drawn from.
         const keepView = keepsView || editFedRef.current;
-        if (keepView && grammarRef.current) keptViewsRef.current = mapViews(grammarRef.current, specRef.current ?? undefined);
+        if (keepView && grammarRef.current) keptViewsRef.current = mapViews(grammarRef.current, panesRef.current);
         destroyLastMaps();
         const wrapper = wrapperRef.current;
+        // The element each view draws in, in its pane (autkViews layOutPanes).
+        let laidOut: LaidOutViews | null = null;
         if (wrapper) {
             // Dispose the previous run's canvas pointer listeners (they live on
             // window, so they'd leak and fire for the now-stale canvas otherwise).
@@ -641,24 +701,15 @@ export const useAutkGrammarBehavior = (
             pickFixCleanupRef.current = null;
             while (wrapper.firstChild) wrapper.removeChild(wrapper.firstChild);
             clearEmptyState(wrapper);
-            if (hasMaps) {
-                const canvas = document.createElement('canvas');
-                canvas.id = mapCanvasId;
-                canvas.style.cssText = 'display:block;width:100%;height:100%;';
-                wrapper.appendChild(canvas);
-                // A drag that only passes over the map, begun on a handle, a
+            if (arrangement) {
+                laidOut = layOutPanes(wrapper, nodeId, arrangement);
+                // A drag that only passes over a map, begun on a handle, a
                 // node or the pane, leaves the map's view (autkMapPressGuard).
-                const disposeZoomFix = attachMapInteractionZoomFix(canvas);
-                const disposePressGuard = attachMapPressGuard(canvas);
-                pickFixCleanupRef.current = () => {
-                    disposeZoomFix();
-                    disposePressGuard();
-                };
-            } else if (hasPlot) {
-                const plotDiv = document.createElement('div');
-                plotDiv.id = plotDivId;
-                plotDiv.style.cssText = 'width:100%;height:100%;overflow:auto;';
-                wrapper.appendChild(plotDiv);
+                const disposers = laidOut.canvases.flatMap((canvas) => [
+                    attachMapInteractionZoomFix(canvas),
+                    attachMapPressGuard(canvas),
+                ]);
+                if (disposers.length > 0) pickFixCleanupRef.current = () => disposers.forEach((dispose) => dispose());
             }
         }
 
@@ -701,13 +752,15 @@ export const useAutkGrammarBehavior = (
                 // step, which draws nothing, reads what it was fed.
                 let prepared = autkSourcesFrom(await ((hasMaps || hasPlot) ? readDrawnInput(data.input) : readInput(data.input)), spec);
                 // The new layers a Map Editor node feeding the map makes are
-                // drawn on top, once they have features.
+                // drawn on top of its first map, once they have features.
                 const made = newLayerTables(feedsRef.current).filter((table) =>
                     prepared.sources.some((source) => source.outputTableName === table && hasFeatures(source.geojsonObject)));
-                if (made.length > 0 && spec.map) {
-                    const refs: any[] = Array.isArray(spec.map.layerRefs) ? spec.map.layerRefs : [];
+                const firstMap = mapEntries(spec)[0];
+                if (made.length > 0 && firstMap) {
+                    const refs: any[] = Array.isArray(firstMap.layerRefs) ? firstMap.layerRefs : [];
                     const missing = made.filter((table) => !refs.some((r: any) => r?.dataRef === table));
-                    spec = { ...spec, map: { ...spec.map, layerRefs: [...refs, ...missing.map((table) => ({ dataRef: table }))] } };
+                    const drawn = { ...firstMap, layerRefs: [...refs, ...missing.map((table) => ({ dataRef: table }))] };
+                    spec = { ...spec, map: Array.isArray(spec.map) ? [drawn, ...spec.map.slice(1)] : drawn };
                 }
                 if ((hasMaps || hasPlot) && prepared.rasters.length > 0) {
                     const resolved = await resolveRasterInputs(prepared.rasters);
@@ -768,10 +821,6 @@ export const useAutkGrammarBehavior = (
                 console.warn('[autk-grammar] reading the input failed:', e);
             }
         }
-
-        const targets: Record<string, string> = {};
-        if (hasMaps) targets.map = mapCanvasId;
-        if (hasPlot) targets.plot = plotDivId;
 
         // Tear down any listeners from the previous run before creating a new
         // grammar instance, so we never hold stale references.
@@ -908,7 +957,9 @@ export const useAutkGrammarBehavior = (
             // cache and load in-browser so the node draws and computes instead of
             // silently working on nothing. Only applies to the backend-ref path
             // (backendLayers == null means we did not already fall back). Each
-            // layer keeps the workspace it was loaded into.
+            // layer keeps the workspace it was loaded into. A buildings layer
+            // gets the heights autk-map and a pass read, as one of the input
+            // does (withReadableHeights).
             const loadedLayers = async (): Promise<AutkLayer[]> => {
                 let layers: AutkLayer[] = [];
                 try {
@@ -922,7 +973,9 @@ export const useAutkGrammarBehavior = (
                     const resolvedForFrontend = resolveDataSourceUrls({ data: specDataSources }, false).data;
                     layers = await loadSpecLayers({ data: resolvedForFrontend }, inputTables);
                 }
-                return layers;
+                return layers.map((layer) => (layer.type === 'buildings'
+                    ? { ...layer, geojson: withReadableHeights(layer.geojson) }
+                    : layer));
             };
 
             if (hasMaps || hasPlot) {
@@ -1055,16 +1108,20 @@ export const useAutkGrammarBehavior = (
                 // drops a thing. A dropped layerRef used to leave a
                 // console.warn as its only trace, so a map whose every ref was
                 // dropped rendered a grey canvas under a green "Done". Each is
-                // a table of the map's or the plot's own workspace, by key.
-                const mapRefKey = (r: any) => autkTableKey(autkWorkspaceOf(spec.map), r.dataRef);
-                const plotKey = (table: string) => autkTableKey(autkWorkspaceOf(spec.plot), table);
+                // a table of its own map's or plot's workspace, by key. Each
+                // view is known by its place in the document as written, which
+                // names the element it draws in (autkViews viewTargets).
+                let maps = mapEntries(spec).map((entry, index) => ({ index, entry }));
+                let plots = plotEntries(spec).map((entry, index) => ({ index, entry }));
+                const refsOf = (entry: any): any[] => (Array.isArray(entry?.layerRefs) ? entry.layerRefs : []);
+                const mapRefKey = (entry: any, r: any) => autkTableKey(autkWorkspaceOf(entry), r.dataRef);
+                const plotTableKey = (entry: any, table: string) => autkTableKey(autkWorkspaceOf(entry), table);
                 const requestedRefs: string[] = [
-                    ...(Array.isArray(spec.map?.layerRefs)
-                        ? spec.map.layerRefs
-                            .filter((r: any) => typeof r?.dataRef === 'string' && !!r.dataRef)
-                            .map(mapRefKey)
-                        : []),
-                    ...(spec.plot?.dataRef ? [plotKey(String(spec.plot.dataRef))] : []),
+                    ...maps.flatMap(({ entry }) => refsOf(entry)
+                        .filter((r: any) => typeof r?.dataRef === 'string' && !!r.dataRef)
+                        .map((r: any) => mapRefKey(entry, r))),
+                    ...plots.filter(({ entry }) => entry?.dataRef)
+                        .map(({ entry }) => plotTableKey(entry, String(entry.dataRef))),
                 ];
                 // Every table this node holds, empty ones included, is what the
                 // document could have named; only the non-empty ones can be
@@ -1089,50 +1146,73 @@ export const useAutkGrammarBehavior = (
                         }
                         spec = { ...spec, compute: passes };
                     }
-                    if (spec.map && Array.isArray(spec.map.layerRefs)) {
-                        const dangling = spec.map.layerRefs.filter(
-                            (r: any) => r?.dataRef && !knownNames.has(mapRefKey(r)),
+                    maps = maps.map(({ index, entry }) => {
+                        if (!Array.isArray(entry?.layerRefs)) return { index, entry };
+                        const dangling = entry.layerRefs.filter(
+                            (r: any) => r?.dataRef && !knownNames.has(mapRefKey(entry, r)),
                         );
-                        const empty = spec.map.layerRefs.filter(
-                            (r: any) => r?.dataRef && knownNames.has(mapRefKey(r))
-                                && !availableNames.has(mapRefKey(r)),
+                        const empty = entry.layerRefs.filter(
+                            (r: any) => r?.dataRef && knownNames.has(mapRefKey(entry, r))
+                                && !availableNames.has(mapRefKey(entry, r)),
                         );
                         if (dangling.length > 0) {
                             console.warn(
                                 '[autk-grammar] dropping map layerRef(s) to unavailable table(s): '
-                                + dangling.map(mapRefKey).join(', ')
+                                + dangling.map((r: any) => mapRefKey(entry, r)).join(', ')
                                 + ' - available: ' + [...availableNames].join(', '),
                             );
                         }
                         if (empty.length > 0) {
                             console.warn(
                                 '[autk-grammar] dropping map layerRef(s) to empty table(s): '
-                                + empty.map(mapRefKey).join(', '),
+                                + empty.map((r: any) => mapRefKey(entry, r)).join(', '),
                             );
                         }
-                        if (dangling.length > 0 || empty.length > 0) {
-                            spec.map = {
-                                ...spec.map,
-                                layerRefs: spec.map.layerRefs.filter(
-                                    (r: any) => !dangling.includes(r) && !empty.includes(r),
-                                ),
-                            };
-                        }
-                    }
+                        if (dangling.length === 0 && empty.length === 0) return { index, entry };
+                        return {
+                            index,
+                            entry: {
+                                ...entry,
+                                layerRefs: entry.layerRefs.filter((r: any) => !dangling.includes(r) && !empty.includes(r)),
+                            },
+                        };
+                    });
                     // A plot bound to an unavailable layer has nothing to draw:
                     // drop it rather than fail resolving the missing table.
-                    if (spec.plot && (
-                        (spec.plot.dataRef && !availableNames.has(plotKey(spec.plot.dataRef)))
-                        || (spec.plot.mapRef && !availableNames.has(plotKey(spec.plot.mapRef)))
-                    )) {
-                        console.warn(
-                            '[autk-grammar] dropping plot bound to unavailable table: '
-                            + plotKey(spec.plot.dataRef ?? spec.plot.mapRef)
-                            + ' - available: ' + [...availableNames].join(', '),
-                        );
-                        const { plot, ...rest } = spec;
-                        spec = rest;
+                    plots = plots.filter(({ entry }) => {
+                        const unavailable = (entry.dataRef && !availableNames.has(plotTableKey(entry, entry.dataRef)))
+                            || (entry.mapRef && !availableNames.has(plotTableKey(entry, entry.mapRef)));
+                        if (unavailable) {
+                            console.warn(
+                                '[autk-grammar] dropping plot bound to unavailable table: '
+                                + plotTableKey(entry, entry.dataRef ?? entry.mapRef)
+                                + ' - available: ' + [...availableNames].join(', '),
+                            );
+                        }
+                        return !unavailable;
+                    });
+                }
+                // A map left with no layer to draw draws nothing: it is left
+                // out, as a plot of no table is, and its pane stays empty.
+                maps = maps.filter(({ entry }) => refsOf(entry).length > 0);
+                // The document the grammar runs holds the views it draws, one
+                // object for one view of a kind, and the links between them:
+                // a link to a view or a layer left out is left out too, which
+                // the grammar would refuse (autkViews linksAtHand).
+                const asWritten = (views: Array<{ entry: any }>) =>
+                    (views.length === 0 ? undefined : views.length === 1 ? views[0].entry : views.map(({ entry }) => entry));
+                {
+                    const { map: _map, plot: _plot, links: _links, ...rest } = spec;
+                    const drawn: any = { ...rest };
+                    if (maps.length > 0) drawn.map = asWritten(maps);
+                    if (plots.length > 0) drawn.plot = asWritten(plots);
+                    const links = linksAtHand({ ...drawn, links: spec.links });
+                    if (Array.isArray(spec.links) && links.length < spec.links.length) {
+                        console.warn('[autk-grammar] dropping link(s) to a view or layer left out: '
+                            + JSON.stringify(spec.links.filter((link: any) => !links.includes(link))));
                     }
+                    if (links.length > 0) drawn.links = links;
+                    spec = drawn;
                 }
                 // The refs that name a table this node holds, whether or not it
                 // had rows: what the document resolved against, and what its
@@ -1152,10 +1232,8 @@ export const useAutkGrammarBehavior = (
                 // verdict is reached before it, so the grammar is never handed a
                 // plot with no data context to fail on.
                 const layersResolved = requestedRefs.filter((r) => knownNames.has(r)).length
-                    + (spec.plot && !spec.plot.dataRef ? 1 : 0);
-                const layersDrawn = (Array.isArray(spec.map?.layerRefs)
-                    ? spec.map.layerRefs.length
-                    : 0) + (spec.plot ? 1 : 0);
+                    + plots.filter(({ entry }) => !entry?.dataRef).length;
+                const layersDrawn = maps.reduce((sum, { entry }) => sum + refsOf(entry).length, 0) + plots.length;
                 const emptyRefs = requestedRefs.filter((r) => {
                     const table = tableRows.get(r);
                     return !!table && !(typeof table.rows === 'number' && table.rows > 0);
@@ -1191,19 +1269,24 @@ export const useAutkGrammarBehavior = (
                     return;
                 }
 
-                // A plot the document did not size fills its pane (see
+                // Each plot the document did not size fills its own pane (see
                 // utils/autkPlotSizing), measured now because the node can be
                 // resized while its data loads.
-                const plotPane = targets.plot ? document.getElementById(targets.plot) : null;
-                if (plotPane && spec.plot) {
-                    spec = {
-                        ...spec,
-                        plot: fitPlotToPane(spec.plot, {
-                            width: plotPane.clientWidth,
-                            height: plotPane.clientHeight,
-                        }),
-                    };
+                const plotPanes = plots.map(({ index }) => laidOut?.element('plot', index) ?? null);
+                if (plots.length > 0) {
+                    const fitted = plotEntries(spec).map((plot, at) => {
+                        const pane = plotPanes[at];
+                        return pane ? fitPlotToPane(plot, { width: pane.clientWidth, height: pane.clientHeight }) : plot;
+                    });
+                    spec = { ...spec, plot: fitted.length === 1 ? fitted[0] : fitted };
                 }
+                // Each view the run keeps draws in its element, named by its
+                // place in the document as written: one of a kind by its id,
+                // several by a list in the grammar's order.
+                const targets = viewTargets(nodeId, {
+                    maps: maps.map(({ index }) => index),
+                    plots: plots.map(({ index }) => index),
+                });
 
                 // The map draws its layers as the document writes them: a layer
                 // in its scenario's color writes that box's color through its
@@ -1212,7 +1295,7 @@ export const useAutkGrammarBehavior = (
                 // base-map layer the map lists after a raster draws over it.
                 spec = withLayersOverRasters(withOpaqueRasters(spec));
 
-                const { AutkGrammar, applyCamera, enterWorkspace } = await import('@urban-toolkit/autk-grammar');
+                const { AutkGrammar, applyCamera, arrangeViews, enterWorkspace } = grammarModule!;
                 // A node that left the page while its data loaded has no
                 // canvas to draw on: its run ends here (see mountedRef).
                 if (leftPage()) return;
@@ -1227,8 +1310,12 @@ export const useAutkGrammarBehavior = (
                     // tables in more than the default one (autkUsesWorkspaces).
                     if (drawsRasters) withRasterSources(g, newAutkDb, autkUsesWorkspaces(spec) ? enterWorkspace : undefined);
                     // Each pass the run computes is checked on the GPU's
-                    // device, as a compute step's is (autkComputeScopes).
-                    if (computes) withCheckedPasses(g);
+                    // device, as a compute step's is, and reads its
+                    // fromFeature tables as the node hands them, as a compute
+                    // step's does: the grammar's compute reads them from
+                    // autk-db, which stores a building as a GeometryCollection
+                    // (autkComputeScopes).
+                    if (computes) withCheckedPasses(g, handedTables(spec));
                     try {
                         await g.run(spec);
                     } catch (err) {
@@ -1254,11 +1341,14 @@ export const useAutkGrammarBehavior = (
                     destroyLastMaps();
                     return;
                 }
+                // The key the grammar knows each view it drew by, from the
+                // panes of the document it ran.
+                const panes = arrangeViews(spec).panes;
                 bleedRasterEdges(grammar, spec);
                 // Each map is framed on its layers, then turned by the camera
                 // its own entry writes, through the grammar's applyCamera.
                 attachSpecCameras(grammar, spec, applyCamera);
-                if (keepView && keptViewsRef.current) keepMapViews(grammar, keptViewsRef.current, spec);
+                if (keepView && keptViewsRef.current) keepMapViews(grammar, keptViewsRef.current, panes);
                 else frameMaps(grammar);
                 if (editFedRef.current) {
                     // What was set on each layer through the map's menu, the
@@ -1268,7 +1358,9 @@ export const useAutkGrammarBehavior = (
                     // feature's rows, read back from what autk-db exported,
                     // which the layer skips while the drawing tools draw the
                     // feature reshaped or moved.
+                    // A Map Editor node works on the node's first map.
                     const shownMap = grammarMaps(grammar)[0];
+                    const shownWorkspace = autkWorkspaceOf(mapEntries(spec)[0]);
                     restoreMapLayers(shownMap, savedLayersRef.current);
                     if (soloRef.current) showAsEditsAsk(shownMap, spec, null, soloRef.current.before);
                     const inputFeatures = inputFeaturesRef.current;
@@ -1278,9 +1370,9 @@ export const useAutkGrammarBehavior = (
                         shownMap ?? null,
                         (table) => layerIdFor(spec, table),
                         async (table, key, id) => featurePositions(
-                            inputFeatures[autkTableKey(autkWorkspaceOf(spec.map), table)] ?? [],
-                            (await drawnRowsOf(grammar, autkWorkspaceOf(spec.map), table))
-                                ?? loadOrders[autkTableKey(autkWorkspaceOf(spec.map), table)]?.map,
+                            inputFeatures[autkTableKey(shownWorkspace, table)] ?? [],
+                            (await drawnRowsOf(grammar, shownWorkspace, table, 0))
+                                ?? loadOrders[autkTableKey(shownWorkspace, table)]?.map,
                             key,
                             id,
                         ),
@@ -1290,13 +1382,16 @@ export const useAutkGrammarBehavior = (
                 // autk-plot's SVG is inline, so it sits on a line of text whose
                 // descender space overflows a pane the plot exactly fills, and
                 // brings the scrollbars back. As a block it fits.
-                for (const child of Array.from(plotPane?.children ?? [])) {
-                    if (child.tagName.toLowerCase() === 'svg') (child as SVGElement).style.display = 'block';
+                for (const pane of plotPanes) {
+                    for (const child of Array.from(pane?.children ?? [])) {
+                        if (child.tagName.toLowerCase() === 'svg') (child as SVGElement).style.display = 'block';
+                    }
                 }
 
                 // Store for interaction effects
                 grammarRef.current = grammar;
                 specRef.current    = spec;
+                panesRef.current   = panes;
                 drawnRef.current   = {
                     grammar, tagged: new Set(taggedTables), features: new Map(), rows: new Map(),
                     reads: Promise.resolve(), enterWorkspace,
@@ -1341,7 +1436,7 @@ export const useAutkGrammarBehavior = (
                             ? keyValues(rows, inputFeaturesRef.current[autkTableKey(workspace, layerRef)] ?? [], fields)
                             : rows;
                         sendOwnSelection({
-                            autk_selection: {
+                            [EDIT_SELECTION]: {
                                 type: data.length > 0 ? VisInteractionType.POINT : VisInteractionType.UNDETERMINED,
                                 data,
                                 priority: 1,
@@ -1386,13 +1481,13 @@ export const useAutkGrammarBehavior = (
                     // (autkMapState `pickOn`). A brush is the plot's its
                     // `plotId` names; one that names none is the first plot's.
                     const off1 = grammar.interactions.on('map:picking', ({ mapId, layerId, selection }) => {
-                        const picked = pickOn(grammar, spec, mapId, layerId);
+                        const picked = pickOn(grammar, spec, mapId, layerId, panes);
                         if (picked) emitInteraction(selection, picked.table, { kind: 'map', index: picked.index, entry: picked.entry });
                     });
                     const off2 = grammar.interactions.on('plot:selection', ({ plotId, selection }) => {
                         const brushed = plotId === undefined
                             ? (plotEntries(spec).length > 0 ? { index: 0, entry: plotEntries(spec)[0] } : null)
-                            : plotEntryOf(spec, plotId);
+                            : plotEntryOf(spec, panes, plotId);
                         if (brushed) emitInteraction(selection, brushed.entry?.dataRef, { kind: 'plot', ...brushed });
                     });
                     interactionOffRef.current = [off1, off2];
@@ -1404,19 +1499,19 @@ export const useAutkGrammarBehavior = (
                 // showing that selection too. A draw for a Map Editor node's
                 // edit keeps it: the pick stays to edit again, and lights up
                 // on the new map below.
-                const lost = preview ? null : ownSelectionRef.current;
-                if (lost) {
-                    ownSelectionRef.current = null;
+                // Each view's: every select that held a selection is sent
+                // empty, under the key it was sent under.
+                const lost = preview ? [] : [...heldSelectsRef.current].filter(([, select]) => holdsSelection(select));
+                if (!preview) heldSelectsRef.current = new Map();
+                if (lost.length > 0) {
                     const d = dataRef.current;
-                    d.interactionsCallback?.({
-                        autk_selection: {
-                            type: VisInteractionType.UNDETERMINED,
-                            data: [],
-                            priority: 1,
-                            source: NodeType.AUTK_GRAMMAR,
-                            layerRef: lost.layerRef,
-                        },
-                    }, d.nodeId);
+                    d.interactionsCallback?.(Object.fromEntries(lost.map(([key, select]) => [key, {
+                        type: VisInteractionType.UNDETERMINED,
+                        data: [],
+                        priority: 1,
+                        source: NodeType.AUTK_GRAMMAR,
+                        layerRef: select.layerRef,
+                    }])), d.nodeId);
                 }
 
                 // What the map was fed, as it came: the edits a Map Editor
@@ -1797,10 +1892,11 @@ export const useAutkGrammarBehavior = (
             ? (current as any).interactions
             : [];
         // Each layer by key (tableKeyOf): a selection that names its layer
-        // lands on the first layer of that name.
+        // lands on the first layer of that name, and an Autark node of
+        // several views sends a select per view, each on its own layer
+        // (utils/autkSelects).
         const direct = new Map<string, IncomingSelection[]>();
-        for (const selection of incoming) {
-            const named = (selection as any)?.details?.autk_selection?.layerRef;
+        for (const { layer: named, selection } of byAutkLayer(incoming)) {
             const target = tableKeyOf(layers.find((l) => l.outputTableName === named) ?? layers[0]);
             direct.set(target, [...(direct.get(target) ?? []), selection]);
         }
@@ -1839,7 +1935,7 @@ export const useAutkGrammarBehavior = (
             const { key } = mapRefs[at];
             return tablePositions(rowsByLayer.get(key) ?? [], drawnOrders[at] ?? loadOrdersRef.current[key]?.map);
         });
-        for (const plotSpec of plotEntries(spec)) {
+        for (const [index, plotSpec] of plotEntries(spec).entries()) {
             // A plot of a table a pass wrote holds the rows the pass kept.
             const plotTable = autkTableKey(autkWorkspaceOf(plotSpec), plotSpec.dataRef);
             const written = writtenRowsOf(grammar, plotSpec.dataRef, autkWorkspaceOf(plotSpec));
@@ -1849,7 +1945,7 @@ export const useAutkGrammarBehavior = (
                 ? tablePositions(rowsByLayer.get(plotTable) ?? [], kept)
                 : positions(plotTable, 'load');
             // The grammar knows a plot by its id, else by its table (plotKey).
-            const plot = plotKey(plotSpec);
+            const plot = plotKey(panesRef.current, index) ?? plotSpec.dataRef;
             sel.length === 0
                 ? grammar.clearHighlightOnPlot?.(plot)
                 : grammar.setPlotSelection?.(plot, sel);
@@ -1877,15 +1973,33 @@ export const useAutkGrammarBehavior = (
     // What this node's map draws and lights, as autk-map and autk-db hold it,
     // for the e2e tests.
     useEffect(() => {
-        // The map's layers, each a table of the map's workspace.
-        const drawn: DrawnTables = {
-            features: (table) => drawnFeaturesOf(grammarRef.current, autkWorkspaceOf(specRef.current?.map), table),
-            rows: (table) => drawnRowsOf(grammarRef.current, autkWorkspaceOf(specRef.current?.map), table),
+        // The map *view* names, else the first: its index among the maps the
+        // last draw made, its entry, and its layers, each a table of the
+        // map's workspace.
+        const mapOf = (view: string | number | undefined) => {
+            const index = view === undefined ? 0 : mapIndexOf(panesRef.current, view);
+            const entry = index < 0 ? undefined : mapEntries(specRef.current)[index];
+            const workspace = autkWorkspaceOf(entry);
+            const drawn: DrawnTables = {
+                features: (table) => drawnFeaturesOf(grammarRef.current, workspace, table),
+                rows: (table) => drawnRowsOf(grammarRef.current, workspace, table, view === undefined ? undefined : index),
+            };
+            return { index, entry, drawn };
         };
         mapStateReaders.set(data.nodeId, {
-            state: () => mapStateOf(grammarRef.current, specRef.current, drawn),
-            featureAt: async (table, position) =>
-                drawnFeatureAt(grammarRef.current, table, await drawn.features(table), position),
+            state: (view) => {
+                const { index, entry, drawn } = mapOf(view);
+                if (index < 0) return Promise.resolve(null);
+                return view === undefined
+                    ? mapStateOf(grammarRef.current, specRef.current, drawn)
+                    : mapStateOf(grammarRef.current, { map: entry }, drawn, index);
+            },
+            featureAt: async (table, position, view) => {
+                const { index, drawn } = mapOf(view);
+                if (index < 0) return null;
+                return drawnFeatureAt(grammarRef.current, table, await drawn.features(table), position,
+                    view === undefined ? undefined : index);
+            },
             views: () => mapViews(grammarRef.current),
             showFramed: () => showFramedViews(grammarRef.current),
         });
@@ -1907,9 +2021,11 @@ export const useAutkGrammarBehavior = (
                 const input = dataRef.current.input;
                 if (!spec || !input) return null;
                 const sources = autkSourcesFrom(await readDrawnInput(input), spec).sources;
-                // A view's tables are of its workspace: the map's, else the plot's.
-                const workspace = autkWorkspaceOf(spec.map ?? spec.plot);
-                const named = rowsTableOf(layer ?? selectionLayerOf(spec), workspace);
+                // A view's tables are of its workspace: that of the views
+                // that draw the layer, else of the first view.
+                const layerName = layer ?? selectionLayerOf(spec);
+                const workspace = workspaceOfLayer(spec, layerName);
+                const named = rowsTableOf(layerName, workspace);
                 const source = sources.find((s) => named !== undefined && tableKeyOf(s) === autkTableKey(workspace, named))
                     ?? sources[0];
                 if (!source) return null;
@@ -2178,6 +2294,9 @@ export const useAutkGrammarBehavior = (
     return {
         applyGrammar,
         contentComponent,
+        // The rows of panes its views are arranged in, which a notebook cell
+        // gives a map's height each.
+        viewRows,
         // Only ever offered for an empty editor, so it cannot displace real
         // work, and it steps aside for a document written in from outside.
         defaultValueOverride: starterSpec,

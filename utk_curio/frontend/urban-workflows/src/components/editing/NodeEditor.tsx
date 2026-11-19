@@ -120,6 +120,8 @@ type NodeEditorProps = {
     provenance?: boolean;
     customWidgetsCallback?: any;
     contentComponent?: any;
+    /** The rows of panes an Autark node's views are arranged in (registry/types `viewRows`). */
+    viewRows?: number;
     /** The behavior's own controls, with the widgets' controls: on the
      * Widgets tab and on a tile (registry/types,
      * NodeBehaviorResult.controlsComponent). */
@@ -148,6 +150,7 @@ function NodeEditor({
     provenance,
     customWidgetsCallback,
     contentComponent,
+    viewRows,
     controlsComponent,
     ownWidgets,
     disableWidgets,
@@ -563,7 +566,7 @@ function NodeEditor({
     // A pane fills the node on the canvas; in a cell it takes its own height.
     const paneStyle: CSS.Properties | undefined = inCell ? undefined : { height: "100%" };
     const widgetsPaneStyle: CSS.Properties = inCell ? { maxHeight: "360px", overflowY: "auto" } : { height: "100%" };
-    const outputBox = notebookOutputBox(String(nodeType ?? ""));
+    const outputBox = notebookOutputBox(String(nodeType ?? ""), viewRows);
     const px = (n: number | undefined) => (n === undefined ? undefined : `${n}px`);
 
     const tabContentFullscreen: CSS.Properties = {

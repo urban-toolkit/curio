@@ -39,7 +39,11 @@ const mockAutkGrammar = jest.fn().mockImplementation(() => ({
 }));
 jest.mock(
   '@urban-toolkit/autk-grammar',
-  () => ({ AutkGrammar: mockAutkGrammar }),
+  () => ({
+    AutkGrammar: mockAutkGrammar,
+    // autk-grammar's arrangeViews, which places each view's pane.
+    arrangeViews: require('../../_support/autkArrangeViews').arrangeViews,
+  }),
   { virtual: true },
 );
 

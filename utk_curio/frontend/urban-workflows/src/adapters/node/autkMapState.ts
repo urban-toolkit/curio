@@ -11,7 +11,7 @@
  * document's: never kept, hidden or picked on.
  */
 import { grammarMaps } from './autkMapDrawing';
-import { mapEntries, mapIndexOf, pickLayerOf } from './autkViews';
+import { mapEntries, mapIndexOf, pickLayerOf, type ViewPanes } from './autkViews';
 import { INPUT_ROW, tablePositions } from '../../utils/autkInput';
 import { idKey } from '../../utils/editFeatures/applyEdits';
 import { isMapEditToolLayer } from '../../utils/editFeatures/mapEditLayers';
@@ -75,15 +75,17 @@ const refsOf = (entry: any): any[] => (Array.isArray(entry?.layerRefs) ? entry.l
 
 /**
  * The map of *grammar* a pick was made on, and the layers of *spec* it draws:
- * the map *mapId* names (its index, or its `id`), as autk-grammar's
- * `map:picking` names it; without one, the map that draws *table*, else the
- * first. A map the grammar does not list as one of its maps reads every layer
- * of *spec*.
+ * the map *mapId* names among *panes*, those of *spec* (its index, or its
+ * `id`), as autk-grammar's `map:picking` names it; without one, the map that
+ * draws *table*, else the first. A map the grammar does not list as one of its
+ * maps reads every layer of *spec*.
  */
-function pickedMap(grammar: any, spec: any, table: string | undefined, mapId: string | number | undefined) {
+function pickedMap(
+    grammar: any, spec: any, table: string | undefined, mapId: string | number | undefined, panes?: ViewPanes | null,
+) {
     const maps = grammarMaps(grammar);
     if (mapId !== undefined) {
-        const index = mapIndexOf(spec, mapId);
+        const index = mapIndexOf(panes, mapId);
         return { index, map: index < 0 ? undefined : maps[index], refs: index < 0 ? [] : refsOf(mapEntries(spec)[index]) };
     }
     const map = (table ? grammar?.mapLayer?.(table)?.map : undefined) ?? maps[0];
@@ -94,15 +96,18 @@ function pickedMap(grammar: any, spec: any, table: string | undefined, mapId: st
 /**
  * The table of the layer that picks on a map of *grammar*: autk-map has one,
  * the last a document marks `isPick`, or the one picked in its layer menu or
- * shown alone by a Map Editor node. The map is the one *mapId* names (its
- * index, or its `id`), as autk-grammar's `map:picking` names the map picked
- * on; without one, the map that draws *table*, else the first. Only that
+ * shown alone by a Map Editor node. The map is the one *mapId* names among
+ * *panes*, those of *spec* (its index, or its `id`), as autk-grammar's
+ * `map:picking` names the map picked on; without one, the map that draws
+ * *table*, else the first. Only that
  * map's layers are read, so two maps whose layers share a title stay apart.
  * Null when the map has none or it draws a table its entry of *spec* does not
  * name.
  */
-export function pickingTableOf(grammar: any, spec: any, table: string | undefined, mapId?: string | number): string | null {
-    const { map, refs } = pickedMap(grammar, spec, table, mapId);
+export function pickingTableOf(
+    grammar: any, spec: any, table: string | undefined, mapId?: string | number, panes?: ViewPanes | null,
+): string | null {
+    const { map, refs } = pickedMap(grammar, spec, table, mapId, panes);
     const picking = idOf(map?.activePickingLayer);
     if (!picking) return null;
     for (const ref of refs) {
@@ -117,18 +122,19 @@ export function pickingTableOf(grammar: any, spec: any, table: string | undefine
  * the map that draws the picked layer *layerId*, else the first; with its
  * entry of *spec* and the table picked: the one its layer that picks now
  * draws, else its entry's own picking layer's. Null for a `mapId` that names
- * no map of *spec*.
+ * no map among *panes*, those of *spec*.
  */
 export function pickOn(
     grammar: any,
     spec: any,
     mapId: string | number | undefined,
     layerId?: string,
+    panes?: ViewPanes | null,
 ): { index: number; entry: any; table: string | undefined } | null {
-    const { index } = pickedMap(grammar, spec, layerId, mapId);
+    const { index } = pickedMap(grammar, spec, layerId, mapId, panes);
     if (index < 0) return null;
     const entry = mapEntries(spec)[index];
-    return { index, entry, table: pickingTableOf(grammar, spec, layerId, mapId) ?? pickLayerOf(entry) };
+    return { index, entry, table: pickingTableOf(grammar, spec, layerId, mapId, panes) ?? pickLayerOf(entry) };
 }
 
 /** The features a map draws of each table, and the input row each of its positions stands for, read back once a draw. */
@@ -199,15 +205,18 @@ function pointDrift(map: any, layer: any, features: readonly any[]): number | nu
  * (the positions it lights, and the feature it was handed for each) and from
  * the features autk-db exported for it (*drawn*), not through the input's
  * rows; beside how many of its positions name an input row (*drawn*), as a
- * pick and a highlight read them. The e2e tests read it
- * (`window.__curio_mapState`).
+ * pick and a highlight read them. With *mapIndex*, the layers of that map of
+ * the grammar's maps; without it, the last map that draws each table. The
+ * e2e tests read it (`window.__curio_mapState`).
  */
-export async function mapStateOf(grammar: any, spec: any, drawn: DrawnTables): Promise<Record<string, MapTableState> | null> {
+export async function mapStateOf(
+    grammar: any, spec: any, drawn: DrawnTables, mapIndex?: number,
+): Promise<Record<string, MapTableState> | null> {
     if (grammarMaps(grammar).length === 0) return null;
     const out: Record<string, MapTableState> = {};
     for (const ref of layerRefsOf(spec)) {
         const table = bareRef(ref?.dataRef);
-        const layer = table ? mapLayerOf(grammar, table) : null;
+        const layer = table ? mapLayerOf(grammar, table, mapIndex) : null;
         if (!layer) continue;
         const features = (await drawn.features(table)) ?? [];
         const rows = await drawn.rows(table);
@@ -218,7 +227,7 @@ export async function mapStateOf(grammar: any, spec: any, drawn: DrawnTables): P
             positions,
             drawn: Array.isArray(layer.components) ? layer.components.length : 0,
             rows: rows ? rows.length : null,
-            pointDrift: pointDrift(grammar.mapLayer(table)?.map, layer, features),
+            pointDrift: pointDrift(grammar.mapLayer(table, mapIndex)?.map, layer, features),
         };
     }
     return out;
@@ -245,16 +254,18 @@ export function featurePositions(
 /**
  * The properties of the feature the map of *grammar* draws at *position* of
  * *table*'s layer, counted from the end when negative, from the features
- * autk-db exported for it (*features*); null when there is none. The e2e
- * tests read it (`window.__curio_mapFeatureAt`).
+ * autk-db exported for it (*features*); null when there is none. With
+ * *mapIndex*, that map's layer; without it, the last map's that draws it. The
+ * e2e tests read it (`window.__curio_mapFeatureAt`).
  */
 export function drawnFeatureAt(
     grammar: any,
     table: string,
     features: readonly any[] | null,
     position: number,
+    mapIndex?: number,
 ): Record<string, unknown> | null {
-    const layer = mapLayerOf(grammar, table);
+    const layer = mapLayerOf(grammar, table, mapIndex);
     const count = Array.isArray(layer?.components) ? layer.components.length : 0;
     const at = position < 0 ? count + position : position;
     if (!layer || !features || at < 0 || at >= count) return null;

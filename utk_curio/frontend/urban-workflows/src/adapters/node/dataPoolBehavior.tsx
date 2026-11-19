@@ -17,6 +17,7 @@ import { copyForFlags } from '../../utils/poolFlagCopy';
 import { poolTabKind } from '../../utils/poolTabs';
 import { sandboxArtifactId } from '../../utils/flowOutputRef';
 import { isInteractionEdge } from '../../contracts/interactionEdges';
+import { byAutkLayer } from '../../utils/autkSelects';
 
 /** The charts joined to a pool by an interaction edge. */
 function interactionPeers(edges: readonly any[], poolId: string): Set<string> {
@@ -234,13 +235,13 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
 
       // Group incoming interactions by the layer they target so multi-layer
       // wrappers can route a brush on (say) roads to the roads features only,
-      // not surface. Interactions without a `layerRef` — Vega, plain Python
-      // dataframes — go to the `undefined` bucket and fall back to the legacy
+      // not surface. An Autark node of several views sends a select per
+      // view, each in the bucket of its own layer (utils/autkSelects).
+      // Interactions without a `layerRef` (Vega, plain Python
+      // dataframes) go to the `undefined` bucket and fall back to the legacy
       // first-layer behavior so existing single-layer flows are unaffected.
       const interactionsByLayer = new Map<string | undefined, any[]>();
-      for (const interaction of interactions) {
-        const sel = interaction?.details?.autk_selection;
-        const layerRef: string | undefined = sel?.layerRef;
+      for (const { layer: layerRef, selection: interaction } of byAutkLayer(interactions)) {
         const bucket = interactionsByLayer.get(layerRef) ?? [];
         bucket.push(interaction);
         interactionsByLayer.set(layerRef, bucket);

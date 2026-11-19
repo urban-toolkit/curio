@@ -17,6 +17,8 @@ const mockHeldRuns: Array<{ spec: any; end: () => void }> = [];
 jest.mock(
   '@urban-toolkit/autk-grammar',
   () => ({
+    // autk-grammar's arrangeViews, which places each view's pane.
+    arrangeViews: require('../../_support/autkArrangeViews').arrangeViews,
     AutkGrammar: jest.fn().mockImplementation(() => {
       const grammar: any = { data: {}, maps: [], interactions: { on: () => () => {} } };
       grammar.run = jest.fn((spec: any) => new Promise<void>((resolve) => {

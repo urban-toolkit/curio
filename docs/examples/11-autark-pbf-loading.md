@@ -27,8 +27,8 @@ histogram and the map each receive those layers as named upstream sources (`tabl
 named-layer case of Autark's two upstream-referencing mechanisms; see
 [Referencing Upstream Data in Autark Nodes](../ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
 
-An Autark node draws one view, a map or a plot, so the histogram and the map are two nodes, joined by an
-interaction edge (see [Linking charts](../USAGE.md#linking-charts)).
+The histogram and the map are two nodes, joined by an interaction edge (see
+[Linking charts](../USAGE.md#linking-charts)).
 
 ## Data
 

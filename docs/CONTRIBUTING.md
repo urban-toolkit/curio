@@ -476,7 +476,7 @@ with nothing to run. An object that names one key twice is refused.
 
 To add, remove or reorder a starter rule, edit its ladder in `visDefaults.json`
 and add or remove its builder in `vegaDefaultSpec.ts` or `autkDefaultSpec.ts`,
-keyed by the rule's id. `inputTableName`, `autkOneViewProblem`,
+keyed by the rule's id. `inputTableName`, `autkViewProblem`,
 `autkKeyProblem` and `autkRasterPassProblem` are code over `autkGrammar.json`
 on both sides, in
 `contracts/autkGrammar.ts` and `contracts.py`; a change to any of them goes

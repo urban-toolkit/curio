@@ -1,17 +1,23 @@
 {
   "families": ["compute", "data", "layout", "links", "map", "plot"],
   "inputTablePrefix": "input_",
-  "oneView": "An Autark node draws one view: one map or one plot. Put each in its own Autark node, and link them with interaction edges.",
+  "viewRules": {
+    "emptyId": "A map or plot has an empty id.",
+    "sharedId": "Two maps or plots have the id \"{id}\"; an id names one view.",
+    "plotsWithoutIds": "Two plots of the table \"{table}\" have no id; give each plot an id.",
+    "plotIdIsDataRef": "A plot's id \"{id}\" is the dataRef of a plot without an id; give each plot an id.",
+    "linkSource": "Link source \"{source}\" is not the id (or the dataRef) of a plot of this specification.",
+    "linkTarget": "Link target \"{target}\" is not the id of a map of this specification.",
+    "linkLayer": "Link from \"{source}\": map \"{target}\" has no layer \"{layer}\".",
+    "linkTable": "Link from \"{source}\": map \"{target}\" draws no layer of the table \"{table}\"; name the layer."
+  },
   "renamedKeys": [
     { "in": "compute[]", "key": "wglsFunction", "renamedTo": "wgslFunction" },
     { "in": "data[]", "key": "tableRootName", "renamedTo": "dataRef" },
     { "in": "data[]", "key": "tableJoinName", "renamedTo": "joinDataRef" }
   ],
   "renamedKey": "This spec uses \"{key}\"{at}, which autk-grammar 5 renamed to \"{renamedTo}\".",
-  "notRunYet": [
-    { "in": "", "key": "layout", "what": "\"layout\"" },
-    { "in": "", "key": "links", "what": "\"links\"" }
-  ],
+  "notRunYet": [],
   "notRunYetKey": "This spec uses {what}{at}, which Curio does not run yet.",
   "keyAt": " at {path}",
   "rasterSources": ["heatmap", "geotiff"],

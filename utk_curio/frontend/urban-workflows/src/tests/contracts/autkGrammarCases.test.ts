@@ -1,10 +1,10 @@
 /**
  * The cases in contracts/autkGrammar.cases.json, run through the node's own
- * inputTableName and autkOneViewProblem (contracts/autkGrammar.ts).
+ * inputTableName and autkViewProblem (contracts/autkGrammar.ts).
  * backend/tests/test_agents/test_autk_grammar_cases.py runs the same file
- * through contracts.input_table_name and autk_one_view_problem, so a grammar
+ * through contracts.input_table_name and autk_view_problem, so a grammar
  * node and the agents' document check name its inputs alike, and refuse the
- * same documents with the same sentence, the one autkGrammar.json holds.
+ * same documents with the same sentence, one of those autkGrammar.json holds.
  */
 import fs from "fs";
 import path from "path";
@@ -19,11 +19,11 @@ interface NameCase {
 interface ViewCase {
   name: string;
   spec: unknown;
-  /** The key in autkGrammar.json of what the document is told, or null. */
-  problem: string | null;
+  /** The sentence the document is told, or null. */
+  says: string | null;
 }
 
-const CASES: { inputTableNames: NameCase[]; oneView: ViewCase[] } = JSON.parse(
+const CASES: { inputTableNames: NameCase[]; views: ViewCase[] } = JSON.parse(
   fs.readFileSync(path.join(CONTRACTS, "autkGrammar.cases.json"), "utf8"),
 );
 
@@ -35,15 +35,22 @@ const shared = (): Record<string, unknown> =>
 const autkGrammar = () =>
   require("../../contracts/autkGrammar") as {
     inputTableName: (position: number) => string;
-    autkOneViewProblem: (spec: unknown) => string | null;
+    autkViewProblem: (spec: unknown) => string | null;
   };
 
+/** A sentence of autkGrammar.json's viewRules, as a pattern its filled sentences match. */
+const shapeOf = (template: string) =>
+  new RegExp(`^${template.replace(/[.*+?^$()|[\]\\]/g, "\\$&").replace(/\{\w+\}/g, ".*")}$`);
+
 describe("the cases", () => {
-  test("cover both answers, and name a sentence autkGrammar.json holds", () => {
-    const named = CASES.oneView.flatMap((c) => (c.problem === null ? [] : [c.problem]));
-    expect(named.length).toBeGreaterThan(0);
-    expect(named.length).toBeLessThan(CASES.oneView.length);
-    for (const key of named) expect(typeof shared()[key]).toBe("string");
+  test("cover both answers, and every rule of the views with a sentence autkGrammar.json holds", () => {
+    const said = CASES.views.flatMap((c) => (c.says === null ? [] : [c.says]));
+    expect(said.length).toBeGreaterThan(0);
+    expect(said.length).toBeLessThan(CASES.views.length);
+    const rules = shared().viewRules as Record<string, string>;
+    for (const template of Object.values(rules)) {
+      expect(said.some((sentence) => shapeOf(template).test(sentence))).toBe(true);
+    }
     expect(CASES.inputTableNames.length).toBeGreaterThan(1);
   });
 });
@@ -58,13 +65,12 @@ describe("inputTableName", () => {
   );
 });
 
-describe("autkOneViewProblem", () => {
-  test.each(CASES.oneView.map((c) => [c.name, c] as const))("%s", (_name, c) => {
-    const sentences = shared();
-    const expected = c.problem === null ? null : sentences[c.problem];
-    expect(expected === null || typeof expected === "string").toBe(true);
-    expect(autkGrammar().autkOneViewProblem(c.spec)).toBe(expected);
-    // Whatever the document, the only sentence it can be told is the file's.
-    expect([null, sentences.oneView]).toContain(autkGrammar().autkOneViewProblem(c.spec));
+describe("autkViewProblem", () => {
+  test.each(CASES.views.map((c) => [c.name, c] as const))("%s", (_name, c) => {
+    const said = autkGrammar().autkViewProblem(c.spec);
+    expect(said).toBe(c.says);
+    // Whatever the document, the only sentences it can be told are the file's.
+    const rules = Object.values(shared().viewRules as Record<string, string>);
+    if (said !== null) expect(rules.some((template) => shapeOf(template).test(said))).toBe(true);
   });
 });

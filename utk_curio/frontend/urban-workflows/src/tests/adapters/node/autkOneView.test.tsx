@@ -1,9 +1,10 @@
 /**
- * An Autark node draws one view, a map or a plot (adapters/node/autkGrammarBehavior).
- * A document with a map and a plot, or with a list of more than one map or more
- * than one plot, fails before anything runs, with an error that names the fix:
- * the node is marked errored, so the nodes it feeds say so, and its error is
- * what Solve and the Node Builder read. A document with one map or one plot
+ * An Autark node draws every view of its document (adapters/node/autkGrammarBehavior):
+ * a map and a plot, or a list of maps or of plots, each in an element of its
+ * own. Views autk-grammar refuses, such as two plots of one table without
+ * ids, fail before anything runs, with the grammar's words, which name the
+ * fix: the node is marked errored, so the nodes it feeds say so, and its error
+ * is what Solve and the Node Builder read. A document with one map or one plot
  * runs as it always has, and a `map` or `plot` written as a list of one is that
  * view: a map's layers are counted, filtered and picked, and a plot is drawn in
  * the node's pane, checked against the tables at hand and brushed by its layer,
@@ -66,16 +67,16 @@ import {
   unitsCollection,
 } from '../../_support/keyedSelections';
 
-/** What the node says of a document with more than one view. */
-const ONE_VIEW =
-  'An Autark node draws one view: one map or one plot. Put each in its own Autark node, '
-  + 'and link them with interaction edges.';
+/** What autk-grammar, and so the node, says of two plots of one table without ids. */
+const PLOTS_WITHOUT_IDS = 'Two plots of the table "input_0" have no id; give each plot an id.';
 
 const NODE = 'view-1';
-/** The one canvas the node draws a map on. */
+/** The canvas the node draws its first map on; map k draws on `<CANVAS>-<k>`. */
 const CANVAS = 'autk-grammar-map-' + NODE;
-/** The one pane the node draws a plot in. */
+/** The pane the node draws its first plot in; plot k draws in `<PANE>-<k>`. */
 const PANE = 'autk-grammar-plot-' + NODE;
+/** The element of view *index* whose first is *first*. */
+const nth = (first: string, index: number) => (index === 0 ? first : `${first}-${index}`);
 const MAP = { layerRefs: [{ dataRef: 'input_0', getFnv: 'pop' }] };
 const PLOT = {
   dataRef: 'input_0', mark: 'bar', axis: ['pop', '@transform'],
@@ -84,17 +85,37 @@ const PLOT = {
 
 const mountNode = () => mountAutkNode(NODE);
 
-/** Run *spec* and expect it refused: nothing ran, and the node failed with the fix. */
-async function expectRefused(spec: object): Promise<void> {
+/** Run *spec* and expect it refused: nothing ran, and the node failed with the fix, *says*. */
+async function expectRefused(spec: object, says: string): Promise<void> {
   const node = mountNode();
 
   await node.run(spec);
 
-  expect(node.lastOutput()).toEqual({ code: 'error', content: ONE_VIEW });
+  expect(node.lastOutput()).toEqual({ code: 'error', content: says });
   expect(mockAutkGrammar).not.toHaveBeenCalled();
   // The nodes it feeds say it failed, and the person running it is told.
   expect(mockMarkNodeErrored).toHaveBeenCalledWith(NODE);
-  expect(mockShowToast).toHaveBeenCalledWith(ONE_VIEW, 'error');
+  expect(mockShowToast).toHaveBeenCalledWith(says, 'error');
+}
+
+/** Run *spec* and expect it drawn as one run: the grammar handed *targets* and the views as written. */
+async function expectDrawn(spec: { map?: unknown; plot?: unknown }, targets: object): Promise<void> {
+  const node = mountNode();
+
+  await node.run(spec);
+
+  expect(mockRuns).toHaveLength(1);
+  expect(mockRuns[0].targets).toEqual(targets);
+  for (const view of ['map', 'plot'] as const) {
+    const written = Array.isArray(spec[view]) && (spec[view] as unknown[]).length === 1
+      ? (spec[view] as unknown[])[0]
+      : spec[view];
+    expect(mockRuns[0].spec[view]).toEqual(written);
+  }
+  expect(node.lastOutput()).toEqual({ code: 'success', content: '' });
+  expect(mockMarkNodeErrored).not.toHaveBeenCalled();
+  // Each element the grammar is handed is on the page.
+  for (const id of Object.values(targets).flat()) expect(document.getElementById(id as string)).not.toBeNull();
 }
 
 beforeEach(() => {
@@ -104,20 +125,30 @@ beforeEach(() => {
 
 afterEach(unstubWebGpu);
 
-test.each([2, 3])('a document with %i maps fails before anything runs, and its error names the fix', async (count) => {
-  await expectRefused({ map: Array.from({ length: count }, () => MAP) });
+test.each([2, 3])('a document with %i maps draws each on a canvas of its own', async (count) => {
+  await expectDrawn(
+    { map: Array.from({ length: count }, () => MAP) },
+    { map: Array.from({ length: count }, (_, k) => nth(CANVAS, k)) },
+  );
 });
 
-test.each([2, 3])('a document with %i plots fails before anything runs, and its error names the fix', async (count) => {
-  await expectRefused({ plot: Array.from({ length: count }, () => PLOT) });
+test.each([2, 3])('a document with %i plots of one table without ids fails before anything runs, and its error names the fix', async (count) => {
+  await expectRefused({ plot: Array.from({ length: count }, () => PLOT) }, PLOTS_WITHOUT_IDS);
+});
+
+test.each([2, 3])('a document with %i plots of one table with ids draws each in a pane of its own', async (count) => {
+  await expectDrawn(
+    { plot: Array.from({ length: count }, (_, k) => ({ ...PLOT, id: `heights-${k}` })) },
+    { plot: Array.from({ length: count }, (_, k) => nth(PANE, k)) },
+  );
 });
 
 test.each([
   ['a map and a plot', { map: MAP, plot: PLOT }],
   ['a list of one map and a plot', { map: [MAP], plot: PLOT }],
   ['a map and a list of one plot', { map: MAP, plot: [PLOT] }],
-])('a document with %s fails before anything runs, and its error names the fix', async (_, spec) => {
-  await expectRefused(spec);
+])('a document with %s draws both', async (_, spec) => {
+  await expectDrawn(spec, { map: CANVAS, plot: PANE });
 });
 
 test('a document with one map runs as before', async () => {

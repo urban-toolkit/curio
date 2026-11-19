@@ -468,7 +468,9 @@ Two families of baseline live in that folder:
   `test_node_execution_closeup_<node id>` baseline: the node alone, framed at up
   to 100% zoom (`save_node_closeup`) and compared at a per-channel tolerance of
   5 instead of 30, against a 5% budget instead of 10%, once two captures of it
-  in a row agree (`still=True`). In the full-page frame a
+  in a row agree (`still=True`). An Autark node of several views also gets one
+  for each view's pane, `test_node_execution_closeup_<node id>_<pane>` (`map-0`
+  and on, then `plot-0` and on; `save_node_closeup`'s `view`). In the full-page frame a
   map, plot or chart that drew nothing can stay under the budget; up close it cannot. Walkthrough scenes with a drawn map
   or chart take one with `ctx.capture_node`. A workflow in `INTERACTIONS`
   (test_workflows.py) also gets

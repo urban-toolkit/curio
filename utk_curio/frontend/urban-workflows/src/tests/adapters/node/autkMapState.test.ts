@@ -161,9 +161,12 @@ describe("a layer of one map of several", () => {
   const state = () =>
     require("../../../adapters/node/autkMapState") as {
       mapLayerOf: (grammar: unknown, table: string, mapId?: string | number) => any;
-      pickingTableOf: (grammar: unknown, spec: unknown, table: string | undefined, mapId?: string | number) => string | null;
+      pickingTableOf: (
+        grammar: unknown, spec: unknown, table: string | undefined, mapId?: string | number, panes?: unknown,
+      ) => string | null;
     };
   const { grammarThatRan } = require("../../_support/autkGrammarMaps");
+  const { panesOf } = require("../../_support/autkArrangeViews");
   /** A map whose one layer, of id *id*, is *layer*, and whose picking layer is *picking*. */
   const oneLayerMap = (id: string, layer: any, picking: string | null = null) => ({
     layerManager: { layers: [layer] },
@@ -192,9 +195,9 @@ describe("a layer of one map of several", () => {
     };
     const streets = { layerInfo: { id: "Streets" } };
     const grammar = grammarThatRan(twoMaps, oneLayerMap("Streets", streets, "Streets"), oneLayerMap("Streets", streets, "Streets"));
-    expect(state().pickingTableOf(grammar, twoMaps, "Streets", "detail")).toBe("lanes");
-    expect(state().pickingTableOf(grammar, twoMaps, "Streets", 1)).toBe("lanes");
-    expect(state().pickingTableOf(grammar, twoMaps, "Streets", 0)).toBe("roads");
+    expect(state().pickingTableOf(grammar, twoMaps, "Streets", "detail", panesOf(twoMaps))).toBe("lanes");
+    expect(state().pickingTableOf(grammar, twoMaps, "Streets", 1, panesOf(twoMaps))).toBe("lanes");
+    expect(state().pickingTableOf(grammar, twoMaps, "Streets", 0, panesOf(twoMaps))).toBe("roads");
   });
 });
 

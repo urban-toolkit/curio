@@ -443,11 +443,7 @@ BACK_BAY_ROADS = {"type": "osm", "pbfFileUrl": "docs/examples/data/back_bay.osm.
     ({"data": [BACK_BAY_ROADS,
                {"type": "join", "tableRootName": "table_osm_roads", "joinDataRef": "table_osm_surface"}]},
      'This spec uses "tableRootName" at data[1], which autk-grammar 5 renamed to "dataRef".'),
-    # Links describe no step of their own, so the document is still a data
-    # node's, which a run on the server loads.
-    ({"data": [BACK_BAY_ROADS], "links": [{"source": "roads-plot", "target": "roads-map"}]},
-     'This spec uses "links", which Curio does not run yet.'),
-], ids=["renamed-key", "not-run-yet"])
+], ids=["renamed-key"])
 def test_a_load_that_writes_a_key_the_node_refuses_fails_with_its_words(
         client, user_and_token, sandbox, recorded, document, said):
     """The compiler refuses the document as the node does
@@ -465,6 +461,25 @@ def test_a_load_that_writes_a_key_the_node_refuses_fails_with_its_words(
     assert sandbox.bodies("/execJs") == []
     assert recorded == []
     assert run["status"] == "failed"
+
+
+def test_a_load_beside_links_runs_on_the_server(client, user_and_token, sandbox, recorded):
+    """Links describe no step of their own, so a document of a data section
+    and links is still a data node's, which a run on the server loads: a node
+    runs links, and links that name no view of a document that draws none
+    tell it nothing."""
+    user, token = user_and_token
+    content = json.dumps({"data": [BACK_BAY_ROADS], "links": [{"source": "roads-plot", "target": "roads-map"}]})
+    run = _run(client, token, _create(client, token, {
+        "name": "Back Bay roads",
+        "nodes": [{"id": "roads", "type": AUTARK, "content": content, "saveOutputDataset": True}],
+        "edges": [],
+    }))
+    (step,) = run["steps"]
+    assert (step["status"], step["outputPath"]) == ("ok", LAYERS), step
+    (load,) = sandbox.bodies("/execJs")
+    assert [source["type"] for source in _compiled_sources(load["code"])] == ["osm"]
+    assert [(ref.node_id, ref.filename, ref.data_type) for ref in recorded] == [("roads", LAYERS, "list")]
 
 
 def test_a_load_that_fails_twice_fails_the_node(client, user_and_token, sandbox, recorded):

@@ -430,8 +430,10 @@ function featuresOf(frame: GrammarFrame, name: string): FrameResult {
  * A buildings table whose heights autk-map and a compute can read, one feature
  * per row as it came: a feature autk-map would misread, or one with no
  * `height`, gets its `height` written, and every other one is the same object.
+ * A node reads its input's buildings and those its own data section loads
+ * through it.
  */
-function withReadableHeights(fc: FeatureCollection): FeatureCollection {
+export function withReadableHeights(fc: FeatureCollection): FeatureCollection {
   const features: any[] = Array.isArray((fc as any)?.features) ? (fc as any).features : [];
   let changed = false;
   const next = features.map((feature) => {

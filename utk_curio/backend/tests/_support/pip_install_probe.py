@@ -376,7 +376,7 @@ def _shared_constants():
         "folder": str(folder),
         "files": {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(folder.glob("*.json"))},
         "stopped_by": contracts.STOPPED_BY_PHRASES,
-        "one_view": contracts.AUTK_ONE_VIEW,
+        "view_rules": contracts.AUTK_VIEW_RULES,
         "categories": list(manifest.AGENT_CATEGORIES),
         "palette": dict(NOTE_PALETTE.colors),
     }
