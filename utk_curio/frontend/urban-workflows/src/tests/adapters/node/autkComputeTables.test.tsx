@@ -99,6 +99,7 @@ import { autkNeedsInput } from '../../../utils/autkInput';
 import { METRES_PER_LEVEL } from '../../../utils/buildingHeight';
 import {
   drawnExports,
+  grammarComputes,
   grammarRuns as mockRuns,
   inputsByPath,
   resetAutkNodeMocks,
@@ -352,23 +353,24 @@ describe('a plot of a table a pass of its document writes', () => {
   });
 });
 
+/** A node whose run hands on what it made, as a node of the canvas does. */
+function mountStep(nodeId: string, input: unknown = '') {
+  const outputCallback = jest.fn();
+  const setOutput = jest.fn();
+  const { result } = renderHook(() => useAutkGrammarBehavior(
+    { nodeId, input, defaultCode: '{}', outputCallback, interactionsCallback: jest.fn() } as any,
+    { output: { code: '', content: '' }, setOutput, setCode: jest.fn(), templateData: {} } as any,
+  ));
+  return {
+    run: async (spec: object) => {
+      await act(async () => { await result.current.applyGrammar!(JSON.stringify(spec)); });
+    },
+    handedOn: () => outputCallback.mock.calls.map((call) => call[1]),
+    lastOutput: () => setOutput.mock.calls[setOutput.mock.calls.length - 1]?.[0],
+  };
+}
+
 describe('a document with data and compute and no view', () => {
-  /** A node whose run hands on what it made, as a node of the canvas does. */
-  function mountStep(nodeId: string, input: unknown = '') {
-    const outputCallback = jest.fn();
-    const setOutput = jest.fn();
-    const { result } = renderHook(() => useAutkGrammarBehavior(
-      { nodeId, input, defaultCode: '{}', outputCallback, interactionsCallback: jest.fn() } as any,
-      { output: { code: '', content: '' }, setOutput, setCode: jest.fn(), templateData: {} } as any,
-    ));
-    return {
-      run: async (spec: object) => {
-        await act(async () => { await result.current.applyGrammar!(JSON.stringify(spec)); });
-      },
-      handedOn: () => outputCallback.mock.calls.map((call) => call[1]),
-      lastOutput: () => setOutput.mock.calls[setOutput.mock.calls.length - 1]?.[0],
-    };
-  }
   const DATA = [{ type: 'geojson', outputTableName: 'spots', geojsonObject: spots() }];
 
   beforeEach(() => {
@@ -474,5 +476,98 @@ describe('a document with data and compute and no view', () => {
     } finally {
       info.mockRestore();
     }
+  });
+});
+
+// A map node's run hands each pass to autk-grammar's own compute adapter,
+// which reads a table no pass wrote from the run's database, autk-db, where a
+// building is a GeometryCollection of its parts. So a pass of one document
+// that draws reads each `fromFeature` table but its `dataRef` as the node
+// loaded it, as a compute step's pass does (autkComputeScopes).
+describe("a map node's pass reads its fromFeature tables as a compute step's pass reads them", () => {
+  /** A building as autk-db keeps one: a GeometryCollection of its parts, their tags in `properties.parts`. */
+  const asAutkDbBuilding = (feature: any) => ({
+    ...feature,
+    geometry: { type: 'GeometryCollection', geometries: [feature.geometry] },
+    properties: { ...feature.properties, parts: [] },
+  });
+  /** The west, south, east and north of building *i*, 10 m square, in World Mercator metres. */
+  const box = (i: number) => [-9755100 + 20 * i, 5142400, -9755090 + 20 * i, 5142410];
+  const BLOCKS = [12, 30, 45].map((height, i) => {
+    const [west, south, east, north] = box(i);
+    return {
+      type: 'Feature',
+      geometry: { type: 'Polygon', coordinates: [[[west, south], [east, south], [east, north], [west, north], [west, south]]] },
+      properties: { height },
+    };
+  });
+  const STREETS = [1, 2].map((value, i) => ({
+    type: 'Feature',
+    geometry: { type: 'LineString', coordinates: [[-9755100, 5142390 - 10 * i], [-9755000, 5142390 - 10 * i]] },
+    properties: { value },
+  }));
+  /** One document: the blocks and the streets it loads, and a pass over the streets that reads every block's outline and height. */
+  const DOCUMENT = {
+    data: [
+      { type: 'geojson', outputTableName: 'blocks', geojsonObject: { type: 'FeatureCollection', features: BLOCKS } },
+      { type: 'geojson', outputTableName: 'streets', geojsonObject: { type: 'FeatureCollection', features: STREETS } },
+    ],
+    compute: [pass('streets', 'sunlight', {
+      outputTableName: 'street_sun',
+      layerType: 'roads',
+      uniforms: { bld_height: { fromFeature: { layer: 'blocks', iterate: 'batched', path: 'properties.height', required: true } } },
+      uniformMatrices: { ring: { fromFeature: { layer: 'blocks', iterate: 'batched', path: 'geometry.coordinates.0' }, cols: 2 } },
+    })],
+  };
+  const MAP = { layerRefs: [{ dataRef: 'blocks' }, { dataRef: 'street_sun', getFnv: 'compute.sunlight' }] };
+
+  beforeEach(() => {
+    mockLoaded.layers = [
+      { name: 'blocks', type: 'buildings', features: BLOCKS },
+      { name: 'streets', type: 'roads', features: STREETS },
+    ];
+    // The map node's run: autk-grammar's own compute adapter, over a database
+    // that exports each table as autk-db does.
+    const { createComputeAdapter } = jest.requireMock('@urban-toolkit/autk-grammar');
+    grammarComputes.on = true;
+    grammarComputes.adapter = () => createComputeAdapter(new Map(), new Map());
+    drawnExports.of = (table, handed) => (table === 'blocks' ? handed.map(asAutkDbBuilding) : handed);
+  });
+
+  test("a map node's pass packs each building part's outline and height as a compute step's does", async () => {
+    const step = mountStep('blocks-step');
+    await step.run(DOCUMENT);
+    expect(step.lastOutput()).toEqual(expect.objectContaining({ code: 'success' }));
+    expect(computeRuns.gpgpu).toHaveBeenCalledTimes(1);
+    const stepped = computeRuns.gpgpu.mock.calls[0][0];
+    // Each part's box, its corners from the south-west one around: none is empty.
+    const boxes = [0, 1, 2].flatMap((i) => {
+      const [west, south, east, north] = box(i);
+      return [west, south, east, south, east, north, west, north];
+    });
+    expect(stepped.uniformArrays).toEqual({ bld_height: [12, 30, 45], ring: boxes });
+
+    computeRuns.gpgpu.mockClear();
+    const node = mountAutkNode('blocks-map', undefined, { input: '' });
+    await node.run({ ...DOCUMENT, map: MAP });
+
+    expect(node.lastOutput()).toEqual(expect.objectContaining({ code: 'success' }));
+    expect(computeRuns.gpgpu).toHaveBeenCalledTimes(1);
+    const drawn = computeRuns.gpgpu.mock.calls[0][0];
+    expect(drawn.uniformArrays).toEqual(stepped.uniformArrays);
+    expect(drawn.uniforms).toEqual(stepped.uniforms);
+  });
+
+  test("guard: a map node's pass computes over its dataRef as the run's database exports it", async () => {
+    // autk-db's export of the streets, the last first.
+    drawnExports.of = (table, handed) => (
+      table === 'blocks' ? handed.map(asAutkDbBuilding) : table === 'streets' ? [...handed].reverse() : handed
+    );
+    const node = mountAutkNode('blocks-map', undefined, { input: '' });
+    await node.run({ ...DOCUMENT, map: MAP });
+
+    expect(node.lastOutput()).toEqual(expect.objectContaining({ code: 'success' }));
+    expect(computeRuns.gpgpu).toHaveBeenCalledTimes(1);
+    expect(valuesOf(computeRuns.gpgpu.mock.calls[0][0].collection, 'value')).toEqual([2, 1]);
   });
 });
