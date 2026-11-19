@@ -32,6 +32,15 @@ export function isInteractionHandle(handle: unknown): boolean {
 }
 
 /**
+ * The interaction handle of the view whose id is *view*: a node's own handle,
+ * the mark, then the id; a node's own handle for no id. A view's dot, a load
+ * and an agent's plan write a view's handle through it.
+ */
+export function interactionViewHandle(view: string | null | undefined): string {
+  return typeof view === 'string' && view !== '' ? VIEW_HANDLE_PREFIX + view : INTERACTION_HANDLE;
+}
+
+/**
  * The handle an interaction edge keeps at one end: the one it names when that
  * is an interaction handle, a view's among them, else a node's own. A load and
  * an agent's applied edge put an interaction edge on the canvas through it.

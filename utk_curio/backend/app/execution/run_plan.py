@@ -71,6 +71,13 @@ def is_interaction_handle(handle: object) -> bool:
     return handle == INTERACTION_HANDLE or interaction_handle_view(handle) is not None
 
 
+def interaction_view_handle(view: object) -> str:
+    """The interaction handle of the view whose id is *view*: a node's own
+    handle, the mark, then the id; a node's own handle for no id. An agent's
+    plan draws an interaction edge on a view's dot through it."""
+    return _VIEW_HANDLE_PREFIX + view if isinstance(view, str) and view else INTERACTION_HANDLE
+
+
 def is_interaction_edge(edge: object) -> bool:
     """Whether *edge* (a saved dataflow's, the canvas's or a plan's) is an
     interaction edge: typed so, of that kind, or with an interaction handle at

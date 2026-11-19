@@ -85,6 +85,23 @@ export function selectsOnLayer<T>(details: T, layer: string | undefined): T {
 }
 
 /**
+ * *details* with only the select the view *view* (its `id`) sent, as an
+ * interaction edge on that view's dot carries it (`in/out@<id>`,
+ * providers/flow/interactionRoutes): of a node of several views, that view's
+ * select alone, at priority 1, its own selection though another view's is
+ * newer; nothing when the view sent none. A node of one view sends its one
+ * view's select under `autk_selection`, which a dot of any view carries.
+ * Details that hold no Autark select, another node's, carry nothing.
+ */
+export function selectsOfView(details: unknown, view: string): Record<string, AutkSelect> {
+  const selects = autkSelects(details);
+  const one = selects.find(({ key }) => key === AUTK_SELECTION);
+  if (one) return { [AUTK_SELECTION]: one.select };
+  const own = selects.find(({ view: named }) => named === view);
+  return own ? { [own.key]: own.select.priority === 1 ? own.select : { ...own.select, priority: 1 } } : {};
+}
+
+/**
  * *selections*, each one source's, with an Autark source's selects told apart
  * by table: one selection for each table its selects name, holding the
  * selects made on it, the newest at priority 1 (`selectsOnLayer`), with that
