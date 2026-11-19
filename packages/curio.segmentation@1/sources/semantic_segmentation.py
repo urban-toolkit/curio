@@ -94,8 +94,12 @@ def _pretrained(model_class, path, **options):
     keeps what goes to stderr as its node's output, where the bar took a line
     more or fewer from run to run, as the load went faster or slower. A bar a
     node's code draws, with tqdm or with Transformers once the load is over,
-    shows as before."""
-    from transformers.utils import logging as transformers_logging
+    shows as before. Where Transformers' switch cannot be imported, the load
+    goes through all the same."""
+    try:
+        from transformers.utils import logging as transformers_logging
+    except ImportError:
+        return model_class.from_pretrained(path, **options)
 
     bars_were_on = transformers_logging.is_progress_bar_enabled()
     if bars_were_on:
