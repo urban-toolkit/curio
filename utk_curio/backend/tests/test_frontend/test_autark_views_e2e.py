@@ -14,7 +14,10 @@ and linked by its `links`.
 4. Example 38, Back Bay and the Chicago Loop in one node: each map draws in its
    own pane, framed on its layers (#773), each histogram draws in its own, and
    the mean minutes of sun per road of each area are recorded on the test
-   (``record_property``), the numbers the example's walkthrough states.
+   (``record_property``), the numbers the example's walkthrough states. Its
+   Loop gets the sun example 07 finds with the same shader on the same roads:
+   the share of roads a building shades and the mean minutes of sun, each
+   near example 07's, which the test runs after it.
 
 Map k of a node draws on `autk-grammar-map-<node>` for k = 0, else
 `autk-grammar-map-<node>-<k>`, and plots likewise, so the drawing checks read
@@ -121,14 +124,16 @@ _BARS_LIT_JS = """({ selector, highlight }) => {
         .map((m) => m.lit);
 }"""
 # Every value of *column* the roads of map *view* of node *id* hold, read from
-# the features it drew (window.__curio_mapFeatureAt).
+# the features it drew (window.__curio_mapFeatureAt): under the feature's
+# `compute`, where a pass of the node's own document writes it, else as the
+# feature's own property, where a compute step upstream lifted it.
 _DRAWN_VALUES_JS = """async ([id, table, view, column]) => {
     const state = await window.__curio_mapState(id, view);
     const drawn = (state && state[table] && state[table].drawn) || 0;
     const values = [];
     for (let at = 0; at < drawn; at++) {
         const feature = await window.__curio_mapFeatureAt(id, table, at, view);
-        const value = feature ? (feature.compute || {})[column] : undefined;
+        const value = feature ? ((feature.compute || {})[column] ?? feature[column]) : undefined;
         if (typeof value === 'number') values.push(value);
     }
     return { drawn, values };
@@ -317,29 +322,66 @@ def test_a_node_of_two_views_pinned_to_a_dashboard_draws_both_in_its_one_tile(
 
 EXAMPLE_38 = "38-autark-solstice-sun-two-cities.json"
 EXAMPLE_38_NODE = "two-cities-sun"
+#: Example 07, which runs the same shadow shader on the same Loop extract, and
+#: its map of the roads with their minutes of sun.
+EXAMPLE_07 = "07-autark-gpu-shader.json"
+EXAMPLE_07_MAP = "sh-map"
+#: How near example 38's Loop must come to example 07's: the same roads, the
+#: same buildings and the same shader give the same minutes of sun.
+SUN_MEAN_TOLERANCE = 0.03
+SHADED_SHARE_TOLERANCE = 0.03
 
 
-def test_example_38_draws_each_view_in_its_pane_and_records_each_area_s_sun(
-    app_frontend: "FrontendPage", current_server: str, page, record_property,
-):
+def _sun_numbers(values: list) -> dict:
+    """An area's roads, their mean minutes of sun, and the share of them that
+    get at least an hour less sun than the area's sunniest road: those a
+    building shades."""
+    top = max(values)
+    return {
+        "roads": len(values),
+        "mean": sum(values) / len(values),
+        "shaded_share": sum(1 for value in values if value <= top - 60) / len(values),
+    }
+
+
+def _drawn_sun(page, node_id: str, table: str, view, label: str) -> list:
+    read = page.evaluate(_DRAWN_VALUES_JS, [node_id, table, view, "sunlight"])
+    values = read["values"]
+    assert read["drawn"] > 0 and len(values) == read["drawn"], (
+        f"{label} drew {read['drawn']} roads, {len(values)} of them with their minutes of sun"
+    )
+    assert all(0 <= value <= 780 for value in values), f"{label}'s roads hold sun past 0 to 780 minutes"
+    return values
+
+
+def _open_example(page, app_frontend, current_server, example: str, name: str) -> None:
     from .walkthroughs import load_example_spec
 
-    require_project_page()
-    require_user_auth()
     stub_login_and_enter_workflow(
         page,
         frontend_url=app_frontend.base_url,
         backend_url=current_server,
-        name="Two Cities",
-        username=f"autk_two_cities_{uuid.uuid4().hex[:8]}",
-        project_name="Back Bay or the Loop",
-        project_spec=load_example_spec(EXAMPLE_38),
+        name=name,
+        username=f"autk_sun_{uuid.uuid4().hex[:8]}",
+        project_name=name,
+        project_spec=load_example_spec(example),
     )
     require_owner_view(page)
     page.wait_for_selector(".react-flow__node", timeout=45000)
     require_webgpu(page)
     run_all_and_wait(page, timeout_ms=600000)
     dismiss_toasts(page)
+
+
+def test_example_38_draws_each_view_in_its_pane_and_records_each_area_s_sun(
+    app_frontend: "FrontendPage", current_server: str, page, record_property,
+):
+    """Each view of example 38 draws in its own pane, and its Loop gets the sun
+    example 07 finds on the same roads: the share of roads a building shades
+    and the mean minutes of sun, each near example 07's."""
+    require_project_page()
+    require_user_auth()
+    _open_example(page, app_frontend, current_server, EXAMPLE_38, "Back Bay or the Loop")
     frame_nodes(page, [EXAMPLE_38_NODE])
     problems = []
     for view in (0, 1):
@@ -350,14 +392,25 @@ def test_example_38_draws_each_view_in_its_pane_and_records_each_area_s_sun(
         if problem:
             problems.append(problem)
     assert not problems, "; ".join(problems)
+    areas = {}
     for view, table in (("back_bay", "back_bay_road_sun"), ("loop", "loop_road_sun")):
-        read = page.evaluate(_DRAWN_VALUES_JS, [EXAMPLE_38_NODE, table, view, "sunlight"])
-        values = read["values"]
-        assert read["drawn"] > 0 and len(values) == read["drawn"], (
-            f"map {view} drew {read['drawn']} roads, {len(values)} of them with their minutes of sun"
-        )
-        assert all(0 <= value <= 780 for value in values), f"map {view}'s roads hold sun past 0 to 780 minutes"
-        mean = sum(values) / len(values)
-        record_property(f"{view}_roads", len(values))
-        record_property(f"{view}_mean_sun_minutes", round(mean, 1))
-        record_property(f"{view}_all_day_share", round(sum(1 for v in values if v >= 780) / len(values), 3))
+        areas[view] = _sun_numbers(_drawn_sun(page, EXAMPLE_38_NODE, table, view, f"example 38's map {view}"))
+        record_property(f"{view}_roads", areas[view]["roads"])
+        record_property(f"{view}_mean_sun_minutes", round(areas[view]["mean"], 1))
+        record_property(f"{view}_shaded_share", round(areas[view]["shaded_share"], 3))
+
+    _open_example(page, app_frontend, current_server, EXAMPLE_07, "Example 07")
+    assert_autark_map_drawn(page, EXAMPLE_07_MAP, timeout=120000)
+    example_07 = _sun_numbers(_drawn_sun(page, EXAMPLE_07_MAP, "table_osm_roads", 0, "example 07's map"))
+    record_property("example_07_roads", example_07["roads"])
+    record_property("example_07_mean_sun_minutes", round(example_07["mean"], 1))
+    record_property("example_07_shaded_share", round(example_07["shaded_share"], 3))
+    loop = areas["loop"]
+    assert abs(loop["shaded_share"] - example_07["shaded_share"]) <= SHADED_SHARE_TOLERANCE, (
+        f"example 38's Loop has {loop['shaded_share']:.1%} of its {loop['roads']} roads shaded, example 07 "
+        f"{example_07['shaded_share']:.1%} of its {example_07['roads']}, on the same roads with the same shader"
+    )
+    assert abs(loop["mean"] - example_07["mean"]) <= SUN_MEAN_TOLERANCE * example_07["mean"], (
+        f"example 38's Loop roads get {loop['mean']:.0f} minutes of sun on average, example 07's "
+        f"{example_07['mean']:.0f}, on the same roads with the same shader"
+    )
