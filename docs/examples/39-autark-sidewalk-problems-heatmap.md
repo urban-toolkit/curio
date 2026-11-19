@@ -30,8 +30,9 @@ the tables by their names, and the Python node gets the layers and the heatmap i
 ## Data
 
 - `data.projectsidewalk.chicago-labels`, in the Data Catalog: Project Sidewalk's 145,880 labels of
-  Chicago and its suburbs, a GeoParquet of points. Each label has a type, a severity from 1 to 3 (some
-  have none) and `correct`, the verdict of Project Sidewalk's validators: 1 when more of them agreed
+  Chicago and its suburbs, a GeoParquet of points. Each label has a type, a severity from 1 (Low) to 3
+  (High), which a missing sidewalk and some other labels do not have, and `correct`, the verdict of
+  Project Sidewalk's validators: 1 when more of them agreed
   with the label than disagreed, 0 when more disagreed, and empty when there is no verdict (no one
   validated it, the votes are tied, or they are all unsure). The file downloads on first use.
 - `docs/examples/data/chicago_loop.osm.pbf`: an OpenStreetMap extract for the Chicago Loop
@@ -86,8 +87,8 @@ over the Loop's box, cells of about 124 m on a side:
 - `near.distance` is 134 in the map's planar units (EPSG:3395), about 100 m on the ground in the Loop;
 - the `count` entry makes the band `count_input_0`: the labels within reach of the cell's center, 0
   where there is none;
-- the `avg` entry over `severity` makes the band `avg_input_0`: their mean severity, of the labels that
-  have one.
+- the `avg` entry over `severity` makes the band `avg_input_0`: the mean severity of the labels that
+  have one, 0 where none of them does.
 
 ```json
 "data": [
@@ -128,7 +129,9 @@ the map draws them over the cells, in dark gray.
 The Python node finds the heatmap among its inputs, a `rasterio` dataset whose bands are described by
 their labels, and reads both bands. For each cell that holds labels it gives the cell's row, counted
 from the north, its column, counted from the west, the longitude and latitude of its center, the labels
-within about 100 m and their mean severity, the most labels first.
+within about 100 m and their mean severity, the most labels first. A mean severity of 0 means none of
+the cell's labels has a severity, since Project Sidewalk rates a label from 1 to 3, so the table leaves
+it empty.
 
 ```python
 import numpy as np
@@ -138,10 +141,12 @@ import rasterio.warp
 
 # The heatmap the data node built, a rasterio dataset, and its two bands: the
 # problem labels within about 100 m of each cell's center, and their mean
-# severity, empty where none of them has a severity.
+# severity, 0 where none of them has one. Project Sidewalk rates a label from
+# 1 (Low) to 3 (High), so the table leaves a mean severity of 0 empty.
 heat = next(item for item in input_0 if isinstance(item, rasterio.io.DatasetReader))
 labels = heat.read(heat.descriptions.index("count_input_0") + 1)
-severity = heat.read(heat.descriptions.index("avg_input_0") + 1)
+severity = heat.read(heat.descriptions.index("avg_input_0") + 1).astype(float)
+severity[severity == 0] = np.nan
 
 # Each cell that holds labels, the most first: its row (the north row is 0),
 # its column (the west column is 0) and its center's longitude and latitude.
@@ -154,7 +159,7 @@ cells = pd.DataFrame({
     "longitude": np.round(longitudes, 5),
     "latitude": np.round(latitudes, 5),
     "problem labels within about 100 m": labels[rows, columns].astype(int),
-    "mean severity": severity[rows, columns].astype(float).round(2),
+    "mean severity": severity[rows, columns].round(2),
 })
 return cells.sort_values("problem labels within about 100 m", ascending=False, kind="stable", ignore_index=True)
 ```

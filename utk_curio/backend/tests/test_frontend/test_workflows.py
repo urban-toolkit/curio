@@ -470,6 +470,9 @@ PROBLEM_CELLS = "problem-cells"
 PROBLEM_TYPES = {"NoCurbRamp", "NoSidewalk", "Obstacle", "SurfaceProblem"}
 PROBLEM_LABELS = "problem labels within about 100 m"
 MEAN_SEVERITY = "mean severity"
+#: Project Sidewalk's severity scale, as its API documents a label's severity:
+#: "1 (Low), 2 (Medium), or 3 (High)", or none. The labels hold only those.
+SEVERITY_SCALE = (1, 3)
 
 #: Example 33, SAM 3 on the same walk's frames and the walk cut into blocks,
 #: and the nodes its own test reads.
@@ -2060,9 +2063,10 @@ class TestWorkflowCanvas:
         its darkest pixels lie in a cell that holds it. The Python step lists
         each cell that holds labels once, the most first: each count a whole
         number no greater than the labels kept, each mean severity on Project
-        Sidewalk's 1 to 3 where the labels have one. The labels kept, the cells
-        that hold labels and the greatest count with its place are recorded as
-        the run's properties, which the walkthrough states."""
+        Sidewalk's scale, 1 to 3, where the labels have one, and empty where
+        none does. The labels kept, the cells that hold labels and the greatest
+        count with its place are recorded as the run's properties, which the
+        walkthrough states, as soon as they are read."""
         page = self.page
         self._execute_all_playable_nodes()
 
@@ -2072,11 +2076,19 @@ class TestWorkflowCanvas:
         rows, columns = grid["rows"], grid["columns"]
         title = documents[PROBLEM_MAP]["map"]["layerRefs"][0]["title"]
 
-        assert_autark_map_drawn(page, PROBLEM_MAP, timeout=60000, attach_as="the problem labels' heatmap")
         kept = _stored_rows(page, LOOP_PROBLEMS)
+        cells = _stored_rows(page, PROBLEM_CELLS)
+        record_property("labels_kept", len(kept))
+        record_property("cells_with_labels", len(cells))
+        record_property("cells", rows * columns)
+        record_property("cells_with_no_severity", sum(_empty_cell(cell[MEAN_SEVERITY]) for cell in cells))
+        record_property("peak_labels", cells[0][PROBLEM_LABELS] if cells else None)
+        record_property("peak_cell", json.dumps(cells[0] if cells else None))
+        record_property("top_cells", json.dumps(cells[:8]))
+
+        assert_autark_map_drawn(page, PROBLEM_MAP, timeout=60000, attach_as="the problem labels' heatmap")
         kept_types = {label["label_type"] for label in kept}
         assert kept and kept_types <= PROBLEM_TYPES, sorted(kept_types)
-        cells = _stored_rows(page, PROBLEM_CELLS)
         counts = [cell[PROBLEM_LABELS] for cell in cells]
         places = [(int(cell["row"]), int(cell["column"])) for cell in cells]
         assert 0 < len(cells) < rows * columns, (len(cells), rows, columns)
@@ -2084,8 +2096,10 @@ class TestWorkflowCanvas:
         assert counts == sorted(counts, reverse=True), counts
         assert len(set(places)) == len(places), places
         assert all(0 <= row < rows and 0 <= column < columns for row, column in places), places
+        low, high = SEVERITY_SCALE
         severities = [cell[MEAN_SEVERITY] for cell in cells if not _empty_cell(cell[MEAN_SEVERITY])]
-        assert severities and all(1 <= severity <= 3 for severity in severities), severities
+        off_the_scale = [severity for severity in severities if not low <= severity <= high]
+        assert severities and not off_the_scale, f"mean severities off Project Sidewalk's {low} to {high}: {off_the_scale}"
 
         # The map's legend runs from no label to the greatest count, and the
         # darkest of the map's pixels lie in a cell that holds it.
@@ -2097,12 +2111,6 @@ class TestWorkflowCanvas:
             [place for place, count in zip(places, counts) if count == counts[0]],
             attach_as="the heatmap's greatest cell",
         )
-        record_property("labels_kept", len(kept))
-        record_property("cells_with_labels", len(cells))
-        record_property("cells", rows * columns)
-        record_property("peak_labels", int(peak[PROBLEM_LABELS]))
-        record_property("peak_cell", json.dumps(peak))
-        record_property("top_cells", json.dumps(cells[:8]))
 
     @pytest.mark.only_workflows(EXAMPLE_33)
     def test_a_blocks_player_lights_the_frames_from_its_start_to_where_it_stands(self, loaded_workflow):
