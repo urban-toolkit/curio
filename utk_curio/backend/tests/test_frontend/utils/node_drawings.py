@@ -104,6 +104,34 @@ def assert_vega_canvas_rendered(
         )
 
 
+def autark_view_element(node_id: str, view: int = 0) -> str:
+    """What follows ``autk-grammar-map-`` or ``autk-grammar-plot-`` in the id of
+    the element an Autark node's map or plot number *view* draws on: the node's
+    id for its first, ``<node>-<view>`` for another (autkViews' viewElementId)."""
+    return node_id if not view else f"{node_id}-{view}"
+
+
+# The panes of an Autark node of several views, in the order it lays them out
+# (autkViews' layOutPanes): `map-0`, ..., `plot-0`, ...; none for a node of one
+# view, which draws in its body.
+_AUTK_PANES_JS = """(id) => {
+    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
+    if (!node) return [];
+    return [...node.querySelectorAll('[data-curio-autk-pane]')].map((pane) => pane.getAttribute('data-curio-autk-pane'));
+}"""
+
+
+def autark_panes(page, node_id: str) -> list[str]:
+    """The panes of an Autark node of several views, `map-0` and on, then
+    `plot-0` and on; empty for a node of one view."""
+    return page.evaluate(_AUTK_PANES_JS, node_id) or []
+
+
+def _view_label(node_id: str, kind: str, view: int) -> str:
+    """How a check names an Autark node, or its map or plot number *view*."""
+    return f"Autark node {node_id}" if not view else f"Autark node {node_id}'s {kind} {view}"
+
+
 # An Autark map's canvas as it last drew, read after two animation frames. The
 # id is autkGrammarBehavior's ``'autk-grammar-map-' + nodeId``.
 _AUTK_MAP_PIXELS_JS = """async (id) => {
@@ -146,7 +174,7 @@ _AUTK_MAP_PLACEMENT_JS = """(id) => {
 
 
 def assert_autark_map_drawn(
-    page, node_id: str, *, timeout: float = 30000, attach_as: str = ""
+    page, node_id: str, *, view: int = 0, timeout: float = 30000, attach_as: str = ""
 ) -> None:
     """Assert an Autark map node's canvas holds a drawn, opaque map.
 
@@ -155,16 +183,19 @@ def assert_autark_map_drawn(
     background-only one holds one or two. With ``attach_as``, the Allure report
     gets the canvas pixels, the canvas as an element, viewport and full-page
     screenshot, and how the canvas is placed, so a map that drew but does not
-    show can be told apart from one that did not draw.
+    show can be told apart from one that did not draw. *view* is the map's
+    place among the node's maps.
     """
     import base64
 
     from PIL import Image
 
+    element = autark_view_element(node_id, view)
+    who = _view_label(node_id, "map", view)
     deadline = time.monotonic() + timeout / 1000
     png, colours, opaque = None, 0, 0.0
     while True:
-        url = page.evaluate(_AUTK_MAP_PIXELS_JS, node_id)
+        url = page.evaluate(_AUTK_MAP_PIXELS_JS, element)
         if url:
             png = base64.b64decode(url.split(",", 1)[1])
             pixels = list(Image.open(BytesIO(png)).convert("RGBA").getdata())
@@ -179,7 +210,7 @@ def assert_autark_map_drawn(
     if attach_as:
         if png:
             allure.attach(png, name=f"{attach_as}: canvas pixels", attachment_type=allure.attachment_type.PNG)
-        canvas = page.locator(f"#autk-grammar-map-{node_id}")
+        canvas = page.locator(f"#autk-grammar-map-{element}")
         if canvas.count():
             allure.attach(canvas.first.screenshot(), name=f"{attach_as}: canvas screenshot",
                           attachment_type=allure.attachment_type.PNG)
@@ -190,12 +221,12 @@ def assert_autark_map_drawn(
                       attachment_type=allure.attachment_type.PNG)
         allure.attach(page.screenshot(full_page=True), name=f"{attach_as}: full-page screenshot",
                       attachment_type=allure.attachment_type.PNG)
-        placement = page.evaluate(_AUTK_MAP_PLACEMENT_JS, node_id)
+        placement = page.evaluate(_AUTK_MAP_PLACEMENT_JS, element)
         allure.attach(json.dumps({"opaqueShare": opaque, "opaqueColours": colours, "placement": placement}, indent=1),
                       name=f"{attach_as}: canvas placement", attachment_type=allure.attachment_type.JSON)
-    assert png, f"Autark node {node_id} has no map canvas"
+    assert png, f"{who} has no map canvas"
     assert colours > 8 and opaque > 0.5, (
-        f"Autark node {node_id}: the map canvas is {opaque:.0%} opaque with {colours} opaque "
+        f"{who}: the map canvas is {opaque:.0%} opaque with {colours} opaque "
         f"colours, so no map was drawn"
     )
 
@@ -216,24 +247,26 @@ _AUTK_PLOT_MARKS_JS = """(id) => {
 }"""
 
 
-def assert_autark_plot_drawn(page, node_id: str, *, timeout: float = 30000) -> None:
+def assert_autark_plot_drawn(page, node_id: str, *, view: int = 0, timeout: float = 30000) -> None:
     """Assert an Autark node's plot pane holds a drawn plot: marks that take up room.
 
     Read in the page. autk-grammar draws a plot only into the pane the node
     hands it, so a plot the node gave no pane is not drawn anywhere, and the
-    node has no pane to show.
+    node has no pane to show. *view* is the plot's place among the node's plots.
     """
+    element = autark_view_element(node_id, view)
+    who = _view_label(node_id, "plot", view)
     deadline = time.monotonic() + timeout / 1000
     while True:
-        found = page.evaluate(_AUTK_PLOT_MARKS_JS, node_id)
+        found = page.evaluate(_AUTK_PLOT_MARKS_JS, element)
         if (found and found["sized"] > 0) or time.monotonic() >= deadline:
             break
         page.wait_for_timeout(500)
     assert found is not None, (
-        f"Autark node {node_id} has no plot pane, so the plot its document names was not drawn"
+        f"{who} has no plot pane, so the plot its document names was not drawn"
     )
     assert found["sized"] > 0, (
-        f"Autark node {node_id}: its plot pane holds {found['marks']} marks and none that "
+        f"{who}: its plot pane holds {found['marks']} marks and none that "
         f"takes up room, so no plot was drawn"
     )
 
@@ -261,7 +294,7 @@ _AUTK_SHOW_FRAMED_JS = """([id, framed]) => typeof window.__curio_showMapsFramed
     && window.__curio_showMapsFramed(id, framed)"""
 
 
-def autark_map_framing(page, node_id: str, *, min_span: float = AUTK_MAP_MIN_FRAMED_SPAN,
+def autark_map_framing(page, node_id: str, *, view: int = 0, min_span: float = AUTK_MAP_MIN_FRAMED_SPAN,
                        timeout: float = 5000) -> str | None:
     """Why an Autark map is not framed on what it draws, or None when it is (#773).
 
@@ -280,20 +313,24 @@ def autark_map_framing(page, node_id: str, *, min_span: float = AUTK_MAP_MIN_FRA
     looks at the point the framed view looks at, from as far as the framed eye
     is high, or as the camera's ``zoom`` says, ``pitch`` degrees from straight
     down, facing ``bearing`` degrees clockwise from north, which is up the map.
+    *view* is the map's place among the node's maps.
     """
-    views = page.evaluate(_AUTK_MAP_VIEWS_JS, node_id) or []
-    if not any(view and view.get("camera") for view in views):
-        return _drawing_framing(page, node_id, min_span=min_span, timeout=timeout)
+    element = autark_view_element(node_id, view)
+    who = _view_label(node_id, "map", view)
+    views = (page.evaluate(_AUTK_MAP_VIEWS_JS, node_id) or [])[view:view + 1]
+    if not any(seen and seen.get("camera") for seen in views):
+        return _drawing_framing(page, element, who, min_span=min_span, timeout=timeout)
     if not page.evaluate(_AUTK_SHOW_FRAMED_JS, [node_id, True]):
         return f"Autark node {node_id}: its maps cannot be shown at the view they were framed at"
     try:
-        framed = page.evaluate(_AUTK_MAP_VIEWS_JS, node_id) or []
-        problem = _drawing_framing(page, node_id, min_span=min_span, timeout=timeout)
+        framed = (page.evaluate(_AUTK_MAP_VIEWS_JS, node_id) or [])[view:view + 1]
+        problem = _drawing_framing(page, element, who, min_span=min_span, timeout=timeout)
     finally:
         page.evaluate(_AUTK_SHOW_FRAMED_JS, [node_id, False])
     if problem:
         return f"{problem}, at the view it was framed at before its camera turned it"
-    return _turn_problem(node_id, framed, page.evaluate(_AUTK_MAP_VIEWS_JS, node_id) or [])
+    return _turn_problem(node_id, framed, (page.evaluate(_AUTK_MAP_VIEWS_JS, node_id) or [])[view:view + 1],
+                         first=view)
 
 
 def _view_angles(view: dict) -> tuple[float, float, float]:
@@ -307,12 +344,13 @@ def _view_angles(view: dict) -> tuple[float, float, float]:
     return distance, pitch, bearing
 
 
-def _turn_problem(node_id: str, framed: list, turned: list) -> str | None:
+def _turn_problem(node_id: str, framed: list, turned: list, *, first: int = 0) -> str | None:
     """Why a map its camera turns does not stand where the camera puts its
     framed view (*framed*, each map's view before the turn; *turned*, after),
-    or None when each does."""
+    or None when each does. *first* is the place of the first of them among
+    the node's maps."""
     problems = []
-    for index, (before, after) in enumerate(zip(framed, turned)):
+    for index, (before, after) in enumerate(zip(framed, turned), start=first):
         if not before or not after or not after.get("camera"):
             continue
         zoom, pitch, bearing = json.loads(after["camera"])
@@ -337,19 +375,22 @@ def _turn_problem(node_id: str, framed: list, turned: list) -> str | None:
     return f"Autark node {node_id}: its camera did not turn the view it was framed at: " + "; ".join(problems)
 
 
-def _drawing_framing(page, node_id: str, *, min_span: float, timeout: float) -> str | None:
+def _drawing_framing(page, element: str, who: str | None = None, *, min_span: float, timeout: float) -> str | None:
     """Why the drawing of an Autark map, at the view it has now, is not framed
-    on what it draws, or None when it is (``autark_map_framing``)."""
+    on what it draws, or None when it is (``autark_map_framing``). *element*
+    follows ``autk-grammar-map-`` in its canvas's id, and *who* names the map
+    (the node, by default)."""
     import base64
 
     from PIL import Image, ImageChops
 
+    who = who or f"Autark node {element}"
     deadline = time.monotonic() + timeout / 1000
     while True:
         problem = None
-        url = page.evaluate(_AUTK_MAP_PIXELS_IN_FRAME_JS, node_id)
+        url = page.evaluate(_AUTK_MAP_PIXELS_IN_FRAME_JS, element)
         if not url:
-            problem = f"Autark node {node_id} has no map canvas"
+            problem = f"{who} has no map canvas"
         else:
             image = Image.open(BytesIO(base64.b64decode(url.split(",", 1)[1]))).convert("RGB")
             width, height = image.size
@@ -358,7 +399,7 @@ def _drawing_framing(page, node_id: str, *, min_span: float, timeout: float) -> 
             moved = ImageChops.lighter(ImageChops.lighter(channels[0], channels[1]), channels[2])
             box = moved.point(lambda v: 255 if v > 8 else 0).getbbox()
             if not box:
-                problem = (f"Autark node {node_id}: its {width}x{height} map canvas is one colour, "
+                problem = (f"{who}: its {width}x{height} map canvas is one colour, "
                            f"so it drew nothing to frame")
             else:
                 left, top, right, bottom = box
@@ -371,7 +412,7 @@ def _drawing_framing(page, node_id: str, *, min_span: float, timeout: float) -> 
                     why = (f"a speck under {min_span:.0%} of it" if spans < min_span
                            else "cut by the canvas's edges on every side it fills")
                     problem = (
-                        f"Autark node {node_id}: its map's drawing spans "
+                        f"{who}: its map's drawing spans "
                         f"{axes['across'][0]:.0%} of the canvas across and {axes['down'][0]:.0%} down "
                         f"(box {box} in {width}x{height}), {why}, so the map did not open "
                         f"framed on its layers"

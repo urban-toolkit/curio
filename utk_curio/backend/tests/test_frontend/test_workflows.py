@@ -37,6 +37,7 @@ from .utils import (
     assert_autark_plot_drawn,
     AUTK_MAP_MIN_FRAMED_SPAN,
     autark_map_framing,
+    autark_panes,
     assert_editor_panes_clear_of_markers,
     assert_in_view,
     at_fraction,
@@ -827,6 +828,15 @@ class TestWorkflowCanvas:
                 drawing.append(node)
         return drawing
 
+    def _autark_views(self, node: NodeSpec, kind: str) -> range:
+        """The places of the maps (*kind* ``map``) or plots (``plot``) an Autark
+        node's document names: one for one written as an object, each of a
+        list."""
+        grammar = json.loads(self.spec.node_code(node, "json") if node.content else "{}")
+        if kind not in grammar:
+            return range(0)
+        return range(len(grammar[kind])) if isinstance(grammar[kind], list) else range(1)
+
     def _closeup_nodes(self) -> list[NodeSpec]:
         """The nodes compared on their own, up close, after the run: each
         Autark map or plot (``_drawing_autark_nodes``), then each Vega-Lite
@@ -1488,8 +1498,8 @@ class TestWorkflowCanvas:
         # into the pane its node hands it, and passes over one it has no pane
         # for without a word.
         for node in self._drawing_autark_nodes():
-            if "plot" in json.loads(self.spec.node_code(node, "json")):
-                assert_autark_plot_drawn(self.page, node.id)
+            for view in self._autark_views(node, "plot"):
+                assert_autark_plot_drawn(self.page, node.id, view=view)
         self._save_screenshot(request)
 
         # Each Vega-Lite chart shows whole in its node, nothing past the node's
@@ -1507,20 +1517,25 @@ class TestWorkflowCanvas:
         # compared on its own, up close: an Autark map or plot after checking it
         # fills its node, a Vega-Lite chart after checking it drew marks, as the
         # interaction steps check it. Each frame waits until two captures of
-        # its node in a row agree, as an interaction's target does.
+        # its node in a row agree, as an interaction's target does. Each view
+        # of an Autark node of several views is compared up close on its own
+        # too, its pane after the node.
         for node in self._closeup_nodes():
             if node.type == "VIS_VEGA":
                 self._assert_drawn(node.id)
             else:
                 assert_autark_drawing_fits(self.page, node.id)
-            save_node_closeup(
-                self.page,
-                self.spec.filepath,
-                node.id,
-                test_name=f"{request.function.__name__}_closeup_{node.id}",
-                sweep_toasts=bool(self._expected_empty()),
-                still=True,
-            )
+            panes = [] if node.type == "VIS_VEGA" else autark_panes(self.page, node.id)
+            for view in [None, *panes]:
+                save_node_closeup(
+                    self.page,
+                    self.spec.filepath,
+                    node.id,
+                    view=view,
+                    test_name=f"{request.function.__name__}_closeup_{node.id}" + (f"_{view}" if view else ""),
+                    sweep_toasts=bool(self._expected_empty()),
+                    still=True,
+                )
 
         # Each map opens framed on the layers it draws (#773): not a speck in
         # the middle of the map, nor a crop past its edges. That is every
@@ -1537,10 +1552,15 @@ class TestWorkflowCanvas:
                 assert set(_linked_maps(self.spec, node.id)) <= set(maps), (
                     f"the map Map Editor node {node.id} edits on is not among the maps checked: {maps}"
                 )
+        # Each map of a node, by its place among the node's maps.
+        map_views = [
+            (node.id, view) for node in self._drawing_autark_nodes() for view in self._autark_views(node, "map")
+        ]
         unframed = [
             problem for problem in (
-                autark_map_framing(self.page, m, min_span=FRAMED_DRAWING_SPAN.get(m, AUTK_MAP_MIN_FRAMED_SPAN))
-                for m in maps
+                autark_map_framing(self.page, m, view=view,
+                                   min_span=FRAMED_DRAWING_SPAN.get(m, AUTK_MAP_MIN_FRAMED_SPAN))
+                for m, view in map_views
             ) if problem
         ]
         assert not unframed, "\n".join(unframed)

@@ -21,7 +21,7 @@ and linked by its `links`.
 
 Map k of a node draws on `autk-grammar-map-<node>` for k = 0, else
 `autk-grammar-map-<node>-<k>`, and plots likewise, so the drawing checks read
-a view by that element (`_element`). It runs Autark maps, which need WebGPU:
+a view by its place (their `view`, `autark_view_element`). It runs Autark maps, which need WebGPU:
 without an adapter it skips, unless ``CURIO_REQUIRE_HARDWARE_WEBGPU=1`` (CI's
 GPU job), where it fails.
 
@@ -42,6 +42,7 @@ from .utils import (
     assert_autark_map_drawn,
     assert_autark_plot_drawn,
     autark_map_framing,
+    autark_view_element,
     bar_boxes,
     brush_area,
     dismiss_toasts,
@@ -140,11 +141,6 @@ _DRAWN_VALUES_JS = """async ([id, table, view, column]) => {
 }"""
 
 
-def _element(node_id: str, view: int) -> str:
-    """The id the drawing checks read view *view* of a kind of *node_id* by."""
-    return node_id if view == 0 else f"{node_id}-{view}"
-
-
 def _node(node_id: str, node_type: str, x: int, content: str) -> dict:
     return {
         "id": node_id, "type": node_type, "x": x, "y": 120, "content": content,
@@ -219,8 +215,8 @@ def test_a_plot_linked_by_links_lights_on_its_map_exactly_the_rows_it_brushes_an
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     _enter(page, app_frontend, current_server, _spec(LINKED), "autk_links")
-    assert_autark_map_drawn(page, _element(VIEWS, 0), timeout=60000)
-    assert_autark_plot_drawn(page, _element(VIEWS, 0), timeout=60000)
+    assert_autark_map_drawn(page, VIEWS, timeout=60000)
+    assert_autark_plot_drawn(page, VIEWS, timeout=60000)
     frame_nodes(page, [VIEWS])
     plot = f"#autk-grammar-plot-{VIEWS}"
 
@@ -251,9 +247,9 @@ def test_two_maps_of_one_table_each_reframe_alone_and_a_pick_is_sent_under_the_m
     app_frontend: "FrontendPage", current_server: str, page,
 ):
     _enter(page, app_frontend, current_server, _spec(TWO_MAPS, receiver=True), "autk_two_maps")
-    first, second = f"autk-grammar-map-{VIEWS}", f"autk-grammar-map-{VIEWS}-1"
+    first, second = (f"autk-grammar-map-{autark_view_element(VIEWS, view)}" for view in (0, 1))
     for view in (0, 1):
-        assert_autark_map_drawn(page, _element(VIEWS, view), timeout=60000)
+        assert_autark_map_drawn(page, VIEWS, view=view, timeout=60000)
     frame_nodes(page, [VIEWS])
 
     def eyes():
@@ -306,8 +302,8 @@ def test_a_node_of_two_views_pinned_to_a_dashboard_draws_both_in_its_one_tile(
     _pin(page, VIEWS)
     _save(page)
     _open_dashboard(page, app_frontend.base_url, session["project"]["id"])
-    assert_autark_map_drawn(page, _element(VIEWS, 0), timeout=120000)
-    assert_autark_plot_drawn(page, _element(VIEWS, 0), timeout=120000)
+    assert_autark_map_drawn(page, VIEWS, timeout=120000)
+    assert_autark_plot_drawn(page, VIEWS, timeout=120000)
     tile = page.locator(f'.react-flow__node[data-id="{VIEWS}"]')
     assert tile.count() == 1, "the dashboard shows the node in more than one tile, or none"
     assert tile.locator(f"#autk-grammar-map-{VIEWS}").count() == 1
@@ -385,10 +381,9 @@ def test_example_38_draws_each_view_in_its_pane_and_records_each_area_s_sun(
     frame_nodes(page, [EXAMPLE_38_NODE])
     problems = []
     for view in (0, 1):
-        element = _element(EXAMPLE_38_NODE, view)
-        assert_autark_map_drawn(page, element, timeout=120000)
-        assert_autark_plot_drawn(page, element, timeout=120000)
-        problem = autark_map_framing(page, element)
+        assert_autark_map_drawn(page, EXAMPLE_38_NODE, view=view, timeout=120000)
+        assert_autark_plot_drawn(page, EXAMPLE_38_NODE, view=view, timeout=120000)
+        problem = autark_map_framing(page, EXAMPLE_38_NODE, view=view)
         if problem:
             problems.append(problem)
     assert not problems, "; ".join(problems)
