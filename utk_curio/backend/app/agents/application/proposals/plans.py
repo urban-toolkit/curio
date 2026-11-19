@@ -1525,7 +1525,7 @@ def _create_plan_edges(user_key, project_id, proposal_id, spec: dict, proposal: 
         ) is not None:
             continue
         if plan_topology.is_interaction_edge(plan_edge):
-            # dev/112: the Trill's feedback edge — interaction handles both
+            # dev/112: the Trill's feedback edge, interaction handles both
             # ends, type Interaction (what loadTrill/TrillGenerator
             # round-trip), on the dots of the views it names; no input port,
             # no input circle.
