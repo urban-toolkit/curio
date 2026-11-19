@@ -40,7 +40,8 @@ const layerIdOf = (layer: unknown): string | undefined => fieldOf(layer, "title"
  * map by its `id`, and a layer of that map: its `layer`, a layer's `title`,
  * else its `dataRef`, or without it a layer that draws the plot's table. The
  * grammar checks its ids as its run starts and its links once it drew, so a
- * node checks both before it loads anything.
+ * node checks both before it loads anything. Links join views: a document
+ * that draws none is told it runs nothing, not of its links.
  */
 export function autkViewProblem(spec: unknown): string | null {
   if (spec === null || typeof spec !== "object" || Array.isArray(spec)) return null;
@@ -68,7 +69,8 @@ export function autkViewProblem(spec: unknown): string | null {
     }
     named.set(name, hasId);
   }
-  for (const link of Array.isArray(document.links) ? document.links : []) {
+  const links = maps.length + plots.length > 0 && Array.isArray(document.links) ? document.links : [];
+  for (const link of links) {
     const source = String(fieldOf(link, "source"));
     const target = String(fieldOf(link, "target"));
     const plot = plots.find((p) => plotNameOf(p) === source);

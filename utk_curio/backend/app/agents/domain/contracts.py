@@ -206,8 +206,9 @@ def autk_view_problem(document: object) -> str | None:
     is known by its ``dataRef``, so no two plots are known by one name. Each
     link names a plot (its ``id``, else its ``dataRef``), a map by its ``id``
     and a layer of that map: its ``layer``, a layer's ``title``, else its
-    ``dataRef``, or without it a layer that draws the plot's table.
-    ``autkViewProblem`` is the node's twin, held to this function by the
+    ``dataRef``, or without it a layer that draws the plot's table. Links
+    join views: a document that draws none is told it runs nothing, not of
+    its links. ``autkViewProblem`` is the node's twin, held to this function by the
     cases in ``autkGrammar.cases.json``."""
     if not isinstance(document, dict):
         return None
@@ -233,7 +234,7 @@ def autk_view_problem(document: object) -> str | None:
                 return _fill(AUTK_VIEW_RULES["plotsWithoutIds"], table=name)
             return _fill(AUTK_VIEW_RULES["plotIdIsDataRef"], id=name)
         named[name] = has_id
-    links = document.get("links")
+    links = document.get("links") if maps or plots else None
     for link in links if isinstance(links, list) else []:
         source, target = _shown(_field_of(link, "source")), _shown(_field_of(link, "target"))
         plot = next((p for p in plots if _plot_name(p) == source), None)

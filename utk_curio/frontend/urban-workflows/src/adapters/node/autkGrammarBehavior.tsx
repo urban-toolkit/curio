@@ -1149,7 +1149,7 @@ export const useAutkGrammarBehavior = (
                     const drawn: any = { ...rest };
                     if (maps.length > 0) drawn.map = asWritten(maps);
                     if (plots.length > 0) drawn.plot = asWritten(plots);
-                    const links = linksAtHand(drawn);
+                    const links = linksAtHand({ ...drawn, links: spec.links });
                     if (Array.isArray(spec.links) && links.length < spec.links.length) {
                         console.warn('[autk-grammar] dropping link(s) to a view or layer left out: '
                             + JSON.stringify(spec.links.filter((link: any) => !links.includes(link))));
