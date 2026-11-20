@@ -228,27 +228,27 @@ def test_the_monitors_histories_are_written_now_in_every_process(app, start, mon
     whichever process holds them, rather than a minute later: the call writes
     this process's and sends the step to every other. With one process
     nothing is sent."""
-    from utk_curio.backend.app.monitor import llm_tokens
+    from utk_curio.backend.app.monitor import llm_performance
 
     monkeypatch.setenv("CURIO_MONITOR_DIR", str(tmp_path / "monitor"))
     client = app.test_client()
-    llm_tokens.reset()
+    llm_performance.reset()
     try:
-        llm_tokens.record("gemma4", curio=True, input_tokens=5, output_tokens=1)
-        held = llm_tokens.HISTORY.rows()
+        llm_performance.record("gemma4", ms=1200, output_tokens=1)
+        held = llm_performance.HISTORY.rows()
         written = _post(client, "monitor-flush")
-        rows = [(row["model"], row["inputTokens"], row["requests"]) for row in llm_tokens.HISTORY.rows()]
+        rows = [(row["model"], row["ms"], row["requests"]) for row in llm_performance.HISTORY.rows()]
         sent_by_two = start.other.steps()
         as_the_one_process(monkeypatch)
         alone = _post(client, "monitor-flush")
     finally:
-        llm_tokens.reset()
+        llm_performance.reset()
 
     assert (written.status_code, alone.status_code) == (200, 200), (
         written.get_data(as_text=True), alone.get_data(as_text=True))
     assert held == [], "a request's row was written before the call"
-    assert "llm-tokens" in written.get_json()["written"], written.get_json()
-    assert rows == [("gemma4", 5, 1)]
+    assert "llm" in written.get_json()["written"], written.get_json()
+    assert rows == [("gemma4", 1200, 1)]
     assert sent_by_two == [("monitor-flush", {})], start.other.calls
     _signed(start.other)
     assert start.other.steps() == sent_by_two, "a start of one process sent the step on"

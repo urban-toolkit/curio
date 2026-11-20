@@ -23,7 +23,7 @@ import re
 import pytest
 
 from utk_curio.backend.app.discovery.infrastructure import bucket_mounts
-from utk_curio.backend.app.monitor import counters, llm_tokens
+from utk_curio.backend.app.monitor import counters, llm_performance
 
 IPV4 = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b")
 # An address, not any "@": the hardware section names the CPU, and an Intel
@@ -226,38 +226,54 @@ def test_the_storage_payload_is_anonymous_too(client, seeded, state_root):
     assert not offenders, f"free-text strings reached the storage payload: {offenders}"
 
 
-def test_the_llm_payload_names_models_and_nobody(client):
+def test_the_llm_payload_names_curios_own_models_and_nobody(client):
     """The third aggregate route, held to the same rule with one exemption.
 
-    It names the models that answered, the owner's call, and a model is
-    whatever a user typed for their own key. So only the values of ``model``
-    are exempt from the closed vocabulary, and the scans still run on them: a
-    model typed as an address, a host or a sentence is recorded as ``other``.
+    It names this Curio's own models that answered, so only the values of
+    ``model`` are exempt from the closed vocabulary, and the scans still run
+    on them: a model named as an address, a host or a sentence is recorded as
+    ``other``. A request on a key a user set for their own, whose model is
+    whatever the user typed, is recorded not at all, and nothing says where a
+    model ran.
     """
-    llm_tokens.record("gemma4", curio=True, input_tokens=120, output_tokens=30)
-    typed = (
+    from utk_curio.backend.app.agents.infrastructure import providers, testing_provider
+
+    llm_performance.record("gemma4", ms=1200, first_token_ms=300, output_tokens=30)
+    named = (
         "zqxprobe@probe.invalid", "https://llm.zqx.example/v1", "llm.zqx.example",
         "llm.zqx.example:8443", "203.0.113.77", "203.0.113.77:11434", "zqx probe",
     )
-    for model in typed:
-        llm_tokens.record(model, curio=False, input_tokens=5, output_tokens=1)
+    for model in named:
+        llm_performance.record(model, ms=500, output_tokens=1)
+    testing_provider.reset()
+    try:
+        for model in ("zqxtyped@probe.invalid", "https://zqx-own.example/v1", "198.51.100.23"):
+            testing_provider.push_reply("A reply on the user's own key.")
+            own = providers.ProviderConfig(api_key="", api_type="testing", base_url="", model=model)
+            asked = [{"role": "user", "content": "Hello"}]
+            assert providers.run_chat_turn(own, asked).text == "A reply on the user's own key."
+    finally:
+        testing_provider.reset()
     # Written, as the process's writer does each minute: the route reads the file.
-    assert llm_tokens.HISTORY.flush() is True
+    assert llm_performance.HISTORY.flush() is True
 
     response = client.get("/api/monitor/llm")
     raw = response.get_data(as_text=True)
-    assert "zqx" not in raw.lower(), "a typed address reached the payload"
+    assert "zqx" not in raw.lower(), "a named or typed address reached the payload"
     assert EMAIL.search(raw) is None, "an email-shaped string reached the payload"
     assert "probe.invalid" not in raw
     assert IPV4.search(raw) is None, "an IP-shaped string reached the payload"
     assert "hostname" not in raw.lower()
+    assert "curio" not in raw.lower(), "the payload says where a model ran"
 
     body = response.get_json()
-    # Not vacuous: every typed address was counted, as other.
-    assert {(entry["model"], entry["curio"]): entry["kept"]["requests"] for entry in body["models"]} == {
-        ("gemma4", True): 1,
-        ("other", False): len(typed),
-    }
+    # Not vacuous: every named address was counted, as other, in every view,
+    # and no request on a user's own key.
+    for name, view in body["views"].items():
+        assert {entry["model"]: entry["requests"] for entry in view["models"]} == {
+            "gemma4": 1,
+            "other": len(named),
+        }, name
 
     offenders = []
 
