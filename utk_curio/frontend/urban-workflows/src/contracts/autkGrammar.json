@@ -17,7 +17,13 @@
     { "in": "data[]", "key": "tableJoinName", "renamedTo": "joinDataRef" }
   ],
   "renamedKey": "This spec uses \"{key}\"{at}, which autk-grammar 5 renamed to \"{renamedTo}\".",
-  "notRunYet": [],
+  "notRunYet": [
+    {
+      "in": "map[].layerRefs[]",
+      "key": "buildingsZeroHeight",
+      "what": "\"buildingsZeroHeight\" (Curio makes a building without a height 6 m tall when it loads the data, so the key would change nothing)"
+    }
+  ],
   "notRunYetKey": "This spec uses {what}{at}, which Curio does not run yet.",
   "osmElementsMixed": "\"osmElements\" on one view of the OpenStreetMap table \"{table}\" and not on another",
   "keyAt": " at {path}",

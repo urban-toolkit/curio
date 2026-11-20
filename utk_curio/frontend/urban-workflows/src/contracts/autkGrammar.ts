@@ -93,19 +93,32 @@ export function autkViewProblem(spec: unknown): string | null {
 /**
  * A key autkGrammar.json names, where it is written: `in` is "" for the
  * document, or a section, whose one object or each object of its list holds
- * the key ("map[]" a map, "compute[]" a pass); with `value`, only that value
- * of the key counts.
+ * the key ("map[]" a map, "compute[]" a pass), or a list in each of those
+ * objects, a dot before it ("map[].layerRefs[]" each layer of each map); with
+ * `value`, only that value of the key counts.
  */
 type KeyRule = { in: string; key: string; value?: string };
 
-/** Each object *spec* holds where *place* says, with its path ("map", "compute[0]"). */
+/**
+ * Each object *spec* holds where *place* says, with its path ("map",
+ * "compute[0]", "map[1].layerRefs[0]"): through each step of the place, the
+ * one object or each object of a list its key holds in each object before.
+ */
 function objectsAt(spec: Record<string, unknown>, place: string): Array<{ path: string; object: unknown }> {
-  if (place === "") return [{ path: "", object: spec }];
-  const section = place.replace(/\[\]$/, "");
-  const held = spec[section];
-  if (held == null) return [];
-  if (Array.isArray(held)) return held.map((object, i) => ({ path: `${section}[${i}]`, object }));
-  return [{ path: section, object: held }];
+  let found: Array<{ path: string; object: unknown }> = [{ path: "", object: spec }];
+  if (place === "") return found;
+  for (const step of place.split(".")) {
+    const key = step.replace(/\[\]$/, "");
+    found = found.flatMap(({ path, object }) => {
+      if (object === null || typeof object !== "object" || Array.isArray(object)) return [];
+      const held = (object as Record<string, unknown>)[key];
+      if (held == null) return [];
+      const at = path ? `${path}.${key}` : key;
+      if (Array.isArray(held)) return held.map((item, i) => ({ path: `${at}[${i}]`, object: item }));
+      return [{ path: at, object: held }];
+    });
+  }
+  return found;
 }
 
 /** The path of the first object of *spec* that writes *rule*'s key, or null. */

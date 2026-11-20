@@ -28,7 +28,6 @@ import { autkKeyProblem, autkRasterPassProblem, autkViewProblem } from '../../co
 import {
     autkNeedsInput, autkReadsInput, autkSourcesFrom, documentTableRefs, drawnFeatures, drawnRows, inputRow, keyValues, loadableSource, ownTableNames,
     passesAtHand, readAutkInput, selectFieldsOf, selectFieldsProblem, tableKeyOf, tablePositions, tablesToLoad, withReadableHeights, writtenTables,
-    zeroHeightTables,
     type LoadOrder,
     type PreparedAutkInput,
 } from '../../utils/autkInput';
@@ -80,9 +79,9 @@ import { interactionHandleView, isInteractionEdge } from '../../contracts/intera
 import type { ViewArrangement } from '@urban-toolkit/autk-grammar';
 import { mapSession, onMapSession, registerEditMap } from '../../utils/editFeatures/mapEditBus';
 import {
-    drawnFeatureAt, featurePositions, handedFeaturesOf, layerIdFor, mapDrawingOf, mapLayerOf, mapStateOf, pickOn,
-    restoreMapLayers, showForEdits, snapshotBeforeSolo, snapshotMapLayers, type DrawnTables, type EditsView,
-    type HandedFeature, type MapDrawing, type MapLayerState, type MapTableState,
+    drawnFeatureAt, featurePositions, layerIdFor, mapDrawingOf, mapLayerOf, mapStateOf, pickOn, restoreMapLayers,
+    showForEdits, snapshotBeforeSolo, snapshotMapLayers, type DrawnTables, type EditsView, type MapDrawing,
+    type MapLayerState, type MapTableState,
 } from './autkMapState';
 import {
     drawnInput, editFeedsOf, editedMapView, fedByInteraction, feedsVersion, newLayerTables, type EditFeed,
@@ -106,7 +105,6 @@ const mapStateReaders = new Map<string, {
     showFramed: () => () => void;
     drawing: (view?: string | number) => MapDrawing | null;
     tourEnded: (view?: string | number) => Promise<boolean>;
-    handed: (table: string, view?: string | number) => Promise<HandedFeature[] | null>;
 }>();
 /** What turns each node's maps back by their cameras, while they show their framed views. */
 const turnBack = new Map<string, () => void>();
@@ -130,11 +128,6 @@ if (typeof window !== 'undefined') {
         mapStateReaders.get(nodeId)?.drawing(view) ?? null;
     (window as any).__curio_mapTourEnded = (nodeId: string, view?: string | number) =>
         mapStateReaders.get(nodeId)?.tourEnded(view) ?? Promise.resolve(false);
-    // The features of a table the grammar handed its map's autk-map, each
-    // with its input row and the keys of a building's top it holds
-    // (autkMapState `handedFeaturesOf`).
-    (window as any).__curio_mapHanded = (nodeId: string, table: string, view?: string | number) =>
-        mapStateReaders.get(nodeId)?.handed(table, view) ?? Promise.resolve(null);
     (window as any).__curio_showMapsFramed = (nodeId: string, framed: boolean): boolean => {
         turnBack.get(nodeId)?.();
         turnBack.delete(nodeId);
@@ -1088,10 +1081,7 @@ export const useAutkGrammarBehavior = (
             // (backendLayers == null means we did not already fall back). Each
             // layer keeps the workspace it was loaded into. A buildings layer
             // gets the heights autk-map and a pass read, as one of the input
-            // does (withReadableHeights), but for a part with no height in a
-            // table a layer with buildingsZeroHeight draws, which autk-map
-            // raises at random itself (zeroHeightTables).
-            const zeroHeight = zeroHeightTables(spec);
+            // does (withReadableHeights).
             const loadedLayers = async (): Promise<AutkLayer[]> => {
                 let layers: AutkLayer[] = [];
                 try {
@@ -1109,12 +1099,7 @@ export const useAutkGrammarBehavior = (
                     );
                 }
                 return layers.map((layer) => (layer.type === 'buildings'
-                    ? {
-                        ...layer,
-                        geojson: withReadableHeights(layer.geojson, {
-                            zeroHeight: zeroHeight.has(autkTableKey(autkWorkspaceOf(layer), layer.name)),
-                        }),
-                    }
+                    ? { ...layer, geojson: withReadableHeights(layer.geojson) }
                     : layer));
             };
 
@@ -2211,11 +2196,6 @@ export const useAutkGrammarBehavior = (
                 if (!tour?.done) return false;
                 await tour.done;
                 return true;
-            },
-            handed: (table, view) => {
-                const { index, entry } = mapOf(view);
-                if (index < 0) return Promise.resolve(null);
-                return handedFeaturesOf(grammarRef.current, autkTableKey(autkWorkspaceOf(entry), table));
             },
         });
         return () => {

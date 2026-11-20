@@ -59,39 +59,6 @@ function autkBase(p: Record<string, any>): number {
     return 0;
 }
 
-/** The keys autk-map reads a building part's top from, the first it holds winning. */
-export const TOP_KEYS = ['height', 'building:height', 'levels', 'building:levels'] as const;
-
-/** Whether *value* holds a number autk-map reads: a number, or text that starts with one. */
-const holdsNumber = (value: unknown): boolean => Number.isFinite(parseFloat(String(value)));
-
-/** *part* without the keys of TOP_KEYS that hold no number; the same object when it has none. */
-function partWithoutEmptyHeights(part: Record<string, any>): Record<string, any> {
-    const empty = TOP_KEYS.filter((key) => key in part && !holdsNumber(part[key]));
-    if (empty.length === 0) return part;
-    const out: Record<string, any> = { ...part };
-    for (const key of empty) delete out[key];
-    return out;
-}
-
-/**
- * A building's properties without the keys autk-map reads its top from that
- * hold no number (a `height` of null, an empty `levels`), on the building and
- * on each of its `parts`: autk-map's `buildingsZeroHeight` draws a part at a
- * random height of 3 to 7 floors only when it holds none of those keys, and
- * reads the first of them a part holds, so such a key would leave the part
- * out, or hide the levels after it. The same object when no key holds no number.
- */
-export function withoutEmptyHeights<T extends Record<string, any> | null | undefined>(props: T): T {
-    if (props === null || props === undefined || typeof props !== 'object') return props;
-    const out = partWithoutEmptyHeights(props as Record<string, any>);
-    const parts = (props as Record<string, any>).parts;
-    if (!Array.isArray(parts)) return out as T;
-    const cleaned = parts.map((part) => (part && typeof part === 'object' ? partWithoutEmptyHeights(part) : part));
-    if (cleaned.every((part, at) => part === parts[at])) return out as T;
-    return { ...out, parts: cleaned } as unknown as T;
-}
-
 /**
  * A building's properties with `height` and `min_height` written where
  * autk-map would read them wrong: a `height` (or `levels`) key with no number

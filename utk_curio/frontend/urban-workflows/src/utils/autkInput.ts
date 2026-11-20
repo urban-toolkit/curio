@@ -26,14 +26,13 @@
 import type { FeatureCollection } from "geojson";
 import { inputTableName } from "../contracts/autkGrammar";
 import {
-  MADE_HEIGHT,
   autkTableKey,
   autkWorkspaceOf,
   loadableFeatures,
   requestedLayerTables,
   sectionInputTables,
 } from "../adapters/node/autkDataCompile";
-import { deriveBuildingHeight, readableBuildingProperties, withoutEmptyHeights } from "./buildingHeight";
+import { readableBuildingProperties } from "./buildingHeight";
 import { detectCoordinateFormat } from "./geoCrs";
 import { resolveGeometryField } from "./geometryField";
 import { readGrammarInput, type GrammarFrame, type GrammarInput, type RasterPayload } from "./grammarInput";
@@ -444,63 +443,19 @@ function featuresOf(frame: GrammarFrame, name: string): FrameResult {
  * per row as it came: a feature autk-map would misread, or one with no
  * `height`, gets its `height` written, and every other one is the same object.
  * A node reads its input's buildings and those its own data section loads
- * through it. With *zeroHeight*, for a table a layer with `buildingsZeroHeight`
- * draws (`zeroHeightTables`), a part with no height autk-map draws gets none
- * from Curio and keeps no key of its height that holds no number, so autk-map
- * raises it at its own random 3 to 7 floors (`withoutEmptyHeights`). That
- * takes in a part an Autark node's loader handed on at the height Curio gave
- * it (`MADE_HEIGHT`), while it still holds that height (`withoutMadeHeight`).
+ * through it.
  */
-export function withReadableHeights(
-  fc: FeatureCollection,
-  { zeroHeight = false }: { zeroHeight?: boolean } = {},
-): FeatureCollection {
+export function withReadableHeights(fc: FeatureCollection): FeatureCollection {
   const features: any[] = Array.isArray((fc as any)?.features) ? (fc as any).features : [];
   let changed = false;
   const next = features.map((feature) => {
     const properties = feature?.properties;
-    // A part with no height of its own autk-map draws: left to autk-map, or given Curio's.
-    const own = zeroHeight ? withoutMadeHeight(feature) : properties;
-    const readable = zeroHeight && deriveBuildingHeight(own ?? {}) !== null
-      ? withoutEmptyHeights(own)
-      : readableBuildingProperties(properties);
+    const readable = readableBuildingProperties(properties);
     if (readable === properties) return feature;
     changed = true;
     return { ...feature, properties: readable };
   });
   return changed ? ({ ...fc, features: next } as FeatureCollection) : fc;
-}
-
-/**
- * *feature*'s properties without the height an Autark node's loader gave the
- * part because it had none, which the feature names (`MADE_HEIGHT`), while
- * the part still holds it; its properties as they are otherwise, a height
- * changed since among them.
- */
-function withoutMadeHeight(feature: any): any {
-  const properties = feature?.properties;
-  const made = feature?.[MADE_HEIGHT];
-  if (typeof made !== "number" || properties == null || properties.height !== made) return properties;
-  const { height: _made, ...own } = properties;
-  return own;
-}
-
-/**
- * The tables a layer with `buildingsZeroHeight` draws, by key
- * (`autkTableKey`), in the workspace of its map: autk-map draws each part of
- * them that has no height at a random 3 to 7 floors, so a node hands it on
- * without one (`withReadableHeights`).
- */
-export function zeroHeightTables(spec: any): Set<string> {
-  const keys = new Set<string>();
-  for (const map of asList<any>(spec?.map)) {
-    for (const ref of asList<any>(map?.layerRefs)) {
-      if (ref?.buildingsZeroHeight === true && typeof ref?.dataRef === "string" && ref.dataRef) {
-        keys.add(autkTableKey(autkWorkspaceOf(map), ref.dataRef));
-      }
-    }
-  }
-  return keys;
 }
 
 /**
@@ -685,7 +640,7 @@ type FrameTable =
   | { raster: AutkRasterInput }
   | { refusal: { reason: NodeEmptyReason; detail: string } };
 
-function frameTable(frame: GrammarFrame, name: string, zeroHeight = false): FrameTable {
+function frameTable(frame: GrammarFrame, name: string): FrameTable {
   // A table handed on from another workspace than the default one is loaded there.
   const workspace = frame.workspace ? { workspace: frame.workspace } : {};
   if (frame.dataType === "raster") return { raster: { outputTableName: name, payload: frame.payload, ...workspace } };
@@ -694,7 +649,7 @@ function frameTable(frame: GrammarFrame, name: string, zeroHeight = false): Fram
   // A layer an Autark data node stored empty comes back with no feature
   // list: it has no rows, and the render leaves it out like any empty table.
   const features = (result.fc as any).features;
-  const geojsonObject = frame.layerType === "buildings" ? withReadableHeights(result.fc, { zeroHeight }) : result.fc;
+  const geojsonObject = frame.layerType === "buildings" ? withReadableHeights(result.fc) : result.fc;
   return {
     source: {
       type: "geojson",
@@ -750,10 +705,6 @@ export function autkSourcesFrom(
   // Names two inputs bring, and where their message goes among the problems:
   // it says where the second layer is, which is known once every frame is in.
   const clashes: Array<{ at: number; earlier: number; frame: GrammarFrame; name: string }> = [];
-  // The tables a layer with buildingsZeroHeight draws, by the table's name or,
-  // for an input of one layer, by the input's (`input_<k>`).
-  const zeroHeight = zeroHeightTables(spec);
-  const framesOf = (circle: number) => read.frames.filter((frame) => frame.circle === circle).length;
 
   for (const frame of read.frames) {
     let name = autkTableName(frame);
@@ -775,8 +726,7 @@ export function autkSourcesFrom(
       }
     }
     if (!taken) broughtBy.set(keyOf(name), frame.circle);
-    const table = frameTable(frame, name, zeroHeight.has(keyOf(name))
-      || (framesOf(frame.circle) === 1 && zeroHeight.has(keyOf(inputTableName(frame.circle)))));
+    const table = frameTable(frame, name);
     became.set(frame, { table, taken });
     if (taken) continue;
     if ("raster" in table) {

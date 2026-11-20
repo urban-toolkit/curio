@@ -255,7 +255,9 @@ def autk_view_problem(document: object) -> str | None:
 
 #: The keys autk-grammar 5 renamed, each where it is written and its new name.
 #: ``in`` is ``""`` for the document, or a section whose one object or each
-#: object of its list holds the key (``"compute[]"`` a pass).
+#: object of its list holds the key (``"compute[]"`` a pass), or a list in each
+#: of those objects, a dot before it (``"map[].layerRefs[]"`` each layer of
+#: each map).
 AUTK_RENAMED_KEYS: tuple[dict, ...] = tuple(_AUTK_GRAMMAR["renamedKeys"])
 #: The keys of autk-grammar 5 a node does not run yet, each where it is
 #: written; with ``value``, only that value of the key counts (a heatmap
@@ -272,16 +274,26 @@ AUTK_DEFAULT_WORKSPACE: str = _AUTK_GRAMMAR["defaultWorkspace"]
 
 def _objects_at(document: dict, place: str) -> list[tuple[str, object]]:
     """Each object *document* holds where *place* says, with its path
-    (``map``, ``compute[0]``)."""
+    (``map``, ``compute[0]``, ``map[1].layerRefs[0]``): through each step of
+    the place, the one object or each object of a list its key holds in each
+    object before. ``objectsAt`` is the node's twin."""
+    found: list[tuple[str, object]] = [("", document)]
     if place == "":
-        return [("", document)]
-    section = place.removesuffix("[]")
-    held = document.get(section)
-    if held is None:
-        return []
-    if isinstance(held, list):
-        return [(f"{section}[{i}]", item) for i, item in enumerate(held)]
-    return [(section, held)]
+        return found
+    for step in place.split("."):
+        key = step.removesuffix("[]")
+        reached: list[tuple[str, object]] = []
+        for path, holder in found:
+            held = holder.get(key) if isinstance(holder, dict) else None
+            if held is None:
+                continue
+            at = f"{path}.{key}" if path else key
+            if isinstance(held, list):
+                reached += [(f"{at}[{i}]", item) for i, item in enumerate(held)]
+            else:
+                reached.append((at, held))
+        found = reached
+    return found
 
 
 def _written(document: dict, rule: dict) -> str | None:
@@ -470,11 +482,21 @@ def _resolved(schema: dict, node: object) -> object:
     return _definition(schema, node["$ref"]) if isinstance(node, dict) and "$ref" in node else node
 
 
-def _place(schema: dict, place: str) -> object:
-    """The schema of what a document holds where *place* says (``""`` the
-    document, ``"map[]"`` its map or its list of maps)."""
+def _places(schema: dict, place: str) -> list:
+    """The schemas of what a document holds where *place* says: ``""`` the
+    document, ``"map[]"`` its map or its list of maps, and for a list in each
+    of a section's objects (``"map[].layerRefs[]"``) that list in each object
+    the section can be (``_objects_under``)."""
     root = _definition(schema, schema.get("$ref", "UrbanSpec"))
-    return root if place == "" else root.get("properties", {}).get(place.removesuffix("[]"))
+    if place == "":
+        return [root]
+    first, *rest = place.split(".")
+    nodes = [root.get("properties", {}).get(first.removesuffix("[]"))]
+    for step in rest:
+        key = step.removesuffix("[]")
+        nodes = [held for node in nodes for holder in _objects_under(schema, node, set())
+                 if (held := holder.get("properties", {}).get(key)) is not None]
+    return [node for node in nodes if node is not None]
 
 
 def _objects_under(schema: dict, node: object, seen: set[int]) -> list[dict]:
@@ -546,14 +568,14 @@ def autk_schema_curio_runs(schema: dict) -> dict:
     made from it, so an agent does not write what a node refuses."""
     schema = json.loads(json.dumps(schema))
     for rule in AUTK_NOT_RUN_YET:
-        place = _place(schema, rule["in"])
-        if "value" in rule:
-            _drop_kind(schema, place, rule["key"], rule["value"], set())
-            continue
-        for holder in _objects_under(schema, place, set()):
-            holder.get("properties", {}).pop(rule["key"], None)
-            if rule["key"] in holder.get("required", []):
-                holder["required"] = [name for name in holder["required"] if name != rule["key"]]
+        for place in _places(schema, rule["in"]):
+            if "value" in rule:
+                _drop_kind(schema, place, rule["key"], rule["value"], set())
+                continue
+            for holder in _objects_under(schema, place, set()):
+                holder.get("properties", {}).pop(rule["key"], None)
+                if rule["key"] in holder.get("required", []):
+                    holder["required"] = [name for name in holder["required"] if name != rule["key"]]
     return schema
 
 

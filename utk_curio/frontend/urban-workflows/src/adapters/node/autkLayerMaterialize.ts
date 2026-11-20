@@ -23,7 +23,6 @@ import { deriveBuildingHeight } from '../../utils/buildingHeight';
 import { decodeRasterEnvelope } from '../../utils/raster/rasterWire';
 import {
     GRAMMAR_RASTER_SOURCES,
-    MADE_HEIGHT,
     PLAIN_TABLE_SOURCES,
     autkTableKey,
     autkUsesWorkspaces,
@@ -210,10 +209,7 @@ function flattenToMultiPolygon(geom: any): any | null {
 // `loadGeojson('buildings')` makes every row a building of its own, so each part
 // also carries, as a property, the `building_id` it came from. A part's
 // `geometryIndex` is autk-db's bookkeeping, not a tag, and is left out, and so is
-// its `id`, which the part carries as its `osm_id` (withOsmIds). A part with no
-// height gets the one `deriveBuildingHeight` gives it, and names it beside its
-// properties (`MADE_HEIGHT`), so a map layer with `buildingsZeroHeight` can take
-// it back.
+// its `id`, which the part carries as its `osm_id` (withOsmIds).
 function explodeBuildingParts(features: any[]): any[] {
     const out: any[] = [];
     for (const f of features ?? []) {
@@ -234,9 +230,7 @@ function explodeBuildingParts(features: any[]): any[] {
             if (props.building_id != null) p.building_id = props.building_id;
             const h = deriveBuildingHeight(p);
             if (h != null) p.height = h;
-            out.push(h != null
-                ? { type: 'Feature', geometry: gg, properties: p, [MADE_HEIGHT]: h }
-                : { type: 'Feature', geometry: gg, properties: p });
+            out.push({ type: 'Feature', geometry: gg, properties: p });
         };
         if (geom?.type === 'GeometryCollection' && Array.isArray(geom.geometries)) {
             geom.geometries.forEach((g: any, i: number) => pushPart(g, partMeta.get(i) ?? props));
