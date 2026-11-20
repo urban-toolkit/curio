@@ -254,6 +254,56 @@
       ],
       "type": "object"
     },
+    "CameraMotionStep": {
+      "description": "One step of a camera tour. `amount` is in the unit of the camera field of the same name: `zoom` levels, each of which halves the eye's distance (zooming out when negative); `pitch` degrees of tilt, away from straight down when positive; `bearing` degrees of heading, clockwise when positive. `roll` turns the view around its line of sight, by `amount` degrees: when positive, the direction at the top of the view turns clockwise, so a roll of a view that looks straight down turns its heading as `bearing` does, and a roll of a tilted view banks it.",
+      "if": {
+        "not": {
+          "properties": {
+            "type": {
+              "const": "pitch"
+            }
+          }
+        }
+      },
+      "properties": {
+        "amount": {
+          "description": "How much the step changes it, in the unit of its `type`.",
+          "type": "number"
+        },
+        "pan": {
+          "description": "With a `pitch` step only: how far the point the view turns around moves during the step, in workspace units, toward the top of the view when positive.",
+          "type": "number"
+        },
+        "seconds": {
+          "description": "How long the step takes, in seconds, greater than 0: the view eases in and out of it.",
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "type": {
+          "description": "What the step changes: `zoom`, `pitch`, `bearing` or `roll`.",
+          "enum": [
+            "zoom",
+            "pitch",
+            "bearing",
+            "roll"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "amount",
+        "seconds"
+      ],
+      "then": {
+        "not": {
+          "required": [
+            "pan"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "CameraSpec": {
       "description": "Where a map looks from. Each field is optional; an omitted field keeps the view that fits the map's layers. Read by the Autark adapter; the deck.gl adapter ignores it.",
       "properties": {
@@ -262,6 +312,35 @@
           "maximum": 360,
           "minimum": 0,
           "type": "number"
+        },
+        "center": {
+          "description": "The point the view looks at, as `[longitude, latitude]` in degrees (WGS84). The run puts it in the CRS of the map's workspace, and the eye turns around it as `pitch` and `bearing` say. Without it, the middle of the view that fits the map's layers. Read by the Autark adapter only.",
+          "items": [
+            {
+              "description": "A longitude in degrees (WGS84).",
+              "maximum": 180,
+              "minimum": -180,
+              "title": "longitude",
+              "type": "number"
+            },
+            {
+              "description": "A latitude in degrees (WGS84).",
+              "maximum": 90,
+              "minimum": -90,
+              "title": "latitude",
+              "type": "number"
+            }
+          ],
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "motion": {
+          "description": "A camera tour: steps the view takes one after another once the map is drawn, each over its own `seconds`, from the view the other fields set. The run does not wait for it. Read by the Autark adapter only.",
+          "items": {
+            "$ref": "#/definitions/CameraMotionStep"
+          },
+          "type": "array"
         },
         "pitch": {
           "description": "Tilt from straight down, in degrees, less than 90: at 90 the eye would sit on the ground, edge-on to the map's flat layers, and the map could not pan.",
@@ -293,6 +372,42 @@
         "schemeTableau10"
       ],
       "type": "string"
+    },
+    "ClustersComputeSpec": {
+      "description": "Cluster ids of touching geometries: rows whose geometries intersect or touch, directly or through other rows, share a cluster. The id, a whole number from 0, is written to `feature.properties.compute.<outputColumnName>`; the first row's cluster is 0, and each other cluster takes the next number in the order of its first row. A row without a geometry, or with an empty one, is in no cluster, and its id is `null`. Runs on the CPU. Read by the Autark adapter only.",
+      "properties": {
+        "dataRef": {
+          "description": "Name of the table whose rows the pass clusters.",
+          "type": "string"
+        },
+        "layerType": {
+          "$ref": "#/definitions/LayerType",
+          "description": "How the map draws the new table. Defaults to the type of the table it was computed from. Only used with `outputTableName`."
+        },
+        "outputColumnName": {
+          "description": "Column written with each row's cluster id.",
+          "type": "string"
+        },
+        "outputTableName": {
+          "description": "Name of a new table that receives the result, so the source table stays as it is and later passes, maps and plots can read both. Without it, the pass writes into its `dataRef` table.",
+          "type": "string"
+        },
+        "type": {
+          "const": "clusters",
+          "description": "Selects a clusters pass.",
+          "type": "string"
+        },
+        "workspace": {
+          "$ref": "#/definitions/WorkspaceName",
+          "description": "Workspace of the tables the pass reads and writes."
+        }
+      },
+      "required": [
+        "dataRef",
+        "outputColumnName",
+        "type"
+      ],
+      "type": "object"
     },
     "ColorMapInterpolator": {
       "description": "Color scheme for a colored map layer: `scheme*` names are categorical, `interpolate*` names are sequential or diverging.",
@@ -354,9 +469,15 @@
         },
         {
           "$ref": "#/definitions/RenderComputeSpec"
+        },
+        {
+          "$ref": "#/definitions/WindowsComputeSpec"
+        },
+        {
+          "$ref": "#/definitions/ClustersComputeSpec"
         }
       ],
-      "description": "One entry of `compute`. A pass with `type: 'render'` is a  {@link  RenderComputeSpec } , any other a  {@link  GpgpuComputeSpec } ."
+      "description": "One entry of `compute`: a  {@link  GpgpuComputeSpec }  without a `type` or with `type: 'gpgpu'`, a  {@link  RenderComputeSpec }  with `type: 'render'`, a  {@link  WindowsComputeSpec }  with `type: 'windows'`, or a  {@link  ClustersComputeSpec }  with `type: 'clusters'`."
     },
     "ContinuousColorMapInterpolator": {
       "description": "A sequential or diverging color scheme: an `interpolate*` name, a color for each number of a scale.",
@@ -1957,11 +2078,13 @@
     "MapLayerSpec": {
       "description": "One layer drawn by a map.",
       "if": {
-        "required": [
-          "colorMapRange"
-        ]
+        "type": "object"
       },
       "properties": {
+        "buildingsZeroHeight": {
+          "description": "Draw the parts of a buildings layer that have no height, each with a random height of 3 to 7 floors of 3.4 m (10.2 to 23.8 m), rather than leave them out: autk-map's `buildingsZeroHeight`. A part has no height when it has none of `height`, `building:height`, `levels` and `building:levels`; a part with one of them whose height is not above its minimum, such as `0`, is still left out. The heights change at each run. Read by the Autark adapter for buildings layers; other layers and the deck.gl adapter ignore it.",
+          "type": "boolean"
+        },
         "catchAllCategory": {
           "type": "string"
         },
@@ -1985,7 +2108,7 @@
           "description": "Color scheme used when `isColorMap` is set."
         },
         "colorMapLabels": {
-          "description": "Legend labels. Read by the deck.gl adapter; the Autark adapter ignores it.",
+          "description": "Legend labels. Neither adapter reads it.",
           "items": {
             "type": "string"
           },
@@ -2024,7 +2147,7 @@
           ]
         },
         "getFnv": {
-          "description": "Dot path to the thematic value, relative to `feature.properties` (for example `tags.highway` or `compute.result`).",
+          "description": "Dot path to the thematic value, relative to `feature.properties` (for example `tags.highway` or `compute.result`). On a raster layer, the band to draw, by its id (`band_1`, ...) or its label (`count.noise` for a heatmap band labeled `count_noise`), the first band without it; on a raster of several bands, one that names none of them is refused.",
           "type": "string"
         },
         "getFnvType": {
@@ -2040,11 +2163,19 @@
           "type": "boolean"
         },
         "isPick": {
-          "description": "Allow picking features on this layer.",
+          "description": "Allow picking features on this layer. autk-map lets one layer of a map pick: the last layer that sets it, unless a link or a plot's `mapRef` makes another layer of the map pick.",
           "type": "boolean"
         },
         "isSkip": {
           "description": "Load the layer without drawing it.",
+          "type": "boolean"
+        },
+        "layerType": {
+          "$ref": "#/definitions/LayerType",
+          "description": "How the map draws the layer's table, in place of the table's own type, among the types of its kind of geometry: a table of polygons as `polygons`, `surface`, `parks`, `water` or `buildings` (raised by its heights), a table of lines as `polylines` or `roads`, a table of points as `points`, and a raster as `raster`. autk-map draws surface, parks, water and roads layers below the others, in that order, whatever the order of `layerRefs`. Read by the Autark adapter; the deck.gl adapter ignores it."
+        },
+        "legend": {
+          "description": "Show this layer's color scale in the map's legend, which otherwise shows the last layer whose colors autk-map set, about the last layer colored by value. One layer of a map at most; a layer colored by value, or a raster, whose legend it shows; and a map that shows its controls. The layers pick as their `isPick` says. Read by the Autark adapter; the deck.gl adapter ignores it.",
           "type": "boolean"
         },
         "normalization": {
@@ -2074,8 +2205,11 @@
           "type": "boolean"
         },
         "pickedComps": {
-          "description": "Feature ids drawn as picked. Read by the deck.gl adapter; the Autark adapter ignores it.",
+          "description": "Features drawn as picked from the start, in the map's highlight color, as if the user had picked them: their positions among the features the layer draws, as `map:picking` events give them. autk-map draws picked features only on the layer of a map that picks, so the layer sets `isPick: true`, and no later layer of its map sets it, nor does a link or a plot's `mapRef` make another layer of its map pick. The plots linked to the layer select the same rows. Read by the Autark adapter; the deck.gl adapter ignores it.",
           "items": {
+            "description": "A row of a table as a view draws it: its position among the rows the view draws, from 0.",
+            "minimum": 0,
+            "multipleOf": 1,
             "type": "number"
           },
           "type": "array"
@@ -2091,6 +2225,16 @@
             "type": "string"
           },
           "minItems": 1,
+          "type": "array"
+        },
+        "skippedComps": {
+          "description": "Features the layer hides, by their positions among the features it draws, as `map:picking` events give them. A hidden feature of a polygons or buildings layer can still be picked with autk-map 4.1.1. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "items": {
+            "description": "A row of a table as a view draws it: its position among the rows the view draws, from 0.",
+            "minimum": 0,
+            "multipleOf": 1,
+            "type": "number"
+          },
           "type": "array"
         },
         "stroke": {
@@ -2115,20 +2259,69 @@
           "description": "How opaque a raster layer's cells are by value, as autk-map's transfer function: for example `{ opacityMin: 1, opacityMax: 1 }` draws every cell with a value fully opaque. Read by the Autark adapter for raster layers; other layers and the deck.gl adapter ignore it."
         },
         "width": {
-          "description": "Width of the lines of a polylines or roads layer, in the map's planar units (about meters). It replaces the widths a roads layer gives each kind of road. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "description": "Width of the lines of a polylines or roads layer, in the map's planar units (about meters). It replaces the widths a roads layer gives each kind of road. Not with `widthBy`. Read by the Autark adapter; the deck.gl adapter ignores it.",
           "exclusiveMinimum": 0,
           "type": "number"
+        },
+        "widthBy": {
+          "description": "Dot path to the width of each line of a roads layer, relative to `feature.properties`, in the map's planar units (about meters), as `width` gives every line one: autk-map's widths by feature. A line without a positive number there keeps the width of its kind of road. autk-map draws every line of a polylines layer at one width, so a table of lines takes it drawn as roads, with `layerType: 'roads'`. Not with `width`. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "minLength": 1,
+          "type": "string"
         }
       },
       "required": [
         "dataRef"
       ],
       "then": {
-        "not": {
-          "required": [
-            "colorMapDomain"
-          ]
-        }
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "colorMapRange"
+              ]
+            },
+            "then": {
+              "not": {
+                "required": [
+                  "colorMapDomain"
+                ]
+              }
+            }
+          },
+          {
+            "if": {
+              "required": [
+                "pickedComps"
+              ]
+            },
+            "then": {
+              "not": {
+                "properties": {
+                  "isPick": {
+                    "const": false
+                  }
+                }
+              },
+              "required": [
+                "isPick"
+              ]
+            }
+          },
+          {
+            "if": {
+              "required": [
+                "widthBy"
+              ]
+            },
+            "then": {
+              "not": {
+                "required": [
+                  "width"
+                ]
+              }
+            }
+          }
+        ]
       },
       "type": "object"
     },
@@ -2139,10 +2332,18 @@
           "$ref": "#/definitions/CameraSpec",
           "description": "Where the map looks from."
         },
+        "highlightColor": {
+          "$ref": "#/definitions/HexColor",
+          "description": "The color of the features the map draws as picked, by the user, a layer's `pickedComps`, a link or a call such as `highlightOnMap`, `#rrggbb`. Each map has its own; autk-map's is `#5dade2`. Read by the Autark adapter; the deck.gl adapter ignores it."
+        },
         "id": {
           "description": "Name of the map, which a link in `links` uses as its `target`. Unique among the ids of the maps and plots.",
           "minLength": 1,
           "type": "string"
+        },
+        "invalidValueColor": {
+          "$ref": "#/definitions/HexColor",
+          "description": "The color of the features of a layer colored by value whose value autk-map cannot color: one without a value, or with one that is not on the layer's scale, `#rrggbb`. Each map has its own; autk-map's is `#ffffff`. Read by the Autark adapter; the deck.gl adapter ignores it."
         },
         "layerRefs": {
           "description": "Layers to draw, bottom first. Each names a table with `dataRef`.",
@@ -2151,9 +2352,24 @@
           },
           "type": "array"
         },
+        "showUi": {
+          "description": "Whether autk-map shows its floating controls on the map: the menu of its layers and the legend. `false` hides them, and the \"made with autark\" credit stays. Defaults to `true`. Read by the Autark adapter; the deck.gl adapter ignores it.",
+          "type": "boolean"
+        },
         "style": {
-          "description": "Map style.",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/definitions/MapStyleColors"
+            }
+          ],
+          "description": "Map style: the name of one of autk-map's styles, such as `apple`, its default, or `light` (a name autk-map does not know draws in `apple`), or the colors of a style of the spec's own. A layer with a `color` is drawn in it instead, and a layer colored by value in its scheme. Read by the Autark adapter; the deck.gl adapter ignores it."
+        },
+        "terrain": {
+          "$ref": "#/definitions/TerrainSpec",
+          "description": "A 3D ground from an elevation raster: autk-map raises the ground the raster covers to its heights, drapes the map's flat layers over it, stands its buildings on it, and fits the view to it, from which `camera` moves. Read by the Autark adapter; the deck.gl adapter ignores it."
         },
         "workspace": {
           "$ref": "#/definitions/WorkspaceName",
@@ -2162,6 +2378,59 @@
       },
       "required": [
         "layerRefs"
+      ],
+      "type": "object"
+    },
+    "MapStyleColors": {
+      "description": "The colors of a map style of the spec's own, each `#rrggbb`: the background, and the color of each kind of layer drawn in one color. autk-map takes a style only whole, so each of the nine is given. Read by the Autark adapter; the deck.gl adapter ignores it.",
+      "properties": {
+        "background": {
+          "$ref": "#/definitions/HexColor",
+          "description": "The map's background, where no layer is drawn."
+        },
+        "buildings": {
+          "$ref": "#/definitions/HexColor",
+          "description": "Buildings layers."
+        },
+        "parks": {
+          "$ref": "#/definitions/HexColor",
+          "description": "Parks layers."
+        },
+        "points": {
+          "$ref": "#/definitions/HexColor",
+          "description": "Points layers."
+        },
+        "polygons": {
+          "$ref": "#/definitions/HexColor",
+          "description": "Polygons layers."
+        },
+        "polylines": {
+          "$ref": "#/definitions/HexColor",
+          "description": "Polylines layers."
+        },
+        "roads": {
+          "$ref": "#/definitions/HexColor",
+          "description": "Roads layers."
+        },
+        "surface": {
+          "$ref": "#/definitions/HexColor",
+          "description": "Surface layers: the ground of an area."
+        },
+        "water": {
+          "$ref": "#/definitions/HexColor",
+          "description": "Water layers."
+        }
+      },
+      "required": [
+        "background",
+        "surface",
+        "parks",
+        "water",
+        "roads",
+        "buildings",
+        "points",
+        "polylines",
+        "polygons"
       ],
       "type": "object"
     },
@@ -3616,6 +3885,25 @@
       ],
       "type": "object"
     },
+    "TerrainSpec": {
+      "description": "The ground of a map in 3D, raised to the heights a raster band gives. Read by the Autark adapter; the deck.gl adapter ignores it.",
+      "properties": {
+        "band": {
+          "description": "The band of heights, by its id (`band_1`, ...) or its label, as a raster layer's `getFnv` names one. Defaults to the first band. On a raster of several bands, a band that names none of them is refused.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "dataRef": {
+          "description": "Name of the raster table whose band gives the ground's height in each of its cells, in the workspace's units, such as a `geotiff` source of an elevation model in meters. It is a table of the map's workspace. A cell without a value lies at height 0.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "dataRef"
+      ],
+      "type": "object"
+    },
     "UpdateSourceSpec": {
       "description": "Replaces or changes the rows of a table already loaded, with rows given inline: a FeatureCollection for a table with a geometry, an array of objects for a table without one. Read by the Autark adapter only.",
       "else": {
@@ -3780,6 +4068,43 @@
           "type": "array"
         }
       },
+      "type": "object"
+    },
+    "WindowsComputeSpec": {
+      "description": "Buildings' windows as a table of their own: one point a window, placed along each building's facades as a render pass's `building-windows` viewpoints are, at the middle of the window. Each point is a feature whose id is the window's, with `properties` that name its building (`sourceFeatureIndex`, the building's row in `dataRef`), its facade, its floor (`floorIndex`, from 0 at the bottom) and its size. Runs on the CPU. Read by the Autark adapter only.",
+      "properties": {
+        "dataRef": {
+          "description": "Name of the buildings table whose windows the pass places.",
+          "type": "string"
+        },
+        "floors": {
+          "description": "Rows of windows on each facade, spread evenly up the building's height.",
+          "type": "number"
+        },
+        "layerType": {
+          "$ref": "#/definitions/LayerType",
+          "description": "How the map draws the new table. Defaults to `points`."
+        },
+        "outputTableName": {
+          "description": "Name of the table that receives the windows. Later passes, maps and plots read it by this name.",
+          "type": "string"
+        },
+        "type": {
+          "const": "windows",
+          "description": "Selects a windows pass.",
+          "type": "string"
+        },
+        "workspace": {
+          "$ref": "#/definitions/WorkspaceName",
+          "description": "Workspace of the tables the pass reads and writes."
+        }
+      },
+      "required": [
+        "type",
+        "dataRef",
+        "floors",
+        "outputTableName"
+      ],
       "type": "object"
     },
     "WktGeometryColumns": {
