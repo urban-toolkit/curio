@@ -32,7 +32,7 @@ import {
   requestedLayerTables,
   sectionInputTables,
 } from "../adapters/node/autkDataCompile";
-import { deriveBuildingHeight, readableBuildingProperties, withoutDrawnHeight } from "./buildingHeight";
+import { deriveBuildingHeight, readableBuildingProperties, withoutEmptyHeights } from "./buildingHeight";
 import { detectCoordinateFormat } from "./geoCrs";
 import { resolveGeometryField } from "./geometryField";
 import { readGrammarInput, type GrammarFrame, type GrammarInput, type RasterPayload } from "./grammarInput";
@@ -444,9 +444,10 @@ function featuresOf(frame: GrammarFrame, name: string): FrameResult {
  * `height`, gets its `height` written, and every other one is the same object.
  * A node reads its input's buildings and those its own data section loads
  * through it. With *zeroHeight*, for a table a layer with `buildingsZeroHeight`
- * draws (`zeroHeightTables`), a part with no height autk-map draws is left
- * with none of the keys autk-map reads a height from, so autk-map raises it at
- * its own random 3 to 7 floors.
+ * draws (`zeroHeightTables`), a part with no height autk-map draws gets none
+ * from Curio and keeps no key of its height that holds no number, so autk-map
+ * raises it at its own random 3 to 7 floors (`withoutEmptyHeights`; the run's
+ * database hands the map the table the same way, `withZeroHeightExports`).
  */
 export function withReadableHeights(
   fc: FeatureCollection,
@@ -458,7 +459,7 @@ export function withReadableHeights(
     const properties = feature?.properties;
     // A part with no height autk-map draws: left to autk-map, or given Curio's.
     const readable = zeroHeight && deriveBuildingHeight(properties ?? {}) !== null
-      ? withoutDrawnHeight(properties)
+      ? withoutEmptyHeights(properties)
       : readableBuildingProperties(properties);
     if (readable === properties) return feature;
     changed = true;

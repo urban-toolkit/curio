@@ -89,17 +89,30 @@ export function attachSpecCameras(
 
 /**
  * The camera *map*'s entry writes, as a key that is the same for the same
- * camera, however its fields and its tour's are ordered; none when it writes
- * no camera.
+ * camera, however its fields are ordered: its zoom, pitch and bearing, which
+ * the e2e framing check reads; none when it writes no camera.
  */
 function cameraKey(map: any): string | undefined {
     const camera = (map?.[SPEC_CAMERA] as SpecCamera | undefined)?.camera;
-    if (!camera) return undefined;
-    const tour = Array.isArray(camera.motion)
-        ? camera.motion.map((step: any) => [step?.type ?? null, step?.amount ?? null, step?.seconds ?? null, step?.pan ?? null])
-        : null;
-    return JSON.stringify([camera.zoom ?? null, camera.pitch ?? null, camera.bearing ?? null, camera.center ?? null, tour]);
+    return camera ? JSON.stringify([camera.zoom ?? null, camera.pitch ?? null, camera.bearing ?? null]) : undefined;
 }
+
+/** The `center` *map*'s camera writes, as a key; none when it writes none. */
+function centerKey(map: any): string | undefined {
+    const center = (map?.[SPEC_CAMERA] as SpecCamera | undefined)?.camera?.center;
+    return Array.isArray(center) ? JSON.stringify(center) : undefined;
+}
+
+/** The tour *map*'s camera writes (`motion`), as a key the same however each step's fields are ordered; none when it writes none. */
+function tourKey(map: any): string | undefined {
+    const motion = (map?.[SPEC_CAMERA] as SpecCamera | undefined)?.camera?.motion;
+    if (!Array.isArray(motion)) return undefined;
+    return JSON.stringify(motion.map((step: any) => [step?.type ?? null, step?.amount ?? null, step?.seconds ?? null, step?.pan ?? null]));
+}
+
+/** Whether *view* was taken under the camera *map*'s entry writes now: its zoom, pitch and bearing, its center and its tour. */
+const sameCamera = (view: MapView, map: any): boolean =>
+    view.camera === cameraKey(map) && view.center === centerKey(map) && view.tour === tourKey(map);
 
 /**
  * Play the tour of *map*'s camera, its `motion`, from the view the map has
@@ -305,13 +318,15 @@ export function frameMaps(grammar: any): void {
 
 /**
  * Where a map's camera stands, the origin of the world it stands in, the
- * camera its entry wrote when it was drawn (`cameraKey`), when it wrote one,
- * the view Curio framed it at before that camera turned it, when it did, and
- * the map's key in the document it was drawn from, when that was given.
+ * camera its entry wrote when it was drawn, when it wrote one (`cameraKey`:
+ * its zoom, pitch and bearing; `centerKey` and `tourKey`: its center and its
+ * tour, when it wrote them), the view Curio framed it at before that camera
+ * turned it, when it did, and the map's key in the document it was drawn
+ * from, when that was given.
  */
 export type MapView = {
-    eye: number[]; lookAt: number[]; up: number[]; origin: number[] | null; camera?: string; framed?: FramedView;
-    key?: string | number;
+    eye: number[]; lookAt: number[]; up: number[]; origin: number[] | null; camera?: string;
+    center?: string; tour?: string; framed?: FramedView; key?: string | number;
 };
 
 /**
@@ -349,6 +364,10 @@ export function mapViews(grammar: any, panes?: ViewPanes | null): Array<MapView 
             };
             const written = cameraKey(map);
             if (written !== undefined) view.camera = written;
+            const center = centerKey(map);
+            if (center !== undefined) view.center = center;
+            const tour = tourKey(map);
+            if (tour !== undefined) view.tour = tour;
             const framed = map[FRAMED_VIEW] as FramedView | undefined;
             if (framed) view.framed = { eye: [...framed.eye], lookAt: [...framed.lookAt], up: [...framed.up] };
             if (panes) view.key = mapKey(panes, index);
@@ -437,7 +456,7 @@ export function keepMapViews(grammar: any, views: ReadonlyArray<MapView | null>,
         const taken = byKey
             ? views.find((view) => view?.key === mapKey(panes, index)) ?? null
             : views[index];
-        const view = taken && taken.camera === cameraKey(map) ? taken : null;
+        const view = taken && sameCamera(taken, map) ? taken : null;
         if (!view || !keepsAView(map) || !putBackView(map, view)) {
             frameMaps({ maps: [map] });
             return;

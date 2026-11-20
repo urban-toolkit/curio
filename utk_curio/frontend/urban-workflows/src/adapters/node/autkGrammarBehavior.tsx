@@ -68,6 +68,7 @@ import {
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
 import { withCheckedPasses } from './autkComputeScopes';
+import { withZeroHeightExports } from './autkZeroHeights';
 import { attachSpecCameras, frameMaps, keepMapViews, mapViews, showFramedViews, type MapView } from './autkMapView';
 import { destroyFailedGrammar, grammarMaps, trackMaps } from './autkMapDrawing';
 import {
@@ -1443,6 +1444,10 @@ export const useAutkGrammarBehavior = (
                     // A raster enters its workspace when the document keeps
                     // tables in more than the default one (autkUsesWorkspaces).
                     if (drawsRasters) withRasterSources(g, newAutkDb, autkUsesWorkspaces(spec) ? enterWorkspace : undefined);
+                    // A buildings table a layer with buildingsZeroHeight draws
+                    // reaches the map with no empty height key, so autk-map
+                    // raises its parts without a height at random.
+                    withZeroHeightExports(g, zeroHeightTables(spec));
                     // Each pass the run computes is checked on the GPU's
                     // device, as a compute step's is (autkComputeScopes). It
                     // runs on the run's own database, and reads a fromFeature
