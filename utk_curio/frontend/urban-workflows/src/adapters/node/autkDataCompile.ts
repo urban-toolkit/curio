@@ -325,6 +325,20 @@ export function sectionTableProblem(dataSources: any[]): string | null {
     return null;
 }
 
+// The keys of a data section's own tables: those its sources load and make
+// (requestedLayerTables), and every name a source of it gives its table
+// (`outputTableName`, an OSM load's and a SQL query's included), dropped or
+// not. Any other table a source of it reads is one of the node's input.
+export function sectionOwnTables(dataSources: any[]): Set<string> {
+    const sources: any[] = Array.isArray(dataSources) ? dataSources : [];
+    return new Set([
+        ...requestedLayerTables(sources),
+        ...sources
+            .filter((source) => typeof source?.outputTableName === 'string' && source.outputTableName !== '')
+            .map((source) => autkTableKey(autkWorkspaceOf(source), source.outputTableName)),
+    ]);
+}
+
 // A table of the node's input that a data section's heatmap or join reads: its
 // name and the workspace of the entry that reads it first, `before`, that
 // entry's place, where both loaders load it into the section's database, and
@@ -344,12 +358,7 @@ export type SectionInputTable = { name: string; workspace?: string; before: numb
 // loaders load it in.
 export function sectionInputTables(dataSources: any[]): SectionInputTable[] {
     const sources: any[] = inPhaseOrder(Array.isArray(dataSources) ? dataSources : []);
-    const loaded = new Set([
-        ...requestedLayerTables(sources),
-        ...sources
-            .filter((source) => typeof source?.outputTableName === 'string' && source.outputTableName !== '')
-            .map((source) => autkTableKey(autkWorkspaceOf(source), source.outputTableName)),
-    ]);
+    const loaded = sectionOwnTables(sources);
     const seen = new Set<string>();
     const tables: SectionInputTable[] = [];
     for (const read of sectionReads(sources)) {
