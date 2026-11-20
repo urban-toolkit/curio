@@ -1000,7 +1000,9 @@ named after it.
 In **Edit**, the form of a building of several parts is for all of them: a
 property its parts differ in is empty, with their values beside it, and a value
 typed there goes to every part. Its **Parts** menu picks one part, by its
-`osm_id`, and the form then shows and changes that part's values alone.
+`osm_id`, and the form then shows and changes that part's values alone. A
+building part with no height shows the height a map draws it at, 6 m above its
+base, marked: `6 (default)`. Its height stays empty until one is typed.
 
 A rule or an expression reads a feature's columns by name (`height`, or
 `` `Mean Acc shadow` `` in backticks). It takes numbers, quoted texts, `true`,
