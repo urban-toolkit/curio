@@ -648,7 +648,7 @@ Without both secrets, the deploy removes `.secrets/llm-endpoint` and the stack h
 
 Both stacks mount `/srv/curio-model-weights` at `/model-weights` and start with `--model-weights-dir /model-weights`, so a model's weights download there once for each revision, on the first node that runs it on either stack, into a folder of that revision: a stack on another version of the package never downloads over the other's ([Model weights a package fetches](#model-weights-a-package-fetches)). Each deploy gives the folder to root, the account both containers' servers run as, readable by every account and writable by no other.
 
-Each stack keeps the [monitor page](#the-monitor-page)'s histories in a folder of its own outside its checkout, `/srv/curio-monitor/dev` or `/srv/curio-monitor/stable`, which Docker makes, mounted at `/monitor` and named with `--monitor-dir /monitor`: they outlive each deploy, which deletes the dev stack's `.curio`.
+Each stack keeps the [monitor page](#the-monitor-page)'s histories across deploys, in a folder of its own outside its checkout, `/srv/curio-monitor/dev` or `/srv/curio-monitor/stable`, which Docker makes, mounted at `/monitor` and named with `--monitor-dir /monitor`.
 
 Both stacks also start with `--media-cache-max-file-gb 8`, so **Cache files** copies the SideSeeing walks, videos of up to 7 GiB, from data.urbantk.org. Each account still holds at most 20 GB of cached files.
 

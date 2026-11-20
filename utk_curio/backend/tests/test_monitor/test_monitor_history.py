@@ -22,6 +22,7 @@ import signal
 import stat
 import subprocess
 import sys
+import threading
 import types
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -472,14 +473,20 @@ def test_sigterm_writes_what_the_process_holds_then_ends_it_as_sigterm_does(tmp_
         [sys.executable, "-c", _HOLDS_A_ROW], cwd=Path(utk_curio.__file__).resolve().parent.parent,
         env=environ, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )
+    lines: list = []
+
+    def read_until_it_says() -> None:
+        for line in process.stdout:
+            lines.append(line.strip())
+            if lines[-1] in ("handled", "not handled"):
+                return
+
     try:
-        said = ""
-        while said not in ("handled", "not handled"):
-            line = process.stdout.readline()
-            if not line:
-                break
-            said = line.strip()
-        assert said == "handled", f"{said!r}; {process.stderr.read() if process.poll() is not None else ''}"
+        reader = threading.Thread(target=read_until_it_says, daemon=True)
+        reader.start()
+        reader.join(60)
+        said = lines[-1] if lines else ""
+        assert said == "handled", f"{said!r} within 60 s; {process.stderr.read() if process.poll() is not None else ''}"
         assert not (tmp_path / "kept" / "stopped.json").exists(), "the row was written before the process stopped"
         process.send_signal(signal.SIGTERM)
         process.wait(timeout=60)

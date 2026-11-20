@@ -126,8 +126,9 @@ def record(model, *, curio: bool, input_tokens, output_tokens) -> None:
             "outputTokens": _count(output_tokens),
             "requests": 1,
         }, at=_now())
-    except Exception:  # noqa: BLE001 - a request never fails over its bookkeeping
-        pass
+    except Exception:  # noqa: BLE001
+        # A request never fails over its bookkeeping.
+        return
 
 
 def snapshot() -> dict:
