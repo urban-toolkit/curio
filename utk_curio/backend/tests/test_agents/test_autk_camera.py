@@ -64,7 +64,7 @@ def test_the_autark_skill_says_what_a_maps_camera_does():
     said = camera["description"].split(" Read by the ", 1)[0]
     assert region[at + 1] == f'  - "camera": {said}'
     fields = [f'    - "{name}": {field["description"]}' for name, field in camera["properties"].items()]
-    assert {"zoom", "pitch", "bearing"} <= set(camera["properties"])
+    assert {"zoom", "pitch", "bearing", "center", "motion"} <= set(camera["properties"])
     assert region[at + 2:at + 2 + len(fields)] == fields
     for line in [region[at + 1], *fields]:
         assert line in skill

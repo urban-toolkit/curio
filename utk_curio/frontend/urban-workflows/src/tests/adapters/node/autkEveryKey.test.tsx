@@ -1,8 +1,9 @@
 /**
- * Every key of autk-grammar 5.2.0's maps, plots, compute passes and
+ * Every key of autk-grammar 5.4.0's maps, plots, compute passes and
  * workspaces, as a node runs it, from the documents of
  * fixtures/autk-every-key.json, on the tables an upstream Autark node hands
- * on: `lines`, in the default workspace and in `east`.
+ * on: `lines`, in the default workspace and in `east`, and `towers`, buildings
+ * in `east`.
  *
  * - A map of every layer key, a map of OpenStreetMap elements in a workspace
  *   `workspaces` sets, a plot of every mark with every plot key and with every
@@ -16,6 +17,9 @@
  *   (_support/autkComputeStandIns), with each key's value there, and the
  *   tables they write are handed on with the type and the workspace the
  *   passes give them.
+ * - A compute step's windows and clusters passes: they run on autk-core's
+ *   CPU code, the build the app bundles, and their tables are handed on as
+ *   those passes write them, in a table of their own or in place.
  *
  * utk_curio/backend/tests/autk_grammar_key_tests.json names these tests for
  * each key, and backend/tests/test_agents/test_autk_every_key_documents.py runs
@@ -69,12 +73,32 @@ const line = (x: number, rank: number, kind: string) => ({
   properties: { x, rank, kind, xs: [x, x + 0.001], box: [[x, 41.88], [x + 0.001, 41.881]] },
 });
 
-/** What an upstream Autark data node hands on: `lines` in the default workspace and in `east`. */
+/**
+ * A building of the Loop: a footprint from longitude *west* to *east* and
+ * latitude 41.88 to 41.8804, *height* metres tall.
+ */
+const tower = (west: number, east: number, height: number) => ({
+  type: 'Feature',
+  geometry: { type: 'Polygon', coordinates: [[[west, 41.88], [east, 41.88], [east, 41.8804], [west, 41.8804], [west, 41.88]]] },
+  properties: { height },
+});
+
+/**
+ * What an upstream Autark data node hands on: `lines` in the default workspace
+ * and in `east`, and three `towers` in `east`, the first two sharing a wall.
+ */
 const RECORDS = [
   { name: 'lines', type: 'polylines', geojson: { type: 'FeatureCollection', features: [line(-87.6, 0, 'a')] } },
   {
     name: 'lines', type: 'polylines', workspace: 'east',
     geojson: { type: 'FeatureCollection', features: [line(-87.5, 0, 'a'), line(-87.49, 1, 'b'), line(-87.48, 2, 'a')] },
+  },
+  {
+    name: 'towers', type: 'buildings', workspace: 'east',
+    geojson: {
+      type: 'FeatureCollection',
+      features: [tower(-87.495, -87.4946, 30), tower(-87.4946, -87.4942, 45), tower(-87.49, -87.4896, 20)],
+    },
   },
 ];
 const INPUT = { path: 'art-every-key', dataType: 'list' };
@@ -180,5 +204,35 @@ describe('a compute step hands autk-compute every key of its passes', () => {
 
     // The table it writes is handed on as the type it gives it, in its workspace.
     expect(out.map((layer: any) => [layer.name, layer.type, layer.workspace])).toContainEqual(['seen', 'points', 'east']);
+  });
+
+  test('windows and clusters passes: the windows of the towers as a table of points, and the clusters of the towers and of the lines, in a table of their own and in place', async () => {
+    const { compute } = documentOf(FIXTURE.passes, 'windows and clusters passes of every pass key');
+    const failures: string[] = [];
+    const out = await applyComputeBlocks(LAYERS as any, compute, failures);
+    expect(failures).toEqual([]);
+    // Both run on the CPU, through autk-core: nothing reaches autk-compute.
+    expect(computeRuns.gpgpu).not.toHaveBeenCalled();
+    expect(computeRuns.render).not.toHaveBeenCalled();
+    const table = (name: string) => out.find((layer: any) => layer.name === name && layer.workspace === 'east') as any;
+
+    // One point a window on each tower, two rows up each facade, drawn as the pass's layerType.
+    const windows = table('towers_windows');
+    expect(windows?.type).toBe('points');
+    expect(new Set(windows.geojson.features.map((f: any) => f.properties.sourceFeatureIndex))).toEqual(new Set([0, 1, 2]));
+    expect(new Set(windows.geojson.features.map((f: any) => f.properties.floorIndex))).toEqual(new Set([0, 1]));
+    expect(windows.geojson.features.every((f: any) => f.geometry?.type === 'Point')).toBe(true);
+
+    // The two towers that share a wall are one cluster, the third another, in a table of the pass's layerType,
+    // its ids also under their own name.
+    const blocks = table('towers_blocks');
+    expect(blocks?.type).toBe('polygons');
+    expect(blocks.geojson.features.map((f: any) => f.properties.compute.block)).toEqual([0, 0, 1]);
+    expect(blocks.geojson.features.map((f: any) => f.properties.block)).toEqual([0, 0, 1]);
+
+    // In place: the three lines touch none of the others.
+    const lines = table('lines');
+    expect(lines?.type).toBe('polylines');
+    expect(lines.geojson.features.map((f: any) => f.properties.compute.network)).toEqual([0, 1, 2]);
   });
 });

@@ -133,3 +133,41 @@ describe("autk-grammar's run hands each pass to the compute adapter a map node c
         expect(computeRuns.gpgpu).toHaveBeenCalledTimes(1);
     });
 });
+
+// autk-grammar 5.4.0's windows and clusters passes run on the CPU, through
+// autk-core: the check runs them as they are, without asking for the GPU's
+// device or opening its error scopes.
+describe("a map node runs windows and clusters passes on the CPU, outside the device's error scopes", () => {
+    const WINDOWS = { type: "windows", dataRef: "towers", floors: 3, outputTableName: "windows" };
+    const CLUSTERS = { type: "clusters", dataRef: "towers", outputColumnName: "block", outputTableName: "blocks" };
+
+    test("a windows pass and a clusters pass run with no GPU device, and the run keeps the tables they write", async () => {
+        const grammar = new AutkGrammar({});
+        withCheckedPasses(grammar);
+
+        await grammar.run({ data: DATA, compute: [WINDOWS, CLUSTERS] });
+
+        expect(computeDevice.pushErrorScope).not.toHaveBeenCalled();
+        expect(computeDevice.popErrorScope).not.toHaveBeenCalled();
+        expect(computeRuns.gpgpu).not.toHaveBeenCalled();
+        expect(computeRuns.render).not.toHaveBeenCalled();
+        // One point a window, on both towers, three rows up each facade.
+        const windows = await grammar.data.windows;
+        expect(windows.features.length).toBeGreaterThan(0);
+        expect(new Set(windows.features.map((f: any) => f.properties.sourceFeatureIndex))).toEqual(new Set([0, 1]));
+        expect(new Set(windows.features.map((f: any) => f.properties.floorIndex))).toEqual(new Set([0, 1, 2]));
+        // The towers stand 20 units apart, so each is a cluster of its own.
+        const blocks = await grammar.data.blocks;
+        expect(blocks.features.map((f: any) => f.properties.compute.block)).toEqual([0, 1]);
+    });
+
+    test("a pass of a type the grammar does not know fails the run, named by its type", async () => {
+        const grammar = new AutkGrammar({});
+        withCheckedPasses(grammar);
+
+        await expect(grammar.run({
+            data: DATA, compute: [{ type: "window", dataRef: "towers", floors: 3, outputTableName: "w" }],
+        })).rejects.toThrow('w: Unknown compute pass type "window".');
+        expect(computeRuns.gpgpu).not.toHaveBeenCalled();
+    });
+});

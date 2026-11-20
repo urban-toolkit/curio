@@ -27,20 +27,20 @@ const HELD_TABLES_CRS = 'EPSG:3395';
 // unchanged.
 //
 // Each pass runs as the grammar's own run runs it: through autk-grammar's
-// compute adapter (`createComputeAdapter`), a GPGPU pass and a render pass
-// alike, over its caches seeded with the layers by `tableKey`, each in its own
-// workspace. A pass reads and writes the tables of its own workspace. The
-// adapter keeps a pass's result under its `outputTableName`, leaving the table
-// it computed over as it was, and else in place of that table; a table a pass
-// names has the pass's `layerType`, else that table's type, or `points` for a
-// render pass's building windows (`store` in its adapters/compute.ts). The
-// layers come back in the order the cache holds them: those the step held, as
-// the passes left them, then each table a pass wrote under a new name, in the
-// pass's workspace. Every pass is checked on the GPU's device
-// (`checkedPasses`).
+// compute adapter (`createComputeAdapter`), a GPGPU pass, a render pass, a
+// windows pass and a clusters pass alike, over its caches seeded with the
+// layers by `tableKey`, each in its own workspace. A pass reads and writes the
+// tables of its own workspace. The adapter keeps a pass's result under its
+// `outputTableName`, leaving the table it computed over as it was, and else in
+// place of that table; a table a pass names has the pass's `layerType`, else
+// that table's type, or `points` for windows (`store` in its
+// adapters/compute.ts). The layers come back in the order the cache holds
+// them: those the step held, as the passes left them, then each table a pass
+// wrote under a new name, in the pass's workspace. Every pass the GPU runs is
+// checked on the GPU's device (`checkedPasses`).
 //
-// A pass whose own table (a GPGPU pass's `dataRef`, a render pass's
-// viewpoints) matches no layer of its workspace is skipped quietly: chained
+// A pass whose own table (a GPGPU, windows or clusters pass's `dataRef`, a
+// render pass's viewpoints) matches no layer of its workspace is skipped quietly: chained
 // compute nodes can target different layers, and a no-op pass is far less
 // surprising than aborting the whole pipeline. A section that writes a key
 // autk-grammar 5 renamed, or one a node does not run yet (contracts/autkGrammar),
@@ -77,9 +77,14 @@ export async function applyComputeBlocks(
     const adapter = checkedPasses(createComputeAdapter(cache, types));
     const db = heldTables(types, HELD_TABLES_CRS);
     for (const pass of computeBlocks) {
+        // A GPGPU pass's type is `gpgpu` or left out. Every other type reaches
+        // the grammar's adapter, which runs a render pass on the GPU, a
+        // windows or a clusters pass on the CPU, and refuses any other type by
+        // its name.
+        const gpgpu = pass?.type === undefined || pass?.type === 'gpgpu';
         const render = pass?.type === 'render';
         const source = render ? pass?.viewpoints?.dataRef : pass?.dataRef;
-        if (!pass || !source || (!render && !pass.wgslFunction)) continue;
+        if (!pass || !source || (gpgpu && !pass.wgslFunction)) continue;
         const workspace = autkWorkspaceOf(pass);
         if (!cache.has(tableKey(workspace, source))) continue;
         const sourceCrs = (cache.get(tableKey(workspace, source)) as any)?.crs;

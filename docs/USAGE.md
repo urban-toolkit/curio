@@ -1383,6 +1383,13 @@ provides.
 Each feature of an OpenStreetMap layer the node hands on has its OpenStreetMap
 id in `osm_id`, and a building's parts share its `building_id`.
 
+A node does not run these keys of the Autark grammar. A document that writes
+one does not run, and the node's error names the key, says why, and says where
+it is written:
+
+- a map layer's `buildingsZeroHeight`: Curio makes a building without a height
+  6 m tall when it loads the data, so the key would change nothing.
+
 ### Several views
 
 A node draws every map and plot its document writes, each in a pane of its
@@ -1460,7 +1467,9 @@ interaction dot of its own, which links that view alone (see
 - A raster is a table too: a `rasterio` dataset from a Python node, or a raster
   another Autark node hands on. A map draws it as a raster layer coloured by one
   band, `{"dataRef": "input_0", "getFnv": "band_1"}`; its bands are `band_1`,
-  `band_2`, and so on. Every cell with a value is drawn opaque, 0 included, in
+  `band_2`, and so on. A `getFnv` that names none of the bands of a raster of
+  several fails the node, and a raster of one band draws it whatever `getFnv`
+  names. Every cell with a value is drawn opaque, 0 included, in
   the layerRef's `colorMapInterpolator` (reds without one) from the band's lowest
   value to its highest, and a cell with no value is clear: the raster's nodata,
   or 0 when the GeoTIFF names no nodata. The layers listed after a raster in
@@ -1585,7 +1594,9 @@ pressing play says why.
 
 ### Compute passes
 
-Each entry of `compute` is a pass, run in order on the GPU. A GPGPU pass, one
+Each entry of `compute` is a pass, run in order: a GPGPU pass and a render
+pass on the GPU, a windows pass and a clusters pass on the CPU. A pass of
+another `type` fails the node, which names the type. A GPGPU pass, one
 with no `type`, runs a WGSL function over every feature of the table its
 `dataRef` names, and writes the result to each feature as `compute.<column>`,
 under the names `outputColumnName` or `outputColumns` give. A pass writes into
@@ -1658,6 +1669,33 @@ sky it sees through the buildings:
   viewpoints' table; a pick on windows names the windows.
 - A compute step hands the new table on after the tables it holds.
 
+### Windows and clusters passes
+
+A pass with `"type": "windows"` places the windows of a buildings table in a
+new table, `outputTableName`, one point a window: `floors` rows of them up
+each facade, where a render pass's `building-windows` viewpoints stand. A pass
+with `"type": "clusters"` writes each row's cluster in
+`compute.<outputColumnName>`: rows whose geometries touch, directly or through
+other rows, share one, numbered from 0 in the order of each cluster's first
+row, and a row without a geometry is in none. It writes into its table, or
+into a new one, `outputTableName`.
+
+```json
+{
+  "compute": [
+    {"type": "windows", "dataRef": "table_osm_buildings", "floors": 4, "outputTableName": "windows"},
+    {"type": "clusters", "dataRef": "table_osm_buildings", "outputColumnName": "block", "outputTableName": "blocks"}
+  ],
+  "map": {"layerRefs": [{"dataRef": "blocks", "getFnv": "compute.block"}, {"dataRef": "windows"}]}
+}
+```
+
+- Each window's properties name its building, `sourceFeatureIndex`, its floor,
+  `floorIndex`, from 0 at the bottom, and its size. The windows table is drawn
+  and handed on as points, unless `layerType` says another.
+- A compute step hands both tables on after the tables it holds, the cluster
+  ids also as a column of their own, `block` beside `compute.block`.
+
 ### Layer titles and colors
 
 A `layerRef`'s `title` names its layer in the legend. Without one, the legend
@@ -1706,6 +1744,59 @@ chip as its color, which its tag under **Scenarios** above the spec drags in
 The chip writes the box's color, and for an input from no box a gray of its
 own. A box recolored gives the layer its new color on the map's next run.
 
+### Layer types, widths, legend, hidden and picked features
+
+```json
+{
+  "map": {
+    "layerRefs": [
+      {"dataRef": "segments", "layerType": "roads", "widthBy": "lane_width"},
+      {"dataRef": "parcels", "getFnv": "value", "legend": true, "skippedComps": [2, 5]},
+      {"dataRef": "sites", "isPick": true, "pickedComps": [0, 4]}
+    ]
+  }
+}
+```
+
+- `layerType` draws a layer's table as another type of its kind of geometry:
+  polygons as `polygons`, `surface`, `parks`, `water` or `buildings`, lines as
+  `polylines` or `roads`. A type of another kind of geometry fails the node.
+  The map draws `surface`, `parks`, `water` and `roads` layers below its other
+  layers.
+- `widthBy` is the path to each line's own width in a roads layer, in the
+  map's planar units. A line without a positive number there keeps its kind of
+  road's width. A layer sets `width` or `widthBy`, not both, and a polylines
+  layer takes no `widthBy`: draw its table as roads.
+- `"legend": true` puts the layer's color scale in the map's legend, which
+  otherwise shows the last layer colored by value. One layer of a map sets it,
+  a layer colored by value or a raster, on a map that shows its legend. A Map
+  Editor node's edit that draws the map again keeps the legend on the layer it
+  showed.
+- `skippedComps` hides features of the layer, by their positions among those
+  it draws, from 0. A Map Editor node's drawing tools hide the feature they
+  draw too, and show it again when they stop, on a layer of points as on any
+  other.
+- `pickedComps` draws features as picked as the map opens, in the map's
+  highlight color, by their positions; the layer sets `"isPick": true`. They
+  stay lit until a selection reaches the node, from its input or over an
+  interaction edge, which takes their place, and are lit again when it
+  clears. They reach no other node.
+
+### Map styles, colors and controls
+
+A map's `style` names one of autk-map's styles, such as `light`, or gives the
+nine colors of a style of its own, each `#rrggbb`: `background`, `surface`,
+`parks`, `water`, `roads`, `buildings`, `points`, `polylines` and `polygons`.
+`highlightColor` colors the features the map draws as picked, `#5dade2` by
+default, and the drawing tools of a Map Editor node that edits it;
+`invalidValueColor` colors the features whose value the map cannot color,
+`#ffffff` by default. Each map has its own. `"showUi": false` hides the map's
+menu of layers and its legend.
+
+```json
+{"map": {"style": "light", "highlightColor": "#ff7f0e", "showUi": false, "layerRefs": [{"dataRef": "input_0"}]}}
+```
+
 ### Plot colors, ticks, titles and selection
 
 A plot colors its marks by the column `color` names. Numbers take
@@ -1749,12 +1840,25 @@ clockwise from north, which is then up on the screen. A map whose `pitch` is
 90, which would set its eye on the ground, does not run, and the node's error
 says why. The eye stays as far from that point as the
 framing put it, unless `zoom` sets the distance: `10000 / 2^(zoom - 10)` of the
-map's planar units, half as far for each step up.
+map's planar units, half as far for each step up. `center`,
+`[longitude, latitude]` in degrees, is the point the view looks at, in place
+of the middle of the framed layers.
+
+`motion` is a tour the map plays once it opens, from the view the rest of the
+camera sets: steps one after another, each easing in and out over its
+`seconds`. A `zoom` step's `amount` is in zoom levels, a `pitch` step's in
+degrees of tilt, with a `pan` in planar units that moves the point the view
+turns around toward the top of the view, and a `bearing` or `roll` step's in
+degrees, clockwise. A drag, a scroll or a key on the map stops the tour, where
+it is.
 
 ```json
 {
   "map": {
-    "camera": {"pitch": 50, "bearing": 30},
+    "camera": {
+      "center": [-87.6298, 41.8781], "zoom": 15, "pitch": 50, "bearing": 30,
+      "motion": [{"type": "bearing", "amount": 90, "seconds": 4}]
+    },
     "layerRefs": [
       {"dataRef": "table_osm_buildings", "getFnv": "height", "getFnvType": "quantitative"}
     ]
@@ -1762,9 +1866,32 @@ map's planar units, half as far for each step up.
 }
 ```
 
-Pressing R on the map frames it and turns it by its camera again. A map a Map
-Editor node feeds keeps the view you zoomed or panned to when an edit draws it
-again, and a change to its `camera` shows that camera's view.
+Pressing R on the map frames it, turns it by its camera and plays its tour
+again. A map a Map Editor node feeds keeps the view you zoomed or panned to
+when an edit draws it again, and plays no tour; a change to its `camera`, its
+center or its tour shows that camera's view and plays its tour.
+
+### Terrain
+
+A map's `terrain` raises its ground to the heights of a raster's band:
+`{"dataRef": "elevation", "band": "band_1"}`, a raster of the map's workspace,
+a `geotiff` the document loads or a raster of the node's input, its band by
+id or label, the first band without one. The map's flat layers are draped
+over the ground, its buildings stand on it, and a cell with no value lies at
+height 0. The map opens fitted to the raster and turned by its `camera`;
+pressing R fits and turns it again. A band that names none of a raster's
+several bands fails the node, as a raster layer's `getFnv` does.
+
+```json
+{
+  "data": [{"type": "geotiff", "outputTableName": "elevation", "geotiffFileUrl": "data/dem.tif"}],
+  "map": {
+    "terrain": {"dataRef": "elevation"},
+    "camera": {"pitch": 60, "bearing": 30},
+    "layerRefs": [{"dataRef": "input_0"}, {"dataRef": "elevation", "colorMapInterpolator": "interpolateYlGn"}]
+  }
+}
+```
 
 ### GeoTIFF rasters
 

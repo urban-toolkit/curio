@@ -1,5 +1,6 @@
 import {
-  drawnFeatureAt, layerIdFor, mapStateOf, pickingTableOf, showForEdits, snapshotBeforeSolo, soloMapLayer,
+  drawnFeatureAt, layerIdFor, mapStateOf, pickingTableOf, restoreMapLayers, showForEdits, snapshotBeforeSolo,
+  snapshotMapLayers, soloMapLayer,
 } from "../../../adapters/node/autkMapState";
 import { INPUT_ROW } from "../../../utils/autkInput";
 
@@ -237,5 +238,56 @@ describe("what a map draws and lights, as autk-map and autk-db hold it", () => {
     expect(drawnFeatureAt(grammar, "input_2", exported, -1)).toEqual({ name: "ash" });
     expect(drawnFeatureAt(grammar, "input_2", exported, 2)).toBeNull();
     expect(drawnFeatureAt(grammar, "input_0", exported, 0)).toBeNull();
+  });
+});
+
+/**
+ * A map whose layers *ids* are each colored by value, as autk-map keeps its
+ * legend: on the layer the map UI's `activeLayer` names, which moves to each
+ * layer whose colors are set (`updateColorMap`, or `updateRenderInfo` with
+ * `isColorMap`), as autk-map's `refreshLegend(layer)` moves it.
+ */
+function legendMap(ids: string[], legend: string) {
+  const layers = ids.map((id) => ({
+    layerInfo: { id },
+    layerRenderInfo: { isColorMap: true, colormap: { config: { interpolator: "interpolateViridis" } } } as Record<string, any>,
+  }));
+  const layer = (id: string) => layers.find((candidate) => candidate.layerInfo.id === id)!;
+  const ui = { activeLayer: layer(legend) as any, refreshLegend: jest.fn() };
+  const map = {
+    layerManager: { layers },
+    ui,
+    updateRenderInfo: (id: string, info: Record<string, unknown>) => {
+      Object.assign(layer(id).layerRenderInfo, info);
+      if ("isColorMap" in info) ui.activeLayer = layer(id);
+    },
+    updateColorMap: (id: string) => {
+      ui.activeLayer = layer(id);
+    },
+    requestRender: () => undefined,
+  };
+  return { map, grammar: { maps: [map] } };
+}
+
+describe("a layer's legend, across a draw that keeps what was set on the layers", () => {
+  test("the legend shows the layer it showed before the draw, not the last layer whose colors were put back", () => {
+    // The document's `legend: true` layer, or the one picked in the map's menu.
+    const before = legendMap(["Income", "Schools"], "Income");
+    const state = snapshotMapLayers(before.grammar, 0);
+
+    // The new map's legend shows the layer its run set: Income again.
+    const after = legendMap(["Income", "Schools"], "Income");
+    restoreMapLayers(after.map, state);
+    expect(after.map.ui.activeLayer.layerInfo.id).toBe("Income");
+  });
+
+  test("a legend the person moved to another layer stays on it", () => {
+    const before = legendMap(["Income", "Schools", "Parks"], "Parks");
+    before.map.ui.activeLayer = before.map.layerManager.layers[1];
+    const state = snapshotMapLayers(before.grammar, 0);
+
+    const after = legendMap(["Income", "Schools", "Parks"], "Income");
+    restoreMapLayers(after.map, state);
+    expect(after.map.ui.activeLayer.layerInfo.id).toBe("Schools");
   });
 });

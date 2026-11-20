@@ -1,11 +1,12 @@
 """The agents' document check takes every key a node runs.
 
 The documents of ``src/tests/fixtures/autk-every-key.json`` write every key of
-autk-grammar 5.2.0's maps, plots, compute passes, data sources and workspaces
+autk-grammar 5.4.0's maps, plots, compute passes, data sources and workspaces
 between them, and an Autark node runs each (``src/tests/adapters/node/autkEveryKey.test.tsx``
 and ``utk_curio/sandbox/tests/test_autk_server_data_keys.py``), and its
 ``checked`` documents write the rest, which this check alone runs: an update
-of a layer by every GeoJSON geometry, with every box. So the check the agents'
+of a layer by every GeoJSON geometry, with every box, and a map raised on a
+band of a GeoTIFF (``terrain``). So the check the agents'
 documents go through (``document_validation.validate``) takes each as it is,
 and an agent may write any of those keys. The fixture is read inside each
 test, so a checkout without it fails each test on its own.

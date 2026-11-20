@@ -79,8 +79,9 @@ import { interactionHandleView, isInteractionEdge } from '../../contracts/intera
 import type { ViewArrangement } from '@urban-toolkit/autk-grammar';
 import { mapSession, onMapSession, registerEditMap } from '../../utils/editFeatures/mapEditBus';
 import {
-    drawnFeatureAt, featurePositions, layerIdFor, mapLayerOf, mapStateOf, pickOn, restoreMapLayers, showForEdits,
-    snapshotBeforeSolo, snapshotMapLayers, type DrawnTables, type EditsView, type MapLayerState, type MapTableState,
+    drawnFeatureAt, featurePositions, layerIdFor, mapDrawingOf, mapLayerOf, mapStateOf, pickOn, restoreMapLayers,
+    showForEdits, snapshotBeforeSolo, snapshotMapLayers, type DrawnTables, type EditsView, type MapDrawing,
+    type MapLayerState, type MapTableState,
 } from './autkMapState';
 import {
     drawnInput, editFeedsOf, editedMapView, fedByInteraction, feedsVersion, newLayerTables, type EditFeed,
@@ -102,6 +103,8 @@ const mapStateReaders = new Map<string, {
     featureAt: (table: string, position: number, view?: string | number) => Promise<Record<string, unknown> | null>;
     views: () => Array<MapView | null>;
     showFramed: () => () => void;
+    drawing: (view?: string | number) => MapDrawing | null;
+    tourEnded: (view?: string | number) => Promise<boolean>;
 }>();
 /** What turns each node's maps back by their cameras, while they show their framed views. */
 const turnBack = new Map<string, () => void>();
@@ -118,6 +121,13 @@ if (typeof window !== 'undefined') {
     (window as any).__curio_mapFeatureAt = (nodeId: string, table: string, position: number, view?: string | number) =>
         mapStateReaders.get(nodeId)?.featureAt(table, position, view) ?? null;
     (window as any).__curio_mapViews = (nodeId: string) => mapStateReaders.get(nodeId)?.views() ?? null;
+    // What a map draws of the keys of its map and its layers (autkMapState
+    // `mapDrawingOf`), and, once its camera tour ends, true: false when it
+    // plays none (test_frontend/test_autark_map_keys_e2e.py).
+    (window as any).__curio_mapDrawing = (nodeId: string, view?: string | number) =>
+        mapStateReaders.get(nodeId)?.drawing(view) ?? null;
+    (window as any).__curio_mapTourEnded = (nodeId: string, view?: string | number) =>
+        mapStateReaders.get(nodeId)?.tourEnded(view) ?? Promise.resolve(false);
     (window as any).__curio_showMapsFramed = (nodeId: string, framed: boolean): boolean => {
         turnBack.get(nodeId)?.();
         turnBack.delete(nodeId);
@@ -1410,7 +1420,7 @@ export const useAutkGrammarBehavior = (
                 // base-map layer the map lists after a raster draws over it.
                 spec = withLayersOverRasters(withOpaqueRasters(spec));
 
-                const { AutkGrammar, applyCamera, arrangeViews, enterWorkspace } = grammarModule!;
+                const { AutkGrammar, applyCamera, arrangeViews, enterWorkspace, playCameraMotion } = grammarModule!;
                 // A node that left the page while its data loaded has no
                 // canvas to draw on: its run ends here (see mountedRef).
                 if (leftPage()) return;
@@ -1461,8 +1471,10 @@ export const useAutkGrammarBehavior = (
                 const panes = arrangeViews(spec).panes;
                 bleedRasterEdges(grammar, spec);
                 // Each map is framed on its layers, then turned by the camera
-                // its own entry writes, through the grammar's applyCamera.
-                attachSpecCameras(grammar, spec, applyCamera);
+                // its own entry writes, through the grammar's applyCamera,
+                // and plays its camera's tour from there, through the
+                // grammar's playCameraMotion (autkMapView).
+                attachSpecCameras(grammar, spec, applyCamera, playCameraMotion);
                 if (keepView && keptViewsRef.current) keepMapViews(grammar, keptViewsRef.current, panes);
                 else frameMaps(grammar);
                 if (editFedRef.current) {
@@ -2080,12 +2092,16 @@ export const useAutkGrammarBehavior = (
         const drawnOrders = await Promise.all(mapRefs.map(({ index, ref, workspace }, at) =>
             (mapRows[at].length > 0 ? drawnRowsOf(grammar, workspace, ref.dataRef, index) : null)));
         if (grammarRef.current !== grammar) return;
-        const views: LitView[] = mapRefs.map(({ index, ref, key }, at) => ({
-            kind: 'map' as const,
-            index,
-            table: ref.dataRef,
-            positions: tablePositions(mapRows[at], drawnOrders[at] ?? loadOrdersRef.current[key]?.map),
-        }));
+        const views: LitView[] = mapRefs.map(({ index, ref, key }, at) => {
+            const positions = tablePositions(mapRows[at], drawnOrders[at] ?? loadOrdersRef.current[key]?.map);
+            // With nothing coming in, from the node's input or along an edge
+            // to this view, a layer keeps the features its document picks
+            // (`pickedComps`), which the grammar's run lit as it drew it, as
+            // a plot keeps its `selection` below: they are already positions
+            // among the features the layer draws.
+            const picked: number[] = Array.isArray(ref.pickedComps) ? ref.pickedComps.filter(Number.isInteger) : [];
+            return { kind: 'map' as const, index, table: ref.dataRef, positions: positions.length > 0 ? positions : picked };
+        });
         for (const [index, plotSpec] of plotEntries(spec).entries()) {
             // A plot of a table a pass wrote holds the rows the pass kept.
             const plotTable = autkTableKey(autkWorkspaceOf(plotSpec), plotSpec.dataRef);
@@ -2168,6 +2184,19 @@ export const useAutkGrammarBehavior = (
             },
             views: () => mapViews(grammarRef.current),
             showFramed: () => showFramedViews(grammarRef.current),
+            drawing: (view) => {
+                const { index } = mapOf(view);
+                return index < 0 ? null : mapDrawingOf(grammarRef.current, index);
+            },
+            // The tour the map plays, or last played: the grammar keeps the
+            // last one played on each map of its run (its `tours`).
+            tourEnded: async (view) => {
+                const { index } = mapOf(view);
+                const tour = index < 0 ? undefined : (grammarRef.current as any)?.tours?.[index];
+                if (!tour?.done) return false;
+                await tour.done;
+                return true;
+            },
         });
         return () => {
             mapStateReaders.delete(data.nodeId);

@@ -529,12 +529,37 @@ function layOutCanvases(): () => void {
  * A layer loaded from a collection is added last to its layers, with its id,
  * type and features, and a layer removed leaves them; the positions skipped
  * in each layer are kept by its id, each toggled as autk-map's vector layers
- * do, until the layer's are cleared.
+ * do, until the layer's are cleared. The layer manager finds a document's
+ * layer by its id (`searchByLayerId`), and its own `setSkippedIds` and
+ * `clearSkippedIds` keep them, which the map's own calls reach too, as
+ * autk-map's reach a vector layer's.
  */
 function projectingMap() {
   const span = SIZE * 1000;
   const layers: any[] = [{ position: new Float32Array([0, 0, 100, 50]), _dimension: 2 }];
   const skipped: Record<string, number[]> = {};
+  const toggle = (id: string, positions: number[]) => {
+    const now = new Set(skipped[id] ?? []);
+    for (const position of positions) {
+      if (now.has(position)) now.delete(position);
+      else now.add(position);
+    }
+    skipped[id] = [...now].sort((a, b) => a - b);
+  };
+  // The document's layers, each as autk-map's vector layer hides features, made as they are first found.
+  const documentLayers = new Map<string, any>();
+  const searchByLayerId = (id: string) => layers.find((layer) => layer.layerInfo?.id === id) ?? (
+    documentLayers.get(id) ?? documentLayers.set(id, {
+      layerInfo: { id },
+      get skippedIds() {
+        return [...(skipped[id] ?? [])];
+      },
+      setSkippedIds: jest.fn((positions: number[]) => toggle(id, positions)),
+      clearSkippedIds: jest.fn(() => {
+        skipped[id] = [];
+      }),
+    }).get(id)
+  );
   const camera: any = {
     eye: [span / 2, span / 2, 10000],
     lookAt: [span / 2, span / 2, 0],
@@ -559,7 +584,7 @@ function projectingMap() {
     camera,
     canvas: document.getElementById(`autk-grammar-map-${MAP}`),
     renderer: { pixelWidth: SIZE, pixelHeight: SIZE, cssWidth: SIZE, cssHeight: SIZE },
-    layerManager: { layers, hasOrigin: true, origin: [0, 0] },
+    layerManager: { layers, hasOrigin: true, origin: [0, 0], searchByLayerId },
     // autk-map's highlight, #5dade2.
     style: { getHighlightColor: () => ({ r: 93, g: 173, b: 226 }) },
     loadCollection: jest.fn((id: string, { collection, type }: { collection: { features: any[] }; type?: string }) => {
@@ -569,17 +594,8 @@ function projectingMap() {
       const at = layers.findIndex((layer) => layer.layerInfo?.id === id);
       if (at >= 0) layers.splice(at, 1);
     }),
-    setSkippedIds: jest.fn((id: string, positions: number[]) => {
-      const now = new Set(skipped[id] ?? []);
-      for (const position of positions) {
-        if (now.has(position)) now.delete(position);
-        else now.add(position);
-      }
-      skipped[id] = [...now].sort((a, b) => a - b);
-    }),
-    clearSkippedIds: jest.fn((id: string) => {
-      skipped[id] = [];
-    }),
+    setSkippedIds: jest.fn((id: string, positions: number[]) => searchByLayerId(id)?.setSkippedIds?.(positions)),
+    clearSkippedIds: jest.fn((id: string) => searchByLayerId(id)?.clearSkippedIds?.()),
     skipped,
     resetCamera: jest.fn(),
     requestRender: jest.fn(),

@@ -286,7 +286,14 @@ export function snapshotBeforeSolo(grammar: unknown, index = 0): MapLayerState |
     return state;
 }
 
-/** The settings of each layer map *index* of *grammar* draws, the first by default. */
+/**
+ * The layer each snapshot's legend showed (the map UI's `activeLayer`), by
+ * the layer's id: the document's `legend` layer, or the one picked in the
+ * map's menu.
+ */
+const legendOf = new WeakMap<MapLayerState, string>();
+
+/** The settings of each layer map *index* of *grammar* draws, the first by default, and the layer its legend shows. */
 export function snapshotMapLayers(grammar: unknown, index = 0): MapLayerState | null {
     const map = grammarMaps(grammar)[index];
     if (!map) return null;
@@ -301,10 +308,19 @@ export function snapshotMapLayers(grammar: unknown, index = 0): MapLayerState | 
         if (info.colormap?.config) kept.colormap = { ...info.colormap.config };
         out[id] = kept;
     }
+    const legend = idOf(map.ui?.activeLayer);
+    if (legend) legendOf.set(out, legend);
     return out;
 }
 
-/** Put *state* back on the layers of *map* that have the same id. */
+/**
+ * Put *state* back on the layers of *map* that have the same id, then show in
+ * the legend the layer it showed when *state* was taken: autk-map moves the
+ * legend to each layer whose colors are set, the last one put back here. It
+ * sets the legend's layer alone, through the map UI's `activeLayer`, as
+ * autk-grammar's `legend` does: autk-map's `changeActiveLayer` would also make
+ * that layer the one that picks.
+ */
 export function restoreMapLayers(map: any, state: MapLayerState | null): void {
     if (!map || !state) return;
     for (const layer of layersOf(map)) {
@@ -318,6 +334,15 @@ export function restoreMapLayers(map: any, state: MapLayerState | null): void {
         } catch (error) {
             // A setting the new layer cannot take is left as the document draws it.
             console.warn('[autk-map] keeping a layer setting across a redraw failed:', id, error);
+        }
+    }
+    const legend = layersOf(map).find((layer) => idOf(layer) === legendOf.get(state));
+    if (legend && map.ui && idOf(map.ui.activeLayer) !== idOf(legend)) {
+        try {
+            map.ui.activeLayer = legend;
+            map.ui.refreshLegend?.(null);
+        } catch (error) {
+            console.warn('[autk-map] keeping the legend\'s layer across a redraw failed:', error);
         }
     }
     map.requestRender?.();
@@ -360,6 +385,79 @@ export function soloMapLayer(
     if (table !== null) set(table, { isPick: true });
     else if (picking) set(picking, { isPick: true });
     map.requestRender?.();
+}
+
+/** What a map draws of a document's keys on its layers, read from autk-map's own layer. */
+export type DrawnLayer = {
+    /** The layer's id in its map: its `title`, else its table. */
+    id: string;
+    /** The type autk-map draws it as (`layerType`). */
+    type: string | null;
+    /** The features it lights, by their positions among those it draws. */
+    highlighted: number[];
+    /** The features it hides (`skippedComps`), by their positions among those it draws. */
+    skipped: number[];
+    /** Each line's width (`widthBy`), or null when the layer gives its lines none of their own. */
+    widths: number[] | null;
+};
+
+/** What a map draws of a document's keys on the map: its layers, its legend, its controls and its terrain. */
+export type MapDrawing = {
+    layers: DrawnLayer[];
+    /** The layer the legend shows (`legend`), by its id. */
+    legend: string | null;
+    /** Whether autk-map's menu and legend are on the page (`showUi`). */
+    controls: boolean;
+    /** The heights the ground rises to (`terrain`), or null on a flat map. */
+    terrain: { minHeight: number; maxHeight: number; width: number; height: number } | null;
+    /**
+     * The colors the map draws picked features and values it cannot color in
+     * (`highlightColor`, `invalidValueColor`), as autk-map's style holds them.
+     */
+    highlightColor: unknown;
+    invalidValueColor: unknown;
+};
+
+/**
+ * What map *index* of *grammar* draws of the keys a document writes on a map
+ * and its layers, read from autk-map's own objects: each layer's type, the
+ * features it lights and hides and each line's width, the layer its legend
+ * shows, whether its menu and legend are on the page, and the heights of its
+ * terrain. The drawing tools a Map Editor node puts on the map are left out.
+ * The e2e tests read it (`window.__curio_mapDrawing`).
+ */
+export function mapDrawingOf(grammar: unknown, index = 0): MapDrawing | null {
+    const map = grammarMaps(grammar)[index];
+    if (!map) return null;
+    const numbers = (values: unknown): number[] => (
+        values && typeof (values as any)[Symbol.iterator] === 'function' ? Array.from(values as Iterable<number>, Number) : []
+    );
+    const layers = layersOf(map).flatMap((layer): DrawnLayer[] => {
+        const id = idOf(layer);
+        if (!id || isMapEditToolLayer(id)) return [];
+        const widths = layer?.layerRenderInfo?.polylinesWidthByComponent;
+        return [{
+            id,
+            type: layer?.layerInfo?.typeLayer ?? null,
+            highlighted: numbers(layer?.highlightedIds),
+            // A points layer keeps the features it hides in a set of its own.
+            skipped: numbers(layer?.skippedIds ?? layer?._skippedIds).sort((a, b) => a - b),
+            widths: ArrayBuffer.isView(widths) ? numbers(widths) : null,
+        }];
+    });
+    const ui = map.ui;
+    const shown = (element: any) => !!element?.isConnected;
+    const heightfield = map._terrainRenderPath?.heightfield;
+    return {
+        layers,
+        legend: idOf(ui?.activeLayer) ?? null,
+        controls: shown(ui?._menuIcon) || shown(ui?._subMenu) || shown(ui?._legend),
+        terrain: heightfield
+            ? { minHeight: heightfield.minHeight, maxHeight: heightfield.maxHeight, width: heightfield.width, height: heightfield.height }
+            : null,
+        highlightColor: map.style?.getHighlightColor?.() ?? null,
+        invalidValueColor: map.style?.getInvalidValueColor?.() ?? null,
+    };
 }
 
 /** What a Map Editor node feeding a map asks of it: the layer shown alone, and the layer an action works on. */

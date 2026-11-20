@@ -366,6 +366,21 @@
       "name": "a tag set's table in a workspace, read as elements by one layer and row by row by another, is told so by its key",
       "spec": { "data": [{ "type": "osm", "outputTableName": "box", "workspace": "east", "queryArea": { "bbox": [-74.0125, 40.705, -74.008, 40.7085] }, "tagSets": [{ "name": "cafes", "type": "points", "tags": [{ "key": "amenity" }] }] }], "map": { "workspace": "east", "layerRefs": [{ "dataRef": "box_cafes_points", "osmElements": true }, { "dataRef": "box_cafes_points", "title": "Rows", "osmElements": false }] } },
       "says": "This spec uses \"osmElements\" on one view of the OpenStreetMap table \"east/box_cafes_points\" and not on another at map.layerRefs[1], which Curio does not run yet."
+    },
+    {
+      "name": "a buildings layer's buildingsZeroHeight is not run yet",
+      "spec": { "map": { "layerRefs": [{ "dataRef": "input_0" }, { "dataRef": "table_osm_buildings", "buildingsZeroHeight": true }] } },
+      "says": "This spec uses \"buildingsZeroHeight\" (Curio makes a building without a height 6 m tall when it loads the data, so the key would change nothing) at map.layerRefs[1], which Curio does not run yet."
+    },
+    {
+      "name": "buildingsZeroHeight written false on a layer of a second map is told where it is written",
+      "spec": { "map": [{ "id": "a", "layerRefs": [{ "dataRef": "input_0" }] }, { "id": "b", "layerRefs": [{ "dataRef": "input_1", "buildingsZeroHeight": false }] }] },
+      "says": "This spec uses \"buildingsZeroHeight\" (Curio makes a building without a height 6 m tall when it loads the data, so the key would change nothing) at map[1].layerRefs[0], which Curio does not run yet."
+    },
+    {
+      "name": "a layer's buildingsZeroHeight written null is not written",
+      "spec": { "map": { "layerRefs": [{ "dataRef": "input_0", "buildingsZeroHeight": null }] } },
+      "says": null
     }
   ]
 }

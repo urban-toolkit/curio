@@ -67,13 +67,34 @@ export function destroyFailedGrammar(grammar: unknown): void {
 }
 
 /**
+ * Stop the camera tour each map of *grammar* plays (autk-grammar's `tours`:
+ * the run's, or the one Curio played since), which would go on turning the
+ * camera of a map that is gone.
+ */
+function stopTours(grammar: unknown): void {
+    const tours = (grammar as { tours?: unknown } | null | undefined)?.tours;
+    if (!Array.isArray(tours)) return;
+    for (const tour of tours) {
+        try {
+            tour?.stop?.();
+        } catch (error) {
+            console.warn('[autk-map] stopping a camera tour failed:', error);
+        }
+    }
+}
+
+/**
  * Keep each map *grammar* made, for `renderMapsForReading`, until the node
- * drops it. Returns what destroys the maps, for the node that drops them.
+ * drops it. Returns what destroys the maps, their tours stopped first, for
+ * the node that drops them.
  */
 export function trackMaps(grammar: unknown): () => void {
     const maps: KeptMap[] = grammarMaps(grammar).filter((map) => typeof map?.destroy === 'function');
     for (const map of maps) keptMaps.add(map);
-    return () => maps.forEach(destroy);
+    return () => {
+        stopTours(grammar);
+        maps.forEach(destroy);
+    };
 }
 
 /**

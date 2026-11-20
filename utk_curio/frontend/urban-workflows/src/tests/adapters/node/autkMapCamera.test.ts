@@ -19,9 +19,11 @@ jest.mock("@urban-toolkit/autk-plot", () => ({}), { virtual: true });
 jest.mock("@urban-toolkit/autk-core", () => require("../../_support/autkApplyCamera").autkCoreAtLoad(), { virtual: true });
 jest.mock("@urban-toolkit/autk-compute", () => ({}), { virtual: true });
 
-import { attachSpecCameras, frameMaps, framingCamera, keepMapViews, mapViews } from "../../../adapters/node/autkMapView";
+import {
+  attachSpecCameras, frameMaps, framingCamera, keepMapViews, mapViews, showFramedViews,
+} from "../../../adapters/node/autkMapView";
 import { grammarThatRan } from "../../_support/autkGrammarMaps";
-import { grammarApplyCamera } from "../../_support/autkApplyCamera";
+import { grammarApplyCamera, grammarResolveCameraCenter } from "../../_support/autkApplyCamera";
 
 const applyCamera = grammarApplyCamera();
 
@@ -220,12 +222,201 @@ describe("a map's camera", () => {
     expect(map.requestRender).toHaveBeenCalled();
   });
 
-  test("a map in terrain mode is left to autk-map, which fits its own camera", () => {
+  test("a map in terrain mode keeps the view its terrain fits; its R key fits the terrain again and turns it by its camera", () => {
     const { map, ownReset } = cameraMap(BLOCKS());
     map._terrainRenderPath = {};
     frameMaps(drawn(oneMap({ pitch: 50, bearing: 30 }), map));
+    // The grammar's run fitted the camera to the terrain and turned it: Curio
+    // does not frame the map on its layers.
     expect(map.camera.resetCamera).not.toHaveBeenCalled();
-    expect(map.resetCamera).toBe(ownReset);
+    // The R key: autk-map's own fit, the terrain's, then the turn.
+    map.resetCamera();
+    expect(ownReset).toHaveBeenCalledTimes(1);
+    expectView(map.camera.view, turned([0, 0, 0], 10000, 50, 30));
+  });
+});
+
+/** A tour's steps, as a document writes them. */
+const TOUR = [{ type: "zoom", amount: 1, seconds: 2 }, { type: "bearing", amount: 90, seconds: 3 }];
+
+/** Every argument autk-grammar 5.4.0's player takes: `attachSpecCameras` with the player as its fourth. */
+const attachWithTours = attachSpecCameras as (...args: any[]) => void;
+
+/**
+ * autk-grammar's `playCameraMotion`, standing in: each tour it plays, the map
+ * and the steps, and the view the tour starts from.
+ */
+function tourPlayer() {
+  const played: Array<{ map: any; motion: any[]; from: View }> = [];
+  const play = jest.fn((map: any, motion: any[]) => {
+    played.push({ map, motion, from: { ...map.camera.view } });
+    return { done: Promise.resolve(), stop: jest.fn() };
+  });
+  return { play, played };
+}
+
+/** The grammar that ran *spec* and drew *maps*, each map given its entry's camera and the tour player *play*. */
+function drawnWithTours(spec: any, play: unknown, ...maps: any[]) {
+  const grammar = grammarThatRan(spec, ...maps);
+  attachWithTours(grammar, spec, applyCamera, play);
+  return grammar;
+}
+
+describe("a camera tour", () => {
+  const MOVED: View = { eye: [250, 120, 160], lookAt: [300, 200, 0], up: [0, 1, 0] };
+
+  test("plays once the map is framed and turned, from the turned view", () => {
+    const { play, played } = tourPlayer();
+    const { map } = cameraMap(BLOCKS());
+    frameMaps(drawnWithTours(oneMap({ pitch: 50, bearing: 30, motion: TOUR }), play, map));
+    expect(play).toHaveBeenCalledTimes(1);
+    expect(played[0].map).toBe(map);
+    expect(played[0].motion).toEqual(TOUR);
+    expectView(played[0].from, turned(FRAMED.lookAt, HIGH, 50, 30));
+    // After the camera's last turn: the run's tour, started before the
+    // framing, would set the camera at every frame.
+    expect(play.mock.invocationCallOrder[0]).toBeGreaterThan(Math.max(...map.camera.resetCamera.mock.invocationCallOrder));
+  });
+
+  test("plays again from the framed and turned view when the R key frames the map", () => {
+    const { play, played } = tourPlayer();
+    const { map } = cameraMap(BLOCKS());
+    frameMaps(drawnWithTours(oneMap({ pitch: 50, bearing: 30, motion: TOUR }), play, map));
+    map.camera.resetCamera(MOVED.up, MOVED.lookAt, MOVED.eye);
+    map.resetCamera();
+    expect(play).toHaveBeenCalledTimes(2);
+    expectView(played[1].from, turned(FRAMED.lookAt, HIGH, 50, 30));
+  });
+
+  test("a map drawn while hidden plays its tour when it is first shown", () => {
+    let shown = { width: 0, height: 0 };
+    const { play } = tourPlayer();
+    const { map, canvas } = cameraMap(BLOCKS());
+    Object.defineProperty(canvas, "offsetWidth", { get: () => shown.width });
+    Object.defineProperty(canvas, "offsetHeight", { get: () => shown.height });
+    frameMaps(drawnWithTours(oneMap({ motion: TOUR }), play, map));
+    expect(play).not.toHaveBeenCalled();
+
+    shown = { width: WIDTH, height: HEIGHT };
+    window.dispatchEvent(new Event("resize"));
+    expect(play).toHaveBeenCalledTimes(1);
+  });
+
+  test("a camera without a motion plays no tour", () => {
+    const { play } = tourPlayer();
+    const { map } = cameraMap(BLOCKS());
+    frameMaps(drawnWithTours(oneMap({ pitch: 50 }), play, map));
+    map.resetCamera();
+    expect(play).not.toHaveBeenCalled();
+  });
+
+  test("a map in terrain mode plays its tour again when its R key fits the terrain and turns it", () => {
+    const { play, played } = tourPlayer();
+    const { map } = cameraMap(BLOCKS());
+    map._terrainRenderPath = {};
+    frameMaps(drawnWithTours(oneMap({ pitch: 40, motion: TOUR }), play, map));
+    // The run's own tour plays from the terrain's view, which Curio leaves.
+    expect(play).not.toHaveBeenCalled();
+    map.resetCamera();
+    expect(play).toHaveBeenCalledTimes(1);
+    expectView(played[0].from, turned([0, 0, 0], 10000, 40, 0));
+  });
+
+  test("a draw that puts the view back stops the run's tour and plays none", () => {
+    const { play } = tourPlayer();
+    const spec = oneMap({ pitch: 50, motion: TOUR });
+    const before = cameraMap(BLOCKS());
+    const first = drawnWithTours(spec, play, before.map);
+    frameMaps(first);
+    before.map.camera.resetCamera(MOVED.up, MOVED.lookAt, MOVED.eye);
+    const views = mapViews(first);
+    play.mockClear();
+
+    const after = cameraMap(BLOCKS());
+    const second = drawnWithTours(spec, play, after.map);
+    // The tour the run started on its new map, from its own view.
+    const runTour = { done: Promise.resolve(), stop: jest.fn() };
+    (second as any).tours = [runTour];
+    keepMapViews(second, views);
+    expect(after.map.camera.view).toEqual(MOVED);
+    expect(runTour.stop).toHaveBeenCalled();
+    expect(play).not.toHaveBeenCalled();
+  });
+
+  test("a tour the document changed is another camera: the redraw frames and turns the map, and plays the new tour", () => {
+    const { play, played } = tourPlayer();
+    const before = cameraMap(BLOCKS());
+    const first = drawnWithTours(oneMap({ pitch: 50, motion: TOUR }), play, before.map);
+    frameMaps(first);
+    before.map.camera.resetCamera(MOVED.up, MOVED.lookAt, MOVED.eye);
+    const views = mapViews(first);
+
+    const other = [{ type: "pitch", amount: 10, seconds: 1, pan: 50 }];
+    const after = cameraMap(BLOCKS());
+    keepMapViews(drawnWithTours(oneMap({ pitch: 50, motion: other }), play, after.map), views);
+    expectView(after.map.camera.view, turned(FRAMED.lookAt, HIGH, 50, 0));
+    expect(played[played.length - 1].map).toBe(after.map);
+    expect(played[played.length - 1].motion).toEqual(other);
+  });
+
+  test("the same tour written with its fields in another order is the same camera: the view is put back", () => {
+    const { play } = tourPlayer();
+    const before = cameraMap(BLOCKS());
+    const first = drawnWithTours(oneMap({ pitch: 50, motion: TOUR }), play, before.map);
+    frameMaps(first);
+    before.map.camera.resetCamera(MOVED.up, MOVED.lookAt, MOVED.eye);
+    const views = mapViews(first);
+
+    const reordered = TOUR.map(({ type, amount, seconds }) => ({ seconds, amount, type }));
+    const after = cameraMap(BLOCKS());
+    keepMapViews(drawnWithTours(oneMap({ motion: reordered, pitch: 50 }), play, after.map), views);
+    expect(after.map.camera.view).toEqual(MOVED);
+  });
+
+  test("the framing check shows a map's framed view and plays no tour", () => {
+    const { play } = tourPlayer();
+    const { map } = cameraMap(BLOCKS());
+    const grammar = drawnWithTours(oneMap({ pitch: 50, motion: TOUR }), play, map);
+    frameMaps(grammar);
+    play.mockClear();
+    const turnBack = showFramedViews(grammar);
+    expectView(map.camera.view, { eye: FRAMED.eye, lookAt: FRAMED.lookAt, up: [0, 1, 0] });
+    turnBack();
+    expect(play).not.toHaveBeenCalled();
+  });
+});
+
+describe("a camera's center", () => {
+  const MOVED: View = { eye: [250, 120, 160], lookAt: [300, 200, 0], up: [0, 1, 0] };
+  /** autk-db, standing in: its transform puts any center at (*x*, *y*) of World Mercator. */
+  const transformingTo = (x: number, y: number) => ({
+    getWorkspaceConfiguration: () => ({ coordinateFormat: "EPSG:3395" }),
+    rawQuery: async () => [{ x, y }],
+  });
+  const centered = (center: number[]) => oneMap({ center, pitch: 30 });
+
+  test("is where the framed map looks, and a redraw whose center moved frames and turns the map round the new one", async () => {
+    const resolveCameraCenter = grammarResolveCameraCenter();
+    const before = cameraMap(BLOCKS());
+    // The map's origin is (1000, 2000): the center is (300, 250) in its world.
+    await resolveCameraCenter(transformingTo(1300, 2250), before.map, [-87.62, 41.88]);
+    const first = drawn(centered([-87.62, 41.88]), before.map);
+    frameMaps(first);
+    expectView(before.map.camera.view, turned([300, 250, 0], HIGH, 30, 0));
+    before.map.camera.resetCamera(MOVED.up, MOVED.lookAt, MOVED.eye);
+    const views = mapViews(first);
+
+    // The same center: the view the person moved to is put back.
+    const same = cameraMap(BLOCKS());
+    await resolveCameraCenter(transformingTo(1300, 2250), same.map, [-87.62, 41.88]);
+    keepMapViews(drawn(centered([-87.62, 41.88]), same.map), views);
+    expect(same.map.camera.view).toEqual(MOVED);
+
+    // Another center is another camera: framed and turned round it.
+    const moved = cameraMap(BLOCKS());
+    await resolveCameraCenter(transformingTo(900, 1800), moved.map, [-87.63, 41.87]);
+    keepMapViews(drawn(centered([-87.63, 41.87]), moved.map), views);
+    expectView(moved.map.camera.view, turned([-100, -200, 0], HIGH, 30, 0));
   });
 });
 
@@ -284,6 +475,20 @@ describe("a draw that keeps the view", () => {
     const after = cameraMap(BLOCKS());
     keepMapViews(drawn(oneMap(), after.map), views);
     expectView(after.map.camera.view, turned(FRAMED.lookAt, HIGH, 0, 0));
+  });
+
+  test("keeps the view of a map in terrain mode, as it keeps a flat map's", () => {
+    const before = cameraMap(BLOCKS());
+    before.map._terrainRenderPath = {};
+    const first = drawn(TILTED, before.map);
+    frameMaps(first);
+    before.map.camera.resetCamera(MOVED.up, MOVED.lookAt, MOVED.eye);
+    const views = mapViews(first);
+
+    const after = cameraMap(BLOCKS());
+    after.map._terrainRenderPath = {};
+    keepMapViews(drawn(TILTED, after.map), views);
+    expect(after.map.camera.view).toEqual(MOVED);
   });
 
   test("the R key on a map put back frames and turns it by its camera", () => {
