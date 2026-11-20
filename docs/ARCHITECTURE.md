@@ -180,7 +180,9 @@ and lines in `llmPerformanceSeries.ts`) reads `GET /api/monitor/llm`: the rows
 `monitor/llm_performance.py` keeps of each of this Curio's own models, which
 `agents/infrastructure/providers.py` records once per request on Curio's own
 endpoint, as it ends (`_counted`): its time, a stream's time to its first word
-or call, its output tokens and whether it raised. A row holds sums alone: the
+or call, its output tokens and whether it raised; a request the endpoint
+refused (400 or 422) is not counted, as Curio asks again without what it
+refused. A row holds sums alone: the
 requests, those that failed, their milliseconds and their count in each of 14
 duration buckets (`monitor/durations.py`), the first tokens' milliseconds, and
 the output tokens with the milliseconds of the requests that reported them.
@@ -2243,7 +2245,7 @@ A server can also stop feeding a stream without closing it, and the SDK alone wo
 
 `ChatTurn.output_limit` and `thinking_room_refused` say how a turn was asked, not what it holds, so two turns that hold the same are equal.
 
-Usage counts every input token as `inputTokens`, cached or not (Anthropic reports cache reads and writes apart from its input count), plus `cacheReadTokens` and `cacheWriteTokens` when the provider reports them. The ledger, a run's execution record and the evaluation report keep them. The monitor counts each request on this Curio's own endpoint (`ProviderConfig.on_deployment`) once, by model, as soon as it ends (`providers._counted`, `monitor/llm_performance.py`): its time from before it was asked (`_clock`) to its end, a stream's time to the first word or call that comes out of it, stamped before its caller has it, the output tokens its provider reported, and whether it raised, which a request its server refused counts as, the room for thinking refused among them. A request asked again counts each time, a stream its caller stopped counts as it stood and not as failed, and the scripted provider's turn (`run_scripted_turn`) counts as one request, timed whole, with no first token. A request on a key a user set for their own is not counted, so no model name a user typed reaches the public page.
+Usage counts every input token as `inputTokens`, cached or not (Anthropic reports cache reads and writes apart from its input count), plus `cacheReadTokens` and `cacheWriteTokens` when the provider reports them. The ledger, a run's execution record and the evaluation report keep them. The monitor counts each request on this Curio's own endpoint (`ProviderConfig.on_deployment`) once, by model, as soon as it ends (`providers._counted`, `monitor/llm_performance.py`): its time from before it was asked (`_clock`) to its end, a stream's time to the first word or call that comes out of it, stamped before its caller has it, the output tokens its provider reported, and whether it raised. A request the endpoint refused (400 or 422) is not counted: Curio asks again without what it refused (the room for thinking, native tools or a reply schema), and the request it asks again counts. A request asked again after a cut reply counts each time, a stream its caller stopped counts as it stood and not as failed, and the scripted provider's turn (`run_scripted_turn`) counts as one request, timed whole, with no first token. A request on a key a user set for their own is not counted, so no model name a user typed reaches the public page.
 
 What an endpoint can do beyond text is [`chat_capabilities.py`](../utk_curio/backend/app/agents/infrastructure/chat_capabilities.py)'s answer: native tools and a reply schema. Anthropic, Gemini and OpenAI's own endpoint are known from their APIs; any other OpenAI-compatible server is asked once per model with a charged one-tool trial (`providers.probe_native_tools`), recorded per account in `.curio/users/<u>/chat-capabilities.json`, its tokens on the ledger with the configuration's id. The scripted provider answers what a test scripted, fenced by default.
 

@@ -569,9 +569,10 @@ class TestEachRequestOnCuriosEndpointCountsOnce:
         assert _sums("monitor-asked-again") == {"requests": 2, "failed": 0, "ms": 1500, "firstTokenMs": 0,
                                                 "firstTokens": 0, "outputTokens": 82, "outputMs": 1500}
 
-    def test_a_request_refused_with_room_counts_as_failed_and_its_second_counts(self, clock, timer, monkeypatch):
-        """The refusal is a request that raised: failed, with its time and no
-        tokens; the request asked again without the room counts as it was."""
+    def test_a_request_refused_with_room_counts_nothing_and_its_second_counts(self, clock, timer, monkeypatch):
+        """The endpoint refused the room (400): Curio asks again without it,
+        so the refusal counts nothing, and the request asked again counts as
+        it was."""
         config = ProviderConfig(api_key="k", api_type="anthropic", base_url="", model="monitor-room-refused",
                                 on_deployment=True)
         monkeypatch.setattr(providers, "_thinking_endpoints", {providers._endpoint(config)})
@@ -596,8 +597,50 @@ class TestEachRequestOnCuriosEndpointCountsOnce:
 
         assert (turn.thinking_room_refused, limits) == (True, [32 + 1024, 32])
         assert usage == {"inputTokens": 90, "outputTokens": 12}
-        assert _sums("monitor-room-refused") == {"requests": 2, "failed": 1, "ms": 1250, "firstTokenMs": 0,
+        assert _sums("monitor-room-refused") == {"requests": 1, "failed": 0, "ms": 1000, "firstTokenMs": 0,
                                                  "firstTokens": 0, "outputTokens": 12, "outputMs": 1000}
+
+    def test_a_request_refused_for_its_tools_counts_nothing(self, clock, timer, monkeypatch):
+        """An endpoint that refuses the offered tools (422) raises
+        NativeToolsRefused, and Curio asks again without them: the refusal
+        counts nothing."""
+        config = ProviderConfig(api_key="k", api_type="anthropic", base_url="", model="monitor-tools-refused",
+                                on_deployment=True)
+
+        class Refused(Exception):
+            status_code = 422
+
+        def one_turn(config, messages, max_output_tokens, usage_out, tools, tool_choice, reply_schema):
+            timer.wait(0.25)
+            raise Refused("tools are not supported by this model")
+
+        monkeypatch.setattr(providers, "_one_turn", one_turn)
+        tools = [{"name": "look", "description": "Look at the loader.", "parameters": {"type": "object"}}]
+        with pytest.raises(providers.NativeToolsRefused):
+            providers.run_chat_turn(config, ASKED, 4096, tools=tools)
+
+        assert _sums("monitor-tools-refused") == dict.fromkeys(SUMS, 0)
+
+    def test_a_server_error_counts_as_failed(self, clock, timer, monkeypatch):
+        """Only a refusal (400 or 422) counts nothing: a server's error, such
+        as a 503 while the model loads, is a failed request with its time."""
+        config = ProviderConfig(api_key="k", api_type="anthropic", base_url="", model="monitor-unavailable",
+                                on_deployment=True)
+
+        class Unavailable(Exception):
+            status_code = 503
+
+        def one_turn(config, messages, max_output_tokens, usage_out, tools, tool_choice, reply_schema):
+            timer.wait(0.5)
+            raise Unavailable("the model is loading")
+
+        monkeypatch.setattr(providers, "_one_turn", one_turn)
+        tools = [{"name": "look", "description": "Look at the loader.", "parameters": {"type": "object"}}]
+        with pytest.raises(Unavailable):
+            providers.run_chat_turn(config, ASKED, 4096, tools=tools)
+
+        assert _sums("monitor-unavailable") == {"requests": 1, "failed": 1, "ms": 500, "firstTokenMs": 0,
+                                                "firstTokens": 0, "outputTokens": 0, "outputMs": 0}
 
     def test_a_stream_its_caller_stopped_counts_what_its_provider_had_reported_and_did_not_fail(
             self, clock, timer, monkeypatch):

@@ -31,9 +31,12 @@ provider reports them.
 (:func:`_counted`, ``monitor/llm_performance.py``): its time, from before it
 was asked to its end; a stream's time to its first word or call; the output
 tokens its provider reported; and whether it raised. A request asked again
-counts each time it was asked, a stream its caller stopped counts as it
-stood, not as failed, and the scripted provider's turn counts as one request.
-A request on a key a user set for their own is not counted.
+after a cut reply counts each time it was asked, a stream its caller stopped
+counts as it stood, not as failed, and the scripted provider's turn counts as
+one request. A request the endpoint refused (400 or 422) is not counted:
+Curio asks again without what it refused (room for thinking, native tools or
+a reply schema), and the request it asks again counts. A request on a key a
+user set for their own is not counted.
 
 **Native tools.** ``tools`` offers the model tools, each ``{name, description,
 parameters}`` (``tools.native_tools``), and ``tool_choice`` is ``"auto"`` or
@@ -786,17 +789,20 @@ def _summed_usage(usage_out: dict | None, sinks: list[dict]) -> None:
 
 
 def _counted(config: ProviderConfig, sink: dict, *, started: float, first: float | None = None,
-             failed: bool = False) -> None:
+             error: BaseException | None = None) -> None:
     """One request on the monitor (``monitor/llm_performance.py``), counted
     once, as it ends: its time, from *started* (:data:`_clock`, read before
     it was asked) to now; a stream's time to its first word or call (*first*,
     None for a request that is not streamed or that wrote none); the output
     tokens its provider reported, which a failed or stopped request may have
-    too; and whether it raised (*failed*). Only a request on this Curio's own
+    too; and whether it raised (*error*). Only a request on this Curio's own
     endpoint (``config.on_deployment``) is counted: one on a key a user set
-    for their own records nothing. Never raises."""
+    for their own records nothing, and so does one the endpoint refused (400
+    or 422), which Curio asks again without what it refused. Never raises."""
     try:
         if not config.on_deployment:
+            return
+        if error is not None and _status_code_of(error) in (400, 422):
             return
         now = _clock()
         output = sink.get("outputTokens")
@@ -805,7 +811,7 @@ def _counted(config: ProviderConfig, sink: dict, *, started: float, first: float
             ms=(now - started) * 1000,
             first_token_ms=None if first is None else (first - started) * 1000,
             output_tokens=output if isinstance(output, int) and not isinstance(output, bool) else None,
-            failed=failed,
+            failed=error is not None,
         )
     except Exception:  # noqa: BLE001
         # A request never fails over its bookkeeping.
@@ -824,18 +830,18 @@ def _asked_with_room(config: ProviderConfig, max_output_tokens, thinking_tokens,
         sink: dict = {}
         sinks.append(sink)
         started = _clock()
-        failed = False
+        error = None
         try:
             turn = ask(limit, sink)
         except Exception as exc:
-            failed = True
+            error = exc
             if room and _status_code_of(exc) in (400, 422):
                 room, refused = 0, True
                 continue
             raise
         finally:
             _summed_usage(usage_out, sinks)
-            _counted(config, sink, started=started, failed=failed)
+            _counted(config, sink, started=started, error=error)
         if refused:
             _note_room_refused(config)
         if turn.thinking:
@@ -868,7 +874,7 @@ def _streamed_with_room(config: ProviderConfig, max_output_tokens, thinking_toke
         wrote = False
         started = _clock()
         first = None
-        failed = False
+        error = None
         events = ask(limit, sink, ended)
         try:
             for event in events:
@@ -879,7 +885,7 @@ def _streamed_with_room(config: ProviderConfig, max_output_tokens, thinking_toke
                     wrote = True
                 yield event
         except Exception as exc:
-            failed = True
+            error = exc
             if room and not wrote and _status_code_of(exc) in (400, 422):
                 room, refused = 0, True
                 continue
@@ -892,7 +898,7 @@ def _streamed_with_room(config: ProviderConfig, max_output_tokens, thinking_toke
                 events.close()
             finally:
                 _summed_usage(usage_out, sinks)
-                _counted(config, sink, started=started, first=first, failed=failed)
+                _counted(config, sink, started=started, first=first, error=error)
         if refused:
             _note_room_refused(config)
         if ended.get("thinking"):
@@ -979,14 +985,14 @@ def _scripted_turn(config, messages, sink: dict, **asked) -> ChatTurn:
     from utk_curio.backend.app.agents.infrastructure.testing_provider import run_scripted_turn
 
     started = _clock()
-    failed = False
+    error = None
     try:
         return run_scripted_turn(messages, usage_out=sink, config=config, **asked)
-    except Exception:
-        failed = True
+    except Exception as exc:
+        error = exc
         raise
     finally:
-        _counted(config, sink, started=started, failed=failed)
+        _counted(config, sink, started=started, error=error)
 
 
 def _one_turn(config, messages, max_output_tokens, usage_out, tools, tool_choice, reply_schema) -> ChatTurn:
