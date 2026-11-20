@@ -143,6 +143,16 @@ def _enter(page, frontend, backend, username, *, spec: dict | None = None) -> di
     return session
 
 
+def _makes_its_own_dataset() -> dict:
+    """The dataflow the publish tests open: one Data Loading node, at
+    OWN_DATASET_NODE, for the code that makes the user's own dataset."""
+    return {"dataflow": {"name": DATAFLOW, "task": "", "edges": [], "nodes": [{
+        "id": OWN_DATASET_NODE, "type": LOADING_TYPE, "x": 0, "y": 0,
+        "content": "", "in": "DEFAULT", "out": "DEFAULT", "goal": "",
+        "metadata": {"keywords": []},
+    }]}}
+
+
 def _loads_the_areas_in_code(name: str) -> dict:
     """A dataflow whose one node loads the community areas in its code alone."""
     return {"dataflow": {"name": name, "task": "", "edges": [], "nodes": [{
@@ -388,10 +398,10 @@ def test_publish_is_offered_only_for_the_users_own_data_and_asks_first(
     """
     require_project_page()
     require_user_auth()
-    _enter(page, app_frontend.base_url, current_server, "confirm_publish")
+    _enter(page, app_frontend.base_url, current_server, "confirm_publish", spec=_makes_its_own_dataset())
 
     # Something of the user's own, so there is a Publish to find.
-    loading = drag_builtin_to_canvas(page, LOADING_TILE, at=(220, 200))
+    loading = OWN_DATASET_NODE
     set_node_code(page, loading, OWN_DATASET_CODE)
     # Saving the output is opt-in per node and off by default, so a plain run
     # leaves a parquet and no catalog row. See ``enable_save_output``.
@@ -549,10 +559,10 @@ def test_the_catalog_pages_use_one_button_vocabulary(
     """
     require_project_page()
     require_user_auth()
-    _enter(page, app_frontend.base_url, current_server, "catalog_button_vocab")
+    _enter(page, app_frontend.base_url, current_server, "catalog_button_vocab", spec=_makes_its_own_dataset())
 
     # Produce something of the user's own, so a Publish action exists to look at.
-    loading = drag_builtin_to_canvas(page, LOADING_TILE, at=(220, 200))
+    loading = OWN_DATASET_NODE
     set_node_code(page, loading, OWN_DATASET_CODE)
     # Saving the output is opt-in per node and off by default, so a plain run
     # leaves a parquet and no catalog row. See ``enable_save_output``.

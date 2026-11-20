@@ -610,7 +610,7 @@ class TestNativeToolCall:
         }
         project_id, _attachment_id, _base = _open_dataflow_with_agent(
             session, spec, project_name="Native tool call", replies=replies,
-            native_tools=True,
+            native_tools=True, node_ids=(created_id,),
         )
         before = _saved_nodes(current_server, login["token"], project_id)
 
