@@ -68,7 +68,6 @@ import {
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
 import { withCheckedPasses } from './autkComputeScopes';
-import { withZeroHeightExports } from './autkZeroHeights';
 import { attachSpecCameras, frameMaps, keepMapViews, mapViews, showFramedViews, type MapView } from './autkMapView';
 import { destroyFailedGrammar, grammarMaps, trackMaps } from './autkMapDrawing';
 import {
@@ -81,9 +80,9 @@ import { interactionHandleView, isInteractionEdge } from '../../contracts/intera
 import type { ViewArrangement } from '@urban-toolkit/autk-grammar';
 import { mapSession, onMapSession, registerEditMap } from '../../utils/editFeatures/mapEditBus';
 import {
-    drawnFeatureAt, featurePositions, layerIdFor, mapDrawingOf, mapLayerOf, mapStateOf, pickOn, restoreMapLayers,
-    showForEdits, snapshotBeforeSolo, snapshotMapLayers, type DrawnTables, type EditsView, type MapDrawing,
-    type MapLayerState, type MapTableState,
+    drawnFeatureAt, featurePositions, handedFeaturesOf, layerIdFor, mapDrawingOf, mapLayerOf, mapStateOf, pickOn,
+    restoreMapLayers, showForEdits, snapshotBeforeSolo, snapshotMapLayers, type DrawnTables, type EditsView,
+    type HandedFeature, type MapDrawing, type MapLayerState, type MapTableState,
 } from './autkMapState';
 import {
     drawnInput, editFeedsOf, editedMapView, fedByInteraction, feedsVersion, newLayerTables, type EditFeed,
@@ -107,6 +106,7 @@ const mapStateReaders = new Map<string, {
     showFramed: () => () => void;
     drawing: (view?: string | number) => MapDrawing | null;
     tourEnded: (view?: string | number) => Promise<boolean>;
+    handed: (table: string, view?: string | number) => Promise<HandedFeature[] | null>;
 }>();
 /** What turns each node's maps back by their cameras, while they show their framed views. */
 const turnBack = new Map<string, () => void>();
@@ -130,6 +130,11 @@ if (typeof window !== 'undefined') {
         mapStateReaders.get(nodeId)?.drawing(view) ?? null;
     (window as any).__curio_mapTourEnded = (nodeId: string, view?: string | number) =>
         mapStateReaders.get(nodeId)?.tourEnded(view) ?? Promise.resolve(false);
+    // The features of a table the grammar handed its map's autk-map, each
+    // with its input row and the keys of a building's top it holds
+    // (autkMapState `handedFeaturesOf`).
+    (window as any).__curio_mapHanded = (nodeId: string, table: string, view?: string | number) =>
+        mapStateReaders.get(nodeId)?.handed(table, view) ?? Promise.resolve(null);
     (window as any).__curio_showMapsFramed = (nodeId: string, framed: boolean): boolean => {
         turnBack.get(nodeId)?.();
         turnBack.delete(nodeId);
@@ -1444,10 +1449,6 @@ export const useAutkGrammarBehavior = (
                     // A raster enters its workspace when the document keeps
                     // tables in more than the default one (autkUsesWorkspaces).
                     if (drawsRasters) withRasterSources(g, newAutkDb, autkUsesWorkspaces(spec) ? enterWorkspace : undefined);
-                    // A buildings table a layer with buildingsZeroHeight draws
-                    // reaches the map with no empty height key, so autk-map
-                    // raises its parts without a height at random.
-                    withZeroHeightExports(g, zeroHeightTables(spec));
                     // Each pass the run computes is checked on the GPU's
                     // device, as a compute step's is (autkComputeScopes). It
                     // runs on the run's own database, and reads a fromFeature
@@ -2210,6 +2211,11 @@ export const useAutkGrammarBehavior = (
                 if (!tour?.done) return false;
                 await tour.done;
                 return true;
+            },
+            handed: (table, view) => {
+                const { index, entry } = mapOf(view);
+                if (index < 0) return Promise.resolve(null);
+                return handedFeaturesOf(grammarRef.current, autkTableKey(autkWorkspaceOf(entry), table));
             },
         });
         return () => {

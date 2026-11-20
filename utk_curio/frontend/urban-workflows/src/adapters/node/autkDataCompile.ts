@@ -25,6 +25,15 @@
 // cases: default ports, a custom-port stack, and a remapped container port.
 export const SANDBOX_BACKEND_URL_TOKEN = '__CURIO_BACKEND_URL__';
 
+// The member of a building part's feature, beside its properties, that names
+// the height Curio gave the part because it had none (6 m above its base, as
+// utils/buildingHeight's deriveBuildingHeight gives it), when both loaders split
+// a building into its parts. Every node reads that height as the part's own;
+// a map layer with `buildingsZeroHeight` takes it back while the part still
+// holds it (utils/autkInput withReadableHeights), so autk-map raises the part
+// at its own random height, as it raises a part with no height.
+export const MADE_HEIGHT = 'curioMadeHeight';
+
 // autk-db's default workspace (its DEFAULT_WORKSPACE_NAME): where a source, a
 // pass, a map or a plot that names no `workspace` keeps and reads its tables.
 // contracts/autkGrammar.json holds it too, as `defaultWorkspace`, for the
@@ -974,7 +983,9 @@ ${wanted.length > 0 ? `${parts.skip}\n` : ''}  // An OpenStreetMap table a view 
     // downstream loadGeojson('buildings') makes every row a building of its own, so
     // each part also carries, as a property, the building_id it came from. A part's
     // geometryIndex is autk-db's bookkeeping and is left out, and so is its id,
-    // which the part carries as its osm_id.
+    // which the part carries as its osm_id. A part with no height gets one, and
+    // names it beside its properties (MADE_HEIGHT), so a map layer with
+    // buildingsZeroHeight can take it back.
     const __exploded = [];
     for (const f of geojson.features) {
       const geom = f && f.geometry;
@@ -992,7 +1003,9 @@ ${wanted.length > 0 ? `${parts.skip}\n` : ''}  // An OpenStreetMap table a view 
         const p = { ...(meta || {}) }; delete p.parts;
         if (props.building_id != null) p.building_id = props.building_id;
         const h = __buildingHeight(p); if (h != null) p.height = h;
-        __exploded.push({ type: 'Feature', geometry: gg, properties: p });
+        const __part = { type: 'Feature', geometry: gg, properties: p };
+        if (h != null) __part[${JSON.stringify(MADE_HEIGHT)}] = h;
+        __exploded.push(__part);
       };
       if (geom && geom.type === 'GeometryCollection' && Array.isArray(geom.geometries)) {
         geom.geometries.forEach((g, i) => pushPart(g, partMeta.has(i) ? partMeta.get(i) : props));

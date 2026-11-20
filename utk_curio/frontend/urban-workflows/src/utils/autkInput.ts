@@ -26,6 +26,7 @@
 import type { FeatureCollection } from "geojson";
 import { inputTableName } from "../contracts/autkGrammar";
 import {
+  MADE_HEIGHT,
   autkTableKey,
   autkWorkspaceOf,
   loadableFeatures,
@@ -446,8 +447,9 @@ function featuresOf(frame: GrammarFrame, name: string): FrameResult {
  * through it. With *zeroHeight*, for a table a layer with `buildingsZeroHeight`
  * draws (`zeroHeightTables`), a part with no height autk-map draws gets none
  * from Curio and keeps no key of its height that holds no number, so autk-map
- * raises it at its own random 3 to 7 floors (`withoutEmptyHeights`; the run's
- * database hands the map the table the same way, `withZeroHeightExports`).
+ * raises it at its own random 3 to 7 floors (`withoutEmptyHeights`). That
+ * takes in a part an Autark node's loader handed on at the height Curio gave
+ * it (`MADE_HEIGHT`), while it still holds that height (`withoutMadeHeight`).
  */
 export function withReadableHeights(
   fc: FeatureCollection,
@@ -457,15 +459,30 @@ export function withReadableHeights(
   let changed = false;
   const next = features.map((feature) => {
     const properties = feature?.properties;
-    // A part with no height autk-map draws: left to autk-map, or given Curio's.
-    const readable = zeroHeight && deriveBuildingHeight(properties ?? {}) !== null
-      ? withoutEmptyHeights(properties)
+    // A part with no height of its own autk-map draws: left to autk-map, or given Curio's.
+    const own = zeroHeight ? withoutMadeHeight(feature) : properties;
+    const readable = zeroHeight && deriveBuildingHeight(own ?? {}) !== null
+      ? withoutEmptyHeights(own)
       : readableBuildingProperties(properties);
     if (readable === properties) return feature;
     changed = true;
     return { ...feature, properties: readable };
   });
   return changed ? ({ ...fc, features: next } as FeatureCollection) : fc;
+}
+
+/**
+ * *feature*'s properties without the height an Autark node's loader gave the
+ * part because it had none, which the feature names (`MADE_HEIGHT`), while
+ * the part still holds it; its properties as they are otherwise, a height
+ * changed since among them.
+ */
+function withoutMadeHeight(feature: any): any {
+  const properties = feature?.properties;
+  const made = feature?.[MADE_HEIGHT];
+  if (typeof made !== "number" || properties == null || properties.height !== made) return properties;
+  const { height: _made, ...own } = properties;
+  return own;
 }
 
 /**

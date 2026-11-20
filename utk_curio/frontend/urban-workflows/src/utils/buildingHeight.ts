@@ -60,7 +60,7 @@ function autkBase(p: Record<string, any>): number {
 }
 
 /** The keys autk-map reads a building part's top from, the first it holds winning. */
-const TOP_KEYS = ['height', 'building:height', 'levels', 'building:levels'] as const;
+export const TOP_KEYS = ['height', 'building:height', 'levels', 'building:levels'] as const;
 
 /** Whether *value* holds a number autk-map reads: a number, or text that starts with one. */
 const holdsNumber = (value: unknown): boolean => Number.isFinite(parseFloat(String(value)));
