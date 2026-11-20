@@ -54,10 +54,11 @@ each keep a workspace of their own.
 
 ## Step 2: Each road's minutes of sun
 
-Each area has a compute pass of its own, in its workspace: example 07's shadow shader, run once per
-road. For each hour from 7:00 to 19:00 of day 172 of the year, June 21, it finds the sun's altitude and
-azimuth at the area's latitude and longitude, projects every building's footprint along the sun by its
-height, and counts 60 minutes for the hour when no building's shadow touches the road. Every building
+Each area has a compute pass of its own, in its workspace: a shadow shader run once per road, which
+measures every coordinate from the road's first point. For each hour from 7:00 to 19:00 of day 172 of
+the year, June 21, it finds the sun's altitude and azimuth at the area's latitude and longitude,
+projects every building's footprint along the sun by its height, and counts 60 minutes for the hour
+when no building's shadow touches the road. Every building
 part casts a shadow: its height is its OSM `height`, else its `building:levels` at 3.4 m each, else
 6 m above its base. The Back Bay
 pass writes example 06's latitude and longitude into the shader (`lat_rad = 0.7393`,
