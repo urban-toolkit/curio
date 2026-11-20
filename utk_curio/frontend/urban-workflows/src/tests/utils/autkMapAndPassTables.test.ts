@@ -6,10 +6,7 @@
  *   node reads from its input like any table a map draws;
  * - a `windows` pass writes a table of points, one a window, and a `clusters`
  *   pass a row each, in place or under its own name; a node runs neither over
- *   a table with no rows, nor a pass over what one of them would write;
- * - a buildings table a layer with `buildingsZeroHeight` draws keeps no
- *   height for a part that has none, so autk-map draws it at its own random
- *   height; every other buildings table gets the height Curio gives such a part.
+ *   a table with no rows, nor a pass over what one of them would write.
  */
 jest.mock("../../services/api", () => ({ fetchData: jest.fn(), fetchPreviewData: jest.fn() }));
 
@@ -73,59 +70,5 @@ describe("the tables windows and clusters passes write", () => {
     const known = new Set(["towers", "lines", "windows"]);
     expect(passesAtHand(passes, known, new Set(["lines"]))).toEqual([passes[2]]);
     expect(passesAtHand(passes, known, new Set(["towers", "lines"]))).toEqual(passes);
-  });
-});
-
-describe("buildingsZeroHeight", () => {
-  /** A square footprint *at* blocks east. */
-  const square = (at: number) => ({
-    type: "Polygon", coordinates: [[[at, 0], [at + 0.5, 0], [at + 0.5, 0.5], [at, 0.5], [at, 0]]],
-  });
-  /** Parts with a height, with none, with a height that holds no number, and with levels only. */
-  const PARTS = [{ height: 30 }, {}, { height: null }, { "building:levels": 4 }];
-  const towers = () => frame({
-    name: "towers",
-    layerType: "buildings",
-    payload: {
-      type: "FeatureCollection",
-      features: PARTS.map((properties, at) => ({ type: "Feature", geometry: square(at), properties: { id: at, ...properties } })),
-    },
-  });
-  const HEIGHT_KEYS = ["height", "building:height", "levels", "building:levels"];
-  const handed = (spec: any) => autkSourcesFrom(read(towers()), spec)
-    .sources.find((source) => source.outputTableName === "towers")!
-    .geojsonObject.features.map((feature: any) => feature.properties);
-
-  test("a buildings table a layer with buildingsZeroHeight draws keeps no height for a part that has none", () => {
-    const parts = handed({ map: { layerRefs: [{ dataRef: "towers", buildingsZeroHeight: true }] } });
-    expect(parts[0].height).toBe(30);
-    for (const part of [parts[1], parts[2]]) {
-      expect(HEIGHT_KEYS.filter((key) => key in part)).toEqual([]);
-    }
-    // A part with levels keeps its height, written where autk-map reads it.
-    expect(parts[3].height).toBeCloseTo(13.6, 6);
-  });
-
-  test("a part of such a table keeps no key of its height that holds no number, on the building and on its parts", () => {
-    const sheds = frame({
-      name: "sheds",
-      layerType: "buildings",
-      payload: {
-        type: "FeatureCollection",
-        features: [
-          { type: "Feature", geometry: square(0), properties: { height: null, "building:levels": "" } },
-          { type: "Feature", geometry: square(1), properties: { height: null, parts: [{ geometryIndex: 0, height: null }] } },
-        ],
-      },
-    });
-    const parts = autkSourcesFrom(read(sheds), { map: { layerRefs: [{ dataRef: "sheds", buildingsZeroHeight: true }] } })
-      .sources[0].geojsonObject.features.map((feature: any) => feature.properties);
-    expect(parts).toEqual([{}, { parts: [{ geometryIndex: 0 }] }]);
-  });
-
-  test("every other buildings table gives a part without a height the one autk-map draws", () => {
-    const parts = handed({ map: { layerRefs: [{ dataRef: "towers" }] } });
-    expect(parts.slice(0, 3).map((part: any) => part.height)).toEqual([30, 6, 6]);
-    expect(parts[3].height).toBeCloseTo(13.6, 6);
   });
 });

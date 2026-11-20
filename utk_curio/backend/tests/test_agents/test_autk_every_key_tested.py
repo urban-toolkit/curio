@@ -67,14 +67,22 @@ def _last_key(path: str) -> str:
     return re.split(r"[.\[\]()]+", path.rstrip("]).*"))[-1]
 
 
+def _rule_path(rule: dict) -> str:
+    """The path of the key a rule of autkGrammar.json names: the key of the
+    document, or the key in each object of its place (``map[].layerRefs[]``
+    and ``buildingsZeroHeight`` are ``map[].layerRefs[].buildingsZeroHeight``)."""
+    return f'{rule["in"]}.{rule["key"]}' if rule["in"] else rule["key"]
+
+
 def _refusing_rule(path: str) -> dict | None:
-    """The notRunYet rule of autkGrammar.json that refuses *path*: a document's
-    key it names, with every key under it."""
+    """The notRunYet rule of autkGrammar.json that refuses *path*: a key it
+    names, of the document or of each object of a place, with every key under
+    it."""
     for rule in _read(SHARED_FILE).get("notRunYet", []):
         if "value" in rule:
             continue
-        if rule["in"] == "" and (path == rule["key"] or path.startswith(rule["key"] + "[")
-                                 or path.startswith(rule["key"] + ".")):
+        refused = _rule_path(rule)
+        if path == refused or path.startswith(refused + "[") or path.startswith(refused + "."):
             return rule
     return None
 
@@ -246,7 +254,7 @@ def test_every_test_named_writes_its_key():
                 if read not in written:
                     written[read] = set().union(*[written_paths(schema, held)
                                                  for held in _documents_of(REPO_ROOT / document, read[1])])
-                wanted = rule["key"] if entry.get("refused") and rule else path
+                wanted = _rule_path(rule) if entry.get("refused") and rule else path
                 if wanted not in written[read]:
                     problems.append(f"{path}: no document of {document} the test reads writes {wanted}")
     assert not problems, f"{len(problems)} test(s) that do not write their key:\n" + "\n".join(sorted(problems))

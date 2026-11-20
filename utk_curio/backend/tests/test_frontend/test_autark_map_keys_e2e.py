@@ -3,20 +3,17 @@
 An Autark node's data section loads tables of the Chicago Loop in EPSG:3395
 metres: an ``area`` around them all, which a map draws first so autk-db keeps
 every later table whole, four ``zones`` with their riders, three ``lanes``
-each with its own width ``w``, four ``stops`` with a ``load``, and six
-``towers``, three 30 m tall and three with no height. It hands them on to
-maps, each read back from autk-map's own objects (``window.__curio_mapDrawing``):
+each with its own width ``w``, and four ``stops`` with a ``load``. It hands
+them on to maps, each read back from autk-map's own objects
+(``window.__curio_mapDrawing``):
 
-- a map of every layer key: the zones colored by their riders, in the legend
-  (``legend``), two of them picked from the start (``isPick``,
+- a map of every layer key a node runs: the zones colored by their riders, in
+  the legend (``legend``), two of them picked from the start (``isPick``,
   ``pickedComps``) and kept lit while nothing comes into the node; the lanes
   drawn as roads (``layerType``), each as wide as its ``w`` (``widthBy``);
-  the stops colored by their load, after the zones, two of them hidden
-  (``skippedComps``); and the towers, the three with no height handed to
-  autk-map with none (``window.__curio_mapHanded``, what the grammar loaded
-  into it), though the data node handed them on at the height Curio gives
-  such a part, and drawn at autk-map's random 3 to 7 floors
-  (``buildingsZeroHeight``);
+  and the stops colored by their load, after the zones, two of them hidden
+  (``skippedComps``). A node refuses ``buildingsZeroHeight``
+  (``test_autark_buildings_zero_height_e2e.py``);
 - a map in a style of its own (``style``'s colors), its zones colored by their
   riders, without autk-map's menu and legend (``showUi``);
 - a map whose ground rises to a band of a GeoTIFF its own data section loads
@@ -60,13 +57,8 @@ AUTARK_TYPE = "curio.builtin/autk-grammar"
 LOOP = (-9755000.0, 5106000.0)
 RIDERS = [0, 25, 50, 100]
 WIDTHS = [4, 12, 24]
-#: Which towers have a height: the even ones, 30 m.
-TOWER_HEIGHT = 30
-#: autk-map's random height of a building part with none: 3 to 7 floors of 3.4 m.
-RANDOM_TOPS = (3 * 3.4, 7 * 3.4)
 PICKED = [1, 3]
 HIDDEN = [0, 2]
-CLOSE = 1e-3
 
 
 def _square(x: float, y: float, side: float) -> dict:
@@ -101,10 +93,6 @@ DATA = [
         _feature({"type": "Point", "coordinates": [LOOP[0] + 500 * i + 200, LOOP[1] + 1000]}, load=i + 1)
         for i in range(4)
     ]),
-    _source("towers", [
-        _feature(_square(LOOP[0] + 300 * i, LOOP[1] - 500, 60), **({"height": TOWER_HEIGHT} if i % 2 == 0 else {}))
-        for i in range(6)
-    ], layerType="buildings"),
 ]
 
 EVERY_LAYER_KEY = {"map": {"highlightColor": "#ff7f0e", "layerRefs": [
@@ -112,7 +100,6 @@ EVERY_LAYER_KEY = {"map": {"highlightColor": "#ff7f0e", "layerRefs": [
     {"dataRef": "zones", "getFnv": "riders", "legend": True, "isPick": True, "pickedComps": PICKED},
     {"dataRef": "lanes", "layerType": "roads", "widthBy": "w"},
     {"dataRef": "stops", "getFnv": "load", "skippedComps": HIDDEN},
-    {"dataRef": "towers", "buildingsZeroHeight": True},
 ]}}
 
 #: The zones colored by their riders, which would put them in the legend, on the area in the style's polygons
@@ -157,8 +144,6 @@ _DRAWING_JS = "(id) => typeof window.__curio_mapDrawing === 'function' ? window.
 _TOUR_ENDED_JS = ("(id) => typeof window.__curio_mapTourEnded === 'function' ? window.__curio_mapTourEnded(id) "
                   ": Promise.resolve(null)")
 _VIEWS_JS = "(id) => typeof window.__curio_mapViews === 'function' ? window.__curio_mapViews(id) : null"
-_HANDED_JS = ("([id, table]) => typeof window.__curio_mapHanded === 'function' ? window.__curio_mapHanded(id, table) "
-              ": Promise.resolve(null)")
 
 
 def _world_mercator(lon: float, lat: float) -> tuple[float, float]:
@@ -235,7 +220,7 @@ def test_a_map_draws_its_terrain_layer_types_widths_hidden_and_picked_features_l
     play_node(page, keys)
     wait_for_node_done(page, keys, node_type=AUTARK_TYPE)
     assert_autark_map_drawn(page, keys, timeout=60000, attach_as="a map of every layer key autk-grammar 5.3.0 adds")
-    drawn = _drawing(page, keys, lambda d: len(d.get("layers", [])) >= 5, "five layers")
+    drawn = _drawing(page, keys, lambda d: len(d.get("layers", [])) >= 4, "four layers")
 
     # The zones in the legend, though the stops are colored after them.
     assert drawn["legend"] == "zones", f"the legend shows {drawn['legend']!r}, not the zones, which set legend"
@@ -246,29 +231,6 @@ def test_a_map_draws_its_terrain_layer_types_widths_hidden_and_picked_features_l
     # Two stops hidden.
     assert _layer(drawn, "stops").get("skipped") == HIDDEN, (
         f"the stops hide {_layer(drawn, 'stops').get('skipped')}, not {HIDDEN} (skippedComps)"
-    )
-    # The towers as the grammar handed them to autk-map, in the order it draws them: the three with no
-    # height hold no key autk-map reads a top from, so it raises them; the others their 30 m.
-    towers = _layer(drawn, "towers")
-    handed = page.evaluate(_HANDED_JS, [keys, "towers"]) or []
-    evidence = f"handed to autk-map as {json.dumps(handed)}, drawn over the points {json.dumps(towers.get('spans'))}"
-    assert len(handed) == 6 and sorted(feature["row"] for feature in handed if not feature["tops"]) == [1, 3, 5], (
-        f"the towers with no height do not reach autk-map without a height ({evidence}): it raises only a part "
-        "that holds none (buildingsZeroHeight)"
-    )
-    assert all(feature["tops"] == {"height": TOWER_HEIGHT} for feature in handed if feature["tops"]), evidence
-    # Three towers 30 m tall, and the three with no height at autk-map's random 3 to 7 floors.
-    tops = towers.get("tops") or []
-    tall = [top for top in tops if top is not None and abs(top - TOWER_HEIGHT) < CLOSE]
-    raised_at_random = [top for top in tops if top is not None and RANDOM_TOPS[0] - CLOSE <= top <= RANDOM_TOPS[1] + CLOSE]
-    assert len(tops) == 6 and len(tall) == 3 and len(raised_at_random) == 3, (
-        f"the towers' tops are {tops}: three of {TOWER_HEIGHT} m and three from {RANDOM_TOPS[0]:.1f} to "
-        f"{RANDOM_TOPS[1]:.1f} m (buildingsZeroHeight); {evidence}"
-    )
-    # Each where it was handed: a tower with its height at it, one with none at random.
-    expected = [(TOWER_HEIGHT, TOWER_HEIGHT) if feature["tops"] else RANDOM_TOPS for feature in handed]
-    assert all(low - CLOSE <= top <= high + CLOSE for top, (low, high) in zip(tops, expected)), (
-        f"the towers' tops are {tops}, each not at its own height, {expected}; {evidence}"
     )
     # The zones picked from the start, and still lit once the node settles: nothing came in to clear them.
     picked = _drawing(page, keys, lambda d: _layer(d, "zones").get("highlighted") == PICKED,

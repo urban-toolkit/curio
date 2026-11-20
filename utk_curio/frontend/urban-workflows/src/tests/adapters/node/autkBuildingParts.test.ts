@@ -8,18 +8,12 @@
  * Examples 06 and 07 pack each part's `geometry.coordinates.0` into their
  * batched shadow step, which reads a Polygon's outer ring: a part handed on as
  * a GeometryCollection would pack a box of zero area.
- *
- * A part with no height is handed on at the height Curio gives it, which every
- * node reads, and names that height (`MADE_HEIGHT`), so a map layer with
- * `buildingsZeroHeight` takes it back and autk-map raises the part at random.
  */
 import * as fs from "fs";
 import * as path from "path";
 
-import { MADE_HEIGHT, compileDataSpecToAutkDbJs } from "../../../adapters/node/autkDataCompile";
+import { compileDataSpecToAutkDbJs } from "../../../adapters/node/autkDataCompile";
 import { loadSpecLayers } from "../../../adapters/node/autkLayerMaterialize";
-import { autkSourcesFrom } from "../../../utils/autkInput";
-import type { GrammarFrame } from "../../../utils/grammarInput";
 
 jest.mock("../../../services/api", () => ({ fetchData: jest.fn() }));
 // Virtual, as the other suites mock Autark: keyed by the package's name, so the
@@ -93,31 +87,6 @@ const EXPECTED = [
   { geometry: WINGS, properties: { building: "house", "building:levels": "2", building_id: 11 } },
 ];
 
-const SHED = square(300, 0, 10);
-const ANNEX = square(320, 0, 10);
-
-/** A building of two parts, the second with no height, as autk-db 4's getLayer exports it. */
-function mockShed() {
-  return {
-    type: "FeatureCollection",
-    features: [{
-      type: "Feature",
-      id: 31,
-      geometry: { type: "GeometryCollection", geometries: [SHED, ANNEX] },
-      properties: {
-        building_id: 31,
-        parts: [
-          { geometryIndex: 0, id: 31, building: "shed", height: "12" },
-          { geometryIndex: 1, id: 32, building: "shed" },
-        ],
-      },
-    }],
-  };
-}
-
-/** The buildings the database exports. */
-let mockExport: () => any = mockBuildings;
-
 class mockAutkDb {
   init() { return Promise.resolve(); }
   // The default workspace, which the grammar's data adapter enters.
@@ -125,7 +94,7 @@ class mockAutkDb {
   setWorkspace() { return Promise.resolve(); }
   loadOsm() { return Promise.resolve(); }
   getLayersMetadata() { return [{ name: "table_osm_buildings", type: "buildings" }]; }
-  getLayer() { return Promise.resolve(mockExport()); }
+  getLayer() { return Promise.resolve(mockBuildings()); }
 }
 
 const SOURCES = [{
@@ -176,46 +145,6 @@ describe.each([
       expect(Math.max(...xs)).toBeGreaterThan(Math.min(...xs));
       expect(Math.max(...ys)).toBeGreaterThan(Math.min(...ys));
     }
-  });
-
-  describe("a part with no height", () => {
-    beforeEach(() => { mockExport = mockShed; });
-    afterEach(() => { mockExport = mockBuildings; });
-
-    test("is handed on at the height Curio gives it, which the part names; a part with its own names none", async () => {
-      const [own, none] = await partsOf();
-      expect(none.properties).toEqual({ building: "shed", building_id: 31, height: 6 });
-      expect(none[MADE_HEIGHT]).toBe(6);
-      expect(own.properties).toEqual({ building: "shed", height: "12", building_id: 31 });
-      expect(MADE_HEIGHT in own).toBe(false);
-    });
-
-    test("a map layer with buildingsZeroHeight takes that height back, but not one changed since", async () => {
-      const [own, none] = await partsOf();
-      const raised = { ...none, properties: { ...none.properties, height: 20 } };
-      const frame: GrammarFrame = {
-        name: "table_osm_buildings",
-        dataType: "geodataframe",
-        payload: { type: "FeatureCollection", features: [own, none, raised] },
-        schema: null,
-        geometryName: "geometry",
-        crsName: null,
-        layerType: "buildings",
-        fromBundle: false,
-        index: 0,
-        circle: 0,
-      };
-      const drawn = (layer: Record<string, unknown>) => autkSourcesFrom({ frames: [frame] }, {
-        map: { layerRefs: [{ dataRef: "table_osm_buildings", ...layer }] },
-      }).sources[0].geojsonObject.features.map((feature: any) => feature.properties);
-
-      const zero = drawn({ buildingsZeroHeight: true });
-      // No key autk-map reads a top from: it raises the part at random.
-      expect(["height", "building:height", "levels", "building:levels"].filter((key) => key in zero[1])).toEqual([]);
-      expect([zero[0].height, zero[2].height]).toEqual(["12", 20]);
-      // Every other layer draws the part at the height Curio gave it.
-      expect(drawn({}).map((properties: any) => properties.height)).toEqual(["12", 6, 20]);
-    });
   });
 });
 
