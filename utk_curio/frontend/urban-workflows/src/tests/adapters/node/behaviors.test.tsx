@@ -3437,6 +3437,14 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         },
         'Two maps or plots have the id "a"; an id names one view.',
       ],
+      [
+        // Curio gives a building part without a height 6 m as it loads it, so
+        // autk-map would raise none of them at random.
+        'a map whose buildings layer writes buildingsZeroHeight',
+        { map: { layerRefs: [{ dataRef: 'input_0' }, { dataRef: 'table_osm_buildings', buildingsZeroHeight: true }] } },
+        'This spec uses "buildingsZeroHeight" (Curio makes a building without a height 6 m tall when it loads the data,'
+          + ' so the key would change nothing) at map.layerRefs[1], which Curio does not run yet.',
+      ],
     ])('%s fails the node before anything runs, naming the key', async (_what, spec, said) => {
       // The sandbox answers, as it does for any data-only node, so a node that
       // does not refuse fails the checks below at once instead of waiting.
