@@ -69,7 +69,9 @@ function bucketMountsText(deployment: MonitorDeployment | undefined): string {
 
 /**
  * The backend processes any of *payloads* left out, in a start of several
- * (`curio.py start --backend-processes N`), once each and in order.
+ * (`curio.py start --backend-processes N`), once each and in order. The
+ * payloads that ask every process for its part: the monitor's own and the
+ * errors'; the histories' read the file every process writes.
  */
 function missingProcesses(
   payloads: Array<{ backendProcesses?: MonitorBackendProcesses } | null | undefined>
@@ -137,9 +139,7 @@ export const MonitorContent: React.FC = () => {
   const sandbox = m?.execution.sandbox;
   const hw = m?.hardware;
   const stale = monitor.error != null;
-  const missingText = missingProcessesText(
-    missingProcesses([monitor.data, errors.data, llm.data, openFiles.data])
-  );
+  const missingText = missingProcessesText(missingProcesses([monitor.data, errors.data]));
 
   return (
     <>

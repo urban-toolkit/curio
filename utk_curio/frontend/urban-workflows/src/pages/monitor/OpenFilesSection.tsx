@@ -17,15 +17,17 @@ function timeSpan(payload: MonitorOpenFilesPayload): [number, number] | undefine
 }
 
 /**
- * Each server's open files, sampled every hour since the backend started,
- * against its limit: a line per server and the limit dashed, on a log scale,
- * so a count of a few hundred and a limit of tens of thousands both read.
- * The last sample's counts are written under it.
+ * Each server's open files, sampled every hour over the last 90 days, kept
+ * across restarts, against its limit: a line per server and the limit dashed,
+ * on a log scale, so a count of a few hundred and a limit of tens of thousands
+ * both read. The last sample's counts are written under it.
  */
 export const OpenFilesSection: React.FC<{ payload: MonitorOpenFilesPayload | null }> = ({ payload }) => {
   const lines = useMemo(() => (payload ? openFilesLines(payload) : null), [payload]);
   const samples = payload?.samples ?? [];
   const last = samples[samples.length - 1];
+  // A sample of a start of several backend processes names the busiest one.
+  const ofSeveral = samples.some((sample) => sample.backendProcess !== undefined);
 
   let body: React.ReactNode;
   if (!payload) {
@@ -66,15 +68,15 @@ export const OpenFilesSection: React.FC<{ payload: MonitorOpenFilesPayload | nul
         </p>
       ) : null}
       {payload ? (
-        <p className={styles.caption}>
-          A sample every hour since the backend started, at most the last {payload.maxDays} days. A server
-          above {payload.warnAbovePercent}% of its limit adds an entry to Recent errors.
+        <p className={styles.caption} data-testid="monitor-open-files-kept">
+          A sample every hour, the last {payload.maxDays} days, kept across restarts. A server above{" "}
+          {payload.warnAbovePercent}% of its limit adds an entry to Recent errors.
         </p>
       ) : null}
-      {payload?.backendProcesses && payload.backendProcesses.count > 1 ? (
+      {ofSeveral ? (
         <p className={styles.caption} data-testid="monitor-open-files-processes">
-          The backend runs as {payload.backendProcesses.count} processes: its line is the busiest one in each
-          hour, against that process's own limit.
+          With several backend processes, the backend line is the busiest one in each hour, against that
+          process's own limit.
         </p>
       ) : null}
     </div>
