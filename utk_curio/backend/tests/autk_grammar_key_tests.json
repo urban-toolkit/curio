@@ -6349,6 +6349,509 @@
       {
         "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkGrammarDataAdapterLoads.test.ts::%s::hands on each table of a workspace in the CRS workspaces sets"
       }
+    ],
+    "compute[windows]": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[windows and clusters passes of every pass key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a compute step hands autk-compute every key of its passes::windows and clusters passes: the windows of the towers as a table of points, and the clusters of the towers and of the lines, in a table of their own and in place",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkCheckedPasses.test.ts::a map node runs windows and clusters passes on the CPU, outside the device's error scopes::a windows pass and a clusters pass run with no GPU device, and the run keeps the tables they write"
+      }
+    ],
+    "compute[windows].dataRef": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[windows and clusters passes of every pass key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a compute step hands autk-compute every key of its passes::windows and clusters passes: the windows of the towers as a table of points, and the clusters of the towers and of the lines, in a table of their own and in place",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkCheckedPasses.test.ts::a map node runs windows and clusters passes on the CPU, outside the device's error scopes::a windows pass and a clusters pass run with no GPU device, and the run keeps the tables they write"
+      }
+    ],
+    "compute[windows].floors": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[windows and clusters passes of every pass key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a compute step hands autk-compute every key of its passes::windows and clusters passes: the windows of the towers as a table of points, and the clusters of the towers and of the lines, in a table of their own and in place",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkCheckedPasses.test.ts::a map node runs windows and clusters passes on the CPU, outside the device's error scopes::a windows pass and a clusters pass run with no GPU device, and the run keeps the tables they write"
+      }
+    ],
+    "compute[windows].layerType": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[windows and clusters passes of every pass key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a compute step hands autk-compute every key of its passes::windows and clusters passes: the windows of the towers as a table of points, and the clusters of the towers and of the lines, in a table of their own and in place",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkCheckedPasses.test.ts::a map node runs windows and clusters passes on the CPU, outside the device's error scopes::a windows pass and a clusters pass run with no GPU device, and the run keeps the tables they write"
+      }
+    ],
+    "compute[windows].outputTableName": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[windows and clusters passes of every pass key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a compute step hands autk-compute every key of its passes::windows and clusters passes: the windows of the towers as a table of points, and the clusters of the towers and of the lines, in a table of their own and in place",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkCheckedPasses.test.ts::a map node runs windows and clusters passes on the CPU, outside the device's error scopes::a windows pass and a clusters pass run with no GPU device, and the run keeps the tables they write"
+      }
+    ],
+    "compute[windows].workspace": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[windows and clusters passes of every pass key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a compute step hands autk-compute every key of its passes::windows and clusters passes: the windows of the towers as a table of points, and the clusters of the towers and of the lines, in a table of their own and in place",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkCheckedPasses.test.ts::a map node runs windows and clusters passes on the CPU, outside the device's error scopes::a windows pass and a clusters pass run with no GPU device, and the run keeps the tables they write"
+      }
+    ],
+    "compute[clusters]": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[windows and clusters passes of every pass key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a compute step hands autk-compute every key of its passes::windows and clusters passes: the windows of the towers as a table of points, and the clusters of the towers and of the lines, in a table of their own and in place",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkCheckedPasses.test.ts::a map node runs windows and clusters passes on the CPU, outside the device's error scopes::a windows pass and a clusters pass run with no GPU device, and the run keeps the tables they write"
+      }
+    ],
+    "compute[clusters].dataRef": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[windows and clusters passes of every pass key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a compute step hands autk-compute every key of its passes::windows and clusters passes: the windows of the towers as a table of points, and the clusters of the towers and of the lines, in a table of their own and in place",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkCheckedPasses.test.ts::a map node runs windows and clusters passes on the CPU, outside the device's error scopes::a windows pass and a clusters pass run with no GPU device, and the run keeps the tables they write"
+      }
+    ],
+    "compute[clusters].layerType": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[windows and clusters passes of every pass key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a compute step hands autk-compute every key of its passes::windows and clusters passes: the windows of the towers as a table of points, and the clusters of the towers and of the lines, in a table of their own and in place",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkCheckedPasses.test.ts::a map node runs windows and clusters passes on the CPU, outside the device's error scopes::a windows pass and a clusters pass run with no GPU device, and the run keeps the tables they write"
+      }
+    ],
+    "compute[clusters].outputColumnName": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[windows and clusters passes of every pass key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a compute step hands autk-compute every key of its passes::windows and clusters passes: the windows of the towers as a table of points, and the clusters of the towers and of the lines, in a table of their own and in place",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkCheckedPasses.test.ts::a map node runs windows and clusters passes on the CPU, outside the device's error scopes::a windows pass and a clusters pass run with no GPU device, and the run keeps the tables they write"
+      }
+    ],
+    "compute[clusters].outputTableName": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[windows and clusters passes of every pass key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a compute step hands autk-compute every key of its passes::windows and clusters passes: the windows of the towers as a table of points, and the clusters of the towers and of the lines, in a table of their own and in place",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkCheckedPasses.test.ts::a map node runs windows and clusters passes on the CPU, outside the device's error scopes::a windows pass and a clusters pass run with no GPU device, and the run keeps the tables they write"
+      }
+    ],
+    "compute[clusters].workspace": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[windows and clusters passes of every pass key]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a compute step hands autk-compute every key of its passes::windows and clusters passes: the windows of the towers as a table of points, and the clusters of the towers and of the lines, in a table of their own and in place",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkCheckedPasses.test.ts::a map node runs windows and clusters passes on the CPU, outside the device's error scopes::a windows pass and a clusters pass run with no GPU device, and the run keeps the tables they write"
+      }
+    ],
+    "map[].camera.center": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkMapCamera.test.ts::a camera's center::is where the framed map looks, and a redraw whose center moved frames and turns the map round the new one"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_map_keys_e2e.py::test_a_camera_looks_at_its_center_and_ends_its_tour_where_its_steps_add_up"
+      }
+    ],
+    "map[].camera.motion": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkMapCamera.test.ts::a camera tour::plays once the map is framed and turned, from the turned view"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_map_keys_e2e.py::test_a_camera_looks_at_its_center_and_ends_its_tour_where_its_steps_add_up"
+      }
+    ],
+    "map[].camera.motion[].amount": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkMapCamera.test.ts::a camera tour::plays once the map is framed and turned, from the turned view"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_map_keys_e2e.py::test_a_camera_looks_at_its_center_and_ends_its_tour_where_its_steps_add_up"
+      }
+    ],
+    "map[].camera.motion[].pan": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkMapCamera.test.ts::a camera tour::plays once the map is framed and turned, from the turned view"
+      }
+    ],
+    "map[].camera.motion[].seconds": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkMapCamera.test.ts::a camera tour::plays once the map is framed and turned, from the turned view"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_map_keys_e2e.py::test_a_camera_looks_at_its_center_and_ends_its_tour_where_its_steps_add_up"
+      }
+    ],
+    "map[].camera.motion[].type": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkMapCamera.test.ts::a camera tour::plays once the map is framed and turned, from the turned view"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_map_keys_e2e.py::test_a_camera_looks_at_its_center_and_ends_its_tour_where_its_steps_add_up"
+      }
+    ],
+    "map[].highlightColor": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_map_keys_e2e.py::test_a_map_draws_its_terrain_layer_types_widths_hidden_and_picked_features_legend_style_and_controls"
+      }
+    ],
+    "map[].invalidValueColor": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      }
+    ],
+    "map[].layerRefs[].buildingsZeroHeight": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_map_keys_e2e.py::test_a_map_draws_its_terrain_layer_types_widths_hidden_and_picked_features_legend_style_and_controls"
+      }
+    ],
+    "map[].layerRefs[].layerType": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_map_keys_e2e.py::test_a_map_draws_its_terrain_layer_types_widths_hidden_and_picked_features_legend_style_and_controls"
+      }
+    ],
+    "map[].layerRefs[].legend": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_map_keys_e2e.py::test_a_map_draws_its_terrain_layer_types_widths_hidden_and_picked_features_legend_style_and_controls"
+      }
+    ],
+    "map[].layerRefs[].skippedComps": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_map_keys_e2e.py::test_a_map_draws_its_terrain_layer_types_widths_hidden_and_picked_features_legend_style_and_controls"
+      }
+    ],
+    "map[].layerRefs[].widthBy": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_map_keys_e2e.py::test_a_map_draws_its_terrain_layer_types_widths_hidden_and_picked_features_legend_style_and_controls"
+      }
+    ],
+    "map[].showUi": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_map_keys_e2e.py::test_a_map_draws_its_terrain_layer_types_widths_hidden_and_picked_features_legend_style_and_controls"
+      }
+    ],
+    "map[].style.background": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_map_keys_e2e.py::test_a_map_draws_its_terrain_layer_types_widths_hidden_and_picked_features_legend_style_and_controls"
+      }
+    ],
+    "map[].style.buildings": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_map_keys_e2e.py::test_a_map_draws_its_terrain_layer_types_widths_hidden_and_picked_features_legend_style_and_controls"
+      }
+    ],
+    "map[].style.parks": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_map_keys_e2e.py::test_a_map_draws_its_terrain_layer_types_widths_hidden_and_picked_features_legend_style_and_controls"
+      }
+    ],
+    "map[].style.points": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_map_keys_e2e.py::test_a_map_draws_its_terrain_layer_types_widths_hidden_and_picked_features_legend_style_and_controls"
+      }
+    ],
+    "map[].style.polygons": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_map_keys_e2e.py::test_a_map_draws_its_terrain_layer_types_widths_hidden_and_picked_features_legend_style_and_controls"
+      }
+    ],
+    "map[].style.polylines": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_map_keys_e2e.py::test_a_map_draws_its_terrain_layer_types_widths_hidden_and_picked_features_legend_style_and_controls"
+      }
+    ],
+    "map[].style.roads": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_map_keys_e2e.py::test_a_map_draws_its_terrain_layer_types_widths_hidden_and_picked_features_legend_style_and_controls"
+      }
+    ],
+    "map[].style.surface": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_map_keys_e2e.py::test_a_map_draws_its_terrain_layer_types_widths_hidden_and_picked_features_legend_style_and_controls"
+      }
+    ],
+    "map[].style.water": [
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_map_keys_e2e.py::test_a_map_draws_its_terrain_layer_types_widths_hidden_and_picked_features_legend_style_and_controls"
+      }
+    ],
+    "map[].terrain": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a map raised on a band of a GeoTIFF the document loads]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_map_keys_e2e.py::test_a_map_draws_its_terrain_layer_types_widths_hidden_and_picked_features_legend_style_and_controls"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/utils/autkMapAndPassTables.test.ts::a map's terrain::names a table the document reads: the raster its ground rises to, in its map's workspace"
+      }
+    ],
+    "map[].terrain.band": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a map raised on a band of a GeoTIFF the document loads]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_map_keys_e2e.py::test_a_map_draws_its_terrain_layer_types_widths_hidden_and_picked_features_legend_style_and_controls"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/utils/autkMapAndPassTables.test.ts::a map's terrain::names a table the document reads: the raster its ground rises to, in its map's workspace"
+      }
+    ],
+    "map[].terrain.dataRef": [
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[a map raised on a band of a GeoTIFF the document loads]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_map_keys_e2e.py::test_a_map_draws_its_terrain_layer_types_widths_hidden_and_picked_features_legend_style_and_controls"
+      },
+      {
+        "test": "utk_curio/frontend/urban-workflows/src/tests/utils/autkMapAndPassTables.test.ts::a map's terrain::names a table the document reads: the raster its ground rises to, in its map's workspace"
+      }
     ]
   },
   "renamedKeys": {
