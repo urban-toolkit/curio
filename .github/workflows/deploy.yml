@@ -228,6 +228,16 @@ jobs:
               || echo "::warning::could not give /srv/curio-model-weights to the container's root"
             weights_args=', "--model-weights-dir", "/model-weights"'
           fi
+          # The monitor's histories, when this release's launcher has the
+          # flag: kept in this stack's own folder outside the checkout, which
+          # the wipe of .curio below leaves, so they outlive each deploy.
+          # Docker makes the folder, root's, as the server runs; the backend
+          # keeps it its own.
+          monitor_args=""
+          monitor_dir=/srv/curio-monitor/dev
+          if grep -q -e '"--monitor-dir"' utk_curio/main.py; then
+            monitor_args=', "--monitor-dir", "/monitor"'
+          fi
           # Cache files takes a file of up to 8 GiB, when this release's
           # launcher has the flag: SideSeeing's longest walks are 7 GiB videos.
           cache_args=""
@@ -321,15 +331,18 @@ jobs:
               ulimits:
                 nofile: {soft: 65536, hard: 65536}
           SITE
-          printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s%s%s%s%s]\n' "$llm_args" "$weights_args" "$cache_args" "$download_args" "$guest_args" "$mounts_args" "$processes_args" >> docker-compose.site.yml
+          printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s%s%s%s%s%s]\n' "$llm_args" "$weights_args" "$cache_args" "$download_args" "$guest_args" "$monitor_args" "$mounts_args" "$processes_args" >> docker-compose.site.yml
           # Curio's binds: the weights folder both stacks share, which the
-          # server writes as it downloads a model's weights on first use, and
-          # this stack's bucket mounts, read-only and rslave. Each replaces an
-          # overlay's bind of the same target whole, so each is written in
-          # full.
+          # server writes as it downloads a model's weights on first use, this
+          # stack's monitor folder, and this stack's bucket mounts, read-only
+          # and rslave. Each replaces an overlay's bind of the same target
+          # whole, so each is written in full.
           curio_volumes=""
           if [ -n "$weights_args" ]; then
             curio_volumes='"/srv/curio-model-weights:/model-weights"'
+          fi
+          if [ -n "$monitor_args" ]; then
+            curio_volumes="${curio_volumes:+$curio_volumes, }{type: bind, source: $monitor_dir, target: /monitor, bind: {create_host_path: true}}"
           fi
           if [ -n "$mounts_args" ]; then
             curio_volumes="${curio_volumes:+$curio_volumes, }{type: bind, source: $mounts_dir, target: /bucket-mounts, read_only: true, bind: {propagation: rslave, create_host_path: true}}"
@@ -667,6 +680,13 @@ jobs:
                 || echo "::warning::could not give /srv/curio-model-weights to the container's root"
               weights_args=', "--model-weights-dir", "/model-weights"'
             fi
+            # The monitor's histories, as curio-dev keeps them, in stable's
+            # own folder, for a release whose launcher has the flag.
+            monitor_args=""
+            monitor_dir=/srv/curio-monitor/stable
+            if grep -q -e '"--monitor-dir"' utk_curio/main.py; then
+              monitor_args=', "--monitor-dir", "/monitor"'
+            fi
             # The file size Cache files takes, as curio-dev's, for a release
             # whose launcher has the flag.
             cache_args=""
@@ -730,11 +750,14 @@ jobs:
               ulimits:
                 nofile: {soft: 65536, hard: 65536}
           SITE
-            printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s%s%s%s%s]\n' "$llm_args" "$weights_args" "$cache_args" "$download_args" "$guest_args" "$mounts_args" "$processes_args" >> docker-compose.site.yml
+            printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s%s%s%s%s%s]\n' "$llm_args" "$weights_args" "$cache_args" "$download_args" "$guest_args" "$monitor_args" "$mounts_args" "$processes_args" >> docker-compose.site.yml
             # Curio's binds and the service's, as curio-dev writes them.
             curio_volumes=""
             if [ -n "$weights_args" ]; then
               curio_volumes='"/srv/curio-model-weights:/model-weights"'
+            fi
+            if [ -n "$monitor_args" ]; then
+              curio_volumes="${curio_volumes:+$curio_volumes, }{type: bind, source: $monitor_dir, target: /monitor, bind: {create_host_path: true}}"
             fi
             if [ -n "$mounts_args" ]; then
               curio_volumes="${curio_volumes:+$curio_volumes, }{type: bind, source: $mounts_dir, target: /bucket-mounts, read_only: true, bind: {propagation: rslave, create_host_path: true}}"
