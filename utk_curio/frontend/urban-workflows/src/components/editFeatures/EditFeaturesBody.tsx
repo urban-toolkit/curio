@@ -317,7 +317,10 @@ export function EditFeaturesBody({
       const ids = keyColumns(l.fc);
       const saved = settings?.keys?.[name] ?? (name === ownLayer ? settings?.key : undefined);
       const layerKey = saved && ids.includes(saved) ? saved : defaultKey(ids) ?? ids[0];
-      return { name, label, table: l.table, ownName: l.name !== null, fc: l.fc as WorkbenchLayer["fc"], key: layerKey };
+      return {
+        name, label, table: l.table, ownName: l.name !== null, fc: l.fc as WorkbenchLayer["fc"], key: layerKey,
+        ...(l.layerType ? { layerType: l.layerType } : {}),
+      };
     });
     const first = input[0]?.fc;
     const made = (settings?.newLayers ?? []).map((def) => ({

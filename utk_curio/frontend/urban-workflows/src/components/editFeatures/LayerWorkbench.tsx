@@ -61,7 +61,7 @@ import { mapTableName } from "../../utils/editFeatures/mapEditsPreview";
 import { withPart } from "../../utils/editFeatures/geometryParts";
 // The form of a feature of several parts (#1110).
 import { idKey } from "../../utils/editFeatures/applyEdits";
-import { PART_COLUMN, partConditions, partsForm, valueText } from "../../utils/editFeatures/featureParts";
+import { PART_COLUMN, buildingDefault, partConditions, partsForm, valueText } from "../../utils/editFeatures/featureParts";
 import { NodeType } from "../../constants";
 import LayerList from "./LayerList";
 import NewLayerForm from "./NewLayerForm";
@@ -103,6 +103,8 @@ export interface WorkbenchLayer {
   key?: string;
   /** Set for a layer the node makes. */
   newLayer?: NewLayerDef;
+  /** The type the input's layer is drawn as (`buildings`), when it names one. */
+  layerType?: string;
 }
 
 export type Action = "add" | "edit" | "remove" | "property";
@@ -232,9 +234,12 @@ export default function LayerWorkbench({
   const partWheres = useMemo(() => (layerKey && pickedRows.length > 1 ? partConditions(pickedRows, layerKey) : null), [pickedRows, layerKey]);
   const partKeys = pickedRows.map((row) => idKey(row.properties[PART_COLUMN]) ?? "");
   const chosenAt = partWheres && partChoice !== null ? partKeys.indexOf(partChoice) : -1;
+  // A part of a buildings layer with no height shows the height the map draws
+  // it at, marked as the default (featureParts `buildingDefault`).
+  const defaultOf = active?.layerType === "buildings" ? buildingDefault : undefined;
   const form = useMemo(
-    () => partsForm(pickedRows, defs.map((def) => def.name), chosenAt >= 0 ? pickedRows[chosenAt] : null),
-    [pickedRows, defs, chosenAt],
+    () => partsForm(pickedRows, defs.map((def) => def.name), chosenAt >= 0 ? pickedRows[chosenAt] : null, defaultOf),
+    [pickedRows, defs, chosenAt, defaultOf],
   );
   // Its fields start on the values the form shows; one the parts differ in
   // starts on none, until something is typed or chosen in it.

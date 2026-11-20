@@ -64,7 +64,9 @@ import ProvenanceProvider, { useProvenanceContext } from "../../../providers/Pro
 import { editFeaturesCode, readEditFeaturesCode, type EditFeaturesSettings } from "../../../utils/editFeatures/editFeatures";
 import { editSelection } from "../../../utils/editFeatures/mapEditSelection";
 import { toMercator } from "../../../utils/editFeatures/mapEditBus";
-import { drawnExports, drawnMaps, grammarRuns, heldDraws, nodeInput, resetAutkNodeMocks } from "../../_support/autkNodeMocks";
+import {
+  drawnExports, drawnMaps, grammarRuns, heldDraws, inputsByPath, nodeInput, resetAutkNodeMocks,
+} from "../../_support/autkNodeMocks";
 import { stubWebGpu, unstubWebGpu } from "../../_support/autkNode";
 
 const LOADER = "buildings";
@@ -1244,6 +1246,51 @@ test("a building of two parts, each with its own osm_id, opens on all its parts:
   const after = partsMenu();
   must(after, "The parts menu left the form after an Apply on all the parts of building 136.");
   expect(optionTexts(after)).toEqual(["All 2 parts", "osm_id 136", "osm_id 1361"]);
+});
+
+/** OSM_PARTED with building 136's first part holding no height, as OpenStreetMap leaves a part. */
+const OSM_PARTED_NO_HEIGHT = {
+  ...OSM_PARTED,
+  features: OSM_PARTED.features.map((feature) => (feature.properties.osm_id === 136
+    ? { ...feature, properties: { building_id: 136, osm_id: 136 } }
+    : feature)),
+};
+
+test("a part of a buildings layer with no height shows the height the map draws it at, 6 m, marked as the default, and keeps none", async () => {
+  // Handed on as buildings, to the node and to its map.
+  const buildings = { dataType: "geodataframe", data: OSM_PARTED_NO_HEIGHT, layerType: "buildings" };
+  inputsByPath.current = { [LOADED.path]: buildings, [COMMITTED.path]: buildings };
+  const canvas = mountCanvas();
+  await canvas.playMap();
+  await openAction("edit");
+
+  // Building 136 picked: its parts are 6 m by default and 30 m tall, so its
+  // height is empty, and the note lists the default, marked.
+  pickOnMap([1]);
+  const height = (await screen.findByTestId("interaction-field-height")) as HTMLInputElement;
+  must(height.value === "", `The form shows the height ${JSON.stringify(height.value)} for building 136's two parts.`);
+  const listed = screen.queryByTestId("interaction-mixed-height");
+  must(
+    listed?.textContent === "2 values: 6 (default), 30",
+    `No note lists building 136's heights as "2 values: 6 (default), 30": the note reads ${JSON.stringify(listed?.textContent ?? null)}.`,
+  );
+  const menu = partsMenu();
+  must(menu, "There is no parts menu: the form of building 136, of two parts, works on its first part alone.");
+  expect(optionTexts(menu)).toEqual(["All 2 parts", "osm_id 136, height 6 (default)", "osm_id 1361, height 30"]);
+
+  // The part with no height chosen: its field holds none, and shows the
+  // default, marked, in its place.
+  choose(menu, "osm_id 136, height 6 (default)");
+  await waitFor(() => expect(fieldOf("height").placeholder).toBe("6 (default)"));
+  expect(fieldOf("height").value).toBe("");
+  // Nothing typed: Apply is off, and nothing is written.
+  expect(screen.getByTestId("interaction-form-submit")).toBeDisabled();
+  expect(canvas.settings()?.edits ?? []).toEqual([]);
+
+  // The part with a height chosen: its own, and no default.
+  choose(menu, "osm_id 1361, height 30");
+  await waitFor(() => expect(fieldOf("height").value).toBe("30"));
+  expect(fieldOf("height").placeholder).toBe("");
 });
 
 /** OSM_PARTED with each row's levels too: 2, then 3 and 4 for building 136's parts, then 5. */
