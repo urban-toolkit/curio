@@ -1,4 +1,4 @@
-"""Each model's LLM tokens, per UTC hour, for the running process.
+"""Each model's LLM tokens over the last 90 days, kept across restarts.
 
 ``agents/infrastructure/providers.py`` records every request here once, right
 after the request, with the usage its provider reported (:func:`record`): the
@@ -7,9 +7,12 @@ input and output tokens, and whether the model ran on this Curio's own endpoint
 ``GET /api/monitor/llm`` publishes :func:`snapshot`: the hourly rows of the
 last 7 days, and each model's totals over 24 hours, 7 days and every hour kept.
 
-The rows are the monitor history ``llm-tokens`` (``history.py``): written to
-``.curio/monitor/llm-tokens.json`` as they change, started over when the
-backend starts, and at most 90 days of hours, the oldest going first.
+The rows are the monitor history ``llm-tokens`` (``history.py``), one file
+every backend process writes, ``llm-tokens.json`` in the monitor folder: a
+request adds to the row its process holds for its 5 minutes, model and
+endpoint, which the process's writer adds to the file's within a minute. The
+route reads the file alone, so a request shows once its process wrote it, and
+each process's requests are counted once.
 
 THE ONE FREE TEXT ON AN AGGREGATE ROUTE. The model names are the owner's call:
 Curio's own and the ones users type for their own keys both appear on this
@@ -17,20 +20,13 @@ public page. A name that is not plainly a model's (a URL, a host, an email
 address, an IP address, something shaped like a key, spaces, more than
 :data:`MAX_MODEL_CHARS` characters) is recorded as :data:`OTHER`
 (:func:`public_model_name`). A day holds at most :data:`MAX_MODELS_PER_DAY`
-names and the route lists at most :data:`MAX_MODELS_SHOWN`, the rest counted
-as :data:`OTHER`, so the file and the page stay bounded whatever names arrive.
+names, counted as the file takes each (:func:`_admitted`), and the route lists
+at most :data:`MAX_MODELS_SHOWN`, the rest counted as :data:`OTHER`, so the
+file and the page stay bounded whatever names arrive.
 
 THE CACHE. As the storage walk's: the route's body is held for
-:data:`TTL_SECONDS` and recomputed under the lock, and sooner once the history
-changed (``History.version``), so the page sees a request at its next poll.
-
-SEVERAL BACKEND PROCESSES. Each process records the requests of the turns it
-runs, in its own rows and file. The home process's route asks every other
-process for its :func:`part`, counted against the home process's clock
-(:func:`asked_at`), and :func:`merged` shows them as one process holding every
-row would: rows of the same hour and model summed, then the models past
-:data:`MAX_MODELS_SHOWN` counted as :data:`OTHER`. That body is computed at
-each call, since another process's rows change without this one's version.
+:data:`TTL_SECONDS` and recomputed under the lock, and sooner once the file
+changed (``History.stamp``), so the page sees a write at its next poll.
 
 Never raises, as ``counters.py`` never does: a request must never fail over its
 bookkeeping.
@@ -58,12 +54,11 @@ MAX_MODELS_PER_DAY = 20
 #: The models the route lists, by tokens kept; the rest are summed as :data:`OTHER`.
 MAX_MODELS_SHOWN = 40
 
-#: Each row: ``{hour, model, curio, inputTokens, outputTokens, requests}``.
-HISTORY = monitor_history.History("llm-tokens")
-
 _FIELDS = ("inputTokens", "outputTokens", "requests")
 #: The windows each model's totals cover.
 _WINDOWS = ("last24h", "last7d", "kept")
+#: What a row counts: its model, and whether it ran on Curio's own endpoint.
+_IDENTITY = ("model", "curio")
 
 # -- what is plainly a model's name --------------------------------------------
 
@@ -106,103 +101,70 @@ def public_model_name(model) -> str:
     return name
 
 
+def _admitted(rows: list[dict], held: list[dict]) -> list[dict]:
+    """The rows a write *held*, oldest first, as the file takes them beside
+    its *rows*: each under its own model while its UTC day holds fewer than
+    :data:`MAX_MODELS_PER_DAY` other models, else as :data:`OTHER`."""
+    days: dict = {}
+    for row in rows:
+        days.setdefault(str(row.get("at"))[:10], set()).add((row.get("model"), row.get("curio")))
+    admitted = []
+    for row in held:
+        names = days.setdefault(str(row.get("at"))[:10], set())
+        key = (row.get("model"), row.get("curio"))
+        if key not in names and len(names) >= MAX_MODELS_PER_DAY:
+            row = {**row, "model": OTHER}
+            key = (OTHER, row.get("curio"))
+        names.add(key)
+        admitted.append(row)
+    return admitted
+
+
+def _history_now() -> datetime:
+    """Now, read through :func:`_now` at each call, so a test's clock reaches the history."""
+    return _now()
+
+
+#: Each row: ``{at, span, model, curio, inputTokens, outputTokens, requests}``.
+HISTORY = monitor_history.History("llm-tokens", identity=_IDENTITY, admit=_admitted, clock=_history_now)
+
+
 def record(model, *, curio: bool, input_tokens, output_tokens) -> None:
-    """Count one request that *model* answered, in this UTC hour. Never raises."""
+    """Count one request that *model* answered, now. Never raises."""
     try:
-        name = public_model_name(model)
-        curio = bool(curio)
-        hour = _now().strftime(monitor_history.HOUR)
-        added = {"inputTokens": _count(input_tokens), "outputTokens": _count(output_tokens), "requests": 1}
-
-        def add(rows: list[dict]) -> None:
-            day = _rows_of_day(rows, hour[:10])
-            names = {(row["model"], row["curio"]) for row in day}
-            key = (name, curio)
-            if key not in names and len(names) >= MAX_MODELS_PER_DAY:
-                key = (OTHER, curio)
-            row = next((row for row in day if (row["hour"], row["model"], row["curio"]) == (hour, *key)), None)
-            if row is None:
-                row = {"hour": hour, "model": key[0], "curio": key[1], **_zero()}
-                rows.append(row)
-            for field, value in added.items():
-                row[field] += value
-
-        HISTORY.update(add)
-    except Exception:  # noqa: BLE001 - a request never fails over its bookkeeping
-        pass
+        HISTORY.add({
+            "model": public_model_name(model),
+            "curio": bool(curio),
+            "inputTokens": _count(input_tokens),
+            "outputTokens": _count(output_tokens),
+            "requests": 1,
+        }, at=_now())
+    except Exception:  # noqa: BLE001
+        # A request never fails over its bookkeeping.
+        return
 
 
 def snapshot() -> dict:
     """The route's body: the hourly rows of the last :data:`HOURLY_HOURS`
-    hours and each model's totals, computed again once the history changed,
+    hours and each model's totals, computed again once the file changed,
     else at most once per :data:`TTL_SECONDS`."""
     now = time.monotonic()
     with _LOCK:
-        version = HISTORY.version
+        stamp = HISTORY.stamp()
         cached = _cache.get("value")
         age = now - _cache.get("at", 0.0)
-        if cached is not None and _cache.get("version") == version and age < TTL_SECONDS:
+        if cached is not None and _cache.get("stamp") == stamp and age < TTL_SECONDS:
             return _with_age(cached, age)
         value = _summarise()
-        _cache.update(value=value, at=time.monotonic(), version=version)
+        _cache.update(value=value, at=time.monotonic(), stamp=stamp)
         return _with_age(value, 0.0)
 
 
-def asked_at() -> dict:
-    """What the home process asks every other process for its :func:`part`
-    with: its clock, which each counts its tokens against, so every process's
-    hours and windows are the home process's."""
-    return {"now": _now().strftime(monitor_history.STAMP)}
-
-
-def part(arguments: dict) -> dict:
-    """This process's tokens as another backend process of its start sends
-    them to the home process (``processes.py``), counted against the clock
-    *arguments* names (:func:`asked_at`): each model's rows of the last
-    :data:`HOURLY_HOURS` hours and its totals, none counted as :data:`OTHER`
-    yet, and when this process's history began."""
-    tally = _tally(HISTORY.rows(), _moment(arguments))
-    return {
-        "startedAt": HISTORY.started_at.strftime(monitor_history.STAMP),
-        "hourly": [{"hour": hour, "model": model, "curio": curio, **counts}
-                   for (hour, model, curio), counts in tally["hourly"].items()],
-        "totals": [{"model": model, "curio": curio, **windows}
-                   for (model, curio), windows in tally["totals"].items()],
-    }
-
-
-def merged(arguments: dict, others: list) -> dict:
-    """The route's body in a start of several backend processes: this
-    process's tokens and every other process's :func:`part`, counted against
-    the clock *arguments* names, as one process holding every row would show
-    them. Computed at each call."""
-    now = _moment(arguments)
-    tally = _tally(HISTORY.rows(), now)
-    started = HISTORY.started_at.strftime(monitor_history.STAMP)
-    for each in others:
-        if not isinstance(each, dict):
-            continue
-        _add_tally(tally, _tally_of_part(each))
-        begun = each.get("startedAt")
-        if isinstance(begun, str) and begun < started:
-            started = begun
-    return _with_age(_present(tally, now, started), 0.0)
-
-
 def reset() -> None:
-    """Drop every row, as a backend start does, and the cache. For tests only."""
-    HISTORY.start()
+    """Drop what this process holds unwritten, and the cache. For tests only."""
+    HISTORY.drop_pending()
     with _LOCK:
-        _cache.update(value=None, at=0.0, version=None)
-
-
-def _moment(arguments) -> datetime:
-    """The clock *arguments* names (:func:`asked_at`), else this process's."""
-    text = arguments.get("now") if isinstance(arguments, dict) else None
-    try:
-        return datetime.strptime(text, monitor_history.STAMP).replace(tzinfo=timezone.utc)
-    except (TypeError, ValueError):
-        return _now()
+        _cache.update(value=None, at=0.0, stamp=None)
 
 
 def _now() -> datetime:
@@ -225,17 +187,6 @@ def _add(total: dict, row: dict) -> None:
         total[field] += row[field]
 
 
-def _rows_of_day(rows: list[dict], day: str) -> list[dict]:
-    """The rows of *day* (``YYYY-MM-DD``) at the end of *rows*, where the
-    newest are."""
-    found = []
-    for row in reversed(rows):
-        if not row["hour"].startswith(day):
-            break
-        found.append(row)
-    return found
-
-
 def _counted(row: dict) -> bool:
     return isinstance(row.get("model"), str) and isinstance(row.get("curio"), bool) and all(
         isinstance(row.get(field), int) and not isinstance(row.get(field), bool) for field in _FIELDS)
@@ -254,15 +205,21 @@ def _shown(totals: dict) -> set:
 
 
 def _summarise() -> dict:
+    """The body, from the file's rows summed by hour: the 5-minute rows of
+    the last 24 hours and the hour rows before them."""
     now = _now()
-    return _present(_tally(HISTORY.rows(), now), now, HISTORY.started_at.strftime(monitor_history.STAMP))
+    rows = HISTORY.rows(now=now)
+    hours = monitor_history.sums_by(rows, "hour", _IDENTITY)
+    started = rows[0]["at"] if rows else now.strftime(monitor_history.STAMP)
+    return _present(_tally([{**row, "hour": row["at"]} for row in hours], now), now, started)
 
 
 def _tally(rows: list, now: datetime) -> dict:
-    """*rows* counted against *now*: each model's tokens per hour of the last
-    :data:`HOURLY_HOURS` hours (``hourly``, by hour, model and endpoint) and
-    each model's totals over the 24 hours, the 7 days and every hour kept
-    (``totals``, by model and endpoint), no model counted as :data:`OTHER`."""
+    """*rows*, one per hour, model and endpoint, counted against *now*: each
+    model's tokens per hour of the last :data:`HOURLY_HOURS` hours (``hourly``,
+    by hour, model and endpoint) and each model's totals over the 24 hours,
+    the 7 days and every hour kept (``totals``, by model and endpoint), no
+    model counted as :data:`OTHER`."""
     hour = now.replace(minute=0, second=0, microsecond=0)
     first = hour - timedelta(hours=HOURLY_HOURS - 1)
     day_ago = hour - timedelta(hours=23)
@@ -284,42 +241,11 @@ def _tally(rows: list, now: datetime) -> dict:
     return {"hourly": hourly, "totals": totals}
 
 
-def _tally_of_part(each: dict) -> dict:
-    """Another process's :func:`part` as a tally; what is not counts is left out."""
-    tally: dict = {"hourly": {}, "totals": {}}
-    for row in each.get("hourly") or ():
-        if isinstance(row, dict) and monitor_history.hour_of(row.get("hour")) is not None and _counted(row):
-            _add(tally["hourly"].setdefault((row["hour"], row["model"], row["curio"]), _zero()), row)
-    for entry in each.get("totals") or ():
-        if not isinstance(entry, dict) or not isinstance(entry.get("model"), str) or not isinstance(
-                entry.get("curio"), bool):
-            continue
-        if not all(isinstance(entry.get(window), dict) and _counted_counts(entry[window]) for window in _WINDOWS):
-            continue
-        windows = tally["totals"].setdefault((entry["model"], entry["curio"]), _windows())
-        for window in _WINDOWS:
-            _add(windows[window], entry[window])
-    return tally
-
-
-def _add_tally(tally: dict, more: dict) -> None:
-    """Add the tally *more* into *tally*."""
-    for key, counts in more["hourly"].items():
-        _add(tally["hourly"].setdefault(key, _zero()), counts)
-    for key, windows in more["totals"].items():
-        into = tally["totals"].setdefault(key, _windows())
-        for window in _WINDOWS:
-            _add(into[window], windows[window])
-
-
-def _counted_counts(counts: dict) -> bool:
-    return all(isinstance(counts.get(field), int) and not isinstance(counts.get(field), bool) for field in _FIELDS)
-
-
 def _present(tally: dict, now: datetime, started: str) -> dict:
     """The route's body from *tally*, counted against *now*, of a history
-    begun at *started*: the models past :data:`MAX_MODELS_SHOWN` counted as
-    :data:`OTHER`, most tokens kept first, and the hourly rows in order."""
+    whose oldest row kept began at *started*: the models past
+    :data:`MAX_MODELS_SHOWN` counted as :data:`OTHER`, most tokens kept first,
+    and the hourly rows in order."""
     hour = now.replace(minute=0, second=0, microsecond=0)
     first = hour - timedelta(hours=HOURLY_HOURS - 1)
     shown = _shown(tally["totals"])

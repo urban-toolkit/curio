@@ -16,13 +16,13 @@ def _uses_reloader():
     return os.getenv('FLASK_USE_RELOADER', '1') != '0'
 
 
+#: Whether this process serves. Under the reloader the process the launcher
+#: started only watches the files, and the process it starts serves.
+SERVES = not _uses_reloader() or is_running_from_reloader()
+
 #: Whether this process does the startup work: the home process
-#: (``common/backend_processes.py``), when it serves. Under the reloader the
-#: process the launcher started only watches the files, and the process it
-#: starts serves and does the work.
-DOES_STARTUP_WORK = backend_processes.is_home() and (
-    not _uses_reloader() or is_running_from_reloader()
-)
+#: (``common/backend_processes.py``), when it serves.
+DOES_STARTUP_WORK = backend_processes.is_home() and SERVES
 
 
 # Shared with sandbox/server.py; see utk_curio/backend/reloader.py.
@@ -168,6 +168,13 @@ def serve():
     # SIGUSR1 writes every thread's stack to a file (thread_stacks.py), which
     # the stress jobs ask for after a tier with failures.
     thread_stacks.register()
+    # What this process holds of the monitor's histories is written when it
+    # stops: on SIGTERM, which is how the launcher stops a backend, and at
+    # exit (monitor/history.py).
+    from utk_curio.backend.app.monitor import history as monitor_history
+
+    if SERVES:
+        monitor_history.write_on_stop()
 
     # The connection DuckDB 1.x's import opens holds a thread per core and
     # serves nothing here (2.0 opens it on first use only). Imported now, so a
@@ -187,6 +194,10 @@ def serve():
 
     if monitor_open_files.sampler_starts_here(DOES_STARTUP_WORK):
         monitor_open_files.start_sampler(app)
+    # What this process holds of the monitor's histories, written every
+    # minute into the files every process shares.
+    if SERVES:
+        monitor_history.start_writer()
     if DOES_STARTUP_WORK:
         from utk_curio.backend.app.discovery import service as discovery_service
 

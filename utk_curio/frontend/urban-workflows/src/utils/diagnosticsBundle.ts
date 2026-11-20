@@ -133,7 +133,7 @@ export function toMarkdown({ monitor, storage, errors, llm, openFiles }: Diagnos
   if (llm) {
     lines.push("", "### LLM tokens", `_Since ${llm.startedAt}, at most ${llm.maxDays} days._`, "");
     if (llm.models.length === 0) {
-      lines.push("_No LLM requests since the backend started._");
+      lines.push(`_No LLM requests in the last ${llm.maxDays} days._`);
     }
     for (const entry of llm.models) {
       // A backtick in a name a user typed would end the code span early.

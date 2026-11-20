@@ -394,9 +394,17 @@ describe("MonitorPage", () => {
     test("an instance no model answered says so, and draws no chart", async () => {
       (fetchMonitorLlm as jest.Mock).mockResolvedValue({ ...llmPayload, hourly: [], models: [] });
       renderPage();
-      expect(await screen.findByText("No LLM requests since the backend started.")).toBeInTheDocument();
+      expect(await screen.findByText("No LLM requests in the last 90 days.")).toBeInTheDocument();
       expect(screen.getAllByText("No LLM requests in the last 7 days.")).toHaveLength(2);
       expect(screen.queryByTestId("lines-chart")).not.toBeInTheDocument();
+    });
+
+    test("the table says it holds the last 90 days, kept across restarts", async () => {
+      renderPage();
+      expect(await screen.findByTestId("monitor-llm-kept")).toHaveTextContent(
+        "The last 90 days, kept across restarts."
+      );
+      expect(screen.queryByText(/since the backend started/i)).not.toBeInTheDocument();
     });
   });
 

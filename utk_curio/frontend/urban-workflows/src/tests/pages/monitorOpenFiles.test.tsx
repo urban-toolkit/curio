@@ -147,6 +147,15 @@ describe("the Open files card", () => {
     expect(screen.queryByTestId("monitor-open-files-last")).not.toBeInTheDocument();
   });
 
+  test("says it holds a sample every hour of the last 90 days, kept across restarts", () => {
+    render(<OpenFilesSection payload={SHARED} />);
+    expect(screen.getByTestId("monitor-open-files-kept")).toHaveTextContent(
+      "A sample every hour, the last 90 days, kept across restarts. A server above 80% of its limit adds an " +
+        "entry to Recent errors."
+    );
+    expect(screen.queryByText(/since the backend started/i)).not.toBeInTheDocument();
+  });
+
   test("while its first read is on the way, says it is loading", () => {
     render(<OpenFilesSection payload={null} />);
     expect(screen.getByRole("heading", { name: "Open files" })).toBeInTheDocument();

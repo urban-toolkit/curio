@@ -320,7 +320,7 @@ describe("toMarkdown", () => {
 
   test("says when no model answered, and leaves the section out with no payload", () => {
     expect(toMarkdown({ ...bundle, llm: { ...llm(), models: [] } })).toContain(
-      "_No LLM requests since the backend started._"
+      "_No LLM requests in the last 90 days._"
     );
     expect(toMarkdown(bundle)).not.toContain("LLM tokens");
     expect(toMarkdown({ ...bundle, llm: null })).not.toContain("LLM tokens");

@@ -1,11 +1,13 @@
 /**
  * The monitor of a backend that runs as several processes (`curio.py start
- * --backend-processes N`). The home process merges every process's part, and
- * each payload's `backendProcesses` says which processes answered. A process
- * that did not answer is named in one line over the sections, and with several
- * processes the Open files card says that its backend line is the busiest
- * process. A backend of one process sends no `backendProcesses`, and neither
- * line shows.
+ * --backend-processes N`). The home process merges every process's part of
+ * the monitor's own payload and the errors', and each of the two says which
+ * processes answered in `backendProcesses`: a process that did not answer is
+ * named in one line over the sections. The LLM tokens and the open files are
+ * files every process writes, so their payloads carry no `backendProcesses`;
+ * each hour's open-files sample names its busiest process, and the Open files
+ * card then says its backend line is the busiest process. A backend of one
+ * process names no process, and neither line shows.
  *
  * The charts are mocked: vega does not render under jsdom.
  */
@@ -135,7 +137,7 @@ describe("the monitor of several backend processes", () => {
   });
 
   test("names a process that did not answer in one line, and says nothing once every process answered", async () => {
-    serve({ monitor: processes(3, [2]), errors: processes(3), llm: processes(3), openFiles: processes(3) });
+    serve({ monitor: processes(3, [2]), errors: processes(3) });
     const first = render(<MonitorContent />);
     expect(
       await screen.findByText("Backend process 2 did not answer; its numbers are left out.")
@@ -144,7 +146,7 @@ describe("the monitor of several backend processes", () => {
     expect(screen.getByText("1482")).toBeInTheDocument();
     first.unmount();
 
-    serve({ monitor: processes(3), errors: processes(3), llm: processes(3), openFiles: processes(3) });
+    serve({ monitor: processes(3), errors: processes(3) });
     const second = render(<MonitorContent />);
     expect(await screen.findByText("1482")).toBeInTheDocument();
     expect(screen.queryByText(/did not answer/)).not.toBeInTheDocument();
@@ -157,12 +159,10 @@ describe("the monitor of several backend processes", () => {
     expect(screen.queryByText(/did not answer/)).not.toBeInTheDocument();
   });
 
-  test("names every process any payload left out, once each and in order", async () => {
+  test("names every process either payload left out, once each and in order", async () => {
     serve({
-      monitor: processes(8, [5]),
-      errors: processes(8),
-      llm: processes(8, [2, 5]),
-      openFiles: processes(8, [7]),
+      monitor: processes(8, [5, 7]),
+      errors: processes(8, [2, 5]),
     });
     render(<MonitorContent />);
     expect(
@@ -171,10 +171,14 @@ describe("the monitor of several backend processes", () => {
   });
 
   test("with several processes the Open files card says its backend line is the busiest process", () => {
-    const eight = { ...openFilesPayload, ...processes(8) } as unknown as MonitorOpenFilesPayload;
-    const several = render(<OpenFilesSection payload={eight} />);
+    const named = {
+      ...openFilesPayload,
+      samples: openFilesPayload.samples.map((sample, index) => ({ ...sample, backendProcess: [3, 6][index] })),
+    } as unknown as MonitorOpenFilesPayload;
+    const several = render(<OpenFilesSection payload={named} />);
     expect(screen.getByTestId("monitor-open-files-processes")).toHaveTextContent(
-      "The backend runs as 8 processes: its line is the busiest one in each hour, against that process's own limit."
+      "With several backend processes, the backend line is the busiest one in each hour, against that " +
+        "process's own limit."
     );
     several.unmount();
 

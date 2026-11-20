@@ -1,9 +1,9 @@
-"""The LLM tokens the monitor keeps: per UTC hour and per model, for the running process.
+"""The LLM tokens the monitor keeps: per UTC hour and per model, kept across restarts.
 
 Two halves. The record (``monitor/llm_tokens.py``): what a request adds, how
 the totals split into 24 hours, 7 days and every hour kept, the 90 days the
-history holds, the file it writes, the backend start that starts it over, and
-which model names a public page may show. The hook
+history keeps, the file every process writes, which a backend start keeps,
+and which model names a public page may show. The hook
 (``agents/infrastructure/providers.py``): each request is counted once, right
 after it. A turn asked again counts each of its requests, never their running
 sum (``_summed_usage`` adds every request's usage up again after each one); a
@@ -12,7 +12,9 @@ the scripted provider counts what it scripted, which is what lets an e2e test
 see tokens.
 
 Each test's history file is in a folder of its own (``conftest.py``), and the
-clock is set by the test, so no test crosses an hour as it runs.
+clock is set by the test, so no test crosses an hour as it runs. The route
+reads the file, so a test writes what the process holds (:func:`_written`), as
+the process's writer does each minute, before it reads.
 """
 
 from __future__ import annotations
@@ -44,9 +46,18 @@ def _usage(input_tokens: int, output_tokens: int, requests: int) -> dict:
     return {"inputTokens": input_tokens, "outputTokens": output_tokens, "requests": requests}
 
 
+def _written() -> None:
+    """What this process holds of the tokens, written into the file, as the
+    process's writer does each minute."""
+    assert llm_tokens.HISTORY.flush() is True
+
+
 def _models(body: dict | None = None) -> dict:
-    """The route's models by ``(model, curio)``, in the route's order."""
-    body = body if body is not None else llm_tokens.snapshot()
+    """The route's models by ``(model, curio)``, in the route's order: of
+    *body*, else of the route once what the process holds is written."""
+    if body is None:
+        _written()
+        body = llm_tokens.snapshot()
     return {(entry["model"], entry["curio"]): entry for entry in body["models"]}
 
 
@@ -61,6 +72,7 @@ class TestTheRecord:
         llm_tokens.record("gemma4", curio=False, input_tokens=7, output_tokens=1)
         llm_tokens.record("gpt-5", curio=False, input_tokens=3, output_tokens=2)
 
+        _written()
         body = llm_tokens.snapshot()
         assert [(row["hour"], row["model"], row["curio"], row["inputTokens"], row["outputTokens"],
                  row["requests"]) for row in body["hourly"]] == [
@@ -91,6 +103,7 @@ class TestTheRecord:
             llm_tokens.record("gemma4", curio=True, input_tokens=tokens, output_tokens=0)
         clock.at = NOW
 
+        _written()
         body = llm_tokens.snapshot()
         totals = _models(body)[("gemma4", True)]
         assert totals["last24h"] == _usage(11, 0, 2)
@@ -104,15 +117,16 @@ class TestTheRecord:
 
     def test_the_history_holds_at_most_90_days_of_hours(self, clock):
         """Once full, the oldest hours go first: 90 days of hours counted back
-        from the newest, so a row 2,160 hours before it is gone."""
+        from the current hour, so a row 2,160 hours before it is gone."""
         hour = NOW.replace(minute=0, second=0)
         for hours, tokens in ((90 * 24, 1), (90 * 24 - 1, 10), (0, 100)):
             clock.at = NOW - timedelta(hours=hours)
             llm_tokens.record("gemma4", curio=True, input_tokens=tokens, output_tokens=0)
 
-        assert [row["hour"] for row in llm_tokens.HISTORY.rows()] == [
-            (hour - timedelta(hours=90 * 24 - 1)).strftime("%Y-%m-%dT%H:00:00Z"),
-            hour.strftime("%Y-%m-%dT%H:00:00Z"),
+        _written()
+        assert [(row["at"], row["span"]) for row in llm_tokens.HISTORY.rows()] == [
+            ((hour - timedelta(hours=90 * 24 - 1)).strftime("%Y-%m-%dT%H:00:00Z"), "1h"),
+            ("2026-11-06T15:20:00Z", "5m"),
         ]
         assert _models()[("gemma4", True)]["kept"] == _usage(110, 0, 2)
 
@@ -121,44 +135,50 @@ class TestTheRecord:
         llm_tokens.record("gpt-5", curio=False, input_tokens=3, output_tokens=2)
         llm_tokens.record("gemma4", curio=True, input_tokens=1, output_tokens=1)
 
+        _written()
         path = llm_tokens.HISTORY.path()
         assert path == monitor_history._folder() / "llm-tokens.json"
         doc = json.loads(path.read_text(encoding="utf-8"))
-        assert doc["name"] == "llm-tokens"
+        assert (doc["name"], doc["format"]) == ("llm-tokens", 2)
         assert doc["rows"] == llm_tokens.HISTORY.rows() == [
-            {"hour": "2026-11-06T15:00:00Z", "model": "gemma4", "curio": True,
+            {"at": "2026-11-06T15:20:00Z", "span": "5m", "model": "gemma4", "curio": True,
              "inputTokens": 101, "outputTokens": 21, "requests": 2},
-            {"hour": "2026-11-06T15:00:00Z", "model": "gpt-5", "curio": False,
+            {"at": "2026-11-06T15:20:00Z", "span": "5m", "model": "gpt-5", "curio": False,
              "inputTokens": 3, "outputTokens": 2, "requests": 1},
         ]
 
-    def test_a_backend_start_starts_the_tokens_over(self, clock):
+    def test_a_backend_start_keeps_the_tokens(self, clock):
         from utk_curio.backend.app import create_app
         from utk_curio.backend.tests._unit_fixtures import TestConfig
 
         llm_tokens.record("gemma4", curio=True, input_tokens=120, output_tokens=30)
         assert _models()[("gemma4", True)]["kept"] == _usage(120, 30, 1)
         path = llm_tokens.HISTORY.path()
-        assert json.loads(path.read_text(encoding="utf-8"))["rows"]
+        before = path.read_bytes()
 
         create_app(TestConfig)
+        llm_tokens.reset()  # the cache and what the process held, as a new process starts
 
-        # The file the last process wrote is written anew, and the route forgets it at once.
-        assert json.loads(path.read_text(encoding="utf-8"))["rows"] == []
-        assert llm_tokens.snapshot()["models"] == []
+        assert path.read_bytes() == before
+        assert _models()[("gemma4", True)]["kept"] == _usage(120, 30, 1)
 
-    def test_a_record_is_on_the_route_at_once(self, clock):
-        assert llm_tokens.snapshot()["models"] == []
+    def test_a_record_is_on_the_route_once_its_process_wrote_it(self, clock):
         llm_tokens.record("gemma4", curio=True, input_tokens=5, output_tokens=1)
-        # Well inside the 60 s the body is held for.
-        assert _models()[("gemma4", True)]["kept"] == _usage(5, 1, 1)
+        assert llm_tokens.snapshot()["models"] == []
+        _written()
+        # Well inside the 60 s the body is held for: the file changed.
+        assert _models(llm_tokens.snapshot())[("gemma4", True)]["kept"] == _usage(5, 1, 1)
 
-    def test_a_record_that_cannot_be_written_still_counts_and_never_raises(self, clock, tmp_path, monkeypatch):
+    def test_a_record_that_cannot_be_written_yet_is_kept_and_never_raises(self, clock, tmp_path, monkeypatch):
+        folder = monitor_history._folder()
         blocked = tmp_path / "a-file"
         blocked.write_text("not a folder", encoding="utf-8")
         monkeypatch.setattr(monitor_history, "_folder", lambda: blocked / "monitor")
 
         llm_tokens.record("gemma4", curio=True, input_tokens=1, output_tokens=1)
+        assert llm_tokens.HISTORY.flush() is False
+
+        monkeypatch.setattr(monitor_history, "_folder", lambda: folder)
         assert _models()[("gemma4", True)]["kept"] == _usage(1, 1, 1)
 
 
@@ -201,10 +221,30 @@ class TestModelNames:
             ("m1", False): 2, ("m2", False): 1, ("m3", False): 1, ("other", False): 2,
         }
 
+    def test_the_cap_counts_the_models_the_file_holds_whichever_write_brought_them(self, clock, monkeypatch):
+        """Each process writes what it holds every minute, so a day's models
+        come in many writes, by many processes: the cap is the day's in the
+        file, not one write's."""
+        monkeypatch.setattr(llm_tokens, "MAX_MODELS_PER_DAY", 3)
+        for name in ("m1", "m2"):
+            llm_tokens.record(name, curio=False, input_tokens=1, output_tokens=0)
+        _written()
+        clock.at = NOW + timedelta(hours=2)
+        for name in ("m3", "m4", "m1", "m5"):
+            llm_tokens.record(name, curio=False, input_tokens=1, output_tokens=0)
+        assert {key: entry["kept"]["requests"] for key, entry in _models().items()} == {
+            ("m1", False): 2, ("m2", False): 1, ("m3", False): 1, ("other", False): 2,
+        }
+        # The next day holds three of its own.
+        clock.at = NOW + timedelta(days=1)
+        llm_tokens.record("m4", curio=False, input_tokens=1, output_tokens=0)
+        assert _models()[("m4", False)]["kept"]["requests"] == 1
+
     def test_the_route_lists_the_models_with_most_tokens_and_sums_the_rest(self, clock, monkeypatch):
         monkeypatch.setattr(llm_tokens, "MAX_MODELS_SHOWN", 2)
         for name, tokens in (("big", 300), ("mid", 200), ("small", 10), ("tiny", 1)):
             llm_tokens.record(name, curio=True, input_tokens=tokens, output_tokens=0)
+        _written()
         body = llm_tokens.snapshot()
         assert [(entry["model"], entry["kept"]["inputTokens"], entry["kept"]["requests"])
                 for entry in body["models"]] == [("big", 300, 1), ("mid", 200, 1), ("other", 11, 2)]
@@ -342,4 +382,5 @@ class TestEachRequestCountsOnce:
         with pytest.raises(testing_provider.ScriptedEndpointError):
             providers.run_chat_turn(config, ASKED)
 
+        _written()
         assert llm_tokens.snapshot()["models"] == []

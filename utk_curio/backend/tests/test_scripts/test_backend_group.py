@@ -109,6 +109,18 @@ def test_each_backend_is_told_its_number_the_count_one_boot_id_every_port_and_th
     assert again.env(0)["CURIO_BACKEND_TOKEN"] not in secrets, "two starts made one secret"
 
 
+def test_every_backend_keeps_the_monitors_histories_in_the_folder_the_launcher_names(monkeypatch, tmp_path):
+    """``--monitor-dir`` is the launcher's ``CURIO_MONITOR_DIR``, which every
+    backend of a start of several inherits: all write the histories' one
+    folder, and none writes ``.curio/monitor`` while home writes the one
+    named."""
+    monkeypatch.setenv("CURIO_MONITOR_DIR", str(tmp_path / "monitor"))
+
+    booted = boot(monkeypatch, processes=3)
+
+    assert [booted.env(number).get("CURIO_MONITOR_DIR") for number in range(3)] == [str(tmp_path / "monitor")] * 3
+
+
 def test_without_proxy_hops_nginx_is_the_one_hop(monkeypatch):
     booted = boot(monkeypatch, processes=2)
     assert {booted.env(n)["CURIO_PROXY_HOPS"] for n in range(2)} == {"1"}

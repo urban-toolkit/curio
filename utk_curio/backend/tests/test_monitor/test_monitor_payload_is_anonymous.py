@@ -241,6 +241,8 @@ def test_the_llm_payload_names_models_and_nobody(client):
     )
     for model in typed:
         llm_tokens.record(model, curio=False, input_tokens=5, output_tokens=1)
+    # Written, as the process's writer does each minute: the route reads the file.
+    assert llm_tokens.HISTORY.flush() is True
 
     response = client.get("/api/monitor/llm")
     raw = response.get_data(as_text=True)
@@ -284,11 +286,17 @@ def test_the_open_files_payload_is_timestamps_and_numbers(client, monkeypatch):
     hour. The servers are its keys, so every string in it is a timestamp, and
     every other value a number or null."""
     # Imported here, so a tree without the sampler fails this test alone.
+    from datetime import datetime, timedelta, timezone
+
     from utk_curio.backend.app.monitor import open_files, routes
 
     open_files.reset()
+    # An hour keeps one row, so the two samples are an hour apart.
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr(open_files, "_now", lambda: now - timedelta(hours=1))
     monkeypatch.setattr(routes, "_sandbox_monitor", lambda: {"open_files": 96, "open_files_limit": 1024})
     open_files.sample()
+    monkeypatch.setattr(open_files, "_now", lambda: now)
     monkeypatch.setattr(routes, "_sandbox_monitor", lambda: None)
     open_files.sample()
 

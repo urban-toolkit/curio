@@ -30,10 +30,10 @@ function exactly(counts: MonitorLlmCounts): string {
 }
 
 /**
- * The monitor's LLM tokens, since the backend started: the last 24 hours as
- * tiles, each model's input and output tokens per hour over the last 7 days
- * as two charts, and each model's totals in a table, which also names the
- * lines' models and their numbers.
+ * The monitor's LLM tokens, kept across restarts: the last 24 hours as tiles,
+ * each model's input and output tokens per hour over the last 7 days as two
+ * charts, and each model's totals in a table, which also names the lines'
+ * models and their numbers.
  */
 export const LlmTokensSection: React.FC<{ payload: MonitorLlmPayload | null }> = ({ payload }) => {
   const lines = useMemo(() => (payload ? tokenLines(payload) : NO_LINES), [payload]);
@@ -151,7 +151,7 @@ export const LlmTokensSection: React.FC<{ payload: MonitorLlmPayload | null }> =
               {models.length === 0 ? (
                 <tr>
                   <td colSpan={6} className={styles.empty}>
-                    {payload ? "No LLM requests since the backend started." : "Loading…"}
+                    {payload ? `No LLM requests in the last ${payload.maxDays} days.` : "Loading…"}
                   </td>
                 </tr>
               ) : null}
@@ -159,9 +159,8 @@ export const LlmTokensSection: React.FC<{ payload: MonitorLlmPayload | null }> =
           </table>
         </div>
         {payload ? (
-          <p className={styles.caption}>
-            Since the backend started, {new Date(payload.startedAt).toLocaleString()}, and at most
-            the last {payload.maxDays} days.
+          <p className={styles.caption} data-testid="monitor-llm-kept">
+            The last {payload.maxDays} days, kept across restarts.
           </p>
         ) : null}
       </div>

@@ -1,11 +1,12 @@
 """Each server's open files over time (``monitor/open_files.py``).
 
 The backend samples its own open files and limit and the sandbox's, from the
-sandbox's ``/monitor`` reply, every hour from its start, keeps the samples in
-the monitor history ``open-files`` (``history.py``) and publishes them on
-``GET /api/monitor/open-files``. A sample above 80% of a server's limit records
-an error in the monitor's errors list, once until that server's count falls
-below 70%.
+sandbox's ``/monitor`` reply, every hour from its start, writes each sample
+into its hour's row of the monitor history ``open-files`` (``history.py``),
+kept across restarts, and publishes the rows on ``GET
+/api/monitor/open-files``. A sample above 80% of a server's limit records an
+error in the monitor's errors list, once until that server's count falls below
+70%.
 
 The counts are the test's own: the backend's through ``common/open_files.py``'s
 ``in_use``, the sandbox's through the monitor's call of its ``/monitor``. The
@@ -101,9 +102,9 @@ class TestTheSample:
         assert [timer.interval for timer in timers] == [0, 3600, 3600]
         assert all(timer.daemon for timer in timers)
         assert module.HISTORY.rows() == [
-            {"hour": _hour(NOW), "at": _stamp(NOW),
+            {"at": _hour(NOW), "span": "1h", "sampledAt": _stamp(NOW),
              "backend": {"open": 212, "limit": 65536}, "sandbox": {"open": 96, "limit": 65536}},
-            {"hour": _hour(NOW + timedelta(hours=1)), "at": _stamp(NOW + timedelta(hours=1)),
+            {"at": _hour(NOW + timedelta(hours=1)), "span": "1h", "sampledAt": _stamp(NOW + timedelta(hours=1)),
              "backend": {"open": 230, "limit": 65536}, "sandbox": {"open": 101, "limit": 65536}},
         ]
 
@@ -140,7 +141,7 @@ class TestTheSample:
         assert module.sample()["sandbox"] is None
         assert (len(asked), slept) == (1, [])
 
-    def test_a_backend_start_writes_the_samples_anew(self, sampler):
+    def test_the_samples_are_written_at_once_and_kept_across_a_backend_start(self, sampler):
         from utk_curio.backend.app import create_app
         from utk_curio.backend.tests._unit_fixtures import TestConfig
 
@@ -148,32 +149,26 @@ class TestTheSample:
         module.sample()
         path = module.HISTORY.path()
         assert path == monitor_history._folder() / "open-files.json"
-        assert [row["at"] for row in json.loads(path.read_text(encoding="utf-8"))["rows"]] == [_stamp(NOW)]
-        # What an earlier process left in the file.
-        path.write_text(json.dumps({"name": "open-files", "rows": [
-            {"hour": "2026-11-01T10:00:00Z", "at": "2026-11-01T10:12:00Z",
-             "backend": {"open": 1000, "limit": 1024}, "sandbox": None},
-        ]}), encoding="utf-8")
+        assert [row["sampledAt"] for row in json.loads(path.read_text(encoding="utf-8"))["rows"]] == [_stamp(NOW)]
+        before = path.read_bytes()
 
         create_app(TestConfig)
 
-        doc = json.loads(path.read_text(encoding="utf-8"))
-        assert (doc["name"], doc["rows"]) == ("open-files", [])
-        assert module.HISTORY.rows() == []
-        assert module.snapshot()["samples"] == []
+        assert path.read_bytes() == before
+        assert [sample["at"] for sample in module.snapshot()["samples"]] == [_stamp(NOW)]
 
     def test_a_sample_older_than_90_days_goes(self, sampler):
-        """Counted back from the newest sample's hour: 90 days hold it and the
-        2,159 hours before it, so a sample 2,160 hours older is gone."""
+        """Counted back from the current hour: 90 days hold it and the 2,159
+        hours before it, so a sample 2,160 hours older is gone."""
         module = sampler.module
         for hours in (90 * 24, 90 * 24 - 1, 0):
             sampler.state.at = NOW - timedelta(hours=hours)
             module.sample()
 
         kept = [_stamp(NOW - timedelta(hours=90 * 24 - 1)), _stamp(NOW)]
-        assert [row["at"] for row in module.HISTORY.rows()] == kept
+        assert [row["sampledAt"] for row in module.HISTORY.rows()] == kept
         doc = json.loads(module.HISTORY.path().read_text(encoding="utf-8"))
-        assert [row["at"] for row in doc["rows"]] == kept
+        assert [row["sampledAt"] for row in doc["rows"]] == kept
 
     def test_a_write_that_fails_is_logged_and_tried_again_the_next_hour(self, sampler, tmp_path, monkeypatch,
                                                                         caplog):
@@ -188,15 +183,16 @@ class TestTheSample:
         logged = [record for record in caplog.records
                   if record.levelno >= logging.WARNING and "open-files" in record.getMessage()]
         assert logged, [record.getMessage() for record in caplog.records]
-        # The sample is kept in the process all the same.
-        assert [each["at"] for each in module.HISTORY.rows()] == [row["at"]]
+        assert row["at"] == _stamp(NOW)
+        assert not (folder / "open-files.json").exists()
 
+        # The sample was kept in the process: the next hour's writes it too.
         monkeypatch.setattr(monitor_history, "_folder", lambda: folder)
         sampler.state.at = NOW + timedelta(hours=1)
         module.sample()
 
         doc = json.loads((folder / "open-files.json").read_text(encoding="utf-8"))
-        assert [each["at"] for each in doc["rows"]] == [_stamp(NOW), _stamp(NOW + timedelta(hours=1))]
+        assert [each["sampledAt"] for each in doc["rows"]] == [_stamp(NOW), _stamp(NOW + timedelta(hours=1))]
 
 
 class TestTheRoute:

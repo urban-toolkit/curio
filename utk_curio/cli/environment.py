@@ -87,7 +87,7 @@ def set_state_dir(state_dir=None):
         os.environ["CURIO_STATE_DIR"] = str(Path(state_dir).expanduser().resolve())
 
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, agent_search_url=None, backend_url=None, discovery_root=None, save_node_outputs=None, solve_max_attempts=None, solve_node_budget=None, solve_session_deadline=None, solve_batch_deadline=None, validation_exec_timeout=None, validation_node_limit=None, discovery_max_download_mb=None, media_cache_max_gb=None, media_cache_max_file_gb=None, db_pool_size=None, db_pool_overflow=None, db_pool_timeout=None, proxy_hops=None, package_workers=None, js_parallelism=None, js_registry_url=None, js_block_unpinned=None, shared_guest_name=None, shared_guest_username=None, guest_packages=None, collab_origins=None, collab_namespace=None, log_to_stdout=None, packages_root=None, llm_endpoint_file=None, model_weights_dir=None, bucket_mounts_dir=None, bucket_mount_socket=None):
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, agent_search_url=None, backend_url=None, discovery_root=None, save_node_outputs=None, solve_max_attempts=None, solve_node_budget=None, solve_session_deadline=None, solve_batch_deadline=None, validation_exec_timeout=None, validation_node_limit=None, discovery_max_download_mb=None, media_cache_max_gb=None, media_cache_max_file_gb=None, db_pool_size=None, db_pool_overflow=None, db_pool_timeout=None, proxy_hops=None, package_workers=None, js_parallelism=None, js_registry_url=None, js_block_unpinned=None, shared_guest_name=None, shared_guest_username=None, guest_packages=None, collab_origins=None, collab_namespace=None, log_to_stdout=None, packages_root=None, llm_endpoint_file=None, model_weights_dir=None, monitor_dir=None, bucket_mounts_dir=None, bucket_mount_socket=None):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
@@ -142,6 +142,17 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
                 "a model whose weights download on first use makes it."
             )
         os.environ["CURIO_MODEL_WEIGHTS_DIR"] = str(weights_dir)
+    # Where the monitor keeps its histories (backend/app/monitor/history.py),
+    # one file each, which every backend process writes and a restart keeps.
+    # Without it, .curio/monitor.
+    if monitor_dir:
+        histories_dir = Path(monitor_dir).expanduser().resolve()
+        if not histories_dir.is_dir():
+            log_warning(
+                f"--monitor-dir {histories_dir} is not a directory yet: the backend makes it, readable "
+                "by its own account alone, when it first writes a history."
+            )
+        os.environ["CURIO_MONITOR_DIR"] = str(histories_dir)
     # The bucket mount service (discovery/infrastructure/bucket_mounts.py):
     # where its mounts appear here, and its control socket, both or neither.
     _use_bucket_mounts(bucket_mounts_dir, bucket_mount_socket, deploy=deploy)
@@ -343,6 +354,8 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
         log_always(f"CURIO_GUEST_PACKAGES={os.environ['CURIO_GUEST_PACKAGES']}")
     if model_weights_dir:
         log_always(f"CURIO_MODEL_WEIGHTS_DIR={os.environ['CURIO_MODEL_WEIGHTS_DIR']}")
+    if monitor_dir:
+        log_always(f"CURIO_MONITOR_DIR={os.environ['CURIO_MONITOR_DIR']}")
     if bucket_mounts_dir:
         log_always(f"CURIO_BUCKET_MOUNTS_DIR={os.environ['CURIO_BUCKET_MOUNTS_DIR']}")
         log_always(f"CURIO_BUCKET_MOUNT_SOCKET={os.environ['CURIO_BUCKET_MOUNT_SOCKET']}")

@@ -120,7 +120,8 @@ export interface MonitorHardware {
  * Which backend processes a payload holds the part of, in a start of several
  * (`curio.py start --backend-processes N`): the home process asks every other
  * one for its part and merges them. Those that did not answer are left out.
- * Absent with one process.
+ * Absent with one process, and from the payloads of the histories (LLM tokens,
+ * open files), which every process writes into one file.
  */
 export interface MonitorBackendProcesses {
   count: number;
@@ -218,9 +219,10 @@ export interface MonitorLlmModel {
 }
 
 /**
- * `GET /api/monitor/llm`: each model's tokens since the backend started
- * (`startedAt`), at most `maxDays` days, as hourly rows from `hourlyFrom` to
- * `hourlyTo` (the last 7 days, hours with no request left out) and totals.
+ * `GET /api/monitor/llm`: each model's tokens over the last `maxDays` days,
+ * kept across restarts, from `startedAt` (when the oldest row kept began), as
+ * hourly rows from `hourlyFrom` to `hourlyTo` (the last 7 days, hours with no
+ * request left out) and totals.
  */
 export interface MonitorLlmPayload {
   computedAt: string;
@@ -232,7 +234,6 @@ export interface MonitorLlmPayload {
   hourlyTo: string;
   hourly: MonitorLlmHour[];
   models: MonitorLlmModel[];
-  backendProcesses?: MonitorBackendProcesses;
 }
 
 /** One server's open files and its soft limit on them; null where unknown. */
@@ -242,8 +243,8 @@ export interface MonitorOpenFilesCounts {
 }
 
 /**
- * One hourly sample (`at`, `YYYY-MM-DDTHH:MM:SSZ`) of both servers. The
- * sandbox's part is null when it did not answer.
+ * One hour's sample (`at`, `YYYY-MM-DDTHH:MM:SSZ`) of both servers: the
+ * busiest of the hour. The sandbox's part is null when it did not answer.
  */
 export interface MonitorOpenFilesSample {
   at: string;
@@ -254,10 +255,11 @@ export interface MonitorOpenFilesSample {
 }
 
 /**
- * `GET /api/monitor/open-files`: every sample since the backend started
- * (`startedAt`), at most `maxDays` days, one each `intervalSeconds`. A sample
- * above `warnAbovePercent` of a server's limit records an error, and another
- * only once its count fell below `clearBelowPercent`.
+ * `GET /api/monitor/open-files`: a sample an hour over the last `maxDays`
+ * days, kept across restarts, from `startedAt` (when the oldest was taken),
+ * one each `intervalSeconds`. A sample above `warnAbovePercent` of a server's
+ * limit records an error, and another only once its count fell below
+ * `clearBelowPercent`.
  */
 export interface MonitorOpenFilesPayload {
   computedAt: string;
@@ -267,7 +269,6 @@ export interface MonitorOpenFilesPayload {
   warnAbovePercent: number;
   clearBelowPercent: number;
   samples: MonitorOpenFilesSample[];
-  backendProcesses?: MonitorBackendProcesses;
 }
 
 export type MonitorErrorSource = "node" | "sandbox" | "backend" | "client";

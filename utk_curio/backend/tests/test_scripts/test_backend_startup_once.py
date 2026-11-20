@@ -4,14 +4,14 @@ process that serves.
 With several backend processes, the launcher names each (``CURIO_BACKEND_PROCESS``
 of ``CURIO_BACKEND_PROCESSES``), and process 0, home, alone does the startup
 work: the shared guest, the hosted guests' copies dropped, the agents, the
-packages ``--guest-packages`` names and the examples put back, the monitor's
-histories started anew and every other process's files of them removed, the
-timers, the open-files sampler and the bucket mount service's proxy and check.
-Each other process does two of those pieces for itself alone
-(:data:`EVERY_PROCESS`): it starts its own histories anew, in its own files,
-and samples its own open files. Under Werkzeug's reloader the process the
-launcher started only watches the files and starts the process that serves,
-which does that work.
+packages ``--guest-packages`` names and the examples put back, the timers, the
+monitor's history writer and its write when the process stops, the open-files
+sampler and the bucket mount service's proxy and check. Each other process
+does three of those pieces for itself (:data:`EVERY_PROCESS`): it writes what
+it holds of the monitor's histories every minute and when it stops, into the
+files every process shares, and samples its own open files. Under Werkzeug's
+reloader the process the launcher started only watches the files and starts
+the process that serves, which does that work.
 
 The server module runs as the launcher runs it, ``python -m backend.server``,
 up to the point where it would serve, with each piece of the startup work
@@ -30,8 +30,6 @@ import pytest
 #: what the record of its call answers.
 STARTUP_WORK = {
     # create_app
-    "utk_curio.backend.app.monitor.history.clear_other_processes": None,
-    "utk_curio.backend.app.monitor.history.start": None,
     "utk_curio.backend.app.packages.seed_dev_packages": [],
     "utk_curio.backend.app.projects.tasks.start_cleanup_scheduler": None,
     "utk_curio.backend.app.runs.kept.start_prune_scheduler": None,
@@ -44,7 +42,9 @@ STARTUP_WORK = {
     "utk_curio.backend.app.projects.seed.seed_example_projects": 0,
     "utk_curio.backend.app.datasets.seed.seed_example_datasets": [],
     # serve()
+    "utk_curio.backend.app.monitor.history.write_on_stop": True,
     "utk_curio.backend.app.monitor.open_files.start_sampler": None,
+    "utk_curio.backend.app.monitor.history.start_writer": True,
     "utk_curio.backend.app.discovery.service.start_bucket_mount_proxy": False,
     "utk_curio.backend.app.discovery.service.start_bucket_mount_check": False,
 }
@@ -53,12 +53,14 @@ STARTUP_WORK = {
 ONCE = {name: 1 for name in STARTUP_WORK}
 
 #: The pieces every other process of a start of several does for itself as it
-#: starts, once each: its own monitor histories anew, in its own files, and the
-#: hourly sample of its own open files (``monitor/history.py``,
+#: starts, once each: what it holds of the monitor's histories written when it
+#: stops and every minute, into the files every process shares, and the hourly
+#: sample of its own open files (``monitor/history.py``,
 #: ``monitor/open_files.py``).
 EVERY_PROCESS = {
-    "utk_curio.backend.app.monitor.history.start": 1,
+    "utk_curio.backend.app.monitor.history.write_on_stop": 1,
     "utk_curio.backend.app.monitor.open_files.start_sampler": 1,
+    "utk_curio.backend.app.monitor.history.start_writer": 1,
 }
 
 
@@ -118,8 +120,8 @@ def test_only_the_home_process_does_the_startup_work(start):
     other = start(CURIO_BACKEND_PROCESS="1", CURIO_BACKEND_PROCESSES="2",
                   FLASK_USE_RELOADER="0", WERKZEUG_RUN_MAIN=None)
     assert other == EVERY_PROCESS, (
-        f"backend process 1 of 2 did startup work, which is the home process's, or did not start its own "
-        f"histories and open-files sampler once each: {other}"
+        f"backend process 1 of 2 did startup work, which is the home process's, or did not start its "
+        f"monitor history writer, its write on stop and its open-files sampler once each: {other}"
     )
 
 

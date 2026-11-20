@@ -2,18 +2,18 @@
 
 ``curio.py start --backend-processes N`` runs N backend processes behind nginx,
 which sends every monitor route to the home process, process 0
-(``cli/backend_group.py``). Each process holds its own part of what the monitor
-shows: its node runs and its memory, its error log, the LLM tokens its agents
-spent and its open files. So the home process asks every other process for its
-part, over 127.0.0.1 at the port the launcher names for it and signed with the
-start's secret, as a change to a dataflow reaches its owner, and merges them:
-node runs summed, the error logs together by time, token rows by hour and
-model, and in each hour the open files of the busiest process against its own
-limit. Each monitor route then says which processes answered; one that does
-not answer is named and its part left out, and the route still answers. Each
-process writes its own history files, the home process's start clears every
-other process's, and every process samples its own open files. With one
-process nothing is asked, and every answer is as it was.
+(``cli/backend_group.py``). Each process holds its own node runs, memory and
+error log, so the home process asks every other process for its part, over
+127.0.0.1 at the port the launcher names for it and signed with the start's
+secret, as a change to a dataflow reaches its owner, and merges them: node
+runs summed, the error logs together by time. Those routes then say which
+processes answered; one that does not answer is named and its part left out,
+and the route still answers. The monitor's histories, the LLM tokens and the
+open files, are one file each that every process writes, which no start
+clears: their routes read the file and ask no process, token rows add up by
+hour and model whichever process wrote them, and each hour's open files are
+the busiest process's against its own limit. Every process samples its own
+open files. With one process nothing is asked, and every answer is as it was.
 
 Here this app is the home process, and each other process is a server in the
 test (:class:`_OtherProcess`) that answers with the part this app's own
@@ -42,7 +42,10 @@ TOKEN_HEADER = "X-Curio-Backend-Token"
 NOW = datetime(2026, 11, 6, 15, 20, 7, tzinfo=timezone.utc)
 MIB = 1024 * 1024
 #: The monitor's routes whose numbers each process holds a part of.
-ROUTES = ("/api/monitor", "/api/monitor/errors", "/api/monitor/llm", "/api/monitor/open-files")
+ASKING = ("/api/monitor", "/api/monitor/errors")
+#: Every monitor route the page reads: those, and the histories', which read
+#: the files every process writes.
+ROUTES = (*ASKING, "/api/monitor/llm", "/api/monitor/open-files")
 #: What a start of one process answers a call from another.
 ONE_PROCESS = "a start of one backend process takes no call from another"
 
@@ -342,69 +345,62 @@ def test_the_error_log_keeps_the_newest_server_errors_of_all_processes_to_its_wi
     ]
 
 
-def test_home_adds_up_the_llm_tokens_of_every_process_by_hour_and_model(client, monkeypatch):
-    """The hourly rows and each model's totals are what one process that
-    made every request would show: rows of the same hour and model summed,
-    each process's counted against the home process's clock."""
+def test_every_processs_llm_tokens_add_up_in_the_one_file_by_hour_and_model(client, monkeypatch):
+    """Process 1 and the home process each write what they hold into the
+    one file: the route reads it, asks no process, and shows rows of the same
+    hour and model summed, whichever process wrote them."""
     from utk_curio.backend.app.monitor import llm_tokens
 
     clock = SimpleNamespace(at=NOW)
     monkeypatch.setattr(llm_tokens, "_now", lambda: clock.at)
 
-    def requests_of_process_1():
+    with _start(monkeypatch) as start:
+        as_process(monkeypatch, 1, 2)
         clock.at = NOW - timedelta(hours=2)
         llm_tokens.record("gpt-5", curio=False, input_tokens=40, output_tokens=8)
         clock.at = NOW
         llm_tokens.record("gemma4", curio=True, input_tokens=100, output_tokens=20)
-
-    def requests_of_home():
+        assert llm_tokens.HISTORY.flush() is True
+        as_process(monkeypatch, 0, 2)
         clock.at = NOW - timedelta(days=30)
         llm_tokens.record("gemma4", curio=False, input_tokens=7, output_tokens=1)
         clock.at = NOW
         llm_tokens.record("gemma4", curio=True, input_tokens=50, output_tokens=10)
+        assert llm_tokens.HISTORY.flush() is True
+        body = _answer(client.get("/api/monitor/llm"))
+        calls = [*start.others[1].calls, *start.itself.calls]
 
-    with _start(monkeypatch) as start:
-        requests_of_process_1()
-        start.others[1].parts["llm"] = _part_as(client, monkeypatch, 1, 2, "llm", {"now": _stamp(NOW)})
-        llm_tokens.reset()
-        requests_of_home()
-        merged = _answer(client.get("/api/monitor/llm"))
-        asked = start.others[1].asked()
-
-    llm_tokens.reset()
-    requests_of_process_1()
-    requests_of_home()
-    alone = llm_tokens.snapshot()
-    assert merged["hourly"] == alone["hourly"]
-    assert merged["models"] == alone["models"]
-    gemma = [row for row in merged["hourly"] if (row["model"], row["curio"]) == ("gemma4", True)]
-    assert [(row["inputTokens"], row["outputTokens"], row["requests"]) for row in gemma] == [(150, 30, 2)]
-    assert [merged[key] for key in ("computedAt", "hourlyFrom", "hourlyTo", "maxDays")] == [
-        alone[key] for key in ("computedAt", "hourlyFrom", "hourlyTo", "maxDays")]
-    assert merged.get("backendProcesses") == {"count": 2, "answered": [0, 1], "missing": []}
-    assert asked == [("llm", {"now": _stamp(NOW)})]
+    assert [(row["hour"], row["model"], row["curio"], row["inputTokens"], row["outputTokens"], row["requests"])
+            for row in body["hourly"]] == [
+        ("2026-11-06T13:00:00Z", "gpt-5", False, 40, 8, 1),
+        ("2026-11-06T15:00:00Z", "gemma4", True, 150, 30, 2),
+    ]
+    assert {(entry["model"], entry["curio"]): entry["kept"] for entry in body["models"]} == {
+        ("gemma4", True): {"inputTokens": 150, "outputTokens": 30, "requests": 2},
+        ("gpt-5", False): {"inputTokens": 40, "outputTokens": 8, "requests": 1},
+        ("gemma4", False): {"inputTokens": 7, "outputTokens": 1, "requests": 1},
+    }
+    assert "backendProcesses" not in body
+    assert calls == [], "the route asked a process for what the file holds"
 
 
 def test_the_open_files_line_is_the_busiest_process_of_each_hour_against_its_own_limit(client, monkeypatch, counts):
     """In each hour, the sample of the process with the largest share of its
     own limit, which a lower limit makes the busiest with fewer files; the
-    sandbox's count is the home process's, which alone asks for it."""
-    from utk_curio.backend.app.monitor import open_files
-
+    sandbox's count is the home process's, which alone asks for it. Each
+    process writes its samples into the one file, which the route reads."""
     hour = timedelta(hours=1)
     with _start(monkeypatch, 3) as start:
         as_process(monkeypatch, 1, 3)
         _take(counts, NOW + timedelta(minutes=5), (5000, 65536))
         _take(counts, NOW + hour + timedelta(minutes=5), (300, 65536))
-        start.others[1].parts["open-files"] = _part_as(client, monkeypatch, 1, 3, "open-files")
-        open_files.reset()
         as_process(monkeypatch, 2, 3)
         _take(counts, NOW + hour + timedelta(minutes=10), (900, 1024))
-        start.others[2].parts["open-files"] = _part_as(client, monkeypatch, 2, 3, "open-files")
-        open_files.reset()
+        as_process(monkeypatch, 0, 3)
         _take(counts, NOW, (212, 65536))
         _take(counts, NOW + hour, (230, 65536))
         body = _answer(client.get("/api/monitor/open-files"))
+        calls = [*start.others[1].calls, *start.others[2].calls, *start.itself.calls]
 
     sandbox = {"open": 96, "limit": 65536}
     assert body["samples"] == [
@@ -414,7 +410,8 @@ def test_the_open_files_line_is_the_busiest_process_of_each_hour_against_its_own
          "backendProcess": 2, "sandbox": sandbox},
     ]
     assert counts.sandbox_asked == [0, 0], "a process other than home asked the sandbox"
-    assert body.get("backendProcesses") == {"count": 3, "answered": [0, 1, 2], "missing": []}
+    assert "backendProcesses" not in body
+    assert calls == [], "the route asked a process for what the file holds"
     assert (body["maxDays"], body["intervalSeconds"], body["warnAbovePercent"], body["clearBelowPercent"]) == (
         90, 3600, 80, 70)
 
@@ -428,16 +425,15 @@ def test_a_process_that_does_not_answer_is_named_and_its_part_left_out(client, m
     with _start(monkeypatch, 3, not_answering={2}) as start:
         counters.record_execution(language="python", ok=True, duration_ms=10)
         counters.record_execution(language="python", ok=True, duration_ms=20)
-        for part, arguments in (("backend", {}), ("errors", {}), ("open-files", {}),
-                                ("llm", {"now": _stamp(datetime.now(timezone.utc))})):
-            start.others[1].parts[part] = _part_as(client, monkeypatch, 1, 3, part, arguments)
+        for part in ("backend", "errors"):
+            start.others[1].parts[part] = _part_as(client, monkeypatch, 1, 3, part)
         counters.reset()
         counters.record_execution(language="javascript", ok=False, duration_ms=30)
-        responses = {route: client.get(route) for route in ROUTES}
+        responses = {route: client.get(route) for route in ASKING}
 
     bodies = {route: _answer(response) for route, response in responses.items()}
     lines = {route: body.get("backendProcesses") for route, body in bodies.items()}
-    assert lines == {route: {"count": 3, "answered": [0, 1], "missing": [2]} for route in ROUTES}
+    assert lines == {route: {"count": 3, "answered": [0, 1], "missing": [2]} for route in ASKING}
     backend = bodies["/api/monitor"]["execution"]["backend"]
     assert (backend["total"], backend["ok"], backend["python"], backend["javascript"]) == (3, 2, 2, 1)
     entries = bodies["/api/monitor/errors"]["errors"]
@@ -448,80 +444,56 @@ def test_a_process_that_does_not_answer_is_named_and_its_part_left_out(client, m
 
 
 # ---------------------------------------------------------------------------
-# Each process's own history files
+# One file of each history, which every process writes
 # ---------------------------------------------------------------------------
 
-def test_each_process_writes_its_own_history_files(monkeypatch):
-    """``<name>.<number>.json`` for a process other than home, so none writes
-    over another's; ``<name>.json`` for the home process, and for a start of
-    one process, as before."""
+def test_every_process_writes_the_one_file_of_each_history(monkeypatch, counts):
+    """``<name>.json`` in the monitor folder, whichever process writes it,
+    in a start of several or of one: no process keeps a file of its own."""
     from utk_curio.backend.app.monitor import history, llm_tokens, open_files
 
+    monkeypatch.setattr(llm_tokens, "_now", lambda: NOW)
     folder = history._folder()
-    as_process(monkeypatch, 2, 3)
-    llm_tokens.record("gemma4", curio=True, input_tokens=120, output_tokens=30)
-    paths = {"llm tokens": llm_tokens.HISTORY.path(), "open files": open_files.HISTORY.path()}
+    paths = {}
+    for number, processes in ((2, 3), (0, 3), (None, 1)):
+        if number is None:
+            as_the_one_process(monkeypatch)
+        else:
+            as_process(monkeypatch, number, processes)
+        llm_tokens.record("gemma4", curio=True, input_tokens=120, output_tokens=30)
+        assert llm_tokens.HISTORY.flush() is True
+        _take(counts, NOW, (212, 65536))
+        paths[number] = (llm_tokens.HISTORY.path(), open_files.HISTORY.path())
 
-    assert paths == {"llm tokens": folder / "llm-tokens.2.json", "open files": folder / "open-files.2.json"}
-    written = _rows(folder / "llm-tokens.2.json")
-    assert [(row["model"], row["inputTokens"], row["outputTokens"]) for row in written] == [("gemma4", 120, 30)]
-    home_rows = _rows(folder / "llm-tokens.json")
-    assert home_rows in (None, []), "process 2 wrote the home process's file"
-
-    as_process(monkeypatch, 0, 3)
-    home_path = llm_tokens.HISTORY.path()
-    as_the_one_process(monkeypatch)
-    one_path = llm_tokens.HISTORY.path()
-    assert (home_path, one_path) == (folder / "llm-tokens.json", folder / "llm-tokens.json")
+    assert set(paths.values()) == {(folder / "llm-tokens.json", folder / "open-files.json")}
+    assert sorted(path.name for path in folder.iterdir() if path.suffix == ".json") == [
+        "llm-tokens.json", "open-files.json"]
+    written = _rows(folder / "llm-tokens.json")
+    assert [(row["model"], row["inputTokens"], row["outputTokens"], row["requests"]) for row in written] == [
+        ("gemma4", 360, 90, 3)]
 
 
-def test_the_home_start_clears_the_files_of_every_other_process_and_writes_its_own_anew(monkeypatch):
-    """What an earlier start left, of any number of processes, goes before
-    the others start; files that are no history's stay."""
+def test_no_start_of_any_process_clears_the_history_files(monkeypatch):
+    """The home process's start and another process's leave every file of
+    the monitor folder as it was, as a restart and a deploy that keeps the
+    folder do."""
     from utk_curio.backend.app import create_app
     from utk_curio.backend.app.monitor import history
     from utk_curio.backend.tests._unit_fixtures import TestConfig
 
     folder = history._folder()
     folder.mkdir(parents=True, exist_ok=True)
-    stale = [{"hour": "2026-11-01T10:00:00Z", "value": 1}]
-    left = ("llm-tokens.json", "open-files.json", "llm-tokens.1.json", "llm-tokens.7.json", "open-files.3.json")
-    kept = ("notes.json", "llm-tokens.backup.json", "someone-else.2.json")
-    for name in (*left, *kept):
-        (folder / name).write_text(json.dumps({"name": name, "rows": stale}), encoding="utf-8")
+    rows = [{"at": "2026-11-06T14:00:00Z", "span": "1h", "model": "gemma4", "curio": True,
+             "inputTokens": 5, "outputTokens": 1, "requests": 1}]
+    for name in ("llm-tokens.json", "open-files.json", "notes.json"):
+        (folder / name).write_text(json.dumps({"name": name[:-5], "format": 2, "rows": rows}), encoding="utf-8")
+    before = {path.name: path.read_bytes() for path in folder.iterdir()}
 
-    as_process(monkeypatch, 0, 2)
-    create_app(TestConfig)
+    for number, processes in ((0, 2), (1, 3)):
+        as_process(monkeypatch, number, processes)
+        create_app(TestConfig)
 
-    files = sorted(path.name for path in folder.iterdir() if path.suffix == ".json")
-    assert files == sorted(("llm-tokens.json", "open-files.json", *kept))
-    own = {name: _rows(folder / name) for name in ("llm-tokens.json", "open-files.json")}
-    assert own == {"llm-tokens.json": [], "open-files.json": []}
-    others = {name: _rows(folder / name) for name in kept}
-    assert others == {name: stale for name in kept}
-
-
-def test_another_process_start_writes_its_own_files_anew_and_leaves_the_others(monkeypatch):
-    """A process other than home starts its own histories over, as home
-    does, and touches no other process's file."""
-    from utk_curio.backend.app import create_app
-    from utk_curio.backend.app.monitor import history
-    from utk_curio.backend.tests._unit_fixtures import TestConfig
-
-    folder = history._folder()
-    folder.mkdir(parents=True, exist_ok=True)
-    for name, value in (("llm-tokens.json", 0), ("llm-tokens.1.json", 1), ("llm-tokens.2.json", 2)):
-        rows = [{"hour": "2026-11-06T14:00:00Z", "value": value}]
-        (folder / name).write_text(json.dumps({"name": "llm-tokens", "rows": rows}), encoding="utf-8")
-    before = {name: (folder / name).read_bytes() for name in ("llm-tokens.json", "llm-tokens.2.json")}
-
-    as_process(monkeypatch, 1, 3)
-    create_app(TestConfig)
-
-    own = {name: _rows(folder / name) for name in ("llm-tokens.1.json", "open-files.1.json")}
-    assert own == {"llm-tokens.1.json": [], "open-files.1.json": []}
-    after = {name: (folder / name).read_bytes() for name in before}
-    assert after == before
+    assert {path.name: path.read_bytes() for path in folder.iterdir()} == before
 
 
 # ---------------------------------------------------------------------------

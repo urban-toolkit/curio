@@ -648,6 +648,8 @@ Without both secrets, the deploy removes `.secrets/llm-endpoint` and the stack h
 
 Both stacks mount `/srv/curio-model-weights` at `/model-weights` and start with `--model-weights-dir /model-weights`, so a model's weights download there once for each revision, on the first node that runs it on either stack, into a folder of that revision: a stack on another version of the package never downloads over the other's ([Model weights a package fetches](#model-weights-a-package-fetches)). Each deploy gives the folder to root, the account both containers' servers run as, readable by every account and writable by no other.
 
+Each stack keeps the [monitor page](#the-monitor-page)'s histories across deploys, in a folder of its own outside its checkout, `/srv/curio-monitor/dev` or `/srv/curio-monitor/stable`, which Docker makes, mounted at `/monitor` and named with `--monitor-dir /monitor`.
+
 Both stacks also start with `--media-cache-max-file-gb 8`, so **Cache files** copies the SideSeeing walks, videos of up to 7 GiB, from data.urbantk.org. Each account still holds at most 20 GB of cached files.
 
 They also start with `--discovery-max-download-mb 2048`, so a download, or a file of a bucket table, may be up to 2 GiB on them: a month of detections in data.urbantk.org's `idot` bucket is a JSON Lines file of up to 1.7 GB.
@@ -698,7 +700,7 @@ It shows:
   per core), and the resident memory of the backend and sandbox processes. The
   hostname is not reported. Under it, **Open files** charts the files,
   sockets and pipes the backend and the sandbox hold open, sampled every hour
-  from the backend's start, against their limit as a dashed line (one per
+  over the last 90 days, against their limit as a dashed line (one per
   server when the two differ), on a log scale. A sample above 80% of a
   server's limit adds an entry to Recent errors, and the next one comes only
   after that server's count has fallen below 70%. Past its limit, each file or
@@ -722,17 +724,21 @@ It shows:
 "Copy diagnostics" puts the whole picture on the clipboard as markdown, ready
 to paste into an issue; "Download" saves the same thing as JSON.
 
-Every figure is since the process started, which is why uptime is on the page,
-and a restart resets them. The LLM tokens are also written to
-`.curio/monitor/llm-tokens.json` as they are counted, and the open-files
-samples to `.curio/monitor/open-files.json`. Each file holds at most the last
-90 days, and a restart starts it over.
+The execution figures and the error log are since the process started, which
+is why uptime is on the page, and a restart resets them. The LLM tokens and the
+open files are kept across restarts: the last 90 days, counted back from the
+current hour, one file each (`llm-tokens.json`, `open-files.json`) in the folder
+`--monitor-dir` names, `.curio/monitor` by default, readable by the backend's
+own account alone. Each backend process writes what it counted there at most a
+minute later, and when it stops. A deployment whose deploys delete `.curio`
+names a folder outside it with `--monitor-dir`, as both hosted stacks do
+([CI/CD](#optional-cicd-with-github-actions--tailscale)).
 
 With `--backend-processes N` the page shows the whole backend: node runs,
-backend memory, errors and LLM tokens of every process, and in each hour the
-open files of the busiest process against its own limit. Process 1 and the
-others write their own files, such as `llm-tokens.1.json`. A process that
-does not answer is named at the top of the page, and its numbers are left out.
+backend memory and errors of every process, the LLM tokens every process
+counted, and in each hour the open files of the busiest process against its
+own limit. A process that does not answer is named at the top of the page, and
+its node runs, memory and errors are left out.
 
 ### What the page exposes, and who can read it
 

@@ -1189,7 +1189,8 @@ def test_a_preset_testing_env_var_still_counts(monkeypatch):
 
 #: Every variable these flags write: #615's table but the guest configuration's,
 #: CURIO_PACKAGES_ROOT, CURIO_PROXY_HOPS, CURIO_MODEL_WEIGHTS_DIR,
-#: CURIO_MEDIA_CACHE_MAX_FILE_GB and the bucket mount service's two.
+#: CURIO_MONITOR_DIR, CURIO_MEDIA_CACHE_MAX_FILE_GB and the bucket mount
+#: service's two.
 OPERATOR_KEYS = (
     "CURIO_MEDIA_CACHE_MAX_GB",
     "CURIO_MEDIA_CACHE_MAX_FILE_GB",
@@ -1209,6 +1210,7 @@ OPERATOR_KEYS = (
     "LOG_TO_STDOUT",
     "CURIO_PACKAGES_ROOT",
     "CURIO_MODEL_WEIGHTS_DIR",
+    "CURIO_MONITOR_DIR",
     "CURIO_BUCKET_MOUNTS_DIR",
     "CURIO_BUCKET_MOUNT_SOCKET",
 )
@@ -1233,6 +1235,7 @@ OPERATOR_FLAG_NAMES = (
     "--log-to-stdout",
     "--packages-root",
     "--model-weights-dir",
+    "--monitor-dir",
     "--bucket-mounts-dir",
     "--bucket-mount-socket",
 )
@@ -1402,6 +1405,28 @@ def test_the_model_weights_dir_flag_is_resolved_and_read_by_the_backend(tmp_path
     set_environment_variables(**BASE, model_weights_dir=str(tmp_path / "a" / ".." / "weights"))
     assert Path(os.environ["CURIO_MODEL_WEIGHTS_DIR"]) == (tmp_path / "weights").resolve()
     assert _model_weights_dir() == (tmp_path / "weights").resolve()
+
+
+def _monitor_folder():
+    from utk_curio.backend.app.monitor import history
+
+    return history._folder()
+
+
+def test_the_monitor_dir_flag_is_resolved_and_read_by_the_backend(tmp_path):
+    """Where the monitor keeps its histories (``--monitor-dir``); without the
+    flag none is named, and the backend keeps them in ``.curio/monitor``.
+    That every backend process of a start of several inherits it is
+    ``test_backend_group.py``'s."""
+    from utk_curio.backend.app.common import user_storage
+
+    set_environment_variables(**BASE)
+    assert "CURIO_MONITOR_DIR" not in os.environ
+    assert _monitor_folder() == user_storage.curio_root() / "monitor"
+
+    set_environment_variables(**BASE, monitor_dir=str(tmp_path / "a" / ".." / "monitor"))
+    assert Path(os.environ["CURIO_MONITOR_DIR"]) == (tmp_path / "monitor").resolve()
+    assert _monitor_folder() == (tmp_path / "monitor").resolve()
 
 
 def _bucket_mounts():
