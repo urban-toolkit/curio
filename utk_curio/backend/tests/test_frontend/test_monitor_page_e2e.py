@@ -11,7 +11,10 @@ separate pieces and nothing else joins them up.
 
 The second runs one scripted agent turn (``utils/scripted_llm.py``) on a model
 of its own, so its calls are told apart from every other test's, and reads its
-tokens back from the route and from the page.
+tokens back from the route and from the page. The tokens are a history every
+backend process writes into one file, kept across restarts, so the test has
+every process write what it holds (``/api/testing/monitor-flush``) before each
+read, and reads what the turn added.
 """
 
 from __future__ import annotations
@@ -108,6 +111,23 @@ def test_monitor_page_shows_stats_errors_and_polls(app_frontend: FrontendPage, p
 #: The agent the turn runs: one that attaches to the canvas, so the dataflow
 #: needs no node.
 RESEARCHER = "agent.curio.researcher@1"
+#: The windows a model's totals cover on the route.
+WINDOWS = ("last24h", "last7d", "kept")
+NONE = {"inputTokens": 0, "outputTokens": 0, "requests": 0}
+
+
+def _tokens_of(current_server: str, token: str, model: str):
+    """The route's body and *model*'s totals in it (None when it has none),
+    once every backend process wrote what it holds of the history."""
+    api_json(f"{current_server}/api/testing/monitor-flush", token, method="POST", payload={})
+    body = api_json(f"{current_server}/api/monitor/llm", token)
+    return body, next((entry for entry in body["models"] if entry["model"] == model), None)
+
+
+def _added(after: dict, before: dict | None) -> dict:
+    """What each window of *after* holds more than *before*'s."""
+    return {window: {field: after[window][field] - (before[window] if before else NONE)[field] for field in NONE}
+            for window in WINDOWS}
 
 
 def test_an_agent_turn_shows_its_models_tokens_in_the_llm_section(app_frontend: FrontendPage, page,
@@ -120,6 +140,10 @@ def test_an_agent_turn_shows_its_models_tokens_in_the_llm_section(app_frontend: 
                            project_name="Monitor tokens")
     token = session["token"]
     use_scripted_llm(current_server, token, model=model, label="Monitor tokens")
+    # The history is kept across restarts, so what it held before the turn is
+    # read first: nothing, for a model of its own.
+    _, before = _tokens_of(current_server, token, model)
+    assert before is None, before
     base = f"{current_server}/api/agents/projects/{session['project']['id']}"
     if RESEARCHER not in {row["dirName"] for row in api_json(base, token)["agents"]}:
         api_json(f"{base}/install", token, method="POST", payload={"coord": RESEARCHER})
@@ -137,11 +161,10 @@ def test_an_agent_turn_shows_its_models_tokens_in_the_llm_section(app_frontend: 
     assert calls, captured_agent_calls(current_server, dataflow=session["project"]["id"])
     counted = {"inputTokens": DEFAULT_USAGE["in"] * len(calls),
                "outputTokens": DEFAULT_USAGE["out"] * len(calls), "requests": len(calls)}
-    body = api_json(f"{current_server}/api/monitor/llm", token)
-    entry = next((entry for entry in body["models"] if entry["model"] == model), None)
+    body, entry = _tokens_of(current_server, token, model)
     assert entry is not None, body["models"]
-    assert (entry["curio"], entry["last24h"], entry["last7d"], entry["kept"]) == (
-        False, counted, counted, counted), entry
+    assert entry["curio"] is False, entry
+    assert _added(entry, before) == {window: counted for window in WINDOWS}, (before, entry)
     assert model in {row["model"] for row in body["hourly"]}, body["hourly"]
 
     # 3. The page shows them: the model's row, on its own key, and its line in both charts.

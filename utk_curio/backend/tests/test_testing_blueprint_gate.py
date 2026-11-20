@@ -66,7 +66,8 @@ class TestTheGateNeedsBothFactors:
 
     @pytest.mark.parametrize(
         "path", ["/api/testing/stub-login", "/api/testing/reset-db", "/api/testing/stub-project",
-                 "/api/testing/run-hold", "/api/testing/clock", "/api/testing/fetched-weights"]
+                 "/api/testing/run-hold", "/api/testing/clock", "/api/testing/fetched-weights",
+                 "/api/testing/monitor-flush"]
     )
     def test_every_stub_route_is_gated(self, client, monkeypatch, path):
         monkeypatch.setattr(testing_routes, "_is_testing", lambda: False)
