@@ -11,12 +11,13 @@ are tested against. The LLM route's model names are the one free text those
 four carry (``llm_tokens.py``).
 
 In a start of several backend processes nginx sends these routes to the home
-process, and four of them answer for the whole backend: ``/api/monitor`` (its
-node runs and memory), ``/errors``, ``/llm`` and ``/open-files`` ask every
-other process for its part and merge it with this one's, and say which
-processes answered in ``backendProcesses`` (``processes.py``). The parts each
-process answers with are registered here. With one process they answer as
-they always have.
+process, and they answer for the whole backend. ``/api/monitor`` (its node
+runs and memory) and ``/errors`` ask every other process for its part and
+merge it with this one's, and say which processes answered in
+``backendProcesses`` (``processes.py``); the parts each process answers with
+are registered here. ``/llm`` and ``/open-files`` read the monitor's history
+files, which every process writes (``history.py``). With one process nothing
+is asked.
 """
 
 from __future__ import annotations
@@ -228,33 +229,20 @@ def monitor_storage_route():
 
 @monitor_bp.route("/llm", methods=["GET"])
 def monitor_llm_route():
-    """Each model's LLM tokens per hour and in total, since the backend
-    started. Aggregates, naming models (``llm_tokens.py``). In a start of
-    several backend processes, every process's that answered, computed at
-    each call."""
-    arguments = llm_tokens.asked_at()
-    asking = processes.ask("llm", arguments)
-    if asking is None:
-        return jsonify(llm_tokens.snapshot())
-    asked = asking.wait()
-    body = llm_tokens.merged(arguments, list(asked.parts.values()))
-    body["backendProcesses"] = asked.line()
-    return jsonify(body)
+    """Each model's LLM tokens per hour and in total, over the last 90 days,
+    from the history file every backend process writes. Aggregates, naming
+    models (``llm_tokens.py``)."""
+    return jsonify(llm_tokens.snapshot())
 
 
 @monitor_bp.route("/open-files", methods=["GET"])
 def monitor_open_files_route():
     """The backend's and the sandbox's open files and limits, sampled every
-    hour since the backend started. Timestamps and numbers only
-    (``open_files.py``). In a start of several backend processes, each hour
-    shows the busiest process that answered, against its own limit."""
-    asking = processes.ask("open-files")
-    if asking is None:
-        return jsonify(open_files.snapshot())
-    asked = asking.wait()
-    body = open_files.merged({asked.here: open_files.part(), **asked.parts})
-    body["backendProcesses"] = asked.line()
-    return jsonify(body)
+    hour, over the last 90 days, from the history file every backend process
+    writes. Timestamps and numbers only (``open_files.py``). In a start of
+    several backend processes, each hour shows its busiest process, against
+    its own limit."""
+    return jsonify(open_files.snapshot())
 
 
 @monitor_bp.route("/errors", methods=["GET"])
@@ -288,18 +276,6 @@ def _backend_part(_arguments: dict) -> dict:
 def _errors_part(_arguments: dict) -> dict:
     """This process's error log."""
     return errors.part()
-
-
-@processes.part("llm")
-def _llm_part(arguments: dict) -> dict:
-    """This process's LLM tokens, against the home process's clock."""
-    return llm_tokens.part(arguments)
-
-
-@processes.part("open-files")
-def _open_files_part(_arguments: dict) -> dict:
-    """This process's open-files samples."""
-    return open_files.part()
 
 
 def _sum_of(values) -> int | None:

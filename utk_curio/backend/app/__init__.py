@@ -75,13 +75,11 @@ def create_app(config_class=config_class, *, startup_work=None):
     """The backend's Flask app.
 
     *startup_work* says whether this process does the startup work held here:
-    the monitor's histories started anew, every other process's files of them
-    removed, the dev packages seeded, the guest cleanup and the kept outputs'
-    sweep. None, the default, means it does when it is the home process
+    the dev packages seeded, the guest cleanup and the kept outputs' sweep.
+    None, the default, means it does when it is the home process
     (``common/backend_processes.py``). ``server.py`` says, since under
     Werkzeug's reloader only the process that serves does it, and the
-    migration before a start says no. Each other process of a start of
-    several starts its own histories anew.
+    migration before a start says no.
     """
     from utk_curio.common import backend_processes
 
@@ -181,16 +179,6 @@ def create_app(config_class=config_class, *, startup_work=None):
     # of several asks for, outside /api (monitor/processes.py).
     from utk_curio.backend.app.monitor.processes import internal_bp as monitor_processes_bp
     app.register_blueprint(monitor_processes_bp)
-    # The monitor's histories cover this start: the process that does the
-    # startup work removes what every other process of an earlier start left
-    # and writes its own anew, and each other process of a start of several
-    # writes its own anew (monitor/history.py).
-    from utk_curio.backend.app.monitor import history as monitor_history
-    if startup_work:
-        monitor_history.clear_other_processes()
-        monitor_history.start()
-    elif not backend_processes.is_home():
-        monitor_history.start()
 
     # Non-prod DB stub endpoints for Playwright E2E tests.
     # Lets Playwright seed users / projects directly without the signup form.

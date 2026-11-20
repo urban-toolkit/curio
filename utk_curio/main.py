@@ -373,6 +373,16 @@ def main():
         ),
     )
     parser.add_argument(
+        "--monitor-dir", default=None, metavar="PATH",
+        help=(
+            "Directory the monitor page keeps its histories in, the last 90 "
+            "days, one file each, which every backend process writes and a "
+            "restart keeps (sets CURIO_MONITOR_DIR). Default: .curio/monitor. "
+            "Name a folder outside .curio when a deploy deletes .curio. The "
+            "backend keeps it readable by its own account alone."
+        ),
+    )
+    parser.add_argument(
         "--bucket-mounts-dir", default=None, metavar="PATH",
         help=(
             "Directory where the bucket mount service's mounts appear in this "
@@ -557,6 +567,7 @@ def main():
         discovery_root=args.discovery_root,
         packages_root=args.packages_root,
         model_weights_dir=args.model_weights_dir,
+        monitor_dir=args.monitor_dir,
         bucket_mounts_dir=args.bucket_mounts_dir,
         bucket_mount_socket=args.bucket_mount_socket,
         save_node_outputs=args.save_node_outputs,

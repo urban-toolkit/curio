@@ -2,10 +2,12 @@
 
 ``curio.py start --backend-processes N`` runs N backend processes behind nginx,
 which sends every monitor route to the home process (``cli/backend_group.py``),
-while each process holds its own part of what the monitor shows: its node runs
-and its memory, its error log, the LLM tokens its agents spent and its open
-files. So each such route of the home process asks every other process for its
-part (:func:`ask`) and merges the parts with its own: a POST to
+while each process holds its own part of some of what the monitor shows: its
+node runs and its memory, and its error log. (The monitor's histories, the LLM
+tokens and the open files among them, are files every process writes,
+``history.py``, which the routes read.) So each such route of the home process
+asks every other process for its part (:func:`ask`) and merges the parts with
+its own: a POST to
 ``/internal/monitor/<part>`` on 127.0.0.1 at that process's port, signed with
 the start's secret, as a change to a dataflow reaches its owner
 (``collaboration/owner_calls.post_to_process``). The asks go out at once, and

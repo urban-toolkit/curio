@@ -4,8 +4,8 @@
 (``cli/backend_group.py``). A testing route names no dataflow, so nginx sends
 it to the home process, while most of what the routes change lives in each
 process's memory: the record clock, Curio's own LLM endpoints, the run hold,
-pip's behaviour and settings, the import path, and the door a reset closes
-(``routes.py``). Each such change is a step (:func:`step`): a function of JSON
+pip's behaviour and settings, the import path, the door a reset closes, and
+the monitor's history rows each process holds unwritten (``routes.py``). Each such change is a step (:func:`step`): a function of JSON
 arguments that makes the change in this process and answers JSON.
 
 :func:`everywhere` makes a step here and, at the same time, in every other

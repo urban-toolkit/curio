@@ -1,4 +1,4 @@
-"""Each server's open files over time: a sample every hour, for the running process.
+"""Each server's open files over time: a sample every hour, kept 90 days across restarts.
 
 A process may hold so many files, sockets and pipes open at once: its soft
 limit (``RLIMIT_NOFILE``). At the limit, each file or connection it opens fails
@@ -7,13 +7,14 @@ backend samples both servers every :data:`INTERVAL_SECONDS`, the first time as
 it starts (:func:`start_sampler`, which ``server.py``'s ``serve()`` calls in the
 home process when it serves): its own count and limit (``common/open_files.py``'s
 ``in_use``), and the sandbox's, which its ``/monitor`` reply carries beside its
-memory. ``GET /api/monitor/open-files`` publishes every sample kept
+memory. ``GET /api/monitor/open-files`` publishes every hour kept
 (:func:`snapshot`): timestamps and numbers only.
 
-The samples are the monitor history ``open-files`` (``history.py``): written to
-``.curio/monitor/open-files.json`` at each sample, started over when the
-backend starts, and at most 90 days of hours, the oldest going first. A write
-that fails is logged, and the next hour's sample writes every row again.
+The samples are the monitor history ``open-files`` (``history.py``), one file
+every backend process writes, ``open-files.json`` in the monitor folder: each
+sample is written as it is taken, into its hour's row, which holds the busiest
+sample of the hour (:func:`_busier`), the last 90 days of hours. A sample whose
+write fails is held, and the next write writes it.
 
 THE WARNING. A sample above :data:`WARN_ABOVE` of a server's limit records an
 error in the monitor's errors list (``errors.py``), naming the server and its
@@ -25,11 +26,9 @@ SEVERAL BACKEND PROCESSES. In a start of several, every backend process
 samples its own open files on its own timer, from when it serves, and warns of
 its own, naming itself by its number; only the home process asks the sandbox,
 whose files one count covers (:func:`sampler_starts_here`, :func:`sample`).
-Each process keeps its samples in its own file (``history.py``), and the home
-process's route merges them by hour (:func:`merged`): in each hour, the sample
-of the busiest process, the one with the largest share of its own limit, which
-it names, with the sandbox's count from the home process's sample of that
-hour.
+Each hour's row is then the sample of the busiest process, the one with the
+largest share of its own limit, which it names (``backendProcess``), with the
+sandbox's count from the home process's sample of that hour.
 
 Never raises, as the rest of the monitor never does.
 """
@@ -62,11 +61,6 @@ CLEAR_BELOW = 0.7
 #: The servers a sample counts, by the keys it names them by.
 SERVERS = ("backend", "sandbox")
 
-#: Each row: ``{hour, at, backend, sandbox}``. A server's part is
-#: ``{"open": n, "limit": n}``, each None where unknown; the sandbox's part is
-#: None when it did not answer.
-HISTORY = monitor_history.History("open-files")
-
 _LOCK = threading.Lock()
 #: The servers whose warning stands: recorded, and not yet cleared by a fall
 #: below :data:`CLEAR_BELOW`.
@@ -76,11 +70,38 @@ _timer: Optional[threading.Timer] = None
 _sleep = time.sleep
 
 
+def _busier(old: dict, new: dict) -> dict:
+    """Two samples of one hour as the row the hour keeps: the busier backend
+    process's part (:func:`_load`; the one written first on a tie), with its
+    time and, with several processes, its number, and the busier of their
+    sandbox parts, which only the home process's samples have."""
+    backend = new if _load(new.get("backend")) > _load(old.get("backend")) else old
+    sandbox = new if _load(new.get("sandbox")) > _load(old.get("sandbox")) else old
+    row = {field: value for field, value in old.items() if field not in _SAMPLE_FIELDS}
+    row["sampledAt"] = backend.get("sampledAt")
+    row["backend"] = backend.get("backend")
+    if backend.get("backendProcess") is not None:
+        row["backendProcess"] = backend["backendProcess"]
+    row["sandbox"] = sandbox.get("sandbox")
+    return row
+
+
+#: What a sample's row holds beside its hour: when it was taken, the backend's
+#: part and, with several processes, its process, and the sandbox's part.
+_SAMPLE_FIELDS = ("sampledAt", "backend", "backendProcess", "sandbox")
+
+#: Each row: ``{at, span, sampledAt, backend, backendProcess?, sandbox}``, one
+#: an hour. A server's part is ``{"open": n, "limit": n}``, each None where
+#: unknown; the sandbox's part is None when it did not answer.
+HISTORY = monitor_history.History("open-files", span=monitor_history.AN_HOUR, join=_busier,
+                                  clock=lambda: _now())
+
+
 def sample(*, wait_for_sandbox: float = 0) -> dict:
     """Count this process's open files and limit now, and in the home process
-    the sandbox's, keep the sample, and warn of a server above
-    :data:`WARN_ABOVE` of its limit. Returns the sample's row, whose sandbox
-    part is None in every other process.
+    the sandbox's, write the sample into its hour's row, and warn of a server
+    above :data:`WARN_ABOVE` of its limit. Returns the sample as the route
+    shows one, whose sandbox part is None in every other process.
 
     While the sandbox does not answer, it is asked again every
     :data:`SANDBOX_RETRY_SECONDS`, for up to *wait_for_sandbox* seconds. Runs
@@ -89,83 +110,41 @@ def sample(*, wait_for_sandbox: float = 0) -> dict:
     sandbox = _sandbox_counts(wait_for_sandbox) if _this_process() == backend_processes.HOME else None
     backend = _counts(*open_files.in_use())
     now = _now()
-    row = {
-        "hour": now.strftime(monitor_history.HOUR),
-        "at": now.strftime(monitor_history.STAMP),
-        "backend": backend,
-        "sandbox": sandbox,
-    }
-    HISTORY.update(lambda rows: rows.append(dict(row)))
+    taken = {"sampledAt": now.strftime(monitor_history.STAMP), "backend": backend, "sandbox": sandbox}
+    number = _numbered()
+    if number is not None:
+        taken["backendProcess"] = number
+    HISTORY.put(taken, at=now)
+    shown = _shown(taken)
     for server in SERVERS:
-        _warn_of(server, row[server], row["at"])
-    return row
+        _warn_of(server, shown[server], shown["at"])
+    return shown
 
 
 def snapshot() -> dict:
-    """The route's body: every sample kept, oldest first, and what the page
-    reads them by."""
+    """The route's body: each hour's sample kept, oldest first, and what the
+    page reads them by. ``startedAt`` is when the oldest was taken."""
+    now = _now()
+    samples = [_shown(row) for row in HISTORY.rows(now=now) if isinstance(row.get("sampledAt"), str)]
+    computed = now.strftime(monitor_history.STAMP)
     return {
-        "computedAt": _now().strftime(monitor_history.STAMP),
-        "startedAt": HISTORY.started_at.strftime(monitor_history.STAMP),
-        "maxDays": HISTORY.max_days,
-        "intervalSeconds": INTERVAL_SECONDS,
-        "warnAbovePercent": round(WARN_ABOVE * 100),
-        "clearBelowPercent": round(CLEAR_BELOW * 100),
-        "samples": [
-            {"at": row.get("at"), "backend": row.get("backend"), "sandbox": row.get("sandbox")}
-            for row in HISTORY.rows()
-        ],
-    }
-
-
-def part() -> dict:
-    """This process's samples as another backend process of its start sends
-    them to the home process (``processes.py``): every sample kept, oldest
-    first, and when this process's history began."""
-    return {"startedAt": HISTORY.started_at.strftime(monitor_history.STAMP), "samples": HISTORY.rows()}
-
-
-def merged(parts: dict) -> dict:
-    """The route's body in a start of several backend processes, from the
-    :func:`part` of each process that answered, by its number: a sample an
-    hour, the busiest process's in that hour (the largest share of its own
-    limit, else the most files), naming it (``backendProcess``), with the
-    sandbox's count from the home process's sample of that hour. A process's
-    latest sample of an hour stands for it."""
-    hours: dict = {}
-    started = HISTORY.started_at.strftime(monitor_history.STAMP)
-    for number, each in parts.items():
-        if not isinstance(each, dict):
-            continue
-        begun = each.get("startedAt")
-        if isinstance(begun, str) and begun < started:
-            started = begun
-        for row in each.get("samples") or ():
-            if not isinstance(row, dict) or monitor_history.hour_of(row.get("hour")) is None:
-                continue
-            held = hours.setdefault(row["hour"], {})
-            if number not in held or str(row.get("at") or "") >= str(held[number].get("at") or ""):
-                held[number] = row
-    samples = []
-    for hour in sorted(hours):
-        held = hours[hour]
-        busiest = _busiest(held)
-        home = held.get(backend_processes.HOME) or {}
-        samples.append({
-            "at": held[busiest].get("at"),
-            "backend": held[busiest].get("backend"),
-            "backendProcess": busiest,
-            "sandbox": home.get("sandbox"),
-        })
-    return {
-        "computedAt": _now().strftime(monitor_history.STAMP),
-        "startedAt": started,
+        "computedAt": computed,
+        "startedAt": samples[0]["at"] if samples else computed,
         "maxDays": HISTORY.max_days,
         "intervalSeconds": INTERVAL_SECONDS,
         "warnAbovePercent": round(WARN_ABOVE * 100),
         "clearBelowPercent": round(CLEAR_BELOW * 100),
         "samples": samples,
     }
+
+
+def _shown(row: dict) -> dict:
+    """A sample as the route shows it: when it was taken, both servers'
+    parts, and with several processes the backend's process."""
+    shown = {"at": row.get("sampledAt"), "backend": row.get("backend"), "sandbox": row.get("sandbox")}
+    if row.get("backendProcess") is not None:
+        shown["backendProcess"] = row["backendProcess"]
+    return shown
 
 
 def sampler_starts_here(does_startup_work: bool) -> bool:
@@ -207,9 +186,9 @@ def start_sampler(app) -> None:
 
 
 def reset() -> None:
-    """Drop every sample, as a backend start does, and the standing warnings.
-    For tests only."""
-    HISTORY.start()
+    """Drop the samples this process holds unwritten, and the standing
+    warnings. For tests only."""
+    HISTORY.drop_pending()
     with _LOCK:
         _warned.clear()
 
@@ -239,35 +218,35 @@ def _this_process() -> int:
         return backend_processes.HOME
 
 
-def _busiest(held: dict) -> int:
-    """The number of the busiest process of *held*, each process's sample of
-    one hour by its number."""
-    return max(held, key=lambda number: _load(held[number].get("backend"), number))
+def _numbered() -> int | None:
+    """This process's number in a start of several backend processes, which
+    its samples and warnings name it by; None with one."""
+    try:
+        several = backend_processes.process_count() > 1
+    except ValueError:
+        several = False
+    return _this_process() if several else None
 
 
-def _load(counts, number: int) -> tuple:
-    """How busy the process *number* is in a sample whose backend part is
-    *counts*, to compare: the share of its limit where both are known, else
-    its count, else nothing; the lower number first on a tie."""
+def _load(counts) -> tuple:
+    """How busy a server is in a sample whose part for it is *counts*, to
+    compare: the share of its limit where both are known, else its count,
+    else nothing."""
     count = counts.get("open") if isinstance(counts, dict) else None
     limit = counts.get("limit") if isinstance(counts, dict) else None
     if _number(count) is not None and _number(limit):
-        return 2, count / limit, -number
+        return 2, count / limit
     if _number(count) is not None:
-        return 1, float(count), -number
-    return 0, 0.0, -number
+        return 1, float(count)
+    return 0, 0.0
 
 
 def _named(server: str) -> str:
     """How a warning names *server*: the sandbox, the backend, or in a start of
     several backend processes this one, by its number."""
-    if server == "backend":
-        try:
-            several = backend_processes.process_count() > 1
-        except ValueError:
-            several = False
-        if several:
-            return f"backend process {_this_process()}"
+    number = _numbered() if server == "backend" else None
+    if number is not None:
+        return f"backend process {number}"
     return f"the {server}"
 
 

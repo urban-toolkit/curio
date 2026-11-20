@@ -31,8 +31,9 @@ In a start of several backend processes (``--backend-processes``) a testing
 route reaches the home process, since it names no dataflow. A route whose
 change lives in a process's memory makes it in every process of the start
 (``every_process.py``): the record clock, Curio's own LLM endpoints, the run
-hold, pip's behaviour, the wheelhouse's pip settings and a broken library's
-import path; and ``reset-db`` closes every process's door before it deletes,
+hold, pip's behaviour, the wheelhouse's pip settings, a broken library's
+import path and the monitor's histories written now (``monitor-flush``); and
+``reset-db`` closes every process's door before it deletes,
 and opens every one after. Users, projects, the shared catalog and the
 package stores are the database and the disk, which every process reads, so
 those routes act once. The scripted model's queues are the dataflow's own
@@ -825,6 +826,35 @@ def llm_deployment():
                 return jsonify({"error": str(exc)}), 400
     try:
         answers = every_process.everywhere("llm-deployment", arguments)
+    except every_process.NotEveryProcess as exc:
+        return _not_every_process(exc)
+    return jsonify(answers[backend_processes.this_process()]), 200
+
+
+@every_process.step("monitor-flush")
+def _monitor_flush_here(_arguments: dict) -> dict:
+    """This process's monitor histories, what each holds written now: the
+    histories written. Raises naming those that could not be."""
+    from utk_curio.backend.app.monitor import history as monitor_history
+
+    written = monitor_history.flush_all()
+    failed = sorted(name for name, done in written.items() if not done)
+    if failed:
+        raise RuntimeError(f"could not write the monitor histories {', '.join(failed)}")
+    return {"written": sorted(written)}
+
+
+@testing_bp.route("/monitor-flush", methods=["POST"])
+def monitor_flush():
+    """Write what every backend process holds of the monitor's histories now,
+    rather than at its next minute (``monitor/history.py``), so a test reads
+    the routes with every row its requests made.
+
+    Response: ``{"written": [<history names>]}``, those of the process the
+    call reached; 502 naming a process that could not write one.
+    """
+    try:
+        answers = every_process.everywhere("monitor-flush")
     except every_process.NotEveryProcess as exc:
         return _not_every_process(exc)
     return jsonify(answers[backend_processes.this_process()]), 200

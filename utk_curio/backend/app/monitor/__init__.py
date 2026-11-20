@@ -18,16 +18,17 @@ Two postures, deliberately different, and the split is the point:
   therefore exempt from that rule. See its docstring in `errors.py` for what
   that exposes and what an operator should do about it.
 
-Everything here covers the running process and is bounded: counters are ints,
-the duration window is a fixed-length deque, and every number resets when the
-process restarts, which is why `uptimeSeconds` ships in the payload. The
-hourly histories (`history.py`: the LLM tokens of `llm_tokens.py`, and the
-servers' open files that `open_files.py` samples every hour) are also written
-to `.curio/monitor/<name>.json` as they change, hold at most 90 days, and start
-over, file included, when the backend starts.
+The counters and the error log cover the running process and are bounded:
+counters are ints, the duration window is a fixed-length deque, and every
+number resets when the process restarts, which is why `uptimeSeconds` ships in
+the payload. The histories (`history.py`: the LLM tokens of `llm_tokens.py`,
+and the servers' open files that `open_files.py` samples every hour) are kept
+across restarts instead: one file each in the monitor folder (`--monitor-dir`,
+`.curio/monitor` by default), which every backend process writes, the last 90
+days.
 
-In a start of several backend processes each process holds its own numbers
-and files, and the home process, which nginx sends every monitor route to,
+In a start of several backend processes each process holds its own counters
+and error log, and the home process, which nginx sends every monitor route to,
 asks the others for their parts and merges them (`processes.py`); with one
-process every route answers as it always has.
+process nothing is asked.
 """
