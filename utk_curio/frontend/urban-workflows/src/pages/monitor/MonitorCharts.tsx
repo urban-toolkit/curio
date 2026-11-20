@@ -161,6 +161,14 @@ export const StoreSizeHistogram: React.FC<{ buckets: SizeBucket[] }> = ({
   );
 };
 
+/** A moment marked across a chart of lines over time, such as a deploy. */
+export interface TimeMark {
+  /** When, in epoch milliseconds. */
+  t: number;
+  /** What its tooltip names it by, such as the version a deploy started. */
+  label: string;
+}
+
 /** What `LinesOverTime` draws, and how. */
 export interface LinesOverTimeOptions {
   /** One point per row: its time (epoch milliseconds), its value and its series. */
@@ -195,6 +203,14 @@ export interface LinesOverTimeOptions {
    * decimal above (`durationText`, as `formatMs` does).
    */
   durations?: boolean;
+  /**
+   * Moments marked across the plot, each a thin dashed rule whose tooltip
+   * gives its label under `markTitle` and its time: the deploys. Those
+   * outside the time axis are left out.
+   */
+  marks?: TimeMark[];
+  /** What a mark's tooltip calls its label. */
+  markTitle?: string;
 }
 
 /** The field of each point that holds its duration as the tooltip writes it. */
@@ -247,9 +263,10 @@ export const DAYS_AXIS_FORMAT = "%b %-d, %H:%M";
  */
 const DAYS_TICK_COUNT = { expr: "ceil(width / 150)" };
 
-/** How long the time axis spans: its domain when given, else the rows' times. */
-function timeSpanOf(rows: Record<string, unknown>[], timeField: string, timeDomain?: [number, number]): number {
-  if (timeDomain) return timeDomain[1] - timeDomain[0];
+/** The time axis's first and last time: its domain when given, else the rows' times. */
+function timeExtentOf(rows: Record<string, unknown>[], timeField: string,
+                      timeDomain?: [number, number]): [number, number] | null {
+  if (timeDomain) return timeDomain;
   let first = Infinity;
   let last = -Infinity;
   for (const row of rows) {
@@ -259,15 +276,21 @@ function timeSpanOf(rows: Record<string, unknown>[], timeField: string, timeDoma
       last = Math.max(last, t);
     }
   }
-  return last > first ? last - first : 0;
+  return first <= last ? [first, last] : null;
 }
+
+/** The marks' ink: the axes' grey, so a mark reads as a reference, not a series. */
+const MARK_INK = AXIS_INK;
 
 /**
  * The Vega-Lite spec of `LinesOverTime`: time on x, the value on y, a 2px
  * line per series, the legend under the plot, and a tooltip with the series,
  * the time and the value. Over more than a day, the time axis names each
  * label's day as well as its hour. A null value breaks its line there, as
- * Vega-Lite breaks a line at an invalid value.
+ * Vega-Lite breaks a line at an invalid value. With marks within the time
+ * axis, the lines are a layer and the marks a second one over them: a thin
+ * dashed rule each, on the same time scale, with a tooltip of its own and no
+ * legend.
  */
 export function linesOverTimeSpec({
   rows,
@@ -283,13 +306,18 @@ export function linesOverTimeSpec({
   dashed = [],
   points = false,
   durations = false,
+  marks = [],
+  markTitle = "mark",
 }: LinesOverTimeOptions) {
   const series = colors?.domain ?? [...new Set(rows.map((row) => String(row[seriesField])))];
   const range = colors?.range ?? CATEGORICAL.slice(0, series.length);
   // Vega thins an axis's values down to its tick count, so a log axis counts
   // every power of ten it ticks.
   const decades = logY ? powersOfTen(rows.map((row) => Number(row[valueField]))) : [];
-  const days = timeSpanOf(rows, timeField, timeDomain) > DAY_MS;
+  const extent = timeExtentOf(rows, timeField, timeDomain);
+  const days = extent !== null && extent[1] - extent[0] > DAY_MS;
+  // A mark past the axis would stretch it, or draw outside the plot.
+  const shownMarks = extent === null ? [] : marks.filter((mark) => mark.t >= extent[0] && mark.t <= extent[1]);
   const ink = { labelColor: AXIS_INK, titleColor: AXIS_INK, domainColor: GRID_INK,
                 tickColor: GRID_INK, gridColor: GRID_INK };
   const encoding: Record<string, unknown> = {
@@ -341,8 +369,7 @@ export function linesOverTimeSpec({
     };
   }
   const value = `datum[${JSON.stringify(valueField)}]`;
-  return {
-    $schema: "https://vega.github.io/schema/vega-lite/v5.json",
+  const lines = {
     data: { values: rows },
     ...(durations
       ? { transform: [{ calculate: `isValid(${value}) ? ${durationText(value)} : ''`, as: DURATION_TEXT_FIELD }] }
@@ -355,15 +382,35 @@ export function linesOverTimeSpec({
       ...(points ? { point: { filled: true, size: 64 } } : {}),
     },
     encoding,
-    config: { background: null, view: { stroke: null }, font: "Rubik, sans-serif" },
+  };
+  const config = { background: null, view: { stroke: null }, font: "Rubik, sans-serif" };
+  if (shownMarks.length === 0) {
+    return { $schema: "https://vega.github.io/schema/vega-lite/v5.json", ...lines, config };
+  }
+  const markLayer = {
+    data: { values: shownMarks },
+    mark: { type: "rule", color: MARK_INK, strokeWidth: 1, strokeDash: [4, 4] },
+    encoding: {
+      // The lines' time axis, read from the mark's own time.
+      x: { ...(encoding.x as Record<string, unknown>), field: "t" },
+      tooltip: [
+        { field: "label", type: "nominal", title: markTitle },
+        { field: "t", type: "temporal", title: "time", format: timeFormat },
+      ],
+    },
+  };
+  return {
+    $schema: "https://vega.github.io/schema/vega-lite/v5.json",
+    layer: [lines, markLayer],
+    config,
   };
 }
 
 /**
- * Lines over time, one per series: an hourly history of the monitor's. Its
- * tooltip is the Curio one, as the histograms' is. Pass `rows`, `colors` and
- * `dashed` that keep their identity while they hold the same, or the chart is
- * drawn again at each render.
+ * Lines over time, one per series: a history of the monitor's. Its tooltip,
+ * and its marks', is the Curio one, as the histograms' is. Pass `rows`,
+ * `colors`, `dashed` and `marks` that keep their identity while they hold the
+ * same, or the chart is drawn again at each render.
  */
 export const LinesOverTime: React.FC<LinesOverTimeOptions & { label: string; height?: number }> = ({
   label,
@@ -381,6 +428,8 @@ export const LinesOverTime: React.FC<LinesOverTimeOptions & { label: string; hei
   dashed,
   points,
   durations,
+  marks,
+  markTitle,
 }) => {
   const first = timeDomain?.[0];
   const last = timeDomain?.[1];
@@ -389,10 +438,10 @@ export const LinesOverTime: React.FC<LinesOverTimeOptions & { label: string; hei
       linesOverTimeSpec({
         rows, timeField, valueField, seriesField, valueTitle, seriesTitle, timeFormat,
         timeDomain: first != null && last != null ? [first, last] : undefined,
-        colors, logY, dashed, points, durations,
+        colors, logY, dashed, points, durations, marks, markTitle,
       }),
     [rows, timeField, valueField, seriesField, valueTitle, seriesTitle, timeFormat, first, last, colors, logY,
-     dashed, points, durations]
+     dashed, points, durations, marks, markTitle]
   );
   return <VegaChart spec={spec} height={height} label={label} />;
 };

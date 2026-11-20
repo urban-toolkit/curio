@@ -8,7 +8,8 @@
  * LLM performance chart over its 7 days. Within a day the labels stay Vega's
  * own. A chart of durations, the LLM performance one, labels its value axis in
  * milliseconds under a second and in seconds above, a step with no value among
- * its rows.
+ * its rows. A chart's marks, the deploys, are rules across its plot at their
+ * times on the lines' time scale, each with its label for the tooltip.
  *
  * Each spec is compiled with the vega-lite the app bundles and run by vega
  * without a renderer, and its labels are read off the scene graph. It runs in
@@ -131,6 +132,51 @@ test("a chart of durations writes each point's tooltip as formatMs does, nothing
     durations: true,
   });
   expect(await tooltipTexts(spec)).toEqual(values.map((value) => [value, value == null ? "" : formatMs(value)]));
+});
+
+/** The items of every mark of *marktype* with the role of a chart's own mark (not an axis's) under *node*. */
+function markItems(node: any, marktype: string, found: any[] = []): any[] {
+  if (node?.marktype) {
+    if (node.marktype === marktype && node.role === "mark") found.push(...node.items);
+    for (const item of node.items ?? []) markItems(item, marktype, found);
+  } else {
+    for (const mark of node?.items ?? []) markItems(mark, marktype, found);
+  }
+  return found;
+}
+
+test("a chart's marks are rules across its plot at their times, each with its label for the tooltip", async () => {
+  const from = Date.parse("2026-10-30T16:00:00Z");
+  const marks = [
+    { t: from + 30 * HOUR, label: "0.17.399" },
+    { t: from + 100 * HOUR, label: "0.17.400" },
+  ];
+  const spec = linesOverTimeSpec({
+    rows: hourly("2026-11-01T00:00:00Z", 5), timeField: "t", valueField: "files", seriesField: "line",
+    valueTitle: "files", timeDomain: [from, from + 168 * HOUR], marks, markTitle: "version",
+  });
+  const view = new vega.View(vega.parse(lite.compile({ ...spec, width: 600, height: 160 }).spec), {
+    renderer: "none",
+  });
+  await view.runAsync();
+  const rules = markItems(view.scenegraph().root, "rule");
+  const x = view.scale("x");
+  const at = marks.map((mark) => x(mark.t));
+  view.finalize();
+
+  expect(rules.map((item) => item.tooltip?.version)).toEqual(["0.17.399", "0.17.400"]);
+  // On the lines' own time scale, at each mark's time, inside the plot.
+  rules.forEach((item, index) => {
+    expect(item.x).toBeCloseTo(at[index], 6);
+    expect(item.x).toBeGreaterThan(0);
+    expect(item.x).toBeLessThan(600);
+  });
+  // From the plot's top to its bottom.
+  expect(rules.map((item) => [item.y, item.y2])).toEqual([[0, 160], [0, 160]]);
+  // Still a week's labels, each naming its day.
+  const labels = await drawnLabels(spec, "x");
+  expect(labels.length).toBeGreaterThan(2);
+  expect(labels.filter((label) => !DAY_AND_HOUR.test(label))).toEqual([]);
 });
 
 test("within a day, the time labels stay Vega's own, the hour alone", async () => {

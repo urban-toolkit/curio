@@ -2,9 +2,10 @@
  * The monitor's lines over time (pages/monitor/MonitorCharts.tsx,
  * `linesOverTimeSpec`): time on x, a value on y, a line per value of a series
  * field, and its options: a log y axis, series drawn dashed, as a limit is,
- * a dot on each point, and values that are durations, whose axis and tooltip
- * Vega writes as `formatMs` does (monitorChartDays.test.ts draws them). Its
- * tooltip is the Curio one (tooltip/vegaTooltip.test.tsx).
+ * a dot on each point, values that are durations, whose axis and tooltip
+ * Vega writes as `formatMs` does, and marks, the deploys, each a thin dashed
+ * rule across the plot (monitorChartDays.test.ts draws them). Its tooltip is
+ * the Curio one (tooltip/vegaTooltip.test.tsx).
  */
 jest.mock("vega", () => ({}), { virtual: true });
 jest.mock("vega-lite", () => ({}), { virtual: true });
@@ -93,6 +94,48 @@ test("durations read as milliseconds under a second and as seconds above, on the
   expect(counts.encoding.y.axis.labelExpr).toBeUndefined();
   expect(counts.encoding.y.axis.format).toBe("~s");
   expect(counts.encoding.tooltip[2]).toEqual({ field: "value", type: "quantitative", title: "open files", format: "," });
+});
+
+test("marks within the time axis are a layer of thin dashed rules over the lines, each with its tooltip", () => {
+  const marks = [
+    { t: 500, label: "0.17.399" },
+    { t: 1500, label: "0.17.400" },
+    { t: 9000, label: "0.17.401" },
+  ];
+  const spec: any = linesOverTimeSpec({
+    ...BASE, timeDomain: [1000, 5000], timeFormat: "%H:00", marks, markTitle: "version", durations: true,
+  });
+  expect(spec.mark).toBeUndefined();
+  expect(spec.data).toBeUndefined();
+  expect(spec.layer).toHaveLength(2);
+  const [lines, rules] = spec.layer;
+  // The lines as a chart without marks draws them.
+  const alone: any = linesOverTimeSpec({ ...BASE, timeDomain: [1000, 5000], timeFormat: "%H:00", durations: true });
+  expect(lines).toEqual({ data: alone.data, transform: alone.transform, mark: alone.mark, encoding: alone.encoding });
+  expect(lines.data.values).toBe(ROWS);
+  expect(spec.config).toEqual(alone.config);
+
+  // Only the mark within the axis's span, on the lines' time axis.
+  expect(rules.data.values).toEqual([{ t: 1500, label: "0.17.400" }]);
+  expect(rules.mark).toEqual({ type: "rule", color: "#6B6B76", strokeWidth: 1, strokeDash: [4, 4] });
+  expect(rules.encoding.x).toEqual({ ...lines.encoding.x, field: "t" });
+  // No colour, so no legend of its own.
+  expect(Object.keys(rules.encoding)).toEqual(["x", "tooltip"]);
+  expect(rules.encoding.tooltip).toEqual([
+    { field: "label", type: "nominal", title: "version" },
+    { field: "t", type: "temporal", title: "time", format: "%H:00" },
+  ]);
+});
+
+test("with no mark within the time axis, the chart is the lines alone", () => {
+  const plain: any = linesOverTimeSpec(BASE);
+  // The rows span 1000 to 2000.
+  expect(linesOverTimeSpec({ ...BASE, marks: [{ t: 99999, label: "0.17.401" }] })).toEqual(plain);
+  expect(linesOverTimeSpec({ ...BASE, marks: [] })).toEqual(plain);
+  expect(plain.layer).toBeUndefined();
+  // Within the rows' span, with no domain given, a mark is drawn.
+  const marked: any = linesOverTimeSpec({ ...BASE, marks: [{ t: 2000, label: "0.17.401" }] });
+  expect(marked.layer[1].data.values).toEqual([{ t: 2000, label: "0.17.401" }]);
 });
 
 test("the colours, the span and the tooltip's words it is given", () => {

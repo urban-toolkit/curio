@@ -26,6 +26,7 @@ jest.mock("../../api/monitorApi", () => ({
   fetchMonitorErrors: jest.fn(),
   fetchMonitorLlm: jest.fn(),
   fetchMonitorOpenFiles: jest.fn(),
+  fetchMonitorUsage: jest.fn(),
   postClientError: jest.fn(),
 }));
 
@@ -39,6 +40,9 @@ import {
 } from "../../api/monitorApi";
 import MonitorContent from "../../pages/monitor/MonitorContent";
 import { OpenFilesSection } from "../../pages/monitor/OpenFilesSection";
+
+/** The monitor's content on its Status tab, where the processes' numbers are. */
+const OnStatus = () => <MonitorContent tab="status" onTabChange={jest.fn()} />;
 
 const monitorPayload = {
   generatedAt: "2026-11-06T15:20:07Z",
@@ -145,7 +149,7 @@ describe("the monitor of several backend processes", () => {
 
   test("names a process that did not answer in one line, and says nothing once every process answered", async () => {
     serve({ monitor: processes(3, [2]), errors: processes(3) });
-    const first = render(<MonitorContent />);
+    const first = render(<OnStatus />);
     expect(
       await screen.findByText("Backend process 2 did not answer; its numbers are left out.")
     ).toBeInTheDocument();
@@ -154,14 +158,14 @@ describe("the monitor of several backend processes", () => {
     first.unmount();
 
     serve({ monitor: processes(3), errors: processes(3) });
-    const second = render(<MonitorContent />);
+    const second = render(<OnStatus />);
     expect(await screen.findByText("1482")).toBeInTheDocument();
     expect(screen.queryByText(/did not answer/)).not.toBeInTheDocument();
     second.unmount();
 
     // A backend of one process.
     serve({});
-    render(<MonitorContent />);
+    render(<OnStatus />);
     expect(await screen.findByText("1482")).toBeInTheDocument();
     expect(screen.queryByText(/did not answer/)).not.toBeInTheDocument();
   });
@@ -171,7 +175,7 @@ describe("the monitor of several backend processes", () => {
       monitor: processes(8, [5, 7]),
       errors: processes(8, [2, 5]),
     });
-    render(<MonitorContent />);
+    render(<OnStatus />);
     expect(
       await screen.findByText("Backend processes 2, 5 and 7 did not answer; their numbers are left out.")
     ).toBeInTheDocument();

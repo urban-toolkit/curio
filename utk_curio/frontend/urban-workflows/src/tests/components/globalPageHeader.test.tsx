@@ -76,6 +76,7 @@ describe('GlobalPageHeader', () => {
 
   test.each([
     ['/monitor', 'page'],
+    ['/monitor/usage', 'page'],
     ['/catalog/nodes', null],
   ])('on %s the Monitor link has aria-current=%s', (path, current) => {
     const { getByRole } = renderAt(path);
