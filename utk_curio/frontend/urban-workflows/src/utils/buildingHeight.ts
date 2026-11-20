@@ -59,6 +59,25 @@ function autkBase(p: Record<string, any>): number {
     return 0;
 }
 
+/** The keys autk-map reads a building part's top from, the first it holds winning. */
+const TOP_KEYS = ['height', 'building:height', 'levels', 'building:levels'] as const;
+
+/**
+ * A building's properties without any of the keys autk-map reads its top
+ * from, when it has no height autk-map draws (the parts
+ * {@link deriveBuildingHeight} gives one): autk-map's `buildingsZeroHeight`
+ * then draws it at a random height of 3 to 7 floors, which it gives only a
+ * part that holds none of those keys. The same object for a part with a height
+ * autk-map draws, or with none of the keys already.
+ */
+export function withoutDrawnHeight<T extends Record<string, any> | null | undefined>(props: T): T {
+    const p: Record<string, any> = props ?? {};
+    if (deriveBuildingHeight(p) === null || !TOP_KEYS.some((key) => key in p)) return props;
+    const out: Record<string, any> = { ...p };
+    for (const key of TOP_KEYS) delete out[key];
+    return out as T;
+}
+
 /**
  * A building's properties with `height` and `min_height` written where
  * autk-map would read them wrong: a `height` (or `levels`) key with no number

@@ -12,7 +12,9 @@
  *
  * Every pass Curio runs, a map node's in the grammar's run and a compute
  * step's, goes through ``checkedPasses``: in error scopes on the device, one
- * pass at a time on the page, named by the table it writes when it fails.
+ * pass at a time on the page, named by the table it writes when it fails. A
+ * windows or clusters pass, which the grammar runs on the CPU, asks no device:
+ * it runs as it is, named the same way when it fails.
  *
  * The device is autk-compute's own, shared by every one of its pipelines;
  * ``getDevice`` is protected in its types, hence the cast.
@@ -99,15 +101,22 @@ async function computeDevice(): Promise<ScopedDevice> {
     return (new ComputeGpgpu() as unknown as { getDevice(): Promise<ScopedDevice> }).getDevice();
 }
 
-/** The table *pass* writes: its `outputTableName`, else a GPGPU pass's `dataRef`. */
+/** The table *pass* writes: its `outputTableName`, else a GPGPU or clusters pass's `dataRef`. */
 function tableWrittenBy(pass: any): string {
     const name = pass?.outputTableName ?? (pass?.type === 'render' ? undefined : pass?.dataRef);
     return typeof name === 'string' && name ? name : 'compute';
 }
 
 /**
+ * The passes autk-grammar runs on the CPU, through autk-core, with no GPU: a
+ * windows pass and a clusters pass (autk-grammar 5.4.0).
+ */
+const CPU_PASSES: ReadonlySet<unknown> = new Set(['windows', 'clusters']);
+
+/**
  * *adapter* with every pass it runs checked: in error scopes on autk-compute's
- * device (``runComputeChecked``), one pass at a time on the page. A pass that
+ * device (``runComputeChecked``), one pass at a time on the page. A pass the
+ * grammar runs on the CPU asks no device and runs as it is. A pass that
  * fails, the GPU refusing it or the grammar, is named by the table it writes.
  * Each pass runs on the database it was given, as autk-grammar's engine hands
  * it on: the grammar's compute reads a `fromFeature` table from the cache of
@@ -115,18 +124,22 @@ function tableWrittenBy(pass: any): string {
  * read for it here.
  */
 export function checkedPasses(adapter: PassAdapter): PassAdapter {
+    const named = async <T>(pass: any, run: () => Promise<T>): Promise<T> => {
+        try {
+            return await run();
+        } catch (e) {
+            throw new Error(`${tableWrittenBy(pass)}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+    };
     return {
-        resolveCompute: (context, pass) => onePassAtATime(async () => {
+        resolveCompute: (context, pass) => {
+            if (CPU_PASSES.has(pass?.type)) return named(pass, () => adapter.resolveCompute(context, pass));
             const compute = {
                 getDevice: computeDevice,
                 run: (params: any) => adapter.resolveCompute(context, params),
             };
-            try {
-                return await runComputeChecked(compute, pass);
-            } catch (e) {
-                throw new Error(`${tableWrittenBy(pass)}: ${e instanceof Error ? e.message : String(e)}`);
-            }
-        }),
+            return onePassAtATime(() => named(pass, () => runComputeChecked(compute, pass)));
+        },
     };
 }
 

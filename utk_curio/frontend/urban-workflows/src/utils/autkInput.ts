@@ -32,7 +32,7 @@ import {
   requestedLayerTables,
   sectionInputTables,
 } from "../adapters/node/autkDataCompile";
-import { readableBuildingProperties } from "./buildingHeight";
+import { deriveBuildingHeight, readableBuildingProperties, withoutDrawnHeight } from "./buildingHeight";
 import { detectCoordinateFormat } from "./geoCrs";
 import { resolveGeometryField } from "./geometryField";
 import { readGrammarInput, type GrammarFrame, type GrammarInput, type RasterPayload } from "./grammarInput";
@@ -91,10 +91,11 @@ function asList<T>(value: T | T[] | undefined | null): T[] {
 
 /**
  * Every table the document reads in the browser, by key (`autkTableKey`): map
- * layers, plots (and the map a plot links to), and compute passes: a GPGPU
- * pass's table and its `fromFeature` uniforms, a render pass's viewpoints and
- * the tables of its layers, each in the workspace of the map, plot or pass that
- * names it.
+ * layers and the raster a map's `terrain` raises its ground to, plots (and the
+ * map a plot links to), and compute passes: a GPGPU, windows or clusters
+ * pass's table and a GPGPU pass's `fromFeature` uniforms, a render pass's
+ * viewpoints and the tables of its layers, each in the workspace of the map,
+ * plot or pass that names it.
  */
 export function documentTableRefs(spec: any): string[] {
   const names = new Set<string>();
@@ -103,6 +104,7 @@ export function documentTableRefs(spec: any): string[] {
   };
   for (const map of asList(spec?.map)) {
     for (const ref of asList((map as any)?.layerRefs)) add(map, (ref as any)?.dataRef);
+    add(map, (map as any)?.terrain?.dataRef);
   }
   for (const plot of asList(spec?.plot)) {
     add(plot, (plot as any)?.dataRef);
@@ -204,40 +206,48 @@ export type WrittenTable = {
   /** Its name: the pass's `outputTableName`, else its `dataRef`. */
   name: string;
   /**
-   * The table the pass computes over: a GPGPU pass's `dataRef`, a render
-   * pass's viewpoints. The table it writes is empty when this one is.
+   * The table the pass computes over: a GPGPU, windows or clusters pass's
+   * `dataRef`, a render pass's viewpoints. The table it writes is empty when
+   * this one is.
    */
   from: string;
   /**
    * Whether it holds the rows of `from`, one feature each: every pass's table
-   * but a render pass's over building windows, which holds one point per
-   * window.
+   * but a windows pass's and a render pass's over building windows, which hold
+   * one point per window.
    */
   holdsRows: boolean;
   /**
    * The type the pass draws and hands it on as (`layerType`), read only with an
-   * `outputTableName`, or the `points` of a render pass's windows.
+   * `outputTableName`, or the `points` of windows.
    */
   layerType?: string;
   /** The pass's workspace, where it reads `from` and writes the table, when it is not the default one. */
   workspace?: string;
 };
 
-/** A compute pass's kind: `render`, or `gpgpu` for the default, or null for neither. */
-function passKind(pass: any): "gpgpu" | "render" | null {
+/**
+ * A compute pass's kind: `render`; `windows` and `clusters`, which autk-grammar
+ * runs on the CPU; `gpgpu` for the default; or null for none of them.
+ */
+function passKind(pass: any): "gpgpu" | "render" | "windows" | "clusters" | null {
   if (pass == null || typeof pass !== "object") return null;
-  if (pass.type === "render") return "render";
+  if (pass.type === "render" || pass.type === "windows" || pass.type === "clusters") return pass.type;
   return pass.type == null || pass.type === "gpgpu" ? "gpgpu" : null;
 }
 
-/** The table a compute pass computes over: a GPGPU pass's `dataRef`, a render pass's viewpoints. */
+/** The table a compute pass computes over: a GPGPU, windows or clusters pass's `dataRef`, a render pass's viewpoints. */
 function passSource(pass: any): unknown {
   return passKind(pass) === "render" ? pass.viewpoints?.dataRef : pass?.dataRef;
 }
 
-/** Whether a render pass looks out from building windows: its table holds one point per window. */
+/**
+ * Whether a pass writes windows, one point a window: a windows pass, and a
+ * render pass that looks out from building windows.
+ */
 function overWindows(pass: any): boolean {
-  return passKind(pass) === "render" && pass.viewpoints?.strategy?.type === "building-windows";
+  const kind = passKind(pass);
+  return kind === "windows" || (kind === "render" && pass.viewpoints?.strategy?.type === "building-windows");
 }
 
 /**
@@ -245,21 +255,23 @@ function overWindows(pass: any): boolean {
  * pass writes from another's comes after it: each under the pass's
  * `outputTableName`, else in place of the table it computes over, as
  * autk-grammar's compute adapter keeps them (`store`), in the pass's
- * workspace. A map or a plot draws a table a pass wrote from that result,
- * which holds every feature of the table the pass computed over, in the order
- * autk-db stores them, but for a render pass over building windows, whose
- * table holds one point per window. A table a pass names is drawn as its
- * `layerType`, else as `points` for windows, else as the table it is computed
- * from.
+ * workspace; a windows pass writes only under its own name. A map or a plot
+ * draws a table a pass wrote from that result, which holds every feature of
+ * the table the pass computed over, in the order autk-db stores them, but for
+ * windows, whose table holds one point per window. A table a pass names is
+ * drawn as its `layerType`, else as `points` for windows, else as the table it
+ * is computed from.
  */
 export function writtenTables(spec: any): WrittenTable[] {
   const written: WrittenTable[] = [];
   for (const pass of asList<any>(spec?.compute)) {
-    if (passKind(pass) === null) continue;
+    const kind = passKind(pass);
+    if (kind === null) continue;
     const { outputTableName, layerType } = pass;
     const from = passSource(pass);
     if (typeof from !== "string" || !from) continue;
     const named = typeof outputTableName === "string" && outputTableName !== "";
+    if (kind === "windows" && !named) continue;
     const windows = overWindows(pass);
     const workspace = autkWorkspaceOf(pass);
     written.push({
@@ -431,19 +443,46 @@ function featuresOf(frame: GrammarFrame, name: string): FrameResult {
  * per row as it came: a feature autk-map would misread, or one with no
  * `height`, gets its `height` written, and every other one is the same object.
  * A node reads its input's buildings and those its own data section loads
- * through it.
+ * through it. With *zeroHeight*, for a table a layer with `buildingsZeroHeight`
+ * draws (`zeroHeightTables`), a part with no height autk-map draws is left
+ * with none of the keys autk-map reads a height from, so autk-map raises it at
+ * its own random 3 to 7 floors.
  */
-export function withReadableHeights(fc: FeatureCollection): FeatureCollection {
+export function withReadableHeights(
+  fc: FeatureCollection,
+  { zeroHeight = false }: { zeroHeight?: boolean } = {},
+): FeatureCollection {
   const features: any[] = Array.isArray((fc as any)?.features) ? (fc as any).features : [];
   let changed = false;
   const next = features.map((feature) => {
     const properties = feature?.properties;
-    const readable = readableBuildingProperties(properties);
+    // A part with no height autk-map draws: left to autk-map, or given Curio's.
+    const readable = zeroHeight && deriveBuildingHeight(properties ?? {}) !== null
+      ? withoutDrawnHeight(properties)
+      : readableBuildingProperties(properties);
     if (readable === properties) return feature;
     changed = true;
     return { ...feature, properties: readable };
   });
   return changed ? ({ ...fc, features: next } as FeatureCollection) : fc;
+}
+
+/**
+ * The tables a layer with `buildingsZeroHeight` draws, by key
+ * (`autkTableKey`), in the workspace of its map: autk-map draws each part of
+ * them that has no height at a random 3 to 7 floors, so a node hands it on
+ * without one (`withReadableHeights`).
+ */
+export function zeroHeightTables(spec: any): Set<string> {
+  const keys = new Set<string>();
+  for (const map of asList<any>(spec?.map)) {
+    for (const ref of asList<any>(map?.layerRefs)) {
+      if (ref?.buildingsZeroHeight === true && typeof ref?.dataRef === "string" && ref.dataRef) {
+        keys.add(autkTableKey(autkWorkspaceOf(map), ref.dataRef));
+      }
+    }
+  }
+  return keys;
 }
 
 /**
@@ -628,7 +667,7 @@ type FrameTable =
   | { raster: AutkRasterInput }
   | { refusal: { reason: NodeEmptyReason; detail: string } };
 
-function frameTable(frame: GrammarFrame, name: string): FrameTable {
+function frameTable(frame: GrammarFrame, name: string, zeroHeight = false): FrameTable {
   // A table handed on from another workspace than the default one is loaded there.
   const workspace = frame.workspace ? { workspace: frame.workspace } : {};
   if (frame.dataType === "raster") return { raster: { outputTableName: name, payload: frame.payload, ...workspace } };
@@ -637,7 +676,7 @@ function frameTable(frame: GrammarFrame, name: string): FrameTable {
   // A layer an Autark data node stored empty comes back with no feature
   // list: it has no rows, and the render leaves it out like any empty table.
   const features = (result.fc as any).features;
-  const geojsonObject = frame.layerType === "buildings" ? withReadableHeights(result.fc) : result.fc;
+  const geojsonObject = frame.layerType === "buildings" ? withReadableHeights(result.fc, { zeroHeight }) : result.fc;
   return {
     source: {
       type: "geojson",
@@ -693,6 +732,10 @@ export function autkSourcesFrom(
   // Names two inputs bring, and where their message goes among the problems:
   // it says where the second layer is, which is known once every frame is in.
   const clashes: Array<{ at: number; earlier: number; frame: GrammarFrame; name: string }> = [];
+  // The tables a layer with buildingsZeroHeight draws, by the table's name or,
+  // for an input of one layer, by the input's (`input_<k>`).
+  const zeroHeight = zeroHeightTables(spec);
+  const framesOf = (circle: number) => read.frames.filter((frame) => frame.circle === circle).length;
 
   for (const frame of read.frames) {
     let name = autkTableName(frame);
@@ -714,7 +757,8 @@ export function autkSourcesFrom(
       }
     }
     if (!taken) broughtBy.set(keyOf(name), frame.circle);
-    const table = frameTable(frame, name);
+    const table = frameTable(frame, name, zeroHeight.has(keyOf(name))
+      || (framesOf(frame.circle) === 1 && zeroHeight.has(keyOf(inputTableName(frame.circle)))));
     became.set(frame, { table, taken });
     if (taken) continue;
     if ("raster" in table) {

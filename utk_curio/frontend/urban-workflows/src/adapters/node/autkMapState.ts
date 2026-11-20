@@ -286,7 +286,14 @@ export function snapshotBeforeSolo(grammar: unknown, index = 0): MapLayerState |
     return state;
 }
 
-/** The settings of each layer map *index* of *grammar* draws, the first by default. */
+/**
+ * The layer each snapshot's legend showed (the map UI's `activeLayer`), by
+ * the layer's id: the document's `legend` layer, or the one picked in the
+ * map's menu.
+ */
+const legendOf = new WeakMap<MapLayerState, string>();
+
+/** The settings of each layer map *index* of *grammar* draws, the first by default, and the layer its legend shows. */
 export function snapshotMapLayers(grammar: unknown, index = 0): MapLayerState | null {
     const map = grammarMaps(grammar)[index];
     if (!map) return null;
@@ -301,10 +308,19 @@ export function snapshotMapLayers(grammar: unknown, index = 0): MapLayerState | 
         if (info.colormap?.config) kept.colormap = { ...info.colormap.config };
         out[id] = kept;
     }
+    const legend = idOf(map.ui?.activeLayer);
+    if (legend) legendOf.set(out, legend);
     return out;
 }
 
-/** Put *state* back on the layers of *map* that have the same id. */
+/**
+ * Put *state* back on the layers of *map* that have the same id, then show in
+ * the legend the layer it showed when *state* was taken: autk-map moves the
+ * legend to each layer whose colors are set, the last one put back here. It
+ * sets the legend's layer alone, through the map UI's `activeLayer`, as
+ * autk-grammar's `legend` does: autk-map's `changeActiveLayer` would also make
+ * that layer the one that picks.
+ */
 export function restoreMapLayers(map: any, state: MapLayerState | null): void {
     if (!map || !state) return;
     for (const layer of layersOf(map)) {
@@ -318,6 +334,15 @@ export function restoreMapLayers(map: any, state: MapLayerState | null): void {
         } catch (error) {
             // A setting the new layer cannot take is left as the document draws it.
             console.warn('[autk-map] keeping a layer setting across a redraw failed:', id, error);
+        }
+    }
+    const legend = layersOf(map).find((layer) => idOf(layer) === legendOf.get(state));
+    if (legend && map.ui && idOf(map.ui.activeLayer) !== idOf(legend)) {
+        try {
+            map.ui.activeLayer = legend;
+            map.ui.refreshLegend?.(null);
+        } catch (error) {
+            console.warn('[autk-map] keeping the legend\'s layer across a redraw failed:', error);
         }
     }
     map.requestRender?.();

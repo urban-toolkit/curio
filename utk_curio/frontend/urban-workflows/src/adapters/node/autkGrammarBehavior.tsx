@@ -28,6 +28,7 @@ import { autkKeyProblem, autkRasterPassProblem, autkViewProblem } from '../../co
 import {
     autkNeedsInput, autkReadsInput, autkSourcesFrom, documentTableRefs, drawnFeatures, drawnRows, inputRow, keyValues, loadableSource, ownTableNames,
     passesAtHand, readAutkInput, selectFieldsOf, selectFieldsProblem, tableKeyOf, tablePositions, tablesToLoad, withReadableHeights, writtenTables,
+    zeroHeightTables,
     type LoadOrder,
     type PreparedAutkInput,
 } from '../../utils/autkInput';
@@ -1081,7 +1082,10 @@ export const useAutkGrammarBehavior = (
             // (backendLayers == null means we did not already fall back). Each
             // layer keeps the workspace it was loaded into. A buildings layer
             // gets the heights autk-map and a pass read, as one of the input
-            // does (withReadableHeights).
+            // does (withReadableHeights), but for a part with no height in a
+            // table a layer with buildingsZeroHeight draws, which autk-map
+            // raises at random itself (zeroHeightTables).
+            const zeroHeight = zeroHeightTables(spec);
             const loadedLayers = async (): Promise<AutkLayer[]> => {
                 let layers: AutkLayer[] = [];
                 try {
@@ -1099,7 +1103,12 @@ export const useAutkGrammarBehavior = (
                     );
                 }
                 return layers.map((layer) => (layer.type === 'buildings'
-                    ? { ...layer, geojson: withReadableHeights(layer.geojson) }
+                    ? {
+                        ...layer,
+                        geojson: withReadableHeights(layer.geojson, {
+                            zeroHeight: zeroHeight.has(autkTableKey(autkWorkspaceOf(layer), layer.name)),
+                        }),
+                    }
                     : layer));
             };
 
@@ -1420,7 +1429,7 @@ export const useAutkGrammarBehavior = (
                 // base-map layer the map lists after a raster draws over it.
                 spec = withLayersOverRasters(withOpaqueRasters(spec));
 
-                const { AutkGrammar, applyCamera, arrangeViews, enterWorkspace } = grammarModule!;
+                const { AutkGrammar, applyCamera, arrangeViews, enterWorkspace, playCameraMotion } = grammarModule!;
                 // A node that left the page while its data loaded has no
                 // canvas to draw on: its run ends here (see mountedRef).
                 if (leftPage()) return;
@@ -1471,8 +1480,10 @@ export const useAutkGrammarBehavior = (
                 const panes = arrangeViews(spec).panes;
                 bleedRasterEdges(grammar, spec);
                 // Each map is framed on its layers, then turned by the camera
-                // its own entry writes, through the grammar's applyCamera.
-                attachSpecCameras(grammar, spec, applyCamera);
+                // its own entry writes, through the grammar's applyCamera,
+                // and plays its camera's tour from there, through the
+                // grammar's playCameraMotion (autkMapView).
+                attachSpecCameras(grammar, spec, applyCamera, playCameraMotion);
                 if (keepView && keptViewsRef.current) keepMapViews(grammar, keptViewsRef.current, panes);
                 else frameMaps(grammar);
                 if (editFedRef.current) {
@@ -2090,12 +2101,16 @@ export const useAutkGrammarBehavior = (
         const drawnOrders = await Promise.all(mapRefs.map(({ index, ref, workspace }, at) =>
             (mapRows[at].length > 0 ? drawnRowsOf(grammar, workspace, ref.dataRef, index) : null)));
         if (grammarRef.current !== grammar) return;
-        const views: LitView[] = mapRefs.map(({ index, ref, key }, at) => ({
-            kind: 'map' as const,
-            index,
-            table: ref.dataRef,
-            positions: tablePositions(mapRows[at], drawnOrders[at] ?? loadOrdersRef.current[key]?.map),
-        }));
+        const views: LitView[] = mapRefs.map(({ index, ref, key }, at) => {
+            const positions = tablePositions(mapRows[at], drawnOrders[at] ?? loadOrdersRef.current[key]?.map);
+            // With nothing coming in, from the node's input or along an edge
+            // to this view, a layer keeps the features its document picks
+            // (`pickedComps`), which the grammar's run lit as it drew it, as
+            // a plot keeps its `selection` below: they are already positions
+            // among the features the layer draws.
+            const picked: number[] = Array.isArray(ref.pickedComps) ? ref.pickedComps.filter(Number.isInteger) : [];
+            return { kind: 'map' as const, index, table: ref.dataRef, positions: positions.length > 0 ? positions : picked };
+        });
         for (const [index, plotSpec] of plotEntries(spec).entries()) {
             // A plot of a table a pass wrote holds the rows the pass kept.
             const plotTable = autkTableKey(autkWorkspaceOf(plotSpec), plotSpec.dataRef);
