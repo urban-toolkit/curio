@@ -547,6 +547,67 @@ def test_each_widget_reaches_the_call(workspace):
         default.close()
 
 
+def test_a_building_with_no_number_in_its_height_column_has_the_height_an_autark_map_draws(tmp_path):
+    """A building with no number in the height column is as tall as an Autark
+    map draws it: its ``height`` or ``building:height``, else 3.4 m a level,
+    when above its base, else 6 m above that base (``min_height``, or 3.4 m a
+    level of ``min_level`` or ``building:min_level``), the height Curio gives a
+    building with none. A number is kept as it is, 0 among them."""
+    import numpy as np
+    import pandas as pd
+
+    rows = [
+        ({"height": 12.0}, 12.0),
+        ({"building:levels": "3"}, 3 * 3.4),
+        ({"building:height": "30", "building:levels": 2}, 30.0),
+        ({}, 6.0),
+        ({"min_height": "10"}, 16.0),
+        ({"building:min_level": 2}, 2 * 3.4 + 6.0),
+        ({"building:levels": 1, "min_height": 8}, 14.0),
+        ({"height": 0.0}, 0.0),
+    ]
+    frame = pd.DataFrame([values for values, _ in rows])
+    with scout_modules(tmp_path) as (_convert, outputs):
+        assert np.allclose(outputs.drawn_heights(frame, "height").to_numpy(), [height for _, height in rows])
+        # A column of another name reads the building's height key after it.
+        roofs = pd.DataFrame({"roof_m": [np.nan, 22.0], "height": ["25", None]})
+        assert np.allclose(outputs.drawn_heights(roofs, "roof_m").to_numpy(), [25.0, 22.0])
+
+
+def test_the_node_rasterizes_a_building_with_no_height_at_the_height_an_autark_map_draws(workspace):
+    """Three buildings lose their heights: one keeps its levels, one its
+    ``building:height`` and one keeps none above a base. The raster is the one
+    of the same buildings with those heights written: 3.4 m a level, the
+    ``building:height``, and 6 m above the base. Without them it would differ:
+    a building with no height would add nothing."""
+    import numpy as np
+
+    buildings = _buildings()
+    largest = buildings.to_crs(3395).area.sort_values(ascending=False).index[:3]
+    levels, tagged, none = largest
+    gaps = buildings.copy()
+    gaps["building:levels"] = np.nan
+    gaps["building:height"] = None
+    gaps["min_height"] = np.nan
+    gaps.loc[[levels, tagged, none], "height"] = np.nan
+    gaps.loc[levels, "building:levels"] = 20
+    gaps.loc[tagged, "building:height"] = "45"
+    gaps.loc[none, "min_height"] = 4.0
+    written = buildings.copy()
+    written.loc[levels, "height"] = 20 * 3.4
+    written.loc[tagged, "height"] = 45.0
+    written.loc[none, "height"] = 10.0
+    dropped = gaps.drop(index=[levels, tagged, none])
+
+    with run_node(gaps, workspace)[1] as raster, run_node(written, workspace)[1] as expected:
+        cells = raster.read(1)
+        assert np.array_equal(cells, expected.read(1), equal_nan=True)
+        assert np.nanmax(cells) > 0
+    with run_node(dropped, workspace)[1] as without:
+        other = without.read(1)
+        assert other.shape != cells.shape or not np.array_equal(cells, other, equal_nan=True)
+
+
 @pytest.mark.parametrize(
     "change, sentence",
     [

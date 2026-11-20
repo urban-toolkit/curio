@@ -7,14 +7,14 @@ color in colors of its own (``highlightColor``, ``invalidValueColor``), with or
 without autk-map's menu and legend (``showUi``); layers drawn as another type
 (``layerType``), with each line's own width (``widthBy``), in the legend
 (``legend``), with features hidden (``skippedComps``) or picked from the start
-(``pickedComps``); a camera that looks at a point (``center``) and plays a
-tour (``motion``); and ``windows`` and ``clusters`` passes. So the ``autark``
-skill names each in the schema's words, the reply schema a provider holds a
-reply to keeps each, in both flavors, and the agents' document check takes
-each, and refuses what the grammar's schema refuses. A node refuses a layer's
-``buildingsZeroHeight``, which the agents never read
-(``test_autk_keys_left_out.py``). Everything is imported inside each test, so
-a checkout without it fails each test on its own.
+(``pickedComps``), and buildings without a height raised at random
+(``buildingsZeroHeight``); a camera that looks at a point (``center``) and
+plays a tour (``motion``); and ``windows`` and ``clusters`` passes. So the
+``autark`` skill names each in the schema's words, the reply schema a provider
+holds a reply to keeps each, in both flavors, and the agents' document check
+takes each, and refuses what the grammar's schema refuses. Everything is
+imported inside each test, so a checkout without it fails each test on its
+own.
 """
 from __future__ import annotations
 
@@ -40,10 +40,10 @@ DOCUMENTS = {
             "layerRefs": [{"dataRef": "lst", "getFnv": "band_24"}],
         },
     },
-    "layers drawn as roads by their widths, in the legend, hidden and picked": {
+    "layers drawn as roads by their widths, in the legend, hidden, picked, of buildings with no height": {
         "map": {"style": "light", "layerRefs": [
             {"dataRef": "input_0", "layerType": "roads", "widthBy": "lanes", "skippedComps": [2, 5]},
-            {"dataRef": "input_1", "getFnv": "height", "legend": True},
+            {"dataRef": "input_1", "getFnv": "height", "legend": True, "buildingsZeroHeight": True},
             {"dataRef": "input_2", "isPick": True, "pickedComps": [0, 4]},
         ]},
     },
@@ -72,7 +72,7 @@ DOCUMENTS = {
 #: The keys of a map the autark skill gives in the schema's words, each on a line of its own.
 MAP_KEYS = ("style", "highlightColor", "invalidValueColor", "showUi", "terrain")
 #: The keys of a map's layer the autark skill gives in the schema's words, each on a line of its own.
-LAYER_KEYS = ("layerType", "widthBy", "legend", "skippedComps", "pickedComps")
+LAYER_KEYS = ("layerType", "widthBy", "legend", "skippedComps", "pickedComps", "buildingsZeroHeight")
 #: The keys of a map's camera autk-grammar 5.4.0 adds.
 CAMERA_KEYS = ("center", "motion")
 #: The compute passes autk-grammar 5.4.0 adds, by their ``type``.

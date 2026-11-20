@@ -8,6 +8,10 @@
  * Examples 06 and 07 pack each part's `geometry.coordinates.0` into their
  * batched shadow step, which reads a Polygon's outer ring: a part handed on as
  * a GeometryCollection would pack a box of zero area.
+ *
+ * A part with no height is handed on with none: the data carries no height
+ * where OpenStreetMap has none, and a node that uses one takes the default
+ * where it uses it (utils/buildingHeight `withDefaultHeight`).
  */
 import * as fs from "fs";
 import * as path from "path";
@@ -43,8 +47,10 @@ const WINGS = {
   type: "MultiPolygon",
   coordinates: [square(200, 0, 10).coordinates, square(220, 0, 10).coordinates],
 };
+const GARAGE = square(300, 0, 6);
+const SHED = square(320, 0, 4);
 
-/** Two buildings as autk-db 4's getLayer exports them. */
+/** Three buildings as autk-db 4's getLayer exports them. */
 function mockBuildings() {
   return {
     type: "FeatureCollection",
@@ -75,6 +81,21 @@ function mockBuildings() {
           ],
         },
       },
+      {
+        // OpenStreetMap gives neither part a height: one has no key of it, the
+        // other a height key with none in it.
+        type: "Feature",
+        id: 21,
+        geometry: { type: "GeometryCollection", geometries: [GARAGE, SHED] },
+        properties: {
+          building: "garage",
+          building_id: 21,
+          parts: [
+            { geometryIndex: 0, id: 21, building: "garage" },
+            { geometryIndex: 1, id: 22, building: "shed", height: null },
+          ],
+        },
+      },
     ],
   };
 }
@@ -85,6 +106,9 @@ const EXPECTED = [
   { geometry: PODIUM, properties: { building: "yes", height: "30", building_id: 29623484 } },
   { geometry: HOUSE, properties: { building: "house", "building:height": "9", building_id: 11 } },
   { geometry: WINGS, properties: { building: "house", "building:levels": "2", building_id: 11 } },
+  // No height: handed on with none, the empty key as it came.
+  { geometry: GARAGE, properties: { building: "garage", building_id: 21 } },
+  { geometry: SHED, properties: { building: "shed", height: null, building_id: 21 } },
 ];
 
 class mockAutkDb {

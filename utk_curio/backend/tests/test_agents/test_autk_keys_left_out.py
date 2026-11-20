@@ -261,28 +261,27 @@ def test_the_autark_skill_names_no_family_or_kind_a_node_refuses():
 
 
 #: A map whose buildings layer writes ``buildingsZeroHeight``, which a node
-#: refuses: Curio makes a building without a height 6 m tall when it loads the
-#: data, so autk-map would raise none of them at random.
+#: runs: autk-map raises the parts of its buildings that have no height at
+#: random.
 ZERO_HEIGHTS = {"map": {"layerRefs": [{"dataRef": "input_0", "buildingsZeroHeight": True}]}}
 
 
-def test_a_buildings_layers_buildings_zero_height_is_left_out_of_what_the_agents_read():
+def test_a_buildings_layers_buildings_zero_height_is_in_what_the_agents_read():
     """autk-grammar draws the parts of a buildings layer that have no height at
-    random heights (``buildingsZeroHeight``), and a node refuses the key. So
-    the schema the agents read, the autark skill and the reply schema, in both
-    flavors, leave it out, and a reply that writes it loses it."""
+    random heights (``buildingsZeroHeight``), and a node runs the key. So the
+    schema the agents read, the autark skill and the reply schema, in both
+    flavors, hold it, and a reply that writes it keeps it."""
     from utk_curio.backend.app.agents.application import reply_schemas as rs
     from utk_curio.backend.app.agents.domain import contracts
     from utk_curio.backend.tests._support.prompt_files import prompt_text
 
     schema = contracts.load_autk_schema()
-    # The grammar's layer has the key; the schema the agents read does not.
     assert "buildingsZeroHeight" in contracts._definition(schema, "MapLayerSpec").get("properties", {})
-    assert "buildingsZeroHeight" not in json.dumps(contracts.autk_schema_curio_runs(schema))
-    assert '"buildingsZeroHeight"' not in prompt_text("autark/SKILL.md")
+    assert "buildingsZeroHeight" in json.dumps(contracts.autk_schema_curio_runs(schema))
+    assert '"buildingsZeroHeight"' in prompt_text("autark/SKILL.md")
     for flavor in (rs.FLAVOR_CLOSED, rs.FLAVOR_STRICT):
         reply = rs.autk_reply_schema(flavor)
-        assert "buildingsZeroHeight" not in json.dumps(reply.schema), flavor
+        assert "buildingsZeroHeight" in json.dumps(reply.schema), flavor
         encoded, dropped = reply.encode(ZERO_HEIGHTS)
-        assert dropped == ["$.map.layerRefs[0].buildingsZeroHeight"], flavor
-        assert json.loads(reply.decode(json.dumps(encoded))) == {"map": {"layerRefs": [{"dataRef": "input_0"}]}}
+        assert dropped == [], flavor
+        assert json.loads(reply.decode(json.dumps(encoded))) == ZERO_HEIGHTS, flavor

@@ -241,6 +241,56 @@ describe("what a map draws and lights, as autk-map and autk-db hold it", () => {
   });
 });
 
+describe("each building's top, as a buildings layer draws it", () => {
+  // Read off the module, so a checkout without the reader fails each case on its own.
+  const { mapDrawingOf, handedFeaturesOf } = require("../../../adapters/node/autkMapState") as any;
+  // Towers of 30, 12 and 45 m, each a box of 8 points: its floor at 0, its
+  // roof at its height. autk-map keeps, on each component of a layer, the
+  // points of it and of every component before it (`loadComponent`).
+  const box = (x: number, top: number) => [0, top].flatMap((z) =>
+    [[x, 0], [x + 10, 0], [x + 10, 10], [x, 10]].flatMap(([px, py]) => [px, py, z]));
+  const HEIGHTS = [30, 12, 45];
+  const towers = (heights: number[], counts: number[]) => ({
+    layerInfo: { id: "towers", typeLayer: "buildings" },
+    _dimension: 3,
+    position: new Float32Array(heights.flatMap((height, at) => box(20 * at, height))),
+    components: counts.map((nPoints, featureIndex) => ({ featureIndex, nPoints })),
+  });
+  const drawnTowers = (layer: any) => mapDrawingOf(drawnGrammar([layer])).layers.find((drawn: any) => drawn.id === "towers");
+
+  test("each building's top is the highest of its own points, which the components count running", () => {
+    const drawn = drawnTowers(towers(HEIGHTS, [8, 16, 24]));
+    expect(drawn.spans).toEqual([[0, 8], [8, 16], [16, 24]]);
+    expect(drawn.tops).toEqual(HEIGHTS);
+  });
+
+  test("a building drawn with no point has no top, and the one after it keeps its own", () => {
+    // The second tower drew nothing: its running count stays at the first's.
+    const drawn = drawnTowers(towers([30, 45], [8, 8, 16]));
+    expect(drawn.spans).toEqual([[0, 8], [8, 8], [8, 16]]);
+    expect(drawn.tops).toEqual([30, null, 45]);
+  });
+
+  test("the features a grammar handed autk-map for a table, each with its row and the keys of its top it holds", async () => {
+    const exportOf = (features: any[]) => Promise.resolve({ type: "FeatureCollection", features });
+    const grammar = {
+      _exports: new Map([["towers", exportOf([
+        { type: "Feature", geometry: { type: "Point", coordinates: [0, 0] }, properties: { height: 30, name: "a", [INPUT_ROW]: 0 } },
+        { type: "Feature", geometry: null, properties: { height: 9, [INPUT_ROW]: 1 } },
+        { type: "Feature", geometry: { type: "Point", coordinates: [1, 1] }, properties: { "building:levels": 2, [INPUT_ROW]: 2 } },
+        { type: "Feature", geometry: { type: "Point", coordinates: [2, 2] }, properties: { name: "c" } },
+      ])]]),
+    };
+    expect(await handedFeaturesOf(grammar, "towers")).toEqual([
+      { row: 0, tops: { height: 30 } },
+      { row: 2, tops: { "building:levels": 2 } },
+      { row: null, tops: {} },
+    ]);
+    expect(await handedFeaturesOf(grammar, "roads")).toBeNull();
+    expect(await handedFeaturesOf({}, "towers")).toBeNull();
+  });
+});
+
 /**
  * A map whose layers *ids* are each colored by value, as autk-map keeps its
  * legend: on the layer the map UI's `activeLayer` names, which moves to each

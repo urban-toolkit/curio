@@ -168,7 +168,7 @@ import { PLAYER_SELECT, latestSelect, playedRange, playerSelect } from '../../..
 import { clearPackageNodes, registerNode } from '../../../registry/nodeRegistry';
 import { parseGeoDataframeWithGeometry } from '../../../utils/parsing';
 import { normalizeGeoSpec } from '../../../utils/vegaGeoSpec';
-import { METRES_PER_LEVEL } from '../../../utils/buildingHeight';
+import { METRES_PER_LEVEL, deriveBuildingHeight } from '../../../utils/buildingHeight';
 
 function makeMockData(overrides: Partial<NodeBehaviorData> = {}): NodeBehaviorData {
   return {
@@ -3437,14 +3437,6 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         },
         'Two maps or plots have the id "a"; an id names one view.',
       ],
-      [
-        // Curio gives a building part without a height 6 m as it loads it, so
-        // autk-map would raise none of them at random.
-        'a map whose buildings layer writes buildingsZeroHeight',
-        { map: { layerRefs: [{ dataRef: 'input_0' }, { dataRef: 'table_osm_buildings', buildingsZeroHeight: true }] } },
-        'This spec uses "buildingsZeroHeight" (Curio makes a building without a height 6 m tall when it loads the data,'
-          + ' so the key would change nothing) at map.layerRefs[1], which Curio does not run yet.',
-      ],
     ])('%s fails the node before anything runs, naming the key', async (_what, spec, said) => {
       // The sandbox answers, as it does for any data-only node, so a node that
       // does not refuse fails the checks below at once instead of waiting.
@@ -3813,7 +3805,111 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
     // passes with the height autk-map draws for it, as a part of its input
     // does (utils/autkInput withReadableHeights): a pass that reads every
     // building's `properties.height` with `required: true` leaves none out.
+    // A part with no height reaches them 6 m tall above its base, a layer
+    // with buildingsZeroHeight with none, which autk-map raises at random,
+    // and a plot of the table with none (utils/autkInput heightsAtUse).
     describe('a building part its own data section loads', () => {
+      const footprint = (i: number) => {
+        const x = -9755100 + 20 * i;
+        return { type: 'Polygon', coordinates: [[[x, 5142400], [x + 10, 5142400], [x + 10, 5142410], [x, 5142400]]] };
+      };
+      const OSM = {
+        type: 'osm',
+        pbfFileUrl: 'docs/examples/data/back_bay.osm.pbf',
+        queryArea: { geocodeArea: 'Boston', areas: ['Back Bay'] },
+        outputTableName: 'city',
+        autoLoadLayers: { layers: ['roads', 'buildings'] },
+      };
+      const SHADOW_PASS = {
+        dataRef: 'city_roads',
+        attributes: { seg: 'geometry.coordinates' },
+        attributeMatrices: { seg: { rows: 'auto', cols: 2 } },
+        uniforms: {
+          bld_height: { fromFeature: { layer: 'city_buildings', iterate: 'batched', path: 'properties.height', required: true } },
+        },
+        wgslFunction: 'return bld_height[0];',
+        outputColumnName: 'sunlight',
+        outputTableName: 'city_road_sun',
+        layerType: 'roads',
+      };
+
+      /** The document the grammar is handed for *spec*, its own data section loading *parts* as the sandbox hands them on. */
+      async function handedFor(parts: object[], spec: object): Promise<any> {
+        const { fetchData } = jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
+        const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
+        const grammarAsBefore = AutkGrammar.getMockImplementation();
+        const drawn: { spec: any } = { spec: null };
+        AutkGrammar.mockImplementation(() => ({
+          run: jest.fn(async (handed: any) => { drawn.spec = handed; }), data: {}, computeAdapter: { resolveCompute: jest.fn() },
+        }));
+        const buildings = {
+          type: 'FeatureCollection',
+          features: parts.map((properties, i) => ({ type: 'Feature', geometry: footprint(i), properties })),
+        };
+        const roads = { type: 'FeatureCollection', features: [
+          { type: 'Feature', geometry: { type: 'LineString', coordinates: [[-9755100, 5142390], [-9755000, 5142390]] }, properties: { highway: 'residential' } },
+        ] };
+        fetchData.mockImplementation(async (path: string) => (path === 'art-city'
+          ? { dataType: 'list', data: [
+            { dataType: 'dict', data: { name: 'city_roads', type: 'roads', geojson: roads } },
+            { dataType: 'dict', data: { name: 'city_buildings', type: 'buildings', geojson: buildings } },
+          ] }
+          : { data: {}, dataType: 'dataframe' }));
+        try {
+          const interpretCode = jest.fn(
+            (_unresolved, _code, _input, _inputTypes, cb) =>
+              cb({ stdout: [], stderr: '', output: { path: 'art-city', dataType: 'list' } }),
+          );
+          const result = await callBehavior(useAutkGrammarBehavior, { jsInterpreter: { interpretCode } as any });
+          await act(async () => {
+            await result.current.applyGrammar!(JSON.stringify({ data: [OSM], ...spec }));
+          });
+          expect(interpretCode).toHaveBeenCalledTimes(1);
+          return drawn.spec;
+        } finally {
+          AutkGrammar.mockImplementation(grammarAsBefore);
+          fetchData.mockImplementation(async () => ({ data: {}, dataType: 'dataframe' }));
+        }
+      }
+      const tableOf = (spec: any, name: string) => spec?.data?.find((s: any) => s.outputTableName === name);
+
+      test('a part with no height reaches its map and its passes 6 m tall above its base', async () => {
+        const handed = await handedFor([{ height: 12 }, {}, { height: null, min_height: 4 }], {
+          compute: [SHADOW_PASS],
+          map: { layerRefs: [{ dataRef: 'city_buildings' }, { dataRef: 'city_road_sun', getFnv: 'compute.sunlight' }] },
+        });
+        const loaded = tableOf(handed, 'city_buildings');
+        expect(loaded.geojsonObject.features.map((f: any) => f.properties.height))
+          .toEqual([12, deriveBuildingHeight({}), deriveBuildingHeight({ min_height: 4 })]);
+        expect(loaded.geojsonObject.features.map((f: any) => f.properties.height)).toEqual([12, 6, 10]);
+      });
+
+      test('a layer with buildingsZeroHeight is handed a part with no height holding no key of one, which autk-map raises', async () => {
+        const handed = await handedFor(
+          [{ height: 12 }, {}, { height: null }, { height: 'unknown', 'building:levels': 2 }],
+          { compute: [SHADOW_PASS], map: { layerRefs: [{ dataRef: 'city_buildings', buildingsZeroHeight: true }] } },
+        );
+        expect(handed).not.toBeNull();
+        expect(handed.map.layerRefs).toEqual([{ dataRef: 'city_buildings', buildingsZeroHeight: true }]);
+        const loaded = tableOf(handed, 'city_buildings');
+        expect(loaded.layerType).toBe('buildings');
+        // The pass reads the table as the layer draws it: the parts with no
+        // height have none, so it leaves them out.
+        expect(loaded.geojsonObject.features.map((f: any) => f.properties)).toEqual([
+          { height: 12 }, {}, {}, { height: 2 * METRES_PER_LEVEL, 'building:levels': 2 },
+        ]);
+      });
+
+      test('a node that only plots its buildings plots the heights they hold, none for a part with none', async () => {
+        const handed = await handedFor([{ height: 12 }, {}, { 'building:levels': 3 }], {
+          plot: { dataRef: 'city_buildings', mark: 'bar', axis: ['height', '@transform'], transform: { preset: 'binning-1d' } },
+        });
+        const loaded = tableOf(handed, 'city_buildings');
+        expect(loaded.geojsonObject.features.map((f: any) => f.properties)).toEqual([
+          { height: 12 }, {}, { 'building:levels': 3, height: 3 * METRES_PER_LEVEL },
+        ]);
+      });
+
       test('reaches its map and its passes with the height autk-map draws, read back from the sandbox', async () => {
         const { fetchData } = jest.requireMock('../../../services/api') as { fetchData: jest.Mock };
         const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
@@ -3822,10 +3918,6 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         AutkGrammar.mockImplementation(() => ({
           run: jest.fn(async (spec: any) => { drawn.spec = spec; }), data: {}, computeAdapter: { resolveCompute: jest.fn() },
         }));
-        const footprint = (i: number) => {
-          const x = -9755100 + 20 * i;
-          return { type: 'Polygon', coordinates: [[[x, 5142400], [x + 10, 5142400], [x + 10, 5142410], [x, 5142400]]] };
-        };
         // The parts as the sandbox's load hands them on: one with a height,
         // one with only its levels, one with an empty height beside its
         // levels, one with only a building:height.
