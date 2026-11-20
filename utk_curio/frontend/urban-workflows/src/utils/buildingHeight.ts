@@ -98,6 +98,24 @@ export function readableBuildingProperties<T extends Record<string, any> | null 
 }
 
 /**
+ * *fc*, a buildings table, with each feature's properties as a map reads them
+ * ({@link readableBuildingProperties}): the same object when no feature
+ * changes, and each feature that does not change the same object.
+ */
+export function readableBuildingFeatures<C extends { features?: readonly any[] }>(fc: C): C {
+    const features: readonly any[] = Array.isArray(fc?.features) ? fc.features : [];
+    let changed = false;
+    const next = features.map((feature) => {
+        const properties = feature?.properties;
+        const readable = readableBuildingProperties(properties);
+        if (readable === properties) return feature;
+        changed = true;
+        return { ...feature, properties: readable };
+    });
+    return (changed ? { ...fc, features: next } : fc) as C;
+}
+
+/**
  * A building's properties as a map draws it and a compute pass reads it: its
  * readable ones ({@link readableBuildingProperties}), and, for a building with
  * no height above its base, a `height` {@link DEFAULT_BUILDING_HEIGHT} m above

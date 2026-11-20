@@ -43,6 +43,7 @@ import { useOptionalToastContext } from "../../providers/ToastProvider";
 import { historyApi } from "../../api/historyApi";
 import { autoRunTargets } from "../../providers/flow/useAutoRun";
 import { readAutkInput, autkSourcesFrom } from "../../utils/autkInput";
+import { readableBuildingFeatures } from "../../utils/buildingHeight";
 import { codeEditRevision, subscribeToCodeEdits } from "../../utils/references/codeEdits";
 import type { SelectionId } from "../../utils/references/selectionTags";
 import { applyEdits, type EditCounts } from "../../utils/editFeatures/applyEdits";
@@ -111,10 +112,13 @@ export interface InputLayer {
   /** The layer's own name, when the input names it. */
   name: string | null;
   layerType?: string;
+  /** Its features as the node shows them: a buildings layer's heights as a map reads them. */
   fc: { features?: any[] };
+  /** Its features as the data holds them, which the node's edits apply to, as its run applies them. */
+  held: { features?: any[] };
 }
 
-/** The layers of *input*, read as the Autark map reads them. */
+/** The layers of *input*, read as the Autark map reads them, and as the data holds them. */
 function useInputLayers(input: unknown): InputLayer[] | null {
   const [layers, setLayers] = useState<InputLayer[] | null>(null);
   useEffect(() => {
@@ -127,13 +131,17 @@ function useInputLayers(input: unknown): InputLayer[] | null {
     readAutkInput(input)
       .then((read) => {
         const named = new Map(read.frames.map((frame) => [frame.name, frame]));
-        const { sources } = autkSourcesFrom(read, {}, { alias: false });
-        return sources.map((source) => ({
-          table: source.outputTableName,
-          name: named.has(source.outputTableName) ? source.outputTableName : null,
-          layerType: source.layerType,
-          fc: source.geojsonObject as { features?: any[] },
-        }));
+        const { sources } = autkSourcesFrom(read, {}, { alias: false, asHeld: true });
+        return sources.map((source) => {
+          const held = source.geojsonObject as { features?: any[] };
+          return {
+            table: source.outputTableName,
+            name: named.has(source.outputTableName) ? source.outputTableName : null,
+            layerType: source.layerType,
+            fc: source.layerType === "buildings" ? readableBuildingFeatures(held) : held,
+            held,
+          };
+        });
       })
       .catch(() => [] as InputLayer[])
       .then((found) => {
@@ -285,7 +293,8 @@ export function EditFeaturesBody({
     live?.interactionsCallback?.(next, nodeId);
   };
 
-  // The layer as the log leaves it: what the counts read.
+  // The layer as the log leaves it, applied to the layer as the data holds it,
+  // as the node's run applies it: what the counts read.
   const logKey = JSON.stringify(settings?.edits ?? []);
   const nodeEdits = useMemo(
     () => (settings?.edits ?? []).filter((e) => !e.layer || e.layer === (settings?.layer ?? layer?.name ?? undefined)),
@@ -293,7 +302,7 @@ export function EditFeaturesBody({
     [logKey, settings?.layer, layer?.name],
   );
   const edited = useMemo(
-    () => editedRows(layer?.fc, settings ? { ...settings, edits: nodeEdits } : settings, key),
+    () => editedRows(layer?.held, settings ? { ...settings, edits: nodeEdits } : settings, key),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [layer, nodeEdits, key],
   );
@@ -319,6 +328,7 @@ export function EditFeaturesBody({
       const layerKey = saved && ids.includes(saved) ? saved : defaultKey(ids) ?? ids[0];
       return {
         name, label, table: l.table, ownName: l.name !== null, fc: l.fc as WorkbenchLayer["fc"], key: layerKey,
+        held: l.held as WorkbenchLayer["fc"],
         ...(l.layerType ? { layerType: l.layerType } : {}),
       };
     });

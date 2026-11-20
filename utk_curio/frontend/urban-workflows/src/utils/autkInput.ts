@@ -34,7 +34,7 @@ import {
 } from "../adapters/node/autkDataCompile";
 import {
   deriveBuildingHeight,
-  readableBuildingProperties,
+  readableBuildingFeatures,
   withDefaultHeight,
   withoutEmptyHeights,
 } from "./buildingHeight";
@@ -465,7 +465,7 @@ function withEachFeature(fc: FeatureCollection, rewrite: (properties: any) => an
  * buildings and those its own data section loads through it.
  */
 export function withReadableHeights(fc: FeatureCollection): FeatureCollection {
-  return withEachFeature(fc, readableBuildingProperties);
+  return readableBuildingFeatures(fc);
 }
 
 /**
@@ -788,7 +788,7 @@ type FrameTable =
   | { raster: AutkRasterInput }
   | { refusal: { reason: NodeEmptyReason; detail: string } };
 
-function frameTable(frame: GrammarFrame, name: string): FrameTable {
+function frameTable(frame: GrammarFrame, name: string, readable = true): FrameTable {
   // A table handed on from another workspace than the default one is loaded there.
   const workspace = frame.workspace ? { workspace: frame.workspace } : {};
   if (frame.dataType === "raster") return { raster: { outputTableName: name, payload: frame.payload, ...workspace } };
@@ -797,7 +797,7 @@ function frameTable(frame: GrammarFrame, name: string): FrameTable {
   // A layer an Autark data node stored empty comes back with no feature
   // list: it has no rows, and the render leaves it out like any empty table.
   const features = (result.fc as any).features;
-  const geojsonObject = frame.layerType === "buildings" ? withReadableHeights(result.fc) : result.fc;
+  const geojsonObject = readable && frame.layerType === "buildings" ? withReadableHeights(result.fc) : result.fc;
   return {
     source: {
       type: "geojson",
@@ -819,12 +819,15 @@ export function readAutkInput(input: any, opts: { preview?: boolean } = {}): Pro
 /**
  * The geojson sources a document reads from an input already read.
  * `alias: false` leaves the `input_<k>` names of named layers out: a compute
- * step passes its layers on under their own names.
+ * step passes its layers on under their own names. A buildings table holds its
+ * heights as a map reads them (`withReadableHeights`); with `asHeld: true`, as
+ * the data holds them, which the Map Editor's edits apply to, as its run
+ * applies them.
  */
 export function autkSourcesFrom(
   read: GrammarInput,
   spec: any,
-  opts: { alias?: boolean } = {},
+  opts: { alias?: boolean; asHeld?: boolean } = {},
 ): PreparedAutkInput {
   if (read.emptyReason) {
     return {
@@ -874,7 +877,7 @@ export function autkSourcesFrom(
       }
     }
     if (!taken) broughtBy.set(keyOf(name), frame.circle);
-    const table = frameTable(frame, name);
+    const table = frameTable(frame, name, opts.asHeld !== true);
     became.set(frame, { table, taken });
     if (taken) continue;
     if ("raster" in table) {
