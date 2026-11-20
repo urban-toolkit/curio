@@ -1,5 +1,5 @@
 {
-  "description": "Documents that write every key of autk-grammar 5.2.0's maps, plots, compute passes, data sources and workspaces, a family to a document, on the tables an upstream Autark node hands on: `lines`, in the default workspace and in `east`. views: a map of every layer key, a map of OpenStreetMap elements in a workspace that `workspaces` sets, a plot of every mark with every plot key, a plot of every mark with every key of its colors, ticks, titles and selection, plots of every mark over one colorMapRange, and a map and a plot laid out and linked by every layout and link key, each of which an Autark node hands the grammar as written; passes: a compute step's GPGPU and render passes with every pass key, which reach autk-compute (src/tests/adapters/node/autkEveryKey.test.tsx); data: CSV, JSON, GeoJSON, OpenStreetMap (an extract, and tag sets from an Overpass API the test answers, its `overpass`), join, GeoTIFF, heatmap, SQL, update and drop sources with every source key, and `workspaces`, which a run on the server loads (utk_curio/sandbox/tests/test_autk_server_data_keys.py); checked: an update of a layer by every GeoJSON geometry, with every box, which the agents' document check alone runs. autk-db keeps in a workspace only what lies in the box of the first table loaded into it, and reads a GeoJSON source's boundingBox in the workspace's CRS (World Mercator, metres), so each data document loads its widest table first. Every document passes the agents' document check (backend/tests/test_agents/test_autk_every_key_documents.py). utk_curio/backend/tests/autk_grammar_key_tests.json names these tests for each key.",
+  "description": "Documents that write every key of autk-grammar 5.4.0's maps, plots, compute passes, data sources and workspaces, a family to a document, on the tables an upstream Autark node hands on: `lines`, in the default workspace and in `east`, and `towers`, buildings in `east`. views: a map of every layer key, a map of OpenStreetMap elements in a workspace that `workspaces` sets, a plot of every mark with every plot key, a plot of every mark with every key of its colors, ticks, titles and selection, plots of every mark over one colorMapRange, a map and a plot laid out and linked by every layout and link key, and maps of every map, layer and camera key autk-grammar 5.3.0 and 5.4.0 add, each of which an Autark node hands the grammar as written; passes: a compute step's GPGPU and render passes with every pass key, which reach autk-compute, and its windows and clusters passes, which run on autk-core (src/tests/adapters/node/autkEveryKey.test.tsx); data: CSV, JSON, GeoJSON, OpenStreetMap (an extract, and tag sets from an Overpass API the test answers, its `overpass`), join, GeoTIFF, heatmap, SQL, update and drop sources with every source key, and `workspaces`, which a run on the server loads (utk_curio/sandbox/tests/test_autk_server_data_keys.py); checked: an update of a layer by every GeoJSON geometry, with every box, and a map raised on a band of a GeoTIFF (`terrain`), which the agents' document check alone runs. autk-db keeps in a workspace only what lies in the box of the first table loaded into it, and reads a GeoJSON source's boundingBox in the workspace's CRS (World Mercator, metres), so each data document loads its widest table first. Every document passes the agents' document check (backend/tests/test_agents/test_autk_every_key_documents.py). utk_curio/backend/tests/autk_grammar_key_tests.json names these tests for each key.",
   "views": [
     {
       "name": "a map of every layer key",
@@ -244,6 +244,44 @@
           }
         ]
       }
+    },
+    {
+      "name": "maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0",
+      "document": {
+        "map": [
+          {
+            "id": "styled",
+            "workspace": "east",
+            "style": {
+              "background": "#0b1a2a", "surface": "#13263a", "parks": "#1f4d3a", "water": "#08121d", "roads": "#3a5068",
+              "buildings": "#5b7083", "points": "#f2c14e", "polylines": "#7f97ad", "polygons": "#2a3d52"
+            },
+            "highlightColor": "#ff7f0e", "invalidValueColor": "#bfbfbf", "showUi": false,
+            "camera": {
+              "center": [-87.49, 41.88], "zoom": 14, "pitch": 30, "bearing": 45,
+              "motion": [
+                { "type": "zoom", "amount": 1, "seconds": 1 },
+                { "type": "pitch", "amount": 20, "seconds": 1.5, "pan": 100 },
+                { "type": "bearing", "amount": 90, "seconds": 2 },
+                { "type": "roll", "amount": 10, "seconds": 0.5 }
+              ]
+            },
+            "layerRefs": [
+              {
+                "dataRef": "lines", "title": "Roads", "layerType": "roads", "widthBy": "rank",
+                "skippedComps": [1], "isPick": true, "pickedComps": [0]
+              }
+            ]
+          },
+          {
+            "id": "legend",
+            "workspace": "east",
+            "layerRefs": [
+              { "dataRef": "towers", "title": "Towers", "getFnv": "height", "legend": true, "buildingsZeroHeight": true }
+            ]
+          }
+        ]
+      }
     }
   ],
   "passes": [
@@ -291,6 +329,19 @@
             "aggregation": { "type": "objects" },
             "camera": { "fov": 60, "clip": { "near": 0.5, "far": 2000 } }
           }
+        ]
+      }
+    },
+    {
+      "name": "windows and clusters passes of every pass key",
+      "document": {
+        "compute": [
+          { "type": "windows", "workspace": "east", "dataRef": "towers", "floors": 2, "outputTableName": "towers_windows", "layerType": "points" },
+          {
+            "type": "clusters", "workspace": "east", "dataRef": "towers", "outputColumnName": "block",
+            "outputTableName": "towers_blocks", "layerType": "polygons"
+          },
+          { "type": "clusters", "workspace": "east", "dataRef": "lines", "outputColumnName": "network" }
         ]
       }
     }
@@ -675,6 +726,19 @@
             ] }
           }
         ]
+      }
+    },
+    {
+      "name": "a map raised on a band of a GeoTIFF the document loads",
+      "document": {
+        "data": [
+          { "type": "geotiff", "outputTableName": "lst", "geotiffFileUrl": "docs/examples/data/niteroi_lst_verao_2001_2024.tif" }
+        ],
+        "map": {
+          "terrain": { "dataRef": "lst", "band": "band_24" },
+          "camera": { "pitch": 45 },
+          "layerRefs": [{ "dataRef": "lst", "getFnv": "band_24", "colorMapInterpolator": "interpolateViridis" }]
+        }
       }
     }
   ]
