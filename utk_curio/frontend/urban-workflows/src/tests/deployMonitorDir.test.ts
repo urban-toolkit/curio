@@ -1,5 +1,5 @@
 /**
- * Both stacks keep the monitor's histories (open files, LLM tokens) across
+ * Both stacks keep the monitor's histories (open files, LLM performance) across
  * deploys: each in a folder of its own outside its checkout,
  * /srv/curio-monitor/dev and /srv/curio-monitor/stable, which its site file
  * binds into Curio's container at /monitor and names with --monitor-dir, for

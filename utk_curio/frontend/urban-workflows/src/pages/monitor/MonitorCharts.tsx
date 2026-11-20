@@ -189,6 +189,23 @@ export interface LinesOverTimeOptions {
   dashed?: string[];
   /** A dot on each point: a line of one point draws nothing else. */
   points?: boolean;
+  /**
+   * The values are durations in milliseconds: the axis and the tooltip
+   * write each as whole milliseconds under a second and as seconds with one
+   * decimal above (`durationText`, as `formatMs` does).
+   */
+  durations?: boolean;
+}
+
+/** The field of each point that holds its duration as the tooltip writes it. */
+export const DURATION_TEXT_FIELD = "durationText";
+
+/**
+ * Vega's expression for *value*, a duration in milliseconds, written as
+ * `formatMs` (`utils/diagnosticsBundle.ts`) writes it: "850 ms", "1.2 s".
+ */
+export function durationText(value: string): string {
+  return `round(${value}) < 1000 ? format(round(${value}), 'd') + ' ms' : format(${value} / 1000, '.1f') + ' s'`;
 }
 
 /**
@@ -249,7 +266,8 @@ function timeSpanOf(rows: Record<string, unknown>[], timeField: string, timeDoma
  * The Vega-Lite spec of `LinesOverTime`: time on x, the value on y, a 2px
  * line per series, the legend under the plot, and a tooltip with the series,
  * the time and the value. Over more than a day, the time axis names each
- * label's day as well as its hour.
+ * label's day as well as its hour. A null value breaks its line there, as
+ * Vega-Lite breaks a line at an invalid value.
  */
 export function linesOverTimeSpec({
   rows,
@@ -264,6 +282,7 @@ export function linesOverTimeSpec({
   logY = false,
   dashed = [],
   points = false,
+  durations = false,
 }: LinesOverTimeOptions) {
   const series = colors?.domain ?? [...new Set(rows.map((row) => String(row[seriesField])))];
   const range = colors?.range ?? CATEGORICAL.slice(0, series.length);
@@ -289,7 +308,8 @@ export function linesOverTimeSpec({
       type: "quantitative",
       title: valueTitle,
       axis: {
-        ...ink, domain: false, tickCount: 4, format: "~s",
+        ...ink, domain: false, tickCount: 4,
+        ...(durations ? { labelExpr: durationText("datum.value") } : { format: "~s" }),
         ...(logY ? { values: decades, tickCount: decades.length } : {}),
       },
       ...(logY ? { scale: { type: "log" } } : {}),
@@ -305,7 +325,9 @@ export function linesOverTimeSpec({
     tooltip: [
       { field: seriesField, type: "nominal", title: seriesTitle },
       { field: timeField, type: "temporal", title: "time", format: timeFormat },
-      { field: valueField, type: "quantitative", title: valueTitle, format: "," },
+      durations
+        ? { field: DURATION_TEXT_FIELD, type: "nominal", title: valueTitle }
+        : { field: valueField, type: "quantitative", title: valueTitle, format: "," },
     ],
   };
   if (dashed.length > 0) {
@@ -318,9 +340,13 @@ export function linesOverTimeSpec({
       scale: { domain: series, range: series.map((name) => (dashed.includes(name) ? [6, 4] : [1, 0])) },
     };
   }
+  const value = `datum[${JSON.stringify(valueField)}]`;
   return {
     $schema: "https://vega.github.io/schema/vega-lite/v5.json",
     data: { values: rows },
+    ...(durations
+      ? { transform: [{ calculate: `isValid(${value}) ? ${durationText(value)} : ''`, as: DURATION_TEXT_FIELD }] }
+      : {}),
     mark: {
       type: "line",
       strokeWidth: 2,
@@ -354,6 +380,7 @@ export const LinesOverTime: React.FC<LinesOverTimeOptions & { label: string; hei
   logY,
   dashed,
   points,
+  durations,
 }) => {
   const first = timeDomain?.[0];
   const last = timeDomain?.[1];
@@ -362,10 +389,10 @@ export const LinesOverTime: React.FC<LinesOverTimeOptions & { label: string; hei
       linesOverTimeSpec({
         rows, timeField, valueField, seriesField, valueTitle, seriesTitle, timeFormat,
         timeDomain: first != null && last != null ? [first, last] : undefined,
-        colors, logY, dashed, points,
+        colors, logY, dashed, points, durations,
       }),
     [rows, timeField, valueField, seriesField, valueTitle, seriesTitle, timeFormat, first, last, colors, logY,
-     dashed, points]
+     dashed, points, durations]
   );
   return <VegaChart spec={spec} height={height} label={label} />;
 };

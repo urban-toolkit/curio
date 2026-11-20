@@ -11,8 +11,9 @@
  */
 import type {
   MonitorErrorsPayload,
-  MonitorLlmCounts,
   MonitorLlmPayload,
+  MonitorLlmStats,
+  MonitorLlmView,
   MonitorOpenFilesCounts,
   MonitorOpenFilesPayload,
   MonitorPayload,
@@ -33,6 +34,7 @@ export interface DiagnosticsInput {
 // One locale, so a count reads the same in every browser and in a test.
 const COMPACT = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
 const EXACT = new Intl.NumberFormat("en-US");
+const ONE_DECIMAL = new Intl.NumberFormat("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 /** A count as a tile or a table cell shows it: 950, 1.2K, 3.4M. */
 export function formatCount(count: number | null | undefined): string {
@@ -44,8 +46,38 @@ export function formatExactCount(count: number | null | undefined): string {
   return count == null ? "n/a" : EXACT.format(count);
 }
 
-function llmCounts(counts: MonitorLlmCounts): string {
-  return `${formatExactCount(counts.inputTokens)} in · ${formatExactCount(counts.outputTokens)} out, ${formatExactCount(counts.requests)} requests`;
+/**
+ * A duration in milliseconds: whole milliseconds under a second ("850 ms"),
+ * seconds with one decimal above ("1.2 s"). The monitor's charts write their
+ * axis and tooltip the same way (`MonitorCharts.durationText`).
+ */
+export function formatMs(ms: number | null | undefined): string {
+  if (ms == null || !Number.isFinite(ms)) return "n/a";
+  const whole = Math.round(ms);
+  return whole < 1000 ? `${whole} ms` : `${(ms / 1000).toFixed(1)} s`;
+}
+
+/** A rate with one decimal: 41.2, 1,234.5. */
+export function formatRate(rate: number | null | undefined): string {
+  return rate == null || !Number.isFinite(rate) ? "n/a" : ONE_DECIMAL.format(rate);
+}
+
+/** One model's stats over a window, in words, every count in full. */
+function llmStats(stats: MonitorLlmStats | undefined): string {
+  if (!stats || stats.requests === 0) return "no requests";
+  const parts = [
+    `${formatExactCount(stats.requests)} requests`,
+    `${formatExactCount(stats.failed)} failed`,
+    `average ${formatMs(stats.averageMs)}`,
+    `95th percentile ${formatMs(stats.p95Ms)}`,
+  ];
+  if (stats.firstTokenMs != null) parts.push(`first token ${formatMs(stats.firstTokenMs)}`);
+  if (stats.tokensPerSecond != null) parts.push(`${formatRate(stats.tokensPerSecond)} tokens per second`);
+  return parts.join(", ");
+}
+
+function modelStats(view: MonitorLlmView, model: string): MonitorLlmStats | undefined {
+  return view.models.find((entry) => entry.model === model);
 }
 
 /** A server's part of an open-files sample: "backend 212 of 65,536". */
@@ -131,15 +163,24 @@ export function toMarkdown({ monitor, storage, errors, llm, openFiles }: Diagnos
   }
 
   if (llm) {
-    lines.push("", "### LLM tokens", `_Since ${llm.startedAt}, at most ${llm.maxDays} days._`, "");
-    if (llm.models.length === 0) {
+    const { "24h": day, "7d": week, "90d": quarter } = llm.views;
+    lines.push(
+      "",
+      "### LLM performance",
+      `_This Curio's own models, the last ${llm.maxDays} days, kept across restarts._`,
+      ""
+    );
+    // The 90 days hold every model the shorter windows do.
+    if (quarter.models.length === 0) {
       lines.push(`_No LLM requests in the last ${llm.maxDays} days._`);
     }
-    for (const entry of llm.models) {
-      // A backtick in a name a user typed would end the code span early.
+    for (const entry of quarter.models) {
+      // A backtick in a model's name would end the code span early.
       const model = entry.model.replace(/`/g, "'");
       lines.push(
-        `- \`${model}\` (${entry.curio ? "Curio's endpoint" : "own key"}): 24 hours ${llmCounts(entry.last24h)}; 7 days ${llmCounts(entry.last7d)}; all kept ${llmCounts(entry.kept)}`
+        `- \`${model}\`: 24 hours ${llmStats(modelStats(day, entry.model))}; 7 days ${llmStats(
+          modelStats(week, entry.model)
+        )}; 90 days ${llmStats(entry)}`
       );
     }
   }

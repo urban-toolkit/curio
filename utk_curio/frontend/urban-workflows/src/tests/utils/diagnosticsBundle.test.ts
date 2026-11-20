@@ -9,7 +9,9 @@ import {
   formatCount,
   formatDuration,
   formatExactCount,
+  formatMs,
   formatOpenFiles,
+  formatRate,
   toJson,
   toMarkdown,
 } from "../../utils/diagnosticsBundle";
@@ -164,32 +166,32 @@ const storage: MonitorStoragePayload = {
   disk: { totalBytes: 494384795648, freeBytes: 120034512896 },
 };
 
+const NO_REQUESTS = {
+  requests: 0, failed: 0, averageMs: null, p95Ms: null, firstTokenMs: null, tokensPerSecond: null,
+};
+
 function llm(): MonitorLlmPayload {
+  const stats = (requests: number, averageMs: number) => ({
+    requests, failed: 1, averageMs, p95Ms: 2380, firstTokenMs: 310, tokensPerSecond: 41.2,
+  });
+  const gemma = (requests: number, averageMs: number) => ({ model: "gemma4", ...stats(requests, averageMs) });
+  // A model whose requests were not streamed, and whose provider reported no output tokens.
+  const backticked = {
+    model: "qwen`3", requests: 2, failed: 0, averageMs: 850, p95Ms: 975, firstTokenMs: null, tokensPerSecond: null,
+  };
   return {
     computedAt: "2026-09-22T14:03:11Z",
-    startedAt: "2026-09-21T08:40:00Z",
     maxDays: 90,
     ageSeconds: 4,
     ttlSeconds: 60,
-    hourlyFrom: "2026-09-15T15:00:00Z",
-    hourlyTo: "2026-09-22T14:00:00Z",
-    hourly: [],
-    models: [
-      {
-        model: "gemma4",
-        curio: true,
-        last24h: { inputTokens: 18200, outputTokens: 2100, requests: 9 },
-        last7d: { inputTokens: 1234567, outputTokens: 98000, requests: 410 },
-        kept: { inputTokens: 2469606, outputTokens: 120000, requests: 530 },
-      },
-      {
-        model: "gpt`5",
-        curio: false,
-        last24h: { inputTokens: 640, outputTokens: 210, requests: 2 },
-        last7d: { inputTokens: 640, outputTokens: 210, requests: 2 },
-        kept: { inputTokens: 640, outputTokens: 210, requests: 2 },
-      },
-    ],
+    views: {
+      "24h": { from: "2026-09-21T14:05:00Z", to: "2026-09-22T14:00:00Z", stepSeconds: 300, rows: [],
+               models: [gemma(9, 1033)], all: stats(9, 1033) },
+      "7d": { from: "2026-09-15T15:00:00Z", to: "2026-09-22T14:00:00Z", stepSeconds: 3600, rows: [],
+              models: [gemma(1209, 1248), backticked], all: stats(1211, 1250) },
+      "90d": { from: "2026-06-25T00:00:00Z", to: "2026-09-22T00:00:00Z", stepSeconds: 86400, rows: [],
+               models: [gemma(1709, 1235), backticked], all: stats(1711, 1237) },
+    },
   };
 }
 
@@ -250,6 +252,31 @@ describe("formatDuration", () => {
   });
 });
 
+describe("formatMs and formatRate", () => {
+  test.each([
+    [0, "0 ms"],
+    [12.4, "12 ms"],
+    [850, "850 ms"],
+    [999.4, "999 ms"],
+    [999.6, "1.0 s"],
+    [1000, "1.0 s"],
+    [1234, "1.2 s"],
+    [61500, "61.5 s"],
+  ])("a duration of %s ms reads as %s", (input, expected) => {
+    expect(formatMs(input)).toBe(expected);
+  });
+
+  test("a rate keeps one decimal", () => {
+    expect([formatRate(41.2), formatRate(8), formatRate(1234.56)]).toEqual(["41.2", "8.0", "1,234.6"]);
+  });
+
+  test("a missing time or rate is stated, not rendered as zero", () => {
+    expect([formatMs(null), formatMs(undefined), formatRate(null), formatRate(undefined)]).toEqual([
+      "n/a", "n/a", "n/a", "n/a",
+    ]);
+  });
+});
+
 describe("toMarkdown", () => {
   const bundle = {
     monitor: monitor(),
@@ -304,26 +331,39 @@ describe("toMarkdown", () => {
     expect(md).toContain("sandbox: **unreachable**");
   });
 
-  test("lists each model's tokens, where it ran, in full", () => {
+  test("lists each model's performance in each window, every count in full", () => {
     const md = toMarkdown({ ...bundle, llm: llm() });
-    expect(md).toContain("### LLM tokens");
-    expect(md).toContain("_Since 2026-09-21T08:40:00Z, at most 90 days._");
+    expect(md).toContain("### LLM performance");
+    expect(md).toContain("_This Curio's own models, the last 90 days, kept across restarts._");
     expect(md).toContain(
-      "- `gemma4` (Curio's endpoint): 24 hours 18,200 in · 2,100 out, 9 requests; " +
-        "7 days 1,234,567 in · 98,000 out, 410 requests; all kept 2,469,606 in · 120,000 out, 530 requests"
+      "- `gemma4`: 24 hours 9 requests, 1 failed, average 1.0 s, 95th percentile 2.4 s, first token 310 ms, " +
+        "41.2 tokens per second; 7 days 1,209 requests, 1 failed, average 1.2 s, 95th percentile 2.4 s, " +
+        "first token 310 ms, 41.2 tokens per second; 90 days 1,709 requests, 1 failed, average 1.2 s, " +
+        "95th percentile 2.4 s, first token 310 ms, 41.2 tokens per second"
     );
-    // A backtick in a typed name cannot end its code span.
-    expect(md).toContain("- `gpt'5` (own key): 24 hours 640 in · 210 out, 2 requests");
+    // A window a model had no request in says so, and what no request gave is
+    // left out. A backtick in a name cannot end its code span.
+    expect(md).toContain(
+      "- `qwen'3`: 24 hours no requests; 7 days 2 requests, 0 failed, average 850 ms, 95th percentile 975 ms; " +
+        "90 days 2 requests, 0 failed, average 850 ms, 95th percentile 975 ms"
+    );
+    // Nothing says where a model ran.
+    expect(md.slice(md.indexOf("### LLM performance"), md.indexOf("### Recent errors"))).not.toMatch(
+      /endpoint|own key/i
+    );
     // Before the errors, as on the page.
-    expect(md.indexOf("### LLM tokens")).toBeLessThan(md.indexOf("### Recent errors"));
+    expect(md.indexOf("### LLM performance")).toBeLessThan(md.indexOf("### Recent errors"));
   });
 
   test("says when no model answered, and leaves the section out with no payload", () => {
-    expect(toMarkdown({ ...bundle, llm: { ...llm(), models: [] } })).toContain(
-      "_No LLM requests in the last 90 days._"
-    );
-    expect(toMarkdown(bundle)).not.toContain("LLM tokens");
-    expect(toMarkdown({ ...bundle, llm: null })).not.toContain("LLM tokens");
+    const none = llm();
+    for (const view of Object.values(none.views)) {
+      view.models = [];
+      view.all = NO_REQUESTS;
+    }
+    expect(toMarkdown({ ...bundle, llm: none })).toContain("_No LLM requests in the last 90 days._");
+    expect(toMarkdown(bundle)).not.toContain("LLM performance");
+    expect(toMarkdown({ ...bundle, llm: null })).not.toContain("LLM performance");
   });
 
   test("gives both servers' open files and limits from the last sample", () => {
@@ -364,9 +404,10 @@ describe("toJson", () => {
     expect(typeof parsed.capturedAt).toBe("string");
   });
 
-  test("keeps the LLM tokens' payload too, and says null without one", () => {
+  test("keeps the LLM performance payload too, and says null without one", () => {
     const parsed = JSON.parse(toJson({ monitor: null, storage: null, errors: null, llm: llm() }));
-    expect(parsed.llm.models.map((entry: { model: string }) => entry.model)).toEqual(["gemma4", "gpt`5"]);
+    expect(parsed.llm).toEqual(llm());
+    expect(parsed.llm.views["90d"].models.map((entry: { model: string }) => entry.model)).toEqual(["gemma4", "qwen`3"]);
     expect(JSON.parse(toJson({ monitor: null, storage: null, errors: null })).llm).toBeNull();
   });
 

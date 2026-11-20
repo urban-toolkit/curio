@@ -5,7 +5,10 @@
  * The monitor's lines over time (pages/monitor/MonitorCharts.tsx,
  * `linesOverTimeSpec`) name each time label's day as well as its hour once the
  * chart spans more than a day: the Open files chart over several days, and the
- * LLM tokens' charts over their 7 days. Within a day the labels stay Vega's own.
+ * LLM performance chart over its 7 days. Within a day the labels stay Vega's
+ * own. A chart of durations, the LLM performance one, labels its value axis in
+ * milliseconds under a second and in seconds above, a step with no value among
+ * its rows.
  *
  * Each spec is compiled with the vega-lite the app bundles and run by vega
  * without a renderer, and its labels are read off the scene graph. It runs in
@@ -53,18 +56,23 @@ function axisLabels(node: any, scale: string, onAxis = false, found: string[] = 
   return found;
 }
 
+/** The labels of the axis of *scale* in the chart of *spec*, as Vega draws it. */
+async function drawnLabels(spec: Record<string, unknown>, scale: string): Promise<string[]> {
+  const view = new vega.View(vega.parse(lite.compile({ ...spec, width: 600, height: 160 }).spec), {
+    renderer: "none",
+  });
+  await view.runAsync();
+  const labels = axisLabels(view.scenegraph().root, scale);
+  view.finalize();
+  return labels;
+}
+
 /** The time axis's labels of the chart of *rows*, over *timeDomain* when given. */
 async function timeLabels(rows: Record<string, unknown>[], timeDomain?: [number, number]): Promise<string[]> {
   const spec = linesOverTimeSpec({
     rows, timeField: "t", valueField: "files", seriesField: "line", valueTitle: "files", timeDomain,
   });
-  const view = new vega.View(vega.parse(lite.compile({ ...spec, width: 600, height: 160 }).spec), {
-    renderer: "none",
-  });
-  await view.runAsync();
-  const labels = axisLabels(view.scenegraph().root, "x");
-  view.finalize();
-  return labels;
+  return drawnLabels(spec, "x");
 }
 
 test("over two days, each time label names its day as well as its hour", async () => {
@@ -73,11 +81,27 @@ test("over two days, each time label names its day as well as its hour", async (
   expect(labels.filter((label) => !DAY_AND_HOUR.test(label))).toEqual([]);
 });
 
-test("the LLM tokens' 7 days name each label's day, whatever hours their rows hold", async () => {
+test("the LLM performance chart's 7 days name each label's day, whatever hours their rows hold", async () => {
   const from = Date.parse("2026-10-30T16:00:00Z");
   const labels = await timeLabels(hourly("2026-11-06T12:00:00Z", 3), [from, from + 167 * HOUR]);
   expect(labels.length).toBeGreaterThan(2);
   expect(labels.filter((label) => !DAY_AND_HOUR.test(label))).toEqual([]);
+});
+
+test("a chart of durations labels its values in milliseconds under a second and in seconds above", async () => {
+  // From 150 to 1,200 ms, an hour with no request among them.
+  const rows: Record<string, unknown>[] = hourly("2026-11-05T09:00:00Z", 6).map((row, index) => ({
+    t: row.t, line: "gemma4", averageMs: index === 3 ? null : 150 + 210 * index,
+  }));
+  const spec = linesOverTimeSpec({
+    rows, timeField: "t", valueField: "averageMs", seriesField: "line", valueTitle: "average response time",
+    durations: true,
+  });
+  const labels = await drawnLabels(spec, "y");
+  expect(labels.length).toBeGreaterThan(2);
+  expect(labels.filter((label) => !/^(\d+ ms|\d+\.\d s)$/.test(label))).toEqual([]);
+  expect(labels.some((label) => /^[1-9]\d* ms$/.test(label))).toBe(true);
+  expect(labels.some((label) => /^\d+\.\d s$/.test(label))).toBe(true);
 });
 
 test("within a day, the time labels stay Vega's own, the hour alone", async () => {

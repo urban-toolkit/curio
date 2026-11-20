@@ -9,8 +9,8 @@
  * session cookie happens to exist is harmless on a public route.
  *
  * The four aggregate payloads carry no identifiers by design, the LLM one
- * naming only models; the error log deliberately does. See
- * `utk_curio/backend/app/monitor/errors.py` and `llm_tokens.py`.
+ * naming only this Curio's own models; the error log deliberately does. See
+ * `utk_curio/backend/app/monitor/errors.py` and `llm_performance.py`.
  */
 import { apiFetch } from "../utils/authApi";
 import { backendUrl } from "../utils/backendUrl";
@@ -120,8 +120,8 @@ export interface MonitorHardware {
  * Which backend processes a payload holds the part of, in a start of several
  * (`curio.py start --backend-processes N`): the home process asks every other
  * one for its part and merges them. Those that did not answer are left out.
- * Absent with one process, and from the payloads of the histories (LLM tokens,
- * open files), which every process writes into one file.
+ * Absent with one process, and from the payloads of the histories (LLM
+ * performance, open files), which every process writes into one file.
  */
 export interface MonitorBackendProcesses {
   count: number;
@@ -194,46 +194,70 @@ export interface MonitorStoragePayload {
   disk: { totalBytes: number | null; freeBytes: number | null };
 }
 
-/** Tokens and requests in one window, or in one hour. */
-export interface MonitorLlmCounts {
-  inputTokens: number;
-  outputTokens: number;
+/** The windows the LLM route views its requests in. */
+export type MonitorLlmWindow = "24h" | "7d" | "90d";
+
+/**
+ * What a window's requests read, one model's or every model's together:
+ * times in milliseconds, each null when no request gave it.
+ */
+export interface MonitorLlmStats {
   requests: number;
+  failed: number;
+  averageMs: number | null;
+  p95Ms: number | null;
+  /** The average time to the first word or call of the streamed requests. */
+  firstTokenMs: number | null;
+  /** The output tokens over the time of the requests whose provider reported them. */
+  tokensPerSecond: number | null;
 }
 
-/** One model's tokens in one UTC hour (`hour`, `YYYY-MM-DDTHH:00:00Z`). */
-export interface MonitorLlmHour extends MonitorLlmCounts {
-  hour: string;
+/** One model's stats over a window. */
+export interface MonitorLlmModel extends MonitorLlmStats {
   model: string;
-  /** On this Curio's own endpoint, rather than on a key a user set for their own. */
-  curio: boolean;
-}
-
-/** One model's totals: the last 24 hours, the last 7 days, every hour kept. */
-export interface MonitorLlmModel {
-  model: string;
-  curio: boolean;
-  last24h: MonitorLlmCounts;
-  last7d: MonitorLlmCounts;
-  kept: MonitorLlmCounts;
 }
 
 /**
- * `GET /api/monitor/llm`: each model's tokens over the last `maxDays` days,
- * kept across restarts, from `startedAt` (when the oldest row kept began), as
- * hourly rows from `hourlyFrom` to `hourlyTo` (the last 7 days, hours with no
- * request left out) and totals.
+ * One model's requests in one 5-minute slot, hour or UTC day (`at`, its
+ * start, `YYYY-MM-DDTHH:MM:00Z`): how many, how many failed, and their
+ * total milliseconds.
+ */
+export interface MonitorLlmRow {
+  at: string;
+  model: string;
+  requests: number;
+  failed: number;
+  ms: number;
+}
+
+/**
+ * One window of the requests: its rows, one every `stepSeconds` from the
+ * start of the first (`from`) to the start of the current one (`to`), steps
+ * with no request left out, and each model's stats over the window, most
+ * requests first, with every model's together (`all`).
+ */
+export interface MonitorLlmView {
+  from: string;
+  to: string;
+  stepSeconds: number;
+  rows: MonitorLlmRow[];
+  models: MonitorLlmModel[];
+  all: MonitorLlmStats;
+}
+
+/**
+ * `GET /api/monitor/llm`: the requests of this Curio's own LLM models, kept
+ * across restarts for the last `maxDays` days, in three views: the last 24
+ * hours in 5-minute rows, the last 7 days in hourly rows and the last 90
+ * days in daily rows. A request on a key a user set for their own is not
+ * counted.
  */
 export interface MonitorLlmPayload {
   computedAt: string;
-  startedAt: string;
   maxDays: number;
   ageSeconds: number;
   ttlSeconds: number;
-  hourlyFrom: string;
-  hourlyTo: string;
-  hourly: MonitorLlmHour[];
-  models: MonitorLlmModel[];
+  views: Record<MonitorLlmWindow, MonitorLlmView>;
 }
 
 /** One server's open files and its soft limit on them; null where unknown. */
