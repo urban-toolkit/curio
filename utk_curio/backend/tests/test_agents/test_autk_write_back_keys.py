@@ -70,14 +70,23 @@ REFUSED = [
 ]
 
 
+def _grammar_refusal(document: dict):
+    """What ``contracts.autk_grammar_refusal`` says of *document*, or None
+    from a build without it, so such a build fails on the assertion that reads it."""
+    from utk_curio.backend.app.agents.domain import contracts
+
+    refusal = getattr(contracts, "autk_grammar_refusal", None)
+    return refusal(document) if refusal else None
+
+
 @pytest.mark.parametrize("name", sorted(DOCUMENTS))
 def test_the_document_check_takes_passes_kept_in_autk_db_and_sources_after_compute(name):
+    """guard: the check takes each document, which writes what the grammar runs."""
     from utk_curio.backend.app.agents.domain import contracts
     from utk_curio.backend.app.agents.domain import document_validation as dv
 
     document = DOCUMENTS[name]
     assert contracts.autk_key_problem(document) is None
-    assert contracts.autk_grammar_refusal(document) is None
     assert dv.validate(AUTK, json.dumps(document)) == {"status": dv.STATUS_VALID}
 
 
@@ -99,22 +108,19 @@ def test_the_reply_schema_keeps_write_back_and_after(flavor, name):
 
 @pytest.mark.parametrize("document, said", REFUSED)
 def test_the_document_check_refuses_what_the_grammars_run_refuses_in_its_words(document, said):
-    from utk_curio.backend.app.agents.domain import contracts
     from utk_curio.backend.app.agents.domain import document_validation as dv
 
-    assert contracts.autk_grammar_refusal(document) == said
     verdict = dv.validate(AUTK, json.dumps(document))
-    assert verdict["status"] == dv.STATUS_INVALID
+    assert verdict["status"] == dv.STATUS_INVALID, verdict
     assert said in verdict["detail"], verdict["detail"]
+    assert _grammar_refusal(document) == said
 
 
 def test_a_source_after_compute_is_told_when_its_after_names_no_phase():
     """The schema refuses an ``after`` other than ``'compute'``, and the
     grammar's run refuses it in its own words, which the check gives too."""
-    from utk_curio.backend.app.agents.domain import contracts
-
     document = {"data": [{"type": "csv", "outputTableName": "t", "csvObject": [["a"], [1]], "after": "map"}]}
-    assert contracts.autk_grammar_refusal(document) == (
+    assert _grammar_refusal(document) == (
         "Data source 0 (csv): after must be 'compute', the one phase a source runs after, not \"map\"."
     )
 
@@ -154,13 +160,17 @@ def test_the_autark_skill_gives_write_back_after_and_the_heatmap_entries():
     from utk_curio.backend.app.agents.domain import contracts
     from utk_curio.backend.tests._support.prompt_files import prompt_text
 
+    text = prompt_text("autark/SKILL.md")
+    lines = text.splitlines()
+    after = [line for line in lines if line.startswith('  - Every source also takes "after": ')]
+    write_back = [line for line in lines if line.startswith('  - Every pass also takes "writeBack": ')]
+    assert len(after) == 1 and len(write_back) == 1, (after, write_back)
+    assert 'every entry names its "aggregateFn", and a heatmap without "groupBy" has one band that counts the rows' in text
+
+    # Each in the schema's words, less its note on which adapters read it.
     schema = contracts.load_autk_schema()
     phase = contracts._definition(schema, "SourcePhase")["description"].split(" Read by the ", 1)[0]
     _description, branches = contracts._compute_passes(schema)[contracts.GPGPU_PASS]
-    write_back = branches[0]["properties"]["writeBack"]["description"].split(" Read by the ", 1)[0]
-
-    text = prompt_text("autark/SKILL.md")
-    lines = text.splitlines()
-    assert f'  - Every source also takes "after": {phase}' in lines
-    assert f'  - Every pass also takes "writeBack": {write_back}' in lines
-    assert 'every entry names its "aggregateFn", and a heatmap without "groupBy" has one band that counts the rows' in text
+    written_back = branches[0]["properties"]["writeBack"]["description"].split(" Read by the ", 1)[0]
+    assert after == [f'  - Every source also takes "after": {phase}']
+    assert write_back == [f'  - Every pass also takes "writeBack": {written_back}']

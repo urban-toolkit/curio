@@ -876,6 +876,9 @@
       {
         "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[every kind of compute pass keeping its result in autk-db, which sources after compute read]",
         "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_write_back_e2e.py::test_a_compute_step_runs_its_sources_after_compute_and_hands_on_what_they_made"
       }
     ],
     "data": [
@@ -2583,6 +2586,9 @@
       },
       {
         "test": "utk_curio/backend/tests/test_agents/test_autk_write_back_keys.py::test_the_document_check_refuses_what_the_grammars_run_refuses_in_its_words[a-source-after-compute-reading-a-table-no-pass-kept]"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_write_back_e2e.py::test_a_server_run_loads_a_data_nodes_sources_after_compute_after_the_others_and_its_pool_shows_them"
       }
     ],
     "layout": [
@@ -4997,6 +5003,9 @@
       },
       {
         "test": "utk_curio/backend/tests/test_frontend/test_autark_write_back_e2e.py::test_a_compute_step_runs_its_sources_after_compute_and_hands_on_what_they_made"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_write_back_e2e.py::test_a_server_run_loads_a_data_nodes_sources_after_compute_after_the_others_and_its_pool_shows_them"
       }
     ],
     "data[update]": [
@@ -6565,6 +6574,9 @@
       },
       {
         "test": "utk_curio/backend/tests/test_agents/test_autk_write_back_keys.py::test_the_document_check_takes_passes_kept_in_autk_db_and_sources_after_compute[windows kept in autk-db, binned by a heatmap after compute and drawn alone]"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_write_back_e2e.py::test_a_compute_step_runs_its_sources_after_compute_and_hands_on_what_they_made"
       }
     ],
     "compute[clusters]": [

@@ -16,12 +16,17 @@ a map node in the grammar's own run, a compute step on a database of its own.
   outline of Curio's places: autk-grammar 5.5.1 places a map that starts with
   a raster at the raster's middle. Its cells follow their counts, Curio frames
   it, and its R key frames it again after a drag.
-- A compute step's clusters pass keeps the blocks of four squares in autk-db,
-  a SQL query after compute counts each block's squares, and a table it loads
-  after compute is dropped after compute: the step hands on the squares, the
-  blocks and the counts, and a Python node reads them.
+- A compute step keeps three passes' results in autk-db: a clusters pass's
+  blocks of four squares, a windows pass's windows of two towers, and a render
+  pass's view from each square. SQL queries after compute count each block's
+  squares, each tower's windows and the views, and a table it loads after
+  compute is dropped after compute: the step hands on its tables, the passes'
+  and the counts, and a Python node reads them.
 - A node whose source after compute reads a table a pass writes without
   ``writeBack`` fails before anything runs, in the grammar's words.
+- A data node of no compute pass, whose sources after compute come first in
+  its data, runs on the server: its load runs them after the others, the run
+  records its output, and the Data Pool below it shows each table.
 
 The maps and the passes need WebGPU, so this test runs on CI's GPU job.
 
@@ -36,7 +41,11 @@ import math
 import time
 from typing import TYPE_CHECKING
 
+from playwright.sync_api import expect
+
 from .utils import (
+    _wait_for_reactflow_ready,
+    api_json,
     assert_autark_map_drawn,
     assert_raster_cells_follow_their_values,
     node_locator,
@@ -115,27 +124,56 @@ def _square(x: float, y: float, side: float) -> dict:
 #: Four squares, the first two sharing a wall: three blocks.
 SQUARES = [(0, 0), (100, 0), (400, 0), (700, 0)]
 BLOCKS = [0, 0, 1, 2]
-#: A compute step: the squares' blocks kept in autk-db, counted after compute
-#: by a SQL query, and a table loaded after compute, then dropped.
+#: Two towers north of the squares, and their heights.
+TOWERS = [((150, 300), 30), ((550, 300), 45)]
+#: A compute step whose passes keep their results in autk-db: the squares'
+#: blocks, the towers' windows and what each square sees of the towers. SQL
+#: queries after compute count each block's squares, each tower's windows and
+#: the views; a table loaded after compute is dropped after compute. The area
+#: around them all loads first: autk-db keeps in a workspace what lies in its
+#: first table's box and first polygon table.
 COMPUTE_STEP = {
     "data": [
+        {"type": "geojson", "outputTableName": "area", "coordinateFormat": "EPSG:3395",
+         "geojsonObject": {"type": "FeatureCollection", "features": [
+             {"type": "Feature", "geometry": _square(LOOP[0] - 200, LOOP[1] - 200, 1200), "properties": {"name": "Loop"}},
+         ]}},
         {"type": "geojson", "outputTableName": "squares", "coordinateFormat": "EPSG:3395",
          "geojsonObject": {"type": "FeatureCollection", "features": [
              {"type": "Feature", "geometry": _square(LOOP[0] + x, LOOP[1] + y, 100), "properties": {"square": i}}
              for i, (x, y) in enumerate(SQUARES)
          ]}},
+        {"type": "geojson", "outputTableName": "towers", "coordinateFormat": "EPSG:3395", "layerType": "buildings",
+         "geojsonObject": {"type": "FeatureCollection", "features": [
+             {"type": "Feature", "geometry": _square(LOOP[0] + x, LOOP[1] + y, 40), "properties": {"height": height}}
+             for (x, y), height in TOWERS
+         ]}},
         {"type": "sql", "outputTableName": "block_sizes", "after": "compute",
          "query": "SELECT CAST(properties->'compute'->>'block' AS INTEGER) AS block, CAST(count(*) AS INTEGER) AS squares "
                   "FROM blocks GROUP BY block ORDER BY block"},
+        {"type": "sql", "outputTableName": "window_counts", "after": "compute",
+         "query": "SELECT CAST(properties->>'sourceFeatureIndex' AS INTEGER) AS tower, CAST(count(*) AS INTEGER) AS windows "
+                  "FROM windows GROUP BY tower ORDER BY tower"},
+        {"type": "sql", "outputTableName": "views", "after": "compute",
+         "query": "SELECT CAST(count(*) AS INTEGER) AS seen FROM seen"},
         {"type": "csv", "outputTableName": "scratch", "csvObject": [["note"], ["read once"]], "after": "compute"},
         {"type": "drop", "dataRef": "scratch", "after": "compute"},
     ],
-    "compute": [{"type": "clusters", "dataRef": "squares", "outputColumnName": "block", "outputTableName": "blocks",
-                 "layerType": "polygons", "writeBack": True}],
+    "compute": [
+        {"type": "clusters", "dataRef": "squares", "outputColumnName": "block", "outputTableName": "blocks",
+         "layerType": "polygons", "writeBack": True},
+        {"type": "windows", "dataRef": "towers", "floors": 2, "outputTableName": "windows", "writeBack": True},
+        {"type": "render", "outputTableName": "seen", "writeBack": True,
+         "layers": [{"id": "towers", "dataRef": "towers", "type": "buildings"}],
+         "viewpoints": {"dataRef": "squares", "sampling": {"directions": 4}},
+         "aggregation": {"type": "classes", "includeBackground": True}},
+    ],
 }
 
 #: What the Python node reads of the step's tables: their names, each block's
-#: squares from the counts, and the blocks of the squares, each a line.
+#: squares from the counts, the blocks of the squares, the towers whose
+#: windows were counted, whether the counts add up to every window the step
+#: hands on, and the views counted against the views handed on.
 PYTHON_READS_THE_STEP = '''items = input_0 if isinstance(input_0, list) else [input_0]
 
 
@@ -156,7 +194,14 @@ def rows_of(item):
 named = {name_of(item): item for item in items}
 sizes = sorted((int(row["block"]), int(row["squares"])) for row in rows_of(named["block_sizes"]))
 blocks = [int(row["block"]) for row in rows_of(named["blocks"])]
-summary = f"tables {sorted(str(name) for name in named)}; sizes {sizes}; blocks {blocks}"
+counts = sorted((int(row["tower"]), int(row["windows"])) for row in rows_of(named["window_counts"]))
+windows = len(rows_of(named["windows"]))
+kept = windows > 0 and sum(count for _tower, count in counts) == windows
+views = [int(row["seen"]) for row in rows_of(named["views"])]
+summary = (
+    f"tables {sorted(str(name) for name in named)}; sizes {sizes}; blocks {blocks}; "
+    f"towers {[tower for tower, _count in counts]}; every window kept {kept}; views {views} of {len(rows_of(named['seen']))}"
+)
 print(summary)
 return summary
 '''
@@ -164,7 +209,7 @@ return summary
 #: A join after compute of a table a pass writes without keeping it in autk-db.
 NOT_KEPT = {
     "data": [
-        COMPUTE_STEP["data"][0],
+        next(source for source in COMPUTE_STEP["data"] if source.get("outputTableName") == "squares"),
         {"type": "join", "dataRef": "squares", "joinDataRef": "blocks", "after": "compute"},
     ],
     "compute": [{"type": "clusters", "dataRef": "squares", "outputColumnName": "block", "outputTableName": "blocks"}],
@@ -175,6 +220,32 @@ NOT_KEPT_SAID = (
     'Data source 1 (join) runs after compute and reads "blocks", which compute pass 0 writes without writeBack, '
     "so autk-db holds \"blocks\" without that pass's result. Set writeBack: true on the pass."
 )
+
+#: A data node of no compute pass whose sources after compute come first in
+#: its data: a SQL query of the zones with many riders, saved as a layer, and
+#: a join of the stops onto the zones, then the zones and the stops they read.
+ZONE_RIDERS = [4, 9]
+STOP_ZONES = [0, 0, 1]
+DATA_AFTER = {"data": [
+    {"type": "sql", "outputTableName": "busy", "layerType": "polygons", "after": "compute",
+     "query": "SELECT properties->>'zone' AS zone, geometry FROM zones WHERE CAST(properties->>'riders' AS INTEGER) > 5"},
+    {"type": "join", "dataRef": "zones", "joinDataRef": "stops", "after": "compute",
+     "groupBy": [{"column": "*", "aggregateFn": "count"}]},
+    {"type": "geojson", "outputTableName": "zones", "coordinateFormat": "EPSG:3395",
+     "geojsonObject": {"type": "FeatureCollection", "features": [
+         {"type": "Feature", "geometry": _square(LOOP[0] + 500 * i, LOOP[1], 400), "properties": {"zone": i, "riders": riders}}
+         for i, riders in enumerate(ZONE_RIDERS)
+     ]}},
+    {"type": "geojson", "outputTableName": "stops", "coordinateFormat": "EPSG:3395",
+     "geojsonObject": {"type": "FeatureCollection", "features": [
+         {"type": "Feature", "geometry": {"type": "Point", "coordinates": [LOOP[0] + 500 * zone + 100 + 50 * i, LOOP[1] + 200]},
+          "properties": {"stop": i}}
+         for i, zone in enumerate(STOP_ZONES)
+     ]}},
+]}
+#: The tables the data node loads, in the order it loads them: its sources
+#: before compute, then the SQL query's table.
+DATA_AFTER_TABLES = ["zones", "stops", "busy"]
 
 _VIEWS_JS = "(id) => typeof window.__curio_mapViews === 'function' ? window.__curio_mapViews(id) : null"
 
@@ -288,12 +359,18 @@ def test_a_compute_step_runs_its_sources_after_compute_and_hands_on_what_they_ma
         _node(refused, AUTARK_TYPE, 120, 760, json.dumps(NOT_KEPT, indent=2)),
     ], [_edge(step, reader)])
 
-    # Plays the compute step first, which hands its tables on.
+    # The compute step runs its passes, then its sources after compute, and hands its tables on.
+    play_node(page, step)
+    wait_for_node_done(page, step, node_type=AUTARK_TYPE, timeout_ms=180000)
     play_node(page, reader)
     wait_for_node_done(page, reader, node_type=PYTHON_TYPE)
     sizes = sorted((block, BLOCKS.count(block)) for block in set(BLOCKS))
+    tables = ["area", "block_sizes", "blocks", "seen", "squares", "towers", "views", "window_counts", "windows"]
     said = read_node_output_text(page, reader)
-    assert f"tables ['block_sizes', 'blocks', 'squares']; sizes {sizes}; blocks {BLOCKS}" in said, said
+    assert (
+        f"tables {tables}; sizes {sizes}; blocks {BLOCKS}; towers [0, 1]; every window kept True; "
+        f"views [{len(SQUARES)}] of {len(SQUARES)}"
+    ) in said, said
 
     # A source after compute that reads a table no pass kept in autk-db: refused before anything runs.
     play_node(page, refused)
@@ -303,3 +380,72 @@ def test_a_compute_step_runs_its_sources_after_compute_and_hands_on_what_they_ma
         f"the node whose join after compute reads what no pass kept ended {status!r}, saying {error!r}"
     )
     assert not [e for e in errors if "[autk-grammar] node error" in e and NOT_KEPT_SAID not in e], errors
+
+
+def _latest_run(backend: str, token: str, project_id: str) -> dict:
+    runs = api_json(f"{backend}/api/projects/{project_id}/runs?limit=1", token)["runs"]
+    assert runs, "playing the data node started no run on the server"
+    return api_json(f"{backend}/api/runs/{runs[0]['id']}", token, dataflow=project_id)
+
+
+def _wait_for_run_to_end(backend: str, token: str, project_id: str, *, timeout_s: float = 180) -> dict:
+    deadline = time.monotonic() + timeout_s
+    while True:
+        run = _latest_run(backend, token, project_id)
+        if run["status"] not in ("queued", "running"):
+            return run
+        assert time.monotonic() < deadline, f"the run did not end within {timeout_s} s: {run['status']}"
+        time.sleep(0.5)
+
+
+def test_a_server_run_loads_a_data_nodes_sources_after_compute_after_the_others_and_its_pool_shows_them(
+    app_frontend: "FrontendPage",
+    current_server: str,
+    page,
+):
+    loader, pool = "wb-data-after", "wb-data-pool"
+    spec = {"dataflow": {"name": "AutarkDataAfterCompute", "task": "", "nodes": [
+        {**_node(loader, AUTARK_TYPE, 120, 160, json.dumps(DATA_AFTER, indent=2)), "saveOutputDataset": True},
+        _node(pool, "curio.builtin/data-pool", 820, 160, ""),
+    ], "edges": [_edge(loader, pool)]}}
+    require_project_page()
+    require_user_auth()
+    session = stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Autark Data After Compute",
+        username="autark_data_after_compute",
+        project_name=spec["dataflow"]["name"],
+        project_spec=spec,
+    )
+    require_owner_view(page)
+    token, project_id = session["token"], session["project"]["id"]
+    _wait_for_reactflow_ready(page)
+    for node_id in (loader, pool):
+        node_locator(page, node_id).wait_for(state="visible", timeout=45000)
+
+    # The data node's load runs on the server, its sources after compute after the others.
+    play_node(page, loader)
+    wait_for_node_done(page, loader, node_type=AUTARK_TYPE, timeout_ms=180000)
+    run = _wait_for_run_to_end(current_server, token, project_id)
+    step = {s["nodeId"]: s for s in run["steps"]}[loader]
+    assert (step["role"], step["status"], step["outputType"]) == ("run", "ok", "list"), step
+    assert step["outputPath"], step
+    assert run["status"] == "succeeded", run["status"]
+
+    # Done, with the tables it loaded.
+    node = node_locator(page, loader)
+    node.locator('.nav-link[data-rr-ui-event-key="output"]').first.click()
+    expect(node.locator('[data-curio-autk-summary="data"]')).to_have_text(
+        "Loaded 3 tables: " + ", ".join(DATA_AFTER_TABLES), timeout=15000,
+    )
+
+    # The pool below it reads the run's output: a tab for each table.
+    expect(node_locator(page, pool).locator('[data-testid="data-pool-tabs"] .nav-link')).to_have_text(
+        DATA_AFTER_TABLES, timeout=60000,
+    )
+
+    # Recorded in the dataflow as a save records it.
+    saved = api_json(f"{current_server}/api/projects/{project_id}", token)
+    assert loader in {o["node_id"] for o in saved["outputs"]}, saved["outputs"]

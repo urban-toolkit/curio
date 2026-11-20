@@ -700,7 +700,7 @@
           {
             "type": "geojson", "outputTableName": "late", "coordinateFormat": "EPSG:4326", "after": "compute",
             "geojsonObject": { "type": "FeatureCollection", "features": [
-              { "type": "Feature", "properties": { "late": true }, "geometry": { "type": "Point", "coordinates": [-87.61, 41.88] } }
+              { "type": "Feature", "properties": { "late": true }, "geometry": { "type": "Point", "coordinates": [-87.625, 41.885] } }
             ] }
           },
           {
