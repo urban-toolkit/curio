@@ -1,9 +1,11 @@
-"""Playwright E2E: the monitor page renders, polls, pauses and logs a browser error,
-and its LLM performance section counts an agent's turn on Curio's own model.
+"""Playwright E2E: the monitor page renders its two tabs, polls, pauses and logs a
+browser error, its Usage tab counts a node's run, and its LLM performance section
+counts an agent's turn on Curio's own model.
 
 The first test exercises the whole chain end to end -- the React page, the real
 backend, the sandbox proxy, real SQL and the public error ingest -- without
-running a node or loading a dataflow, so it stays cheap.
+running a node or loading a dataflow, so it stays cheap. It opens /monitor on
+its Status tab, then the Usage tab by a click (/monitor/usage), and Status again.
 
 The browser-error step is the only coverage that path gets anywhere: the
 window handler, the public POST, the ring buffer and the render are four
@@ -14,10 +16,16 @@ The second makes the scripted provider this Curio's own endpoint
 set for their own is not, under a model name of the test's own, so no other
 test's requests count on it; runs one scripted agent turn on it
 (``utils/scripted_llm.py``); and reads its requests and their times back from
-the route and from the page. The requests are a history every backend process
-writes into one file, kept across restarts, so the test has every process
-write what it holds (``/api/testing/monitor-flush``) before each read, and
-reads what the turn added.
+the route and from the page, opened on the Usage tab by its URL.
+
+The third runs two Python nodes through the backend as Play does
+(``/processPythonCode``), one that fails, and reads them in the Usage tab's
+``node.python`` measure, on the route and on the page.
+
+The monitor's measures are histories every backend process writes into one
+file each, kept across restarts, so a test has every process write what it
+holds (``/api/testing/monitor-flush``) before each read, and reads what it
+added.
 """
 
 from __future__ import annotations
@@ -25,6 +33,8 @@ from __future__ import annotations
 import re
 import uuid
 from typing import TYPE_CHECKING
+
+from playwright.sync_api import expect
 
 from .utils import api_json, captured_agent_calls, script_agent_replies, stub_db_user
 
@@ -48,10 +58,10 @@ def test_monitor_page_shows_stats_errors_and_polls(app_frontend: FrontendPage, p
     page.goto(f"{base}/monitor", timeout=120000)
     page.wait_for_load_state("domcontentloaded")
 
-    # 1. Every section renders.
-    for heading in ("Deployment", "Hardware", "Execution", "LLM performance",
-                    "Accounts and content", "Storage", "Recent errors"):
+    # 1. Every section of the Status tab renders, the tab /monitor opens on.
+    for heading in ("Deployment", "Hardware", "Execution", "Accounts and content", "Storage", "Recent errors"):
         page.get_by_role("heading", name=heading).wait_for(timeout=30000)
+    expect(page.get_by_role("tab", name="Status", exact=True)).to_have_attribute("aria-selected", "true")
 
     # 2. Real numbers arrived. The harness always has at least the shared guest
     #    account, so this is >= 1 without being a flaky exact figure.
@@ -83,12 +93,30 @@ def test_monitor_page_shows_stats_errors_and_polls(app_frontend: FrontendPage, p
     #    the whole body: the error log is raw by design, so a body-wide
     #    assertion would now be wrong rather than strict.
     for panel in ("monitor-deployment", "monitor-hardware", "monitor-execution",
-                  "monitor-llm-performance", "monitor-accounts", "monitor-storage"):
+                  "monitor-accounts", "monitor-storage"):
         text = page.get_by_test_id(panel).inner_text()
         assert EMAIL.search(text) is None, f"{panel} rendered an email-shaped string"
         assert IPV4.search(text) is None, f"{panel} rendered an IP-shaped string"
 
-    # 8. A browser error travels: window handler -> public POST -> ring buffer
+    # 8. The Usage tab, by a click: its path, its sections, the LLM performance
+    #    among them, its numbers, and its panels name nobody either.
+    page.get_by_role("tab", name="Usage", exact=True).click()
+    page.wait_for_url(re.compile(r"/monitor/usage$"), timeout=30000)
+    expect(page.get_by_role("tab", name="Usage", exact=True)).to_have_attribute("aria-selected", "true")
+    for heading in ("Activity", "Sessions seen", "Average time", "By measure", "LLM performance"):
+        page.get_by_role("heading", name=heading, exact=True).wait_for(timeout=30000)
+    page.locator('[data-testid="monitor-usage-measures"] tr[data-measure="node.python"]').wait_for(timeout=30000)
+    for panel in ("monitor-usage", "monitor-usage-measures", "monitor-llm-performance"):
+        text = page.get_by_test_id(panel).inner_text()
+        assert EMAIL.search(text) is None, f"{panel} rendered an email-shaped string"
+        assert IPV4.search(text) is None, f"{panel} rendered an IP-shaped string"
+
+    # Back to Status, by a click, where the errors are.
+    page.get_by_role("tab", name="Status", exact=True).click()
+    page.wait_for_url(re.compile(r"/monitor$"), timeout=30000)
+    page.get_by_role("heading", name="Recent errors").wait_for(timeout=30000)
+
+    # 9. A browser error travels: window handler -> public POST -> ring buffer
     #    -> render. The marker makes it unambiguous which entry is ours.
     #
     # LAST on purpose, and nothing may click after it. This harness serves the
@@ -179,10 +207,13 @@ def test_a_turn_on_curios_own_model_shows_in_llm_performance(app_frontend: Front
             assert after[window]["averageMs"] is not None and after[window]["p95Ms"] is not None, after[window]
         assert model in {row["model"] for row in body["views"]["24h"]["rows"]}, body["views"]["24h"]["rows"]
 
-        # 3. The page shows them: the model's row in the By model table, over
-        #    the 7 days it shows first, and its line in the chart.
+        # 3. The page shows them on its Usage tab, opened by its URL: the
+        #    model's row in the By model table, over the 7 days it shows
+        #    first, and its line in the chart.
         week = after["7d"]
-        page.goto(f"{app_frontend.base_url}/monitor", timeout=120000)
+        page.goto(f"{app_frontend.base_url}/monitor/usage", timeout=120000)
+        expect(page.get_by_role("tab", name="Usage", exact=True)).to_have_attribute("aria-selected", "true",
+                                                                                    timeout=30000)
         page.get_by_role("heading", name="LLM performance").wait_for(timeout=30000)
         row = page.locator(f'[data-testid="monitor-llm-models"] tr[data-model="{model}"]')
         row.wait_for(timeout=30000)
@@ -198,3 +229,60 @@ def test_a_turn_on_curios_own_model_shows_in_llm_performance(app_frontend: Front
         section.locator("svg text", has_text=model).first.wait_for(timeout=30000)
     finally:
         api_json(f"{current_server}/api/testing/llm-deployment", token, method="DELETE")
+
+
+def _python_runs(current_server: str, token: str) -> dict:
+    """The Usage tab's Python node runs in each window, once every backend
+    process wrote what it holds of the history."""
+    api_json(f"{current_server}/api/testing/monitor-flush", token, method="POST", payload={})
+    body = api_json(f"{current_server}/api/monitor/usage", token)
+    return {window: next(each for each in body["views"][window]["measures"] if each["key"] == "node.python")
+            for window in WINDOWS}
+
+
+def test_a_node_run_shows_in_the_usage_tab(app_frontend: FrontendPage, page, current_server: str):
+    # 1. Two Python nodes run through the backend as Play runs them, one of
+    #    which fails, on a dataflow of the test's own. The history is kept
+    #    across restarts, so what it held before is read first.
+    suffix = uuid.uuid4().hex[:8]
+    session = stub_db_user(current_server, username=f"monitor_usage_{suffix}",
+                           name="Monitor Usage", project_name="Monitor usage")
+    token = session["token"]
+    dataflow = session["project"]["id"]
+    before = _python_runs(current_server, token)
+    paths = []
+    # Bodies indented, as the canvas sends a node's code.
+    for code in ("    return 21 * 2\n", "    raise ValueError('the monitor counts this run as failed')\n"):
+        reply = api_json(
+            f"{current_server}/processPythonCode", token, method="POST",
+            payload={
+                "code": code, "nodeType": "curio.builtin/python-computation", "dataflowId": dataflow,
+                "input": {"path": "", "dataType": ""}, "saveOutputDataset": False,
+            },
+            timeout=120, dataflow=dataflow,
+        )
+        paths.append((reply.get("output") or {}).get("path"))
+    assert bool(paths[0]) and not paths[1], paths
+
+    # 2. The route counts both, the second as failed, each with its time, in
+    #    every window.
+    after = _python_runs(current_server, token)
+    for window in WINDOWS:
+        added = (after[window]["count"] - before[window]["count"], after[window]["failed"] - before[window]["failed"])
+        assert added == (2, 1), (window, before[window], after[window])
+        assert after[window]["averageMs"] is not None and after[window]["p95Ms"] is not None, after[window]
+
+    # 3. The page shows them on its Usage tab, opened by its URL: the Python
+    #    row of the By measure table, over the 7 days it shows first.
+    page.goto(f"{app_frontend.base_url}/monitor/usage", timeout=120000)
+    expect(page.get_by_role("tab", name="Usage", exact=True)).to_have_attribute("aria-selected", "true",
+                                                                                timeout=30000)
+    row = page.locator('[data-testid="monitor-usage-measures"] tr[data-measure="node.python"]')
+    row.wait_for(timeout=30000)
+    cells = row.locator("td")
+    week = after["7d"]
+    expect(cells.nth(1)).to_have_attribute("data-tooltip", f"{week['count']:,} runs", timeout=30000)
+    expect(cells.nth(2)).to_have_attribute(
+        "data-tooltip", f"{week['failed']:,} of {week['count']:,} runs failed", timeout=30000)
+    assert SHOWN_DURATION.fullmatch(cells.nth(3).inner_text().strip()), row.inner_text()
+    assert cells.nth(3).get_attribute("data-tooltip") == f"{week['averageMs']:,} ms", row.inner_text()
