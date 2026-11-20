@@ -7,19 +7,20 @@
  * A compute step runs its passes over the layers it holds with no database
  * (autkComputeBlocks). A pass with `writeBack` also keeps its result in
  * autk-db, and a source after compute reads autk-db, so a step with either
- * runs on a database of its own, through the grammar's own adapters and
- * caches, wired as an AutkGrammar wires them (`createDataAdapter`,
- * `createComputeAdapter`):
+ * runs on a database of its own, through the adapters and caches an
+ * `AutkGrammar` of the grammar's main entry wires for itself, as a map node's
+ * run does (its data adapter, its compute adapter, checked as a map node's is
+ * by `withCheckedPasses`, and its caches), with no view to draw:
  *
  * - the document's workspaces set up (`resolveWorkspaces`);
  * - each layer the step holds loaded as a GeoJSON source, in the order a map
  *   node hands its tables to the grammar (utils/autkInput `tablesToLoad`), on
  *   the 1 cm grid it hands them on (utils/geoPrecision); a raster, and a table
  *   with no geometry, which no pass or source reads, stay out;
- * - its passes, each checked (autkComputeScopes `checkedPasses`), each reading
- *   its table as autk-db keeps it, as a map node's passes do; a pass whose
- *   table the step does not hold is skipped, as the step skips it without a
- *   database;
+ * - its passes, each checked (autkComputeScopes), each reading its table as
+ *   autk-db keeps it and a `fromFeature` table as the source gave it, as a map
+ *   node's passes do; a pass whose table the step does not hold is skipped, as
+ *   the step skips it without a database;
  * - then its sources after compute, in their order, which read what the
  *   passes kept in autk-db: a heatmap is made and read back one raster at a
  *   time, as the loaders make one (autkLayerMaterialize `grammarRaster`).
@@ -50,13 +51,18 @@ import {
     workspaceCrsOf,
 } from './autkDataCompile';
 import { RASTER_TABLE, explodeBuildingParts, grammarRaster } from './autkLayerMaterialize';
-import { checkedPasses } from './autkComputeScopes';
+import { withCheckedPasses } from './autkComputeScopes';
 import { closeAutkDb } from './autkDbClose';
 import { withExtensionRetry } from './duckdbExtensionRetry';
 import { hasFeatures } from './autkRunDescriptions';
 
 /** A layer a compute step holds, in the workspace it names when it is not the default one. */
 type Layer = { name: string; type?: string; geojson: any; workspace?: string };
+
+/** What a compute step says when the grammar keeps its adapters or caches where Curio does not read them. */
+export const COMPUTE_DATABASE_MISSING =
+    'Autark cannot keep these passes in autk-db or run sources after compute: this autk-grammar build keeps its '
+    + "adapters differently, and Curio's compute step (adapters/node/autkComputeDatabase.ts) has to follow it.";
 
 const keyOf = (layer: { name: string; workspace?: string }): string => autkTableKey(layer.workspace, layer.name);
 
@@ -95,13 +101,19 @@ export async function computeOnADatabase(
         import('@urban-toolkit/autk-grammar'),
         import('@urban-toolkit/autk-db'),
     ]);
-    // The grammar's caches, as an AutkGrammar keeps them: each GeoJSON table a
-    // source loaded, and each table a pass wrote with its type, by tableKey.
-    const sources = new Map<string, FeatureCollection>();
-    const cache = new Map<string, FeatureCollection>();
-    const types = new Map<string, any>();
-    const dataAdapter = grammar.createDataAdapter(undefined, sources, cache, types);
-    const computeAdapter = checkedPasses(grammar.createComputeAdapter(cache, types, sources));
+    // An AutkGrammar with no view: its adapters, wired with its caches as its
+    // run wires them, run each part of the document, and its compute cache
+    // holds each table a pass wrote, with its type, by tableKey.
+    const run: any = new grammar.AutkGrammar({});
+    withCheckedPasses(run);
+    const dataAdapter = run.dataAdapter;
+    const computeAdapter = run.computeAdapter;
+    const cache: Map<string, FeatureCollection> = run._computeCache;
+    const types: Map<string, any> = run._computeTypes;
+    if (!dataAdapter?.resolveSource || !(cache instanceof Map) || !(types instanceof Map)) {
+        failures.push(COMPUTE_DATABASE_MISSING);
+        return layers;
+    }
     const workspaces = Array.isArray(spec.workspaces) && spec.workspaces.length > 0 ? spec.workspaces : null;
     const crsOf = workspaceCrsOf(workspaces);
     // `init()` downloads the DuckDB spatial extension; a flaky fetch is worth

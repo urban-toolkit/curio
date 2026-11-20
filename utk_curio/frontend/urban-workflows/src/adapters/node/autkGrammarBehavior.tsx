@@ -747,7 +747,7 @@ export const useAutkGrammarBehavior = (
         // a table a pass writes without `writeBack`, in the grammar's words.
         if (writesAfter(spec?.data)) {
             try {
-                const { dataPhases } = await import('@urban-toolkit/autk-grammar/data');
+                const { dataPhases } = await import('@urban-toolkit/autk-grammar');
                 dataPhases(spec);
             } catch (err) {
                 const message = describeError(err);
