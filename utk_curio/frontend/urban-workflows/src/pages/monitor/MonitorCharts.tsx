@@ -199,8 +199,9 @@ export interface LinesOverTimeOptions {
   points?: boolean;
   /**
    * The values are durations in milliseconds: the axis and the tooltip
-   * write each as whole milliseconds under a second and as seconds with one
-   * decimal above (`durationText`, as `formatMs` does).
+   * write each with two significant digits under a millisecond, as whole
+   * milliseconds under a second and as seconds with one decimal above
+   * (`durationText`, as `formatMs` does).
    */
   durations?: boolean;
   /**
@@ -218,10 +219,14 @@ export const DURATION_TEXT_FIELD = "durationText";
 
 /**
  * Vega's expression for *value*, a duration in milliseconds, written as
- * `formatMs` (`utils/diagnosticsBundle.ts`) writes it: "850 ms", "1.2 s".
+ * `formatMs` (`utils/diagnosticsBundle.ts`) writes it: "0.43 ms", "850 ms",
+ * "1.2 s".
  */
 export function durationText(value: string): string {
-  return `round(${value}) < 1000 ? format(round(${value}), 'd') + ' ms' : format(${value} / 1000, '.1f') + ' s'`;
+  return (
+    `(${value} < 1 ? format(${value}, '.2~r') + ' ms' : ` +
+    `round(${value}) < 1000 ? format(round(${value}), 'd') + ' ms' : format(${value} / 1000, '.1f') + ' s')`
+  );
 }
 
 /**

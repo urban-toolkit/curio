@@ -145,8 +145,7 @@ export function measurePoints(
   for (const row of view.rows) {
     const t = Date.parse(row.at);
     if (Number.isNaN(t) || row.count <= 0) continue;
-    const value =
-      field === "count" ? row.count : field === "averageMs" ? Math.round(row.ms / row.count) : row.p95Ms;
+    const value = field === "count" ? row.count : field === "averageMs" ? averageOf(row.ms, row.count) : row.p95Ms;
     values.set(`${row.key}\n${t}`, value);
   }
   const times = steps(view);
@@ -228,7 +227,17 @@ export function combined(stats: MonitorUsageStats[], keys: MonitorUsageMeasure[]
     failed += each.failed;
     ms += each.ms;
   }
-  return { count, failed, averageMs: count > 0 ? Math.round(ms / count) : null };
+  return { count, failed, averageMs: count > 0 ? averageOf(ms, count) : null };
+}
+
+/**
+ * The average of *count* times that add up to *ms* milliseconds, as the route
+ * gives its times: whole milliseconds from 10 ms up, three significant digits
+ * below, so an average of a fraction of a millisecond keeps its value.
+ */
+export function averageOf(ms: number, count: number): number {
+  const average = ms / count;
+  return average >= 10 ? Math.round(average) : Number(average.toPrecision(3));
 }
 
 /** The tiles' numbers: the last 24 hours of each measure the tiles name, and the sessions seen. */

@@ -75,7 +75,7 @@ def timer(monkeypatch):
 
 
 def _buckets(**placed) -> list[int]:
-    """Bucket counts with *placed* counts, by bucket number (``b0`` to ``b13``)."""
+    """Bucket counts with *placed* counts, by bucket number (``b0`` to ``b18``)."""
     out = [0] * durations.BUCKETS
     for name, count in placed.items():
         out[int(name[1:])] = count
@@ -126,10 +126,10 @@ class TestTheRecord:
         _written()
         assert llm_performance.HISTORY.rows() == [
             {"at": "2026-11-06T15:20:00Z", "span": "5m", "model": "gemma4", "requests": 2, "failed": 1,
-             "ms": 2000, "buckets": _buckets(b4=1, b5=1), "firstTokenMs": 300, "firstTokens": 1,
+             "ms": 2000, "buckets": _buckets(b9=1, b10=1), "firstTokenMs": 300, "firstTokens": 1,
              "outputTokens": 80, "outputMs": 2000},
             {"at": "2026-11-06T15:20:00Z", "span": "5m", "model": "qwen3", "requests": 1, "failed": 0,
-             "ms": 4000, "buckets": _buckets(b6=1), "firstTokenMs": 0, "firstTokens": 0,
+             "ms": 4000, "buckets": _buckets(b11=1), "firstTokenMs": 0, "firstTokens": 0,
              "outputTokens": 0, "outputMs": 0},
         ]
         view = _view("24h")
@@ -229,13 +229,13 @@ class TestTheRecord:
         assert path == monitor_history._folder() / "llm.json"
         text = path.read_text(encoding="utf-8")
         doc = json.loads(text)
-        assert (doc["name"], doc["format"]) == ("llm", 2)
+        assert (doc["name"], doc["format"]) == ("llm", llm_performance.FILE_FORMAT) == ("llm", 3)
         assert doc["rows"] == llm_performance.HISTORY.rows() == [
             {"at": "2026-11-06T15:20:00Z", "span": "5m", "model": "gemma4", "requests": 2, "failed": 0,
-             "ms": 2000, "buckets": _buckets(b4=1, b5=1), "firstTokenMs": 300, "firstTokens": 1,
+             "ms": 2000, "buckets": _buckets(b9=1, b10=1), "firstTokenMs": 300, "firstTokens": 1,
              "outputTokens": 80, "outputMs": 2000},
             {"at": "2026-11-06T15:20:00Z", "span": "5m", "model": "qwen3", "requests": 1, "failed": 1,
-             "ms": 40, "buckets": _buckets(b0=1), "firstTokenMs": 0, "firstTokens": 0,
+             "ms": 40, "buckets": _buckets(b5=1), "firstTokenMs": 0, "firstTokens": 0,
              "outputTokens": 0, "outputMs": 0},
         ]
         # Sums alone, each a whole number, which every write adds up exactly,
@@ -254,7 +254,27 @@ class TestTheRecord:
 
         assert _sums("gemma4") == {"requests": 2, "failed": 1, "ms": 2000, "firstTokenMs": 400, "firstTokens": 2,
                                    "outputTokens": 80, "outputMs": 2000}
-        assert [row["buckets"] for row in llm_performance.HISTORY.rows()] == [_buckets(b4=1, b5=1)]
+        assert [row["buckets"] for row in llm_performance.HISTORY.rows()] == [_buckets(b9=1, b10=1)]
+
+    def test_a_file_of_the_earlier_buckets_reads_as_empty_and_the_next_write_replaces_it(self, clock):
+        """Rows counted in the buckets from 50 ms (format 2) are never joined
+        with these: the file reads as no rows until its next write."""
+        path = llm_performance.HISTORY.path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"name": "llm", "format": 2, "rows": [
+            {"at": "2026-11-06T15:20:00Z", "span": "5m", "model": "gemma4", "requests": 3, "failed": 0,
+             "ms": 3000, "buckets": [0, 0, 0, 0, 3] + [0] * 9, "firstTokenMs": 0, "firstTokens": 0,
+             "outputTokens": 0, "outputMs": 0},
+        ]}), encoding="utf-8")
+        assert llm_performance.HISTORY.rows() == []
+        assert _view("24h")["all"]["requests"] == 0
+
+        _record("gemma4", ms=1200)
+        _written()
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        assert (doc["format"], [(row["model"], row["requests"], row["buckets"]) for row in doc["rows"]]) == (
+            3, [("gemma4", 1, _buckets(b10=1))])
+        assert not list(path.parent.glob("llm.json.unreadable-*"))
 
     def test_a_time_that_is_not_one_reads_as_0_ms_and_a_count_that_is_not_one_as_not_reported(self, clock):
         """Never raised: a request still counts once."""

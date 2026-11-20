@@ -53,12 +53,14 @@ export function formatExactCount(count: number | null | undefined): string {
 }
 
 /**
- * A duration in milliseconds: whole milliseconds under a second ("850 ms"),
- * seconds with one decimal above ("1.2 s"). The monitor's charts write their
- * axis and tooltip the same way (`MonitorCharts.durationText`).
+ * A duration in milliseconds: two significant digits under a millisecond
+ * ("0.43 ms"), whole milliseconds under a second ("850 ms"), seconds with one
+ * decimal above ("1.2 s"). The monitor's charts write their axis and tooltip
+ * the same way (`MonitorCharts.durationText`).
  */
 export function formatMs(ms: number | null | undefined): string {
   if (ms == null || !Number.isFinite(ms)) return "n/a";
+  if (ms < 1) return `${Number(ms.toPrecision(2))} ms`;
   const whole = Math.round(ms);
   return whole < 1000 ? `${whole} ms` : `${(ms / 1000).toFixed(1)} s`;
 }

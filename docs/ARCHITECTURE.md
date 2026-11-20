@@ -198,7 +198,9 @@ from the app's first `before_request` to its last `after_request`
 registers a hook; failed with a 5xx), leaving out preflights, the monitor's own
 routes, `/version`, `/health`, `/live`, `/internal/`, `/api/testing/`, streamed
 responses and Socket.IO, which Engine.IO's WSGI app answers before Flask sees
-it. A row is `{at, span, key, count, failed, ms, buckets}`, sums alone. Beside
+it. A row is `{at, span, key, count, failed, us, buckets}`, sums alone, its
+time in whole microseconds, so a request answered in a fraction of a
+millisecond counts its time. Beside
 it, the home process samples the sessions seen a few seconds after each
 5-minute slot ends (`start_sessions_sampler`, beside the open-files sampler,
 off under `--testing`): the sign-ins whose `last_seen_at` falls since the
@@ -225,16 +227,23 @@ endpoint, as it ends (`_counted`): its time, a stream's time to its first word
 or call, its output tokens and whether it raised; a request the endpoint
 refused (400 or 422) is not counted, as Curio asks again without what it
 refused. A row holds sums alone: the
-requests, those that failed, their milliseconds and their count in each of 14
-duration buckets (`monitor/durations.py`), the first tokens' milliseconds, and
-the output tokens with the milliseconds of the requests that reported them.
+requests, those that failed, their milliseconds and their count in each of 19
+duration buckets (`monitor/durations.py`: up to 1, 2, 5, 10, 25, 50, 100, 250
+and 500 ms, 1, 2.5, 5, 10, 30, 60, 120, 300 and 600 s, and above, each duration
+in the first bucket its measured time does not pass), the first tokens'
+milliseconds, and the output tokens with the milliseconds of the requests that
+reported them. The usage route gives a time as whole milliseconds from 10 ms
+up and with three significant digits below (`durations.shown`), so a request of
+a fraction of a millisecond reads as one; this route, whose requests take
+seconds, in whole milliseconds.
 The route reads three views of them: the 5-minute rows of the last 24 hours,
 hourly sums over 7 days and daily sums over 90 days, each with each model's
 and every model's requests, failures, average and 95th percentile time (read
 from the buckets, interpolated inside the one that holds it), time to the
 first token and output tokens per second. Those rows are a monitor
 history (`monitor/history.py`), kept across restarts: one file,
-`<name>.json` with `{name, format: 2, rows}`, in the monitor folder
+`<name>.json` with `{name, format, rows}`, format 2, or the format a history
+names once its rows change shape (3 for `usage` and `llm`), in the monitor folder
 (`--monitor-dir`, `CURIO_MONITOR_DIR`, else `.curio/monitor`, kept `0700`),
 which every backend process writes and no start clears. A row covers 5
 minutes (`span` `5m`) for the last 24 hours, counted back from the current
@@ -255,7 +264,8 @@ replaced; one that does not parse is set aside as
 shared and count both windows back from now. Its charts are `LinesOverTime`
 (`MonitorCharts.tsx`), a line per series over time, broken where a value is
 null, with a log y axis, dashed series, values that are durations (written
-as milliseconds under a second, seconds above) and marks as options: a mark
+with two significant digits under a millisecond, as milliseconds under a
+second, seconds above) and marks as options: a mark
 is a thin dashed rule across the plot at a moment on the lines' time scale,
 in a layer over them with a tooltip of its own, which the Usage tab's charts
 of 24 hours and 7 days and the open-files chart draw at each deploy.

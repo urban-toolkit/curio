@@ -3,7 +3,8 @@ shared by every backend process and kept across restarts.
 
 THE FILE. A :class:`History` has a name and one JSON document,
 ``<monitor folder>/<name>.json``: ``{"name": <name>, "format": 2, "rows":
-[...]}``. The monitor folder is the one ``curio.py start --monitor-dir`` names
+[...]}``, or the format its history names when its rows changed shape. The
+monitor folder is the one ``curio.py start --monitor-dir`` names
 (``CURIO_MONITOR_DIR``), else ``monitor`` in the ``.curio`` tree
 ``user_storage.curio_root`` resolves, read at each call (:func:`_folder`).
 Every backend process of a start writes the same file, and nothing starts it
@@ -45,8 +46,9 @@ moved over the file with ``os.replace``: a reader or a crash sees the old file
 or the new one, never part of one. A write that fails puts what it took back,
 to be written by the next, and is logged once until a write succeeds again.
 
-A FILE THIS VERSION DOES NOT READ. A document of another ``format`` (such as
-an earlier version's) is read as no rows, and the next write replaces it. A
+A FILE THIS VERSION DOES NOT READ. A document of another ``format`` than its
+history's (such as an earlier version's) is read as no rows, and the next
+write replaces it. A
 file that does not parse is set aside by the next write, as
 ``<name>.json.unreadable-<UTC time>``, named in the monitor's errors, and a new
 one begins.
@@ -85,7 +87,7 @@ from typing import Callable, Iterable, Optional, Sequence
 
 from utk_curio.backend.app.common import file_locks
 
-#: The version of the document a history's file holds.
+#: The version of the document a history's file holds, unless its history names another.
 FORMAT = 2
 #: The days a history keeps, counted back from the current hour.
 MAX_DAYS = 90
@@ -140,18 +142,23 @@ class History:
     become one (:func:`summed` by default). *admit*, when given, is how the
     file takes the rows a write holds, from the file's rows and the held rows,
     oldest first: the rows to join, each the held row or another in its place.
-    *clock* is what "now" is, read at each call."""
+    *clock* is what "now" is, read at each call. *file_format* is the format
+    its file is written in and the only one read (:data:`FORMAT` by default):
+    a history whose rows change shape names a new one, so it never joins rows
+    of the old shape with its own."""
 
     def __init__(self, name: str, *, identity: Sequence[str] = (), span: str = FIVE_MINUTES,
                  join: Callable[[dict, dict], dict] = summed,
                  admit: Optional[Callable[[list, list], list]] = None,
-                 clock: Optional[Callable[[], datetime]] = None, max_days: int = MAX_DAYS):
+                 clock: Optional[Callable[[], datetime]] = None, max_days: int = MAX_DAYS,
+                 file_format: int = FORMAT):
         if span not in SPANS:
             raise ValueError(f"a history's rows span {' or '.join(SPANS)}, not {span!r}")
         self.name = name
         self.identity = tuple(identity)
         self.span = span
         self.max_days = max_days
+        self.file_format = file_format
         self._join = join
         self._admit = admit
         self._clock = clock
@@ -281,7 +288,7 @@ class History:
         with file_locks.exclusive_lock(folder / f"{self.name}.lock", namespace=LOCKS, key=self.name):
             rows = _read_to_write(self, path, now)
             rows = self._joined(rows, batch)
-            document = {"name": self.name, "format": FORMAT, "rows": self._settled(rows, now)}
+            document = {"name": self.name, "format": self.file_format, "rows": self._settled(rows, now)}
             _clear_leftovers(folder, self.name)
             _replace(path, document)
 
@@ -334,14 +341,15 @@ class History:
 
     def _parsed(self, data: bytes) -> Optional[list[dict]]:
         """The rows a file's *data* holds that this version reads: none for a
-        document of another format, None for one that is not a history's."""
+        document of another format than this history's, None for one that is
+        not a history's."""
         try:
             document = json.loads(data)
         except ValueError:
             return None
         if not isinstance(document, dict):
             return None
-        if document.get("format") != FORMAT:
+        if document.get("format") != self.file_format:
             return []
         rows = document.get("rows")
         if not isinstance(rows, list):
