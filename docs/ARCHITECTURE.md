@@ -176,16 +176,31 @@ are links to `/monitor` and `/settings`. The monitor's content is
 `MonitorDrawer` both render.
 
 Its LLM tokens section (`LlmTokensSection`, with its lines in `llmSeries.ts`)
-reads `GET /api/monitor/llm`: the hourly rows `monitor/llm_tokens.py` keeps of
-each model's tokens, which `agents/infrastructure/providers.py` records once
-per request, right after it (`_counted`). Those rows are a monitor history
-(`monitor/history.py`): the process holds them, every change writes them
-whole to its own file through a temporary file (`.curio/monitor/<name>.json`
-in the home process, `<name>.<number>.json` in each other process of a start
-of several), the home backend's start (`create_app`) removes the other
-processes' files and writes its own anew, each other process writes its own
-anew as it starts, and a history holds at most 90 days of hours. Its charts are `LinesOverTime` (`MonitorCharts.tsx`), a line per
-series over time, with a log y axis and dashed series as options.
+reads `GET /api/monitor/llm`: the rows `monitor/llm_tokens.py` keeps of each
+model's tokens, which `agents/infrastructure/providers.py` records once per
+request, right after it (`_counted`), summed by hour. Those rows are a monitor
+history (`monitor/history.py`), kept across restarts: one file,
+`<name>.json` with `{name, format: 2, rows}`, in the monitor folder
+(`--monitor-dir`, `CURIO_MONITOR_DIR`, else `.curio/monitor`, kept `0700`),
+which every backend process writes and no start clears. A row covers 5
+minutes (`span` `5m`) for the last 24 hours, counted back from the current
+5-minute slot, then an hour (`1h`); a history keeps the last 90 days counted
+back from the current hour. A request adds its numbers to the row its process
+holds in memory for its time and identity (`History.add`), and every 60 s a
+timer thread of each process that serves (`start_writer`) writes what it holds,
+as its SIGTERM handler and its exit do (`write_on_stop`): under the file's lock
+(`file_locks.exclusive_lock`, `flock` across the processes) it reads the file,
+adds each held row to the row of the same time and identity, joins the
+5-minute rows past the last 24 hours into their hours, leaves out the rows past
+the 90 days, and writes the document to a temporary file, fsynced and moved
+over the file. A write that fails puts its rows back, for the next. A sample,
+such as an hour's open files, is written at once (`History.put`) and joined by
+its history's own rule. A file of another format reads as empty and is
+replaced; one that does not parse is set aside as
+`<name>.json.unreadable-<time>` and named in the errors. Reads take the lock
+shared and count both windows back from now. Its charts are `LinesOverTime`
+(`MonitorCharts.tsx`), a line per series over time, with a log y axis and
+dashed series as options.
 
 API Settings is `ApiSettingsPanel` (`src/components/apiSettings/`), which the
 settings page (`src/pages/settings/SettingsPage.tsx`, at `/settings/keys` and
@@ -3079,7 +3094,7 @@ The server keeps one Yjs doc per open dataflow: a pycrdt `Doc` and an `Awareness
 
 **Budgets across the processes** ([`common/shared_budgets.py`](../utk_curio/backend/app/common/shared_budgets.py)). A budget over something every process shares is one budget for the start, as it is for one process: half the sandbox's isolated pool for viewers' steps and a visitor address's runs a minute and everyone's (`runs/viewer.py`), the `MAX_CONCURRENT_WORKERS` package handler workers and their quarantine breakers (`packages/infrastructure/backend_runtime.py`), an account's two runs, two Solves, two package builds and two Discovery downloads, an account's requests a minute to a portal, and Nominatim's one request a second. With several processes each is kept in `.curio/budgets/<name>/`, a folder only the backend reaches (0700, and in the isolation's `SENSITIVE_PATHS`), read and written under the budget's file lock. A place a run, a step or a download holds is an entry there whose holder holds a lock file of its own, and it counts only while that lock is held (`file_locks.is_held`), so a process that dies frees its places at once. A rate's tokens and last refill, and the next free second, are a small state the start's boot id tags, which the next start does not read. A waiter at a full budget is woken at once by a place its own process frees, and looks every `RECHECK_S` (0.25 s) for one another process freed. With one process each budget is held in memory, as before, and nothing is written. A dashboard's two live runs stay its owner process's, and the limit on the monitor's error reports stays the home process's: nothing else starts or takes them.
 
-Each process also keeps its own monitor: its counters, its error log, its LLM token rows and its open-files samples, which every process takes for itself every hour (only home asks the sandbox). The monitor's routes in home ask every other process for its part at once, a POST signed with the start's secret to `/internal/monitor/<part>` (`backend`, `errors`, `llm`, `open-files`; [`monitor/processes.py`](../utk_curio/backend/app/monitor/processes.py), over `owner_calls.post_to_process`), and merge them: node runs and memory summed, node types counted once, the newest 200 runs and the newest 200 server errors of them all, each error naming its process, token rows by hour and model counted against home's clock, and in each hour the open files of the busiest process against its own limit. A process that does not answer within 3 s is left out and named in the route's `backendProcesses`, and its failure goes to the error log; with one process nothing is asked.
+Each process also keeps its own counters and error log, and takes its own open-files sample every hour (only home asks the sandbox). The monitor's routes in home ask every other process for its part at once, a POST signed with the start's secret to `/internal/monitor/<part>` (`backend`, `errors`; [`monitor/processes.py`](../utk_curio/backend/app/monitor/processes.py), over `owner_calls.post_to_process`), and merge them: node runs and memory summed, node types counted once, the newest 200 runs and the newest 200 server errors of them all, each error naming its process. A process that does not answer within 3 s is left out and named in the route's `backendProcesses`, and its failure goes to the error log; with one process nothing is asked. The monitor's histories, the LLM tokens and the open files among them, are one file each that every process writes ([`monitor/history.py`](../utk_curio/backend/app/monitor/history.py)), so their routes read the file and ask no process: token rows add up by hour and model whichever process wrote them, and each hour's open files are the busiest process's against its own limit, which the row names.
 
 **The rules the server applies.** After each update a tab sends, `_drop_dangling_connections` (called from `_apply_updates`, after each socket's updates in a batch) removes every connection whose node at either end the doc no longer holds, with its `edgeOrder` entry, as one transaction of origin `rules`, logged and relayed to every tab with the rest of the batch. A writer's change (`_write`) and a spec written outside the doc (`_catch_up`) meet the same rule inside their own transaction. Then the tab that drew it is told `connection_dropped`, `{projectId, edgeIds, by}`, `by` naming whoever removed the node: a person, or an agent at work by its name. Only the server takes such a connection out: a canvas stops drawing it, but its writer leaves it in the doc (`useDataflowDoc.ts`, `withoutDangling`), so a tab that sends it with its later changes as one update, as one that reconnects does, still sends it. One the doc took out already stays out: a canvas whose load was read before the node went still draws it at its bind, and its writer never puts it back.
 
@@ -3668,7 +3683,7 @@ on an upstream loader is progress.
 
 | File | Purpose |
 |---|---|
-| `backend/server.py` | Builds the Flask app from `create_app` (`backend/app/__init__.py`); the startup work, done by the home process when it serves, owning every dataflow while it does (the shared guest, the hosted guests' copies dropped, the agents, the packages `--guest-packages` names and the examples put back, the monitor's histories started anew and the other processes' files of them removed, the timers, the open-files sampler, the bucket mount service's proxy and check; each other process of a start of several starts its own histories and samples its own open files); Werkzeug reloader exclude patterns |
+| `backend/server.py` | Builds the Flask app from `create_app` (`backend/app/__init__.py`); the startup work, done by the home process when it serves, owning every dataflow while it does (the shared guest, the hosted guests' copies dropped, the agents, the packages `--guest-packages` names and the examples put back, the timers, the open-files sampler, the bucket mount service's proxy and check; each other process of a start of several samples its own open files); in every process that serves, the monitor's history writer and the write of what it holds on SIGTERM and at exit (`monitor/history.py`); Werkzeug reloader exclude patterns |
 | `common/backend_processes.py` | Which backend process this is (`CURIO_BACKEND_PROCESS` of `CURIO_BACKEND_PROCESSES`, process 0 the home process), the start's boot id (`CURIO_BOOT_ID`), which the launcher gives every backend of a start, every process's port and the start's secret, `shard_of`, the process a dataflow belongs to among several, `dataflow_id_on`, a new dataflow's id made for a process, and `own_file`, a file of this process's own |
 | `backend/app/api/routes.py` | REST endpoints for sandbox proxies, starters, and file serving |
 | `backend/app/packages/domain/manifest.py` | Parse `manifest.json` into typed `PackageManifest` dataclass |
