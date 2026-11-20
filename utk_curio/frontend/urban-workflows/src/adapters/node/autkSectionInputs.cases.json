@@ -1,5 +1,5 @@
 {
-  "description": "The tables of the node's input a document's data section reads: each table a heatmap bins (joinDataRef), a join reads (dataRef, joinDataRef), or an update or a drop changes (dataRef), by its key in the entry's workspace, that none of the section's own sources loads (an OSM area's layers and tag sets among them), each once, in the order the section first reads them. sectionInputTables in autkDataCompile.ts and section_input_tables in execution/autk_spec_kind.py both run these.",
+  "description": "The tables of the node's input a document's data section reads: each table a heatmap bins (joinDataRef), a join reads (dataRef, joinDataRef), or an update or a drop changes (dataRef), by its key in the entry's workspace, that none of the section's own sources loads (an OSM area's layers and tag sets among them), each once, in the order the section first reads them, read in the order autk-grammar runs it: its sources after compute (`after`) after the others. sectionInputTables in autkDataCompile.ts and section_input_tables in execution/autk_spec_kind.py both run these.",
   "cases": [
     {
       "name": "a section of its own sources reads no input table",
@@ -97,6 +97,15 @@
         { "type": "heatmap", "joinDataRef": "box_cafes_points", "outputTableName": "density", "near": { "distance": 200 }, "grid": { "rows": 2, "columns": 2 } }
       ] },
       "reads": []
+    },
+    {
+      "name": "a section's sources after compute read after the others, wherever they stand in it",
+      "spec": { "data": [
+        { "type": "heatmap", "joinDataRef": "input_1", "outputTableName": "late", "near": { "distance": 200 }, "grid": { "rows": 2, "columns": 2 }, "after": "compute" },
+        { "type": "join", "dataRef": "input_0", "joinDataRef": "input_2", "after": "compute" },
+        { "type": "heatmap", "joinDataRef": "input_0", "outputTableName": "early", "near": { "distance": 200 }, "grid": { "rows": 2, "columns": 2 } }
+      ] },
+      "reads": ["input_0", "input_1", "input_2"]
     }
   ]
 }

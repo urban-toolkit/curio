@@ -164,7 +164,7 @@ def test_the_server_compiled_load_hands_on_the_layers(example, node_id, extract,
         _assert_osm_ids(layer)
 
 
-AUTK_GRAMMAR_VERSION = "5.4.0"
+AUTK_GRAMMAR_VERSION = "5.5.1"
 
 #: Four readings at the corners of a box about 1.1 km by 1.5 km in the Chicago
 #: Loop, binned twice into 3 columns by 2 rows over their extent: each cell of
@@ -367,6 +367,80 @@ def test_the_server_compiled_load_builds_every_heatmap_aggregate_from_the_readin
     finally:
         for item in handed[1:]:
             item.close()
+
+
+def _run_load(document: dict, tmp_path, monkeypatch) -> dict:
+    """*document* compiled as a run on the server compiles an Autark data node,
+    run through ``execute_js_code``, with no socket and nothing in."""
+    from utk_curio.cli import dependencies
+    from utk_curio.common.autk_data_compiler import compile_data_spec
+    from utk_curio.sandbox.app.worker import _worker_init, execute_js_code
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setenv("FLASK_BACKEND_HOST", "curio-backend.invalid")
+    monkeypatch.setenv("FLASK_BACKEND_PORT", "1")
+    dependencies.seed_duckdb_extensions()
+    _worker_init()
+    return execute_js_code(
+        _NO_SOCKET + compile_data_spec(json.dumps(document)), "", "AUTK_GRAMMAR", "",
+        launch_dir=str(REPO_ROOT), session_id=None,
+    )
+
+
+def test_the_server_compiled_load_counts_the_rows_near_each_cell_of_a_heatmap_without_group_by(tmp_path, monkeypatch):
+    """A heatmap that writes no ``groupBy`` has one band, which counts the
+    readings near each cell's center, as one that writes a count does
+    (autk-grammar 5.5.0 hands autk-db that count; left to itself, autk-db
+    labelled the band a count and joined no aggregate, so every cell read 0)."""
+    import numpy as np
+
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+    from utk_curio.sandbox.util.rasters import envelope_arrays
+
+    readings, heatmap = LEVEL_HEATMAP["data"]
+    without = {key: value for key, value in heatmap.items() if key != "groupBy"}
+    result = _run_load({"data": [readings, without]}, tmp_path, monkeypatch)
+
+    assert result["output"]["path"], result["stderr"]
+    loaded = load_from_duckdb(result["output"]["path"], session_id=None)
+    assert [(item.get("dataType"), item.get("layerName")) for item in loaded[1:]] == [("raster", "noise")]
+    noise = loaded[1]
+    _grid, bands, cells = envelope_arrays(noise)
+    assert bands == ["band_1"]
+    assert noise["data"]["features"][0]["properties"]["bands"] == [{"id": "band_1", "label": "count_levels"}]
+    expected = _cells_from_the_levels()["count"]
+    # Cells of none to four readings, so a band of zeros cannot pass.
+    assert {value for row in expected for value in row} == {0.0, 1.0, 2.0, 3.0, 4.0}
+    np.testing.assert_allclose(cells[0], expected, err_msg="the count of the readings near each cell")
+
+
+def test_the_server_compiled_load_refuses_a_heatmap_entry_without_an_aggregate(tmp_path, monkeypatch):
+    """A ``groupBy`` entry without ``aggregateFn`` combines nothing, and a cell
+    holds one value: the load fails, in autk-grammar 5.5.1's words, and hands
+    nothing on (autk-db built such a band, labelled ``value_levels``, of zeros)."""
+    readings, heatmap = LEVEL_HEATMAP["data"]
+    entries = [{"column": "*", "aggregateFn": "count"}, {"column": "db"}]
+    result = _run_load({"data": [readings, {**heatmap, "groupBy": entries}]}, tmp_path, monkeypatch)
+
+    assert not result["output"]["path"], "the load handed on a heatmap with a band that combines nothing"
+    assert (
+        'Heatmap "noise": the groupBy entry for column "db" has no aggregateFn to combine the rows near a cell, '
+        "and a cell holds one value; use sum, avg, count, min, max or weighted."
+    ) in result["stderr"], result["stderr"]
+
+
+def test_the_server_compiled_load_refuses_a_source_whose_after_is_not_compute(tmp_path, monkeypatch):
+    """A source runs after compute or before it: autk-grammar's ``dataPhases``,
+    which the load asks before anything loads, refuses any other ``after``,
+    in its words."""
+    readings, _heatmap = LEVEL_HEATMAP["data"]
+    result = _run_load({"data": [{**readings, "after": "map"}]}, tmp_path, monkeypatch)
+
+    assert not result["output"]["path"], "the load handed on a source whose after names no phase"
+    assert result["stderr"].startswith(
+        "Data source 0 (geojson): after must be 'compute', the one phase a source runs after, not \"map\"."
+    ), result["stderr"]
 
 
 def test_the_server_compiled_load_bins_a_table_of_the_nodes_input(tmp_path, monkeypatch):
