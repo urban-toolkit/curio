@@ -651,7 +651,8 @@ def test_each_view_reads_the_sessions_of_its_steps_the_larger_count_of_its_sampl
     within it, never their sum, whether a write joined them or the view did."""
 
     def sampled(at: datetime, counts: tuple) -> None:
-        assert usage.SESSIONS.put(dict(zip(NOBODY, counts)), at=at) is True
+        written = usage.SESSIONS.put(dict(zip(NOBODY, counts)), at=at)
+        assert written is True, at
 
     sampled(datetime(2026, 11, 6, 15, 10, tzinfo=UTC), (2, 1, 4, 3, 9, 7))
     sampled(datetime(2026, 11, 6, 15, 15, tzinfo=UTC), (1, 0, 5, 3, 10, 7))
