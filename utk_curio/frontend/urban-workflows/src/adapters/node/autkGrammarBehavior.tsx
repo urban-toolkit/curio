@@ -1071,7 +1071,7 @@ export const useAutkGrammarBehavior = (
                             // hint at the real (backend) cause.
                             const fallbackReason = fe?.message ?? String(fe);
                             const combined =
-                                `autk data load failed — backend: ${backendReason}; `
+                                `autk data load failed: backend: ${backendReason}; `
                                 + `in-browser fallback: ${fallbackReason}`;
                             console.error('[autk-grammar]', combined);
                             throw new Error(combined);
