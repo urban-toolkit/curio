@@ -69,6 +69,7 @@ from __future__ import annotations
 
 import atexit
 import contextlib
+import functools
 import itertools
 import json
 import logging
@@ -137,12 +138,13 @@ class History:
     span its rows start with: :data:`FIVE_MINUTES` (joined into hours after 24
     hours) or :data:`AN_HOUR`. *join* is how two rows of one time and identity
     become one (:func:`summed` by default). *admit*, when given, is how the
-    file takes a held row, from the rows it holds then: the row, or another in
-    its place. *clock* is what "now" is, read at each call."""
+    file takes the rows a write holds, from the file's rows and the held rows,
+    oldest first: the rows to join, each the held row or another in its place.
+    *clock* is what "now" is, read at each call."""
 
     def __init__(self, name: str, *, identity: Sequence[str] = (), span: str = FIVE_MINUTES,
                  join: Callable[[dict, dict], dict] = summed,
-                 admit: Optional[Callable[[list, dict], dict]] = None,
+                 admit: Optional[Callable[[list, list], list]] = None,
                  clock: Optional[Callable[[], datetime]] = None, max_days: int = MAX_DAYS):
         if span not in SPANS:
             raise ValueError(f"a history's rows span {' or '.join(SPANS)}, not {span!r}")
@@ -282,10 +284,11 @@ class History:
     def _joined(self, rows: list[dict], batch: dict) -> list[dict]:
         """The file's *rows* with each row of *batch* joined into the row of
         its time and identity, or added, oldest first."""
+        held = sorted(batch.values(), key=_in_time)
+        if self._admit is not None:
+            held = self._admit(rows, held)
         index = {self._key(row): number for number, row in enumerate(rows)}
-        for row in sorted(batch.values(), key=_in_time):
-            if self._admit is not None:
-                row = self._admit(rows, row)
+        for row in held:
             key = self._key(row)
             number = index.get(key)
             if number is None:
@@ -298,19 +301,20 @@ class History:
     def _settled(self, rows: list[dict], now: datetime) -> list[dict]:
         """*rows* as they stand at *now*, in time order: each 5-minute row
         past the last 24 hours joined into its hour's row, and the rows past
-        the last :attr:`max_days` days left out."""
-        recent = _slot_of(now, FIVE_MINUTES) - timedelta(minutes=5 * (RECENT_SLOTS - 1))
+        the last :attr:`max_days` days left out. Times are compared as the
+        text they are written in, which sorts as they do."""
+        recent = (_slot_of(now, FIVE_MINUTES) - timedelta(minutes=5 * (RECENT_SLOTS - 1))).strftime(SLOT)
         kept: list[dict] = []
         index: dict = {}
         older: list[dict] = []
         for row in rows:
-            if row["span"] == FIVE_MINUTES and at_of(row["at"]) < recent:
+            if row["span"] == FIVE_MINUTES and row["at"] < recent:
                 older.append(row)
                 continue
             index[self._key(row)] = len(kept)
             kept.append(row)
         for row in sorted(older, key=_in_time):
-            hour = {**row, "at": at_of(row["at"]).strftime(HOUR), "span": AN_HOUR}
+            hour = {**row, "at": _hour_text(row["at"]), "span": AN_HOUR}
             key = self._key(hour)
             number = index.get(key)
             if number is None:
@@ -318,8 +322,8 @@ class History:
                 kept.append(hour)
             else:
                 kept[number] = self._join(kept[number], hour)
-        oldest = _slot_of(now, AN_HOUR) - timedelta(hours=self.max_days * 24 - 1)
-        return sorted((row for row in kept if _slot_of(at_of(row["at"]), AN_HOUR) >= oldest), key=_in_time)
+        oldest = (_slot_of(now, AN_HOUR) - timedelta(hours=self.max_days * 24 - 1)).strftime(SLOT)
+        return sorted((row for row in kept if row["at"] >= oldest), key=_in_time)
 
     def _key(self, row: dict) -> tuple:
         return (row["at"], row["span"], *(row.get(field) for field in self.identity))
@@ -393,10 +397,21 @@ def at_of(text) -> Optional[datetime]:
     hour. None when it is not one."""
     if not isinstance(text, str) or not _A_SLOT.fullmatch(text):
         return None
+    return _parsed_slot(text)
+
+
+@functools.lru_cache(maxsize=4096)
+def _parsed_slot(text: str) -> Optional[datetime]:
+    """*text*, a row's ``at``, parsed once however many rows share it."""
     try:
         return datetime.strptime(text, SLOT).replace(tzinfo=timezone.utc)
     except ValueError:
         return None
+
+
+def _hour_text(at: str) -> str:
+    """The hour a row's ``at`` is in, written as :data:`HOUR`."""
+    return f"{at[:14]}00:00Z"
 
 
 def hour_of(text) -> Optional[datetime]:

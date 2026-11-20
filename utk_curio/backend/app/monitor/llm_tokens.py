@@ -101,15 +101,23 @@ def public_model_name(model) -> str:
     return name
 
 
-def _admitted(rows: list[dict], row: dict) -> dict:
-    """*row* as the file takes it, beside the file's *rows*: under its own
-    model while its UTC day holds fewer than :data:`MAX_MODELS_PER_DAY` other
-    models, else as :data:`OTHER`."""
-    day = str(row.get("at"))[:10]
-    names = {(held.get("model"), held.get("curio")) for held in rows if str(held.get("at"))[:10] == day}
-    if (row.get("model"), row.get("curio")) in names or len(names) < MAX_MODELS_PER_DAY:
-        return row
-    return {**row, "model": OTHER}
+def _admitted(rows: list[dict], held: list[dict]) -> list[dict]:
+    """The rows a write *held*, oldest first, as the file takes them beside
+    its *rows*: each under its own model while its UTC day holds fewer than
+    :data:`MAX_MODELS_PER_DAY` other models, else as :data:`OTHER`."""
+    days: dict = {}
+    for row in rows:
+        days.setdefault(str(row.get("at"))[:10], set()).add((row.get("model"), row.get("curio")))
+    admitted = []
+    for row in held:
+        names = days.setdefault(str(row.get("at"))[:10], set())
+        key = (row.get("model"), row.get("curio"))
+        if key not in names and len(names) >= MAX_MODELS_PER_DAY:
+            row = {**row, "model": OTHER}
+            key = (OTHER, row.get("curio"))
+        names.add(key)
+        admitted.append(row)
+    return admitted
 
 
 #: Each row: ``{at, span, model, curio, inputTokens, outputTokens, requests}``.
