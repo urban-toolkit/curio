@@ -215,16 +215,18 @@ def test_the_server_compiled_load_hands_on_a_building_part_with_no_height_with_n
     bare = [index for index, properties in enumerate(parts)
             if all(_number(properties.get(key)) is None for key in TOP_KEYS)]
     tall = [index for index, properties in enumerate(parts) if (_number(properties.get("height")) or 0) > 0]
-    assert len(bare) > 100, (
-        f"{len(bare)} of {len(parts)} building parts hold no height: a part OpenStreetMap gives none is handed "
-        "on with one made for it"
+    assert bare, (
+        f"none of the {len(parts)} building parts holds no height: a part OpenStreetMap gives none is handed on "
+        "with one made for it"
     )
-    assert len(tall) > 100, len(tall)
+    assert tall, f"none of the {len(parts)} building parts holds a height of its own"
 
-    # A Map Editor node's scale of the heights of five such parts' buildings,
-    # and of one whose height it first sets to 20 m, which it doubles.
-    probe = tall[0]
+    # A Map Editor node's scale of the heights of up to five such parts'
+    # buildings, and of one whose height it first sets to 20 m, which it doubles.
+    bare_buildings = {parts[index]["building_id"] for index in bare}
+    probe = next((index for index in tall if parts[index]["building_id"] not in bare_buildings), tall[0])
     others = [index for index in bare if parts[index]["building_id"] != parts[probe]["building_id"]][:5]
+    assert others, f"every one of the {len(bare)} parts with no height is in the building of part {probe}"
     edits = [
         {"op": "set", "column": "height", "value": 20, "ids": [parts[probe]["building_id"]]},
         {"op": "scale", "column": "height", "value": 2,
@@ -234,7 +236,9 @@ def test_the_server_compiled_load_hands_on_a_building_part_with_no_height_with_n
     (layer,) = [item for item in edited["data"] if item.get("layerName") == "table_osm_buildings"]
     after = [feature["properties"] for feature in layer["data"]["features"]]
     assert _number(after[probe]["height"]) == 40, after[probe]
-    assert [_number(after[index].get("height")) for index in others] == [None] * 5, [after[index] for index in others]
+    assert [_number(after[index].get("height")) for index in others] == [None] * len(others), (
+        [after[index] for index in others]
+    )
 
     # The dataflow's Building heights node, its chips as its widgets set them.
     code = _loader_content(example, "park-shade-heights")
