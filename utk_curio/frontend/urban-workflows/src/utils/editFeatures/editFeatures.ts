@@ -80,8 +80,9 @@ export type EditValue = string | number | boolean | null;
  * One entry of the node's edit log, on the features whose `key` is one of
  * `ids` or, in place of `ids`, those its `where` condition holds for. `set`
  * writes `value` into `column`; `scale` multiplies the number there by
- * `value` and `offset` adds `value` to it; `expr` writes what the expression
- * `value` makes of the feature.
+ * `value` and `offset` adds `value` to it, a number written as text ("30")
+ * read as that number and written back as text; `expr` writes what the
+ * expression `value` makes of the feature.
  */
 export interface FeatureEdit {
   op: EditOp;
