@@ -1,5 +1,5 @@
 {
-  "description": "Documents that write every key of autk-grammar 5.4.0's maps, plots, compute passes, data sources and workspaces, a family to a document, on the tables an upstream Autark node hands on: `lines`, in the default workspace and in `east`, and `towers`, buildings in `east`. views: a map of every layer key, a map of OpenStreetMap elements in a workspace that `workspaces` sets, a plot of every mark with every plot key, a plot of every mark with every key of its colors, ticks, titles and selection, plots of every mark over one colorMapRange, a map and a plot laid out and linked by every layout and link key, and maps of every map, layer and camera key autk-grammar 5.3.0 and 5.4.0 add but a layer's `buildingsZeroHeight`, which a node refuses, each of which an Autark node hands the grammar as written; passes: a compute step's GPGPU and render passes with every pass key, which reach autk-compute, and its windows and clusters passes, which run on autk-core (src/tests/adapters/node/autkEveryKey.test.tsx); data: CSV, JSON, GeoJSON, OpenStreetMap (an extract, and tag sets from an Overpass API the test answers, its `overpass`), join, GeoTIFF, heatmap, SQL, update and drop sources with every source key, and `workspaces`, which a run on the server loads (utk_curio/sandbox/tests/test_autk_server_data_keys.py); checked: an update of a layer by every GeoJSON geometry, with every box, and a map raised on a band of a GeoTIFF (`terrain`), which the agents' document check alone runs. autk-db keeps in a workspace only what lies in the box of the first table loaded into it, and reads a GeoJSON source's boundingBox in the workspace's CRS (World Mercator, metres), so each data document loads its widest table first. Every document passes the agents' document check (backend/tests/test_agents/test_autk_every_key_documents.py). utk_curio/backend/tests/autk_grammar_key_tests.json names these tests for each key.",
+  "description": "Documents that write every key of autk-grammar 5.5.1's maps, plots, compute passes, data sources and workspaces, a family to a document, on the tables an upstream Autark node hands on: `lines`, in the default workspace and in `east`, and `towers`, buildings in `east`. views: a map of every layer key, a map of OpenStreetMap elements in a workspace that `workspaces` sets, a plot of every mark with every plot key, a plot of every mark with every key of its colors, ticks, titles and selection, plots of every mark over one colorMapRange, a map and a plot laid out and linked by every layout and link key, and maps of every map, layer and camera key autk-grammar 5.3.0 and 5.4.0 add but a layer's `buildingsZeroHeight`, which a node refuses, each of which an Autark node hands the grammar as written; passes: a compute step's GPGPU and render passes with every pass key, which reach autk-compute, and its windows and clusters passes, which run on autk-core (src/tests/adapters/node/autkEveryKey.test.tsx); data: CSV, JSON, GeoJSON, OpenStreetMap (an extract, and tag sets from an Overpass API the test answers, its `overpass`), join, GeoTIFF, heatmap, SQL, update and drop sources with every source key, every kind of source after compute (`after`) in a document of no compute pass, which loads them after the others, and `workspaces`, which a run on the server loads (utk_curio/sandbox/tests/test_autk_server_data_keys.py); checked: an update of a layer by every GeoJSON geometry, with every box, a map raised on a band of a GeoTIFF (`terrain`), and every kind of compute pass keeping its result in autk-db (`writeBack`), which sources after compute read, which the agents' document check alone runs. autk-db keeps in a workspace only what lies in the box of the first table loaded into it, and reads a GeoJSON source's boundingBox in the workspace's CRS (World Mercator, metres), so each data document loads its widest table first. Every document passes the agents' document check (backend/tests/test_agents/test_autk_every_key_documents.py). utk_curio/backend/tests/autk_grammar_key_tests.json names these tests for each key.",
   "views": [
     {
       "name": "a map of every layer key",
@@ -685,6 +685,57 @@
       },
       "handsOn": [["busy_stops", "points", 1, "east"]],
       "tables": [["counts", "east", [{ "stop": "b", "riders": 9 }]]]
+    },
+    {
+      "name": "every kind of source after compute, in a document of no compute pass, each listed before what it reads",
+      "document": {
+        "data": [
+          { "type": "join", "dataRef": "zones", "joinDataRef": "stops", "groupBy": [{ "column": "riders", "aggregateFn": "sum" }], "after": "compute" },
+          { "type": "heatmap", "outputTableName": "heat", "joinDataRef": "stops", "near": { "distance": 2000 }, "grid": { "rows": 2, "columns": 2 }, "after": "compute" },
+          { "type": "sql", "outputTableName": "zone_names", "query": "SELECT properties->>'zone' AS zone FROM zones ORDER BY zone", "after": "compute" },
+          { "type": "csv", "outputTableName": "sales", "csvObject": [["month", "total"], ["Jan", 3]], "after": "compute" },
+          { "type": "update", "dataRef": "sales", "strategy": "replace", "jsonObject": [{ "month": "Feb", "total": 5 }], "after": "compute" },
+          { "type": "json", "outputTableName": "notes", "jsonObject": [{ "note": "draft" }], "after": "compute" },
+          { "type": "drop", "dataRef": "notes", "after": "compute" },
+          {
+            "type": "geojson", "outputTableName": "late", "coordinateFormat": "EPSG:4326", "after": "compute",
+            "geojsonObject": { "type": "FeatureCollection", "features": [
+              { "type": "Feature", "properties": { "late": true }, "geometry": { "type": "Point", "coordinates": [-87.61, 41.88] } }
+            ] }
+          },
+          {
+            "type": "osm", "workspace": "tip", "pbfFileUrl": "docs/examples/data/lower_mnt.osm.pbf", "outputTableName": "tip",
+            "queryArea": { "bbox": [-74.0194, 40.7, -74.0085, 40.7085] }, "autoLoadLayers": { "layers": ["parks"] }, "after": "compute"
+          },
+          {
+            "type": "geotiff", "workspace": "east", "geotiffFileUrl": "utk_curio/backend/tests/test_frontend/data/autark_raster_utm16n.tif",
+            "outputTableName": "lst", "coordinateFormat": "EPSG:32616", "after": "compute"
+          },
+          {
+            "type": "geojson", "outputTableName": "zones", "coordinateFormat": "EPSG:4326",
+            "geojsonObject": { "type": "FeatureCollection", "features": [
+              { "type": "Feature", "properties": { "zone": 1 }, "geometry": { "type": "Polygon", "coordinates": [[[-87.64, 41.87], [-87.62, 41.87], [-87.62, 41.89], [-87.64, 41.89], [-87.64, 41.87]]] } },
+              { "type": "Feature", "properties": { "zone": 2 }, "geometry": { "type": "Polygon", "coordinates": [[[-87.6, 41.87], [-87.58, 41.87], [-87.58, 41.89], [-87.6, 41.89], [-87.6, 41.87]]] } }
+            ] }
+          },
+          {
+            "type": "geojson", "outputTableName": "stops", "coordinateFormat": "EPSG:4326",
+            "geojsonObject": { "type": "FeatureCollection", "features": [
+              { "type": "Feature", "properties": { "riders": 4 }, "geometry": { "type": "Point", "coordinates": [-87.63, 41.88] } },
+              { "type": "Feature", "properties": { "riders": 6 }, "geometry": { "type": "Point", "coordinates": [-87.6301, 41.8801] } },
+              { "type": "Feature", "properties": { "riders": 2 }, "geometry": { "type": "Point", "coordinates": [-87.59, 41.88] } }
+            ] }
+          }
+        ]
+      },
+      "handsOn": [["zones", "polygons", 2, null], ["stops", "points", 3, null], ["late", "points", 1, null], ["tip_parks", "parks", null, "tip"]],
+      "tables": [["zone_names", null, [{ "zone": "1" }, { "zone": "2" }]], ["sales", null, [{ "month": "Feb", "total": 5 }]]],
+      "rasters": [["heat", null, 2, 2], ["lst", "east", 40, 30]],
+      "joined": [
+        { "zone": 1, "values": [[["sjoin", "sum", "stops.riders"], 10]] },
+        { "zone": 2, "values": [[["sjoin", "sum", "stops.riders"], 2]] }
+      ],
+      "files": ["docs/examples/data/lower_mnt.osm.pbf", "utk_curio/backend/tests/test_frontend/data/autark_raster_utm16n.tif"]
     }
   ],
   "checked": [
@@ -739,6 +790,27 @@
           "camera": { "pitch": 45 },
           "layerRefs": [{ "dataRef": "lst", "getFnv": "band_24", "colorMapInterpolator": "interpolateViridis" }]
         }
+      }
+    },
+    {
+      "name": "every kind of compute pass keeping its result in autk-db, which sources after compute read",
+      "document": {
+        "data": [
+          { "type": "heatmap", "outputTableName": "window_density", "joinDataRef": "towers_windows", "near": { "distance": 50 }, "grid": { "rows": 2, "columns": 2 }, "after": "compute" },
+          { "type": "join", "dataRef": "seen", "joinDataRef": "lines", "groupBy": [{ "column": "compute.y", "aggregateFn": "max" }], "after": "compute" },
+          { "type": "sql", "outputTableName": "block_sizes", "query": "SELECT properties->'compute'->>'block' AS block, count(*) AS towers FROM towers_blocks GROUP BY block", "after": "compute" }
+        ],
+        "compute": [
+          { "type": "gpgpu", "dataRef": "lines", "attributes": { "x": "x" }, "wgslFunction": "return x * 2.0;", "outputColumnName": "y", "writeBack": true },
+          {
+            "type": "render", "outputTableName": "seen", "layerType": "points", "writeBack": true,
+            "layers": [{ "id": "towers", "dataRef": "towers", "type": "buildings" }],
+            "viewpoints": { "dataRef": "lines" }, "aggregation": { "type": "classes", "includeBackground": true }
+          },
+          { "type": "windows", "dataRef": "towers", "floors": 2, "outputTableName": "towers_windows", "writeBack": true },
+          { "type": "clusters", "dataRef": "towers", "outputColumnName": "block", "outputTableName": "towers_blocks", "writeBack": true }
+        ],
+        "map": { "layerRefs": [{ "dataRef": "window_density", "getFnv": "count.towers_windows" }] }
       }
     }
   ]
