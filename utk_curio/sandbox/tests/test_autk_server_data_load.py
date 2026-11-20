@@ -27,10 +27,16 @@ the document names by its path, which the compiled code fetches from the
 backend's ``/file/`` route (served from disk here, as an extract is). Its
 raster table is handed on as a heatmap's is: the file's cells, laid over its
 corners in the workspace's CRS.
+
+A Map Editor node below such a load edits what it hands on: OpenStreetMap
+writes a building's height as text ("65.5"), the load keeps it so, and a
+scale or an offset of it reads it as the number it writes.
 """
 from __future__ import annotations
 
+import copy
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -162,6 +168,98 @@ def test_the_server_compiled_load_hands_on_the_layers(example, node_id, extract,
     ] == layers
     for layer in loaded:
         _assert_osm_ids(layer)
+
+
+#: Example 07's loader: the Chicago Loop's OpenStreetMap layers, and its
+#: building parts among them, about 300 of whose height tags are numbers.
+LOOP_LOAD = ("07-autark-gpu-shader.json", "sh-data", "docs/examples/data/chicago_loop.osm.pbf")
+#: A height tag that holds a number and nothing else, as "65.5" or "184".
+_PLAIN_HEIGHT = re.compile(r"[0-9]+(?:\.[0-9]+)?")
+
+
+def _served_layers(example: str, node_id: str, extract: str, tmp_path, monkeypatch) -> list:
+    """What the server-compiled load of *example*'s node *node_id* stores,
+    *extract* served from disk, as the test above runs it: a layer record
+    ``{name, type, geojson}`` each."""
+    from utk_curio.cli import dependencies
+    from utk_curio.common.autk_data_compiler import compile_data_spec
+    from utk_curio.sandbox.app.worker import _worker_init, execute_js_code
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    serve = (_FETCH_FROM_DISK
+             .replace("EXTRACT", json.dumps(extract))
+             .replace("ROOT", json.dumps(str(REPO_ROOT))))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    # An address nothing answers at: the fetch above is the only way in.
+    monkeypatch.setenv("FLASK_BACKEND_HOST", "curio-backend.invalid")
+    monkeypatch.setenv("FLASK_BACKEND_PORT", "1")
+    dependencies.seed_duckdb_extensions()
+    _worker_init()
+    result = execute_js_code(
+        serve + compile_data_spec(_loader_content(example, node_id)), "", "AUTK_GRAMMAR", "",
+        launch_dir=str(REPO_ROOT), session_id=None,
+    )
+    assert result["output"]["path"], result["stderr"]
+    return load_from_duckdb(result["output"]["path"], session_id=None)
+
+
+def test_a_map_editor_scales_and_offsets_the_heights_openstreetmap_writes_as_text(tmp_path, monkeypatch):
+    """The Chicago Loop's building parts, loaded as a run on the server loads
+    them, keep each height tag as OpenStreetMap writes it, as text. A Map
+    Editor below the load scales and offsets three of them: each is read as
+    the number it writes and written back as text, on the layers as a run on
+    the server stores them and as the canvas stores them, a table each."""
+    from utk_curio.sandbox.util.feature_edits import edit_features
+    from utk_curio.sandbox.util.stored_inputs import read_stored
+
+    layers = _served_layers(*LOOP_LOAD, tmp_path, monkeypatch)
+    buildings = next(layer for layer in layers if layer["name"] == "table_osm_buildings")
+    heights = {
+        feature["properties"]["osm_id"]: feature["properties"].get("height")
+        for feature in buildings["geojson"]["features"]
+    }
+    as_text = {
+        osm_id: height for osm_id, height in heights.items()
+        if isinstance(height, str) and _PLAIN_HEIGHT.fullmatch(height)
+    }
+    # The case: the load hands a part's height on as OpenStreetMap wrote it.
+    assert len(as_text) >= 3, (
+        "the load hands on no heights as text; it holds "
+        + repr(sorted({type(height).__name__ for height in heights.values()}))
+    )
+    picked = sorted(as_text)[:3]
+    edits = [
+        {"op": "scale", "ids": picked, "column": "height", "value": 2},
+        {"op": "offset", "ids": picked, "column": "height", "value": 1},
+    ]
+    stored = {
+        # The layer records the load returned.
+        "as a run on the server stores them": layers,
+        # An envelope a layer, as the canvas's Autark node stores them
+        # (persistLayersToBackend), which reach the Map Editor as tables.
+        "as the canvas stores them": {"dataType": "outputs", "data": [
+            {"dataType": "geodataframe", "data": layer["geojson"],
+             "layerName": layer["name"], "layerType": layer["type"]}
+            for layer in layers
+        ]},
+    }
+    for how, value in stored.items():
+        out = edit_features(
+            read_stored(copy.deepcopy(value)), copy.deepcopy(edits), key="osm_id", layer="table_osm_buildings",
+        )
+        edited = next(item for item in out["data"] if item.get("layerName") == "table_osm_buildings")
+        after = {
+            feature["properties"]["osm_id"]: feature["properties"].get("height")
+            for feature in edited["data"]["features"]
+            if feature["properties"].get("osm_id") in picked
+        }
+        before = {osm_id: as_text[osm_id] for osm_id in picked}
+        assert sorted(after) == picked, (how, sorted(after))
+        assert all(isinstance(after[osm_id], str) for osm_id in picked), (how, before, after)
+        assert {osm_id: float(after[osm_id]) for osm_id in picked} == pytest.approx(
+            {osm_id: float(before[osm_id]) * 2 + 1 for osm_id in picked}
+        ), f"{how}: heights {before} became {after}, not twice them plus one"
 
 
 AUTK_GRAMMAR_VERSION = "5.4.0"
