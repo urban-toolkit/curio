@@ -15,6 +15,7 @@ import {
   MEASURES,
   SESSION_LINES,
   WINDOWS,
+  averageOf,
   chartSpan,
   combined,
   deployMarks,
@@ -133,6 +134,21 @@ test("every line has a point at every step of the window: its average, 95th perc
   const days = measurePoints(view([row("turn", "2026-10-01T00:00:00Z", 3, 1000)], QUARTER), "averageMs");
   expect(days).toHaveLength(90);
   expect(days.filter((each) => each.value !== null)).toEqual([point(Date.parse("2026-10-01T00:00:00Z"), "Agent turns", 333)]);
+});
+
+test("an average of a fraction of a millisecond keeps its value, and one from 10 ms up is whole", () => {
+  // As the route gives its times: three significant digits under 10 ms.
+  expect([averageOf(2.345, 7), averageOf(4.567, 1), averageOf(45.67, 1), averageOf(1000, 3)]).toEqual([
+    0.335, 4.57, 46, 333,
+  ]);
+  const at = "2026-11-06T14:00:00Z";
+  const week = view([row("request", at, 7, 2.345, 0.95), row("turn", at, 3, 1000)]);
+  const averages = measurePoints(week, "averageMs").filter((each) => each.value !== null);
+  // A request's average is a point on the log axis, not a 0 the axis leaves out.
+  expect(averages.map((each) => [each.line, each.value])).toEqual([["Agent turns", 333], ["Requests", 0.335]]);
+  expect(measurePoints(week, "p95Ms").filter((each) => each.line === "Requests" && each.value !== null))
+    .toEqual([point(Date.parse(at), "Requests", 0.95)]);
+  expect(combined([stats("request", 7, 0, 2.345)], ["request"])).toEqual({ count: 7, failed: 0, averageMs: 0.335 });
 });
 
 test("the sessions chart has the accounts and the guests at every step, null where no sample covers it", () => {

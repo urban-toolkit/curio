@@ -350,6 +350,27 @@ def test_a_file_of_another_format_is_read_as_no_rows_and_replaced(histories, clo
     assert not list(usage.path().parent.glob("usage.json.unreadable-*"))
 
 
+def test_a_history_that_names_its_format_reads_that_one_alone_and_writes_it(histories, clock):
+    """A history whose rows changed shape names a new format, so no row of the
+    old shape is ever joined with its own: a file of the default format reads
+    as no rows, and the first write replaces it with the history's format."""
+    old = _tally()
+    old.add({"key": "run", "count": 9})
+    assert old.flush() is True
+    assert _file(old)["format"] == history.FORMAT == 2
+
+    usage = history.History("usage", identity=("key",), file_format=3)
+    assert usage.file_format == 3
+    assert usage.rows() == []
+    usage.add({"key": "run", "count": 1})
+    assert usage.flush() is True
+    doc = _file(usage)
+    assert (doc["format"], doc["rows"]) == (3, [{"at": _at(T), "span": "5m", "key": "run", "count": 1}])
+    assert not list(usage.path().parent.glob("usage.json.unreadable-*"))
+    # The default format's history now reads the new file as no rows in turn.
+    assert _tally().rows() == []
+
+
 def test_a_row_that_is_not_one_is_left_out(histories, clock):
     usage = _tally()
     usage.path().parent.mkdir(parents=True, exist_ok=True)

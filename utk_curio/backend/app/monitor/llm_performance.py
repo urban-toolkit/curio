@@ -15,11 +15,13 @@ writer adds to the file's within a minute. A row holds sums alone, so the rows
 of any number of processes add up exactly: ``{at, span, model, requests,
 failed, ms, buckets, firstTokenMs, firstTokens, outputTokens, outputMs}``, the
 requests and those that failed, their total milliseconds and their count in
-each of the 14 duration buckets (``durations.py``), the total milliseconds to
+each of the 19 duration buckets (``durations.py``), the total milliseconds to
 the first token of the streams that wrote one and how many did, and the output
 tokens of the requests whose provider reported them with those requests' total
 milliseconds. The route reads the file alone, so a request shows once its
-process wrote it, and each process's requests count once.
+process wrote it, and each process's requests count once. The file is in
+format :data:`FILE_FORMAT`: one of the earlier buckets (from 50 ms) reads as
+empty and the next write replaces it.
 
 ``GET /api/monitor/llm`` publishes :func:`snapshot`: three views of the rows,
 the last 24 hours (the current 5-minute slot and the 287 before it) in 5-minute
@@ -71,6 +73,8 @@ MAX_MODEL_CHARS = 100
 MAX_MODELS_PER_DAY = 20
 #: The models the route lists, by requests kept; the rest are summed as :data:`OTHER`.
 MAX_MODELS_SHOWN = 40
+#: The format of ``llm.json``: its rows' durations in the buckets from 1 ms.
+FILE_FORMAT = 3
 
 #: What a row counts: its model.
 _IDENTITY = ("model",)
@@ -151,7 +155,8 @@ def _history_now() -> datetime:
 
 #: Each row: ``{at, span, model, requests, failed, ms, buckets, firstTokenMs,
 #: firstTokens, outputTokens, outputMs}``.
-HISTORY = monitor_history.History("llm", identity=_IDENTITY, admit=_admitted, clock=_history_now)
+HISTORY = monitor_history.History("llm", identity=_IDENTITY, admit=_admitted, clock=_history_now,
+                                  file_format=FILE_FORMAT)
 
 
 def record(model, *, ms, first_token_ms=None, output_tokens=None, failed: bool = False) -> None:
@@ -169,7 +174,7 @@ def record(model, *, ms, first_token_ms=None, output_tokens=None, failed: bool =
             "requests": 1,
             "failed": 1 if failed else 0,
             "ms": duration,
-            "buckets": durations.counts(duration),
+            "buckets": durations.counts(ms),
             "firstTokenMs": 0 if first is None else first,
             "firstTokens": 0 if first is None else 1,
             "outputTokens": 0 if tokens is None else tokens,
@@ -239,6 +244,8 @@ def _sum(rows) -> dict:
 
 
 def _rounded(value):
+    """A time as this route gives it: whole milliseconds, as an LLM's
+    requests take seconds."""
     return None if value is None else int(round(value))
 
 

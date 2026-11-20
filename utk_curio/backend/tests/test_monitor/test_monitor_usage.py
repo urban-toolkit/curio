@@ -49,7 +49,7 @@ def clock(monkeypatch):
 
 
 def _buckets(**placed) -> list[int]:
-    """Bucket counts with *placed* counts, by bucket number (``b0`` to ``b13``)."""
+    """Bucket counts with *placed* counts, by bucket number (``b0`` to ``b18``)."""
     out = [0] * durations.BUCKETS
     for name, count in placed.items():
         out[int(name[1:])] = count
@@ -96,38 +96,39 @@ def test_each_measure_adds_up_in_its_5_minutes_and_reads_back_in_every_view(cloc
     path = usage.HISTORY.path()
     assert path == monitor_history._folder() / "usage.json"
     doc = json.loads(path.read_text(encoding="utf-8"))
-    assert (doc["name"], doc["format"]) == ("usage", 2)
+    assert (doc["name"], doc["format"]) == ("usage", usage.FILE_FORMAT) == ("usage", 3)
+    # Times in whole microseconds.
     assert doc["rows"] == usage.HISTORY.rows() == [
-        {"at": "2026-11-06T15:20:00Z", "span": "5m", "key": "node.python", "count": 2, "failed": 1, "ms": 2000,
-         "buckets": _buckets(b4=1, b5=1)},
-        {"at": "2026-11-06T15:20:00Z", "span": "5m", "key": "run", "count": 1, "failed": 0, "ms": 4000,
-         "buckets": _buckets(b6=1)},
-        {"at": "2026-11-06T15:20:00Z", "span": "5m", "key": "turn", "count": 1, "failed": 1, "ms": 15000,
-         "buckets": _buckets(b8=1)},
-        {"at": "2026-11-06T15:20:00Z", "span": "5m", "key": "request", "count": 1, "failed": 0, "ms": 40,
-         "buckets": _buckets(b0=1)},
+        {"at": "2026-11-06T15:20:00Z", "span": "5m", "key": "node.python", "count": 2, "failed": 1,
+         "us": 2_000_000, "buckets": _buckets(b9=1, b10=1)},
+        {"at": "2026-11-06T15:20:00Z", "span": "5m", "key": "run", "count": 1, "failed": 0, "us": 4_000_000,
+         "buckets": _buckets(b11=1)},
+        {"at": "2026-11-06T15:20:00Z", "span": "5m", "key": "turn", "count": 1, "failed": 1, "us": 15_000_000,
+         "buckets": _buckets(b13=1)},
+        {"at": "2026-11-06T15:20:00Z", "span": "5m", "key": "request", "count": 1, "failed": 0, "us": 40_000,
+         "buckets": _buckets(b5=1)},
     ]
     # Sums alone, each a whole number, which every write adds up exactly.
     for row in doc["rows"]:
-        assert all(type(row[field]) is int for field in ("count", "failed", "ms")), row
+        assert all(type(row[field]) is int for field in ("count", "failed", "us")), row
         assert all(type(count) is int for count in row["buckets"]), row
 
     view = _view("24h")
     # Every measure, in the page's order, one nothing counted among them. The
     # 95th percentile is read from the buckets: 1,000 to 2,500 ms holds the
-    # Python runs' rank, 1.9 of their 2.
+    # Python runs' rank, 1.9 of their 2, and 25 to 50 ms the request's.
     assert view["measures"] == [
         {"key": "node.python", "count": 2, "failed": 1, "ms": 2000, "averageMs": 1000, "p95Ms": 2350},
         {"key": "node.javascript", "count": 0, "failed": 0, "ms": 0, "averageMs": None, "p95Ms": None},
         {"key": "run", "count": 1, "failed": 0, "ms": 4000, "averageMs": 4000, "p95Ms": 4875},
         {"key": "turn", "count": 1, "failed": 1, "ms": 15000, "averageMs": 15000, "p95Ms": 29000},
-        {"key": "request", "count": 1, "failed": 0, "ms": 40, "averageMs": 40, "p95Ms": 48},
+        {"key": "request", "count": 1, "failed": 0, "ms": 40, "averageMs": 40, "p95Ms": 49},
     ]
     assert [(row["at"], row["key"], row["count"], row["failed"], row["ms"], row["p95Ms"]) for row in view["rows"]] == [
         ("2026-11-06T15:20:00Z", "node.python", 2, 1, 2000, 2350),
         ("2026-11-06T15:20:00Z", "run", 1, 0, 4000, 4875),
         ("2026-11-06T15:20:00Z", "turn", 1, 1, 15000, 29000),
-        ("2026-11-06T15:20:00Z", "request", 1, 0, 40, 48),
+        ("2026-11-06T15:20:00Z", "request", 1, 0, 40, 49),
     ]
     # The same work in every view.
     assert _view("7d")["measures"] == _view("90d")["measures"] == view["measures"]
@@ -181,7 +182,7 @@ def test_each_view_reads_its_own_rows_and_says_where_it_starts_and_ends(clock):
 
 def test_the_95th_percentile_is_read_from_the_buckets_interpolated_in_the_one_that_holds_it(clock):
     for _ in range(10):
-        usage.record("request", ms=40)  # 0 to 50 ms
+        usage.record("request", ms=40)  # 25 to 50 ms
     for _ in range(10):
         usage.record("request", ms=700)  # 500 ms to 1 s
     requests = _measures("24h")["request"]
@@ -244,8 +245,8 @@ def test_two_processes_adding_at_once_sum_exactly(clock, monkeypatch):
     assert raced.child_exit == 0, raced.child_error
     assert raced.here is True
     assert usage.HISTORY.rows() == [
-        {"at": "2026-11-06T15:20:00Z", "span": "5m", "key": "request", "count": 5, "failed": 1, "ms": 3820,
-         "buckets": _buckets(b0=3, b4=1, b6=1)},
+        {"at": "2026-11-06T15:20:00Z", "span": "5m", "key": "request", "count": 5, "failed": 1, "us": 3_820_000,
+         "buckets": _buckets(b5=3, b9=1, b11=1)},
     ]
 
 
@@ -256,9 +257,64 @@ def test_a_measure_that_is_not_one_counts_nothing_and_a_time_that_is_not_one_rea
     usage.record("request", ms=-5, failed=True)
     _written()
     assert usage.HISTORY.rows() == [
-        {"at": "2026-11-06T15:20:00Z", "span": "5m", "key": "request", "count": 2, "failed": 1, "ms": 0,
+        {"at": "2026-11-06T15:20:00Z", "span": "5m", "key": "request", "count": 2, "failed": 1, "us": 0,
          "buckets": _buckets(b0=2)},
     ]
+
+
+def test_requests_of_a_fraction_of_a_millisecond_read_as_one(clock):
+    """A request the backend answers in under a millisecond keeps its time:
+    its average is that fraction, not 0, and its 95th percentile is under
+    1 ms, read from the bucket up to 1 ms."""
+    for _ in range(20):
+        usage.record("request", ms=0.4321)
+    _written()
+    assert _rows_of("request") == [
+        {"at": "2026-11-06T15:20:00Z", "span": "5m", "key": "request", "count": 20, "failed": 0, "us": 8640,
+         "buckets": _buckets(b0=20)},
+    ]
+    requests = _measures("24h")["request"]
+    assert requests == {"key": "request", "count": 20, "failed": 0, "ms": 8.64, "averageMs": 0.432, "p95Ms": 0.95}
+    assert 0 < requests["averageMs"] < requests["p95Ms"] < 1
+    assert [(row["ms"], row["p95Ms"]) for row in _view("24h")["rows"]] == [(8.64, 0.95)]
+
+
+def test_a_slowdown_under_50_ms_shows_in_the_95th_percentile_of_its_5_minutes(clock):
+    """Requests of 5 ms, then of 40 ms five minutes later: each step's 95th
+    percentile reads its own, where one bucket up to 50 ms read both alike."""
+    for _ in range(20):
+        usage.record("request", ms=5)
+    clock.at = NOW + timedelta(minutes=5)
+    for _ in range(20):
+        usage.record("request", ms=40)
+    _written()
+    rows = _view("24h")["rows"]
+    assert [(row["at"], row["count"], row["ms"], row["p95Ms"]) for row in rows] == [
+        ("2026-11-06T15:20:00Z", 20, 100, 4.85),
+        ("2026-11-06T15:25:00Z", 20, 800, 49),
+    ]
+
+
+def test_a_usage_file_of_the_earlier_rows_reads_as_empty_and_the_next_write_replaces_it(clock):
+    """The rows of whole milliseconds in buckets from 50 ms (format 2) are
+    never joined with these: the file reads as no rows until its next write."""
+    path = usage.HISTORY.path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"name": "usage", "format": 2, "rows": [
+        {"at": "2026-11-06T15:20:00Z", "span": "5m", "key": "request", "count": 7, "failed": 0, "ms": 0,
+         "buckets": [7] + [0] * 13},
+    ]}), encoding="utf-8")
+    assert usage.HISTORY.rows() == []
+    assert _measures("24h")["request"]["count"] == 0
+
+    usage.record("request", ms=0.4321)
+    _written()
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    assert doc == {"name": "usage", "format": 3, "rows": [
+        {"at": "2026-11-06T15:20:00Z", "span": "5m", "key": "request", "count": 1, "failed": 0, "us": 432,
+         "buckets": _buckets(b0=1)},
+    ]}
+    assert not list(path.parent.glob("usage.json.unreadable-*"))
 
 
 def test_the_route_answers_its_documented_keys(client, clock):
@@ -335,8 +391,8 @@ def test_a_python_node_counts_once_with_its_time_and_one_that_failed_as_failed(c
 
     (python,) = _rows_of("node.python")
     assert (python["count"], python["failed"]) == (2, 1)
-    # From the call's start to its reply: the sandbox's 50 ms and more.
-    assert python["ms"] >= 50, python
+    # From the call's start to its reply: the sandbox's 50 ms and more, in microseconds.
+    assert python["us"] >= 50_000, python
     assert [row["key"] for row in usage.HISTORY.rows()] == ["node.python"]
 
 
@@ -416,8 +472,8 @@ def test_a_run_on_the_server_counts_once_as_it_ends_and_failed_only_when_it_fail
 
     (runs,) = _rows_of("run")
     assert (runs["count"], runs["failed"]) == (5, 2)
-    # From each run's start to its end: four of 20 ms and more.
-    assert runs["ms"] >= 80, runs
+    # From each run's start to its end: four of 20 ms and more, in microseconds.
+    assert runs["us"] >= 80_000, runs
     assert ("run-raised", "failed") in written and ("run-failed", "failed") in written
 
 
@@ -469,8 +525,8 @@ def test_a_turn_counts_once_from_its_start_to_its_end_and_a_withdrawn_ask_not_at
 
     (turns,) = _rows_of("turn")
     assert (turns["count"], turns["failed"]) == (2, 1)
-    # From each start to its end: a second and a half, and a quarter of a second.
-    assert 1750 <= turns["ms"] < 1750 + 60_000, turns
+    # From each start to its end: a second and a half, and a quarter of a second, in microseconds.
+    assert 1_750_000 <= turns["us"] < (1750 + 60_000) * 1000, turns
     assert (withdrawn.state, withdrawn.started_at) == ("ended", None)
 
 
@@ -511,8 +567,8 @@ def test_a_request_is_timed_to_its_response_and_a_5xx_counts_as_failed(probed, c
     (requests,) = _rows_of("request")
     # Six answers: the 503 and the route that raised failed, a 404 did not.
     assert (requests["count"], requests["failed"]) == (6, 2)
-    # The slow route's 50 ms and more.
-    assert requests["ms"] >= 50, requests
+    # The slow route's 50 ms and more, in microseconds.
+    assert requests["us"] >= 50_000, requests
     assert [row["key"] for row in usage.HISTORY.rows()] == ["request"]
 
 

@@ -25,9 +25,13 @@ THE ROWS are the monitor history ``usage`` (``history.py``), ``usage.json`` in
 the monitor folder, which every backend process writes: a measure adds to the
 row its process holds for its 5 minutes and key, which the process's writer
 adds to the file's within a minute. A row holds sums alone, so the rows of any
-number of processes add up exactly: ``{at, span, key, count, failed, ms,
-buckets}``, its count, those that failed, their total milliseconds and their
-count in each of the 14 duration buckets of ``durations.py``.
+number of processes add up exactly: ``{at, span, key, count, failed, us,
+buckets}``, its count, those that failed, their total time in whole
+microseconds, so a request of a fraction of a millisecond counts its time, and
+their count in each of the 19 duration buckets of ``durations.py``. The file
+is in format :data:`FILE_FORMAT`: one of the earlier rows' shape (whole
+milliseconds, buckets from 50 ms) reads as empty and the next write replaces
+it.
 
 THE SESSIONS are a sample every 5 minutes, which the home process takes
 (:func:`start_sessions_sampler`) a few seconds after each 5-minute slot ends,
@@ -84,11 +88,13 @@ TTL_SECONDS = 60
 SESSIONS_EVERY_SECONDS = 300
 #: How long after its slot ends a sample is taken.
 SAMPLE_AFTER_SECONDS = 5
+#: The format of ``usage.json``: its rows' times in microseconds, in the buckets from 1 ms.
+FILE_FORMAT = 3
 
 #: What a usage row counts: its measure.
 _IDENTITY = ("key",)
 #: A usage row's sums besides its duration buckets, each a whole number.
-_SUMS = ("count", "failed", "ms")
+_SUMS = ("count", "failed", "us")
 #: A sessions row's counts: of accounts and of guests, since its slot began,
 #: since its hour began and since its UTC day began.
 _SESSION_FIELDS = ("accounts5m", "guests5m", "accounts1h", "guests1h", "accountsDay", "guestsDay")
@@ -132,8 +138,8 @@ def _history_now() -> datetime:
     return _now()
 
 
-#: Each row: ``{at, span, key, count, failed, ms, buckets}``.
-HISTORY = monitor_history.History("usage", identity=_IDENTITY, clock=_history_now)
+#: Each row: ``{at, span, key, count, failed, us, buckets}``.
+HISTORY = monitor_history.History("usage", identity=_IDENTITY, clock=_history_now, file_format=FILE_FORMAT)
 #: Each row: ``{at, span, accounts5m, guests5m, accounts1h, guests1h, accountsDay, guestsDay}``.
 SESSIONS = monitor_history.History("sessions", join=_larger, clock=_history_now)
 #: Each row: ``{at, span, startedAt, version}``, one per start, in the row of its hour.
@@ -147,13 +153,12 @@ def record(key: str, *, ms, failed: bool = False) -> None:
     try:
         if key not in MEASURES:
             return
-        duration = durations.whole_ms(ms)
         HISTORY.add({
             "key": key,
             "count": 1,
             "failed": 1 if failed else 0,
-            "ms": duration,
-            "buckets": durations.counts(duration),
+            "us": durations.whole_us(ms),
+            "buckets": durations.counts(ms),
         }, at=_now())
     except Exception:  # noqa: BLE001
         # A request, a run or a turn never fails over its bookkeeping.
@@ -358,7 +363,8 @@ def _view(step: timedelta, steps: int, period: Optional[str], fields: tuple,
         "to": end,
         "stepSeconds": int(step.total_seconds()),
         "rows": [{"at": row["at"], "key": row["key"], "count": row["count"], "failed": row["failed"],
-                  "ms": row["ms"], "p95Ms": _rounded(durations.percentile(row["buckets"]))} for row in within],
+                  "ms": _ms(row["us"]), "p95Ms": durations.shown(durations.percentile(row["buckets"]))}
+                 for row in within],
         "measures": [{"key": key, **_stats(_sum(by_key[key]))} for key in MEASURES],
         "sessions": [{"at": row["at"], "accounts": row[accounts], "guests": row[guests]}
                      for row in sorted(sampled, key=_at) if start <= row["at"] <= end],
@@ -382,12 +388,13 @@ def _stats(total: dict) -> dict:
     """What the page shows of *total*, the sums of some rows: the count, the
     failures, the milliseconds, the average and the 95th percentile time, each
     time None when nothing was counted."""
+    average_us = durations.average(total["us"], total["count"])
     return {
         "count": total["count"],
         "failed": total["failed"],
-        "ms": total["ms"],
-        "averageMs": _rounded(durations.average(total["ms"], total["count"])),
-        "p95Ms": _rounded(durations.percentile(total["buckets"])),
+        "ms": _ms(total["us"]),
+        "averageMs": None if average_us is None else durations.shown(average_us / 1000),
+        "p95Ms": durations.shown(durations.percentile(total["buckets"])),
     }
 
 
@@ -450,8 +457,9 @@ def _last_start(now: datetime, step: timedelta) -> datetime:
     return now.replace(hour=0, minute=0)
 
 
-def _rounded(value):
-    return None if value is None else int(round(value))
+def _ms(us: int) -> float:
+    """*us* microseconds as milliseconds, to the microsecond."""
+    return round(us / 1000, 3)
 
 
 def _whole(value) -> bool:

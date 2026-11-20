@@ -287,6 +287,11 @@ describe("formatDuration", () => {
 describe("formatMs and formatRate", () => {
   test.each([
     [0, "0 ms"],
+    [0.05, "0.05 ms"],
+    [0.4, "0.4 ms"],
+    [0.4321, "0.43 ms"],
+    [0.996, "1 ms"],
+    [4.6, "5 ms"],
     [12.4, "12 ms"],
     [850, "850 ms"],
     [999.4, "999 ms"],

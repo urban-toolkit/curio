@@ -6,9 +6,10 @@
  * `linesOverTimeSpec`) name each time label's day as well as its hour once the
  * chart spans more than a day: the Open files chart over several days, and the
  * LLM performance chart over its 7 days. Within a day the labels stay Vega's
- * own. A chart of durations, the LLM performance one, labels its value axis in
- * milliseconds under a second and in seconds above, a step with no value among
- * its rows. A chart's marks, the deploys, are rules across its plot at their
+ * own. A chart of durations, the LLM performance one, labels its value axis
+ * with two significant digits under a millisecond, in milliseconds under a
+ * second and in seconds above, a step with no value among its rows. A chart's
+ * marks, the deploys, are rules across its plot at their
  * times on the lines' time scale, each with its label for the tooltip.
  *
  * Each spec is compiled with the vega-lite the app bundles and run by vega
@@ -121,8 +122,21 @@ test("a chart of durations labels its values in milliseconds under a second and 
   expect(labels.some((label) => /^\d+\.\d s$/.test(label))).toBe(true);
 });
 
+test("a chart of durations under a millisecond labels its log axis with two significant digits", async () => {
+  // Requests from a tenth of a millisecond to 10 ms: the axis's decades are 0.1, 1 and 10 ms.
+  const values = [0.1, 0.45, 2, 10];
+  const rows: Record<string, unknown>[] = hourly("2026-11-05T09:00:00Z", values.length).map((row, index) => ({
+    t: row.t, line: "Requests", averageMs: values[index],
+  }));
+  const spec = linesOverTimeSpec({
+    rows, timeField: "t", valueField: "averageMs", seriesField: "line", valueTitle: "average time",
+    durations: true, logY: true,
+  });
+  expect([...(await drawnLabels(spec, "y"))].sort()).toEqual(["0.1 ms", "1 ms", "10 ms"]);
+});
+
 test("a chart of durations writes each point's tooltip as formatMs does, nothing for a step with no value", async () => {
-  const values = [0, 49.6, 850, 999, 999.4, 999.6, 1000, 1049, 1050, 1234, 12345, 600000, null];
+  const values = [0, 0.05, 0.4321, 0.996, 4.6, 49.6, 850, 999, 999.4, 999.6, 1000, 1049, 1050, 1234, 12345, 600000, null];
   const first = Date.parse("2026-11-05T09:00:00Z");
   const rows: Record<string, unknown>[] = values.map((averageMs, index) => ({
     t: first + index * HOUR, line: "gemma4", averageMs,
