@@ -20,7 +20,13 @@ jest.mock("../../components/apiSettings/ApiSettingsPanel", () => {
 });
 jest.mock("../../pages/monitor/MonitorContent", () => ({
   __esModule: true,
-  default: () => <div data-testid="monitor-content" />,
+  default: (props: { tab: string; onTabChange: (tab: string) => void }) => (
+    <div data-testid="monitor-content" data-tab={props.tab}>
+      <button type="button" onClick={() => props.onTabChange("usage")}>
+        Show usage
+      </button>
+    </div>
+  ),
 }));
 
 import ModalShell, { modalStackDepth } from "../../components/ModalShell";
@@ -115,6 +121,27 @@ describe("the Monitor drawer", () => {
     expect(screen.getByRole("heading", { name: "Monitor", level: 2 })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Close Monitor" }));
     await waitFor(() => expect(drawerRoot("monitor")).toBeNull());
+  });
+
+  it("keeps its tab in its own state, and opens on Status, as API Settings' drawer opens on its first tab", async () => {
+    render(
+      <MonitorDrawerProvider>
+        <MonitorOpener />
+      </MonitorDrawerProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "open monitor" }));
+    expect(await screen.findByTestId("monitor-content")).toHaveAttribute("data-tab", "status");
+    await waitFor(() => expect(drawerRoot("monitor")).toHaveAttribute("aria-hidden", "false"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Show usage" }));
+    expect(screen.getByTestId("monitor-content")).toHaveAttribute("data-tab", "usage");
+    // The page's URL is the page's: the drawer leaves the canvas where it is.
+    expect(window.location.pathname).not.toMatch(/monitor/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Close Monitor" }));
+    await waitFor(() => expect(drawerRoot("monitor")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "open monitor" }));
+    expect(await screen.findByTestId("monitor-content")).toHaveAttribute("data-tab", "status");
   });
 });
 

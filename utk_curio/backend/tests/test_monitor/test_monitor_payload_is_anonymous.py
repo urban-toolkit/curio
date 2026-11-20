@@ -1,10 +1,10 @@
 """Nothing on the aggregate routes may name a person.
 
-`/api/monitor` is public, as are `/api/monitor/storage`, `/api/monitor/llm`
-and `/api/monitor/open-files`. It reports on accounts, sessions, sign-in attempts
-and storage, and every one of those has an identifier sitting next to the
-number. This suite is what stands between "14 accounts" and "14 accounts, one
-of them alice@lab.edu".
+`/api/monitor` is public, as are `/api/monitor/storage`, `/api/monitor/usage`,
+`/api/monitor/llm` and `/api/monitor/open-files`. It reports on accounts,
+sessions, sign-in attempts and storage, and every one of those has an
+identifier sitting next to the number. This suite is what stands between "14
+accounts" and "14 accounts, one of them alice@lab.edu".
 
 DELIBERATELY NOT COVERED: `/api/monitor/errors`. That route returns raw
 tracebacks by an explicit product decision, and will contain paths, code
@@ -300,11 +300,12 @@ def test_the_llm_payload_names_curios_own_models_and_nobody(client):
 def test_the_open_files_payload_is_timestamps_and_numbers(client, monkeypatch):
     """The fourth aggregate route: each server's open files and limit, every
     hour. The servers are its keys, so every string in it is a timestamp, and
-    every other value a number or null."""
+    every other value a number or null, but for the version each deploy the
+    chart marks started, popped by name."""
     # Imported here, so a tree without the sampler fails this test alone.
     from datetime import datetime, timedelta, timezone
 
-    from utk_curio.backend.app.monitor import open_files, routes
+    from utk_curio.backend.app.monitor import open_files, routes, usage
 
     open_files.reset()
     # An hour keeps one row, so the two samples are an hour apart.
@@ -312,15 +313,24 @@ def test_the_open_files_payload_is_timestamps_and_numbers(client, monkeypatch):
     monkeypatch.setattr(open_files, "_now", lambda: now - timedelta(hours=1))
     monkeypatch.setattr(routes, "_sandbox_monitor", lambda: {"open_files": 96, "open_files_limit": 1024})
     open_files.sample()
+    # A deploy between the two samples.
+    monkeypatch.setattr(usage, "_now", lambda: now - timedelta(minutes=30))
+    assert usage.record_start("0.17.400") is True
     monkeypatch.setattr(open_files, "_now", lambda: now)
     monkeypatch.setattr(routes, "_sandbox_monitor", lambda: None)
     open_files.sample()
 
     body = client.get("/api/monitor/open-files").get_json()
-    # Not vacuous: both samples are there, the sandbox's counts in the first.
+    # Not vacuous: both samples are there, the sandbox's counts in the first,
+    # and the deploy.
     assert len(body["samples"]) == 2
     assert body["samples"][0]["sandbox"] == {"open": 96, "limit": 1024}
     assert body["samples"][1]["sandbox"] is None
+    assert [deploy["version"] for deploy in body["deploys"]] == ["0.17.400"]
+    # The version a deploy started, Curio's own: popped by name, as the other
+    # payloads' free-text fields are.
+    for deploy in body["deploys"]:
+        deploy.pop("version")
 
     offenders = []
 
@@ -340,3 +350,73 @@ def test_the_open_files_payload_is_timestamps_and_numbers(client, monkeypatch):
     walk(body, "$")
     open_files.reset()
     assert not offenders, f"something other than a timestamp or a number reached the open-files payload: {offenders}"
+
+
+def test_the_usage_payload_is_counts_measures_timestamps_and_versions(client, seeded, db, monkeypatch):
+    """The fifth aggregate route: what this Curio did by measure, the
+    sessions seen and the deploys. Its strings are timestamps, the names of
+    its measures (as the values of ``key`` and of ``measures`` alone) and the
+    version each deploy started, popped by name; every other value is a
+    number or null. The sessions are counts: nothing of who signed in."""
+    from datetime import datetime, timedelta, timezone
+
+    from utk_curio.backend.app.monitor import usage
+    from utk_curio.backend.app.users.models import UserSession
+
+    now = datetime.now(timezone.utc)
+    clock = {"at": now - timedelta(hours=2)}
+    monkeypatch.setattr(usage, "_now", lambda: clock["at"])
+    assert usage.record_start("0.17.400") is True
+    clock["at"] = now
+    assert usage.record_start("0.17.401") is True
+    for key in usage.MEASURES:
+        usage.record(key, ms=1200, failed=key == "run")
+    # The seeded account's sign-in, seen a minute ago, as a request stamps it,
+    # and the sessions sample of its 5 minutes.
+    signed_in = db.session.query(UserSession).filter_by(token="zqxprobe-token").one()
+    signed_in.last_seen_at = now - timedelta(minutes=1)
+    db.session.commit()
+    assert usage.sample_sessions(now=now)["accounts5m"] == 1
+    # Written, as the process's writer does each minute: the route reads the file.
+    assert usage.HISTORY.flush() is True
+
+    response = client.get("/api/monitor/usage")
+    raw = response.get_data(as_text=True)
+    assert "zqx" not in raw.lower(), "a seeded name reached the payload"
+    assert EMAIL.search(raw) is None, "an email-shaped string reached the payload"
+    assert "probe.invalid" not in raw
+    assert IPV4.search(raw) is None, "an IP-shaped string reached the payload"
+
+    body = response.get_json()
+    # Not vacuous: every measure was counted in every view, the sign-in, and
+    # both deploys.
+    assert body["sessionsLast24h"] == {"accounts": 1, "guests": 0}
+    for name, view in body["views"].items():
+        assert [(each["key"], each["count"], each["failed"]) for each in view["measures"]] == [
+            (key, 1, 1 if key == "run" else 0) for key in usage.MEASURES], name
+        assert [deploy["version"] for deploy in view["deploys"]] == ["0.17.400", "0.17.401"], name
+        assert [(each["accounts"], each["guests"]) for each in view["sessions"]] == [(1, 0)], name
+        # The version a deploy started, Curio's own: popped by name, as the
+        # other payloads' free-text fields are.
+        for deploy in view["deploys"]:
+            deploy.pop("version")
+
+    offenders = []
+
+    def walk(node, path, key=None):
+        if isinstance(node, dict):
+            for name, value in node.items():
+                walk(value, f"{path}.{name}", name)
+        elif isinstance(node, list):
+            for i, value in enumerate(node):
+                walk(value, f"{path}[{i}]", key)
+        elif isinstance(node, str):
+            if key in ("key", "measures") and node in usage.MEASURES:
+                return
+            if not ISO_Z.match(node):
+                offenders.append((path, node))
+        elif node is not None and (isinstance(node, bool) or not isinstance(node, (int, float))):
+            offenders.append((path, node))
+
+    walk(body, "$")
+    assert not offenders, f"free text reached the usage payload: {offenders}"

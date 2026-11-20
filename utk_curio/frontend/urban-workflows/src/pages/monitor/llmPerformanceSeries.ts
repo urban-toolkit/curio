@@ -1,7 +1,7 @@
 /**
- * The LLM performance section's switch and chart: the windows it switches
- * between, one line per model with its colour, and each line's average
- * response time at every step of a window.
+ * The LLM performance section's chart: one line per model with its colour,
+ * and each line's average response time at every step of the window the
+ * Usage tab's switch shows (`usageSeries.ts`).
  *
  * Pure, so the chart and the table read the same lines and colours, and a
  * test reads them without Vega.
@@ -17,33 +17,14 @@
  * is null, which breaks the line there, so a line never bridges idle time. A
  * point with no neighbour on either side shows only as a dot (`hasLonePoint`).
  */
-import type { MonitorLlmView, MonitorLlmWindow } from "../../api/monitorApi";
+import type { MonitorLlmView } from "../../api/monitorApi";
 import { CATEGORICAL } from "./chartColors";
+import { windowSpan } from "./usageSeries";
 
 const LINE_COLORS = CATEGORICAL;
 
 /** The line the models past the palette share. */
 export const OTHER_LINE = "Other models";
-
-/** One window of the switch: its key, its button's label, and how the chart names and times it. */
-export interface LlmWindow {
-  key: MonitorLlmWindow;
-  label: string;
-  /** What the chart and an empty table call the window: "last 24 hours". */
-  span: string;
-  /** How the chart's tooltip writes a step's time, in d3-time-format. */
-  timeFormat: string;
-}
-
-/** The switch's windows, in its order: 5-minute, hourly and daily steps. */
-export const LLM_WINDOWS: LlmWindow[] = [
-  { key: "24h", label: "24 hours", span: "last 24 hours", timeFormat: "%b %-d, %H:%M" },
-  { key: "7d", label: "7 days", span: "last 7 days", timeFormat: "%b %-d, %H:00" },
-  { key: "90d", label: "90 days", span: "last 90 days", timeFormat: "%b %-d" },
-];
-
-/** The window the section shows first. */
-export const FIRST_WINDOW: MonitorLlmWindow = "7d";
 
 export interface ModelLine {
   label: string;
@@ -98,13 +79,6 @@ export function lineColors(lines: Map<string, ModelLine>): { domain: string[]; r
     (a, b) => LINE_COLORS.indexOf(a[1]) - LINE_COLORS.indexOf(b[1])
   );
   return { domain: ordered.map(([label]) => label), range: ordered.map(([, color]) => color) };
-}
-
-/** The chart's span: the start of the window's first step to the start of its current one. */
-export function windowSpan(view: MonitorLlmView): [number, number] | undefined {
-  const from = Date.parse(view.from);
-  const to = Date.parse(view.to);
-  return Number.isNaN(from) || Number.isNaN(to) ? undefined : [from, to];
 }
 
 /**

@@ -684,12 +684,12 @@ So a routine merge quietly ships to `curio-dev` and nothing else. Cutting a stab
 ## The monitor page
 
 Every instance serves `/monitor`, a page that reports what the deployment is
-doing and what has recently gone wrong. It exists on a laptop and on a server
-alike; there is no flag to turn it on. The top bar's **Monitor** opens it; on
-the canvas and the dashboard it opens the same content on the right side, and
-the dataflow stays open.
+doing, what it did over the last 90 days, and what has recently gone wrong. It
+exists on a laptop and on a server alike; there is no flag to turn it on. The
+top bar's **Monitor** opens it; on the canvas and the dashboard it opens the
+same content on the right side, and the dataflow stays open.
 
-It shows:
+It has two tabs. **Status**, `/monitor`, shows:
 
 - **Deployment** - version, the requested and active isolation mode, the
   memory limit isolated nodes run under (**Node memory**: a cgroup limit, or
@@ -701,21 +701,14 @@ It shows:
   hostname is not reported. Under it, **Open files** charts the files,
   sockets and pipes the backend and the sandbox hold open, sampled every hour
   over the last 90 days, against their limit as a dashed line (one per
-  server when the two differ), on a log scale. A sample above 80% of a
+  server when the two differ), on a log scale, each deploy marked as on the
+  Usage tab. A sample above 80% of a
   server's limit adds an entry to Recent errors, and the next one comes only
   after that server's count has fallen below 70%. Past its limit, each file or
   connection a server opens fails with `[Errno 24] Too many open files`.
 - **Execution** - node runs since launch, failures, a duration histogram, how
   many isolated slots are busy, and a tally of how child processes died
   (timeout, OOM, CPU limit, refused confinement).
-- **LLM performance** - the requests of this Curio's own models, those of the
-  file `--llm-endpoint-file` names: over the last 24 hours, their number, their
-  average response time and their output tokens per second; then a chart of
-  each model's average response time and a table of each model's requests,
-  failed requests, average and 95th percentile response time, time to the
-  first token and output tokens per second, over the last 24 hours in
-  5-minute steps, the last 7 days hour by hour (shown first) or the last 90
-  days day by day. A request on a key a user set for their own is not counted.
 - **Accounts and content** - account, session, sign-in, project and dataset
   counts.
 - **Storage** - disk usage across the `.curio` tree, as a distribution over
@@ -724,35 +717,77 @@ It shows:
 - **Recent errors** - the last failures from node executions, the sandbox, the
   backend, and the browser.
 
+**Usage**, `/monitor/usage`, shows what this Curio did for the people using
+it, so a slowdown shows as it comes. A switch shows every chart and table of
+the tab over the last 24 hours in 5-minute steps, the last 7 days hour by hour
+(shown first) or the last 90 days day by day.
+
+- **Activity** - over the last 24 hours, the sessions seen, of accounts and of
+  guests, and how many node runs, agent turns, Run All runs and requests there
+  were, with their average time. Then charts of the sessions seen at each
+  step, and of each measure's count, average time and 95th percentile time at
+  each step, on a log scale, and a table of each measure's count, failures,
+  average and 95th percentile time. The measures:
+  - **Python node runs** and **JavaScript node runs**: a node's code run by
+    Play or by a run on the server, from the backend's call to its reply;
+    failed when its output names no file.
+  - **Run All runs**: a dataflow's run on the server (Run All, a run up to a
+    node, an automatic run, a dashboard viewer's run), from its start to its
+    end; failed when it ends failed or stops on an error. A cancelled run did
+    not fail.
+  - **Agent turns**: an agent's chat turn, from its start to its end; failed
+    when it ends with an error. A Solve is not a turn.
+  - **Requests**: the backend's answer to a request, from before it is
+    handled to its response; failed with a 5xx. Left out: the monitor's own
+    routes, `/version`, `/health` and `/live`, the backend processes' calls to
+    each other, streamed answers (event streams, the artifacts and files it
+    passes on as they come) and Socket.IO.
+- **LLM performance** - the requests of this Curio's own models, those of the
+  file `--llm-endpoint-file` names: over the last 24 hours, their number, their
+  average response time and their output tokens per second; then a chart of
+  each model's average response time and a table of each model's requests,
+  failed requests, average and 95th percentile response time, time to the
+  first token and output tokens per second. A request on a key a user set for
+  their own is not counted.
+
+The charts of 24 hours and 7 days mark each deploy, a start of the backend
+with another version than the start before it, with a dashed vertical line
+whose tooltip names the version.
+
 "Copy diagnostics" puts the whole picture on the clipboard as markdown, ready
-to paste into an issue; "Download" saves the same thing as JSON.
+to paste into an issue; "Download" saves the same thing as JSON. Each holds
+what the page read: the shown tab's figures, and the other tab's once it was
+opened.
 
 The execution figures and the error log are since the process started, which
-is why uptime is on the page, and a restart resets them. The LLM performance and
-the open files are kept across restarts: the last 90 days, counted back from the
-current hour, one file each (`llm.json`, `open-files.json`) in the folder
-`--monitor-dir` names, `.curio/monitor` by default, readable by the backend's
-own account alone. Each backend process writes what it counted there at most a
-minute later, and when it stops. A deployment whose deploys delete `.curio`
-names a folder outside it with `--monitor-dir`, as both hosted stacks do
+is why uptime is on the page, and a restart resets them. The Usage tab's
+figures and the open files are kept across restarts: the last 90 days, counted
+back from the current hour, one file each (`usage.json`, `sessions.json`,
+`starts.json`, `llm.json`, `open-files.json`) in the folder `--monitor-dir`
+names, `.curio/monitor` by default, readable by the backend's own account
+alone. Each backend process writes what it counted there at most a minute
+later, and when it stops. The home process counts the sessions seen after
+every 5 minutes, from the time each sign-in was last seen, and writes each
+start with its version. A deployment whose deploys delete `.curio` names a
+folder outside it with `--monitor-dir`, as both hosted stacks do
 ([CI/CD](#optional-cicd-with-github-actions--tailscale)).
 
 With `--backend-processes N` the page shows the whole backend: node runs,
-backend memory and errors of every process, the LLM requests every process
-counted, and in each hour the open files of the busiest process against its
-own limit. A process that does not answer is named at the top of the page, and
-its node runs, memory and errors are left out.
+backend memory and errors of every process, the work and the LLM requests
+every process counted, and in each hour the open files of the busiest process
+against its own limit. A process that does not answer is named at the top of
+the page, and its node runs, memory and errors are left out.
 
 ### What the page exposes, and who can read it
 
-**`/monitor` and its six routes are public and unauthenticated**, like
+**`/monitor` and its seven routes are public and unauthenticated**, like
 `/version`. On a deployment, anyone who can reach the URL can read them.
 
 The statistics are aggregates: no route reports a username, an email address,
 an IP address, or a per-user row. The LLM performance section names this
-Curio's own models that answered. A model name that looks like a URL, a host,
-an email address, an IP address or a key, or that has spaces, shows as
-`other`.
+Curio's own models that answered, and the deploy marks the versions of Curio.
+A model name that looks like a URL, a host, an email address, an IP address or
+a key, or that has spaces, shows as `other`.
 
 **The error log is the exception.** `GET /api/monitor/errors` returns raw,
 unredacted failures. Those

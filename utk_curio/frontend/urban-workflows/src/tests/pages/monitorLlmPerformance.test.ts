@@ -1,24 +1,23 @@
 /**
- * The LLM performance section's switch and lines
- * (pages/monitor/llmPerformanceSeries.ts): 24 hours, 7 days and 90 days, 7
- * days first; one line per model, coloured in the palette's order by its
- * name, folded into one past the palette's eight; and a point at every step
- * of the window, its average response time, null where no request was, so a
- * line never bridges idle time, with a dot on each point when one stands alone.
+ * The LLM performance section's lines (pages/monitor/llmPerformanceSeries.ts)
+ * over the window the Usage tab's switch shows (its windows are
+ * monitorUsage.test.ts's): one line per model, coloured in the palette's order
+ * by its name, folded into one past the palette's eight; and a point at every
+ * step of the window, its average response time, null where no request was,
+ * so a line never bridges idle time, with a dot on each point when one stands
+ * alone.
  */
 import type { MonitorLlmRow, MonitorLlmStats, MonitorLlmView } from "../../api/monitorApi";
 import { CATEGORICAL } from "../../pages/monitor/chartColors";
 import {
-  FIRST_WINDOW,
-  LLM_WINDOWS,
   OTHER_LINE,
   hasLonePoint,
   lineColors,
   modelLines,
   responseTimes,
-  windowSpan,
   type ResponsePoint,
 } from "../../pages/monitor/llmPerformanceSeries";
+import { windowSpan } from "../../pages/monitor/usageSeries";
 
 const NONE: MonitorLlmStats = {
   requests: 0, failed: 0, averageMs: null, p95Ms: null, firstTokenMs: null, tokensPerSecond: null,
@@ -38,15 +37,6 @@ function view(rows: MonitorLlmRow[], window = WEEK): MonitorLlmView {
 function point(t: number, line: string, averageMs: number | null): ResponsePoint {
   return { t, line, averageMs };
 }
-
-test("the switch offers 24 hours, 7 days and 90 days, and shows 7 days first", () => {
-  expect(LLM_WINDOWS.map((each) => [each.key, each.label, each.span])).toEqual([
-    ["24h", "24 hours", "last 24 hours"],
-    ["7d", "7 days", "last 7 days"],
-    ["90d", "90 days", "last 90 days"],
-  ]);
-  expect(FIRST_WINDOW).toBe("7d");
-});
 
 test("each model is a line, named as it is and coloured in the palette's order by its name", () => {
   const lines = modelLines(

@@ -1,6 +1,6 @@
-import React, { useRef } from "react";
-import clsx from "clsx";
+import React from "react";
 import styles from "./ApiSettings.module.css";
+import { TabBar, tabPanelProps } from "../layout/TabBar";
 import { useUserContext } from "../../providers/UserProvider";
 import { AgentConfigTab } from "./AgentConfigTab";
 import { ApiKeysTab } from "./ApiKeysTab";
@@ -29,45 +29,16 @@ export const ApiSettingsPanel: React.FC<{
   const { user, isSharedGuest, enableUserAuth } = useUserContext();
   const hostedGuest = isHostedGuest(user, enableUserAuth);
   const shared = !hostedGuest && (isSharedGuest || Boolean(llm.listing?.shared));
-  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
-
-  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
-    event.preventDefault();
-    const at = TABS.findIndex((t) => t.key === tab);
-    const next = TABS[(at + (event.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length].key;
-    onTabChange(next);
-    tabRefs.current[next]?.focus();
-  };
 
   return (
     <div className={styles.panel}>
-      <div className={styles.tabs} role="tablist" aria-label="API Settings" onKeyDown={onKeyDown}>
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            ref={(el) => {
-              tabRefs.current[t.key] = el;
-            }}
-            type="button"
-            role="tab"
-            id={`api-settings-tab-${t.key}`}
-            aria-selected={tab === t.key}
-            aria-controls={`api-settings-panel-${t.key}`}
-            tabIndex={tab === t.key ? 0 : -1}
-            className={clsx(styles.tab, tab === t.key && styles.tabActive)}
-            onClick={() => onTabChange(t.key)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <TabBar tabs={TABS} selected={tab} onSelect={onTabChange} label="API Settings" idPrefix="api-settings" />
       {shared ? (
         <p className={styles.sharedNote} role="note">
           Everyone using this Curio shares this account, so keys saved here are shared too.
         </p>
       ) : null}
-      <div role="tabpanel" id={`api-settings-panel-${tab}`} aria-labelledby={`api-settings-tab-${tab}`}>
+      <div {...tabPanelProps("api-settings", tab)}>
         {tab === "keys" ? (
           <ApiKeysTab llm={llm} hostedGuest={hostedGuest} focus={focus} />
         ) : (

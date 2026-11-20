@@ -4,6 +4,7 @@ import type { MonitorOpenFilesPayload } from "../../api/monitorApi";
 import { formatOpenFiles } from "../../utils/diagnosticsBundle";
 import { LinesOverTime } from "./MonitorCharts";
 import { openFilesLines, SERVERS } from "./openFilesSeries";
+import { deployMarks } from "./usageSeries";
 import styles from "./MonitorPage.module.css";
 
 /**
@@ -20,10 +21,12 @@ function timeSpan(payload: MonitorOpenFilesPayload): [number, number] | undefine
  * Each server's open files, sampled every hour over the last 90 days, kept
  * across restarts, against its limit: a line per server and the limit dashed,
  * on a log scale, so a count of a few hundred and a limit of tens of thousands
- * both read. The last sample's counts are written under it.
+ * both read, and each deploy marked with its version. The last sample's
+ * counts are written under it.
  */
 export const OpenFilesSection: React.FC<{ payload: MonitorOpenFilesPayload | null }> = ({ payload }) => {
   const lines = useMemo(() => (payload ? openFilesLines(payload) : null), [payload]);
+  const marks = useMemo(() => deployMarks(payload?.deploys), [payload]);
   const samples = payload?.samples ?? [];
   const last = samples[samples.length - 1];
   // A sample of a start of several backend processes names the busiest one.
@@ -52,6 +55,8 @@ export const OpenFilesSection: React.FC<{ payload: MonitorOpenFilesPayload | nul
         logY
         dashed={lines.dashed}
         points={samples.length === 1}
+        marks={marks}
+        markTitle="version"
         label="Open files of the backend and the sandbox, every hour, against their limits"
       />
     );

@@ -1,19 +1,17 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 
-import type { MonitorLlmModel, MonitorLlmPayload, MonitorLlmWindow } from "../../api/monitorApi";
+import type { MonitorLlmModel, MonitorLlmPayload } from "../../api/monitorApi";
 import { formatCount, formatExactCount, formatMs, formatRate } from "../../utils/diagnosticsBundle";
-import { LinesOverTime } from "./MonitorCharts";
+import { LinesOverTime, type TimeMark } from "./MonitorCharts";
 import {
-  FIRST_WINDOW,
-  LLM_WINDOWS,
   hasLonePoint,
   lineColors,
   modelLines,
   responseTimes,
-  windowSpan,
   type ModelLine,
   type ResponsePoint,
 } from "./llmPerformanceSeries";
+import { chartSpan, type WindowOption } from "./usageSeries";
 import { StatTile } from "./StatTile";
 import styles from "./MonitorPage.module.css";
 
@@ -21,20 +19,23 @@ const NO_LINES = new Map<string, ModelLine>();
 const NO_POINTS: ResponsePoint[] = [];
 
 /** A time cell's exact milliseconds, its Curio tooltip; none without a time. */
-function exactMs(ms: number | null): string | undefined {
+export function exactMs(ms: number | null): string | undefined {
   return ms == null ? undefined : `${formatExactCount(ms)} ms`;
 }
 
 /**
  * The performance of this Curio's own LLM models, kept across restarts: the
  * last 24 hours as tiles, then each model's average response time as a chart
- * and its numbers in a table, both over the window the switch shows: 24 hours
- * in 5-minute steps, 7 days in hourly steps (shown first) or 90 days in daily
- * steps. The table also names the chart's lines.
+ * and its numbers in a table, both over the window the Usage tab's switch
+ * shows (*shown*): 24 hours in 5-minute steps, 7 days in hourly steps or 90
+ * days in daily steps, with the deploys marked (*marks*). The table also
+ * names the chart's lines.
  */
-export const LlmPerformanceSection: React.FC<{ payload: MonitorLlmPayload | null }> = ({ payload }) => {
-  const [shownKey, setShownKey] = useState<MonitorLlmWindow>(FIRST_WINDOW);
-  const shown = LLM_WINDOWS.find((each) => each.key === shownKey) ?? LLM_WINDOWS[0];
+export const LlmPerformanceSection: React.FC<{
+  payload: MonitorLlmPayload | null;
+  shown: WindowOption;
+  marks?: TimeMark[];
+}> = ({ payload, shown, marks }) => {
   const view = payload?.views[shown.key] ?? null;
   const lines = useMemo(() => (view ? modelLines(view) : NO_LINES), [view]);
   const colors = useMemo(() => lineColors(lines), [lines]);
@@ -59,10 +60,12 @@ export const LlmPerformanceSection: React.FC<{ payload: MonitorLlmPayload | null
         valueTitle="average response time"
         seriesTitle="model"
         timeFormat={shown.timeFormat}
-        timeDomain={windowSpan(view)}
+        timeDomain={chartSpan(view)}
         colors={colors}
         durations
         points={hasLonePoint(points)}
+        marks={marks}
+        markTitle="version"
         label={`Average response time by model, ${shown.span}`}
       />
     );
@@ -86,22 +89,6 @@ export const LlmPerformanceSection: React.FC<{ payload: MonitorLlmPayload | null
           value={formatRate(day?.tokensPerSecond)}
           sub={day?.firstTokenMs != null ? `first token in ${formatMs(day.firstTokenMs)}` : undefined}
         />
-      </div>
-
-      <div className={styles.switchRow}>
-        <div className={styles.switch} role="group" aria-label="Window of the chart and the table">
-          {LLM_WINDOWS.map((each) => (
-            <button
-              key={each.key}
-              type="button"
-              className={styles.switchButton}
-              aria-pressed={each.key === shown.key}
-              onClick={() => setShownKey(each.key)}
-            >
-              {each.label}
-            </button>
-          ))}
-        </div>
       </div>
 
       <div className={`${styles.card} ${styles.spaced}`}>

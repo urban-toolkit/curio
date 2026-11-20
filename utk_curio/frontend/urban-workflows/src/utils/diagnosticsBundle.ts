@@ -18,7 +18,12 @@ import type {
   MonitorOpenFilesPayload,
   MonitorPayload,
   MonitorStoragePayload,
+  MonitorUsageMeasure,
+  MonitorUsagePayload,
+  MonitorUsageStats,
+  MonitorUsageView,
 } from "../api/monitorApi";
+import { MEASURES } from "../pages/monitor/usageSeries";
 
 /** An issue comment nobody wants to scroll past. Older entries are summarised. */
 export const MAX_BUNDLED_ERRORS = 20;
@@ -29,6 +34,7 @@ export interface DiagnosticsInput {
   errors: MonitorErrorsPayload | null;
   llm?: MonitorLlmPayload | null;
   openFiles?: MonitorOpenFilesPayload | null;
+  usage?: MonitorUsagePayload | null;
 }
 
 // One locale, so a count reads the same in every browser and in a test.
@@ -80,6 +86,21 @@ function modelStats(view: MonitorLlmView, model: string): MonitorLlmStats | unde
   return view.models.find((entry) => entry.model === model);
 }
 
+/** One measure's work over a window, in words, every count in full. */
+function usageStats(stats: MonitorUsageStats | undefined, noun: string): string {
+  if (!stats || stats.count === 0) return "none";
+  return [
+    `${formatExactCount(stats.count)} ${noun}`,
+    `${formatExactCount(stats.failed)} failed`,
+    `average ${formatMs(stats.averageMs)}`,
+    `95th percentile ${formatMs(stats.p95Ms)}`,
+  ].join(", ");
+}
+
+function measureStats(view: MonitorUsageView, key: MonitorUsageMeasure): MonitorUsageStats | undefined {
+  return view.measures.find((entry) => entry.key === key);
+}
+
 /** A server's part of an open-files sample: "backend 212 of 65,536". */
 export function formatOpenFiles(server: string, counts: MonitorOpenFilesCounts | null): string {
   if (!counts) return `${server} not answering`;
@@ -108,7 +129,7 @@ export function formatDuration(seconds: number | null | undefined): string {
   return `${(seconds / 86400).toFixed(1)}d`;
 }
 
-export function toMarkdown({ monitor, storage, errors, llm, openFiles }: DiagnosticsInput): string {
+export function toMarkdown({ monitor, storage, errors, llm, openFiles, usage }: DiagnosticsInput): string {
   const lines: string[] = ["## Curio diagnostics", ""];
 
   if (monitor) {
@@ -160,6 +181,31 @@ export function toMarkdown({ monitor, storage, errors, llm, openFiles }: Diagnos
     lines.push(
       `- storage ${formatBytes(storage.userStores.totalBytes)} across ${storage.userStores.count} stores · disk free ${formatBytes(storage.disk.freeBytes)}`
     );
+  }
+
+  if (usage) {
+    const { "24h": day, "7d": week, "90d": quarter } = usage.views;
+    const sessions = usage.sessionsLast24h;
+    lines.push(
+      "",
+      "### Usage",
+      `_The last ${usage.maxDays} days, kept across restarts._`,
+      "",
+      sessions
+        ? `- sessions seen in the last 24 hours: ${formatExactCount(sessions.accounts)} accounts, ` +
+            `${formatExactCount(sessions.guests)} guests`
+        : "- sessions seen in the last 24 hours: unknown"
+    );
+    for (const measure of MEASURES) {
+      lines.push(
+        `- ${measure.label}: 24 hours ${usageStats(measureStats(day, measure.key), measure.noun)}; 7 days ${usageStats(
+          measureStats(week, measure.key),
+          measure.noun
+        )}; 90 days ${usageStats(measureStats(quarter, measure.key), measure.noun)}`
+      );
+    }
+    const deployed = quarter.deploys[quarter.deploys.length - 1];
+    if (deployed) lines.push(`- last deploy: \`${deployed.version}\`, ${deployed.at}`);
   }
 
   if (llm) {
@@ -228,6 +274,7 @@ export function toJson(input: DiagnosticsInput): string {
       errors: input.errors,
       llm: input.llm ?? null,
       openFiles: input.openFiles ?? null,
+      usage: input.usage ?? null,
     },
     null,
     2

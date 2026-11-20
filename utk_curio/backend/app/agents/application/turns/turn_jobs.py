@@ -54,6 +54,7 @@ from utk_curio.backend.app.agents.infrastructure import provider_config
 from utk_curio.backend.app.agents.infrastructure import testing_provider
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.collaboration import owner_guard, roles
+from utk_curio.backend.app.monitor import usage as monitor_usage
 from utk_curio.common.redaction import redact
 
 log = logging.getLogger(__name__)
@@ -504,7 +505,11 @@ def _publish(asked: Ask, name: str, data, *, status: Optional[int] = None) -> Op
 
 
 def _keep(asked: Ask, envelope: dict, status: Optional[int]) -> None:
-    """What *envelope* changes of *asked* as a later tab reads it."""
+    """What *envelope* changes of *asked* as a later tab reads it. A turn
+    that started counts once as it ends, in the monitor's Usage tab
+    (``monitor/usage.py``'s ``turn``): from its start to its end, failed when
+    it ends with an error. An ask withdrawn before its turn started counts
+    nothing."""
     name, data = envelope["event"], envelope["data"]
     kept = {"seq": envelope["seq"], "event": name, "data": data}
     if name == STARTED:
@@ -523,6 +528,8 @@ def _keep(asked: Ask, envelope: dict, status: Optional[int]) -> None:
             asked.failure = (data.get("error"), status or 502)
         elif name == WITHDRAWN:
             asked.failure = ("the ask was withdrawn before its turn", 409)
+        if name in ENDINGS and isinstance(asked.started_at, (int, float)):
+            monitor_usage.record("turn", ms=(asked.ended_at - asked.started_at) * 1000.0, failed=name == "error")
 
 
 def _secrets(asked: Ask) -> dict:

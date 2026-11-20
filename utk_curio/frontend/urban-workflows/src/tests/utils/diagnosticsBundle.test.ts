@@ -21,6 +21,8 @@ import type {
   MonitorOpenFilesPayload,
   MonitorPayload,
   MonitorStoragePayload,
+  MonitorUsagePayload,
+  MonitorUsageStats,
 } from "../../api/monitorApi";
 
 function monitor(): MonitorPayload {
@@ -191,6 +193,36 @@ function llm(): MonitorLlmPayload {
               models: [gemma(1209, 1248), backticked], all: stats(1211, 1250) },
       "90d": { from: "2026-06-25T00:00:00Z", to: "2026-09-22T00:00:00Z", stepSeconds: 86400, rows: [],
                models: [gemma(1709, 1235), backticked], all: stats(1711, 1237) },
+    },
+  };
+}
+
+function usage(): MonitorUsagePayload {
+  const work = (key: string, count = 0, failed = 0, averageMs: number | null = null,
+                p95Ms: number | null = null): MonitorUsageStats => ({
+    key: key as MonitorUsageStats["key"], count, failed, ms: averageMs == null ? 0 : averageMs * count, averageMs, p95Ms,
+  });
+  const measures = (python: MonitorUsageStats) => [
+    python, work("node.javascript"), work("run", 2, 1, 4500, 7000), work("turn"), work("request", 1234, 0, 45, 120),
+  ];
+  const view = (from: string, to: string, stepSeconds: number, python: MonitorUsageStats) => ({
+    from, to, stepSeconds, rows: [], sessions: [], measures: measures(python),
+    deploys: [
+      { at: "2026-09-18T10:00:00Z", version: "0.16.110" },
+      { at: "2026-09-22T09:30:12Z", version: "0.16.114" },
+    ],
+  });
+  return {
+    computedAt: "2026-09-22T14:03:11Z",
+    maxDays: 90,
+    ageSeconds: 3,
+    ttlSeconds: 60,
+    measures: ["node.python", "node.javascript", "run", "turn", "request"],
+    sessionsLast24h: { accounts: 12, guests: 30 },
+    views: {
+      "24h": view("2026-09-21T14:05:00Z", "2026-09-22T14:00:00Z", 300, work("node.python", 4, 1, 1200, 2380)),
+      "7d": view("2026-09-15T15:00:00Z", "2026-09-22T14:00:00Z", 3600, work("node.python", 1204, 4, 1248, 4100)),
+      "90d": view("2026-06-25T00:00:00Z", "2026-09-22T00:00:00Z", 86400, work("node.python", 1700, 3, 1235, 4000)),
     },
   };
 }
@@ -366,6 +398,37 @@ describe("toMarkdown", () => {
     expect(toMarkdown({ ...bundle, llm: null })).not.toContain("LLM performance");
   });
 
+  test("lists each measure's work in each window, the sessions and the last deploy, every count in full", () => {
+    const md = toMarkdown({ ...bundle, usage: usage(), llm: llm() });
+    expect(md).toContain("### Usage");
+    expect(md).toContain("_The last 90 days, kept across restarts._");
+    expect(md).toContain("- sessions seen in the last 24 hours: 12 accounts, 30 guests");
+    expect(md).toContain(
+      "- Python node runs: 24 hours 4 runs, 1 failed, average 1.2 s, 95th percentile 2.4 s; 7 days 1,204 runs, " +
+        "4 failed, average 1.2 s, 95th percentile 4.1 s; 90 days 1,700 runs, 3 failed, average 1.2 s, " +
+        "95th percentile 4.0 s"
+    );
+    // A measure that counted nothing says so.
+    expect(md).toContain("- JavaScript node runs: 24 hours none; 7 days none; 90 days none");
+    expect(md).toContain(
+      "- Requests: 24 hours 1,234 requests, 0 failed, average 45 ms, 95th percentile 120 ms; 7 days 1,234 requests"
+    );
+    expect(md).toContain("- Agent turns: 24 hours none");
+    expect(md).toContain("- Run All runs: 24 hours 2 runs, 1 failed, average 4.5 s, 95th percentile 7.0 s");
+    expect(md).toContain("- last deploy: `0.16.114`, 2026-09-22T09:30:12Z");
+    // As the tab shows them: the usage, then the LLM performance, before the errors.
+    expect(md.indexOf("### Usage")).toBeLessThan(md.indexOf("### LLM performance"));
+    expect(md.indexOf("### LLM performance")).toBeLessThan(md.indexOf("### Recent errors"));
+  });
+
+  test("says when the sessions could not be counted, and leaves the usage out with no payload", () => {
+    expect(toMarkdown({ ...bundle, usage: { ...usage(), sessionsLast24h: null } })).toContain(
+      "- sessions seen in the last 24 hours: unknown"
+    );
+    expect(toMarkdown(bundle)).not.toContain("### Usage");
+    expect(toMarkdown({ ...bundle, usage: null })).not.toContain("### Usage");
+  });
+
   test("gives both servers' open files and limits from the last sample", () => {
     const md = toMarkdown({ ...bundle, openFiles: openFiles() });
     expect(md).toContain("### Open files");
@@ -409,6 +472,12 @@ describe("toJson", () => {
     expect(parsed.llm).toEqual(llm());
     expect(parsed.llm.views["90d"].models.map((entry: { model: string }) => entry.model)).toEqual(["gemma4", "qwen`3"]);
     expect(JSON.parse(toJson({ monitor: null, storage: null, errors: null })).llm).toBeNull();
+  });
+
+  test("keeps the usage payload too, and says null without one", () => {
+    const parsed = JSON.parse(toJson({ monitor: null, storage: null, errors: null, usage: usage() }));
+    expect(parsed.usage).toEqual(usage());
+    expect(JSON.parse(toJson({ monitor: null, storage: null, errors: null })).usage).toBeNull();
   });
 
   test("keeps every open-files sample, and says null without them", () => {

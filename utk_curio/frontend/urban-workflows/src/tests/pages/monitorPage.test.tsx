@@ -1,21 +1,28 @@
 /**
- * The monitor page as a whole.
+ * The monitor page as a whole: its two tabs, Status at /monitor and Usage at
+ * /monitor/usage, each polling its own routes alone.
  *
  * The charts are mocked: vega does not render under jsdom, and what matters
  * here is that the page composes, polls, pauses and survives a failed request.
  */
 import React from "react";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
 jest.mock("../../pages/monitor/MonitorCharts", () => ({
   DurationHistogram: () => <div data-testid="duration-chart" />,
   StoreSizeHistogram: () => <div data-testid="store-chart" />,
   // What a line chart was handed: its name, each line's values added up over
-  // its points (a point with no value adds nothing), and whether its values
-  // are durations.
-  LinesOverTime: ({ label, rows, colors, valueField, durations }: any) => (
-    <div data-testid="lines-chart" aria-label={label} data-durations={String(Boolean(durations))}>
+  // its points (a point with no value adds nothing), whether its values are
+  // durations, whether its y axis is a log one, and the labels of its marks.
+  LinesOverTime: ({ label, rows, colors, valueField, durations, logY, marks }: any) => (
+    <div
+      data-testid="lines-chart"
+      aria-label={label}
+      data-durations={String(Boolean(durations))}
+      data-log={String(Boolean(logY))}
+      data-marks={(marks ?? []).map((mark: any) => mark.label).join(",")}
+    >
       {colors.domain.map((line: string, index: number) => (
         <span key={line} data-color={colors.range[index]}>
           {`${line}: ${rows
@@ -66,6 +73,7 @@ jest.mock("../../api/monitorApi", () => ({
   fetchMonitorErrors: jest.fn(),
   fetchMonitorLlm: jest.fn(),
   fetchMonitorOpenFiles: jest.fn(),
+  fetchMonitorUsage: jest.fn(),
   postClientError: jest.fn(),
 }));
 
@@ -75,6 +83,7 @@ import {
   fetchMonitorLlm,
   fetchMonitorOpenFiles,
   fetchMonitorStorage,
+  fetchMonitorUsage,
 } from "../../api/monitorApi";
 import MonitorPage from "../../pages/monitor/MonitorPage";
 import { getByTooltip } from "../_support/tooltips";
@@ -224,15 +233,103 @@ const openFilesPayload = {
     { at: "2026-09-22T12:03:05Z", backend: { open: 212, limit: 65536 }, sandbox: { open: 96, limit: 65536 } },
     { at: "2026-09-22T13:03:05Z", backend: { open: 230, limit: 65536 }, sandbox: { open: 101, limit: 65536 } },
   ],
+  deploys: [{ at: "2026-09-22T12:30:00Z", version: "0.16.114" }],
 };
 
-function renderPage() {
+/** A measure's work over a window: nothing, unless given. */
+function work(key: string, count = 0, failed = 0, ms = 0, averageMs: number | null = null,
+              p95Ms: number | null = null) {
+  return { key, count, failed, ms, averageMs, p95Ms };
+}
+
+const usagePayload = {
+  computedAt: "2026-09-22T14:03:11Z", maxDays: 90, ageSeconds: 3, ttlSeconds: 60,
+  measures: ["node.python", "node.javascript", "run", "turn", "request"],
+  sessionsLast24h: { accounts: 12, guests: 30 },
+  views: {
+    "24h": {
+      from: "2026-09-21T14:05:00Z", to: "2026-09-22T14:00:00Z", stepSeconds: 300,
+      rows: [
+        { at: "2026-09-22T13:10:00Z", key: "node.python", count: 4, failed: 1, ms: 4800, p95Ms: 2380 },
+        { at: "2026-09-22T13:10:00Z", key: "node.javascript", count: 1, failed: 0, ms: 300, p95Ms: 475 },
+        { at: "2026-09-22T13:10:00Z", key: "request", count: 200, failed: 0, ms: 9000, p95Ms: 120 },
+        { at: "2026-09-22T13:15:00Z", key: "turn", count: 2, failed: 0, ms: 30000, p95Ms: 29000 },
+      ],
+      measures: [
+        work("node.python", 4, 1, 4800, 1200, 2380),
+        work("node.javascript", 1, 0, 300, 300, 475),
+        work("run"),
+        work("turn", 2, 0, 30000, 15000, 29000),
+        work("request", 200, 0, 9000, 45, 120),
+      ],
+      sessions: [{ at: "2026-09-22T13:10:00Z", accounts: 3, guests: 7 }],
+      deploys: [{ at: "2026-09-22T09:30:12Z", version: "0.16.114" }],
+    },
+    "7d": {
+      from: "2026-09-15T15:00:00Z", to: "2026-09-22T14:00:00Z", stepSeconds: 3600,
+      rows: [
+        { at: "2026-09-20T09:00:00Z", key: "node.python", count: 1200, failed: 3, ms: 1500000, p95Ms: 4100 },
+        { at: "2026-09-22T13:00:00Z", key: "node.python", count: 4, failed: 1, ms: 4800, p95Ms: 2380 },
+        { at: "2026-09-22T13:00:00Z", key: "run", count: 2, failed: 1, ms: 9000, p95Ms: 7000 },
+        { at: "2026-09-22T13:00:00Z", key: "request", count: 200, failed: 0, ms: 9000, p95Ms: 120 },
+      ],
+      measures: [
+        work("node.python", 1204, 4, 1504800, 1248, 4100),
+        work("node.javascript"),
+        work("run", 2, 1, 9000, 4500, 7000),
+        work("turn"),
+        work("request", 200, 0, 9000, 45, 120),
+      ],
+      sessions: [
+        { at: "2026-09-20T09:00:00Z", accounts: 40, guests: 2 },
+        { at: "2026-09-22T13:00:00Z", accounts: 5, guests: 9 },
+      ],
+      deploys: [
+        { at: "2026-09-18T10:00:00Z", version: "0.16.110" },
+        { at: "2026-09-22T09:30:12Z", version: "0.16.114" },
+      ],
+    },
+    "90d": {
+      from: "2026-06-25T00:00:00Z", to: "2026-09-22T00:00:00Z", stepSeconds: 86400,
+      rows: [
+        { at: "2026-07-01T00:00:00Z", key: "node.python", count: 500, failed: 0, ms: 600000, p95Ms: 2000 },
+        { at: "2026-09-20T00:00:00Z", key: "node.python", count: 1200, failed: 3, ms: 1500000, p95Ms: 4100 },
+      ],
+      measures: [
+        work("node.python", 1700, 3, 2100000, 1235, 4000),
+        work("node.javascript"),
+        work("run"),
+        work("turn"),
+        work("request"),
+      ],
+      sessions: [{ at: "2026-09-22T00:00:00Z", accounts: 20, guests: 40 }],
+      deploys: [
+        { at: "2026-07-02T08:00:00Z", version: "0.16.90" },
+        { at: "2026-09-18T10:00:00Z", version: "0.16.110" },
+        { at: "2026-09-22T09:30:12Z", version: "0.16.114" },
+      ],
+    },
+  },
+};
+
+/** The page's path, as the page's URL holds it. */
+function Where() {
+  const location = useLocation();
+  return <p data-testid="where">{location.pathname}</p>;
+}
+
+function renderPage(path = "/monitor") {
   return render(
-    <MemoryRouter initialEntries={["/monitor"]}>
-      <MonitorPage />
+    <MemoryRouter initialEntries={[path]}>
+      <Routes>
+        <Route path="/monitor/:tab?" element={<><MonitorPage /><Where /></>} />
+      </Routes>
     </MemoryRouter>
   );
 }
+
+/** The chart a page shows under *label*. */
+const chartNamed = (label: string) => screen.getByLabelText(label);
 
 describe("MonitorPage", () => {
   beforeEach(() => {
@@ -243,18 +340,33 @@ describe("MonitorPage", () => {
     (fetchMonitorErrors as jest.Mock).mockResolvedValue(errorsPayload);
     (fetchMonitorLlm as jest.Mock).mockResolvedValue(llmPayload);
     (fetchMonitorOpenFiles as jest.Mock).mockResolvedValue(noOpenFiles);
+    (fetchMonitorUsage as jest.Mock).mockResolvedValue(usagePayload);
   });
 
-  test("renders every section", async () => {
+  test("the Status tab renders every section of the deployment as it is now", async () => {
     renderPage();
     for (const heading of [
-      "Deployment", "Hardware", "Execution", "LLM performance", "Accounts and content",
-      "Storage", "Recent errors",
+      "Deployment", "Hardware", "Execution", "Accounts and content", "Storage", "Recent errors",
     ]) {
       expect(
         await screen.findByRole("heading", { name: heading })
       ).toBeInTheDocument();
     }
+    // LLM performance is the Usage tab's.
+    expect(screen.queryByRole("heading", { name: "LLM performance" })).not.toBeInTheDocument();
+  });
+
+  test("the Usage tab renders the activity and the LLM performance", async () => {
+    renderPage("/monitor/usage");
+    for (const heading of [
+      "Activity", "Sessions seen", "Count", "Average time", "95th percentile time", "By measure",
+      "LLM performance", "Average response time", "By model",
+    ]) {
+      expect(
+        await screen.findByRole("heading", { name: heading })
+      ).toBeInTheDocument();
+    }
+    expect(screen.queryByRole("heading", { name: "Deployment" })).not.toBeInTheDocument();
   });
 
   test("shows the headline numbers from the payload", async () => {
@@ -293,6 +405,8 @@ describe("MonitorPage", () => {
     expect(within(chart).getByText("Backend: 442 over 2 points")).toBeInTheDocument();
     expect(within(chart).getByText("Sandbox: 197 over 2 points")).toBeInTheDocument();
     expect(within(chart).getByText("Limit: 131072 over 2 points")).toBeInTheDocument();
+    // The deploy between the two samples is marked, with its version.
+    expect(chart).toHaveAttribute("data-marks", "0.16.114");
     // Read once as the page opens; the next read is 10 minutes later.
     expect(fetchMonitorOpenFiles).toHaveBeenCalledTimes(1);
   });
@@ -391,9 +505,228 @@ describe("MonitorPage", () => {
     await waitFor(() => expect(label.nextElementSibling?.textContent).toBe(text));
   });
 
+  describe("the tabs", () => {
+    test("/monitor is the Status tab and /monitor/usage the Usage tab, and a click on a tab goes to its path", async () => {
+      renderPage();
+      expect(await screen.findByRole("tab", { name: "Status" })).toHaveAttribute("aria-selected", "true");
+      expect(screen.getByRole("tab", { name: "Usage" })).toHaveAttribute("aria-selected", "false");
+      expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "monitor-tab-status");
+      expect(screen.getByRole("tablist", { name: "Monitor" })).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("tab", { name: "Usage" }));
+      expect(screen.getByTestId("where").textContent).toBe("/monitor/usage");
+      expect(screen.getByRole("tab", { name: "Usage" })).toHaveAttribute("aria-selected", "true");
+      expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "monitor-tab-usage");
+      expect(await screen.findByRole("heading", { name: "Activity" })).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "Deployment" })).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("tab", { name: "Status" }));
+      expect(screen.getByTestId("where").textContent).toBe("/monitor");
+      expect(await screen.findByRole("heading", { name: "Deployment" })).toBeInTheDocument();
+    });
+
+    test("the arrow keys move between the tabs, as API Settings' do", async () => {
+      renderPage("/monitor/usage");
+      const usage = await screen.findByRole("tab", { name: "Usage" });
+      expect(usage).toHaveAttribute("tabIndex", "0");
+      expect(screen.getByRole("tab", { name: "Status" })).toHaveAttribute("tabIndex", "-1");
+      fireEvent.keyDown(usage, { key: "ArrowRight" });
+      expect(screen.getByTestId("where").textContent).toBe("/monitor");
+      expect(screen.getByRole("tab", { name: "Status" })).toHaveFocus();
+      fireEvent.keyDown(screen.getByRole("tab", { name: "Status" }), { key: "ArrowLeft" });
+      expect(screen.getByTestId("where").textContent).toBe("/monitor/usage");
+      expect(screen.getByRole("tab", { name: "Usage" })).toHaveFocus();
+    });
+
+    test("a path that names no tab opens Status", async () => {
+      renderPage("/monitor/nope");
+      expect(await screen.findByRole("tab", { name: "Status" })).toHaveAttribute("aria-selected", "true");
+      expect(screen.getByTestId("where").textContent).toBe("/monitor");
+    });
+
+    test("only the shown tab's routes poll, and showing a tab reads its routes at once", async () => {
+      jest.useFakeTimers();
+      try {
+        renderPage();
+        expect(await screen.findByText("1482")).toBeInTheDocument();
+        const status = [fetchMonitor, fetchMonitorErrors, fetchMonitorStorage, fetchMonitorOpenFiles] as jest.Mock[];
+        const usage = [fetchMonitorUsage, fetchMonitorLlm] as jest.Mock[];
+        const calls = (fetchers: jest.Mock[]) => fetchers.map((each) => each.mock.calls.length);
+        expect(calls(status)).toEqual([1, 1, 1, 1]);
+        expect(calls(usage)).toEqual([0, 0]);
+        // The monitor's and the errors' routes again 5 seconds later.
+        await act(async () => {
+          jest.advanceTimersByTime(5000);
+        });
+        expect(calls(status)).toEqual([2, 2, 1, 1]);
+
+        fireEvent.click(screen.getByRole("tab", { name: "Usage" }));
+        expect(await screen.findByTestId("monitor-usage-measures")).toBeInTheDocument();
+        expect(calls(usage)).toEqual([1, 1]);
+        const shown = calls(status);
+        await act(async () => {
+          jest.advanceTimersByTime(60_000);
+        });
+        // A minute later: the Usage routes read again, the Status routes not at all.
+        expect(calls(usage)).toEqual([2, 2]);
+        expect(calls(status)).toEqual(shown);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    test("opened on Usage, the page asks no route of the Status tab", async () => {
+      renderPage("/monitor/usage");
+      expect(await screen.findByTestId("monitor-usage-measures")).toBeInTheDocument();
+      await waitFor(() => expect(fetchMonitorLlm).toHaveBeenCalledTimes(1));
+      expect(fetchMonitorUsage).toHaveBeenCalledTimes(1);
+      for (const fetcher of [fetchMonitor, fetchMonitorErrors, fetchMonitorStorage, fetchMonitorOpenFiles]) {
+        expect(fetcher).not.toHaveBeenCalled();
+      }
+    });
+
+    test("the toolbar speaks for the tab shown", async () => {
+      (fetchMonitorUsage as jest.Mock).mockRejectedValue(new Error("backend down"));
+      renderPage("/monitor/usage");
+      expect(await screen.findByRole("status")).toHaveTextContent(/Could not reach the backend/);
+      // The Status tab's route answered nothing yet, as it was never asked.
+      expect(fetchMonitor).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("Usage", () => {
+    test("the tiles give the last 24 hours, node runs of both languages as one, whichever window is shown", async () => {
+      renderPage("/monitor/usage");
+      const tiles = within(await screen.findByTestId("monitor-usage"));
+      const shown = async () => {
+        expect(await tiles.findByText("42")).toBeInTheDocument();
+        expect(tiles.getByText("12 accounts · 30 guests")).toBeInTheDocument();
+        // 5 node runs, 4 of Python and 1 of JavaScript, 5.1 s in all; one failed.
+        expect(tiles.getByText("5")).toBeInTheDocument();
+        expect(tiles.getByText("average 1.0 s · 1 failed")).toBeInTheDocument();
+        expect(tiles.getByText("average 15.0 s")).toBeInTheDocument();
+        expect(tiles.getByText("average n/a")).toBeInTheDocument();
+        expect(tiles.getByText("average 45 ms")).toBeInTheDocument();
+        expect(tiles.getAllByText(/24 hours$/).map((label) => label.textContent)).toEqual([
+          "Sessions seen, 24 hours", "Node runs, 24 hours", "Agent turns, 24 hours", "Run All runs, 24 hours",
+          "Requests, 24 hours",
+        ]);
+      };
+      await shown();
+      fireEvent.click(screen.getByRole("button", { name: "90 days" }));
+      await shown();
+    });
+
+    test("the By measure table gives each measure's work over the 7 days, shown first, then the window chosen",
+      async () => {
+        renderPage("/monitor/usage");
+        const table = await screen.findByTestId("monitor-usage-measures");
+        const row = (key: string) => table.querySelector(`tr[data-measure="${key}"]`) as HTMLElement;
+        await waitFor(() => expect(within(row("node.python")).getByText("1.2K")).toBeInTheDocument());
+        expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+          "Measure", "Count", "Failed", "Average", "95th percentile",
+        ]);
+        expect([...table.querySelectorAll("tbody tr")].map((each) => each.querySelector("td")?.textContent)).toEqual([
+          "Python node runs", "JavaScript node runs", "Run All runs", "Agent turns", "Requests",
+        ]);
+        const python = row("node.python");
+        expect(within(python).getByText("4")).toBeInTheDocument();
+        expect(within(python).getByText("1.2 s")).toBeInTheDocument();
+        expect(within(python).getByText("4.1 s")).toBeInTheDocument();
+        // The exact numbers are the cells' Curio tooltips, never a title.
+        expect(getByTooltip(python, "1,204 runs")).toBeInTheDocument();
+        expect(getByTooltip(python, "4 of 1,204 runs failed")).toBeInTheDocument();
+        expect(getByTooltip(python, "1,248 ms")).toBeInTheDocument();
+        expect(getByTooltip(python, "4,100 ms")).toBeInTheDocument();
+        expect(table.querySelector("[title]")).toBeNull();
+        // A measure that counted nothing reads 0, and n/a for its times.
+        expect(within(row("turn")).getAllByText("0")).toHaveLength(2);
+        expect(within(row("turn")).getAllByText("n/a")).toHaveLength(2);
+        expect(within(row("run")).getByText("4.5 s")).toBeInTheDocument();
+        expect(getByTooltip(row("request"), "200 requests")).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole("button", { name: "24 hours" }));
+        expect(within(row("node.python")).getByText("2.4 s")).toBeInTheDocument();
+        expect(within(row("turn")).getByText("15.0 s")).toBeInTheDocument();
+        expect(getByTooltip(row("turn"), "2 turns")).toBeInTheDocument();
+      });
+
+    test("each chart draws a line per measure that counted something, the times on a log scale", async () => {
+      renderPage("/monitor/usage");
+      const count = await screen.findByLabelText("Count by measure, last 7 days");
+      expect(within(count).getByText("Python node runs: 1204 over 168 points")).toBeInTheDocument();
+      expect(within(count).getByText("Run All runs: 2 over 168 points")).toBeInTheDocument();
+      expect(within(count).getByText("Requests: 200 over 168 points")).toBeInTheDocument();
+      expect(within(count).queryByText(/Agent turns|JavaScript node runs/)).not.toBeInTheDocument();
+      expect([count.getAttribute("data-log"), count.getAttribute("data-durations")]).toEqual(["true", "false"]);
+
+      // Each step's average: 1,250 ms then 1,200 ms of Python runs, in the 168 hours.
+      const average = chartNamed("Average time by measure, last 7 days");
+      expect(within(average).getByText("Python node runs: 2450 over 168 points")).toBeInTheDocument();
+      expect(within(average).getByText("Requests: 45 over 168 points")).toBeInTheDocument();
+      expect([average.getAttribute("data-log"), average.getAttribute("data-durations")]).toEqual(["true", "true"]);
+      const p95 = chartNamed("95th percentile time by measure, last 7 days");
+      expect(within(p95).getByText("Python node runs: 6480 over 168 points")).toBeInTheDocument();
+      expect(within(p95).getByText("Run All runs: 7000 over 168 points")).toBeInTheDocument();
+
+      const sessions = chartNamed("Sessions seen, accounts and guests, last 7 days");
+      expect(within(sessions).getByText("Accounts: 45 over 168 points")).toBeInTheDocument();
+      expect(within(sessions).getByText("Guests: 11 over 168 points")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "24 hours" }));
+      const day = chartNamed("Count by measure, last 24 hours");
+      expect(within(day).getByText("Agent turns: 2 over 288 points")).toBeInTheDocument();
+      expect(within(day).getByText("JavaScript node runs: 1 over 288 points")).toBeInTheDocument();
+    });
+
+    test("the charts of 24 hours and 7 days mark each deploy with its version, those of 90 days none", async () => {
+      renderPage("/monitor/usage");
+      await screen.findByLabelText("Count by measure, last 7 days");
+      const week = [
+        "Sessions seen, accounts and guests, last 7 days", "Count by measure, last 7 days",
+        "Average time by measure, last 7 days", "95th percentile time by measure, last 7 days",
+        "Average response time by model, last 7 days",
+      ];
+      for (const label of week) {
+        expect(chartNamed(label)).toHaveAttribute("data-marks", "0.16.110,0.16.114");
+      }
+      fireEvent.click(screen.getByRole("button", { name: "24 hours" }));
+      expect(chartNamed("Count by measure, last 24 hours")).toHaveAttribute("data-marks", "0.16.114");
+      expect(chartNamed("Average response time by model, last 24 hours")).toHaveAttribute("data-marks", "0.16.114");
+      fireEvent.click(screen.getByRole("button", { name: "90 days" }));
+      expect(chartNamed("Count by measure, last 90 days")).toHaveAttribute("data-marks", "");
+      expect(chartNamed("Sessions seen, accounts and guests, last 90 days")).toHaveAttribute("data-marks", "");
+      expect(chartNamed("Average response time by model, last 90 days")).toHaveAttribute("data-marks", "");
+    });
+
+    test("a window with nothing counted and no sessions sample says so, and draws no chart of them", async () => {
+      const empty = {
+        ...usagePayload,
+        views: Object.fromEntries(
+          Object.entries(usagePayload.views).map(([name, view]) => [
+            name, { ...view, rows: [], sessions: [], measures: view.measures.map((each) => work(each.key)) },
+          ])
+        ),
+      };
+      (fetchMonitorUsage as jest.Mock).mockResolvedValue(empty);
+      (fetchMonitorLlm as jest.Mock).mockResolvedValue(noLlm);
+      renderPage("/monitor/usage");
+      expect(await screen.findAllByText("Nothing counted in the last 7 days.")).toHaveLength(3);
+      expect(screen.getByText(/^No sample in the last 7 days/)).toBeInTheDocument();
+      expect(screen.queryByTestId("lines-chart")).not.toBeInTheDocument();
+    });
+
+    test("the table says what each measure counts, and that the days are kept across restarts", async () => {
+      renderPage("/monitor/usage");
+      expect(await screen.findByTestId("monitor-usage-kept")).toHaveTextContent(
+        /^The last 90 days are kept across restarts\. A node run is a node's code run by Play or by a run on the server/
+      );
+    });
+  });
+
   describe("LLM performance", () => {
     test("the table names each model and its performance over the 7 days, shown first", async () => {
-      renderPage();
+      renderPage("/monitor/usage");
       const table = await screen.findByTestId("monitor-llm-models");
       const gemma = (await within(table).findByText("gemma4")).closest("tr") as HTMLElement;
       expect(within(gemma).getByText("1.2K")).toBeInTheDocument();
@@ -424,9 +757,11 @@ describe("MonitorPage", () => {
       expect(within(section).queryByText(/endpoint|own key|\(curio\)/i)).not.toBeInTheDocument();
     });
 
-    test("the switch shows the 24 hours or the 90 days in the chart and the table", async () => {
-      renderPage();
-      const week = await screen.findByTestId("lines-chart");
+    test("the tab's switch shows the 24 hours or the 90 days in the chart and the table", async () => {
+      renderPage("/monitor/usage");
+      // The section's own chart: the tab's charts of its activity draw beside it.
+      const section = await screen.findByTestId("monitor-llm-performance");
+      const week = await within(section).findByTestId("lines-chart");
       expect(screen.getByRole("button", { name: "7 days" })).toHaveAttribute("aria-pressed", "true");
       expect(week).toHaveAttribute("aria-label", "Average response time by model, last 7 days");
       expect(week).toHaveAttribute("data-durations", "true");
@@ -437,7 +772,7 @@ describe("MonitorPage", () => {
       fireEvent.click(screen.getByRole("button", { name: "24 hours" }));
       expect(screen.getByRole("button", { name: "24 hours" })).toHaveAttribute("aria-pressed", "true");
       expect(screen.getByRole("button", { name: "7 days" })).toHaveAttribute("aria-pressed", "false");
-      const day = screen.getByTestId("lines-chart");
+      const day = within(section).getByTestId("lines-chart");
       expect(day).toHaveAttribute("aria-label", "Average response time by model, last 24 hours");
       expect(within(day).getByText("gemma4: 2100 over 288 points")).toBeInTheDocument();
       const gemmaDay = within(screen.getByTestId("monitor-llm-models")).getByText("gemma4").closest("tr") as HTMLElement;
@@ -445,7 +780,7 @@ describe("MonitorPage", () => {
       expect(within(gemmaDay).getByText("1.0 s")).toBeInTheDocument();
 
       fireEvent.click(screen.getByRole("button", { name: "90 days" }));
-      const quarter = screen.getByTestId("lines-chart");
+      const quarter = within(section).getByTestId("lines-chart");
       expect(quarter).toHaveAttribute("aria-label", "Average response time by model, last 90 days");
       expect(within(quarter).getByText("gemma4: 3483 over 90 points")).toBeInTheDocument();
       const gemmaQuarter = within(screen.getByTestId("monitor-llm-models")).getByText("gemma4")
@@ -454,7 +789,7 @@ describe("MonitorPage", () => {
     });
 
     test("the tiles give the last 24 hours, whichever window the switch shows", async () => {
-      renderPage();
+      renderPage("/monitor/usage");
       const section = await screen.findByTestId("monitor-llm-performance");
       const tiles = async () => {
         expect(await within(section).findByText("11")).toBeInTheDocument();
@@ -465,22 +800,24 @@ describe("MonitorPage", () => {
         expect(within(section).getByText("first token in 310 ms")).toBeInTheDocument();
       };
       await tiles();
-      fireEvent.click(within(section).getByRole("button", { name: "90 days" }));
+      // The tab's switch, which the section follows.
+      fireEvent.click(screen.getByRole("button", { name: "90 days" }));
       await tiles();
     });
 
     test("an instance no model answered says so in the window shown, and draws no chart", async () => {
       (fetchMonitorLlm as jest.Mock).mockResolvedValue(noLlm);
-      renderPage();
-      expect(await screen.findAllByText("No LLM requests in the last 7 days.")).toHaveLength(2);
-      expect(screen.queryByTestId("lines-chart")).not.toBeInTheDocument();
+      renderPage("/monitor/usage");
+      const section = await screen.findByTestId("monitor-llm-performance");
+      expect(await within(section).findAllByText("No LLM requests in the last 7 days.")).toHaveLength(2);
+      expect(within(section).queryByTestId("lines-chart")).not.toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: "90 days" }));
-      expect(screen.getAllByText("No LLM requests in the last 90 days.")).toHaveLength(2);
-      expect(screen.queryByTestId("lines-chart")).not.toBeInTheDocument();
+      expect(within(section).getAllByText("No LLM requests in the last 90 days.")).toHaveLength(2);
+      expect(within(section).queryByTestId("lines-chart")).not.toBeInTheDocument();
     });
 
     test("the table says its models are this Curio's own, the last 90 days, kept across restarts", async () => {
-      renderPage();
+      renderPage("/monitor/usage");
       expect(await screen.findByTestId("monitor-llm-kept")).toHaveTextContent(
         "This Curio's own models, the last 90 days, kept across restarts. A request on a key a user set for " +
           "their own is not counted."

@@ -200,6 +200,13 @@ def serve():
         monitor_history.start_writer()
     if DOES_STARTUP_WORK:
         from utk_curio.backend.app.discovery import service as discovery_service
+        from utk_curio.backend.app.monitor import usage as monitor_usage
+
+        # The monitor's Usage tab: this start and its version, which its
+        # charts mark when the version changed, and the sessions seen, a
+        # sample after each 5 minutes (monitor/usage.py).
+        monitor_usage.record_start()
+        monitor_usage.start_sessions_sampler(app)
 
         # When --bucket-mounts-dir and --bucket-mount-socket name a bucket
         # mount service: its one way out, a proxy where the backend listens,
