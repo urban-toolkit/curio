@@ -241,6 +241,8 @@ def test_the_llm_payload_names_models_and_nobody(client):
     )
     for model in typed:
         llm_tokens.record(model, curio=False, input_tokens=5, output_tokens=1)
+    # Written, as the process's writer does each minute: the route reads the file.
+    assert llm_tokens.HISTORY.flush() is True
 
     response = client.get("/api/monitor/llm")
     raw = response.get_data(as_text=True)

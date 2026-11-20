@@ -360,12 +360,15 @@ class TestTheLlmRoute:
         monkeypatch.setattr(llm_tokens, "_now", lambda: self.NOW)
         llm_tokens.record("gemma4", curio=True, input_tokens=120, output_tokens=30)
         llm_tokens.record("gpt-5", curio=False, input_tokens=40, output_tokens=8)
+        # Written, as the process's writer does each minute: the route reads the file.
+        assert llm_tokens.HISTORY.flush() is True
         body = client.get("/api/monitor/llm").get_json()
 
         assert set(body) == {"computedAt", "startedAt", "maxDays", "ageSeconds", "ttlSeconds",
                              "hourlyFrom", "hourlyTo", "hourly", "models"}
         assert body["computedAt"] == "2026-11-06T15:20:07Z"
-        # When this process's history began: the backend's start.
+        # When the oldest row kept began.
+        assert body["startedAt"] == "2026-11-06T15:20:00Z"
         datetime.strptime(body["startedAt"], self.STAMP)
         assert (body["hourlyFrom"], body["hourlyTo"]) == ("2026-10-30T16:00:00Z", "2026-11-06T15:00:00Z")
         assert (datetime.strptime(body["hourlyTo"], self.STAMP)

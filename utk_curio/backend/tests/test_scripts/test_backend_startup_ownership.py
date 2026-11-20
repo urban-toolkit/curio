@@ -25,7 +25,9 @@ THEIRS = "413a5c1e-0b4d-4c8e-9a7f-2d6b8e1c5a90"
 
 #: The pieces ``serve()`` starts, once the startup work before it is done.
 _SERVE = {
+    "utk_curio.backend.app.monitor.history.write_on_stop",
     "utk_curio.backend.app.monitor.open_files.start_sampler",
+    "utk_curio.backend.app.monitor.history.start_writer",
     "utk_curio.backend.app.discovery.service.start_bucket_mount_proxy",
     "utk_curio.backend.app.discovery.service.start_bucket_mount_check",
 }

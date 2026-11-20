@@ -30,19 +30,21 @@ def app():
 def clean_monitor_state(tmp_path, monkeypatch):
     """Counters and error windows are module globals, so they leak across tests.
 
-    The hourly histories are written to disk too, so each test gets a folder
-    of its own for their files. It is apart from the tree ``state_root`` hands
-    the storage walk, whose store counts it must not change.
+    The histories are files in the monitor folder, so each test gets a folder
+    of its own for them, and the rows the process holds unwritten, which an
+    earlier test may have left, are dropped. The folder is apart from the tree
+    ``state_root`` hands the storage walk, whose store counts it must not
+    change.
     """
-    from utk_curio.backend.app.monitor import counters, errors, history, llm_tokens, routes, storage
+    from utk_curio.backend.app.monitor import counters, errors, history, llm_tokens, open_files, routes, storage
 
     histories = tmp_path / "monitor"
     monkeypatch.setattr(history, "_folder", lambda: histories)
-    for module in (counters, errors, llm_tokens, storage):
+    for module in (counters, errors, llm_tokens, open_files, storage):
         module.reset()
     routes.reset_rate_limit()
     yield
-    for module in (counters, errors, llm_tokens, storage):
+    for module in (counters, errors, llm_tokens, open_files, storage):
         module.reset()
     routes.reset_rate_limit()
 
