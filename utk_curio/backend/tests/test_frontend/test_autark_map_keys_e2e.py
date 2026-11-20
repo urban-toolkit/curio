@@ -17,8 +17,8 @@ maps, each read back from autk-map's own objects (``window.__curio_mapDrawing``)
   into it), though the data node handed them on at the height Curio gives
   such a part, and drawn at autk-map's random 3 to 7 floors
   (``buildingsZeroHeight``);
-- a map in a style of its own (``style``'s colors) without autk-map's menu and
-  legend (``showUi``);
+- a map in a style of its own (``style``'s colors), its zones colored by their
+  riders, without autk-map's menu and legend (``showUi``);
 - a map whose ground rises to a band of a GeoTIFF its own data section loads
   (``terrain``).
 
@@ -115,13 +115,15 @@ EVERY_LAYER_KEY = {"map": {"highlightColor": "#ff7f0e", "layerRefs": [
     {"dataRef": "towers", "buildingsZeroHeight": True},
 ]}}
 
+#: The zones colored by their riders, which would put them in the legend, on the area in the style's polygons
+#: color, and the lanes and the stops in the style's own colors.
 NO_CONTROLS = {"map": {
     "showUi": False,
     "style": {
         "background": "#0b1a2a", "surface": "#13263a", "parks": "#1f4d3a", "water": "#08121d", "roads": "#3a5068",
         "buildings": "#5b7083", "points": "#f2c14e", "polylines": "#7f97ad", "polygons": "#2a3d52",
     },
-    "layerRefs": [{"dataRef": "area"}, {"dataRef": "zones"}],
+    "layerRefs": [{"dataRef": "area"}, {"dataRef": "zones", "getFnv": "riders"}, {"dataRef": "lanes"}, {"dataRef": "stops"}],
 }}
 
 #: A GeoTIFF of Niteroi's land surface temperatures, a band a year from 2001 to 2024.
@@ -280,7 +282,7 @@ def test_a_map_draws_its_terrain_layer_types_widths_hidden_and_picked_features_l
     play_node(page, plain)
     wait_for_node_done(page, plain, node_type=AUTARK_TYPE)
     assert_autark_map_drawn(page, plain, timeout=60000, attach_as="a map in a style of its own without its controls")
-    bare = _drawing(page, plain, lambda d: len(d.get("layers", [])) >= 2, "two layers")
+    bare = _drawing(page, plain, lambda d: len(d.get("layers", [])) >= 4, "four layers")
     assert bare["controls"] is False, "a map whose showUi is false shows autk-map's menu or legend"
 
     # The ground raised to the GeoTIFF's 2024 band.
