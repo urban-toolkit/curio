@@ -287,6 +287,36 @@ export function oneRasterAtATime<T>(load: () => Promise<T>): Promise<T> {
 }
 
 /**
+ * The page's raster turn, as one caller holds it: `held` when the caller runs
+ * inside a turn it took (`runInRasterTurn`), so a raster load it makes
+ * (`withRasterSources`) runs at once rather than wait for the turn its own
+ * caller holds.
+ */
+export type RasterTurn = { held: boolean };
+
+/**
+ * Whether a run makes a raster after its passes: a source after compute
+ * (*afterPasses*, autkDataCompile `sourcesAfterPasses`) of a kind that makes a
+ * raster table, a heatmap or a GeoTIFF. autk-grammar makes it in its own run,
+ * in autk-db's raster store, which the whole page shares (`oneRasterAtATime`),
+ * and its map reads it when it draws.
+ */
+export function makesRasterAfterCompute(afterPasses: readonly any[]): boolean {
+    return afterPasses.some((source) => GRAMMAR_RASTER_SOURCES.includes(source?.type));
+}
+
+/**
+ * Run *grammar* on *spec*, holding the page's raster turn from the run's start
+ * to its end when *turn* is held (`makesRasterAfterCompute`): another node's
+ * raster load or run then waits, so no other raster of the same workspace and
+ * name lands in the page's store between the run making its raster and its
+ * map drawing it. Any other run takes no turn and runs as it is.
+ */
+export function runInRasterTurn(grammar: any, spec: any, turn: RasterTurn): Promise<void> {
+    return turn.held ? oneRasterAtATime(() => grammar.run(spec)) : grammar.run(spec);
+}
+
+/**
  * Let one grammar instance load `curio-raster` sources: each goes into the
  * grammar's own database (made with `newDb` when it is the first source), by
  * `loadGeoTiff`, and the map is handed what `getRaster` read back. Any other
@@ -294,12 +324,16 @@ export function oneRasterAtATime<T>(load: () => Promise<T>): Promise<T> {
  * workspace, the default one included, entered with *enterWorkspace*
  * (autk-grammar's, which the node passes) as the grammar's data adapter
  * enters a source's: the source before it can have left the database in
- * another.
+ * another. Each raster is loaded and read back in the page's raster turn
+ * (`oneRasterAtATime`), unless *turn* says the grammar's run holds it already
+ * (`runInRasterTurn`): then at once, since a load that waited for that turn
+ * would wait on its own run.
  */
 export function withRasterSources(
     grammar: any,
     newDb: () => Promise<any>,
     enterWorkspace?: (db: any, workspace?: string) => Promise<void>,
+    turn: RasterTurn = { held: false },
 ): void {
     const adapter = grammar?.dataAdapter;
     if (!adapter || typeof adapter.resolveSource !== 'function') throw new Error(RASTER_ADAPTER_MISSING);
@@ -311,10 +345,11 @@ export function withRasterSources(
             const target = db ?? await newDb();
             if (typeof target.getRaster !== 'function') throw new Error(RASTER_EXPORT_MISSING);
             if (enterWorkspace) await enterWorkspace(target, source.workspace);
-            const collection = await oneRasterAtATime(async () => {
+            const load = async () => {
                 await target.loadGeoTiff(loadGeoTiffParams(source));
                 return readRaster(target, source.outputTableName);
-            });
+            };
+            const collection = turn.held ? await load() : await oneRasterAtATime(load);
             serveRaster(target, source.outputTableName, withBandLabels(collection, source.bands), source.workspace);
             return target;
         },

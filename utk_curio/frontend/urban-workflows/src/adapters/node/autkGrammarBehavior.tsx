@@ -65,8 +65,8 @@ import {
     type AutkLayer,
 } from './autkLayerMaterialize';
 import {
-    bleedRasterEdges, isCurioRasterSource, newAutkDb, rasterSourceOf, resolveRasterInputs, withLayersOverRasters,
-    withOpaqueRasters, withRasterSources, type CurioRasterSource,
+    bleedRasterEdges, isCurioRasterSource, makesRasterAfterCompute, newAutkDb, rasterSourceOf, resolveRasterInputs,
+    runInRasterTurn, withLayersOverRasters, withOpaqueRasters, withRasterSources, type CurioRasterSource,
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
 import { withCheckedPasses } from './autkComputeScopes';
@@ -1470,11 +1470,15 @@ export const useAutkGrammarBehavior = (
                 // that state, so only a new one can succeed (#318).
                 const drawsRasters = (spec.data as any[]).some(isCurioRasterSource);
                 const computes = Array.isArray(spec.compute) && spec.compute.length > 0;
+                // A run that makes a raster after its passes holds the page's
+                // raster turn throughout, and its own raster loads are told so
+                // (autkRasters runInRasterTurn).
+                const rasterTurn = { held: makesRasterAfterCompute(afterPasses) };
                 const grammar = await withExtensionRetry(async () => {
                     const g = new AutkGrammar(targets);
                     // A raster enters its workspace when the document keeps
                     // tables in more than the default one (autkUsesWorkspaces).
-                    if (drawsRasters) withRasterSources(g, newAutkDb, autkUsesWorkspaces(spec) ? enterWorkspace : undefined);
+                    if (drawsRasters) withRasterSources(g, newAutkDb, autkUsesWorkspaces(spec) ? enterWorkspace : undefined, rasterTurn);
                     // Each pass the run computes is checked on the GPU's
                     // device, as a compute step's is (autkComputeScopes). It
                     // runs on the run's own database, and reads a fromFeature
@@ -1483,7 +1487,7 @@ export const useAutkGrammarBehavior = (
                     // entry as its compute adapter.
                     if (computes) withCheckedPasses(g);
                     try {
-                        await g.run(spec);
+                        await runInRasterTurn(g, spec, rasterTurn);
                     } catch (err) {
                         // A failed attempt ends its own database (autkDbClose),
                         // then the maps it made, which no node keeps.
