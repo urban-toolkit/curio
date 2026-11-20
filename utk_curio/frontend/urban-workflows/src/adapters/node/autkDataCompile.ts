@@ -235,13 +235,15 @@ export function osmElementTables(spec: any): string[] {
 // its source loads it into, once, in the order its sources make them. A
 // heatmap's or a GeoTIFF's raster table is one of them: the loaders read it
 // back by its key. A table a later `drop` drops is no longer asked for, until
-// a source after it makes one of that name again.
+// a source after it makes one of that name again. The sources are read in the
+// order autk-grammar runs them (inPhaseOrder), so a drop after compute drops
+// the table a source before compute made, wherever each stands in `data`.
 export function requestedLayerTables(dataSources: any[]): string[] {
     const names: string[] = [];
     const add = (key: string) => {
         if (!names.includes(key)) names.push(key);
     };
-    for (const source of dataSources ?? []) {
+    for (const source of inPhaseOrder(dataSources ?? [])) {
         const { type, ...rest } = (source ?? {}) as any;
         const workspace = autkWorkspaceOf(rest);
         if (type === 'osm') {
