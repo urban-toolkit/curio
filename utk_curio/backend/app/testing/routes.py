@@ -822,10 +822,12 @@ def llm_deployment():
     if request.method == "POST":
         body = request.get_json(silent=True) or {}
         if body.get("scripted") is True:
-            model = body.get("model", "scripted")
-            if not isinstance(model, str) or not _SCRIPTED_MODEL.fullmatch(model):
-                return jsonify({"error": "model must be a model id of letters, digits and . _ : -"}), 400
-            arguments = {"scripted": True, "model": model}
+            arguments = {"scripted": True}
+            if "model" in body:
+                model = body["model"]
+                if not isinstance(model, str) or not _SCRIPTED_MODEL.fullmatch(model):
+                    return jsonify({"error": "model must be a model id of letters, digits and . _ : -"}), 400
+                arguments["model"] = model
         elif not isinstance(body.get("file"), str):
             return jsonify({"error": "file must be an endpoint file's text"}), 400
         else:

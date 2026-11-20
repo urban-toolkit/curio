@@ -223,6 +223,31 @@ def test_curios_llm_endpoints_are_set_in_every_process_and_put_back_in_every_one
     _signed(start.other)
 
 
+def test_the_scripted_endpoint_takes_a_model_name_of_a_tests_own(app, start):
+    """A test that reads the monitor names the scripted model, so no other
+    test's requests count on it; a name that is not a model id is refused
+    before any process changes."""
+    from utk_curio.backend import config as settings
+
+    client = app.test_client()
+    launch = tuple(settings.DEFAULT_LLM_ENDPOINTS)
+    try:
+        named = _post(client, "llm-deployment", {"scripted": True, "model": "scripted-1a2b3c4d"})
+        offered = [list(endpoint.models) for endpoint in settings.DEFAULT_LLM_ENDPOINTS]
+        refused = _post(client, "llm-deployment", {"scripted": True, "model": "https://llm.example.com/v1"})
+        put_back = client.delete("/api/testing/llm-deployment")
+    finally:
+        settings.DEFAULT_LLM_ENDPOINTS = launch
+
+    assert [answer.status_code for answer in (named, refused, put_back)] == [200, 400, 200], (
+        named.get_data(as_text=True), refused.get_data(as_text=True))
+    assert offered == [["scripted-1a2b3c4d"]], offered
+    assert start.other.steps() == [
+        ("llm-deployment", {"scripted": True, "model": "scripted-1a2b3c4d"}),
+        ("llm-deployment", {"restore": True}),
+    ], start.other.calls
+
+
 def test_the_monitors_histories_are_written_now_in_every_process(app, start, monkeypatch, tmp_path):
     """A test reads the monitor's routes with every row its requests made,
     whichever process holds them, rather than a minute later: the call writes
