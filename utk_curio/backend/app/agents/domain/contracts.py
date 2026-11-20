@@ -804,8 +804,8 @@ def render_autk_region(schema: dict, label: str) -> str:
             layer_title=layer_title,
         )).rstrip(),
     ]
-    lines += _map_key_lines(schema)
     lines += _camera_lines(schema)
+    lines += _map_key_lines(schema)
     lines.append("- " + _autk_words(
         "plot", description=props.get("plot", {}).get("description", ""), plot_fields=_every(_plot_required(schema)),
     ))
