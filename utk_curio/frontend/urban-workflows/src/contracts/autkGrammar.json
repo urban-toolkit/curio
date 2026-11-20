@@ -26,7 +26,13 @@
   ],
   "notRunYetKey": "This spec uses {what}{at}, which Curio does not run yet.",
   "osmElementsMixed": "\"osmElements\" on one view of the OpenStreetMap table \"{table}\" and not on another",
+  "osmElementsInPlace": "\"osmElements\" on the OpenStreetMap table \"{table}\" while compute pass {pass} changes it in place without writeBack",
   "keyAt": " at {path}",
+  "grammarRefuses": {
+    "afterNotCompute": "Data source {at} ({type}): after must be 'compute', the one phase a source runs after, not {value}.",
+    "afterReadsUnwritten": "Data source {at} ({type}) runs after compute and reads \"{table}\", which compute pass {pass} writes without writeBack, so autk-db holds \"{table}\" without that pass's result. Set writeBack: true on the pass.",
+    "heatmapWithoutAggregate": "Heatmap \"{table}\": the groupBy entry for column \"{column}\" has no aggregateFn to combine the rows near a cell, and a cell holds one value; use sum, avg, count, min, max or weighted."
+  },
   "rasterSources": ["heatmap", "geotiff"],
   "defaultWorkspace": "autk",
   "rasterPass": "a compute pass over the raster \"{table}\"",

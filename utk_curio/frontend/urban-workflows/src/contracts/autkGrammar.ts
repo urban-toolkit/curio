@@ -204,6 +204,26 @@ function ownRasters(document: Record<string, unknown>): AutkRasterTable[] {
 const tableKeyIn = (workspace: string | undefined, name: string): string => (workspace ? `${workspace}/${name}` : name);
 
 /**
+ * The tables a document's compute passes change in place without keeping the
+ * result in autk-db, each by its key with the first such pass's place in
+ * `compute`: a GPGPU or clusters pass without `outputTableName` or
+ * `writeBack`, in the pass's workspace.
+ */
+function changedInPlace(document: Record<string, unknown>): Map<string, number> {
+  const changed = new Map<string, number>();
+  listOf(document.compute).forEach((pass, at) => {
+    if (pass === null || typeof pass !== "object" || Array.isArray(pass)) return;
+    const { type, dataRef, outputTableName, writeBack } = pass as Record<string, unknown>;
+    const inPlace = (type == null || type === "gpgpu" || type === "clusters")
+      && !(typeof outputTableName === "string" && outputTableName !== "");
+    if (!inPlace || Boolean(writeBack) || typeof dataRef !== "string" || dataRef === "") return;
+    const key = tableKeyIn(workspaceOf(pass), dataRef);
+    if (!changed.has(key)) changed.set(key, at);
+  });
+  return changed;
+}
+
+/**
  * What a document is told when its views read an OpenStreetMap table its own
  * data section loads both as OpenStreetMap elements (`osmElements`) and row
  * by row, else null: the first view that reads such a table otherwise than
@@ -214,6 +234,14 @@ const tableKeyIn = (workspace: string | undefined, name: string): string => (wor
  * `<outputTableName>_<name>_<type>`, each in the source's workspace; a view
  * reads its table in its own. A table of the node's input is read row by row,
  * whatever a view says. The maps' layers are read first, then the plots.
+ *
+ * So is a view that reads such a table as elements while a compute pass
+ * changes the table in place without `writeBack` (autkGrammar.json's
+ * `osmElementsInPlace`): autk-grammar draws the elements autk-db holds,
+ * without the pass's columns, and the pass computes over the table's rows,
+ * where a node's loaders hand the table on as its elements, which the pass
+ * would compute over. With `writeBack`, autk-grammar reads the table row by
+ * row, the pass's rows, and so do the node's loaders (osmElementTables).
  */
 export function autkOsmElementsProblem(spec: unknown): string | null {
   if (spec === null || typeof spec !== "object" || Array.isArray(spec)) return null;
@@ -231,28 +259,33 @@ export function autkOsmElementsProblem(spec: unknown): string | null {
   }
   // Each such table and the way its first view reads it, by key.
   const firstWay = new Map<string, boolean>();
-  const readOtherwise = (view: unknown, reader: unknown): string | null => {
+  const inPlace = changedInPlace(document);
+  // What a view that reads such a table is told, or null.
+  const problemOf = (view: unknown, reader: unknown): string | null => {
     const table = fieldOf(reader, "dataRef");
     if (table === undefined) return null;
     const key = tableKeyIn(workspaceOf(view), table);
     if (!own.has(key)) return null;
     const asElements = (reader as Record<string, unknown>).osmElements === true;
     if (!firstWay.has(key)) firstWay.set(key, asElements);
-    return firstWay.get(key) === asElements ? null : key;
+    if (firstWay.get(key) !== asElements) return fill(autkGrammar.osmElementsMixed, { table: key });
+    return asElements && inPlace.has(key)
+      ? fill(autkGrammar.osmElementsInPlace, { table: key, pass: String(inPlace.get(key)) })
+      : null;
   };
   for (const { path, object: map } of objectsAt(document, "map[]")) {
     const layers = (map as Record<string, unknown> | null)?.layerRefs;
     for (const [i, layer] of listOf(layers).entries()) {
-      const table = readOtherwise(map, layer);
-      if (table !== null) {
+      const what = problemOf(map, layer);
+      if (what !== null) {
         const at = Array.isArray(layers) ? `${path}.layerRefs[${i}]` : `${path}.layerRefs`;
-        return autkNotRunYet(fill(autkGrammar.osmElementsMixed, { table }), at);
+        return autkNotRunYet(what, at);
       }
     }
   }
   for (const { path, object: plot } of objectsAt(document, "plot[]")) {
-    const table = readOtherwise(plot, plot);
-    if (table !== null) return autkNotRunYet(fill(autkGrammar.osmElementsMixed, { table }), path);
+    const what = problemOf(plot, plot);
+    if (what !== null) return autkNotRunYet(what, path);
   }
   return null;
 }

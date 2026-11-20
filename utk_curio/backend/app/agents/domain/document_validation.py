@@ -361,15 +361,18 @@ def validate_autk_grammar(
     each table with its geometry, so *geometry_columns* change nothing here.
 
     The schema is the vendored copy of what autk-grammar publishes
-    (``contracts.AUTK_SCHEMA_PATH``). Three rules sit on top, because no schema
+    (``contracts.AUTK_SCHEMA_PATH``). Four rules sit on top, because no schema
     form says them. A document whose views autk-grammar refuses (an id two
     views share, two plots known by one name, a link that names no view or
     layer) is refused first, in the grammar's words, which the node's own
     error says too (``contracts.autk_view_problem``). A document that writes a
     key autk-grammar 5 renamed, or a key a node does not run yet, is refused
-    next, with the node's words too (``contracts.autk_key_problem``). And the
-    document must load, compute or draw something, and a map must list a
-    layer (``_draws_nothing``).
+    next, with the node's words too (``contracts.autk_key_problem``). A
+    document the schema takes and the grammar's run refuses (a source after
+    compute that reads what a pass did not keep in autk-db, a heatmap entry
+    with no aggregate) is refused in the grammar's words
+    (``contracts.autk_grammar_refusal``). And the document must load, compute
+    or draw something, and a map must list a layer (``_draws_nothing``).
     """
     from utk_curio.backend.app.agents.domain import contracts
 
@@ -404,6 +407,9 @@ def validate_autk_grammar(
                 messages.append(message)
     if messages:
         return {"status": STATUS_INVALID, "detail": _detail("; ".join(messages[:_MAX_SCHEMA_ERRORS]))}
+    grammar_refusal = contracts.autk_grammar_refusal(payload)
+    if grammar_refusal:
+        return {"status": STATUS_INVALID, "detail": _detail(grammar_refusal)}
     empty = _draws_nothing(payload, schema)
     if empty:
         return {"status": STATUS_INVALID, "detail": _detail(empty)}
