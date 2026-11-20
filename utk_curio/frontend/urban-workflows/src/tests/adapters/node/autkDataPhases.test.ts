@@ -21,8 +21,13 @@
 import * as compile from "../../../adapters/node/autkDataCompile";
 import { autkNeedsInput, documentTableRefs } from "../../../utils/autkInput";
 
-const { compileDataSpecToAutkDbJs, osmElementTables } = compile;
+const { compileDataSpecToAutkDbJs, osmElementTables, requestedLayerTables } = compile;
 const { loadedSources, sourcesAfterPasses } = compile as any;
+
+/** This release's split, read off the module: a build without it fails here, on this assertion. */
+function expectTheSplit(): void {
+  expect([typeof loadedSources, typeof sourcesAfterPasses]).toEqual(["function", "function"]);
+}
 
 const square = (x: number) => ({
   type: "Feature",
@@ -59,6 +64,7 @@ describe("a document with compute passes", () => {
   const document = { data: [JOIN_AFTER, ZONES, HEATMAP_AFTER, PINS], compute: [CLUSTERS], map: { layerRefs: [{ dataRef: "heat" }] } };
 
   test("loads its sources before compute where it loads its data, and runs those after compute after its passes", () => {
+    expectTheSplit();
     expect(loadedSources(document)).toEqual([ZONES, PINS]);
     expect(sourcesAfterPasses(document)).toEqual([JOIN_AFTER, HEATMAP_AFTER]);
   });
@@ -79,8 +85,17 @@ describe("a document of no compute pass", () => {
   const document = { data: [JOIN_AFTER, ZONES, PINS] };
 
   test("loads its sources after compute after the others, wherever they stand in data", () => {
+    expectTheSplit();
     expect(loadedSources(document)).toEqual([ZONES, PINS, JOIN_AFTER]);
     expect(sourcesAfterPasses(document)).toEqual([]);
+  });
+
+  test("a drop after compute drops the table a source before compute makes, wherever each stands in data", () => {
+    const scratch = { type: "csv", outputTableName: "scratch", csvObject: [["note"], ["read once"]] };
+    const dropAfter = { type: "drop", dataRef: "scratch", after: "compute" };
+    // The grammar runs the drop after the CSV source: the section hands on no scratch table.
+    expect(requestedLayerTables([dropAfter, ZONES, scratch])).toEqual(["zones"]);
+    expect(requestedLayerTables([ZONES, scratch, dropAfter])).toEqual(["zones"]);
   });
 
   test("compiles them in that order, and asks the grammar's dataPhases of the section first", () => {
