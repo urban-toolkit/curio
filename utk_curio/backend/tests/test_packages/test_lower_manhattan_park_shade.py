@@ -134,20 +134,24 @@ GRID = (1024, 1280)
 TILE = {"zoom": "16", "tile_x": "19293", "tile_y": "24639"}
 
 #: Each park's mean minutes of shadow in summer, per scenario, from a run on 8
-#: threads; a run on another machine is within MINUTES of each.
+#: threads; a run on another machine is within MINUTES of each. A building
+#: part OpenStreetMap gives no height is handed on with none, so the
+#: example's Default height widget, 10 m, gives it its height, where the
+#: loader wrote 6 m into it before: the existing scenario's parks it moved by
+#: more than MINUTES are from run 44755514938.
 MINUTES = 1.0
 MEANS = {
     "existing": {
-        "Battery Park": 77.78, "Battery Playscape": 105.11, "Bowling Green": 369.75, "City Hall Park": 160.02,
+        "Battery Park": 80.02, "Battery Playscape": 117.89, "Bowling Green": 369.75, "City Hall Park": 160.02,
         "Coenties Slip": 486.00, "DeLury Square": 472.17, "Drumgoole Plaza": 229.16,
-        "East River Waterfront Esplanade": 95.83, "Elizabeth H. Berger Plaza": 371.09,
-        "Imagination Playground": 261.89, "Liberty Park": 213.36, "Little West Dog Run": 313.45,
-        "Living Memorial Grove": 101.86, "Louise Nevelson Plaza": 569.35, "Mannahatta Park": 458.83,
+        "East River Waterfront Esplanade": 100.36, "Elizabeth H. Berger Plaza": 371.09,
+        "Imagination Playground": 261.89, "Liberty Park": 226.92, "Little West Dog Run": 316.56,
+        "Living Memorial Grove": 101.86, "Louise Nevelson Plaza": 566.89, "Mannahatta Park": 458.83,
         "Old Slip Park": 504.19, "Parks Dog Run": 105.60, "Pearl Street Playground": 358.58,
-        "Rector Park": 144.58, "Robert F. Wagner Jr. Park": 45.67, "South Cove Park": 236.46,
-        "The Battery Oval": 47.45, "The Battery Woodland": 47.13, "The Esplanade": 184.48,
-        "The Queen Elizabeth II September 11th Garden": 498.29, "Trinity Churchyard": 403.59,
-        "Vietnam Veterans Plaza": 378.02, "West Thames Park": 295.10, "Zuccotti Park": 354.78,
+        "Rector Park": 142.43, "Robert F. Wagner Jr. Park": 55.53, "South Cove Park": 239.41,
+        "The Battery Oval": 49.31, "The Battery Woodland": 47.13, "The Esplanade": 184.48,
+        "The Queen Elizabeth II September 11th Garden": 498.29, "Trinity Churchyard": 405.85,
+        "Vietnam Veterans Plaza": 378.02, "West Thames Park": 293.86, "Zuccotti Park": 354.78,
     },
     "towers-removed": {
         "Battery Park": 41.26, "Battery Playscape": 63.28, "Bowling Green": 173.25, "City Hall Park": 115.40,
@@ -757,8 +761,10 @@ def test_the_three_scenarios_rasters_share_one_grid(ran):
 def test_each_park_has_its_minutes_of_shadow_and_the_levers_take_shadow_away(ran):
     """One row per park in each scenario, its mean minutes within MINUTES of
     the pinned run's; in every park removing the towers takes away more shadow
-    than capping them, and capping them takes some away."""
-    means = {}
+    than capping them, and capping them takes some away. A failure names each
+    scenario's parks off their pinned minutes, and gives every park's minutes
+    of the run."""
+    means, off = {}, {}
     for scenario, _name, _color, key in SCENARIOS:
         shade = _value(ran, _node_id(key, "shade"))
         assert list(shade["park"]) == PARKS, scenario
@@ -767,9 +773,13 @@ def test_each_park_has_its_minutes_of_shadow_and_the_levers_take_shadow_away(ran
         shares = shade["share_sun"] + shade["share_partial"] + shade["share_deep"]
         assert all(abs(total - 1) < 1e-9 for total in shares), scenario
         means[scenario] = dict(zip(shade["park"], shade["mean_min"]))
-        off = {park: (round(means[scenario][park], 2), pinned)
-               for park, pinned in MEANS[scenario].items() if abs(means[scenario][park] - pinned) > MINUTES}
-        assert not off, f"{scenario}: (ours, pinned) {off}"
+        off[scenario] = {park: (round(means[scenario][park], 2), pinned)
+                         for park, pinned in MEANS[scenario].items() if abs(means[scenario][park] - pinned) > MINUTES}
+    run = {scenario: {park: round(float(mean), 2) for park, mean in parks.items()} for scenario, parks in means.items()}
+    assert not any(off.values()), (
+        f"(ours, pinned) {({scenario: parks for scenario, parks in off.items() if parks})}; "
+        f"every park's minutes of this run: {json.dumps(run)}"
+    )
     for park in PARKS:
         assert means["towers-removed"][park] < means["height-cap"][park] < means["existing"][park], park
 
