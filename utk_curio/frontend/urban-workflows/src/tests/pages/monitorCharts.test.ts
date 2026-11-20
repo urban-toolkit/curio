@@ -2,8 +2,9 @@
  * The monitor's lines over time (pages/monitor/MonitorCharts.tsx,
  * `linesOverTimeSpec`): time on x, a value on y, a line per value of a series
  * field, and its options: a log y axis, series drawn dashed, as a limit is,
- * a dot on each point, and values that are durations, written as `formatMs`
- * writes them. Its tooltip is the Curio one (tooltip/vegaTooltip.test.tsx).
+ * a dot on each point, and values that are durations, whose axis and tooltip
+ * Vega writes as `formatMs` does (monitorChartDays.test.ts draws them). Its
+ * tooltip is the Curio one (tooltip/vegaTooltip.test.tsx).
  */
 jest.mock("vega", () => ({}), { virtual: true });
 jest.mock("vega-lite", () => ({}), { virtual: true });
@@ -15,20 +16,6 @@ import {
   linesOverTimeSpec,
   powersOfTen,
 } from "../../pages/monitor/MonitorCharts";
-import { formatMs } from "../../utils/diagnosticsBundle";
-
-/**
- * *expression*, a Vega expression of `value`, run with the functions it calls
- * as Vega's expressions (`round`) and d3-format (`format`) define them.
- */
-function evaluate(expression: string, value: number): string {
-  const format = (number: number, specifier: string): string => {
-    if (specifier === "d") return String(Math.round(number));
-    if (specifier === ".1f") return number.toFixed(1);
-    throw new Error(`the expression asks for a format this test does not know: ${specifier}`);
-  };
-  return new Function("round", "format", "value", `return ${expression};`)(Math.round, format, value);
-}
 
 const ROWS = [
   { t: 1000, server: "backend", value: 3 },
@@ -106,13 +93,6 @@ test("durations read as milliseconds under a second and as seconds above, on the
   expect(counts.encoding.y.axis.labelExpr).toBeUndefined();
   expect(counts.encoding.y.axis.format).toBe("~s");
   expect(counts.encoding.tooltip[2]).toEqual({ field: "value", type: "quantitative", title: "open files", format: "," });
-});
-
-test("the charts write a duration as formatMs does", () => {
-  for (const ms of [0, 1, 49.6, 850, 999, 999.4, 999.6, 1000, 1049, 1050, 1234, 12345, 600000]) {
-    expect(evaluate(durationText("value"), ms)).toBe(formatMs(ms));
-  }
-  expect([evaluate(durationText("value"), 850), evaluate(durationText("value"), 1234)]).toEqual(["850 ms", "1.2 s"]);
 });
 
 test("the colours, the span and the tooltip's words it is given", () => {

@@ -27,7 +27,8 @@ jest.mock(
   { virtual: true }
 );
 
-import { linesOverTimeSpec } from "../../pages/monitor/MonitorCharts";
+import { DURATION_TEXT_FIELD, linesOverTimeSpec } from "../../pages/monitor/MonitorCharts";
+import { formatMs } from "../../utils/diagnosticsBundle";
 
 const vega = require("vega");
 const lite = require("vega-lite");
@@ -67,6 +68,21 @@ async function drawnLabels(spec: Record<string, unknown>, scale: string): Promis
   return labels;
 }
 
+/**
+ * Each point's value and the duration text its tooltip shows, in the drawn
+ * chart of *spec*: read off the first of its datasets that holds the text.
+ */
+async function tooltipTexts(spec: Record<string, unknown>): Promise<unknown[][]> {
+  const compiled = lite.compile({ ...spec, width: 600, height: 160 }).spec;
+  const view = new vega.View(vega.parse(compiled), { renderer: "none" });
+  await view.runAsync();
+  const held = (compiled.data ?? [])
+    .map((data: { name: string }) => view.data(data.name))
+    .find((values: any[]) => values?.length > 0 && DURATION_TEXT_FIELD in values[0]);
+  view.finalize();
+  return (held ?? []).map((datum: any) => [datum.averageMs, datum[DURATION_TEXT_FIELD]]);
+}
+
 /** The time axis's labels of the chart of *rows*, over *timeDomain* when given. */
 async function timeLabels(rows: Record<string, unknown>[], timeDomain?: [number, number]): Promise<string[]> {
   const spec = linesOverTimeSpec({
@@ -102,6 +118,19 @@ test("a chart of durations labels its values in milliseconds under a second and 
   expect(labels.filter((label) => !/^(\d+ ms|\d+\.\d s)$/.test(label))).toEqual([]);
   expect(labels.some((label) => /^[1-9]\d* ms$/.test(label))).toBe(true);
   expect(labels.some((label) => /^\d+\.\d s$/.test(label))).toBe(true);
+});
+
+test("a chart of durations writes each point's tooltip as formatMs does, nothing for a step with no value", async () => {
+  const values = [0, 49.6, 850, 999, 999.4, 999.6, 1000, 1049, 1050, 1234, 12345, 600000, null];
+  const first = Date.parse("2026-11-05T09:00:00Z");
+  const rows: Record<string, unknown>[] = values.map((averageMs, index) => ({
+    t: first + index * HOUR, line: "gemma4", averageMs,
+  }));
+  const spec = linesOverTimeSpec({
+    rows, timeField: "t", valueField: "averageMs", seriesField: "line", valueTitle: "average response time",
+    durations: true,
+  });
+  expect(await tooltipTexts(spec)).toEqual(values.map((value) => [value, value == null ? "" : formatMs(value)]));
 });
 
 test("within a day, the time labels stay Vega's own, the hour alone", async () => {
