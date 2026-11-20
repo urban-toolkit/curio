@@ -15,8 +15,6 @@ import {
   documentTableRefs,
   drawnFeatures,
   drawnRows,
-  heightUses,
-  heightsAtUse,
   loadableSource,
   ownTableNames,
   inputRow,
@@ -24,6 +22,7 @@ import {
   tablePositions,
   type PreparedAutkInput,
 } from "../../utils/autkInput";
+import * as autkInput from "../../utils/autkInput";
 import type { GrammarFrame, GrammarInput } from "../../utils/grammarInput";
 import { resolveReferences } from "../../utils/references/codeReferences";
 import { inputScopeFor } from "../../utils/references/inputScope";
@@ -272,7 +271,10 @@ describe("autkSourcesFrom", () => {
     expect(features[0]).toBe(payload.features[0]);
     expect(features[2]).toBe(payload.features[2]);
     expect(payload.features.map((f) => f.properties.height)).toEqual([30, null, null]);
-    // The map that draws the table draws each building at its height, the one with none at 6 m.
+    // The map that draws the table draws each building at its height, the one
+    // with none at 6 m. Read off the module, so a checkout without them fails
+    // this case on its own.
+    const { heightUses, heightsAtUse } = autkInput as any;
     const drawn = heightsAtUse(prepared.sources[0], heightUses(MAP_ON("input_0")));
     expect(drawn.geojsonObject.features.map((f: any) => f.properties.height)).toEqual([30, 8 * 3.4, 6]);
   });
