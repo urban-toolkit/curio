@@ -93,8 +93,13 @@ _SAMPLE_FIELDS = ("sampledAt", "backend", "backendProcess", "sandbox")
 #: Each row: ``{at, span, sampledAt, backend, backendProcess?, sandbox}``, one
 #: an hour. A server's part is ``{"open": n, "limit": n}``, each None where
 #: unknown; the sandbox's part is None when it did not answer.
+def _history_now() -> datetime:
+    """Now, read through :func:`_now` at each call, so a test's clock reaches the history."""
+    return _now()
+
+
 HISTORY = monitor_history.History("open-files", span=monitor_history.AN_HOUR, join=_busier,
-                                  clock=lambda: _now())
+                                  clock=_history_now)
 
 
 def sample(*, wait_for_sandbox: float = 0) -> dict:

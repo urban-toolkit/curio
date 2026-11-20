@@ -154,7 +154,7 @@ class History:
         self.max_days = max_days
         self._join = join
         self._admit = admit
-        self._clock = clock or (lambda: _now())
+        self._clock = clock
         self._lock = threading.Lock()
         #: Held from a write's take of the rows to its end, so one write of
         #: this history waits for another of this process to land: a stop's
@@ -174,6 +174,10 @@ class History:
         """The history's file, in the monitor folder as it is now."""
         return _folder() / f"{self.name}.json"
 
+    def _time(self) -> datetime:
+        """Now: the history's clock, else this module's, read at each call."""
+        return self._clock() if self._clock is not None else _now()
+
     # -- what happens -------------------------------------------------------
 
     def add(self, numbers: dict, *, at: Optional[datetime] = None) -> None:
@@ -183,7 +187,7 @@ class History:
         the next write writes it. Never raises."""
         try:
             row = {field: list(value) if isinstance(value, list) else value for field, value in numbers.items()}
-            row["at"] = _slot_of(at or self._clock(), self.span).strftime(SLOT)
+            row["at"] = _slot_of(at or self._time(), self.span).strftime(SLOT)
             row["span"] = self.span
             key = self._key(row)
             with self._lock:
@@ -211,7 +215,7 @@ class History:
             if not batch:
                 return True
             try:
-                self._write(batch, now or self._clock())
+                self._write(batch, now or self._time())
             except Exception as exc:  # noqa: BLE001 - kept for the next write, which tries again
                 with self._lock:
                     for key, row in batch.items():
@@ -241,7 +245,7 @@ class History:
         past the last 90 days. No rows while there is no file, or none this
         version reads. Never raises."""
         try:
-            now = now or self._clock()
+            now = now or self._time()
             folder = _folder()
             path = folder / f"{self.name}.json"
             if not path.is_file():
@@ -454,8 +458,8 @@ def sums_by(rows: Iterable[dict], period: str, identity: Sequence[str],
 
 _timer: Optional[threading.Timer] = None
 _timer_lock = threading.Lock()
-#: Whether this process writes its histories when it stops (write_on_stop).
-_stop_handled = False
+#: Set once this process writes its histories when it stops (write_on_stop).
+_stop_handled = threading.Event()
 
 
 def start_writer() -> bool:
@@ -502,10 +506,9 @@ def write_on_stop() -> bool:
     main thread can install."""
     from utk_curio.backend.config import _is_testing
 
-    global _stop_handled
-    if _is_testing() or _stop_handled:
+    if _is_testing() or _stop_handled.is_set():
         return False
-    _stop_handled = True
+    _stop_handled.set()
     atexit.register(_write_quietly)
     if not hasattr(signal, "SIGTERM") or threading.current_thread() is not threading.main_thread():
         return False
