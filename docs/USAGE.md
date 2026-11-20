@@ -1382,6 +1382,13 @@ provides.
 Each feature of an OpenStreetMap layer the node hands on has its OpenStreetMap
 id in `osm_id`, and a building's parts share its `building_id`.
 
+A node does not run these keys of the Autark grammar. A document that writes
+one does not run, and the node's error names the key, says why, and says where
+it is written:
+
+- a map layer's `buildingsZeroHeight`: Curio makes a building without a height
+  6 m tall when it loads the data, so the key would change nothing.
+
 ### Several views
 
 A node draws every map and plot its document writes, each in a pane of its
@@ -1744,8 +1751,7 @@ own. A box recolored gives the layer its new color on the map's next run.
     "layerRefs": [
       {"dataRef": "segments", "layerType": "roads", "widthBy": "lane_width"},
       {"dataRef": "parcels", "getFnv": "value", "legend": true, "skippedComps": [2, 5]},
-      {"dataRef": "sites", "isPick": true, "pickedComps": [0, 4]},
-      {"dataRef": "table_osm_buildings", "buildingsZeroHeight": true}
+      {"dataRef": "sites", "isPick": true, "pickedComps": [0, 4]}
     ]
   }
 }
@@ -1774,9 +1780,6 @@ own. A box recolored gives the layer its new color on the map's next run.
   stay lit until a selection reaches the node, from its input or over an
   interaction edge, which takes their place, and are lit again when it
   clears. They reach no other node.
-- `"buildingsZeroHeight": true` draws each part of a buildings layer that has
-  no height at a random 3 to 7 floors, 10.2 to 23.8 m, drawn again at each
-  run. Without it, a part with no height is drawn 6 m tall.
 
 ### Map styles, colors and controls
 
