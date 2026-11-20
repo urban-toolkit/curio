@@ -30,8 +30,7 @@ and milliseconds by model for its chart, and, over the whole view, each
 model's and all models' requests, failed requests, average and 95th percentile
 time, average time to the first token, and output tokens per second (the
 output tokens over the time of the requests that reported them). A row dated
-past the current slot, hour or day (a clock set back) is kept, outside the
-views.
+past the current 5 minutes (a clock set back) is kept, outside the views.
 
 THE ONE FREE TEXT ON AN AGGREGATE ROUTE: the names of this Curio's models,
 which the operator's endpoint file gives. A name that is not plainly a model's
@@ -312,7 +311,9 @@ def _summarise() -> dict:
     """The body, from the file's rows: the 5-minute rows of the last 24 hours
     and the hour rows before them."""
     now = _now()
-    rows = _folded([row for row in HISTORY.rows(now=now) if _readable(row)])
+    # A row dated past the current 5 minutes (a clock set back) is in no view.
+    current = _last_start(now, timedelta(minutes=5)).strftime(monitor_history.SLOT)
+    rows = _folded([row for row in HISTORY.rows(now=now) if _readable(row) and row["at"] <= current])
     return {
         "computedAt": now.strftime(monitor_history.STAMP),
         "maxDays": HISTORY.max_days,
