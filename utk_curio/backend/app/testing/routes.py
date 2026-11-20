@@ -760,15 +760,21 @@ def _restore_llm_deployment() -> None:
         settings.DEFAULT_LLM_ENDPOINTS = saved
 
 
+#: What the scripted stand-in's model may be named: a model id's characters.
+_SCRIPTED_MODEL = re.compile(r"[\w.:-]{1,64}")
+
+
 def _stand_in_endpoints(arguments: dict) -> tuple:
-    """The endpoints *arguments* name: the scripted one (``scripted``), or
-    those of an endpoint file's text (``file``), read as the launch reads the
-    file; ``EndpointFileError`` for a text the launch would refuse."""
+    """The endpoints *arguments* name: the scripted one (``scripted``), its
+    model ``scripted`` or the one ``model`` names, or those of an endpoint
+    file's text (``file``), read as the launch reads the file;
+    ``EndpointFileError`` for a text the launch would refuse."""
     from utk_curio.common import llm_endpoint
 
     if arguments.get("scripted") is True:
+        model = arguments.get("model") or "scripted"
         return (llm_endpoint.Endpoint(name="Scripted", api_type="testing", base_url="",
-                                      api_key="scripted", models=("scripted",)),)
+                                      api_key="scripted", models=(model,)),)
     return llm_endpoint.parse_endpoints(str(arguments.get("file") or ""), "the test's endpoint file")
 
 
@@ -804,8 +810,10 @@ def llm_deployment():
     launch reads the file (``llm_endpoint.parse_endpoints``), or
     ``{"scripted": true}``: the scripted provider (``testing_provider.py``)
     as this Curio's one endpoint, whose model a hosted guest's agents answer
-    with, as ``/agent-script`` scripts it. ``DELETE`` puts the launch's
-    endpoints back, as ``reset-db`` does.
+    with, as ``/agent-script`` scripts it, named ``scripted`` or as
+    ``"model"`` says, so a test can tell its requests on the monitor apart
+    from every other test's. ``DELETE`` puts the launch's endpoints back, as
+    ``reset-db`` does.
     Response: ``{"endpoints": [{"name", "models"}]}``, what is now offered.
     """
     from utk_curio.common import llm_endpoint
@@ -814,7 +822,10 @@ def llm_deployment():
     if request.method == "POST":
         body = request.get_json(silent=True) or {}
         if body.get("scripted") is True:
-            arguments = {"scripted": True}
+            model = body.get("model", "scripted")
+            if not isinstance(model, str) or not _SCRIPTED_MODEL.fullmatch(model):
+                return jsonify({"error": "model must be a model id of letters, digits and . _ : -"}), 400
+            arguments = {"scripted": True, "model": model}
         elif not isinstance(body.get("file"), str):
             return jsonify({"error": "file must be an endpoint file's text"}), 400
         else:

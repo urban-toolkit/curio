@@ -9,15 +9,15 @@ The browser-error step is the only coverage that path gets anywhere: the
 window handler, the public POST, the ring buffer and the render are four
 separate pieces and nothing else joins them up.
 
-The second makes the scripted model this Curio's own
+The second makes the scripted provider this Curio's own endpoint
 (``/api/testing/llm-deployment``), which the monitor counts and a key a user
-set for their own is not, runs one scripted agent turn on it
-(``utils/scripted_llm.py``), and reads its requests and their times back from
+set for their own is not, under a model name of the test's own, so no other
+test's requests count on it; runs one scripted agent turn on it
+(``utils/scripted_llm.py``); and reads its requests and their times back from
 the route and from the page. The requests are a history every backend process
-writes into one file, kept across restarts, and the scripted model is every
-test's on the stack, so the test has every process write what it holds
-(``/api/testing/monitor-flush``) before each read, and reads what the turn
-added.
+writes into one file, kept across restarts, so the test has every process
+write what it holds (``/api/testing/monitor-flush``) before each read, and
+reads what the turn added.
 """
 
 from __future__ import annotations
@@ -114,22 +114,19 @@ def test_monitor_page_shows_stats_errors_and_polls(app_frontend: FrontendPage, p
 #: The agent the turn runs: one that attaches to the canvas, so the dataflow
 #: needs no node.
 RESEARCHER = "agent.curio.researcher@1"
-#: This Curio's own model while the test's stand-in endpoint is set
-#: (``/api/testing/llm-deployment`` with ``{"scripted": true}``).
-SCRIPTED = "scripted"
 #: The windows the route views the requests in.
 WINDOWS = ("24h", "7d", "90d")
 #: A duration as the page writes it (``formatMs``): "850 ms", "1.2 s".
 SHOWN_DURATION = re.compile(r"\d+ ms|\d+\.\d s")
 
 
-def _scripted_model(current_server: str, token: str):
-    """The route's body and the scripted model's stats in each window (None
-    in a window with no request of it), once every backend process wrote what
-    it holds of the history."""
+def _scripted_model(current_server: str, token: str, model: str):
+    """The route's body and *model*'s stats in each window (None in a window
+    with no request of it), once every backend process wrote what it holds of
+    the history."""
     api_json(f"{current_server}/api/testing/monitor-flush", token, method="POST", payload={})
     body = api_json(f"{current_server}/api/monitor/llm", token)
-    return body, {window: next((entry for entry in body["views"][window]["models"] if entry["model"] == SCRIPTED),
+    return body, {window: next((entry for entry in body["views"][window]["models"] if entry["model"] == model),
                                None)
                   for window in WINDOWS}
 
@@ -141,19 +138,23 @@ def _counts(stats: dict | None) -> tuple[int, int]:
 
 def test_a_turn_on_curios_own_model_shows_in_llm_performance(app_frontend: FrontendPage, page,
                                                              current_server: str):
-    # 1. The scripted model is this Curio's own while the test runs, so a user
-    #    with no LLM configuration of their own runs on it, and the monitor
-    #    counts its requests. Put back whatever happens, so no later test of
-    #    the stack finds the stand-in.
-    session = stub_db_user(current_server, username=f"monitor_llm_{uuid.uuid4().hex[:8]}",
+    # 1. The scripted provider is this Curio's own endpoint while the test
+    #    runs, under a model name of this test's own, so a user with no LLM
+    #    configuration of their own runs on it, and the monitor counts its
+    #    requests and no other test's. Put back whatever happens, so no later
+    #    test of the stack finds the stand-in.
+    suffix = uuid.uuid4().hex[:8]
+    model = f"scripted-{suffix}"
+    session = stub_db_user(current_server, username=f"monitor_llm_{suffix}",
                            name="Monitor Performance", project_name="Monitor performance")
     token = session["token"]
     dataflow = session["project"]["id"]
-    api_json(f"{current_server}/api/testing/llm-deployment", token, method="POST", payload={"scripted": True})
+    api_json(f"{current_server}/api/testing/llm-deployment", token, method="POST",
+             payload={"scripted": True, "model": model})
     try:
-        # The history is kept across restarts and the scripted model is every
-        # test's on this stack, so what it held before the turn is read first.
-        _, before = _scripted_model(current_server, token)
+        # The history is kept across restarts, so what it held before the
+        # turn is read first.
+        _, before = _scripted_model(current_server, token, model)
         base = f"{current_server}/api/agents/projects/{dataflow}"
         if RESEARCHER not in {row["dirName"] for row in api_json(base, token)["agents"]}:
             api_json(f"{base}/install", token, method="POST", payload={"coord": RESEARCHER})
@@ -168,22 +169,22 @@ def test_a_turn_on_curios_own_model_shows_in_llm_performance(app_frontend: Front
         #    model, the conversation's title among them, each with its time,
         #    and none failed.
         calls = [call for call in captured_agent_calls(current_server, dataflow=dataflow)
-                 if call["model"] == SCRIPTED]
+                 if call["model"] == model]
         assert calls, captured_agent_calls(current_server, dataflow=dataflow)
-        body, after = _scripted_model(current_server, token)
+        body, after = _scripted_model(current_server, token, model)
         for window in WINDOWS:
             assert after[window] is not None, (window, body["views"][window]["models"])
             (requests, failed), (requests_before, failed_before) = _counts(after[window]), _counts(before[window])
             assert (requests - requests_before, failed - failed_before) == (len(calls), 0), (window, before, after)
             assert after[window]["averageMs"] is not None and after[window]["p95Ms"] is not None, after[window]
-        assert SCRIPTED in {row["model"] for row in body["views"]["24h"]["rows"]}, body["views"]["24h"]["rows"]
+        assert model in {row["model"] for row in body["views"]["24h"]["rows"]}, body["views"]["24h"]["rows"]
 
         # 3. The page shows them: the model's row in the By model table, over
         #    the 7 days it shows first, and its line in the chart.
         week = after["7d"]
         page.goto(f"{app_frontend.base_url}/monitor", timeout=120000)
         page.get_by_role("heading", name="LLM performance").wait_for(timeout=30000)
-        row = page.locator(f'[data-testid="monitor-llm-models"] tr[data-model="{SCRIPTED}"]')
+        row = page.locator(f'[data-testid="monitor-llm-models"] tr[data-model="{model}"]')
         row.wait_for(timeout=30000)
         cells = row.locator("td")
         assert cells.nth(1).get_attribute("data-tooltip") == f"{week['requests']:,} requests", row.inner_text()
@@ -194,6 +195,6 @@ def test_a_turn_on_curios_own_model_shows_in_llm_performance(app_frontend: Front
             assert average == f"{week['averageMs']} ms", row.inner_text()
         section = page.get_by_test_id("monitor-llm-performance")
         section.locator('[role="img"] svg').first.wait_for(timeout=30000)
-        section.locator("svg text", has_text=SCRIPTED).first.wait_for(timeout=30000)
+        section.locator("svg text", has_text=model).first.wait_for(timeout=30000)
     finally:
         api_json(f"{current_server}/api/testing/llm-deployment", token, method="DELETE")
