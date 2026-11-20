@@ -126,12 +126,16 @@ describe("frameMaps", () => {
     expect(none.ownReset).toHaveBeenCalledTimes(1);
   });
 
-  test("a map in terrain mode is left to autk-map, which fits it itself", () => {
+  test("a map in terrain mode keeps the view autk-map fits it at, and its R key fits it again", () => {
     const { map, ownReset } = fakeMap([flatLayer(0, 0, 1200, 700)]);
     map._terrainRenderPath = {};
     frameMaps(grammarThatRan(ONE_MAP, map));
     expect(map.camera.resetCamera).not.toHaveBeenCalled();
-    expect(map.resetCamera).toBe(ownReset);
+    expect(ownReset).not.toHaveBeenCalled();
+    // R: autk-map's own fit, the terrain's, never Curio's framing on the layers.
+    map.resetCamera();
+    expect(ownReset).toHaveBeenCalledTimes(1);
+    expect(map.camera.resetCamera).not.toHaveBeenCalled();
   });
 
   test("a map drawn while hidden is framed when it is first shown, at the size it is shown at", () => {
@@ -226,7 +230,7 @@ describe("mapViews and keepMapViews", () => {
       ],
     }, map, terrain.map, unready.map))).toEqual([
       { ...ZOOMED, origin: [1000, 2000] },
-      null,
+      { ...ZOOMED, origin: [0, 0] },
       { ...ZOOMED, origin: null },
     ]);
     expect(mapViews({})).toEqual([]);

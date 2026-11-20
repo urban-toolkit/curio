@@ -13,6 +13,7 @@
  */
 jest.mock("../../services/api", () => ({ fetchData: jest.fn(), fetchPreviewData: jest.fn() }));
 
+import { withZeroHeightExports } from "../../adapters/node/autkZeroHeights";
 import { autkSourcesFrom, documentTableRefs, passesAtHand, writtenTables } from "../../utils/autkInput";
 import type { GrammarFrame, GrammarInput } from "../../utils/grammarInput";
 
@@ -104,6 +105,31 @@ describe("buildingsZeroHeight", () => {
     }
     // A part with levels keeps its height, written where autk-map reads it.
     expect(parts[3].height).toBeCloseTo(13.6, 6);
+  });
+
+  test("the run's database hands the map such a table with no height key that holds no number, on a building and on its parts", async () => {
+    // As autk-db exports a table it keeps column by column: every column on every feature.
+    const exported = {
+      type: "FeatureCollection",
+      features: [
+        { type: "Feature", geometry: square(0), properties: { height: 30, levels: null } },
+        { type: "Feature", geometry: square(1), properties: { height: null, "building:levels": "" } },
+        { type: "Feature", geometry: square(2), properties: { height: null, parts: [{ geometryIndex: 0, height: null }] } },
+      ],
+    };
+    const db = { getCurrentWorkspace: () => "autk", getLayer: jest.fn(async () => exported) };
+    const grammar: any = { dataAdapter: { resolveSource: jest.fn(async () => db) } };
+    withZeroHeightExports(grammar, new Set(["towers"]));
+    const loaded = await grammar.dataAdapter.resolveSource(undefined, { type: "geojson", outputTableName: "towers" });
+
+    const towers = await loaded.getLayer("towers");
+    expect(towers.features.map((feature: any) => feature.properties)).toEqual([
+      { height: 30 },
+      {},
+      { parts: [{ geometryIndex: 0 }] },
+    ]);
+    // Any other table, as autk-db exports it.
+    expect(await loaded.getLayer("roads")).toBe(exported);
   });
 
   test("every other buildings table gives a part without a height the one autk-map draws", () => {
