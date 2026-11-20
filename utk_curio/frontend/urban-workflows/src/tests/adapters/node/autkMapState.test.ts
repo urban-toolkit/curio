@@ -1,5 +1,5 @@
 import {
-  drawnFeatureAt, layerIdFor, mapStateOf, pickingTableOf, restoreMapLayers, showForEdits, snapshotBeforeSolo,
+  drawnFeatureAt, layerIdFor, mapDrawingOf, mapStateOf, pickingTableOf, restoreMapLayers, showForEdits, snapshotBeforeSolo,
   snapshotMapLayers, soloMapLayer,
 } from "../../../adapters/node/autkMapState";
 import { INPUT_ROW } from "../../../utils/autkInput";
@@ -238,6 +238,35 @@ describe("what a map draws and lights, as autk-map and autk-db hold it", () => {
     expect(drawnFeatureAt(grammar, "input_2", exported, -1)).toEqual({ name: "ash" });
     expect(drawnFeatureAt(grammar, "input_2", exported, 2)).toBeNull();
     expect(drawnFeatureAt(grammar, "input_0", exported, 0)).toBeNull();
+  });
+});
+
+describe("each building's top, as a buildings layer draws it", () => {
+  // Towers of 30, 12 and 45 m, each a box of 8 points: its floor at 0, its
+  // roof at its height. autk-map keeps, on each component of a layer, the
+  // points of it and of every component before it (`loadComponent`).
+  const box = (x: number, top: number) => [0, top].flatMap((z) =>
+    [[x, 0], [x + 10, 0], [x + 10, 10], [x, 10]].flatMap(([px, py]) => [px, py, z]));
+  const HEIGHTS = [30, 12, 45];
+  const towers = (heights: number[], counts: number[]) => ({
+    layerInfo: { id: "towers", typeLayer: "buildings" },
+    _dimension: 3,
+    position: new Float32Array(heights.flatMap((height, at) => box(20 * at, height))),
+    components: counts.map((nPoints, featureIndex) => ({ featureIndex, nPoints })),
+  });
+  const drawnTowers = (layer: any) => mapDrawingOf(drawnGrammar([layer]))!.layers.find((drawn) => drawn.id === "towers")!;
+
+  test("each building's top is the highest of its own points, which the components count running", () => {
+    const drawn = drawnTowers(towers(HEIGHTS, [8, 16, 24]));
+    expect(drawn.spans).toEqual([[0, 8], [8, 16], [16, 24]]);
+    expect(drawn.tops).toEqual(HEIGHTS);
+  });
+
+  test("a building drawn with no point has no top, and the one after it keeps its own", () => {
+    // The second tower drew nothing: its running count stays at the first's.
+    const drawn = drawnTowers(towers([30, 45], [8, 8, 16]));
+    expect(drawn.spans).toEqual([[0, 8], [8, 8], [8, 16]]);
+    expect(drawn.tops).toEqual([30, null, 45]);
   });
 });
 
