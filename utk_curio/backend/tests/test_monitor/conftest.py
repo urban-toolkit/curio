@@ -36,15 +36,15 @@ def clean_monitor_state(tmp_path, monkeypatch):
     ``state_root`` hands the storage walk, whose store counts it must not
     change.
     """
-    from utk_curio.backend.app.monitor import counters, errors, history, llm_tokens, open_files, routes, storage
+    from utk_curio.backend.app.monitor import counters, errors, history, llm_performance, open_files, routes, storage
 
     histories = tmp_path / "monitor"
     monkeypatch.setattr(history, "_folder", lambda: histories)
-    for module in (counters, errors, llm_tokens, open_files, storage):
+    for module in (counters, errors, llm_performance, open_files, storage):
         module.reset()
     routes.reset_rate_limit()
     yield
-    for module in (counters, errors, llm_tokens, open_files, storage):
+    for module in (counters, errors, llm_performance, open_files, storage):
         module.reset()
     routes.reset_rate_limit()
 

@@ -7,8 +7,8 @@ a page that only appears in one posture is a page nobody remembers exists.
 
 Read ``errors.py``'s module docstring before changing what the errors route
 returns. It is deliberately exempt from the anonymity rule the other four GETs
-are tested against. The LLM route's model names are the one free text those
-four carry (``llm_tokens.py``).
+are tested against. The LLM route's model names, this Curio's own, are the one
+free text those four carry (``llm_performance.py``).
 
 In a start of several backend processes nginx sends these routes to the home
 process, and they answer for the whole backend. ``/api/monitor`` (its node
@@ -33,7 +33,7 @@ from utk_curio.backend.app.monitor import (
     counters,
     errors,
     hardware,
-    llm_tokens,
+    llm_performance,
     open_files,
     processes,
     stats,
@@ -148,8 +148,8 @@ def _deployment(sandbox) -> dict:
     Every setting that has a value a person chose (the exec account name, the
     LLM base URL, model and key) is reported as "configured: true/false". The
     question an operator has is whether it is set, and the value itself would
-    be the leak. The models that answered requests are named on the LLM route
-    instead, by the owner's call (``llm_tokens.py``).
+    be the leak. The models of this Curio's own endpoint that answered
+    requests are named on the LLM route instead (``llm_performance.py``).
     """
     from utk_curio import __version__
     from utk_curio.backend import config
@@ -229,10 +229,11 @@ def monitor_storage_route():
 
 @monitor_bp.route("/llm", methods=["GET"])
 def monitor_llm_route():
-    """Each model's LLM tokens per hour and in total, over the last 90 days,
-    from the history file every backend process writes. Aggregates, naming
-    models (``llm_tokens.py``)."""
-    return jsonify(llm_tokens.snapshot())
+    """The performance of this Curio's own LLM models over the last 24 hours,
+    7 days and 90 days, from the history file every backend process writes:
+    requests, failures, response times, time to the first token and output
+    tokens per second. Aggregates, naming models (``llm_performance.py``)."""
+    return jsonify(llm_performance.snapshot())
 
 
 @monitor_bp.route("/open-files", methods=["GET"])

@@ -31,8 +31,7 @@ def use_scripted_llm(backend_url: str, token: str, *, model: str = SCRIPTED_MODE
     Goes through the real API Settings routes (``/api/agents/llm``) rather than a
     test-only shortcut, so the resolution path under test is the production one.
     *model* and *label* name a configuration of the test's own, for a test that
-    tells its calls apart from every other test's by their model (the monitor's
-    LLM tokens).
+    tells its calls apart from every other test's by their model.
     """
     listing = api_json(f"{backend_url}/api/agents/llm", token)
     config = next(

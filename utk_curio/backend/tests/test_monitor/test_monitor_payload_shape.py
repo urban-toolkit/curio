@@ -347,54 +347,69 @@ class TestContentSection:
 
 
 class TestTheLlmRoute:
-    """``/api/monitor/llm``: the hourly rows of the last 7 days and each
-    model's totals, every documented key present and typed."""
+    """``/api/monitor/llm``: the last 24 hours, 7 days and 90 days of this
+    Curio's own models, each view's rows and each model's stats, every
+    documented key present and typed."""
 
     STAMP = "%Y-%m-%dT%H:%M:%SZ"
-    COUNTS = {"inputTokens", "outputTokens", "requests"}
+    ROW = {"at", "model", "requests", "failed", "ms"}
+    STATS = {"requests", "failed", "averageMs", "p95Ms", "firstTokenMs", "tokensPerSecond"}
     NOW = datetime(2026, 11, 6, 15, 20, 7, tzinfo=timezone.utc)
 
     def test_the_documented_keys_are_present_and_typed(self, client, monkeypatch):
-        from utk_curio.backend.app.monitor import llm_tokens
+        from utk_curio.backend.app.monitor import llm_performance
 
-        monkeypatch.setattr(llm_tokens, "_now", lambda: self.NOW)
-        llm_tokens.record("gemma4", curio=True, input_tokens=120, output_tokens=30)
-        llm_tokens.record("gpt-5", curio=False, input_tokens=40, output_tokens=8)
+        monkeypatch.setattr(llm_performance, "_now", lambda: self.NOW)
+        llm_performance.record("gemma4", ms=1200, first_token_ms=300, output_tokens=60)
+        llm_performance.record("qwen3", ms=800, failed=True)
         # Written, as the process's writer does each minute: the route reads the file.
-        assert llm_tokens.HISTORY.flush() is True
+        assert llm_performance.HISTORY.flush() is True
         body = client.get("/api/monitor/llm").get_json()
 
-        assert set(body) == {"computedAt", "startedAt", "maxDays", "ageSeconds", "ttlSeconds",
-                             "hourlyFrom", "hourlyTo", "hourly", "models"}
+        assert set(body) == {"computedAt", "maxDays", "ageSeconds", "ttlSeconds", "views"}
         assert body["computedAt"] == "2026-11-06T15:20:07Z"
-        # When the oldest row kept began.
-        assert body["startedAt"] == "2026-11-06T15:20:00Z"
-        datetime.strptime(body["startedAt"], self.STAMP)
-        assert (body["hourlyFrom"], body["hourlyTo"]) == ("2026-10-30T16:00:00Z", "2026-11-06T15:00:00Z")
-        assert (datetime.strptime(body["hourlyTo"], self.STAMP)
-                - datetime.strptime(body["hourlyFrom"], self.STAMP)) == timedelta(hours=7 * 24 - 1)
         assert body["maxDays"] == 90
         assert isinstance(body["ageSeconds"], int) and body["ttlSeconds"] == 60
+        assert list(body["views"]) == ["24h", "7d", "90d"]
 
-        assert [(row["hour"], row["model"], row["curio"]) for row in body["hourly"]] == [
-            ("2026-11-06T15:00:00Z", "gemma4", True),
-            ("2026-11-06T15:00:00Z", "gpt-5", False),
-        ]
-        for row in body["hourly"]:
-            assert set(row) == {"hour", "model", "curio"} | self.COUNTS
-            assert all(type(row[key]) is int for key in self.COUNTS), row
+        spans = {"24h": (timedelta(minutes=5), 288), "7d": (timedelta(hours=1), 168), "90d": (timedelta(days=1), 90)}
+        for name, view in body["views"].items():
+            assert set(view) == {"from", "to", "stepSeconds", "rows", "models", "all"}, name
+            step, steps = spans[name]
+            assert view["stepSeconds"] == step.total_seconds(), name
+            # From the first row's start to the current one's, as many as the view spans.
+            assert (datetime.strptime(view["to"], self.STAMP)
+                    - datetime.strptime(view["from"], self.STAMP)) == step * (steps - 1), name
+            assert datetime.strptime(view["to"], self.STAMP) <= self.NOW.replace(tzinfo=None), name
 
-        assert [(entry["model"], entry["curio"]) for entry in body["models"]] == [
-            ("gemma4", True), ("gpt-5", False),
-        ]
-        for entry in body["models"]:
-            assert set(entry) == {"model", "curio", "last24h", "last7d", "kept"}
-            for window in ("last24h", "last7d", "kept"):
-                assert set(entry[window]) == self.COUNTS
-                assert all(type(entry[window][key]) is int for key in self.COUNTS), entry
-        assert body["models"][0]["kept"] == {"inputTokens": 120, "outputTokens": 30, "requests": 1}
+            assert [(row["model"], row["requests"], row["failed"], row["ms"]) for row in view["rows"]] == [
+                ("gemma4", 1, 0, 1200), ("qwen3", 1, 1, 800)], name
+            for row in view["rows"]:
+                assert set(row) == self.ROW, row
+                datetime.strptime(row["at"], self.STAMP)
+                assert all(type(row[key]) is int for key in self.ROW - {"at", "model"}), row
+
+            assert [entry["model"] for entry in view["models"]] == ["gemma4", "qwen3"], name
+            for stats in (*view["models"], view["all"]):
+                assert set(stats) - {"model"} == self.STATS, stats
+            assert view["models"][0] == {"model": "gemma4", "requests": 1, "failed": 0, "averageMs": 1200,
+                                         "p95Ms": 2425, "firstTokenMs": 300, "tokensPerSecond": 50.0}, name
+            # What no request gave is null, never 0.
+            assert view["models"][1] == {"model": "qwen3", "requests": 1, "failed": 1, "averageMs": 800,
+                                         "p95Ms": 975, "firstTokenMs": None, "tokensPerSecond": None}, name
+            assert view["all"] == {"requests": 2, "failed": 1, "averageMs": 1000, "p95Ms": 2350,
+                                   "firstTokenMs": 300, "tokensPerSecond": 50.0}, name
+        assert (body["views"]["24h"]["from"], body["views"]["24h"]["to"]) == (
+            "2026-11-05T15:25:00Z", "2026-11-06T15:20:00Z")
+        assert (body["views"]["7d"]["from"], body["views"]["7d"]["to"]) == (
+            "2026-10-30T16:00:00Z", "2026-11-06T15:00:00Z")
+        assert (body["views"]["90d"]["from"], body["views"]["90d"]["to"]) == (
+            "2026-08-09T00:00:00Z", "2026-11-06T00:00:00Z")
 
     def test_an_instance_no_model_answered_lists_nothing(self, client):
         body = client.get("/api/monitor/llm").get_json()
-        assert (body["hourly"], body["models"]) == ([], [])
+        for name, view in body["views"].items():
+            assert (view["rows"], view["models"]) == ([], []), name
+            assert view["all"] == {"requests": 0, "failed": 0, "averageMs": None, "p95Ms": None,
+                                   "firstTokenMs": None, "tokensPerSecond": None}, name
         assert body["maxDays"] == 90

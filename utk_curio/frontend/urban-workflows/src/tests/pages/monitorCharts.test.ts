@@ -2,14 +2,20 @@
  * The monitor's lines over time (pages/monitor/MonitorCharts.tsx,
  * `linesOverTimeSpec`): time on x, a value on y, a line per value of a series
  * field, and its options: a log y axis, series drawn dashed, as a limit is,
- * and a dot on each point. Its tooltip is the Curio one
- * (tooltip/vegaTooltip.test.tsx).
+ * a dot on each point, and values that are durations, whose axis and tooltip
+ * Vega writes as `formatMs` does (monitorChartDays.test.ts draws them). Its
+ * tooltip is the Curio one (tooltip/vegaTooltip.test.tsx).
  */
 jest.mock("vega", () => ({}), { virtual: true });
 jest.mock("vega-lite", () => ({}), { virtual: true });
 
 import { CATEGORICAL } from "../../pages/monitor/chartColors";
-import { linesOverTimeSpec, powersOfTen } from "../../pages/monitor/MonitorCharts";
+import {
+  DURATION_TEXT_FIELD,
+  durationText,
+  linesOverTimeSpec,
+  powersOfTen,
+} from "../../pages/monitor/MonitorCharts";
 
 const ROWS = [
   { t: 1000, server: "backend", value: 3 },
@@ -68,6 +74,25 @@ test("a dot on each point when asked, so a line of one point shows", () => {
   expect(spec.mark).toEqual({
     type: "line", strokeWidth: 2, strokeCap: "round", strokeJoin: "round", point: { filled: true, size: 64 },
   });
+});
+
+test("durations read as milliseconds under a second and as seconds above, on the axis and in the tooltip", () => {
+  const spec: any = linesOverTimeSpec({ ...BASE, valueTitle: "average response time", durations: true });
+  expect(spec.encoding.y.axis.labelExpr).toBe(durationText("datum.value"));
+  expect(spec.encoding.y.axis.format).toBeUndefined();
+  // The tooltip shows each point's duration as the axis writes it, and
+  // nothing for a step with no value.
+  expect(spec.transform).toEqual([
+    { calculate: `isValid(datum["value"]) ? ${durationText('datum["value"]')} : ''`, as: DURATION_TEXT_FIELD },
+  ]);
+  expect(spec.encoding.tooltip[2]).toEqual({ field: DURATION_TEXT_FIELD, type: "nominal", title: "average response time" });
+  expect(spec.data.values).toBe(ROWS);
+
+  const counts: any = linesOverTimeSpec(BASE);
+  expect(counts.transform).toBeUndefined();
+  expect(counts.encoding.y.axis.labelExpr).toBeUndefined();
+  expect(counts.encoding.y.axis.format).toBe("~s");
+  expect(counts.encoding.tooltip[2]).toEqual({ field: "value", type: "quantitative", title: "open files", format: "," });
 });
 
 test("the colours, the span and the tooltip's words it is given", () => {

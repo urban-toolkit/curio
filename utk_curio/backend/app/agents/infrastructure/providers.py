@@ -24,11 +24,19 @@ slots is sent as its text, as it always was.
 **Usage.** ``inputTokens`` counts every input token, cached or not, on every
 provider (Anthropic reports cache reads and writes apart from its input
 count). ``cacheReadTokens`` and ``cacheWriteTokens`` are added when the
-provider reports them. Each request's usage also reaches the monitor once,
-right after the request, by its model and whether it ran on this Curio's
-endpoint (:func:`_counted`, ``monitor/llm_tokens.py``): a request asked again
-counts each time it was asked, a stream its caller stopped counts what its
-provider had reported, and the scripted provider counts what it scripted.
+provider reports them.
+
+**The monitor.** Each request on this Curio's own endpoint
+(``ProviderConfig.on_deployment``) reaches the monitor once, as it ends
+(:func:`_counted`, ``monitor/llm_performance.py``): its time, from before it
+was asked to its end; a stream's time to its first word or call; the output
+tokens its provider reported; and whether it raised. A request asked again
+after a cut reply counts each time it was asked, a stream its caller stopped
+counts as it stood, not as failed, and the scripted provider's turn counts as
+one request. A request the endpoint refused (400 or 422) is not counted:
+Curio asks again without what it refused (room for thinking, native tools or
+a reply schema), and the request it asks again counts. A request on a key a
+user set for their own is not counted.
 
 **Native tools.** ``tools`` offers the model tools, each ``{name, description,
 parameters}`` (``tools.native_tools``), and ``tool_choice`` is ``"auto"`` or
@@ -137,7 +145,7 @@ import uuid
 from dataclasses import dataclass, field, replace
 
 from utk_curio.backend.app.agents.domain import agent_text
-from utk_curio.backend.app.monitor import llm_tokens as monitor_llm_tokens
+from utk_curio.backend.app.monitor import llm_performance as monitor_llm_performance
 
 
 class NativeToolsRefused(RuntimeError):
@@ -197,6 +205,10 @@ _RETRY_AFTER_MAX_S = 60.0
 _thinking_endpoints: set[tuple[str, str, str]] = set()
 _room_refused: set[tuple[str, str, str]] = set()
 _thinking_lock = threading.Lock()
+
+#: The clock the monitor times each request by (:func:`_counted`), apart from
+#: the one the reads' waits run on.
+_clock = time.monotonic
 
 
 @dataclass(frozen=True)
@@ -776,22 +788,40 @@ def _summed_usage(usage_out: dict | None, sinks: list[dict]) -> None:
     usage_out.update(total)
 
 
-def _counted(config: ProviderConfig, sink: dict) -> None:
-    """One request's usage on the monitor (``monitor/llm_tokens.py``),
-    counted once, as soon as the request ends: what its provider reported,
-    a failed or stopped request's included. A request whose provider
-    reported no usage counts nothing. Never raises."""
-    if "inputTokens" not in sink:
+def _counted(config: ProviderConfig, sink: dict, *, started: float, first: float | None = None,
+             error: BaseException | None = None) -> None:
+    """One request on the monitor (``monitor/llm_performance.py``), counted
+    once, as it ends: its time, from *started* (:data:`_clock`, read before
+    it was asked) to now; a stream's time to its first word or call (*first*,
+    None for a request that is not streamed or that wrote none); the output
+    tokens its provider reported, which a failed or stopped request may have
+    too; and whether it raised (*error*). Only a request on this Curio's own
+    endpoint (``config.on_deployment``) is counted: one on a key a user set
+    for their own records nothing, and so does one the endpoint refused (400
+    or 422), which Curio asks again without what it refused. Never raises."""
+    try:
+        if not config.on_deployment:
+            return
+        if error is not None and _status_code_of(error) in (400, 422):
+            return
+        now = _clock()
+        output = sink.get("outputTokens")
+        monitor_llm_performance.record(
+            config.model,
+            ms=(now - started) * 1000,
+            first_token_ms=None if first is None else (first - started) * 1000,
+            output_tokens=output if isinstance(output, int) and not isinstance(output, bool) else None,
+            failed=error is not None,
+        )
+    except Exception:  # noqa: BLE001
+        # A request never fails over its bookkeeping.
         return
-    monitor_llm_tokens.record(
-        config.model, curio=config.on_deployment,
-        input_tokens=sink.get("inputTokens"), output_tokens=sink.get("outputTokens"),
-    )
 
 
 def _asked_with_room(config: ProviderConfig, max_output_tokens, thinking_tokens, usage_out, ask) -> ChatTurn:
     """A whole turn, asked through ``ask(limit, usage_sink)``, with the room
-    a model that thinks gets (see the module docstring)."""
+    a model that thinks gets (see the module docstring). Each request is
+    timed from before it is asked to its end (:func:`_counted`)."""
     room = _room_for(config, max_output_tokens, thinking_tokens)
     refused = False
     sinks: list[dict] = []
@@ -799,16 +829,19 @@ def _asked_with_room(config: ProviderConfig, max_output_tokens, thinking_tokens,
         limit = max_output_tokens + room if max_output_tokens else max_output_tokens
         sink: dict = {}
         sinks.append(sink)
+        started = _clock()
+        error = None
         try:
             turn = ask(limit, sink)
         except Exception as exc:
+            error = exc
             if room and _status_code_of(exc) in (400, 422):
                 room, refused = 0, True
                 continue
             raise
         finally:
             _summed_usage(usage_out, sinks)
-            _counted(config, sink)
+            _counted(config, sink, started=started, error=error)
         if refused:
             _note_room_refused(config)
         if turn.thinking:
@@ -827,7 +860,9 @@ def _streamed_with_room(config: ProviderConfig, max_output_tokens, thinking_toke
     is asked again only before it showed a word or a call, so its caller
     reads the second as the turn. *finish*, when given, gets how the turn
     ended once it has: the stop reason, ``thinking``, ``limit`` and
-    ``thinking_room_refused``."""
+    ``thinking_room_refused``. Each request is timed from before it is
+    asked to its end, its first token when its first word or call comes out
+    of it (:func:`_counted`)."""
     room = _room_for(config, max_output_tokens, thinking_tokens)
     refused = False
     sinks: list[dict] = []
@@ -837,25 +872,33 @@ def _streamed_with_room(config: ProviderConfig, max_output_tokens, thinking_toke
         ended: dict = {}
         sinks.append(sink)
         wrote = False
+        started = _clock()
+        first = None
+        error = None
         events = ask(limit, sink, ended)
         try:
             for event in events:
                 if isinstance(event, ToolCall) or (isinstance(event, str) and event.strip()):
+                    if first is None:
+                        # Before the caller has it: its time with the piece is not the server's.
+                        first = _clock()
                     wrote = True
                 yield event
         except Exception as exc:
+            error = exc
             if room and not wrote and _status_code_of(exc) in (400, 422):
                 room, refused = 0, True
                 continue
             raise
         finally:
             # A caller that stops reading ends the stream at its last piece:
-            # what the provider reported by then is the turn's and the monitor's.
+            # what the provider reported by then is the turn's and the
+            # monitor's, and the stream did not fail.
             try:
                 events.close()
             finally:
                 _summed_usage(usage_out, sinks)
-                _counted(config, sink)
+                _counted(config, sink, started=started, first=first, error=error)
         if refused:
             _note_room_refused(config)
         if ended.get("thinking"):
@@ -922,20 +965,34 @@ def _run_chat_turn(
         # Scripted, deterministic, no network. Guarded on CURIO_TESTING inside
         # run_scripted_turn, so this branch cannot be reached on a real
         # deployment even if a config names it. See agents/testing_provider.py.
-        from utk_curio.backend.app.agents.infrastructure.testing_provider import run_scripted_turn
-
         sink: dict = {}
-        turn = run_scripted_turn(
-            messages, usage_out=sink, config=config, tools=tools, tool_choice=tool_choice,
-            reply_schema=reply_schema,
-        )
+        turn = _scripted_turn(config, messages, sink, tools=tools, tool_choice=tool_choice,
+                              reply_schema=reply_schema)
         _summed_usage(usage_out, [sink])
-        _counted(config, sink)
         return turn
     return _asked_with_room(
         config, max_output_tokens, thinking_tokens, usage_out,
         lambda limit, sink: _one_turn(config, messages, limit, sink, tools, tool_choice, reply_schema),
     )
+
+
+def _scripted_turn(config, messages, sink: dict, **asked) -> ChatTurn:
+    """The scripted provider's turn (``testing_provider.run_scripted_turn``),
+    its usage in *sink*, counted on the monitor as one request, timed from
+    before it was asked to its end. Its whole reply comes at once, before
+    a streamed turn yields any of it, so no first token is stamped. One that
+    raises counts as failed."""
+    from utk_curio.backend.app.agents.infrastructure.testing_provider import run_scripted_turn
+
+    started = _clock()
+    error = None
+    try:
+        return run_scripted_turn(messages, usage_out=sink, config=config, **asked)
+    except Exception as exc:
+        error = exc
+        raise
+    finally:
+        _counted(config, sink, started=started, error=error)
 
 
 def _one_turn(config, messages, max_output_tokens, usage_out, tools, tool_choice, reply_schema) -> ChatTurn:
@@ -1328,14 +1385,9 @@ def _stream_chat_turn(config, messages, max_output_tokens, usage_out, tools, too
         # The scripted reply, delivered as a single chunk. Splitting it would
         # only test the splitter: what the SSE runtime needs from a provider
         # is a deterministic sequence of deltas, and one is a sequence.
-        from utk_curio.backend.app.agents.infrastructure.testing_provider import run_scripted_turn
-
         sink: dict = {}
-        turn = run_scripted_turn(
-            messages, usage_out=sink, config=config, tools=tools, tool_choice=tool_choice
-        )
+        turn = _scripted_turn(config, messages, sink, tools=tools, tool_choice=tool_choice)
         _summed_usage(usage_out, [sink])
-        _counted(config, sink)
         if turn.text or not turn.tool_calls:
             yield turn.text
         yield from turn.tool_calls

@@ -23,7 +23,7 @@ import {
   toMarkdown,
 } from "../../utils/diagnosticsBundle";
 import ErrorLogPanel from "./ErrorLogPanel";
-import { LlmTokensSection } from "./LlmTokensSection";
+import { LlmPerformanceSection } from "./LlmPerformanceSection";
 import { DurationHistogram, StoreSizeHistogram } from "./MonitorCharts";
 import { OpenFilesSection } from "./OpenFilesSection";
 import { Chip, Meter, StatTile } from "./StatTile";
@@ -33,7 +33,7 @@ const FAST_POLL_MS = 5000;
 // The storage walk is the one expensive call; the backend caches it for the
 // same 60s, so polling faster would only ever return the same cached body.
 const STORAGE_POLL_MS = 60000;
-// Hourly rows: the backend holds the body 60s unless a request changed it.
+// Rows of 5 minutes and more: the backend holds the body 60s unless a request changed it.
 const LLM_POLL_MS = 60000;
 // A sample an hour: read when the page opens, then every 10 minutes.
 const OPEN_FILES_POLL_MS = 600000;
@@ -93,8 +93,8 @@ function missingProcessesText(missing: number[]): string | null {
 
 /**
  * What the monitor shows: the toolbar, the deployment, hardware (each
- * server's open files over time among it), execution, LLM tokens, accounts
- * and storage sections, and the recent errors. The /monitor page and the
+ * server's open files over time among it), execution, LLM performance,
+ * accounts and storage sections, and the recent errors. The /monitor page and the
  * canvas's Monitor drawer both render this, and it polls only while it is
  * mounted.
  */
@@ -446,11 +446,11 @@ export const MonitorContent: React.FC = () => {
         </div>
       </section>
 
-      <section className={styles.section} aria-labelledby="mon-llm">
-        <h2 id="mon-llm" className={styles.heading}>
-          LLM tokens
+      <section className={styles.section} aria-labelledby="mon-llm-performance">
+        <h2 id="mon-llm-performance" className={styles.heading}>
+          LLM performance
         </h2>
-        <LlmTokensSection payload={llm.data} />
+        <LlmPerformanceSection payload={llm.data} />
       </section>
 
       <section className={styles.section} aria-labelledby="mon-accounts">

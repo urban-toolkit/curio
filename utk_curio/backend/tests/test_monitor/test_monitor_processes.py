@@ -8,10 +8,10 @@ error log, so the home process asks every other process for its part, over
 secret, as a change to a dataflow reaches its owner, and merges them: node
 runs summed, the error logs together by time. Those routes then say which
 processes answered; one that does not answer is named and its part left out,
-and the route still answers. The monitor's histories, the LLM tokens and the
-open files, are one file each that every process writes, which no start
-clears: their routes read the file and ask no process, token rows add up by
-hour and model whichever process wrote them, and each hour's open files are
+and the route still answers. The monitor's histories, the LLM performance and
+the open files, are one file each that every process writes, which no start
+clears: their routes read the file and ask no process, LLM rows add up by
+time and model whichever process wrote them, and each hour's open files are
 the busiest process's against its own limit. Every process samples its own
 open files. With one process nothing is asked, and every answer is as it was.
 
@@ -345,40 +345,40 @@ def test_the_error_log_keeps_the_newest_server_errors_of_all_processes_to_its_wi
     ]
 
 
-def test_every_processs_llm_tokens_add_up_in_the_one_file_by_hour_and_model(client, monkeypatch):
+def test_every_processs_llm_requests_add_up_in_the_one_file_by_time_and_model(client, monkeypatch):
     """Process 1 and the home process each write what they hold into the
     one file: the route reads it, asks no process, and shows rows of the same
-    hour and model summed, whichever process wrote them."""
-    from utk_curio.backend.app.monitor import llm_tokens
+    time and model summed, whichever process wrote them."""
+    from utk_curio.backend.app.monitor import llm_performance
 
     clock = SimpleNamespace(at=NOW)
-    monkeypatch.setattr(llm_tokens, "_now", lambda: clock.at)
+    monkeypatch.setattr(llm_performance, "_now", lambda: clock.at)
 
     with _start(monkeypatch) as start:
         as_process(monkeypatch, 1, 2)
         clock.at = NOW - timedelta(hours=2)
-        llm_tokens.record("gpt-5", curio=False, input_tokens=40, output_tokens=8)
+        llm_performance.record("qwen3", ms=400, output_tokens=8)
         clock.at = NOW
-        llm_tokens.record("gemma4", curio=True, input_tokens=100, output_tokens=20)
-        assert llm_tokens.HISTORY.flush() is True
+        llm_performance.record("gemma4", ms=1200, first_token_ms=300, output_tokens=60)
+        assert llm_performance.HISTORY.flush() is True
         as_process(monkeypatch, 0, 2)
         clock.at = NOW - timedelta(days=30)
-        llm_tokens.record("gemma4", curio=False, input_tokens=7, output_tokens=1)
+        llm_performance.record("gemma4", ms=700, failed=True)
         clock.at = NOW
-        llm_tokens.record("gemma4", curio=True, input_tokens=50, output_tokens=10)
-        assert llm_tokens.HISTORY.flush() is True
+        llm_performance.record("gemma4", ms=800, first_token_ms=100, output_tokens=20)
+        assert llm_performance.HISTORY.flush() is True
         body = _answer(client.get("/api/monitor/llm"))
         calls = [*start.others[1].calls, *start.itself.calls]
 
-    assert [(row["hour"], row["model"], row["curio"], row["inputTokens"], row["outputTokens"], row["requests"])
-            for row in body["hourly"]] == [
-        ("2026-11-06T13:00:00Z", "gpt-5", False, 40, 8, 1),
-        ("2026-11-06T15:00:00Z", "gemma4", True, 150, 30, 2),
+    views = body["views"]
+    assert [(row["at"], row["model"], row["requests"], row["failed"], row["ms"]) for row in views["7d"]["rows"]] == [
+        ("2026-11-06T13:00:00Z", "qwen3", 1, 0, 400),
+        ("2026-11-06T15:00:00Z", "gemma4", 2, 0, 2000),
     ]
-    assert {(entry["model"], entry["curio"]): entry["kept"] for entry in body["models"]} == {
-        ("gemma4", True): {"inputTokens": 150, "outputTokens": 30, "requests": 2},
-        ("gpt-5", False): {"inputTokens": 40, "outputTokens": 8, "requests": 1},
-        ("gemma4", False): {"inputTokens": 7, "outputTokens": 1, "requests": 1},
+    assert {entry["model"]: (entry["requests"], entry["failed"], entry["averageMs"], entry["firstTokenMs"],
+                             entry["tokensPerSecond"]) for entry in views["90d"]["models"]} == {
+        "gemma4": (3, 1, 900, 200, 40.0),
+        "qwen3": (1, 0, 400, None, 20.0),
     }
     assert "backendProcesses" not in body
     assert calls == [], "the route asked a process for what the file holds"
@@ -450,9 +450,9 @@ def test_a_process_that_does_not_answer_is_named_and_its_part_left_out(client, m
 def test_every_process_writes_the_one_file_of_each_history(monkeypatch, counts):
     """``<name>.json`` in the monitor folder, whichever process writes it,
     in a start of several or of one: no process keeps a file of its own."""
-    from utk_curio.backend.app.monitor import history, llm_tokens, open_files
+    from utk_curio.backend.app.monitor import history, llm_performance, open_files
 
-    monkeypatch.setattr(llm_tokens, "_now", lambda: NOW)
+    monkeypatch.setattr(llm_performance, "_now", lambda: NOW)
     folder = history._folder()
     paths = {}
     for number, processes in ((2, 3), (0, 3), (None, 1)):
@@ -460,17 +460,17 @@ def test_every_process_writes_the_one_file_of_each_history(monkeypatch, counts):
             as_the_one_process(monkeypatch)
         else:
             as_process(monkeypatch, number, processes)
-        llm_tokens.record("gemma4", curio=True, input_tokens=120, output_tokens=30)
-        assert llm_tokens.HISTORY.flush() is True
+        llm_performance.record("gemma4", ms=1200, output_tokens=30)
+        assert llm_performance.HISTORY.flush() is True
         _take(counts, NOW, (212, 65536))
-        paths[number] = (llm_tokens.HISTORY.path(), open_files.HISTORY.path())
+        paths[number] = (llm_performance.HISTORY.path(), open_files.HISTORY.path())
 
-    assert set(paths.values()) == {(folder / "llm-tokens.json", folder / "open-files.json")}
+    assert set(paths.values()) == {(folder / "llm.json", folder / "open-files.json")}
     assert sorted(path.name for path in folder.iterdir() if path.suffix == ".json") == [
-        "llm-tokens.json", "open-files.json"]
-    written = _rows(folder / "llm-tokens.json")
-    assert [(row["model"], row["inputTokens"], row["outputTokens"], row["requests"]) for row in written] == [
-        ("gemma4", 360, 90, 3)]
+        "llm.json", "open-files.json"]
+    written = _rows(folder / "llm.json")
+    assert [(row["model"], row["requests"], row["ms"], row["outputTokens"]) for row in written] == [
+        ("gemma4", 3, 3600, 90)]
 
 
 def test_no_start_of_any_process_clears_the_history_files(monkeypatch):
@@ -483,9 +483,10 @@ def test_no_start_of_any_process_clears_the_history_files(monkeypatch):
 
     folder = history._folder()
     folder.mkdir(parents=True, exist_ok=True)
-    rows = [{"at": "2026-11-06T14:00:00Z", "span": "1h", "model": "gemma4", "curio": True,
-             "inputTokens": 5, "outputTokens": 1, "requests": 1}]
-    for name in ("llm-tokens.json", "open-files.json", "notes.json"):
+    rows = [{"at": "2026-11-06T14:00:00Z", "span": "1h", "model": "gemma4", "requests": 1, "failed": 0,
+             "ms": 1200, "buckets": [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0], "firstTokenMs": 300,
+             "firstTokens": 1, "outputTokens": 30, "outputMs": 1200}]
+    for name in ("llm.json", "open-files.json", "notes.json"):
         (folder / name).write_text(json.dumps({"name": name[:-5], "format": 2, "rows": rows}), encoding="utf-8")
     before = {path.name: path.read_bytes() for path in folder.iterdir()}
 
@@ -582,7 +583,7 @@ def test_with_one_process_nothing_is_asked_and_every_answer_is_as_it_was(client,
     no entry or sample names a process, and the internal route refuses. The
     route's refusal is what fails before this change; the rest pins that one
     process is as it was."""
-    from utk_curio.backend.app.monitor import counters, errors, llm_tokens
+    from utk_curio.backend.app.monitor import counters, errors, llm_performance
 
     with _OtherProcess() as stray:
         as_the_one_process(monkeypatch)
@@ -590,7 +591,7 @@ def test_with_one_process_nothing_is_asked_and_every_answer_is_as_it_was(client,
         monkeypatch.setenv("CURIO_BACKEND_TOKEN", SECRET)
         counters.record_execution(language="python", ok=True, duration_ms=10)
         errors.record("node", summary="KeyError: 'x'", detail="Traceback")
-        llm_tokens.record("gemma4", curio=True, input_tokens=5, output_tokens=1)
+        llm_performance.record("gemma4", ms=1200, output_tokens=1)
         _take(counts, NOW, (212, 65536))
         responses = {route: client.get(route) for route in ROUTES}
         refused = client.post("/internal/monitor/backend", data=json.dumps({"arguments": {}}),

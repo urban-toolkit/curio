@@ -3,8 +3,8 @@
  * --backend-processes N`). The home process merges every process's part of
  * the monitor's own payload and the errors', and each of the two says which
  * processes answered in `backendProcesses`: a process that did not answer is
- * named in one line over the sections. The LLM tokens and the open files are
- * files every process writes, so their payloads carry no `backendProcesses`;
+ * named in one line over the sections. The LLM performance and the open files
+ * are files every process writes, so their payloads carry no `backendProcesses`;
  * each hour's open-files sample names its busiest process, and the Open files
  * card then says its backend line is the busiest process. A backend of one
  * process names no process, and neither line shows.
@@ -99,10 +99,17 @@ const errorsPayload = {
   droppedClient: 0, errors: [],
 };
 
+const noRequests = { requests: 0, failed: 0, averageMs: null, p95Ms: null, firstTokenMs: null, tokensPerSecond: null };
 const llmPayload = {
-  computedAt: "2026-11-06T15:20:07Z", startedAt: "2026-11-06T08:40:00Z", maxDays: 90,
-  ageSeconds: 0, ttlSeconds: 60, hourlyFrom: "2026-10-30T16:00:00Z", hourlyTo: "2026-11-06T15:00:00Z",
-  hourly: [], models: [],
+  computedAt: "2026-11-06T15:20:07Z", maxDays: 90, ageSeconds: 0, ttlSeconds: 60,
+  views: {
+    "24h": { from: "2026-11-05T15:25:00Z", to: "2026-11-06T15:20:00Z", stepSeconds: 300, rows: [], models: [],
+             all: noRequests },
+    "7d": { from: "2026-10-30T16:00:00Z", to: "2026-11-06T15:00:00Z", stepSeconds: 3600, rows: [], models: [],
+            all: noRequests },
+    "90d": { from: "2026-08-09T00:00:00Z", to: "2026-11-06T00:00:00Z", stepSeconds: 86400, rows: [], models: [],
+             all: noRequests },
+  },
 };
 
 const openFilesPayload = {
