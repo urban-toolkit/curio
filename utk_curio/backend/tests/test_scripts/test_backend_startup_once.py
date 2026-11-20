@@ -6,7 +6,8 @@ of ``CURIO_BACKEND_PROCESSES``), and process 0, home, alone does the startup
 work: the shared guest, the hosted guests' copies dropped, the agents, the
 packages ``--guest-packages`` names and the examples put back, the timers, the
 monitor's history writer and its write when the process stops, the open-files
-sampler and the bucket mount service's proxy and check. Each other process
+sampler, the monitor's record of the start and its sessions sampler, and the
+bucket mount service's proxy and check. Each other process
 does three of those pieces for itself (:data:`EVERY_PROCESS`): it writes what
 it holds of the monitor's histories every minute and when it stops, into the
 files every process shares, and samples its own open files. Under Werkzeug's
@@ -45,6 +46,8 @@ STARTUP_WORK = {
     "utk_curio.backend.app.monitor.history.write_on_stop": True,
     "utk_curio.backend.app.monitor.open_files.start_sampler": None,
     "utk_curio.backend.app.monitor.history.start_writer": True,
+    "utk_curio.backend.app.monitor.usage.record_start": True,
+    "utk_curio.backend.app.monitor.usage.start_sessions_sampler": True,
     "utk_curio.backend.app.discovery.service.start_bucket_mount_proxy": False,
     "utk_curio.backend.app.discovery.service.start_bucket_mount_check": False,
 }

@@ -26,6 +26,7 @@ from utk_curio.backend.app.discovery.application.exec_collections import (
 from utk_curio.backend.app.execution.sandbox_client import sandbox_request
 from utk_curio.backend.app.monitor import counters as _monitor_counters
 from utk_curio.backend.app.monitor import errors as _monitor_errors
+from utk_curio.backend.app.monitor import usage as _monitor_usage
 from utk_curio.backend.config import CURIO_DEFAULT_SAVE_NODE_OUTPUT
 
 # The sandbox round trip for one node run, in seconds. It was 120 historically;
@@ -1006,12 +1007,16 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
     # record_runtime_outcome returns early whenever node/dataflow/user is
     # missing, which is every execution from an unsaved canvas. Counters placed
     # in there would silently under-count exactly the runs a new user makes.
+    ok = bool(isinstance(output, dict) and output.get("path"))
+    ran_ms = (time.perf_counter() - t0) * 1000.0
     _monitor_counters.record_execution(
         language=language,
         node_type=run.node_type,
-        ok=bool(isinstance(output, dict) and output.get("path")),
-        duration_ms=(time.perf_counter() - t0) * 1000.0,
+        ok=ok,
+        duration_ms=ran_ms,
     )
+    # The same run in the Usage tab's history, kept across restarts.
+    _monitor_usage.record(f"node.{language}", ms=ran_ms, failed=not ok)
     if not (isinstance(output, dict) and output.get("path")):
         # Same canonical predicate as above: an EMPTY output path. A non-empty
         # stderr is NOT the predicate, because benign warnings land there too
@@ -1058,6 +1063,7 @@ def _unavailable_reply(
     _monitor_counters.record_execution(
         language="python", node_type=run.node_type, ok=False, duration_ms=duration_ms,
     )
+    _monitor_usage.record("node.python", ms=duration_ms, failed=True)
     _monitor_errors.record(
         "node",
         summary="A file Curio downloads on first use could not be downloaded",

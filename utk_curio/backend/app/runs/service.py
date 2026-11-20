@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Iterator, Optional
 
@@ -400,10 +401,15 @@ def _run_thread(
     the dataflow's owner, whose packages say what each node's template
     declares. With *records_outputs*, the owner's run, an output is recorded
     in the dataflow as ``save_policy`` says; an invited editor's run records
-    none, its outputs staying in the editor's session as their Play's do."""
+    none, its outputs staying in the editor's session as their Play's do.
+
+    The run counts once in the monitor's Usage tab (``monitor/usage.py``'s
+    ``run``), from its start to its end: as it finishes, failed when it ends
+    ``failed``, or as it stops on an error, failed."""
     from utk_curio.backend import config
     from utk_curio.backend.app.execution import node_exec, runtime_journal
     from utk_curio.backend.app.execution.run_engine import run_events
+    from utk_curio.backend.app.monitor import usage as monitor_usage
     from utk_curio.backend.app.execution.save_policy import (
         records_output_on_save,
         saved_source_node_ids,
@@ -469,6 +475,8 @@ def _run_thread(
                 return fn()
         return in_context
 
+    started = time.perf_counter()
+    counted = False
     try:
         runs_repo.update_run(run_id, status="running", started_at=datetime.now(timezone.utc))
         for kind, payload in run_events(plan, execute, cancelled=cancelled, wrap=wrap):
@@ -500,6 +508,9 @@ def _run_thread(
                         runs_repo.update_step(run_id, step.node_id, install_warnings=json.dumps(warnings))
                         payload = {**payload, "installWarnings": warnings}
             elif kind == "run_finished":
+                counted = True
+                monitor_usage.record("run", ms=(time.perf_counter() - started) * 1000.0,
+                                     failed=payload["status"] == "failed")
                 runs_repo.update_run(
                     run_id, status=payload["status"], finished_at=datetime.now(timezone.utc),
                     ok_count=payload["ok"], failed_count=payload["failed"],
@@ -507,6 +518,8 @@ def _run_thread(
                 )
             yield kind, payload
     except Exception as exc:
+        if not counted:
+            monitor_usage.record("run", ms=(time.perf_counter() - started) * 1000.0, failed=True)
         runs_repo.update_run(
             run_id, status="failed", finished_at=datetime.now(timezone.utc),
             error=f"The run stopped: {type(exc).__name__}: {str(exc)[:300]}",

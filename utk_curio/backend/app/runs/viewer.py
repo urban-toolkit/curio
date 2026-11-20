@@ -569,12 +569,17 @@ def _run_events(
     the dataflow on that guest's dashboard, else the dataflow. Each step runs
     as the dataflow's own (its saved outputs, its owner's store) and is
     served the guest signed in as *sign_in*, on its thread, so it reads that
-    guest's datasets as the guest's plays do (``visitor_copies.serving``)."""
+    guest's datasets as the guest's plays do (``visitor_copies.serving``).
+
+    The run counts once in the monitor's Usage tab, as a run on the server's
+    does (``monitor/usage.py``'s ``run``): as it finishes, failed when it ends
+    ``failed``, or as it stops on an error, failed."""
     from contextlib import nullcontext
 
     from utk_curio.backend.app.discovery.infrastructure import media_dirs
     from utk_curio.backend.app.execution import node_exec
     from utk_curio.backend.app.execution.run_engine import run_events
+    from utk_curio.backend.app.monitor import usage as monitor_usage
     from utk_curio.backend.app.projects import visitor_copies
     from utk_curio.backend.app.users.connection_keys import secret_names
     from utk_curio.backend.app.users.models import User
@@ -639,9 +644,19 @@ def _run_events(
                 return fn()
         return in_context
 
+    started = time.perf_counter()
+    counted = False
     try:
         for kind, payload in run_events(plan, execute, cancelled=threading.Event(), wrap=wrap):
+            if kind == "run_finished":
+                counted = True
+                monitor_usage.record("run", ms=(time.perf_counter() - started) * 1000.0,
+                                     failed=payload.get("status") == "failed")
             yield kind, _public(payload)
+    except Exception:
+        if not counted:
+            monitor_usage.record("run", ms=(time.perf_counter() - started) * 1000.0, failed=True)
+        raise
     finally:
         prune_quietly()
 

@@ -1,23 +1,24 @@
 """The monitor routes.
 
-All six are public and unauthenticated, like ``/version`` and
-``/api/config/public``, and all six exist on every instance. There is no
+All seven are public and unauthenticated, like ``/version`` and
+``/api/config/public``, and all seven exist on every instance. There is no
 deploy gate: a laptop benefits from the error log as much as a server does, and
 a page that only appears in one posture is a page nobody remembers exists.
 
 Read ``errors.py``'s module docstring before changing what the errors route
-returns. It is deliberately exempt from the anonymity rule the other four GETs
-are tested against. The LLM route's model names, this Curio's own, are the one
-free text those four carry (``llm_performance.py``).
+returns. It is deliberately exempt from the anonymity rule the other five GETs
+are tested against. The LLM route's model names, this Curio's own, and the
+versions of Curio the usage and open-files routes mark their deploys with are
+the only free text those five carry (``llm_performance.py``, ``usage.py``).
 
 In a start of several backend processes nginx sends these routes to the home
 process, and they answer for the whole backend. ``/api/monitor`` (its node
 runs and memory) and ``/errors`` ask every other process for its part and
 merge it with this one's, and say which processes answered in
 ``backendProcesses`` (``processes.py``); the parts each process answers with
-are registered here. ``/llm`` and ``/open-files`` read the monitor's history
-files, which every process writes (``history.py``). With one process nothing
-is asked.
+are registered here. ``/llm``, ``/usage`` and ``/open-files`` read the
+monitor's history files, which every process writes (``history.py``). With
+one process nothing is asked.
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ from utk_curio.backend.app.monitor import (
     processes,
     stats,
     storage,
+    usage,
 )
 
 monitor_bp = Blueprint("monitor", __name__, url_prefix="/api/monitor")
@@ -234,6 +236,16 @@ def monitor_llm_route():
     requests, failures, response times, time to the first token and output
     tokens per second. Aggregates, naming models (``llm_performance.py``)."""
     return jsonify(llm_performance.snapshot())
+
+
+@monitor_bp.route("/usage", methods=["GET"])
+def monitor_usage_route():
+    """What this Curio did for the people using it over the last 24 hours, 7
+    days and 90 days, from the history files every backend process writes:
+    node runs, Run All runs, agent turns and requests, each with its count,
+    failures, average and 95th percentile time, the sessions seen, and the
+    deploys. Aggregates, naming only versions (``usage.py``)."""
+    return jsonify(usage.snapshot())
 
 
 @monitor_bp.route("/open-files", methods=["GET"])

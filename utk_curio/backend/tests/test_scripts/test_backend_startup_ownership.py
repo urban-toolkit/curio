@@ -28,6 +28,8 @@ _SERVE = {
     "utk_curio.backend.app.monitor.history.write_on_stop",
     "utk_curio.backend.app.monitor.open_files.start_sampler",
     "utk_curio.backend.app.monitor.history.start_writer",
+    "utk_curio.backend.app.monitor.usage.record_start",
+    "utk_curio.backend.app.monitor.usage.start_sessions_sampler",
     "utk_curio.backend.app.discovery.service.start_bucket_mount_proxy",
     "utk_curio.backend.app.discovery.service.start_bucket_mount_check",
 }

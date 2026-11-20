@@ -62,6 +62,7 @@ HOMES = (
     ("GET", "/api/discovery/catalog"),
     ("GET", "/api/monitor"),
     ("GET", "/api/monitor/open-files"),
+    ("GET", "/api/monitor/usage"),
     ("POST", "/api/monitor/errors/client"),
     ("POST", "/api/packages/factory/build"),
     ("POST", "/api/packages/factory/install"),
