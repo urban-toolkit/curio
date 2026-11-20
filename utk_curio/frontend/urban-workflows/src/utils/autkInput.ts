@@ -32,7 +32,12 @@ import {
   requestedLayerTables,
   sectionInputTables,
 } from "../adapters/node/autkDataCompile";
-import { readableBuildingProperties } from "./buildingHeight";
+import {
+  deriveBuildingHeight,
+  readableBuildingProperties,
+  withDefaultHeight,
+  withoutEmptyHeights,
+} from "./buildingHeight";
 import { detectCoordinateFormat } from "./geoCrs";
 import { resolveGeometryField } from "./geometryField";
 import { readGrammarInput, type GrammarFrame, type GrammarInput, type RasterPayload } from "./grammarInput";
@@ -438,24 +443,167 @@ function featuresOf(frame: GrammarFrame, name: string): FrameResult {
   return { fc };
 }
 
-/**
- * A buildings table whose heights autk-map and a compute can read, one feature
- * per row as it came: a feature autk-map would misread, or one with no
- * `height`, gets its `height` written, and every other one is the same object.
- * A node reads its input's buildings and those its own data section loads
- * through it.
- */
-export function withReadableHeights(fc: FeatureCollection): FeatureCollection {
+/** *fc* with each feature's properties as *rewrite* makes them; the same object when it changes none. */
+function withEachFeature(fc: FeatureCollection, rewrite: (properties: any) => any): FeatureCollection {
   const features: any[] = Array.isArray((fc as any)?.features) ? (fc as any).features : [];
   let changed = false;
   const next = features.map((feature) => {
     const properties = feature?.properties;
-    const readable = readableBuildingProperties(properties);
-    if (readable === properties) return feature;
+    const rewritten = rewrite(properties);
+    if (rewritten === properties) return feature;
     changed = true;
-    return { ...feature, properties: readable };
+    return { ...feature, properties: rewritten };
   });
   return changed ? ({ ...fc, features: next } as FeatureCollection) : fc;
+}
+
+/**
+ * A buildings table whose heights autk-map and a compute can read, one feature
+ * per row as it came: a feature autk-map would misread, or one with a height
+ * and no `height` key, gets its `height` written, and every other one is the
+ * same object. A feature with no height keeps none. A node reads its input's
+ * buildings and those its own data section loads through it.
+ */
+export function withReadableHeights(fc: FeatureCollection): FeatureCollection {
+  return withEachFeature(fc, readableBuildingProperties);
+}
+
+/**
+ * A buildings table as a map draws it and a compute pass reads it: readable
+ * (`withReadableHeights`), and each feature with no height
+ * `DEFAULT_BUILDING_HEIGHT` m tall above its base (utils/buildingHeight
+ * `withDefaultHeight`).
+ */
+export function withDefaultHeights(fc: FeatureCollection): FeatureCollection {
+  return withEachFeature(fc, withDefaultHeight);
+}
+
+/**
+ * A buildings table a layer with `buildingsZeroHeight` draws: no feature holds
+ * a key of its height that holds no number (utils/buildingHeight
+ * `withoutEmptyHeights`), so autk-map raises each with no height at its own
+ * random 3 to 7 floors.
+ */
+export function withoutEmptyBuildingHeights(fc: FeatureCollection): FeatureCollection {
+  return withEachFeature(fc, withoutEmptyHeights);
+}
+
+/**
+ * *result*, a table a compute pass wrote from *held*, with each feature that
+ * has no height in *held* holding the height it holds there: the pass read
+ * `DEFAULT_BUILDING_HEIGHT` m for it (`withDefaultHeights`), which the table
+ * handed on does not keep. A pass keeps the features of the table it computes
+ * over in their order, one each; a result of another length is the same object.
+ */
+export function withHeightsAsHeld(result: FeatureCollection, held: FeatureCollection): FeatureCollection {
+  const features: any[] = Array.isArray((result as any)?.features) ? (result as any).features : [];
+  const before: any[] = Array.isArray((held as any)?.features) ? (held as any).features : [];
+  if (features.length !== before.length) return result;
+  let changed = false;
+  const next = features.map((feature, at) => {
+    const own = before[at]?.properties ?? {};
+    const properties = feature?.properties;
+    if (deriveBuildingHeight(own) === null || properties == null || typeof properties !== "object") return feature;
+    const restored: Record<string, any> = { ...properties };
+    if ("height" in own) restored.height = own.height;
+    else delete restored.height;
+    changed = true;
+    return { ...feature, properties: restored };
+  });
+  return changed ? ({ ...result, features: next } as FeatureCollection) : result;
+}
+
+/**
+ * The tables, by key (`autkTableKey`), a layer with `buildingsZeroHeight`
+ * draws: autk-map raises a part of them with no height at random, so a node
+ * hands them on with none.
+ */
+export function zeroHeightTables(spec: any): Set<string> {
+  const keys = new Set<string>();
+  for (const map of asList<any>(spec?.map)) {
+    for (const ref of asList<any>(map?.layerRefs)) {
+      if (ref?.buildingsZeroHeight === true && typeof ref?.dataRef === "string" && ref.dataRef) {
+        keys.add(autkTableKey(autkWorkspaceOf(map), ref.dataRef));
+      }
+    }
+  }
+  return keys;
+}
+
+/** Where a document uses a table's building heights, each table by key (`autkTableKey`). */
+export type HeightUses = {
+  /** The tables a map layer draws or a compute pass reads, which read a building with no height at the default. */
+  numbered: Set<string>;
+  /** The tables a layer with `buildingsZeroHeight` draws (`zeroHeightTables`). */
+  zero: Set<string>;
+  /**
+   * The tables a map layer (its `layerType`) or a render pass's layer (its
+   * `type`) draws as buildings, whatever their own type.
+   */
+  asBuildings: Set<string>;
+};
+
+/**
+ * Where *spec* uses the heights of its tables: each table a map layer draws,
+ * or a compute pass reads (its table, a render pass's viewpoints and layers, a
+ * GPGPU pass's `fromFeature` tables), takes a building with no height at the
+ * default, but one a layer with `buildingsZeroHeight` draws; a table only a
+ * plot reads takes none.
+ */
+export function heightUses(spec: any): HeightUses {
+  const zero = zeroHeightTables(spec);
+  const numbered = new Set<string>();
+  const asBuildings = new Set<string>();
+  const add = (entry: unknown, name: unknown) => {
+    if (typeof name !== "string" || !name) return;
+    const key = autkTableKey(autkWorkspaceOf(entry), name);
+    if (!zero.has(key)) numbered.add(key);
+  };
+  const drawnAsBuildings = (entry: unknown, type: unknown, name: unknown) => {
+    if (type === "buildings" && typeof name === "string" && name) asBuildings.add(autkTableKey(autkWorkspaceOf(entry), name));
+  };
+  for (const map of asList<any>(spec?.map)) {
+    for (const ref of asList<any>(map?.layerRefs)) {
+      add(map, ref?.dataRef);
+      drawnAsBuildings(map, ref?.layerType, ref?.dataRef);
+    }
+  }
+  for (const pass of asList<any>(spec?.compute)) {
+    add(pass, pass?.dataRef);
+    add(pass, pass?.viewpoints?.dataRef);
+    for (const layer of asList<any>(pass?.layers)) {
+      add(pass, layer?.dataRef);
+      drawnAsBuildings(pass, layer?.type, layer?.dataRef);
+    }
+    for (const group of [pass?.uniforms, pass?.uniformMatrices]) {
+      if (group == null || typeof group !== "object") continue;
+      for (const value of Object.values(group)) add(pass, (value as any)?.fromFeature?.layer);
+    }
+  }
+  return { numbered, zero, asBuildings };
+}
+
+/**
+ * A source as a node hands it to its grammar, by where the document uses its
+ * heights (`heightUses`): a buildings table a map layer draws or a pass reads
+ * holds each feature with no height `DEFAULT_BUILDING_HEIGHT` m tall above its
+ * base (`withDefaultHeights`), one a layer with `buildingsZeroHeight` draws
+ * holds no key of a height that holds no number (`withoutEmptyBuildingHeights`),
+ * and any other source is the same object. A table is a buildings table when it
+ * is typed so or a layer draws it so.
+ */
+export function heightsAtUse<T extends { type?: unknown; geojsonObject?: unknown; outputTableName?: unknown; layerType?: unknown; workspace?: unknown }>(
+  source: T,
+  uses: HeightUses,
+): T {
+  if (source?.type !== "geojson" || source.geojsonObject == null) return source;
+  const key = tableKeyOf(source);
+  if (source.layerType !== "buildings" && !uses.asBuildings.has(key)) return source;
+  const fc = source.geojsonObject as FeatureCollection;
+  const geojsonObject = uses.zero.has(key)
+    ? withoutEmptyBuildingHeights(fc)
+    : uses.numbered.has(key) ? withDefaultHeights(fc) : fc;
+  return geojsonObject === fc ? source : { ...source, geojsonObject };
 }
 
 /**

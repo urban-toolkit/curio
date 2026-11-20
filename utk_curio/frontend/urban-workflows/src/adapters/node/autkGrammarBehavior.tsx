@@ -26,8 +26,9 @@ import { closeGrammarDb } from './autkDbClose';
 import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
 import { autkKeyProblem, autkRasterPassProblem, autkViewProblem } from '../../contracts/autkGrammar';
 import {
-    autkNeedsInput, autkReadsInput, autkSourcesFrom, documentTableRefs, drawnFeatures, drawnRows, inputRow, keyValues, loadableSource, ownTableNames,
-    passesAtHand, readAutkInput, selectFieldsOf, selectFieldsProblem, tableKeyOf, tablePositions, tablesToLoad, withReadableHeights, writtenTables,
+    autkNeedsInput, autkReadsInput, autkSourcesFrom, documentTableRefs, drawnFeatures, drawnRows, heightUses, heightsAtUse, inputRow, keyValues,
+    loadableSource, ownTableNames, passesAtHand, readAutkInput, selectFieldsOf, selectFieldsProblem, tableKeyOf, tablePositions, tablesToLoad,
+    withReadableHeights, writtenTables,
     type LoadOrder,
     type PreparedAutkInput,
 } from '../../utils/autkInput';
@@ -79,9 +80,9 @@ import { interactionHandleView, isInteractionEdge } from '../../contracts/intera
 import type { ViewArrangement } from '@urban-toolkit/autk-grammar';
 import { mapSession, onMapSession, registerEditMap } from '../../utils/editFeatures/mapEditBus';
 import {
-    drawnFeatureAt, featurePositions, layerIdFor, mapDrawingOf, mapLayerOf, mapStateOf, pickOn, restoreMapLayers,
-    showForEdits, snapshotBeforeSolo, snapshotMapLayers, type DrawnTables, type EditsView, type MapDrawing,
-    type MapLayerState, type MapTableState,
+    drawnFeatureAt, featurePositions, handedFeaturesOf, layerIdFor, mapDrawingOf, mapLayerOf, mapStateOf, pickOn,
+    restoreMapLayers, showForEdits, snapshotBeforeSolo, snapshotMapLayers, type DrawnTables, type EditsView,
+    type HandedFeature, type MapDrawing, type MapLayerState, type MapTableState,
 } from './autkMapState';
 import {
     drawnInput, editFeedsOf, editedMapView, fedByInteraction, feedsVersion, newLayerTables, type EditFeed,
@@ -105,6 +106,7 @@ const mapStateReaders = new Map<string, {
     showFramed: () => () => void;
     drawing: (view?: string | number) => MapDrawing | null;
     tourEnded: (view?: string | number) => Promise<boolean>;
+    handed: (table: string, view?: string | number) => Promise<HandedFeature[] | null>;
 }>();
 /** What turns each node's maps back by their cameras, while they show their framed views. */
 const turnBack = new Map<string, () => void>();
@@ -128,6 +130,12 @@ if (typeof window !== 'undefined') {
         mapStateReaders.get(nodeId)?.drawing(view) ?? null;
     (window as any).__curio_mapTourEnded = (nodeId: string, view?: string | number) =>
         mapStateReaders.get(nodeId)?.tourEnded(view) ?? Promise.resolve(false);
+    // The features of a table the grammar handed its map's autk-map, each
+    // with its input row and the keys of a building's top it holds
+    // (autkMapState `handedFeaturesOf`;
+    // test_frontend/test_autark_buildings_zero_height_e2e.py).
+    (window as any).__curio_mapHanded = (nodeId: string, table: string, view?: string | number) =>
+        mapStateReaders.get(nodeId)?.handed(table, view) ?? Promise.resolve(null);
     (window as any).__curio_showMapsFramed = (nodeId: string, framed: boolean): boolean => {
         turnBack.get(nodeId)?.();
         turnBack.delete(nodeId);
@@ -1080,8 +1088,10 @@ export const useAutkGrammarBehavior = (
             // silently working on nothing. Only applies to the backend-ref path
             // (backendLayers == null means we did not already fall back). Each
             // layer keeps the workspace it was loaded into. A buildings layer
-            // gets the heights autk-map and a pass read, as one of the input
-            // does (withReadableHeights).
+            // holds its heights where autk-map and a pass read them, as one of
+            // the input does (withReadableHeights); a building with no height
+            // holds none, and is as tall as the document uses it (a map's
+            // heightsAtUse, a compute step's applyComputeBlocks).
             const loadedLayers = async (): Promise<AutkLayer[]> => {
                 let layers: AutkLayer[] = [];
                 try {
@@ -1219,9 +1229,15 @@ export const useAutkGrammarBehavior = (
                 // cover every table at hand, so the verdict below tells a
                 // misnamed table apart from data the input does not bring.
                 const handed = tablesToLoad(dataSectionSources, spec, ownSources);
-                // On a 1 cm grid, so autk-db's second clip of these already
-                // clipped layers holds (see utils/geoPrecision).
-                spec = { ...spec, data: handed.map(snapSourceToGrid) };
+                // A building with no height is as tall as the document uses
+                // it: the default height above its base in a table a map layer
+                // draws or a pass reads, none in one a layer with
+                // buildingsZeroHeight draws, which autk-map raises at random,
+                // and as it came in a table only a plot reads (utils/autkInput
+                // heightsAtUse). On a 1 cm grid, so autk-db's second clip of
+                // these already clipped layers holds (see utils/geoPrecision).
+                const uses = heightUses(spec);
+                spec = { ...spec, data: handed.map((source) => snapSourceToGrid(heightsAtUse(source, uses))) };
                 if (dataSectionSources.length === 0 && (hasMaps || hasPlot)) {
                     console.warn(
                         '[autk-grammar] render node has no data sources left — the '
@@ -2196,6 +2212,11 @@ export const useAutkGrammarBehavior = (
                 if (!tour?.done) return false;
                 await tour.done;
                 return true;
+            },
+            handed: (table, view) => {
+                const { index, entry } = mapOf(view);
+                if (index < 0) return Promise.resolve(null);
+                return handedFeaturesOf(grammarRef.current, autkTableKey(autkWorkspaceOf(entry), table));
             },
         });
         return () => {

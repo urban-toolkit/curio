@@ -3,6 +3,7 @@
 
 import type { FeatureCollection } from 'geojson';
 import { autkKeyProblem } from '../../contracts/autkGrammar';
+import { withDefaultHeights, withHeightsAsHeld } from '../../utils/autkInput';
 import { autkWorkspaceOf } from './autkDataCompile';
 import { checkedPasses } from './autkComputeScopes';
 
@@ -45,6 +46,13 @@ const HELD_TABLES_CRS = 'EPSG:3395';
 // surprising than aborting the whole pipeline. A section that writes a key
 // autk-grammar 5 renamed, or one a node does not run yet (contracts/autkGrammar),
 // runs no pass and is a failure, named.
+//
+// A pass reads a buildings layer as a map draws it: a building with no height
+// is `DEFAULT_BUILDING_HEIGHT` m tall above its base (utils/autkInput
+// `withDefaultHeights`), so a pass that reads every building's height with
+// `required: true` leaves none out. The step hands its layers on as it holds
+// them: a building with no height keeps none, in a layer no pass wrote and in
+// one a pass wrote over it (`withHeightsAsHeld`).
 export async function applyComputeBlocks(
     layers: Layer[],
     computeBlocks: any[],
@@ -65,10 +73,17 @@ export async function applyComputeBlocks(
     const cache = new Map<string, FeatureCollection>();
     const types = new Map<string, any>();
     const held = new Map<string, { name: string; workspace?: string }>();
+    // Each buildings layer as the step holds it, where its passes read it with
+    // the default height (withDefaultHeights), by key; and each table a pass
+    // wrote, with the key of the one it computed over.
+    const asHeld = new Map<string, FeatureCollection>();
+    const wroteFrom = new Map<string, string>();
     for (const layer of layers) {
         const workspace = autkWorkspaceOf(layer);
         const key = tableKey(workspace, layer.name);
-        cache.set(key, layer.geojson);
+        const read = layer.type === 'buildings' ? withDefaultHeights(layer.geojson) : layer.geojson;
+        if (read !== layer.geojson) asHeld.set(key, layer.geojson);
+        cache.set(key, read);
         types.set(key, layer.type);
         held.set(key, { name: layer.name, ...(workspace ? { workspace } : {}) });
     }
@@ -108,6 +123,11 @@ export async function applyComputeBlocks(
             continue;
         }
         held.set(key, { name, ...(workspace ? { workspace } : {}) });
+        // A windows pass, and a render pass that looks out of building
+        // windows, write a point a window, not the rows they computed over.
+        const holdsRows = pass.type !== 'windows' && !(render && pass?.viewpoints?.strategy?.type === 'building-windows');
+        const over = tableKey(workspace, source);
+        wroteFrom.set(key, holdsRows ? wroteFrom.get(over) ?? over : '');
         const result: any = cache.get(key);
         if (!result) continue;
         // The pipelines write each GPGPU output under properties.compute.<col>.
@@ -131,10 +151,18 @@ export async function applyComputeBlocks(
         // aligned: a render pass's windows are a new collection.
         if (sourceCrs && !result.crs) result.crs = sourceCrs;
     }
+    // A table no pass wrote is handed on as the step holds it; one a pass
+    // wrote over a buildings layer holds each building's own height.
+    const handedOn = (key: string, geojson: FeatureCollection): FeatureCollection => {
+        const from = wroteFrom.get(key);
+        if (from === undefined) return asHeld.get(key) ?? geojson;
+        const source = asHeld.get(from);
+        return source ? withHeightsAsHeld(geojson, source) : geojson;
+    };
     return [...cache].map(([key, geojson]) => ({
         name: held.get(key)?.name ?? key,
         type: types.get(key) ?? 'polygons',
-        geojson,
+        geojson: handedOn(key, geojson),
         ...(held.get(key)?.workspace ? { workspace: held.get(key)!.workspace } : {}),
     }));
 }

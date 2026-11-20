@@ -5,15 +5,32 @@
  * part's top from the first of `height`, `building:height`, `levels` and
  * `building:levels` the part HAS, whatever its value, and its base from the
  * first of `min_height`, `min_level` and `building:min_level`. A part whose top
- * is not above its base is culled. A table gives every row every column, and autk-db's `loadGeojson`
- * gives every feature every key it found, so a building tagged only with
- * `building:levels` arrives with `height: null` and is culled.
+ * is not above its base is culled, unless its layer sets `buildingsZeroHeight`
+ * and it holds none of those four keys: then autk-map raises it at a random 3
+ * to 7 floors. A table gives every row every column, and autk-db's
+ * `loadGeojson` gives every feature every key it found, so a building tagged
+ * only with `building:levels` arrives with `height: null` and is culled.
+ *
+ * A part with no height keeps none in the data Curio loads and hands on. Where
+ * a number is used, Curio takes it to be {@link DEFAULT_BUILDING_HEIGHT} m tall
+ * above its base: a map draws it so, and a compute pass reads it so
+ * ({@link withDefaultHeight}).
  *
  * No autk import here: this stays testable under jest.
  */
 
 /** Metres per level, as autk-map's building renderer counts them. */
 export const METRES_PER_LEVEL = 3.4;
+
+/**
+ * How tall, in metres above its base, Curio takes a building part with no
+ * height to be where a number is used: as a map draws it and as a compute pass
+ * reads it.
+ */
+export const DEFAULT_BUILDING_HEIGHT = 6;
+
+/** The keys autk-map reads a building part's top from, the first it holds winning. */
+export const TOP_KEYS = ['height', 'building:height', 'levels', 'building:levels'] as const;
 
 const num = (v: any) => { const n = parseFloat(String(v)); return Number.isFinite(n) && n > 0 ? n : 0; };
 
@@ -29,15 +46,17 @@ function valueHeights(props: any): { base: number; top: number } {
     return { base, top };
 }
 
-// Guarantee a footprint extrudes instead of being culled as "no valid height
-// metadata". autk-map culls a building part when its top height <= its base
-// (`min_height`), which also covers the no-height case (0 <= 0). Mirror that
-// computation and, only when the part would be culled, return a height that clears
-// the base by a visible amount; otherwise return null to leave the real tags
-// untouched. `parts` lifting covers a feature whose height lived only per-part.
+/**
+ * The height Curio takes a building part with no height above its base to
+ * have where a number is used, {@link DEFAULT_BUILDING_HEIGHT} m above that
+ * base; null for a part with a height, whose own tags stay. autk-map culls a
+ * part when its top height <= its base (`min_height`), which also covers the
+ * no-height case (0 <= 0). `parts` lifting covers a feature whose height lived
+ * only per part.
+ */
 export function deriveBuildingHeight(props: any): number | null {
     const { base, top } = valueHeights(props);
-    return top > base ? null : base + 6;
+    return top > base ? null : base + DEFAULT_BUILDING_HEIGHT;
 }
 
 // autk-core's own reading: the first key present wins, and a value that is not
@@ -61,20 +80,62 @@ function autkBase(p: Record<string, any>): number {
 
 /**
  * A building's properties with `height` and `min_height` written where
- * autk-map would read them wrong: a `height` (or `levels`) key with no number
- * in it hides `building:levels`, and a building with no height at all gets the
- * one {@link deriveBuildingHeight} gives it. A building with no `height` key
- * gets the height autk-map draws, so a compute that reads `properties.height`
- * reads it too, whether or not a table handed the building on. The same object
- * when it already has a height autk-map reads right.
+ * autk-map would read the height the building holds wrong: a `height` (or
+ * `levels`) key with no number in it hides `building:levels`. A building with
+ * a height and no `height` key gets the height autk-map draws, so a compute
+ * that reads `properties.height` reads it too, whether or not a table handed
+ * the building on. A building with no height keeps none. The same object when
+ * nothing changes.
  */
 export function readableBuildingProperties<T extends Record<string, any> | null | undefined>(props: T): T {
     const p: Record<string, any> = props ?? {};
-    const { base } = valueHeights(p);
-    const top = deriveBuildingHeight(p) ?? valueHeights(p).top;
+    const { base, top } = valueHeights(p);
     const out: Record<string, any> = { ...p };
     let changed = false;
     if (autkBase(p) !== base) { out.min_height = base; changed = true; }
-    if (autkTop(p) !== top || !("height" in p)) { out.height = top; changed = true; }
+    if (top > base && (autkTop(p) !== top || !("height" in p))) { out.height = top; changed = true; }
     return (changed ? out : props) as T;
+}
+
+/**
+ * A building's properties as a map draws it and a compute pass reads it: its
+ * readable ones ({@link readableBuildingProperties}), and, for a building with
+ * no height above its base, a `height` {@link DEFAULT_BUILDING_HEIGHT} m above
+ * that base ({@link deriveBuildingHeight}). The same object when nothing
+ * changes.
+ */
+export function withDefaultHeight<T extends Record<string, any> | null | undefined>(props: T): T {
+    const readable: Record<string, any> | null | undefined = readableBuildingProperties(props);
+    const height = deriveBuildingHeight(readable ?? {});
+    return (height === null ? readable : { ...(readable ?? {}), height }) as T;
+}
+
+/** Whether *value* holds a number autk-map reads: a number, or text that starts with one. */
+const holdsNumber = (value: unknown): boolean => Number.isFinite(parseFloat(String(value)));
+
+/** *part* without the keys of TOP_KEYS that hold no number; the same object when it has none. */
+function partWithoutEmptyHeights(part: Record<string, any>): Record<string, any> {
+    const empty = TOP_KEYS.filter((key) => key in part && !holdsNumber(part[key]));
+    if (empty.length === 0) return part;
+    const out: Record<string, any> = { ...part };
+    for (const key of empty) delete out[key];
+    return out;
+}
+
+/**
+ * A building's properties without the keys autk-map reads its top from that
+ * hold no number (a `height` of null, an empty `levels`), on the building and
+ * on each of its `parts`: autk-map's `buildingsZeroHeight` draws a part at a
+ * random height of 3 to 7 floors only when it holds none of those keys, and
+ * reads the first of them a part holds, so such a key would leave the part
+ * out, or hide the levels after it. The same object when no key holds no number.
+ */
+export function withoutEmptyHeights<T extends Record<string, any> | null | undefined>(props: T): T {
+    if (props === null || props === undefined || typeof props !== 'object') return props;
+    const out = partWithoutEmptyHeights(props as Record<string, any>);
+    const parts = (props as Record<string, any>).parts;
+    if (!Array.isArray(parts)) return out as T;
+    const cleaned = parts.map((part) => (part && typeof part === 'object' ? partWithoutEmptyHeights(part) : part));
+    if (cleaned.every((part, at) => part === parts[at])) return out as T;
+    return { ...out, parts: cleaned } as unknown as T;
 }
