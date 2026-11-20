@@ -144,9 +144,14 @@ def _admitted(rows: list[dict], held: list[dict]) -> list[dict]:
     return admitted
 
 
+def _history_now() -> datetime:
+    """Now, read through :func:`_now` at each call, so a test's clock reaches the history."""
+    return _now()
+
+
 #: Each row: ``{at, span, model, requests, failed, ms, buckets, firstTokenMs,
 #: firstTokens, outputTokens, outputMs}``.
-HISTORY = monitor_history.History("llm", identity=_IDENTITY, admit=_admitted, clock=lambda: _now())
+HISTORY = monitor_history.History("llm", identity=_IDENTITY, admit=_admitted, clock=_history_now)
 
 
 def record(model, *, ms, first_token_ms=None, output_tokens=None, failed: bool = False) -> None:
