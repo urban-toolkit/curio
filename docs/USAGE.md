@@ -105,7 +105,7 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 | Flag | Default | Effect |
 |---|---|---|
 | `--state-dir PATH` | `.curio/` in the directory Curio starts from | Where Curio keeps its state: every user's store, the caches and the launcher's log |
-| `--monitor-dir PATH` | `.curio/monitor/` | Where the monitor page keeps its histories, the LLM performance and the open files of the last 90 days, across restarts, readable by the backend's own account alone. Name a folder outside `.curio` when your deploys delete it. See [DEPLOYMENT.md](DEPLOYMENT.md#the-monitor-page) |
+| `--monitor-dir PATH` | `.curio/monitor/` | Where the monitor page keeps its histories, the Usage tab's figures and the open files of the last 90 days, across restarts, readable by the backend's own account alone. Name a folder outside `.curio` when your deploys delete it. See [DEPLOYMENT.md](DEPLOYMENT.md#the-monitor-page) |
 | `--backend-processes N` | 1 | How many backend processes serve, each keeping the dataflows it owns. Above 1 they serve behind nginx on the backend's host and port, which sends each request to the process that owns its dataflow; nginx must be on `PATH`, and `--dev` runs one. See [DEPLOYMENT.md](DEPLOYMENT.md#3-build-and-run) |
 | `--js-parallelism N` | half the host's cores, from 2 to 16 | How many JavaScript nodes the sandbox runs at once |
 | `--package-workers N` | half the host's cores, from 2 to 8 | How many package backend handlers run at once |

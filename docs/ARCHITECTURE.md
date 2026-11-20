@@ -173,10 +173,52 @@ dashboard), they are buttons that open those drawers, built on `HeaderDrawer`,
 and the dataflow stays open. On every other page there is no provider, and they
 are links to `/monitor` and `/settings`. The monitor's content is
 `MonitorContent` (`src/pages/monitor/`), which the `/monitor` page and
-`MonitorDrawer` both render.
+`MonitorDrawer` both render, in two tabs (`monitorTabs.ts`) on API Settings'
+tab bar (`src/components/layout/TabBar.tsx`, the same tablist, ids and arrow
+keys): Status, the deployment as it is now, and Usage (`MonitorUsage`). The
+page keeps the tab in its URL, `/monitor` and `/monitor/usage`, the drawer in
+its state (`MonitorDrawerProvider`), and only the shown tab's routes poll. The
+toolbar above both (Pause, Copy diagnostics, Download) speaks for the tab
+shown.
 
-Its LLM performance section (`LlmPerformanceSection`, with its window switch
-and lines in `llmPerformanceSeries.ts`) reads `GET /api/monitor/llm`: the rows
+The Usage tab (`MonitorUsage`, with its window switch, lines, deploy marks and
+tiles in `usageSeries.ts`) reads `GET /api/monitor/usage`: the rows
+`monitor/usage.py` keeps of five measures, each recorded once as it ends with
+its time and whether it failed. `node.python` and `node.javascript` are a
+node's run as Play runs it, recorded by `execution/node_exec.py` beside the
+execution counters, so a run on the server's steps and a dashboard viewer's
+count too; `run` is a run on the server from its start to its end, recorded
+by `runs/service._run_thread` and by a dashboard viewer's `runs/viewer._run_events`
+as it finishes (failed when it ends `failed`) or stops on an error; `turn` is
+an agent's chat turn, recorded by `agents/application/turns/turn_jobs._keep`
+when an ask that started ends (failed on `error`; an ask withdrawn before its
+turn started counts nothing); `request` is the backend's answer to a request,
+from the app's first `before_request` to its last `after_request`
+(`monitor/requests.py`, which `create_app` installs before anything else
+registers a hook; failed with a 5xx), leaving out preflights, the monitor's own
+routes, `/version`, `/health`, `/live`, `/internal/`, `/api/testing/`, streamed
+responses and Socket.IO, which Engine.IO's WSGI app answers before Flask sees
+it. A row is `{at, span, key, count, failed, ms, buckets}`, sums alone. Beside
+it, the home process samples the sessions seen a few seconds after each
+5-minute slot ends (`start_sessions_sampler`, beside the open-files sampler,
+off under `--testing`): the sign-ins whose `last_seen_at` falls since the
+slot's start, since its hour's and since its UTC day's, of accounts and of
+guests apart, written as the slot's row of the history `sessions`, whose rows
+of one time keep the larger count of each field, so an hour's row holds the
+hour's sessions and a day's the day's. Each start of the home process is a row
+of the history `starts` with its version (`record_start`, in `serve()`), and a
+start whose version is not the one before it is a deploy (`usage.deploys`).
+The route reads three views, as the LLM route's: each measure's count,
+failures, milliseconds and 95th percentile at each 5-minute, hourly or daily
+step and over the view, the sessions of each step (the 5 minutes', the
+hour's, the day's), the deploys within it, and the sessions of the last 24
+hours, read from the database. Its body is held 60 s, and computed again
+sooner once one of its three files changed. The open-files route gives the
+deploys since its first sample too, which its chart marks.
+
+Its LLM performance section (`LlmPerformanceSection`, with its lines in
+`llmPerformanceSeries.ts`, over the window of the tab's switch) reads
+`GET /api/monitor/llm`: the rows
 `monitor/llm_performance.py` keeps of each of this Curio's own models, which
 `agents/infrastructure/providers.py` records once per request on Curio's own
 endpoint, as it ends (`_counted`): its time, a stream's time to its first word
@@ -212,8 +254,11 @@ replaced; one that does not parse is set aside as
 `<name>.json.unreadable-<time>` and named in the errors. Reads take the lock
 shared and count both windows back from now. Its charts are `LinesOverTime`
 (`MonitorCharts.tsx`), a line per series over time, broken where a value is
-null, with a log y axis, dashed series and values that are durations (written
-as milliseconds under a second, seconds above) as options.
+null, with a log y axis, dashed series, values that are durations (written
+as milliseconds under a second, seconds above) and marks as options: a mark
+is a thin dashed rule across the plot at a moment on the lines' time scale,
+in a layer over them with a tooltip of its own, which the Usage tab's charts
+of 24 hours and 7 days and the open-files chart draw at each deploy.
 
 API Settings is `ApiSettingsPanel` (`src/components/apiSettings/`), which the
 settings page (`src/pages/settings/SettingsPage.tsx`, at `/settings/keys` and
@@ -3107,7 +3152,7 @@ The server keeps one Yjs doc per open dataflow: a pycrdt `Doc` and an `Awareness
 
 **Budgets across the processes** ([`common/shared_budgets.py`](../utk_curio/backend/app/common/shared_budgets.py)). A budget over something every process shares is one budget for the start, as it is for one process: half the sandbox's isolated pool for viewers' steps and a visitor address's runs a minute and everyone's (`runs/viewer.py`), the `MAX_CONCURRENT_WORKERS` package handler workers and their quarantine breakers (`packages/infrastructure/backend_runtime.py`), an account's two runs, two Solves, two package builds and two Discovery downloads, an account's requests a minute to a portal, and Nominatim's one request a second. With several processes each is kept in `.curio/budgets/<name>/`, a folder only the backend reaches (0700, and in the isolation's `SENSITIVE_PATHS`), read and written under the budget's file lock. A place a run, a step or a download holds is an entry there whose holder holds a lock file of its own, and it counts only while that lock is held (`file_locks.is_held`), so a process that dies frees its places at once. A rate's tokens and last refill, and the next free second, are a small state the start's boot id tags, which the next start does not read. A waiter at a full budget is woken at once by a place its own process frees, and looks every `RECHECK_S` (0.25 s) for one another process freed. With one process each budget is held in memory, as before, and nothing is written. A dashboard's two live runs stay its owner process's, and the limit on the monitor's error reports stays the home process's: nothing else starts or takes them.
 
-Each process also keeps its own counters and error log, and takes its own open-files sample every hour (only home asks the sandbox). The monitor's routes in home ask every other process for its part at once, a POST signed with the start's secret to `/internal/monitor/<part>` (`backend`, `errors`; [`monitor/processes.py`](../utk_curio/backend/app/monitor/processes.py), over `owner_calls.post_to_process`), and merge them: node runs and memory summed, node types counted once, the newest 200 runs and the newest 200 server errors of them all, each error naming its process. A process that does not answer within 3 s is left out and named in the route's `backendProcesses`, and its failure goes to the error log; with one process nothing is asked. The monitor's histories, the LLM performance and the open files among them, are one file each that every process writes ([`monitor/history.py`](../utk_curio/backend/app/monitor/history.py)), so their routes read the file and ask no process: LLM rows add up by time and model whichever process wrote them, every field a sum, and each hour's open files are the busiest process's against its own limit, which the row names.
+Each process also keeps its own counters and error log, and takes its own open-files sample every hour (only home asks the sandbox). The monitor's routes in home ask every other process for its part at once, a POST signed with the start's secret to `/internal/monitor/<part>` (`backend`, `errors`; [`monitor/processes.py`](../utk_curio/backend/app/monitor/processes.py), over `owner_calls.post_to_process`), and merge them: node runs and memory summed, node types counted once, the newest 200 runs and the newest 200 server errors of them all, each error naming its process. A process that does not answer within 3 s is left out and named in the route's `backendProcesses`, and its failure goes to the error log; with one process nothing is asked. The monitor's histories, the usage, the LLM performance and the open files among them, are one file each that every process writes ([`monitor/history.py`](../utk_curio/backend/app/monitor/history.py)), so their routes read the files and ask no process: usage rows add up by time and measure, and LLM rows by time and model, whichever process wrote them, every field a sum, and each hour's open files are the busiest process's against its own limit, which the row names. The sessions and the starts are home's alone.
 
 **The rules the server applies.** After each update a tab sends, `_drop_dangling_connections` (called from `_apply_updates`, after each socket's updates in a batch) removes every connection whose node at either end the doc no longer holds, with its `edgeOrder` entry, as one transaction of origin `rules`, logged and relayed to every tab with the rest of the batch. A writer's change (`_write`) and a spec written outside the doc (`_catch_up`) meet the same rule inside their own transaction. Then the tab that drew it is told `connection_dropped`, `{projectId, edgeIds, by}`, `by` naming whoever removed the node: a person, or an agent at work by its name. Only the server takes such a connection out: a canvas stops drawing it, but its writer leaves it in the doc (`useDataflowDoc.ts`, `withoutDangling`), so a tab that sends it with its later changes as one update, as one that reconnects does, still sends it. One the doc took out already stays out: a canvas whose load was read before the node went still draws it at its bind, and its writer never puts it back.
 
@@ -3686,9 +3731,9 @@ on an upstream loader is progress.
 | `src/components/layout/HeaderDrawer.tsx` | The drawer shell API Settings, the Monitor and provenance open in on the canvas and the dashboard; with `pinnable`, the catalog drawers' pin |
 | `src/providers/ApiSettingsDrawerProvider.tsx`, `src/providers/MonitorDrawerProvider.tsx`, `src/providers/ProvenanceDrawerProvider.tsx` | Mount those drawers, inside `DataflowProviders` |
 | `src/components/provenance/` | The provenance drawer: `ProvenanceDrawer`, `ProvenanceHistory` (the list), `DataflowProvenance`, `NodeRunsProvenance`; layout in `src/utils/provenanceTree.ts`, versions in `src/utils/dataflowVersions.ts`, runs in `src/utils/nodeRuns.ts` |
-| `src/components/apiSettings/` | API Settings: `ApiSettingsPanel` (the two tabs), `ApiKeysTab`, `AgentConfigTab`, `SourceKeyForm`, `NodeKeyForm`, `ApiSettingsDrawer`, `ApiSettingsRequestHost` and `apiSettingsRequest.ts` (the `curio:api-settings` request event) |
+| `src/components/apiSettings/` | API Settings: `ApiSettingsPanel` (the two tabs, on `src/components/layout/TabBar.tsx`), `ApiKeysTab`, `AgentConfigTab`, `SourceKeyForm`, `NodeKeyForm`, `ApiSettingsDrawer`, `ApiSettingsRequestHost` and `apiSettingsRequest.ts` (the `curio:api-settings` request event) |
 | `src/pages/settings/SettingsPage.tsx` | The settings page, `/settings/keys` and `/settings/agents` |
-| `src/pages/monitor/MonitorContent.tsx`, `MonitorDrawer.tsx` | The monitor's content, rendered by the `/monitor` page and by its drawer; its LLM performance section is `LlmPerformanceSection.tsx` with `llmPerformanceSeries.ts`, and its charts are `MonitorCharts.tsx` (the histograms and `LinesOverTime`) in the palette of `chartColors.ts` |
+| `src/pages/monitor/MonitorContent.tsx`, `MonitorDrawer.tsx` | The monitor's content in its two tabs (`monitorTabs.ts`, on `src/components/layout/TabBar.tsx`), rendered by the `/monitor` page, which keeps the tab in its URL, and by its drawer; its Usage tab is `MonitorUsage.tsx` with `usageSeries.ts`, its LLM performance section `LlmPerformanceSection.tsx` with `llmPerformanceSeries.ts`, and its charts are `MonitorCharts.tsx` (the histograms and `LinesOverTime`, with its marks) in the palette of `chartColors.ts` |
 | `src/components/llmConfigs/` | The LLM configuration editor, the choices of the default and of each agent (with Curio's own models, `curioModels.ts`) and the `llm-config` remedy button, over `src/api/llmConfigsApi.ts` |
 | `src/components/menus/libraries/LibraryManagerWindow.tsx` | "Installed Libraries" modal (per-user pip libs, manifest-derived libs) |
 
@@ -3696,7 +3741,7 @@ on an upstream loader is progress.
 
 | File | Purpose |
 |---|---|
-| `backend/server.py` | Builds the Flask app from `create_app` (`backend/app/__init__.py`); the startup work, done by the home process when it serves, owning every dataflow while it does (the shared guest, the hosted guests' copies dropped, the agents, the packages `--guest-packages` names and the examples put back, the timers, the open-files sampler, the bucket mount service's proxy and check; each other process of a start of several samples its own open files); in every process that serves, the monitor's history writer and the write of what it holds on SIGTERM and at exit (`monitor/history.py`); Werkzeug reloader exclude patterns |
+| `backend/server.py` | Builds the Flask app from `create_app` (`backend/app/__init__.py`); the startup work, done by the home process when it serves, owning every dataflow while it does (the shared guest, the hosted guests' copies dropped, the agents, the packages `--guest-packages` names and the examples put back, the timers, the open-files sampler, the monitor's record of the start with its version and its sessions sampler (`monitor/usage.py`), the bucket mount service's proxy and check; each other process of a start of several samples its own open files); in every process that serves, the monitor's history writer and the write of what it holds on SIGTERM and at exit (`monitor/history.py`); Werkzeug reloader exclude patterns |
 | `common/backend_processes.py` | Which backend process this is (`CURIO_BACKEND_PROCESS` of `CURIO_BACKEND_PROCESSES`, process 0 the home process), the start's boot id (`CURIO_BOOT_ID`), which the launcher gives every backend of a start, every process's port and the start's secret, `shard_of`, the process a dataflow belongs to among several, `dataflow_id_on`, a new dataflow's id made for a process, and `own_file`, a file of this process's own |
 | `backend/app/api/routes.py` | REST endpoints for sandbox proxies, starters, and file serving |
 | `backend/app/packages/domain/manifest.py` | Parse `manifest.json` into typed `PackageManifest` dataclass |
