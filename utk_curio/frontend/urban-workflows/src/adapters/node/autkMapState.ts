@@ -362,6 +362,101 @@ export function soloMapLayer(
     map.requestRender?.();
 }
 
+/** What a map draws of a document's keys on its layers, read from autk-map's own layer. */
+export type DrawnLayer = {
+    /** The layer's id in its map: its `title`, else its table. */
+    id: string;
+    /** The type autk-map draws it as (`layerType`). */
+    type: string | null;
+    /** The features it lights, by their positions among those it draws. */
+    highlighted: number[];
+    /** The features it hides (`skippedComps`), by their positions among those it draws. */
+    skipped: number[];
+    /** Each line's width (`widthBy`), or null when the layer gives its lines none of their own. */
+    widths: number[] | null;
+    /** Each building's top, in the order the layer draws them, null for one drawn with no part (`buildingsZeroHeight`). */
+    tops: Array<number | null> | null;
+};
+
+/** What a map draws of a document's keys on the map: its layers, its legend, its controls and its terrain. */
+export type MapDrawing = {
+    layers: DrawnLayer[];
+    /** The layer the legend shows (`legend`), by its id. */
+    legend: string | null;
+    /** Whether autk-map's menu and legend are on the page (`showUi`). */
+    controls: boolean;
+    /** The heights the ground rises to (`terrain`), or null on a flat map. */
+    terrain: { minHeight: number; maxHeight: number; width: number; height: number } | null;
+    /**
+     * The colors the map draws picked features and values it cannot color in
+     * (`highlightColor`, `invalidValueColor`), as autk-map's style holds them.
+     */
+    highlightColor: unknown;
+    invalidValueColor: unknown;
+};
+
+/** The top of each building a buildings layer draws: the highest point of its mesh, null when it drew none. */
+function buildingTops(layer: any): Array<number | null> | null {
+    const position = layer?.position;
+    const components = layer?.components;
+    if (layer?._dimension !== 3 || !ArrayBuffer.isView(position) || !Array.isArray(components)) return null;
+    const values = position as unknown as ArrayLike<number>;
+    let at = 0;
+    return components.map((component: any) => {
+        const points = Number(component?.nPoints) || 0;
+        let top: number | null = null;
+        for (let i = 0; i < points; i += 1) {
+            const z = values[(at + i) * 3 + 2];
+            if (Number.isFinite(z) && (top === null || z > top)) top = z;
+        }
+        at += points;
+        return top;
+    });
+}
+
+/**
+ * What map *index* of *grammar* draws of the keys a document writes on a map
+ * and its layers, read from autk-map's own objects: each layer's type, the
+ * features it lights and hides, each line's width and each building's top,
+ * the layer its legend shows, whether its menu and legend are on the page, and
+ * the heights of its terrain. The drawing tools a Map Editor node puts on the
+ * map are left out. The e2e tests read it (`window.__curio_mapDrawing`).
+ */
+export function mapDrawingOf(grammar: unknown, index = 0): MapDrawing | null {
+    const map = grammarMaps(grammar)[index];
+    if (!map) return null;
+    const numbers = (values: unknown): number[] => (
+        values && typeof (values as any)[Symbol.iterator] === 'function' ? Array.from(values as Iterable<number>, Number) : []
+    );
+    const layers = layersOf(map).flatMap((layer): DrawnLayer[] => {
+        const id = idOf(layer);
+        if (!id || isMapEditToolLayer(id)) return [];
+        const widths = layer?.layerRenderInfo?.polylinesWidthByComponent;
+        return [{
+            id,
+            type: layer?.layerInfo?.typeLayer ?? null,
+            highlighted: numbers(layer?.highlightedIds),
+            // A points layer keeps the features it hides in a set of its own.
+            skipped: numbers(layer?.skippedIds ?? layer?._skippedIds).sort((a, b) => a - b),
+            widths: ArrayBuffer.isView(widths) ? numbers(widths) : null,
+            tops: buildingTops(layer),
+        }];
+    });
+    const ui = map.ui;
+    const shown = (element: any) => !!element?.isConnected;
+    const heightfield = map._terrainRenderPath?.heightfield;
+    return {
+        layers,
+        legend: idOf(ui?.activeLayer) ?? null,
+        controls: shown(ui?._menuIcon) || shown(ui?._subMenu) || shown(ui?._legend),
+        terrain: heightfield
+            ? { minHeight: heightfield.minHeight, maxHeight: heightfield.maxHeight, width: heightfield.width, height: heightfield.height }
+            : null,
+        highlightColor: map.style?.getHighlightColor?.() ?? null,
+        invalidValueColor: map.style?.getInvalidValueColor?.() ?? null,
+    };
+}
+
 /** What a Map Editor node feeding a map asks of it: the layer shown alone, and the layer an action works on. */
 export type EditsView = { solo: string | null; picking: string | null };
 

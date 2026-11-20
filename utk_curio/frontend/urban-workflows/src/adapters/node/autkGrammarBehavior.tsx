@@ -79,8 +79,9 @@ import { interactionHandleView, isInteractionEdge } from '../../contracts/intera
 import type { ViewArrangement } from '@urban-toolkit/autk-grammar';
 import { mapSession, onMapSession, registerEditMap } from '../../utils/editFeatures/mapEditBus';
 import {
-    drawnFeatureAt, featurePositions, layerIdFor, mapLayerOf, mapStateOf, pickOn, restoreMapLayers, showForEdits,
-    snapshotBeforeSolo, snapshotMapLayers, type DrawnTables, type EditsView, type MapLayerState, type MapTableState,
+    drawnFeatureAt, featurePositions, layerIdFor, mapDrawingOf, mapLayerOf, mapStateOf, pickOn, restoreMapLayers,
+    showForEdits, snapshotBeforeSolo, snapshotMapLayers, type DrawnTables, type EditsView, type MapDrawing,
+    type MapLayerState, type MapTableState,
 } from './autkMapState';
 import {
     drawnInput, editFeedsOf, editedMapView, fedByInteraction, feedsVersion, newLayerTables, type EditFeed,
@@ -102,6 +103,8 @@ const mapStateReaders = new Map<string, {
     featureAt: (table: string, position: number, view?: string | number) => Promise<Record<string, unknown> | null>;
     views: () => Array<MapView | null>;
     showFramed: () => () => void;
+    drawing: (view?: string | number) => MapDrawing | null;
+    tourEnded: (view?: string | number) => Promise<boolean>;
 }>();
 /** What turns each node's maps back by their cameras, while they show their framed views. */
 const turnBack = new Map<string, () => void>();
@@ -118,6 +121,13 @@ if (typeof window !== 'undefined') {
     (window as any).__curio_mapFeatureAt = (nodeId: string, table: string, position: number, view?: string | number) =>
         mapStateReaders.get(nodeId)?.featureAt(table, position, view) ?? null;
     (window as any).__curio_mapViews = (nodeId: string) => mapStateReaders.get(nodeId)?.views() ?? null;
+    // What a map draws of the keys of its map and its layers (autkMapState
+    // `mapDrawingOf`), and, once its camera tour ends, true: false when it
+    // plays none (test_frontend/test_autark_map_keys_e2e.py).
+    (window as any).__curio_mapDrawing = (nodeId: string, view?: string | number) =>
+        mapStateReaders.get(nodeId)?.drawing(view) ?? null;
+    (window as any).__curio_mapTourEnded = (nodeId: string, view?: string | number) =>
+        mapStateReaders.get(nodeId)?.tourEnded(view) ?? Promise.resolve(false);
     (window as any).__curio_showMapsFramed = (nodeId: string, framed: boolean): boolean => {
         turnBack.get(nodeId)?.();
         turnBack.delete(nodeId);
@@ -2168,6 +2178,19 @@ export const useAutkGrammarBehavior = (
             },
             views: () => mapViews(grammarRef.current),
             showFramed: () => showFramedViews(grammarRef.current),
+            drawing: (view) => {
+                const { index } = mapOf(view);
+                return index < 0 ? null : mapDrawingOf(grammarRef.current, index);
+            },
+            // The tour the map plays, or last played: the grammar keeps the
+            // last one played on each map of its run (its `tours`).
+            tourEnded: async (view) => {
+                const { index } = mapOf(view);
+                const tour = index < 0 ? undefined : (grammarRef.current as any)?.tours?.[index];
+                if (!tour?.done) return false;
+                await tour.done;
+                return true;
+            },
         });
         return () => {
             mapStateReaders.delete(data.nodeId);
