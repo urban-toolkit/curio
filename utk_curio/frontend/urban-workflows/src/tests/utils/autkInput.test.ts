@@ -15,6 +15,8 @@ import {
   documentTableRefs,
   drawnFeatures,
   drawnRows,
+  heightUses,
+  heightsAtUse,
   loadableSource,
   ownTableNames,
   inputRow,
@@ -249,7 +251,9 @@ describe("autkSourcesFrom", () => {
 
   test("a buildings table gets heights autk-map can read, one feature per row", () => {
     // A GeoDataFrame gives every row every column: a building tagged only with
-    // building:levels arrives with height null, and autk-map would cull it.
+    // building:levels arrives with height null, and autk-map would cull it. A
+    // building with no height keeps none as the node reads it, and the map
+    // that draws the table draws it 6 m tall (heightsAtUse).
     const rows = [
       { height: 30, "building:levels": null },
       { height: null, "building:levels": 8 },
@@ -262,10 +266,15 @@ describe("autkSourcesFrom", () => {
     const prepared = autkSourcesFrom(read(frame({ layerType: "buildings", payload })), MAP_ON("input_0"));
     expect(prepared.sources.map((s) => [s.outputTableName, s.layerType])).toEqual([["input_0", "buildings"]]);
     const features = prepared.sources[0].geojsonObject.features as any[];
-    expect(features.map((f) => f.properties.height)).toEqual([30, 8 * 3.4, 6]);
-    // The first already reads right, so it is the same feature; the input is not changed.
+    expect(features.map((f) => f.properties.height)).toEqual([30, 8 * 3.4, null]);
+    // The first and the last already read right, so they are the same
+    // features; the input is not changed.
     expect(features[0]).toBe(payload.features[0]);
+    expect(features[2]).toBe(payload.features[2]);
     expect(payload.features.map((f) => f.properties.height)).toEqual([30, null, null]);
+    // The map that draws the table draws each building at its height, the one with none at 6 m.
+    const drawn = heightsAtUse(prepared.sources[0], heightUses(MAP_ON("input_0")));
+    expect(drawn.geojsonObject.features.map((f: any) => f.properties.height)).toEqual([30, 8 * 3.4, 6]);
   });
 
   test("any other table is passed on as it came", () => {
