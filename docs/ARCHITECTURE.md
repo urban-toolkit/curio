@@ -175,10 +175,20 @@ are links to `/monitor` and `/settings`. The monitor's content is
 `MonitorContent` (`src/pages/monitor/`), which the `/monitor` page and
 `MonitorDrawer` both render.
 
-Its LLM tokens section (`LlmTokensSection`, with its lines in `llmSeries.ts`)
-reads `GET /api/monitor/llm`: the rows `monitor/llm_tokens.py` keeps of each
-model's tokens, which `agents/infrastructure/providers.py` records once per
-request, right after it (`_counted`), summed by hour. Those rows are a monitor
+Its LLM performance section (`LlmPerformanceSection`, with its window switch
+and lines in `llmPerformanceSeries.ts`) reads `GET /api/monitor/llm`: the rows
+`monitor/llm_performance.py` keeps of each of this Curio's own models, which
+`agents/infrastructure/providers.py` records once per request on Curio's own
+endpoint, as it ends (`_counted`): its time, a stream's time to its first word
+or call, its output tokens and whether it raised. A row holds sums alone: the
+requests, those that failed, their milliseconds and their count in each of 14
+duration buckets (`monitor/durations.py`), the first tokens' milliseconds, and
+the output tokens with the milliseconds of the requests that reported them.
+The route reads three views of them: the 5-minute rows of the last 24 hours,
+hourly sums over 7 days and daily sums over 90 days, each with each model's
+and every model's requests, failures, average and 95th percentile time (read
+from the buckets, interpolated inside the one that holds it), time to the
+first token and output tokens per second. Those rows are a monitor
 history (`monitor/history.py`), kept across restarts: one file,
 `<name>.json` with `{name, format: 2, rows}`, in the monitor folder
 (`--monitor-dir`, `CURIO_MONITOR_DIR`, else `.curio/monitor`, kept `0700`),
@@ -199,8 +209,9 @@ its history's own rule. A file of another format reads as empty and is
 replaced; one that does not parse is set aside as
 `<name>.json.unreadable-<time>` and named in the errors. Reads take the lock
 shared and count both windows back from now. Its charts are `LinesOverTime`
-(`MonitorCharts.tsx`), a line per series over time, with a log y axis and
-dashed series as options.
+(`MonitorCharts.tsx`), a line per series over time, broken where a value is
+null, with a log y axis, dashed series and values that are durations (written
+as milliseconds under a second, seconds above) as options.
 
 API Settings is `ApiSettingsPanel` (`src/components/apiSettings/`), which the
 settings page (`src/pages/settings/SettingsPage.tsx`, at `/settings/keys` and
@@ -2232,7 +2243,7 @@ A server can also stop feeding a stream without closing it, and the SDK alone wo
 
 `ChatTurn.output_limit` and `thinking_room_refused` say how a turn was asked, not what it holds, so two turns that hold the same are equal.
 
-Usage counts every input token as `inputTokens`, cached or not (Anthropic reports cache reads and writes apart from its input count), plus `cacheReadTokens` and `cacheWriteTokens` when the provider reports them. The ledger, a run's execution record and the evaluation report keep them. The monitor counts each request's input and output tokens once, by model and by endpoint (this Curio's or a user's own key), as soon as the request ends (`providers._counted`, `monitor/llm_tokens.py`): a request asked again counts each time, and a stream its caller stopped counts what its provider had reported, which reaches the turn's usage too.
+Usage counts every input token as `inputTokens`, cached or not (Anthropic reports cache reads and writes apart from its input count), plus `cacheReadTokens` and `cacheWriteTokens` when the provider reports them. The ledger, a run's execution record and the evaluation report keep them. The monitor counts each request on this Curio's own endpoint (`ProviderConfig.on_deployment`) once, by model, as soon as it ends (`providers._counted`, `monitor/llm_performance.py`): its time from before it was asked (`_clock`) to its end, a stream's time to the first word or call that comes out of it, stamped before its caller has it, the output tokens its provider reported, and whether it raised, which a request its server refused counts as, the room for thinking refused among them. A request asked again counts each time, a stream its caller stopped counts as it stood and not as failed, and the scripted provider's turn (`run_scripted_turn`) counts as one request, timed whole, with no first token. A request on a key a user set for their own is not counted, so no model name a user typed reaches the public page.
 
 What an endpoint can do beyond text is [`chat_capabilities.py`](../utk_curio/backend/app/agents/infrastructure/chat_capabilities.py)'s answer: native tools and a reply schema. Anthropic, Gemini and OpenAI's own endpoint are known from their APIs; any other OpenAI-compatible server is asked once per model with a charged one-tool trial (`providers.probe_native_tools`), recorded per account in `.curio/users/<u>/chat-capabilities.json`, its tokens on the ledger with the configuration's id. The scripted provider answers what a test scripted, fenced by default.
 
@@ -3094,7 +3105,7 @@ The server keeps one Yjs doc per open dataflow: a pycrdt `Doc` and an `Awareness
 
 **Budgets across the processes** ([`common/shared_budgets.py`](../utk_curio/backend/app/common/shared_budgets.py)). A budget over something every process shares is one budget for the start, as it is for one process: half the sandbox's isolated pool for viewers' steps and a visitor address's runs a minute and everyone's (`runs/viewer.py`), the `MAX_CONCURRENT_WORKERS` package handler workers and their quarantine breakers (`packages/infrastructure/backend_runtime.py`), an account's two runs, two Solves, two package builds and two Discovery downloads, an account's requests a minute to a portal, and Nominatim's one request a second. With several processes each is kept in `.curio/budgets/<name>/`, a folder only the backend reaches (0700, and in the isolation's `SENSITIVE_PATHS`), read and written under the budget's file lock. A place a run, a step or a download holds is an entry there whose holder holds a lock file of its own, and it counts only while that lock is held (`file_locks.is_held`), so a process that dies frees its places at once. A rate's tokens and last refill, and the next free second, are a small state the start's boot id tags, which the next start does not read. A waiter at a full budget is woken at once by a place its own process frees, and looks every `RECHECK_S` (0.25 s) for one another process freed. With one process each budget is held in memory, as before, and nothing is written. A dashboard's two live runs stay its owner process's, and the limit on the monitor's error reports stays the home process's: nothing else starts or takes them.
 
-Each process also keeps its own counters and error log, and takes its own open-files sample every hour (only home asks the sandbox). The monitor's routes in home ask every other process for its part at once, a POST signed with the start's secret to `/internal/monitor/<part>` (`backend`, `errors`; [`monitor/processes.py`](../utk_curio/backend/app/monitor/processes.py), over `owner_calls.post_to_process`), and merge them: node runs and memory summed, node types counted once, the newest 200 runs and the newest 200 server errors of them all, each error naming its process. A process that does not answer within 3 s is left out and named in the route's `backendProcesses`, and its failure goes to the error log; with one process nothing is asked. The monitor's histories, the LLM tokens and the open files among them, are one file each that every process writes ([`monitor/history.py`](../utk_curio/backend/app/monitor/history.py)), so their routes read the file and ask no process: token rows add up by hour and model whichever process wrote them, and each hour's open files are the busiest process's against its own limit, which the row names.
+Each process also keeps its own counters and error log, and takes its own open-files sample every hour (only home asks the sandbox). The monitor's routes in home ask every other process for its part at once, a POST signed with the start's secret to `/internal/monitor/<part>` (`backend`, `errors`; [`monitor/processes.py`](../utk_curio/backend/app/monitor/processes.py), over `owner_calls.post_to_process`), and merge them: node runs and memory summed, node types counted once, the newest 200 runs and the newest 200 server errors of them all, each error naming its process. A process that does not answer within 3 s is left out and named in the route's `backendProcesses`, and its failure goes to the error log; with one process nothing is asked. The monitor's histories, the LLM performance and the open files among them, are one file each that every process writes ([`monitor/history.py`](../utk_curio/backend/app/monitor/history.py)), so their routes read the file and ask no process: LLM rows add up by time and model whichever process wrote them, every field a sum, and each hour's open files are the busiest process's against its own limit, which the row names.
 
 **The rules the server applies.** After each update a tab sends, `_drop_dangling_connections` (called from `_apply_updates`, after each socket's updates in a batch) removes every connection whose node at either end the doc no longer holds, with its `edgeOrder` entry, as one transaction of origin `rules`, logged and relayed to every tab with the rest of the batch. A writer's change (`_write`) and a spec written outside the doc (`_catch_up`) meet the same rule inside their own transaction. Then the tab that drew it is told `connection_dropped`, `{projectId, edgeIds, by}`, `by` naming whoever removed the node: a person, or an agent at work by its name. Only the server takes such a connection out: a canvas stops drawing it, but its writer leaves it in the doc (`useDataflowDoc.ts`, `withoutDangling`), so a tab that sends it with its later changes as one update, as one that reconnects does, still sends it. One the doc took out already stays out: a canvas whose load was read before the node went still draws it at its bind, and its writer never puts it back.
 
@@ -3675,7 +3686,7 @@ on an upstream loader is progress.
 | `src/components/provenance/` | The provenance drawer: `ProvenanceDrawer`, `ProvenanceHistory` (the list), `DataflowProvenance`, `NodeRunsProvenance`; layout in `src/utils/provenanceTree.ts`, versions in `src/utils/dataflowVersions.ts`, runs in `src/utils/nodeRuns.ts` |
 | `src/components/apiSettings/` | API Settings: `ApiSettingsPanel` (the two tabs), `ApiKeysTab`, `AgentConfigTab`, `SourceKeyForm`, `NodeKeyForm`, `ApiSettingsDrawer`, `ApiSettingsRequestHost` and `apiSettingsRequest.ts` (the `curio:api-settings` request event) |
 | `src/pages/settings/SettingsPage.tsx` | The settings page, `/settings/keys` and `/settings/agents` |
-| `src/pages/monitor/MonitorContent.tsx`, `MonitorDrawer.tsx` | The monitor's content, rendered by the `/monitor` page and by its drawer; its LLM tokens section is `LlmTokensSection.tsx` with `llmSeries.ts`, and its charts are `MonitorCharts.tsx` (the histograms and `LinesOverTime`) in the palette of `chartColors.ts` |
+| `src/pages/monitor/MonitorContent.tsx`, `MonitorDrawer.tsx` | The monitor's content, rendered by the `/monitor` page and by its drawer; its LLM performance section is `LlmPerformanceSection.tsx` with `llmPerformanceSeries.ts`, and its charts are `MonitorCharts.tsx` (the histograms and `LinesOverTime`) in the palette of `chartColors.ts` |
 | `src/components/llmConfigs/` | The LLM configuration editor, the choices of the default and of each agent (with Curio's own models, `curioModels.ts`) and the `llm-config` remedy button, over `src/api/llmConfigsApi.ts` |
 | `src/components/menus/libraries/LibraryManagerWindow.tsx` | "Installed Libraries" modal (per-user pip libs, manifest-derived libs) |
 

@@ -708,11 +708,14 @@ It shows:
 - **Execution** - node runs since launch, failures, a duration histogram, how
   many isolated slots are busy, and a tally of how child processes died
   (timeout, OOM, CPU limit, refused confinement).
-- **LLM tokens** - each model's input and output tokens per hour over the last
-  7 days, as two charts, and a table of each model's tokens over the last 24
-  hours, the last 7 days and everything kept, with its requests. Each model is
-  marked as running on Curio's own endpoint or on a key a user set for their
-  own.
+- **LLM performance** - the requests of this Curio's own models, those of the
+  file `--llm-endpoint-file` names: over the last 24 hours, their number, their
+  average response time and their output tokens per second; then a chart of
+  each model's average response time and a table of each model's requests,
+  failed requests, average and 95th percentile response time, time to the
+  first token and output tokens per second, over the last 24 hours in
+  5-minute steps, the last 7 days hour by hour (shown first) or the last 90
+  days day by day. A request on a key a user set for their own is not counted.
 - **Accounts and content** - account, session, sign-in, project and dataset
   counts.
 - **Storage** - disk usage across the `.curio` tree, as a distribution over
@@ -725,9 +728,9 @@ It shows:
 to paste into an issue; "Download" saves the same thing as JSON.
 
 The execution figures and the error log are since the process started, which
-is why uptime is on the page, and a restart resets them. The LLM tokens and the
-open files are kept across restarts: the last 90 days, counted back from the
-current hour, one file each (`llm-tokens.json`, `open-files.json`) in the folder
+is why uptime is on the page, and a restart resets them. The LLM performance and
+the open files are kept across restarts: the last 90 days, counted back from the
+current hour, one file each (`llm.json`, `open-files.json`) in the folder
 `--monitor-dir` names, `.curio/monitor` by default, readable by the backend's
 own account alone. Each backend process writes what it counted there at most a
 minute later, and when it stops. A deployment whose deploys delete `.curio`
@@ -735,7 +738,7 @@ names a folder outside it with `--monitor-dir`, as both hosted stacks do
 ([CI/CD](#optional-cicd-with-github-actions--tailscale)).
 
 With `--backend-processes N` the page shows the whole backend: node runs,
-backend memory and errors of every process, the LLM tokens every process
+backend memory and errors of every process, the LLM requests every process
 counted, and in each hour the open files of the busiest process against its
 own limit. A process that does not answer is named at the top of the page, and
 its node runs, memory and errors are left out.
@@ -746,10 +749,10 @@ its node runs, memory and errors are left out.
 `/version`. On a deployment, anyone who can reach the URL can read them.
 
 The statistics are aggregates: no route reports a username, an email address,
-an IP address, or a per-user row. The LLM tokens section names the models that
-answered: Curio's own, and the ones users set for their own keys. A model name
-that looks like a URL, a host, an email address, an IP address or a key, or
-that has spaces, shows as `other`.
+an IP address, or a per-user row. The LLM performance section names this
+Curio's own models that answered. A model name that looks like a URL, a host,
+an email address, an IP address or a key, or that has spaces, shows as
+`other`.
 
 **The error log is the exception.** `GET /api/monitor/errors` returns raw,
 unredacted failures. Those
