@@ -45,6 +45,12 @@ const HELD_TABLES_CRS = 'EPSG:3395';
 // surprising than aborting the whole pipeline. A section that writes a key
 // autk-grammar 5 renamed, or one a node does not run yet (contracts/autkGrammar),
 // runs no pass and is a failure, named.
+//
+// A step whose passes keep a result in autk-db (`writeBack`), or with sources
+// that run after its passes (*afterCompute.after*, autkDataCompile
+// sourcesAfterPasses), runs on a database of its own, as autk-grammar's run
+// runs a document, the document's workspaces (*afterCompute.workspaces*) set
+// up first (autkComputeDatabase).
 export async function applyComputeBlocks(
     layers: Layer[],
     computeBlocks: any[],
@@ -52,12 +58,20 @@ export async function applyComputeBlocks(
      *  so the caller can refuse to report success. A pass whose table matches
      *  no layer is still skipped quietly - that is a no-op, not a failure. */
     failures: string[] = [],
+    afterCompute: { after?: any[]; workspaces?: unknown } = {},
 ): Promise<Layer[]> {
-    if (!Array.isArray(computeBlocks) || computeBlocks.length === 0) return layers;
-    const keyProblem = autkKeyProblem({ compute: computeBlocks });
+    const after = Array.isArray(afterCompute.after) ? afterCompute.after : [];
+    const passes = Array.isArray(computeBlocks) ? computeBlocks : [];
+    if (passes.length === 0 && after.length === 0) return layers;
+    const keyProblem = autkKeyProblem({ compute: passes });
     if (keyProblem) {
         failures.push(keyProblem);
         return layers;
+    }
+    if (after.length > 0 || passes.some((pass) => Boolean(pass?.writeBack))) {
+        const { computeOnADatabase } = await import('./autkComputeDatabase');
+        const handed = await computeOnADatabase(layers, passes, after, { workspaces: afterCompute.workspaces, compute: passes, data: after }, failures);
+        return handed.map((layer) => ({ ...layer, type: layer.type ?? 'polygons' }));
     }
     const { createComputeAdapter, tableKey } = await import('@urban-toolkit/autk-grammar');
     // The grammar's caches, as its own run keeps them: each table by tableKey,
