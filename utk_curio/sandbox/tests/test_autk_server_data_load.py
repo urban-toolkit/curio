@@ -114,9 +114,10 @@ def _loader_content(example: str, node_id: str) -> str:
     return next(node["content"] for node in dataflow["nodes"] if node["id"] == node_id)
 
 
-def _run_load(example: str, node_id: str, extract: str, tmp_path, monkeypatch) -> dict:
+def _run_example_load(example: str, node_id: str, extract: str, tmp_path, monkeypatch) -> dict:
     """What ``execute_js_code`` answers for the server-compiled load of the
-    node *node_id* of *example*, its extract served from disk."""
+    node *node_id* of *example*, its extract served from disk (``_run_load``,
+    below, runs a document of the test's own with nothing served)."""
     from utk_curio.cli import dependencies
     from utk_curio.common.autk_data_compiler import compile_data_spec
     from utk_curio.sandbox.app.worker import _worker_init, execute_js_code
@@ -158,7 +159,7 @@ def _run_load(example: str, node_id: str, extract: str, tmp_path, monkeypatch) -
 def test_the_server_compiled_load_hands_on_the_layers(example, node_id, extract, layers, tmp_path, monkeypatch):
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
-    result = _run_load(example, node_id, extract, tmp_path, monkeypatch)
+    result = _run_example_load(example, node_id, extract, tmp_path, monkeypatch)
 
     assert result["output"]["path"], result["stderr"]
     assert result["output"]["dataType"] == "list"
@@ -212,7 +213,7 @@ def test_the_server_compiled_load_hands_on_a_building_part_with_no_height_with_n
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
     example, node_id = "dataflows/lower-manhattan-park-shade.json", "park-shade-layers"
-    result = _run_load(example, node_id, "docs/examples/data/lower_mnt.osm.pbf", tmp_path, monkeypatch)
+    result = _run_example_load(example, node_id, "docs/examples/data/lower_mnt.osm.pbf", tmp_path, monkeypatch)
     assert result["output"]["path"], result["stderr"]
     loaded = load_from_duckdb(result["output"]["path"], session_id=None)
     (buildings,) = [layer for layer in loaded if layer["name"] == "table_osm_buildings"]
@@ -270,11 +271,11 @@ _PLAIN_HEIGHT = re.compile(r"[0-9]+(?:\.[0-9]+)?")
 
 def _served_layers(example: str, node_id: str, extract: str, tmp_path, monkeypatch) -> list:
     """What the server-compiled load of *example*'s node *node_id* stores,
-    *extract* served from disk, as the tests above run it (``_run_load``): a
-    layer record ``{name, type, geojson}`` each."""
+    *extract* served from disk, as the tests above run it
+    (``_run_example_load``): a layer record ``{name, type, geojson}`` each."""
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
-    result = _run_load(example, node_id, extract, tmp_path, monkeypatch)
+    result = _run_example_load(example, node_id, extract, tmp_path, monkeypatch)
     assert result["output"]["path"], result["stderr"]
     return load_from_duckdb(result["output"]["path"], session_id=None)
 
