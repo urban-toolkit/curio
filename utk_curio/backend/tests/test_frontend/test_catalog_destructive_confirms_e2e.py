@@ -78,6 +78,12 @@ OWN_DATASET_CODE = (
     "df = pd.DataFrame({'a': [1, 2, 3], 'b': ['x', 'y', 'z']})\n"
     "return df\n"
 )
+#: The node that makes it, at an id of its own. The catalog pages print the
+#: dataset's id, ``computed.<node id>@1``, and a dropped node's random id put
+#: new text in the two frames that show it on every run.
+OWN_DATASET_NODE = "own-dataset"
+#: That id, as the card and its details print it.
+OWN_DATASET = f"computed.{OWN_DATASET_NODE}@1"
 
 
 def _expect_actions_in_view(drawer) -> None:
@@ -135,6 +141,16 @@ def _enter(page, frontend, backend, username, *, spec: dict | None = None) -> di
     require_owner_view(page)
     page.locator("#tools-menu").wait_for(state="visible", timeout=45000)
     return session
+
+
+def _makes_its_own_dataset() -> dict:
+    """The dataflow the publish tests open: one Data Loading node, at
+    OWN_DATASET_NODE, for the code that makes the user's own dataset."""
+    return {"dataflow": {"name": DATAFLOW, "task": "", "edges": [], "nodes": [{
+        "id": OWN_DATASET_NODE, "type": LOADING_TYPE, "x": 0, "y": 0,
+        "content": "", "in": "DEFAULT", "out": "DEFAULT", "goal": "",
+        "metadata": {"keywords": []},
+    }]}}
 
 
 def _loads_the_areas_in_code(name: str) -> dict:
@@ -382,10 +398,10 @@ def test_publish_is_offered_only_for_the_users_own_data_and_asks_first(
     """
     require_project_page()
     require_user_auth()
-    _enter(page, app_frontend.base_url, current_server, "confirm_publish")
+    _enter(page, app_frontend.base_url, current_server, "confirm_publish", spec=_makes_its_own_dataset())
 
     # Something of the user's own, so there is a Publish to find.
-    loading = drag_builtin_to_canvas(page, LOADING_TILE, at=(220, 200))
+    loading = OWN_DATASET_NODE
     set_node_code(page, loading, OWN_DATASET_CODE)
     # Saving the output is opt-in per node and off by default, so a plain run
     # leaves a parquet and no catalog row. See ``enable_save_output``.
@@ -411,10 +427,13 @@ def test_publish_is_offered_only_for_the_users_own_data_and_asks_first(
     # 2. THE POINT: the user's own does offer it.
     own_card = page.locator('article[data-dataset-id^="computed."]').first
     own_card.wait_for(state="visible", timeout=60000)
+    # The frame below prints its id, on the card and in its details.
+    expect(own_card).to_contain_text(OWN_DATASET)
     own_card.scroll_into_view_if_needed()
     own_card.click()
     publish = drawer.get_by_role("button", name=re.compile(r"^Publish"))
     expect(publish).to_have_count(1, timeout=30000)
+    expect(drawer).to_contain_text(OWN_DATASET)
     _expect_actions_in_view(drawer)
 
     save_workflow_test_screenshot(
@@ -540,10 +559,10 @@ def test_the_catalog_pages_use_one_button_vocabulary(
     """
     require_project_page()
     require_user_auth()
-    _enter(page, app_frontend.base_url, current_server, "catalog_button_vocab")
+    _enter(page, app_frontend.base_url, current_server, "catalog_button_vocab", spec=_makes_its_own_dataset())
 
     # Produce something of the user's own, so a Publish action exists to look at.
-    loading = drag_builtin_to_canvas(page, LOADING_TILE, at=(220, 200))
+    loading = OWN_DATASET_NODE
     set_node_code(page, loading, OWN_DATASET_CODE)
     # Saving the output is opt-in per node and off by default, so a plain run
     # leaves a parquet and no catalog row. See ``enable_save_output``.
@@ -554,6 +573,8 @@ def test_the_catalog_pages_use_one_button_vocabulary(
     page.wait_for_load_state("domcontentloaded")
     card = page.locator('article[data-dataset-id^="computed."]').first
     card.wait_for(state="visible", timeout=60000)
+    # The frame below prints its id, on the card and in its details.
+    expect(card).to_contain_text(OWN_DATASET)
     card.scroll_into_view_if_needed()
 
     # Publishing is not a card action on any surface any more, so the button to
@@ -565,6 +586,7 @@ def test_the_catalog_pages_use_one_button_vocabulary(
     drawer.wait_for(state="visible", timeout=30000)
     publish = drawer.get_by_role("button", name=re.compile(r"^Publish"))
     expect(publish).to_have_count(1, timeout=30000)
+    expect(drawer).to_contain_text(OWN_DATASET)
 
     # The action fill, not a blue pill of its own. `--curio-top-bar-bg` is the
     # same token `.btnInstall` uses for "Add to project".
