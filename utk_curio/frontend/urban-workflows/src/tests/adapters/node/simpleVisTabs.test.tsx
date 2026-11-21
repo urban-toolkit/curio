@@ -5,7 +5,8 @@
  * tab is open. In it the overlay's card plays, and the player's range is in
  * the time of the played row's video (utils/playerSelection). Another tab
  * shows its own rows, and leaving a tab closes its player, which takes the
- * range away. A dict that holds no frame is the JSON it is.
+ * range away. While the view reads a dict by its artifact, it says its input
+ * is on its way. A dict that holds no frame is the JSON it is.
  */
 import React from 'react';
 import { render, screen, act, fireEvent, waitFor, within } from '@testing-library/react';
@@ -162,6 +163,20 @@ describe('Simple View shows a dict of frames as a tab per frame', () => {
     });
     expect(openTab()).toBe('videos');
     expect(screen.getByRole('button', { name: 'Play walk.mp4 from 50 s' })).toBeInTheDocument();
+  });
+
+  it('says the dict is on its way while it reads it, and never shows the reference it reads it by', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    (fetchData as jest.Mock).mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+    const input = { path: 'art-tracked', dataType: 'dict' };
+    const view = render(<Harness data={{ nodeId: 'sv-1', input, outputCallback: jest.fn(), interactionsCallback: jest.fn() }} />);
+    await act(async () => {});
+    expect(view.container.querySelector('[data-curio-node-text]')).toBeNull();
+    expect(screen.getByText('Computing...')).toBeInTheDocument();
+    await act(async () => {
+      answer(twoTables);
+    });
+    expect(tabTitles()).toEqual(['videos', 'tracks']);
   });
 
   it('shows a dict it holds inline, as a dashboard tile is handed one, as its tabs too', async () => {

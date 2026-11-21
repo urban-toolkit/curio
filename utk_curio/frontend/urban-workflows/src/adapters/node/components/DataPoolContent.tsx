@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import Nav from 'react-bootstrap/Nav';
+import FrameTabs from './FrameTabs';
 import { TabularPreviewTable } from '../../../components/tables/TabularPreviewTable';
 import { fetchPreviewData } from '../../../services/api';
 import { sandboxArtifactId } from '../../../utils/flowOutputRef';
@@ -245,32 +245,12 @@ export default function DataPoolContent({
           testId="data-pool-mode-between"
         />
       </div>
-      <Nav
-        variant="tabs"
+      <FrameTabs
+        tabs={hasData ? tabData : []}
         activeKey={activeTab}
-        onSelect={(k) => onSelectTab(k || '0')}
-        className="mb-3 nowheel"
-        // nowrap + overflowX keeps the strip one row tall regardless of table
-        // count, so adding tables never steals height from the table below.
-        // overflowY hidden: a tab's -1px bottom margin would otherwise make
-        // the strip scroll vertically by one pixel, with a scrollbar.
-        // `nowheel` stops React Flow swallowing the scroll (#156).
-        style={{ flexShrink: 0, flexWrap: 'nowrap', overflowX: 'auto', overflowY: 'hidden' }}
-        data-testid="data-pool-tabs"
-      >
-        {hasData ? (
-          tabData.map((entry, index) => {
-            const title = entry && typeof entry === 'object' && entry.layerName
-              ? String(entry.layerName)
-              : `Tab ${index + 1}`;
-            return (
-              <Nav.Item key={index}>
-                <Nav.Link eventKey={index.toString()}>{title}</Nav.Link>
-              </Nav.Item>
-            );
-          })
-        ) : null}
-      </Nav>
+        onSelect={onSelectTab}
+        testId="data-pool-tabs"
+      />
       <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         {hasData && activeKind === 'raster' ? (
           <NodeEmptyState reason="not-tabular" title={RASTER_TAB_TITLE} hint="" lines={rasterLines} />
