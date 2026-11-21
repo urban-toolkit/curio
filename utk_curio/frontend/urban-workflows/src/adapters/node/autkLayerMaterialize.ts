@@ -206,8 +206,10 @@ function flattenToMultiPolygon(geom: any): any | null {
 // part's tags in `properties.parts` naming its geometry by `geometryIndex`. An
 // Autark node hands buildings on one row per part (#536), a Polygon (or
 // MultiPolygon) with that part's tags: a table lists every part, Edit Features
-// removes a building by `building_id`, and a batched compute packs each part's
-// `geometry.coordinates.0`, a Polygon's outer ring. A part with no height is
+// removes a building by `building_id`, and a batched compute packs each polygon
+// of a part, its `geometry.coordinates.0`, its outer ring, beside the part's
+// values (autk-grammar packs each polygon of a MultiPolygon as a feature of its
+// own when a batched entry reads the geometry). A part with no height is
 // handed on with none: a node that uses one takes the default where it uses it
 // (utils/buildingHeight `withDefaultHeight`). The downstream
 // `loadGeojson('buildings')` makes every row a building of its own, so each part
