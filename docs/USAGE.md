@@ -1641,6 +1641,12 @@ that table, unless it names a new one:
   beside `compute.twice`.
 - A compute step with a `data` section of its own runs its passes on the tables
   it loads, and on its input's tables when a pass names one.
+- A document that draws a map or a plot and also loads data or runs passes
+  hands on what a compute step would: its input's tables when a view or a
+  pass names one, then the tables it loads, then each new table. A Python node
+  after example 38's node reads the Loop's roads with their minutes of sun as
+  `loop = [!! input_0:loop_road_sun !!]`. A document that only draws its input
+  hands that input on as it came.
 - A pass over a table with no rows does not run, and the table it would write
   has no rows.
 - A pass the GPU cannot run fails the node, and the node's error names the
@@ -1762,8 +1768,8 @@ takes it. This one counts the buildings of each block a clusters pass finds:
 - A compute step hands on the tables its sources after compute make after the
   tables it holds and the tables its passes write, a table one of them changes
   as it left it, and none they drop.
-- A node that draws a map or a plot hands on its input, as it does without
-  them.
+- A node that draws a map or a plot hands them on in the same order, as a
+  compute step does.
 
 ### Layer titles and colors
 
