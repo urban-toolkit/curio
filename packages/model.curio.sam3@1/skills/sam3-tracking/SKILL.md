@@ -4,8 +4,9 @@ description: >-
   Use this skill when a dataflow uses SAM 3 (model.curio.sam3@1) and a task writes, wires or fixes
   its Track Objects node, which follows objects named in words, such as curb ramp or traffic cone,
   through a collection's videos, or its Segment Images node, which finds them in a collection's
-  images or in the frames Sample Video Frames samples, or reads what either returns: an overlay
-  video, counts and a table of tracks, or each image's counts and shares per label and its overlay.
+  images or in the frames Sample Video Frames samples, or reads what either returns: two tables,
+  each video's overlay with its counts and every object's track, or each image's counts and shares
+  per label and its overlay.
   It gives each node's settings, its output's columns, how a later node reads them, and what each of
   its stops means.
 license: MIT
@@ -25,7 +26,7 @@ SAM 3 is a model of the Model Catalog that finds every object a short phrase nam
 - Its code holds its settings and one call of `track_objects`, from the package's module `sam3_tracking`. Change what it does through the settings, and keep the call, which hands it `curio_load_model("model.curio.sam3")`, a literal id Curio reads, and `curio_derived_file`.
 - Objects named in words, found in a collection's images or in a video's frames, with how much of each image they cover, are a Segment Images node (below), wired from the Data Loading node of the images, or from a Sample Video Frames node for a video's frames.
 - An Image Segmentation node does not run SAM 3: Segmentation's `segment_images` refuses a concept segmentation model, and a model dropped on a node swaps only for one of the node's type.
-- A table of the objects is a Python Computation node that reads the tracks (below); a chart of them is a Vega-Lite node on that table.
+- A table of the objects is Track Objects' own `tracks`, which a Python Computation node wired from it reads by its key (below); a chart of them is a Vega-Lite node on that node's table.
 
 ### Its settings
 
@@ -40,21 +41,22 @@ The constants at the top of its code, each passed to `track_objects` as the argu
 
 ### What it returns
 
-One row per video, its overlay: the frames SAM 3 looked at, each object's mask and box drawn in its label's color with its label and id, which Simple View plays in real time, each frame at its own time in the video. The row keeps the video's own columns, its fields and its position, and has:
+Two tables, as one dict: a node wired from Track Objects reads each by its key, with a chip, `[!! input_0:videos !!]` or `[!! input_0:tracks !!]`, and Simple View shows each as a tab, `videos` first, whose cards play the overlays.
+
+`videos` has one row per video, its overlay: the frames SAM 3 looked at, each object's mask and box drawn in its label's color with its label and id, which Simple View plays in real time, each frame at its own time in the video. The row keeps the video's own columns, its fields and its position, and has:
 
 - `file_id`, `path`, `thumbnail` and `image_url`: the overlay's;
 - `video_file_id` and `name`: the video tracked;
 - `t_s`: where the overlay starts in the video, so a time in the video is `t_s` plus the time in the overlay;
 - `duration_s`, `fps`, `width` and `height`: the overlay's;
-- `<label>_objects`: how many objects of each label of `LABELS` it followed, a space written as `_`, such as `traffic_cone_objects`;
-- `tracks`: the Parquet file Track Objects wrote of the video's objects, one row per object: `video_file_id`, `video`, `object_id` (the id drawn on the overlay), `label`, `start_s` and `end_s` (the first and the last time it was seen, in seconds from the video's start), `frames` (how many of the frames looked at it was seen in), `largest_share` (the largest share of a frame its mask covered, 0 to 1) and `mean_score`.
+- `<label>_objects`: how many objects of each label of `LABELS` it followed, a space written as `_`, such as `traffic_cone_objects`.
 
-A Python Computation node wired from Track Objects puts every video's objects in one table:
+`tracks` has one row per object of every video: `video_file_id`, `video`, `object_id` (the id drawn on the overlay), `label`, `start_s` and `end_s` (the first and the last time it was seen, in seconds from the video's start), `frames` (how many of the frames looked at it was seen in), `largest_share` (the largest share of a frame its mask covered, 0 to 1) and `mean_score`.
+
+A Python Computation node wired from Track Objects gets every video's objects as one table:
 
 ```python
-import pandas as pd
-
-return pd.concat([pd.read_parquet(path) for path in input_0["tracks"]])
+return [!! input_0:tracks !!]
 ```
 
 A swimlane of that table, one bar per object, is a Vega-Lite `bar` with `start_s` on `x`, `end_s` on `x2`, `object_id` on `y` and `label` on `color`.
