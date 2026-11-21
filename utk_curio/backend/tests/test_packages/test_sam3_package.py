@@ -191,7 +191,7 @@ def videos(tmp_path):
 
 @pytest.fixture
 def walk(tmp_path):
-    """A 33 s clip at the walk's rate, as ``_sample`` reads a video: from 30 s,
+    """A 33 s clip at the walk's rate, as ``_looked_at`` reads a video: from 30 s,
     its frames come 0.2 ms before 30.5 s, 0.8 ms before 31 s and 1.3 ms before
     31.5 s, each followed by the next frame 33 ms later."""
     import av
@@ -217,15 +217,15 @@ def walk(tmp_path):
 
 @pytest.fixture
 def corner(tmp_path):
-    """The 2 s clip at 4 frames a second, as ``_sample`` reads a video."""
+    """The 2 s clip at 4 frames a second, as ``_looked_at`` reads a video."""
     tiny_sam3.clip(tmp_path / "corner.mp4")
     return {"path": str(tmp_path / "corner.mp4"), "relpath": "corner.mp4"}
 
 
 def _times(module, video, from_seconds, end):
-    """The times of the frames ``_sample`` looks at in *video*, every EVERY
+    """The times of the frames ``_looked_at`` looks at in *video*, every EVERY
     seconds from *from_seconds* up to *end*."""
-    return module._sample(SimpleNamespace(width=960, from_seconds=from_seconds, every_seconds=EVERY), video, end)[1]
+    return module._looked_at(SimpleNamespace(width=960, from_seconds=from_seconds, every_seconds=EVERY), video, end)[1]
 
 
 def _node_source(**settings) -> str:
@@ -245,14 +245,18 @@ def _node_source(**settings) -> str:
 
 @contextlib.contextmanager
 def _staged(tmp_path: Path):
-    """The package's module, importable as a run of Track Objects imports it:
-    staged into a folder of the run's own, then imported by its name."""
+    """The package's module, importable as a run of Track Objects imports it,
+    with Media's, whose reader it reads its frames with: staged into a folder
+    of the run's own, then imported by its name."""
     from utk_curio.sandbox.util.package_modules import importable
     from utk_curio.sandbox.util.staging import stage_package_modules
 
     run = Path(tempfile.mkdtemp(prefix="run-", dir=tmp_path))
-    staged = stage_package_modules([{"root": str(PACKAGE / "sources"), "names": [MODULE]}], str(run))
-    assert staged == {"root": "package_modules", "names": [MODULE]}, staged
+    staged = stage_package_modules([
+        {"root": str(PACKAGE / "sources"), "names": [MODULE]},
+        {"root": str(MEDIA / "sources"), "names": ["media_collections"]},
+    ], str(run))
+    assert staged == {"root": "package_modules", "names": [MODULE, "media_collections"]}, staged
     with importable(str(run / staged["root"]), staged["names"]):
         yield importlib.import_module(MODULE)
 
@@ -435,7 +439,9 @@ def test_track_objects_reads_its_frames_with_medias_reader_and_decodes_none_itse
         ast.unparse(node) for node in ast.walk(tree)
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in ("decode", "seek")
     ]
-    threads = [ast.unparse(node) for node in ast.walk(tree) if isinstance(node, ast.Attribute) and node.attr == "thread_type"]
+    threads = [
+        ast.unparse(node) for node in ast.walk(tree) if isinstance(node, ast.Attribute) and node.attr == "thread_type"
+    ]
     assert (reads, threads) == ([], []), f"{MODULE} reads a video's frames itself: {reads + threads}"
 
 
@@ -666,7 +672,7 @@ def test_every_frame_up_to_the_parts_end_decodes_with_frame_threading(videos, tm
     real_open = av.open
 
     class _Recording:
-        """The container ``_sample`` opens, noting how each stream it decodes is threaded."""
+        """The container Media's reader opens, noting how each stream it decodes is threaded."""
 
         def __init__(self, container):
             self._container = container
@@ -688,7 +694,7 @@ def test_every_frame_up_to_the_parts_end_decodes_with_frame_threading(videos, tm
     with _staged(tmp_path) as module:
         monkeypatch.setattr(module.av, "open", lambda *args, **kwargs: _Recording(real_open(*args, **kwargs)))
         run = SimpleNamespace(width=960, from_seconds=0, every_seconds=EVERY)
-        frames, times = module._sample(run, video, CLIP_SECONDS)
+        frames, times = module._looked_at(run, video, CLIP_SECONDS)
 
     assert times == SAMPLED and len(frames) == len(SAMPLED)
     assert [getattr(kind, "name", kind) for kind in decoded_as] == ["AUTO"], decoded_as
@@ -702,7 +708,7 @@ def test_one_frame_is_looked_at_for_each_step_never_two_for_one(walk, tmp_path):
     to 31.75 s of a clip at that rate, each of the four steps gets one frame."""
     with _staged(tmp_path) as module:
         run = SimpleNamespace(width=960, from_seconds=30, every_seconds=EVERY)
-        frames, times = module._sample(run, walk, 31.75)
+        frames, times = module._looked_at(run, walk, 31.75)
     steps = [round((t - 30) / EVERY) for t in times]
     assert times == [30.0, 30.5, 30.999, 31.532], f"looked at {times}, in steps {steps}, not 30.0, 30.5, 30.999, 31.532"
     assert len(frames) == len(times)
@@ -713,7 +719,7 @@ def test_a_frame_just_before_a_steps_time_is_the_one_looked_at_for_it(walk, tmp_
     the one 0.8 ms before 31 s is looked at."""
     with _staged(tmp_path) as module:
         run = SimpleNamespace(width=960, from_seconds=30, every_seconds=EVERY)
-        times = module._sample(run, walk, 31.75)[1]
+        times = module._looked_at(run, walk, 31.75)[1]
     assert 30.999 in times, f"looked at {times}, not the frame at 30.999 s"
 
 
@@ -885,7 +891,7 @@ def _code_tab_settings() -> dict:
 
 def _whole_walk(tmp_path: Path) -> dict:
     """A clip as long as the walk, 864.3 s at 10 frames a second, as
-    ``_sample`` reads a video."""
+    ``_looked_at`` reads a video."""
     import av
     import numpy as np
 
@@ -945,8 +951,8 @@ def test_a_part_that_needs_more_frames_than_max_frames_stops_before_sam3_loads_w
 def test_a_run_may_look_at_max_frames_frames_of_a_part_and_not_one_more(corner, walk, tmp_path, no_sam3):
     """The frames the limit counts are the frames a run looks at: each part
     the steps' tests pin, whose frames fall on a step, a millisecond before it
-    or after the part's end, passes a limit of the frames ``_sample`` looks at
-    in it, and stops before SAM 3 loads at one fewer, naming them."""
+    or after the part's end, passes a limit of the frames ``_looked_at`` looks
+    at in it, and stops before SAM 3 loads at one fewer, naming them."""
     nothing = SimpleNamespace(path=str(tmp_path / "no-weights"))
     parts = [
         (corner, 0, None), (corner, 0, 1.0), (corner, 1.0, 1.0),
@@ -1059,7 +1065,7 @@ def test_the_code_tabs_max_frames_is_450_which_takes_the_whole_walk_at_a_frame_e
 
         with pytest.raises(_SamLoads):
             track(every_seconds=2)
-        looked_at = module._sample(SimpleNamespace(width=960, from_seconds=0, every_seconds=2), walk, WALK_SECONDS)[1]
+        looked_at = module._looked_at(SimpleNamespace(width=960, from_seconds=0, every_seconds=2), walk, WALK_SECONDS)[1]
         with pytest.raises(ValueError) as whole_walk:
             track(every_seconds=settings["EVERY_SECONDS"])
         with pytest.raises(ValueError) as five_minutes:

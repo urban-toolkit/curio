@@ -6,8 +6,9 @@ package's functions, as its details list them.
   ``deep_umbra`` offers ``accumulated_shadow`` and ``season_factor``, and its
   other modules nothing; Rasterization's modules the calls its README lists,
   the mosaics in ``scout_rasters.mosaic``; Media's ``media_collections`` the
-  two its video and audio nodes call; the weather model's ``weather_routing``
-  its route; the built-in package's ``spatial_join`` the Spatial Join's join.
+  three its video and audio nodes call and the reader their frames and SAM
+  3's are read with; the weather model's ``weather_routing`` its route; the
+  built-in package's ``spatial_join`` the Spatial Join's join.
   Every name a shipped ``__all__`` lists is a function its module offers, with
   a docstring.
 - ``GET /api/packages/node-functions?nodeType=``: the engine of the node's
@@ -15,8 +16,9 @@ package's functions, as its details list them.
   (``skills/node-functions/SKILL.md``), and, for a Python node, the functions
   the modules a run hands it offer, its own package's first, as Accumulated
   Shadow's and Mosaic Rasters' headers list Rasterization's after their own
-  package's, and a built-in Python node's the built-in package's. Each with
-  the call a click on it writes.
+  package's, SAM 3's nodes Media's and then Rasterization's, and a built-in
+  Python node's the built-in package's. Each with the call a click on it
+  writes.
 - ``GET /api/packages/<dir>/functions``: each module of a package with the
   functions it offers, from the account's copy, else the catalog's.
 
@@ -138,6 +140,7 @@ def test_media_offers_the_calls_of_its_video_and_audio_nodes_from_media_collecti
             ("split_audio", "split_audio(media, derived_file, *, window_seconds=5.0, max_windows_per_recording=2000)"),
             ("split_video", "split_video(media, derived_file, cuts=None, *, block_seconds=60.0, width=960, "
                             "max_frames=30000)"),
+            ("read_video_frames", READER_CALL),
         ],
     }
 
@@ -266,11 +269,7 @@ def test_mosaic_rasters_lists_medias_module_then_rasterizations_whose_mosaic_its
         ("curio.media@1", "media_collections"),
         *RASTERIZATION_LISTED,
     ]
-    assert [(f["name"], f["insert"]) for f in listed["modules"][0]["functions"]] == [
-        ("sample_video_frames", "sample_video_frames(media, derived_file)"),
-        ("split_audio", "split_audio(media, derived_file)"),
-        ("split_video", "split_video(media, derived_file)"),
-    ]
+    assert [(f["name"], f["insert"]) for f in listed["modules"][0]["functions"]] == MEDIA_INSERTS
     assert [(f["name"], f["insert"]) for f in listed["modules"][1]["functions"]] == [
         ("mosaic_rasters", "mosaic_rasters(tiles, path, crs=crs, dtype=dtype)"),
         ("mosaic_collection", "mosaic_collection(tiles, output_file)"),

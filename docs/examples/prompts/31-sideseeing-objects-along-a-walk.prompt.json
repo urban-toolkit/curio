@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/31-sideseeing-objects-along-a-walk.json",
-    "sha256": "bc89d856970eb5aa1744798f6c838070495b80410cdaaf5cc5731554e93268aa",
+    "sha256": "43ef1d843074fe4a7684d2fe482afa4f133e90cf6b4e97b1d93cdf9785e3a50c",
     "walkthrough": "docs/examples/31-sideseeing-objects-along-a-walk.md"
   },
   "prompt": "Load the SideSeeing West Loop walk's video from the Data Catalog and follow sidewalk objects through the whole of it with SAM 3: the eight labels its tracking node ships with, plus wheelchair ramp, a frame every 2.5 seconds. Play the overlay it draws, and make one row per object from its tracks table, with the time the object was first seen. Chart the objects in Vega-Lite as a swimlane, a lane for each label it found and a bar per object from its first sighting to its last, in its label's colour once the video has played past it and grey before. Also load the walk's GPS track from the Data Catalog, read its gps.csv in place, and make each fix a point with its time in the walk, from when the walk began. Map the fixes on an Autark map over the West Loop's streets from the committed OpenStreetMap extract, each a disc 4 m in radius coloured by its time. Link the video's player to the swimlane and the map, so the swimlane colours each bar once the video passes its first sighting and the map highlights the fixes up to where the video stands.",
@@ -15,6 +15,8 @@
       "data.sideseeing.west-loop-walk-gps"
     ],
     "packages": [
+      "curio.media@1",
+      "curio.rasterization@1",
       "model.curio.sam3@1"
     ],
     "paths": [
