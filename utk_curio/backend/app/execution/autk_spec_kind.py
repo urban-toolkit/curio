@@ -129,18 +129,27 @@ def _loaded_tables(sources: list) -> set[str]:
 _READS = {"heatmap": ("joinDataRef",), "join": ("dataRef", "joinDataRef"), "update": ("dataRef",), "drop": ("dataRef",)}
 
 
+def _in_phase_order(sources: list) -> list:
+    """*sources* in the order autk-grammar runs them when no pass runs between
+    them: those without ``after``, then those with it (``after: 'compute'``),
+    each in the order of ``data``. ``inPhaseOrder`` is the node's twin."""
+    return ([source for source in sources if not isinstance(source, dict) or "after" not in source]
+            + [source for source in sources if isinstance(source, dict) and "after" in source])
+
+
 def section_input_tables(spec) -> list[str]:
     """The keys of the tables a document's data section reads from the node's
     input, in the order it first reads them: each table a heatmap bins
     (``joinDataRef``), a join reads (``dataRef``, ``joinDataRef``) or an update
     or a drop changes (``dataRef``), in the entry's workspace, that none of the
-    section's own sources loads."""
+    section's own sources loads. The section is read in the order autk-grammar
+    runs it (``_in_phase_order``)."""
     sources = spec.get("data") if isinstance(spec, dict) else None
     if not isinstance(sources, list):
         return []
     loaded = _loaded_tables(sources)
     keys: list[str] = []
-    for source in sources:
+    for source in _in_phase_order(sources):
         if not isinstance(source, dict) or source.get("type") not in _READS:
             continue
         read = [source.get(field) for field in _READS[source["type"]]]

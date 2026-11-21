@@ -30,10 +30,14 @@ use (``wgslFunction``, a join's ``dataRef`` and ``joinDataRef``); 5.2.0
 or later, in both trees, whose data adapter loads every source Curio's
 loaders hand it and sets up a document's ``workspaces``, whose plots take the
 keys of their colors, ticks, titles and selection, and whose compute reads a
-pass's ``fromFeature`` table as the run's GeoJSON source gave it; and 5.4.0
+pass's ``fromFeature`` table as the run's GeoJSON source gave it; 5.4.0
 or later, in both trees, whose maps take the map keys of autk-map, whose
 camera takes a center and a tour, and whose compute runs windows and
-clusters passes. Nothing else is vendored.
+clusters passes; and 5.5.1 or later, in both trees, whose passes keep their
+results in autk-db (``writeBack``), whose sources run after compute
+(``after``, its ``dataPhases``), whose heatmap without ``groupBy`` counts its
+rows and whose heatmap entry without ``aggregateFn`` is refused. Nothing else
+is vendored.
 """
 from __future__ import annotations
 
@@ -88,6 +92,14 @@ GRAMMAR_SOURCES_AND_PLOTS_RELEASE = (5, 2, 0)
 #: plays a tour with (``playCameraMotion``), and whose compute runs ``windows``
 #: and ``clusters`` passes.
 GRAMMAR_MAPS_CAMERA_AND_COMPUTE_RELEASE = (5, 4, 0)
+
+#: The first autk-grammar release whose passes keep their results in autk-db
+#: (``writeBack``), whose sources run after compute (``after: 'compute'``) and
+#: whose two entries export the split a node runs them by (``dataPhases``),
+#: whose heatmap without ``groupBy`` counts its rows, whose heatmap entry without
+#: ``aggregateFn`` is refused, and whose map that starts with a raster is placed
+#: at the raster.
+GRAMMAR_WRITE_BACK_RELEASE = (5, 5, 1)
 
 #: The vendored Autark packages: each one's tarball in vendor/autark/, its
 #: version and its npm integrity.
@@ -295,6 +307,24 @@ def test_the_grammar_draws_the_map_keys_and_runs_the_camera_and_compute_keys_cur
             f"the {tree} {what} takes autk-grammar {held!r}, which does not draw a map's terrain, its picked and hidden "
             f"features, its line widths, legend, layer types, colors and controls, play a camera's center and tour, "
             f"or run windows and clusters passes: 5.4.0 is the first that does"
+        )
+    assert spec == version, f"the {tree} package.json takes autk-grammar {spec}, its lockfile {version}"
+
+
+@pytest.mark.parametrize("tree", sorted(TREES))
+def test_the_grammar_keeps_pass_results_and_runs_sources_after_compute(tree):
+    """Both trees take autk-grammar 5.5.1 or later: a node's run keeps a pass's
+    result in autk-db and runs its sources after compute, and both loaders, the
+    sandbox's of the same release, load a section's sources after compute after
+    the others, through its ``dataPhases``."""
+    root, _packages = TREES[tree]
+    spec = _read(root / "package.json")["dependencies"].get(f"@urban-toolkit/{GRAMMAR}", "")
+    version = _read(root / "package-lock.json")["packages"].get(f"node_modules/@urban-toolkit/{GRAMMAR}", {}).get("version", "")
+    for what, held in (("package.json", spec), ("lockfile", version)):
+        assert re.fullmatch(r"\d+\.\d+\.\d+", held) and _release(held) >= GRAMMAR_WRITE_BACK_RELEASE, (
+            f"the {tree} {what} takes autk-grammar {held!r}, which does not keep a pass's result in autk-db "
+            f"(writeBack), run a source after compute (after, dataPhases), count a heatmap's rows without groupBy "
+            f"or refuse a heatmap entry without aggregateFn: 5.5.1 is the first that does"
         )
     assert spec == version, f"the {tree} package.json takes autk-grammar {spec}, its lockfile {version}"
 

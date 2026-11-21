@@ -71,6 +71,57 @@ export function inItsWorkspace(source: any): any {
     return workspace === undefined ? rest : { ...rest, workspace };
 }
 
+// Where each source of a data section runs. autk-grammar runs a source with
+// `after: 'compute'` once every compute pass has run, in the order of `data`,
+// after every source without it, wherever it stands in `data`; its own
+// `dataPhases` splits a document so, and refuses an `after` other than
+// 'compute' and a source after compute that reads a table a pass writes
+// without `writeBack`. The node calls it where it has the grammar at hand (its
+// run in the browser, the sandbox's code); here, without the grammar, the
+// order alone. A node loads the sources before compute where it loads its data
+// section (the sandbox, or the browser's loader), and runs those after compute
+// in the browser once its passes have run. A document with no compute pass has
+// nothing for them to wait for: they load with the others, after them.
+
+// Whether a source of *dataSources* writes `after`, the key that moves it
+// after the compute passes.
+export function writesAfter(dataSources: unknown): boolean {
+    return Array.isArray(dataSources)
+        && dataSources.some((source) => source != null && typeof source === 'object' && source.after !== undefined);
+}
+
+// *dataSources* in the order autk-grammar runs them when no pass runs between
+// them: those without `after`, then those with it, each in the order of `data`.
+export function inPhaseOrder(dataSources: any[]): any[] {
+    const sources: any[] = Array.isArray(dataSources) ? dataSources : [];
+    if (!writesAfter(sources)) return sources;
+    return [
+        ...sources.filter((source) => source == null || source.after === undefined),
+        ...sources.filter((source) => source != null && source.after !== undefined),
+    ];
+}
+
+// Whether *spec* has compute passes, which its sources after compute wait for.
+function hasPasses(spec: any): boolean {
+    return spec != null && Array.isArray(spec.compute) && spec.compute.length > 0;
+}
+
+// The sources a node loads where it loads a document's data section: those
+// before compute, then, when the document has no compute pass, those after
+// compute (inPhaseOrder).
+export function loadedSources(spec: any): any[] {
+    const sources: any[] = spec != null && Array.isArray(spec.data) ? spec.data : [];
+    if (!writesAfter(sources)) return sources;
+    return hasPasses(spec) ? sources.filter((source) => source == null || source.after === undefined) : inPhaseOrder(sources);
+}
+
+// The sources a node runs in the browser once its compute passes have run:
+// those after compute, in the order of `data`, of a document that has passes.
+export function sourcesAfterPasses(spec: any): any[] {
+    const sources: any[] = spec != null && Array.isArray(spec.data) ? spec.data : [];
+    return hasPasses(spec) ? sources.filter((source) => source != null && source.after !== undefined) : [];
+}
+
 // Resolve relative URLs in data source specs to the Curio backend's /file/
 // route, which serves files by their path *relative to CURIO_LAUNCH_CWD* — the
 // same root and relative-path convention the Python sandbox uses. So users can
@@ -140,17 +191,26 @@ function osmTables(source: any): string[] {
 // elements (`osmElements`), each in the view's workspace: both loaders read
 // each as one feature per element, which the views then draw. A table of the
 // node's input is no OpenStreetMap table of its database, so a view reads it
-// row by row, as autk-grammar reads any other table.
+// row by row, as autk-grammar reads any other table. So is a table a GPGPU or
+// clusters pass changes in place and keeps in autk-db (`writeBack`):
+// autk-grammar then reads it row by row, the pass's rows. (A view of one a
+// pass changes in place without `writeBack` is refused:
+// contracts/autkGrammar autkOsmElementsProblem.)
 export function osmElementTables(spec: any): string[] {
     const list = (held: any): any[] => (held == null ? [] : Array.isArray(held) ? held : [held]);
     const own = new Set(list(spec?.data)
         .filter((source) => source?.type === 'osm')
         .flatMap((source) => osmTables(source).map((table) => autkTableKey(autkWorkspaceOf(source), table))));
+    const writtenBack = new Set(list(spec?.compute)
+        .filter((pass) => (pass?.type == null || pass.type === 'gpgpu' || pass.type === 'clusters')
+            && !(typeof pass?.outputTableName === 'string' && pass.outputTableName !== '')
+            && Boolean(pass?.writeBack) && typeof pass?.dataRef === 'string')
+        .map((pass) => autkTableKey(autkWorkspaceOf(pass), pass.dataRef)));
     const keys: string[] = [];
     const read = (view: any, table: unknown) => {
         if (typeof table !== 'string' || table === '') return;
         const key = autkTableKey(autkWorkspaceOf(view), table);
-        if (own.has(key) && !keys.includes(key)) keys.push(key);
+        if (own.has(key) && !writtenBack.has(key) && !keys.includes(key)) keys.push(key);
     };
     for (const map of list(spec?.map)) {
         for (const layer of list(map?.layerRefs)) if (layer?.osmElements === true) read(map, layer.dataRef);
@@ -175,13 +235,15 @@ export function osmElementTables(spec: any): string[] {
 // its source loads it into, once, in the order its sources make them. A
 // heatmap's or a GeoTIFF's raster table is one of them: the loaders read it
 // back by its key. A table a later `drop` drops is no longer asked for, until
-// a source after it makes one of that name again.
+// a source after it makes one of that name again. The sources are read in the
+// order autk-grammar runs them (inPhaseOrder), so a drop after compute drops
+// the table a source before compute made, wherever each stands in `data`.
 export function requestedLayerTables(dataSources: any[]): string[] {
     const names: string[] = [];
     const add = (key: string) => {
         if (!names.includes(key)) names.push(key);
     };
-    for (const source of dataSources ?? []) {
+    for (const source of inPhaseOrder(dataSources ?? [])) {
         const { type, ...rest } = (source ?? {}) as any;
         const workspace = autkWorkspaceOf(rest);
         if (type === 'osm') {
@@ -209,6 +271,17 @@ export function requestedLayerTables(dataSources: any[]): string[] {
 // `joinDataRef`, the table joined onto it; an update changes the rows of its
 // `dataRef`, and a drop drops it.
 type SectionRead = { at: number; name: string; workspace?: string; key: string; reader: string };
+
+// The tables a data source reads by name, in its own workspace, as sectionReads
+// finds them: a heatmap's `joinDataRef`, a join's `dataRef` and `joinDataRef`,
+// and an update's or a drop's `dataRef`. A SQL query is not read for its tables.
+export function tablesReadBy(source: any): string[] {
+    const named = (table: unknown): table is string => typeof table === 'string' && table !== '';
+    if (source?.type === 'heatmap') return [source.joinDataRef].filter(named);
+    if (source?.type === 'join') return [source.dataRef, source.joinDataRef].filter(named);
+    if (source?.type === 'update' || source?.type === 'drop') return [source.dataRef].filter(named);
+    return [];
+}
 
 function sectionReads(dataSources: any[]): SectionRead[] {
     const sources: any[] = Array.isArray(dataSources) ? dataSources : [];
@@ -254,6 +327,20 @@ export function sectionTableProblem(dataSources: any[]): string | null {
     return null;
 }
 
+// The keys of a data section's own tables: those its sources load and make
+// (requestedLayerTables), and every name a source of it gives its table
+// (`outputTableName`, an OSM load's and a SQL query's included), dropped or
+// not. Any other table a source of it reads is one of the node's input.
+export function sectionOwnTables(dataSources: any[]): Set<string> {
+    const sources: any[] = Array.isArray(dataSources) ? dataSources : [];
+    return new Set([
+        ...requestedLayerTables(sources),
+        ...sources
+            .filter((source) => typeof source?.outputTableName === 'string' && source.outputTableName !== '')
+            .map((source) => autkTableKey(autkWorkspaceOf(source), source.outputTableName)),
+    ]);
+}
+
 // A table of the node's input that a data section's heatmap or join reads: its
 // name and the workspace of the entry that reads it first, `before`, that
 // entry's place, where both loaders load it into the section's database, and
@@ -268,15 +355,12 @@ export type SectionInputTable = { name: string; workspace?: string; before: numb
 // query's included). The input names them as the node reads its input
 // everywhere (utils/autkInput autkSourcesFrom): `input_<k>` for what arrives
 // on circle k, a layer by its own name. A section that reads none of them
-// reads no input.
+// reads no input. The section is read in the order autk-grammar runs it
+// (inPhaseOrder), and `before` is a place in that order, the order both
+// loaders load it in.
 export function sectionInputTables(dataSources: any[]): SectionInputTable[] {
-    const sources: any[] = Array.isArray(dataSources) ? dataSources : [];
-    const loaded = new Set([
-        ...requestedLayerTables(sources),
-        ...sources
-            .filter((source) => typeof source?.outputTableName === 'string' && source.outputTableName !== '')
-            .map((source) => autkTableKey(autkWorkspaceOf(source), source.outputTableName)),
-    ]);
+    const sources: any[] = inPhaseOrder(Array.isArray(dataSources) ? dataSources : []);
+    const loaded = sectionOwnTables(sources);
     const seen = new Set<string>();
     const tables: SectionInputTable[] = [];
     for (const read of sectionReads(sources)) {
@@ -796,7 +880,11 @@ for (const __plain of __plainTables) __have.add(${key});`,
 // loads each just before the first entry that reads it; one that reads none
 // compiles without them. An OpenStreetMap table a view of the node reads with
 // `osmElements` (*options.elements*, by key) is read as one feature per
-// OpenStreetMap element. The function returns Array<{name, type, geojson}>,
+// OpenStreetMap element. The sources load in the order autk-grammar runs them
+// (inPhaseOrder): a section with sources after compute, which is a section of
+// no compute pass, loads them after the others, and its code first asks the
+// grammar's own `dataPhases` of the section, which refuses an `after` other
+// than 'compute' before anything loads. The function returns Array<{name, type, geojson}>,
 // each table in the CRS of its workspace, each raster table after them in its
 // envelope (rasterEnvelope), each table or raster in another workspace than
 // the default one with its `workspace` too, which the sandbox persists to
@@ -805,11 +893,17 @@ export function compileDataSpecToAutkDbJs(
     dataSources: any[],
     options: { workspaces?: unknown; elements?: string[] } = {},
 ): string {
-    const sources = (dataSources ?? []).map(inItsWorkspace);
+    const sources = inPhaseOrder(dataSources ?? []).map(inItsWorkspace);
     const usesWorkspaces = autkUsesWorkspaces({ data: sources });
     const parts = workspaceCode(usesWorkspaces);
     const workspaces = Array.isArray(options.workspaces) && options.workspaces.length > 0 ? options.workspaces : null;
-    const fromDataEntry = ['createDataAdapter', ...parts.fromDataEntry];
+    const phased = writesAfter(sources);
+    const fromDataEntry = ['createDataAdapter', ...(phased ? ['dataPhases'] : []), ...parts.fromDataEntry];
+    const phaseCheck = phased ? `// The grammar's own phases of the section, which refuse an \`after\` other than
+// 'compute' before anything loads. The section has no compute pass, so its
+// sources after compute load after the others, as __sources holds them.
+dataPhases({ data: __sources });
+` : '';
     const tableCheck = sectionReads(sources).length > 0 ? `// A heatmap, a join, an update or a drop that reads a table this section
 // loads only after it fails before anything loads, with the words the host
 // gives it (sectionTableProblem).
@@ -870,7 +964,7 @@ const __joinErrors = [];
 // withOsmIds and layerEpsg, as the host defines them (autkDataCompile.ts).
 const __withOsmIds = ${withOsmIds.toString()};
 const __layerEpsg = ${layerEpsg.toString()};
-${tableCheck}${inputTables}${handOnCheck}// autk-grammar's own data adapter, which loads every source as the grammar's run
+${phaseCheck}${tableCheck}${inputTables}${handOnCheck}// autk-grammar's own data adapter, which loads every source as the grammar's run
 // loads one. A raster table it makes is read back at once, in the workspace it
 // was built in, with the grid its cells lie on (withRasterGrid), in the
 // envelope it is handed on in (rasterEnvelope), as the host defines them.
