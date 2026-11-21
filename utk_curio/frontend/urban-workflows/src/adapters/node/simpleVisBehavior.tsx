@@ -107,9 +107,9 @@ function deriveView(parsedInput: any): {
   const imageColumns = resolveImageColumns(rows);
   if (imageColumns.length > 0) return { mode: 'image', rows, imageColumns, textContent: '' };
   if (isFrame(parsedInput)) return { mode: 'table', rows, imageColumns: [], textContent: '' };
-  // A reference the view reads before it shows it (a dict of frames a node
-  // returns, say) is no text: until its read ends, the body says its input
-  // is on its way.
+  // A reference the view reads before it shows it, of anything but a table
+  // (a dict of frames a node returns, say), is no text: until its read ends,
+  // the body says its input is on its way.
   if (isUnread(parsedInput)) return { mode: 'text', rows: [], imageColumns: [], textContent: '' };
   return { mode: 'text', rows: [], imageColumns: [], textContent: toDisplayString(parsedInput) };
 }
