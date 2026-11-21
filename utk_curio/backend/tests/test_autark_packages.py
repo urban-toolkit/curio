@@ -33,11 +33,13 @@ keys of their colors, ticks, titles and selection, and whose compute reads a
 pass's ``fromFeature`` table as the run's GeoJSON source gave it; 5.4.0
 or later, in both trees, whose maps take the map keys of autk-map, whose
 camera takes a center and a tour, and whose compute runs windows and
-clusters passes; and 5.5.1 or later, in both trees, whose passes keep their
+clusters passes; 5.5.1 or later, in both trees, whose passes keep their
 results in autk-db (``writeBack``), whose sources run after compute
 (``after``, its ``dataPhases``), whose heatmap without ``groupBy`` counts its
-rows and whose heatmap entry without ``aggregateFn`` is refused. Nothing else
-is vendored.
+rows and whose heatmap entry without ``aggregateFn`` is refused; and 5.6.0 or
+later, in both trees, whose batched passes pack every polygon of a building
+part and read a road of several lines from its first point. Nothing else is
+vendored.
 """
 from __future__ import annotations
 
@@ -100,6 +102,13 @@ GRAMMAR_MAPS_CAMERA_AND_COMPUTE_RELEASE = (5, 4, 0)
 #: ``aggregateFn`` is refused, and whose map that starts with a raster is placed
 #: at the raster.
 GRAMMAR_WRITE_BACK_RELEASE = (5, 5, 1)
+
+#: The first autk-grammar release whose batched entries that read the geometry
+#: pack each polygon of a MultiPolygon or a GeometryCollection as a feature of
+#: its own, so a shadow pass's ``geometry.coordinates.0`` reads every polygon of
+#: a building part, and which hands autk-compute a MultiLineString's lines as one
+#: line, so a pass over roads reads each road's first points.
+GRAMMAR_EVERY_POLYGON_RELEASE = (5, 6, 0)
 
 #: The vendored Autark packages: each one's tarball in vendor/autark/, its
 #: version and its npm integrity.
@@ -325,6 +334,24 @@ def test_the_grammar_keeps_pass_results_and_runs_sources_after_compute(tree):
             f"the {tree} {what} takes autk-grammar {held!r}, which does not keep a pass's result in autk-db "
             f"(writeBack), run a source after compute (after, dataPhases), count a heatmap's rows without groupBy "
             f"or refuse a heatmap entry without aggregateFn: 5.5.1 is the first that does"
+        )
+    assert spec == version, f"the {tree} package.json takes autk-grammar {spec}, its lockfile {version}"
+
+
+@pytest.mark.parametrize("tree", sorted(TREES))
+def test_the_grammar_packs_every_polygon_of_a_building_part_and_reads_a_road_of_several_lines(tree):
+    """Both trees take autk-grammar 5.6.0 or later: the shadow passes of
+    examples 06, 07 and 38 read every polygon of a building part OpenStreetMap
+    maps as one element of several polygons, and every road of several lines
+    from its first point."""
+    root, _packages = TREES[tree]
+    spec = _read(root / "package.json")["dependencies"].get(f"@urban-toolkit/{GRAMMAR}", "")
+    version = _read(root / "package-lock.json")["packages"].get(f"node_modules/@urban-toolkit/{GRAMMAR}", {}).get("version", "")
+    for what, held in (("package.json", spec), ("lockfile", version)):
+        assert re.fullmatch(r"\d+\.\d+\.\d+", held) and _release(held) >= GRAMMAR_EVERY_POLYGON_RELEASE, (
+            f"the {tree} {what} takes autk-grammar {held!r}, whose batched passes pack a building part of several "
+            f"polygons as a box of zeros and a road of several lines as zeros: 5.6.0 is the first that packs every "
+            f"polygon and each road's first points"
         )
     assert spec == version, f"the {tree} package.json takes autk-grammar {spec}, its lockfile {version}"
 
