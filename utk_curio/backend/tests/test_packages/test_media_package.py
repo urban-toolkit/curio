@@ -486,6 +486,32 @@ def test_split_audio_measures_every_channel_and_keeps_them(folder_collection, tm
         assert clip.getnchannels() == 2 and clip.getnframes() == 4000
 
 
+def test_two_split_audio_nodes_with_other_windows_keep_their_own_clips(folder_collection, tmp_path):
+    """Two Split Audio nodes on one recording, one with windows of 5 s and one
+    with windows of 10 s, both have a window at 0 s and one at 10 s. Each
+    window's clip is a file of its own: after the second node runs, every clip
+    of the first still holds what the first wrote, 5 s of the recording, as
+    its row says, and the two rows at 0 s name two files."""
+    import wave
+
+    root = tmp_path / "noise"
+    root.mkdir()
+    _stereo_left_only(root / "long.wav", seconds=20.0)
+    media, helpers = folder_collection(root, {"id": "noise", "name": "Noise", "kind": "audio", "path": "*"})
+    first = run_node("split-audio", media, helpers, WINDOW_SECONDS=5.0)
+    wrote = {path: Path(path).read_bytes() for path in first["path"]}
+    second = run_node("split-audio", media, helpers, WINDOW_SECONDS=10.0)
+    assert (list(first["t_s"]), list(second["t_s"])) == ([0.0, 5.0, 10.0, 15.0], [0.0, 10.0])
+    replaced = [path for path, data in wrote.items() if Path(path).read_bytes() != data]
+    assert replaced == [], f"the second node wrote over the first's clips: {replaced}"
+    for row in first.itertuples():
+        with wave.open(row.path) as clip:
+            assert (clip.getnframes() / clip.getframerate(), row.duration_s) == (5.0, 5.0), row.path
+    assert first["file_id"].iloc[0] != second["file_id"].iloc[0]
+    with wave.open(second["path"].iloc[0]) as clip:
+        assert clip.getnframes() / clip.getframerate() == 10.0
+
+
 # ---------------------------------------------------------------------------
 # Split Video
 # ---------------------------------------------------------------------------
