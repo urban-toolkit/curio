@@ -14,10 +14,13 @@ and linked by its `links`.
 4. Example 38, Back Bay and the Chicago Loop in one node: each map draws in its
    own pane, framed on its layers (#773), each histogram draws in its own, and
    the mean minutes of sun per road of each area are recorded on the test
-   (``record_property``), the numbers the example's walkthrough states. Its
-   Loop gets the sun example 07 finds with the same shader on the same roads:
-   the share of roads a building shades and the mean minutes of sun, each
-   near example 07's, which the test runs after it.
+   (``record_property``), the numbers the example's walkthrough states, with
+   how many roads get each number of minutes and a digest of every road's
+   minutes in the order its map draws them, which runs on other GPUs match
+   road for road. Its Loop gets the sun example 07 finds with the same shader
+   on the same roads: the share of roads a building shades and the mean
+   minutes of sun, each near example 07's, which the test runs after it and
+   whose roads' minutes it records the same way.
 
 Map k of a node draws on `autk-grammar-map-<node>` for k = 0, else
 `autk-grammar-map-<node>-<k>`, and plots likewise, so the drawing checks read
@@ -31,10 +34,12 @@ Run::
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import time
 import uuid
+from collections import Counter
 from typing import TYPE_CHECKING
 
 from .utils import (
@@ -342,6 +347,23 @@ def _sun_numbers(values: list) -> dict:
     }
 
 
+def _minutes(value) -> str:
+    """A road's minutes of sun as one text whether the page read it as 600 or 600.0."""
+    return format(float(value), "g")
+
+
+def _minutes_counts(values: list) -> str:
+    """How many roads get each number of minutes of sun, `minutes:roads`, from the least sun up."""
+    counts = Counter(_minutes(value) for value in values)
+    return ",".join(f"{minutes}:{counts[minutes]}" for minutes in sorted(counts, key=float))
+
+
+def _minutes_digest(values: list) -> str:
+    """A digest of every road's minutes of sun, in the order its map draws the
+    roads: two runs that give every road the same minutes give the same one."""
+    return hashlib.sha256(",".join(_minutes(value) for value in values).encode("utf-8")).hexdigest()
+
+
 def _drawn_sun(page, node_id: str, table: str, view, label: str) -> list:
     read = page.evaluate(_DRAWN_VALUES_JS, [node_id, table, view, "sunlight"])
     values = read["values"]
@@ -391,17 +413,23 @@ def test_example_38_draws_each_view_in_its_pane_and_records_each_area_s_sun(
     assert not problems, "; ".join(problems)
     areas = {}
     for view, table in (("back_bay", "back_bay_road_sun"), ("loop", "loop_road_sun")):
-        areas[view] = _sun_numbers(_drawn_sun(page, EXAMPLE_38_NODE, table, view, f"example 38's map {view}"))
+        values = _drawn_sun(page, EXAMPLE_38_NODE, table, view, f"example 38's map {view}")
+        areas[view] = _sun_numbers(values)
         record_property(f"{view}_roads", areas[view]["roads"])
         record_property(f"{view}_mean_sun_minutes", round(areas[view]["mean"], 1))
         record_property(f"{view}_shaded_share", round(areas[view]["shaded_share"], 3))
+        record_property(f"{view}_roads_by_sun_minutes", _minutes_counts(values))
+        record_property(f"{view}_sun_minutes_sha256", _minutes_digest(values))
 
     _open_example(page, app_frontend, current_server, EXAMPLE_07, "Example 07")
     assert_autark_map_drawn(page, EXAMPLE_07_MAP, timeout=120000)
-    example_07 = _sun_numbers(_drawn_sun(page, EXAMPLE_07_MAP, "table_osm_roads", 0, "example 07's map"))
+    values_07 = _drawn_sun(page, EXAMPLE_07_MAP, "table_osm_roads", 0, "example 07's map")
+    example_07 = _sun_numbers(values_07)
     record_property("example_07_roads", example_07["roads"])
     record_property("example_07_mean_sun_minutes", round(example_07["mean"], 1))
     record_property("example_07_shaded_share", round(example_07["shaded_share"], 3))
+    record_property("example_07_roads_by_sun_minutes", _minutes_counts(values_07))
+    record_property("example_07_sun_minutes_sha256", _minutes_digest(values_07))
     loop = areas["loop"]
     assert abs(loop["shaded_share"] - example_07["shaded_share"]) <= SHADED_SHARE_TOLERANCE, (
         f"example 38's Loop has {loop['shaded_share']:.1%} of its {loop['roads']} roads shaded, example 07 "
