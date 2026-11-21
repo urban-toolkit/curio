@@ -29,7 +29,9 @@ The first test drives the example as it ships:
    one scenario in place, and its map is drawn.
 3. The chart: Twice as tall has the lowest mean sunlight and Two towers removed
    the highest, in the rows the Bars chart reads, and the chart draws every
-   scenario's colour.
+   scenario's colour. Each scenario's mean, how many of its roads get each
+   number of minutes and a digest of every road's minutes are recorded on the
+   test (``record_property``), which runs on other GPUs match road for road.
 4. The difference: each road's sunlight change, one row per road Baseline's
    Roads node hands on, below zero where the taller shadows reach it and zero
    elsewhere, in its ``sunlight`` and in its nested ``compute`` values, within
@@ -559,7 +561,7 @@ def _assert_cards(page) -> None:
 
 
 def test_example_06_compares_its_three_scenarios_in_the_canvas(
-    app_frontend: "FrontendPage", current_server: str, page,
+    app_frontend: "FrontendPage", current_server: str, page, record_property,
 ):
     require_project_page()
     require_user_auth()
@@ -655,6 +657,17 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
     assert means["Twice as tall"] < means["Baseline"] < means["Two towers removed"], (
         f"mean road sunlight per scenario: {means}"
     )
+    # Each scenario's mean, how many roads get each number of minutes and a
+    # digest of every road's minutes, as its Roads node hands them on, so
+    # runs on other GPUs compare road for road.
+    from .test_autark_views_e2e import _minutes_counts, _minutes_digest
+
+    for scenario_id, roads_node in ((BASELINE, B_ROADS), (TWICE, T_ROADS), (TOWERS, E_ROADS)):
+        minutes = [row["sunlight"] for row in _rows(page, roads_node)]
+        key = scenario_id.removeprefix("s-")
+        record_property(f"{key}_mean_sun_minutes", round(means[NAMES[scenario_id]], 1))
+        record_property(f"{key}_roads_by_sun_minutes", _minutes_counts(minutes))
+        record_property(f"{key}_sun_minutes_sha256", _minutes_digest(minutes))
 
     # 4. The difference: each road's change, below zero where shadows grew, on
     # a scale centered on no change, one row per road Baseline's Roads node

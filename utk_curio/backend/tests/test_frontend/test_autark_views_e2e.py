@@ -17,9 +17,10 @@ and linked by its `links`.
    (``record_property``), the numbers the example's walkthrough states, with
    how many roads get each number of minutes and a digest of every road's
    minutes in the order its map draws them, which runs on other GPUs match
-   road for road. Its Loop gets the sun example 07 finds with the same shadow
-   test on the same roads: the share of roads a building shades and the mean
-   minutes of sun, each near example 07's, which the test runs after it.
+   road for road. Its Loop gets the sun example 07 finds with the same shader
+   on the same roads: the share of roads a building shades and the mean
+   minutes of sun, each near example 07's, which the test runs after it and
+   whose roads' minutes it records the same way.
 
 Map k of a node draws on `autk-grammar-map-<node>` for k = 0, else
 `autk-grammar-map-<node>-<k>`, and plots likewise, so the drawing checks read
@@ -324,16 +325,12 @@ def test_a_node_of_two_views_pinned_to_a_dashboard_draws_both_in_its_one_tile(
 
 EXAMPLE_38 = "38-autark-solstice-sun-two-cities.json"
 EXAMPLE_38_NODE = "two-cities-sun"
-#: Example 07, which runs the same shadow test on the same Loop extract, and
+#: Example 07, which runs the same shadow shader on the same Loop extract, and
 #: its map of the roads with their minutes of sun.
 EXAMPLE_07 = "07-autark-gpu-shader.json"
 EXAMPLE_07_MAP = "sh-map"
 #: How near example 38's Loop must come to example 07's: the same roads, the
-#: same buildings and the same shadow test give nearly the same minutes of
-#: sun. Example 07's pass multiplies World Mercator coordinates as they are,
-#: near 1e7 m, where an f32 holds about a metre, and example 38's measures
-#: them from each road's first point, so a road within about a metre of a
-#: shadow's edge can get another hour of sun in one than in the other.
+#: same buildings and the same shader give the same minutes of sun.
 SUN_MEAN_TOLERANCE = 0.03
 SHADED_SHARE_TOLERANCE = 0.03
 
@@ -426,10 +423,13 @@ def test_example_38_draws_each_view_in_its_pane_and_records_each_area_s_sun(
 
     _open_example(page, app_frontend, current_server, EXAMPLE_07, "Example 07")
     assert_autark_map_drawn(page, EXAMPLE_07_MAP, timeout=120000)
-    example_07 = _sun_numbers(_drawn_sun(page, EXAMPLE_07_MAP, "table_osm_roads", 0, "example 07's map"))
+    values_07 = _drawn_sun(page, EXAMPLE_07_MAP, "table_osm_roads", 0, "example 07's map")
+    example_07 = _sun_numbers(values_07)
     record_property("example_07_roads", example_07["roads"])
     record_property("example_07_mean_sun_minutes", round(example_07["mean"], 1))
     record_property("example_07_shaded_share", round(example_07["shaded_share"], 3))
+    record_property("example_07_roads_by_sun_minutes", _minutes_counts(values_07))
+    record_property("example_07_sun_minutes_sha256", _minutes_digest(values_07))
     loop = areas["loop"]
     assert abs(loop["shaded_share"] - example_07["shaded_share"]) <= SHADED_SHARE_TOLERANCE, (
         f"example 38's Loop has {loop['shaded_share']:.1%} of its {loop['roads']} roads shaded, example 07 "
