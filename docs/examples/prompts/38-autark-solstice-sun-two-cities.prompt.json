@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/38-autark-solstice-sun-two-cities.json",
-    "sha256": "7ade76f4b1963fb800ba53b8b255fad6b6f7c38fe5b0e48a86dead08ecda41cf",
+    "sha256": "aae856d66c2496adc205cb39132593664ff2e5037467188d3143d74f9e5540a1",
     "walkthrough": "docs/examples/38-autark-solstice-sun-two-cities.md"
   },
   "prompt": "Whose streets get more sun on the June solstice, Back Bay's in Boston or the Chicago Loop's? In one Autark node, load the surface, parks, water, roads and buildings of each area from the OpenStreetMap extracts in this checkout, docs/examples/data/back_bay.osm.pbf and docs/examples/data/chicago_loop.osm.pbf, each area into a workspace of its own. On the GPU, add up each road's minutes of sun on June 21, from 7:00 to 19:00, an hour counting when no building's shadow falls on the road, each area at its own latitude and longitude. Draw a map of each area's roads colored by their minutes of sun over its buildings, and under each map a histogram of its roads' minutes of sun that I can brush, linked to that map's roads, the maps side by side on top.",
