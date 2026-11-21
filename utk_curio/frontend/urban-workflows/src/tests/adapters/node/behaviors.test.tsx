@@ -102,8 +102,7 @@ jest.mock('../../../utils/formatters', () => ({
 jest.mock('@urban-toolkit/autk-grammar', () => ({
   // autk-grammar's arrangeViews, which places each view's pane.
   arrangeViews: require('../../_support/autkArrangeViews').arrangeViews,
-  // The grammar keeps the adapter its run hands each compute pass to, which a node checks.
-  AutkGrammar: jest.fn().mockImplementation(() => ({ run: jest.fn().mockResolvedValue(undefined), data: {}, computeAdapter: { resolveCompute: jest.fn() } })),
+  AutkGrammar: jest.fn().mockImplementation(() => ({ run: jest.fn().mockResolvedValue(undefined), data: {} })),
   // The grammar's applyCamera, which the node turns a framed map by when the
   // map's entry writes a camera (adapters/node/autkMapView).
   applyCamera: (...a: any[]) => mockApplyCamera(...a),
@@ -1155,12 +1154,10 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       // actually survives the DuckDB round-trip into spec.data.
       let runSpec: any = null;
       (AutkGrammar as jest.Mock).mockReset();
-      // It stays the grammar of the tests after this one: like the module's,
-      // it keeps the adapter its run hands each compute pass to.
+      // It stays the grammar of the tests after this one.
       (AutkGrammar as jest.Mock).mockImplementation(() => ({
         run: jest.fn((s: any) => { runSpec = s; return Promise.resolve(); }),
         data: {},
-        computeAdapter: { resolveCompute: jest.fn() },
       }));
       // Mock fetchData with the REAL /get shape: parseOutput wraps the 'list'
       // artifact AND each element, so a backend layer array round-trips as
@@ -1820,11 +1817,11 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
               transform: [30, 0, 447000, 0, -30, 4637000], nodata: -9999,
             },
           });
-          // The grammar as autk-grammar builds it: a raster loads through its data adapter.
+          // The grammar as autk-grammar builds it: a raster loads through its
+          // data adapter, which the node wraps (`wrapDataAdapter`).
           const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
           AutkGrammar.mockImplementationOnce(() => ({
             data: {},
-            dataAdapter: { resolveSource: jest.fn(async (db: any) => db) },
             run: jest.fn().mockResolvedValue(undefined),
           }));
           await run(
@@ -2445,7 +2442,6 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         const grammarAsBefore = AutkGrammar.getMockImplementation();
         AutkGrammar.mockImplementation(() => {
           const grammar: any = { data: {} };
-          grammar.dataAdapter = { resolveSource: jest.fn(async (db: any) => db) };
           grammar.run = jest.fn(async (spec: any) => { drawn.spec = spec; });
           return grammar;
         });
@@ -3696,7 +3692,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         const grammarAsBefore = AutkGrammar.getMockImplementation();
         const drawn: { spec: any } = { spec: null };
         AutkGrammar.mockImplementation(() => ({
-          run: jest.fn(async (spec: any) => { drawn.spec = spec; }), data: {}, computeAdapter: { resolveCompute: jest.fn() },
+          run: jest.fn(async (spec: any) => { drawn.spec = spec; }), data: {},
         }));
         const roads = { type: 'FeatureCollection', features: [
           { type: 'Feature', geometry: { type: 'LineString', coordinates: [[-9755100, 5142400], [-9753900, 5142700]] }, properties: { road: 1 } },
@@ -3749,7 +3745,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         const grammarAsBefore = AutkGrammar.getMockImplementation();
         const drawn: { spec: any } = { spec: null };
         AutkGrammar.mockImplementation(() => ({
-          run: jest.fn(async (spec: any) => { drawn.spec = spec; }), data: {}, computeAdapter: { resolveCompute: jest.fn() },
+          run: jest.fn(async (spec: any) => { drawn.spec = spec; }), data: {},
         }));
         const roads = { type: 'FeatureCollection', features: [
           { type: 'Feature', geometry: { type: 'LineString', coordinates: [[-9755100, 5142400], [-9753900, 5142700]] }, properties: { road: 1 } },
@@ -3846,7 +3842,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         const grammarAsBefore = AutkGrammar.getMockImplementation();
         const drawn: { spec: any } = { spec: null };
         AutkGrammar.mockImplementation(() => ({
-          run: jest.fn(async (handed: any) => { drawn.spec = handed; }), data: {}, computeAdapter: { resolveCompute: jest.fn() },
+          run: jest.fn(async (handed: any) => { drawn.spec = handed; }), data: {},
         }));
         const buildings = {
           type: 'FeatureCollection',
@@ -3922,7 +3918,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         const grammarAsBefore = AutkGrammar.getMockImplementation();
         const drawn: { spec: any } = { spec: null };
         AutkGrammar.mockImplementation(() => ({
-          run: jest.fn(async (spec: any) => { drawn.spec = spec; }), data: {}, computeAdapter: { resolveCompute: jest.fn() },
+          run: jest.fn(async (spec: any) => { drawn.spec = spec; }), data: {},
         }));
         // The parts as the sandbox's load hands them on: one with a height,
         // one with only its levels, one with an empty height beside its
