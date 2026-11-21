@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PackageKind, PackagePayload, SortMode } from "../../services/packages";
 import {
   MODEL_RUNTIME_LABEL,
-  MODEL_TYPE_LABEL,
   catalogAndOwnPackages,
   isNewerPackageVersion,
   matchesSearch,
+  modelTypeWords,
   primaryCategory,
   sortPackages,
   usePackageCatalog,
@@ -17,7 +17,9 @@ import { usePackageArchiveImport } from "../../providers/packages/usePackageArch
 import type { NodeCatalogFilterTab } from "./nodeCatalogBrowseTypes";
 
 /** One way the rail narrows the grid: a package's category for the Node
- *  Catalog; a model's type and runtime for the Model Catalog. */
+ *  Catalog; a model's type and runtime for the Model Catalog. A model's type
+ *  is any name its manifest gives, so its rows are the types present, as a
+ *  package's categories are. */
 export interface CatalogFacet {
   key: string;
   label: string;
@@ -39,8 +41,7 @@ export const CATALOG_FACETS: Record<PackageKind, CatalogFacet[]> = {
       key: "type",
       label: "By type",
       valueOf: (pkg) => pkg.model?.type ?? "",
-      labelOf: (value) => MODEL_TYPE_LABEL[value as keyof typeof MODEL_TYPE_LABEL] ?? value,
-      order: Object.keys(MODEL_TYPE_LABEL),
+      labelOf: modelTypeWords,
     },
     {
       key: "runtime",

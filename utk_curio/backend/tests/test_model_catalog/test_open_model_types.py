@@ -131,16 +131,6 @@ def test_a_type_that_is_not_a_lowercase_name_is_refused(model_type):
     assert _schema_errors(raw)
 
 
-def test_the_parser_and_the_schema_read_the_same_names():
-    from utk_curio.backend.app.packages.domain.model_block import MAX_TYPE_LENGTH, TYPE_RE
-
-    schema = json.loads(SCHEMA.read_text(encoding="utf-8"))["$defs"]["model"]["properties"]["type"]
-    assert (schema["pattern"], schema["maxLength"]) == (TYPE_RE.pattern, MAX_TYPE_LENGTH)
-    assert "enum" not in schema
-    for example in schema["examples"]:
-        assert TYPE_RE.match(example), example
-
-
 # ---------------------------------------------------------------------------
 # A template with no source
 # ---------------------------------------------------------------------------

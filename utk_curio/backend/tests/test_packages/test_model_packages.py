@@ -255,19 +255,20 @@ class TestTheModelBlock:
 
     @pytest.mark.parametrize("model, message", [
         ({"runtime": "tflite"}, "runtime must be one of"),
-        ({"type": "detection"}, "type must be one of"),
+        ({"type": "Object Detection"}, "type must be a lowercase name"),
+        ({"type": None}, "type must be a lowercase name"),
         ({"entry": "../m.onnx"}, "under models/"),
         ({"entry": "/abs/m.onnx"}, "under models/"),
         ({"entry": "files/m.onnx"}, "under models/"),
         ({"entry": "models/../m.onnx"}, "under models/"),
         ({"entry": "models/m.bin"}, "entry is its .onnx file"),
-        ({"labels": []}, "names its labels"),
+        ({"labels": ["a", ""]}, "labels must list"),
         ({"license": ""}, "license must be"),
         ({"input": {"width": 64, "height": 32, "dtype": "int64"}}, "input.dtype"),
         ({"input": {"width": 64, "height": 32, "std": [1, 0, 1]}}, "zero"),
         ({"homepage": "http://x.example"}, "https"),
         ({"input": {"width": 64, "height": 32, "layout": "CHW"}}, "input.layout must be one of"),
-        ({"input": {"width": 64, "height": 32, "layout": "NHWC"}}, "NCHW for this type"),
+        ({"input": {"width": 4, "height": 32}}, "8 to 8192 pixels"),
         ({"sizeBytes": -1}, "sizeBytes"),
     ])
     def test_what_the_model_block_refuses(self, model, message):
@@ -295,10 +296,12 @@ class TestTheModelBlock:
         assert image.model.labels == () and image.model.input.layout == "NHWC"
         graph = _parse(_model_manifest(model={"type": "node-regression", "labels": [], "input": None}))
         assert graph.model.input is None
-        checkpoint = _parse(_model_manifest(model={
+        # A transformers model's node runs the code its package ships.
+        checkpoint = _model_manifest(model={
             "runtime": "transformers", "entry": "models/checkpoint", "labels": [], "input": None,
-        }))
-        assert checkpoint.model.entry == "models/checkpoint"
+        })
+        checkpoint["templates"][0]["source"] = "sources/tiny.py"
+        assert _parse(checkpoint).model.entry == "models/checkpoint"
 
     def test_a_package_without_a_kind_is_a_node_package(self, manifest_dict):
         manifest = _parse(manifest_dict(package_id="ai.test.demo"), dir_name="ai.test.demo@1")
@@ -313,6 +316,8 @@ class TestTheModelBlock:
             model={"runtime": "transformers", "entry": "models/checkpoint", "labels": [], "input": None},
             downloadOnFirstUse=["models/checkpoint"],
         )
+        # A transformers model's node runs the code its package ships.
+        checkpoint["templates"][0]["source"] = "sources/tiny.py"
         assert _parse(onnx).download_on_first_use == ("models/m.onnx", "models/m.onnx.data")
         assert _parse(checkpoint).download_on_first_use == ("models/checkpoint",)
         assert _parse(_model_manifest()).download_on_first_use == ()

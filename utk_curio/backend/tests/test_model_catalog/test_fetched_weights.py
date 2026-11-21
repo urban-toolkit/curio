@@ -11,8 +11,8 @@ package's entry folder, or under the folder ``curio.py start
 ``scripts/fetch_model_weights.py`` fetches them there ahead.
 
 - The ``concept-segmentation`` type and the ``fetch`` block, as the schema and
-  the parser read them, and what each refuses, a template of that type with
-  no source of its own among it.
+  the parser read them, and what each refuses, a template of a transformers
+  model with no source of its own among it.
 - Where a run reads the weights: the package's own folder, or the flag's
   folder of the block's revision, which the sandbox gets apart from the
   model's and reads in place.
@@ -267,12 +267,15 @@ def test_a_concept_segmentation_model_with_a_fetch_block_reads_and_round_trips()
     assert list(_validator().iter_errors(_manifest())) == []
 
 
-def test_the_schema_and_the_parser_name_the_same_model_types():
-    from utk_curio.backend.app.packages.domain.model_block import TYPES
+def test_the_schema_and_the_parser_read_the_same_model_types():
+    """Any lowercase name, concept-segmentation among them: the schema's
+    pattern and length are the parser's, and its examples are names both read."""
+    from utk_curio.backend.app.packages.domain.model_block import MAX_TYPE_LENGTH, TYPE_RE
 
-    schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
-    assert schema["$defs"]["model"]["properties"]["type"]["enum"] == list(TYPES)
-    assert "concept-segmentation" in TYPES
+    schema = json.loads(SCHEMA.read_text(encoding="utf-8"))["$defs"]["model"]["properties"]["type"]
+    assert (schema["pattern"], schema["maxLength"]) == (TYPE_RE.pattern, MAX_TYPE_LENGTH)
+    assert "enum" not in schema and "concept-segmentation" in schema["examples"]
+    assert all(TYPE_RE.match(example) for example in schema["examples"]), schema["examples"]
 
 
 def _files(*files) -> dict:
@@ -330,24 +333,27 @@ def test_a_package_whose_weights_are_fetched_names_none_to_download_on_first_use
         _parse(_manifest(downloadOnFirstUse=[ENTRY]))
 
 
-def test_a_concept_segmentation_template_with_no_source_of_its_own_is_refused():
-    """Its node is the code its package ships: Curio writes no cell for the
-    type, so the parser and the schema refuse a template without a source,
-    saying why. A semantic segmentation model's template still may have none,
-    and opens with the cell Curio writes for it."""
+def test_a_transformers_template_with_no_source_of_its_own_is_refused():
+    """Its node is the code its package ships: Curio's cell opens an .onnx
+    file, so the parser and the schema refuse a template without a source of
+    a transformers model, whatever its type, saying why. An onnx model's
+    template still may have none, and opens with the cell Curio writes for it."""
     from utk_curio.backend.app.packages.domain.manifest import ManifestError
 
-    refused = _manifest(templates=[_template(), _template(id="plain", source=None)])
-    with pytest.raises(ManifestError, match=re.escape(
-        "manifest.json.templates['plain']: a concept-segmentation model's node runs the code its package ships, "
-        "so the template names its source (sources/<file>.py)"
-    )):
-        _parse(refused)
-    assert list(_validator().iter_errors(refused))
+    said = re.escape(
+        "manifest.json.templates['plain']: a transformers model's node runs the code its package ships: "
+        "Curio's cell opens an .onnx file, so the template names its source (sources/<file>.py)"
+    )
+    for model in (_block(), _block(type="semantic-segmentation", fetch=None, labels=["road", "sky"])):
+        refused = _manifest(templates=[_template(), _template(id="plain", source=None)], model=model)
+        with pytest.raises(ManifestError, match=said):
+            _parse(refused)
+        assert list(_validator().iter_errors(refused)), model["type"]
 
     segmentation = _manifest(
         templates=[_template(source=None)],
-        model=_block(type="semantic-segmentation", fetch=None, labels=["road", "sky"]),
+        model=_block(type="semantic-segmentation", runtime="onnx", entry="models/m.onnx", fetch=None,
+                     labels=["road", "sky"]),
     )
     assert _parse(segmentation).templates[0].source is None
     assert list(_validator().iter_errors(segmentation)) == []
