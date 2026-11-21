@@ -89,30 +89,50 @@ return {name: weights[name].tolist() for name in weights.files}
 
 The node builds the network, puts the weights in it and classifies the 60 pictures in one batch on `device`: `cuda` when PyTorch sees a GPU, `cpu` otherwise. Each of the four convolutions steps two pixels at a time, taking a picture from 64 by 64 to 4 by 4. The network keeps each feature's largest value anywhere in the picture, such as a sharp corner or a curve, and a linear layer weighs them into a score per shape.
 
-The lines before the network make a rerun give the same answer. `CUBLAS_WORKSPACE_CONFIG`, set before CUDA starts, fixes the order of cuBLAS's sums; `torch.manual_seed` and `torch.use_deterministic_algorithms(True)` fix the rest; and `torch.backends.fp32_precision = "ieee"` keeps float32 math at full precision on the GPU, with no TF32. The confidence is a whole percent.
+The work runs inside `same_numbers_on_every_run`, which makes a rerun give the same answer. `CUBLAS_WORKSPACE_CONFIG`, set before CUDA starts, fixes the order of cuBLAS's sums; `torch.manual_seed` and `torch.use_deterministic_algorithms(True)` fix the rest; and `torch.backends.fp32_precision = "ieee"` keeps float32 math at full precision on the GPU, with no TF32. It reads each setting before it changes it and puts it back when the work ends, returned or raised, so the nodes after this one run as they would have. The confidence is a whole percent.
 
 ```python
-import os
-
-# Before CUDA starts, so cuBLAS repeats its sums in the same order on every run.
-os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
-
 import base64
+import contextlib
 import io
+import os
 
 import numpy as np
 import torch
 from PIL import Image
 
-# The same numbers on every run: seeded, deterministic kernels only, and full
-# float32 precision (no TF32), so every GPU rounds them alike.
-torch.manual_seed(27)
-torch.use_deterministic_algorithms(True)
-torch.backends.fp32_precision = "ieee"
-torch.backends.cudnn.benchmark = False
-device = "cuda" if torch.cuda.is_available() else "cpu"
-
 SHAPES = ["circle", "square", "triangle"]
+
+
+@contextlib.contextmanager
+def same_numbers_on_every_run(seed):
+    """The same numbers on every run while the block runs: seeded,
+    deterministic kernels only, and full float32 precision (no TF32), so every
+    GPU rounds them alike. Each setting is read first and put back as it was
+    when the block ends, returned or raised, so the nodes after this one run
+    as they would have."""
+    cublas = os.environ.get("CUBLAS_WORKSPACE_CONFIG")
+    flags = (torch.are_deterministic_algorithms_enabled(), torch.is_deterministic_algorithms_warn_only_enabled(),
+             torch.backends.fp32_precision, torch.backends.cudnn.benchmark)
+    # Before CUDA starts, so cuBLAS repeats its sums in the same order on every run.
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+    try:
+        # The random numbers of the CPU and of each GPU, as they were once the block ends.
+        with torch.random.fork_rng(devices=range(torch.accelerator.device_count())):
+            torch.manual_seed(seed)
+            torch.use_deterministic_algorithms(True)
+            torch.backends.fp32_precision = "ieee"
+            torch.backends.cudnn.benchmark = False
+            yield
+    finally:
+        deterministic, warn_only, precision, benchmark = flags
+        torch.use_deterministic_algorithms(deterministic, warn_only=warn_only)
+        torch.backends.fp32_precision = precision
+        torch.backends.cudnn.benchmark = benchmark
+        if cublas is None:
+            os.environ.pop("CUBLAS_WORKSPACE_CONFIG", None)
+        else:
+            os.environ["CUBLAS_WORKSPACE_CONFIG"] = cublas
 
 
 class TinyCNN(torch.nn.Module):
@@ -140,23 +160,25 @@ def pixels(uri):
     return rgb.transpose(2, 0, 1)
 
 
-pictures, weights = input_0, input_1
-model = TinyCNN()
-model.load_state_dict({name: torch.tensor(values) for name, values in weights.items()})
-model = model.to(device).eval()
+with same_numbers_on_every_run(27):
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    pictures, weights = input_0, input_1
+    model = TinyCNN()
+    model.load_state_dict({name: torch.tensor(values) for name, values in weights.items()})
+    model = model.to(device).eval()
 
-batch = torch.from_numpy(np.stack([pixels(uri) for uri in pictures["image"]])).to(device)
-with torch.no_grad():
-    confidence, guess = torch.softmax(model(batch), dim=1).max(dim=1)
-print(f"Ran on {device}.")
+    batch = torch.from_numpy(np.stack([pixels(uri) for uri in pictures["image"]])).to(device)
+    with torch.no_grad():
+        confidence, guess = torch.softmax(model(batch), dim=1).max(dim=1)
+    print(f"Ran on {device}.")
 
-result = pictures[["picture", "shape"]].copy()
-result["predicted"] = [SHAPES[i] for i in guess.tolist()]
-# Whole percents, so every GPU shows the same ones.
-result["confidence_pct"] = np.rint(confidence.cpu().numpy() * 100).astype(int)
-result["device"] = device
-result["image"] = pictures["image"]
-return result
+    result = pictures[["picture", "shape"]].copy()
+    result["predicted"] = [SHAPES[i] for i in guess.tolist()]
+    # Whole percents, so every GPU shows the same ones.
+    result["confidence_pct"] = np.rint(confidence.cpu().numpy() * 100).astype(int)
+    result["device"] = device
+    result["image"] = pictures["image"]
+    return result
 ```
 
 ## The views

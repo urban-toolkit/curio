@@ -33,70 +33,93 @@ k-means puts each label in the cluster whose centre is nearest, then moves each 
 - each step's distances are one tensor of labels by centres, and the new centres the
   product of the labels' one-hot clusters with their places.
 
-The random draws come from a seeded generator on the CPU, and the clusters are numbered from the largest, so a rerun gives the same clusters.
+The random draws come from a seeded generator on the CPU, and the clusters are numbered from the largest, so a rerun gives the same clusters. The clustering runs inside example 27's `same_numbers_on_every_run`, which puts each of torch's settings back when it ends.
 
 ```python
+import contextlib
 import os
-
-# Before CUDA starts, so cuBLAS repeats its sums in the same order on every run.
-os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
 import numpy as np
 import torch
 
-# The same numbers on every run: seeded, deterministic kernels only, and full
-# float32 precision (no TF32), so every GPU rounds them alike.
-torch.manual_seed(30)
-torch.use_deterministic_algorithms(True)
-torch.backends.fp32_precision = "ieee"
-torch.backends.cudnn.benchmark = False
-device = "cuda" if torch.cuda.is_available() else "cpu"
-
 K = 8
 
-# Each label's place in metres (Illinois East), around the labels' mean, in
-# float64, so every device puts each label in the same cluster.
-metres = input_0.geometry.to_crs(26971)
-xy = np.column_stack([metres.x, metres.y])
-points = torch.from_numpy(xy - xy.mean(axis=0)).to(device)
+
+@contextlib.contextmanager
+def same_numbers_on_every_run(seed):
+    """The same numbers on every run while the block runs: seeded,
+    deterministic kernels only, and full float32 precision (no TF32), so every
+    GPU rounds them alike. Each setting is read first and put back as it was
+    when the block ends, returned or raised, so the nodes after this one run
+    as they would have."""
+    cublas = os.environ.get("CUBLAS_WORKSPACE_CONFIG")
+    flags = (torch.are_deterministic_algorithms_enabled(), torch.is_deterministic_algorithms_warn_only_enabled(),
+             torch.backends.fp32_precision, torch.backends.cudnn.benchmark)
+    # Before CUDA starts, so cuBLAS repeats its sums in the same order on every run.
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+    try:
+        # The random numbers of the CPU and of each GPU, as they were once the block ends.
+        with torch.random.fork_rng(devices=range(torch.accelerator.device_count())):
+            torch.manual_seed(seed)
+            torch.use_deterministic_algorithms(True)
+            torch.backends.fp32_precision = "ieee"
+            torch.backends.cudnn.benchmark = False
+            yield
+    finally:
+        deterministic, warn_only, precision, benchmark = flags
+        torch.use_deterministic_algorithms(deterministic, warn_only=warn_only)
+        torch.backends.fp32_precision = precision
+        torch.backends.cudnn.benchmark = benchmark
+        if cublas is None:
+            os.environ.pop("CUBLAS_WORKSPACE_CONFIG", None)
+        else:
+            os.environ["CUBLAS_WORKSPACE_CONFIG"] = cublas
 
 
-def squared_distances(centres):
-    """Every label's squared distance to every centre, labels by centres."""
-    return (points[:, None, :] - centres[None, :, :]).square().sum(dim=2)
+with same_numbers_on_every_run(30):
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    # Each label's place in metres (Illinois East), around the labels' mean, in
+    # float64, so every device puts each label in the same cluster.
+    metres = input_0.geometry.to_crs(26971)
+    xy = np.column_stack([metres.x, metres.y])
+    points = torch.from_numpy(xy - xy.mean(axis=0)).to(device)
 
-# k-means++ starts: each next centre a label drawn with odds by its squared
-# distance to the nearest centre so far, by a generator on the CPU, so every
-# device draws the same ones.
-draws = torch.Generator().manual_seed(30)
-centres = points[torch.randint(len(points), (1,), generator=draws).to(device)]
-for _ in range(K - 1):
-    nearest = squared_distances(centres).min(dim=1).values
-    pick = torch.multinomial((nearest / nearest.sum()).cpu(), 1, generator=draws)
-    centres = torch.cat([centres, points[pick.to(device)]])
+    def squared_distances(centres):
+        """Every label's squared distance to every centre, labels by centres."""
+        return (points[:, None, :] - centres[None, :, :]).square().sum(dim=2)
 
-# Lloyd's steps until no label changes cluster: each centre moves to the mean
-# of its labels, a product with the labels' one-hot clusters.
-assigned = None
-for step in range(1, 101):
-    closest = squared_distances(centres).argmin(dim=1)
-    if assigned is not None and torch.equal(closest, assigned):
-        break
-    assigned = closest
-    members = torch.nn.functional.one_hot(assigned, K).to(points.dtype)
-    centres = (members.T @ points) / members.sum(dim=0).clamp(min=1)[:, None]
-print(f"Ran on {device}: {K} clusters, settled after {step} steps.")
+    # k-means++ starts: each next centre a label drawn with odds by its squared
+    # distance to the nearest centre so far, by a generator on the CPU, so every
+    # device draws the same ones.
+    draws = torch.Generator().manual_seed(30)
+    centres = points[torch.randint(len(points), (1,), generator=draws).to(device)]
+    for _ in range(K - 1):
+        nearest = squared_distances(centres).min(dim=1).values
+        pick = torch.multinomial((nearest / nearest.sum()).cpu(), 1, generator=draws)
+        centres = torch.cat([centres, points[pick.to(device)]])
 
-# Clusters numbered from the largest, 1 to K.
-sizes = torch.nn.functional.one_hot(assigned, K).sum(dim=0).cpu()
-rank = torch.empty(K, dtype=torch.long)
-rank[torch.argsort(sizes, descending=True, stable=True)] = torch.arange(K)
+    # Lloyd's steps until no label changes cluster: each centre moves to the mean
+    # of its labels, a product with the labels' one-hot clusters.
+    assigned = None
+    for step in range(1, 101):
+        closest = squared_distances(centres).argmin(dim=1)
+        if assigned is not None and torch.equal(closest, assigned):
+            break
+        assigned = closest
+        members = torch.nn.functional.one_hot(assigned, K).to(points.dtype)
+        centres = (members.T @ points) / members.sum(dim=0).clamp(min=1)[:, None]
+    print(f"Ran on {device}: {K} clusters, settled after {step} steps.")
 
-clustered = input_0.copy()
-clustered["cluster"] = (rank[assigned.cpu()] + 1).numpy()
-clustered["device"] = device
-return clustered
+    # Clusters numbered from the largest, 1 to K.
+    sizes = torch.nn.functional.one_hot(assigned, K).sum(dim=0).cpu()
+    rank = torch.empty(K, dtype=torch.long)
+    rank[torch.argsort(sizes, descending=True, stable=True)] = torch.arange(K)
+
+    clustered = input_0.copy()
+    clustered["cluster"] = (rank[assigned.cpu()] + 1).numpy()
+    clustered["device"] = device
+    return clustered
 ```
 
 ## Count and gather

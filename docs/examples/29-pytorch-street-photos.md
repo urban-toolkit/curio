@@ -32,13 +32,11 @@ Each measure is a convolution over the photo on `device`:
 - edges: the brightness, another 1 x 1 convolution, then Sobel's two 3 x 3 gradients;
   a pixel is on an edge where the change passes `EDGE`.
 
-The overlay dims the photo and paints its green pixels green and its edges white. The node writes it to the file `curio_derived_file` names for it, whose `image_url` goes in `overlay_url`. The shares are rounded to one decimal.
+The overlay dims the photo and paints its green pixels green and its edges white. The node writes it to the file `curio_derived_file` names for it, whose `image_url` goes in `overlay_url`. The shares are rounded to one decimal. The measures run inside example 27's `same_numbers_on_every_run`, which gives the same numbers on every run and puts each of torch's settings back when they end.
 
 ```python
+import contextlib
 import os
-
-# Before CUDA starts, so cuBLAS repeats its sums in the same order on every run.
-os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
 import numpy as np
 import pandas as pd
@@ -46,57 +44,84 @@ import torch
 import torch.nn.functional as F
 from PIL import Image
 
-# The same numbers on every run: seeded, deterministic kernels only, and full
-# float32 precision (no TF32), so every GPU rounds them alike.
-torch.manual_seed(29)
-torch.use_deterministic_algorithms(True)
-torch.backends.fp32_precision = "ieee"
-torch.backends.cudnn.benchmark = False
-device = "cuda" if torch.cuda.is_available() else "cpu"
-
 #: A pixel is green when 2G - R - B, smoothed over 5 x 5 pixels, passes this.
 GREEN = 0.1
 #: A pixel is on an edge when the brightness changes by more than this a pixel.
 EDGE = 0.2
 
-# Each measure is a convolution: weights over the color channels, a 5 x 5
-# mean, and Sobel's two 3 x 3 gradients of the brightness.
-excess_green = torch.tensor([-1.0, 2.0, -1.0]).view(1, 3, 1, 1).to(device)
-smooth = torch.full((1, 1, 5, 5), 1 / 25).to(device)
-brightness = torch.tensor([0.299, 0.587, 0.114]).view(1, 3, 1, 1).to(device)
-sobel = torch.tensor([[-1.0, 0.0, 1.0], [-2.0, 0.0, 2.0], [-1.0, 0.0, 1.0]])
-gradients = torch.stack([sobel, sobel.T]).unsqueeze(1).to(device) / 4
 
-rows = []
-for photo in input_0.itertuples():
-    with Image.open(photo.path) as source:
-        rgb = np.asarray(source.convert("RGB"), dtype=np.float32) / 255
-    image = torch.from_numpy(rgb).permute(2, 0, 1).unsqueeze(0).to(device)
-    green = F.conv2d(F.conv2d(image, excess_green), smooth, padding=2) > GREEN
-    change = F.conv2d(F.conv2d(image, brightness), gradients, padding=1)
-    edges = change.square().sum(dim=1, keepdim=True).sqrt() > EDGE
+@contextlib.contextmanager
+def same_numbers_on_every_run(seed):
+    """The same numbers on every run while the block runs: seeded,
+    deterministic kernels only, and full float32 precision (no TF32), so every
+    GPU rounds them alike. Each setting is read first and put back as it was
+    when the block ends, returned or raised, so the nodes after this one run
+    as they would have."""
+    cublas = os.environ.get("CUBLAS_WORKSPACE_CONFIG")
+    flags = (torch.are_deterministic_algorithms_enabled(), torch.is_deterministic_algorithms_warn_only_enabled(),
+             torch.backends.fp32_precision, torch.backends.cudnn.benchmark)
+    # Before CUDA starts, so cuBLAS repeats its sums in the same order on every run.
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+    try:
+        # The random numbers of the CPU and of each GPU, as they were once the block ends.
+        with torch.random.fork_rng(devices=range(torch.accelerator.device_count())):
+            torch.manual_seed(seed)
+            torch.use_deterministic_algorithms(True)
+            torch.backends.fp32_precision = "ieee"
+            torch.backends.cudnn.benchmark = False
+            yield
+    finally:
+        deterministic, warn_only, precision, benchmark = flags
+        torch.use_deterministic_algorithms(deterministic, warn_only=warn_only)
+        torch.backends.fp32_precision = precision
+        torch.backends.cudnn.benchmark = benchmark
+        if cublas is None:
+            os.environ.pop("CUBLAS_WORKSPACE_CONFIG", None)
+        else:
+            os.environ["CUBLAS_WORKSPACE_CONFIG"] = cublas
 
-    # The overlay: the photo dimmed, its green pixels green and its edges white.
-    overlay = image * 0.5
-    overlay = torch.where(green, torch.tensor([0.2, 0.8, 0.3], device=device).view(1, 3, 1, 1), overlay)
-    overlay = torch.where(edges, torch.ones(1, 3, 1, 1, device=device), overlay)
-    picture = (overlay[0].permute(1, 2, 0).cpu().numpy() * 255).round().astype(np.uint8)
-    derived = curio_derived_file(photo.dataset_id, photo.file_id, 0, "png", kind="image", tag="greenedges")
-    Image.fromarray(picture).save(derived["path"])
 
-    rows.append({
-        "image_id": photo.image_id,
-        "creator": photo.creator,
-        # One decimal, so every GPU shows the same numbers.
-        "green_pct": round(green.float().mean().item() * 100, 1),
-        "edge_pct": round(edges.float().mean().item() * 100, 1),
-        "device": device,
-        "thumbnail": photo.thumbnail,
-        "overlay_url": derived["image_url"],
-    })
-print(f"Ran on {device}.")
+with same_numbers_on_every_run(29):
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
-return pd.DataFrame(rows)
+    # Each measure is a convolution: weights over the color channels, a 5 x 5
+    # mean, and Sobel's two 3 x 3 gradients of the brightness.
+    excess_green = torch.tensor([-1.0, 2.0, -1.0]).view(1, 3, 1, 1).to(device)
+    smooth = torch.full((1, 1, 5, 5), 1 / 25).to(device)
+    brightness = torch.tensor([0.299, 0.587, 0.114]).view(1, 3, 1, 1).to(device)
+    sobel = torch.tensor([[-1.0, 0.0, 1.0], [-2.0, 0.0, 2.0], [-1.0, 0.0, 1.0]])
+    gradients = torch.stack([sobel, sobel.T]).unsqueeze(1).to(device) / 4
+
+    rows = []
+    for photo in input_0.itertuples():
+        with Image.open(photo.path) as source:
+            rgb = np.asarray(source.convert("RGB"), dtype=np.float32) / 255
+        image = torch.from_numpy(rgb).permute(2, 0, 1).unsqueeze(0).to(device)
+        green = F.conv2d(F.conv2d(image, excess_green), smooth, padding=2) > GREEN
+        change = F.conv2d(F.conv2d(image, brightness), gradients, padding=1)
+        edges = change.square().sum(dim=1, keepdim=True).sqrt() > EDGE
+
+        # The overlay: the photo dimmed, its green pixels green and its edges white.
+        overlay = image * 0.5
+        overlay = torch.where(green, torch.tensor([0.2, 0.8, 0.3], device=device).view(1, 3, 1, 1), overlay)
+        overlay = torch.where(edges, torch.ones(1, 3, 1, 1, device=device), overlay)
+        picture = (overlay[0].permute(1, 2, 0).cpu().numpy() * 255).round().astype(np.uint8)
+        derived = curio_derived_file(photo.dataset_id, photo.file_id, 0, "png", kind="image", tag="greenedges")
+        Image.fromarray(picture).save(derived["path"])
+
+        rows.append({
+            "image_id": photo.image_id,
+            "creator": photo.creator,
+            # One decimal, so every GPU shows the same numbers.
+            "green_pct": round(green.float().mean().item() * 100, 1),
+            "edge_pct": round(edges.float().mean().item() * 100, 1),
+            "device": device,
+            "thumbnail": photo.thumbnail,
+            "overlay_url": derived["image_url"],
+        })
+    print(f"Ran on {device}.")
+
+    return pd.DataFrame(rows)
 ```
 
 ## The views

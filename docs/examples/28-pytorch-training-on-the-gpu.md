@@ -72,33 +72,53 @@ return pd.DataFrame({
 
 The network starts from random weights. Each epoch shuffles the 900 pictures, takes them 30 at a time, and moves the weights against the gradient of the cross-entropy loss with Adam. Then the node measures the accuracy on both sets with the weights the network has.
 
-The network is made on the CPU from the seed, and the shuffles are drawn there too by a generator of their own, so the network starts and trains alike on every device. With the settings example 27 describes, a rerun on the same machine gives the same numbers, which the node rounds to three decimals. It trains in float64: every GPU adds up its sums in an order of its own, and in float32 those last bits grow, epoch after epoch, into the decimals shown.
+The network is made on the CPU from the seed, and the shuffles are drawn there too by a generator of their own, so the network starts and trains alike on every device. With the settings example 27 describes, a rerun on the same machine gives the same numbers, which the node rounds to three decimals; as there, `same_numbers_on_every_run` puts each setting back when the training ends. It trains in float64: every GPU adds up its sums in an order of its own, and in float32 those last bits grow, epoch after epoch, into the decimals shown.
 
 ```python
-import os
-
-# Before CUDA starts, so cuBLAS repeats its sums in the same order on every run.
-os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
-
 import base64
+import contextlib
 import io
+import os
 
 import numpy as np
 import pandas as pd
 import torch
 from PIL import Image
 
-# The same numbers on every run: seeded, deterministic kernels only, and full
-# float32 precision (no TF32), so every GPU rounds them alike.
-torch.manual_seed(28)
-torch.use_deterministic_algorithms(True)
-torch.backends.fp32_precision = "ieee"
-torch.backends.cudnn.benchmark = False
-device = "cuda" if torch.cuda.is_available() else "cpu"
-
 SHAPES = ["circle", "square", "triangle"]
 EPOCHS = 20
 BATCH = 30
+
+
+@contextlib.contextmanager
+def same_numbers_on_every_run(seed):
+    """The same numbers on every run while the block runs: seeded,
+    deterministic kernels only, and full float32 precision (no TF32), so every
+    GPU rounds them alike. Each setting is read first and put back as it was
+    when the block ends, returned or raised, so the nodes after this one run
+    as they would have."""
+    cublas = os.environ.get("CUBLAS_WORKSPACE_CONFIG")
+    flags = (torch.are_deterministic_algorithms_enabled(), torch.is_deterministic_algorithms_warn_only_enabled(),
+             torch.backends.fp32_precision, torch.backends.cudnn.benchmark)
+    # Before CUDA starts, so cuBLAS repeats its sums in the same order on every run.
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+    try:
+        # The random numbers of the CPU and of each GPU, as they were once the block ends.
+        with torch.random.fork_rng(devices=range(torch.accelerator.device_count())):
+            torch.manual_seed(seed)
+            torch.use_deterministic_algorithms(True)
+            torch.backends.fp32_precision = "ieee"
+            torch.backends.cudnn.benchmark = False
+            yield
+    finally:
+        deterministic, warn_only, precision, benchmark = flags
+        torch.use_deterministic_algorithms(deterministic, warn_only=warn_only)
+        torch.backends.fp32_precision = precision
+        torch.backends.cudnn.benchmark = benchmark
+        if cublas is None:
+            os.environ.pop("CUBLAS_WORKSPACE_CONFIG", None)
+        else:
+            os.environ["CUBLAS_WORKSPACE_CONFIG"] = cublas
 
 
 class TinyCNN(torch.nn.Module):
@@ -138,40 +158,42 @@ def accuracy(model, images, labels):
         return (model(images).argmax(dim=1) == labels).float().mean().item()
 
 
-train_images, train_labels = tensors(input_0[input_0["split"] == "train"])
-held_images, held_labels = tensors(input_0[input_0["split"] == "held out"])
+with same_numbers_on_every_run(28):
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    train_images, train_labels = tensors(input_0[input_0["split"] == "train"])
+    held_images, held_labels = tensors(input_0[input_0["split"] == "held out"])
 
-# Made on the CPU, from the seed, and the batches drawn there too, so the
-# network starts and trains alike on every device. In float64: each GPU sums
-# in its own order, and in float32 those last bits grow, epoch after epoch,
-# into the three decimals shown.
-model = TinyCNN().double().to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.005)
-shuffle = torch.Generator().manual_seed(28)
+    # Made on the CPU, from the seed, and the batches drawn there too, so the
+    # network starts and trains alike on every device. In float64: each GPU sums
+    # in its own order, and in float32 those last bits grow, epoch after epoch,
+    # into the three decimals shown.
+    model = TinyCNN().double().to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.005)
+    shuffle = torch.Generator().manual_seed(28)
 
-history = []
-for epoch in range(1, EPOCHS + 1):
-    model.train()
-    total = 0.0
-    for batch in torch.randperm(len(train_labels), generator=shuffle).split(BATCH):
-        batch = batch.to(device)
-        loss = torch.nn.functional.cross_entropy(model(train_images[batch]), train_labels[batch])
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        total += loss.item() * len(batch)
-    model.eval()
-    history.append({
-        "epoch": epoch,
-        # Three decimals, so every GPU shows the same numbers.
-        "loss": round(total / len(train_labels), 3),
-        "train_accuracy": round(accuracy(model, train_images, train_labels), 3),
-        "held_out_accuracy": round(accuracy(model, held_images, held_labels), 3),
-        "device": device,
-    })
-print(f"Ran on {device}.")
+    history = []
+    for epoch in range(1, EPOCHS + 1):
+        model.train()
+        total = 0.0
+        for batch in torch.randperm(len(train_labels), generator=shuffle).split(BATCH):
+            batch = batch.to(device)
+            loss = torch.nn.functional.cross_entropy(model(train_images[batch]), train_labels[batch])
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            total += loss.item() * len(batch)
+        model.eval()
+        history.append({
+            "epoch": epoch,
+            # Three decimals, so every GPU shows the same numbers.
+            "loss": round(total / len(train_labels), 3),
+            "train_accuracy": round(accuracy(model, train_images, train_labels), 3),
+            "held_out_accuracy": round(accuracy(model, held_images, held_labels), 3),
+            "device": device,
+        })
+    print(f"Ran on {device}.")
 
-return pd.DataFrame(history)
+    return pd.DataFrame(history)
 ```
 
 ## The views
