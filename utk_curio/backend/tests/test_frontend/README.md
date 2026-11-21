@@ -542,9 +542,11 @@ python scripts/ci_report.py --junit "End-to-end tests=.curio/e2e.xml" \
 The GPU job runs on one of three GPU kinds: an arcade runner (arcade-gpu-01 to
 04 share an H100), utk-gpu (an RTX PRO 6000) or a desktop (kind `utk-desktop`:
 utk-desktop-01 has an RTX 3070, utk-desktop-03 an RTX 4080). Nearly every frame
-draws the same on all of them. A frame that does not, like example 07's plot close-up, whose
-GPU-computed histogram draws 6% apart, may also keep a baseline of one GPU kind
-beside its default one: `<name>.utk-gpu.png`, `<name>.arcade-gpu.png` or `<name>.utk-desktop.png`.
+draws the same on all of them. A frame that does not may also keep a baseline of
+one GPU kind beside its default one: `<name>.utk-gpu.png`, `<name>.arcade-gpu.png`
+or `<name>.utk-desktop.png`. A shader that computes on map coordinates in metres
+draws alike on every kind only when it measures them from a local origin first, as
+the shadow passes of examples 06, 07 and 38 do.
 
 - The test-gpu job sets `CURIO_E2E_GPU_KIND` from its runner's name. A frame
   with a baseline of that kind is compared with it. Every other frame, and every
