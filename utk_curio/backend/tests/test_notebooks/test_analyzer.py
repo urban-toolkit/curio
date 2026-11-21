@@ -16,7 +16,9 @@ Run::
 """
 from __future__ import annotations
 
+import sys
 import textwrap
+import types
 
 from utk_curio.backend.app.notebooks.analyzer import analyze_cells
 
@@ -176,3 +178,23 @@ class TestDependencyEdges:
             assert set(entry) == {
                 "defined", "used", "last_var", "altair_spec", "is_import_only",
             }
+
+
+class TestNoCellCodeRuns:
+    """The analysis reads a cell's code and runs none of it, a cell that
+    draws an Altair chart included."""
+
+    PROBE = "curio_notebook_analysis_probe"
+
+    def test_analyzing_a_chart_cell_runs_none_of_its_code(self, monkeypatch):
+        probe = types.ModuleType(self.PROBE)
+        monkeypatch.setitem(sys.modules, self.PROBE, probe)
+        result = analyze_cells(_cells(
+            f"""
+            import {self.PROBE}
+            {self.PROBE}.ran_in = "the analysis"
+            chart = alt.Chart(df).mark_point().encode(x="a", y="b")
+            """
+        ))
+        assert not hasattr(probe, "ran_in"), "analyze_cells ran the code of a notebook cell"
+        assert result["analysis"][0]["last_var"] == "chart"
