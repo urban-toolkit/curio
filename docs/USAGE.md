@@ -1696,6 +1696,55 @@ into a new one, `outputTableName`.
 - A compute step hands both tables on after the tables it holds, the cluster
   ids also as a column of their own, `block` beside `compute.block`.
 
+### writeBack
+
+A pass of any type with `"writeBack": true` also keeps the table it writes in
+autk-db, the node's database: its `outputTableName`, or its own table in
+place. The sources that run after compute read it there (see
+[after](#after)). Later passes, the map and the plot read the pass's table as
+they do without it.
+
+- autk-db keeps every row of it, each coordinate on the workspace's precision
+  grid.
+- `writeBack` on a pass over a raster, or on a new table whose layer type is
+  not known, fails the node: set the pass's `layerType`.
+- A table a pass changes in place and keeps in autk-db is read row by row,
+  `osmElements` or not (see [OpenStreetMap elements](#openstreetmap-elements)).
+
+### after
+
+A source with `"after": "compute"` runs once every pass has run, after the
+sources without it, in the order of `data`, wherever it stands there. It reads
+what the passes kept in autk-db with `writeBack`: a join or a heatmap of a
+pass's table, a SQL query of it, an update or a drop. Every type of source
+takes it. This one counts the buildings of each block a clusters pass finds:
+
+```json
+{
+  "data": [
+    {"type": "sql", "outputTableName": "block_sizes", "after": "compute",
+     "query": "SELECT CAST(properties->'compute'->>'block' AS INTEGER) AS block, CAST(count(*) AS INTEGER) AS buildings FROM blocks GROUP BY block ORDER BY buildings DESC LIMIT 10"}
+  ],
+  "compute": [{"type": "clusters", "dataRef": "table_osm_buildings", "outputColumnName": "block",
+               "outputTableName": "blocks", "writeBack": true}],
+  "plot": {"dataRef": "block_sizes", "mark": "bar", "axis": ["block", "buildings"]}
+}
+```
+
+- A source after compute that reads a table a pass writes without `writeBack`
+  fails the node before anything runs, and the error names the source and the
+  pass. So does an `after` other than `"compute"`.
+- A join's or a heatmap's `groupBy` reads a pass's column by its path,
+  `{"column": "compute.block", "aggregateFn": "max"}`, and a layer's `getFnv`
+  names what a join wrote of it, `"sjoin.max.blocks.compute.block"`.
+- A node whose document has no compute pass runs its sources after compute
+  after its other sources, and hands their tables on with the others.
+- A compute step hands on the tables its sources after compute make after the
+  tables it holds and the tables its passes write, a table one of them changes
+  as it left it, and none they drop.
+- A node that draws a map or a plot hands on its input, as it does without
+  them.
+
 ### Layer titles and colors
 
 A `layerRef`'s `title` names its layer in the legend. Without one, the legend
@@ -1953,13 +2002,15 @@ Each `groupBy` entry is a band, labelled `<aggregateFn>_<table>`:
   `{"column": "db", "aggregateFn": "avg"}`, over the rows that have a value
   in it.
 
-An entry with `"normalize": true` rescales its band from 0 at its least cell to
-1 at its greatest, and its label ends in `_norm`. Bands of one aggregate over
-different columns each name their column too, such as `avg_<table>_db` and
-`avg_<table>_peak`, so every label names one band. A cell no row reaches holds
-0 in every band, and so does a `sum`, `avg`, `min` or `max` band in a cell
-whose rows have no value in its column. A heatmap without `groupBy` has one
-band, `count`.
+Every entry names its `aggregateFn`: an entry without one fails the node, and
+the error names the heatmap and the column. An entry with `"normalize": true`
+rescales its band from 0 at its least cell to 1 at its greatest, and its label
+ends in `_norm`. Bands of one aggregate over different columns each name their
+column too, such as `avg_<table>_db` and `avg_<table>_peak`, so every label
+names one band. A cell no row reaches holds 0 in every band, and so does a
+`sum`, `avg`, `min` or `max` band in a cell whose rows have no value in its
+column. A heatmap without `groupBy` has one band, `count_<table>`, which counts
+the rows near each cell.
 
 The table a heatmap bins is one its `data` section loads before it, into the
 heatmap's own workspace, or a table of the node's input, such as the points a
@@ -2067,10 +2118,13 @@ A map layer or a plot with `"osmElements": true` reads an OpenStreetMap layer
 table the document's own `osm` source loads as one feature per OpenStreetMap
 element it was built from, each with the element's tags, `osm_type` and
 `osm_id` (and `building_id` in a buildings table) as its properties. A table
-of the node's input, a surface and a table an `update` changed are read row by
-row. Every view of the node that reads one table writes `osmElements` alike: a
+of the node's input, a surface, a table an `update` changed and a table a
+compute pass changes in place and keeps in autk-db (`writeBack`) are read row
+by row. Every view of the node that reads one table writes `osmElements` alike: a
 document where one view of a table writes it and another does not, does not
-run, and the node's error names the table.
+run, and the node's error names the table. Nor does a document whose view
+reads a table as elements while a compute pass changes that table in place
+without `writeBack`: the node's error names the table and the pass.
 
 ### The starter document
 

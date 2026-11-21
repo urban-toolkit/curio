@@ -169,7 +169,7 @@
           "type": "object"
         },
         "osmElements": {
-          "description": "Plot an OpenStreetMap layer table as one row per OSM element it was built from, each with the element's tags, `osm_type` and `osm_id` (and `building_id` in a buildings table), rather than one row per table row. A table that is not an OSM layer, a surface, and an OSM table an update changed are plotted row by row, as without it. Read by the Autark adapter only.",
+          "description": "Plot an OpenStreetMap layer table as one row per OSM element it was built from, each with the element's tags, `osm_type` and `osm_id` (and `building_id` in a buildings table), rather than one row per table row. A compute pass that changes the table in place leaves its elements as they were: they are plotted without the pass's columns. A table that is not an OSM layer, a surface, and an OSM table an update changed, an in-place `writeBack` among them, are plotted row by row, as without it. Read by the Autark adapter only.",
           "type": "boolean"
         },
         "selectFields": {
@@ -400,6 +400,10 @@
         "workspace": {
           "$ref": "#/definitions/WorkspaceName",
           "description": "Workspace of the tables the pass reads and writes."
+        },
+        "writeBack": {
+          "description": "Also keep the result in autk-db, in the pass's workspace: as the table `outputTableName`, else in place of the `dataRef` table. autk-db keeps every row, each coordinate on the workspace's precision grid, so the sources that run after compute (`after: 'compute'`), such as a join, a heatmap, a `sql` source or an update, read the result there. Later passes, maps and plots read the result as they do without it. Read by the Autark adapter only.",
+          "type": "boolean"
         }
       },
       "required": [
@@ -534,6 +538,10 @@
         ]
       },
       "properties": {
+        "after": {
+          "$ref": "#/definitions/SourcePhase",
+          "description": "Run the source after the compute passes."
+        },
         "csvFileUrl": {
           "type": "string"
         },
@@ -587,6 +595,10 @@
         }
       },
       "properties": {
+        "after": {
+          "$ref": "#/definitions/SourcePhase",
+          "description": "Run the source after the compute passes."
+        },
         "boundingBox": {
           "$ref": "#/definitions/BoundingBox"
         },
@@ -787,6 +799,10 @@
     "DropSourceSpec": {
       "description": "Drops a table, so the sources, compute passes, maps and plots after it no longer find it, and `AutkGrammar.data` no longer lists it. Read by the Autark adapter only.",
       "properties": {
+        "after": {
+          "$ref": "#/definitions/SourcePhase",
+          "description": "Run the drop after the compute passes."
+        },
         "dataRef": {
           "description": "The table to drop.",
           "type": "string"
@@ -882,6 +898,10 @@
     "GeoTiffDataSourceSpec": {
       "description": "Loads a GeoTIFF raster from `geotiffFileUrl` as a raster table: one feature, with one band per value. Read by the Autark adapter only.",
       "properties": {
+        "after": {
+          "$ref": "#/definitions/SourcePhase",
+          "description": "Run the source after the compute passes."
+        },
         "coordinateFormat": {
           "description": "CRS of the file, as an EPSG string. Defaults to `'EPSG:4326'`.",
           "type": "string"
@@ -1131,6 +1151,10 @@
             "workspace": {
               "$ref": "#/definitions/WorkspaceName",
               "description": "Workspace of the tables the pass reads and writes."
+            },
+            "writeBack": {
+              "description": "Also keep the result in autk-db, in the pass's workspace: as the table `outputTableName`, else in place of the `dataRef` table. autk-db keeps every row, each coordinate on the workspace's precision grid, so the sources that run after compute (`after: 'compute'`), such as a join, a heatmap, a `sql` source or an update, read the result there. Later passes, maps and plots read the result as they do without it. Read by the Autark adapter only.",
+              "type": "boolean"
             }
           },
           "required": [
@@ -1282,6 +1306,10 @@
             "workspace": {
               "$ref": "#/definitions/WorkspaceName",
               "description": "Workspace of the tables the pass reads and writes."
+            },
+            "writeBack": {
+              "description": "Also keep the result in autk-db, in the pass's workspace: as the table `outputTableName`, else in place of the `dataRef` table. autk-db keeps every row, each coordinate on the workspace's precision grid, so the sources that run after compute (`after: 'compute'`), such as a join, a heatmap, a `sql` source or an update, read the result there. Later passes, maps and plots read the result as they do without it. Read by the Autark adapter only.",
+              "type": "boolean"
             }
           },
           "required": [
@@ -1310,6 +1338,10 @@
     "HeatmapSourceSpec": {
       "description": "Aggregates a table onto a regular grid, producing a raster heatmap table.",
       "properties": {
+        "after": {
+          "$ref": "#/definitions/SourcePhase",
+          "description": "Run the source after the compute passes."
+        },
         "grid": {
           "description": "Grid resolution.",
           "properties": {
@@ -1327,12 +1359,12 @@
           "type": "object"
         },
         "groupBy": {
-          "description": "Aggregate the rows near each cell, one raster band per entry.",
+          "description": "Aggregate the rows near each cell, one raster band per entry. Without it, one band counts the rows near each cell.",
           "items": {
             "properties": {
               "aggregateFn": {
                 "$ref": "#/definitions/HeatmapAggregateFunction",
-                "description": "How the rows combine into the cell's value: any aggregate but `collect`, which lists rows, while a cell holds one value."
+                "description": "How the rows combine into the cell's value: any aggregate but `collect`, which lists rows, while a cell holds one value. An entry without it is refused, as nothing would combine the rows."
               },
               "column": {
                 "type": "string"
@@ -1524,7 +1556,7 @@
           "type": "object"
         },
         "osmElements": {
-          "description": "Plot an OpenStreetMap layer table as one row per OSM element it was built from, each with the element's tags, `osm_type` and `osm_id` (and `building_id` in a buildings table), rather than one row per table row. A table that is not an OSM layer, a surface, and an OSM table an update changed are plotted row by row, as without it. Read by the Autark adapter only.",
+          "description": "Plot an OpenStreetMap layer table as one row per OSM element it was built from, each with the element's tags, `osm_type` and `osm_id` (and `building_id` in a buildings table), rather than one row per table row. A compute pass that changes the table in place leaves its elements as they were: they are plotted without the pass's columns. A table that is not an OSM layer, a surface, and an OSM table an update changed, an in-place `writeBack` among them, are plotted row by row, as without it. Read by the Autark adapter only.",
           "type": "boolean"
         },
         "selectFields": {
@@ -1655,6 +1687,10 @@
     "JoinSourceSpec": {
       "description": "Spatially joins one table onto another. The result replaces the root table.",
       "properties": {
+        "after": {
+          "$ref": "#/definitions/SourcePhase",
+          "description": "Run the join after the compute passes."
+        },
         "dataRef": {
           "description": "Table that receives the joined columns.",
           "type": "string"
@@ -1730,6 +1766,10 @@
         ]
       },
       "properties": {
+        "after": {
+          "$ref": "#/definitions/SourcePhase",
+          "description": "Run the source after the compute passes."
+        },
         "geometryColumns": {
           "$ref": "#/definitions/GeometryColumns"
         },
@@ -1962,7 +2002,7 @@
           "type": "object"
         },
         "osmElements": {
-          "description": "Plot an OpenStreetMap layer table as one row per OSM element it was built from, each with the element's tags, `osm_type` and `osm_id` (and `building_id` in a buildings table), rather than one row per table row. A table that is not an OSM layer, a surface, and an OSM table an update changed are plotted row by row, as without it. Read by the Autark adapter only.",
+          "description": "Plot an OpenStreetMap layer table as one row per OSM element it was built from, each with the element's tags, `osm_type` and `osm_id` (and `building_id` in a buildings table), rather than one row per table row. A compute pass that changes the table in place leaves its elements as they were: they are plotted without the pass's columns. A table that is not an OSM layer, a surface, and an OSM table an update changed, an in-place `writeBack` among them, are plotted row by row, as without it. Read by the Autark adapter only.",
           "type": "boolean"
         },
         "selectFields": {
@@ -2201,7 +2241,7 @@
           "type": "number"
         },
         "osmElements": {
-          "description": "Draw an OpenStreetMap layer table as one feature per OSM element it was built from, each with the element's tags, `osm_type` and `osm_id` as its properties (and `building_id` in a buildings table, whose parts are elements of their own), rather than one feature per row. A table that is not an OSM layer, a surface, and an OSM table an update changed are drawn row by row, as without it. Read by the Autark adapter only.",
+          "description": "Draw an OpenStreetMap layer table as one feature per OSM element it was built from, each with the element's tags, `osm_type` and `osm_id` as its properties (and `building_id` in a buildings table, whose parts are elements of their own), rather than one feature per row. A compute pass that changes the table in place leaves its elements as they were: they are drawn without the pass's columns. A table that is not an OSM layer, a surface, and an OSM table an update changed, an in-place `writeBack` among them, are drawn row by row, as without it. Read by the Autark adapter only.",
           "type": "boolean"
         },
         "pickedComps": {
@@ -2587,6 +2627,10 @@
         ]
       },
       "properties": {
+        "after": {
+          "$ref": "#/definitions/SourcePhase",
+          "description": "Run the source after the compute passes."
+        },
         "autoLoadLayers": {
           "description": "Split the raw OSM table into one table per layer, named `<outputTableName>_<layer>`.",
           "properties": {
@@ -2880,7 +2924,7 @@
           "type": "object"
         },
         "osmElements": {
-          "description": "Plot an OpenStreetMap layer table as one row per OSM element it was built from, each with the element's tags, `osm_type` and `osm_id` (and `building_id` in a buildings table), rather than one row per table row. A table that is not an OSM layer, a surface, and an OSM table an update changed are plotted row by row, as without it. Read by the Autark adapter only.",
+          "description": "Plot an OpenStreetMap layer table as one row per OSM element it was built from, each with the element's tags, `osm_type` and `osm_id` (and `building_id` in a buildings table), rather than one row per table row. A compute pass that changes the table in place leaves its elements as they were: they are plotted without the pass's columns. A table that is not an OSM layer, a surface, and an OSM table an update changed, an in-place `writeBack` among them, are plotted row by row, as without it. Read by the Autark adapter only.",
           "type": "boolean"
         },
         "selectFields": {
@@ -3417,6 +3461,10 @@
         "workspace": {
           "$ref": "#/definitions/WorkspaceName",
           "description": "Workspace of the tables the pass reads and writes."
+        },
+        "writeBack": {
+          "description": "Also keep the result in autk-db as the table `outputTableName`, in the pass's workspace. autk-db keeps every row, each coordinate on the workspace's precision grid, so the sources that run after compute (`after: 'compute'`), such as a join, a heatmap, a `sql` source or an update, read the result there. Later passes, maps and plots read the result as they do without it. Read by the Autark adapter only.",
+          "type": "boolean"
         }
       },
       "required": [
@@ -3597,7 +3645,7 @@
           "type": "object"
         },
         "osmElements": {
-          "description": "Plot an OpenStreetMap layer table as one row per OSM element it was built from, each with the element's tags, `osm_type` and `osm_id` (and `building_id` in a buildings table), rather than one row per table row. A table that is not an OSM layer, a surface, and an OSM table an update changed are plotted row by row, as without it. Read by the Autark adapter only.",
+          "description": "Plot an OpenStreetMap layer table as one row per OSM element it was built from, each with the element's tags, `osm_type` and `osm_id` (and `building_id` in a buildings table), rather than one row per table row. A compute pass that changes the table in place leaves its elements as they were: they are plotted without the pass's columns. A table that is not an OSM layer, a surface, and an OSM table an update changed, an in-place `writeBack` among them, are plotted row by row, as without it. Read by the Autark adapter only.",
           "type": "boolean"
         },
         "selectFields": {
@@ -3659,9 +3707,18 @@
       ],
       "type": "object"
     },
+    "SourcePhase": {
+      "const": "compute",
+      "description": "When a source runs: `'compute'` runs it once every compute pass has run, instead of before them, so it reads the tables passes kept in autk-db with `writeBack`. The sources with it run in the order of `data`, after those without it. A run refuses a source after compute that reads a table a compute pass writes without `writeBack`, since autk-db holds that table without the pass's result. Read by the Autark adapter only.",
+      "type": "string"
+    },
     "SqlSourceSpec": {
       "description": "Saves the rows of a SQL query over the workspace's tables as a new table. Read by the Autark adapter only.",
       "properties": {
+        "after": {
+          "$ref": "#/definitions/SourcePhase",
+          "description": "Run the source after the compute passes."
+        },
         "layerType": {
           "$ref": "#/definitions/LayerType",
           "description": "How a map draws the new table, whose geometry must then be in a column named `geometry`, in the workspace's CRS, as the workspace's tables hold it. Without it, the table has no layer type: a plot draws its rows, while a map does not draw it and `AutkGrammar.data` does not list it."
@@ -3823,7 +3880,7 @@
           "type": "object"
         },
         "osmElements": {
-          "description": "Plot an OpenStreetMap layer table as one row per OSM element it was built from, each with the element's tags, `osm_type` and `osm_id` (and `building_id` in a buildings table), rather than one row per table row. A table that is not an OSM layer, a surface, and an OSM table an update changed are plotted row by row, as without it. Read by the Autark adapter only.",
+          "description": "Plot an OpenStreetMap layer table as one row per OSM element it was built from, each with the element's tags, `osm_type` and `osm_id` (and `building_id` in a buildings table), rather than one row per table row. A compute pass that changes the table in place leaves its elements as they were: they are plotted without the pass's columns. A table that is not an OSM layer, a surface, and an OSM table an update changed, an in-place `writeBack` among them, are plotted row by row, as without it. Read by the Autark adapter only.",
           "type": "boolean"
         },
         "selectFields": {
@@ -3932,6 +3989,10 @@
         ]
       },
       "properties": {
+        "after": {
+          "$ref": "#/definitions/SourcePhase",
+          "description": "Run the update after the compute passes."
+        },
         "dataRef": {
           "description": "The table to change.",
           "type": "string"
@@ -4008,14 +4069,14 @@
           "type": "string"
         },
         "compute": {
-          "description": "Compute passes, run in order after the data is loaded.",
+          "description": "Compute passes, run in order once the data sources without `after` are loaded.",
           "items": {
             "$ref": "#/definitions/ComputeSpec"
           },
           "type": "array"
         },
         "data": {
-          "description": "Tables to load, in order.",
+          "description": "Tables to load, in order: those without `after` before the compute passes, those with `after: 'compute'` after them.",
           "items": {
             "$ref": "#/definitions/DataSourceSpec"
           },
@@ -4097,6 +4158,10 @@
         "workspace": {
           "$ref": "#/definitions/WorkspaceName",
           "description": "Workspace of the tables the pass reads and writes."
+        },
+        "writeBack": {
+          "description": "Also keep the windows in autk-db as the table `outputTableName`, in the pass's workspace. autk-db keeps every window, each position on the workspace's precision grid, so the sources that run after compute (`after: 'compute'`), such as a join, a heatmap, a `sql` source or an update, read them there. Later passes, maps and plots read the windows as they do without it. Read by the Autark adapter only.",
+          "type": "boolean"
         }
       },
       "required": [
