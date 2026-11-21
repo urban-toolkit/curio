@@ -29,6 +29,9 @@ jest.mock('@urban-toolkit/autk-plot', () => require('../../_support/autkComputeS
 jest.mock('@urban-toolkit/autk-db', () => ({
   DEFAULT_WORKSPACE_COORDINATE_FORMAT: 'EPSG:3395',
   DEFAULT_WORKSPACE_NAME: 'autk',
+  // The database a map node's run goes on, the node's own, which the stand-in
+  // grammar's run exports its tables from (drawnExports).
+  AutkDb: class { async init() { } },
 }), { virtual: true });
 
 import { act } from '@testing-library/react';
@@ -38,6 +41,7 @@ import { rasterTables } from '../../../adapters/node/autkRasters';
 import { madeTables } from '../../../utils/autkInput';
 import {
   drawnExports,
+  grammarLoads,
   grammarRuns as mockRuns,
   inputsByPath,
   resetAutkNodeMocks,
@@ -96,8 +100,10 @@ describe('a map', () => {
   });
 
   test('names in a pick the row of its own workspace\'s table, as autk-db exported it', async () => {
-    // autk-db exports east's rows in an order of its own.
+    // autk-db exports east's rows in an order of its own, from the database
+    // the run went on, which the run's sources load into.
     drawnExports.of = (_table, rows) => [...rows].reverse();
+    grammarLoads.on = true;
     const node = mountAutkNode('ws-map', undefined, { input: INPUT });
     await node.run({ map: { workspace: 'east', layerRefs: [{ dataRef: 'lines', isPick: true }] } });
     await act(async () => {

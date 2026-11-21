@@ -7,10 +7,10 @@
  * A compute step runs its passes over the layers it holds with no database
  * (autkComputeBlocks). A pass with `writeBack` also keeps its result in
  * autk-db, and a source after compute reads autk-db, so a step with either
- * runs on a database of its own, through the adapters and caches an
- * `AutkGrammar` of the grammar's main entry wires for itself, as a map node's
- * run does (its data adapter, its compute adapter, checked as a map node's is
- * by `withCheckedPasses`, and its caches), with no view to draw:
+ * runs on a database of its own, through the steps of a run the grammar's
+ * main entry gives a host (`createComputeSteps`, autk-grammar 5.6.0), wired
+ * to one another as a map node's run wires its adapters, each pass checked as
+ * a map node's is (`checkedPasses`), with no view to draw:
  *
  * - the document's workspaces set up (`resolveWorkspaces`);
  * - each layer the step holds loaded as a GeoJSON source, in the order a map
@@ -50,7 +50,6 @@
  * coordinates autk-db keeps it in. A pass or a source that fails is a failure,
  * named, and the step hands on the layers it was given.
  */
-import type { FeatureCollection } from 'geojson';
 import { detectCoordinateFormat } from '../../utils/geoCrs';
 import { snapSourceToGrid } from '../../utils/geoPrecision';
 import { tablesToLoad, writtenTables } from '../../utils/autkInput';
@@ -68,7 +67,7 @@ import {
     workspaceCrsOf,
 } from './autkDataCompile';
 import { RASTER_TABLE, explodeBuildingParts, grammarRaster } from './autkLayerMaterialize';
-import { withCheckedPasses } from './autkComputeScopes';
+import { checkedPasses } from './autkComputeScopes';
 import { closeAutkDb } from './autkDbClose';
 import { withExtensionRetry } from './duckdbExtensionRetry';
 import { hasFeatures } from './autkRunDescriptions';
@@ -76,10 +75,10 @@ import { hasFeatures } from './autkRunDescriptions';
 /** A layer a compute step holds, in the workspace it names when it is not the default one. */
 type Layer = { name: string; type?: string; geojson: any; workspace?: string };
 
-/** What a compute step says when the grammar keeps its adapters or caches where Curio does not read them. */
+/** What a compute step says when the grammar gives a host no steps of a run (`createComputeSteps`). */
 export const COMPUTE_DATABASE_MISSING =
-    'Autark cannot keep these passes in autk-db or run sources after compute: this autk-grammar build keeps its '
-    + "adapters differently, and Curio's compute step (adapters/node/autkComputeDatabase.ts) has to follow it.";
+    'Autark cannot keep these passes in autk-db or run sources after compute: this autk-grammar build gives no '
+    + "createComputeSteps, which Curio's compute step (adapters/node/autkComputeDatabase.ts) runs them with.";
 
 const keyOf = (layer: { name: string; workspace?: string }): string => autkTableKey(layer.workspace, layer.name);
 
@@ -170,19 +169,15 @@ export async function computeOnADatabase(
         import('@urban-toolkit/autk-grammar'),
         import('@urban-toolkit/autk-db'),
     ]);
-    // An AutkGrammar with no view: its adapters, wired with its caches as its
-    // run wires them, run each part of the document, and its compute cache
-    // holds each table a pass wrote, with its type, by tableKey.
-    const run: any = new grammar.AutkGrammar({});
-    withCheckedPasses(run);
-    const dataAdapter = run.dataAdapter;
-    const computeAdapter = run.computeAdapter;
-    const cache: Map<string, FeatureCollection> = run._computeCache;
-    const types: Map<string, any> = run._computeTypes;
-    if (!dataAdapter?.resolveSource || !(cache instanceof Map) || !(types instanceof Map)) {
+    // The steps of a run up to its maps and plots, wired to one another as a
+    // run wires its adapters, run each part of the document on the step's own
+    // database, and give each table a pass wrote, with its type (`computed`).
+    if (typeof grammar.createComputeSteps !== 'function') {
         failures.push(COMPUTE_DATABASE_MISSING);
         return layers;
     }
+    const steps = grammar.createComputeSteps();
+    const checked = checkedPasses(steps);
     const workspaces = Array.isArray(spec.workspaces) && spec.workspaces.length > 0 ? spec.workspaces : null;
     const crsOf = workspaceCrsOf(workspaces);
     // `init()` downloads the DuckDB spatial extension; a flaky fetch is worth
@@ -204,7 +199,7 @@ export async function computeOnADatabase(
     try {
         if (workspaces) {
             try {
-                await dataAdapter.resolveWorkspaces(db, workspaces);
+                await steps.resolveWorkspaces(db, workspaces as any);
             } catch (e) {
                 return failed('workspaces', e);
             }
@@ -227,7 +222,7 @@ export async function computeOnADatabase(
             });
         for (const source of tablesToLoad(loadable, spec, loadable)) {
             try {
-                await dataAdapter.resolveSource(db, snapSourceToGrid(source) as any);
+                await steps.resolveSource(db, snapSourceToGrid(source) as any);
             } catch (e) {
                 return failed(autkTableKey(autkWorkspaceOf(source), source.outputTableName), e);
             }
@@ -247,7 +242,7 @@ export async function computeOnADatabase(
             const workspace = autkWorkspaceOf(pass);
             if (!present.has(autkTableKey(workspace, source))) continue;
             try {
-                await computeAdapter.resolveCompute(db, pass);
+                await checked.resolveCompute(db, pass);
             } catch (e) {
                 console.warn('[autk-grammar] compute pass failed', e);
                 failures.push((e as Error)?.message ?? 'compute failed');
@@ -266,10 +261,10 @@ export async function computeOnADatabase(
         for (const source of after) {
             try {
                 if (GRAMMAR_RASTER_SOURCES.includes(source?.type)) {
-                    const raster = await grammarRaster(db, source, dataAdapter);
+                    const raster = await grammarRaster(db, source, steps);
                     rasters.set(keyOf(raster), raster);
                 } else {
-                    await dataAdapter.resolveSource(db, source);
+                    await steps.resolveSource(db, source);
                 }
             } catch (e) {
                 return failed(`${source?.type ?? 'source'} after compute`, e);
@@ -298,12 +293,12 @@ export async function computeOnADatabase(
             }
             return { name, type, geojson, ...(workspace ? { workspace } : {}) };
         };
-        // A table a pass wrote, as the cache holds it: in the CRS of its
+        // A table a pass wrote, as the steps hold it: in the CRS of its
         // workspace, the columns it computed also lifted to the top of each
         // feature's properties, as a step without a database hands them on.
         const passResult = async (name: string, workspace: string | undefined, was: Layer | undefined, pass: any): Promise<Layer> => {
-            const key = autkTableKey(workspace, name);
-            const result: any = cache.get(key);
+            const computed = steps.computed(name, workspace);
+            const result: any = computed?.collection;
             const outCols: string[] = pass?.type === 'render'
                 ? []
                 : (pass?.outputColumns ?? (pass?.outputColumnName ? [pass.outputColumnName] : []));
@@ -318,7 +313,7 @@ export async function computeOnADatabase(
             await grammar.enterWorkspace(db, workspace);
             const epsg = layerEpsg(result, workspace, crsOf, DEFAULT_WORKSPACE_COORDINATE_FORMAT);
             result.crs = { type: 'name', properties: { name: `urn:ogc:def:crs:EPSG::${epsg}` } };
-            return { name, type: types.get(key) ?? was?.type ?? 'polygons', geojson: result, ...(workspace ? { workspace } : {}) };
+            return { name, type: computed?.layerType ?? was?.type ?? 'polygons', geojson: result, ...(workspace ? { workspace } : {}) };
         };
 
         const lastPassOf = new Map<string, any>();
@@ -342,7 +337,7 @@ export async function computeOnADatabase(
             const key = autkTableKey(workspace, name);
             if (listed.has(key) || dropped.has(key)) return;
             listed.add(key);
-            if (cache.has(key)) {
+            if (steps.computed(name, workspace) !== undefined) {
                 handed.push(unmarked(await passResult(name, workspace, was, lastPassOf.get(key)), Boolean(wroteFrom.get(key))));
             } else if (wroteAfter.has(key) || rasters.has(key)) {
                 handed.push(unmarked(await readBack(name, workspace), true));

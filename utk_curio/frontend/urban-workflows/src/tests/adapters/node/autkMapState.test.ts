@@ -272,22 +272,31 @@ describe("each building's top, as a buildings layer draws it", () => {
   });
 
   test("the features a grammar handed autk-map for a table, each with its row and the keys of its top it holds", async () => {
-    const exportOf = (features: any[]) => Promise.resolve({ type: "FeatureCollection", features });
-    const grammar = {
-      _exports: new Map([["towers", exportOf([
+    const collection = {
+      type: "FeatureCollection",
+      features: [
         { type: "Feature", geometry: { type: "Point", coordinates: [0, 0] }, properties: { height: 30, name: "a", [INPUT_ROW]: 0 } },
         { type: "Feature", geometry: null, properties: { height: 9, [INPUT_ROW]: 1 } },
         { type: "Feature", geometry: { type: "Point", coordinates: [1, 1] }, properties: { "building:levels": 2, [INPUT_ROW]: 2 } },
         { type: "Feature", geometry: { type: "Point", coordinates: [2, 2] }, properties: { name: "c" } },
-      ])]]),
+      ],
     };
-    expect(await handedFeaturesOf(grammar, "towers")).toEqual([
+    // autk-grammar 5.6.0's lookup of a map's layer of a table: the map by its
+    // index, and the collection the run handed autk-map for the layer.
+    const grammar = {
+      mapLayer: (dataRef: string, mapId?: string | number) => (
+        dataRef === "towers" && mapId === 0 ? { map: {}, layerId: "towers", collection } : undefined
+      ),
+    };
+    expect(await handedFeaturesOf(grammar, "towers", 0)).toEqual([
       { row: 0, tops: { height: 30 } },
       { row: 2, tops: { "building:levels": 2 } },
       { row: null, tops: {} },
     ]);
-    expect(await handedFeaturesOf(grammar, "roads")).toBeNull();
-    expect(await handedFeaturesOf({}, "towers")).toBeNull();
+    expect(await handedFeaturesOf(grammar, "roads", 0)).toBeNull();
+    // Another map draws no layer of the table.
+    expect(await handedFeaturesOf(grammar, "towers", 1)).toBeNull();
+    expect(await handedFeaturesOf({}, "towers", 0)).toBeNull();
   });
 });
 

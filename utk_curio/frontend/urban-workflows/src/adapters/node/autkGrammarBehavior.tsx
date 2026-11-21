@@ -22,7 +22,7 @@ import { snapSourceToGrid } from '../../utils/geoPrecision';
 import { fitPlotToPane } from '../../utils/autkPlotSizing';
 import { UNREPORTED_MESSAGE, describeError, runAndAlwaysSettle } from './autkRunSettlement';
 import { withExtensionRetry } from './duckdbExtensionRetry';
-import { closeGrammarDb } from './autkDbClose';
+import { runDatabase } from './autkDbClose';
 import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
 import { autkKeyProblem, autkRasterPassProblem, autkViewProblem } from '../../contracts/autkGrammar';
 import {
@@ -66,11 +66,11 @@ import {
     type AutkLayer,
 } from './autkLayerMaterialize';
 import {
-    bleedRasterEdges, isCurioRasterSource, makesRasterAfterCompute, newAutkDb, rasterSourceOf, resolveRasterInputs,
+    bleedRasterEdges, isCurioRasterSource, makesRasterAfterCompute, rasterSourceOf, resolveRasterInputs,
     runInRasterTurn, withLayersOverRasters, withOpaqueRasters, withRasterSources, type CurioRasterSource,
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
-import { withCheckedPasses } from './autkComputeScopes';
+import { checkedPasses } from './autkComputeScopes';
 import { attachSpecCameras, frameMaps, keepMapViews, mapViews, showFramedViews, type MapView } from './autkMapView';
 import { destroyFailedGrammar, grammarMaps, trackMaps } from './autkMapDrawing';
 import {
@@ -388,11 +388,13 @@ export const useAutkGrammarBehavior = (
     // and the input row each position of its layer stands for (`drawnRows`):
     // read back the first time a pick or a highlight on that layer needs it,
     // by key. `tagged` holds the keys of the tables whose features carry their
-    // input row. `reads` is the last read of the run's database, and
-    // `enterWorkspace` autk-grammar's, which a read of a table in another
-    // workspace than the default one enters it with.
+    // input row. `db` is the run's database, the node's own (autkDbClose
+    // runDatabase), `reads` the last read of it, and `enterWorkspace`
+    // autk-grammar's, which a read of a table in another workspace than the
+    // default one enters it with.
     const drawnRef = useRef<{
         grammar: unknown;
+        db: any;
         tagged: ReadonlySet<string>;
         features: Map<string, Promise<any[] | null>>;
         rows: Map<string, Promise<number[] | null>>;
@@ -410,7 +412,7 @@ export const useAutkGrammarBehavior = (
         const exports = grammar?.data;
         if (!drawn || drawn.grammar !== grammar || !exports || typeof exports !== 'object') return null;
         const key = autkTableKey(workspace, table);
-        const db = grammar?.grammarEngine?.context;
+        const db = drawn.db;
         const enter = drawn.enterWorkspace;
         let read: () => Promise<any>;
         if (key in exports) read = () => Promise.resolve(exports[key]);
@@ -1484,37 +1486,46 @@ export const useAutkGrammarBehavior = (
                 // A node that left the page while its data loaded has no
                 // canvas to draw on: its run ends here (see mountedRef).
                 if (leftPage()) return;
-                // A fresh grammar per attempt: it builds its own AutkDb, and a
-                // DuckDB worker that failed to fetch the spatial extension keeps
-                // that state, so only a new one can succeed (#318).
+                // A fresh grammar and a fresh database per attempt: a DuckDB
+                // worker that failed to fetch the spatial extension keeps that
+                // state, so only a new one can succeed (#318).
                 const drawsRasters = (spec.data as any[]).some(isCurioRasterSource);
                 const computes = Array.isArray(spec.compute) && spec.compute.length > 0;
                 // A run that makes a raster after its passes holds the page's
                 // raster turn throughout, and its own raster loads are told so
                 // (autkRasters runInRasterTurn).
                 const rasterTurn = { held: makesRasterAfterCompute(afterPasses) };
-                const grammar = await withExtensionRetry(async () => {
-                    const g = new AutkGrammar(targets);
-                    // A raster enters its workspace when the document keeps
-                    // tables in more than the default one (autkUsesWorkspaces).
-                    if (drawsRasters) withRasterSources(g, newAutkDb, autkUsesWorkspaces(spec) ? enterWorkspace : undefined, rasterTurn);
-                    // Each pass the run computes is checked on the GPU's
-                    // device, as a compute step's is (autkComputeScopes). It
-                    // runs on the run's own database, and reads a fromFeature
-                    // table as the GeoJSON the node handed the run, from the
-                    // cache of the grammar's own data adapter, of the same
-                    // entry as its compute adapter.
-                    if (computes) withCheckedPasses(g);
+                const { grammar, database } = await withExtensionRetry(async () => {
+                    // The run goes on a database of the node's own, which the
+                    // node ends whether the run ends or fails (autkDbClose
+                    // runDatabase): the grammar's data adapter is handed it
+                    // wherever the run gives it none.
+                    const database = runDatabase();
+                    const g = new AutkGrammar(targets, {
+                        // A raster loads into it too (autkRasters), entering its
+                        // workspace when the document keeps tables in more than
+                        // the default one (autkUsesWorkspaces).
+                        wrapDataAdapter: (adapter) => database.handedTo(drawsRasters
+                            ? withRasterSources(adapter, autkUsesWorkspaces(spec) ? enterWorkspace : undefined, rasterTurn)
+                            : adapter),
+                        // Each pass the run computes is checked on the GPU's
+                        // device, as a compute step's is (autkComputeScopes). It
+                        // runs on the run's database, and reads a fromFeature
+                        // table as the GeoJSON the node handed the run, from the
+                        // cache of the grammar's own data adapter, which the
+                        // grammar wires to the compute adapter it wraps.
+                        ...(computes ? { wrapComputeAdapter: checkedPasses } : {}),
+                    });
                     try {
                         await runInRasterTurn(g, spec, rasterTurn);
                     } catch (err) {
-                        // A failed attempt ends its own database (autkDbClose),
-                        // then the maps it made, which no node keeps.
-                        closeGrammarDb(g);
+                        // A failed attempt ends its database, then the maps it
+                        // made, which no node keeps.
+                        database.close();
                         destroyFailedGrammar(g);
                         throw err;
                     }
-                    return g;
+                    return { grammar: g, database };
                 });
                 // The node keeps the grammar's maps, handed over first, so they
                 // are destroyed with the next run or the node even if a step
@@ -1522,7 +1533,7 @@ export const useAutkGrammarBehavior = (
                 const destroyMaps = trackMaps(grammar);
                 destroyMapsRef.current = () => {
                     destroyMaps();
-                    closeGrammarDb(grammar);
+                    database.close();
                 };
                 // A node that left the page while they were made destroys them
                 // now, and its run ends there.
@@ -1568,7 +1579,7 @@ export const useAutkGrammarBehavior = (
                 specRef.current    = spec;
                 panesRef.current   = panes;
                 drawnRef.current   = {
-                    grammar, tagged: new Set(taggedTables), features: new Map(), rows: new Map(),
+                    grammar, db: database.db, tagged: new Set(taggedTables), features: new Map(), rows: new Map(),
                     reads: Promise.resolve(), enterWorkspace,
                 };
                 writtenFromRef.current = writtenFrom;
@@ -2269,9 +2280,9 @@ export const useAutkGrammarBehavior = (
                 return true;
             },
             handed: (table, view) => {
-                const { index, entry } = mapOf(view);
+                const { index } = mapOf(view);
                 if (index < 0) return Promise.resolve(null);
-                return handedFeaturesOf(grammarRef.current, autkTableKey(autkWorkspaceOf(entry), table));
+                return Promise.resolve(handedFeaturesOf(grammarRef.current, table, index));
             },
         });
         return () => {

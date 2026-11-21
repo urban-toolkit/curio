@@ -38,8 +38,12 @@ results in autk-db (``writeBack``), whose sources run after compute
 (``after``, its ``dataPhases``), whose heatmap without ``groupBy`` counts its
 rows and whose heatmap entry without ``aggregateFn`` is refused; and 5.6.0 or
 later, in both trees, whose batched passes pack every polygon of a building
-part and read a road of several lines from its first point. Nothing else is
-vendored.
+part and read a road of several lines from its first point, and in the
+frontend for the public calls Curio's map node and compute step use in place
+of the grammar's private fields: a host's own adapters around a run's
+(``wrapComputeAdapter``, ``wrapDataAdapter``), the steps of a run on a
+database the host owns (``createComputeSteps``) and what a run handed each map
+layer (``mapLayer``'s ``collection``). Nothing else is vendored.
 """
 from __future__ import annotations
 
@@ -109,6 +113,15 @@ GRAMMAR_WRITE_BACK_RELEASE = (5, 5, 1)
 #: a building part, and which hands autk-compute a MultiLineString's lines as one
 #: line, so a pass over roads reads each road's first points.
 GRAMMAR_EVERY_POLYGON_RELEASE = (5, 6, 0)
+
+#: The first autk-grammar release with the public calls Curio's map node and
+#: compute step make in place of the grammar's private fields: ``AutkGrammar``'s
+#: options (``wrapComputeAdapter``, which checks each pass, and
+#: ``wrapDataAdapter``, which hands a run the node's own database and loads its
+#: rasters), ``createComputeSteps`` and ``mapLayer``'s ``collection``. A build
+#: before it takes no options and says nothing, so a node's passes would run
+#: unchecked.
+GRAMMAR_HOST_CALLS_RELEASE = (5, 6, 0)
 
 #: The vendored Autark packages: each one's tarball in vendor/autark/, its
 #: version and its npm integrity.
@@ -354,6 +367,23 @@ def test_the_grammar_packs_every_polygon_of_a_building_part_and_reads_a_road_of_
             f"polygon and each road's first points"
         )
     assert spec == version, f"the {tree} package.json takes autk-grammar {spec}, its lockfile {version}"
+
+
+def test_the_grammar_gives_the_host_calls_curio_makes():
+    """The frontend takes autk-grammar 5.6.0 or later: a map node hands its
+    grammar adapters of its own (``wrapComputeAdapter``, ``wrapDataAdapter``),
+    a compute step runs a document's steps on its own database
+    (``createComputeSteps``), and the e2e tests read what a run handed each map
+    layer (``mapLayer``'s ``collection``)."""
+    spec = _read(FRONTEND / "package.json")["dependencies"].get(f"@urban-toolkit/{GRAMMAR}", "")
+    version = _read(FRONTEND / "package-lock.json")["packages"].get(f"node_modules/@urban-toolkit/{GRAMMAR}", {}).get("version", "")
+    for what, held in (("package.json", spec), ("lockfile", version)):
+        assert re.fullmatch(r"\d+\.\d+\.\d+", held) and _release(held) >= GRAMMAR_HOST_CALLS_RELEASE, (
+            f"the frontend {what} takes autk-grammar {held!r}, which takes no adapters of a host's own "
+            f"(wrapComputeAdapter, wrapDataAdapter) and gives no createComputeSteps or mapLayer collection: "
+            f"5.6.0 is the first that does"
+        )
+    assert spec == version, f"the frontend package.json takes autk-grammar {spec}, its lockfile {version}"
 
 
 def test_vendor_autark_holds_the_vendored_packages_each_tree_installs_and_overrides():

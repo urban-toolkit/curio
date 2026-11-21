@@ -1,11 +1,12 @@
 /**
- * A map node checks every pass its grammar's run computes by wrapping the
- * compute adapter the grammar keeps (`withCheckedPasses`,
- * adapters/node/autkComputeScopes), as `withRasterSources` wraps its data
- * adapter. These tests pin that autk-grammar's build keeps it there and hands
- * it each pass of a run: the run's passes go through the check, in error
- * scopes on autk-compute's device, and one the GPU refuses fails the run,
- * named by the table it writes.
+ * A map node checks every pass its grammar's run computes by handing the
+ * grammar `checkedPasses` (adapters/node/autkComputeScopes) as its
+ * `wrapComputeAdapter` (autk-grammar 5.6.0), as it hands it the raster loader
+ * and its own database as its `wrapDataAdapter`. These tests pin that
+ * autk-grammar's build wraps its compute adapter so and hands the check each
+ * pass of a run: the run's passes go through the check, in error scopes on
+ * autk-compute's device, and one the GPU refuses fails the run, named by the
+ * table it writes.
  *
  * The grammar is the build the app bundles, as CommonJS. jsdom has neither
  * DuckDB nor WebGPU: the database is a stand-in that holds the tables a data
@@ -53,9 +54,25 @@ jest.mock("@urban-toolkit/autk-db", () => {
 }, { virtual: true });
 
 import { grammarBuild, computeDevice, computeRuns, gpuErrors, resetComputeStandIns } from "../../_support/autkComputeStandIns";
-import { withCheckedPasses } from "../../../adapters/node/autkComputeScopes";
+import { checkedPasses } from "../../../adapters/node/autkComputeScopes";
 
 const { AutkGrammar } = grammarBuild();
+
+/** The options a map node that computes hands its grammar: every pass checked. */
+const CHECKED = { wrapComputeAdapter: checkedPasses };
+
+/** `checkedPasses`, as a map node hands it to its grammar, recording the type of each pass it is handed in *seen*. */
+const checkedAndSeen = (seen: string[]) => ({
+    wrapComputeAdapter: (adapter: any) => {
+        const checked = checkedPasses(adapter);
+        return {
+            resolveCompute: (context: unknown, pass: any) => {
+                seen.push(pass.type);
+                return checked.resolveCompute(context, pass);
+            },
+        };
+    },
+});
 
 /** A square of side 40 at *x*, in the workspace's planar units, *height* tall. */
 function building(x: number, height: number) {
@@ -98,8 +115,7 @@ beforeEach(() => {
 
 describe("autk-grammar's run hands each pass to the compute adapter a map node checks", () => {
     test("a render pass runs through the check, in the device's three error scopes", async () => {
-        const grammar = new AutkGrammar({});
-        withCheckedPasses(grammar);
+        const grammar = new AutkGrammar({}, CHECKED);
 
         await grammar.run({ data: DATA, compute: [RENDER] });
 
@@ -114,8 +130,7 @@ describe("autk-grammar's run hands each pass to the compute adapter a map node c
 
     test("a render pass the GPU refuses fails the run, named by the table it writes", async () => {
         gpuErrors.next = { validation: "Binding size is smaller than the minimum binding size" };
-        const grammar = new AutkGrammar({});
-        withCheckedPasses(grammar);
+        const grammar = new AutkGrammar({}, CHECKED);
 
         await expect(grammar.run({ data: DATA, compute: [RENDER] })).rejects.toThrow(
             "sky: the GPU could not run this compute pass: Binding size is smaller than the minimum binding size",
@@ -124,8 +139,7 @@ describe("autk-grammar's run hands each pass to the compute adapter a map node c
 
     test("a GPGPU pass the GPU refuses fails the run the same way", async () => {
         gpuErrors.next = { internal: "CreateComputePipelines failed with VK_ERROR_UNKNOWN" };
-        const grammar = new AutkGrammar({});
-        withCheckedPasses(grammar);
+        const grammar = new AutkGrammar({}, CHECKED);
 
         await expect(grammar.run({ data: DATA, compute: [GPGPU] })).rejects.toThrow(
             "doubled: the GPU could not run this compute pass: CreateComputePipelines failed with VK_ERROR_UNKNOWN",
@@ -142,11 +156,13 @@ describe("a map node runs windows and clusters passes on the CPU, outside the de
     const CLUSTERS = { type: "clusters", dataRef: "towers", outputColumnName: "block", outputTableName: "blocks" };
 
     test("a windows pass and a clusters pass run with no GPU device, and the run keeps the tables they write", async () => {
-        const grammar = new AutkGrammar({});
-        withCheckedPasses(grammar);
+        const seen: string[] = [];
+        const grammar = new AutkGrammar({}, checkedAndSeen(seen));
 
         await grammar.run({ data: DATA, compute: [WINDOWS, CLUSTERS] });
 
+        // Both passes went through the check, which ran them as they are.
+        expect(seen).toEqual(["windows", "clusters"]);
         expect(computeDevice.pushErrorScope).not.toHaveBeenCalled();
         expect(computeDevice.popErrorScope).not.toHaveBeenCalled();
         expect(computeRuns.gpgpu).not.toHaveBeenCalled();
@@ -162,8 +178,7 @@ describe("a map node runs windows and clusters passes on the CPU, outside the de
     });
 
     test("a pass of a type the grammar does not know fails the run, named by its type", async () => {
-        const grammar = new AutkGrammar({});
-        withCheckedPasses(grammar);
+        const grammar = new AutkGrammar({}, CHECKED);
 
         await expect(grammar.run({
             data: DATA, compute: [{ type: "window", dataRef: "towers", floors: 3, outputTableName: "w" }],
