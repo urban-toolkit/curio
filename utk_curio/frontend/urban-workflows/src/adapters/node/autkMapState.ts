@@ -505,22 +505,19 @@ export function mapDrawingOf(grammar: unknown, index = 0): MapDrawing | null {
 export type HandedFeature = { row: number | null; tops: Record<string, unknown> };
 
 /**
- * The features the maps of *grammar* were handed for the table of *key*
- * (`autkTableKey`), in the order a layer draws them: the export of the table
- * the grammar's map adapter loaded into autk-map (its `_exports`), each feature
- * with a geometry. Null when the grammar exported no such table. The e2e tests
- * read it (`window.__curio_mapHanded`).
+ * The features the map of *grammar*'s last run at *mapIndex* (its index among
+ * the document's maps) was handed for the table *table*, in the order its
+ * layer draws them: the collection the run handed autk-map for the layer
+ * (autk-grammar's `mapLayer`, whose `collection` 5.6.0 gives), each feature
+ * with a geometry. Null when no layer of that map draws the table. The e2e
+ * tests read it (`window.__curio_mapHanded`).
  */
-export async function handedFeaturesOf(grammar: unknown, key: string): Promise<HandedFeature[] | null> {
-    const exports = (grammar as any)?._exports;
-    let exported: any;
-    try {
-        exported = exports instanceof Map ? await exports.get(key) : undefined;
-    } catch {
-        return null;
-    }
-    if (!Array.isArray(exported?.features)) return null;
-    return exported.features.filter((feature: any) => feature?.geometry != null).map((feature: any) => {
+export function handedFeaturesOf(grammar: unknown, table: string, mapIndex: number): HandedFeature[] | null {
+    type Layer = { collection?: { features?: unknown } };
+    const lookup = (grammar as { mapLayer?: (dataRef: string, mapId?: number) => Layer | undefined } | null | undefined)?.mapLayer;
+    const handed: any = typeof lookup === 'function' ? lookup.call(grammar, table, mapIndex)?.collection : undefined;
+    if (!Array.isArray(handed?.features)) return null;
+    return handed.features.filter((feature: any) => feature?.geometry != null).map((feature: any) => {
         const properties = feature?.properties ?? {};
         const row = properties[INPUT_ROW];
         return {

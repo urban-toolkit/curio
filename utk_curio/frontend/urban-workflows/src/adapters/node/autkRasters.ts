@@ -5,8 +5,10 @@
  * autk-grammar draws a raster table on a map (`getRaster`, then autk-map's
  * `loadCollection` with `type: 'raster'`). A raster the node's input brings is
  * bytes, not a URL, so it becomes a source of Curio's own, `curio-raster`,
- * which `withRasterSources` teaches one grammar instance to load: into the
- * grammar's own database, with `loadGeoTiff`, before its map runs. So does a
+ * which `withRasterSources` loads around the grammar's data adapter, as the
+ * node hands it to the grammar (`wrapDataAdapter`): into the database the run
+ * goes on, the node's own (autkDbClose `runDatabase`), with `loadGeoTiff`,
+ * before its map runs. So does a
  * raster the node's own data section made, a heatmap or the GeoTIFF of a
  * `geotiff` source, which the data load hands the map as a collection
  * (`rasterSourceOf`). Every other source goes to the grammar unchanged. A
@@ -22,8 +24,8 @@
  * (`withLayersOverRasters`), and once the map is
  * drawn, keeps linear sampling from drawing dark seams at the edges of the
  * cells with no data (`bleedRasterEdges`). Nothing in Autark is changed; the
- * instance's data adapter, and that database's `getRaster` and `getLayer`,
- * are wrapped.
+ * grammar's data adapter, and that database's `getRaster` and `getLayer`, are
+ * wrapped.
  *
  * A raster comes as GeoTIFF bytes: a Python node's rasterio dataset is asked
  * of the sandbox by its artifact (`/raster`; a standalone dashboard carries
@@ -174,11 +176,6 @@ export async function resolveRasterInputs(rasters: AutkRasterInput[]): Promise<R
     return resolved;
 }
 
-/** Said when an autk-grammar build no longer loads data the way this expects. */
-export const RASTER_ADAPTER_MISSING =
-    'Autark cannot draw this raster: this autk-grammar build loads its data differently, '
-    + "and Curio's raster loader (adapters/node/autkRasters.ts) has to follow it.";
-
 /** Said when the database the grammar uses cannot export a raster. */
 export const RASTER_EXPORT_MISSING =
     'Autark cannot draw this raster: this autk-db build has no getRaster, '
@@ -316,42 +313,43 @@ export function runInRasterTurn(grammar: any, spec: any, turn: RasterTurn): Prom
     return turn.held ? oneRasterAtATime(() => grammar.run(spec)) : grammar.run(spec);
 }
 
+/** A data adapter of autk-grammar's, as far as it loads a source into the database it is handed. */
+type SourceAdapter = { resolveSource(db: any, source: any): Promise<unknown> };
+
 /**
- * Let one grammar instance load `curio-raster` sources: each goes into the
- * grammar's own database (made with `newDb` when it is the first source), by
- * `loadGeoTiff`, and the map is handed what `getRaster` read back. Any other
- * source is the grammar's to load, as before. Each raster goes into its
- * workspace, the default one included, entered with *enterWorkspace*
- * (autk-grammar's, which the node passes) as the grammar's data adapter
- * enters a source's: the source before it can have left the database in
- * another. Each raster is loaded and read back in the page's raster turn
- * (`oneRasterAtATime`), unless *turn* says the grammar's run holds it already
- * (`runInRasterTurn`): then at once, since a load that waited for that turn
- * would wait on its own run.
+ * *adapter*, autk-grammar's data adapter, loading `curio-raster` sources too:
+ * each goes into the database the run goes on, by `loadGeoTiff`, and the map
+ * is handed what `getRaster` read back. Any other source is *adapter*'s to
+ * load, as before. A map node hands the grammar this adapter through
+ * `wrapDataAdapter` (autk-grammar 5.6.0), inside the one that hands the run
+ * the node's own database wherever it is given none (autkDbClose
+ * `runDatabase`), so a raster that comes first goes into that database too.
+ * Each raster goes into its workspace, the default one included, entered with
+ * *enterWorkspace* (autk-grammar's, which the node passes) as the grammar's
+ * data adapter enters a source's: the source before it can have left the
+ * database in another. Each raster is loaded and read back in the page's
+ * raster turn (`oneRasterAtATime`), unless *turn* says the grammar's run holds
+ * it already (`runInRasterTurn`): then at once, since a load that waited for
+ * that turn would wait on its own run.
  */
-export function withRasterSources(
-    grammar: any,
-    newDb: () => Promise<any>,
+export function withRasterSources<A extends SourceAdapter>(
+    adapter: A,
     enterWorkspace?: (db: any, workspace?: string) => Promise<void>,
     turn: RasterTurn = { held: false },
-): void {
-    const adapter = grammar?.dataAdapter;
-    if (!adapter || typeof adapter.resolveSource !== 'function') throw new Error(RASTER_ADAPTER_MISSING);
-    const resolveSource = adapter.resolveSource.bind(adapter);
-    grammar.dataAdapter = {
+): A & SourceAdapter {
+    return {
         ...adapter,
         async resolveSource(db: any, source: any) {
-            if (!isCurioRasterSource(source)) return resolveSource(db, source);
-            const target = db ?? await newDb();
-            if (typeof target.getRaster !== 'function') throw new Error(RASTER_EXPORT_MISSING);
-            if (enterWorkspace) await enterWorkspace(target, source.workspace);
+            if (!isCurioRasterSource(source)) return adapter.resolveSource(db, source);
+            if (typeof db?.getRaster !== 'function') throw new Error(RASTER_EXPORT_MISSING);
+            if (enterWorkspace) await enterWorkspace(db, source.workspace);
             const load = async () => {
-                await target.loadGeoTiff(loadGeoTiffParams(source));
-                return readRaster(target, source.outputTableName);
+                await db.loadGeoTiff(loadGeoTiffParams(source));
+                return readRaster(db, source.outputTableName);
             };
             const collection = turn.held ? await load() : await oneRasterAtATime(load);
-            serveRaster(target, source.outputTableName, withBandLabels(collection, source.bands), source.workspace);
-            return target;
+            serveRaster(db, source.outputTableName, withBandLabels(collection, source.bands), source.workspace);
+            return db;
         },
     };
 }
@@ -536,12 +534,4 @@ export function bleedRasterEdges(grammar: any, spec: any): void {
         layer.makeLayerDataDirty?.();
         found!.map.requestRender?.();
     }
-}
-
-/** A fresh autk-db database, as autk-grammar makes its own. */
-export async function newAutkDb(): Promise<any> {
-    const { AutkDb } = await import('@urban-toolkit/autk-db');
-    const db = new AutkDb();
-    await db.init();
-    return db;
 }
