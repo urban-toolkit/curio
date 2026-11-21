@@ -103,8 +103,6 @@ class Declared:
     data_types: tuple[str, ...] = ()
     #: The grammar a node's template draws with.
     grammar: Optional[str] = None
-    #: The type of a model package's model.
-    model_type: Optional[str] = None
     #: The category a node's template declares (``data``, ``computation``,
     #: ``vis_grammar``, ``vis_simple`` or ``flow``), which colors the node's
     #: box in a dataflow's thumbnail.
@@ -152,30 +150,22 @@ def _account_store(user_key: Optional[str]) -> list[Path]:
         return []
 
 
-def _model_type(manifests: Iterable[dict]) -> Optional[str]:
-    """The first of *manifests* that names its model's type names it."""
-    return _first_string(
-        manifest["model"].get("type") for manifest in manifests if isinstance(manifest.get("model"), dict)
-    )
-
-
 class TemplateGrammars:
     """What the package manifests say about a dataflow's node types and the
     models its code loads, for one account and one request.
 
     Called with a node type, it gives the grammar the node's template draws
     with. :meth:`node` gives that too, with what the node's package and its
-    template declare in ``dataflowCategories``, the template's ``category``,
-    behavior and flags and, for a model package, its model's type.
-    :meth:`model` gives what the model package a ``curio_load_model`` call
-    names declares, and its model's type.
+    template declare in ``dataflowCategories``, and the template's
+    ``category``, behavior and flags. :meth:`model` gives what the model
+    package a ``curio_load_model`` call names declares.
 
     A package is read in the account's own store, then in the catalog, as
     ``categories.DatasetKinds`` reads datasets. The account's copy dates from
     when the package was added to the store, so what the two copies declare is
     unioned, a flag either copy declares included, as the agents read flags
-    (``packages.template_flags``), and a grammar, a category, a behavior or a
-    model type is the first copy's that names one. Without a major, a node type
+    (``packages.template_flags``), and a grammar, a category or a behavior is
+    the first copy's that names one. Without a major, a node type
     or a model id takes the highest major the places hold. A node type with no
     package in it, or of any other shape than
     ``<package id>/<template id>[@<major>]``, matches nothing. Each manifest is
@@ -237,7 +227,7 @@ class TemplateGrammars:
 
     def model(self, model_id: object) -> Declared:
         """What a ``curio_load_model`` call naming *model_id* gets from its
-        model package: what the package declares, and its model's type."""
+        model package: what the package declares."""
         if not isinstance(model_id, str):
             return NOTHING
         if model_id not in self._models:
@@ -267,7 +257,6 @@ class TemplateGrammars:
             tags,
             data_types,
             grammar=_first_string(template.get("grammarId") for template in templates),
-            model_type=_model_type(manifests),
             category=_first_string(template.get("category") for template in templates),
             behavior=_first_string(template.get("behavior") for template in templates),
             flags=frozenset(
@@ -281,9 +270,8 @@ class TemplateGrammars:
         dir_name = dir_name_from_model_ref(model_id, self._installed_majors())
         if dir_name is None:
             return NOTHING
-        manifests = self._copies(dir_name)
-        tags, data_types = union_of_declarations(manifests)
-        return Declared(tags, data_types, model_type=_model_type(manifests))
+        tags, data_types = union_of_declarations(self._copies(dir_name))
+        return Declared(tags, data_types)
 
     def _copies(self, dir_name: str) -> list[dict]:
         """The manifests of the package folder *dir_name* that read, the

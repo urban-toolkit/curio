@@ -6,7 +6,8 @@
   },
   "createdAt": "2026-10-22T00:00:00Z",
   "dataflowCategories": {
-    "tags": ["PyTorch"]
+    "tags": ["PyTorch", "Computer vision"],
+    "dataTypes": ["Imagery"]
   },
   "dependencies": {
     "js": {},
