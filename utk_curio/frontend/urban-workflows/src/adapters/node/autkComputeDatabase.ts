@@ -36,13 +36,15 @@
  * as autk-db holds it: a buildings table a part a row, as the loaders hand
  * one on (`explodeBuildingParts`), and a table with no geometry as its rows
  * (`plainTableRecord`). A part the step gave the default holds its own height
- * again wherever it is handed on with its mark, in a table a pass wrote over
- * its layer and in one a source after compute read back: autk-db keeps a
- * row's properties, its mark among them, through a join, which patches them
- * (`json_merge_patch`), and an update gives the rows it matches the
- * properties it was given, the user's, with no mark and no default. A table a
- * pass wrote a point a window into keeps the heights it holds. No mark is
- * handed on. A table a source after compute dropped is gone. Each
+ * again wherever it is handed on with its mark and still holds that default,
+ * in a table a pass wrote over its layer and in one a source after compute
+ * read back: autk-db keeps a row's properties, its mark among them, through a
+ * join, which patches them (`json_merge_patch`), and an update gives the rows
+ * it matches the properties it was given, the user's, with no mark and no
+ * default. A part a source gave a height of its own, such as a SQL query
+ * saved under its table's name, keeps it. A table a pass wrote a point a
+ * window into keeps the heights it holds. No mark is handed on. A table a
+ * source after compute dropped is gone. Each
  * table a pass or a source wrote says the CRS of its workspace (`crs`), the
  * coordinates autk-db keeps it in. A pass or a source that fails is a failure,
  * named, and the step hands on the layers it was given.
@@ -85,16 +87,16 @@ function hasGeometry(collection: any): boolean {
 
 /**
  * The property a building part the step gives the default height carries in
- * its database, and never out of it: the height the part held, `{held}`, or
- * `{}` for none.
+ * its database, and never out of it: the default it was given, `put`, and the
+ * height it held, `held`, left out for none.
  */
 export const HELD_HEIGHT = '__curio_held_height';
 
 /**
  * *fc*, a buildings layer, as the step's passes read it: each part with no
  * height above its base `DEFAULT_BUILDING_HEIGHT` m tall above it
- * (`withDefaultHeight`) and marked with the height it held (`HELD_HEIGHT`).
- * The same object when no part changes.
+ * (`withDefaultHeight`) and marked with that default and the height it held
+ * (`HELD_HEIGHT`). The same object when no part changes.
  */
 function withMarkedDefaults(fc: any): any {
     const features: any[] = Array.isArray(fc?.features) ? fc.features : [];
@@ -104,17 +106,18 @@ function withMarkedDefaults(fc: any): any {
         const read = withDefaultHeight(own);
         if (read === own) return feature;
         changed = true;
+        if (deriveBuildingHeight(own ?? {}) === null) return { ...feature, properties: read };
         const held = own != null && typeof own === 'object' && 'height' in own ? { held: own.height } : {};
-        const properties = deriveBuildingHeight(own ?? {}) === null ? read : { ...read, [HELD_HEIGHT]: held };
-        return { ...feature, properties };
+        return { ...feature, properties: { ...read, [HELD_HEIGHT]: { put: read.height, ...held } } };
     });
     return changed ? { ...fc, features: next } : fc;
 }
 
 /**
  * *fc* with no part marked (`HELD_HEIGHT`): with *restore*, each marked part
- * holds the height it held again, none where it held none. The same object
- * when no part is marked.
+ * that still holds the default the step put holds the height it held again,
+ * none where it held none, and one a source gave a height of its own keeps
+ * it. The same object when no part is marked.
  */
 function withoutMarks(fc: any, restore: boolean): any {
     const features: any[] = Array.isArray(fc?.features) ? fc.features : [];
@@ -124,8 +127,9 @@ function withoutMarks(fc: any, restore: boolean): any {
         if (properties == null || typeof properties !== 'object' || !(HELD_HEIGHT in properties)) return feature;
         changed = true;
         const { [HELD_HEIGHT]: mark, ...rest } = properties;
-        if (restore) {
-            if (mark != null && typeof mark === 'object' && 'held' in mark) rest.height = mark.held;
+        const marked = mark != null && typeof mark === 'object';
+        if (restore && marked && 'put' in mark && rest.height === mark.put) {
+            if ('held' in mark) rest.height = mark.held;
             else delete rest.height;
         }
         return { ...feature, properties: rest };
