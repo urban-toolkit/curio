@@ -36,9 +36,24 @@ PACKAGES = REPO / "packages"
 DEEP_UMBRA = PACKAGES / "model.scout.deep-umbra@1"
 RASTERIZATION = PACKAGES / "curio.rasterization@1"
 MEDIA = PACKAGES / "curio.media@1"
+SAM3 = PACKAGES / "model.curio.sam3@1"
 WEATHER_GNN = PACKAGES / "model.scout.weather-gnn@1"
 SHADOW = "model.scout.deep-umbra/accumulated-shadow"
 MOSAIC = "curio.media/mosaic-rasters"
+SAM3_NODES = ("model.curio.sam3/track-objects", "model.curio.sam3/segment-images")
+#: The reader Media offers, which Sample Video Frames, Split Video and Track
+#: Objects read their frames with, as its header lists it.
+READER_CALL = (
+    "read_video_frames(path, *, every_seconds=None, from_seconds=0, to_seconds=None, max_frames=None, "
+    "width=None, pixel_format=None)"
+)
+#: What a click on each of Media's functions writes, in its module's order.
+MEDIA_INSERTS = [
+    ("sample_video_frames", "sample_video_frames(media, derived_file)"),
+    ("split_audio", "split_audio(media, derived_file)"),
+    ("split_video", "split_video(media, derived_file)"),
+    ("read_video_frames", "read_video_frames(path)"),
+]
 
 #: Rasterization's modules that offer a function, as a header lists them
 #: after the node's own package's, in module order.
@@ -261,6 +276,38 @@ def test_mosaic_rasters_lists_medias_module_then_rasterizations_whose_mosaic_its
         ("mosaic_collection", "mosaic_collection(tiles, output_file)"),
     ]
     assert all(f["doc"] for row in listed["modules"] for f in row["functions"]), listed["modules"]
+
+
+def test_sam3s_nodes_list_its_modules_then_medias_whose_reader_track_objects_calls_then_rasterizations(
+        client, user_and_token):
+    """SAM 3 names Media in dependencies.packages, whose ``read_video_frames``
+    Track Objects reads its frames with, and Media names Rasterization: the
+    header of each SAM 3 node lists SAM 3's modules, then Media's, then
+    Rasterization's, as a run of the node is handed them. So it lists 13
+    functions of packages: SAM 3's 2, Media's 4 and Rasterization's 7."""
+    from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
+
+    user, token = user_and_token
+    key = _account(user)
+    for package in (RASTERIZATION, MEDIA, SAM3):
+        install_package_from_directory(key, package)
+
+    for node_type in SAM3_NODES:
+        answer = _get(client, token, f"?nodeType={node_type}")
+        assert answer.status_code == 200, answer.get_data(as_text=True)
+        listed = answer.get_json()
+        assert listed["engine"] == "python"
+        assert [(row["package"], row["module"]) for row in listed["modules"]] == [
+            ("model.curio.sam3@1", "sam3_images"),
+            ("model.curio.sam3@1", "sam3_tracking"),
+            ("curio.media@1", "media_collections"),
+            *RASTERIZATION_LISTED,
+        ], node_type
+        media = listed["modules"][2]["functions"]
+        assert [(f["name"], f["insert"]) for f in media] == MEDIA_INSERTS, node_type
+        assert media[3]["call"] == READER_CALL
+        assert media[3]["doc"].startswith("The frames of the video at *path*, each with its time in seconds"), media[3]
+        assert sum(len(row["functions"]) for row in listed["modules"]) == 13, node_type
 
 
 def test_a_javascript_node_lists_curios_functions_for_javascript_and_a_spec_nothing(client, user_and_token):

@@ -61,6 +61,12 @@ SOURCE = PACKAGE / "sources" / "track-objects.py"
 #: The package's module, which holds Track Objects' logic.
 MODULE = "sam3_tracking"
 MODULE_SOURCE = PACKAGE / "sources" / f"{MODULE}.py"
+#: Media, whose ``read_video_frames`` Track Objects reads its frames with, and
+#: Rasterization, which Media needs.
+MEDIA = REPO / "packages" / "curio.media@1"
+RASTERIZATION = REPO / "packages" / "curio.rasterization@1"
+#: SAM 3 and the packages it needs, those first: what adding it brings.
+BROUGHT = [RASTERIZATION.name, MEDIA.name, PACKAGE.name]
 #: The node's settings, in its code tab's order, and the arguments they are.
 SETTINGS = {
     "LABELS": "labels", "EVERY_SECONDS": "every_seconds", "FORGET_SECONDS": "forget_seconds",
@@ -410,6 +416,88 @@ def test_the_module_offers_track_objects_says_what_it_does_and_is_handed_curios_
     imported += [node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
     assert not [name for name in imported if name.split(".")[0] == "utk_curio"]
     assert not [node.id for node in ast.walk(tree) if isinstance(node, ast.Name) and node.id.startswith("curio_")]
+
+
+def test_track_objects_reads_its_frames_with_medias_reader_and_decodes_none_itself():
+    """Media's ``read_video_frames`` reads a video's frames for Sample Video
+    Frames and Split Video, and for Track Objects too: SAM 3's module imports
+    it from Media's ``media_collections``, keeps no reader of its own, and
+    neither decodes nor seeks a video, nor threads its decoding."""
+    tree = ast.parse(MODULE_SOURCE.read_text(encoding="utf-8"))
+    imported = sorted(
+        (node.module, alias.name) for node in tree.body if isinstance(node, ast.ImportFrom) for alias in node.names
+    )
+    assert ("media_collections", "read_video_frames") in imported, (
+        f"{MODULE} reads frames with a reader of its own: it imports {imported}")
+    defined = {node.name for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.ClassDef))}
+    assert "_sample" not in defined, f"{MODULE} still defines _sample, a frame reader of its own"
+    reads = [
+        ast.unparse(node) for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in ("decode", "seek")
+    ]
+    threads = [ast.unparse(node) for node in ast.walk(tree) if isinstance(node, ast.Attribute) and node.attr == "thread_type"]
+    assert (reads, threads) == ([], []), f"{MODULE} reads a video's frames itself: {reads + threads}"
+
+
+def test_the_package_names_media_so_adding_it_and_the_guest_packages_bring_media_and_rasterization(tmp_curio):
+    """SAM 3's manifest names Media in ``dependencies.packages``, as Media
+    names Rasterization. So an add of SAM 3 copies Media and Rasterization
+    into the store first (#1040), here without their libraries as a hosted
+    guest's start adds what ``--guest-packages`` names (#1481), and the
+    launcher installs the libraries of the same three for the guests: deploy.yml
+    names SAM 3 alone."""
+    from utk_curio.backend.app.packages.application.package_dependencies import catalog_packages_to_add
+    from utk_curio.backend.app.packages.application.store_install import _ensure_user_store_install
+    from utk_curio.backend.app.packages.repositories.store import package_dir
+
+    assert _manifest()["dependencies"]["packages"] == {MEDIA.name: "*"}
+    assert catalog_packages_to_add([PACKAGE.name]) == BROUGHT
+    added = _ensure_user_store_install("guest", PACKAGE.name, libraries=False)
+    assert list(added.packages) == BROUGHT, added.packages
+    assert all((package_dir("guest", name) / "manifest.json").is_file() for name in BROUGHT)
+
+
+def test_a_run_of_either_node_is_handed_its_modules_then_medias_and_finds_the_reader_in_both_runtimes(
+        tmp_curio, tmp_path):
+    """A run of Track Objects or Segment Images is handed SAM 3's modules,
+    then Media's, then Rasterization's, its own first
+    (``python_modules.modules_for_node``), and both runtimes stage them, so
+    Track Objects' module imports Media's reader: in process, and in an
+    isolated child (``child.run_node``, here without the fork)."""
+    from utk_curio.backend.app.packages.application.python_modules import modules_for_node
+    from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
+    from utk_curio.backend.app.packages.repositories.store import package_dir
+    from utk_curio.sandbox.isolation import child, protocol
+    from utk_curio.sandbox.util.package_modules import importable
+    from utk_curio.sandbox.util.staging import stage_package_modules
+
+    for package in (RASTERIZATION, MEDIA, PACKAGE):
+        install_package_from_directory("guest", package)
+    handed = [
+        {"root": str(package_dir("guest", PACKAGE.name) / "sources"), "names": ["sam3_images", MODULE]},
+        {"root": str(package_dir("guest", MEDIA.name) / "sources"), "names": ["media_collections"]},
+        {"root": str(package_dir("guest", RASTERIZATION.name) / "sources"), "names": ["scout_rasters"]},
+    ]
+    for template in ("track-objects", "segment-images"):
+        assert modules_for_node("guest", f"{MODEL_ID}/{template}") == handed, template
+
+    in_process = tmp_path / "run-in-process"
+    in_process.mkdir()
+    staged = stage_package_modules(handed, str(in_process))
+    with importable(str(in_process / staged["root"]), staged["names"]):
+        assert importlib.import_module(MODULE).read_video_frames.__module__ == "media_collections"
+
+    isolated = tmp_path / "run-isolated"
+    isolated.mkdir()
+    request = protocol.build_exec_request(
+        code=f"    from {MODULE} import read_video_frames\n    return read_video_frames.__module__\n",
+        node_type=f"{MODEL_ID}/track-objects", data_type="", scratch_dir=str(isolated),
+        input_spec={"kind": "none"}, session_imports=[],
+        package_modules=stage_package_modules(handed, str(isolated)),
+    )
+    result = child.run_node(request, dict)
+    assert result["ok"], result["stderr"]
+    assert result["output"] == {"kind": "str", "value": "media_collections"}
 
 
 # ---------------------------------------------------------------------------
