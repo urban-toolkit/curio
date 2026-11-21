@@ -121,8 +121,10 @@ The WGSL the example ships is (formatted):
 
 ```wgsl
 let dec_rad = -0.40928 * cos(2.0 * pi / 365.0 * (doy + 10.0));
-let ax = seg[0u]; let ay = seg[1u];
-let bx = seg[2u]; let by = seg[3u];
+// every coordinate measured from the road's first point
+let ox = seg[0u]; let oy = seg[1u];
+let ax = seg[0u] - ox; let ay = seg[1u] - oy;
+let bx = seg[2u] - ox; let by = seg[3u] - oy;
 
 var sunlight: f32 = 0.0;
 for (var hour = 7i; hour <= 19i; hour++) {
@@ -150,8 +152,8 @@ for (var hour = 7i; hour <= 19i; hour++) {
         var u_lo = 1e30; var u_hi = -1e30;
         var v_lo = 1e30; var v_hi = -1e30;
         for (var ci = 0u; ci < 4u; ci++) {
-            let rx = ring[base + ci * 2u];
-            let ry = ring[base + ci * 2u + 1u];
+            let rx = ring[base + ci * 2u] - ox;
+            let ry = ring[base + ci * 2u + 1u] - oy;
             // ... update bbox ...
         }
         let v_hi_shadow = v_hi + shadow_len;
