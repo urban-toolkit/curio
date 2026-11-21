@@ -38,6 +38,7 @@ import {
     sectionTableProblem,
     withInputTables,
     withOsmIds,
+    withOsmNumbers,
     withRasterGrid,
     workspaceCrsOf,
     writesAfter,
@@ -431,8 +432,9 @@ export async function loadSpecLayers(
                     // right rendering.
                     const type = (t.type as string) ?? 'polygons';
                     // Each OpenStreetMap feature's OSM id in `osm_id`, a building
-                    // part's in that part, as the sandbox's loader hands them on.
-                    if (Array.isArray(geojson?.features)) geojson.features = withOsmIds(t, geojson.features);
+                    // part's in that part, and its numeric building tags as
+                    // numbers, as the sandbox's loader hands them on.
+                    if (Array.isArray(geojson?.features)) geojson.features = withOsmNumbers(t, withOsmIds(t, geojson.features));
                     // Buildings: explode the grouped GeometryCollection into one footprint
                     // feature per part (each with its own tags) and KEEP type 'buildings',
                     // so autk-map extrudes each part by its own height. See

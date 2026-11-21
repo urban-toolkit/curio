@@ -117,7 +117,7 @@ both legends read, 0 to 780 minutes. Brushing bars of a histogram lights the roa
 map alone, and picking a road selects its bar. Each map has its own menu, legend and R key, which
 reframes the map you clicked last.
 
-The Loop's streets get more sun. On June 21 its 2,120 roads get 246 minutes of sun on average, and Back
-Bay's 735 roads 208, about 38 minutes less. In both areas nearly every road spends an hour or more in a
+The Loop's streets get more sun. On June 21 its 2,120 roads get 245 minutes of sun on average, and Back
+Bay's 735 roads 208, about 37 minutes less. In both areas nearly every road spends an hour or more in a
 building's shadow: 96.2% of the Loop's roads get at least an hour less sun than its sunniest road, and
 94.6% of Back Bay's.

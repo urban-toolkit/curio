@@ -53,9 +53,11 @@ export function idKey(value: unknown): string | null {
 const propertiesOf = (feature: EditableFeature | null | undefined): Row => (feature?.properties ?? {}) as Row;
 
 /**
- * A number written as text, as OpenStreetMap writes a building's height
- * ("30", "12.5"): the expression language's own number, signed, with nothing
- * around it once trimmed. `_NUMBER_TEXT` in `feature_edits.py` is the same.
+ * A number written as text ("30", "12.5"), as a table read from a file may
+ * hold one: the expression language's own number, signed, with nothing around
+ * it once trimmed. `_NUMBER_TEXT` in `feature_edits.py` is the same, and so is
+ * the plain number an Autark node reads an OpenStreetMap tag's text as
+ * (`withOsmNumbers` in `adapters/node/autkDataCompile.ts`).
  */
 const NUMBER_TEXT = /^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$/;
 

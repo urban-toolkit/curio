@@ -28,16 +28,18 @@ backend's ``/file/`` route (served from disk here, as an extract is). Its
 raster table is handed on as a heatmap's is: the file's cells, laid over its
 corners in the workspace's CRS.
 
-A Map Editor node below such a load edits what it hands on: OpenStreetMap
-writes a building's height as text ("65.5"), the load keeps it so, and a
-scale or an offset of it reads it as the number it writes.
+OpenStreetMap writes every tag as text, and the load hands each numeric
+building tag on as a number (``withOsmNumbers``): a plain number as that
+number ("65.5"), a length with its unit in metres ("86 m"), and a value with
+no number that can be read ("7-7") as none. A Map Editor node below such a
+load edits what it hands on: its scale, offset, rule and expression read each
+such tag as the number it is.
 """
 from __future__ import annotations
 
 import copy
 import json
 import math
-import re
 import textwrap
 from pathlib import Path
 
@@ -288,10 +290,61 @@ def test_the_server_compiled_load_hands_on_a_building_part_with_no_height_with_n
 
 
 #: Example 07's loader: the Chicago Loop's OpenStreetMap layers, and its
-#: building parts among them, about 300 of whose height tags are numbers.
+#: building parts among them, about 250 of which OpenStreetMap gives a height.
 LOOP_LOAD = ("07-autark-gpu-shader.json", "sh-data", "docs/examples/data/chicago_loop.osm.pbf")
-#: A height tag that holds a number and nothing else, as "65.5" or "184".
-_PLAIN_HEIGHT = re.compile(r"[0-9]+(?:\.[0-9]+)?")
+#: Example 06's loader: Back Bay's OpenStreetMap layers.
+BACK_BAY_LOAD = ("06-back-bay-road-sunlight.json", "whatif-data", "docs/examples/data/back_bay.osm.pbf")
+
+#: OpenStreetMap's numeric building tags, which an Autark node hands on as
+#: numbers (``withOsmNumbers`` in autkDataCompile.ts): the lengths, in metres,
+#: then the levels.
+NUMERIC_TAGS = (
+    "height", "min_height", "building:height", "roof:height",
+    "building:levels", "building:min_level", "levels", "min_level", "roof:levels", "building:levels:underground",
+)
+#: Each load's building parts, by OSM id, whose numeric tags OpenStreetMap
+#: writes with a unit or with no number that can be read, and what the load
+#: hands on for them, the text in the extract beside each.
+WRITTEN_OTHERWISE = {
+    "chicago_loop": {
+        124873939: {"height": 133.5},  # "133.5 m"
+        126982631: {"height": 86},  # "86 m"
+        126982632: {"height": 67.7},  # "67.7 m"
+        144846553: {"height": 91},  # "91 m"
+        145625877: {"height": 61.5},  # "61.5 m"
+        147478105: {"height": 87},  # "87 m"
+        148164130: {"height": 86},  # "86m"
+        1178203072: {"building:levels": None},  # "7-7", a range
+    },
+    "back_bay": {
+        29623484: {"height": 241},  # "241m", 200 Clarendon's tower
+        29869880: {"height": 228.6},  # "228.6m", the Prudential Tower
+        117889600: {"height": 102},  # "102m"
+        240278719: {"height": 64, "roof:height": 15},  # "64m", and "15"
+    },
+}
+#: Each load's building parts, by OSM id, whose numeric tags OpenStreetMap
+#: writes as plain numbers, and the numbers the load hands on.
+WRITTEN_PLAIN = {
+    "chicago_loop": {
+        15930576: {"height": 42.3, "building:levels": 12},
+        15937050: {"height": 261.8, "building:levels": 82},
+        1179624203: {"height": 175, "building:levels": 44, "roof:levels": 1},
+        1433561730: {"height": 240, "building:levels": 74, "building:min_level": 12},
+    },
+    "back_bay": {
+        823008368: {"height": 6.8, "min_height": 3.4, "building:levels": 2, "building:min_level": 1},
+        240711152: {"height": 45, "roof:height": 4, "building:levels": 9},
+    },
+}
+#: How many of the Chicago Loop's building parts the load gives a height above
+#: 100 m: 179 written as plain numbers, and one written "133.5 m".
+LOOP_PARTS_ABOVE_100_M = 180
+
+
+def _a_number(value) -> bool:
+    """Whether *value* is a number, never a text or a bool."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
 def _served_layers(example: str, node_id: str, extract: str, tmp_path, monkeypatch) -> list:
@@ -305,12 +358,93 @@ def _served_layers(example: str, node_id: str, extract: str, tmp_path, monkeypat
     return load_from_duckdb(result["output"]["path"], session_id=None)
 
 
+def _as_stored(layers: list) -> dict:
+    """*layers*, the records a load returned, as each place keeps them that a
+    Map Editor reads them from: as a run on the server stores them, and as the
+    canvas's Autark node stores them (``persistLayersToBackend``), an envelope
+    a layer, which reach the Map Editor as tables."""
+    return {
+        "as a run on the server stores them": layers,
+        "as the canvas stores them": {"dataType": "outputs", "data": [
+            {"dataType": "geodataframe", "data": layer["geojson"],
+             "layerName": layer["name"], "layerType": layer["type"]}
+            for layer in layers
+        ]},
+    }
+
+
+@pytest.mark.parametrize("load, extract", [(LOOP_LOAD, "chicago_loop"), (BACK_BAY_LOAD, "back_bay")],
+                         ids=["chicago_loop", "back_bay"])
+def test_the_server_compiled_load_hands_on_openstreetmaps_numeric_building_tags_as_numbers(
+    load, extract, tmp_path, monkeypatch,
+):
+    """OpenStreetMap writes every tag as text, and autk-db keeps it so. The
+    load hands each numeric building tag on as a number: a plain number as
+    that number, a length with its unit in metres, and a value with no number
+    that can be read, such as a range of levels, as none. No such tag of any
+    building part is left as text."""
+    layers = _served_layers(*load, tmp_path, monkeypatch)
+    buildings = next(layer for layer in layers if layer["name"] == "table_osm_buildings")
+    parts = [feature["properties"] for feature in buildings["geojson"]["features"]]
+    texts = sorted({
+        (key, repr(part[key])) for part in parts for key in NUMERIC_TAGS
+        if key in part and part[key] is not None and not _a_number(part[key])
+    })
+    assert texts == [], (
+        f"the load hands on {len(texts)} values of numeric building tags that are no numbers, such as {texts[:12]}"
+    )
+    by_id = {part["osm_id"]: part for part in parts}
+    for expected in (WRITTEN_OTHERWISE[extract], WRITTEN_PLAIN[extract]):
+        handed = {
+            osm_id: {key: by_id[osm_id].get(key, "missing") for key in tags} if osm_id in by_id else "missing"
+            for osm_id, tags in expected.items()
+        }
+        assert handed == expected
+
+
+def test_a_map_editor_rule_picks_the_loops_tall_buildings_and_an_expression_halves_them(tmp_path, monkeypatch):
+    """On the Chicago Loop's load, the rule ``height > 100``, the rule the
+    Map Editor's guide gives, picks every building part the load gives a
+    height above 100 m, a height written with its unit among them, and the
+    expression ``height * 0.5`` halves each: on the layers as a run on the
+    server stores them and as the canvas stores them, a table each. Every
+    other part keeps its height."""
+    from utk_curio.sandbox.util.feature_edits import edit_features
+    from utk_curio.sandbox.util.stored_inputs import read_stored
+
+    layers = _served_layers(*LOOP_LOAD, tmp_path, monkeypatch)
+    buildings = next(layer for layer in layers if layer["name"] == "table_osm_buildings")
+    before = [feature["properties"].get("height") for feature in buildings["geojson"]["features"]]
+    tall = [at for at, height in enumerate(before) if _a_number(height) and height > 100]
+    assert len(tall) == LOOP_PARTS_ABOVE_100_M, (
+        f"the load gives {len(tall)} parts a height above 100 m as a number, not {LOOP_PARTS_ABOVE_100_M}"
+    )
+    osm_ids = [feature["properties"]["osm_id"] for feature in buildings["geojson"]["features"]]
+    assert osm_ids.index(124873939) in tall, "the part OpenStreetMap writes as 133.5 m is not among them"
+    edits = [{"op": "expr", "where": "height > 100", "column": "height", "value": "height * 0.5",
+              "label": "Every part above 100 m at half its height"}]
+    for how, value in _as_stored(layers).items():
+        out = edit_features(
+            read_stored(copy.deepcopy(value)), copy.deepcopy(edits), key="osm_id", layer="table_osm_buildings",
+        )
+        edited = next(item for item in out["data"] if item.get("layerName") == "table_osm_buildings")
+        after = [feature["properties"].get("height") for feature in edited["data"]["features"]]
+        assert [feature["properties"]["osm_id"] for feature in edited["data"]["features"]] == osm_ids, how
+        picked = [at for at in range(len(before)) if after[at] != before[at]]
+        assert picked == tall, (
+            f"{how}: the rule height > 100 changed {len(picked)} parts, not the {len(tall)} above 100 m"
+        )
+        assert all(_a_number(after[at]) for at in tall), (how, [after[at] for at in tall[:5]])
+        assert [after[at] for at in tall] == pytest.approx([before[at] * 0.5 for at in tall]), how
+
+
 def test_a_map_editor_scales_and_offsets_the_heights_openstreetmap_writes_as_text(tmp_path, monkeypatch):
-    """The Chicago Loop's building parts, loaded as a run on the server loads
-    them, keep each height tag as OpenStreetMap writes it, as text. A Map
-    Editor below the load scales and offsets three of them: each is read as
-    the number it writes and written back as text, on the layers as a run on
-    the server stores them and as the canvas stores them, a table each."""
+    """OpenStreetMap writes each height of the Chicago Loop's building parts
+    as text ("42.3", "133.5 m"), and the load hands each on as the number it
+    is. A Map Editor below the load scales and offsets three of them, one
+    written with its unit among them: each becomes twice its height plus one,
+    a number, on the layers as a run on the server stores them and as the
+    canvas stores them, a table each."""
     from utk_curio.sandbox.util.feature_edits import edit_features
     from utk_curio.sandbox.util.stored_inputs import read_stored
 
@@ -320,32 +454,18 @@ def test_a_map_editor_scales_and_offsets_the_heights_openstreetmap_writes_as_tex
         feature["properties"]["osm_id"]: feature["properties"].get("height")
         for feature in buildings["geojson"]["features"]
     }
-    as_text = {
-        osm_id: height for osm_id, height in heights.items()
-        if isinstance(height, str) and _PLAIN_HEIGHT.fullmatch(height)
-    }
-    # The case: the load hands a part's height on as OpenStreetMap wrote it.
-    assert len(as_text) >= 3, (
-        "the load hands on no heights as text; it holds "
-        + repr(sorted({type(height).__name__ for height in heights.values()}))
+    # "42.3", "184" and "133.5 m" in the extract.
+    picked = [15930576, 28951633, 124873939]
+    before = {osm_id: heights.get(osm_id) for osm_id in picked}
+    # The case: the load hands each height on as the number it is.
+    assert all(_a_number(height) for height in before.values()), (
+        f"the load hands on these heights as {before}, not as numbers"
     )
-    picked = sorted(as_text)[:3]
     edits = [
         {"op": "scale", "ids": picked, "column": "height", "value": 2},
         {"op": "offset", "ids": picked, "column": "height", "value": 1},
     ]
-    stored = {
-        # The layer records the load returned.
-        "as a run on the server stores them": layers,
-        # An envelope a layer, as the canvas's Autark node stores them
-        # (persistLayersToBackend), which reach the Map Editor as tables.
-        "as the canvas stores them": {"dataType": "outputs", "data": [
-            {"dataType": "geodataframe", "data": layer["geojson"],
-             "layerName": layer["name"], "layerType": layer["type"]}
-            for layer in layers
-        ]},
-    }
-    for how, value in stored.items():
+    for how, value in _as_stored(layers).items():
         out = edit_features(
             read_stored(copy.deepcopy(value)), copy.deepcopy(edits), key="osm_id", layer="table_osm_buildings",
         )
@@ -355,11 +475,10 @@ def test_a_map_editor_scales_and_offsets_the_heights_openstreetmap_writes_as_tex
             for feature in edited["data"]["features"]
             if feature["properties"].get("osm_id") in picked
         }
-        before = {osm_id: as_text[osm_id] for osm_id in picked}
-        assert sorted(after) == picked, (how, sorted(after))
-        assert all(isinstance(after[osm_id], str) for osm_id in picked), (how, before, after)
-        assert {osm_id: float(after[osm_id]) for osm_id in picked} == pytest.approx(
-            {osm_id: float(before[osm_id]) * 2 + 1 for osm_id in picked}
+        assert sorted(after) == sorted(picked), (how, sorted(after))
+        assert all(_a_number(after[osm_id]) for osm_id in picked), (how, before, after)
+        assert after == pytest.approx(
+            {osm_id: before[osm_id] * 2 + 1 for osm_id in picked}
         ), f"{how}: heights {before} became {after}, not twice them plus one"
 
 
