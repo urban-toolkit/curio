@@ -1038,21 +1038,6 @@ const __flattenToMultiPolygon = (geom) => {
   collect(geom);
   return polys.length > 0 ? { type: 'MultiPolygon', coordinates: polys } : null;
 };
-const __buildingHeight = (props) => {
-  const num = (v) => { const n = parseFloat(String(v)); return Number.isFinite(n) && n > 0 ? n : 0; };
-  const L = 3.4; // metres per level (matches autk-map's building renderer)
-  const p = props || {};
-  // autk-map culls a part when its top height <= its base (min_height) — which also
-  // covers the no-height case (0 <= 0). Mirror its height computation and, only when
-  // the part would be culled, return a height that clears the base by a visible
-  // amount; otherwise return null to leave the real tags untouched.
-  const base = num(p.min_height) || L * num(p.min_level) || L * num(p['building:min_level']);
-  let top = num(p.height) || num(p['building:height']) || L * num(p.levels) || L * num(p['building:levels']);
-  if (top === 0 && Array.isArray(p.parts)) {
-    for (const q of p.parts) { const h = num(q && q.height) || L * num(q && q.levels); if (h > top) top = h; }
-  }
-  return top > base ? null : base + 6;
-};
 const __out = [];
 ${parts.each}
 ${wanted.length > 0 ? `${parts.skip}\n` : ''}  // An OpenStreetMap table a view reads as elements: one feature per element.
@@ -1063,10 +1048,11 @@ ${wanted.length > 0 ? `${parts.skip}\n` : ''}  // An OpenStreetMap table a view 
   if (type === 'buildings' && Array.isArray(geojson?.features)) {
     // autk-db keeps a building as one GeometryCollection, each part's tags in
     // properties.parts naming its geometry by geometryIndex. Explode each building
-    // into one footprint feature per part, carrying that part's tags and height, as
-    // explodeBuildingParts does in the browser (autkLayerMaterialize.ts). The
-    // downstream loadGeojson('buildings') makes every row a building of its own, so
-    // each part also carries, as a property, the building_id it came from. A part's
+    // into one footprint feature per part, carrying that part's tags, as
+    // explodeBuildingParts does in the browser (autkLayerMaterialize.ts): a part
+    // with no height is handed on with none. The downstream
+    // loadGeojson('buildings') makes every row a building of its own, so each part
+    // also carries, as a property, the building_id it came from. A part's
     // geometryIndex is autk-db's bookkeeping and is left out, and so is its id,
     // which the part carries as its osm_id.
     const __exploded = [];
@@ -1085,7 +1071,6 @@ ${wanted.length > 0 ? `${parts.skip}\n` : ''}  // An OpenStreetMap table a view 
         if (!gg) return;
         const p = { ...(meta || {}) }; delete p.parts;
         if (props.building_id != null) p.building_id = props.building_id;
-        const h = __buildingHeight(p); if (h != null) p.height = h;
         __exploded.push({ type: 'Feature', geometry: gg, properties: p });
       };
       if (geom && geom.type === 'GeometryCollection' && Array.isArray(geom.geometries)) {

@@ -140,7 +140,9 @@ export function editedOutput(read: GrammarInput, feed: Pick<EditFeed, "settings"
   const byInput = feed.circles > 1;
   if (edits.length === 0 && newLayers.length === 0 && !byInput) return null;
   const named = new Set(read.frames.map((frame) => frame.name).filter((name): name is string => !!name));
-  const { sources } = autkSourcesFrom(read, {}, { alias: false });
+  // Each layer as the data holds it, as the run edits it: a buildings layer's
+  // heights as handed on, which the map reads as it reads the run's output.
+  const { sources } = autkSourcesFrom(read, {}, { alias: false, asHeld: true });
   const only = sources.length === 1 ? sources[0].outputTableName : undefined;
   const envelopes: any[] = sources.map((source) => {
     const name = source.outputTableName;

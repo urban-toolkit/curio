@@ -6784,30 +6784,32 @@
     ],
     "map[].layerRefs[].buildingsZeroHeight": [
       {
-        "test": "utk_curio/frontend/urban-workflows/src/tests/contracts/autkGrammarKeys.test.ts::autkKeyProblem::%s[a buildings layer's buildingsZeroHeight is not run yet]",
-        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
-        "refused": true
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/autkEveryKey.test.tsx::a node hands the grammar every key of its map or its plot as its document writes it::%s[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_grammar_keys.py::test_the_document_check_refuses_it_with_that_sentence[a buildings layer's buildingsZeroHeight is not run yet]",
-        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json",
-        "refused": true
+        "test": "utk_curio/backend/tests/test_agents/test_autk_every_key_documents.py::test_the_document_check_takes_every_key_a_node_runs[maps of every map key, layer key and camera key of autk-grammar 5.3.0 and 5.4.0]",
+        "document": "utk_curio/frontend/urban-workflows/src/tests/fixtures/autk-every-key.json"
       },
       {
-        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/behaviors.test.tsx::%s fails the node before anything runs, naming the key[a map whose buildings layer writes buildingsZeroHeight]",
-        "refused": true
+        "test": "utk_curio/frontend/urban-workflows/src/tests/contracts/autkGrammarKeys.test.ts::autkKeyProblem::%s[a buildings layer's buildingsZeroHeight is run]",
+        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_runs/test_autk_data_runs.py::test_the_compiler_refuses_a_map_layer_that_writes_a_key_the_node_does_not_run_yet",
-        "refused": true
+        "test": "utk_curio/backend/tests/test_agents/test_autk_grammar_keys.py::test_a_document_is_told_what_the_node_tells_it_of_its_keys[a buildings layer's buildingsZeroHeight is run]",
+        "document": "utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.cases.json"
       },
       {
-        "test": "utk_curio/backend/tests/test_agents/test_autk_keys_left_out.py::test_a_buildings_layers_buildings_zero_height_is_left_out_of_what_the_agents_read",
-        "refused": true
+        "test": "utk_curio/frontend/urban-workflows/src/tests/adapters/node/behaviors.test.tsx::a layer with buildingsZeroHeight is handed a part with no height holding no key of one, which autk-map raises"
       },
       {
-        "test": "utk_curio/backend/tests/test_frontend/test_autark_buildings_zero_height_e2e.py::test_a_map_layer_that_writes_buildings_zero_height_is_refused_with_the_reason",
-        "refused": true
+        "test": "utk_curio/backend/tests/test_runs/test_autk_data_runs.py::test_the_compiler_compiles_a_map_layer_that_writes_buildings_zero_height"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_agents/test_autk_keys_left_out.py::test_a_buildings_layers_buildings_zero_height_is_in_what_the_agents_read"
+      },
+      {
+        "test": "utk_curio/backend/tests/test_frontend/test_autark_buildings_zero_height_e2e.py::test_a_map_layer_with_buildings_zero_height_raises_its_buildings_with_no_height_at_random"
       }
     ],
     "map[].layerRefs[].layerType": [

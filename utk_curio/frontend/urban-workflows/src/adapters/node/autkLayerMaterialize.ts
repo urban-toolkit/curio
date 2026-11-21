@@ -19,7 +19,6 @@ import { closeAutkDb } from './autkDbClose';
 import { autkKeyProblem } from '../../contracts/autkGrammar';
 import { autkTableName } from '../../utils/autkInput';
 import { framesFromPayload } from '../../utils/grammarInput';
-import { deriveBuildingHeight } from '../../utils/buildingHeight';
 import { decodeRasterEnvelope } from '../../utils/raster/rasterWire';
 import {
     GRAMMAR_RASTER_SOURCES,
@@ -205,9 +204,11 @@ function flattenToMultiPolygon(geom: any): any | null {
 // autk-db keeps a building as one feature: a GeometryCollection of its parts, each
 // part's tags in `properties.parts` naming its geometry by `geometryIndex`. An
 // Autark node hands buildings on one row per part (#536), a Polygon (or
-// MultiPolygon) with that part's tags and height: a table lists every part, Edit
-// Features removes a building by `building_id`, and a batched compute packs each
-// part's `geometry.coordinates.0`, a Polygon's outer ring. The downstream
+// MultiPolygon) with that part's tags: a table lists every part, Edit Features
+// removes a building by `building_id`, and a batched compute packs each part's
+// `geometry.coordinates.0`, a Polygon's outer ring. A part with no height is
+// handed on with none: a node that uses one takes the default where it uses it
+// (utils/buildingHeight `withDefaultHeight`). The downstream
 // `loadGeojson('buildings')` makes every row a building of its own, so each part
 // also carries, as a property, the `building_id` it came from. A part's
 // `geometryIndex` is autk-db's bookkeeping, not a tag, and is left out, and so is
@@ -232,8 +233,6 @@ export function explodeBuildingParts(features: any[]): any[] {
             const p = { ...(meta ?? {}) };
             delete p.parts;
             if (props.building_id != null) p.building_id = props.building_id;
-            const h = deriveBuildingHeight(p);
-            if (h != null) p.height = h;
             out.push({ type: 'Feature', geometry: gg, properties: p });
         };
         if (geom?.type === 'GeometryCollection' && Array.isArray(geom.geometries)) {
@@ -435,8 +434,8 @@ export async function loadSpecLayers(
                     // part's in that part, as the sandbox's loader hands them on.
                     if (Array.isArray(geojson?.features)) geojson.features = withOsmIds(t, geojson.features);
                     // Buildings: explode the grouped GeometryCollection into one footprint
-                    // feature per part (each with its own height) and KEEP type 'buildings',
-                    // so autk-map extrudes each part by its real height. See
+                    // feature per part (each with its own tags) and KEEP type 'buildings',
+                    // so autk-map extrudes each part by its own height. See
                     // explodeBuildingParts.
                     if (type === 'buildings' && Array.isArray(geojson?.features)) {
                         geojson.features = explodeBuildingParts(geojson.features);

@@ -463,15 +463,16 @@ def test_a_load_that_writes_a_key_the_node_refuses_fails_with_its_words(
     assert run["status"] == "failed"
 
 
-def test_the_compiler_refuses_a_map_layer_that_writes_a_key_the_node_does_not_run_yet():
-    """The compiler a run on the server uses reads the whole document and
-    refuses one whose map writes a key a node does not run yet, with the
-    node's sentence (``contracts/autkGrammar``): a buildings layer's
-    ``buildingsZeroHeight``, which would change nothing, since Curio makes a
-    building without a height 6 m tall when it loads the data. A run on the
-    server hands a document that draws a map to the browser, so the compiler is
-    called here itself, as the sandbox's tests call it."""
-    from utk_curio.common.autk_data_compiler import AutkCompileError, compile_data_spec
+def test_the_compiler_compiles_a_map_layer_that_writes_buildings_zero_height():
+    """The compiler a run on the server uses reads the whole document, and
+    compiles one whose map layer writes ``buildingsZeroHeight`` (autk-map
+    raises the parts of its buildings that have no height at random), as a
+    node runs it: its load hands a part with no height on with none
+    (``utk_curio/sandbox/tests/test_autk_server_data_load.py``), so the key
+    has parts to raise. A run on the server hands a document that draws a map
+    to the browser, so the compiler is called here itself, as the sandbox's
+    tests call it."""
+    from utk_curio.common.autk_data_compiler import compile_data_spec
 
     document = {
         "data": [{"type": "osm", "pbfFileUrl": "docs/examples/data/back_bay.osm.pbf", "outputTableName": "table_osm",
@@ -479,11 +480,8 @@ def test_the_compiler_refuses_a_map_layer_that_writes_a_key_the_node_does_not_ru
         "map": {"layerRefs": [{"dataRef": "table_osm_surface"},
                               {"dataRef": "table_osm_buildings", "buildingsZeroHeight": True}]},
     }
-    with pytest.raises(AutkCompileError) as refused:
-        compile_data_spec(json.dumps(document))
-    said = ('This spec uses "buildingsZeroHeight" (Curio makes a building without a height 6 m tall when it loads '
-            "the data, so the key would change nothing) at map.layerRefs[1], which Curio does not run yet.")
-    assert said in str(refused.value), refused.value
+    code = compile_data_spec(json.dumps(document))
+    assert '"pbfFileUrl":"__CURIO_BACKEND_URL__/file/docs/examples/data/back_bay.osm.pbf"' in code, code[:400]
 
 
 def test_a_load_beside_links_runs_on_the_server(client, user_and_token, sandbox, recorded):

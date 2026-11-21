@@ -388,14 +388,14 @@
       "says": null
     },
     {
-      "name": "a buildings layer's buildingsZeroHeight is not run yet",
+      "name": "a buildings layer's buildingsZeroHeight is run",
       "spec": { "map": { "layerRefs": [{ "dataRef": "input_0" }, { "dataRef": "table_osm_buildings", "buildingsZeroHeight": true }] } },
-      "says": "This spec uses \"buildingsZeroHeight\" (Curio makes a building without a height 6 m tall when it loads the data, so the key would change nothing) at map.layerRefs[1], which Curio does not run yet."
+      "says": null
     },
     {
-      "name": "buildingsZeroHeight written false on a layer of a second map is told where it is written",
+      "name": "buildingsZeroHeight written false on a layer of a second map is run",
       "spec": { "map": [{ "id": "a", "layerRefs": [{ "dataRef": "input_0" }] }, { "id": "b", "layerRefs": [{ "dataRef": "input_1", "buildingsZeroHeight": false }] }] },
-      "says": "This spec uses \"buildingsZeroHeight\" (Curio makes a building without a height 6 m tall when it loads the data, so the key would change nothing) at map[1].layerRefs[0], which Curio does not run yet."
+      "says": null
     },
     {
       "name": "a layer's buildingsZeroHeight written null is not written",

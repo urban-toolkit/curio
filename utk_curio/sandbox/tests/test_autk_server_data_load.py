@@ -36,7 +36,9 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import re
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -112,20 +114,14 @@ def _loader_content(example: str, node_id: str) -> str:
     return next(node["content"] for node in dataflow["nodes"] if node["id"] == node_id)
 
 
-@pytest.mark.parametrize("example, node_id, extract, layers", [
-    ("06-back-bay-road-sunlight.json", "whatif-data", "docs/examples/data/back_bay.osm.pbf", BACK_BAY),
-    ("07-autark-gpu-shader.json", "sh-data", "docs/examples/data/chicago_loop.osm.pbf", CHICAGO_LOOP),
-    ("08-autark-spatial-join-regression.json", "niteroi-osm", "docs/examples/data/niteroi.osm.pbf", NITEROI),
-    ("11-autark-pbf-loading.json", "pbf-load", "docs/examples/data/lower_mnt.osm.pbf", LOWER_MANHATTAN),
-    ("dataflows/lower-manhattan-park-shade.json", "park-shade-layers", "docs/examples/data/lower_mnt.osm.pbf",
-     LOWER_MANHATTAN_PARKS),
-], ids=["back_bay", "chicago_loop", "niteroi", "lower_mnt", "lower_mnt_parks"])
-def test_the_server_compiled_load_hands_on_the_layers(example, node_id, extract, layers, tmp_path, monkeypatch):
+def _run_example_load(example: str, node_id: str, extract: str, tmp_path, monkeypatch) -> dict:
+    """What ``execute_js_code`` answers for the server-compiled load of the
+    node *node_id* of *example*, its extract served from disk (``_run_load``,
+    below, runs a document of the test's own with nothing served)."""
     from utk_curio.cli import dependencies
     from utk_curio.common.autk_data_compiler import compile_data_spec
     from utk_curio.sandbox.app.worker import _worker_init, execute_js_code
     from utk_curio.sandbox.util.node_runtime import node_modules_dir
-    from utk_curio.sandbox.util.parsers import load_from_duckdb
 
     installed = json.loads(
         (node_modules_dir() / "@urban-toolkit" / "autk-db" / "package.json").read_text(encoding="utf-8")
@@ -147,9 +143,23 @@ def test_the_server_compiled_load_hands_on_the_layers(example, node_id, extract,
     monkeypatch.setenv("FLASK_BACKEND_PORT", "1")
     dependencies.seed_duckdb_extensions()
     _worker_init()
-    result = execute_js_code(
+    return execute_js_code(
         serve + code, "", "AUTK_GRAMMAR", "", launch_dir=str(REPO_ROOT), session_id=None,
     )
+
+
+@pytest.mark.parametrize("example, node_id, extract, layers", [
+    ("06-back-bay-road-sunlight.json", "whatif-data", "docs/examples/data/back_bay.osm.pbf", BACK_BAY),
+    ("07-autark-gpu-shader.json", "sh-data", "docs/examples/data/chicago_loop.osm.pbf", CHICAGO_LOOP),
+    ("08-autark-spatial-join-regression.json", "niteroi-osm", "docs/examples/data/niteroi.osm.pbf", NITEROI),
+    ("11-autark-pbf-loading.json", "pbf-load", "docs/examples/data/lower_mnt.osm.pbf", LOWER_MANHATTAN),
+    ("dataflows/lower-manhattan-park-shade.json", "park-shade-layers", "docs/examples/data/lower_mnt.osm.pbf",
+     LOWER_MANHATTAN_PARKS),
+], ids=["back_bay", "chicago_loop", "niteroi", "lower_mnt", "lower_mnt_parks"])
+def test_the_server_compiled_load_hands_on_the_layers(example, node_id, extract, layers, tmp_path, monkeypatch):
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    result = _run_example_load(example, node_id, extract, tmp_path, monkeypatch)
 
     assert result["output"]["path"], result["stderr"]
     assert result["output"]["dataType"] == "list"
@@ -170,6 +180,88 @@ def test_the_server_compiled_load_hands_on_the_layers(example, node_id, extract,
         _assert_osm_ids(layer)
 
 
+#: The keys an Autark map reads a building part's top from.
+TOP_KEYS = ("height", "building:height", "levels", "building:levels")
+
+
+def _number(value) -> float | None:
+    """*value* as a number, when it is one or text that is one, else None."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def test_the_server_compiled_load_hands_on_a_building_part_with_no_height_with_none(tmp_path, monkeypatch):
+    """The test dataflow lower-manhattan-park-shade's load hands its building
+    parts on as OpenStreetMap has them: a part with no height (none of
+    ``height``, ``building:height``, ``levels`` and ``building:levels`` holds a
+    number) holds none, so a node that uses one takes the default where it
+    uses it, and the others hold their own.
+
+    So what reads the data sees the gap: a Map Editor node's scale of the
+    heights leaves such a part as it is (``feature_edits``: a feature whose
+    column holds no number), and the dataflow's Building heights node gives it
+    its Default height widget's value, 10 m (``fillna``)."""
+    import geopandas as gpd
+
+    from utk_curio.sandbox.util.feature_edits import edit_features
+    from utk_curio.sandbox.util.input_layers import curio_layer
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    example, node_id = "dataflows/lower-manhattan-park-shade.json", "park-shade-layers"
+    result = _run_example_load(example, node_id, "docs/examples/data/lower_mnt.osm.pbf", tmp_path, monkeypatch)
+    assert result["output"]["path"], result["stderr"]
+    loaded = load_from_duckdb(result["output"]["path"], session_id=None)
+    (buildings,) = [layer for layer in loaded if layer["name"] == "table_osm_buildings"]
+    parts = [feature["properties"] for feature in buildings["geojson"]["features"]]
+    # No number in any key of a top: the parts the load gives no height.
+    bare = [index for index, properties in enumerate(parts)
+            if all(_number(properties.get(key)) is None for key in TOP_KEYS)]
+    tall = [index for index, properties in enumerate(parts) if (_number(properties.get("height")) or 0) > 0]
+    assert bare, (
+        f"none of the {len(parts)} building parts holds no height: a part OpenStreetMap gives none is handed on "
+        "with one made for it"
+    )
+    assert tall, f"none of the {len(parts)} building parts holds a height of its own"
+
+    # A Map Editor node's scale of the heights of up to five such parts'
+    # buildings, and of one whose height it first sets to 20 m, which it doubles.
+    bare_buildings = {parts[index]["building_id"] for index in bare}
+    probe = next((index for index in tall if parts[index]["building_id"] not in bare_buildings), tall[0])
+    others = [index for index in bare if parts[index]["building_id"] != parts[probe]["building_id"]][:5]
+    assert others, f"every one of the {len(bare)} parts with no height is in the building of part {probe}"
+    edits = [
+        {"op": "set", "column": "height", "value": 20, "ids": [parts[probe]["building_id"]]},
+        {"op": "scale", "column": "height", "value": 2,
+         "ids": sorted({parts[index]["building_id"] for index in [probe, *others]})},
+    ]
+    edited = edit_features(loaded, edits, key="building_id", layer="table_osm_buildings")
+    (layer,) = [item for item in edited["data"] if item.get("layerName") == "table_osm_buildings"]
+    after = [feature["properties"] for feature in layer["data"]["features"]]
+    assert _number(after[probe]["height"]) == 40, after[probe]
+    assert [_number(after[index].get("height")) for index in others] == [None] * len(others), (
+        [after[index] for index in others]
+    )
+
+    # The dataflow's Building heights node, its chips as its widgets set them.
+    code = _loader_content(example, "park-shade-heights")
+    for chip, value in (("[!! input_0:table_osm_buildings !!]", "frame"), ("[!! floor_height !!]", "3.4"),
+                        ("[!! default_height !!]", "10")):
+        assert chip in code, chip
+        code = code.replace(chip, value)
+    frame = curio_layer(loaded, "table_osm_buildings")
+    assert isinstance(frame, gpd.GeoDataFrame) and len(frame) == len(parts)
+    namespace: dict = {"frame": frame}
+    exec("def node():\n" + textwrap.indent(code, "    "), namespace)  # noqa: S102  (the dataflow's own node code)
+    heights = namespace["node"]()["height"].tolist()
+    assert [heights[index] for index in bare] == [10.0] * len(bare)
+    assert [heights[index] for index in tall[:5]] == [_number(parts[index]["height"]) for index in tall[:5]]
+
+
 #: Example 07's loader: the Chicago Loop's OpenStreetMap layers, and its
 #: building parts among them, about 300 of whose height tags are numbers.
 LOOP_LOAD = ("07-autark-gpu-shader.json", "sh-data", "docs/examples/data/chicago_loop.osm.pbf")
@@ -179,27 +271,11 @@ _PLAIN_HEIGHT = re.compile(r"[0-9]+(?:\.[0-9]+)?")
 
 def _served_layers(example: str, node_id: str, extract: str, tmp_path, monkeypatch) -> list:
     """What the server-compiled load of *example*'s node *node_id* stores,
-    *extract* served from disk, as the test above runs it: a layer record
-    ``{name, type, geojson}`` each."""
-    from utk_curio.cli import dependencies
-    from utk_curio.common.autk_data_compiler import compile_data_spec
-    from utk_curio.sandbox.app.worker import _worker_init, execute_js_code
+    *extract* served from disk, as the tests above run it
+    (``_run_example_load``): a layer record ``{name, type, geojson}`` each."""
     from utk_curio.sandbox.util.parsers import load_from_duckdb
 
-    serve = (_FETCH_FROM_DISK
-             .replace("EXTRACT", json.dumps(extract))
-             .replace("ROOT", json.dumps(str(REPO_ROOT))))
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    # An address nothing answers at: the fetch above is the only way in.
-    monkeypatch.setenv("FLASK_BACKEND_HOST", "curio-backend.invalid")
-    monkeypatch.setenv("FLASK_BACKEND_PORT", "1")
-    dependencies.seed_duckdb_extensions()
-    _worker_init()
-    result = execute_js_code(
-        serve + compile_data_spec(_loader_content(example, node_id)), "", "AUTK_GRAMMAR", "",
-        launch_dir=str(REPO_ROOT), session_id=None,
-    )
+    result = _run_example_load(example, node_id, extract, tmp_path, monkeypatch)
     assert result["output"]["path"], result["stderr"]
     return load_from_duckdb(result["output"]["path"], session_id=None)
 

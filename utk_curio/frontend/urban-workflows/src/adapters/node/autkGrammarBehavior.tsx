@@ -26,8 +26,9 @@ import { closeGrammarDb } from './autkDbClose';
 import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
 import { autkKeyProblem, autkRasterPassProblem, autkViewProblem } from '../../contracts/autkGrammar';
 import {
-    autkNeedsInput, autkReadsInput, autkSourcesFrom, documentTableRefs, drawnFeatures, drawnRows, inputRow, keyValues, loadableSource, ownTableNames,
-    passesAtHand, readAutkInput, selectFieldsOf, selectFieldsProblem, tableKeyOf, tablePositions, tablesToLoad, withReadableHeights, writtenTables,
+    autkNeedsInput, autkReadsInput, autkSourcesFrom, documentTableRefs, drawnFeatures, drawnRows, heightUses, heightsAtUse, inputRow, keyValues,
+    loadableSource, ownTableNames, passesAtHand, readAutkInput, selectFieldsOf, selectFieldsProblem, tableKeyOf, tablePositions, tablesToLoad,
+    withReadableHeights, writtenTables,
     type LoadOrder,
     type PreparedAutkInput,
 } from '../../utils/autkInput';
@@ -82,9 +83,9 @@ import { interactionHandleView, isInteractionEdge } from '../../contracts/intera
 import type { ViewArrangement } from '@urban-toolkit/autk-grammar';
 import { mapSession, onMapSession, registerEditMap } from '../../utils/editFeatures/mapEditBus';
 import {
-    drawnFeatureAt, featurePositions, layerIdFor, mapDrawingOf, mapLayerOf, mapStateOf, pickOn, restoreMapLayers,
-    showForEdits, snapshotBeforeSolo, snapshotMapLayers, type DrawnTables, type EditsView, type MapDrawing,
-    type MapLayerState, type MapTableState,
+    drawnFeatureAt, featurePositions, handedFeaturesOf, layerIdFor, mapDrawingOf, mapLayerOf, mapStateOf, pickOn,
+    restoreMapLayers, showForEdits, snapshotBeforeSolo, snapshotMapLayers, type DrawnTables, type EditsView,
+    type HandedFeature, type MapDrawing, type MapLayerState, type MapTableState,
 } from './autkMapState';
 import {
     drawnInput, editFeedsOf, editedMapView, fedByInteraction, feedsVersion, newLayerTables, type EditFeed,
@@ -108,6 +109,7 @@ const mapStateReaders = new Map<string, {
     showFramed: () => () => void;
     drawing: (view?: string | number) => MapDrawing | null;
     tourEnded: (view?: string | number) => Promise<boolean>;
+    handed: (table: string, view?: string | number) => Promise<HandedFeature[] | null>;
 }>();
 /** What turns each node's maps back by their cameras, while they show their framed views. */
 const turnBack = new Map<string, () => void>();
@@ -131,6 +133,12 @@ if (typeof window !== 'undefined') {
         mapStateReaders.get(nodeId)?.drawing(view) ?? null;
     (window as any).__curio_mapTourEnded = (nodeId: string, view?: string | number) =>
         mapStateReaders.get(nodeId)?.tourEnded(view) ?? Promise.resolve(false);
+    // The features of a table the grammar handed its map's autk-map, each
+    // with its input row and the keys of a building's top it holds
+    // (autkMapState `handedFeaturesOf`;
+    // test_frontend/test_autark_buildings_zero_height_e2e.py).
+    (window as any).__curio_mapHanded = (nodeId: string, table: string, view?: string | number) =>
+        mapStateReaders.get(nodeId)?.handed(table, view) ?? Promise.resolve(null);
     (window as any).__curio_showMapsFramed = (nodeId: string, framed: boolean): boolean => {
         turnBack.get(nodeId)?.();
         turnBack.delete(nodeId);
@@ -1086,7 +1094,7 @@ export const useAutkGrammarBehavior = (
                             // hint at the real (backend) cause.
                             const fallbackReason = fe?.message ?? String(fe);
                             const combined =
-                                `autk data load failed — backend: ${backendReason}; `
+                                `autk data load failed: backend: ${backendReason}; `
                                 + `in-browser fallback: ${fallbackReason}`;
                             console.error('[autk-grammar]', combined);
                             throw new Error(combined);
@@ -1103,8 +1111,10 @@ export const useAutkGrammarBehavior = (
             // silently working on nothing. Only applies to the backend-ref path
             // (backendLayers == null means we did not already fall back). Each
             // layer keeps the workspace it was loaded into. A buildings layer
-            // gets the heights autk-map and a pass read, as one of the input
-            // does (withReadableHeights).
+            // holds its heights where autk-map and a pass read them, as one of
+            // the input does (withReadableHeights); a building with no height
+            // holds none, and is as tall as the document uses it (a map's
+            // heightsAtUse, a compute step's applyComputeBlocks).
             const loadedLayers = async (): Promise<AutkLayer[]> => {
                 let layers: AutkLayer[] = [];
                 try {
@@ -1223,8 +1233,8 @@ export const useAutkGrammarBehavior = (
                 // consequences for sparse data (e.g. a PBF area with no parks, or a
                 // join that empties a layer):
                 //   1. an empty geojson source must be dropped before grammar.run,
-                //   2. a map/plot ref to a table that is empty — or that an upstream
-                //      node already dropped, so it never arrives here — dangles and
+                //   2. a map/plot ref to a table that is empty, or that an upstream
+                //      node already dropped, so it never arrives here, dangles and
                 //      fails grammar.run with "Table <name> not found".
                 // Drop empty sources, then keep only refs that point at a table this
                 // node can actually create: layers with data render; empty/absent
@@ -1251,18 +1261,27 @@ export const useAutkGrammarBehavior = (
                 // cover every table at hand, so the verdict below tells a
                 // misnamed table apart from data the input does not bring.
                 const handed = tablesToLoad(dataSectionSources, spec, ownSources);
-                // On a 1 cm grid, so autk-db's second clip of these already
-                // clipped layers holds (see utils/geoPrecision). The sources
-                // after compute follow them as the document writes them, their
-                // file URLs resolved for the browser: the grammar's run phases
-                // them itself, after its passes.
+                // A building with no height is as tall as the document uses
+                // it: the default height above its base in a table a map layer
+                // draws or a pass reads, none in one a layer with
+                // buildingsZeroHeight draws, which autk-map raises at random,
+                // and as it came in a table only a plot reads (utils/autkInput
+                // heightsAtUse). On a 1 cm grid, so autk-db's second clip of
+                // these already clipped layers holds (see utils/geoPrecision).
+                // The sources after compute follow them as the document writes
+                // them, their file URLs resolved for the browser: the grammar's
+                // run phases them itself, after its passes.
+                const uses = heightUses(spec);
                 spec = {
                     ...spec,
-                    data: [...handed.map(snapSourceToGrid), ...resolveDataSourceUrls({ data: afterPasses }, false).data],
+                    data: [
+                        ...handed.map((source) => snapSourceToGrid(heightsAtUse(source, uses))),
+                        ...resolveDataSourceUrls({ data: afterPasses }, false).data,
+                    ],
                 };
                 if (dataSectionSources.length === 0 && (hasMaps || hasPlot)) {
                     console.warn(
-                        '[autk-grammar] render node has no data sources left — the '
+                        '[autk-grammar] render node has no data sources left: the '
                         + 'grammar engine will produce no data context and the '
                         + 'map/plot will render blank. Check the upstream nodes.',
                     );
@@ -2249,6 +2268,11 @@ export const useAutkGrammarBehavior = (
                 await tour.done;
                 return true;
             },
+            handed: (table, view) => {
+                const { index, entry } = mapOf(view);
+                if (index < 0) return Promise.resolve(null);
+                return handedFeaturesOf(grammarRef.current, autkTableKey(autkWorkspaceOf(entry), table));
+            },
         });
         return () => {
             mapStateReaders.delete(data.nodeId);
@@ -2359,17 +2383,17 @@ export const useAutkGrammarBehavior = (
 
     // Forward parent container resizes to AutkMap via a synthetic window.resize.
     // AutkMap binds only to window.resize (and exposes no per-instance resize API),
-    // so node-handle drags are otherwise silent — but that dispatch is expensive and
+    // so node-handle drags are otherwise silent, but that dispatch is expensive and
     // fragile: each one makes *every* AutkMap on the page rebuild its WebGPU textures
     // and reconfigure its swapchain. Doing that every frame during a drag stalls the
     // canvas, and reconfiguring mid-render races AutkMap's render loop (its
-    // getCurrentTexture() ends up invalidated) — which its render-error latch then
+    // getCurrentTexture() ends up invalidated), which its render-error latch then
     // swallows, leaving the map blank/white.
     //
     // So: keep the *cheap* CSS sizing on every tick (the width/height:100% canvas
     // stretches to fill the node during the drag), but fire the *expensive*
     // window.resize only once the size has settled, and on a macrotask (setTimeout)
-    // rather than rAF — outside AutkMap's render window — so the GPU rebuild happens
+    // rather than rAF, outside AutkMap's render window, so the GPU rebuild happens
     // exactly once, cleanly, and the canvas snaps crisp.
     useEffect(() => {
         const wrapper = wrapperRef.current;

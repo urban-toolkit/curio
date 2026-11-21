@@ -1000,7 +1000,12 @@ named after it.
 In **Edit**, the form of a building of several parts is for all of them: a
 property its parts differ in is empty, with their values beside it, and a value
 typed there goes to every part. Its **Parts** menu picks one part, by its
-`osm_id`, and the form then shows and changes that part's values alone.
+`osm_id`, and the form then shows and changes that part's values alone. A
+building part with no height shows the height a map draws it at, 6 m above its
+base, marked: `6 (default)`. Its height stays empty until one is typed. A
+scale, an offset, an expression or a rule on `height` reads the height a part
+holds: a part with none, or with only its levels, keeps none, and a rule on
+`height` does not pick it.
 
 A rule or an expression reads a feature's columns by name (`height`, or
 `` `Mean Acc shadow` `` in backticks). It takes numbers, quoted texts, `true`,
@@ -1383,12 +1388,11 @@ provides.
 Each feature of an OpenStreetMap layer the node hands on has its OpenStreetMap
 id in `osm_id`, and a building's parts share its `building_id`.
 
-A node does not run these keys of the Autark grammar. A document that writes
-one does not run, and the node's error names the key, says why, and says where
-it is written:
-
-- a map layer's `buildingsZeroHeight`: Curio makes a building without a height
-  6 m tall when it loads the data, so the key would change nothing.
+A building part with no height, none of `height`, `building:height`, `levels`
+and `building:levels`, is handed on with none: a Python node reads no value
+(NaN) in its `height`. Where an Autark node uses a height, such a part is 6 m
+tall above its base: a map draws it and colors it by that height, and a
+compute pass reads it. A plot shows the heights its table holds.
 
 ### Several views
 
@@ -1801,7 +1805,8 @@ own. A box recolored gives the layer its new color on the map's next run.
     "layerRefs": [
       {"dataRef": "segments", "layerType": "roads", "widthBy": "lane_width"},
       {"dataRef": "parcels", "getFnv": "value", "legend": true, "skippedComps": [2, 5]},
-      {"dataRef": "sites", "isPick": true, "pickedComps": [0, 4]}
+      {"dataRef": "sites", "isPick": true, "pickedComps": [0, 4]},
+      {"dataRef": "table_osm_buildings", "buildingsZeroHeight": true}
     ]
   }
 }
@@ -1830,6 +1835,11 @@ own. A box recolored gives the layer its new color on the map's next run.
   stay lit until a selection reaches the node, from its input or over an
   interaction edge, which takes their place, and are lit again when it
   clears. They reach no other node.
+- `"buildingsZeroHeight": true` draws each part of a buildings layer that has
+  no height at a random 3 to 7 floors, 10.2 to 23.8 m, drawn again at each
+  run, and the node's compute passes read no height for such a part, so a pass
+  that requires one leaves it out. Without it, a part with no height is drawn
+  6 m tall, and a pass reads it so.
 
 ### Map styles, colors and controls
 

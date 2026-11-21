@@ -12,8 +12,8 @@ them on to maps, each read back from autk-map's own objects
   ``pickedComps``) and kept lit while nothing comes into the node; the lanes
   drawn as roads (``layerType``), each as wide as its ``w`` (``widthBy``);
   and the stops colored by their load, after the zones, two of them hidden
-  (``skippedComps``). A node refuses ``buildingsZeroHeight``
-  (``test_autark_buildings_zero_height_e2e.py``);
+  (``skippedComps``). A buildings layer's ``buildingsZeroHeight`` is drawn
+  in ``test_autark_buildings_zero_height_e2e.py``;
 - a map in a style of its own (``style``'s colors), its zones colored by their
   riders, without autk-map's menu and legend (``showUi``);
 - a map whose ground rises to a band of a GeoTIFF its own data section loads

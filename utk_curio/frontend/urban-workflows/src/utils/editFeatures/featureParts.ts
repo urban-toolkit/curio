@@ -16,6 +16,7 @@
  * chosen in its parts menu, named the same way (`partsForm`, #1110).
  */
 import type { SelectionId } from "../references/selectionTags";
+import { deriveBuildingHeight } from "../buildingHeight";
 import { idKey } from "./applyEdits";
 import { evaluate, parseExpr, truthy } from "./editExpr";
 import type { FeatureEdit, Geometry } from "./editFeatures";
@@ -118,6 +119,25 @@ export function valueText(value: unknown): string {
 /** A value as a note or a part's name says it: its text, or "empty". */
 const said = (value: unknown) => valueText(value) || "empty";
 
+/**
+ * The value a row is drawn at for a property it holds no value in, or null:
+ * the default a layer gives the row where it uses the property.
+ */
+export type ValueDefault = (name: string, properties: Record<string, unknown>) => number | null;
+
+/**
+ * A buildings layer's default: a part with no height is drawn
+ * `DEFAULT_BUILDING_HEIGHT` m above its base (utils/buildingHeight
+ * `deriveBuildingHeight`). Null for another property, or for a part whose
+ * `height` holds a value.
+ */
+export const buildingDefault: ValueDefault = (name, properties) => (
+  name === "height" && valueText(properties.height) === "" ? deriveBuildingHeight(properties) : null
+);
+
+/** A default as the form shows it, marked: "6 (default)". */
+export const defaultText = (value: number) => `${value} (default)`;
+
 /** At most this many values a note lists, before it says how many more there are. */
 const LISTED = 3;
 
@@ -137,6 +157,12 @@ export interface PartsForm {
   fixed: Record<string, string>;
   /** Each part's name in the parts menu, in the rows' order: its osm_id, then the values it differs in. */
   labels: string[];
+  /**
+   * For each property whose field shows no value where the row is drawn at a
+   * default (`ValueDefault`): that default, marked (`defaultText`), which the
+   * field shows in its place.
+   */
+  defaults: Record<string, string>;
 }
 
 /**
@@ -144,12 +170,30 @@ export interface PartsForm {
  * parts or on the one *chosen*. On all of them, a property they share shows
  * its value and one they differ in shows none, but a note that lists them.
  * osm_id, which tells the parts apart, cannot be changed. A feature of one row
- * is that row.
+ * is that row. With *defaultOf*, a row that holds no value of a property the
+ * layer draws it at a default for shows that default, marked, in the note,
+ * the parts menu and the field, whose value stays empty.
  */
-export function partsForm(rows: readonly Row[], names: readonly string[], chosen: Row | null = null): PartsForm {
+export function partsForm(
+  rows: readonly Row[],
+  names: readonly string[],
+  chosen: Row | null = null,
+  defaultOf?: ValueDefault,
+): PartsForm {
   const first = rows[0]?.properties ?? {};
-  if (rows.length <= 1) return { values: { ...first }, mixed: {}, fixed: {}, labels: [] };
-  const textsOf = (name: string) => [...new Set(rows.map((row) => valueText(row.properties[name])))];
+  // A row's value of *name* as the form says it: its own, else its default, marked.
+  const shownText = (properties: Record<string, unknown>, name: string): string => {
+    const text = valueText(properties[name]);
+    const drawn = text === "" && defaultOf ? defaultOf(name, properties) : null;
+    return drawn === null ? text : defaultText(drawn);
+  };
+  // The defaults the fields show where one row's values are shown.
+  const defaultsOf = (properties: Record<string, unknown>) => Object.fromEntries(names.flatMap((name) => {
+    const text = shownText(properties, name);
+    return text !== valueText(properties[name]) ? [[name, text]] : [];
+  }));
+  if (rows.length <= 1) return { values: { ...first }, mixed: {}, fixed: {}, labels: [], defaults: defaultsOf(first) };
+  const textsOf = (name: string) => [...new Set(rows.map((row) => shownText(row.properties, name)))];
   const values: Record<string, unknown> = {};
   const mixed: Record<string, string> = {};
   const fixed: Record<string, string> = {};
@@ -161,7 +205,9 @@ export function partsForm(rows: readonly Row[], names: readonly string[], chosen
     else if (texts.length > 1) mixed[name] = valuesNote(texts);
     else values[name] = first[name];
   }
+  const shared = defaultsOf(chosen ? chosen.properties : first);
+  const defaults = Object.fromEntries(Object.entries(shared).filter(([name]) => !(name in mixed)));
   const differ = names.filter((name) => name !== PART_COLUMN && textsOf(name).length > 1);
-  const labels = rows.map((row) => [PART_COLUMN, ...differ].map((name) => `${name} ${said(row.properties[name])}`).join(", "));
-  return { values, mixed, fixed, labels };
+  const labels = rows.map((row) => [PART_COLUMN, ...differ].map((name) => `${name} ${said(shownText(row.properties, name))}`).join(", "));
+  return { values, mixed, fixed, labels, defaults };
 }

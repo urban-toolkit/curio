@@ -103,8 +103,10 @@ MARKED_ROWS = 527
 TALL_HEIGHT_M = 60
 GRID = (1024, 1280)
 #: Each scenario's mean over the parks of their mean minutes of shadow in
-#: summer, from the run test_lower_manhattan_park_shade.py pins.
-MEAN_OVER_PARKS = {"existing": 272.06, "towers-removed": 143.09, "height-cap": 219.03}
+#: summer, from run 44755514938: a building part OpenStreetMap gives no height
+#: is handed on with none, so the example's Default height widget, 10 m, gives
+#: it its height, where the loader wrote 6 m into it before.
+MEAN_OVER_PARKS = {"existing": 273.83, "towers-removed": 148.38, "height-cap": 220.93}
 MINUTES = 0.5
 #: The diverging schemes the maps of a change use: a legend labels their middle too.
 DIVERGING = {"interpolateRdBu", "interpolateRdYlBu"}

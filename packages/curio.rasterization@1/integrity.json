@@ -1,8 +1,8 @@
 {
   "sha256": {
-    "README.md": "8d9add834e935d6b61ef592d459a47224c1580d3d047a6fe837e7b27f15e08dc",
+    "README.md": "c1041a4fa908d08e902140f91d8a53c9d395b0379b7ca0be019e02ac6f34129b",
     "manifest.json": "7826b981430812bd230c1eee1f0babbe7e5f6ac8ecb9b178699ffa05f94c51d2",
-    "skills/rasterization/SKILL.md": "876eab34e2dfae9ce4b6b3336e3ac6cf637361def2602928ee38669f63ab74e2",
+    "skills/rasterization/SKILL.md": "573b4fd1f032add6bc71c5afca8e873bad0f4fd813441151958ec4bc5b939cfc",
     "skills/rasterization/evals/evals.json": "b135c8ed0e060b8fa8d63eb5a6f2c60e9912a251e752dedfe09c949a3eee2729",
     "skills/rasterization/evals/truth.json": "bfe8a3b5737b3fc04c6bde0afd7b03e57880637dc05b85a727ca1646cca36431",
     "sources/raster-calculator.py": "463a522521da2453290c6a06525edf97f305eb4082dc304b85c8fbe9e28761dc",
@@ -10,7 +10,7 @@
     "sources/scout_rasters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "sources/scout_rasters/convert_to_raster.py": "84ce62d6fb2c29e9e31aec50a8406a74f392c48ea0399cffd1ced647c5c9fbcf",
     "sources/scout_rasters/mosaic.py": "028b108ee25f0a7a1e77939805b4f24330464daa2fc67589c48973ece53b9f9e",
-    "sources/scout_rasters/node_outputs.py": "2b89fb78a54a73a0358b1db33d3a1388a325f4c21b6a07311bb1347c01d58a51",
+    "sources/scout_rasters/node_outputs.py": "259d619c41dcd24c93af2b7d48217ae42935cd03a0abf7caee3d5b98272ce8fc",
     "sources/scout_rasters/raster_algebra.py": "57ab66d82ca4c09cdeab27c71d2e526e207eb71373755ac2e10b11bbc70e54fb",
     "sources/scout_rasters/web_tiles.py": "6e11404537c08471eb6c691f5bd5022d6e91760177f83899e34f8e6519faf677"
   }
