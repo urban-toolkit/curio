@@ -668,7 +668,7 @@ export function withOsmIds(table: { source?: string; type?: string } | null | un
 // the default height where a height is used (utils/buildingHeight). A number
 // stays the number it is, and a key a feature does not have stays missing. A
 // building's own tags and each part's in `properties.parts` are read alike.
-// These keys are the building tags among the Discovery Catalog's numeric
+// These keys are the heights and levels among the Discovery Catalog's numeric
 // tags (discovery/domain/osm_values.py). The surface, a raster and a layer
 // from another source come back as they are; the input is never changed.
 // Both loaders hand their layers on through this one function, after
