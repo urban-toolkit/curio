@@ -400,7 +400,7 @@ def test_the_rule_refuses_code_planted_with(planted):
     'return curio_load_data("data.example.mrt")\n',
     '"""A loader."""\n\nreturn curio_load_data([!! dataset !!])\n',
     'return curio_load_collection("data.example.photos")\n',
-])
+], ids=["a-dataset-by-id", "a-dataset-a-widget-holds", "a-collection-by-id"])
 def test_a_loader_is_one_read_of_the_data_catalog_and_its_return(code):
     """A loader's whole code, a docstring aside, is the return of one read of
     the Data Catalog, its item's id written in it or held by a widget."""
