@@ -99,6 +99,12 @@ class TestTheSharedCases:
             "a selection tag takes",
             "is for a Vega-Lite spec, not for code",
             "has no input to stack",
+            # A dataset widget an input picks.
+            "has no choice for",
+            "has no value yet",
+            "holds no camera",
+            "not a text",
+            "only a Python node's code reads it",
         ):
             assert kind in messages, kind
 
