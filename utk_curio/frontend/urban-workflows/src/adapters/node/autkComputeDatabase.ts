@@ -34,7 +34,7 @@
  * source after compute made. A table a source after compute wrote (a join
  * into it, an update, a SQL query saved under its name, a load) is read back
  * as autk-db holds it, as the loaders hand one on: an OpenStreetMap table with
- * its OSM ids and its numeric building tags as numbers (`withOsmIds`,
+ * its OSM ids and its numeric tags as numbers (`withOsmIds`,
  * `withOsmNumbers`), a buildings table a part a row (`explodeBuildingParts`),
  * and a table with no geometry as its rows (`plainTableRecord`). A part the step gave the default holds its own height
  * again wherever it is handed on with its mark and still holds that default,

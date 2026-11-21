@@ -20,7 +20,7 @@ that write, a ``column`` and a ``value``:
   from a file may hold one, is read as that number and written back as text
   (``"45"``); a feature whose ``column`` holds no number, or text that writes
   none (``"30 m"``), is left as it is. An Autark node hands on OpenStreetMap's
-  numeric building tags as numbers;
+  numeric tags as numbers;
 - ``expr`` writes into ``column`` what the expression ``value`` makes of the
   feature, such as ``levels * 3.2`` (``edit_expr``);
 - ``add`` adds a feature drawn on the map: its ``geometry`` (GeoJSON, in the

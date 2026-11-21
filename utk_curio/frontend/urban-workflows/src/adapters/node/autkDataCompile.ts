@@ -649,62 +649,87 @@ export function withOsmIds(table: { source?: string; type?: string } | null | un
     });
 }
 
-// A layer's features with OpenStreetMap's numeric building tags as numbers.
-// autk-db keeps every tag as text ("65.5", "86 m"); each value of these keys
+// A layer's features with OpenStreetMap's numeric tags as numbers. autk-db
+// keeps every tag as text ("65.5", "86 m", "25 mph"); each value of these keys
 // becomes a number, or null when it holds none that can be read:
-// - lengths, in metres: `height`, `min_height`, `building:height` and
-//   `roof:height`. A plain number is that number. A number followed by its
-//   unit is converted, as OpenStreetMap writes a length (metres when no unit
-//   is written): `m`, `metre`, `metres`, `meter`, `meters`, `km`, `mi`, `nmi`
-//   and `ft`, in any case, and feet and inches (`282'`, `16'6"`, `6"`). A
-//   length in another unit than metres is rounded to the centimetre;
-// - levels, which take a plain number only: `building:levels`,
-//   `building:min_level`, `levels`, `min_level`, `roof:levels` and
-//   `building:levels:underground`.
+// - lengths, in metres: `height`, `min_height`, `building:height`,
+//   `roof:height`, `width`, `est_width`, `maxheight`, `maxwidth`, `maxlength`,
+//   `ele` and `depth`. A number followed by its unit is converted: `m`,
+//   `metre`, `metres`, `meter`, `meters`, `km`, `mi`, `nmi` and `ft`, in any
+//   case, and feet and inches (`282'`, `16'6"`, `6"`);
+// - speeds, in kilometres per hour: `maxspeed`, `maxspeed:forward`,
+//   `maxspeed:backward` and `minspeed`. `km/h`, `mph` and `knots` are converted;
+// - counts, which take a plain number alone: `building:levels`,
+//   `building:min_level`, `building:levels:underground`, `roof:levels`,
+//   `levels`, `min_level`, `lanes`, `lanes:forward`, `lanes:backward`,
+//   `lanes:both_ways`, `layer`, `capacity`, `seats`, `beds`, `rooms` and
+//   `building:flats`.
 // A plain number is written as the expression language writes one, signed,
 // with nothing around it once trimmed (NUMBER_TEXT in
-// utils/editFeatures/applyEdits.ts). Any other text ("tall", "~20", "7-7",
-// "4.0;11.6") is null, so a building with no height that can be read takes
-// the default height where a height is used (utils/buildingHeight). A number
-// stays the number it is, and a key a feature does not have stays missing. A
-// building's own tags and each part's in `properties.parts` are read alike.
-// These keys are the heights and levels among the Discovery Catalog's numeric
-// tags (discovery/domain/osm_values.py). The surface, a raster and a layer
-// from another source come back as they are; the input is never changed.
-// Both loaders hand their layers on through this one function, after
-// withOsmIds, and so does a compute step that reads a table back from its
-// database (autkComputeDatabase); the sandbox's code embeds its source, so the
-// body avoids what withOsmIds avoids.
+// utils/editFeatures/applyEdits.ts), and stays the number it writes, as does
+// one written in its key's own unit ("86 metres", "50 km/h"). A value converted
+// from another unit is rounded to two decimals (`Math.round`). Any other text
+// ("tall", "~20", "7-7", "none") is null, so a building with no height that
+// can be read takes the default height where a height is used
+// (utils/buildingHeight). A number stays the number it is, and a key a feature
+// does not have stays missing. A building's own tags and each part's in
+// `properties.parts` are read alike. The Discovery Catalog's OpenStreetMap
+// downloads write their numbers by this rule and these keys (its Python twin,
+// discovery/domain/osm_values.py), and both run the cases of
+// autkOsmNumbers.cases.json. The surface, a raster and a layer from another
+// source come back as they are; the input is never changed. Both loaders hand
+// their layers on through this one function, after withOsmIds, and so does a
+// compute step that reads a table back from its database
+// (autkComputeDatabase); the sandbox's code embeds its source, so the body
+// avoids what withOsmIds avoids.
 export function withOsmNumbers(table: { source?: string; type?: string } | null | undefined, features: any[]): any[] {
     if (table == null || table.source !== 'osm' || table.type === 'surface' || table.type === 'raster'
         || !Array.isArray(features)) return features;
-    const lengths = ['height', 'min_height', 'building:height', 'roof:height'];
-    const levels = ['building:levels', 'building:min_level', 'levels', 'min_level', 'roof:levels', 'building:levels:underground'];
-    const keys = lengths.concat(levels);
+    const lengths = [
+        'height', 'min_height', 'building:height', 'roof:height',
+        'width', 'est_width', 'maxheight', 'maxwidth', 'maxlength', 'ele', 'depth',
+    ];
+    const speeds = ['maxspeed', 'maxspeed:forward', 'maxspeed:backward', 'minspeed'];
+    const counts = [
+        'building:levels', 'building:min_level', 'building:levels:underground', 'roof:levels', 'levels', 'min_level',
+        'lanes', 'lanes:forward', 'lanes:backward', 'lanes:both_ways', 'layer',
+        'capacity', 'seats', 'beds', 'rooms', 'building:flats',
+    ];
+    const keys = lengths.concat(speeds, counts);
     const number = '[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?';
     const plain = new RegExp('^' + number + '$');
-    const withUnit = new RegExp('^(' + number + ')\\s*(m|metres?|meters?|km|mi|nmi|ft)$', 'i');
+    const length = new RegExp('^(' + number + ')\\s*(m|metres?|meters?|km|mi|nmi|ft)$', 'i');
+    const speed = new RegExp('^(' + number + ')\\s*(km/h|mph|knots)$', 'i');
     const feetAndInches = /^(?:([0-9]+(?:\.[0-9]+)?)\s*')?\s*(?:([0-9]+(?:\.[0-9]+)?)\s*")?$/;
     const metresIn: Record<string, number> = {
         m: 1, metre: 1, metres: 1, meter: 1, meters: 1, km: 1000, mi: 1609.344, nmi: 1852, ft: 0.3048,
     };
+    const kmhIn: Record<string, number> = { 'km/h': 1, mph: 1.609344, knots: 1.852 };
     const finite = function (value: number) { return Number.isFinite(value) ? value : null; };
-    const centimetres = function (value: number) { return finite(Math.round(value * 100) / 100); };
+    const hundredths = function (value: number) { return finite(Math.round(value * 100) / 100); };
+    // A number followed by one of *units*: as written in the unit worth 1, else converted.
+    const withUnit = function (pattern: RegExp, units: Record<string, number>, text: string): any {
+        const unit = pattern.exec(text);
+        if (unit === null) return undefined;
+        const factor = units[unit[2].toLowerCase()];
+        return factor === 1 ? finite(Number(unit[1])) : hundredths(Number(unit[1]) * factor);
+    };
     const read = function (key: string, value: any): any {
         if (value === null || value === undefined) return value;
         if (typeof value === 'number') return finite(value);
         if (typeof value !== 'string') return null;
         const text = value.trim();
         if (plain.test(text)) return finite(Number(text));
-        if (levels.indexOf(key) >= 0) return null;
-        const unit = withUnit.exec(text);
-        if (unit !== null) {
-            const factor = metresIn[unit[2].toLowerCase()];
-            return factor === 1 ? finite(Number(unit[1])) : centimetres(Number(unit[1]) * factor);
+        if (speeds.indexOf(key) >= 0) {
+            const kmh = withUnit(speed, kmhIn, text);
+            return kmh === undefined ? null : kmh;
         }
+        if (lengths.indexOf(key) < 0) return null;
+        const metres = withUnit(length, metresIn, text);
+        if (metres !== undefined) return metres;
         const imperial = feetAndInches.exec(text);
         if (imperial !== null && (imperial[1] !== undefined || imperial[2] !== undefined)) {
-            return centimetres(Number(imperial[1] || 0) * 0.3048 + Number(imperial[2] || 0) * 0.0254);
+            return hundredths(Number(imperial[1] || 0) * 0.3048 + Number(imperial[2] || 0) * 0.0254);
         }
         return null;
     };
@@ -1137,7 +1162,7 @@ ${wanted.length > 0 ? `${parts.skip}\n` : ''}  // An OpenStreetMap table a view 
   const geojson = __elements.includes(${keyOf}) ? await db.getLayer(t.name, { osmElements: true }) : await db.getLayer(t.name);
   let type = t.type ?? 'polygons';
   // Each OpenStreetMap feature's OSM id in osm_id, a building part's in that
-  // part, and its numeric building tags as numbers.
+  // part, and its numeric tags as numbers.
   if (geojson && Array.isArray(geojson.features)) geojson.features = __withOsmNumbers(t, __withOsmIds(t, geojson.features));
   if (type === 'buildings' && Array.isArray(geojson?.features)) {
     // autk-db keeps a building as one GeometryCollection, each part's tags in
