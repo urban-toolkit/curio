@@ -1,11 +1,12 @@
 /**
- * An Autark node hands on OpenStreetMap's numeric building tags as numbers.
- * autk-db keeps every tag as text ("65.5", "86 m"), and a Map Editor's rule or
- * expression (`height > 100`, `height * 0.5`), a Python node and a compute
- * pass read a text as a text: a length becomes metres, a level a number, and a
- * value that holds no number that can be read becomes null
- * (autkOsmNumbers.cases.json, the shared cases). Both loaders hand their
- * tables on through one function, `withOsmNumbers`: the sandbox's
+ * An Autark node hands on OpenStreetMap's numeric tags as numbers. autk-db
+ * keeps every tag as text ("65.5", "86 m", "25 mph"), and a Map Editor's rule
+ * or expression (`height > 100`, `height * 0.5`), a Python node and a compute
+ * pass read a text as a text: a length becomes metres, a speed km/h, a count a
+ * number, and a value that holds no number that can be read becomes null
+ * (autkOsmNumbers.cases.json, the shared cases, which the Discovery Catalog's
+ * Python twin, osm_values.py, runs too). Both loaders hand their tables on
+ * through one function, `withOsmNumbers`: the sandbox's
  * (compileDataSpecToAutkDbJs, which embeds its source), which a run on the
  * server posts, and the in-browser fallback (loadSpecLayers). Each shared case
  * is a building part's tag here, read by both.
@@ -27,7 +28,10 @@ jest.mock("@urban-toolkit/autk-db", () => ({
 const { createDataAdapter } = jest.requireActual("@urban-toolkit/autk-grammar/data");
 
 type Case = { name: string; key: string; value: unknown; becomes: unknown };
+type Keys = { lengths: string[]; speeds: string[]; counts: string[] };
 const cases: Case[] = (CASES as { cases: Case[] }).cases;
+/** The keys of each kind, as the cases list them for both twins. */
+const KEYS: Keys = (CASES as unknown as { keys: Keys }).keys;
 
 // Back Bay, in EPSG:3395 metres, as autk-db's workspace holds it.
 const X = -7910000;
@@ -155,6 +159,21 @@ test("the sandbox hands on the very rows the browser does", async () => {
 describe("withOsmNumbers, the one function both loaders hand their layers on through", () => {
   test.each(cases.map((c) => [c.name, c] as const))("%s", (_name, c) => {
     expect(osmNumber(c.key, c.value)).toEqual(c.becomes);
+  });
+
+  test("reads every key the cases list by its kind: a length in metres, a speed in km/h, a count from a plain number", () => {
+    const read = (keys: string[], value: string) => keys.map((key) => [key, osmNumber(key, value)]);
+    const as = (keys: string[], number: number | null) => keys.map((key) => [key, number]);
+    expect(read(KEYS.lengths, "7")).toEqual(as(KEYS.lengths, 7));
+    expect(read(KEYS.lengths, "7 m")).toEqual(as(KEYS.lengths, 7));
+    expect(read(KEYS.lengths, "10 ft")).toEqual(as(KEYS.lengths, 3.05));
+    expect(read(KEYS.lengths, "7 mph")).toEqual(as(KEYS.lengths, null));
+    expect(read(KEYS.speeds, "7")).toEqual(as(KEYS.speeds, 7));
+    expect(read(KEYS.speeds, "7 km/h")).toEqual(as(KEYS.speeds, 7));
+    expect(read(KEYS.speeds, "30 mph")).toEqual(as(KEYS.speeds, 48.28));
+    expect(read(KEYS.speeds, "7 m")).toEqual(as(KEYS.speeds, null));
+    expect(read(KEYS.counts, "7")).toEqual(as(KEYS.counts, 7));
+    expect(read(KEYS.counts, "7 m")).toEqual(as(KEYS.counts, null));
   });
 
   test("the sandbox's code embeds its own source", () => {

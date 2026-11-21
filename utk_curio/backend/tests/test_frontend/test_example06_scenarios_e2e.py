@@ -686,15 +686,20 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
     # in the same order, with the same columns, types, values and shapes
     # (roads_change, which the fixture of Compare's own output holds to it,
     # the order of its columns too: the sandbox's /get writes its JSON with the
-    # keys sorted, so a page cannot see that order). The node reads its roads
-    # from the two maps, which name the coordinate system Autark draws in; the
-    # Roads nodes read the same roads from the shadow steps, whose layers name
-    # none. So the node's coordinate system is held to Autark's, as the unit
-    # test holds it, and the rest of its layer to the rule's.
-    from utk_curio.backend.tests._support.scenario_changes import first_difference, roads_change
+    # keys sorted, so a page cannot see that order), each road's numeric tags
+    # kept as they came, where Compare took their differences (the unit test
+    # holds both). The node reads its roads from the two maps, which name the
+    # coordinate system Autark draws in; the Roads nodes read the same roads
+    # from the shadow steps, whose layers name none. So the node's coordinate
+    # system is held to Autark's, as the unit test holds it, and the rest of
+    # its layer to the rule's.
+    from utk_curio.backend.tests._support.scenario_changes import first_difference, numeric_tags, roads_change
     from utk_curio.sandbox.util.parsers import parseOutput
 
-    expected = parseOutput(roads_change(_layer_of(_stored(page, B_ROADS)), _layer_of(_stored(page, T_ROADS))))
+    before, after = _layer_of(_stored(page, B_ROADS)), _layer_of(_stored(page, T_ROADS))
+    tags = numeric_tags(before)
+    assert tags, f"Back Bay's roads carry no numeric tag: {list(before.columns)}"
+    expected = parseOutput(roads_change(before, after, kept=tags))
     assert written["data"].get("crs") == AUTARK_CRS, written["data"].get("crs")
     assert expected["data"].get("crs") in (None, AUTARK_CRS), expected["data"].get("crs")
 
