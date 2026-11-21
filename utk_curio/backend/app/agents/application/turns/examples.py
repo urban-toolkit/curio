@@ -38,7 +38,7 @@ from utk_curio import shipped
 from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain import contracts
-from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
+from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code, dataset_widget_ids
 from utk_curio.backend.app.execution.code_references import VEGA_LITE, normalize_widgets, widget_with_default
 from utk_curio.backend.app.projects import services as projects_services
 from utk_curio.backend.app.projects import shipped as projects_shipped
@@ -215,11 +215,14 @@ def words(text: object) -> set[str]:
 
 
 def dataset_ids_of(spec: object) -> set[str]:
-    """The dataset ids a dataflow uses: its node code's catalog calls and its dataset refs."""
+    """The dataset ids a dataflow uses: its node code's catalog calls, what
+    its nodes' dataset widgets hold (every choice of one an input picks), and
+    its dataset refs."""
     dataflow = _dataflow(spec)
     ids: set[str] = set()
     for node in _dicts(dataflow.get("nodes")):
         ids.update(dataset_ids_in_code(node.get("content")))
+        ids.update(dataset_widget_ids(node))
     for ref in _dicts(dataflow.get("datasets")):
         raw = ref.get("id") or ref.get("datasetId") or ref.get("dirName")
         if isinstance(raw, str) and raw:

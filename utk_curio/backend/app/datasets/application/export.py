@@ -17,6 +17,7 @@ from typing import Any
 from utk_curio.backend.app.datasets.domain.code_refs import (
     code_refers_to_dataset,
     dataset_ids_in_code,
+    dataset_widget_ids,
     node_code,
 )
 from utk_curio.backend.app.datasets.domain.constants import FORMAT_TO_EXTENSION
@@ -102,7 +103,7 @@ def resolve_upstream_inputs(spec: dict[str, Any], node_id: str) -> list[dict[str
         # does take that dataset as an input, and leaving it out here would make
         # upstream lineage contradict the downstream answer on the same spec
         # (#250).
-        for ref in [*refs, *dataset_ids_in_code(node_code(node))]:
+        for ref in [*refs, *dataset_ids_in_code(node_code(node)), *dataset_widget_ids(node)]:
             if isinstance(ref, str) and f"ds:{ref}" not in seen:
                 seen.add(f"ds:{ref}")
                 inputs.append({"datasetId": ref})
@@ -255,7 +256,7 @@ def _dataset_consumer_nodes_in_spec(
         elif code_ids_by_node is not None:
             in_code = dataset_id in code_ids_by_node.get(node.get("id") or "", ())
         else:
-            in_code = code_refers_to_dataset(node_code(node), dataset_id)
+            in_code = code_refers_to_dataset(node_code(node), dataset_id) or dataset_id in dataset_widget_ids(node)
         if dataset_id in refs or in_code:
             uses = True
             nid = node.get("id")

@@ -88,7 +88,7 @@
       {
         "id": "idot-settings",
         "type": "curio.builtin/python-computation",
-        "x": 0,
+        "x": -645,
         "y": 548,
         "content": "# The dashboard's controls, read by every node wired to this one: the camera\n# and its day, the model, the classes, the lowest confidence kept, and the\n# half hour the frames show.\ncamera = [!! camera !!]\nmodel = [!! model !!]\n\nreturn {\n    \"camera\": camera.split(\" \")[0],\n    \"model\": model.split(\" \")[0],\n    \"classes\": [!! classes !!],\n    \"confidence\": [!! confidence !!],\n    \"frames_from\": [!! frames_from !!],\n}\n",
         "out": "DEFAULT",
@@ -244,7 +244,7 @@
         "id": "idot-yolo26n",
         "type": "curio.builtin/data-loading",
         "x": 0,
-        "y": 118,
+        "y": -312,
         "content": "boxes = curio_load_data(\"data.cities-in-motion.idot-yolo26n\")\n\nreturn boxes\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
@@ -253,6 +253,66 @@
           "keywords": []
         },
         "title": "YOLO26n boxes"
+      },
+      {
+        "id": "idot-records",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 548,
+        "content": "data = curio_load_data([!! data !!])\nreturn data\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the records of the camera the Settings node names: its month's JSON Lines file, one row, read in place.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "data",
+              "type": "dataset",
+              "label": "Data",
+              "default": "",
+              "options": {
+                "pickedBy": "input_0.camera",
+                "choices": {
+                  "W042": "data.sage.idot-w042-records-2025-08",
+                  "W065": "data.sage.idot-w065-records-2025-08",
+                  "W06E": "data.sage.idot-w06e-records-2025-12"
+                }
+              }
+            }
+          ]
+        },
+        "title": "Records"
+      },
+      {
+        "id": "idot-snapshots",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 118,
+        "content": "data = curio_load_data([!! data !!])\nreturn data\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the snapshots of the camera the Settings node names, of its day, read in place.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "data",
+              "type": "dataset",
+              "label": "Data",
+              "default": "",
+              "options": {
+                "pickedBy": "input_0.camera",
+                "choices": {
+                  "W042": "data.sage.idot-w042-snapshots-2025-08-09",
+                  "W065": "data.sage.idot-w065-snapshots-2025-08-17",
+                  "W06E": "data.sage.idot-w06e-snapshots-2025-12-02"
+                }
+              }
+            }
+          ]
+        },
+        "title": "Snapshots"
       },
       {
         "id": "idot-camera-on-the-ground",
@@ -287,10 +347,10 @@
         "type": "curio.builtin/python-computation",
         "x": 645,
         "y": 580,
-        "content": "import json\nimport os\nfrom datetime import date, timedelta\n\nimport pandas as pd\n\n# The camera's records of its day, a UTC date, out of its month's JSON Lines\n# file, read where it is. The month runs day by day, each day's lines in a\n# block: one line per image the models looked at, in time order, then one per\n# snapshot uploaded. A line's date never goes down, so a bisection on the\n# dates finds where the day starts and where the next one does, and only\n# those bytes are read.\nDAYS = {\"W042\": \"2025-08-09\", \"W065\": \"2025-08-17\", \"W06E\": \"2025-12-02\"}\nMONTHS = {\n    \"W042\": curio_load_collection(\"data.sage.idot-w042-records-2025-08\"),\n    \"W065\": curio_load_collection(\"data.sage.idot-w065-records-2025-08\"),\n    \"W06E\": curio_load_collection(\"data.sage.idot-w06e-records-2025-12\"),\n}\ncamera = input_0[\"camera\"]\npath = MONTHS[camera][\"path\"].iloc[0]\nif pd.isna(path):\n    raise RuntimeError(\n        f\"The records of {camera} are not on this machine: open their dataset's details in the \"\n        \"Data Catalog and press Cache files.\"\n    )\n\n\ndef first_line_from(handle, size, day):\n    \"\"\"Where the first line dated *day* or later starts.\"\"\"\n    low, high = 0, size\n    while low < high:\n        middle = (low + high) // 2\n        handle.seek(middle)\n        if middle:\n            handle.readline()  # the rest of the line the seek fell in\n        line = handle.readline()\n        if line and json.loads(line)[\"timestamp\"][:10] < day:\n            low = middle + 1\n        else:\n            high = middle\n    handle.seek(low)\n    if low:\n        handle.readline()\n    return handle.tell()\n\n\nday = DAYS[camera]\nnext_day = (date.fromisoformat(day) + timedelta(days=1)).isoformat()\nwith open(path, \"rb\") as handle:\n    size = os.fstat(handle.fileno()).st_size\n    start = first_line_from(handle, size, day)\n    end = first_line_from(handle, size, next_day)\n    handle.seek(start)\n    lines = handle.read(end - start).splitlines()\n\n# One row per box a model drew, and one with no class for an image the model\n# saw nothing in, as the team's get_detections_df reads the records.\nrows = []\nfor line in lines:\n    record = json.loads(line)  # its meta.filename may be a bare NaN, which Python reads\n    if record[\"name\"] != \"object.detections.all\":\n        continue  # a snapshot's upload line\n    value = json.loads(record[\"value\"])\n    for model, result in value[\"models_results\"].items():\n        for box in result.get(\"detections\") or [{}]:\n            x0, y0, x1, y1 = box.get(\"bbox\", [None] * 4)\n            rows.append((value[\"image_timestamp_ns\"], model, box.get(\"class\"), box.get(\"confidence\"), x0, y0, x1, y1))\nrecords = pd.DataFrame(rows, columns=[\"image_timestamp_ns\", \"model\", \"class\", \"confidence\", \"x0\", \"y0\", \"x1\", \"y1\"])\nprint(f\"{camera} on {day}: {end - start:,} bytes from {start:,}, {records['image_timestamp_ns'].nunique():,} images\")\nreturn records\n",
+        "content": "import json\nimport os\nfrom datetime import date, timedelta\n\nimport pandas as pd\n\n# The camera's records of its day, a UTC date, out of its month's JSON Lines\n# file, which the Records node loads (input_1) and this node reads where it\n# is. The month runs day by day, each day's lines in a block: one line per\n# image the models looked at, in time order, then one per snapshot uploaded.\n# A line's date never goes down, so a bisection on the dates finds where the\n# day starts and where the next one does, and only those bytes are read.\nDAYS = {\"W042\": \"2025-08-09\", \"W065\": \"2025-08-17\", \"W06E\": \"2025-12-02\"}\ncamera = input_0[\"camera\"]\npath = input_1[\"path\"].iloc[0]\nif pd.isna(path):\n    raise RuntimeError(\n        f\"The records of {camera} are not on this machine: open their dataset's details in the \"\n        \"Data Catalog and press Cache files.\"\n    )\n\n\ndef first_line_from(handle, size, day):\n    \"\"\"Where the first line dated *day* or later starts.\"\"\"\n    low, high = 0, size\n    while low < high:\n        middle = (low + high) // 2\n        handle.seek(middle)\n        if middle:\n            handle.readline()  # the rest of the line the seek fell in\n        line = handle.readline()\n        if line and json.loads(line)[\"timestamp\"][:10] < day:\n            low = middle + 1\n        else:\n            high = middle\n    handle.seek(low)\n    if low:\n        handle.readline()\n    return handle.tell()\n\n\nday = DAYS[camera]\nnext_day = (date.fromisoformat(day) + timedelta(days=1)).isoformat()\nwith open(path, \"rb\") as handle:\n    size = os.fstat(handle.fileno()).st_size\n    start = first_line_from(handle, size, day)\n    end = first_line_from(handle, size, next_day)\n    handle.seek(start)\n    lines = handle.read(end - start).splitlines()\n\n# One row per box a model drew, and one with no class for an image the model\n# saw nothing in, as the team's get_detections_df reads the records.\nrows = []\nfor line in lines:\n    record = json.loads(line)  # its meta.filename may be a bare NaN, which Python reads\n    if record[\"name\"] != \"object.detections.all\":\n        continue  # a snapshot's upload line\n    value = json.loads(record[\"value\"])\n    for model, result in value[\"models_results\"].items():\n        for box in result.get(\"detections\") or [{}]:\n            x0, y0, x1, y1 = box.get(\"bbox\", [None] * 4)\n            rows.append((value[\"image_timestamp_ns\"], model, box.get(\"class\"), box.get(\"confidence\"), x0, y0, x1, y1))\nrecords = pd.DataFrame(rows, columns=[\"image_timestamp_ns\", \"model\", \"class\", \"confidence\", \"x0\", \"y0\", \"x1\", \"y1\"])\nprint(f\"{camera} on {day}: {end - start:,} bytes from {start:,}, {records['image_timestamp_ns'].nunique():,} images\")\nreturn records\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Read the camera's day of records out of its month's file, by a bisection on the dates, one row per box and one per image a model saw nothing in.",
+        "goal": "Read the camera's day of records out of the month's file the Records node loads, by a bisection on the dates, one row per box and one per image a model saw nothing in.",
         "metadata": {
           "keywords": []
         },
@@ -301,10 +361,10 @@
         "type": "curio.builtin/python-computation",
         "x": 645,
         "y": 150,
-        "content": "# The camera's snapshots of its day, one every 5 minutes, read where they are:\n# each named by when it was taken in nanoseconds (ns), with that time in UTC\n# (taken_at) and on a Chicago clock (chicago).\nSNAPSHOTS = {\n    \"W042\": curio_load_collection(\"data.sage.idot-w042-snapshots-2025-08-09\"),\n    \"W065\": curio_load_collection(\"data.sage.idot-w065-snapshots-2025-08-17\"),\n    \"W06E\": curio_load_collection(\"data.sage.idot-w06e-snapshots-2025-12-02\"),\n}\nsnapshots = SNAPSHOTS[input_0[\"camera\"]].sort_values(\"ns\", ignore_index=True)\nin_utc = snapshots[\"taken_at\"].dt.tz_localize(\"UTC\")\nsnapshots[\"chicago\"] = in_utc.dt.tz_convert(\"America/Chicago\").dt.tz_localize(None)\nreturn snapshots\n",
+        "content": "import pandas as pd\n\n# The camera's snapshots of its day, one every 5 minutes, which the Snapshots\n# node loads (input_0), read where they are: each named by when it was taken\n# in nanoseconds (ns), with that time in UTC (taken_at) and on a Chicago clock\n# (chicago).\nsnapshots = input_0.sort_values(\"ns\", ignore_index=True)\nin_utc = pd.to_datetime(snapshots[\"taken_at\"], utc=True)\nsnapshots[\"chicago\"] = in_utc.dt.tz_convert(\"America/Chicago\").dt.tz_localize(None)\nreturn snapshots\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "List the camera's snapshots of its day with their times in Chicago.",
+        "goal": "Order the snapshots the Snapshots node loads by when they were taken, with their times in Chicago.",
         "metadata": {
           "keywords": []
         },
@@ -704,6 +764,20 @@
         "targetHandle": "in_1"
       },
       {
+        "id": "reactflow__edge-idot-settingsout-idot-recordsin",
+        "source": "idot-settings",
+        "sourceHandle": "out",
+        "target": "idot-records",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-idot-settingsout-idot-snapshotsin",
+        "source": "idot-settings",
+        "sourceHandle": "out",
+        "target": "idot-snapshots",
+        "targetHandle": "in"
+      },
+      {
         "id": "reactflow__edge-idot-settingsout-idot-records-of-the-dayin",
         "source": "idot-settings",
         "sourceHandle": "out",
@@ -711,8 +785,15 @@
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-idot-settingsout-idot-snapshots-of-the-dayin",
-        "source": "idot-settings",
+        "id": "reactflow__edge-idot-recordsout-idot-records-of-the-dayin_1",
+        "source": "idot-records",
+        "sourceHandle": "out",
+        "target": "idot-records-of-the-day",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-idot-snapshotsout-idot-snapshots-of-the-dayin",
+        "source": "idot-snapshots",
         "sourceHandle": "out",
         "target": "idot-snapshots-of-the-day",
         "targetHandle": "in"

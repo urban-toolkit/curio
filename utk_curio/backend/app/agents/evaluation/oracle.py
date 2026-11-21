@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from typing import Iterable, Mapping
 from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.domain import map_edits
+from utk_curio.backend.app.datasets.domain.code_refs import dataset_widget_ids
 from utk_curio.backend.app.execution.workflow_spec import slot_handle_id
 
 #: The fence the plan grammar recognises (``content.py``); fence-agnostic
@@ -338,6 +339,8 @@ def synthetic_refs_for(expected: Mapping, *, example: Mapping, origins: Iterable
         content = raw_nodes[order[index]].get("content")
         if not isinstance(content, str) or not content.strip():
             continue
-        if not source_grounding.scan_sources(content, "python"):
+        # A loader that reads its Data widget loads the dataset the widget
+        # holds, or the one its input picks: no data of its own making.
+        if not source_grounding.scan_sources(content, "python") and not dataset_widget_ids(raw_nodes[order[index]]):
             refs.append(str(node.get("ref")))
     return tuple(refs)

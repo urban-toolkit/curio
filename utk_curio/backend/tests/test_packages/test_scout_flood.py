@@ -608,11 +608,19 @@ def _feeds(spec: dict, node_id: str) -> dict:
 
 
 def _loader_of(dataset_id: str) -> dict:
-    """The one Data Loading node whose code reads *dataset_id*."""
-    from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
-
-    (loader,) = [n for n in _nodes(LOADING) if dataset_id in dataset_ids_in_code(n["content"])]
+    """The one Data Loading node that reads *dataset_id*: by a literal call in
+    its code, or by its Data widget, which an input may pick it among its
+    choices (``code_refs.dataset_widget_ids``)."""
+    (loader,) = [n for n in _nodes(LOADING) if dataset_id in _read_by(n)]
     return loader
+
+
+def _read_by(node: dict) -> list:
+    """The datasets *node* reads: those its code names, then what its Data
+    widget holds, every choice of one an input picks."""
+    from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code, dataset_widget_ids
+
+    return [*dataset_ids_in_code(node["content"]), *dataset_widget_ids(node)]
 
 
 def _members(spec: dict) -> set:
@@ -829,13 +837,14 @@ def test_the_depth_datasets_are_named_by_the_periods_curio_shows():
 
 
 def test_the_loaders_read_their_datasets_by_id_and_the_rasters_with_the_regions_bounds():
-    """Each Data Loading node reads its datasets by literal id, the only kind a
-    run resolves: SCOUT's rasters with the bounds the region's corners give,
-    the region on the loader's first circle, and the tracts and the waterways
-    whole, since they are cut to SCOUT's grid."""
-    from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
-
-    read = sorted(tuple(dataset_ids_in_code(n["content"])) for n in _nodes(LOADING))
+    """Each Data Loading node reads its datasets by id, the only kind a run
+    resolves: the classes, the tracts and the waterways by a literal id in its
+    code, and each depth loader the period's depth through its Data widget,
+    which holds a choice for each of SCOUT's periods. SCOUT's rasters are read
+    with the bounds the region's corners give, the region on the loader's
+    first circle, and the tracts and the waterways whole, since they are cut
+    to SCOUT's grid."""
+    read = sorted(tuple(_read_by(n)) for n in _nodes(LOADING))
     assert read == sorted([
         (CLASSES,),
         tuple(_depth_id(p, True) for p in PERIODS),
@@ -844,24 +853,23 @@ def test_the_loaders_read_their_datasets_by_id_and_the_rasters_with_the_regions_
         (WATERWAYS,),
     ])
     for loader in _nodes(LOADING):
-        ids = dataset_ids_in_code(loader["content"])
-        windowed = re.findall(r"curio_load_data\(\"[^\"]+\", bounds=bounds\)", loader["content"])
+        ids = _read_by(loader)
+        windowed = re.findall(r"curio_load_data\((?:\"[^\"]+\"|\[!! data !!\]), bounds=bounds\)", loader["content"])
         whole = re.findall(r"curio_load_data\(\"[^\"]+\"\)", loader["content"])
         if set(ids) <= set(RASTER_IDS):
-            assert (len(windowed), len(whole)) == (len(ids), 0), loader["content"]
+            assert (len(windowed), len(whole)) == (1, 0), loader["content"]
             assert "\nregion = input_0\n" in loader["content"], loader["content"]
         else:
             assert (len(windowed), len(whole)) == (0, len(ids)) == (0, 1), loader["content"]
-    # The depth loaders read the period on their second circle, by the label
-    # the Projection period node returns it with.
-    from utk_curio.backend.app.execution.code_references import resolve_references
-
+    # The period on a depth loader's second circle picks its depth, by the
+    # label the Projection period node returns it with: no code of the
+    # loader's own reads it.
     for nbs in (True, False):
         loader = _loader_of(_depth_id(PERIODS[0], nbs))
-        assert "\nperiod = input_1\n" in loader["content"], loader["content"]
-        resolved, problems = resolve_references(loader["content"], [], "python")
-        assert problems == [], problems
-        assert _period_keys(_function_body(resolved)) == list(PERIODS), loader["content"]
+        (widget,) = loader["metadata"]["widgets"]
+        assert widget["type"] == "dataset" and widget["options"]["pickedBy"] == "input_1", widget
+        assert widget["options"]["choices"] == {p: _depth_id(p, nbs) for p in PERIODS}, widget
+        assert "input_1" not in loader["content"], loader["content"]
 
 
 def test_each_scenario_chooses_by_scouts_classes_takes_the_statistics_and_maps_the_depth():
@@ -1076,14 +1084,25 @@ def test_each_scenario_maps_its_tracts_mean_depth_over_the_depth_maps_range():
 
 
 def test_every_nodes_code_resolves_with_nothing_left_over():
+    """Every node's code resolves to code that compiles, a depth loader's once
+    the period its Data widget is picked by is read: each of SCOUT's periods
+    in turn, on its second circle."""
     from utk_curio.backend.app.execution.code_references import resolve_references
 
-    for n in _dataflow()["nodes"]:
+    spec = _dataflow()
+    for n in spec["nodes"]:
         if n["type"] in (LOADING, CALCULATOR, PYTHON):
-            code, problems = resolve_references(n["content"], n["metadata"].get("widgets") or [], "python")
-            assert problems == [], (n["id"], problems)
-            assert "[!!" not in code
-            compile(_function_body(code), n["id"], "exec")
+            widgets = n["metadata"].get("widgets") or []
+            picked = [w for w in widgets if "pickedBy" in (w.get("options") or {})]
+            circles = sorted(_circle(handle) for handle in _feeds(spec, n["id"]))
+            periods = list(picked[0]["options"]["choices"]) if picked else [None]
+            assert not picked or periods == list(PERIODS), n["id"]
+            for period in periods:
+                inputs = [{"slot": slot, **({"value": period} if picked and slot == 1 else {})} for slot in circles]
+                code, problems = resolve_references(n["content"], widgets, "python", inputs if picked else ())
+                assert problems == [], (n["id"], problems)
+                assert "[!!" not in code
+                compile(_function_body(code), n["id"], "exec")
 
 
 def test_the_changes_and_the_charts_hold_what_they_compare():
@@ -1208,9 +1227,13 @@ def _runner(workspace, *, fails=False):
     from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
     from utk_curio.backend.app.execution.code_references import resolve_references
 
-    def run(node, file_path, data_type, widgets=(), circles=0):
-        inputs = [{"slot": slot} for slot in range(circles)]
+    def run(node, file_path, data_type, widgets=(), circles=0, values=None):
+        # *values*, by circle, are what a run reads of the circles before it
+        # writes the code, for a dataset widget one of them picks.
+        inputs = [{"slot": slot, **({"value": values[slot]} if values else {})} for slot in range(circles)]
         code, problems = resolve_references(node["content"], list(widgets), "python", inputs=inputs)
+        if problems and fails:
+            return None, "\n".join(problem["message"] for problem in problems)
         assert problems == [], problems
         paths = {i: str(_data_file(i)) for i in dataset_ids_in_code(code)}
         result = _execute(code, file_path, node["type"], data_type, workspace, dataset_paths=paths,
@@ -1230,7 +1253,7 @@ def _run_loaders(run, settings: dict) -> tuple[dict, str | None]:
     the nodes wired into it in circle order, as Run All runs them: the region
     comes out a dict and the period a str, SCOUT's rasters rasters, and the
     tracts and the waterways layers. Each node's output, by its id."""
-    from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
 
     spec = _dataflow()
     nodes = {node["id"]: node for node in spec["nodes"]}
@@ -1244,13 +1267,17 @@ def _run_loaders(run, settings: dict) -> tuple[dict, str | None]:
         loaded[node_id] = output["path"]
     for loader in _nodes(LOADING):
         fed = [loaded[source] for source in _fed_in_circle_order(spec, loader["id"])]
+        widgets = (loader.get("metadata") or {}).get("widgets") or []
+        # A depth loader's Data widget is picked by the period on its second
+        # circle, which a run reads before it writes the loader's code.
+        values = [load_from_duckdb(path) for path in fed] if widgets else None
         if len(fed) > 1:
-            output, error = run(loader, repr(fed), "outputs", circles=len(fed))
+            output, error = run(loader, repr(fed), "outputs", widgets, circles=len(fed), values=values)
         else:
-            output, error = run(loader, fed[0] if fed else "", "", circles=len(fed))
+            output, error = run(loader, fed[0] if fed else "", "", widgets, circles=len(fed), values=values)
         if error:
             return loaded, error
-        rasters = set(dataset_ids_in_code(loader["content"])) <= set(RASTER_IDS)
+        rasters = set(_read_by(loader)) <= set(RASTER_IDS)
         assert output["dataType"] == ("raster" if rasters else "geodataframe"), output
         loaded[loader["id"]] = output["path"]
     return loaded, None
@@ -1454,7 +1481,9 @@ def test_the_depth_is_a_raster_autark_loads(workspace, monkeypatch):
          "reach past data.scout.flood-nbs-classes, which covers west -90.6879323"),
         ({"region": (SCOUT_REGION[2], SCOUT_REGION[3], SCOUT_REGION[0], SCOUT_REGION[1])},
          "are not (west, south, east, north) with west less than east and south less than north"),
-        ({"period": "2030"}, "There is no flood projection for '2030'. The periods: 2020 - 2050, 2050 - 2080, 2080 - 2100."),
+        # The depth loaders' Data widget, which the period picks, says it.
+        ({"period": "2030"}, 'Data has no choice for "2030", the value of input_1. '
+                             'Its choices are "2020 - 2050", "2050 - 2080" and "2080 - 2100".'),
     ],
 )
 def test_a_setting_the_dataflow_cannot_use_says_why(workspace, settings, sentence):

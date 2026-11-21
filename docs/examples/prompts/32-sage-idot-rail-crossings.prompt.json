@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/32-sage-idot-rail-crossings.json",
-    "sha256": "e799a981197f853307e54788ca3b85bf22118f50acd8f6aac0da1202cb276b41",
+    "sha256": "69a9cb25ad650f95a650bd59a6fe5e1ca3dfdf3373f1311bda168cc93977f883",
     "walkthrough": "docs/examples/32-sage-idot-rail-crossings.md"
   },
   "prompt": "For the SAGE cameras at three IDOT rail crossings, W042, W065 and W06E, each on the day the Cities in Motion workshop team studied, read the camera's day of YOLO detection records out of its month's JSON Lines file in the Data Catalog without reading the rest of the file, and list its snapshots of that day. Place every object the chosen model saw on the ground, at its box's bottom center, through the camera's homography fitted in float64 to the team's control points, and measure how full each of the camera's lanes before and after the crossing is, per image and per 100 square metres, minute by minute, against night, twilight and day from astral. Draw a half hour's snapshots with the lanes and the boxes, map a grid of mean confidence on 2 m cells with that half hour's objects, and compare YOLOv5n, YOLOv8n, YOLOv10n and the team's YOLO26n boxes on the snapshots: boxes per snapshot by class group, and how often each model finds another's boxes at an IoU of 0.5 or more. Put the camera, model, classes, lowest confidence and half hour on a dashboard with the charts, the map and the drawn snapshots.",
@@ -40,6 +40,20 @@
       },
       {
         "ref": "loader2",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader3",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader4",
         "type": "curio.builtin/data-loading",
         "role": "loader",
         "executable": true,
@@ -224,31 +238,47 @@
     "edges": [
       {
         "from": "loader1",
-        "to": "analysis4",
+        "to": "analysis6",
         "kind": "data",
         "slot": 3
       },
       {
         "from": "loader2",
+        "to": "analysis3",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "loader2",
+        "to": "analysis4",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "loader2",
+        "to": "analysis7",
+        "kind": "data",
+        "slot": 3
+      },
+      {
+        "from": "loader3",
         "to": "analysis2",
-        "kind": "data",
-        "slot": 1
+        "kind": "data"
       },
       {
-        "from": "loader2",
-        "to": "analysis3",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "loader2",
+        "from": "loader4",
         "to": "analysis5",
         "kind": "data",
-        "slot": 3
+        "slot": 1
       },
       {
         "from": "analysis1",
-        "to": "analysis3",
+        "to": "loader3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "loader4",
         "kind": "data"
       },
       {
@@ -259,6 +289,11 @@
       {
         "from": "analysis1",
         "to": "analysis5",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "analysis6",
         "kind": "data"
       },
       {
@@ -268,11 +303,6 @@
       },
       {
         "from": "analysis1",
-        "to": "analysis8",
-        "kind": "data"
-      },
-      {
-        "from": "analysis1",
         "to": "analysis16",
         "kind": "data"
       },
@@ -288,127 +318,127 @@
       },
       {
         "from": "analysis2",
-        "to": "visualization1",
+        "to": "analysis6",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "analysis2",
+        "to": "analysis7",
         "kind": "data",
         "slot": 1
       },
       {
         "from": "analysis2",
-        "to": "analysis12",
-        "kind": "data"
+        "to": "analysis14",
+        "kind": "data",
+        "slot": 1
       },
       {
         "from": "analysis2",
         "to": "analysis17",
         "kind": "data",
-        "slot": 3
+        "slot": 2
       },
       {
         "from": "analysis2",
+        "to": "analysis18",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis3",
+        "to": "visualization1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis3",
+        "to": "analysis12",
+        "kind": "data"
+      },
+      {
+        "from": "analysis3",
+        "to": "analysis17",
+        "kind": "data",
+        "slot": 3
+      },
+      {
+        "from": "analysis3",
         "to": "transform1",
         "kind": "data",
         "slot": 1
       },
       {
-        "from": "analysis3",
-        "to": "analysis2",
+        "from": "analysis4",
+        "to": "analysis3",
         "kind": "data"
       },
       {
-        "from": "analysis3",
+        "from": "analysis4",
         "to": "analysis9",
         "kind": "data"
       },
       {
-        "from": "analysis3",
+        "from": "analysis4",
         "to": "analysis16",
         "kind": "data",
         "slot": 1
       },
       {
-        "from": "analysis4",
-        "to": "analysis5",
+        "from": "analysis5",
+        "to": "analysis6",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis5",
+        "to": "analysis16",
         "kind": "data",
         "slot": 2
       },
       {
-        "from": "analysis4",
+        "from": "analysis5",
+        "to": "analysis17",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis6",
+        "to": "analysis7",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "analysis6",
         "to": "analysis10",
         "kind": "data"
       },
       {
-        "from": "analysis4",
+        "from": "analysis6",
         "to": "analysis14",
         "kind": "data"
       },
       {
-        "from": "analysis4",
+        "from": "analysis6",
         "to": "analysis16",
         "kind": "data",
         "slot": 3
       },
       {
-        "from": "analysis5",
+        "from": "analysis7",
         "to": "visualization2",
         "kind": "data"
       },
       {
-        "from": "analysis6",
+        "from": "analysis8",
         "to": "visualization1",
         "kind": "data",
         "slot": 2
       },
       {
-        "from": "analysis6",
+        "from": "analysis8",
         "to": "analysis12",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "analysis7",
-        "to": "analysis4",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "analysis7",
-        "to": "analysis16",
-        "kind": "data",
-        "slot": 2
-      },
-      {
-        "from": "analysis7",
-        "to": "analysis17",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "analysis8",
-        "to": "analysis4",
-        "kind": "data",
-        "slot": 2
-      },
-      {
-        "from": "analysis8",
-        "to": "analysis5",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "analysis8",
-        "to": "analysis14",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "analysis8",
-        "to": "analysis17",
-        "kind": "data",
-        "slot": 2
-      },
-      {
-        "from": "analysis8",
-        "to": "analysis18",
         "kind": "data",
         "slot": 1
       },
@@ -451,7 +481,7 @@
       },
       {
         "from": "analysis16",
-        "to": "analysis6",
+        "to": "analysis8",
         "kind": "data"
       },
       {
@@ -487,7 +517,7 @@
       },
       {
         "from": "analysis18",
-        "to": "analysis5",
+        "to": "analysis7",
         "kind": "data",
         "slot": 4
       },
