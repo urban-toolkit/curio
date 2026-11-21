@@ -90,6 +90,20 @@ LOWER_MANHATTAN_PARKS = [
     ("table_osm_buildings", "buildings", 2688, EPSG_3395, WITHOUT_ID),
 ]
 
+#: The building parts the shadow passes of examples 06 and 07 read, by their
+#: geometry, and every polygon among them: a part OpenStreetMap maps as one
+#: element of several polygons is handed on as one MultiPolygon, as autk-db
+#: keeps it. Back Bay holds none; in the Chicago Loop, these, by osm_id with
+#: their polygons: Quincy Station, LaSalle/Van Buren and LaSalle Street
+#: stations, Riverwalk Gateway, and a part of building 15930575.
+PARTS_BY_GEOMETRY = {
+    "06-back-bay-road-sunlight.json": ({"Polygon": 2102}, 2102, []),
+    "07-autark-gpu-shader.json": (
+        {"MultiPolygon": 5, "Polygon": 1496}, 1507,
+        [(15930577, 3), (17516289, 2), (20048625, 2), (20048626, 2), (20445315, 2)],
+    ),
+}
+
 #: Put before the compiled code: serves the one extract the document loads,
 #: from disk, as the backend's ``/file/`` route would, says so on stdout, and
 #: refuses any other request. The sandbox writes its backend address for the
@@ -178,6 +192,17 @@ def test_the_server_compiled_load_hands_on_the_layers(example, node_id, extract,
     ] == layers
     for layer in loaded:
         _assert_osm_ids(layer)
+    if example in PARTS_BY_GEOMETRY:
+        (buildings,) = [layer for layer in loaded if layer["type"] == "buildings"]
+        features = buildings["geojson"]["features"]
+        kinds: dict[str, int] = {}
+        for feature in features:
+            kinds[feature["geometry"]["type"]] = kinds.get(feature["geometry"]["type"], 0) + 1
+        polygons = sum(len(f["geometry"]["coordinates"]) if f["geometry"]["type"] == "MultiPolygon" else 1
+                       for f in features)
+        several = sorted((f["properties"]["osm_id"], len(f["geometry"]["coordinates"]))
+                         for f in features if f["geometry"]["type"] == "MultiPolygon")
+        assert (kinds, polygons, several) == PARTS_BY_GEOMETRY[example]
 
 
 #: The keys an Autark map reads a building part's top from.
