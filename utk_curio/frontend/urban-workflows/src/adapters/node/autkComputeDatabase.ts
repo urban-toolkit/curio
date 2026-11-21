@@ -29,14 +29,16 @@
  *   passes kept in autk-db: a heatmap is made and read back one raster at a
  *   time, as the loaders make one (autkLayerMaterialize `grammarRaster`).
  *
- * It hands on, in order: each layer it holds, as a pass left it or as it
+ * It hands on as every Autark node hands its tables on (autkHandOn
+ * `handOnTables`), in order: each layer it holds, as a pass left it or as it
  * came; each table a pass wrote under a name of its own; then each table a
  * source after compute made. A table a source after compute wrote (a join
  * into it, an update, a SQL query saved under its name, a load) is read back
- * as autk-db holds it, as the loaders hand one on: an OpenStreetMap table with
- * its OSM ids and its numeric tags as numbers (`withOsmIds`,
- * `withOsmNumbers`), a buildings table a part a row (`explodeBuildingParts`),
- * and a table with no geometry as its rows (`plainTableRecord`). A part the step gave the default holds its own height
+ * as autk-db holds it, as the loaders hand one on (autkHandOn `readBackTable`):
+ * an OpenStreetMap table with its OSM ids and its numeric tags as numbers
+ * (`withOsmIds`, `withOsmNumbers`), a buildings table a part a row
+ * (`explodeBuildingParts`), and a table with no geometry as its rows
+ * (`plainTableRecord`). A part the step gave the default holds its own height
  * again wherever it is handed on with its mark and still holds that default,
  * in a table a pass wrote over its layer and in one a source after compute
  * read back: autk-db keeps a row's properties, its mark among them, through a
@@ -52,28 +54,27 @@
  */
 import { detectCoordinateFormat } from '../../utils/geoCrs';
 import { snapSourceToGrid } from '../../utils/geoPrecision';
-import { tablesToLoad, writtenTables } from '../../utils/autkInput';
+import { tablesToLoad } from '../../utils/autkInput';
 import { deriveBuildingHeight, withDefaultHeight } from '../../utils/buildingHeight';
 import {
     GRAMMAR_RASTER_SOURCES,
     autkTableKey,
     autkWorkspaceOf,
-    layerEpsg,
-    plainTableRecord,
-    requestedLayerTables,
-    sectionChangedTables,
-    withOsmIds,
-    withOsmNumbers,
     workspaceCrsOf,
 } from './autkDataCompile';
-import { RASTER_TABLE, explodeBuildingParts, grammarRaster } from './autkLayerMaterialize';
+import { RASTER_TABLE, grammarRaster } from './autkLayerMaterialize';
 import { checkedPasses } from './autkComputeScopes';
 import { closeAutkDb } from './autkDbClose';
 import { withExtensionRetry } from './duckdbExtensionRetry';
 import { hasFeatures } from './autkRunDescriptions';
+import { handOnTables, readBackTable, workspaceCrs } from './autkHandOn';
 
-/** A layer a compute step holds, in the workspace it names when it is not the default one. */
-type Layer = { name: string; type?: string; geojson: any; workspace?: string };
+/**
+ * A layer a compute step holds, in the workspace it names when it is not the
+ * default one; a raster of its input as it came (`asItCame`), which goes on as
+ * it came.
+ */
+type Layer = { name: string; type?: string; geojson: any; workspace?: string; asItCame?: any };
 
 /** What a compute step says when the grammar gives a host no steps of a run (`createComputeSteps`). */
 export const COMPUTE_DATABASE_MISSING =
@@ -142,20 +143,6 @@ function withoutMarks(fc: any, restore: boolean): any {
 /** The table a pass computes over: a render pass's viewpoints, any other pass's `dataRef`. */
 function passSource(pass: any): unknown {
     return pass?.type === 'render' ? pass?.viewpoints?.dataRef : pass?.dataRef;
-}
-
-/**
- * The keys of the tables *after*'s drops drop and none of its later sources
- * makes again.
- */
-function droppedBy(after: any[]): Set<string> {
-    const dropped = new Set<string>();
-    after.forEach((source, at) => {
-        if (source?.type !== 'drop' || typeof source.dataRef !== 'string' || source.dataRef === '') return;
-        const key = autkTableKey(autkWorkspaceOf(source), source.dataRef);
-        if (!requestedLayerTables(after.slice(at + 1)).includes(key)) dropped.add(key);
-    });
-    return dropped;
 }
 
 export async function computeOnADatabase(
@@ -228,13 +215,9 @@ export async function computeOnADatabase(
             }
         }
         // The passes, over the tables the step holds and those earlier passes
-        // wrote; and each table a pass wrote, with the key of the table whose
-        // rows it holds, as autkComputeBlocks keeps it: a windows pass, and a
-        // render pass that looks out of building windows, write a point a
-        // window, not the rows they computed over (none).
+        // wrote.
         const present = new Set(layers.map(keyOf));
         const ran: any[] = [];
-        const wroteFrom = new Map<string, string>();
         for (const pass of passes) {
             const gpgpu = pass?.type === undefined || pass?.type === 'gpgpu';
             const source = passSource(pass);
@@ -251,10 +234,6 @@ export async function computeOnADatabase(
             ran.push(pass);
             const name = typeof pass.outputTableName === 'string' && pass.outputTableName ? pass.outputTableName : source;
             present.add(autkTableKey(workspace, name));
-            const holdsRows = pass.type !== 'windows'
-                && !(pass.type === 'render' && pass?.viewpoints?.strategy?.type === 'building-windows');
-            const over = autkTableKey(workspace, source);
-            wroteFrom.set(autkTableKey(workspace, name), holdsRows ? wroteFrom.get(over) ?? over : '');
         }
         // The sources after compute, which read autk-db.
         const rasters = new Map<string, Layer>();
@@ -271,88 +250,29 @@ export async function computeOnADatabase(
             }
         }
 
-        // A table read back from autk-db, in its workspace, as the loaders hand
-        // one on: an OpenStreetMap table with its OSM ids and its numeric
-        // building tags as numbers, a buildings table a part a row.
-        const readBack = async (name: string, workspace: string | undefined): Promise<Layer> => {
-            const raster = rasters.get(autkTableKey(workspace, name));
-            if (raster) return raster;
-            await grammar.enterWorkspace(db, workspace);
-            const table = (db.getTablesMetadata() as Array<{ name: string; type?: string; source?: string }>)
-                .find((t) => t.name === name);
-            if (table && table.type === undefined) {
-                return plainTableRecord(name, await db.getTable(name), workspace) as Layer;
-            }
-            const geojson: any = await db.getLayer(name);
-            const type = table?.type ?? 'polygons';
-            if (Array.isArray(geojson?.features)) geojson.features = withOsmNumbers(table, withOsmIds(table, geojson.features));
-            if (type === 'buildings' && Array.isArray(geojson?.features)) geojson.features = explodeBuildingParts(geojson.features);
-            if (geojson && typeof geojson === 'object') {
-                const epsg = layerEpsg(geojson, workspace, crsOf, DEFAULT_WORKSPACE_COORDINATE_FORMAT);
-                geojson.crs = { type: 'name', properties: { name: `urn:ogc:def:crs:EPSG::${epsg}` } };
-            }
-            return { name, type, geojson, ...(workspace ? { workspace } : {}) };
-        };
-        // A table a pass wrote, as the steps hold it: in the CRS of its
-        // workspace, the columns it computed also lifted to the top of each
-        // feature's properties, as a step without a database hands them on.
-        const passResult = async (name: string, workspace: string | undefined, was: Layer | undefined, pass: any): Promise<Layer> => {
-            const computed = steps.computed(name, workspace);
-            const result: any = computed?.collection;
-            const outCols: string[] = pass?.type === 'render'
-                ? []
-                : (pass?.outputColumns ?? (pass?.outputColumnName ? [pass.outputColumnName] : []));
-            for (const feature of Array.isArray(result?.features) ? result.features : []) {
-                const properties: any = feature?.properties;
-                const computed = properties?.compute;
-                if (!properties || !computed) continue;
-                for (const column of outCols) {
-                    if (column in computed && !(column in properties)) properties[column] = computed[column];
-                }
-            }
-            await grammar.enterWorkspace(db, workspace);
-            const epsg = layerEpsg(result, workspace, crsOf, DEFAULT_WORKSPACE_COORDINATE_FORMAT);
-            result.crs = { type: 'name', properties: { name: `urn:ogc:def:crs:EPSG::${epsg}` } };
-            return { name, type: computed?.layerType ?? was?.type ?? 'polygons', geojson: result, ...(workspace ? { workspace } : {}) };
-        };
-
-        const lastPassOf = new Map<string, any>();
-        for (const pass of ran) {
-            const workspace = autkWorkspaceOf(pass);
-            const name = typeof pass.outputTableName === 'string' && pass.outputTableName ? pass.outputTableName : passSource(pass);
-            lastPassOf.set(autkTableKey(workspace, String(name)), pass);
-        }
-        const wroteAfter = new Set([...requestedLayerTables(after), ...sectionChangedTables(after)]);
-        const dropped = droppedBy(after);
-        const handed: Layer[] = [];
-        const listed = new Set<string>();
-        // A table handed on with no part marked: each marked part with its own
-        // height again where the table holds the rows of the one a pass
-        // computed over, or a source after compute wrote it.
+        // What the step hands on: each table a pass wrote as the steps hold
+        // it, in the CRS of its workspace; each a source after compute wrote
+        // read back from autk-db (a raster as it was made); and no part
+        // marked, each marked part with its own height again where the table
+        // holds the rows of the one a pass computed over, or a source after
+        // compute wrote it.
         const unmarked = (layer: Layer, restore: boolean): Layer => {
             const geojson = withoutMarks(layer.geojson, restore);
             return geojson === layer.geojson ? layer : { ...layer, geojson };
         };
-        const handOn = async (name: string, workspace: string | undefined, was?: Layer) => {
-            const key = autkTableKey(workspace, name);
-            if (listed.has(key) || dropped.has(key)) return;
-            listed.add(key);
-            if (steps.computed(name, workspace) !== undefined) {
-                handed.push(unmarked(await passResult(name, workspace, was, lastPassOf.get(key)), Boolean(wroteFrom.get(key))));
-            } else if (wroteAfter.has(key) || rasters.has(key)) {
-                handed.push(unmarked(await readBack(name, workspace), true));
-            } else if (was) handed.push(was);
-        };
-        for (const layer of layers) await handOn(layer.name, layer.workspace, layer);
-        for (const { name, workspace } of writtenTables({ compute: ran })) await handOn(name, workspace);
-        for (const source of after) {
-            const workspace = autkWorkspaceOf(source);
-            for (const key of requestedLayerTables([source])) {
-                const name = workspace === undefined ? key : key.slice(workspace.length + 1);
-                await handOn(name, workspace);
-            }
-        }
-        return handed;
+        return await handOnTables({
+            held: layers,
+            passes: ran,
+            after,
+            computed: (name, workspace) => {
+                const computed = steps.computed(name, workspace);
+                return computed ? { collection: computed.collection, layerType: computed.layerType } : undefined;
+            },
+            readBack: (name, workspace) => rasters.get(autkTableKey(workspace, name))
+                ?? readBackTable(db, grammar.enterWorkspace, name, workspace, crsOf, DEFAULT_WORKSPACE_COORDINATE_FORMAT),
+            crs: (collection, workspace) => workspaceCrs(collection, workspace, crsOf, DEFAULT_WORKSPACE_COORDINATE_FORMAT),
+            heights: (table, rows, how) => unmarked(table, how === 'read back' || rows !== undefined),
+        });
     } catch (e) {
         return failed('compute', e);
     } finally {

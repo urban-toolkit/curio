@@ -18,7 +18,7 @@ The canvas and the Scenario Catalog's details show the whole shared context
 and shared outcomes. What saves its output because of a scenario is what
 stands for its boundary, its own last nodes and its shared outcomes, and
 nothing else (:func:`scenario_source_node_ids`): a pass-through (a chart, a
-Data Pool, a drawing Autark node) saves nothing itself, and
+Data Pool, an Autark node that only draws its input) saves nothing itself, and
 :func:`saved_sources` resolves it to the nodes feeding it, the walk pinned
 dashboard tiles use (``producersFeeding`` in ``utils/dashboardLayout.ts``).
 
@@ -52,9 +52,10 @@ def _catalog_templates(packages: Optional["TemplateGrammars"]) -> "TemplateGramm
 def is_pass_through(node: dict, packages: Optional["TemplateGrammars"] = None) -> bool:
     """Whether a saved spec's *node* shows data it is handed rather than
     making its own: a node whose template declares a chart's or a Data Pool's
-    behavior (or draws with the Vega-Lite grammar), or an Autark spec that
-    draws. The dashboard walk's rule (``dashboard_payload.passes_through``).
-    *packages* reads the manifests (``TemplateGrammars.for_account()`` when None)."""
+    behavior (or draws with the Vega-Lite grammar), or an Autark document that
+    only draws its input. The dashboard walk's rule
+    (``dashboard_payload.passes_through``). *packages* reads the manifests
+    (``TemplateGrammars.for_account()`` when None)."""
     return passes_through(node, packages)
 
 

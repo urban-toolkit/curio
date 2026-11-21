@@ -307,10 +307,16 @@ export function makesRasterAfterCompute(afterPasses: readonly any[]): boolean {
  * to its end when *turn* is held (`makesRasterAfterCompute`): another node's
  * raster load or run then waits, so no other raster of the same workspace and
  * name lands in the page's store between the run making its raster and its
- * map drawing it. Any other run takes no turn and runs as it is.
+ * map drawing it. Any other run takes no turn and runs as it is. *then* runs
+ * as the run ends, in the same turn: a node reads back there the tables its
+ * sources after compute made (autkHandOn `readBackAfterCompute`).
  */
-export function runInRasterTurn(grammar: any, spec: any, turn: RasterTurn): Promise<void> {
-    return turn.held ? oneRasterAtATime(() => grammar.run(spec)) : grammar.run(spec);
+export function runInRasterTurn(grammar: any, spec: any, turn: RasterTurn, then?: () => Promise<void>): Promise<void> {
+    const run = async () => {
+        await grammar.run(spec);
+        if (then) await then();
+    };
+    return turn.held ? oneRasterAtATime(run) : run();
 }
 
 /** A data adapter of autk-grammar's, as far as it loads a source into the database it is handed. */
