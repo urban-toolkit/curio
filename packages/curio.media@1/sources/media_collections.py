@@ -155,6 +155,12 @@ def _by_decoding(container, stream, rate, length, every_seconds, max_frames_per_
 # Windows of recordings
 # ---------------------------------------------------------------------------
 
+#: The shortest window, in seconds. A window's clip is named after where the
+#: window starts and ends, in milliseconds (``_file_tag``), so shorter windows
+#: of one recording would share names.
+SHORTEST_WINDOW_SECONDS = 0.001
+
+
 def split_audio(media, derived_file, *, window_seconds=5.0, max_windows_per_recording=2000):
     """Every recording in a collection split into windows of *window_seconds*
     seconds, at most *max_windows_per_recording* from one recording: one row
@@ -169,7 +175,20 @@ def split_audio(media, derived_file, *, window_seconds=5.0, max_windows_per_reco
     its ``recorded_at`` moves forward by the window's offset, ``t_s``. A
     recording is read one window at a time. A recording whose file is not on
     this machine yet is refused with its path in the collection.
+
+    A window's clip is named after its recording and where the window starts
+    and ends, in milliseconds: two nodes whose windows differ in length keep
+    clips of their own, and two windows that start and end at the same
+    sample hold the same bytes and share one file. A *window_seconds* under a
+    millisecond (``SHORTEST_WINDOW_SECONDS``), or one that is not a number,
+    stops the call before any clip is written.
     """
+    if (isinstance(window_seconds, bool) or not isinstance(window_seconds, (int, float))
+            or not window_seconds >= SHORTEST_WINDOW_SECONDS):
+        raise ValueError(
+            "WINDOW_SECONDS is the length of a window, in seconds: "
+            f"a number of {SHORTEST_WINDOW_SECONDS} or more"
+        )
     recordings = media[media["kind"] == "audio"]
     rows = []
     for _, recording in recordings.iterrows():
@@ -181,7 +200,8 @@ def split_audio(media, derived_file, *, window_seconds=5.0, max_windows_per_reco
             scaled = window.astype(np.float64) / 32768.0
             t_s = round(start / rate, 3)
             derived = derived_file(
-                recording["dataset_id"], recording["file_id"], round(t_s * 1000), kind="audio"
+                recording["dataset_id"], recording["file_id"], round(t_s * 1000), kind="audio",
+                tag=_file_tag((start + len(window)) / rate),
             )
             with wave.open(derived["path"], "wb") as handle:
                 handle.setnchannels(window.shape[1])
@@ -523,7 +543,7 @@ def _cut(video, blocks, derived_file, width, left, max_frames):
             if block is None:
                 derived = derived_file(
                     video["dataset_id"], video["file_id"], round(blocks[index]["start"] * 1000), "mp4",
-                    tag=_block_tag(blocks[index]["end"], width),
+                    tag=_file_tag(blocks[index]["end"], width),
                 )
                 block = _Block(derived, out_width, out_height, rate, at)
                 opened.add(index)
@@ -548,11 +568,13 @@ def _cut(video, blocks, derived_file, width, left, max_frames):
     return rows
 
 
-def _block_tag(end, width):
-    """The tag of a block's file, which its name holds besides where it starts:
-    where the block ends and how wide it is drawn, so blocks that differ keep
-    files of their own."""
-    return f"to{round(end * 1000)}w{int(width)}" if end is not None else f"toendw{int(width)}"
+def _file_tag(end, width=None):
+    """The tag of a block's or a window's file, which its name holds besides
+    where it starts: where it ends, in milliseconds, or ``end`` for a block to
+    the end of a video that does not say how long it is, and how wide a block
+    is drawn, so blocks or windows that differ keep files of their own."""
+    tag = f"to{round(end * 1000)}" if end is not None else "toend"
+    return tag if width is None else f"{tag}w{int(width)}"
 
 
 def _finished(block, video, planned, number):

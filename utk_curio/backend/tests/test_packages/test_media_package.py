@@ -512,6 +512,67 @@ def test_two_split_audio_nodes_with_other_windows_keep_their_own_clips(folder_co
         assert clip.getnframes() / clip.getframerate() == 10.0
 
 
+def _noise(folder_collection, tmp_path: Path, seconds: float = 1.0):
+    """``(rows, helpers)`` for a folder holding one recording *seconds* long."""
+    root = tmp_path / "noise"
+    root.mkdir()
+    _stereo_left_only(root / "left.wav", seconds=seconds)
+    return folder_collection(root, {"id": "noise", "name": "Noise", "kind": "audio", "path": "*"})
+
+
+def test_a_windows_clip_is_named_after_where_it_starts_and_ends(folder_collection, tmp_path):
+    """A clip's id is its recording's, then where its window starts and ends,
+    in milliseconds; the last window ends where the recording does. Two
+    nodes' windows that start and end at the same sample hold the same bytes
+    and share one file: here the last of 0.4 s windows and of 0.8 s ones,
+    from 0.8 s to the recording's end at 1 s."""
+    media, helpers = _noise(folder_collection, tmp_path)
+    recording = media["file_id"].iloc[0]
+    shorter = run_node("split-audio", media, helpers, WINDOW_SECONDS=0.4)
+    assert list(shorter["file_id"]) == [f"{recording}@{span}" for span in ("0-to400", "400-to800", "800-to1000")]
+    assert list(shorter["duration_s"]) == [0.4, 0.4, 0.2]
+    assert Path(shorter["path"].iloc[0]).name == "0-to400.wav"
+    last = Path(shorter["path"].iloc[2]).read_bytes()
+    longer = run_node("split-audio", media, helpers, WINDOW_SECONDS=0.8)
+    assert list(longer["file_id"]) == [f"{recording}@0-to800", f"{recording}@800-to1000"]
+    assert longer["path"].iloc[1] == shorter["path"].iloc[2]
+    assert Path(longer["path"].iloc[1]).read_bytes() == last
+
+
+def test_split_audio_cuts_windows_as_short_as_a_millisecond(folder_collection, tmp_path):
+    """A millisecond, 8 samples at 8000 a second, is the shortest window, and
+    each such window is a clip of its own."""
+    import wave
+
+    media, helpers = _noise(folder_collection, tmp_path, seconds=0.01)
+    windows = run_node("split-audio", media, helpers, WINDOW_SECONDS=0.001)
+    assert list(windows["t_s"]) == [round(k / 1000, 3) for k in range(10)]
+    assert len(set(windows["path"])) == 10
+    for path in windows["path"]:
+        with wave.open(path) as clip:
+            assert clip.getnframes() == 8
+
+
+@pytest.mark.parametrize("window", [
+    pytest.param(0.0009, id="under-a-millisecond"),
+    pytest.param(0, id="zero"),
+    pytest.param(-5.0, id="below-zero"),
+    pytest.param(True, id="a-bool"),
+    pytest.param("5", id="a-string"),
+])
+def test_split_audio_refuses_a_window_under_a_millisecond(folder_collection, tmp_path, window):
+    """A clip is named after where its window starts and ends, in
+    milliseconds, so a WINDOW_SECONDS under 0.001, zero and below too, or one
+    that is not a number, stops the node before it writes a clip."""
+    import re
+
+    media, helpers = _noise(folder_collection, tmp_path)
+    says = "WINDOW_SECONDS is the length of a window, in seconds: a number of 0.001 or more"
+    with pytest.raises(ValueError, match=re.escape(says)):
+        run_node("split-audio", media, helpers, WINDOW_SECONDS=window)
+    assert sorted((tmp_path / "media").rglob("*.wav")) == []
+
+
 # ---------------------------------------------------------------------------
 # Split Video
 # ---------------------------------------------------------------------------
