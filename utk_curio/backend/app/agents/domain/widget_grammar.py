@@ -48,7 +48,7 @@ from utk_curio.backend.app.agents.domain import agent_text
 #: The keys a widget has, in the order a node stores them.
 WIDGET_KEYS = ("name", "type", "label", "default", "value", "options")
 #: The keys of a widget's options.
-OPTION_KEYS = ("choices", "display", "min", "max", "step", "units")
+OPTION_KEYS = ("choices", "pickedBy", "display", "min", "max", "step", "units")
 #: How a choice widget is drawn.
 CHOICE_DISPLAYS = ("dropdown", "radio")
 
@@ -89,11 +89,19 @@ def _options_problems(options: object, where: str) -> list[str]:
             "widget.options-unknown-keys", where=where, unknown=', '.join(unknown), option_keys=', '.join(OPTION_KEYS),
         ))
     choices = options.get("choices")
-    if choices is not None and (
+    # A list of texts, or, for a dataset widget an input picks, each value of
+    # that input and the dataset it picks, which check_widget_def judges.
+    picked = isinstance(choices, dict) and len(choices) <= _CHOICES_MAX and all(
+        isinstance(k, str) and len(k) <= _TEXT_MAX_CHARS and isinstance(v, str) and len(v) <= _VALUE_MAX_CHARS
+        for k, v in choices.items()
+    )
+    if choices is not None and not picked and (
         not isinstance(choices, list) or len(choices) > _CHOICES_MAX
         or not all(isinstance(c, str) and len(c) <= _TEXT_MAX_CHARS for c in choices)
     ):
         problems.append(agent_text.message("widget.choices-shape", where=where, choices_max=_CHOICES_MAX))
+    if "pickedBy" in options and not isinstance(options["pickedBy"], str):
+        problems.append(agent_text.message("widget.picked-by-shape", where=where))
     if options.get("display") is not None and options["display"] not in CHOICE_DISPLAYS:
         problems.append(agent_text.message(
             "widget.display-choice", where=where, choice_displays=', '.join(CHOICE_DISPLAYS),

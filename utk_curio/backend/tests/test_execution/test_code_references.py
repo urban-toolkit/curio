@@ -377,8 +377,8 @@ class TestThePatternsAreShared:
 
     def test_the_options_the_controls_read(self):
         options = re.search(r"export interface WidgetOptions \{(.*?)\n\}", self._ts("widgetModel.ts"), re.S)
-        keys = re.findall(r"^\s*([a-z]+)\?:", options.group(1), re.M)
-        assert keys == ["choices", "display", "min", "max", "step", "units"]
+        keys = re.findall(r"^\s*([a-z][A-Za-z]*)\?:", options.group(1), re.M)
+        assert keys == ["choices", "pickedBy", "display", "min", "max", "step", "units"]
         for schema in self._schemas():
             assert list(schema["properties"]["options"]["properties"]) == keys
 

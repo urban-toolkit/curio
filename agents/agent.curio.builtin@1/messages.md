@@ -842,7 +842,11 @@ scenarios has {count} entries (max {scenarios_max})
 
 ## widget.choices-shape
 
-{where}.choices must be a list of up to {choices_max} texts
+{where}.choices must be a list of up to {choices_max} texts, or, for a dataset widget an input picks, an object of up to {choices_max} values of that input, each with the id of the dataset it picks
+
+## widget.picked-by-shape
+
+{where}.pickedBy must be a text naming an input circle, such as input_0, or a key of the dict on it, such as input_0.camera
 
 ## widget.display-choice
 

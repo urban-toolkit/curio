@@ -248,9 +248,12 @@ def _appearance(say: Say) -> dict:
 
 def _widget_options() -> dict:
     """A widget's options as ``$defs.widget`` types them, so a server that
-    reads a call by its schema keeps their numbers."""
+    reads a call by its schema keeps their numbers. Its choices, a choice
+    widget's list or the map of a dataset widget an input picks, have the
+    type of their widget's kind, so a native call gives them as JSON text."""
     return _object({
-        "choices": {"type": "array", "items": {"type": "string"}},
+        "choices": _json_value(),
+        "pickedBy": {"type": "string"},
         "display": {"type": "string", "enum": list(widget_grammar.CHOICE_DISPLAYS)},
         "min": {"type": "number"},
         "max": {"type": "number"},
