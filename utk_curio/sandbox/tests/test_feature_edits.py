@@ -767,6 +767,22 @@ class TestTablesTakeTheNewEdits:
         assert table["height"].tolist()[0] == 2.0
         assert table["height"].isna().tolist() == [False, True]
 
+    def test_a_number_written_as_text_is_scaled_and_offset_and_stays_text(self, capsys):
+        # OpenStreetMap's building parts as a table: a mapped height is text,
+        # as OpenStreetMap writes it, and a height with its unit is no number.
+        frame = gpd.GeoDataFrame(
+            {"osm_id": [10, 11, 12, 13], "height": ["30", "12.25", "86 m", None]},
+            geometry=[Point(0, 0), Point(1, 1), Point(2, 2), Point(3, 3)],
+            crs=3395,
+        )
+        table = _edit(frame, [
+            {"op": "scale", "ids": [10, 11, 12, 13], "column": "height", "value": 2},
+            {"op": "offset", "ids": [10, 11, 12, 13], "column": "height", "value": 1},
+        ], key="osm_id")
+        assert table["height"].tolist()[:3] == ["61", "25.5", "86 m"]
+        assert table["height"].isna().tolist() == [False, False, False, True]
+        assert "2 changed" in capsys.readouterr().out
+
 
 class ExecAppliesTheEditsTestCase(unittest.TestCase):
     """``/exec``, as a play or a run sends it: the input is an Autark node's
