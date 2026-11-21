@@ -29,6 +29,7 @@ from utk_curio.backend.app.execution.sandbox_auth import sandbox_headers
 from utk_curio.backend.app.execution.workflow_spec import (
     WorkflowSpec,
     parse_workflow_dict,
+    picked_inputs,
     seed_node_code,
 )
 from utk_curio.backend.app.execution.code_references import CodeReferenceError
@@ -237,6 +238,25 @@ def _resolve_input(spec: WorkflowSpec, node_id: str, outputs: dict) -> tuple[str
             return str(up.get("path")), "outputs"
         return up.get("path", ""), up.get("dataType", "")
     return str([outputs[uid] for uid in upstreams if uid in outputs]), "outputs"
+
+
+def _picked_values(spec: WorkflowSpec, node, outputs: dict, session_id: str | None) -> dict:
+    """What this run reads of the circles a dataset widget of *node* is
+    picked by, before it writes the node's code (``workflow_spec.picked_inputs``):
+    each upstream's output, read under the session this run runs its nodes
+    in, as its nodes read their inputs."""
+    from utk_curio.backend.app.execution.node_exec import read_artifact_value
+
+    if not node.widgets:
+        return {}
+    refs = {
+        slot: outputs.get(upstream)
+        for slot, upstream in zip(spec.input_slots(node.id), spec.upstream_nodes(node.id))
+    }
+    return picked_inputs(
+        node.widgets, refs,
+        lambda _slot, ref: read_artifact_value(str(ref.get("filename") or ref.get("path") or ""), session_id=session_id),
+    )
 
 
 def _ancestor_slice(spec: WorkflowSpec, target_id: str) -> set[str]:
@@ -491,7 +511,10 @@ def run_through_node(
         # like a hang, without asking the sandbox.
         widget_problem = None
         try:
-            resolved = spec.node_code(node, "python" if is_py else "javascript", content_text)
+            resolved = spec.node_code(
+                node, "python" if is_py else "javascript", content_text,
+                picked=_picked_values(spec, node, outputs, session_id),
+            )
         except CodeReferenceError as exc:
             resolved, widget_problem = content_text, str(exc)
         seeded = seed_node_code(resolved, seed)

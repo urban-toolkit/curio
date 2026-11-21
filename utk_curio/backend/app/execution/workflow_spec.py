@@ -18,6 +18,7 @@ from utk_curio.backend.app.execution.code_references import (
     CodeReferenceError,
     normalize_selections,
     normalize_widgets,
+    picked_slots,
     resolve_references,
 )
 from utk_curio.backend.app.execution.run_plan import is_interaction_edge
@@ -386,18 +387,23 @@ class WorkflowSpec:
                 labels[slot] = {"name": self.node_label(source), "color": NO_SCENARIO_COLOR}
         return labels
 
-    def node_code(self, node, language: str, content: str | None = None, grammar: str | None = None) -> str:
+    def node_code(
+        self, node, language: str, content: str | None = None, grammar: str | None = None,
+        picked: dict | None = None,
+    ) -> str:
         """*node*'s code (or *content* in its place) with its references
         resolved as the canvas resolves them before a run: its widgets, its
         wired circles, each with the scenario label its rows carry, and its
         selection tags. *grammar* is the grammar its JSON document
         is written in, which a Vega-Lite chart's spec names to write a column's
-        name escaped where Vega-Lite reads a field. Raises
-        ``CodeReferenceError``."""
-        return _resolved_or_raise(*self.node_code_and_problems(node, language, content, grammar))
+        name escaped where Vega-Lite reads a field. *picked* is what the run
+        read of the circles a picked dataset widget names (:func:`picked_inputs`).
+        Raises ``CodeReferenceError``."""
+        return _resolved_or_raise(*self.node_code_and_problems(node, language, content, grammar, picked))
 
     def node_code_and_problems(
         self, node, language: str, content: str | None = None, grammar: str | None = None,
+        picked: dict | None = None,
     ) -> tuple[str, list]:
         """:meth:`node_code`, with each reference *node* cannot resolve yet
         left as written and its problem listed rather than raised: what a check
@@ -411,7 +417,19 @@ class WorkflowSpec:
             node.selections,
             grammar,
             input_scenarios=self.input_scenarios(node.id),
+            picked=picked,
         )
+
+    def input_refs(self, node_id: str, input_ref) -> dict:
+        """``{circle: reference}``: what each wired circle of *node_id* holds,
+        out of *input_ref*, one upstream's output or an ``outputs`` bundle in
+        circle order, as a run hands it the node."""
+        slots = self.input_slots(node_id)
+        if not isinstance(input_ref, dict) or not slots:
+            return {}
+        if input_ref.get("dataType") == "outputs" and isinstance(input_ref.get("data"), list):
+            return dict(zip(slots, input_ref["data"]))
+        return {slots[0]: input_ref} if len(slots) == 1 else {}
 
     def topo_sorted_nodes(self) -> list:
         """Return nodes in topological (dependency) order using Kahn's algorithm.
@@ -713,14 +731,49 @@ def resolve_code_references(
 
 def code_references_and_problems(
     code: str, widgets=(), language: str = "python", input_slots=(), selections=(), grammar=None,
-    input_scenarios=None,
+    input_scenarios=None, picked=None,
 ) -> tuple[str, list]:
     """:func:`resolve_code_references`, with each reference it cannot resolve
     left as written and its problem (``{"reference", "message"}``) listed
-    rather than raised."""
+    rather than raised. *picked* (:func:`picked_inputs`) gives the circles a
+    picked dataset widget reads their data type and the value a run read."""
     labels = input_scenarios or {}
-    inputs = [{"slot": slot, **({"scenario": labels[slot]} if slot in labels else {})} for slot in input_slots]
+    read = picked or {}
+    inputs = [
+        {"slot": slot, **({"scenario": labels[slot]} if slot in labels else {}), **read.get(slot, {})}
+        for slot in input_slots
+    ]
     return resolve_references(code, widgets, language, inputs, selections=selections, grammar=grammar)
+
+
+#: The data types of a value a picked dataset widget reads nothing from: no
+#: text is in a table or a raster.
+_NOT_A_TEXT = ("dataframe", "geodataframe", "raster")
+
+
+def picked_inputs(widgets, refs: dict, read) -> dict:
+    """``{circle: {"dataType", "value"?}}`` for each circle a dataset widget
+    among *widgets* is picked by (``code_references.picked_slots``) that has
+    an edge: the data type of what *refs* (``{circle: reference}``) holds on
+    it, and its value, ``read(circle, reference)``, unless it is a table or a
+    raster. What a run reads before it writes the node's code, so the
+    widget writes the dataset that value picks (``code_references._picked``).
+    Raises ``CodeReferenceError`` when a read fails, saying why, never with
+    what the circle holds."""
+    out: dict = {}
+    for slot in picked_slots(widgets):
+        ref = refs.get(slot)
+        if not isinstance(ref, dict):
+            continue
+        kind = str(ref.get("dataType") or "")
+        entry: dict = {"dataType": kind}
+        if kind.lower() not in _NOT_A_TEXT and read is not None:
+            try:
+                entry["value"] = read(slot, ref)
+            except Exception as exc:  # noqa: BLE001 - the node's own failure, said as it is
+                raise CodeReferenceError(f"input_{slot} could not be read to pick a dataset: {exc}") from exc
+        out[slot] = entry
+    return out
 
 
 def _resolved_or_raise(resolved: str, problems: list) -> str:
