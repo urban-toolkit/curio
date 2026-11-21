@@ -32,6 +32,13 @@ from utk_curio.backend.app.projects.schemas import OutputRef
 RENDER_SPEC = json.dumps({"map": {"layerRefs": []}})
 COMPUTE_SPEC = json.dumps({"compute": [{"shader": "x"}]})
 DATA_SPEC = json.dumps({"data": [{"type": "osm"}]})
+#: A map that also loads data, and one that also runs a pass over its input:
+#: each hands on the tables it makes, as a data node and a compute step do.
+DRAW_AND_LOAD_SPEC = json.dumps({"data": [{"type": "osm"}], "map": {"layerRefs": [{"dataRef": "table_osm_roads"}]}})
+DRAW_AND_COMPUTE_SPEC = json.dumps({
+    "compute": [{"dataRef": "input_0", "outputTableName": "sky", "shader": "x"}],
+    "map": {"layerRefs": [{"dataRef": "sky"}]},
+})
 
 
 def node(node_id, node_type, code=None, **fields):
@@ -142,6 +149,36 @@ class TestWhichOutputsAreNeeded:
         )
 
         assert dashboard_source_node_ids(spec) == {"compute"}
+
+    def test_an_autark_node_that_draws_and_computes_is_a_producer_as_a_compute_node_is(self):
+        # Example 35's shape: the sky map runs its render pass over the
+        # loader's layers and hands on each street's share of sky.
+        from utk_curio.backend.app.projects.dashboard_payload import passes_through
+
+        sky = node("sky", "curio.builtin/autk-grammar", code=DRAW_AND_COMPUTE_SPEC)
+        spec = spec_of(
+            [
+                node("data", "curio.builtin/autk-grammar", code=DATA_SPEC),
+                sky,
+                node("map", "curio.builtin/autk-grammar", code=RENDER_SPEC, dashboardPinned=True),
+            ],
+            [edge("data", "sky"), edge("sky", "map")],
+        )
+
+        assert not passes_through(sky)
+        assert dashboard_source_node_ids(spec) == {"sky"}
+
+    def test_an_autark_node_that_draws_and_loads_is_a_producer_as_a_data_node_is(self):
+        from utk_curio.backend.app.projects.dashboard_payload import passes_through
+
+        walk = node("walk", "curio.builtin/autk-grammar", code=DRAW_AND_LOAD_SPEC)
+        spec = spec_of(
+            [walk, node("chart", "curio.builtin/vis-vega", dashboardPinned=True)],
+            [edge("walk", "chart")],
+        )
+
+        assert not passes_through(walk)
+        assert dashboard_source_node_ids(spec) == {"walk"}
 
     def test_a_versioned_node_type_resolves_to_the_same_kind(self):
         # Palette-dragged nodes persist `...@1`; an unnormalised comparison used
@@ -414,15 +451,16 @@ class TestATileThatFetchesItsOwnData:
 
         assert payload.outputs == {}
 
-    def test_an_unpinned_node_with_data_sources_is_not_a_refusal(self):
+    @pytest.mark.parametrize("loader_spec", [DATA_SPEC, DRAW_AND_LOAD_SPEC], ids=["data-only", "draws-too"])
+    def test_an_unpinned_node_with_data_sources_is_not_a_refusal(self, loader_spec):
         # It is not a tile, it is the shape the refusal tells people to move to:
-        # a data node of its own, whose output is saved and travels with the
-        # page. A data-only spec, deliberately, because a spec carrying a `map`
-        # classifies as render however little else it does, and a render node is
-        # walked through rather than treated as a producer.
+        # a node upstream that loads the data, whose output is saved and
+        # travels with the page. A data node, and a node that draws beside
+        # what it loads, which hands on what it loads as a data node does, so
+        # it is a producer too, not walked through.
         spec = spec_of(
             [
-                node("loader", "curio.builtin/autk-grammar", code=DATA_SPEC),
+                node("loader", "curio.builtin/autk-grammar", code=loader_spec),
                 node("map", "curio.builtin/autk-grammar", code=RENDER_SPEC, dashboardPinned=True),
             ],
             [edge("loader", "map")],

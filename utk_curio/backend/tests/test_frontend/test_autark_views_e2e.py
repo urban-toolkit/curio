@@ -21,6 +21,15 @@ and linked by its `links`.
    on the same roads: the share of roads a building shades and the mean
    minutes of sun, each near example 07's, which the test runs after it and
    whose roads' minutes it records the same way.
+5. What an Autark node that draws and also loads data or runs passes hands on:
+   what it loads and computes, as a compute step does. A Python node added
+   after example 38's node, to the example as the test loads it, reads the
+   node's 12 tables by name, the Loop's roads with the minutes of sun its map
+   drew, near those example 07's compute step hands on for the same roads; and
+   one added after example 35's sky map reads the share of sky each street
+   sees. The size of what example 38's node keeps in the sandbox and the time
+   it takes are recorded on the test, on its first draw and on a redraw for a
+   color edit.
 
 Map k of a node draws on `autk-grammar-map-<node>` for k = 0, else
 `autk-grammar-map-<node>-<k>`, and plots likewise, so the drawing checks read
@@ -44,6 +53,7 @@ from typing import TYPE_CHECKING
 
 from .utils import (
     AUTK_PLOT_HIGHLIGHT,
+    _OUTPUT_ARTIFACT_JS,
     assert_autark_map_drawn,
     assert_autark_plot_drawn,
     autark_map_framing,
@@ -52,12 +62,21 @@ from .utils import (
     brush_area,
     dismiss_toasts,
     frame_nodes,
+    load_artifact_as_dict,
+    node_locator,
+    play_node,
+    read_node_error_text,
     require_owner_view,
     require_project_page,
     require_user_auth,
     require_webgpu,
     run_all_and_wait,
+    set_node_code,
     stub_login_and_enter_workflow,
+    wait_for_node_run_to_end,
+    wait_for_node_settled,
+    wait_for_run_guard_released,
+    watch_node_run,
 )
 
 if TYPE_CHECKING:
@@ -438,4 +457,239 @@ def test_example_38_draws_each_view_in_its_pane_and_records_each_area_s_sun(
     assert abs(loop["mean"] - example_07["mean"]) <= SUN_MEAN_TOLERANCE * example_07["mean"], (
         f"example 38's Loop roads get {loop['mean']:.0f} minutes of sun on average, example 07's "
         f"{example_07['mean']:.0f}, on the same roads with the same shader"
+    )
+
+
+PYTHON = "curio.builtin/python-computation"
+#: The tables example 38's node hands on: each area's five OpenStreetMap
+#: layers, which its data section loads, then each area's roads with their
+#: minutes of sun, which its passes write, in the passes' order.
+EXAMPLE_38_LOADED = [
+    f"{area}_{layer}" for area in ("back_bay", "loop") for layer in ("surface", "parks", "water", "roads", "buildings")
+]
+EXAMPLE_38_WRITTEN = ["back_bay_road_sun", "loop_road_sun"]
+#: The Python node the test adds after example 38's node: it reads each of the
+#: node's tables by name, and returns, one row each, every table's rows, the
+#: order the node handed the tables on in, and the minutes of sun of each of
+#: the Loop's roads.
+AFTER_38 = "after-two-cities"
+AFTER_38_CODE = (
+    "import pandas as pd\n\n"
+    "tables = {\n"
+    + "".join(f'    "{name}": [!! input_0:{name} !!],\n' for name in EXAMPLE_38_LOADED + EXAMPLE_38_WRITTEN)
+    + "}\n"
+    "order = [str((getattr(frame, 'metadata', None) or {}).get('name')) for frame in input_0]\n"
+    "loop = [!! input_0:loop_road_sun !!]\n"
+    "rows = [{'what': 'table', 'name': name, 'value': float(len(frame))} for name, frame in tables.items()]\n"
+    "rows += [{'what': 'order', 'name': name, 'value': float(at)} for at, name in enumerate(order)]\n"
+    "rows += [{'what': 'sun', 'name': 'loop_road_sun', 'value': float(minutes)} for minutes in loop['sunlight']]\n"
+    "return pd.DataFrame(rows)\n"
+)
+#: Example 35, its sky map, whose render pass writes `street_sky`, each street
+#: with its shares of what it sees, and the Python node the test adds after it,
+#: which returns the share of sky of each street.
+EXAMPLE_35 = "35-autark-sky-seen-from-the-street.json"
+EXAMPLE_35_MAP = "sky-map"
+AFTER_35 = "after-sky-map"
+AFTER_35_CODE = (
+    "import pandas as pd\n\n"
+    "streets = [!! input_0:street_sky !!]\n\n"
+    "def sky_share(computed):\n"
+    "    try:\n"
+    "        return float(computed['render']['classes']['sky'])\n"
+    "    except (KeyError, TypeError):\n"
+    "        return float('nan')\n\n"
+    "return pd.DataFrame({'sky': [sky_share(computed) for computed in streets['compute']]})\n"
+)
+#: A color edit of example 38's node: its first map's surface drawn in another
+#: color. The node draws again, and loads and computes nothing new.
+EDITED_SURFACE_COLOR = "#e4dfd2"
+
+# Each request the page sends that keeps an Autark node's hand-on in the
+# sandbox (autkLayerMaterialize `persistLayersToBackend`): the node it is for,
+# the bytes it sends and how long its answer takes.
+_RECORD_HAND_ONS_JS = r"""() => {
+    if (window.__curioHandOns) return;
+    const posts = [];
+    window.__curioHandOns = posts;
+    const real = window.fetch.bind(window);
+    window.fetch = async (url, init) => {
+        const href = typeof url === 'string' ? url : (url && url.url) || '';
+        const body = init && typeof init.body === 'string' ? init.body : '';
+        if (!href.endsWith('/processJavaScriptCode') || !body.startsWith('{"code":"const __wrapper = ')) {
+            return real(url, init);
+        }
+        const nodeId = (body.match(/"nodeId":"([^"]+)"/) || [])[1] || null;
+        const started = performance.now();
+        try {
+            return await real(url, init);
+        } finally {
+            posts.push({ nodeId, bytes: new Blob([body]).size, ms: performance.now() - started });
+        }
+    };
+}"""
+_HAND_ONS_JS = "(id) => (window.__curioHandOns || []).filter((post) => post.nodeId === id)"
+
+
+def _with_python_after(example: str, node_id: str, python_id: str, code: str) -> dict:
+    """*example*'s dataflow, with a Python node of *code* added after *node_id*."""
+    import copy
+
+    from .walkthroughs import load_example_spec
+
+    spec = copy.deepcopy(load_example_spec(example))
+    nodes = spec["dataflow"]["nodes"]
+    upstream = next(node for node in nodes if node["id"] == node_id)
+    x = int(upstream.get("x") or 0) + int(upstream.get("width") or 900) + 120
+    nodes.append({**_node(python_id, PYTHON, x, code), "y": int(upstream.get("y") or 0)})
+    spec["dataflow"]["edges"].append(_data_edge(node_id, python_id))
+    return spec
+
+
+def _open_spec(page, app_frontend, current_server, spec: dict, name: str) -> float:
+    """Open *spec* on a canvas of its own, Run All, and the seconds the run took."""
+    stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name=name,
+        username=f"autk_hand_on_{uuid.uuid4().hex[:8]}",
+        project_name=name,
+        project_spec=spec,
+    )
+    require_owner_view(page)
+    page.wait_for_selector(".react-flow__node", timeout=45000)
+    require_webgpu(page)
+    page.evaluate(_RECORD_HAND_ONS_JS)
+    started = time.monotonic()
+    run_all_and_wait(page, timeout_ms=600000)
+    dismiss_toasts(page)
+    return time.monotonic() - started
+
+
+def _python_read(page, python_id: str, upstream: str) -> dict:
+    """What the Python node *python_id* returned, column by column, once it
+    ran; it fails naming what *upstream* handed it when it did not run."""
+    status = wait_for_node_settled(page, python_id, node_type="PYTHON_COMPUTATION", timeout_ms=300000)
+    if status != "done":
+        detail = read_node_error_text(node_locator(page, python_id)) or ""
+        raise AssertionError(
+            f"the Python node after {upstream} could not read what {upstream} handed it as input_0: {detail}"
+        )
+    artifact = page.evaluate(_OUTPUT_ARTIFACT_JS, python_id)
+    assert artifact, f"the Python node after {upstream} shows no saved output"
+    return load_artifact_as_dict(artifact)["data"]
+
+
+def _rows_of(read: dict, what: str) -> list[tuple[str, float]]:
+    """The rows of *read* (AFTER_38_CODE's) of the kind *what*: each its name and value."""
+    return [(name, value) for kind, name, value in zip(read["what"], read["name"], read["value"]) if kind == what]
+
+
+def _megabytes(posts: list) -> float:
+    return round(sum(post["bytes"] for post in posts) / 1e6, 2)
+
+
+def test_a_python_node_after_example_38s_node_reads_its_12_tables_and_the_loops_sun(
+    app_frontend: "FrontendPage", current_server: str, page, record_property,
+):
+    """A Python node after example 38's node reads its 12 tables by name, and
+    the Loop's roads with the minutes of sun its map drew, near those example
+    07's compute step hands on for the same roads. What the node keeps in the
+    sandbox, and how long that takes, is recorded on its first draw and on a
+    redraw for a color edit."""
+    require_project_page()
+    require_user_auth()
+
+    first_s = _open_spec(
+        page, app_frontend, current_server,
+        _with_python_after(EXAMPLE_38, EXAMPLE_38_NODE, AFTER_38, AFTER_38_CODE), "Back Bay or the Loop, read on",
+    )
+    read = _python_read(page, AFTER_38, f"example 38's node {EXAMPLE_38_NODE}")
+    tables = dict(_rows_of(read, "table"))
+    assert sorted(tables) == sorted(EXAMPLE_38_LOADED + EXAMPLE_38_WRITTEN), (
+        f"the Python node after example 38's node read the tables {sorted(tables)}"
+    )
+    order = [name for name, _ in sorted(_rows_of(read, "order"), key=lambda row: row[1])]
+    assert sorted(order) == sorted(EXAMPLE_38_LOADED + EXAMPLE_38_WRITTEN) and order[-2:] == EXAMPLE_38_WRITTEN, (
+        f"example 38's node handed its tables on in the order {order}: its own tables, then each its passes write"
+    )
+    assert all(tables[name] > 0 for name in ("back_bay_roads", "loop_roads", "back_bay_road_sun", "loop_road_sun")), tables
+    assert tables["loop_road_sun"] == tables["loop_roads"], (
+        f"example 38's node handed on {tables['loop_road_sun']:.0f} Loop roads with their sun, of {tables['loop_roads']:.0f}"
+    )
+    handed_sun = [value for _, value in _rows_of(read, "sun")]
+    frame_nodes(page, [EXAMPLE_38_NODE])
+    assert_autark_map_drawn(page, EXAMPLE_38_NODE, view=1, timeout=120000)
+    drawn_sun = _drawn_sun(page, EXAMPLE_38_NODE, "loop_road_sun", "loop", "example 38's map loop")
+    assert _minutes_counts(handed_sun) == _minutes_counts(drawn_sun), (
+        "the Python node after example 38's node read other minutes of sun for the Loop's roads than its map drew: "
+        f"{_minutes_counts(handed_sun)[:300]} against {_minutes_counts(drawn_sun)[:300]}"
+    )
+    first_posts = page.evaluate(_HAND_ONS_JS, EXAMPLE_38_NODE)
+    record_property("example_38_run_all_s", round(first_s, 1))
+    record_property("example_38_hand_on_posts_first_draw", len(first_posts))
+    record_property("example_38_hand_on_mb_first_draw", _megabytes(first_posts))
+    record_property("example_38_hand_on_ms_first_draw", round(sum(post["ms"] for post in first_posts)))
+
+    # A color edit: the node draws again, its data and its passes as they were.
+    node = next(n for n in _with_python_after(EXAMPLE_38, EXAMPLE_38_NODE, AFTER_38, AFTER_38_CODE)["dataflow"]["nodes"]
+                if n["id"] == EXAMPLE_38_NODE)
+    edited = json.loads(node["content"])
+    edited["map"][0]["layerRefs"][0]["color"] = EDITED_SURFACE_COLOR
+    from .test_widget_tags_e2e import _open_tab
+
+    _open_tab(page, EXAMPLE_38_NODE, "grammar")
+    set_node_code(page, EXAMPLE_38_NODE, json.dumps(edited, indent=2))
+    watch_node_run(page, EXAMPLE_38_NODE)
+    started = time.monotonic()
+    play_node(page, EXAMPLE_38_NODE)
+    status = wait_for_node_run_to_end(page, EXAMPLE_38_NODE, node_type="AUTK_GRAMMAR", timeout_ms=600000)
+    wait_for_run_guard_released(page, timeout_ms=600000)
+    redraw_s = time.monotonic() - started
+    assert status == "done", f"example 38's node did not draw again after a color edit: {status}"
+    redraw_posts = page.evaluate(_HAND_ONS_JS, EXAMPLE_38_NODE)[len(first_posts):]
+    record_property("example_38_redraw_s", round(redraw_s, 1))
+    record_property("example_38_hand_on_posts_redraw", len(redraw_posts))
+    record_property("example_38_hand_on_mb_redraw", _megabytes(redraw_posts))
+    record_property("example_38_hand_on_ms_redraw", round(sum(post["ms"] for post in redraw_posts)))
+
+    # The Loop's sun is the sun example 07's compute step hands on for the same
+    # roads with the same shader, which its map draws.
+    _open_example(page, app_frontend, current_server, EXAMPLE_07, "Example 07")
+    assert_autark_map_drawn(page, EXAMPLE_07_MAP, timeout=120000)
+    example_07 = _sun_numbers(_drawn_sun(page, EXAMPLE_07_MAP, "table_osm_roads", 0, "example 07's map"))
+    handed = _sun_numbers(handed_sun)
+    assert abs(handed["shaded_share"] - example_07["shaded_share"]) <= SHADED_SHARE_TOLERANCE, (
+        f"the Loop example 38's node hands on has {handed['shaded_share']:.1%} of its {handed['roads']} roads "
+        f"shaded, example 07 {example_07['shaded_share']:.1%} of its {example_07['roads']}"
+    )
+    assert abs(handed["mean"] - example_07["mean"]) <= SUN_MEAN_TOLERANCE * example_07["mean"], (
+        f"the Loop roads example 38's node hands on get {handed['mean']:.0f} minutes of sun on average, "
+        f"example 07's {example_07['mean']:.0f}"
+    )
+
+
+def test_a_python_node_after_example_35s_sky_map_reads_each_streets_share_of_sky(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """Example 35's sky map hands on each street with the share of sky it
+    sees, the table its render pass writes: every street its map draws."""
+    require_project_page()
+    require_user_auth()
+
+    _open_spec(
+        page, app_frontend, current_server,
+        _with_python_after(EXAMPLE_35, EXAMPLE_35_MAP, AFTER_35, AFTER_35_CODE), "Sky seen from the street, read on",
+    )
+    shares = _python_read(page, AFTER_35, f"example 35's sky map {EXAMPLE_35_MAP}")["sky"]
+    assert shares and all(isinstance(share, (int, float)) and 0 <= share <= 1 for share in shares), (
+        f"the Python node after example 35's sky map read the shares of sky {shares[:20]}"
+    )
+    frame_nodes(page, [EXAMPLE_35_MAP])
+    assert_autark_map_drawn(page, EXAMPLE_35_MAP, timeout=120000)
+    state = page.evaluate(_STATE_JS, [EXAMPLE_35_MAP, None]) or {}
+    drawn = (state.get("street_sky") or {}).get("drawn")
+    assert drawn == len(shares), (
+        f"example 35's sky map drew {drawn} streets of street_sky, and handed on {len(shares)}"
     )
