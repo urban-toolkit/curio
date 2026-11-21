@@ -59,9 +59,12 @@ nodes reference these layers by name (`table_osm_roads`, `table_osm_buildings`),
 The `compute` block binds each road's geometry as a per-feature matrix (`attributes.seg` =
 `geometry.coordinates`, `attributeMatrices.seg`) and pulls every building's footprint and height from the
 upstream `table_osm_buildings` layer via a `fromFeature` directive with `iterate: "batched"`. The runtime
-packs each building's **AABB** (4 corners × 2 floats = 8 f32 per building) into a flat array exposed as
-`uniformArrays.ring`, packs the height array as `uniformArrays.bld_height`, and runs the shader **once**,
-not once per building. A `num_features` uniform tells the WGSL how many buildings are in the pack.
+packs the **AABB** of each polygon of each building part (4 corners × 2 floats = 8 f32 per polygon) into a
+flat array exposed as `uniformArrays.ring`, packs the height array as `uniformArrays.bld_height`, a part's
+height beside each of its polygons, and runs the shader **once**, not once per building. A part that
+OpenStreetMap maps as one element of several polygons, such as the LaSalle/Van Buren CTA station's two,
+packs a box for each, so every polygon casts its shadow. A `num_features` uniform tells the WGSL how many
+boxes are in the pack. A road of several lines is read as one list of its points, from its first point.
 `required: true` on `bld_height` tells the runtime to drop a building whose `properties.height` does not
 resolve to a finite value. Curio gives every building part a height, its OSM `height` or its
 `building:levels` at 3.4 m each, or 6 m above its base when neither puts its top above its base, so none is
@@ -111,8 +114,8 @@ shading this road right now" per hour, which is a union the runtime can't comput
 
 ### AABB simplification
 
-Each batched matrix entry is reduced to a per-source AABB before being packed (4 corners × 2 floats = 8
-f32 per source feature), not the full polygon outline. AABBs project to a conservative shadow envelope
+Each batched matrix entry is reduced to an AABB per polygon of a source feature before being packed (4
+corners × 2 floats = 8 f32 per polygon), not the full polygon outline. AABBs project to a conservative shadow envelope
 (correct for axis-aligned buildings, a slight over-estimate for rotated/irregular ones).
 
 ### Shader sketch
