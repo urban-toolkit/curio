@@ -1538,10 +1538,16 @@ export const useAutkGrammarBehavior = (
                 // hands on what it loads and computes hands on: read back from
                 // the run's database by its key as the run ends, in that
                 // turn, before anything else reads the database or it closes.
+                // A read that fails leaves the draw as it is: those tables
+                // are not handed on, and the log says why.
                 const handsOnWhatItMakes = !preview && !onlyDrawsItsInput;
                 let readBacks = new Map<string, HandOnTable>();
                 const readAfterCompute = async (db: any): Promise<void> => {
-                    readBacks = await readBackAfterCompute(db, enterWorkspace, afterPasses, workspaceCrsOf(loadOptions.workspaces));
+                    try {
+                        readBacks = await readBackAfterCompute(db, enterWorkspace, afterPasses, workspaceCrsOf(loadOptions.workspaces));
+                    } catch (e) {
+                        console.warn('[autk-grammar] not handing on the tables made after compute:', e);
+                    }
                 };
                 const { grammar, database } = await withExtensionRetry(async () => {
                     // The run goes on a database of the node's own, which the
