@@ -1388,9 +1388,19 @@ provides.
 Each feature of an OpenStreetMap layer the node hands on has its OpenStreetMap
 id in `osm_id`, and a building's parts share its `building_id`.
 
+Its numeric building tags are numbers: the lengths `height`, `min_height`,
+`building:height` and `roof:height`, in metres, and the levels
+`building:levels`, `building:min_level`, `levels`, `min_level`, `roof:levels`
+and `building:levels:underground`. A length written with its unit is
+converted: `86 m` and `86 metres` are 86, `282 ft` is 85.95 and `16'6"` is
+5.03. Any other value, such as `7-7`, `4.0;11.6`, `tall` or a level written
+with a word beside its number (`4 floors`), is handed on with no value. A Map
+Editor's rule such as `height > 100`, its expressions and a Python node read
+these tags as numbers.
+
 A building part with no height, none of `height`, `building:height`, `levels`
-and `building:levels`, is handed on with none: a Python node reads no value
-(NaN) in its `height`. Where an Autark node uses a height, such a part is 6 m
+and `building:levels` holding a number, is handed on with none: a Python node
+reads no value (NaN) in its `height`. Where an Autark node uses a height, such a part is 6 m
 tall above its base: a map draws it and colors it by that height, and a
 compute pass reads it. A plot shows the heights its table holds.
 

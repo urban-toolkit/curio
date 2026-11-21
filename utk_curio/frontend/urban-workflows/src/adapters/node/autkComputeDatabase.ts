@@ -33,9 +33,10 @@
  * came; each table a pass wrote under a name of its own; then each table a
  * source after compute made. A table a source after compute wrote (a join
  * into it, an update, a SQL query saved under its name, a load) is read back
- * as autk-db holds it: a buildings table a part a row, as the loaders hand
- * one on (`explodeBuildingParts`), and a table with no geometry as its rows
- * (`plainTableRecord`). A part the step gave the default holds its own height
+ * as autk-db holds it, as the loaders hand one on: an OpenStreetMap table with
+ * its OSM ids and its numeric building tags as numbers (`withOsmIds`,
+ * `withOsmNumbers`), a buildings table a part a row (`explodeBuildingParts`),
+ * and a table with no geometry as its rows (`plainTableRecord`). A part the step gave the default holds its own height
  * again wherever it is handed on with its mark and still holds that default,
  * in a table a pass wrote over its layer and in one a source after compute
  * read back: autk-db keeps a row's properties, its mark among them, through a
@@ -62,6 +63,8 @@ import {
     plainTableRecord,
     requestedLayerTables,
     sectionChangedTables,
+    withOsmIds,
+    withOsmNumbers,
     workspaceCrsOf,
 } from './autkDataCompile';
 import { RASTER_TABLE, explodeBuildingParts, grammarRaster } from './autkLayerMaterialize';
@@ -273,17 +276,21 @@ export async function computeOnADatabase(
             }
         }
 
-        // A table read back from autk-db, in its workspace, as the loaders hand one on.
+        // A table read back from autk-db, in its workspace, as the loaders hand
+        // one on: an OpenStreetMap table with its OSM ids and its numeric
+        // building tags as numbers, a buildings table a part a row.
         const readBack = async (name: string, workspace: string | undefined): Promise<Layer> => {
             const raster = rasters.get(autkTableKey(workspace, name));
             if (raster) return raster;
             await grammar.enterWorkspace(db, workspace);
-            const table = (db.getTablesMetadata() as Array<{ name: string; type?: string }>).find((t) => t.name === name);
+            const table = (db.getTablesMetadata() as Array<{ name: string; type?: string; source?: string }>)
+                .find((t) => t.name === name);
             if (table && table.type === undefined) {
                 return plainTableRecord(name, await db.getTable(name), workspace) as Layer;
             }
             const geojson: any = await db.getLayer(name);
             const type = table?.type ?? 'polygons';
+            if (Array.isArray(geojson?.features)) geojson.features = withOsmNumbers(table, withOsmIds(table, geojson.features));
             if (type === 'buildings' && Array.isArray(geojson?.features)) geojson.features = explodeBuildingParts(geojson.features);
             if (geojson && typeof geojson === 'object') {
                 const epsg = layerEpsg(geojson, workspace, crsOf, DEFAULT_WORKSPACE_COORDINATE_FORMAT);

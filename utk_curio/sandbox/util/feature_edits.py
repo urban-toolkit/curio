@@ -16,10 +16,11 @@ that write, a ``column`` and a ``value``:
   it;
 - ``set`` writes ``value`` into ``column``;
 - ``scale`` multiplies the number in ``column`` by ``value``, and ``offset``
-  adds ``value`` to it. A number written as text, as OpenStreetMap writes a
-  building's height (``"30"``), is read as that number and written back as
-  text (``"45"``); a feature whose ``column`` holds no number, or text that
-  writes none (``"30 m"``), is left as it is;
+  adds ``value`` to it. A number written as text (``"30"``), as a table read
+  from a file may hold one, is read as that number and written back as text
+  (``"45"``); a feature whose ``column`` holds no number, or text that writes
+  none (``"30 m"``), is left as it is. An Autark node hands on OpenStreetMap's
+  numeric building tags as numbers;
 - ``expr`` writes into ``column`` what the expression ``value`` makes of the
   feature, such as ``levels * 3.2`` (``edit_expr``);
 - ``add`` adds a feature drawn on the map: its ``geometry`` (GeoJSON, in the
@@ -380,9 +381,11 @@ def _checked_edits(edits, key):
     return checked
 
 
-#: A number written as text, as OpenStreetMap writes a building's height
-#: ("30", "12.5"): the expression language's own number, signed, with nothing
-#: around it once trimmed. ``NUMBER_TEXT`` in ``applyEdits.ts`` is the same.
+#: A number written as text ("30", "12.5"), as a table read from a file may
+#: hold one: the expression language's own number, signed, with nothing around
+#: it once trimmed. ``NUMBER_TEXT`` in ``applyEdits.ts`` is the same, and so is
+#: the plain number an Autark node reads an OpenStreetMap tag's text as
+#: (``withOsmNumbers`` in ``autkDataCompile.ts``).
 _NUMBER_TEXT = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
 
 
