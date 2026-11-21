@@ -55,6 +55,24 @@ def segment(tmp_path, monkeypatch):
         yield module.segment_images
 
 
+@pytest.fixture()
+def split_audio(tmp_path):
+    """The Media package's ``split_audio``, staged and imported as a run of
+    Split Audio imports it."""
+    import importlib
+    from pathlib import Path
+
+    from utk_curio.sandbox.util.package_modules import importable
+    from utk_curio.sandbox.util.staging import stage_package_modules
+
+    sources = Path(__file__).resolve().parents[4] / "packages" / "curio.media@1" / "sources"
+    run = tmp_path / "run-media"
+    run.mkdir()
+    staged = stage_package_modules({"root": str(sources), "names": ["media_collections"]}, str(run))
+    with importable(str(run / staged["root"]), staged["names"]):
+        yield importlib.import_module("media_collections").split_audio
+
+
 def wait_for(client, auth, job_id, timeout=15.0):
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -350,6 +368,50 @@ class TestDerivedFiles:
         assert road_url != sky_url, f"both models' overlays are {road_url}"
         assert by_road != by_sky
         assert served(road_url) == by_road, "the second model's overlay replaced the first's"
+
+    def test_two_split_audio_nodes_on_one_recording_each_play_their_own_clip(
+        self, client, auth, app, shipped_root, user_and_token, split_audio,
+    ):
+        """Split Audio on one recording with windows of 0.25 s and of 0.5 s:
+        both have a window at 0 s. Simple View plays a window's row as it
+        plays a recording, through a signed link to the row's id, and each
+        node's row at 0 s plays the clip that node wrote, after the other
+        node ran too."""
+        from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
+        from utk_curio.backend.app.discovery.infrastructure import media_dirs
+        from utk_curio.backend.app.discovery.infrastructure.storage import storage_root
+        from utk_curio.backend.tests.test_discovery.conftest import SHIPPED_ROOT
+        from utk_curio.sandbox.util.collections import make_collection_helpers
+
+        user, _token = user_and_token
+        dataset, _index = collection(client, auth, "noise")
+        root = storage_root(load_source_manifest(SHIPPED_ROOT / EXAMPLE))
+        helpers = make_collection_helpers(
+            lambda _id: dataset["path"],
+            {dataset["id"]: {"kind": "audio", "root": str(root)}},
+            str(media_dirs.media_work_root(str(user.id))),
+        )
+        rows = helpers["curio_load_collection"](dataset["id"])
+        recording = rows[(rows["sensor"] == "sensor_01") & (rows["name"] == "20240501_060000.wav")]
+        assert len(recording) == 1
+
+        def played(row):
+            """What the player plays for *row*: its link, asked for as Simple View asks."""
+            link = client.post(
+                f"/api/datasets/{dataset['id']}/media/{quote(row['file_id'], safe='')}/link", headers=auth
+            )
+            assert link.status_code == 200, link.get_data(as_text=True)[:300]
+            clip = client.get(link.get_json()["url"])
+            assert clip.status_code == 200 and clip.mimetype == "audio/wav", clip.get_data()[:300]
+            return clip.data
+
+        shorter = split_audio(recording, helpers["curio_derived_file"], window_seconds=0.25).iloc[0]
+        by_shorter = played(shorter)
+        longer = split_audio(recording, helpers["curio_derived_file"], window_seconds=0.5).iloc[0]
+        assert (shorter["t_s"], longer["t_s"]) == (0.0, 0.0)
+        assert played(shorter) == by_shorter, "the 0.5 s node's clip replaced the 0.25 s node's"
+        assert played(longer) != by_shorter
+        assert shorter["file_id"] != longer["file_id"]
 
     def test_a_raster_has_no_derived_files(self, client, auth, app, shipped_root):
         dataset, index = collection(client, auth, "orthos")

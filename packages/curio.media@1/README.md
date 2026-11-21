@@ -21,7 +21,7 @@ views and the zonal-statistics nodes work on the result as they are.
 Each node's settings are constants at the top of its code:
 
 - Sample Video Frames: `EVERY_SECONDS` (default 2.0) and `MAX_FRAMES_PER_VIDEO` (default 300).
-- Split Audio: `WINDOW_SECONDS` (default 5.0) and `MAX_WINDOWS_PER_RECORDING` (default 2000).
+- Split Audio: `WINDOW_SECONDS` (default 5.0, at least 0.001) and `MAX_WINDOWS_PER_RECORDING` (default 2000).
 - Split Video: `BLOCK_SECONDS` (default 60.0), the length of a block when nothing is wired to the bottom circle; `WIDTH` (default 960), the widest a block is drawn; and `MAX_FRAMES` (default 30000), the most frames one run re-encodes, which a whole 864 s walk at 30 frames a second fits.
 
 ## Cutting a video where you choose
@@ -93,10 +93,12 @@ modules.
 ## Files
 
 A frame, a window or a block is a file the node writes beside the collection's
-other derived files, served back to Simple View by its id. A block's file is
-named after its video, where it starts and ends and its width, so cutting a
-video again into the same blocks writes the same files. The media files
-themselves are never written. A bucket collection's files are read in place
+other derived files, served back to Simple View by its id. A window's clip is
+named after its recording and where the window starts and ends, so two Split
+Audio nodes whose windows differ in length keep clips of their own. A block's
+file is named after its video, where it starts and ends and its width, so
+cutting a video again into the same blocks writes the same files. The media
+files themselves are never written. A bucket collection's files are read in place
 where the deployment mounts the bucket; elsewhere they must be cached first
 (**Cache files**, in the collection's details in the Data Catalog), and a node
 that meets an uncached file says so.
