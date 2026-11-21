@@ -1785,9 +1785,12 @@ export const useAutkGrammarBehavior = (
                         crs: (collection, workspace) => workspaceCrs(
                             collection, workspace, crsOf, String((grammar as any)?.workspaceCrs ?? 'EPSG:3395'),
                         ),
+                        // A table read back holds the input rows' marks too
+                        // when a source after compute wrote into one the map
+                        // drew from its input: none goes on.
                         heights: (table, rows, how) => (how === 'computed'
                             ? asHandedFromTheRun(table, rows, rows !== undefined && handedWithDefaults(rows, uses))
-                            : table),
+                            : asHandedFromTheRun(table, undefined, false)),
                     });
                     handOnRun(await handOnOutput(tables, {
                         jsInterpreter: data.jsInterpreter, nodeId, onDashboard: !!dashboardOn, stored: storedHandOnRef,

@@ -22,7 +22,9 @@
  * A table a pass wrote is that pass's result, as the node's run computed it:
  * no pass runs again to hand it on. It is copied before anything of it changes,
  * since the views of a node that draws read the same object. The columns its
- * passes computed are lifted to the top of each feature (`withLiftedColumns`).
+ * passes computed are lifted to the top of each feature (`withLiftedColumns`),
+ * in a table a source after compute wrote too, which is read back from the
+ * run's database as it then stands.
  * It says the CRS its coordinates are in: the one of the table it was computed
  * from, for a compute step with no database, else its workspace's. It is a
  * table of its pass's `layerType`, else of `points` for windows, else of the
@@ -245,11 +247,14 @@ export async function handOnTables(run: HandOnRun): Promise<HandOnTable[]> {
         if (listed.has(key) || dropped.has(key)) return;
         listed.add(key);
         // A table a source after compute wrote is the database's now, a
-        // table a pass wrote before it among them.
+        // table a pass wrote before it among them, with the columns the
+        // passes computed lifted as in a table a pass wrote.
         if (wroteAfter.has(key) && run.readBack) {
             const read = await run.readBack(name, workspace);
             if (read) {
-                handed.push(run.heights ? run.heights(read, undefined, 'read back') : read);
+                const geojson = withLiftedColumns(read.geojson, columns);
+                const table = geojson === read.geojson ? read : { ...read, geojson };
+                handed.push(run.heights ? run.heights(table, undefined, 'read back') : table);
                 return;
             }
         }
