@@ -281,7 +281,7 @@ export async function notebookToTrill(
     for (let i = 0; i < codeCells.length - 1; i++) {
       cellEdges.push({ source: i, target: i + 1 });
     }
-    // No lastVars available — skip wiring in this path
+    // No lastVars available: skip wiring in this path
     lastVars = [];
     // …and no analysis, so nothing can be classified. Merging on a guess would
     // silently move code the user wrote into a node they did not: without the

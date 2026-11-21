@@ -31,6 +31,7 @@ This document describes the internal architecture of Curio for contributors who 
   * [Step-by-Step: Running a Node](#step-by-step-running-a-node)
   * [Render Outcomes](#render-outcomes)
   * [Running Python Code](#running-python-code)
+  * [Importing a notebook](#importing-a-notebook)
   * [Sandbox Isolation](#sandbox-isolation)
 * [Interactions and Propagation](#interactions-and-propagation)
 * [Provenance Tracking](#provenance-tracking)
@@ -1472,6 +1473,14 @@ The harness reads the cause from the `kind`, never from the message. [`result_sh
 - Calls `save_to_duckdb(output)` to persist the result, and returns the new artifact id and kind.
 
 `load_from_duckdb` and `save_to_duckdb` live in `utk_curio/sandbox/util/parsers.py`, `detect_kind` in `utk_curio/sandbox/util/codec.py`, and the DuckDB connection in `utk_curio/sandbox/util/db.py`.
+
+### Importing a notebook
+
+The Projects page's **Import notebook** builds a dataflow from a `.ipynb` file in the browser (`NotebookConvertor.ts`'s `notebookToTrill`), from what `POST /api/analyzeNotebook` answers of the notebook's code cells. The route needs a sign-in, which the page sends through `requestHeaders`.
+
+- **The analysis** ([`notebooks/analyzer.py`](../utk_curio/backend/app/notebooks/analyzer.py)'s `analyze_cells`) reads each cell with `ast` and runs none of its code: the names it defines and uses, its last variable (the node's title), the edges between cells, and the cells that only import, which become one Setup node.
+- **Altair charts.** A cell that parses, assigns a variable and calls `alt.<name>(` is a chart cell (`chart_cells`), and its Vega-Lite spec makes it a Vega-Lite node. The backend sends every chart cell of the notebook to the sandbox's `/exec` as one node's code ([`notebooks/charts.py`](../utk_curio/backend/app/notebooks/charts.py)), under the caller's sign-in and with their account's work directory, so the run gets what a Play gets: under isolation a forked child with seccomp, no network, the execution account, its memory budget and its time limit. As with a Play, no budget of the account's applies to it in the backend. In the run each chart cell runs in a namespace of its own, with `alt`, `pd` and `np`, and each name it reads bound to a copy of a stand-in frame whose columns are the field names its strings mention, two rows of numbers, so Altair can tell a shorthand field's type. Its spec is its last variable's `to_dict()` without `data` and `datasets`, since the node reads its data from the node wired into it. The run returns `{"specs": [...]}`, which the backend reads with `/get`.
+- **No spec.** A cell that raises, or whose last variable is no chart, has none, and the others keep theirs. A run that fails, outlasts its time or cannot be asked gives no chart cell a spec, and each becomes a Python node. Without isolation the run is in the sandbox's process, as a Play's is (see the warning below), so a cell that never ends holds the sandbox until the backend stops waiting, after `node_exec.SANDBOX_EXEC_TIMEOUT` (600 s).
 
 ### Sandbox Isolation
 
@@ -3250,6 +3259,7 @@ The backend is a Flask application in `utk_curio/backend/`. Routes are split acr
 | `/output-file` | GET | The file a text output names, a Data Export's, by the output's artifact id and never by a path, read in the session `_read_session` gives: the sandbox serves it only from inside the folder of the run that made the output, with its name in `Content-Disposition`, and answers a refusal (403 `outside`, 404 `not-found`, `no-file` or `gone`) as JSON with its reason ([Files a run writes](#files-a-run-writes)) |
 | `/file/<path>` | GET | Serve a file relative to `CURIO_LAUNCH_CWD` so browser-side nodes can fetch binary assets (PBF, GeoTIFF) by the same relative path Python nodes use. Unauthenticated, so it refuses hidden paths and Curio's own state: the instance folder, the `.curio` state root, the shared data directory, the dataset hub and the SQLite database. `vendor/duckdb-extensions/` and `docs/examples/data/` come from the folders Curio ships instead ([Where the shipped folders are](#where-the-shipped-folders-are)) |
 | `/starters` | GET | Per-template starter source bodies from every installed package |
+| `/api/analyzeNotebook` | POST | `{cells}`, a notebook's code cells: each cell's analysis and the Vega-Lite spec the sandbox made of each Altair chart cell, under the caller's sign-in ([Importing a notebook](#importing-a-notebook)) |
 
 File ingestion is **not** here - it lives in the datasets blueprint as `POST /api/datasets/import`.
 
@@ -3765,6 +3775,7 @@ on an upstream loader is progress.
 | `backend/server.py` | Builds the Flask app from `create_app` (`backend/app/__init__.py`); the startup work, done by the home process when it serves, owning every dataflow while it does (the shared guest, the hosted guests' copies dropped, the agents, the packages `--guest-packages` names and the examples put back, the timers, the open-files sampler, the monitor's record of the start with its version and its sessions sampler (`monitor/usage.py`), the bucket mount service's proxy and check; each other process of a start of several samples its own open files); in every process that serves, the monitor's history writer and the write of what it holds on SIGTERM and at exit (`monitor/history.py`); Werkzeug reloader exclude patterns |
 | `common/backend_processes.py` | Which backend process this is (`CURIO_BACKEND_PROCESS` of `CURIO_BACKEND_PROCESSES`, process 0 the home process), the start's boot id (`CURIO_BOOT_ID`), which the launcher gives every backend of a start, every process's port and the start's secret, `shard_of`, the process a dataflow belongs to among several, `dataflow_id_on`, a new dataflow's id made for a process, and `own_file`, a file of this process's own |
 | `backend/app/api/routes.py` | REST endpoints for sandbox proxies, starters, and file serving |
+| `backend/app/notebooks/analyzer.py` + `charts.py` | The notebook import: what its analysis reads of each cell with `ast`, and the Vega-Lite specs of its Altair cells, made in the sandbox as a node's run |
 | `backend/app/packages/domain/manifest.py` | Parse `manifest.json` into typed `PackageManifest` dataclass |
 | `backend/app/packages/repositories/archive.py` + `application/store_install.py` | The `.curio.zip` format (member safety, integrity hashing) and catalog-source-dir → archive → user-store copy |
 | `backend/app/packages/infrastructure/pip_runner.py` | `install_python_deps` / `uninstall_python_deps`; PEP 440 + caret support, idempotent skip |
