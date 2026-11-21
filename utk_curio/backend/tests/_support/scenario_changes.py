@@ -13,7 +13,8 @@ before they were deleted:
 - :func:`roads_change`, its Difference of two layers with no key column, in
   one order and with the same shapes, numbers nested in a column of dicts
   subtracted too (example 06's roads, whose ``osm_id``, which Compare's
-  inputs did not have, is taken as it is);
+  inputs did not have, is taken as it is, and whose numeric tags, which
+  Compare's inputs held as text, example 06's node keeps as they are);
 - :func:`stacked_rows`, its stacked table, each input's rows under its
   scenario's id and name, read without their geometry.
 
@@ -91,14 +92,18 @@ def _cell_change(before, after):
     return cell, differs
 
 
-def roads_change(before, after):
+def roads_change(before, after, *, kept=()):
     """*after*'s layer minus *before*'s, two layers with no key column in one
     order and with the same shapes, each row matched to the row in its place:
     the geometry first and ``change`` second, then the other columns in their
-    order. Each number column but ``osm_id``, and each number in a column of
-    dicts, is *after*'s value minus *before*'s; ``change`` says ``changed``
-    where any value differs, else ``unchanged``; every other value, each
-    road's ``osm_id`` among them, and the shape, is *after*'s."""
+    order. Each number column but ``osm_id`` and the columns *kept* names, and
+    each number in a column of dicts, is *after*'s value minus *before*'s;
+    ``change`` says ``changed`` where any value differs, else ``unchanged``;
+    every other value, each road's ``osm_id`` and *kept*'s columns among them,
+    and the shape, is *after*'s. With nothing *kept* it is Compare Scenarios'
+    rule, which the fixture of Compare's own output holds it to; example 06's
+    Sunlight change node keeps each road's numeric tags as they are
+    (:func:`numeric_tags`)."""
     import geopandas as gpd
     import numpy as np
     import pandas as pd
@@ -110,7 +115,7 @@ def roads_change(before, after):
     columns = {}
     differs = np.zeros(len(now), dtype=bool)
     for column in [c for c in was.columns if c != geometry]:
-        if column != OSM_ID and _is_number(was[column]) and _is_number(now[column]):
+        if column != OSM_ID and column not in kept and _is_number(was[column]) and _is_number(now[column]):
             old, new = was[column].astype("float64"), now[column].astype("float64")
             columns[column] = new - old
             differs |= ((old.isna() != new.isna()) | (old.notna() & new.notna() & (new != old))).to_numpy()
@@ -124,6 +129,15 @@ def roads_change(before, after):
             differs |= ~same.to_numpy()
     written = pd.DataFrame({geometry: now[geometry], "change": np.where(differs, "changed", "unchanged"), **columns})
     return gpd.GeoDataFrame(written, geometry=geometry, crs=after.crs if after.crs is not None else before.crs)
+
+
+def numeric_tags(frame) -> list:
+    """*frame*'s columns that are numeric OpenStreetMap tags, in its order: the
+    tags both Autark loaders hand on as numbers, by the one rule the Discovery
+    Catalog's download reads them by too (``osm_values.NUMERIC_KEYS``)."""
+    from utk_curio.backend.app.discovery.domain.osm_values import NUMERIC_KEYS
+
+    return [column for column in frame.columns if column in NUMERIC_KEYS]
 
 
 def keyed_change(before, after, key: str, *, absolute: bool = False):

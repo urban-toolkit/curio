@@ -28,12 +28,13 @@ backend's ``/file/`` route (served from disk here, as an extract is). Its
 raster table is handed on as a heatmap's is: the file's cells, laid over its
 corners in the workspace's CRS.
 
-OpenStreetMap writes every tag as text, and the load hands each numeric
-building tag on as a number (``withOsmNumbers``): a plain number as that
-number ("65.5"), a length with its unit in metres ("86 m"), and a value with
-no number that can be read ("7-7") as none. A Map Editor node below such a
-load edits what it hands on: its scale, offset, rule and expression read each
-such tag as the number it is.
+OpenStreetMap writes every tag as text, and the load hands each numeric tag
+on as a number (``withOsmNumbers``), as the Discovery Catalog's downloads hold
+it (``osm_values.py``): a plain number as that number ("65.5"), a length with
+its unit in metres ("86 m", "45 ft"), a speed in km/h ("30 mph"), and a value
+with no number that can be read ("7-7") as none. A Map Editor node below such
+a load edits what it hands on: its scale, offset, rule and expression read
+each such tag as the number it is.
 """
 from __future__ import annotations
 
@@ -400,6 +401,58 @@ def test_the_server_compiled_load_hands_on_openstreetmaps_numeric_building_tags_
             for osm_id, tags in expected.items()
         }
         assert handed == expected
+
+
+#: The cases both twins of the number rule run (``withOsmNumbers`` and the
+#: Discovery Catalog's ``osm_values.py``), whose ``keys`` list every numeric tag.
+SHARED_CASES = (REPO_ROOT / "utk_curio" / "frontend" / "urban-workflows" / "src" / "adapters" / "node"
+                / "autkOsmNumbers.cases.json")
+#: Each load's roads, by OSM id, and what the load hands on for their numeric
+#: tags, the text in the extract beside each.
+ROADS_WRITTEN = {
+    "chicago_loop": {
+        # The Eisenhower Expressway: 13'6", 12'0", "3" and "1".
+        56152933: {"maxheight": 4.11, "maxwidth": 3.66, "lanes": 3, "layer": 1},
+        # South Columbus Drive: "30 mph", "7", "3" and "4".
+        235714536: {"maxspeed": 48.28, "lanes": 7, "lanes:forward": 3, "lanes:backward": 4},
+    },
+    "back_bay": {
+        # David G. Mugar Way: "3.7", 14'0", "25 mph" and "1".
+        8637722: {"width": 3.7, "maxheight": 4.27, "maxspeed": 40.23, "lanes": 1},
+        # Public Alley 419: "2.7", "none", "15 mph" and "1".
+        8637791: {"width": 2.7, "maxheight": None, "maxspeed": 24.14, "lanes": 1},
+    },
+}
+
+
+@pytest.mark.parametrize("load, extract", [(LOOP_LOAD, "chicago_loop"), (BACK_BAY_LOAD, "back_bay")],
+                         ids=["chicago_loop", "back_bay"])
+def test_the_server_compiled_load_hands_on_every_numeric_tag_of_its_layers_as_a_number(
+    load, extract, tmp_path, monkeypatch,
+):
+    """Every OpenStreetMap layer the load hands on but the surface holds each
+    numeric tag the shared cases list, a length, a speed or a count, as a
+    number or as none, never as text, as the Discovery Catalog's downloads
+    hold it: a road's speed in km/h, its clearance and width in metres, its
+    lanes and its layer as counts."""
+    keys = json.loads(SHARED_CASES.read_text(encoding="utf-8"))["keys"]
+    numeric = set(keys["lengths"]) | set(keys["speeds"]) | set(keys["counts"])
+    layers = _served_layers(*load, tmp_path, monkeypatch)
+    texts = sorted({
+        (layer["name"], key, repr(value))
+        for layer in layers if layer["type"] != "surface"
+        for feature in layer["geojson"]["features"]
+        for key, value in (feature["properties"] or {}).items()
+        if key in numeric and value is not None and not _a_number(value)
+    })
+    assert texts == [], f"the load hands on {len(texts)} numeric tag values that are no numbers, such as {texts[:12]}"
+    roads = next(layer for layer in layers if layer["name"] == "table_osm_roads")
+    by_id = {feature["properties"]["osm_id"]: feature["properties"] for feature in roads["geojson"]["features"]}
+    handed = {
+        osm_id: {key: by_id[osm_id].get(key, "missing") for key in tags} if osm_id in by_id else "missing"
+        for osm_id, tags in ROADS_WRITTEN[extract].items()
+    }
+    assert handed == ROADS_WRITTEN[extract]
 
 
 def test_a_map_editor_rule_picks_the_loops_tall_buildings_and_an_expression_halves_them(tmp_path, monkeypatch):

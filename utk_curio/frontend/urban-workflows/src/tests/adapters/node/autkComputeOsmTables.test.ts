@@ -3,7 +3,7 @@
  * or sources after compute; adapters/node/autkComputeDatabase.ts) hands on a
  * table an OpenStreetMap source after compute loads as both loaders hand one
  * on: each feature with its OSM id in `osm_id`, a building part with its own,
- * its numeric building tags as numbers (`withOsmIds`, `withOsmNumbers` in
+ * its numeric tags as numbers (`withOsmIds`, `withOsmNumbers` in
  * autkDataCompile.ts), and a building a part a row.
  *
  * The step runs through autk-grammar's own data adapter, the build the app
@@ -152,10 +152,10 @@ describe("a compute step on a database of its own hands on an OpenStreetMap sour
     ]);
   });
 
-  test("each road with its OSM id, its other tags as they came", async () => {
+  test("each road with its OSM id, its speed in km/h and its other tags as they came", async () => {
     const roads = (await handedOn()).table_osm_roads;
     expect(roads.geojson.features.map((f: any) => f.properties)).toEqual([
-      { highway: "primary", name: "Boylston Street", maxspeed: "25 mph", osm_id: 8614929 },
+      { highway: "primary", name: "Boylston Street", maxspeed: 40.23, osm_id: 8614929 },
     ]);
   });
 });

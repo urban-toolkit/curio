@@ -11,7 +11,9 @@ rules in ``tests/_support/scenario_changes.py``, to:
 
 - ``example06_roads_change.json``: Compare's Difference over example 06's
   Baseline and Twice as tall, on Back Bay's roads (autk-db's load of the
-  extract, the minutes ``test_example06_sunlight_change.py`` gives them);
+  extract, its numeric tags as numbers as Curio's loaders hand them on, by
+  this checkout's ``osm_values.with_numbers``, the minutes
+  ``test_example06_sunlight_change.py`` gives them);
 - ``flood_tracts.json``: over the flood example's two Tract depth outputs at
   the dataflow's own settings, keyed on FIPS, in Absolute; over the
   riverside tracts by hand with a tract left out of one side; and its stacked
@@ -47,6 +49,10 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 MAIN = "72f5d3df5"
 SUPPORT = HERE.parents[2] / "_support" / "scenario_changes.py"
+#: This checkout's twin of the rule Curio's loaders hand OpenStreetMap's
+#: numeric tags on by, and the module of JavaScript's spaces it reads.
+OSM_VALUES = HERE.parents[3] / "app" / "discovery" / "domain" / "osm_values.py"
+JS_VALUES = HERE.parents[4] / "sandbox" / "util" / "js_values.py"
 
 
 def _support():
@@ -56,6 +62,20 @@ def _support():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _osm_numbers():
+    """This checkout's ``osm_values.with_numbers``, by its path, with the
+    ``js_values`` it reads, which main's tree at 72f5d3df5 does not hold: an
+    OpenStreetMap layer as Curio's loaders hand it on, its numeric tags as
+    numbers."""
+    spaces = importlib.util.spec_from_file_location("utk_curio.sandbox.util.js_values", JS_VALUES)
+    sys.modules["utk_curio.sandbox.util.js_values"] = importlib.util.module_from_spec(spaces)
+    spaces.loader.exec_module(sys.modules["utk_curio.sandbox.util.js_values"])
+    spec = importlib.util.spec_from_file_location("checkout_osm_values", OSM_VALUES)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.with_numbers
 
 
 def _store(root: Path) -> None:
@@ -127,6 +147,12 @@ def example06(work: Path, support) -> None:
     finally:
         Path.home = saved_home
     assert [layer["name"] for layer in layers] == test.LAYERS
+    # Each layer but the surface as Curio's loaders hand it on since main's
+    # tree: its numeric tags as numbers (main's loader at 72f5d3df5 handed
+    # them on as text, and no osm_id).
+    with_numbers = _osm_numbers()
+    layers = [layer if layer["type"] == "surface" else {**layer, "geojson": with_numbers(layer["geojson"])}
+              for layer in layers]
     (roads,) = [layer for layer in layers if layer["name"] == test.ROADS]
     assert len(roads["geojson"]["features"]) == test.ROAD_COUNT
 
@@ -148,13 +174,15 @@ def example06(work: Path, support) -> None:
     order = sorted(range(len(shapes)), key=lambda road: (-first[shapes[road]], road))
     reordered = compares(baseline, test._handed_on(layers, "s-twice", order=order))
     # The values a change writes: the label, and the minutes in their column
-    # and in the compute values; the other columns are Twice as tall's tags.
+    # and in the compute values; the other columns are Twice as tall's tags,
+    # each number of them Twice as tall's minus Baseline's.
     held = support.frame_fixture(in_place, ["change", "compute", "sunlight"])
     assert support.frame_fixture(reordered, ["change", "compute", "sunlight"]) == held, (
         "Compare's change moved with the order of the roads"
     )
     _written("example06_roads_change.json", {
-        "inputs": "Back Bay's roads as test_example06_sunlight_change.py hands them on, Baseline then Twice as tall",
+        "inputs": "Back Bay's roads as test_example06_sunlight_change.py hands them on, their numeric tags as numbers "
+                  "(osm_values.with_numbers), Baseline then Twice as tall",
         "call": 'difference_scenarios([("s-baseline", "Baseline", ...), ("s-twice", "Twice as tall", ...)], '
                 'layer="table_osm_roads"), read back from the store; the same with Twice as tall\'s roads reordered',
         "change": held,
