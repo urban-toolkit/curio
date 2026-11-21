@@ -33,14 +33,18 @@ def _auth(token):
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 
-def _local_relief_archive() -> bytes:
+def _local_relief_archive(**manifest_changes) -> bytes:
     """Local Relief as an export writes it: its files at the root, its
-    integrity record left out."""
+    integrity record left out; *manifest_changes* go into its manifest."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(LOCAL_RELIEF_FOLDER.rglob("*")):
             rel = path.relative_to(LOCAL_RELIEF_FOLDER).as_posix()
-            if path.is_file() and rel != "integrity.json" and "__pycache__" not in rel:
+            if not path.is_file() or rel == "integrity.json" or "__pycache__" in rel:
+                continue
+            if rel == "manifest.json" and manifest_changes:
+                archive.writestr(rel, json.dumps({**_manifest(LOCAL_RELIEF_FOLDER), **manifest_changes}))
+            else:
                 archive.write(path, rel)
     return buf.getvalue()
 
@@ -113,6 +117,20 @@ def test_a_new_package_of_a_node_that_loads_a_model_is_a_model_package_with_a_co
     code = (folder / "sources" / "python-computation.py").read_text(encoding="utf-8")
     assert f'curio_load_model("{NEW_ID}")' in code
     assert LOCAL_RELIEF_ID not in code
+
+
+def test_the_new_model_package_files_its_dataflows_as_the_model_it_copied_does(tmp_curio):
+    """What a dataflow that uses the model is filed under, its package's
+    ``dataflowCategories``, comes with the copy, as its block and its
+    libraries do: Curio's code names no model type's categories."""
+    from utk_curio.backend.app.packages.application.factory_install import install_draft
+
+    declares = {"tags": ["Terrain"], "dataTypes": ["Rasters"]}
+    install_package_from_archive("guest", _local_relief_archive(dataflowCategories=declares))
+
+    install_draft("guest", _draft(_code(LOCAL_RELIEF_ID)), replace=False)
+
+    assert _manifest(package_dir("guest", NEW_DIR)).get("dataflowCategories") == declares
 
 
 def test_the_new_model_package_runs_without_the_model_it_was_copied_from(tmp_curio):

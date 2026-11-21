@@ -353,6 +353,37 @@ describe("a concept segmentation model whose weights its fetch names", () => {
   });
 });
 
+describe("a model of a type no package Curio ships runs", () => {
+  beforeEach(() => {
+    const depth = fetchedModelPackage();
+    mockApi.catalog.mockResolvedValue({
+      packages: [ddrnetPackage(), deepUmbraPackage(), fetchedModelPackage({ model: { ...depth.model, type: "depth-estimation" } })],
+      families: [],
+      catalogCollisions: [],
+    });
+  });
+
+  test("its card and the rail name its type in words, and the rail narrows the grid to it", async () => {
+    renderPage();
+    const depth = await gridCard("model.test.prompted@1");
+    expect(depth).toHaveTextContent("Depth estimation");
+    expect(railRow(/Depth estimation/)).toHaveTextContent("1");
+    fireEvent.click(railRow(/Depth estimation/));
+    await waitFor(() => expect(card("model.curio.ddrnet23-slim@1")).toBeNull());
+    expect(card("model.scout.deep-umbra@1")).toBeNull();
+    expect(card("model.test.prompted@1")).not.toBeNull();
+  });
+
+  test("its details name its type in words", async () => {
+    renderPage();
+    const depth = await gridCard("model.test.prompted@1");
+    fireEvent.click(within(depth).getByRole("button", { name: "View details" }));
+    const modal = await screen.findByRole("dialog", { name: "Model details" });
+    const type = within(modal).getByText("Type", { selector: "dt" }).nextElementSibling as HTMLElement;
+    expect(type).toHaveTextContent("Depth estimation");
+  });
+});
+
 describe("the Model Catalog page, while it loads", () => {
   test("says it is loading models, never that no model matches", () => {
     mockApi.catalog.mockImplementation(() => new Promise(() => undefined));
