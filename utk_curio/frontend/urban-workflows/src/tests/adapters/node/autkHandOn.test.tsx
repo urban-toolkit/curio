@@ -63,15 +63,22 @@ jest.mock('@urban-toolkit/autk-core', () => require('../../_support/autkComputeS
 jest.mock('@urban-toolkit/autk-map', () => require('../../_support/autkComputeStandIns').autkMapModule, { virtual: true });
 jest.mock('@urban-toolkit/autk-plot', () => require('../../_support/autkComputeStandIns').autkPlotModule, { virtual: true });
 // The tables a data section loads, as the browser's own loader reads them
-// back when no sandbox answers.
-const mockLoaded: { layers: Array<{ name: string; type: string; features: any[] }> } = { layers: [] };
+// back when no sandbox answers; and the tables of the database a node's run
+// goes on, when its sources reach the grammar's data adapter (grammarLoads).
+// A table *unreadable* names cannot be read back.
+const mockLoaded: { layers: Array<{ name: string; type: string; features: any[] }>; unreadable: string | null } = {
+  layers: [], unreadable: null,
+};
 jest.mock(
   '@urban-toolkit/autk-db',
   () => ({
     AutkDb: class {
+      private workspace = 'autk';
       async init() { }
       async loadGeojson() { }
       async loadGeoTiff() { }
+      getCurrentWorkspace() { return this.workspace; }
+      async setWorkspace(name: string) { this.workspace = name; }
       getWorkspaceConfiguration() { return { coordinateFormat: 'EPSG:3395' }; }
       getLayersMetadata() {
         return mockLoaded.layers.map(({ name, type }) => ({ name, type }));
@@ -80,6 +87,7 @@ jest.mock(
         return mockLoaded.layers.map(({ name, type }) => ({ name, type }));
       }
       async getLayer(name: string) {
+        if (name === mockLoaded.unreadable) throw new Error(`Table ${name} could not be read.`);
         const layer = mockLoaded.layers.find((l) => l.name === name);
         return {
           type: 'FeatureCollection',
@@ -103,8 +111,11 @@ import {
   drawnExports,
   flowDashboard,
   grammarComputes,
+  grammarLoads,
+  grammarRuns,
   inputsByPath,
   resetAutkNodeMocks,
+  showToast,
 } from '../../_support/autkNodeMocks';
 import { stubWebGpu, unstubWebGpu } from '../../_support/autkNode';
 import { computeRuns, resetComputeStandIns } from '../../_support/autkComputeStandIns';
@@ -232,6 +243,7 @@ beforeEach(() => {
   resetComputeStandIns();
   computeRuns.gpgpu.mockImplementation(async (params: any) => computed(params));
   mockLoaded.layers = [];
+  mockLoaded.unreadable = null;
   mockKeepStep.mockReset();
   forgetPageSteps();
   inputsByPath.current = { 'art-lanes': LANES, 'art-lanes-density': { dataType: 'outputs', data: [LANES, DENSITY] } };
@@ -461,5 +473,66 @@ describe("on a viewer's dashboard page", () => {
     expect(node.lastOutput()).toEqual(expect.objectContaining({ code: 'success' }));
     expect(interpretCode).not.toHaveBeenCalled();
     expect(mockKeepStep).not.toHaveBeenCalled();
+  });
+});
+
+describe('a node that draws reads back the tables its sources after compute make, from the database its run went on', () => {
+  // A map over its input whose pass writes `lane_twice`, then a SQL query after
+  // compute that keeps the pass's rows as `lane_copy`. The run's sources reach
+  // the grammar's data adapter, which goes on the node's own database, the
+  // stand-in autk-db: it holds the input's table as the node handed it, each
+  // row marked with the input row it stands for, and once the run is over the
+  // table the query saved, as autk-db keeps the pass's rows: each with its mark
+  // and the pass's column under `compute`.
+  const AFTER_COMPUTE = {
+    data: [{ type: 'sql', query: 'SELECT * FROM "lane_twice"', outputTableName: 'lane_copy', layerType: 'roads', after: 'compute' }],
+    compute: [pass('lanes', 'twice', { outputTableName: 'lane_twice', layerType: 'roads' })],
+    map: { layerRefs: [{ dataRef: 'lane_twice', getFnv: 'twice' }] },
+  };
+  /** The spots as the run's database holds them: each with its input row's mark, and *column* doubled under `compute`. */
+  const heldRows = (column?: string) => spots().features.map((feature: any, row: number) => ({
+    ...feature,
+    properties: {
+      ...feature.properties,
+      __curio_row: row,
+      ...(column ? { compute: { [column]: 2 * feature.properties.value } } : {}),
+    },
+  }));
+
+  beforeEach(() => {
+    grammarLoads.on = true;
+    drawnExports.of = null;
+    mockLoaded.layers = [
+      { name: 'lanes', type: 'roads', features: heldRows() },
+      { name: 'lane_copy', type: 'roads', features: heldRows('twice') },
+    ];
+  });
+
+  test("hands on the table a source after compute made, without its map's marks, each pass's column lifted", async () => {
+    const node = mountNode('reads-back', { input: ONE_LAYER });
+
+    await node.run(AFTER_COMPUTE);
+
+    expect(node.lastOutput()).toEqual(expect.objectContaining({ code: 'success' }));
+    const [handed] = node.handedOn();
+    expect(namesAndTypes(handed)).toEqual([['lanes', 'roads'], ['lane_twice', 'roads'], ['lane_copy', 'roads']]);
+    expect(tableNamed(handed, 'lane_copy').data.features.map((f: any) => f.properties)).toEqual(
+      [1, 2, 3].map((value) => ({ value, compute: { twice: 2 * value }, twice: 2 * value })),
+    );
+  });
+
+  test('a read-back that fails fails the run as a compute step fails, names it, hands on nothing, and leaves its maps drawn', async () => {
+    mockLoaded.unreadable = 'lane_copy';
+    const node = mountNode('reads-back', { input: ONE_LAYER });
+
+    await node.run(AFTER_COMPUTE);
+
+    const message = 'Compute failed: compute: Table lane_copy could not be read.';
+    expect(node.lastOutput()).toEqual(expect.objectContaining({ code: 'error', content: message }));
+    expect(showToast).toHaveBeenLastCalledWith(message, 'error');
+    expect(node.handedOn()).toEqual([]);
+    // It drew: its grammar, and the maps it made, are the node's until its next run.
+    expect(grammarRuns).toHaveLength(1);
+    expect(grammarRuns[0].destroy).not.toHaveBeenCalled();
   });
 });
