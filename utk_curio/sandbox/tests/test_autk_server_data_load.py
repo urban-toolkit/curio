@@ -457,7 +457,7 @@ def test_a_map_editor_scales_and_offsets_the_heights_openstreetmap_writes_as_tex
         ), f"{how}: heights {before} became {after}, not twice them plus one"
 
 
-AUTK_GRAMMAR_VERSION = "5.5.1"
+AUTK_GRAMMAR_VERSION = "5.6.0"
 
 #: Four readings at the corners of a box about 1.1 km by 1.5 km in the Chicago
 #: Loop, binned twice into 3 columns by 2 rows over their extent: each cell of
