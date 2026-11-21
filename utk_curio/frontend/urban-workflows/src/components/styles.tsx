@@ -58,8 +58,7 @@ import {
     widgetLoaderCode,
     type DatasetDragPayload,
 } from "../services/datasetCatalog";
-import { datasetWidgetBindings, datasetWidgetReadBy } from "../utils/widgets/datasetWidgets";
-import { isPicked } from "../utils/widgets/widgetModel";
+import { datasetWidgetBindings, datasetWidgetReadBy, pickedDropRefusal } from "../utils/widgets/datasetWidgets";
 import { DatasetWidgetContext, type DatasetWidgetNode } from "./editing/widgets/datasetWidgetContext";
 import { hasFileDrag, useDataFileImport } from "./datasets/useDataFileImport";
 import { useAskTheOwner } from "./datasets/useAskTheOwner";
@@ -474,9 +473,7 @@ export const NodeContainer = ({
     const pickedRefusalRef = useRef<() => string | null>(() => null);
     pickedRefusalRef.current = () => {
         const current = getNodes().find((node) => node.id === nodeId)?.data ?? data;
-        const widget = datasetWidgetReadBy(current.widgets, code ?? current.code ?? current.defaultCode);
-        if (!widget || !isPicked(widget)) return null;
-        return `${widget.label || widget.name} is picked by ${widget.options?.pickedBy}: change what that input holds to load another dataset.`;
+        return pickedDropRefusal(current.widgets, code ?? current.code ?? current.defaultCode);
     };
     const takeDatasetRef = useRef<(dataset: DatasetDragPayload) => void>(() => {});
     takeDatasetRef.current = (dataset: DatasetDragPayload) => {

@@ -3731,9 +3731,9 @@ such a widget.
 - **The canvas.** `useInputScope` reads the value on a picked circle through
   the same `/get-preview` a chip's hover reads (`readInputValue`), and the
   controls show the dataset it picks (`withPickedValues`); the box offers no
-  **Choose file**, and the node refuses a drop with why
-  (`NodeContainer`'s `pickedRefusalRef`). `nodeBoundDatasetIds` binds every
-  choice. The agents declare it through the widget grammar, whose native tools
+  **Choose file**, and the node refuses a drop with why, before a file is
+  imported for it (`datasetWidgets.pickedDropRefusal`, asked by
+  `NodeContainer`). `nodeBoundDatasetIds` binds every choice. The agents declare it through the widget grammar, whose native tools
   offer `choices` as JSON text, a choice widget's list or this map.
 
 ### Auth Routes

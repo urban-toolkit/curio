@@ -21,6 +21,16 @@ export function datasetWidgetReadBy(widgets: unknown, code: unknown): WidgetDef 
   return normalizeWidgets(widgets).find((w) => w.type === "dataset" && reads(code, w.name)) ?? null;
 }
 
+/** Why a node whose *code* reads a dataset widget an input picks
+ * (`options.pickedBy`) takes no drop of a file or a dataset, or null when it
+ * takes one: what that input holds says which dataset it loads, and a drop
+ * would say another. */
+export function pickedDropRefusal(widgets: unknown, code: unknown): string | null {
+  const widget = datasetWidgetReadBy(widgets, code);
+  if (!widget || !isPicked(widget)) return null;
+  return `${widget.label || widget.name} is picked by ${widget.options?.pickedBy}: change what that input holds to load another dataset.`;
+}
+
 /** Whether *code* reads any of *widgets*: a node whose template opens on its
  * Widgets tab opens there when it does (NodeEditor). */
 export function readsAWidget(widgets: unknown, code: unknown): boolean {
