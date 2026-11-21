@@ -438,6 +438,23 @@ A Data Loading node opens on its **Widgets** tab, which holds only its **Data**
 box: drop a file or a Data Catalog dataset on the node, or click **Choose file**
 to pick a file, and its code, on the **Code** tab, loads it ([Data Catalog](#data-catalog)).
 
+An input can pick the dataset the **Data** box holds, as the camera of example
+32's Settings node picks the collections its **Records** and **Snapshots** nodes
+load. The widget names that input in `pickedBy`, `input_0` for the text on
+circle 0 or `input_0.camera` for the text under the key `camera` of the dict on
+it, and maps each text the input may hold to a dataset in `choices`:
+
+```json
+{"name": "data", "type": "dataset", "label": "Data",
+ "options": {"pickedBy": "input_0.camera",
+             "choices": {"W042": "data.sage.idot-w042-records-2025-08",
+                         "W065": "data.sage.idot-w065-records-2025-08"}}}
+```
+
+The box then shows the dataset the input picks, and takes no drop or file. A run
+reads the input first and loads the dataset it picks; a text no choice names
+stops the run, which names the text and the choices.
+
 A Data Export node opens on its **Widgets** tab, which holds only its
 **File name** and its **Download** button, and its **Part** dropdown when its
 input holds several parts. Its code, on the
