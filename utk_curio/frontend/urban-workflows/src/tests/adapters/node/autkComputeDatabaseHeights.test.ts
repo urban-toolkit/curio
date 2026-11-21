@@ -11,13 +11,17 @@
  * - a layer nothing changed is handed on as the step holds it;
  * - a buildings layer a source after compute joins into is read back with
  *   each part's own height: the part the step gave the default carries its
- *   mark through the join, as autk-db patches a row's properties.
+ *   mark through the join, as autk-db patches a row's properties;
+ * - a part a source after compute gives a height of its own keeps it: the
+ *   mark takes the default back off only a part that still holds it.
  *
  * The step runs through autk-grammar's own data and compute adapters, the
  * build the app bundles, on a stand-in autk-compute whose GPGPU dispatch writes
  * twice each feature's `value` (_support/autkComputeStandIns), and a stand-in
- * autk-db that keeps each table it is handed and joins as autk-db does,
- * patching each root row's properties with what it joined (`sjoin`).
+ * autk-db that keeps each table it is handed, counts its rows for the
+ * grammar's check after a writeBack, joins as autk-db does, patching each root
+ * row's properties with what it joined (`sjoin`), and saves the one query of
+ * the test's own under a table's name.
  */
 jest.mock("@urban-toolkit/autk-grammar", () => require("../../_support/autkComputeStandIns").grammarBuild(), { virtual: true });
 jest.mock("@urban-toolkit/autk-compute", () => require("../../_support/autkComputeStandIns").autkComputeModule, { virtual: true });
@@ -65,7 +69,29 @@ jest.mock(
       async updateTable({ tableName, data }: any) {
         mockTables.set(tableName, { type: mockTables.get(tableName)?.type, collection: mockCopy(data) });
       }
-      async rawQuery() {}
+      // Two queries: a table saved under a name (CREATE_TABLE), its rows those
+      // of the table it reads FROM with each row's properties patched as
+      // `json_merge_patch(properties, '<patch>')` writes them, none when it
+      // reads no table, as the grammar's empty table for a writeBack; and the
+      // rows a table holds, which the grammar counts once it kept a pass's
+      // result (SELECT count(*) AS n FROM "<table>").
+      async rawQuery({ query, output }: any) {
+        const from = /FROM "([^"]+)"/.exec(String(query))?.[1];
+        const table = from ? mockTables.get(from) : undefined;
+        if (output?.type === "CREATE_TABLE") {
+          const patch = /json_merge_patch\(properties, '([^']*)'\)/.exec(String(query))?.[1];
+          const features = (table?.collection.features ?? []).map((feature: any) => ({
+            ...feature,
+            properties: { ...feature.properties, ...(patch ? JSON.parse(patch) : {}) },
+          }));
+          mockTables.set(output.tableName, {
+            type: output.tableType ?? table?.type,
+            collection: { type: "FeatureCollection", features: mockCopy(features) },
+          });
+          return [];
+        }
+        return [{ n: table ? table.collection.features.length : 0 }];
+      }
       // autk-db's spatial join: each root row's properties patched with what
       // it joined, under `sjoin` (json_merge_patch), every other key kept.
       async spatialQuery({ tableRootName }: any) {
@@ -185,6 +211,27 @@ describe("a compute step on a database of its own reads a building's height as a
     expect(blocks.geojson.features.map((f: any) => f.properties)).toEqual([
       { height: 12, value: 1, sjoin: { matches: [] } },
       { value: 2, sjoin: { matches: [] } },
+    ]);
+  });
+
+  test("a part a source after compute gives a height of its own keeps it, though the step gave it the default", async () => {
+    const failures: string[] = [];
+    // A SQL query saved under the buildings' name that sets every part 20 m tall.
+    const query = `SELECT * REPLACE (json_merge_patch(properties, '{"height": 20}') AS properties) FROM "blocks"`;
+    const out = await applyComputeBlocks(
+      layers() as any,
+      [pass("spots", "twice", { uniforms: HEIGHTS })],
+      failures,
+      { after: [{ type: "sql", query, outputTableName: "blocks", layerType: "buildings", after: "compute" }] },
+    );
+    expect(failures).toEqual([]);
+    // The pass read the part with no height 6 m tall; the query then gave
+    // both parts 20 m, which the step hands on, with no mark.
+    expect(computeRuns.gpgpu.mock.calls[0][0].uniformArrays.heights).toEqual([12, 6]);
+    const blocks = out.find((layer) => layer.name === "blocks")!;
+    expect(blocks.geojson.features.map((f: any) => f.properties)).toEqual([
+      { height: 20, value: 1 },
+      { height: 20, value: 2 },
     ]);
   });
 });
