@@ -510,6 +510,41 @@ def test_track_objects_follows_each_object_through_a_clip(videos, catalog_copy, 
     assert counts == {label: int((tracks["label"] == label).sum()) for label in DEFAULT_LABELS}
 
 
+def test_track_objects_hands_on_its_videos_and_their_tracks_as_two_tables_and_writes_no_tracks_file(
+        videos, catalog_copy, weights, few_threads, tmp_path):
+    """Track Objects' one output is two tables, a dict whose keys a chip
+    names (``[!! input_0:tracks !!]``): ``videos``, one row per video, its
+    overlay, and ``tracks``, one row per object of every video. So the tracks
+    are on the edge: the next node's header lists their columns, and a saved
+    output, a Data Export or a dashboard holds their rows. No table of them is
+    written beside the collection, in ``curio_derived_file``'s ``tables``
+    folder, and no row names one."""
+    import pandas as pd
+
+    rows, helpers = videos
+    (video,) = rows[rows["kind"] == "video"].to_dict("records")
+    model = _loaded(catalog_copy, weights)(MODEL_ID)
+    with _staged(tmp_path) as module:
+        out = module.track_objects(rows, model, helpers["curio_derived_file"], labels=DEFAULT_LABELS,
+                                   every_seconds=EVERY)
+
+    media = tmp_path / "media"
+    written = sorted(str(path.relative_to(media)) for path in media.rglob("*") if path.is_file())
+    assert isinstance(out, dict) and list(out) == ["videos", "tracks"], (
+        f"Track Objects returned a {type(out).__name__}, not its videos and their tracks; it wrote {written}")
+    assert not (media / "tables").exists(), f"Track Objects wrote its tracks beside the collection: {written}"
+    (overlay,) = out["videos"].to_dict("records")
+    assert "tracks" not in overlay, overlay
+    assert (overlay["kind"], overlay["video_file_id"]) == ("video", video["file_id"]), overlay
+    tracks = out["tracks"]
+    assert isinstance(tracks, pd.DataFrame) and list(tracks.columns) == TRACK_COLUMNS, tracks
+    # Thresholds at 0: random weights find something, six things at most.
+    assert 1 <= len(tracks) <= 6 and tracks["object_id"].is_unique, tracks
+    assert set(tracks["video_file_id"]) == {video["file_id"]} and set(tracks["video"]) == {video["name"]}
+    counts = {label: int(overlay[label.replace(" ", "_") + "_objects"]) for label in DEFAULT_LABELS}
+    assert counts == {label: int((tracks["label"] == label).sum()) for label in DEFAULT_LABELS}, counts
+
+
 def test_a_part_of_a_video_is_tracked_from_where_it_starts(videos, catalog_copy, weights, few_threads, tmp_path):
     """The 2 s clip from 1 s to 2 s, a part of 2 frames, within a limit of 2
     frames: its files are named by where the part starts, and so is its
