@@ -41,8 +41,14 @@ export interface LocationValue {
 export type WidgetValue = number | string | boolean | number[] | string[] | LocationValue | null;
 
 export interface WidgetOptions {
-  /** A choice, checkbox group or multi-select widget's options. */
-  choices?: string[];
+  /** A choice, checkbox group or multi-select widget's options; for a
+   * dataset widget an input picks, the dataset each value of that input
+   * picks, by its Data Catalog id (`PickedChoices`). */
+  choices?: string[] | PickedChoices;
+  /** The input that picks a dataset widget's dataset among its choices:
+   * `input_<k>`, the value on circle k, or `input_<k>.<key>`, the value under
+   * a key of the dict on it (`PICKED_BY_PATTERN`). */
+  pickedBy?: string;
   /** How a choice widget is drawn; a dropdown when absent. */
   display?: "dropdown" | "radio";
   /** A number or slider widget's bounds and step; a slider needs both bounds. */
@@ -116,6 +122,76 @@ export function emptyDatasetMessage(reference: string, widget: Pick<WidgetDef, "
   return `${reference}: drop a file or a Data Catalog dataset on ${widget.label || widget.name} first.`;
 }
 
+/** A picked dataset widget's choices: each value its input may hold, and the
+ * Data Catalog id of the dataset that value picks. */
+export type PickedChoices = Record<string, string>;
+
+/** How a dataset widget names the input that picks its dataset
+ * (`options.pickedBy`). Kept in sync with `PICKED_BY_RE` in
+ * `code_references.py`. */
+export const PICKED_BY_PATTERN = String.raw`^input_(\d{1,3})(?:\.(.+))?$`;
+const PICKED_BY_RE = new RegExp(PICKED_BY_PATTERN);
+/** The most circles a node has. Kept in sync with `MAX_PICKED_SLOT`. */
+const MAX_PICKED_SLOT = 255;
+/** The most choices a picked dataset widget gives, as many datasets as a scan
+ * of a node names. Kept in sync with `MAX_PICKED_CHOICES`. */
+export const MAX_PICKED_CHOICES = 32;
+
+/** The choices a choice, checkbox group or multi-select widget lists. */
+export function listedChoices(options?: WidgetOptions): string[] {
+  const choices = options?.choices;
+  return Array.isArray(choices) ? choices : [];
+}
+
+/** A picked dataset widget's choices, or an empty map. */
+export function pickedChoices(widget: Pick<WidgetDef, "options">): PickedChoices {
+  const choices = widget.options?.choices;
+  return choices && typeof choices === "object" && !Array.isArray(choices) ? choices : {};
+}
+
+/** Whether *widget* says an input picks its value (`options.pickedBy`). */
+export function isPicked(widget: Pick<WidgetDef, "options">): boolean {
+  return widget.options !== undefined && "pickedBy" in widget.options;
+}
+
+/** The circle and the key a picked dataset widget reads, or null when its
+ * `pickedBy` names no circle. Kept in sync with `picked_by`. */
+export function pickedBy(widget: Pick<WidgetDef, "options">): { slot: number; key: string | null } | null {
+  const by = widget.options?.pickedBy;
+  const match = typeof by === "string" ? PICKED_BY_RE.exec(by) : null;
+  if (!match || match[0] !== by || Number(match[1]) > MAX_PICKED_SLOT) return null;
+  return { slot: Number(match[1]), key: match[2] ?? null };
+}
+
+/** What is wrong with how *def* says an input picks its value, or null. Kept
+ * in sync with `pick_problem` in `code_references.py`. */
+export function pickProblem(def: Pick<WidgetDef, "type" | "options">): string | null {
+  const options = def.options ?? {};
+  const named = "pickedBy" in options;
+  const choices = options.choices as unknown;
+  const mapped = choices !== null && typeof choices === "object" && !Array.isArray(choices);
+  if (!named) {
+    return def.type === "dataset" && mapped
+      ? "A dataset widget's choices go with pickedBy, the input that picks one of them."
+      : null;
+  }
+  if (def.type !== "dataset") return "Only a dataset widget is picked by an input.";
+  if (pickedBy(def) === null) {
+    return "pickedBy names an input circle, such as input_0, or a key of the dict on it, such as input_0.camera.";
+  }
+  const entries = mapped ? Object.entries(choices as Record<string, unknown>) : [];
+  if (entries.length === 0 || entries.some(([key]) => key === "")) {
+    return "A dataset widget an input picks gives its choices: each value the input may hold, and the dataset that value picks.";
+  }
+  if (entries.length > MAX_PICKED_CHOICES) {
+    return `A dataset widget an input picks gives at most ${MAX_PICKED_CHOICES} choices.`;
+  }
+  if (entries.some(([, id]) => typeof id !== "string" || !DATASET_ID_RE.test(id))) {
+    return "Each choice names a Data Catalog dataset, layer group or collection by its id.";
+  }
+  return null;
+}
+
 export function effectiveValue(widget: WidgetDef): WidgetValue {
   return widget.value !== undefined ? widget.value : widget.default;
 }
@@ -139,8 +215,10 @@ export function defaultValueFor(kind: WidgetKind, options?: WidgetOptions): Widg
       return isFiniteNumber(options?.min) ? options!.min! : 0;
     case "checkbox":
       return false;
-    case "choice":
-      return options?.choices && options.choices.length > 0 ? options.choices[0] : "";
+    case "choice": {
+      const choices = listedChoices(options);
+      return choices.length > 0 ? choices[0] : "";
+    }
     case "checkbox-group":
     case "multi-select":
     case "number-list":
@@ -238,13 +316,13 @@ export function checkWidgetValue(
     case "checkbox":
       return typeof value === "boolean" ? null : "Choose true or false.";
     case "choice": {
-      const choices = widget.options?.choices ?? [];
+      const choices = listedChoices(widget.options);
       if (typeof value !== "string") return "Pick one of the choices.";
       return choices.includes(value) ? null : "Pick one of the choices.";
     }
     case "checkbox-group":
     case "multi-select": {
-      const choices = widget.options?.choices ?? [];
+      const choices = listedChoices(widget.options);
       return Array.isArray(value) &&
         value.every((v) => typeof v === "string" && choices.includes(v)) &&
         new Set(value).size === value.length
@@ -299,8 +377,10 @@ export function checkWidgetDef(def: WidgetDef, others: WidgetDef[]): string | nu
   if (INPUT_NAME_ONLY_RE.test(def.name)) return `${def.name} names one of the node's inputs. Pick another name.`;
   if (others.some((w) => w.name === def.name)) return `This node already has a widget named ${def.name}.`;
   if (!(WIDGET_KINDS as readonly string[]).includes(def.type)) return "Pick a widget type.";
+  const picking = pickProblem(def);
+  if (picking) return picking;
   if (CHOICE_KINDS.includes(def.type)) {
-    const choices = def.options?.choices ?? [];
+    const choices = listedChoices(def.options);
     if (choices.length === 0) return "Give at least one choice.";
     if (new Set(choices).size !== choices.length) return "Each choice can appear only once.";
   }
@@ -321,6 +401,10 @@ function normalizeOptions(raw: unknown): WidgetOptions | undefined {
   const o = raw as Record<string, unknown>;
   const out: WidgetOptions = {};
   if (Array.isArray(o.choices)) out.choices = o.choices.filter((c): c is string => typeof c === "string");
+  // A picked dataset widget's choices and the input that picks among them
+  // are kept as written, so its check (pickProblem) and its save see them.
+  else if (o.choices && typeof o.choices === "object") out.choices = { ...(o.choices as PickedChoices) };
+  if ("pickedBy" in o) out.pickedBy = o.pickedBy as string;
   if (o.display === "dropdown" || o.display === "radio") out.display = o.display;
   if (isFiniteNumber(o.min)) out.min = o.min;
   if (isFiniteNumber(o.max)) out.max = o.max;

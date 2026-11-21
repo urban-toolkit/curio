@@ -3,8 +3,10 @@
 // it on request, and the scenario label its rows carry, which the scenario
 // chips write (utils/scenarios/inputScenarios). And what a chip's hover shows
 // of each input: the node feeding it and the state of its output, and its
-// preview once read, from the same read as its columns.
-import { useCallback, useMemo, useRef, useState } from "react";
+// preview once read, from the same read as its columns. The value on a
+// circle a dataset widget of the node is picked by (`options.pickedBy`) is
+// read as it arrives, so the widget shows the dataset that value picks.
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFlowContext } from "../providers/FlowProvider";
 import { circleValue, emptyWiredSlots, holdsValuePerCircle } from "../utils/inputSlots";
 import type { InputScope } from "../utils/references/codeReferences";
@@ -15,6 +17,7 @@ import {
     inputSourcesFor,
     inputValueKey,
     readInputPreview,
+    readInputValue,
     type InputColumns,
     type InputPreview,
     type InputPreviewState,
@@ -22,6 +25,17 @@ import {
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
 import { inputScenarios } from "../utils/scenarios/inputScenarios";
 import type { Scenario } from "../utils/scenarios/scenarioModel";
+import { isPicked, normalizeWidgets, pickedBy } from "../utils/widgets/widgetModel";
+
+/** The circles the dataset widgets an input picks read among *widgets*. */
+function pickedSlotsOf(widgets: unknown): number[] {
+    const slots = new Set<number>();
+    for (const widget of normalizeWidgets(widgets)) {
+        const address = widget.type === "dataset" && isPicked(widget) ? pickedBy(widget) : null;
+        if (address !== null) slots.add(address.slot);
+    }
+    return Array.from(slots).sort((a, b) => a - b);
+}
 
 function labelOf(data: any): string | null {
     try {
@@ -95,10 +109,35 @@ export function useInputScope(data: any): {
         return `inline ${id}`;
     };
 
+    // The value on each circle a dataset widget is picked by, read once per
+    // value it holds, by the value's key.
+    const pickedValues = useRef(new Map<string, unknown>());
+    const pickedReading = useRef(new Set<string>());
+    const pickedSlots = pickedSlotsOf(data.widgets);
+    const pickedKeys = pickedSlots.map((slot) => inputValueKey(valueOf(slot)));
+    const pickedSignature = JSON.stringify([pickedSlots, pickedKeys]);
+    useEffect(() => {
+        pickedSlots.forEach((slot, index) => {
+            const key = pickedKeys[index];
+            if (!key || pickedValues.current.has(key) || pickedReading.current.has(key)) return;
+            pickedReading.current.add(key);
+            readInputValue(valueOf(slot))
+                .catch((): unknown => undefined)
+                .then((value) => {
+                    pickedReading.current.delete(key);
+                    if (value === undefined) return;
+                    pickedValues.current.set(key, value);
+                    setReadCount((n) => n + 1);
+                });
+        });
+    }, [pickedSignature]);
+
     const labels = new Map(inputScenarios(data.nodeId, nodes, edges, scenarios).map((input) => [input.slot, input.label]));
-    const computed = inputScopeFor(data.nodeId, edges, nodes, valueOf, labelOf, columnsOf).map((input) =>
-        labels.has(input.slot) ? { ...input, scenario: labels.get(input.slot) } : input,
-    );
+    const computed = inputScopeFor(data.nodeId, edges, nodes, valueOf, labelOf, columnsOf).map((input) => {
+        const labelled = labels.has(input.slot) ? { ...input, scenario: labels.get(input.slot) } : input;
+        const key = pickedSlots.includes(input.slot) ? inputValueKey(valueOf(input.slot)) : null;
+        return key && pickedValues.current.has(key) ? { ...labelled, value: pickedValues.current.get(key) } : labelled;
+    });
     // The same list keeps its identity, so editors do not redraw their chips
     // whenever an unrelated node moves; a box renamed or recolored is a new one.
     const signature = JSON.stringify(computed);

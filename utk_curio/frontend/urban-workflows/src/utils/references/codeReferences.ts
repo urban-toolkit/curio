@@ -69,6 +69,11 @@ import {
   WIDGET_NAME_RE,
   effectiveValue,
   emptyDatasetMessage,
+  isPicked,
+  pickProblem,
+  pickedBy,
+  pickedChoices,
+  type PickedChoices,
   type WidgetDef,
   type WidgetValue,
 } from "../widgets/widgetModel";
@@ -208,6 +213,9 @@ export interface InputScope {
    * `NO_SCENARIO_COLOR` (utils/scenarios/inputScenarios). Absent when it is
    * not known here, and a scenario chip that needs it says so. */
   scenario?: ScenarioLabel;
+  /** The value it holds, once read for a dataset widget it picks
+   * (`options.pickedBy`, `inputScope.readInputValue`): absent until then. */
+  value?: unknown;
 }
 
 /** One layer an input carries. */
@@ -852,14 +860,110 @@ function datasetProblem(reference: string, inputs: readonly InputScope[], langua
   return null;
 }
 
-/** Whether *problem* is only an empty dataset widget of *scope* waiting for its
- * data: a node that has not been given its data, not code at fault. A run
- * still refuses it; the editor draws its chip as any other and the Widgets tab
- * leaves it out of its list, where the widget itself says what to drop. */
-export function waitsForData(problem: { reference: string; message: string }, scope: ReferenceScope): boolean {
-  return scope.widgets.some(
-    (w) => w.type === "dataset" && effectiveValue(w) === "" && problem.message === emptyDatasetMessage(problem.reference, w),
+/** What *value* is, in the words a picked widget's refusal says it. Kept in
+ * sync with `_kind_of` in `code_references.py`. */
+function kindOf(value: unknown): string {
+  if (value === null || value === undefined) return "nothing";
+  if (typeof value === "boolean") return "true or false";
+  if (typeof value === "number") return "a number";
+  if (Array.isArray(value)) return "a list";
+  if (typeof value === "object") return "a dict";
+  return "a value";
+}
+
+/** The values a picked widget's choices answer, quoted, as one text. */
+function choiceList(choices: PickedChoices): string {
+  const quoted = Object.keys(choices).map((key) => JSON.stringify(key));
+  return quoted.length === 1 ? quoted[0] : `${quoted.slice(0, -1).join(", ")} and ${quoted[quoted.length - 1]}`;
+}
+
+/** What a run refuses while the input that picks *widget* holds no value
+ * yet. Kept in sync with `picked_waits_message` in `code_references.py`. */
+export function pickedWaitsMessage(reference: string, widget: WidgetDef, slot: number): string {
+  return `${reference}: ${widget.label || widget.name} is picked by ${widget.options?.pickedBy}, and input_${slot} has no value yet. Run the node that feeds it first.`;
+}
+
+const hasOwn = (holder: object, key: string) => Object.prototype.hasOwnProperty.call(holder, key);
+
+/**
+ * The choice of *widget*, a dataset widget an input picks, that the value on
+ * its input picks (`{ id }`), or why none can be picked (`{ problem }`).
+ * *inputs* are the node's wired circles, each with its value once read. Kept
+ * in sync with `_picked` in `code_references.py`.
+ */
+export function pickedDataset(
+  reference: string,
+  widget: WidgetDef,
+  inputs: readonly InputScope[],
+  language: CodeLanguage,
+): { id: string; problem: null } | { id: null; problem: string } {
+  const label = widget.label || widget.name;
+  const by = widget.options?.pickedBy;
+  if (language !== "python") {
+    return { id: null, problem: `${reference}: ${label} is picked by ${by}, and only a Python node's code reads it.` };
+  }
+  const problem = pickProblem(widget);
+  if (problem !== null) return { id: null, problem: `${reference}: ${problem}` };
+  const { slot, key } = pickedBy(widget)!;
+  const choices = pickedChoices(widget);
+  const input = inputs.find((i) => i.slot === slot);
+  if (input === undefined) {
+    return { id: null, problem: `${reference}: ${label} is picked by ${by}, and input_${slot} has no edge. Connect one to that circle.` };
+  }
+  const kind = (input.dataType ?? "").toLowerCase();
+  if (TABLE_TYPES.has(kind) || kind === "raster") {
+    const what = kind === "raster" ? "a raster" : "a table";
+    return { id: null, problem: `${reference}: ${label} is picked by ${by}, and input_${slot} holds ${what}, not a text.` };
+  }
+  if (!hasOwn(input, "value")) return { id: null, problem: pickedWaitsMessage(reference, widget, slot) };
+  let value = input.value;
+  if (key !== null) {
+    if (value === null || typeof value !== "object" || Array.isArray(value) || !hasOwn(value, key)) {
+      return { id: null, problem: `${reference}: ${label} is picked by ${by}, and input_${slot} holds no ${key}.` };
+    }
+    value = (value as Record<string, unknown>)[key];
+  }
+  if (typeof value !== "string") {
+    return {
+      id: null,
+      problem: `${reference}: ${label} is picked by ${by}, which holds ${kindOf(value)}, not a text. Its choices are ${choiceList(choices)}.`,
+    };
+  }
+  if (!hasOwn(choices, value)) {
+    return {
+      id: null,
+      problem: `${reference}: ${label} has no choice for ${JSON.stringify(value)}, the value of ${by}. Its choices are ${choiceList(choices)}.`,
+    };
+  }
+  return { id: choices[value], problem: null };
+}
+
+/** *widgets* as their controls show them: each dataset widget an input picks
+ * holding the dataset its input's value picks, or nothing until it can be
+ * picked. Never saved: a run picks again from what its input holds. */
+export function withPickedValues(widgets: readonly WidgetDef[], inputs: readonly InputScope[]): WidgetDef[] {
+  return widgets.map((widget) =>
+    widget.type === "dataset" && isPicked(widget)
+      ? { ...widget, value: pickedDataset("", widget, inputs, "python").id ?? "" }
+      : widget,
   );
+}
+
+/** Whether *problem* is only a dataset widget of *scope* waiting for its
+ * data: an empty one, or one whose input holds no value yet to pick its
+ * dataset by. A node that has not been given its data, not code at fault. A
+ * run still refuses it; the editor draws its chip as any other and the
+ * Widgets tab leaves it out of its list, where the widget itself says what to
+ * drop. */
+export function waitsForData(problem: { reference: string; message: string }, scope: ReferenceScope): boolean {
+  return scope.widgets.some((w) => {
+    if (w.type !== "dataset") return false;
+    if (isPicked(w)) {
+      const address = pickedBy(w);
+      return address !== null && problem.message === pickedWaitsMessage(problem.reference, w, address.slot);
+    }
+    return effectiveValue(w) === "" && problem.message === emptyDatasetMessage(problem.reference, w);
+  });
 }
 
 /** Why *reference* cannot be resolved in *scope*, standing in *context*, or null. */
@@ -947,6 +1051,12 @@ export function referenceProblem(
   if (widget === undefined) {
     return `${reference}: this node has no widget named ${inner}. Add it in the Widgets tab.`;
   }
+  // A dataset widget an input picks names the dataset that input's value
+  // picks; text that only mentions it, in a comment or a string, writes ""
+  // when none can be picked yet, as an empty one does.
+  if (widget.type === "dataset" && isPicked(widget)) {
+    return context.kind === "code" ? pickedDataset(reference, widget, scope.inputs, language).problem : null;
+  }
   // An empty dataset widget names no dataset for the code to load; text
   // that only mentions it, in a comment or a string, still writes "".
   if (widget.type === "dataset" && context.kind === "code" && effectiveValue(widget) === "") {
@@ -985,12 +1095,17 @@ function resolvedText(
   // is its name too, which no place reads as a field.
   if (parsed.kind === "stacked") return writeText(named(parsed.column), context, language);
   if (parsed.kind === "dataset") return writeText(INPUTS_DATASET, context, language);
+  const widgetValue = (widget: WidgetDef): WidgetValue =>
+    // A dataset widget an input picks writes the dataset its value picks.
+    widget.type === "dataset" && isPicked(widget)
+      ? pickedDataset("", widget, scope.inputs, language).id ?? ""
+      : effectiveValue(widget);
   const value =
     parsed.kind === "scenario"
       ? scenarioValue(parsed, scope.inputs)
       : parsed.kind === "selection"
         ? ((scope.selections ?? []).find((t) => t.name === parsed.name) as SelectionTag).ids as WidgetValue
-        : effectiveValue(scope.widgets.find((w) => w.name === parsed.name) as WidgetDef);
+        : widgetValue(scope.widgets.find((w) => w.name === parsed.name) as WidgetDef);
   if (context.kind === "code") return widgetLiteral(place ? fieldValue(value, place) : value, language);
   return escapeFor(named(textOf(value, language)), context, language);
 }
