@@ -398,12 +398,13 @@ class TestDerivedFiles:
                         f"{video_id}@0-overlay.jpg"):
             assert media(client, auth, dataset["id"], missing, "original").status_code == 404, missing
 
-    def test_a_table_a_node_found_in_a_video_is_kept_and_never_served(
+    def test_a_table_a_node_found_in_a_video_is_no_derived_file_and_never_served(
         self, client, auth, app, shipped_root, user_and_token
     ):
-        """Track Objects' tracks: a Parquet beside its overlay, which a later
-        node reads by its path. Its row links nothing, and the media route
-        serves none of it."""
+        """What a node finds in a video, such as Track Objects' tracks, is a
+        table the node returns, which goes on its edge: ``curio_derived_file``
+        refuses to name a file for it, and the media route serves no file
+        under a table's id, even one where such an id would put it."""
         import pandas as pd
 
         from utk_curio.backend.app.discovery.infrastructure import media_dirs
@@ -413,14 +414,14 @@ class TestDerivedFiles:
         dataset, index = collection(client, auth, "survey")
         video_id = file_id_of(index, "clip_01.mp4")
         root = media_dirs.media_work_root(str(user.id))
-        row = make_collection_helpers(None, {}, str(root))["curio_derived_file"](
-            dataset["id"], video_id, 0, "parquet", tag="overlay"
-        )
-        pd.DataFrame({"label": ["car"], "frames_seen": [12]}).to_parquet(row["path"])
-        assert row["path"] == str(root / "tables" / dataset["id"] / video_id / "0-overlay.parquet")
-        assert (row["thumbnail"], row["image_url"], row["audio_url"]) == (None, None, None)
-        assert pd.read_parquet(row["path"])["frames_seen"].tolist() == [12]
-        assert media(client, auth, dataset["id"], row["file_id"], "original").status_code == 415
+        derive = make_collection_helpers(None, {}, str(root))["curio_derived_file"]
+        with pytest.raises(ValueError, match="from a file of kind 'video', not 'parquet'"):
+            derive(dataset["id"], video_id, 0, "parquet", tag="overlay")
+        assert not (root / "tables").exists()
+        there = root / "tables" / dataset["id"] / video_id / "0-overlay.parquet"
+        there.parent.mkdir(parents=True)
+        pd.DataFrame({"label": ["car"], "frames_seen": [12]}).to_parquet(there)
+        assert media(client, auth, dataset["id"], f"{video_id}@0-overlay.parquet", "original").status_code == 404
 
     def test_an_overlay_of_a_sequences_frame_is_served(self, client, auth, app, shipped_root, user_and_token):
         """A frames collection's file (dashcam) is an image, as a photo is:
