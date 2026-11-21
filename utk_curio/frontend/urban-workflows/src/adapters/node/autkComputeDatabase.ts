@@ -16,7 +16,10 @@
  * - each layer the step holds loaded as a GeoJSON source, in the order a map
  *   node hands its tables to the grammar (utils/autkInput `tablesToLoad`), on
  *   the 1 cm grid it hands them on (utils/geoPrecision); a raster, and a table
- *   with no geometry, which no pass or source reads, stay out;
+ *   with no geometry, which no pass or source reads, stay out; a buildings
+ *   layer with each building with no height `DEFAULT_BUILDING_HEIGHT` m tall
+ *   above its base, as the step's passes read it with no database
+ *   (utils/autkInput `withDefaultHeights`);
  * - its passes, each checked (autkComputeScopes), each reading its table as
  *   autk-db keeps it and a `fromFeature` table as the source gave it, as a map
  *   node's passes do; a pass whose table the step does not hold is skipped, as
@@ -27,8 +30,12 @@
  *
  * It hands on, in order: each layer it holds, as a pass left it or as it
  * came; each table a pass wrote under a name of its own; then each table a
- * source after compute made. A table a source after compute wrote (a join
- * into it, an update, a SQL query saved under its name, a load) is read back
+ * source after compute made. A table a pass wrote over a buildings layer holds
+ * each building's own height, as the step holds the layer (utils/autkInput
+ * `withHeightsAsHeld`); one a source after compute changed is read back as
+ * autk-db holds it, with the heights the passes read. A table a source after
+ * compute wrote (a join into it, an update, a SQL query saved under its name,
+ * a load) is read back
  * as autk-db holds it: a buildings table a part a row, as the loaders hand
  * one on (`explodeBuildingParts`), and a table with no geometry as its rows
  * (`plainTableRecord`). A table a source after compute dropped is gone. Each
@@ -39,7 +46,7 @@
 import type { FeatureCollection } from 'geojson';
 import { detectCoordinateFormat } from '../../utils/geoCrs';
 import { snapSourceToGrid } from '../../utils/geoPrecision';
-import { tablesToLoad, writtenTables } from '../../utils/autkInput';
+import { tablesToLoad, withDefaultHeights, withHeightsAsHeld, writtenTables } from '../../utils/autkInput';
 import {
     GRAMMAR_RASTER_SOURCES,
     autkTableKey,
@@ -140,17 +147,24 @@ export async function computeOnADatabase(
                 return failed('workspaces', e);
             }
         }
-        // The layers the step holds, as the sources a map node hands the grammar.
+        // The layers the step holds, as the sources a map node hands the
+        // grammar: a buildings layer as its passes read it, each building with
+        // no height at the default, and as the step holds it, by key.
+        const asHeld = new Map<string, FeatureCollection>();
         const loadable = layers
             .filter((layer) => layer.type !== RASTER_TABLE && hasGeometry(layer.geojson))
-            .map((layer) => ({
-                type: 'geojson',
-                geojsonObject: layer.geojson,
-                outputTableName: layer.name,
-                coordinateFormat: detectCoordinateFormat(layer.geojson),
-                ...(layer.type && layer.type !== 'polygons' ? { layerType: layer.type } : {}),
-                ...(layer.workspace ? { workspace: layer.workspace } : {}),
-            }));
+            .map((layer) => {
+                const geojson = layer.type === 'buildings' ? withDefaultHeights(layer.geojson) : layer.geojson;
+                if (geojson !== layer.geojson) asHeld.set(keyOf(layer), layer.geojson);
+                return {
+                    type: 'geojson',
+                    geojsonObject: geojson,
+                    outputTableName: layer.name,
+                    coordinateFormat: detectCoordinateFormat(geojson),
+                    ...(layer.type && layer.type !== 'polygons' ? { layerType: layer.type } : {}),
+                    ...(layer.workspace ? { workspace: layer.workspace } : {}),
+                };
+            });
         for (const source of tablesToLoad(loadable, spec, loadable)) {
             try {
                 await dataAdapter.resolveSource(db, snapSourceToGrid(source) as any);
@@ -158,9 +172,14 @@ export async function computeOnADatabase(
                 return failed(autkTableKey(autkWorkspaceOf(source), source.outputTableName), e);
             }
         }
-        // The passes, over the tables the step holds and those earlier passes wrote.
+        // The passes, over the tables the step holds and those earlier passes
+        // wrote; and each table a pass wrote, with the key of the layer whose
+        // rows it holds, as autkComputeBlocks keeps it: a windows pass, and a
+        // render pass that looks out of building windows, write a point a
+        // window, not the rows they computed over.
         const present = new Set(layers.map(keyOf));
         const ran: any[] = [];
+        const wroteFrom = new Map<string, string>();
         for (const pass of passes) {
             const gpgpu = pass?.type === undefined || pass?.type === 'gpgpu';
             const source = passSource(pass);
@@ -177,6 +196,10 @@ export async function computeOnADatabase(
             ran.push(pass);
             const name = typeof pass.outputTableName === 'string' && pass.outputTableName ? pass.outputTableName : source;
             present.add(autkTableKey(workspace, name));
+            const holdsRows = pass.type !== 'windows'
+                && !(pass.type === 'render' && pass?.viewpoints?.strategy?.type === 'building-windows');
+            const over = autkTableKey(workspace, source);
+            wroteFrom.set(autkTableKey(workspace, name), holdsRows ? wroteFrom.get(over) ?? over : '');
         }
         // The sources after compute, which read autk-db.
         const rasters = new Map<string, Layer>();
@@ -244,11 +267,18 @@ export async function computeOnADatabase(
         const dropped = droppedBy(after);
         const handed: Layer[] = [];
         const listed = new Set<string>();
+        // A table a pass wrote over a buildings layer, with each building's own
+        // height, as the step holds the layer (withHeightsAsHeld).
+        const asTheStepHolds = (layer: Layer, key: string): Layer => {
+            const from = wroteFrom.get(key);
+            const held = from ? asHeld.get(from) : undefined;
+            return held ? { ...layer, geojson: withHeightsAsHeld(layer.geojson, held) } : layer;
+        };
         const handOn = async (name: string, workspace: string | undefined, was?: Layer) => {
             const key = autkTableKey(workspace, name);
             if (listed.has(key) || dropped.has(key)) return;
             listed.add(key);
-            if (cache.has(key)) handed.push(await passResult(name, workspace, was, lastPassOf.get(key)));
+            if (cache.has(key)) handed.push(asTheStepHolds(await passResult(name, workspace, was, lastPassOf.get(key)), key));
             else if (wroteAfter.has(key) || rasters.has(key)) handed.push(await readBack(name, workspace));
             else if (was) handed.push(was);
         };
