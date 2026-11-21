@@ -66,9 +66,9 @@ OpenStreetMap maps as one element of several polygons, such as the LaSalle/Van B
 packs a box for each, so every polygon casts its shadow. A `num_features` uniform tells the WGSL how many
 boxes are in the pack. A road of several lines is read as one list of its points, from its first point.
 `required: true` on `bld_height` tells the runtime to drop a building whose `properties.height` does not
-resolve to a finite value. Curio gives every building part a height, its OSM `height` or its
-`building:levels` at 3.4 m each, or 6 m above its base when neither puts its top above its base, so none is
-dropped here.
+resolve to a finite value. Curio gives every building part a height: its OSM `height`, else its
+`building:height`, else its `levels` at 3.4 m each, else its `building:levels` at 3.4 m each, or 6 m above
+its base when that gives it no height above its base, so none is dropped here.
 
 ```json
 "compute": [{

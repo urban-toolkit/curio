@@ -1379,11 +1379,12 @@ The values are read from the node's input, so the table must come from an input,
 
 ## Autark node
 
-The `Autark` node draws an Autark document: map layers or a plot, and GPU
-compute over tables. A table comes from the document's own `data` section (an
-OSM extract, a GeoJSON or CSV file, a GeoTIFF) or from the node's input. The
-document writes no `data` entry for its input; it names the tables the input
-provides.
+The `Autark` node draws every map and plot an Autark document writes, and
+runs its compute passes over tables: GPGPU and render passes on the GPU,
+windows and clusters passes on the CPU. A table comes from the document's own
+`data` section (an OSM extract, a GeoJSON or CSV file, a GeoTIFF) or from the
+node's input. The document writes no `data` entry for its input; it names the
+tables the input provides.
 
 Each feature of an OpenStreetMap layer the node hands on has its OpenStreetMap
 id in `osm_id`, and a building's parts share its `building_id`.
@@ -1475,8 +1476,8 @@ interaction dot of its own, which links that view alone (see
 - A `GeoDataFrame` whose `metadata` names one of Autark's layer types loads as
   that layer: `gdf.metadata = {"layerType": "buildings"}` draws its rows as
   buildings, raised to their height. A building's height comes from `height`,
-  else `building:height`, else `building:levels` (3.4 m a level); one with none
-  of them stands 6 m high. The
+  else `building:height`, else 3.4 m a level of `levels`, else of
+  `building:levels`; one with none of them is 6 m tall above its base. The
   loader of an OpenStreetMap layer downloaded from the Discovery Catalog sets it.
 - Coordinates are read in the CRS the frame declares. A frame with no CRS is
   read as EPSG:4326 when its coordinates look like longitude and latitude, and

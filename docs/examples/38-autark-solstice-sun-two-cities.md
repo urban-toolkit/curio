@@ -59,8 +59,9 @@ measures every coordinate from the road's first point. For each hour from 7:00 t
 the year, June 21, it finds the sun's altitude and azimuth at the area's latitude and longitude,
 projects the footprint of every polygon of every building part along the sun by the part's height, and
 counts 60 minutes for the hour when no building's shadow touches the road. Every building
-part casts a shadow: its height is its OSM `height`, else its `building:levels` at 3.4 m each, else
-6 m above its base. A road of several lines is read from its first point. The Back Bay
+part casts a shadow: its height is its OSM `height`, else its `building:height`, else its `levels`
+at 3.4 m each, else its `building:levels` at 3.4 m each, else 6 m above its base. A road of several
+lines is read from its first point. The Back Bay
 pass writes example 06's latitude and longitude into the shader (`lat_rad = 0.7393`,
 `lon_loc = -71.06`), and the Loop pass example 07's (`lat_rad = 0.73027`, `lon_loc = -87.65`). Each
 pass writes its roads with their minutes of sun, from 0 to 780, as a new table of roads,
