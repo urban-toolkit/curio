@@ -37,8 +37,10 @@ clusters passes; 5.5.1 or later, in both trees, whose passes keep their
 results in autk-db (``writeBack``), whose sources run after compute
 (``after``, its ``dataPhases``), whose heatmap without ``groupBy`` counts its
 rows and whose heatmap entry without ``aggregateFn`` is refused; and 5.6.0 or
-later, whose public calls Curio's map node and compute step use in place of
-the grammar's private fields: a host's own adapters around a run's
+later, in both trees, whose batched passes pack every polygon of a building
+part and read a road of several lines from its first point, and in the
+frontend for the public calls Curio's map node and compute step use in place
+of the grammar's private fields: a host's own adapters around a run's
 (``wrapComputeAdapter``, ``wrapDataAdapter``), the steps of a run on a
 database the host owns (``createComputeSteps``) and what a run handed each map
 layer (``mapLayer``'s ``collection``). Nothing else is vendored.
@@ -104,6 +106,13 @@ GRAMMAR_MAPS_CAMERA_AND_COMPUTE_RELEASE = (5, 4, 0)
 #: ``aggregateFn`` is refused, and whose map that starts with a raster is placed
 #: at the raster.
 GRAMMAR_WRITE_BACK_RELEASE = (5, 5, 1)
+
+#: The first autk-grammar release whose batched entries that read the geometry
+#: pack each polygon of a MultiPolygon or a GeometryCollection as a feature of
+#: its own, so a shadow pass's ``geometry.coordinates.0`` reads every polygon of
+#: a building part, and which hands autk-compute a MultiLineString's lines as one
+#: line, so a pass over roads reads each road's first points.
+GRAMMAR_EVERY_POLYGON_RELEASE = (5, 6, 0)
 
 #: The first autk-grammar release with the public calls Curio's map node and
 #: compute step make in place of the grammar's private fields: ``AutkGrammar``'s
@@ -338,6 +347,24 @@ def test_the_grammar_keeps_pass_results_and_runs_sources_after_compute(tree):
             f"the {tree} {what} takes autk-grammar {held!r}, which does not keep a pass's result in autk-db "
             f"(writeBack), run a source after compute (after, dataPhases), count a heatmap's rows without groupBy "
             f"or refuse a heatmap entry without aggregateFn: 5.5.1 is the first that does"
+        )
+    assert spec == version, f"the {tree} package.json takes autk-grammar {spec}, its lockfile {version}"
+
+
+@pytest.mark.parametrize("tree", sorted(TREES))
+def test_the_grammar_packs_every_polygon_of_a_building_part_and_reads_a_road_of_several_lines(tree):
+    """Both trees take autk-grammar 5.6.0 or later: the shadow passes of
+    examples 06, 07 and 38 read every polygon of a building part OpenStreetMap
+    maps as one element of several polygons, and every road of several lines
+    from its first point."""
+    root, _packages = TREES[tree]
+    spec = _read(root / "package.json")["dependencies"].get(f"@urban-toolkit/{GRAMMAR}", "")
+    version = _read(root / "package-lock.json")["packages"].get(f"node_modules/@urban-toolkit/{GRAMMAR}", {}).get("version", "")
+    for what, held in (("package.json", spec), ("lockfile", version)):
+        assert re.fullmatch(r"\d+\.\d+\.\d+", held) and _release(held) >= GRAMMAR_EVERY_POLYGON_RELEASE, (
+            f"the {tree} {what} takes autk-grammar {held!r}, whose batched passes pack a building part of several "
+            f"polygons as a box of zeros and a road of several lines as zeros: 5.6.0 is the first that packs every "
+            f"polygon and each road's first points"
         )
     assert spec == version, f"the {tree} package.json takes autk-grammar {spec}, its lockfile {version}"
 

@@ -461,10 +461,9 @@ def _loaded_buildings(read: dict) -> dict:
 
 def _assert_parts_pack_a_box(fc: dict) -> None:
     """Every building part the data node hands on is a Polygon, and its outer
-    ring spans a box: the shadow step packs each part's
-    ``geometry.coordinates.0`` (``iterate: "batched"``), and a part handed on
-    as autk-db keeps a building, one GeometryCollection, would pack a box of
-    zero area."""
+    ring spans a box: Curio's loaders hand on each part of a building as a row
+    of its own, and Back Bay holds no part of several polygons. The shadow step
+    packs each part's ``geometry.coordinates.0`` (``iterate: "batched"``)."""
     flat = []
     for feature in fc["features"]:
         geometry = feature.get("geometry") or {}
