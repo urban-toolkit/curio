@@ -67,7 +67,7 @@ import { checkedPasses } from './autkComputeScopes';
 import { closeAutkDb } from './autkDbClose';
 import { withExtensionRetry } from './duckdbExtensionRetry';
 import { hasFeatures } from './autkRunDescriptions';
-import { handOnTables, readBackTable, workspaceCrs } from './autkHandOn';
+import { computeFailure, handOnTables, readBackTable, workspaceCrs } from './autkHandOn';
 
 /**
  * A layer a compute step holds, in the workspace it names when it is not the
@@ -180,7 +180,7 @@ export async function computeOnADatabase(
         return instance;
     });
     const failed = (what: string, e: unknown): Layer[] => {
-        failures.push(`${what}: ${(e as Error)?.message ?? String(e)}`);
+        failures.push(computeFailure(what, e));
         return layers;
     };
     try {

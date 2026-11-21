@@ -41,7 +41,9 @@
  * node that draws (autkGrammarBehavior) read their passes' results and the
  * tables their sources after compute made each from where their run keeps
  * them, and hand the rest to `handOnTables`; `handOnOutput` says what goes to
- * the nodes below.
+ * the nodes below. A read-back that fails fails the node's run, in the words a
+ * compute step fails in (`computeFailure`, `computeFailedMessage`), and the
+ * node hands nothing on: no part of its tables goes on under Done.
  */
 import { INPUT_ROW, autkNeedsInput, withHeightsAsHeld, writtenTables, type PreparedAutkInput } from '../../utils/autkInput';
 import { rasterAsItCame } from '../../utils/grammarInput';
@@ -404,6 +406,25 @@ export async function readBackAfterCompute(
         await enterWorkspace(db);
     }
     return read;
+}
+
+/**
+ * A failure of a stage of a node's compute, named by *what* failed (a table it
+ * loads, `workspaces`, a source after compute, or `compute` for the run and the
+ * read-back of what it made), as `computeFailedMessage` lists it.
+ */
+export function computeFailure(what: string, e: unknown): string {
+    return `${what}: ${(e as Error)?.message ?? String(e)}`;
+}
+
+/**
+ * What a node's run fails with when its compute fails, *failures* after
+ * "Compute failed: ": a compute step's (autkComputeDatabase), and a node's that
+ * draws, whose read-back of the tables its sources after compute made failed.
+ * Either hands nothing on.
+ */
+export function computeFailedMessage(failures: readonly string[]): string {
+    return 'Compute failed: ' + failures.join('; ');
 }
 
 /**

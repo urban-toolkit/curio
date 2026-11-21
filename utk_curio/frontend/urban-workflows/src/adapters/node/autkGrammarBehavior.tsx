@@ -57,7 +57,8 @@ import {
     writesAfter,
 } from './autkDataCompile';
 import {
-    asHandedFromTheRun, handOnOutput, handOnTables, handsOnItsInput, heldTables, inputTablesOf, readBackAfterCompute,
+    asHandedFromTheRun, computeFailedMessage, computeFailure, handOnOutput, handOnTables, handsOnItsInput, heldTables,
+    inputTablesOf, readBackAfterCompute,
     withRows, workspaceCrs,
     type HandOnTable, type StoredHandOn,
 } from './autkHandOn';
@@ -1538,15 +1539,20 @@ export const useAutkGrammarBehavior = (
                 // hands on what it loads and computes hands on: read back from
                 // the run's database by its key as the run ends, in that
                 // turn, before anything else reads the database or it closes.
-                // A read that fails leaves the draw as it is: those tables
-                // are not handed on, and the log says why.
+                // A read that fails is named as a compute step names it
+                // (autkHandOn `computeFailure`), and fails the run below once
+                // its maps are drawn.
                 const handsOnWhatItMakes = !preview && !onlyDrawsItsInput;
                 let readBacks = new Map<string, HandOnTable>();
+                let readBackFailure = null as string | null;
                 const readAfterCompute = async (db: any): Promise<void> => {
+                    // Each attempt of the run reads anew (withExtensionRetry).
+                    readBackFailure = null;
                     try {
                         readBacks = await readBackAfterCompute(db, enterWorkspace, afterPasses, workspaceCrsOf(loadOptions.workspaces));
                     } catch (e) {
-                        console.warn('[autk-grammar] not handing on the tables made after compute:', e);
+                        readBacks = new Map();
+                        readBackFailure = computeFailure('compute', e);
                     }
                 };
                 const { grammar, database } = await withExtensionRetry(async () => {
@@ -1770,6 +1776,15 @@ export const useAutkGrammarBehavior = (
                 // sources after compute wrote, as its own run made them, so no
                 // pass runs again. A draw for a preview hands nothing on.
                 if (handsOnWhatItMakes) {
+                    // A read-back that failed fails the run as a compute step's
+                    // does, naming it, and hands nothing on: no part of its
+                    // tables goes on under Done. The maps it drew stay.
+                    if (readBackFailure !== null) {
+                        const message = computeFailedMessage([readBackFailure]);
+                        emit({ code: 'error', content: message });
+                        showToast(message, 'error');
+                        return;
+                    }
                     const exports = (grammar as any)?.data;
                     const input = handsOnInput && data.input
                         ? inputTablesOf(autkSourcesFrom(await readInput(data.input), spec, { alias: false }))
@@ -1920,8 +1935,7 @@ export const useAutkGrammarBehavior = (
                         if (computeFailures.length > 0) {
                             // Emitting here would hand downstream nodes the
                             // untouched input under a green "Done" badge.
-                            const message =
-                                'Compute failed: ' + computeFailures.join('; ');
+                            const message = computeFailedMessage(computeFailures);
                             emit({ code: 'error', content: message });
                             showToast(message, 'error');
                             return;
