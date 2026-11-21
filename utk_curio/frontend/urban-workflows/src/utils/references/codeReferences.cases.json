@@ -1,5 +1,5 @@
 {
-  "about": "Code reference cases: widget, input, column, selection and scenario references, and the dataset inputs and its fields. Read by src/tests/utils/codeReferences.test.ts and by utk_curio/backend/tests/test_execution/test_code_references.py: the browser and the headless runner must write the same code. A case's inputs are the node's wired circles, with their data type, the layer name their value gives, columns and layers when known, and the scenario label their rows carry: the id, name and color of the box the feeding node is in, with that box's rank in the dataflow's list of boxes, or the node's name in grey for a node in no box. Its selections are the node's selection tags, with the ids each holds. A JSON case may name its document's grammar: in a Vega-Lite spec (vega-lite), a reference where Vega-Lite reads a field name writes each name escaped for Vega-Lite.",
+  "about": "Code reference cases: widget, input, column, selection and scenario references, and the dataset inputs and its fields. Read by src/tests/utils/codeReferences.test.ts and by utk_curio/backend/tests/test_execution/test_code_references.py: the browser and the headless runner must write the same code. A case's inputs are the node's wired circles, with their data type, the layer name their value gives, columns and layers when known, the value they hold once a run has read it for a dataset widget the input picks (value), and the scenario label their rows carry: the id, name and color of the box the feeding node is in, with that box's rank in the dataflow's list of boxes, or the node's name in grey for a node in no box. Its selections are the node's selection tags, with the ids each holds. A JSON case may name its document's grammar: in a Vega-Lite spec (vega-lite), a reference where Vega-Lite reads a field name writes each name escaped for Vega-Lite.",
   "cases": [
     {
       "name": "a number on its own",
@@ -92,6 +92,100 @@
       "code": "# loads [!! data !!]\nreturn 1",
       "widgets": [{"name": "data", "type": "dataset", "default": ""}],
       "expected": "# loads \nreturn 1"
+    },
+    {
+      "name": "a dataset widget picked by a key of a dict input writes the dataset that key's value picks",
+      "language": "python",
+      "code": "data = curio_load_data([!! data !!])\nreturn data",
+      "widgets": [{"name": "data", "type": "dataset", "label": "Data", "default": "", "options": {"pickedBy": "input_0.camera", "choices": {"W042": "data.test.w042-records", "W065": "data.test.w065-records"}}}],
+      "inputs": [{"slot": 0, "dataType": "dict", "value": {"camera": "W065", "model": "YOLOv8n"}}],
+      "expected": "data = curio_load_data(\"data.test.w065-records\")\nreturn data"
+    },
+    {
+      "name": "a dataset widget picked by a whole input writes the dataset its value picks",
+      "language": "python",
+      "code": "src = curio_load_data([!! data !!], bounds=bounds)",
+      "widgets": [{"name": "data", "type": "dataset", "label": "Depth", "default": "", "options": {"pickedBy": "input_1", "choices": {"2020 - 2050": "data.test.depth-2020", "2050 - 2080": "data.test.depth-2050"}}}],
+      "inputs": [{"slot": 0, "dataType": "dict"}, {"slot": 1, "dataType": "str", "value": "2050 - 2080"}],
+      "expected": "src = curio_load_data(\"data.test.depth-2050\", bounds=bounds)"
+    },
+    {
+      "name": "a picked dataset widget in a comment and a string writes the picked id's text",
+      "language": "python",
+      "code": "# loads [!! data !!]\nprint(\"loading [!! data !!]\")\ndata = curio_load_data([!! data !!])",
+      "widgets": [{"name": "data", "type": "dataset", "label": "Data", "default": "", "options": {"pickedBy": "input_0.camera", "choices": {"W042": "data.test.w042-records", "W065": "data.test.w065-records"}}}],
+      "inputs": [{"slot": 0, "dataType": "dict", "value": {"camera": "W042"}}],
+      "expected": "# loads data.test.w042-records\nprint(\"loading data.test.w042-records\")\ndata = curio_load_data(\"data.test.w042-records\")"
+    },
+    {
+      "name": "a value no choice names is refused, with the value and the choices",
+      "language": "python",
+      "code": "data = curio_load_data([!! data !!])",
+      "widgets": [{"name": "data", "type": "dataset", "label": "Data", "default": "", "options": {"pickedBy": "input_0.camera", "choices": {"W042": "data.test.w042-records", "W065": "data.test.w065-records", "W06E": "data.test.w06e-records"}}}],
+      "inputs": [{"slot": 0, "dataType": "dict", "value": {"camera": "W999"}}],
+      "expected": "data = curio_load_data([!! data !!])",
+      "problems": ["[!! data !!]: Data has no choice for \"W999\", the value of input_0.camera. Its choices are \"W042\", \"W065\" and \"W06E\"."]
+    },
+    {
+      "name": "a picked dataset widget whose input holds no value yet waits for it",
+      "language": "python",
+      "code": "data = curio_load_data([!! data !!])",
+      "widgets": [{"name": "data", "type": "dataset", "label": "Data", "default": "", "options": {"pickedBy": "input_0.camera", "choices": {"W042": "data.test.w042-records"}}}],
+      "inputs": [{"slot": 0, "dataType": "dict"}],
+      "expected": "data = curio_load_data([!! data !!])",
+      "problems": ["[!! data !!]: Data is picked by input_0.camera, and input_0 has no value yet. Run the node that feeds it first."]
+    },
+    {
+      "name": "a picked dataset widget whose input holds no value yet stops nothing in a comment",
+      "language": "python",
+      "code": "# loads [!! data !!]\nreturn 1",
+      "widgets": [{"name": "data", "type": "dataset", "label": "Data", "default": "", "options": {"pickedBy": "input_0.camera", "choices": {"W042": "data.test.w042-records"}}}],
+      "inputs": [{"slot": 0, "dataType": "dict"}],
+      "expected": "# loads \nreturn 1"
+    },
+    {
+      "name": "a picked dataset widget whose circle has no edge is refused",
+      "language": "python",
+      "code": "data = curio_load_data([!! data !!])",
+      "widgets": [{"name": "data", "type": "dataset", "label": "Data", "default": "", "options": {"pickedBy": "input_0.camera", "choices": {"W042": "data.test.w042-records"}}}],
+      "expected": "data = curio_load_data([!! data !!])",
+      "problems": ["[!! data !!]: Data is picked by input_0.camera, and input_0 has no edge. Connect one to that circle."]
+    },
+    {
+      "name": "a picked dataset widget whose input holds no such key is refused",
+      "language": "python",
+      "code": "data = curio_load_data([!! data !!])",
+      "widgets": [{"name": "data", "type": "dataset", "label": "Data", "default": "", "options": {"pickedBy": "input_0.camera", "choices": {"W042": "data.test.w042-records"}}}],
+      "inputs": [{"slot": 0, "dataType": "dict", "value": {"model": "YOLOv8n"}}],
+      "expected": "data = curio_load_data([!! data !!])",
+      "problems": ["[!! data !!]: Data is picked by input_0.camera, and input_0 holds no camera."]
+    },
+    {
+      "name": "a picked dataset widget whose value is no text is refused, with the choices",
+      "language": "python",
+      "code": "data = curio_load_data([!! data !!])",
+      "widgets": [{"name": "data", "type": "dataset", "label": "Data", "default": "", "options": {"pickedBy": "input_0.camera", "choices": {"W042": "data.test.w042-records", "W065": "data.test.w065-records"}}}],
+      "inputs": [{"slot": 0, "dataType": "dict", "value": {"camera": 42}}],
+      "expected": "data = curio_load_data([!! data !!])",
+      "problems": ["[!! data !!]: Data is picked by input_0.camera, which holds a number, not a text. Its choices are \"W042\" and \"W065\"."]
+    },
+    {
+      "name": "a picked dataset widget whose input is a table is refused",
+      "language": "python",
+      "code": "data = curio_load_data([!! data !!])",
+      "widgets": [{"name": "data", "type": "dataset", "label": "Data", "default": "", "options": {"pickedBy": "input_0", "choices": {"W042": "data.test.w042-records"}}}],
+      "inputs": [{"slot": 0, "dataType": "dataframe", "columns": ["camera"]}],
+      "expected": "data = curio_load_data([!! data !!])",
+      "problems": ["[!! data !!]: Data is picked by input_0, and input_0 holds a table, not a text."]
+    },
+    {
+      "name": "a picked dataset widget is read by Python code alone",
+      "language": "javascript",
+      "code": "const data = [!! data !!];",
+      "widgets": [{"name": "data", "type": "dataset", "label": "Data", "default": "", "options": {"pickedBy": "input_0.camera", "choices": {"W042": "data.test.w042-records"}}}],
+      "inputs": [{"slot": 0, "dataType": "dict", "value": {"camera": "W042"}}],
+      "expected": "const data = [!! data !!];",
+      "problems": ["[!! data !!]: Data is picked by input_0.camera, and only a Python node's code reads it."]
     },
     {
       "name": "a hash inside a string is not a comment",
