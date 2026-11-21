@@ -1994,14 +1994,16 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         });
         mockAutkDbLoadGeoTiff.mockClear();
         // The grammar as autk-grammar builds it: its engine hands each data
-        // source to its data adapter, threading the database through.
+        // source to its data adapter, threading the database through, and a
+        // host's own adapter around it (`wrapDataAdapter`) comes first.
         const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
         let runSpec: any = null;
         let mapLayer: any = null;
         const resolved: any[] = [];
-        AutkGrammar.mockImplementationOnce(() => {
+        AutkGrammar.mockImplementationOnce((_targets: unknown, options?: any) => {
           const grammar: any = { data: {} };
-          grammar.dataAdapter = { resolveSource: jest.fn(async (db: any) => db) };
+          const own = { resolveSource: jest.fn(async (db: any) => db), resolveWorkspaces: jest.fn(async (db: any) => db) };
+          grammar.dataAdapter = options?.wrapDataAdapter ? options.wrapDataAdapter(own) : own;
           grammar.run = jest.fn(async (spec: any) => {
             runSpec = spec;
             let db: any;
@@ -2101,17 +2103,19 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         }],
       });
       // The grammar as autk-grammar builds it: each data source through its
-      // data adapter, then its map reads the raster table with getRaster. The
-      // sandbox's list is what /get answers for the artifact `art-heat`. Every
-      // mock is put back afterwards, whatever the test reached.
+      // data adapter, a host's own around it first (`wrapDataAdapter`), then
+      // its map reads the raster table with getRaster. The sandbox's list is
+      // what /get answers for the artifact `art-heat`. Every mock is put back
+      // afterwards, whatever the test reached.
       async function drawingHeatmaps(table: string, run: (drawn: { spec: any; raster: any }) => Promise<void>) {
         const drawn: { spec: any; raster: any } = { spec: null, raster: null };
         const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
         const grammarAsBefore = AutkGrammar.getMockImplementation();
         const getRasterAsBefore = mockAutkDbGetRaster.getMockImplementation()!;
-        AutkGrammar.mockImplementation(() => {
+        AutkGrammar.mockImplementation((_targets: unknown, options?: any) => {
           const grammar: any = { data: {} };
-          grammar.dataAdapter = { resolveSource: jest.fn(async (db: any) => db) };
+          const own = { resolveSource: jest.fn(async (db: any) => db), resolveWorkspaces: jest.fn(async (db: any) => db) };
+          grammar.dataAdapter = options?.wrapDataAdapter ? options.wrapDataAdapter(own) : own;
           grammar.run = jest.fn(async (spec: any) => {
             drawn.spec = spec;
             let db: any;
@@ -2321,17 +2325,19 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
           }],
         } : { data: {}, dataType: 'dataframe' }));
         // The grammar as autk-grammar builds it: each data source through its
-        // data adapter, then its map reads the raster table with getRaster,
-        // which the grammar's database answers, once Curio loaded the raster
-        // with loadGeoTiff, at its own extent, its bands labelled by their ids.
-        // Every mock is put back afterwards, whatever the test reached.
+        // data adapter, a host's own around it first (`wrapDataAdapter`), then
+        // its map reads the raster table with getRaster, which the grammar's
+        // database answers, once Curio loaded the raster with loadGeoTiff, at
+        // its own extent, its bands labelled by their ids. Every mock is put
+        // back afterwards, whatever the test reached.
         const drawn: { spec: any; raster: any } = { spec: null, raster: null };
         const { AutkGrammar } = jest.requireMock('@urban-toolkit/autk-grammar') as { AutkGrammar: jest.Mock };
         const grammarAsBefore = AutkGrammar.getMockImplementation();
         const getRasterAsBefore = mockAutkDbGetRaster.getMockImplementation()!;
-        AutkGrammar.mockImplementation(() => {
+        AutkGrammar.mockImplementation((_targets: unknown, options?: any) => {
           const grammar: any = { data: {} };
-          grammar.dataAdapter = { resolveSource: jest.fn(async (db: any) => db) };
+          const own = { resolveSource: jest.fn(async (db: any) => db), resolveWorkspaces: jest.fn(async (db: any) => db) };
+          grammar.dataAdapter = options?.wrapDataAdapter ? options.wrapDataAdapter(own) : own;
           grammar.run = jest.fn(async (spec: any) => {
             drawn.spec = spec;
             let db: any;

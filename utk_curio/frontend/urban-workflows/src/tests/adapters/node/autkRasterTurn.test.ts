@@ -87,8 +87,8 @@ function pageDb(cells: string) {
   };
 }
 
-/** A grammar instance with a data adapter that loads nothing of its own. */
-const grammarWithAdapter = (): any => ({ dataAdapter: { resolveSource: jest.fn(async (db: any) => db) } });
+/** autk-grammar's data adapter, as a stand-in that loads nothing of its own. */
+const adapterLoadingNothing = (): any => ({ resolveSource: jest.fn(async (db: any) => db) });
 
 beforeEach(() => store.clear());
 
@@ -123,10 +123,8 @@ describe("a run that makes a raster after its passes holds the page's raster tur
   test("another node's raster load waits for the run's turn, and the run's own raster load does not wait on it", async () => {
     expect(typeof runInRasterTurn).toBe("function");
     const turn = { held: true };
-    const own = grammarWithAdapter();
-    const other = grammarWithAdapter();
-    withRasterSources(own, jest.fn(), undefined, turn);
-    withRasterSources(other, jest.fn());
+    const own = withRasterSources(adapterLoadingNothing(), undefined, turn);
+    const other = withRasterSources(adapterLoadingNothing());
     const ownDb = pageDb("own");
     const otherDb = pageDb("other");
     const seen: { ownLoaded?: boolean; otherBefore?: boolean } = {};
@@ -136,12 +134,12 @@ describe("a run that makes a raster after its passes holds the page's raster tur
       run: async () => {
         // The run's own raster, loaded inside the turn the run holds: at once.
         seen.ownLoaded = await Promise.race([
-          own.dataAdapter.resolveSource(ownDb, RASTER_SOURCE).then(() => true),
+          own.resolveSource(ownDb, RASTER_SOURCE).then(() => true),
           ticks(20).then(() => false),
         ]);
         // Another node's raster load starts: it waits for the run's turn.
         let otherDone = false;
-        otherLoad = other.dataAdapter.resolveSource(otherDb, RASTER_SOURCE).then(() => {
+        otherLoad = other.resolveSource(otherDb, RASTER_SOURCE).then(() => {
           otherDone = true;
         });
         await ticks(5);

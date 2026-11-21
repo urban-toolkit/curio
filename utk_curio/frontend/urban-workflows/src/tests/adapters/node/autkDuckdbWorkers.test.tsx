@@ -10,8 +10,11 @@
  * then "out of memory") and its three maps stayed gray. Chromium kept them:
  * 5 workers on open, then 4 more with each day, none ended (dev, 0.17.8).
  *
- * The grammar is a stand-in (_support/autkNodeMocks) whose database ends with
- * the `terminate` each run records, as DuckDB-Wasm's does.
+ * The grammar is a stand-in (_support/autkNodeMocks) that loads each run's
+ * sources through its data adapter, the node's around its own (`grammarLoads`),
+ * so each run goes on the database the node hands it (autkDbClose
+ * `runDatabase`), made by the AutkDb below, which ends with the `terminate`
+ * each run records, as DuckDB-Wasm's does.
  */
 
 jest.mock('../../../providers/FlowProvider', () => require('../../_support/autkNodeMocks').flowProviderModule);
@@ -20,8 +23,8 @@ jest.mock('../../../services/api', () => require('../../_support/autkNodeMocks')
 jest.mock('../../../JavaScriptInterpreter', () => ({ JavaScriptInterpreter: class { } }));
 jest.mock('@urban-toolkit/autk-grammar', () => require('../../_support/autkNodeMocks').autkGrammarModule, { virtual: true });
 jest.mock('@urban-toolkit/autk-compute', () => ({ ComputeGpgpu: jest.fn() }), { virtual: true });
-// A data step's database (loadSpecLayers), with DuckDB-Wasm's database in its
-// `db` as autk-db keeps it.
+// A data step's database (loadSpecLayers) and a map node's own (autkDbClose
+// runDatabase), with DuckDB-Wasm's database in its `db` as autk-db keeps it.
 const mockDatabases: Array<{ terminate: jest.Mock; layersRead: () => number }> = [];
 jest.mock(
   '@urban-toolkit/autk-db',
@@ -55,7 +58,7 @@ jest.mock(
   { virtual: true },
 );
 
-import { failedDraws, grammarRuns, resetAutkNodeMocks } from '../../_support/autkNodeMocks';
+import { failedDraws, grammarLoads, grammarRuns, resetAutkNodeMocks } from '../../_support/autkNodeMocks';
 import { mountAutkNode, stubWebGpu, unstubWebGpu } from '../../_support/autkNode';
 import { loadSpecLayers } from '../../../adapters/node/autkLayerMaterialize';
 
@@ -64,6 +67,7 @@ const ended = () => grammarRuns.map((run) => run.terminate.mock.calls.length);
 
 beforeEach(() => {
   resetAutkNodeMocks();
+  grammarLoads.on = true;
   mockDatabases.length = 0;
   stubWebGpu();
 });
@@ -109,8 +113,7 @@ describe("a map's draws", () => {
   });
 
   // No node keeps the maps of a draw that failed: the grammar's own destroy()
-  // ends them, once the worker is ended, since destroy() lets go of the
-  // engine the worker is found through.
+  // ends them, once the node has ended the worker.
   test('a draw that fails destroys the maps it made, after it ends its worker', async () => {
     failedDraws.error = new Error('Binder Error: no table named parks');
     const node = mountAutkNode('map-1');

@@ -36,8 +36,10 @@ export type GrammarRun = {
   /** The maps this run drew, made by `drawnMaps.make` when a test sets it. */
   maps: any[];
   /**
-   * What ends the DuckDB worker of the database this run made, as autk-grammar
-   * keeps it (its engine's context, an AutkDb holding DuckDB-Wasm's database).
+   * What ends the DuckDB worker of the database this run went on (an AutkDb
+   * holding DuckDB-Wasm's database in its `db`): the one its data adapter
+   * handed on when the run loaded its sources (`grammarLoads`), a node's own
+   * where the node handed it one, else one the run made.
    */
   terminate: jest.Mock;
   /** The grammar's `destroy()`, which ends its maps and lets go of its engine, as autk-grammar 5's does. */
@@ -66,10 +68,25 @@ export const heldDraws: { until: Promise<void> | null } = { until: null };
  * handed, as `grammar.data` holds it: a test that sets it makes autk-db leave
  * rows out or keep them in an order of its own. None unless a test sets it.
  * As autk-grammar's, `grammar.data` lists the tables of the default workspace
- * alone; the run's database (`grammarEngine.context`) exports a table of any
- * workspace, in the workspace it works in.
+ * alone; the database the run went on exports a table of any workspace, in
+ * the workspace it works in.
  */
 export const drawnExports: { of: null | ((table: string, handed: any[]) => any[]) } = { of: null };
+
+/**
+ * Whether a run hands its spec's `workspaces` and each of its sources to the
+ * grammar's data adapter first, each on the database the last call returned,
+ * as autk-grammar's engine does: not unless a test sets it. The grammar's own
+ * adapter loads nothing: it goes on with the database it is handed, else one
+ * of its own. A node hands it the node's own database (adapters/node/autkDbClose
+ * `runDatabase`), which the suite's autk-db makes, so a suite that sets it
+ * stands autk-db's `AutkDb` in. A run that loads nothing goes on a database
+ * of its own.
+ */
+export const grammarLoads: { on: boolean } = { on: false };
+
+/** A database a run makes when it is handed none, as autk-grammar's data adapter makes one: DuckDB-Wasm's in its `db`. */
+const madeDatabase = (): any => ({ db: { terminate: jest.fn(async () => undefined) } });
 
 /** autk-grammar's `enterWorkspace`, as its data entry has it: autk-db's default workspace is `autk`. */
 export async function enterWorkspace(db: any, workspace?: string): Promise<void> {
@@ -81,7 +98,11 @@ export async function enterWorkspace(db: any, workspace?: string): Promise<void>
 const workspaceOf = (source: any): string =>
   typeof source?.workspace === 'string' && source.workspace ? source.workspace : 'autk';
 
-/** What a run fails with once it made its database, for a test of a failed draw; none unless a test sets it. */
+/**
+ * What a run fails with once it has its database, as one that fails after its
+ * sources loaded, so the engine never keeps the database: for a test of a
+ * failed draw; none unless a test sets it.
+ */
 export const failedDraws: { error: Error | null } = { error: null };
 
 /**
@@ -92,8 +113,9 @@ export const failedDraws: { error: Error | null } = { error: null };
  * an adapter of its own (`adapter`, made as each grammar is, such as
  * autk-grammar's `createComputeAdapter`, handed the cache of the grammar's
  * data adapter, `sources`, as autk-grammar 5.2.0 makes its own); a node that
- * wraps the adapter runs its wrapper. A run whose database exports its tables
- * (`drawnExports`) has that database before its passes run, and puts each
+ * wraps it (`wrapComputeAdapter`) runs its own around it. A run whose
+ * database exports its tables (`drawnExports`) has that database before its
+ * passes run, and puts each
  * GeoJSON source of its spec in `sources` through the grammar's own data
  * adapter (`createDataAdapter`, the build the app bundles), as its run loads
  * one, so a pass reads a `fromFeature` table as the source gave it.
@@ -118,7 +140,7 @@ async function handedToTheDataAdapter(sources: Map<string, any>, spec: any, cont
   await context.setWorkspace('autk');
 }
 
-export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string, unknown>) => {
+export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string, unknown>, options?: any) => {
   const handlers: Record<string, (event: any) => void> = {};
   const highlights: Array<[string, number[]]> = [];
   const highlightMaps: Array<string | number | undefined> = [];
@@ -126,6 +148,15 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
   const calls: GrammarRun['calls'] = [];
   // The cache of the grammar's data adapter, which its compute adapter reads.
   const grammarSources = new Map<string, any>();
+  // The grammar's own adapters: its data adapter goes on with the database it
+  // is handed, else one of its own, and its compute adapter runs no pass.
+  const ownData = {
+    resolveSource: jest.fn(async (context: unknown) => context ?? madeDatabase()),
+    resolveWorkspaces: jest.fn(async (context: unknown) => context ?? madeDatabase()),
+  };
+  const ownCompute = grammarComputes.adapter
+    ? grammarComputes.adapter(grammarSources)
+    : { resolveCompute: jest.fn(async (context: unknown) => context) };
   const grammar: any = {
     data: {},
     interactions: {
@@ -152,18 +183,31 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
       plotSelections.push([plot, []]);
       calls.push(['plot', plot, []]);
     }),
-    // Where autk-grammar keeps the adapter its run hands each compute pass to.
-    computeAdapter: grammarComputes.adapter
-      ? grammarComputes.adapter(grammarSources)
-      : { resolveCompute: jest.fn(async (context: unknown) => context) },
+    // Where autk-grammar keeps the adapters its run hands each source and each
+    // pass to: its own, inside a host's own around them, each wrap function
+    // called once, here, as autk-grammar 5.6.0 makes them (`AutkGrammarOptions`).
+    dataAdapter: options?.wrapDataAdapter ? options.wrapDataAdapter(ownData) : ownData,
+    computeAdapter: options?.wrapComputeAdapter ? options.wrapComputeAdapter(ownCompute) : ownCompute,
   };
   // autk-grammar 5's destroy() lets go of its engine, and with it the database.
   const destroy = jest.fn(() => { grammar.grammarEngine = undefined; });
   grammar.destroy = destroy;
   grammar.run = jest.fn(async (spec: any) => {
-    // The database the run reads, where autk-grammar keeps it.
-    const terminate = jest.fn(async () => undefined);
-    grammar.grammarEngine = { context: { db: { terminate } } };
+    // The database the run goes on, as autk-grammar's engine threads it
+    // through the data adapter (grammarLoads), else one the run made. The
+    // engine keeps it (`grammarEngine.context`) only once the run has ended.
+    let context: any;
+    if (grammarLoads.on) {
+      if (Array.isArray(spec?.workspaces) && spec.workspaces.length > 0) {
+        context = await grammar.dataAdapter.resolveWorkspaces(context, spec.workspaces);
+      }
+      for (const source of Array.isArray(spec?.data) ? spec.data : []) {
+        context = await grammar.dataAdapter.resolveSource(context, source);
+      }
+    } else {
+      context = madeDatabase();
+    }
+    const terminate: jest.Mock = context?.db?.terminate ?? jest.fn(async () => undefined);
     if (failedDraws.error) {
       grammarRuns.push({
         targets, spec, pick: () => {}, brush: () => {}, pickOn: () => {}, brushOn: () => {},
@@ -192,27 +236,27 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
         if (read) grammar.data[keyOf(workspace, pass.outputTableName ?? pass.dataRef)] = read;
       }
       // The run's database, left in the default workspace, as autk-grammar leaves it.
-      const context = grammar.grammarEngine.context;
-      context.workspace = 'autk';
-      context.getCurrentWorkspace = () => context.workspace;
-      context.setWorkspace = async (name: string) => { context.workspace = name; };
+      const database = context;
+      database.workspace = 'autk';
+      database.getCurrentWorkspace = () => database.workspace;
+      database.setWorkspace = async (name: string) => { database.workspace = name; };
       // autk-db's CRS, and a load whose table the export above stands for.
-      context.getWorkspaceConfiguration = () => ({ coordinateFormat: 'EPSG:3395', precisionGrid: 0.01 });
-      context.loadGeojson = async () => undefined;
-      context.getLayer = async (name: string) => {
-        const source = sources.find((s) => s.outputTableName === name && workspaceOf(s) === context.workspace);
+      database.getWorkspaceConfiguration = () => ({ coordinateFormat: 'EPSG:3395', precisionGrid: 0.01 });
+      database.loadGeojson = async () => undefined;
+      database.getLayer = async (name: string) => {
+        const source = sources.find((s) => s.outputTableName === name && workspaceOf(s) === database.workspace);
         if (!source) throw new Error(`Table ${name} not found.`);
         return exported(source);
       };
     }
     if (grammarComputes.on) {
-      let context = grammar.grammarEngine.context;
       if (exportOf) await handedToTheDataAdapter(grammarSources, spec, context);
       for (const pass of Array.isArray(spec?.compute) ? spec.compute : []) {
         context = await grammar.computeAdapter.resolveCompute(context, pass);
       }
-      grammar.grammarEngine.context = context;
     }
+    // The run has ended: the engine keeps the database it went on.
+    grammar.grammarEngine = { context };
     const mapsOfSpec: any[] = spec?.map === undefined || spec?.map === null ? [] : Array.isArray(spec.map) ? spec.map : [spec.map];
     const makeEach = drawnMaps.makeEach;
     const maps = makeEach
@@ -288,6 +332,7 @@ export function resetAutkNodeMocks(): void {
   heldDraws.until = null;
   drawnExports.of = null;
   failedDraws.error = null;
+  grammarLoads.on = false;
   grammarComputes.on = false;
   grammarComputes.adapter = null;
   AutkGrammar.mockClear();
