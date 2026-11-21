@@ -1233,8 +1233,8 @@ export const useAutkGrammarBehavior = (
                 // consequences for sparse data (e.g. a PBF area with no parks, or a
                 // join that empties a layer):
                 //   1. an empty geojson source must be dropped before grammar.run,
-                //   2. a map/plot ref to a table that is empty — or that an upstream
-                //      node already dropped, so it never arrives here — dangles and
+                //   2. a map/plot ref to a table that is empty, or that an upstream
+                //      node already dropped, so it never arrives here, dangles and
                 //      fails grammar.run with "Table <name> not found".
                 // Drop empty sources, then keep only refs that point at a table this
                 // node can actually create: layers with data render; empty/absent
@@ -1281,7 +1281,7 @@ export const useAutkGrammarBehavior = (
                 };
                 if (dataSectionSources.length === 0 && (hasMaps || hasPlot)) {
                     console.warn(
-                        '[autk-grammar] render node has no data sources left — the '
+                        '[autk-grammar] render node has no data sources left: the '
                         + 'grammar engine will produce no data context and the '
                         + 'map/plot will render blank. Check the upstream nodes.',
                     );
@@ -2383,17 +2383,17 @@ export const useAutkGrammarBehavior = (
 
     // Forward parent container resizes to AutkMap via a synthetic window.resize.
     // AutkMap binds only to window.resize (and exposes no per-instance resize API),
-    // so node-handle drags are otherwise silent — but that dispatch is expensive and
+    // so node-handle drags are otherwise silent, but that dispatch is expensive and
     // fragile: each one makes *every* AutkMap on the page rebuild its WebGPU textures
     // and reconfigure its swapchain. Doing that every frame during a drag stalls the
     // canvas, and reconfiguring mid-render races AutkMap's render loop (its
-    // getCurrentTexture() ends up invalidated) — which its render-error latch then
+    // getCurrentTexture() ends up invalidated), which its render-error latch then
     // swallows, leaving the map blank/white.
     //
     // So: keep the *cheap* CSS sizing on every tick (the width/height:100% canvas
     // stretches to fill the node during the drag), but fire the *expensive*
     // window.resize only once the size has settled, and on a macrotask (setTimeout)
-    // rather than rAF — outside AutkMap's render window — so the GPU rebuild happens
+    // rather than rAF, outside AutkMap's render window, so the GPU rebuild happens
     // exactly once, cleanly, and the canvas snaps crisp.
     useEffect(() => {
         const wrapper = wrapperRef.current;
