@@ -8,6 +8,7 @@ needs a sign-in, as a Play does.
 from __future__ import annotations
 
 import ast
+import json
 import sys
 import textwrap
 import types
@@ -17,6 +18,7 @@ import pytest
 
 from utk_curio.backend.app import notebooks
 from utk_curio.backend.app.execution import sandbox_client
+from utk_curio.backend.app.notebooks import charts
 
 #: A module the test owns, which a chart cell marks when its code runs.
 PROBE = "curio_notebook_import_probe"
@@ -73,10 +75,122 @@ class TestTheSignIn:
             f"the notebook analysis answered {response.status_code} to a request with no sign-in"
         )
 
+    def test_a_hosted_guest_still_gets_the_analysis(self, client, guest_user_and_token):
+        token = guest_user_and_token[1]
+        response = client.post(
+            "/api/analyzeNotebook", json={"cells": ["df = load()", "out = df.head()"]},
+            headers=_auth(token),
+        )
+        assert response.status_code == 200
+        assert response.get_json()["edges"] == [{"source": 0, "target": 1}]
+
+
+class TestTheChartRun:
+    """The cells that draw an Altair chart go to the sandbox's ``/exec`` as one
+    node's run, under the caller's sign-in, and its output is read back with
+    ``/get``. Anything else the sandbox answers leaves every chart cell with
+    no spec, and the rest of the analysis whole."""
+
+    CELLS = [
+        "import altair as alt",
+        "df = load()",
+        'chart = alt.Chart(df).mark_bar().encode(x="city:N", y="population:Q")',
+        "out = df.head()",
+        'line = alt.Chart(df).mark_line().encode(x="day:T")',
+    ]
+    SPEC = {"mark": {"type": "bar"}, "encoding": {"x": {"field": "city", "type": "nominal"}}}
+    RAN = {"stdout": [], "stderr": "", "output": {"path": "art-7", "dataType": "dict"}}
+
+    def _sandbox(self, monkeypatch, exec_reply=None, stored=None, unreachable=False):
+        calls = []
+
+        def fake(method, path, *, label, timeout, **kwargs):
+            calls.append({"method": method, "path": path, "timeout": timeout, **kwargs})
+            if unreachable:
+                raise sandbox_client.SandboxTransportError(
+                    {"error": "sandbox_unreachable", "message": "Could not reach the sandbox on /exec."}, 502,
+                )
+            return _Reply(exec_reply if path == "/exec" else stored)
+
+        monkeypatch.setattr(sandbox_client, "sandbox_request", fake)
+        return calls
+
+    def _analysis(self, client, token, cells=None):
+        response = client.post(
+            "/api/analyzeNotebook", json={"cells": cells or self.CELLS}, headers=_auth(token),
+        )
+        assert response.status_code == 200
+        return response.get_json()
+
+    def test_the_chart_cells_go_to_the_sandbox_as_one_run_under_the_sign_in(
+        self, client, user_and_token, monkeypatch,
+    ):
+        from utk_curio.backend.app.execution.node_exec import SANDBOX_EXEC_TIMEOUT
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        calls = self._sandbox(
+            monkeypatch, self.RAN, {"data": {"specs": [self.SPEC, None]}, "dataType": "dict"},
+        )
+        analysis = self._analysis(client, token)
+
+        assert [call["path"] for call in calls] == ["/exec", "/get"]
+        run = json.loads(calls[0]["data"])
+        # A Play's run: the caller's session, the work directory of their
+        # account, a Play's time limit, and no dataset saved.
+        assert run["session_id"] == token
+        assert run["user_key"] == _user_dir_key(user)
+        assert calls[0]["timeout"] == SANDBOX_EXEC_TIMEOUT
+        assert run["save_dataset"] is False
+        assert (run["nodeType"], run["file_path"], run["dataType"]) == (charts.RUN_LABEL, "", "")
+        # The two chart cells, and no other cell, are the run's.
+        assert repr(self.CELLS[2]) in run["code"] and repr(self.CELLS[4]) in run["code"]
+        assert self.CELLS[1] not in run["code"] and self.CELLS[3] not in run["code"]
+        assert calls[1]["params"] == {"fileName": "art-7", "sessionId": token}
+        assert [cell["altair_spec"] for cell in analysis["analysis"]] == [None, None, self.SPEC, None, None]
+
+    def test_a_notebook_with_no_chart_cell_asks_the_sandbox_nothing(self, client, user_and_token, monkeypatch):
+        token = user_and_token[1]
+        calls = self._sandbox(monkeypatch)
+        self._analysis(client, token, ["df = load()", "out = df.head()"])
+        assert calls == []
+
+    def test_an_unreachable_sandbox_gives_no_chart_cell_a_spec(self, client, user_and_token, monkeypatch):
+        token = user_and_token[1]
+        self._sandbox(monkeypatch, unreachable=True)
+        analysis = self._analysis(client, token)
+        assert [cell["altair_spec"] for cell in analysis["analysis"]] == [None] * 5
+        assert {"source": 1, "target": 2} in analysis["edges"]
+        assert analysis["analysis"][0]["is_import_only"] is True
+
+    def test_a_run_the_sandbox_failed_gives_no_chart_cell_a_spec(self, client, user_and_token, monkeypatch):
+        token = user_and_token[1]
+        calls = self._sandbox(monkeypatch, {"error": "run_failed", "message": "The run's place went away."})
+        analysis = self._analysis(client, token)
+        assert [call["path"] for call in calls] == ["/exec"]
+        assert [cell["altair_spec"] for cell in analysis["analysis"]] == [None] * 5
+
+    def test_a_run_that_made_no_output_gives_no_chart_cell_a_spec(self, client, user_and_token, monkeypatch):
+        # As a run stopped at its time limit or its memory budget answers.
+        token = user_and_token[1]
+        calls = self._sandbox(monkeypatch, {
+            "stdout": [], "stderr": "This node was stopped after 300s.",
+            "output": {"path": "", "dataType": "str"},
+        })
+        analysis = self._analysis(client, token)
+        assert [call["path"] for call in calls] == ["/exec"]
+        assert [cell["altair_spec"] for cell in analysis["analysis"]] == [None] * 5
+
+    def test_an_output_without_a_spec_for_each_chart_cell_gives_none(self, client, user_and_token, monkeypatch):
+        token = user_and_token[1]
+        self._sandbox(monkeypatch, self.RAN, {"data": {"specs": [self.SPEC]}, "dataType": "dict"})
+        analysis = self._analysis(client, token)
+        assert [cell["altair_spec"] for cell in analysis["analysis"]] == [None] * 5
+
 
 class TestNoCellCodeRuns:
     def test_a_chart_cells_code_does_not_run_in_the_backend(self, client, user_and_token, probe, sandbox_calls):
-        _, token = user_and_token
+        token = user_and_token[1]
         response = client.post(
             "/api/analyzeNotebook", json={"cells": [CHART_CELL]}, headers=_auth(token),
         )
