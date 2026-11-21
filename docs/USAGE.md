@@ -2391,10 +2391,10 @@ A dataflow file opened with **File → Load dataflow** is a new dataflow: saving
 your dataflows under its own name, and the dataflow that was open stays as it was.
 
 Tags and data types come from the dataflow and from what it uses: the libraries its code
-imports and the files it names, the grammar each node draws with, the type of each model
-it runs (a segmentation model gives Computer vision and Imagery), the format of each
-dataset (a GeoTIFF gives Rasters), and the tags and data types its packages, models and
-datasets declare in their manifests' `dataflowCategories` (SCOUT's give SCOUT). A package
+imports and the files it names, the grammar each node draws with, the format of each
+dataset (a GeoTIFF gives Rasters) and the kind of each collection, and the tags and data
+types its packages, models and datasets declare in their manifests' `dataflowCategories`
+(SCOUT's give SCOUT, a segmentation model Computer vision and Imagery). A package, model
 or dataset of your own can declare them too ([Authoring nodes](AUTHORING-NODES.md#tags-and-data-types),
 [Data Catalog](DATA-CATALOG.md#7-the-manifest)), and a new name adds an entry to the
 rail. They follow the dataflow's changes within a few seconds, in every tab that has it
