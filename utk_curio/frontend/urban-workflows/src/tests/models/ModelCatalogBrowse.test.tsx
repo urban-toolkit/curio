@@ -374,6 +374,34 @@ describe("a model of a type no package Curio ships runs", () => {
     expect(card("model.test.prompted@1")).not.toBeNull();
   });
 
+  test("the rail lists the types present by count, then by name, whatever order the listing gives", async () => {
+    const fetched = fetchedModelPackage();
+    const depth = (id: string) =>
+      fetchedModelPackage({ packageId: id, dirName: `${id}@1`, name: id, model: { ...fetched.model, type: "depth-estimation" } });
+    mockApi.catalog.mockResolvedValue({
+      packages: [ddrnetPackage(), deepUmbraPackage(), fetched, depth("model.test.depth-a"), depth("model.test.depth-b")],
+      families: [],
+      catalogCollisions: [],
+    });
+    mockApi.listInstalled.mockResolvedValue({ packages: [] });
+    renderPage();
+    await gridCard("model.test.depth-b@1");
+    const rail = screen.getByRole("complementary", { name: "Filter models" });
+    const rows = Array.from(rail.querySelectorAll<HTMLElement>('button[data-curio-rail-section="type"]'));
+    expect(rows.map((row) => row.getAttribute("data-curio-rail-value"))).toEqual([
+      "depth-estimation",
+      "concept-segmentation",
+      "image-to-image",
+      "semantic-segmentation",
+    ]);
+    expect(rows.map((row) => row.textContent)).toEqual([
+      "Depth estimation2",
+      "Concept segmentation1",
+      "Image to image1",
+      "Semantic segmentation1",
+    ]);
+  });
+
   test("its details name its type in words", async () => {
     renderPage();
     const depth = await gridCard("model.test.prompted@1");

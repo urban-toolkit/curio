@@ -28,6 +28,9 @@ export interface CatalogFacet {
   /** The rows in a fixed order, so a value with nothing in it reads zero;
    *  left out, the values present, by count. */
   order?: string[];
+  /** With no `order`, rows of one count follow their labels in alphabetical
+   *  order, so the rail does not change with the order the listing gives. */
+  tiesByLabel?: boolean;
   /** Rows carry a dot keyed like the card strips. */
   dotted?: boolean;
 }
@@ -42,6 +45,7 @@ export const CATALOG_FACETS: Record<PackageKind, CatalogFacet[]> = {
       label: "By type",
       valueOf: (pkg) => pkg.model?.type ?? "",
       labelOf: modelTypeWords,
+      tiesByLabel: true,
     },
     {
       key: "runtime",
@@ -165,7 +169,10 @@ export function useNodeCatalogBrowse(packageKind: PackageKind = "node") {
         }
         let rows: [string, number][] = facet.order
           ? facet.order.map((value) => [value, counts.get(value) ?? 0])
-          : Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+          : Array.from(counts.entries()).sort(
+              (a, b) =>
+                b[1] - a[1] || (facet.tiesByLabel ? facet.labelOf(a[0]).localeCompare(facet.labelOf(b[0])) : 0),
+            );
         const selected = facetFilters[facet.key];
         if (selected && !rows.some(([value]) => value === selected)) rows = [...rows, [selected, 0]];
         return { facet, rows };
