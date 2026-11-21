@@ -19,7 +19,8 @@
  *   with no geometry, which no pass or source reads, stay out; a buildings
  *   layer with each building with no height `DEFAULT_BUILDING_HEIGHT` m tall
  *   above its base, as the step's passes read it with no database
- *   (utils/autkInput `withDefaultHeights`);
+ *   (utils/buildingHeight `withDefaultHeight`), each such part marked with the
+ *   height it held (`HELD_HEIGHT`), which stays in the database;
  * - its passes, each checked (autkComputeScopes), each reading its table as
  *   autk-db keeps it and a `fromFeature` table as the source gave it, as a map
  *   node's passes do; a pass whose table the step does not hold is skipped, as
@@ -30,15 +31,18 @@
  *
  * It hands on, in order: each layer it holds, as a pass left it or as it
  * came; each table a pass wrote under a name of its own; then each table a
- * source after compute made. A table a pass wrote over a buildings layer holds
- * each building's own height, as the step holds the layer (utils/autkInput
- * `withHeightsAsHeld`); one a source after compute changed is read back as
- * autk-db holds it, with the heights the passes read. A table a source after
- * compute wrote (a join into it, an update, a SQL query saved under its name,
- * a load) is read back
+ * source after compute made. A table a source after compute wrote (a join
+ * into it, an update, a SQL query saved under its name, a load) is read back
  * as autk-db holds it: a buildings table a part a row, as the loaders hand
  * one on (`explodeBuildingParts`), and a table with no geometry as its rows
- * (`plainTableRecord`). A table a source after compute dropped is gone. Each
+ * (`plainTableRecord`). A part the step gave the default holds its own height
+ * again wherever it is handed on with its mark, in a table a pass wrote over
+ * its layer and in one a source after compute read back: autk-db keeps a
+ * row's properties, its mark among them, through a join, which patches them
+ * (`json_merge_patch`), and an update gives the rows it matches the
+ * properties it was given, the user's, with no mark and no default. A table a
+ * pass wrote a point a window into keeps the heights it holds. No mark is
+ * handed on. A table a source after compute dropped is gone. Each
  * table a pass or a source wrote says the CRS of its workspace (`crs`), the
  * coordinates autk-db keeps it in. A pass or a source that fails is a failure,
  * named, and the step hands on the layers it was given.
@@ -46,7 +50,8 @@
 import type { FeatureCollection } from 'geojson';
 import { detectCoordinateFormat } from '../../utils/geoCrs';
 import { snapSourceToGrid } from '../../utils/geoPrecision';
-import { tablesToLoad, withDefaultHeights, withHeightsAsHeld, writtenTables } from '../../utils/autkInput';
+import { tablesToLoad, writtenTables } from '../../utils/autkInput';
+import { deriveBuildingHeight, withDefaultHeight } from '../../utils/buildingHeight';
 import {
     GRAMMAR_RASTER_SOURCES,
     autkTableKey,
@@ -76,6 +81,56 @@ const keyOf = (layer: { name: string; workspace?: string }): string => autkTable
 /** Whether a feature of *collection* has a geometry: a table autk-db can load as a layer. */
 function hasGeometry(collection: any): boolean {
     return hasFeatures(collection) && (collection.features as any[]).some((feature) => feature?.geometry != null);
+}
+
+/**
+ * The property a building part the step gives the default height carries in
+ * its database, and never out of it: the height the part held, `{held}`, or
+ * `{}` for none.
+ */
+export const HELD_HEIGHT = '__curio_held_height';
+
+/**
+ * *fc*, a buildings layer, as the step's passes read it: each part with no
+ * height above its base `DEFAULT_BUILDING_HEIGHT` m tall above it
+ * (`withDefaultHeight`) and marked with the height it held (`HELD_HEIGHT`).
+ * The same object when no part changes.
+ */
+function withMarkedDefaults(fc: any): any {
+    const features: any[] = Array.isArray(fc?.features) ? fc.features : [];
+    let changed = false;
+    const next = features.map((feature) => {
+        const own = feature?.properties;
+        const read = withDefaultHeight(own);
+        if (read === own) return feature;
+        changed = true;
+        const held = own != null && typeof own === 'object' && 'height' in own ? { held: own.height } : {};
+        const properties = deriveBuildingHeight(own ?? {}) === null ? read : { ...read, [HELD_HEIGHT]: held };
+        return { ...feature, properties };
+    });
+    return changed ? { ...fc, features: next } : fc;
+}
+
+/**
+ * *fc* with no part marked (`HELD_HEIGHT`): with *restore*, each marked part
+ * holds the height it held again, none where it held none. The same object
+ * when no part is marked.
+ */
+function withoutMarks(fc: any, restore: boolean): any {
+    const features: any[] = Array.isArray(fc?.features) ? fc.features : [];
+    let changed = false;
+    const next = features.map((feature) => {
+        const properties = feature?.properties;
+        if (properties == null || typeof properties !== 'object' || !(HELD_HEIGHT in properties)) return feature;
+        changed = true;
+        const { [HELD_HEIGHT]: mark, ...rest } = properties;
+        if (restore) {
+            if (mark != null && typeof mark === 'object' && 'held' in mark) rest.height = mark.held;
+            else delete rest.height;
+        }
+        return { ...feature, properties: rest };
+    });
+    return changed ? { ...fc, features: next } : fc;
 }
 
 /** The table a pass computes over: a render pass's viewpoints, any other pass's `dataRef`. */
@@ -149,13 +204,11 @@ export async function computeOnADatabase(
         }
         // The layers the step holds, as the sources a map node hands the
         // grammar: a buildings layer as its passes read it, each building with
-        // no height at the default, and as the step holds it, by key.
-        const asHeld = new Map<string, FeatureCollection>();
+        // no height at the default and marked with the height it held.
         const loadable = layers
             .filter((layer) => layer.type !== RASTER_TABLE && hasGeometry(layer.geojson))
             .map((layer) => {
-                const geojson = layer.type === 'buildings' ? withDefaultHeights(layer.geojson) : layer.geojson;
-                if (geojson !== layer.geojson) asHeld.set(keyOf(layer), layer.geojson);
+                const geojson = layer.type === 'buildings' ? withMarkedDefaults(layer.geojson) : layer.geojson;
                 return {
                     type: 'geojson',
                     geojsonObject: geojson,
@@ -173,10 +226,10 @@ export async function computeOnADatabase(
             }
         }
         // The passes, over the tables the step holds and those earlier passes
-        // wrote; and each table a pass wrote, with the key of the layer whose
+        // wrote; and each table a pass wrote, with the key of the table whose
         // rows it holds, as autkComputeBlocks keeps it: a windows pass, and a
         // render pass that looks out of building windows, write a point a
-        // window, not the rows they computed over.
+        // window, not the rows they computed over (none).
         const present = new Set(layers.map(keyOf));
         const ran: any[] = [];
         const wroteFrom = new Map<string, string>();
@@ -267,20 +320,22 @@ export async function computeOnADatabase(
         const dropped = droppedBy(after);
         const handed: Layer[] = [];
         const listed = new Set<string>();
-        // A table a pass wrote over a buildings layer, with each building's own
-        // height, as the step holds the layer (withHeightsAsHeld).
-        const asTheStepHolds = (layer: Layer, key: string): Layer => {
-            const from = wroteFrom.get(key);
-            const held = from ? asHeld.get(from) : undefined;
-            return held ? { ...layer, geojson: withHeightsAsHeld(layer.geojson, held) } : layer;
+        // A table handed on with no part marked: each marked part with its own
+        // height again where the table holds the rows of the one a pass
+        // computed over, or a source after compute wrote it.
+        const unmarked = (layer: Layer, restore: boolean): Layer => {
+            const geojson = withoutMarks(layer.geojson, restore);
+            return geojson === layer.geojson ? layer : { ...layer, geojson };
         };
         const handOn = async (name: string, workspace: string | undefined, was?: Layer) => {
             const key = autkTableKey(workspace, name);
             if (listed.has(key) || dropped.has(key)) return;
             listed.add(key);
-            if (cache.has(key)) handed.push(asTheStepHolds(await passResult(name, workspace, was, lastPassOf.get(key)), key));
-            else if (wroteAfter.has(key) || rasters.has(key)) handed.push(await readBack(name, workspace));
-            else if (was) handed.push(was);
+            if (cache.has(key)) {
+                handed.push(unmarked(await passResult(name, workspace, was, lastPassOf.get(key)), Boolean(wroteFrom.get(key))));
+            } else if (wroteAfter.has(key) || rasters.has(key)) {
+                handed.push(unmarked(await readBack(name, workspace), true));
+            } else if (was) handed.push(was);
         };
         for (const layer of layers) await handOn(layer.name, layer.workspace, layer);
         for (const { name, workspace } of writtenTables({ compute: ran })) await handOn(name, workspace);
