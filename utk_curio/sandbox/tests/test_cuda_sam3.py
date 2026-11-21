@@ -116,7 +116,6 @@ def _two_runs(mode: str, work: Path) -> dict:
     and for each run its row, its tracks, what SAM 3 found and the frames it
     drew."""
     import numpy as np
-    import pandas as pd
     import torch
 
     from utk_curio.backend.tests._support import tiny_sam3
@@ -158,8 +157,8 @@ def _two_runs(mode: str, work: Path) -> dict:
                 out = module.track_objects(rows, model, helpers["curio_derived_file"], labels=LABELS, **SETTINGS)
             finally:
                 module._follow, module._draw = follow, draw
-            (row,) = out.to_dict("records")
-            tracks = pd.read_parquet(row["tracks"]).to_dict("records")
+            (row,) = out["videos"].to_dict("records")
+            tracks = out["tracks"].to_dict("records")
             runs.append({
                 "row": {key: _plain(value) for key, value in row.items()},
                 "tracks": [{key: _plain(value) for key, value in track.items()} for track in tracks],
