@@ -368,6 +368,26 @@
       "says": "This spec uses \"osmElements\" on one view of the OpenStreetMap table \"east/box_cafes_points\" and not on another at map.layerRefs[1], which Curio does not run yet."
     },
     {
+      "name": "an OpenStreetMap table read as elements while a clusters pass changes it in place without writeBack is told so",
+      "spec": { "data": [{ "type": "osm", "pbfFileUrl": "a.pbf", "outputTableName": "fidi", "autoLoadLayers": { "layers": ["buildings"] } }], "compute": [{ "type": "clusters", "dataRef": "fidi_buildings", "outputColumnName": "block", "outputTableName": "blocks" }, { "type": "clusters", "dataRef": "fidi_buildings", "outputColumnName": "block" }], "map": { "layerRefs": [{ "dataRef": "fidi_buildings", "osmElements": true }] } },
+      "says": "This spec uses \"osmElements\" on the OpenStreetMap table \"fidi_buildings\" while compute pass 1 changes it in place without writeBack at map.layerRefs[0], which Curio does not run yet."
+    },
+    {
+      "name": "an OpenStreetMap table in a workspace plotted as elements while a GPGPU pass changes it in place is told so by its key",
+      "spec": { "data": [{ "type": "osm", "workspace": "east", "pbfFileUrl": "a.pbf", "outputTableName": "t", "autoLoadLayers": { "layers": ["roads"] } }], "compute": [{ "workspace": "east", "dataRef": "t_roads", "attributes": { "x": "lanes" }, "wgslFunction": "return x;", "outputColumnName": "w" }], "plot": { "workspace": "east", "dataRef": "t_roads", "mark": "table", "axis": ["osm_id"], "osmElements": true } },
+      "says": "This spec uses \"osmElements\" on the OpenStreetMap table \"east/t_roads\" while compute pass 0 changes it in place without writeBack at plot, which Curio does not run yet."
+    },
+    {
+      "name": "an OpenStreetMap table read as elements while a pass changes it in place and keeps it in autk-db is run",
+      "spec": { "data": [{ "type": "osm", "pbfFileUrl": "a.pbf", "outputTableName": "fidi", "autoLoadLayers": { "layers": ["buildings"] } }], "compute": [{ "type": "clusters", "dataRef": "fidi_buildings", "outputColumnName": "block", "writeBack": true }], "map": { "layerRefs": [{ "dataRef": "fidi_buildings", "osmElements": true }] } },
+      "says": null
+    },
+    {
+      "name": "an OpenStreetMap table read as elements while a pass writes a table of its own from it is run",
+      "spec": { "data": [{ "type": "osm", "pbfFileUrl": "a.pbf", "outputTableName": "fidi", "autoLoadLayers": { "layers": ["buildings"] } }], "compute": [{ "type": "windows", "dataRef": "fidi_buildings", "floors": 3, "outputTableName": "windows" }, { "type": "clusters", "dataRef": "fidi_buildings", "outputColumnName": "block", "outputTableName": "blocks" }], "map": { "layerRefs": [{ "dataRef": "fidi_buildings", "osmElements": true }, { "dataRef": "blocks" }] } },
+      "says": null
+    },
+    {
       "name": "a buildings layer's buildingsZeroHeight is run",
       "spec": { "map": { "layerRefs": [{ "dataRef": "input_0" }, { "dataRef": "table_osm_buildings", "buildingsZeroHeight": true }] } },
       "says": null

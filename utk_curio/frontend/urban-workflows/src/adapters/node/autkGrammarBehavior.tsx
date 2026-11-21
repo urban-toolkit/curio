@@ -45,12 +45,15 @@ import {
     autkUsesWorkspaces,
     autkWorkspaceOf,
     compileDataSpecToAutkDbJs,
+    loadedSources,
     osmElementTables,
     requestedLayerTables,
     resolveDataSourceUrls as resolveDataSourceUrlsWithBase,
     sectionChangedTables,
     sectionInputTables,
     sectionTablesHandedOn,
+    sourcesAfterPasses,
+    writesAfter,
 } from './autkDataCompile';
 import { executionInputRef } from '../../utils/flowOutputRef';
 import { attachMapInteractionZoomFix } from './autkMapZoom';
@@ -63,8 +66,8 @@ import {
     type AutkLayer,
 } from './autkLayerMaterialize';
 import {
-    bleedRasterEdges, isCurioRasterSource, newAutkDb, rasterSourceOf, resolveRasterInputs, withLayersOverRasters,
-    withOpaqueRasters, withRasterSources, type CurioRasterSource,
+    bleedRasterEdges, isCurioRasterSource, makesRasterAfterCompute, newAutkDb, rasterSourceOf, resolveRasterInputs,
+    runInRasterTurn, withLayersOverRasters, withOpaqueRasters, withRasterSources, type CurioRasterSource,
 } from './autkRasters';
 import { applyComputeBlocks } from './autkComputeBlocks';
 import { withCheckedPasses } from './autkComputeScopes';
@@ -746,6 +749,22 @@ export const useAutkGrammarBehavior = (
             showToast(unrunKey, 'error');
             return;
         }
+        // A document with sources after compute is split by the grammar's
+        // own phases (`dataPhases`) before anything runs, which refuse an
+        // `after` other than 'compute' and a source after compute that reads
+        // a table a pass writes without `writeBack`, in the grammar's words.
+        if (writesAfter(spec?.data)) {
+            try {
+                const { dataPhases } = await import('@urban-toolkit/autk-grammar');
+                dataPhases(spec);
+            } catch (err) {
+                const message = describeError(err);
+                emit({ code: 'error', content: message });
+                showToast(message, 'error');
+                return;
+            }
+            if (leftPage()) return;
+        }
         // A list of one map or one plot is that view.
         for (const view of ['map', 'plot'] as const) {
             if (Array.isArray(spec?.[view]) && spec[view].length === 1) {
@@ -832,8 +851,12 @@ export const useAutkGrammarBehavior = (
 
         // The authored data sources (osm / pbf / csv / json / geojson-from-URL)
         // are the heavy "data component": they run in the backend sandbox via
-        // autk-db. Capture them before we touch spec.data.
-        const specDataSources: any[] = Array.isArray(spec.data) ? spec.data : [];
+        // autk-db. Capture them before we touch spec.data: those the node
+        // loads there, its sources before compute and, with no compute pass,
+        // those after compute after them (loadedSources), and those it runs in
+        // the browser once its passes have run (sourcesAfterPasses).
+        const specDataSources: any[] = loadedSources(spec);
+        const afterPasses: any[] = sourcesAfterPasses(spec);
 
         // The tables of the node's input its data section's heatmaps, joins,
         // updates and drops read (sectionInputTables): none for a section that
@@ -1197,6 +1220,15 @@ export const useAutkGrammarBehavior = (
                     const source = tableRows.get(autkTableKey(workspace, from));
                     if (source) tableRows.set(autkTableKey(workspace, name), { ...source });
                 }
+                // A table a source after compute makes (a heatmap, a SQL
+                // query's table, a table it loads) is one this node has too,
+                // made by the grammar's run once the passes have run, so its
+                // rows are not known before the run, which names a table that
+                // is not there.
+                const madeAfterPasses = new Set(requestedLayerTables(afterPasses));
+                for (const key of madeAfterPasses) {
+                    if (!tableRows.has(key)) tableRows.set(key, { rows: undefined, own: true });
+                }
                 // autk-db's loadGeojson throws on an empty FeatureCollection. Two
                 // consequences for sparse data (e.g. a PBF area with no parks, or a
                 // join that empties a layer):
@@ -1236,8 +1268,17 @@ export const useAutkGrammarBehavior = (
                 // and as it came in a table only a plot reads (utils/autkInput
                 // heightsAtUse). On a 1 cm grid, so autk-db's second clip of
                 // these already clipped layers holds (see utils/geoPrecision).
+                // The sources after compute follow them as the document writes
+                // them, their file URLs resolved for the browser: the grammar's
+                // run phases them itself, after its passes.
                 const uses = heightUses(spec);
-                spec = { ...spec, data: handed.map((source) => snapSourceToGrid(heightsAtUse(source, uses))) };
+                spec = {
+                    ...spec,
+                    data: [
+                        ...handed.map((source) => snapSourceToGrid(heightsAtUse(source, uses))),
+                        ...resolveDataSourceUrls({ data: afterPasses }, false).data,
+                    ],
+                };
                 if (dataSectionSources.length === 0 && (hasMaps || hasPlot)) {
                     console.warn(
                         '[autk-grammar] render node has no data sources left — the '
@@ -1287,6 +1328,8 @@ export const useAutkGrammarBehavior = (
                         }
                         spec = { ...spec, compute: passes };
                     }
+                    // So does a source after compute, once they have run.
+                    for (const key of madeAfterPasses) availableNames.add(key);
                     maps = maps.map(({ index, entry }) => {
                         if (!Array.isArray(entry?.layerRefs)) return { index, entry };
                         const dangling = entry.layerRefs.filter(
@@ -1375,9 +1418,10 @@ export const useAutkGrammarBehavior = (
                 const layersResolved = requestedRefs.filter((r) => knownNames.has(r)).length
                     + plots.filter(({ entry }) => !entry?.dataRef).length;
                 const layersDrawn = maps.reduce((sum, { entry }) => sum + refsOf(entry).length, 0) + plots.length;
+                // A table a source after compute makes has no rows known yet, which is no empty table.
                 const emptyRefs = requestedRefs.filter((r) => {
                     const table = tableRows.get(r);
-                    return !!table && !(typeof table.rows === 'number' && table.rows > 0);
+                    return !!table && !madeAfterPasses.has(r) && !(typeof table.rows === 'number' && table.rows > 0);
                 });
                 const renderCounts: RenderCounts = {
                     layersRequested: requestedRefs.length,
@@ -1445,11 +1489,15 @@ export const useAutkGrammarBehavior = (
                 // that state, so only a new one can succeed (#318).
                 const drawsRasters = (spec.data as any[]).some(isCurioRasterSource);
                 const computes = Array.isArray(spec.compute) && spec.compute.length > 0;
+                // A run that makes a raster after its passes holds the page's
+                // raster turn throughout, and its own raster loads are told so
+                // (autkRasters runInRasterTurn).
+                const rasterTurn = { held: makesRasterAfterCompute(afterPasses) };
                 const grammar = await withExtensionRetry(async () => {
                     const g = new AutkGrammar(targets);
                     // A raster enters its workspace when the document keeps
                     // tables in more than the default one (autkUsesWorkspaces).
-                    if (drawsRasters) withRasterSources(g, newAutkDb, autkUsesWorkspaces(spec) ? enterWorkspace : undefined);
+                    if (drawsRasters) withRasterSources(g, newAutkDb, autkUsesWorkspaces(spec) ? enterWorkspace : undefined, rasterTurn);
                     // Each pass the run computes is checked on the GPU's
                     // device, as a compute step's is (autkComputeScopes). It
                     // runs on the run's own database, and reads a fromFeature
@@ -1458,7 +1506,7 @@ export const useAutkGrammarBehavior = (
                     // entry as its compute adapter.
                     if (computes) withCheckedPasses(g);
                     try {
-                        await g.run(spec);
+                        await runInRasterTurn(g, spec, rasterTurn);
                     } catch (err) {
                         // A failed attempt ends its own database (autkDbClose),
                         // then the maps it made, which no node keeps.
@@ -1772,8 +1820,15 @@ export const useAutkGrammarBehavior = (
                         // layer does not run, and a render layer of one is left
                         // out of its pass. Each by key, in its workspace.
                         const runs = passesAtHand(passes, held, new Set(layers.map(layerKey)));
+                        // Its sources after compute run once its passes have,
+                        // on the database the passes kept their results in
+                        // (autkComputeBlocks), their file URLs resolved for
+                        // the browser.
                         layers = await applyComputeBlocks(
-                            layers, runs, computeFailures,
+                            layers, runs, computeFailures, {
+                                after: resolveDataSourceUrls({ data: afterPasses }, false).data,
+                                workspaces: spec.workspaces,
+                            },
                         );
                         if (computeFailures.length > 0) {
                             // Emitting here would hand downstream nodes the

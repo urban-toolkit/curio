@@ -28,6 +28,7 @@ import {
     autkWorkspaceOf,
     handedOn,
     inItsWorkspace,
+    inPhaseOrder,
     layerEpsg,
     plainTableRecord,
     rasterEnvelope,
@@ -39,6 +40,7 @@ import {
     withOsmIds,
     withRasterGrid,
     workspaceCrsOf,
+    writesAfter,
 } from './autkDataCompile';
 import { oneRasterAtATime } from './autkRasters';
 import { featureCount } from './autkRunDescriptions';
@@ -210,8 +212,10 @@ function flattenToMultiPolygon(geom: any): any | null {
 // `loadGeojson('buildings')` makes every row a building of its own, so each part
 // also carries, as a property, the `building_id` it came from. A part's
 // `geometryIndex` is autk-db's bookkeeping, not a tag, and is left out, and so is
-// its `id`, which the part carries as its `osm_id` (withOsmIds).
-function explodeBuildingParts(features: any[]): any[] {
+// its `id`, which the part carries as its `osm_id` (withOsmIds). A compute step
+// hands on a buildings table it read back from autk-db the same way
+// (autkComputeDatabase).
+export function explodeBuildingParts(features: any[]): any[] {
     const out: any[] = [];
     for (const f of features ?? []) {
         const geom = f?.geometry;
@@ -246,8 +250,9 @@ function explodeBuildingParts(features: any[]): any[] {
 // at once, in the workspace it was made in, with the grid its cells lie on.
 // autk-db keeps a raster's cells in one store for the whole page, so the
 // making and the read are one raster at a time (oneRasterAtATime). A raster
-// in another workspace than the default one keeps it.
-async function grammarRaster(
+// in another workspace than the default one keeps it. A compute step's
+// heatmap after compute is made and read the same way (autkComputeDatabase).
+export async function grammarRaster(
     db: any,
     source: any,
     adapter: { resolveSource: (db: any, source: any) => Promise<unknown> },
@@ -291,6 +296,9 @@ const CHANGING_SOURCES = ['join', 'update', 'drop'];
 // onto it or an update changed it (handedOn), as in the sandbox's loader. An
 // OpenStreetMap table a view of the node reads with `osmElements`
 // (*options.elements*, by key) is read as one feature per OpenStreetMap element.
+// The sources load in the order autk-grammar runs them (inPhaseOrder), those
+// after compute after the others, once the grammar's own `dataPhases` took the
+// section, as the sandbox's loader does.
 export async function loadSpecLayers(
     spec: any,
     input: ReadonlyArray<{
@@ -300,9 +308,10 @@ export async function loadSpecLayers(
 ): Promise<Array<{ name: string; type: string; geojson: FeatureCollection; workspace?: string }>> {
     const keyProblem = autkKeyProblem({ data: spec?.data });
     if (keyProblem) throw new Error(keyProblem);
-    const tableProblem = sectionTableProblem(spec?.data ?? []);
+    const ordered = inPhaseOrder(spec?.data ?? []);
+    const tableProblem = sectionTableProblem(ordered);
     if (tableProblem) throw new Error(tableProblem);
-    const authored: any[] = (spec?.data ?? []).map(inItsWorkspace);
+    const authored: any[] = ordered.map(inItsWorkspace);
     const wanted = sectionInputTables(authored);
     const inputKeys = wanted.map((table) => autkTableKey(table.workspace, table.name));
     const changed = sectionChangedTables(authored);
@@ -335,6 +344,9 @@ export async function loadSpecLayers(
         import('@urban-toolkit/autk-db'),
         import('@urban-toolkit/autk-grammar/data'),
     ]);
+    // The grammar's own phases of the section, which refuse an `after` other
+    // than 'compute' before anything loads.
+    if (writesAfter(authored)) grammarData.dataPhases({ data: authored });
     const enterWorkspace = usesWorkspaces
         ? grammarData.enterWorkspace
         : async (_db: unknown, _workspace?: string) => undefined;

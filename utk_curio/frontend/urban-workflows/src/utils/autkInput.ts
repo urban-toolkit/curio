@@ -31,6 +31,9 @@ import {
   loadableFeatures,
   requestedLayerTables,
   sectionInputTables,
+  sectionOwnTables,
+  sourcesAfterPasses,
+  tablesReadBy,
 } from "../adapters/node/autkDataCompile";
 import {
   deriveBuildingHeight,
@@ -100,7 +103,10 @@ function asList<T>(value: T | T[] | undefined | null): T[] {
  * map a plot links to), and compute passes: a GPGPU, windows or clusters
  * pass's table and a GPGPU pass's `fromFeature` uniforms, a render pass's
  * viewpoints and the tables of its layers, each in the workspace of the map,
- * plot or pass that names it.
+ * plot or pass that names it; and the tables a source that runs in the browser
+ * after the passes reads (`sourcesAfterPasses`, `tablesReadBy`) that the data
+ * section does not make (`sectionOwnTables`), in the source's workspace: the
+ * tables of the node's input it reads, and those a pass writes.
  */
 export function documentTableRefs(spec: any): string[] {
   const names = new Set<string>();
@@ -122,6 +128,12 @@ export function documentTableRefs(spec: any): string[] {
     for (const group of [(block as any)?.uniforms, (block as any)?.uniformMatrices]) {
       if (group == null || typeof group !== "object") continue;
       for (const value of Object.values(group)) add(block, (value as any)?.fromFeature?.layer);
+    }
+  }
+  const own = sectionOwnTables(Array.isArray(spec?.data) ? spec.data : []);
+  for (const source of sourcesAfterPasses(spec)) {
+    for (const table of tablesReadBy(source)) {
+      if (!own.has(autkTableKey(autkWorkspaceOf(source), table))) add(source, table);
     }
   }
   return Array.from(names);
