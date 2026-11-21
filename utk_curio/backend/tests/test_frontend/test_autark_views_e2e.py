@@ -14,10 +14,12 @@ and linked by its `links`.
 4. Example 38, Back Bay and the Chicago Loop in one node: each map draws in its
    own pane, framed on its layers (#773), each histogram draws in its own, and
    the mean minutes of sun per road of each area are recorded on the test
-   (``record_property``), the numbers the example's walkthrough states. Its
-   Loop gets the sun example 07 finds with the same shader on the same roads:
-   the share of roads a building shades and the mean minutes of sun, each
-   near example 07's, which the test runs after it.
+   (``record_property``), the numbers the example's walkthrough states, with
+   how many roads get each number of minutes and a digest of every road's
+   minutes in the order its map draws them, which runs on other GPUs match
+   road for road. Its Loop gets the sun example 07 finds with the same shadow
+   test on the same roads: the share of roads a building shades and the mean
+   minutes of sun, each near example 07's, which the test runs after it.
 
 Map k of a node draws on `autk-grammar-map-<node>` for k = 0, else
 `autk-grammar-map-<node>-<k>`, and plots likewise, so the drawing checks read
@@ -31,10 +33,12 @@ Run::
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import time
 import uuid
+from collections import Counter
 from typing import TYPE_CHECKING
 
 from .utils import (
@@ -320,12 +324,16 @@ def test_a_node_of_two_views_pinned_to_a_dashboard_draws_both_in_its_one_tile(
 
 EXAMPLE_38 = "38-autark-solstice-sun-two-cities.json"
 EXAMPLE_38_NODE = "two-cities-sun"
-#: Example 07, which runs the same shadow shader on the same Loop extract, and
+#: Example 07, which runs the same shadow test on the same Loop extract, and
 #: its map of the roads with their minutes of sun.
 EXAMPLE_07 = "07-autark-gpu-shader.json"
 EXAMPLE_07_MAP = "sh-map"
 #: How near example 38's Loop must come to example 07's: the same roads, the
-#: same buildings and the same shader give the same minutes of sun.
+#: same buildings and the same shadow test give nearly the same minutes of
+#: sun. Example 07's pass multiplies World Mercator coordinates as they are,
+#: near 1e7 m, where an f32 holds about a metre, and example 38's measures
+#: them from each road's first point, so a road within about a metre of a
+#: shadow's edge can get another hour of sun in one than in the other.
 SUN_MEAN_TOLERANCE = 0.03
 SHADED_SHARE_TOLERANCE = 0.03
 
@@ -340,6 +348,23 @@ def _sun_numbers(values: list) -> dict:
         "mean": sum(values) / len(values),
         "shaded_share": sum(1 for value in values if value <= top - 60) / len(values),
     }
+
+
+def _minutes(value) -> str:
+    """A road's minutes of sun as one text whether the page read it as 600 or 600.0."""
+    return format(float(value), "g")
+
+
+def _minutes_counts(values: list) -> str:
+    """How many roads get each number of minutes of sun, `minutes:roads`, from the least sun up."""
+    counts = Counter(_minutes(value) for value in values)
+    return ",".join(f"{minutes}:{counts[minutes]}" for minutes in sorted(counts, key=float))
+
+
+def _minutes_digest(values: list) -> str:
+    """A digest of every road's minutes of sun, in the order its map draws the
+    roads: two runs that give every road the same minutes give the same one."""
+    return hashlib.sha256(",".join(_minutes(value) for value in values).encode("utf-8")).hexdigest()
 
 
 def _drawn_sun(page, node_id: str, table: str, view, label: str) -> list:
@@ -391,10 +416,13 @@ def test_example_38_draws_each_view_in_its_pane_and_records_each_area_s_sun(
     assert not problems, "; ".join(problems)
     areas = {}
     for view, table in (("back_bay", "back_bay_road_sun"), ("loop", "loop_road_sun")):
-        areas[view] = _sun_numbers(_drawn_sun(page, EXAMPLE_38_NODE, table, view, f"example 38's map {view}"))
+        values = _drawn_sun(page, EXAMPLE_38_NODE, table, view, f"example 38's map {view}")
+        areas[view] = _sun_numbers(values)
         record_property(f"{view}_roads", areas[view]["roads"])
         record_property(f"{view}_mean_sun_minutes", round(areas[view]["mean"], 1))
         record_property(f"{view}_shaded_share", round(areas[view]["shaded_share"], 3))
+        record_property(f"{view}_roads_by_sun_minutes", _minutes_counts(values))
+        record_property(f"{view}_sun_minutes_sha256", _minutes_digest(values))
 
     _open_example(page, app_frontend, current_server, EXAMPLE_07, "Example 07")
     assert_autark_map_drawn(page, EXAMPLE_07_MAP, timeout=120000)
