@@ -118,11 +118,21 @@ export const failedDraws: { error: Error | null } = { error: null };
  * passes run, and puts each
  * GeoJSON source of its spec in `sources` through the grammar's own data
  * adapter (`createDataAdapter`, the build the app bundles), as its run loads
- * one, so a pass reads a `fromFeature` table as the source gave it.
+ * one, so a pass reads a `fromFeature` table as the source gave it. An
+ * adapter made with the grammar's compute caches (`cache` and `types`, as
+ * autk-grammar 5.6.0 wires its own) keeps each pass's result there, and the
+ * run's `data` then lists each table a pass wrote, under its key, as the
+ * pass's collection itself, as autk-grammar 5.6.0's `data` does.
  */
-export const grammarComputes: { on: boolean; adapter: null | ((sources: Map<string, any>) => any) } = {
+export const grammarComputes: {
+  on: boolean;
+  adapter: null | ((sources: Map<string, any>, cache: Map<string, any>, types: Map<string, any>) => any);
+} = {
   on: false, adapter: null,
 };
+
+/** Whether the page is a dashboard (the flow's `dashboardOn`): not unless a test sets it. */
+export const flowDashboard: { on: boolean } = { on: false };
 
 /**
  * Put each GeoJSON source of *spec* in *sources*, the cache of the grammar's
@@ -146,8 +156,11 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
   const highlightMaps: Array<string | number | undefined> = [];
   const plotSelections: Array<[string, number[]]> = [];
   const calls: GrammarRun['calls'] = [];
-  // The cache of the grammar's data adapter, which its compute adapter reads.
+  // The cache of the grammar's data adapter, which its compute adapter reads,
+  // and the caches its compute adapter keeps each pass's result and type in.
   const grammarSources = new Map<string, any>();
+  const computeCache = new Map<string, any>();
+  const computeTypes = new Map<string, any>();
   // The grammar's own adapters: its data adapter goes on with the database it
   // is handed, else one of its own, and its compute adapter runs no pass.
   const ownData = {
@@ -155,7 +168,7 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
     resolveWorkspaces: jest.fn(async (context: unknown) => context ?? madeDatabase()),
   };
   const ownCompute = grammarComputes.adapter
-    ? grammarComputes.adapter(grammarSources)
+    ? grammarComputes.adapter(grammarSources, computeCache, computeTypes)
     : { resolveCompute: jest.fn(async (context: unknown) => context) };
   const grammar: any = {
     data: {},
@@ -254,6 +267,13 @@ export const AutkGrammar = jest.fn().mockImplementation((targets: Record<string,
       for (const pass of Array.isArray(spec?.compute) ? spec.compute : []) {
         context = await grammar.computeAdapter.resolveCompute(context, pass);
       }
+      // Each table a pass wrote, as autk-grammar 5.6.0's `data` lists it: the
+      // pass's collection itself, under its key, in place of the export.
+      if (computeCache.size > 0) {
+        grammar.data = { ...grammar.data };
+        for (const [key, collection] of computeCache) grammar.data[key] = Promise.resolve(collection);
+      }
+      if (context && typeof context.setWorkspace === 'function') await context.setWorkspace('autk');
     }
     // The run has ended: the engine keeps the database it went on.
     grammar.grammarEngine = { context };
@@ -308,7 +328,7 @@ export const flowEdges: { current: any[] } = { current: [] };
 export const flowProviderModule = {
   useFlowContext: () => ({
     nodes: flowNodes.current, edges: flowEdges.current, nodeExecStatus: {}, markNodeErrored,
-    workflowNameRef: { current: 'wf' }, scenarios: flowScenarios.current,
+    workflowNameRef: { current: 'wf' }, scenarios: flowScenarios.current, dashboardOn: flowDashboard.on,
   }),
 };
 export const toastProviderModule = {
@@ -335,6 +355,7 @@ export function resetAutkNodeMocks(): void {
   grammarLoads.on = false;
   grammarComputes.on = false;
   grammarComputes.adapter = null;
+  flowDashboard.on = false;
   AutkGrammar.mockClear();
   markNodeErrored.mockClear();
   showToast.mockClear();
