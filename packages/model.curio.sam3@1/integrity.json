@@ -8,7 +8,7 @@
     "skills/sam3-tracking/evals/files/walk.json": "f042227ee8007613162f1a1e04f14a3f210fff3fd7186b081a906f3013466e4a",
     "skills/sam3-tracking/evals/truth.json": "5b530df196a97701978ade6c0c40ec1f2e50965cfed700857791aff1f0661619",
     "sources/sam3_images.py": "3446908310ac0a924813c025ac6e12a4723dd5f85c2f77afaaa035340c028c6c",
-    "sources/sam3_tracking.py": "da606b695ef162e7bcd7594f12b9188b7672aa67a395f6683b7effdb136fa818",
+    "sources/sam3_tracking.py": "6608c3704c96f92cc06b4150535bb385bf1d9ca83dd33a87b56c90d908d5bfa6",
     "sources/segment-images.py": "6b89298a3a8c9a49bee5a0dbd186621371973609dc47b74817d60dc1d91d2330",
     "sources/track-objects.py": "78839b8d27ebeb7be16782a26c34c8771d7b27511b3747a209c29883927b367a"
   }

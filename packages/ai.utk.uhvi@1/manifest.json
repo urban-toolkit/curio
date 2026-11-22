@@ -19,14 +19,13 @@
   "license": "MIT",
   "name": "Urban Heat Vulnerability Index",
   "permissions": [
-    "filesystem.read",
-    "network.fetch"
+    "filesystem.read"
   ],
   "publisher": "Curio",
   "templates": [
     {
       "category": "data",
-      "description": "Load a UHVI raster from a path or URL into a Curio-compatible Raster dataset.",
+      "description": "Load a UHVI raster from the Data Catalog: the GeoTIFF dataset its Raster widget holds.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
@@ -49,16 +48,16 @@
       "source": "sources/uhvi-load.py",
       "widgets": [
         {
-          "name": "src",
-          "type": "text",
-          "label": "Raster path",
-          "default": "./milan/Milan_Tmrt_2022_203_1200D.tif"
+          "name": "raster",
+          "type": "dataset",
+          "label": "Raster",
+          "default": ""
         }
       ]
     },
     {
       "category": "data",
-      "description": "Load a polygon GeoDataFrame (e.g., census tracts) to use as the zonal-aggregation footprint.",
+      "description": "Load polygons (e.g., census tracts) from the Data Catalog as a GeoDataFrame, the zonal-aggregation footprint: the dataset its Zones widget holds.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
@@ -80,10 +79,10 @@
       "source": "sources/uhvi-zones.py",
       "widgets": [
         {
-          "name": "path",
-          "type": "text",
-          "label": "Zones path",
-          "default": "./milan/R03_21-11_WGS84_P_SocioDemographics_MILANO_Selected.shp"
+          "name": "zones",
+          "type": "dataset",
+          "label": "Zones",
+          "default": ""
         }
       ]
     },

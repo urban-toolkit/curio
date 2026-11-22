@@ -13,6 +13,8 @@ import { normalizeScenarios } from "./utils/scenarios/scenarioModel";
 import { inputScenarios } from "./utils/scenarios/inputScenarios";
 import { NO_SCENARIO_COLOR, type ScenarioLabel } from "./utils/scenarios/scenarioColors";
 import { savedNodeTitle } from "./utils/nodeTitle";
+import { getToken } from "./utils/authApi";
+import { requestHeaders } from "./utils/requestHeaders";
 
 // ── Trill types ──────────────────────────────────────────────────────────────
 
@@ -229,7 +231,9 @@ export async function notebookToTrill(
       return Array.isArray(source) ? source.join("") : String(source ?? "");
     });
 
-  // Call backend for AST-based dependency analysis + Altair spec extraction
+  // Ask the backend for each cell's analysis, which reads the code and runs
+  // none of it, and the Vega-Lite spec of each Altair chart cell, which the
+  // sandbox makes as it runs node code, under the page's sign-in.
   type CellAnalysis = {
     defined: string[];
     used: string[];
@@ -249,7 +253,7 @@ export async function notebookToTrill(
   try {
     const response = await fetch(`${backendUrl}/api/analyzeNotebook`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: requestHeaders(getToken(), { "Content-Type": "application/json" }),
       body: JSON.stringify({ cells: codeCells }),
     });
     if (response.ok) {
@@ -277,7 +281,7 @@ export async function notebookToTrill(
     for (let i = 0; i < codeCells.length - 1; i++) {
       cellEdges.push({ source: i, target: i + 1 });
     }
-    // No lastVars available — skip wiring in this path
+    // No lastVars available: skip wiring in this path
     lastVars = [];
     // …and no analysis, so nothing can be classified. Merging on a guess would
     // silently move code the user wrote into a node they did not: without the

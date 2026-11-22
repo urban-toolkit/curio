@@ -9,8 +9,8 @@ It registers three kinds that together form a complete UHVI workflow:
 
 | Canonical id | Engine | Editor | Purpose |
 |--------------|--------|--------|---------|
-| `ai.utk.uhvi/uhvi-load@1`  | python | code | Load a UHVI raster from disk. |
-| `ai.utk.uhvi/uhvi-zones@1` | python | code | Load a polygon GeoDataFrame (e.g. census tracts) to use as the zonal footprint. |
+| `ai.utk.uhvi/uhvi-load@1`  | python | code | Load a UHVI raster from the Data Catalog. |
+| `ai.utk.uhvi/uhvi-zones@1` | python | code | Load polygons (e.g. census tracts) from the Data Catalog to use as the zonal footprint. |
 | `ai.utk.uhvi/uhvi-zonal@1` | python | code | Zonal-mean UHVI over the polygon GeoDataFrame. |
 
 ### Functions
@@ -38,6 +38,7 @@ return zonal_mean(input_0, input_1)
 The zonal node takes the raster and the zones GeoDataFrame on its two input
 circles, in either order: `zonal_mean` tells them apart by type.
 
-The defaults assume a workspace layout matching the repo root:
-`./milan/Milan_Tmrt_2022_203_1200D.tif` and
-`./milan/R03_21-11_WGS84_P_SocioDemographics_MILANO_Selected.shp`.
+UHVI Loader and UHVI Zones each read the Data Catalog dataset their widget
+holds, Raster or Zones: drop a dataset or a file on the node, or choose a file
+in its Widgets tab. Each one's code is that read, such as UHVI Loader's
+`return curio_load_data([!! raster !!])`.
