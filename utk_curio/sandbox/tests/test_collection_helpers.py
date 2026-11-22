@@ -158,10 +158,10 @@ class TestTheHelpers(unittest.TestCase):
     def test_a_table_found_in_a_video_is_no_derived_file(self):
         """What a node finds in a video, such as Track Objects' tracks, is a
         table the node returns, which goes on its edge: no file is derived
-        for it, and no folder is made."""
+        for it, the refusal says to return it, and no folder is made."""
         media = self.tmp / "media"
         derive = self.helpers({}, str(media))["curio_derived_file"]
-        with self.assertRaisesRegex(ValueError, "from a file of kind 'video', not 'parquet'"):
+        with self.assertRaisesRegex(ValueError, "not 'parquet': return a table from the node as its output"):
             derive("c1", "b" * 16, 0, "parquet", tag="sam3")
         self.assertFalse(media.exists())
 
@@ -311,17 +311,21 @@ class TestTheHelpers(unittest.TestCase):
         })
 
     def test_what_the_media_route_would_never_find_is_refused_and_nothing_is_made(self):
-        """A file a kind does not derive (``DERIVED``), or at a time no id
-        holds, would be written and never served: its row's links would fail.
-        One assertion over every case, so each counts in this test."""
+        """A file of an extension of no family (``FAMILIES``), no extension
+        from a kind with no file of its own (``DERIVED_DEFAULTS``), a kind no
+        row has, or a time no id holds would be written and never served: its
+        row's links would fail. One assertion over every case, so each counts
+        in this test."""
         media = self.tmp / "media"
         derive = self.helpers({}, str(media))["curio_derived_file"]
         cases = {
-            "a video made from a recording": lambda: derive("c1", "c" * 16, 0, "mp4", kind="audio"),
-            "a video made from a photo": lambda: derive("c1", "a" * 16, 0, "mp4", kind="image"),
-            "a format no kind derives": lambda: derive("c1", "b" * 16, 0, "txt"),
+            "a format of no family": lambda: derive("c1", "b" * 16, 0, "txt"),
+            "a table found in a video": lambda: derive("c1", "b" * 16, 0, "csv"),
             "a frame's format, upper case": lambda: derive("c1", "b" * 16, 0, "JPG"),
-            "a kind nothing is derived from": lambda: derive("c1", "b" * 16, 0, kind="raster"),
+            "an extension written with its dot": lambda: derive("c1", "b" * 16, 0, ".png"),
+            "a raster tile's file with no extension named": lambda: derive("c1", "d" * 16, 0, kind="raster"),
+            "a file of a files resource with no extension named": lambda: derive("c1", "e" * 16, 0, kind="file"),
+            "a kind no collection's row has": lambda: derive("c1", "b" * 16, 0, "png", kind="videos"),
             "a time before the file starts": lambda: derive("c1", "b" * 16, -1, "mp4", tag="sam3"),
             "a time longer than an id holds": lambda: derive("c1", "b" * 16, 10**12, "mp4", tag="sam3"),
             "a video's tag that is no tag": lambda: derive("c1", "b" * 16, 0, "mp4", tag="SAM3"),

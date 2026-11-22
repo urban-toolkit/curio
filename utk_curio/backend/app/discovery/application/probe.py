@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from utk_curio.backend.app.datasets.domain.constants import TIFF_SIGNATURES
+from utk_curio.sandbox.util.collections import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
 
 #: How long a probe may spend on one container before it is given up on.
 AV_TIMEOUT_SECONDS = 20
@@ -294,15 +295,11 @@ def probe_raster(path: Path) -> dict[str, Any]:
         return _error(exc)
 
 
-IMAGE_EXTENSIONS = frozenset({"jpg", "jpeg", "png", "webp", "gif", "bmp", "tif", "tiff"})
-VIDEO_EXTENSIONS = frozenset({"mp4", "mov", "m4v", "webm", "mkv", "avi"})
-AUDIO_EXTENSIONS = frozenset({"wav", "flac", "mp3", "ogg", "opus", "m4a", "aiff", "aif"})
-
-
 def file_kind(resource_kind: str, relpath: str) -> str:
     """What one file of a collection is: ``image``, ``video``, ``frame``,
     ``audio``, ``raster``, or ``file`` for every file of a ``files``
-    resource, whatever its extension says."""
+    resource, whatever its extension says. The extensions' families are the
+    ones every file a node derives is of (``collections.FAMILIES``)."""
     if resource_kind == "files":
         return "file"
     ext = relpath.rsplit(".", 1)[-1].lower() if "." in relpath else ""

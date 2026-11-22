@@ -444,9 +444,24 @@ class TestDerivedFiles:
         assert played(longer) != by_shorter
         assert shorter["file_id"] != longer["file_id"]
 
-    def test_a_raster_has_no_derived_files(self, client, auth, app, shipped_root):
+    def test_a_raster_tile_derives_no_file_of_its_own(self, client, auth, app, shipped_root, user_and_token):
+        """A raster tile has no file it derives by default, as a video has its
+        frame: an id that names no extension names no file of a tile, even
+        where a photo's own file would be, and the same file is served by its
+        own id, which names its extension."""
+        from PIL import Image
+
+        from utk_curio.backend.app.discovery.infrastructure import media_dirs
+
+        user, _token = user_and_token
         dataset, index = collection(client, auth, "orthos")
-        assert media(client, auth, dataset["id"], f"{index['file_id'].iloc[0]}@0").status_code == 404
+        tile = index["file_id"].iloc[0]
+        assert media(client, auth, dataset["id"], f"{tile}@0").status_code == 404
+        there = media_dirs.media_work_dir(str(user.id), "overlays", dataset["id"], tile) / "0.png"
+        Image.new("RGB", (64, 48), (30, 200, 30)).save(there, "PNG")
+        assert media(client, auth, dataset["id"], f"{tile}@0", "original").status_code == 404
+        drawn = media(client, auth, dataset["id"], f"{tile}@0.png", "original")
+        assert (drawn.status_code, drawn.mimetype) == (200, "image/png"), drawn.get_data(as_text=True)[:300]
 
     def test_a_video_a_node_made_from_a_video_plays_and_seeks(self, client, auth, app, shipped_root, user_and_token):
         """What Track Objects writes beside a collection's video: an overlay
@@ -496,8 +511,9 @@ class TestDerivedFiles:
     ):
         """What a node finds in a video, such as Track Objects' tracks, is a
         table the node returns, which goes on its edge: ``curio_derived_file``
-        refuses to name a file for it, and the media route serves no file
-        under a table's id, even one where such an id would put it."""
+        refuses to name a file for it, saying to return it, and the media
+        route serves no file under a table's id, even one where such an id
+        would put it."""
         import pandas as pd
 
         from utk_curio.backend.app.discovery.infrastructure import media_dirs
@@ -508,7 +524,7 @@ class TestDerivedFiles:
         video_id = file_id_of(index, "clip_01.mp4")
         root = media_dirs.media_work_root(str(user.id))
         derive = make_collection_helpers(None, {}, str(root))["curio_derived_file"]
-        with pytest.raises(ValueError, match="from a file of kind 'video', not 'parquet'"):
+        with pytest.raises(ValueError, match="not 'parquet': return a table from the node as its output"):
             derive(dataset["id"], video_id, 0, "parquet", tag="overlay")
         assert not (root / "tables").exists()
         there = root / "tables" / dataset["id"] / video_id / "0-overlay.parquet"
