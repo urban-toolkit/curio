@@ -546,10 +546,10 @@ saved is saved under its title by its first run.
   compute step) runs on the server, like a code node.
 - A Data Export node writes its file and downloads nothing: its **Download**
   button saves the file.
-- A node that needs data only the browser makes (an Autark compute node)
-  runs, with the nodes below it, in a tab. The tab that
-  started the run runs them by itself; otherwise opening the dataflow offers
-  **Finish run**.
+- A node that needs data only the browser makes (an Autark compute node, or an
+  Autark map or plot that also loads data or runs a pass) runs, with the nodes
+  below it, in a tab. The tab that started the run runs them by itself;
+  otherwise opening the dataflow offers **Finish run**.
 - While a run goes, **Run All** stops it. The run ends before its next node
   starts; a node already running finishes, and its result is not kept.
 
@@ -558,9 +558,10 @@ any browser and after signing in again, each code node of your own dataflow
 shows the last result you ran it to, for 7 days, as long as its code, its
 inputs, your packages and the datasets it reads are unchanged; charts and maps
 below it draw from it. A node with no such result shows its saved output, if its
-**Save output dataset** toggle is on. Nodes below an Autark compute node wait
-for a run. After Curio is upgraded, only saved outputs come
-back. A dashboard shows its saved outputs.
+**Save output dataset** toggle is on. Nodes below an Autark compute node, or
+below an Autark map or plot that also loads data or runs a pass, wait for a
+run. After Curio is upgraded, only saved outputs come back. A dashboard shows
+its saved outputs.
 
 An invited editor's runs are the editor's own: their results show on the
 editor's canvas, not the owner's, and the dataflow's saved outputs stay those of
