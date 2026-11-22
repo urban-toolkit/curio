@@ -196,10 +196,14 @@ class TestReachability:
             "widget", "scenarios", "quad-cities-flood-vulnerability", "06-back-bay-road-sunlight",
             "chicago-loop-shadow-towers", "24-scout-shadow-model-chicago-loop", "chicago-rain-wind-routing", "lower-manhattan-park-shade",
             "scenario-comparison-charts", "crown-heights-1550-bedford-shadow", "filter-rows-with-widgets",
-            # Each Spatial Join's Operation and Output.
+            # Each Spatial Join's Operation and Output, and 10's Image
+            # Segmentation's classes.
             "10-street-vision-cv-analysis", "15-vega-lite-spec-forms-and-catalogs", "25-spatial-join-operations",
             # Its Settings node's widgets, and its Spatial Join's.
             "32-sage-idot-rail-crossings",
+            # The settings of Media's and SAM 3's nodes.
+            "21-storage-photos-and-videos", "22-storage-audio-recordings", "31-sideseeing-objects-along-a-walk",
+            "33-sideseeing-frames-segments-blocks",
         }
         for fixture in with_widgets:
             example = _example(fixture)

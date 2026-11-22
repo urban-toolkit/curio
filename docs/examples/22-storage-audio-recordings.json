@@ -52,12 +52,34 @@
         "type": "curio.media/split-audio",
         "x": 645,
         "y": 430,
-        "content": "\"\"\"Split Audio.\n\nInput: a collection's rows, as Data Loading's `curio_load_collection(...)` returns\nthem. Every recording becomes one row per window, with the window's level and\npeak in dBFS (decibels below full scale) over all of its channels, and a\nshort WAV of the window, in the recording's channels, that Simple View can\nplay. A window row keeps the recording's fields, and its `recorded_at` moves\nforward by the window's offset. A recording is read one window at a time.\n\nSettings:\n- WINDOW_SECONDS: the length of one window.\n- MAX_WINDOWS_PER_RECORDING: windows kept from one recording at most.\n\"\"\"\n\nfrom media_collections import split_audio\n\nWINDOW_SECONDS = 0.1\nMAX_WINDOWS_PER_RECORDING = 2000\n\nreturn split_audio(\n    input_0, curio_derived_file,\n    window_seconds=WINDOW_SECONDS, max_windows_per_recording=MAX_WINDOWS_PER_RECORDING,\n)\n",
+        "content": "\"\"\"Split Audio.\n\nInput: a collection's rows, as Data Loading's `curio_load_collection(...)` returns\nthem. Every recording becomes one row per window, with the window's level and\npeak in dBFS (decibels below full scale) over all of its channels, and a\nshort WAV of the window, in the recording's channels, that Simple View can\nplay. A window row keeps the recording's fields, and its `recorded_at` moves\nforward by the window's offset. A recording is read one window at a time.\n\nThe Widgets tab sets the length of one window, in seconds, and the most\nwindows kept from one recording.\n\"\"\"\n\nfrom media_collections import split_audio\n\nreturn split_audio(\n    input_0, curio_derived_file,\n    window_seconds=float([!! window_seconds !!]),\n    max_windows_per_recording=int([!! max_windows_per_recording !!]),\n)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Cut each recording into 0.1 second windows and measure them.",
         "metadata": {
-          "keywords": []
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "window_seconds",
+              "type": "number",
+              "label": "Window length",
+              "default": 5.0,
+              "options": {
+                "min": 0.001,
+                "units": "s"
+              },
+              "value": 0.1
+            },
+            {
+              "name": "max_windows_per_recording",
+              "type": "number",
+              "label": "Maximum windows per recording",
+              "default": 2000,
+              "options": {
+                "step": 1
+              }
+            }
+          ]
         }
       },
       {

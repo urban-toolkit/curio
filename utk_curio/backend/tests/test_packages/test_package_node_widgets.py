@@ -21,8 +21,10 @@ Segmentation's ``classes`` is a text list whose empty value reports every
 class, as None did (``segment_images`` reads ``classes or`` every label).
 
 The shipped dataflows that hold these nodes give them their template's
-widgets and call, with the values they used before as the widgets' defaults,
-so each call gets what it got before.
+widgets and call. Each widget is its template's, default and all, with the
+value the node used before set as its ``value`` where it differs from the
+default, as the other shipped dataflows hold a template's widget and as a
+plan or a node.create sets one. So each call gets what it got before.
 """
 
 from __future__ import annotations
@@ -91,8 +93,9 @@ CONSTANTS = {
     "model.curio.sam3/track-objects": {"FORGET_SECONDS": ("forget_seconds", 10), "TO_SECONDS": ("to_seconds", None)},
 }
 #: Each shipped dataflow's node of the eight, by file and node id, and the
-#: values its call got before its settings were widgets: what the widgets'
-#: defaults hold now. Example 10's second node held ``classes = None``.
+#: values its call got before its settings were widgets: what its widgets
+#: hold now, as their values or their defaults. Example 10's second node held
+#: ``classes = None``.
 EXAMPLE_VALUES = {
     ("10-street-vision-cv-analysis.json", "4067fb98-3ed5-497a-97a5-41a98ce1085b"): {
         "classes": ["vegetation", "terrain", "sky", "road", "sidewalk", "building"],
@@ -281,12 +284,13 @@ def test_every_shipped_dataflow_that_holds_one_of_these_nodes_is_known():
 
 @pytest.mark.parametrize(("file", "node_id"), sorted(EXAMPLE_VALUES), ids=lambda part: part.split(".json")[0][:24])
 def test_a_shipped_node_holds_its_templates_widgets_at_the_values_it_used(file, node_id):
-    """A shipped node of the eight has its template's widgets, names, kinds,
-    labels and options alike, with the values its call got before as their
-    defaults; its call is its template's; and resolved as a run writes it,
-    the call gets those values, each of its constant's type, and the values
-    of the constants it keeps."""
-    from utk_curio.backend.app.execution.code_references import node_run_code
+    """A shipped node of the eight has its template's widgets, each its
+    template's widget whole, default and all, and holds the value its call got
+    before: as its ``value`` where that differs from the default, else as the
+    default, with no ``value``. Its call is its template's; and resolved as a
+    run writes it, the call gets those values, each of its constant's type,
+    and the values of the constants it keeps."""
+    from utk_curio.backend.app.execution.code_references import effective_value, node_run_code
 
     node = _node(file, node_id)
     node_type = node["type"]
@@ -297,12 +301,14 @@ def test_a_shipped_node_holds_its_templates_widgets_at_the_values_it_used(file, 
     assert not missing, f"{file}'s {node_id} has no widget {', '.join(missing)}; its widgets: {names}"
     template_widgets = _template(node_type)["widgets"]
 
-    def but_default(widget: dict) -> dict:
-        return {key: value for key, value in widget.items() if key not in ("default", "value")}
+    def but_value(widget: dict) -> dict:
+        return {key: value for key, value in widget.items() if key != "value"}
 
-    assert [but_default(w) for w in widgets] == [but_default(w) for w in template_widgets], widgets
-    assert {w["name"]: w["default"] for w in widgets} == values, widgets
-    assert not any("value" in w for w in widgets), "a shipped node's values are its widgets' defaults"
+    assert [but_value(w) for w in widgets] == template_widgets, widgets
+    assert {w["name"]: effective_value(w) for w in widgets} == values, widgets
+    assert {w["name"]: "value" in w for w in widgets} == {
+        w["name"]: values[w["name"]] != w["default"] for w in template_widgets
+    }, widgets
     assert _how_read(node["content"]) == _how_read(_source(node_type)), node["content"]
 
     got = _call_values(node_run_code(node))
