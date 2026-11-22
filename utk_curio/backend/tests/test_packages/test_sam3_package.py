@@ -95,7 +95,7 @@ CHECKPOINT_DIGESTS = {
     "merges.txt": ("gitSha1", "76e821f1b6f0a9709293c3b6b51ed90980b3166b"),
 }
 CHECKPOINT_FILES = list(CHECKPOINT_DIGESTS)
-#: What the node looks for until its LABELS change.
+#: What the node looks for until its labels widget changes.
 DEFAULT_LABELS = [
     "curb ramp", "curb cut", "tactile paving", "bollard", "pole",
     "construction barrier", "traffic cone", "person",
@@ -729,10 +729,10 @@ def test_two_calls_that_ask_differently_of_one_video_keep_files_of_their_own(
 
 
 def test_every_frame_up_to_the_parts_end_decodes_with_frame_threading(videos, tmp_path, monkeypatch):
-    """Track Objects looks at one frame every EVERY_SECONDS, but decodes every
-    frame up to the part's end. On dev the 864 s SideSeeing walk at 1080p is
-    25,955 frames: 271 s of decoding with FFmpeg's default, slice threading,
-    50 s with frame threading, against an isolated node's 300 s."""
+    """Track Objects looks at one frame every ``every_seconds``, but decodes
+    every frame up to the part's end. On dev the 864 s SideSeeing walk at
+    1080p is 25,955 frames: 271 s of decoding with FFmpeg's default, slice
+    threading, 50 s with frame threading, against an isolated node's 300 s."""
     import av
 
     rows, _helpers = videos
@@ -770,8 +770,8 @@ def test_every_frame_up_to_the_parts_end_decodes_with_frame_threading(videos, tm
 
 
 def test_one_frame_is_looked_at_for_each_step_never_two_for_one(walk, tmp_path):
-    """Track Objects looks at one frame every EVERY_SECONDS. On dev, 10 s of a
-    30.033 fps walk at 0.5 s gave 22 frames, not 20: a frame just before a
+    """Track Objects looks at one frame every ``every_seconds``. On dev, 10 s
+    of a 30.033 fps walk at 0.5 s gave 22 frames, not 20: a frame just before a
     step's time was looked at for it, and the next frame too, so the overlay
     played 9.5 s of video as 11 s and drifted from the video's times. From 30 s
     to 31.75 s of a clip at that rate, each of the four steps gets one frame."""
@@ -793,10 +793,10 @@ def test_a_frame_just_before_a_steps_time_is_the_one_looked_at_for_it(walk, tmp_
 
 
 def test_the_steps_end_before_to_seconds_however_the_frames_fall(corner, walk, tmp_path):
-    """A part of W seconds has W / EVERY_SECONDS steps, from FROM_SECONDS up
-    to TO_SECONDS: the step at TO_SECONDS is not one, whether a frame comes
-    right at it, as at 1 s of the 4 fps clip, or 0.8 ms before it, as before
-    31 s of the walk."""
+    """A part of W seconds has W / ``every_seconds`` steps, from
+    ``from_seconds`` up to TO_SECONDS: the step at TO_SECONDS is not one,
+    whether a frame comes right at it, as at 1 s of the 4 fps clip, or 0.8 ms
+    before it, as before 31 s of the walk."""
     with _staged(tmp_path) as module:
         on_the_step = _times(module, corner, 0, 1.0)
         just_before = _times(module, walk, 30.5, 31.0)
@@ -804,8 +804,8 @@ def test_the_steps_end_before_to_seconds_however_the_frames_fall(corner, walk, t
 
 
 def test_a_step_before_to_seconds_looks_at_its_frame_even_after_it(walk, tmp_path):
-    """Every step from FROM_SECONDS up to TO_SECONDS gets its frame: the first
-    from a millisecond before its time to a millisecond before the next
+    """Every step from ``from_seconds`` up to TO_SECONDS gets its frame: the
+    first from a millisecond before its time to a millisecond before the next
     step's, even when that frame comes after TO_SECONDS. From 30 s to 31.51 s
     of the walk, the step at 31.5 s looks at the frame at 31.532 s."""
     with _staged(tmp_path) as module:
@@ -814,11 +814,11 @@ def test_a_step_before_to_seconds_looks_at_its_frame_even_after_it(walk, tmp_pat
 
 
 def test_a_part_of_no_length_looks_at_the_first_frame_from_its_start(corner, walk, tmp_path):
-    """FROM_SECONDS equal to TO_SECONDS looks at one frame wherever the frames
-    fall: the first no more than a millisecond before FROM_SECONDS, or after
-    it. That is the frame right at 1 s of the 4 fps clip, the one 0.8 ms before
-    31 s of the walk, and the one 32 ms after 31.5 s, whose frame 1.3 ms
-    before is too early. Past the video's end there is no frame."""
+    """``from_seconds`` equal to TO_SECONDS looks at one frame wherever the
+    frames fall: the first no more than a millisecond before ``from_seconds``,
+    or after it. That is the frame right at 1 s of the 4 fps clip, the one 0.8
+    ms before 31 s of the walk, and the one 32 ms after 31.5 s, whose frame 1.3
+    ms before is too early. Past the video's end there is no frame."""
     with _staged(tmp_path) as module:
         at_it = _times(module, corner, 1.0, 1.0)
         just_before = _times(module, walk, 31.0, 31.0)
@@ -831,11 +831,11 @@ def test_a_part_of_no_length_looks_at_the_first_frame_from_its_start(corner, wal
 
 def test_with_every_shorter_than_a_frame_the_overlay_plays_in_real_time(
         videos, catalog_copy, weights, few_threads, tmp_path):
-    """With EVERY_SECONDS shorter than the gap between two of the video's
+    """With ``every_seconds`` shorter than the gap between two of the video's
     frames, SAM 3 looks at every frame, and the overlay plays each at its own
     time: the 2 s clip at 4 frames a second, looked at every 0.1 s, is an
-    overlay of its 8 frames over 2 s. At 1 / EVERY_SECONDS frames a second it
-    would play them in 0.8 s."""
+    overlay of its 8 frames over 2 s. At 1 / ``every_seconds`` frames a second
+    it would play them in 0.8 s."""
     import av
 
     rows, helpers = videos
@@ -855,8 +855,8 @@ def test_with_every_shorter_than_a_frame_the_overlay_plays_in_real_time(
 def test_each_stop_comes_before_sam3_loads_and_writes_nothing(videos, tmp_path):
     """Empty labels, a part that needs more frames than one run looks at, a
     limit under one frame, the limit in seconds of a node's code older than
-    MAX_FRAMES and a video not on this machine each stop the call before any
-    frame is read or file written, and before SAM 3 loads: the model here
+    ``max_frames`` and a video not on this machine each stop the call before
+    any frame is read or file written, and before SAM 3 loads: the model here
     names a folder that holds nothing. A collection with no video loads
     nothing either, and gives two empty tables, the tracks with their
     columns."""
@@ -993,7 +993,7 @@ def test_a_part_that_needs_more_frames_than_max_frames_stops_before_sam3_loads_w
     frame every quarter second, each need 4 frames, so each stops at a limit
     of 3 before SAM 3 loads and writes nothing, though both are seconds long.
     The message names the limit, the frames the part needs, and an
-    EVERY_SECONDS and a shorter part that fit, which each pass."""
+    ``every_seconds`` and a shorter part that fit, which each pass."""
     rows, helpers = videos
     relpath = rows["relpath"].iloc[0]
     nothing = SimpleNamespace(path=str(tmp_path / "no-weights"))

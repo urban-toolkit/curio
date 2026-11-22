@@ -76,7 +76,7 @@ return objects
 
 ## The swimlane
 
-A lane for each label SAM 3 found an object of, and one bar per object, from `start_s`, when SAM 3 first saw it, to `end_s`, when it last did. A label it finds nothing of has no lane, so the swimlane can have fewer lanes than `LABELS` names. A bar takes its label's color once the player has played past its first sighting, and is gray before.
+A lane for each label SAM 3 found an object of, and one bar per object, from `start_s`, when SAM 3 first saw it, to `end_s`, when it last did. A label it finds nothing of has no lane, so the swimlane can have fewer lanes than **Labels** names. A bar takes its label's color once the player has played past its first sighting, and is gray before.
 
 ```json
 {
