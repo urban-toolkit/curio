@@ -1463,10 +1463,11 @@ class TestWorkflowCanvas:
 
         # ---- VIS_SIMPLE content verification -----------------------------------
         # VIS_SIMPLE has no play button so the loop above skips it.  After all
-        # upstream code nodes have finished, VIS_SIMPLE fetches the data async
-        # and sets its contentComponent (table / image mode) or leaves it empty
-        # (text / passthrough mode).  Wait up to 10 s for the async fetch, then
-        # verify the rendered content makes sense for the mode.
+        # upstream code nodes have finished, VIS_SIMPLE reads its input and
+        # shows it on its Output tab, which it opens on (its Widgets tab holds
+        # its Time column): a table, a card per row with its images, or the
+        # text of any other value.  The read and an image's fetch are async,
+        # so wait for the content, then verify it makes sense for the mode.
         for node in self.spec.nodes:
             if node.type != "VIS_SIMPLE":
                 continue
@@ -1474,34 +1475,26 @@ class TestWorkflowCanvas:
             output_tab = node_el.locator(
                 '.nav-link[data-rr-ui-event-key="output"]'
             )
-            # table and image modes → NodeEditor auto-switches to output tab;
-            # text (passthrough) mode → no output tab at all.
-            output_tab_visible = False
+            assert output_tab.count() >= 1, (
+                f"VIS_SIMPLE node {node.id} has no Output tab"
+            )
+            assert "active" in (output_tab.first.get_attribute("class") or ""), (
+                f"VIS_SIMPLE node {node.id} is not on its Output tab"
+            )
+            active_pane = node_el.locator(".tab-pane.active")
+            active_pane.first.wait_for(state="visible", timeout=5000)
+
+            # table mode → MUI TableCell; image mode → <img> elements; text
+            # mode → the value's text.
+            content = active_pane.locator(
+                "td.MuiTableCell-root, th.MuiTableCell-root, img, [data-curio-node-text]"
+            )
             with contextlib.suppress(Exception):
-                output_tab.first.wait_for(state="visible", timeout=10000)
-                output_tab_visible = True
-
-            if output_tab_visible:
-                # Ensure the tab is active.
-                is_active = "active" in (
-                    output_tab.first.get_attribute("class") or ""
-                )
-                if not is_active:
-                    output_tab.first.click(force=True)
-
-                active_pane = node_el.locator(".tab-pane.active")
-                active_pane.first.wait_for(state="visible", timeout=5000)
-
-                # table mode → MUI TableCell; image mode → <img> elements.
-                table_cells = active_pane.locator(
-                    "td.MuiTableCell-root, th.MuiTableCell-root"
-                )
-                images = active_pane.locator("img")
-                assert table_cells.count() >= 1 or images.count() >= 1, (
-                    f"VIS_SIMPLE node {node.id}: output tab is visible but "
-                    f"contains neither table cells nor images"
-                )
-            # text mode: no output tab → nothing further to assert.
+                content.first.wait_for(state="attached", timeout=30000)
+            assert content.count() >= 1, (
+                f"VIS_SIMPLE node {node.id}: its Output tab shows neither "
+                f"table cells, images nor text"
+            )
 
         # A Map Editor node lists its layers, linked to the map it edits on,
         # which drew.
