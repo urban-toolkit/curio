@@ -14,11 +14,13 @@ package's functions, as its details list them.
 - ``GET /api/packages/node-functions?nodeType=``: the engine of the node's
   template, Curio's functions for that engine from the page that lists them
   (``skills/node-functions/SKILL.md``), and, for a Python node, the functions
-  the modules a run hands it offer, its own package's first, as Accumulated
-  Shadow's and Mosaic Rasters' headers list Rasterization's after their own
-  package's, SAM 3's nodes Media's and then Rasterization's, and a built-in
-  Python node's the built-in package's. Each with the call a click on it
-  writes.
+  the modules of its own package offer, then those of the packages its
+  package names in ``dependencies.packages``, as Accumulated Shadow's and
+  Mosaic Rasters' headers list Rasterization's after their own package's and
+  Image Segmentation's lists Segmentation's; not those of the packages those
+  name in turn, which a run is handed too, so SAM 3's nodes list Media's and
+  none of Rasterization's, which Media names; and a built-in Python node's the
+  built-in package's. Each with the call a click on it writes.
 - ``GET /api/packages/<dir>/functions``: each module of a package with the
   functions it offers, from the account's copy, else the catalog's.
 
@@ -39,6 +41,8 @@ DEEP_UMBRA = PACKAGES / "model.scout.deep-umbra@1"
 RASTERIZATION = PACKAGES / "curio.rasterization@1"
 MEDIA = PACKAGES / "curio.media@1"
 SAM3 = PACKAGES / "model.curio.sam3@1"
+SEGMENTATION = PACKAGES / "curio.segmentation@1"
+DDRNET = PACKAGES / "model.curio.ddrnet23-slim@1"
 WEATHER_GNN = PACKAGES / "model.scout.weather-gnn@1"
 SHADOW = "model.scout.deep-umbra/accumulated-shadow"
 MOSAIC = "curio.media/mosaic-rasters"
@@ -277,13 +281,16 @@ def test_mosaic_rasters_lists_medias_module_then_rasterizations_whose_mosaic_its
     assert all(f["doc"] for row in listed["modules"] for f in row["functions"]), listed["modules"]
 
 
-def test_sam3s_nodes_list_its_modules_then_medias_whose_reader_track_objects_calls_then_rasterizations(
+def test_sam3s_nodes_list_its_modules_then_medias_whose_reader_track_objects_calls_and_none_of_rasterizations(
         client, user_and_token):
-    """SAM 3 names Media in dependencies.packages, whose ``read_video_frames``
-    Track Objects reads its frames with, and Media names Rasterization: the
-    header of each SAM 3 node lists SAM 3's modules, then Media's, then
-    Rasterization's, as a run of the node is handed them. So it lists 13
-    functions of packages: SAM 3's 2, Media's 4 and Rasterization's 7."""
+    """A node's header lists its own package's functions and those of the
+    packages its package names in dependencies.packages, not of the packages
+    those name in turn (owner, 11-22). SAM 3 names Media, whose
+    ``read_video_frames`` Track Objects reads its frames with, and Media names
+    Rasterization: the header of each SAM 3 node lists SAM 3's modules, then
+    Media's, and none of Rasterization's, 6 functions of packages, SAM 3's 2
+    and Media's 4. A run of the node is still handed Rasterization's modules
+    (test_sam3_package.py)."""
     from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
 
     user, token = user_and_token
@@ -300,13 +307,37 @@ def test_sam3s_nodes_list_its_modules_then_medias_whose_reader_track_objects_cal
             ("model.curio.sam3@1", "sam3_images"),
             ("model.curio.sam3@1", "sam3_tracking"),
             ("curio.media@1", "media_collections"),
-            *RASTERIZATION_LISTED,
         ], node_type
         media = listed["modules"][2]["functions"]
         assert [(f["name"], f["insert"]) for f in media] == MEDIA_INSERTS, node_type
         assert media[3]["call"] == READER_CALL
         assert media[3]["doc"].startswith("The frames of the video at *path*, each with its time in seconds"), media[3]
-        assert sum(len(row["functions"]) for row in listed["modules"]) == 13, node_type
+        assert sum(len(row["functions"]) for row in listed["modules"]) == 6, node_type
+
+
+def test_ddrnets_image_segmentation_lists_segmentations_function_which_its_code_calls(client, user_and_token):
+    """DDRNet23-Slim ships no module of its own and names Segmentation in
+    dependencies.packages: its Image Segmentation node's header lists
+    Segmentation's ``segment_images``, whose call its code returns."""
+    from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
+
+    user, token = user_and_token
+    key = _account(user)
+    for package in (SEGMENTATION, DDRNET):
+        install_package_from_directory(key, package)
+
+    answer = _get(client, token, "?nodeType=model.curio.ddrnet23-slim/image-segmentation")
+    assert answer.status_code == 200, answer.get_data(as_text=True)
+    listed = answer.get_json()
+    assert listed["engine"] == "python"
+    assert [
+        (row["package"], row["module"], [(f["name"], f["insert"]) for f in row["functions"]])
+        for row in listed["modules"]
+    ] == [
+        ("curio.segmentation@1", "semantic_segmentation", [
+            ("segment_images", "segment_images(images, model, derived_file)"),
+        ]),
+    ]
 
 
 def test_a_javascript_node_lists_curios_functions_for_javascript_and_a_spec_nothing(client, user_and_token):

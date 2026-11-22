@@ -1,7 +1,7 @@
 {
   "sha256": {
     "LICENSE": "4dea99bfaa016e21bc860d73f344236bd1e5c4977d1a9a8fd32f822b500ae1be",
-    "README.md": "21a98fb61a784258e309d41879ed3d34ff1dc5699c3b992bdcbd4c418a74d279",
+    "README.md": "a3e3fce09ff21a32e7324d0f184e53e2cce5b3c7777f2baef4173318402aaac7",
     "manifest.json": "cc7cd500726d2be7ed03f2e19470110ef0412fbcc51dda9fd1332f54f255d367",
     "skills/sam3-tracking/SKILL.md": "90f215a47241ce0f46f38fd5f4afc6fa57b58c7fe84840c5eacdcb8f17e10be7",
     "skills/sam3-tracking/evals/evals.json": "af49cbd532106a1d1f8a15514c2e170782ed3d384777bdad6bc21a692cf1883c",

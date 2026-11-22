@@ -225,4 +225,4 @@ The package needs [Media](../curio.media@1/README.md) (`curio.media@1` in its
 `dependencies.packages`): Track Objects reads each video's frames with Media's
 `read_video_frames`, as Sample Video Frames does. Adding SAM 3 adds Media too,
 with Rasterization, which Media needs, and the header above each node's code
-lists their functions after the package's own.
+lists Media's functions after the package's own.

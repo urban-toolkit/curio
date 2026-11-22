@@ -467,9 +467,11 @@ def test_a_run_of_either_node_is_handed_its_modules_then_medias_and_finds_the_re
         tmp_curio, tmp_path):
     """A run of Track Objects or Segment Images is handed SAM 3's modules,
     then Media's, then Rasterization's, its own first
-    (``python_modules.modules_for_node``), and both runtimes stage them, so
-    Track Objects' module imports Media's reader: in process, and in an
-    isolated child (``child.run_node``, here without the fork)."""
+    (``python_modules.modules_for_node``), though the header above its code
+    lists SAM 3's and Media's alone (test_functions_on_the_node.py). Both
+    runtimes stage them, so Track Objects' module imports Media's reader: in
+    process, and in an isolated child (``child.run_node``, here without the
+    fork)."""
     from utk_curio.backend.app.packages.application.python_modules import modules_for_node
     from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
     from utk_curio.backend.app.packages.repositories.store import package_dir
