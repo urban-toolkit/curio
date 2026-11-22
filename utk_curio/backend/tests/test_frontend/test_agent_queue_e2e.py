@@ -10,9 +10,11 @@ palette's tiles one at a time in plan order, each ghost at its drop point under
 reduced motion, each node landing as its drop ends; then the connections land,
 with no motion, and the agent leaves. When Ben removes Sum while the plan
 lands, the plan stops before its connections, and the change's card in Ana's
-chat says what was left undone. Two agents asked at once, the Dataflow Builder
-and a Node Builder adding two nodes, each drag their own nodes in their own
-order, side by side.
+chat says what was left undone. His removal takes Sum alone, even when he
+selects Sum at the commit in which his canvas takes the agent's first node,
+before React Flow's own copy of the canvas holds it. Two agents asked at once,
+the Dataflow Builder and a Node Builder adding two nodes, each drag their own
+nodes in their own order, side by side.
 
 What Ben's tab shows is recorded in the page as it happens, and read once the
 replies are back: a frame would race the agents.
@@ -135,8 +137,17 @@ _RECORD_JS = """() => {
 _CARRYING_JS = """() => Array.from(window.__curio_awareness.getStates().values())
     .some((state) => state && state.user && state.user.agent && state.carrying)"""
 
-_SELECT_ONLY_JS = """(id) => window.__curio_reactFlow.setNodes(
-    (nodes) => nodes.map((node) => ({ ...node, selected: node.id === id })))"""
+#: Select the node *id* alone, as a person does from the keyboard: the node
+#: focused, then Enter, which React Flow's own selection takes by the node's
+#: id, leaving every other node of the canvas as it is. Never
+#: ``window.__curio_reactFlow.setNodes``, which replaces the canvas's whole
+#: list with React Flow's own copy of it (``test_frontend/README.md``).
+_SELECT_ONLY_JS = """(id) => {
+    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
+    if (!node) throw new Error(`no node ${id} is drawn`);
+    node.focus({preventScroll: true});
+    node.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', bubbles: true, cancelable: true}));
+}"""
 
 #: Ben's selection, made at the commit in which his canvas takes a node the
 #: dataflow's doc gained, before React Flow's own copy of the canvas holds it.
@@ -256,13 +267,8 @@ def _ready(room: _Room):
 
 def _delete_with_the_key(page, node_id: str) -> None:
     """Select *node_id* alone and press Delete, as a person removes a node."""
-    page.evaluate("() => document.activeElement && document.activeElement.blur && document.activeElement.blur()")
     page.evaluate(_SELECT_ONLY_JS, node_id)
-    page.wait_for_function(
-        """(id) => !!window.__curio_reactFlow.getNodes().find((n) => n.id === id && n.selected)""",
-        arg=node_id, timeout=10000,
-    )
-    page.keyboard.press("Delete")
+    _press_delete(page, node_id)
 
 
 def _press_delete(page, node_id: str) -> None:
