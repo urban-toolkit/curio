@@ -23,8 +23,10 @@ dependencies.
 
 ## Functions
 
-The code of each computation node is its settings and the call of one
-function, which does the node's work:
+Each loader's code is one read of the Data Catalog, such as Milan MRT
+Loader's `return curio_load_data("data.utk.milan-mrt")`. The code of each
+computation node is its settings and the call of one function, which does the
+node's work:
 
 | Function | Module | What it does |
 |---|---|---|

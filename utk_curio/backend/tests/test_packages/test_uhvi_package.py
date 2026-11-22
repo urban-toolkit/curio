@@ -9,8 +9,8 @@ of four by four cells, one of them nodata, and four zones over it.
 The values pinned below are what the node's code gave before it moved into
 the module: the old starter, run on these inputs with geopandas 1.1.3 and
 rasterio 1.5.0, gave them, and the new code gave the same results, warnings
-and errors, to the last bit. UHVI Loader and UHVI Zones hold a path and the
-read of it, as a loader does, and no logic.
+and errors, to the last bit. UHVI Loader and UHVI Zones are each one read of
+the Data Catalog dataset their widget holds.
 
 The libraries are imported inside the tests, so a checkout without one fails
 its tests alone.
@@ -185,6 +185,89 @@ def test_the_module_offers_zonal_mean_and_says_what_it_does(package_modules):
     imported += [node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
     assert not [name for name in imported if name.split(".")[0] == "utk_curio"], imported
     assert not [node.id for node in ast.walk(tree) if isinstance(node, ast.Name) and node.id.startswith("curio_")]
+
+
+# ---------------------------------------------------------------------------
+# The loaders
+# ---------------------------------------------------------------------------
+
+#: Each loader's one widget: its name and its label.
+LOADERS = {"uhvi-load": ("raster", "Raster"), "uhvi-zones": ("zones", "Zones")}
+
+
+def _loader(template_id: str) -> tuple[dict, str]:
+    """The loader's template, and its code."""
+    manifest = json.loads((PACKAGE / "manifest.json").read_text(encoding="utf-8"))
+    (template,) = [t for t in manifest["templates"] if t["id"] == template_id]
+    return template, (PACKAGE / template["source"]).read_text(encoding="utf-8")
+
+
+def _run_loader(template_id: str, dataset_id: str, path, fmt: str):
+    """The loader's output with *dataset_id* in its widget: its code written
+    as a run writes it, then run as the sandbox runs it, with
+    ``curio_load_data`` reading *path* as a dataset of format *fmt*."""
+    from utk_curio.backend.app.execution.code_references import resolve_references
+    from utk_curio.sandbox.util.catalog_helpers import install_catalog_helpers
+    from utk_curio.sandbox.util.input_names import call_as_node
+
+    template, code = _loader(template_id)
+    (widget,) = template["widgets"]
+    resolved, problems = resolve_references(code, [{**widget, "value": dataset_id}], "python")
+    assert problems == [], problems
+    namespace: dict = {}
+    install_catalog_helpers(
+        namespace, data_path={dataset_id: str(path)}.__getitem__,
+        formats={dataset_id: {"format": fmt}}, collections=None, media_dir=None, models=None,
+    )
+    return call_as_node("\n".join("    " + line for line in resolved.splitlines()), namespace)
+
+
+@pytest.mark.parametrize("template_id", sorted(LOADERS))
+def test_each_loader_reads_the_data_catalog_dataset_its_widget_holds(template_id):
+    """UHVI Loader and UHVI Zones each have one widget, of Data Loading's
+    dataset kind, empty until a dataset or a file is dropped on the node, and
+    their whole code is the read of the dataset it holds."""
+    template, code = _loader(template_id)
+    name, label = LOADERS[template_id]
+    assert template["widgets"] == [{"name": name, "type": "dataset", "label": label, "default": ""}]
+    assert code == f"return curio_load_data([!! {name} !!])\n"
+
+
+@pytest.mark.parametrize("template_id", sorted(LOADERS))
+def test_a_loader_with_no_dataset_yet_is_refused_saying_what_to_drop(template_id):
+    """With its widget empty, a run refuses the loader as it refuses Data
+    Loading with no Data: drop a file or a dataset on the widget first."""
+    from utk_curio.backend.app.execution.code_references import empty_dataset_message, resolve_references
+
+    template, code = _loader(template_id)
+    (widget,) = template["widgets"]
+    _resolved, problems = resolve_references(code, [widget], "python")
+    reference = f"[!! {widget['name']} !!]"
+    assert problems == [{"reference": reference, "message": empty_dataset_message(reference, widget)}]
+
+
+def test_the_loaders_datasets_wired_into_uhvi_zonal_stats_give_each_zones_mean(tmp_path, package_modules, raster):
+    """UHVI Loader gives the raster its dataset holds, open as rasterio opens
+    it, and UHVI Zones the polygons as geopandas reads them. Wired into UHVI
+    Zonal Stats, they give each zone's mean."""
+    import geopandas as gpd
+    import numpy as np
+    import rasterio
+
+    zones_file = tmp_path / "zones.geojson"
+    _zones().to_file(zones_file, driver="GeoJSON")
+    loaded = _run_loader("uhvi-load", "data.example.uhvi", raster.name, "geotiff")
+    try:
+        zones = _run_loader("uhvi-zones", "data.example.zones", zones_file, "geojson")
+        assert isinstance(loaded, rasterio.io.DatasetReader) and not loaded.closed, type(loaded)
+        np.testing.assert_array_equal(loaded.read(), raster.read())
+        assert isinstance(zones, gpd.GeoDataFrame), type(zones)
+        assert zones["zone"].tolist() == ZONES
+        assert zones.geom_equals(gpd.read_file(zones_file)).all()
+        out = run_node([loaded, zones], [0, 1])
+        assert _same(out["uhvi_mean"].tolist(), MEANS), out["uhvi_mean"].tolist()
+    finally:
+        loaded.close()
 
 
 # ---------------------------------------------------------------------------
