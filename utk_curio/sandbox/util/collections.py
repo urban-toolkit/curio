@@ -14,16 +14,18 @@ A row of a ``files`` resource, kind ``file``, has none of those URLs: node
 code reads the file from its ``path``.
 
 ``curio_derived_file(dataset_id, file_id, t_ms, ext)`` names a file a node
-writes from one of a collection's files: a video's frame, a video made from a
-video (an overlay of it, say), a recording's window, a photo's overlay.
-``DERIVED`` lists what may be derived from a file of each kind. A ``tag``
-tells two derived files of one file and time apart: an overlay's names the
-model that drew it. The backend serves the file back under the same id
-(``DERIVED_ID_RE``). A dashboard viewer's step
-writes in a folder of its own (``KEPT_MEDIA``), which the URLs of the rows it
-derives name (``?kept=<name>``), so a row is read from where its run wrote
-it. Both paths, in process and isolated, build these from one function, so
-they cannot disagree.
+writes from one of a collection's files, of any kind: an image, a video or a
+recording, of any extension of the families a collection's own files are
+sorted by (``FAMILIES``), such as a video's frame, a video made from a video
+(an overlay of it, say), a recording's window, a photo's overlay or a picture
+of a raster tile. A table a node finds in a file is the node's output, never
+a derived file. A ``tag`` tells two derived files of one file and time apart:
+an overlay's names the model that drew it. The backend serves the file back
+under the same id (``DERIVED_ID_RE``). A dashboard viewer's step writes in a
+folder of its own (``KEPT_MEDIA``), which the URLs of the rows it derives name
+(``?kept=<name>``), so a row is read from where its run wrote it. Both paths,
+in process and isolated, build these from one function, so they cannot
+disagree.
 """
 
 from __future__ import annotations
@@ -43,7 +45,7 @@ _FILE_ID_RE = re.compile(rf"^{_FILE_ID}$")
 _TAG_RE = re.compile(rf"^{_TAG}$")
 
 #: A derived file's id, ``<fileId>@<t_ms>`` or ``<fileId>@<t_ms>-<tag>``, and
-#: for a file of any type but its kind's first, its extension after that:
+#: for a file of any extension but its kind's own, that extension after it:
 #: ``<fileId>@<t_ms>-<tag>.mp4``. What ``curio_derived_file`` names and the
 #: media route looks up.
 DERIVED_ID_RE = re.compile(rf"^({_FILE_ID})@([0-9]{{1,12}})(?:-({_TAG}))?(?:\.({_EXT}))?$")
@@ -51,26 +53,43 @@ DERIVED_ID_RE = re.compile(rf"^({_FILE_ID})@([0-9]{{1,12}})(?:-({_TAG}))?(?:\.({
 #: The largest time a derived file's id holds: twelve digits of milliseconds.
 _MAX_T_MS = 10**12 - 1
 
-#: What a node may derive from a file of each kind, by the derived file's
-#: extension: the folder it goes in, and the kind of its row. The first is
-#: what ``ext=None`` derives, and its id names no extension. Any other's id
-#: does, so a video's frame and a video made from it at one time and tag are
-#: two ids, each naming one file.
-DERIVED = {
-    # A video's frame, a video made from it (an overlay, say), and the overlay
-    # of one of its frames.
-    "video": {
-        "jpg": ("frames", "frame"), "mp4": ("videos", "video"), "png": ("overlays", "image"),
-    },
-    "audio": {"wav": ("clips", "audio")},
-    # A segmentation's overlay of a photo, or of a sequence's frame.
-    "image": {"png": ("overlays", "image")},
-    "frame": {"png": ("overlays", "image")},
-}
+#: The extensions of the three families of file a collection's own files are
+#: sorted by, which the backend reads from here (``probe.file_kind``, and the
+#: files a resource takes by default, ``DEFAULT_EXTENSIONS`` in
+#: ``discovery/domain/manifest.py``): every file a node derives is of one.
+IMAGE_EXTENSIONS = ("jpg", "jpeg", "png", "webp", "gif", "bmp", "tif", "tiff")
+VIDEO_EXTENSIONS = ("mp4", "mov", "m4v", "webm", "mkv", "avi")
+AUDIO_EXTENSIONS = ("wav", "flac", "mp3", "ogg", "opus", "m4a", "aiff", "aif")
+
+#: The kind of the row of a file a node derives, by its extension's family:
+#: an image a Simple View card shows, a video or a recording it plays.
+FAMILIES = {"image": IMAGE_EXTENSIONS, "video": VIDEO_EXTENSIONS, "audio": AUDIO_EXTENSIONS}
 
 #: The kinds of row the media route draws a thumbnail of: a collection's
 #: files but those of a ``files`` resource, and the derived ones.
 DRAWN = ("image", "frame", "raster", "video", "audio")
+
+#: Every kind of a collection's row (``probe.file_kind``), each a kind of file
+#: a node derives from: those the media route draws, and a ``files`` resource's.
+ROW_KINDS = DRAWN + ("file",)
+
+#: What a node derives from a file of each kind when it names no extension,
+#: and the kind of its row: a video's frame, a recording's clip, a photo's or
+#: a frame's overlay. Its id names no extension, whether that one is named or
+#: not; any other's id does, so a video's frame and a video made from it at
+#: one time and tag are two ids, each naming one file. A raster or a ``files``
+#: row has none, and names what it derives.
+DERIVED_DEFAULTS = {
+    "video": ("jpg", "frame"),
+    "audio": ("wav", "audio"),
+    "image": ("png", "image"),
+    "frame": ("png", "image"),
+}
+
+#: The folder in the media directory of the files a node derives, by their
+#: row's kind, whatever kind of file they come from: ``forget_media`` empties
+#: each of a collection's.
+DERIVED_FOLDERS = {"frame": "frames", "image": "overlays", "video": "videos", "audio": "clips"}
 
 #: In an account's media folder, the folder of each dashboard viewer's step's
 #: own, ``<media>/kept/<name>/``, which the backend makes the step's media
@@ -170,22 +189,38 @@ def media_urls(dataset_id, file_id, kind, kept=None):
 
 
 def derived_type(kind, ext=None):
-    """``(folder, ext, row kind, suffix)`` of what a node derives as *ext*
-    from a *kind* file (``DERIVED``), the kind's first when *ext* is None.
-    *suffix* is what the derived file's id holds after its stem: nothing for
-    the kind's first type, ``.<ext>`` for any other.
+    """``(folder, ext, row kind, suffix)`` of what a node derives as *ext* from
+    a file of *kind*, any kind of a collection's row (``ROW_KINDS``): an image,
+    a video or a recording, by the family of its extension (``FAMILIES``), and
+    with no *ext* the kind's own file (``DERIVED_DEFAULTS``), the one whose row
+    may be a ``frame``. *suffix* is what the derived file's id holds after its
+    stem: nothing for the kind's own file, ``.<ext>`` for any other.
 
-    Raises ValueError for a kind nothing is derived from, and an ext its kind
-    does not list: the media route would serve that file under no id."""
-    types = DERIVED.get(kind)
-    if types is None:
-        raise ValueError(f"kind is the kind of the file it is derived from: {_one_of(DERIVED)}, not {kind!r}")
-    first = next(iter(types))
-    ext = first if ext is None else ext
-    if ext not in types:
-        raise ValueError(f"a node derives {_one_of(types)} from a file of kind {kind!r}, not {ext!r}")
-    folder, row_kind = types[ext]
-    return folder, ext, row_kind, "" if ext == first else f".{ext}"
+    Raises ValueError for a kind no row has, for no *ext* from a raster or a
+    ``files`` row, and for an *ext* of no family, a table's among them: the
+    media route would serve that file under no id, and a table is the node's
+    output, which it returns, as it writes any other file it returns with
+    ``curio_output_file``."""
+    if kind not in ROW_KINDS:
+        raise ValueError(f"kind is the kind of the file it is derived from: {_one_of(ROW_KINDS)}, not {kind!r}")
+    own, own_kind = DERIVED_DEFAULTS.get(kind, (None, None))
+    if ext is None:
+        if own is None:
+            raise ValueError(
+                f"a file of kind {kind!r} derives no file of its own: ext names the extension of the image, "
+                "the video or the recording derived from it"
+            )
+        ext = own
+    if ext == own:
+        return DERIVED_FOLDERS[own_kind], ext, own_kind, ""
+    row_kind = next((family for family, extensions in FAMILIES.items() if ext in extensions), None)
+    if row_kind is None:
+        raise ValueError(
+            f"a node derives an image ({_one_of(IMAGE_EXTENSIONS)}), a video ({_one_of(VIDEO_EXTENSIONS)}) "
+            f"or a recording ({_one_of(AUDIO_EXTENSIONS)}) from a collection's file, not {ext!r}: "
+            "return a table from the node as its output, or write any other file it returns with curio_output_file"
+        )
+    return DERIVED_FOLDERS[row_kind], ext, row_kind, f".{ext}"
 
 
 def _one_of(values):
@@ -307,11 +342,16 @@ def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir
     def curio_derived_file(dataset_id, file_id, t_ms, ext=None, *, kind="video", tag=None):
         """Where to write a file derived from one file of a collection, and its row.
 
-        *kind* is that file's kind and *ext* what is derived from it
-        (``DERIVED``): from a video, its frame at *t_ms* (``jpg``, the
-        default), a video made from it that starts at *t_ms* (``mp4``), or
-        the overlay of its frame at *t_ms* (``png``); a recording's clip
-        (``wav``); an image's or a frame's overlay (``png``). *tag*, up to 32
+        *kind* is that file's kind, any a collection's row has (``ROW_KINDS``),
+        and *ext* the extension of what is derived from it: an image, a video
+        or a recording, of any extension of the families a collection's files
+        are sorted by (``FAMILIES``), such as a video made from a video that
+        starts at *t_ms* (``mp4``) or the overlay of its frame at *t_ms*
+        (``png``). With no *ext*, a video derives its frame at *t_ms*
+        (``jpg``), a recording its clip (``wav``), and an image or a frame its
+        overlay (``png``); a raster or a ``files`` row names *ext*. A table is
+        no derived file but the node's output, which it returns, and any other
+        file it returns is written with ``curio_output_file``. *tag*, up to 32
         lowercase letters and digits, tells two derived files of one file and
         time apart, as the model that drew an overlay does.
 
