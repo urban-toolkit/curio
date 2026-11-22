@@ -155,18 +155,15 @@ class TestTheHelpers(unittest.TestCase):
         self.assertEqual((frame["file_id"], frame["kind"]), (f"{'b' * 16}@0-sam3", "frame"))
         self.assertEqual(Path(frame["path"]), media / "frames" / "c1" / ("b" * 16) / "0-sam3.jpg")
 
-    def test_a_table_found_in_a_video_has_a_path_and_no_media_url(self):
-        """What Track Objects keeps of a video's tracks: a Parquet that later
-        nodes read by its path, and that the media route serves nothing of."""
+    def test_a_table_found_in_a_video_is_no_derived_file(self):
+        """What a node finds in a video, such as Track Objects' tracks, is a
+        table the node returns, which goes on its edge: no file is derived
+        for it, and no folder is made."""
         media = self.tmp / "media"
-        row = self.helpers({}, str(media))["curio_derived_file"]("c1", "b" * 16, 0, "parquet", tag="sam3")
-        self.assertEqual(Path(row["path"]), media / "tables" / "c1" / ("b" * 16) / "0-sam3.parquet")
-        self.assertTrue(Path(row["path"]).parent.is_dir())
-        self.assertEqual(
-            {k: row[k] for k in ("file_id", "dataset_id", "kind", "thumbnail", "image_url", "audio_url")},
-            {"file_id": f"{'b' * 16}@0-sam3.parquet", "dataset_id": "c1", "kind": "table",
-             "thumbnail": None, "image_url": None, "audio_url": None},
-        )
+        derive = self.helpers({}, str(media))["curio_derived_file"]
+        with self.assertRaisesRegex(ValueError, "from a file of kind 'video', not 'parquet'"):
+            derive("c1", "b" * 16, 0, "parquet", tag="sam3")
+        self.assertFalse(media.exists())
 
     def test_every_derived_row_has_a_collection_rows_locator_columns(self):
         """Each derived row says what it is (``kind``) and whose it is
@@ -178,14 +175,14 @@ class TestTheHelpers(unittest.TestCase):
         columns = sorted(("file_id", "dataset_id", "kind", "path", "thumbnail", "image_url", "audio_url"))
         made = {
             (kind, ext): derive("c1", "b" * 16, 0, ext, kind=kind, tag="m1")
-            for kind, ext in (("video", None), ("video", "mp4"), ("video", "png"), ("video", "parquet"),
+            for kind, ext in (("video", None), ("video", "mp4"), ("video", "png"),
                               ("audio", None), ("image", None), ("frame", None))
         }
         self.assertEqual(
             {made_as: (sorted(row), row.get("kind"), row.get("dataset_id")) for made_as, row in made.items()},
             {
                 ("video", None): (columns, "frame", "c1"), ("video", "mp4"): (columns, "video", "c1"),
-                ("video", "png"): (columns, "image", "c1"), ("video", "parquet"): (columns, "table", "c1"),
+                ("video", "png"): (columns, "image", "c1"),
                 ("audio", None): (columns, "audio", "c1"), ("image", None): (columns, "image", "c1"),
                 ("frame", None): (columns, "image", "c1"),
             },

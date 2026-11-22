@@ -102,6 +102,8 @@ CODE = {
      "dataset_path = \ntry:\n    df = gpd.read_p"): "the Python a node runs to load a dataset",
     ("utk_curio/backend/app/datasets/domain/catalog_item.py", "loader_snippet",
      "dataset_path = \nwith open(dataset_path, "): "the Python a node runs to load a dataset",
+    ("utk_curio/backend/app/notebooks/charts.py", "<module>",
+     "def notebook_charts(charts):\n    import "): "the Python the sandbox runs to make a notebook's chart specs",
     ("utk_curio/backend/app/packages/builder/preview.py", "<module>",
      "\n(function () {\n  'use strict';\n  var re"): "the JavaScript a package preview runs",
     ("utk_curio/backend/app/packages/builder/preview.py", "build_preview_document",

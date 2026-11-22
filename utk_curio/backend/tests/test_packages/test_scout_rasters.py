@@ -27,6 +27,7 @@ each test on its own and no bytecode lands in ``packages/``.
 """
 from __future__ import annotations
 
+import ast
 import contextlib
 import importlib
 import json
@@ -572,6 +573,93 @@ def test_a_building_with_no_number_in_its_height_column_has_the_height_an_autark
         # A column of another name reads the building's height key after it.
         roofs = pd.DataFrame({"roof_m": [np.nan, 22.0], "height": ["25", None]})
         assert np.allclose(outputs.drawn_heights(roofs, "roof_m").to_numpy(), [25.0, 22.0])
+
+
+#: The canvas's heights at use, which an Autark map draws.
+CANVAS_HEIGHTS = REPO / "utk_curio" / "frontend" / "urban-workflows" / "src" / "utils" / "buildingHeight.ts"
+#: The module Rasterize Buildings' heights come from.
+HEIGHTS_MODULE = SOURCES / "scout_rasters" / "node_outputs.py"
+#: Each constant the canvas exports, by the name the module gives its own.
+SHARED_HEIGHTS = {"DEFAULT_BUILDING_HEIGHT": "DEFAULT_HEIGHT", "METRES_PER_LEVEL": "METRES_PER_LEVEL"}
+
+
+def _canvas_number(text: str, name: str) -> float:
+    """What ``export const <name> = <number>;``, written once in *text*, gives."""
+    found = re.findall(rf"^export const {name} = (-?\d+(?:\.\d+)?);$", text, flags=re.M)
+    assert len(found) == 1, f"buildingHeight.ts exports {name} as a number {len(found)} times"
+    return float(found[0])
+
+
+def _module_number(text: str, name: str) -> float:
+    """What the module's own ``<name> = <number>``, assigned once in *text*, gives."""
+    found = [
+        statement.value for statement in ast.parse(text).body
+        if isinstance(statement, ast.Assign) and [ast.unparse(t) for t in statement.targets] == [name]
+    ]
+    assert len(found) == 1, f"node_outputs.py assigns {name} {len(found)} times"
+    value = ast.literal_eval(found[0])
+    assert isinstance(value, (int, float)) and not isinstance(value, bool), (name, value)
+    return float(value)
+
+
+def _height_differences(canvas: str, module: str) -> list[str]:
+    """Each height the canvas and the module give apart, compared as numbers."""
+    differences = []
+    for canvas_name, module_name in SHARED_HEIGHTS.items():
+        drawn, rasterized = _canvas_number(canvas, canvas_name), _module_number(module, module_name)
+        if drawn != rasterized:
+            differences.append(f"the canvas's {canvas_name} is {drawn}, Rasterization's {module_name} {rasterized}")
+    return differences
+
+
+def test_rasterize_buildings_gives_a_building_with_no_height_the_height_the_canvas_draws():
+    """The canvas (``utils/buildingHeight.ts``) and Rasterization's module each
+    keep a building's default height (6 m) and its metres a level (3.4), since a
+    package imports nothing of Curio's. They give the same numbers, so a
+    building with no height is as tall on an Autark map as in the raster."""
+    canvas = CANVAS_HEIGHTS.read_text(encoding="utf-8")
+    module = HEIGHTS_MODULE.read_text(encoding="utf-8")
+    assert _height_differences(canvas, module) == []
+    assert (_canvas_number(canvas, "DEFAULT_BUILDING_HEIGHT"), _module_number(module, "METRES_PER_LEVEL")) == (6, 3.4)
+
+
+@pytest.mark.parametrize("side, written, planted", [
+    ("canvas", "export const DEFAULT_BUILDING_HEIGHT = 6;", "export const DEFAULT_BUILDING_HEIGHT = 7;"),
+    ("canvas", "export const METRES_PER_LEVEL = 3.4;", "export const METRES_PER_LEVEL = 3;"),
+    ("module", "DEFAULT_HEIGHT = 6.0", "DEFAULT_HEIGHT = 6.5"),
+    ("module", "METRES_PER_LEVEL = 3.4", "METRES_PER_LEVEL = 3.5"),
+], ids=["canvas-default", "canvas-level", "module-default", "module-level"])
+def test_a_height_one_side_changes_alone_is_a_difference(side, written, planted):
+    """A height planted on one side alone is named as a difference, where the
+    shipped files have none: the canvas's whole 6 and the module's 6.0 are one
+    number."""
+    canvas = CANVAS_HEIGHTS.read_text(encoding="utf-8")
+    module = HEIGHTS_MODULE.read_text(encoding="utf-8")
+    assert _height_differences(canvas, module) == []
+    text = canvas if side == "canvas" else module
+    assert text.count(written) == 1, written
+    if side == "canvas":
+        canvas = canvas.replace(written, planted)
+    else:
+        module = module.replace(written, planted)
+    (difference,) = _height_differences(canvas, module)
+    name = planted.removeprefix("export const ").split(" = ")[0]
+    assert name in difference, difference
+
+
+@pytest.mark.parametrize("planted, words", [
+    ("export const DEFAULT_BUILDING_HEIGHT = 2 * 3;", "exports DEFAULT_BUILDING_HEIGHT as a number 0 times"),
+    ("export const DEFAULT_HEIGHT_M = 6;", "exports DEFAULT_BUILDING_HEIGHT as a number 0 times"),
+], ids=["not-a-number", "renamed"])
+def test_a_canvas_height_the_check_cannot_read_fails_it(planted, words):
+    """A canvas height written as anything but one number, or under another
+    name, fails the check: it never passes by reading nothing."""
+    canvas = CANVAS_HEIGHTS.read_text(encoding="utf-8")
+    module = HEIGHTS_MODULE.read_text(encoding="utf-8")
+    written = "export const DEFAULT_BUILDING_HEIGHT = 6;"
+    assert canvas.count(written) == 1, written
+    with pytest.raises(AssertionError, match=re.escape(words)):
+        _height_differences(canvas.replace(written, planted), module)
 
 
 def test_the_node_rasterizes_a_building_with_no_height_at_the_height_an_autark_map_draws(workspace):

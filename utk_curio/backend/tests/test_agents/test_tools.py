@@ -1145,7 +1145,7 @@ class TestPackageTools:
         report = json.loads(text)
         pkg = next(p for p in report["packages"] if p["dirName"] == "ai.utk.uhvi@1")
         # Grounded in the committed manifest — never invented.
-        assert pkg["permissions"] == ["filesystem.read", "network.fetch"]
+        assert pkg["permissions"] == ["filesystem.read"]
         assert "geopandas" in pkg["pythonDeps"]
         assert report["conflicts"] == []
 
