@@ -19,7 +19,11 @@ import ImageCardGrid from './components/ImageCardGrid';
 import FrameTabs from './components/FrameTabs';
 import { toRows } from '../../utils/rowSource';
 import { keyedFramesAsOutputs, unwrapValueEnvelopes } from '../../utils/sandboxEnvelope';
-import { registerNodeSettingWriter, withWidgetValues } from '../../utils/nodeSettingsWriters';
+import {
+  registerNodeSettingWriter,
+  registerNodeWidgetWriter,
+  withDeclaredWidgetValues,
+} from '../../utils/nodeSettingsWriters';
 import nodeSettings from '../../contracts/nodeSettings.json';
 import type { SelectDetail } from '../../utils/selectionMatch';
 import {
@@ -191,8 +195,7 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   const { workflowNameRef, updateDataNode } = useFlowContext();
   // The node's data as it is now, which the writes and the player's tell below
   // read: through a ref, so they keep their identity, and so does the view's
-  // body, whatever the node's data becomes. An agent's widget write changes
-  // the data in place (NodeEditor's writer), which the ref sees at once.
+  // body, whatever the node's data becomes.
   const dataRef = useRef(data);
   dataRef.current = data;
   // The dataflow the cards read a collection's files through, as the canvas's
@@ -388,15 +391,20 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   const setTimeColumn = useCallback(
     (value: string) => {
       const current = dataRef.current as any;
-      const widgets = normalizeWidgets(current.widgets);
-      const next = widgets.some((widget) => widget.name === TIME_COLUMN_WIDGET)
-        ? withWidgetValues(widgets, { [TIME_COLUMN_WIDGET]: value })
-        : timeWidgetRef.current
-          ? [...widgets, { ...timeWidgetRef.current, value }]
-          : widgets;
+      const template = timeWidgetRef.current ? [timeWidgetRef.current] : [];
+      const next = withDeclaredWidgetValues(normalizeWidgets(current.widgets), { [TIME_COLUMN_WIDGET]: value }, template);
       updateDataNode(current.nodeId, { ...current, widgets: next });
     },
     [updateDataNode],
+  );
+  // An agent's applied change sets the Time column as the field does
+  // (utils/nodeSettingsWriters): the same write, which runs nothing.
+  const setTimeColumnRef = useRef(setTimeColumn);
+  setTimeColumnRef.current = setTimeColumn;
+  useEffect(
+    () => registerNodeWidgetWriter(data.nodeId, TIME_COLUMN_WIDGET, (value) =>
+      setTimeColumnRef.current(typeof value === 'string' ? value : '')),
+    [data.nodeId],
   );
 
   // The Time column's field, the node's own control: on its Widgets tab, and
