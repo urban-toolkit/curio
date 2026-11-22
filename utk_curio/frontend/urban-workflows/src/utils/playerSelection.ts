@@ -6,18 +6,42 @@
  * matches its own rows against it with the code a brush's interval goes
  * through (`selectionMatch`): a row is lit when its time is in the range.
  *
- * The time is in seconds, in `t_s`: the column Curio's media nodes give the
+ * The range is in seconds, on the view's Time column (`timeColumnOf`): the
+ * column the rows of the views linked to it keep their time in. Until the
+ * view names another, it is `t_s`, the column Curio's media nodes give the
  * time in a video or a recording (Sample Video Frames' frames, Split Audio's
- * windows). A played row that carries `t_s` is a part of a longer file that
- * starts there, such as Track Objects' overlay or Split Audio's clip, so its
- * times are that file's: an overlay that starts 50 s into its video plays the
- * range from 50 s to 50 s plus where it stands.
+ * windows). A played row's own start stays its `t_s`, whatever the Time
+ * column names: a played row that carries `t_s` is a part of a longer file
+ * that starts there, such as Track Objects' overlay or Split Audio's clip, so
+ * its times are that file's: an overlay that starts 50 s into its video plays
+ * the range from 50 s to 50 s plus where it stands.
  */
 import { NodeType, VisInteractionType } from "../constants";
 import type { SelectDetail } from "./selectionMatch";
 
-/** The column the player's range names: the time in the video, in seconds. */
+/** The time in a video or a recording, in seconds, as Curio's media nodes
+ *  write it: a played row's own start in the file it was cut from, and the
+ *  column a Simple View's Time column names until it names another. */
 export const PLAYED_TIME_COLUMN = "t_s";
+
+/** The Simple View widget that holds its Time column. */
+export const TIME_COLUMN_WIDGET = "time_column";
+
+/**
+ * The column a Simple View's player's range names in the views linked to it:
+ * the value of its Time column widget among *widgets*, the node's, or `t_s`
+ * when the node holds no such widget (one saved before it had the setting)
+ * or its value is empty.
+ */
+export function timeColumnOf(widgets: unknown): string {
+  const held = Array.isArray(widgets)
+    ? widgets.find((widget) => (widget as { name?: unknown } | null)?.name === TIME_COLUMN_WIDGET)
+    : undefined;
+  if (!held) return PLAYED_TIME_COLUMN;
+  const { value, default: initial } = held as { value?: unknown; default?: unknown };
+  const named = value !== undefined ? value : initial;
+  return typeof named === "string" && named.trim() ? named.trim() : PLAYED_TIME_COLUMN;
+}
 
 /** The name of the player's select among Simple View's selects. */
 export const PLAYER_SELECT = "player_time";
@@ -81,14 +105,18 @@ export function playedRange(row: Record<string, unknown> | null | undefined, at:
 }
 
 /**
- * The player's select: an interval over `t_s` that holds *range*, or, when
- * the player closed, one that holds nothing, which every view reads as a
- * selection taken away. Its priority is the caller's (`latestSelect`).
+ * The player's select: an interval over *column*, the view's Time column,
+ * that holds *range*, or, when the player closed, one that holds nothing,
+ * which every view reads as a selection taken away. Its priority is the
+ * caller's (`latestSelect`).
  */
-export function playerSelect(range: [number, number] | null): SelectDetail & { source: string } {
+export function playerSelect(
+  range: [number, number] | null,
+  column: string = PLAYED_TIME_COLUMN,
+): SelectDetail & { source: string } {
   return {
     type: VisInteractionType.INTERVAL,
-    data: range ? { [PLAYED_TIME_COLUMN]: range } : {},
+    data: range ? { [column]: range } : {},
     source: NodeType.VIS_SIMPLE,
   };
 }

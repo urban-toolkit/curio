@@ -18,10 +18,25 @@ import { CopyButton } from '../../components/CopyButton';
 import ImageCardGrid from './components/ImageCardGrid';
 import { toRows } from '../../utils/rowSource';
 import { unwrapValueEnvelopes } from '../../utils/sandboxEnvelope';
-import { registerNodeSettingWriter } from '../../utils/nodeSettingsWriters';
+import { registerNodeSettingWriter, withWidgetValues } from '../../utils/nodeSettingsWriters';
 import nodeSettings from '../../contracts/nodeSettings.json';
 import type { SelectDetail } from '../../utils/selectionMatch';
-import { CARD_SELECT, PLAYER_SELECT, latestSelect, playedRange, playerSelect } from '../../utils/playerSelection';
+import {
+  CARD_SELECT,
+  PLAYER_SELECT,
+  TIME_COLUMN_WIDGET,
+  latestSelect,
+  playedRange,
+  playerSelect,
+  timeColumnOf,
+} from '../../utils/playerSelection';
+import { tryGetNodeDescriptor } from '../../registry/nodeRegistry';
+import { normalizeWidgets, type WidgetDef } from '../../utils/widgets/widgetModel';
+import { SimpleViewTimeColumn } from './SimpleViewTimeColumn';
+
+/** The widgets Simple View's own controls draw: its Time column, set from
+ *  its Widgets tab, has no row of the editor's (NodeEditor's `ownWidgets`). */
+const OWN_WIDGETS = [TIME_COLUMN_WIDGET];
 
 /** The picker's label, and its word for every image column, which an agent's
  *  review card and the backend say the setting in too
@@ -136,6 +151,12 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
 
   const { nodeExecProv } = useProvenanceContext();
   const { workflowNameRef, updateDataNode } = useFlowContext();
+  // The node's data as it is now, which the writes and the player's tell below
+  // read: through a ref, so they keep their identity, and so does the view's
+  // body, whatever the node's data becomes. An agent's widget write changes
+  // the data in place (NodeEditor's writer), which the ref sees at once.
+  const dataRef = useRef(data);
+  dataRef.current = data;
   // The dataflow the cards read a collection's files through, as the canvas's
   // Data Catalog lists them (`useAgentsDataflowId`): on an invited editor's
   // canvas, the owner's, whose collections the editor's runs load.
@@ -231,12 +252,32 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
     } as SelectDetail);
   }, [tellSelect]);
 
+  // The column the player's range names in the views linked to this one: its
+  // Time column, t_s until set (utils/playerSelection).
+  const timeColumn = timeColumnOf((data as any).widgets);
+
   // What a card's player has played, from its file's start to where it
-  // stands, as an interval on `t_s`; one that holds nothing once it closes.
-  // A selection this view receives moves no player.
+  // stands, as an interval on the Time column; one that holds nothing once it
+  // closes. A selection this view receives moves no player. The column is
+  // read from the node's data as it tells, so a new value changes no
+  // callback the view's body holds: NodeEditor would take a new body for a
+  // new run and leave the Widgets tab the value was set on.
   const played = useCallback((row: Record<string, unknown>, at: number | null) => {
-    tellSelect(PLAYER_SELECT, playerSelect(at === null ? null : playedRange(row, at)));
+    const column = timeColumnOf((dataRef.current as any).widgets);
+    tellSelect(PLAYER_SELECT, playerSelect(at === null ? null : playedRange(row, at), column));
   }, [tellSelect]);
+
+  // A Time column set while a player holds a range moves the range to it at
+  // once, at the priority it holds: the linked views light their rows by the
+  // new column without waiting for the player to tell its time again.
+  useEffect(() => {
+    const held = interactionsRef.current[PLAYER_SELECT];
+    const [column] = Object.keys(held?.data ?? {});
+    if (!held || column === undefined || column === timeColumn) return;
+    const next = { ...interactionsRef.current, [PLAYER_SELECT]: { ...held, data: { [timeColumn]: held.data[column] } } };
+    interactionsRef.current = next;
+    setInteractions(next);
+  }, [timeColumn]);
 
   // Written back by a linked Data Pool, onto the row itself for both frame
   // shapes, so this no longer has to know which shape it came from.
@@ -259,12 +300,50 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   // which the node still reads as every column.
   const pickColumn = useCallback(
     (value: string) => {
-      const simpleVis = { ...(data as any).simpleVis };
+      const current = dataRef.current as any;
+      const simpleVis = { ...current.simpleVis };
       if (value === ALL_IMAGE_COLUMNS) delete simpleVis.imageColumn;
       else simpleVis.imageColumn = value;
-      updateDataNode(data.nodeId, { ...data, simpleVis });
+      updateDataNode(current.nodeId, { ...current, simpleVis });
     },
-    [data, updateDataNode],
+    [updateDataNode],
+  );
+
+  // The Time column's widget: the node's own, else its template's, for a node
+  // that holds none yet (one saved before it had the setting), which names t_s.
+  const heldTimeWidget = normalizeWidgets((data as any).widgets).find((widget) => widget.name === TIME_COLUMN_WIDGET);
+  const timeWidget: WidgetDef | undefined = heldTimeWidget
+    ?? (tryGetNodeDescriptor((data as any).nodeType)?.widgets ?? []).find((widget) => widget.name === TIME_COLUMN_WIDGET);
+  const timeWidgetRef = useRef(timeWidget);
+  timeWidgetRef.current = timeWidget;
+
+  // A Time column set on the Widgets tab is the node's, as a pick of its image
+  // column is: kept in its widgets, saved with it, and run by nothing, since
+  // it changes no rows the view hands on. A node with no widget of it yet
+  // takes its template's, with the value set.
+  const setTimeColumn = useCallback(
+    (value: string) => {
+      const current = dataRef.current as any;
+      const widgets = normalizeWidgets(current.widgets);
+      const next = widgets.some((widget) => widget.name === TIME_COLUMN_WIDGET)
+        ? withWidgetValues(widgets, { [TIME_COLUMN_WIDGET]: value })
+        : timeWidgetRef.current
+          ? [...widgets, { ...timeWidgetRef.current, value }]
+          : widgets;
+      updateDataNode(current.nodeId, { ...current, widgets: next });
+    },
+    [updateDataNode],
+  );
+
+  // The Time column's field, the node's own control: on its Widgets tab, and
+  // on its dashboard tile, read-only there as every text widget is.
+  const timeWidgetKey = JSON.stringify(timeWidget ?? null);
+  const controlsComponent = useMemo<React.ReactNode | undefined>(
+    () => (timeWidget
+      ? <SimpleViewTimeColumn widget={timeWidget} onCommit={setTimeColumn} dashboard={onDashboard} />
+      : undefined),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [timeWidgetKey, setTimeColumn, onDashboard],
   );
 
   // An agent's applied change picks the column as the picker does
@@ -388,6 +467,10 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
 
   return {
     contentComponent,
+    controlsComponent,
+    ownWidgets: OWN_WIDGETS,
+    // No Play: the editor's send-code callback reaches no header, so the node
+    // shows no Play, run status or Save output toggle.
     setSendCodeCallbackOverride: (_: any) => {},
     untilHandedOn,
   };
