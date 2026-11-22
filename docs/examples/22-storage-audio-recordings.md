@@ -50,7 +50,7 @@ button.
 ## Levels per window
 
 **Split Audio**, from the `curio.media` package, cuts each recording into
-windows of `WINDOW_SECONDS`, here `0.1`, and measures each one: `level_dbfs`
+windows of its **Window length** widget, here 0.1 s, and measures each one: `level_dbfs`
 is its RMS level and `peak_dbfs` its peak, both relative to full scale. Each
 window's `recorded_at` is its recording's time plus its offset.
 

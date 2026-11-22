@@ -13,20 +13,27 @@ views and the zonal-statistics nodes work on the result as they are.
 |---|---|---|---|
 | `curio.media/video-frames` | Sample Video Frames | A collection with videos | One row per frame: `path`, `thumbnail`, `image_url`, `width`, `height`, `t_s` (the frame's time in the video), `sequence` (the video), `frame` (the frame's number in it), and the video's fields, position and time |
 | `curio.media/split-audio` | Split Audio | A collection with recordings | One row per window: `level_dbfs` and `peak_dbfs` over all of the recording's channels, `t_s`, `duration_s`, a playable clip in the recording's channels (`audio_url`), and the recording's fields and time |
-| `curio.media/split-video` | Split Video | On the top circle, a collection with videos; on the bottom circle, optional, where to cut: one row per block, with `t_s` (where it starts, in seconds from its video's start) and, if it has them, `end_s` and `video_file_id` | One row per block, a video Simple View plays, re-encoded as H.264 at most `WIDTH` wide, with no sound: `block` (its number in its video), the cut's own columns, `t_s` and `end_s` (where it starts and ends in the video), then the video's fields, position and time, `duration_s`, `fps`, `width` and `height` |
+| `curio.media/split-video` | Split Video | On the top circle, a collection with videos; on the bottom circle, optional, where to cut: one row per block, with `t_s` (where it starts, in seconds from its video's start) and, if it has them, `end_s` and `video_file_id` | One row per block, a video Simple View plays, re-encoded as H.264 at most **Maximum width** wide, with no sound: `block` (its number in its video), the cut's own columns, `t_s` and `end_s` (where it starts and ends in the video), then the video's fields, position and time, `duration_s`, `fps`, `width` and `height` |
 | `curio.media/mosaic-rasters` | Mosaic Rasters | A raster collection's rows, often filtered | One RASTER: a virtual mosaic of the tiles, which must share their CRS, resolution, bands, data type and no-data value. Where tiles overlap, a tile's no-data pixels show the tile below |
 
 ## Settings
 
-Each node's settings are constants at the top of its code:
+Each node's settings are its widgets, which you set in its Widgets tab, pin to
+a dashboard or vary in a scenario; its code reads each by its chip:
 
-- Sample Video Frames: `EVERY_SECONDS` (default 2.0) and `MAX_FRAMES_PER_VIDEO` (default 300).
-- Split Audio: `WINDOW_SECONDS` (default 5.0, at least 0.001) and `MAX_WINDOWS_PER_RECORDING` (default 2000).
-- Split Video: `BLOCK_SECONDS` (default 60.0), the length of a block when nothing is wired to the bottom circle; `WIDTH` (default 960), the widest a block is drawn; and `MAX_FRAMES` (default 30000), the most frames one run re-encodes, which a whole 864 s walk at 30 frames a second fits.
+| Node | Widget | Default | What it sets |
+|---|---|---|---|
+| Sample Video Frames | **Gap between frames** (`every_seconds`) | 2 s | The gap between two sampled frames |
+| Sample Video Frames | **Maximum frames per video** (`max_frames_per_video`) | 300 | Frames kept from one video at most |
+| Split Audio | **Window length** (`window_seconds`) | 5 s, at least 0.001 | The length of one window |
+| Split Audio | **Maximum windows per recording** (`max_windows_per_recording`) | 2000 | Windows kept from one recording at most |
+| Split Video | **Block length** (`block_seconds`) | 60 s | The length of a block when nothing is wired to the bottom circle |
+| Split Video | **Maximum width** (`width`) | 960 px, at least 2 | The widest a block is drawn |
+| Split Video | **Maximum frames per run** (`max_frames`) | 30000 | The most frames one run re-encodes, which a whole 864 s walk at 30 frames a second fits |
 
 ## Cutting a video where you choose
 
-Split Video cuts every `BLOCK_SECONDS` seconds until a table is wired to its
+Split Video cuts every **Block length** seconds until a table is wired to its
 bottom circle. Then each row of that table is a block: it starts at its `t_s`
 and ends at its `end_s`, or where the next block starts, or where the video
 ends. A row with a `video_file_id` cuts only that video, and one without it
@@ -66,12 +73,10 @@ Sample Video Frames' code, for one:
 ```python
 from media_collections import sample_video_frames
 
-EVERY_SECONDS = 2.0
-MAX_FRAMES_PER_VIDEO = 300
-
 return sample_video_frames(
     input_0, curio_derived_file,
-    every_seconds=EVERY_SECONDS, max_frames_per_video=MAX_FRAMES_PER_VIDEO,
+    every_seconds=float([!! every_seconds !!]),
+    max_frames_per_video=int([!! max_frames_per_video !!]),
 )
 ```
 

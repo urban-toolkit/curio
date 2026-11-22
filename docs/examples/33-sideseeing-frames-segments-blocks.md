@@ -74,31 +74,22 @@ return gpd.GeoDataFrame(
 ## Frames, and what SAM 3 finds in them
 
 **Sample Video Frames** samples a frame every 2 seconds over the whole walk:
-`EVERY_SECONDS` is 2.0 and `MAX_FRAMES_PER_VIDEO` 450, which takes the walk's
-433 frames.
+its **Gap between frames** widget is 2 s and its **Maximum frames per video**
+450, which takes the walk's 433 frames.
 
 **Segment Images** finds what each of 9 labels names in each frame: the ways a
 curb meets the street (curb cut, curb ramp, wheelchair ramp), what marks a
-crossing underfoot (tactile paving), and what stands in a walker's way. Its code
-is its settings and one call of its package's function:
+crossing underfoot (tactile paving), and what stands in a walker's way. Its
+Widgets tab holds the 9 **Labels** and a **Maximum images per run** of 450,
+and its code is one call of its package's function:
 
 ```python
 from sam3_images import find_in_images
 
-# What to look for, in plain words: SAM 3 takes any short noun phrase. These are
-# the 9 labels the SideSeeing walk example tracks: the ways a curb meets the
-# street, what marks a crossing underfoot, and what stands in a walker's way.
-LABELS = [
-    "curb cut", "curb ramp", "wheelchair ramp", "tactile paving",
-    "pole", "bollard", "construction barrier", "traffic cone", "person",
-]
-THRESHOLD = 0.5  # the score SAM 3 needs to keep an object
-WIDTH = 960  # the widest images are read and drawn at
-MAX_IMAGES = 450  # the most images one run looks at
-
 return find_in_images(
     input_0, curio_load_model("model.curio.sam3"), curio_derived_file,
-    labels=LABELS, threshold=THRESHOLD, width=WIDTH, max_images=MAX_IMAGES,
+    labels=[!! labels !!], threshold=float([!! threshold !!]),
+    width=int([!! width !!]), max_images=int([!! max_images !!]),
 )
 ```
 

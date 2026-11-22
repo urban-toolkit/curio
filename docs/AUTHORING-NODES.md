@@ -222,8 +222,9 @@ return convert_raster(input_0, zoom=[!! zoom !!])
 - A node's logic is in its package's functions
   ([Extending](EXTENDING.md#a-nodes-logic-is-in-its-packages-functions)). The
   template's source holds the node's settings, as widgets or constants, and a
-  short call: Media's Sample Video Frames sets `EVERY_SECONDS` and returns a
-  call of `sample_video_frames`, from Media's `media_collections`.
+  short call: Media's Sample Video Frames returns a call of
+  `sample_video_frames`, from Media's `media_collections`, which reads its
+  `every_seconds` widget as `float([!! every_seconds !!])`.
 - A module's `__all__` names what it offers, and each function it offers says
   what it does in the first paragraph of its docstring. That is what users and
   agents read of it: the header above a node's code lists those functions
