@@ -323,9 +323,10 @@ class TestMaterializationHeal:
         stale["delegatesTo"] = [
             d for d in manifest["delegatesTo"] if not isinstance(d, dict) or d["id"] != manifest["id"]
         ]
-        storage.write_definition(
+        storage.write_definition_atomic(
             ukey, coord, stale,
             {manifest["prompts"]["instruction"]["path"]: "old instruction bytes"},
+            replace=True,
         )
         client.post(
             f"/api/agents/projects/{alice_project}/install",
@@ -527,7 +528,7 @@ class TestBuiltinPromptPropagation:
         for asset in manifest["prompts"].values():
             asset["sha256"] = hashlib.sha256(self.SHADOW_PROMPTS[asset["path"]].encode("utf-8")).hexdigest()
         shutil.rmtree(storage.agent_definition_dir(key, self.COORD), ignore_errors=True)
-        storage.write_definition(key, self.COORD, manifest, self.SHADOW_PROMPTS)
+        storage.write_definition_atomic(key, self.COORD, manifest, self.SHADOW_PROMPTS, replace=True)
         imports.add_imported_agent(key, self.COORD)
         assert storage.load_installed_agent_definition(key, self.COORD).provenance.trust == "imported"
         r = client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": self.COORD}, headers=_auth(token))

@@ -78,7 +78,7 @@ def _write_copy(ukey: str, shipped: str, coord: str, name: str) -> None:
     manifest["delegatesTo"] = [rename(entry) for entry in manifest.get("delegatesTo", [])]
     if "requiresAgents" in manifest:
         manifest["requiresAgents"] = [rename(agent_id) for agent_id in manifest["requiresAgents"]]
-    storage.write_definition(ukey, coord, manifest, bundle["prompts"])
+    storage.write_definition_atomic(ukey, coord, manifest, bundle["prompts"], replace=True)
     imports.add_imported_agent(ukey, coord)
 
 

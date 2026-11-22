@@ -41,6 +41,7 @@ from utk_curio.backend.app.discovery.domain.templates import (
     TemplateError,
     compile_template,
 )
+from utk_curio.sandbox.util.collections import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 
 #: Portals: a query API whose datasets are discovered live.
 PORTAL_PROVIDER_TYPES = ("socrata", "ckan", "arcgis", "wfs", "direct")
@@ -188,19 +189,16 @@ TABLE_FORMATS = ("csv", "json", "geojson", "parquet", "gpkg", "shp", "pbf", "jso
 #: Formats a storage source can hand the Data Catalog.
 STORAGE_FORMATS = TABLE_FORMATS + ("collection",)
 
-_IMAGE_EXTENSIONS = ("jpg", "jpeg", "png", "webp", "gif", "bmp", "tif", "tiff")
-_VIDEO_EXTENSIONS = ("mp4", "mov", "m4v", "webm", "mkv", "avi")
-_AUDIO_EXTENSIONS = ("wav", "flac", "mp3", "ogg", "opus", "m4a", "aiff", "aif")
-
-#: The files a resource's template sees when it names no ``extensions``. None
-#: listed is every file the template matches, whatever its extension.
+#: The files a resource's template sees when it names no ``extensions``, by
+#: the families a collection's files are sorted by (``sandbox/util/collections.py``).
+#: None listed is every file the template matches, whatever its extension.
 DEFAULT_EXTENSIONS = {
     "rasters": ("tif", "tiff", "jp2"),
-    "frames": _IMAGE_EXTENSIONS,
-    "images": _IMAGE_EXTENSIONS,
-    "videos": _VIDEO_EXTENSIONS,
-    "media": _IMAGE_EXTENSIONS + _VIDEO_EXTENSIONS,
-    "audio": _AUDIO_EXTENSIONS,
+    "frames": IMAGE_EXTENSIONS,
+    "images": IMAGE_EXTENSIONS,
+    "videos": VIDEO_EXTENSIONS,
+    "media": IMAGE_EXTENSIONS + VIDEO_EXTENSIONS,
+    "audio": AUDIO_EXTENSIONS,
     "files": (),
 }
 TABLE_EXTENSIONS = {

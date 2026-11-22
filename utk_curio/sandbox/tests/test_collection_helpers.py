@@ -158,10 +158,10 @@ class TestTheHelpers(unittest.TestCase):
     def test_a_table_found_in_a_video_is_no_derived_file(self):
         """What a node finds in a video, such as Track Objects' tracks, is a
         table the node returns, which goes on its edge: no file is derived
-        for it, and no folder is made."""
+        for it, the refusal says to return it, and no folder is made."""
         media = self.tmp / "media"
         derive = self.helpers({}, str(media))["curio_derived_file"]
-        with self.assertRaisesRegex(ValueError, "from a file of kind 'video', not 'parquet'"):
+        with self.assertRaisesRegex(ValueError, "not 'parquet': return a table from the node as its output"):
             derive("c1", "b" * 16, 0, "parquet", tag="sam3")
         self.assertFalse(media.exists())
 
@@ -196,18 +196,136 @@ class TestTheHelpers(unittest.TestCase):
         as_frame = derive("c1", "d" * 16, 0, "png", kind="frame", tag="m1")
         self.assertEqual((as_frame["path"], as_frame["file_id"]), (as_image["path"], as_image["file_id"]))
 
-    def test_what_the_media_route_would_never_find_is_refused_and_nothing_is_made(self):
-        """A file a kind does not derive (``DERIVED``), or at a time no id
-        holds, would be written and never served: its row's links would fail.
-        One assertion over every case, so each counts in this test."""
+    def test_an_image_a_video_or_a_recording_is_derived_from_a_file_of_any_kind(self):
+        """A file of any kind a collection's row has derives a file of any
+        extension of the three families a collection's files are sorted by:
+        an image, a video or a recording. Its row is its family's, with the
+        links a collection's row of that kind has, in that kind's folder, and
+        its id names its extension. One assertion over every case, so each
+        counts in this test."""
         media = self.tmp / "media"
         derive = self.helpers({}, str(media))["curio_derived_file"]
         cases = {
-            "a video made from a recording": lambda: derive("c1", "c" * 16, 0, "mp4", kind="audio"),
-            "a video made from a photo": lambda: derive("c1", "a" * 16, 0, "mp4", kind="image"),
-            "a format no kind derives": lambda: derive("c1", "b" * 16, 0, "txt"),
+            "a jpg from a photo": ("a", "image", "jpg"),
+            "an mp4 from a photo": ("a", "image", "mp4"),
+            "a png from a raster tile": ("d", "raster", "png"),
+            "a png from a recording": ("c", "audio", "png"),
+            "an mp4 from a recording": ("c", "audio", "mp4"),
+            "a webm from a video": ("b", "video", "webm"),
+            "a wav from a video": ("b", "video", "wav"),
+            "a jpeg from a sequence's frame": ("f", "frame", "jpeg"),
+            "a png from a file of a files resource": ("e", "file", "png"),
+        }
+        made = {}
+        for case, (letter, kind, ext) in cases.items():
+            try:
+                row = derive("c1", letter * 16, 0, ext, kind=kind, tag="m1")
+            except ValueError as exc:
+                made[case] = f"refused: {exc}"
+            else:
+                made[case] = {**row, "path": os.path.relpath(row["path"], media),
+                              "folder made": Path(row["path"]).parent.is_dir()}
+
+        def row_of(letter, ext, kind, folder):
+            served = f"{letter * 16}@0-m1.{ext}"
+            thumb, original = (f"/api/datasets/c1/media/{served}?variant={name}" for name in ("thumb", "original"))
+            return {
+                "file_id": served, "dataset_id": "c1", "kind": kind,
+                "path": os.path.join(folder, "c1", letter * 16, f"0-m1.{ext}"), "folder made": True,
+                "thumbnail": thumb, "image_url": {"image": original, "video": thumb, "audio": None}[kind],
+                "audio_url": original if kind == "audio" else None,
+            }
+
+        self.assertEqual(made, {
+            "a jpg from a photo": row_of("a", "jpg", "image", "overlays"),
+            "an mp4 from a photo": row_of("a", "mp4", "video", "videos"),
+            "a png from a raster tile": row_of("d", "png", "image", "overlays"),
+            "a png from a recording": row_of("c", "png", "image", "overlays"),
+            "an mp4 from a recording": row_of("c", "mp4", "video", "videos"),
+            "a webm from a video": row_of("b", "webm", "video", "videos"),
+            "a wav from a video": row_of("b", "wav", "audio", "clips"),
+            "a jpeg from a sequence's frame": row_of("f", "jpeg", "image", "overlays"),
+            "a png from a file of a files resource": row_of("e", "png", "image", "overlays"),
+        })
+
+    def test_a_table_or_any_other_file_is_refused_naming_the_nodes_output(self):
+        """A table a node finds in a file, or any file but an image, a video or
+        a recording, is no derived file: the node returns the table as its
+        output, and writes any other file it returns with curio_output_file,
+        as the refusal says. Nothing is made. One assertion over every case,
+        so each counts in this test."""
+        media = self.tmp / "media"
+        derive = self.helpers({}, str(media))["curio_derived_file"]
+        cases = {
+            "a table found in a video": ("b", "video", "csv"),
+            "a table found in a video, as Parquet": ("b", "video", "parquet"),
+            "a GeoJSON file from a photo": ("a", "image", "geojson"),
+            "a text file from a recording": ("c", "audio", "txt"),
+            "a JSON file from a raster tile": ("d", "raster", "json"),
+            "a CSV file from a file of a files resource": ("e", "file", "csv"),
+        }
+        said = {}
+        for case, (letter, kind, ext) in cases.items():
+            try:
+                said[case] = f"named {derive('c1', letter * 16, 0, ext, kind=kind)['path']}"
+            except ValueError as exc:
+                text = str(exc)
+                names_the_output = (
+                    f"not {ext!r}" in text and "return a table from the node" in text and "curio_output_file" in text
+                )
+                said[case] = "names the node's output" if names_the_output else text
+        self.assertEqual(said, {case: "names the node's output" for case in cases})
+        self.assertFalse(media.exists())
+
+    def test_the_shipped_pairs_keep_their_ids_folders_and_row_kinds(self):
+        """What a node derived before any file could derive an image, a video
+        or a recording keeps its id, its folder and its row's kind, so no file
+        a shipped node writes moves: each kind's own file, with no extension
+        named or that same one, has an id with no extension, and a video's
+        video and the overlay of its frame have ids ending in theirs. One
+        assertion over every pair, so each counts in this test."""
+        media = self.tmp / "media"
+        derive = self.helpers({}, str(media))["curio_derived_file"]
+        letters = {"video": "b", "audio": "c", "image": "a", "frame": "f"}
+        pairs = (("video", None), ("video", "jpg"), ("video", "mp4"), ("video", "png"), ("audio", None),
+                 ("audio", "wav"), ("image", None), ("image", "png"), ("frame", None), ("frame", "png"))
+        made = {}
+        for kind, ext in pairs:
+            row = derive("c1", letters[kind] * 16, 1500, ext, kind=kind, tag="m1")
+            made[(kind, ext)] = (row["file_id"], row["kind"], os.path.relpath(row["path"], media))
+
+        def at(kind, suffix, row_kind, folder, ext):
+            letter = letters[kind]
+            path = os.path.join(folder, "c1", letter * 16, f"1500-m1.{ext}")
+            return (f"{letter * 16}@1500-m1{suffix}", row_kind, path)
+
+        frame, clip = at("video", "", "frame", "frames", "jpg"), at("audio", "", "audio", "clips", "wav")
+        photo, sequence = at("image", "", "image", "overlays", "png"), at("frame", "", "image", "overlays", "png")
+        self.assertEqual(made, {
+            ("video", None): frame, ("video", "jpg"): frame,
+            ("video", "mp4"): at("video", ".mp4", "video", "videos", "mp4"),
+            ("video", "png"): at("video", ".png", "image", "overlays", "png"),
+            ("audio", None): clip, ("audio", "wav"): clip,
+            ("image", None): photo, ("image", "png"): photo,
+            ("frame", None): sequence, ("frame", "png"): sequence,
+        })
+
+    def test_what_the_media_route_would_never_find_is_refused_and_nothing_is_made(self):
+        """A file of an extension of no family (``FAMILIES``), no extension
+        from a kind with no file of its own (``DERIVED_DEFAULTS``), a kind no
+        row has, or a time no id holds would be written and never served: its
+        row's links would fail. One assertion over every case, so each counts
+        in this test."""
+        media = self.tmp / "media"
+        derive = self.helpers({}, str(media))["curio_derived_file"]
+        cases = {
+            "a format of no family": lambda: derive("c1", "b" * 16, 0, "txt"),
+            "a table found in a video": lambda: derive("c1", "b" * 16, 0, "csv"),
             "a frame's format, upper case": lambda: derive("c1", "b" * 16, 0, "JPG"),
-            "a kind nothing is derived from": lambda: derive("c1", "b" * 16, 0, kind="raster"),
+            "an extension written with its dot": lambda: derive("c1", "b" * 16, 0, ".png"),
+            "a raster tile's file with no extension named": lambda: derive("c1", "d" * 16, 0, kind="raster"),
+            "a file of a files resource with no extension named": lambda: derive("c1", "e" * 16, 0, kind="file"),
+            "a kind no collection's row has": lambda: derive("c1", "b" * 16, 0, "png", kind="videos"),
             "a time before the file starts": lambda: derive("c1", "b" * 16, -1, "mp4", tag="sam3"),
             "a time longer than an id holds": lambda: derive("c1", "b" * 16, 10**12, "mp4", tag="sam3"),
             "a video's tag that is no tag": lambda: derive("c1", "b" * 16, 0, "mp4", tag="SAM3"),

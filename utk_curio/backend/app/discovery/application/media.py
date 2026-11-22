@@ -121,14 +121,18 @@ def locate(service, dataset_id: str, file_id: str, *, kept: str | None = None) -
     """Find one file of this account's collection, by id.
 
     ``<file_id>@<t_ms>``, or ``<file_id>@<t_ms>-<tag>``, names a file a node
-    derived from one of the collection's: a video's frame, a recording's
-    window or an image's overlay (its tag names the model that drew it),
-    written where ``curio_derived_file`` put it, in this account's media
-    folder, a hosted guest's in their own folder in it, a dashboard viewer's
-    step's in the step's own folder, which its row's URL names as *kept*
-    (:func:`_locate_derived`). A file of any type but the first its kind derives adds its
-    extension: ``<file_id>@<t_ms>-<tag>.mp4`` is a video a node made from a
-    video. A collection the service's dataflow lists from its owner's store
+    derived from one of the collection's files, of any kind: an image, a
+    video or a recording, such as a video's frame, a recording's window or an
+    image's overlay (its tag names the model that drew it), written where
+    ``curio_derived_file`` put it, in this account's media folder, a hosted
+    guest's in their own folder in it, a dashboard viewer's step's in the
+    step's own folder, which its row's URL names as *kept*
+    (:func:`_locate_derived`). The id of a file of any extension but the one
+    its source's kind derives by default ends in it:
+    ``<file_id>@<t_ms>-<tag>.mp4`` is a video a node made from a video, and
+    ``<file_id>@0.png`` a picture a node drew of a raster tile, which derives
+    nothing by default. A collection the service's dataflow lists from its
+    owner's store
     (``DiscoveryService.collection``) has its cached files read from that
     store's media folder, and nothing else of it. A bucket this deployment
     mounts is read in place (``S3Storage.local_path``), and its copies cached
@@ -173,9 +177,10 @@ def _locate_derived(
     *, kept: str | None = None,
 ) -> Located:
     """The file *file_id* names, which ``curio_derived_file`` wrote from the
-    collection's file *source_id*: one type of what a file of its kind
-    derives (``DERIVED``), the one its id's extension names, and only under
-    the id ``curio_derived_file`` gives it.
+    collection's file *source_id*, of any kind: the image, video or recording
+    its id's extension names, or, with none, the file a source of that kind
+    derives by default (``derived_type``), and only under the id
+    ``curio_derived_file`` gives it.
 
     It is read where the reader's runs write it (``media_dirs.derived_root``):
     a hosted guest's in their own folder, else in the account's, where only a
@@ -187,11 +192,11 @@ def _locate_derived(
     output took with it is not found, never read as the owner's file of the
     same id."""
     from utk_curio.backend.app.projects import visitor_copies
-    from utk_curio.sandbox.util.collections import DERIVED, derived_id, derived_relpath, derived_type
+    from utk_curio.sandbox.util.collections import derived_id, derived_relpath, derived_type
 
     source = rows.get(source_id)
-    if source is None or source.kind not in DERIVED:
-        raise ResourceNotFound(f"{source_id!r} is not a video, recording, image or frame of {dataset_id!r}")
+    if source is None:
+        raise ResourceNotFound(f"{source_id!r} is not a file of {dataset_id!r}")
     try:
         folder, ext, kind, suffix = derived_type(source.kind, ext)
     except ValueError:

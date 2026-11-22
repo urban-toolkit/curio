@@ -190,6 +190,27 @@ def test_map_edits_call_is_the_one_its_step_defines():
     )
 
 
+def test_the_files_a_node_derives_are_the_ones_the_page_gives():
+    """``curio_derived_file``'s ``ext`` names every extension of the three
+    families a derived file is of, family by family and in their order, and
+    its ``kind`` every kind of a collection's row it derives from, as the
+    sandbox defines them."""
+    import re
+
+    from utk_curio.backend.app.agents.domain import node_functions
+    from utk_curio.sandbox.util.collections import FAMILIES, ROW_KINDS
+
+    derived = next(f for f in node_functions.read() if f.name == "curio_derived_file")
+    ext, kind = derived.argument("ext").text, derived.argument("kind").text
+    nouns = {"image": "an image", "video": "a video", "audio": "a recording"}
+    listed = {}
+    for family in FAMILIES:
+        found = re.search(rf"{nouns[family]} \(([^)]*)\)", ext)
+        listed[family] = re.findall(r"`([0-9a-z]+)`", found.group(1)) if found else None
+    assert listed == {family: list(extensions) for family, extensions in FAMILIES.items()}
+    assert sorted(re.findall(r'`"([a-z]+)"`', kind)) == sorted(ROW_KINDS)
+
+
 def test_the_ids_a_function_names_are_the_ones_the_backend_resolves():
     """The pin. Each argument the page says names a catalog's item is its
     function's first, given by position, and named as the sandbox names it;
