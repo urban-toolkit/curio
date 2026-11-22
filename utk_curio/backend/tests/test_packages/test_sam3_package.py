@@ -61,6 +61,12 @@ SOURCE = PACKAGE / "sources" / "track-objects.py"
 #: The package's module, which holds Track Objects' logic.
 MODULE = "sam3_tracking"
 MODULE_SOURCE = PACKAGE / "sources" / f"{MODULE}.py"
+#: Media, whose ``read_video_frames`` Track Objects reads its frames with, and
+#: Rasterization, which Media needs.
+MEDIA = REPO / "packages" / "curio.media@1"
+RASTERIZATION = REPO / "packages" / "curio.rasterization@1"
+#: SAM 3 and the packages it needs, those first: what adding it brings.
+BROUGHT = [RASTERIZATION.name, MEDIA.name, PACKAGE.name]
 #: The node's settings, the arguments its code hands ``track_objects``, in
 #: its call's order, each as the call reads it: a widget of its template by
 #: its name, a number cast to its type, or, for a setting that may be None,
@@ -189,7 +195,7 @@ def videos(tmp_path):
 
 @pytest.fixture
 def walk(tmp_path):
-    """A 33 s clip at the walk's rate, as ``_sample`` reads a video: from 30 s,
+    """A 33 s clip at the walk's rate, as ``_looked_at`` reads a video: from 30 s,
     its frames come 0.2 ms before 30.5 s, 0.8 ms before 31 s and 1.3 ms before
     31.5 s, each followed by the next frame 33 ms later."""
     import av
@@ -215,15 +221,15 @@ def walk(tmp_path):
 
 @pytest.fixture
 def corner(tmp_path):
-    """The 2 s clip at 4 frames a second, as ``_sample`` reads a video."""
+    """The 2 s clip at 4 frames a second, as ``_looked_at`` reads a video."""
     tiny_sam3.clip(tmp_path / "corner.mp4")
     return {"path": str(tmp_path / "corner.mp4"), "relpath": "corner.mp4"}
 
 
 def _times(module, video, from_seconds, end):
-    """The times of the frames ``_sample`` looks at in *video*, every EVERY
+    """The times of the frames ``_looked_at`` looks at in *video*, every EVERY
     seconds from *from_seconds* up to *end*."""
-    return module._sample(SimpleNamespace(width=960, from_seconds=from_seconds, every_seconds=EVERY), video, end)[1]
+    return module._looked_at(SimpleNamespace(width=960, from_seconds=from_seconds, every_seconds=EVERY), video, end)[1]
 
 
 def _template(template_id: str) -> dict:
@@ -254,14 +260,18 @@ def _node_source(**values) -> str:
 
 @contextlib.contextmanager
 def _staged(tmp_path: Path):
-    """The package's module, importable as a run of Track Objects imports it:
-    staged into a folder of the run's own, then imported by its name."""
+    """The package's module, importable as a run of Track Objects imports it,
+    with Media's, whose reader it reads its frames with: staged into a folder
+    of the run's own, then imported by its name."""
     from utk_curio.sandbox.util.package_modules import importable
     from utk_curio.sandbox.util.staging import stage_package_modules
 
     run = Path(tempfile.mkdtemp(prefix="run-", dir=tmp_path))
-    staged = stage_package_modules([{"root": str(PACKAGE / "sources"), "names": [MODULE]}], str(run))
-    assert staged == {"root": "package_modules", "names": [MODULE]}, staged
+    staged = stage_package_modules([
+        {"root": str(PACKAGE / "sources"), "names": [MODULE]},
+        {"root": str(MEDIA / "sources"), "names": ["media_collections"]},
+    ], str(run))
+    assert staged == {"root": "package_modules", "names": [MODULE, "media_collections"]}, staged
     with importable(str(run / staged["root"]), staged["names"]):
         yield importlib.import_module(MODULE)
 
@@ -443,6 +453,92 @@ def test_the_module_offers_track_objects_says_what_it_does_and_is_handed_curios_
     imported += [node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
     assert not [name for name in imported if name.split(".")[0] == "utk_curio"]
     assert not [node.id for node in ast.walk(tree) if isinstance(node, ast.Name) and node.id.startswith("curio_")]
+
+
+def test_track_objects_reads_its_frames_with_medias_reader_and_decodes_none_itself():
+    """Media's ``read_video_frames`` reads a video's frames for Sample Video
+    Frames and Split Video, and for Track Objects too: SAM 3's module imports
+    it from Media's ``media_collections``, keeps no reader of its own, and
+    neither decodes nor seeks a video, nor threads its decoding."""
+    tree = ast.parse(MODULE_SOURCE.read_text(encoding="utf-8"))
+    imported = sorted(
+        (node.module, alias.name) for node in tree.body if isinstance(node, ast.ImportFrom) for alias in node.names
+    )
+    assert ("media_collections", "read_video_frames") in imported, (
+        f"{MODULE} reads frames with a reader of its own: it imports {imported}")
+    defined = {node.name for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.ClassDef))}
+    assert "_sample" not in defined, f"{MODULE} still defines _sample, a frame reader of its own"
+    reads = [
+        ast.unparse(node) for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in ("decode", "seek")
+    ]
+    threads = [
+        ast.unparse(node) for node in ast.walk(tree) if isinstance(node, ast.Attribute) and node.attr == "thread_type"
+    ]
+    assert (reads, threads) == ([], []), f"{MODULE} reads a video's frames itself: {reads + threads}"
+
+
+def test_the_package_names_media_so_adding_it_and_the_guest_packages_bring_media_and_rasterization(tmp_curio):
+    """SAM 3's manifest names Media in ``dependencies.packages``, as Media
+    names Rasterization. So an add of SAM 3 copies Media and Rasterization
+    into the store first (#1040), here without their libraries as a hosted
+    guest's start adds what ``--guest-packages`` names (#1481), and the
+    launcher installs the libraries of the same three for the guests: deploy.yml
+    names SAM 3 alone."""
+    from utk_curio.backend.app.packages.application.package_dependencies import catalog_packages_to_add
+    from utk_curio.backend.app.packages.application.store_install import _ensure_user_store_install
+    from utk_curio.backend.app.packages.repositories.store import package_dir
+
+    assert _manifest()["dependencies"]["packages"] == {MEDIA.name: "*"}
+    assert catalog_packages_to_add([PACKAGE.name]) == BROUGHT
+    added = _ensure_user_store_install("guest", PACKAGE.name, libraries=False)
+    assert list(added.packages) == BROUGHT, added.packages
+    assert all((package_dir("guest", name) / "manifest.json").is_file() for name in BROUGHT)
+
+
+def test_a_run_of_either_node_is_handed_its_modules_then_medias_and_finds_the_reader_in_both_runtimes(
+        tmp_curio, tmp_path):
+    """A run of Track Objects or Segment Images is handed SAM 3's modules,
+    then Media's, then Rasterization's, its own first
+    (``python_modules.modules_for_node``), though the header above its code
+    lists SAM 3's and Media's alone (test_functions_on_the_node.py). Both
+    runtimes stage them, so Track Objects' module imports Media's reader: in
+    process, and in an isolated child (``child.run_node``, here without the
+    fork)."""
+    from utk_curio.backend.app.packages.application.python_modules import modules_for_node
+    from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
+    from utk_curio.backend.app.packages.repositories.store import package_dir
+    from utk_curio.sandbox.isolation import child, protocol
+    from utk_curio.sandbox.util.package_modules import importable
+    from utk_curio.sandbox.util.staging import stage_package_modules
+
+    for package in (RASTERIZATION, MEDIA, PACKAGE):
+        install_package_from_directory("guest", package)
+    handed = [
+        {"root": str(package_dir("guest", PACKAGE.name) / "sources"), "names": ["sam3_images", MODULE]},
+        {"root": str(package_dir("guest", MEDIA.name) / "sources"), "names": ["media_collections"]},
+        {"root": str(package_dir("guest", RASTERIZATION.name) / "sources"), "names": ["scout_rasters"]},
+    ]
+    for template in ("track-objects", "segment-images"):
+        assert modules_for_node("guest", f"{MODEL_ID}/{template}") == handed, template
+
+    in_process = tmp_path / "run-in-process"
+    in_process.mkdir()
+    staged = stage_package_modules(handed, str(in_process))
+    with importable(str(in_process / staged["root"]), staged["names"]):
+        assert importlib.import_module(MODULE).read_video_frames.__module__ == "media_collections"
+
+    isolated = tmp_path / "run-isolated"
+    isolated.mkdir()
+    request = protocol.build_exec_request(
+        code=f"    from {MODULE} import read_video_frames\n    return read_video_frames.__module__\n",
+        node_type=f"{MODEL_ID}/track-objects", data_type="", scratch_dir=str(isolated),
+        input_spec={"kind": "none"}, session_imports=[],
+        package_modules=stage_package_modules(handed, str(isolated)),
+    )
+    result = child.run_node(request, dict)
+    assert result["ok"], result["stderr"]
+    assert result["output"] == {"kind": "str", "value": "media_collections"}
 
 
 # ---------------------------------------------------------------------------
@@ -645,7 +741,7 @@ def test_every_frame_up_to_the_parts_end_decodes_with_frame_threading(videos, tm
     real_open = av.open
 
     class _Recording:
-        """The container ``_sample`` opens, noting how each stream it decodes is threaded."""
+        """The container Media's reader opens, noting how each stream it decodes is threaded."""
 
         def __init__(self, container):
             self._container = container
@@ -667,7 +763,7 @@ def test_every_frame_up_to_the_parts_end_decodes_with_frame_threading(videos, tm
     with _staged(tmp_path) as module:
         monkeypatch.setattr(module.av, "open", lambda *args, **kwargs: _Recording(real_open(*args, **kwargs)))
         run = SimpleNamespace(width=960, from_seconds=0, every_seconds=EVERY)
-        frames, times = module._sample(run, video, CLIP_SECONDS)
+        frames, times = module._looked_at(run, video, CLIP_SECONDS)
 
     assert times == SAMPLED and len(frames) == len(SAMPLED)
     assert [getattr(kind, "name", kind) for kind in decoded_as] == ["AUTO"], decoded_as
@@ -681,7 +777,7 @@ def test_one_frame_is_looked_at_for_each_step_never_two_for_one(walk, tmp_path):
     to 31.75 s of a clip at that rate, each of the four steps gets one frame."""
     with _staged(tmp_path) as module:
         run = SimpleNamespace(width=960, from_seconds=30, every_seconds=EVERY)
-        frames, times = module._sample(run, walk, 31.75)
+        frames, times = module._looked_at(run, walk, 31.75)
     steps = [round((t - 30) / EVERY) for t in times]
     assert times == [30.0, 30.5, 30.999, 31.532], f"looked at {times}, in steps {steps}, not 30.0, 30.5, 30.999, 31.532"
     assert len(frames) == len(times)
@@ -692,7 +788,7 @@ def test_a_frame_just_before_a_steps_time_is_the_one_looked_at_for_it(walk, tmp_
     the one 0.8 ms before 31 s is looked at."""
     with _staged(tmp_path) as module:
         run = SimpleNamespace(width=960, from_seconds=30, every_seconds=EVERY)
-        times = module._sample(run, walk, 31.75)[1]
+        times = module._looked_at(run, walk, 31.75)[1]
     assert 30.999 in times, f"looked at {times}, not the frame at 30.999 s"
 
 
@@ -873,7 +969,7 @@ def _code_tab_settings() -> dict:
 
 def _whole_walk(tmp_path: Path) -> dict:
     """A clip as long as the walk, 864.3 s at 10 frames a second, as
-    ``_sample`` reads a video."""
+    ``_looked_at`` reads a video."""
     import av
     import numpy as np
 
@@ -933,8 +1029,8 @@ def test_a_part_that_needs_more_frames_than_max_frames_stops_before_sam3_loads_w
 def test_a_run_may_look_at_max_frames_frames_of_a_part_and_not_one_more(corner, walk, tmp_path, no_sam3):
     """The frames the limit counts are the frames a run looks at: each part
     the steps' tests pin, whose frames fall on a step, a millisecond before it
-    or after the part's end, passes a limit of the frames ``_sample`` looks at
-    in it, and stops before SAM 3 loads at one fewer, naming them."""
+    or after the part's end, passes a limit of the frames ``_looked_at`` looks
+    at in it, and stops before SAM 3 loads at one fewer, naming them."""
     nothing = SimpleNamespace(path=str(tmp_path / "no-weights"))
     parts = [
         (corner, 0, None), (corner, 0, 1.0), (corner, 1.0, 1.0),
@@ -1051,7 +1147,7 @@ def test_the_code_tabs_max_frames_is_450_which_takes_the_whole_walk_at_a_frame_e
 
         with pytest.raises(_SamLoads):
             track(every_seconds=2)
-        looked_at = module._sample(SimpleNamespace(width=960, from_seconds=0, every_seconds=2), walk, WALK_SECONDS)[1]
+        looked_at = module._looked_at(SimpleNamespace(width=960, from_seconds=0, every_seconds=2), walk, WALK_SECONDS)[1]
         with pytest.raises(ValueError) as whole_walk:
             track(every_seconds=settings["every_seconds"])
         with pytest.raises(ValueError) as five_minutes:

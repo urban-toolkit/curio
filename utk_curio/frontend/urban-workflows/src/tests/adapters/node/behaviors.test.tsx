@@ -231,6 +231,16 @@ function assertValidBehaviorResult(result: NodeBehaviorResult) {
   }
 }
 
+/**
+ * The calls an Autark node made to its JavaScript interpreter (*interpretCode*)
+ * to load its data section in the sandbox: each but the one that keeps what a
+ * node that draws and also loads hands on (`const __wrapper = ...`,
+ * autkLayerMaterialize `persistLayersToBackend`).
+ */
+function loadsSent(interpretCode: jest.Mock): any[][] {
+  return interpretCode.mock.calls.filter((call) => !String(call[1]).startsWith('const __wrapper = '));
+}
+
 async function callBehavior(
   hook: NodeBehaviorHook,
   data?: Partial<NodeBehaviorData>,
@@ -1193,8 +1203,10 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         }));
       });
 
-      // Data ran in the backend …
-      expect(interpretCode).toHaveBeenCalledTimes(1);
+      // Data ran in the backend, once; the node keeps there what it hands on,
+      // the table it loads, as a compute step keeps its tables …
+      expect(loadsSent(interpretCode)).toHaveLength(1);
+      expect(interpretCode).toHaveBeenCalledTimes(2);
       // … the layers were fetched back from DuckDB …
       expect(fetchData).toHaveBeenCalledWith('art-2');
       // … and compute/map/plot ran in the browser via AutkGrammar.
@@ -3726,7 +3738,10 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
               map: { layerRefs: [{ dataRef: 'roads' }, { dataRef: 'input_0' }] },
             }));
           });
-          expect(interpretCode).toHaveBeenCalledTimes(1);
+          // One load, on the node's input; the other call keeps what the map
+          // hands on, the tables it loads, as a compute step keeps its own.
+          expect(loadsSent(interpretCode)).toHaveLength(1);
+          expect(interpretCode).toHaveBeenCalledTimes(2);
           expect(interpretCode.mock.calls[0][2]).toEqual(input);
           const loaded = drawn.spec.data.map((s: any) => s.outputTableName);
           // input_0 once, as the join made it.
@@ -3866,7 +3881,9 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
           await act(async () => {
             await result.current.applyGrammar!(JSON.stringify({ data: [OSM], ...spec }));
           });
-          expect(interpretCode).toHaveBeenCalledTimes(1);
+          // One load; the node also keeps what it hands on, as a compute step does.
+          expect(loadsSent(interpretCode)).toHaveLength(1);
+          expect(interpretCode).toHaveBeenCalledTimes(2);
           return drawn.spec;
         } finally {
           AutkGrammar.mockImplementation(grammarAsBefore);
@@ -3967,7 +3984,9 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
               map: { layerRefs: [{ dataRef: 'city_buildings' }, { dataRef: 'city_road_sun', getFnv: 'compute.sunlight' }] },
             }));
           });
-          expect(interpretCode).toHaveBeenCalledTimes(1);
+          // One load; the node also keeps what it hands on, as a compute step does.
+          expect(loadsSent(interpretCode)).toHaveLength(1);
+          expect(interpretCode).toHaveBeenCalledTimes(2);
           const loaded = drawn.spec.data.find((s: any) => s.outputTableName === 'city_buildings');
           expect(loaded.layerType).toBe('buildings');
           expect(loaded.geojsonObject.features.map((f: any) => f.properties.height))

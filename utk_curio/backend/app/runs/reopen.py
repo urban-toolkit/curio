@@ -12,9 +12,9 @@ after Curio changes version, every node does.
 
 The nodes are walked in a run's order (``run_engine.plan_run``), so a node's
 input is what the nodes above it show: one a run forwards hands its input on,
-and one only the browser makes (an Autark compute node) leaves
-the nodes below it nothing to key, its data being the tab's. Nothing runs and
-nothing is written.
+and one only the browser makes (an Autark compute node, or an Autark map or
+plot that also loads data or runs a pass) leaves the nodes below it nothing to
+key, its data being the tab's. Nothing runs and nothing is written.
 """
 from __future__ import annotations
 

@@ -46,7 +46,7 @@ But if the previous node outputs a single data like, but not limited to, a dataf
     return {{inputs.chip:0}}
 ```
 
-A node controllable through grammar passes its input on, except an {{template.label:curio.builtin/autk-grammar}} node that draws no map or plot: it passes on the layers it loaded or computed, and nothing when the layers it computed are empty.
+A node controllable through grammar passes its input on, except an {{template.label:curio.builtin/autk-grammar}} node that loads data or runs passes: it passes on the layers it loaded or computed, after its input's when its views or passes read them, and nothing when they are empty.
 
 A {{template.label:curio.builtin/vis-vega}} node draws the DataFrame or GeoDataFrame the node before it returns, like:
 

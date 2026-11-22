@@ -19,10 +19,12 @@
 - :func:`node_role`: what a run does with a node. ``run`` executes it in the
   sandbox, as an executable template or an Autark node whose document only
   loads data (``autk_spec_kind``); ``forward`` passes its input on, as a chart,
-  a pool or a download does on the canvas, or has nothing to run, as a Note;
-  ``browser`` makes data only the browser can (an Autark compute node, an
-  Autark node with no data of its own to load), so nothing below it can run
-  until a tab does; ``missing`` is a node whose type names a
+  a pool, a download or an Autark node whose document only draws its input
+  does on the canvas, or has nothing to run, as a Note; ``browser`` makes data
+  only the browser can (an Autark compute node, an Autark node with no data of
+  its own to load, an Autark node that draws and also loads data or runs
+  passes, which hands on what it loads and computes), so nothing below it can
+  run until a tab does; ``missing`` is a node whose type names a
   package's template that no installed package provides (a saved Compare
   Scenarios node, a node of a package only another account's store holds):
   the canvas cannot run it either, so a run fails it, naming the

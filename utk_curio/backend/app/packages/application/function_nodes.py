@@ -1,7 +1,8 @@
 """The functions installed packages' modules offer: New node from a Python
 function and the template that calls one (SCOUT's Compute Catalog, the Curio
-way), what a node's code can call, as the header above its code lists it and
-an agent that writes it reads it, and a package's, as its details list them.
+way), what a node's code can call from its package and the packages its
+package names, as the header above its code lists it and an agent that writes
+it reads it, and a package's, as its details list them.
 
 Application layer of the packages package. A module is read, never imported
 or run (``domain/function_nodes.py``): it offers what its ``__all__`` names,
@@ -210,11 +211,16 @@ def module_functions(package_root: Path, manifest: PackageManifest, names: froze
 def _node_modules(
     user_key: str, node_type: object, project_id: str | None, owners=None,
 ) -> list[tuple[str, str, str | None, list[FunctionSignature]]]:
-    """``(package, module, problem, functions)`` for each module the sandbox
-    makes importable for a node of *node_type* (``python_modules.modules_for_node``,
-    with *owners* as a run of an editor the dataflow's owner invited gets
-    them), its own package's first."""
-    sources = packages_python_modules.modules_for_node(user_key, node_type, project_id, owners=owners)
+    """``(package, module, problem, functions)`` for each module of a node of
+    *node_type*'s own package and of the packages its package names in
+    ``dependencies.packages`` (``python_modules.modules_for_node``, with
+    *owners* as a run of an editor the dataflow's owner invited gets them),
+    its own package's first. Not those of the packages they name in turn,
+    though a run is handed those too (``modules_for_node`` without
+    *direct_only*)."""
+    sources = packages_python_modules.modules_for_node(
+        user_key, node_type, project_id, owners=owners, direct_only=True,
+    )
     if isinstance(sources, dict):
         sources = [sources]
     if not sources:
@@ -235,13 +241,13 @@ def _node_modules(
 
 
 def node_functions(user_key: str, node_type: object, project_id: str | None = None, *, owners=None) -> list[dict]:
-    """The functions the code of a node of *node_type* can import: those the
-    modules the sandbox makes importable for it offer
-    (``python_modules.modules_for_node``), its own package's and those of the
-    packages it names in ``dependencies.packages``; for a built-in Python
-    node, the built-in package's. One ``{"package", "module", "problem",
-    "functions"}`` per module, its own package's first. Empty for any other
-    built-in node and for a package that ships no modules."""
+    """The functions the code of a node of *node_type* calls: those the
+    modules of its own package offer and those of the packages it names in
+    ``dependencies.packages``, not of the packages those name in turn
+    (:func:`_node_modules`); for a built-in Python node, the built-in
+    package's. One ``{"package", "module", "problem", "functions"}`` per
+    module, its own package's first. Empty for any other built-in node and for
+    a package that ships no modules."""
     return [
         {"package": package, "module": module, "problem": problem, "functions": [_read_row(f) for f in functions]}
         for package, module, problem, functions in _node_modules(user_key, node_type, project_id, owners)
