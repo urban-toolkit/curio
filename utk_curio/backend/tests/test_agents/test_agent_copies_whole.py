@@ -162,10 +162,12 @@ class _SecondRewrite:
     thread of its own at the moment numbered *at* (from 0) of the first
     rewrite, which runs on this thread: each moment it opens a file or
     renames a folder in the store, while *patch* (a ``monkeypatch.context()``)
-    holds. The first goes on only once the second has ended or waits for the
-    account's lock (``storage.writing``), so no two writes run at once and
-    the moment, not the threads' timing, decides what each finds. With *at*
-    None it only counts the first's moments."""
+    holds. The first goes on only once the second has ended or blocks on the
+    account's lock, the ``exclusive_lock`` that ``storage.writing`` takes: so
+    no two writes run at once, whatever the lock does (one that holds nothing
+    lets the second run to its end first), and the moment, not the threads'
+    timing, decides what each finds. With *at* None it only counts the
+    first's moments."""
 
     def __init__(self, patch, key: str, coord: str, at: int | None):
         self.key, self.coord, self.at = key, coord, at
@@ -177,7 +179,7 @@ class _SecondRewrite:
         self.outcome = "never started"
         self.hung = False
         real_open, real_replace = Path.open, os.replace
-        real_writing = getattr(storage, "writing", None)
+        real_lock = getattr(storage, "exclusive_lock", None)
 
         def open_(path, mode="r", *args, **kwargs):
             handle = real_open(path, mode, *args, **kwargs)
@@ -189,15 +191,15 @@ class _SecondRewrite:
             real_replace(src, dst, *args, **kwargs)
             self._moment(src, dst)
 
-        def writing(user_key):
+        def lock(*args, **kwargs):
             if threading.get_ident() != self.first:
-                self.stopped.set()  # the second waits here while the first holds the lock
-            return real_writing(user_key)
+                self.stopped.set()  # the second blocks here while the first holds the lock
+            return real_lock(*args, **kwargs)
 
         patch.setattr(Path, "open", open_)
         patch.setattr(os, "replace", replace)
-        if real_writing is not None:  # a checkout with no lock has no wait to see
-            patch.setattr(storage, "writing", writing)
+        if real_lock is not None:  # a store with no lock has no wait to see
+            patch.setattr(storage, "exclusive_lock", lock)
 
     def _moment(self, *paths) -> None:
         if threading.get_ident() != self.first or self.thread is not None:
