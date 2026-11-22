@@ -70,12 +70,12 @@
     {
       "behavior": "code",
       "category": "computation",
-      "description": "Follow what LABELS names through every video of a collection with SAM 3, one frame every EVERY_SECONDS seconds, each object under one id from frame to frame. Returns two tables, which a chip names by key: videos, each video as its overlay, the frames looked at with each object's mask and id drawn, which Simple View plays, with t_s, where the overlay starts in the video, and <label>_objects, how many objects of each label it followed; and tracks, one row per object of every video (video_file_id, video, object_id, label, start_s, end_s, frames, largest_share, mean_score). FROM_SECONDS and TO_SECONDS pick the part of each video to track, at most MAX_FRAMES frames of it. The model is this package's, model.curio.sam3.",
+      "description": "Follow what labels names through every video of a collection with SAM 3, one frame every every_seconds seconds, each object under one id from frame to frame. Returns two tables, which a chip names by key: videos, each video as its overlay, the frames looked at with each object's mask and id drawn, which Simple View plays, with t_s, where the overlay starts in the video, and <label>_objects, how many objects of each label it followed; and tracks, one row per object of every video (video_file_id, video, object_id, label, start_s, end_s, frames, largest_share, mean_score). from_seconds and TO_SECONDS pick the part of each video to track, at most max_frames frames of it. labels, every_seconds, from_seconds, max_frames and width are its widgets; FORGET_SECONDS and TO_SECONDS, which may be None, are settings in its code. The model is this package's, model.curio.sam3.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
       "hasGrammar": false,
-      "hasWidgets": false,
+      "hasWidgets": true,
       "icon": null,
       "iconRef": "fa-solid:crosshairs",
       "id": "track-objects",
@@ -92,17 +92,56 @@
           "types": ["JSON"]
         }
       ],
-      "source": "sources/track-objects.py"
+      "source": "sources/track-objects.py",
+      "widgets": [
+        {
+          "name": "labels",
+          "type": "text-list",
+          "label": "Labels",
+          "default": [
+            "curb ramp", "curb cut", "tactile paving", "bollard", "pole",
+            "construction barrier", "traffic cone", "person"
+          ]
+        },
+        {
+          "name": "every_seconds",
+          "type": "number",
+          "label": "Gap between frames",
+          "default": 0.5,
+          "options": {"units": "s"}
+        },
+        {
+          "name": "from_seconds",
+          "type": "number",
+          "label": "Track from",
+          "default": 0,
+          "options": {"units": "s"}
+        },
+        {
+          "name": "max_frames",
+          "type": "number",
+          "label": "Maximum frames per video",
+          "default": 450,
+          "options": {"min": 1, "step": 1}
+        },
+        {
+          "name": "width",
+          "type": "number",
+          "label": "Maximum width",
+          "default": 960,
+          "options": {"step": 1, "units": "px"}
+        }
+      ]
     },
     {
       "behavior": "code",
       "category": "computation",
-      "description": "Find what LABELS names in every image of a collection, or every frame Sample Video Frames sampled, with SAM 3. Returns each image with dominant_class and dominant_pct, the label whose objects cover the most of it; for each label, <label>_pct, the share of the image its objects cover, and <label>_objects, how many it found (a space written as _); overlay_url, the image with each object's mask, box and label drawn, which Simple View shows beside it; and segment_error. THRESHOLD is the score SAM 3 needs to keep an object, WIDTH the widest an image is read and drawn at, and MAX_IMAGES the most images one run looks at. The model is this package's, model.curio.sam3.",
+      "description": "Find what labels names in every image of a collection, or every frame Sample Video Frames sampled, with SAM 3. Returns each image with dominant_class and dominant_pct, the label whose objects cover the most of it; for each label, <label>_pct, the share of the image its objects cover, and <label>_objects, how many it found (a space written as _); overlay_url, the image with each object's mask, box and label drawn, which Simple View shows beside it; and segment_error. threshold is the score SAM 3 needs to keep an object, width the widest an image is read and drawn at, and max_images the most images one run looks at. labels, threshold, width and max_images are its widgets. The model is this package's, model.curio.sam3.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
       "hasGrammar": false,
-      "hasWidgets": false,
+      "hasWidgets": true,
       "icon": null,
       "iconRef": "fa-solid:object-ungroup",
       "id": "segment-images",
@@ -119,7 +158,45 @@
           "types": ["DATAFRAME", "GEODATAFRAME"]
         }
       ],
-      "source": "sources/segment-images.py"
+      "source": "sources/segment-images.py",
+      "widgets": [
+        {
+          "name": "labels",
+          "type": "text-list",
+          "label": "Labels",
+          "default": [
+            "sidewalk", "crosswalk", "curb", "driveway", "alley", "tactile paving", "stairs",
+            "curb ramp", "curb cut", "wheelchair ramp", "ramp", "curbramp",
+            "traffic light", "pedestrian signal", "stop sign",
+            "pole", "fire hydrant", "trash bin", "bench", "bollard", "tree", "planter", "parking meter",
+            "bicycle rack", "bus stop",
+            "construction barrier", "traffic cone", "scaffolding",
+            "pothole", "puddle", "manhole cover", "sidewalk crack",
+            "person", "car", "bicycle"
+          ]
+        },
+        {
+          "name": "threshold",
+          "type": "slider",
+          "label": "Score threshold",
+          "default": 0.5,
+          "options": {"min": 0, "max": 1}
+        },
+        {
+          "name": "width",
+          "type": "number",
+          "label": "Maximum width",
+          "default": 960,
+          "options": {"step": 1, "units": "px"}
+        },
+        {
+          "name": "max_images",
+          "type": "number",
+          "label": "Maximum images per run",
+          "default": 300,
+          "options": {"min": 1, "step": 1}
+        }
+      ]
     }
   ],
   "version": "1.0.0"

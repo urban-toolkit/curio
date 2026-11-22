@@ -1,19 +1,16 @@
 from sam3_tracking import track_objects
 
-# What to look for, in plain words: SAM 3 takes any short noun phrase.
-LABELS = [
-    "curb ramp", "curb cut", "tactile paving", "bollard", "pole",
-    "construction barrier", "traffic cone", "person",
-]
-EVERY_SECONDS = 0.5  # the gap between two frames SAM 3 looks at
+# The Widgets tab sets what to look for, in plain words (SAM 3 takes any short
+# noun phrase), the gap between two frames SAM 3 looks at, where the part of
+# each video to track starts, in seconds from its start, the most frames of a
+# video one run looks at, and the widest frames are read and drawn at. These
+# two may be None, which no widget holds, so they are set here:
 FORGET_SECONDS = 10  # SAM 3 lets go of an object unseen this long; None keeps every object
-FROM_SECONDS = 0  # the part of each video to track, in seconds from its start
-TO_SECONDS = None  # None is the video's end
-MAX_FRAMES = 450  # the most frames of a video one run looks at
-WIDTH = 960  # the widest frames are read and drawn at
+TO_SECONDS = None  # where the part of each video ends; None is the video's end
 
 return track_objects(
     input_0, curio_load_model("model.curio.sam3"), curio_derived_file,
-    labels=LABELS, every_seconds=EVERY_SECONDS, forget_seconds=FORGET_SECONDS,
-    from_seconds=FROM_SECONDS, to_seconds=TO_SECONDS, max_frames=MAX_FRAMES, width=WIDTH,
+    labels=[!! labels !!], every_seconds=float([!! every_seconds !!]), forget_seconds=FORGET_SECONDS,
+    from_seconds=float([!! from_seconds !!]), to_seconds=TO_SECONDS,
+    max_frames=int([!! max_frames !!]), width=int([!! width !!]),
 )

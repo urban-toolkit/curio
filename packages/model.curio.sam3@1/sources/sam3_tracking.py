@@ -119,9 +119,9 @@ def track_objects(media, model, derived_file, *, labels, every_seconds=0.5, forg
             "max_frames=MAX_FRAMES"
         )
     if not labels:
-        raise ValueError("LABELS is empty: name at least one thing to look for")
+        raise ValueError("labels is empty: name at least one thing to look for")
     if max_frames < 1:
-        raise ValueError(f"MAX_FRAMES is {max_frames}: a run looks at one frame at least, so set it to 1 or more")
+        raise ValueError(f"max_frames is {max_frames}: a run looks at one frame at least, so set it to 1 or more")
     videos = [video for _, video in media[media["kind"] == "video"].iterrows()]
     ends = [_part_end(video, from_seconds, to_seconds, every_seconds, max_frames) for video in videos]
     rows, tables = [], []
@@ -234,7 +234,7 @@ def _part_end(video, from_seconds, to_seconds, every_seconds, max_frames):
         raise ValueError(
             f"{video['relpath']}: Track Objects looks at {max_frames} frames of a video at most in one run, "
             f"and {_seconds(from_seconds)} to {_seconds(end)} s at a frame every {every_seconds:g} s is {frames} "
-            f"frames; raise EVERY_SECONDS to {every:g} or more, or set FROM_SECONDS and TO_SECONDS to a shorter "
+            f"frames; raise every_seconds to {every:g} or more, or set from_seconds and TO_SECONDS to a shorter "
             f"part, such as {_seconds(from_seconds)} and {_seconds(shorter)}"
         )
     return end

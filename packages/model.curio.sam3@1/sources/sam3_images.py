@@ -99,24 +99,24 @@ def find_in_images(images, model, derived_file, *, labels, threshold=0.5, width=
     and says why in ``segment_error``.
     """
     if not labels:
-        raise ValueError("LABELS is empty: name at least one thing to look for")
+        raise ValueError("labels is empty: name at least one thing to look for")
     labels = [str(label) for label in labels]
     twice = sorted({label for label in labels if labels.count(label) > 1})
     if twice:
-        raise ValueError(f"LABELS names {', '.join(map(repr, twice))} more than once")
+        raise ValueError(f"labels names {', '.join(map(repr, twice))} more than once")
     names = {label: (f"{label}_pct", label.replace(" ", "_") + "_objects") for label in labels}
     columns = ["dominant_class", "dominant_pct", *(name for pair in names.values() for name in pair)]
     shared = sorted({name for name in columns if columns.count(name) > 1})
     if shared:
-        raise ValueError(f"LABELS would give two results one column: {', '.join(shared)}; rename a label")
+        raise ValueError(f"labels would give two results one column: {', '.join(shared)}; rename a label")
     if "path" not in getattr(images, "columns", ()):
         raise ValueError("Segment Images reads rows with a path, as curio_load_collection gives them")
     if max_images < 1:
-        raise ValueError(f"MAX_IMAGES is {max_images}: a run looks at one image at least, so set it to 1 or more")
+        raise ValueError(f"max_images is {max_images}: a run looks at one image at least, so set it to 1 or more")
     if len(images) > max_images:
         raise ValueError(
-            f"Segment Images looks at {max_images} images in one run (MAX_IMAGES), and its input has "
-            f"{len(images)}: sample fewer frames, keep fewer rows, or raise MAX_IMAGES"
+            f"Segment Images looks at {max_images} images in one run (max_images), and its input has "
+            f"{len(images)}: sample fewer frames, keep fewer rows, or raise max_images"
         )
     results = {name: [] for name in columns}
     results["overlay_url"] = []

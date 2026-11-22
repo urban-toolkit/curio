@@ -1,7 +1,7 @@
 """SAM 3's image path: its Segment Images node and the package module it calls,
 ``sources/sam3_images.py``.
 
-Segment Images finds what its LABELS name in each image of a collection, or
+Segment Images finds what its labels name in each image of a collection, or
 each frame Sample Video Frames sampled, with SAM 3's image model: the detector
 of the video checkpoint Track Objects reads, loaded from the same folder.
 These tests run on the tiny SAM 3 ``test_sam3_package`` builds and saves where
@@ -63,8 +63,12 @@ STAGED = [
     {"root": str(REPO / "packages" / "curio.media@1" / "sources"), "names": ["media_collections"]},
     {"root": str(REPO / "packages" / "curio.segmentation@1" / "sources"), "names": ["semantic_segmentation"]},
 ]
-#: Each setting of the code tab, and the argument of the call it is handed as.
-SETTINGS = {"LABELS": "labels", "THRESHOLD": "threshold", "WIDTH": "width", "MAX_IMAGES": "max_images"}
+#: Each setting the call is handed, by its argument, as the call reads it:
+#: the template's widget of its name, a number cast to its type.
+SETTINGS = {
+    "labels": "[!! labels !!]", "threshold": "float([!! threshold !!])", "width": "int([!! width !!])",
+    "max_images": "int([!! max_images !!])",
+}
 TWO = ["pole", "person"]
 #: How many objects the tiny SAM 3 can find in an image for one label: its
 #: detector's queries. At a threshold of 0, with its overlap suppression off
@@ -143,18 +147,24 @@ def _staged(tmp_path: Path):
         yield {name: importlib.import_module(name) for name in staged["names"]}
 
 
-def _node_source(**settings) -> str:
-    """The node's code with each setting given set at the top, as a person
-    edits it."""
-    code = SOURCE.read_text(encoding="utf-8")
-    for name, value in settings.items():
-        # LABELS is a list over several lines; every other setting is one line.
-        if name == "LABELS":
-            pattern, flags = r"^LABELS = \[.*?^\]$", re.M | re.S
-        else:
-            pattern, flags = rf"^{name} = .*$", re.M
-        code, count = re.subn(pattern, lambda _m, n=name, v=value: f"{n} = {v!r}", code, count=1, flags=flags)
-        assert count == 1, f"the node sets no {name}"
+def _widgets() -> list[dict]:
+    """The widgets a new Segment Images node starts with, as the manifest declares them."""
+    (template,) = [t for t in _manifest()["templates"] if t["id"] == "segment-images"]
+    return template["widgets"]
+
+
+def _node_source(**values) -> str:
+    """The node's code as a run writes it, its widgets at *values*, as a
+    person sets them in its Widgets tab, else at their defaults. Each name in
+    *values* is one of its widgets."""
+    from utk_curio.backend.app.execution.code_references import resolve_references
+
+    widgets = _widgets()
+    unknown = sorted(set(values) - {widget["name"] for widget in widgets})
+    assert not unknown, f"Segment Images has no widget {', '.join(unknown)}"
+    set_to = [{**widget, "value": values[widget["name"]]} if widget["name"] in values else widget for widget in widgets]
+    code, problems = resolve_references(SOURCE.read_text(encoding="utf-8"), set_to)
+    assert problems == [], problems
     return code
 
 
@@ -192,26 +202,38 @@ def _overlay(url: str, tmp_path: Path) -> Path:
 
 def test_the_code_tab_holds_its_settings_and_one_call_of_the_image_module():
     """Segment Images' logic is the package's image module: its code tab
-    imports the module's function, sets the node's settings, the package's 35
-    labels first, and returns one call of it, which hands it Curio's plumbing,
-    the model by the literal id the backend reads and ``curio_derived_file``,
-    and each setting as its argument."""
+    imports the module's function and returns one call of it, which hands it
+    Curio's plumbing, the model by the literal id the backend reads and
+    ``curio_derived_file``, and each setting as its argument. The settings
+    are the template's widgets, read by chip: the package's 35 labels first."""
+    from utk_curio.backend.app.execution.code_references import REFERENCE_RE
+
     code = SOURCE.read_text(encoding="utf-8")
     assert f'curio_load_model("{MODEL_ID}")' in code
-    body = ast.parse("def node(input_0):\n" + "\n".join("    " + line for line in code.splitlines())).body[0].body
-    imports, assigns, returned = body[:1], body[1:-1], body[-1]
+    chips: list[str] = []
+
+    def stand_in(match) -> str:
+        chips.append(match.group(0))
+        return f"_chip_{len(chips) - 1}_"
+
+    text = REFERENCE_RE.sub(stand_in, code)
+    body = ast.parse("def node(input_0):\n" + "\n".join("    " + line for line in text.splitlines())).body[0].body
+    imports, returned = body[:-1], body[-1]
     assert [ast.unparse(statement) for statement in imports] == [f"from {MODULE} import find_in_images"]
-    assert all(isinstance(statement, ast.Assign) for statement in assigns), [ast.unparse(s) for s in assigns]
-    settings = {statement.targets[0].id: ast.literal_eval(statement.value) for statement in assigns}
-    assert list(settings) == list(SETTINGS)
-    assert settings["LABELS"] == _manifest()["model"]["labels"]
-    assert (settings["THRESHOLD"], settings["WIDTH"], settings["MAX_IMAGES"]) == (0.5, 960, 300)
+    widgets = {widget["name"]: widget for widget in _widgets()}
+    assert list(widgets) == list(SETTINGS)
+    assert widgets["labels"]["type"] == "text-list" and widgets["labels"]["default"] == _manifest()["model"]["labels"]
+    assert (widgets["threshold"]["default"], widgets["width"]["default"], widgets["max_images"]["default"]) == (
+        0.5, 960, 300)
     assert isinstance(returned, ast.Return) and isinstance(returned.value, ast.Call), ast.unparse(returned)
     call = returned.value
     assert ast.unparse(call.func) == "find_in_images"
     assert [ast.unparse(arg) for arg in call.args] == ["input_0", f"curio_load_model('{MODEL_ID}')", "curio_derived_file"]
-    assert {keyword.arg: ast.unparse(keyword.value) for keyword in call.keywords} == {
-        argument: setting for setting, argument in SETTINGS.items()}
+    written = [
+        (keyword.arg, re.sub(r"_chip_(\d+)_", lambda m: chips[int(m.group(1))], ast.unparse(keyword.value)))
+        for keyword in call.keywords
+    ]
+    assert written == list(SETTINGS.items())
 
 
 def test_the_image_module_offers_find_in_images_and_is_handed_curios_plumbing():
@@ -281,7 +303,7 @@ def test_segment_images_finds_each_label_in_each_frame_sample_video_frames_sampl
     with _staged(tmp_path) as modules:
         frames, helpers = _frames(modules, videos)
         out = _run(frames, helpers, model_folder=catalog_copy, weights=every_detection_weights,
-                   LABELS=TWO, THRESHOLD=0.0)
+                   labels=TWO, threshold=0.0)
         tag = modules[MODULE]._tag(TWO, 0.0, 960)
     assert list(out.columns) == [*RESULTS, *frames.columns]
     assert list(out["t_s"]) == list(frames["t_s"]) and list(out["file_id"]) == list(frames["file_id"])
@@ -292,7 +314,7 @@ def test_segment_images_finds_each_label_in_each_frame_sample_video_frames_sampl
     for row in out.to_dict("records"):
         shares = {"pole": row["pole_pct"], "person": row["person_pct"]}
         assert all(0 <= share <= 100 for share in shares.values()), shares
-        # The label covering the most, the first of LABELS on a tie; none where nothing covers any.
+        # The label covering the most, the first of labels on a tie; none where nothing covers any.
         best = max(shares.values())
         assert row["dominant_pct"] == best
         if best > 0:
@@ -317,7 +339,7 @@ def test_a_run_writes_nothing_of_loading_sam3_and_leaves_progress_bars_on(
         frames, helpers = _frames(modules, videos)
         transformers_bars_on(monkeypatch)
         with stderr_of_a_run() as said:
-            out = _run(frames, helpers, model_folder=catalog_copy, weights=weights, LABELS=TWO)
+            out = _run(frames, helpers, model_folder=catalog_copy, weights=weights, labels=TWO)
     assert len(out) == len(frames), out
     assert_no_bar(said.getvalue(), "Segment Images")
     assert_bars_draw()
@@ -329,7 +351,7 @@ def test_where_sam3_finds_nothing_each_label_counts_none_and_no_label_dominates(
     and the overlay is the frame as it is."""
     with _staged(tmp_path) as modules:
         frames, helpers = _frames(modules, videos)
-        out = _run(frames, helpers, model_folder=catalog_copy, weights=weights, LABELS=TWO, THRESHOLD=1.0)
+        out = _run(frames, helpers, model_folder=catalog_copy, weights=weights, labels=TWO, threshold=1.0)
     assert out["pole_objects"].eq(0).all() and out["person_objects"].eq(0).all()
     assert out["pole_pct"].eq(0).all() and out["dominant_pct"].eq(0).all()
     assert out["dominant_class"].isna().all() and out["overlay_url"].notna().all()
@@ -338,7 +360,7 @@ def test_where_sam3_finds_nothing_each_label_counts_none_and_no_label_dominates(
 def test_photos_get_overlays_named_after_themselves_and_a_row_without_an_image_says_why(
         catalog_copy, every_detection_weights, few_threads, tmp_path):
     """A collection's photos: each overlay is named after its photo, a photo
-    wider than WIDTH is read and drawn WIDTH wide, and a photo that is gone or
+    wider than width is read and drawn width wide, and a photo that is gone or
     is not an image gets no results and says why."""
     import numpy as np
     import pandas as pd
@@ -361,7 +383,7 @@ def test_photos_get_overlays_named_after_themselves_and_a_row_without_an_image_s
 
     with _staged(tmp_path):
         out = _run(rows, helpers, model_folder=catalog_copy, weights=every_detection_weights,
-                   LABELS=TWO, THRESHOLD=0.0)
+                   labels=TWO, threshold=0.0)
     by_name = {row["name"]: row for row in out.to_dict("records")}
     assert by_name["c.png"]["segment_error"] == "the image could not be read"
     assert by_name["d.png"]["segment_error"] == "the image is not on this machine"
@@ -404,9 +426,9 @@ def test_calls_that_ask_differently_keep_overlays_of_their_own(videos, catalog_c
         tag = modules[MODULE]._tag
         assert len({tag(TWO, 0.5, 960), tag(["pole"], 0.5, 960), tag(TWO, 0.4, 960), tag(TWO, 0.5, 480)}) == 4
         frames, helpers = _frames(modules, videos)
-        first = _run(frames, helpers, model_folder=catalog_copy, weights=weights, LABELS=TWO, THRESHOLD=0.0)
-        again = _run(frames, helpers, model_folder=catalog_copy, weights=weights, LABELS=TWO, THRESHOLD=0.0)
-        other = _run(frames, helpers, model_folder=catalog_copy, weights=weights, LABELS=["pole"], THRESHOLD=0.0)
+        first = _run(frames, helpers, model_folder=catalog_copy, weights=weights, labels=TWO, threshold=0.0)
+        again = _run(frames, helpers, model_folder=catalog_copy, weights=weights, labels=TWO, threshold=0.0)
+        other = _run(frames, helpers, model_folder=catalog_copy, weights=weights, labels=["pole"], threshold=0.0)
     assert list(first["overlay_url"]) == list(again["overlay_url"])
     assert not set(first["overlay_url"]) & set(other["overlay_url"])
 
@@ -468,7 +490,7 @@ def _finding(modules, specs, frames, helpers, tmp_path, **found_by):
     import numpy as np
     from PIL import Image
 
-    out = _run_finding(modules[MODULE], specs, frames, helpers, LABELS=TWO, **found_by)
+    out = _run_finding(modules[MODULE], specs, frames, helpers, labels=TWO, **found_by)
     overlays = []
     for url in out["overlay_url"]:
         with Image.open(_overlay(url, tmp_path)) as overlay:
@@ -573,13 +595,13 @@ def test_each_stop_comes_before_sam3_loads_and_writes_nothing(videos, tmp_path):
             stops[name] = str(stopped.value)
         empty = find(frames.iloc[:0], nothing, derived, labels=TWO)
     assert stops == {
-        "no label": "LABELS is empty: name at least one thing to look for",
-        "twice": "LABELS names 'pole' more than once",
-        "one column": "LABELS would give two results one column: dominant_pct; rename a label",
-        "no image": "MAX_IMAGES is 0: a run looks at one image at least, so set it to 1 or more",
+        "no label": "labels is empty: name at least one thing to look for",
+        "twice": "labels names 'pole' more than once",
+        "one column": "labels would give two results one column: dominant_pct; rename a label",
+        "no image": "max_images is 0: a run looks at one image at least, so set it to 1 or more",
         "too many": (
-            "Segment Images looks at 3 images in one run (MAX_IMAGES), and its input has 4: sample fewer "
-            "frames, keep fewer rows, or raise MAX_IMAGES"
+            "Segment Images looks at 3 images in one run (max_images), and its input has 4: sample fewer "
+            "frames, keep fewer rows, or raise max_images"
         ),
         "no path": "Segment Images reads rows with a path, as curio_load_collection gives them",
     }
@@ -593,6 +615,6 @@ def test_a_positioned_frames_table_comes_back_with_its_positions(videos, catalog
     with _staged(tmp_path) as modules:
         frames, helpers = _frames(modules, videos)
         placed = gpd.GeoDataFrame(frames, geometry=gpd.points_from_xy([-87.6475] * 4, [41.8842] * 4), crs="EPSG:4326")
-        out = _run(placed, helpers, model_folder=catalog_copy, weights=weights, LABELS=["pole"], THRESHOLD=1.0)
+        out = _run(placed, helpers, model_folder=catalog_copy, weights=weights, labels=["pole"], threshold=1.0)
     assert isinstance(out, gpd.GeoDataFrame) and out.crs == placed.crs
     assert list(out.geometry.x) == [-87.6475] * 4

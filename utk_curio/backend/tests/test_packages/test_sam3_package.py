@@ -61,10 +61,14 @@ SOURCE = PACKAGE / "sources" / "track-objects.py"
 #: The package's module, which holds Track Objects' logic.
 MODULE = "sam3_tracking"
 MODULE_SOURCE = PACKAGE / "sources" / f"{MODULE}.py"
-#: The node's settings, in its code tab's order, and the arguments they are.
+#: The node's settings, the arguments its code hands ``track_objects``, in
+#: its call's order, each as the call reads it: a widget of its template by
+#: its name, a number cast to its type, or, for a setting that may be None,
+#: which no widget holds, a constant its code tab sets.
 SETTINGS = {
-    "LABELS": "labels", "EVERY_SECONDS": "every_seconds", "FORGET_SECONDS": "forget_seconds",
-    "FROM_SECONDS": "from_seconds", "TO_SECONDS": "to_seconds", "MAX_FRAMES": "max_frames", "WIDTH": "width",
+    "labels": "[!! labels !!]", "every_seconds": "float([!! every_seconds !!])", "forget_seconds": "FORGET_SECONDS",
+    "from_seconds": "float([!! from_seconds !!])", "to_seconds": "TO_SECONDS",
+    "max_frames": "int([!! max_frames !!])", "width": "int([!! width !!])",
 }
 #: Meta's SAM 3 is gated (``facebook/sam3``, at the revision sideseeing-tools
 #: pins, 3c879f39826c281e95690f02c7821c4de09afae7). Its weights download from
@@ -222,18 +226,29 @@ def _times(module, video, from_seconds, end):
     return module._sample(SimpleNamespace(width=960, from_seconds=from_seconds, every_seconds=EVERY), video, end)[1]
 
 
-def _node_source(**settings) -> str:
-    """The node's code with each setting given set at the top, as a person
-    edits it."""
+def _template(template_id: str) -> dict:
+    (template,) = [t for t in _manifest()["templates"] if t["id"] == template_id]
+    return template
+
+
+def _node_source(**values) -> str:
+    """The node's code as a run writes it, each value given set as a person
+    sets it: a widget's in the node's Widgets tab, a constant's at the top of
+    its code tab. Every other widget is at its default."""
+    from utk_curio.backend.app.execution.code_references import resolve_references
+
     code = SOURCE.read_text(encoding="utf-8")
-    for name, value in settings.items():
-        # LABELS is a list over several lines; every other setting is one line.
-        if name == "LABELS":
-            pattern, flags = r"^LABELS = \[.*?^\]$", re.M | re.S
-        else:
-            pattern, flags = rf"^{name} = .*$", re.M
-        code, count = re.subn(pattern, lambda _m, n=name, v=value: f"{n} = {v!r}", code, count=1, flags=flags)
-        assert count == 1, f"the node sets no {name}"
+    widgets = _template("track-objects")["widgets"]
+    names = {widget["name"] for widget in widgets}
+    for name, value in values.items():
+        if name not in names:
+            code, count = re.subn(
+                rf"^{name} = .*$", lambda _m, n=name, v=value: f"{n} = {v!r}", code, count=1, flags=re.M,
+            )
+            assert count == 1, f"the node sets no {name}"
+    set_to = [{**widget, "value": values[widget["name"]]} if widget["name"] in values else widget for widget in widgets]
+    code, problems = resolve_references(code, set_to)
+    assert problems == [], problems
     return code
 
 
@@ -363,29 +378,47 @@ def test_the_weights_license_is_metas_sam_license():
 
 def test_the_code_tab_holds_its_settings_and_one_call_of_the_packages_module():
     """Track Objects' logic is the package's module: its code tab imports the
-    module's function, sets the node's settings, and returns one call of it,
-    which hands it Curio's plumbing, the model by the literal id the backend
-    reads and ``curio_derived_file``, and each setting as its argument."""
+    module's function and returns one call of it, which hands it Curio's
+    plumbing, the model by the literal id the backend reads and
+    ``curio_derived_file``, and each setting as its argument. The settings are
+    the template's widgets, read by chip, but for the two that may be None,
+    which no widget holds: those the code tab sets as constants."""
+    from utk_curio.backend.app.execution.code_references import REFERENCE_RE
+
     code = SOURCE.read_text(encoding="utf-8")
     assert f'curio_load_model("{MODEL_ID}")' in code
-    body = ast.parse("def node(input_0):\n" + "\n".join("    " + line for line in code.splitlines())).body[0].body
+    chips: list[str] = []
+
+    def stand_in(match) -> str:
+        chips.append(match.group(0))
+        return f"_chip_{len(chips) - 1}_"
+
+    text = REFERENCE_RE.sub(stand_in, code)
+    body = ast.parse("def node(input_0):\n" + "\n".join("    " + line for line in text.splitlines())).body[0].body
     imports, assigns, returned = body[:1], body[1:-1], body[-1]
     assert [ast.unparse(statement) for statement in imports] == [f"from {MODULE} import track_objects"]
     assert all(isinstance(statement, ast.Assign) for statement in assigns), [ast.unparse(s) for s in assigns]
-    settings = {statement.targets[0].id: ast.literal_eval(statement.value) for statement in assigns}
-    assert list(settings) == list(SETTINGS)
-    assert settings["LABELS"] == DEFAULT_LABELS
+    constants = {statement.targets[0].id: ast.literal_eval(statement.value) for statement in assigns}
+    assert constants == {"FORGET_SECONDS": 10, "TO_SECONDS": None}
+    template = _template("track-objects")
+    assert template["hasWidgets"] is True
+    widgets = {widget["name"]: widget for widget in template["widgets"]}
+    assert list(widgets) == ["labels", "every_seconds", "from_seconds", "max_frames", "width"]
+    assert widgets["labels"]["type"] == "text-list" and widgets["labels"]["default"] == DEFAULT_LABELS
     assert set(DEFAULT_LABELS) <= set(_manifest()["model"]["labels"])
-    assert (settings["EVERY_SECONDS"], settings["FROM_SECONDS"], settings["TO_SECONDS"]) == (0.5, 0, None)
-    assert settings["FORGET_SECONDS"] == 10
-    assert settings["MAX_FRAMES"] > 0 and settings["WIDTH"] % 2 == 0
+    assert (widgets["every_seconds"]["default"], widgets["from_seconds"]["default"], constants["TO_SECONDS"]) == (
+        0.5, 0, None)
+    assert widgets["max_frames"]["default"] > 0 and widgets["width"]["default"] % 2 == 0
     assert isinstance(returned, ast.Return) and isinstance(returned.value, ast.Call), ast.unparse(returned)
     call = returned.value
     assert ast.unparse(call.func) == "track_objects"
     assert [ast.unparse(arg) for arg in call.args] == [
         "input_0", f"curio_load_model('{MODEL_ID}')", "curio_derived_file"]
-    assert {keyword.arg: ast.unparse(keyword.value) for keyword in call.keywords} == {
-        argument: setting for setting, argument in SETTINGS.items()}
+    written = [
+        (keyword.arg, re.sub(r"_chip_(\d+)_", lambda m: chips[int(m.group(1))], ast.unparse(keyword.value)))
+        for keyword in call.keywords
+    ]
+    assert written == list(SETTINGS.items())
 
 
 def test_the_module_offers_track_objects_says_what_it_does_and_is_handed_curios_plumbing():
@@ -405,7 +438,7 @@ def test_the_module_offers_track_objects_says_what_it_does_and_is_handed_curios_
     assert [arg.arg for arg in function.args.args] == ["media", "model", "derived_file"]
     # The settings, then max_seconds, which only stops a call of a node's
     # code older than max_frames, naming the lines to change.
-    assert [arg.arg for arg in function.args.kwonlyargs] == [*SETTINGS.values(), "max_seconds"]
+    assert [arg.arg for arg in function.args.kwonlyargs] == [*SETTINGS, "max_seconds"]
     imported = [alias.name for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names]
     imported += [node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
     assert not [name for name in imported if name.split(".")[0] == "utk_curio"]
@@ -426,12 +459,12 @@ def test_without_its_weights_the_node_says_how_to_fetch_them(videos, catalog_cop
 
 
 def test_the_nodes_code_hands_its_settings_to_the_module(videos, catalog_copy, weights, few_threads, tmp_path):
-    """The code tab's call, run as the canvas runs it: the node's settings
-    reach ``track_objects``, and the node returns the overlay's row and the
-    tracks of its objects."""
+    """The code tab's call, run as the canvas runs it: the node's settings,
+    its widgets' values, reach ``track_objects``, and the node returns the
+    overlay's row and the tracks of its objects."""
     rows, helpers = videos
     out = _run(rows, helpers, tmp_path, model_folder=catalog_copy, weights=weights,
-               LABELS=["pole", "person"], EVERY_SECONDS=1.0)
+               labels=["pole", "person"], every_seconds=1.0)
     (row,) = out["videos"].to_dict("records")
     # One frame a second of the 2 s clip: at 0 s and 1 s.
     assert (row["kind"], row["fps"], row["duration_s"]) == ("video", 1.0, 2.0)
@@ -455,7 +488,7 @@ def test_a_run_writes_nothing_of_loading_sam3_and_leaves_progress_bars_on(
     transformers_bars_on(monkeypatch)
     with stderr_of_a_run() as said:
         out = _run(rows, helpers, tmp_path, model_folder=catalog_copy, weights=weights,
-                   LABELS=["pole", "person"], EVERY_SECONDS=1.0)
+                   labels=["pole", "person"], every_seconds=1.0)
     assert len(out["videos"]) == 1, out
     assert_no_bar(said.getvalue(), "Track Objects")
     assert_bars_draw()
@@ -749,13 +782,13 @@ def test_each_stop_comes_before_sam3_loads_and_writes_nothing(videos, tmp_path):
         no_video = module.track_objects(rows.assign(kind="image"), nothing, derived, labels=DEFAULT_LABELS)
     assert no_video["videos"].empty and no_video["tracks"].empty, no_video
     assert list(no_video["tracks"].columns) == TRACK_COLUMNS, no_video["tracks"]
-    assert str(no_labels.value) == "LABELS is empty: name at least one thing to look for"
+    assert str(no_labels.value) == "labels is empty: name at least one thing to look for"
     assert str(too_long.value) == (
         f"{relpath}: Track Objects looks at 3 frames of a video at most in one run, and 0 to 2 s at a frame "
-        "every 0.5 s is 4 frames; raise EVERY_SECONDS to 0.7 or more, or set FROM_SECONDS and TO_SECONDS to a "
+        "every 0.5 s is 4 frames; raise every_seconds to 0.7 or more, or set from_seconds and TO_SECONDS to a "
         "shorter part, such as 0 and 1.5"
     )
-    assert str(no_frame.value) == "MAX_FRAMES is 0: a run looks at one frame at least, so set it to 1 or more"
+    assert str(no_frame.value) == "max_frames is 0: a run looks at one frame at least, so set it to 1 or more"
     assert str(in_seconds.value) == (
         "MAX_SECONDS is gone: Track Objects counts the frames a run looks at. In the node's code, replace "
         "MAX_SECONDS = 300 with MAX_FRAMES = 450, and max_seconds=MAX_SECONDS with max_frames=MAX_FRAMES"
@@ -823,12 +856,18 @@ def _rows_of(video: dict):
 
 
 def _code_tab_settings() -> dict:
-    """The settings the node's code tab sets, by name."""
-    code = SOURCE.read_text(encoding="utf-8")
+    """The settings a new node starts with, by name: its template's widgets
+    at their defaults, and the constants its code tab sets."""
+    from utk_curio.backend.app.execution.code_references import REFERENCE_RE
+
+    code = REFERENCE_RE.sub("None", SOURCE.read_text(encoding="utf-8"))
     body = ast.parse("def node(input_0):\n" + "\n".join("    " + line for line in code.splitlines())).body[0].body
     return {
-        statement.targets[0].id: ast.literal_eval(statement.value)
-        for statement in body if isinstance(statement, ast.Assign)
+        **{widget["name"]: widget["default"] for widget in _template("track-objects")["widgets"]},
+        **{
+            statement.targets[0].id: ast.literal_eval(statement.value)
+            for statement in body if isinstance(statement, ast.Assign)
+        },
     }
 
 
@@ -880,12 +919,12 @@ def test_a_part_that_needs_more_frames_than_max_frames_stops_before_sam3_loads_w
 
     assert str(whole_clip.value) == (
         f"{relpath}: Track Objects looks at 3 frames of a video at most in one run, and 0 to 2 s at a frame "
-        "every 0.5 s is 4 frames; raise EVERY_SECONDS to 0.7 or more, or set FROM_SECONDS and TO_SECONDS to a "
+        "every 0.5 s is 4 frames; raise every_seconds to 0.7 or more, or set from_seconds and TO_SECONDS to a "
         "shorter part, such as 0 and 1.5"
     )
     assert str(first_second.value) == (
         f"{relpath}: Track Objects looks at 3 frames of a video at most in one run, and 0 to 1 s at a frame "
-        "every 0.25 s is 4 frames; raise EVERY_SECONDS to 0.4 or more, or set FROM_SECONDS and TO_SECONDS to a "
+        "every 0.25 s is 4 frames; raise every_seconds to 0.4 or more, or set from_seconds and TO_SECONDS to a "
         "shorter part, such as 0 and 0.75"
     )
     assert not (tmp_path / "media" / "videos").exists() and not (tmp_path / "media" / "tables").exists()
@@ -999,25 +1038,25 @@ def test_the_code_tabs_max_frames_is_450_which_takes_the_whole_walk_at_a_frame_e
     import inspect
 
     settings = _code_tab_settings()
-    assert settings.get("MAX_FRAMES") == 450, f"the code tab sets {settings}"
+    assert settings.get("max_frames") == 450, f"the code tab sets {settings}"
     walk = _whole_walk(tmp_path)
     nothing = SimpleNamespace(path=str(tmp_path / "no-weights"))
     with _staged(tmp_path) as module:
-        assert inspect.signature(module.track_objects).parameters["max_frames"].default == settings["MAX_FRAMES"]
+        assert inspect.signature(module.track_objects).parameters["max_frames"].default == settings["max_frames"]
         no_sam3(module)
 
         def track(**part):
-            return module.track_objects(_rows_of(walk), nothing, None, labels=settings["LABELS"],
-                                        max_frames=settings["MAX_FRAMES"], **part)
+            return module.track_objects(_rows_of(walk), nothing, None, labels=settings["labels"],
+                                        max_frames=settings["max_frames"], **part)
 
         with pytest.raises(_SamLoads):
             track(every_seconds=2)
         looked_at = module._sample(SimpleNamespace(width=960, from_seconds=0, every_seconds=2), walk, WALK_SECONDS)[1]
         with pytest.raises(ValueError) as whole_walk:
-            track(every_seconds=settings["EVERY_SECONDS"])
+            track(every_seconds=settings["every_seconds"])
         with pytest.raises(ValueError) as five_minutes:
-            track(every_seconds=settings["EVERY_SECONDS"], to_seconds=300)
-        for fits in ({"every_seconds": settings["EVERY_SECONDS"], "to_seconds": 225},
+            track(every_seconds=settings["every_seconds"], to_seconds=300)
+        for fits in ({"every_seconds": settings["every_seconds"], "to_seconds": 225},
                      {"every_seconds": 0.7, "to_seconds": 300}):
             with pytest.raises(_SamLoads):
                 track(**fits)
@@ -1025,12 +1064,12 @@ def test_the_code_tabs_max_frames_is_450_which_takes_the_whole_walk_at_a_frame_e
     assert (len(looked_at), looked_at[-1]) == (433, 864.0), f"one frame every 2 s of the walk: {looked_at}"
     assert str(whole_walk.value) == (
         "whole-walk.mp4: Track Objects looks at 450 frames of a video at most in one run, and 0 to 864.3 s at a "
-        "frame every 0.5 s is 1729 frames; raise EVERY_SECONDS to 2 or more, or set FROM_SECONDS and TO_SECONDS "
+        "frame every 0.5 s is 1729 frames; raise every_seconds to 2 or more, or set from_seconds and TO_SECONDS "
         "to a shorter part, such as 0 and 225"
     )
     assert str(five_minutes.value) == (
         "whole-walk.mp4: Track Objects looks at 450 frames of a video at most in one run, and 0 to 300 s at a "
-        "frame every 0.5 s is 600 frames; raise EVERY_SECONDS to 0.7 or more, or set FROM_SECONDS and TO_SECONDS "
+        "frame every 0.5 s is 600 frames; raise every_seconds to 0.7 or more, or set from_seconds and TO_SECONDS "
         "to a shorter part, such as 0 and 225"
     )
 
