@@ -302,6 +302,26 @@ describe("dashboardSourceNodeIds", () => {
     expect([...sources]).toEqual(["compute"]);
   });
 
+  test("an Autark node that draws and also runs a pass or loads data is a source, as a compute node is", () => {
+    // It hands on what it computes and loads, which is what a reload restores.
+    const drawsAndComputes = JSON.stringify({
+      compute: [{ dataRef: "input_0", outputTableName: "sky", shader: "x" }],
+      map: { layerRefs: [{ dataRef: "sky" }] },
+    });
+    const drawsAndLoads = JSON.stringify({ data: [{ type: "osm" }], map: { layerRefs: [{ dataRef: "table_osm_roads" }] } });
+    const nodes = [
+      node("load", NodeType.AUTK_GRAMMAR, { code: DATA_SPEC }),
+      node("sky", NodeType.AUTK_GRAMMAR, { code: drawsAndComputes }),
+      node("walk", NodeType.AUTK_GRAMMAR, { code: drawsAndLoads }),
+      node("map", NodeType.AUTK_GRAMMAR, { code: RENDER_SPEC, dashboardPinned: true }),
+      node("chart", NodeType.VIS_VEGA, { dashboardPinned: true }),
+    ];
+
+    const sources = dashboardSourceNodeIds(nodes, [edge("load", "sky"), edge("sky", "map"), edge("walk", "chart")]);
+
+    expect([...sources].sort()).toEqual(["sky", "walk"]);
+  });
+
   test("an Autark node that draws is walked through like any other view", () => {
     const nodes = [
       node("load", NodeType.AUTK_GRAMMAR, { code: DATA_SPEC }),
