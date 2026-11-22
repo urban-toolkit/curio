@@ -15,6 +15,10 @@
  * - a part a source after compute gives a height of its own keeps it: the
  *   mark takes the default back off only a part that still holds it.
  *
+ * It hands on a table its passes wrote as a step with none does
+ * (adapters/node/autkHandOn): one a source after compute joined into as the
+ * database then holds it, and with each pass's column lifted.
+ *
  * The step runs through autk-grammar's own data and compute adapters, the
  * build the app bundles, on a stand-in autk-compute whose GPGPU dispatch writes
  * twice each feature's `value` (_support/autkComputeStandIns), and a stand-in
@@ -233,5 +237,36 @@ describe("a compute step on a database of its own reads a building's height as a
       { height: 20, value: 1 },
       { height: 20, value: 2 },
     ]);
+  });
+});
+
+describe("a compute step on a database of its own hands on a table its passes wrote as a step with none", () => {
+  test("a table a pass wrote that a source after compute joins into is handed on as the join left it, the pass's column lifted", async () => {
+    const failures: string[] = [];
+    const out = await applyComputeBlocks(
+      layers() as any,
+      [pass("blocks", "twice")],
+      failures,
+      { after: [{ type: "join", dataRef: "blocks", joinDataRef: "spots", after: "compute" }] },
+    );
+    expect(failures).toEqual([]);
+    // The join wrote into the pass's result: the step hands on the table as
+    // the database then holds it, the join's column and the pass's, each part
+    // with its own height.
+    const blocks = out.find((layer) => layer.name === "blocks")!;
+    expect(blocks.geojson.features.map((f: any) => f.properties)).toEqual([
+      { height: 12, value: 1, compute: { twice: 2 }, sjoin: { matches: [] }, twice: 2 },
+      { value: 2, compute: { twice: 4 }, sjoin: { matches: [] }, twice: 4 },
+    ]);
+  });
+
+  test("a table two passes wrote holds each pass's column lifted, as a step with no database hands it on", async () => {
+    const failures: string[] = [];
+    const out = await applyComputeBlocks(layers() as any, [pass("spots", "twice"), pass("spots", "again")], failures);
+    expect(failures).toEqual([]);
+    const spots = out.find((layer) => layer.name === "spots")!;
+    expect(spots.geojson.features.map((f: any) => f.properties)).toEqual([1, 2, 3].map((value) => ({
+      value, compute: { twice: 2 * value, again: 2 * value }, twice: 2 * value, again: 2 * value,
+    })));
   });
 });

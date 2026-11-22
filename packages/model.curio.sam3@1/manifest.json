@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "js": {},
-    "packages": {},
+    "packages": {"curio.media@1": "*"},
     "python": {
       "av": ">=15.0",
       "geopandas": ">=1.1.3",

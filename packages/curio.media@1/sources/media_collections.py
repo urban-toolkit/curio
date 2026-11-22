@@ -6,6 +6,11 @@ Split Video call them with their settings. Each frame, window or block is a
 file written where ``curio_derived_file``, which a node hands in, says:
 beside the collection's other derived files.
 
+``read_video_frames`` reads a video's frames, one every so many seconds or
+every one, for Sample Video Frames and Split Video, and for SAM 3's Track
+Objects (``model.curio.sam3@1``, which names Media in
+``dependencies.packages``).
+
 Mosaic Rasters calls Rasterization's ``scout_rasters.mosaic``
 (``curio.rasterization@1``, which the package names in
 ``dependencies.packages``).
@@ -24,7 +29,7 @@ import numpy as np
 import pandas as pd
 
 #: What node code calls.
-__all__ = ["sample_video_frames", "split_audio", "split_video"]
+__all__ = ["sample_video_frames", "split_audio", "split_video", "read_video_frames"]
 
 #: A video's own columns that describe the file, not what a frame inherits.
 VIDEO_FILE_COLUMNS = {
@@ -39,6 +44,10 @@ RECORDING_FILE_COLUMNS = {
     "sample_rate", "channels", "codec", "path", "thumbnail", "image_url",
     "audio_url", "probe_error", "geometry",
 }
+
+#: How long before a time a frame may come and still be the frame read for
+#: it: a step's frame, the first frame of a read or of a block.
+EARLY_SECONDS = 1e-3
 
 
 # ---------------------------------------------------------------------------
@@ -69,10 +78,10 @@ def sample_video_frames(media, derived_file, *, every_seconds=2.0, max_frames_pe
                 f"{video['relpath']} is not on this machine yet; cache the collection's files first"
             )
         with av.open(video["path"]) as container:
-            stream = container.streams.video[0]
-            rate = float(stream.average_rate) if stream.average_rate else None
-            length = _length_of(container, stream)
-            sampled = _by_decoding(container, stream, rate, length, every_seconds, max_frames_per_video)
+            average = container.streams.video[0].average_rate
+        rate = float(average) if average else None
+        sampled = read_video_frames(video["path"], every_seconds=every_seconds, max_frames=max_frames_per_video)
+        with contextlib.closing(sampled):
             last = None
             for at, frame in sampled:
                 t_s = round(float(at), 3)
@@ -123,32 +132,127 @@ def _length_of(container, stream):
     return None
 
 
-def _by_decoding(container, stream, rate, length, every_seconds, max_frames_per_video):
-    """The first frame at or past each sample time, one every *every_seconds*
-    from 0, before the video's *length* (when its file gives one) and
-    *max_frames_per_video* of them at most, read in one pass from the video's
-    start with frame threading. A seek to each sample time would decode from
-    the key frame before it instead, so on a video whose key frames are
-    seconds apart, as the SideSeeing walks' 8.3 s, each frame would be decoded
-    many times over."""
-    # Frame threading decodes several frames at once, about five times faster
-    # than slice threading at 1080p.
-    stream.thread_type = "AUTO"
-    step = 0
-    for index, frame in enumerate(container.decode(stream)):
-        if step >= max_frames_per_video or (length is not None and step * every_seconds >= length):
+def read_video_frames(path, *, every_seconds=None, from_seconds=0, to_seconds=None, max_frames=None, width=None,
+                      pixel_format=None):
+    """The frames of the video at *path*, each with its time in seconds from
+    the video's start: one every *every_seconds* seconds, or every frame when
+    it is None, from *from_seconds* up to *to_seconds*, or to the video's end
+    when it is None, *max_frames* at most, each at most *width* wide and in
+    *pixel_format*.
+
+    It yields ``(time, frame)``, *frame* a PyAV ``VideoFrame``, whose
+    ``to_image()`` is a PIL image and ``to_ndarray()`` an array. It reads the
+    video once, from the key frame before *from_seconds*.
+
+    With *every_seconds*, each step of *every_seconds* from *from_seconds*
+    gets one frame, the first from a millisecond before the step's time on:
+    a frame just before a step's time is that step's, and the next frame is
+    not read for it. A frame that comes past the next step's time stands for
+    that step too, so frames further apart than *every_seconds* are each read
+    once. The steps stop before *to_seconds*, and the last step's frame comes
+    no later than a millisecond before the step after it, even past
+    *to_seconds*; a part of no length, *from_seconds* equal to *to_seconds*,
+    reads one frame. With *to_seconds* None, the steps stop before the
+    video's length when its file gives it, and the last one takes the first
+    frame from its time on. *max_frames* counts steps: the frames of the
+    first *max_frames* steps at most.
+
+    With *every_seconds* None, every frame from a millisecond before
+    *from_seconds* to a millisecond before *to_seconds*, *max_frames* at most.
+
+    *width* draws each frame at most that wide, in even pixels as H.264
+    needs, and its height in proportion; None keeps the video's size.
+    *pixel_format* is one of FFmpeg's, such as ``"rgb24"`` or ``"yuv420p"``;
+    None keeps the video's own. A frame its file gives no time comes one frame
+    after the frame before it, at the video's frame rate, the first at
+    *from_seconds*; where the file gives no rate either, its first frame is
+    the only one read.
+    """
+    if every_seconds is not None and not every_seconds > 0:
+        raise ValueError("every_seconds is the gap between two frames, in seconds: a number above 0, or None")
+    with av.open(path) as container:
+        stream = container.streams.video[0]
+        # Frame threading decodes several frames at once, about five times
+        # faster than slice threading at 1080p.
+        stream.thread_type = "AUTO"
+        wide, high = _drawn_size(stream.codec_context, width)
+        rate = float(stream.average_rate) if stream.average_rate else None
+        length = None
+        if every_seconds is None:
+            count, stop = math.inf, (math.inf if to_seconds is None else to_seconds - EARLY_SECONDS)
+        elif to_seconds is None:
+            count, stop = math.inf, math.inf
+            length = _length_of(container, stream)
+        else:
+            count, stop = _steps(from_seconds, to_seconds, every_seconds)
+        if max_frames is not None:
+            count = min(count, max_frames)
+        # One seek, then every frame decoded in order: a seek to each frame
+        # would decode from the key frame before it, so on a video whose key
+        # frames are seconds apart, as the SideSeeing walks' 8.3 s, each frame
+        # would be decoded many times over.
+        if from_seconds > 0:
+            container.seek(int(from_seconds / stream.time_base), stream=stream, backward=True)
+        steps, wanted = 0, from_seconds
+        for at, frame in _timed(container.decode(stream), from_seconds, rate):
+            if steps >= count or (length is not None and from_seconds + steps * every_seconds >= length):
+                return
+            if at < wanted - EARLY_SECONDS:
+                continue  # before the step, or before from_seconds, where the read went back to
+            if at >= stop:
+                return
+            if wide is not None or pixel_format is not None:
+                frame = frame.reformat(width=wide, height=high, format=pixel_format)
+            yield at, frame
+            if every_seconds is None:
+                steps += 1
+            else:
+                # On by whole steps, at least one, to the first this frame
+                # comes more than a millisecond before.
+                steps = max(steps + 1, math.floor((at - from_seconds + EARLY_SECONDS) / every_seconds) + 1)
+                wanted = from_seconds + steps * every_seconds
+
+
+def _steps(from_seconds, to_seconds, every_seconds):
+    """``(count, stop)``: the steps of *every_seconds* from *from_seconds* up
+    to *to_seconds*, never the step at *to_seconds*, ceil(W / every_seconds)
+    of a part of W seconds (the 1e-9 is for float rounding), and where the
+    frames of the step after the last would start, which the last step's
+    frame comes before. A part of no length has one step and no such end, and
+    a part that ends before it starts none."""
+    if to_seconds > from_seconds:
+        count = math.ceil((to_seconds - from_seconds) / every_seconds - 1e-9)
+        return count, from_seconds + count * every_seconds - EARLY_SECONDS
+    return int(to_seconds == from_seconds), math.inf
+
+
+def _drawn_size(context, width):
+    """``(width, height)`` the frames of a video whose codec context is
+    *context* are drawn at: at most *width* wide, in even pixels as H.264
+    needs, and the height in proportion. ``(None, None)`` for *width* None,
+    which keeps the video's size."""
+    if width is None:
+        return None, None
+    wide = 2 * (min(width, context.width) // 2)
+    return wide, 2 * round(context.height * wide / context.width / 2)
+
+
+def _timed(frames, start, rate):
+    """Each of *frames* with its time in seconds: its own, or, for a frame its
+    file gives none, one frame after the frame before it at *rate* frames a
+    second, the first at *start*. With no *rate*, a frame with no time ends
+    them, unless it is the first, which comes alone."""
+    base, after = float(start), -1
+    for frame in frames:
+        if frame.time is not None:
+            base, after = float(frame.time), 0
+        elif rate:
+            after += 1
+        else:
+            if after == -1:
+                yield base, frame
             return
-        at = frame.time if frame.time is not None else (index / rate if rate else None)
-        if at is None:
-            # Neither a time nor a rate: only the first frame can be placed.
-            if index == 0:
-                yield 0.0, frame
-            return
-        if at < step * every_seconds - 1e-3:
-            continue
-        yield at, frame
-        # On to the first sample time this frame does not stand for.
-        step = max(step + 1, math.floor((at + 1e-3) / every_seconds) + 1)
+        yield (base + after / rate if after else base), frame
 
 
 # ---------------------------------------------------------------------------
@@ -277,9 +381,6 @@ BLOCK_OPTIONS = {"preset": "veryfast", "crf": "23"}
 #: A block's time base: each of its frames plays at its own time, to the millisecond.
 MILLISECOND = Fraction(1, 1000)
 
-#: How long before a block's start a frame may come and still be its first.
-EARLY_SECONDS = 1e-3
-
 #: A cut's columns that place its block, which the block's row does not copy.
 PLACING_COLUMNS = ("t_s", "end_s", "video_file_id", "geometry")
 
@@ -337,16 +438,17 @@ def split_video(media, derived_file, cuts=None, *, block_seconds=60.0, width=960
         with av.open(video["path"]) as container:
             stream = container.streams.video[0]
             length = _length_of(container, stream)
-            rate = float(stream.average_rate) if stream.average_rate else None
+            average = stream.average_rate
+        rate = float(average) if average else None
         blocks = _blocks_of(video, table, float(block_seconds), length, rate)
         if blocks:
-            plans.append((video, blocks, rate))
+            plans.append((video, blocks, rate, average or Fraction(30)))
     if table is not None and not plans and len(media[media["kind"] == "video"]):
         raise ValueError(
             "No row of the cuts on the bottom circle cuts a video of the collection: a row's "
             "video_file_id is the file_id of a video on the top circle, and a row without one cuts every video"
         )
-    counted = [_frames_in(blocks, rate) for _, blocks, rate in plans]
+    counted = [_frames_in(blocks, rate) for _, blocks, rate, _average in plans]
     needed = sum(count for count in counted if count is not None)
     if needed > max_frames:
         raise ValueError(
@@ -357,8 +459,8 @@ def split_video(media, derived_file, cuts=None, *, block_seconds=60.0, width=960
     # What a video whose blocks could not be counted before may still take.
     left = [max_frames - needed]
     rows, geometries = [], []
-    for (video, blocks, _rate), count in zip(plans, counted):
-        for row in _cut(video, blocks, derived_file, width, None if count is not None else left, max_frames):
+    for (video, blocks, _rate, average), count in zip(plans, counted):
+        for row in _cut(video, blocks, derived_file, width, average, None if count is not None else left, max_frames):
             rows.append(row)
             geometries.append(video["geometry"] if "geometry" in video.index else None)
     result = pd.DataFrame(rows)
@@ -505,27 +607,16 @@ class _Block:
             self.out.mux(packet)
 
 
-def _cut(video, blocks, derived_file, width, left, max_frames):
-    """Re-encode *video*'s *blocks*, reading it once from the first: each
-    block's row. *left*, for a video whose blocks could not be counted before,
-    holds how many frames the call may still re-encode."""
+def _cut(video, blocks, derived_file, width, rate, left, max_frames):
+    """Re-encode *video*'s *blocks* at *rate* frames a second, reading it once
+    from the first (``read_video_frames``): each block's row. *left*, for a
+    video whose blocks could not be counted before, holds how many frames the
+    call may still re-encode."""
     rows, opened = [], set()
-    with av.open(video["path"]) as container:
-        stream = container.streams.video[0]
-        # Frame threading decodes several frames at once, about five times
-        # faster than slice threading at 1080p.
-        stream.thread_type = "AUTO"
-        context = stream.codec_context
-        out_width = 2 * (min(width, context.width) // 2)
-        out_height = 2 * round(context.height * out_width / context.width / 2)
-        rate = stream.average_rate or Fraction(30)
-        if blocks[0]["start"] > 0:
-            container.seek(int(blocks[0]["start"] / stream.time_base), stream=stream, backward=True)
+    frames = read_video_frames(video["path"], from_seconds=blocks[0]["start"], width=width, pixel_format="yuv420p")
+    with contextlib.closing(frames):
         index, block, last = 0, None, None
-        for frame in container.decode(stream):
-            at = float(frame.time) if frame.time is not None else (
-                last + 1 / float(rate) if last is not None else blocks[0]["start"]
-            )
+        for at, frame in frames:
             while (index < len(blocks) and not blocks[index].get("to_end")
                    and at >= blocks[index]["end"] - EARLY_SECONDS):
                 if block is not None:
@@ -539,13 +630,13 @@ def _cut(video, blocks, derived_file, width, left, max_frames):
                 break
             last = at
             if at < blocks[index]["start"] - EARLY_SECONDS:
-                continue  # before the block: a gap between two, or where the seek went back to
+                continue  # before the block: a gap between two
             if block is None:
                 derived = derived_file(
                     video["dataset_id"], video["file_id"], round(blocks[index]["start"] * 1000), "mp4",
                     tag=_file_tag(blocks[index]["end"], width),
                 )
-                block = _Block(derived, out_width, out_height, rate, at)
+                block = _Block(derived, frame.width, frame.height, rate, at)
                 opened.add(index)
             if left is not None:
                 if left[0] <= 0:

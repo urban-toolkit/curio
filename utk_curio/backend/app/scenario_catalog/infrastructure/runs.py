@@ -24,9 +24,9 @@ _NOT_MADE_ON_THE_SERVER = ("browser", "missing")
 def browser_node(user, project_id: str, nodes: list[dict], edges: list[dict], node_id: str) -> dict | None:
     """The node a run on the server of *node_id* cannot make an output for:
     *node_id* itself, else the first node it reads from whose run role is
-    ``browser`` (an Autark compute node) or ``missing`` (no
-    installed package provides its type). ``None`` when the server runs them
-    all."""
+    ``browser`` (an Autark compute node, or an Autark map or plot that also
+    loads data or runs a pass) or ``missing`` (no installed package provides
+    its type). ``None`` when the server runs them all."""
     from utk_curio.backend.app.execution.run_plan import ancestors, node_role
     from utk_curio.backend.app.packages.service import roster_templates
     from utk_curio.backend.app.projects.services import _user_dir_key

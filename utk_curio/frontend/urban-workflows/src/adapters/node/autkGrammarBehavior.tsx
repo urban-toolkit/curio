@@ -23,10 +23,10 @@ import { fitPlotToPane } from '../../utils/autkPlotSizing';
 import { UNREPORTED_MESSAGE, describeError, runAndAlwaysSettle } from './autkRunSettlement';
 import { withExtensionRetry } from './duckdbExtensionRetry';
 import { runDatabase } from './autkDbClose';
-import { AutkSpecKind, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
+import { AutkSpecKind, autkOnlyDrawsItsInput, classifyAutkSpec, classifyAutkSpecString } from '../../utils/autkSpecKind';
 import { autkKeyProblem, autkRasterPassProblem, autkViewProblem } from '../../contracts/autkGrammar';
 import {
-    autkNeedsInput, autkReadsInput, autkSourcesFrom, documentTableRefs, drawnFeatures, drawnRows, heightUses, heightsAtUse, inputRow, keyValues,
+    autkReadsInput, autkSourcesFrom, documentTableRefs, drawnFeatures, drawnRows, heightUses, heightsAtUse, inputRow, keyValues,
     loadableSource, ownTableNames, passesAtHand, readAutkInput, selectFieldsOf, selectFieldsProblem, tableKeyOf, tablePositions, tablesToLoad,
     withReadableHeights, writtenTables,
     type LoadOrder,
@@ -53,8 +53,15 @@ import {
     sectionInputTables,
     sectionTablesHandedOn,
     sourcesAfterPasses,
+    workspaceCrsOf,
     writesAfter,
 } from './autkDataCompile';
+import {
+    asHandedFromTheRun, computeFailedMessage, computeFailure, handOnOutput, handOnTables, handsOnItsInput, heldTables,
+    inputTablesOf, readBackAfterCompute,
+    withRows, workspaceCrs,
+    type HandOnTable, type StoredHandOn,
+} from './autkHandOn';
 import { executionInputRef } from '../../utils/flowOutputRef';
 import { attachMapInteractionZoomFix } from './autkMapZoom';
 import { attachMapPressGuard } from './autkMapPressGuard';
@@ -181,6 +188,23 @@ function selectionLayerOf(spec: any): string | undefined {
         if (typeof layer === 'string') return layer;
     }
     return plotEntries(spec).find((p) => typeof p?.dataRef === 'string')?.dataRef;
+}
+
+/**
+ * Whether a node that draws handed its run *table*, a table it holds, with
+ * each building with no height at the default (utils/autkInput
+ * `heightsAtUse`, by where the document uses it, *uses*): a pass's result over
+ * it read that default.
+ */
+function handedWithDefaults(table: HandOnTable, uses: ReturnType<typeof heightUses>): boolean {
+    const source = {
+        type: 'geojson',
+        geojsonObject: table.geojson,
+        outputTableName: table.name,
+        ...(table.type ? { layerType: table.type } : {}),
+        ...(table.workspace ? { workspace: table.workspace } : {}),
+    };
+    return heightsAtUse(source, uses).geojsonObject !== table.geojson;
 }
 
 export type AutkBehaviorOptions = {
@@ -346,6 +370,11 @@ export const useAutkGrammarBehavior = (
     // the backend. The cached DuckDB artifact stays valid until the data section
     // or the upstream input changes.
     const dataCacheRef = useRef<{ key: string; ref: { path: string; dataType: string } } | null>(null);
+    // What a node that draws and also loads or computes kept in the sandbox
+    // of what it handed on last: a redraw that hands on the same tables (a
+    // color edit) hands that on again, and stores nothing (autkHandOn
+    // `handOnOutput`).
+    const storedHandOnRef = useRef<StoredHandOn | null>(null);
 
     // The input, read once per input object and shared by the render path,
     // the compute path and the highlight sync (utils/autkInput).
@@ -732,6 +761,13 @@ export const useAutkGrammarBehavior = (
         }
         setSpecKind(classifyAutkSpec(spec));
         setRunSummary(null);
+        // What the node hands on, by one rule for every kind (autkHandOn),
+        // read off the document as written: a node that only draws its input
+        // hands that input on as it came, and any other its input's tables
+        // when it reads them (`handsOnItsInput`), then what it loads and
+        // computes.
+        const onlyDrawsItsInput = autkOnlyDrawsItsInput(spec);
+        const handsOnInput = handsOnItsInput(spec);
 
         // Views autk-grammar refuses (an id two views share, two plots known
         // by one name, a link that names no view or layer) are refused before
@@ -1147,8 +1183,12 @@ export const useAutkGrammarBehavior = (
                 // The sources this node's own data section loaded, as opposed to
                 // what arrived from upstream: an empty one is the document's fault.
                 let ownSources: any[] = [];
+                // Its data section's tables, as the node holds them, which it
+                // hands on (autkHandOn `heldTables`).
+                let ownLayers: AutkLayer[] = [];
                 if (specDataSources.length > 0) {
                     const layers = await loadedLayers();
+                    ownLayers = layers;
                     // coordinateFormat must reflect the coordinates as loaded
                     // (autk-db returns layers in the workspace CRS, EPSG:3395
                     // meters): the layers carry a crs stamp set by the loader,
@@ -1495,6 +1535,26 @@ export const useAutkGrammarBehavior = (
                 // raster turn throughout, and its own raster loads are told so
                 // (autkRasters runInRasterTurn).
                 const rasterTurn = { held: makesRasterAfterCompute(afterPasses) };
+                // Each table a source after compute made, which a node that
+                // hands on what it loads and computes hands on: read back from
+                // the run's database by its key as the run ends, in that
+                // turn, before anything else reads the database or it closes.
+                // A read that fails is named as a compute step names it
+                // (autkHandOn `computeFailure`), and fails the run below once
+                // its maps are drawn.
+                const handsOnWhatItMakes = !preview && !onlyDrawsItsInput;
+                let readBacks = new Map<string, HandOnTable>();
+                let readBackFailure = null as string | null;
+                const readAfterCompute = async (db: any): Promise<void> => {
+                    // Each attempt of the run reads anew (withExtensionRetry).
+                    readBackFailure = null;
+                    try {
+                        readBacks = await readBackAfterCompute(db, enterWorkspace, afterPasses, workspaceCrsOf(loadOptions.workspaces));
+                    } catch (e) {
+                        readBacks = new Map();
+                        readBackFailure = computeFailure('compute', e);
+                    }
+                };
                 const { grammar, database } = await withExtensionRetry(async () => {
                     // The run goes on a database of the node's own, which the
                     // node ends whether the run ends or fails (autkDbClose
@@ -1517,7 +1577,9 @@ export const useAutkGrammarBehavior = (
                         ...(computes ? { wrapComputeAdapter: checkedPasses } : {}),
                     });
                     try {
-                        await runInRasterTurn(g, spec, rasterTurn);
+                        await runInRasterTurn(g, spec, rasterTurn, handsOnWhatItMakes && afterPasses.length > 0
+                            ? () => readAfterCompute(database.db)
+                            : undefined);
                     } catch (err) {
                         // A failed attempt ends its database, then the maps it
                         // made, which no node keeps.
@@ -1700,12 +1762,61 @@ export const useAutkGrammarBehavior = (
                     }])), d.nodeId);
                 }
 
-                // What the map was fed, as it came: the edits a Map Editor
-                // node feeding it made, as its last run made them.
-                handOnRun(data.input ?? null);
+                // A node that only draws its input hands on what it was fed, as
+                // it came: the edits a Map Editor node feeding it made, as its
+                // last run made them.
+                if (onlyDrawsItsInput) handOnRun(data.input ?? null);
                 // A selection still active from before this draw lights up
                 // the new map too, as a Vega chart re-applies its own.
                 syncHighlightsNow();
+                // Any other hands on what it loads and computes, as a compute
+                // step does (autkHandOn): its input's tables when it reads
+                // them, as it was fed them, not as a Map Editor node's preview
+                // draws them; then its own; then each table its passes and its
+                // sources after compute wrote, as its own run made them, so no
+                // pass runs again. A draw for a preview hands nothing on.
+                if (handsOnWhatItMakes) {
+                    // A read-back that failed fails the run as a compute step's
+                    // does, naming it, and hands nothing on: no part of its
+                    // tables goes on under Done. The maps it drew stay.
+                    if (readBackFailure !== null) {
+                        const message = computeFailedMessage([readBackFailure]);
+                        emit({ code: 'error', content: message });
+                        showToast(message, 'error');
+                        return;
+                    }
+                    const exports = (grammar as any)?.data;
+                    const input = handsOnInput && data.input
+                        ? inputTablesOf(autkSourcesFrom(await readInput(data.input), spec, { alias: false }))
+                        : [];
+                    const crsOf = workspaceCrsOf(loadOptions.workspaces);
+                    const tables = await handOnTables({
+                        held: withRows(heldTables(input, ownLayers), '[autk-grammar] not handing on empty table(s): '),
+                        passes: Array.isArray(spec.compute) ? spec.compute : [],
+                        after: afterPasses,
+                        // autk-grammar's `data` lists each table a pass wrote
+                        // under its key, as the pass's collection itself.
+                        computed: async (name, workspace) => {
+                            const key = autkTableKey(workspace, name);
+                            if (!exports || typeof exports !== 'object' || !(key in exports)) return undefined;
+                            const collection = await exports[key];
+                            return collection ? { collection } : undefined;
+                        },
+                        readBack: (name, workspace) => readBacks.get(autkTableKey(workspace, name)),
+                        crs: (collection, workspace) => workspaceCrs(
+                            collection, workspace, crsOf, String((grammar as any)?.workspaceCrs ?? 'EPSG:3395'),
+                        ),
+                        // A table read back holds the input rows' marks too
+                        // when a source after compute wrote into one the map
+                        // drew from its input: none goes on.
+                        heights: (table, rows, how) => (how === 'computed'
+                            ? asHandedFromTheRun(table, rows, rows !== undefined && handedWithDefaults(rows, uses))
+                            : asHandedFromTheRun(table, undefined, false)),
+                    });
+                    handOnRun(await handOnOutput(tables, {
+                        jsInterpreter: data.jsInterpreter, nodeId, onDashboard: !!dashboardOn, stored: storedHandOnRef,
+                    }));
+                }
                 // A partial drop still drew something; say what it lost rather
                 // than leaving the console as the only record. It rides as the
                 // success output, since a render node's body is its map.
@@ -1751,40 +1862,27 @@ export const useAutkGrammarBehavior = (
                     // Compute step: its passes run over the layers it holds, those
                     // its input brings and those its own data section loaded, and
                     // it hands every one on, each pass's result where autk-grammar
-                    // writes it (applyComputeBlocks). A step with a data section
+                    // writes it (applyComputeBlocks), by the rule every Autark
+                    // node hands on by (autkHandOn). A step with a data section
                     // reads its input only when it names a table neither that
-                    // section nor a pass makes (autkNeedsInput). Skip the extra
+                    // section nor a pass makes (`handsOnItsInput`). Skip the extra
                     // AutkDb round-trip: upstream layers (from backend, or the
                     // in-browser fallback) are already normalized and exploded, and
                     // re-loading them through DuckDB + the buildings clusterer can
                     // strip custom per-feature properties. Apply WGSL blocks
                     // directly so the outputs (feature.properties.compute.<col>)
                     // reach downstream untouched.
-                    const readsItsInput = specDataSources.length === 0 || autkNeedsInput(spec);
-                    let computeInput = data.input && readsItsInput
+                    const computeInput = data.input && handsOnInput
                         ? autkSourcesFrom(await readInput(data.input), spec, { alias: false })
                         : null;
-                    // Compute blocks run over layers' features; a raster has none.
-                    if (computeInput && computeInput.rasters.length > 0) {
-                        const note = 'Left out: the raster '
-                            + computeInput.rasters.map((r) => r.outputTableName).join(', ')
-                            + ', since a compute step works on layers. Draw it on a map instead.';
-                        computeInput = {
-                            ...computeInput,
-                            inputProblem: [computeInput.inputProblem, note].filter(Boolean).join(' '),
-                        };
-                    }
                     if (computeInput?.emptyReason && computeInput.sources.length === 0) {
                         inputProblemRef.current = { reason: computeInput.emptyReason, detail: computeInput.detail };
                     }
                     // Each layer keeps the workspace it came in, which a pass
-                    // names to read it and which it is handed on in.
-                    const upstream = (computeInput?.sources ?? []).map((source) => ({
-                        name: source.outputTableName,
-                        type: source.layerType ?? 'polygons',
-                        geojson: source.geojsonObject,
-                        ...(source.workspace ? { workspace: source.workspace } : {}),
-                    }));
+                    // names to read it and which it is handed on in, and a
+                    // raster of the input, which no pass computes over, goes
+                    // on as it came (autkHandOn `inputTablesOf`).
+                    const upstream = inputTablesOf(computeInput);
                     // The layers its data section loaded, which a layer of the
                     // input of the same name and workspace gives way to, as on a map.
                     const own = specDataSources.length > 0
@@ -1794,8 +1892,7 @@ export const useAutkGrammarBehavior = (
                         }))
                         : [];
                     const layerKey = (l: { name: string; workspace?: string }) => autkTableKey(l.workspace, l.name);
-                    const ownKeys = new Set(own.map(layerKey));
-                    let layers = [...upstream.filter((l) => !ownKeys.has(layerKey(l))), ...own];
+                    let layers = heldTables(upstream, own).map((l) => ({ ...l, type: l.type ?? 'polygons' }));
                     // The rows at hand, counted before the empty-layer drop
                     // below hides them, and of those the ones its data section
                     // loaded; a raster's rows are its cells (loadedRows), as a
@@ -1811,19 +1908,13 @@ export const useAutkGrammarBehavior = (
                     // Drop empty layers (autk-db throws on an empty
                     // FeatureCollection, and an empty layer would surface as a
                     // blank tab in the downstream Data Pool); the compute below
-                    // then only runs on layers that have features.
+                    // then only runs on layers that have features. A raster of
+                    // the input goes on as it came (autkHandOn `withRows`).
                     const held = new Set([
                         ...layers.map(layerKey),
                         ...writtenTables(spec).map((t) => autkTableKey(t.workspace, t.name)),
                     ]);
-                    const emptyLayers = layers.filter((l) => !hasFeatures(l.geojson));
-                    if (emptyLayers.length > 0) {
-                        console.warn(
-                            '[autk-grammar] compute node dropping empty layer(s): '
-                            + emptyLayers.map((l) => l.name).join(', '),
-                        );
-                        layers = layers.filter((l) => !emptyLayers.includes(l));
-                    }
+                    layers = withRows(layers, '[autk-grammar] compute node dropping empty layer(s): ');
                     if (passes.length > 0) {
                         const computeFailures: string[] = [];
                         // The passes run over the layers that have features, as
@@ -1844,8 +1935,7 @@ export const useAutkGrammarBehavior = (
                         if (computeFailures.length > 0) {
                             // Emitting here would hand downstream nodes the
                             // untouched input under a green "Done" badge.
-                            const message =
-                                'Compute failed: ' + computeFailures.join('; ');
+                            const message = computeFailedMessage(computeFailures);
                             emit({ code: 'error', content: message });
                             showToast(message, 'error');
                             return;
@@ -1868,8 +1958,9 @@ export const useAutkGrammarBehavior = (
                     // An empty result is not passed on: downstream would get
                     // nothing under this node's error. The verdict below says why.
                     if (!renderOutcome(runCounts).empty) {
-                        const out = await toPoolOutput(layers, data.jsInterpreter, data.nodeId);
-                        handOnRun(out ?? layers);
+                        handOnRun(await handOnOutput(layers, {
+                            jsInterpreter: data.jsInterpreter, nodeId: data.nodeId, onDashboard: !!dashboardOn,
+                        }));
                     }
                 }
             }
