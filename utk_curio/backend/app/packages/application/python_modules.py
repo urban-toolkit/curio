@@ -117,26 +117,30 @@ def dependency_dirs(
 
 def _module_sources(
     user_key: str, dir_name: str, manifest, majors_by_pkg: dict[str, list[int]],
-    pins: AbstractSet[str] = frozenset(),
+    pins: AbstractSet[str] = frozenset(), *, direct_only: bool = False,
 ) -> list[dict]:
     """The modules of the package at *dir_name* and of every package it
     depends on, transitively: one ``{"root", "names"}`` per package that
-    ships any, its own first. Called under the store lock."""
+    ships any, its own first. With *direct_only*, only those of the packages
+    its own manifest names, not the packages those name in turn. Called under
+    the store lock."""
     sources: list[dict] = []
     seen = {dir_name}
-    queue = [(dir_name, manifest)]
+    queue = [(dir_name, manifest, 0)]
     while queue:
-        current, current_manifest = queue.pop(0)
+        current, current_manifest, depth = queue.pop(0)
         root = package_dir(user_key, current)
         names = module_names(root, current_manifest)
         if names:
             sources.append({"root": str(root / SOURCES_DIR), "names": sorted(names)})
+        if direct_only and depth:
+            continue
         for dependency in dependency_dirs(current_manifest.package_deps, majors_by_pkg, pins):
             if dependency in seen or len(seen) >= MAX_MODULE_PACKAGES:
                 continue
             seen.add(dependency)
             try:
-                queue.append((dependency, load_package_manifest(package_dir(user_key, dependency))))
+                queue.append((dependency, load_package_manifest(package_dir(user_key, dependency)), depth + 1))
             except ManifestError:
                 continue
     return sources
@@ -191,19 +195,25 @@ def _store_of_node(user_key: str | None, node_type: object, project_id: str | No
 
 def modules_for_node(
     user_key: str | None, node_type: object, project_id: str | None = None, *, owners=None,
+    direct_only: bool = False,
 ) -> dict | list | None:
     """What a node of *node_type* may import, for the sandbox.
 
     ``{"root": <the package's sources folder>, "names": [...]}`` when the
     node's package, in *user_key*'s store, ships modules. A package that
     depends on other packages (``dependencies.packages``) also hands its node
-    theirs: then each package that ships modules is one such source, and
-    there may be a list of them, its own first. A built-in node gets the
-    built-in package's modules when it holds Python code
-    (:func:`_python_code`), as the Spatial Join's code imports ``spatial_join``.
-    ``None`` when there is none. Never raises: a node whose modules could not
-    be resolved still runs, and its import fails with Python's own message
-    naming the module.
+    theirs, and those of the packages they depend on in turn: then each
+    package that ships modules is one such source, and there may be a list of
+    them, its own first. A built-in node gets the built-in package's modules
+    when it holds Python code (:func:`_python_code`), as the Spatial Join's
+    code imports ``spatial_join``. ``None`` when there is none. Never raises:
+    a node whose modules could not be resolved still runs, and its import
+    fails with Python's own message naming the module.
+
+    With *direct_only*, only the modules of the node's own package and of the
+    packages it names, not the packages those name in turn: what the header
+    above the node's code lists (``function_nodes``), where a run is still
+    handed them all.
 
     With *owners* (``project_packages.OwnersPackages``), the run is one of an
     editor the owner of the dataflow *project_id* invited: a node of a package
@@ -227,7 +237,7 @@ def modules_for_node(
             template = next((t for t in manifest.templates if t.template_id == template_id), None)
             if template is None or (package_id == BUILTIN_PACKAGE_ID and not _python_code(template)):
                 return None
-            sources = _module_sources(user_key, dir_name, manifest, majors_by_pkg, pins)
+            sources = _module_sources(user_key, dir_name, manifest, majors_by_pkg, pins, direct_only=direct_only)
     except Exception as exc:  # noqa: BLE001 - resolution must never fail the execution
         log.warning("Could not resolve the modules of %s for a run: %s", node_type, exc)
         return None

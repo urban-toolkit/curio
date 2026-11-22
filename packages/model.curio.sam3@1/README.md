@@ -223,3 +223,9 @@ Curio installs the package's Python libraries with it: `transformers` 5,
 `pandas`, `geopandas`, `numpy`, `pillow` and `pyarrow`. It asks for no version of
 torch or torchvision: Curio's images hold both, built for CUDA, so adding the
 model there installs neither.
+
+The package needs [Media](../curio.media@1/README.md) (`curio.media@1` in its
+`dependencies.packages`): Track Objects reads each video's frames with Media's
+`read_video_frames`, as Sample Video Frames does. Adding SAM 3 adds Media too,
+with Rasterization, which Media needs, and the header above each node's code
+lists Media's functions after the package's own.

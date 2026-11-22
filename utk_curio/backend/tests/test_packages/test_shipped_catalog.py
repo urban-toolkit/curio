@@ -170,9 +170,10 @@ def test_each_shipped_dataflow_lists_the_packages_its_packages_need():
     (``project_packages.install_to_project``), and a dataflow keeps the
     packages its lockfile lists: each shipped dataflow lists every package a
     package it lists needs, such as Rasterization beside Media or Deep Umbra,
-    and Segmentation beside DDRNet23-Slim."""
+    Media beside SAM 3, and Segmentation beside DDRNet23-Slim."""
     needs = {p.name: sorted(_raw_package_deps(p)) for p in PACKAGE_DIRS}
     assert needs["curio.media@1"] == needs["model.scout.deep-umbra@1"] == ["curio.rasterization@1"], needs
+    assert needs["model.curio.sam3@1"] == ["curio.media@1"], needs
     assert needs["model.curio.ddrnet23-slim@1"] == ["curio.segmentation@1"], needs
     examples = CATALOG.parent / "docs" / "examples"
     read, missing = 0, []
