@@ -555,12 +555,17 @@ _PLAYER_JS = """(selector) => {
 }"""
 
 
-def _stored_rows(page, node_id: str) -> list[dict]:
+def _stored_rows(page, node_id: str, key: str | None = None) -> list[dict]:
     """The rows of *node_id*'s saved output as the sandbox stores them: a
-    table's, or a layer's features' properties."""
+    table's, or a layer's features' properties; of a dict of frames, those of
+    the frame under *key*."""
     artifact = page.evaluate(_OUTPUT_ARTIFACT_JS, node_id)
     assert artifact, f"{node_id} shows no saved output"
     stored = load_artifact_as_dict(artifact)
+    if key is not None:
+        assert stored["dataType"] == "dict" and key in stored["data"], (
+            f"{node_id} saved a {stored['dataType']} with no {key!r}")
+        stored = stored["data"][key]
     data = stored["data"]
     if stored["dataType"] == "geodataframe":
         return [feature["properties"] for feature in data["features"]]
@@ -1874,11 +1879,13 @@ class TestWorkflowCanvas:
         the tiny SAM 3 planted as fetched, and the walk's 8 s recorded clip and
         three GPS fixes, cached for the account.
 
-        Track Objects gives the walk back as its overlay, one video that
-        starts at ``t_s`` 0 and shows a frame every ``EVERY_SECONDS``, which
-        Simple View plays through the media route. Objects gives one row per
-        object of its tracks, which keep the module's invariants, and ``t_s``,
-        its first sighting. The player's range lights exactly the bars and the
+        Track Objects gives two tables: ``videos``, the walk as its overlay,
+        one video that starts at ``t_s`` 0 and shows a frame every
+        ``EVERY_SECONDS``, which Simple View plays through the media route in
+        its first tab; and ``tracks``, one row per object. Objects gives one
+        row per object of those tracks, read by their key, which keep the
+        module's invariants, and ``t_s``, its first sighting. The player's
+        range lights exactly the bars and the
         fixes whose ``t_s`` it holds, read from the nodes' own outputs: none
         before the overlay plays, and after a seek to 7 s and back to 5 s,
         fewer fixes than at 7 s. The tiny SAM 3 takes its objects in its first
@@ -1897,12 +1904,16 @@ class TestWorkflowCanvas:
 
         # The overlay: the walk as one video that starts where the walk does,
         # a frame every EVERY_SECONDS.
-        (overlay,) = _stored_rows(page, WALK_TRACKING)
+        (overlay,) = _stored_rows(page, WALK_TRACKING, "videos")
         assert (overlay["kind"], overlay["t_s"]) == ("video", 0.0), overlay
         frames = round(overlay["duration_s"] / every)
         assert frames >= 2 and overlay["fps"] == round(1 / every, 3), overlay
-        # One row per object of its tracks, as Objects reads them.
+        # One row per object of its tracks, as Objects reads them: Track
+        # Objects' own tracks table, each row with its t_s.
         objects = _stored_rows(page, WALK_OBJECTS)
+        tracks = _stored_rows(page, WALK_TRACKING, "tracks")
+        assert [{key: value for key, value in row.items() if key != "t_s"} for row in objects] == tracks, (
+            objects, tracks)
         counts = {label: int(overlay[label.replace(" ", "_") + "_objects"]) for label in labels}
         # In the job's results, to compare what the tiny SAM 3 finds on each GPU.
         request.node.user_properties.append(("walk_objects", json.dumps(counts, sort_keys=True)))

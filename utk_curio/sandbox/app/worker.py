@@ -6,8 +6,9 @@ into _globals_cache. execute_code() then runs user code in-process using those
 cached imports - no subprocess spawning, no IPC overhead.
 
 Thread safety: _exec_lock serializes calls because contextlib.redirect_stdout
-mutates the global sys.stdout, and os.chdir is process-wide. Both are restored
-after each call via a finally block. For a single-user tool this is acceptable.
+mutates the global sys.stdout, and os.chdir and os.environ are process-wide.
+All three are restored after each call via a finally block. For a single-user
+tool this is acceptable.
 The swap also catches what other threads print meanwhile, so the sandbox's own
 log lines go to sys.__stderr__, never to sys.stderr (#770).
 
@@ -473,6 +474,26 @@ def _stage_package_modules(package_modules):
     return run_dir, (os.path.join(run_dir, staged["root"]), tuple(staged["names"]))
 
 
+def _put_back_the_environment(environment):
+    """``os.environ`` as *environment* again, once a node's code has run in
+    this process: each variable the code added removed, and each it changed
+    or removed set back to its value.
+
+    A node runs in the sandbox's own process (:func:`execute_code`), which
+    every later node of every dataflow shares, so a variable its code set
+    would reach them all. Only what the code changed is written, so a
+    variable it left alone, a thread count's among them, is never set again.
+    A library that read a variable when it started keeps what it read, as
+    cuBLAS keeps the ``CUBLAS_WORKSPACE_CONFIG`` it read when CUDA started;
+    and a library's own settings, such as torch's deterministic mode, are the
+    code's to put back."""
+    for name in [name for name in os.environ if name not in environment]:
+        os.environ.pop(name, None)
+    for name, value in environment.items():
+        if os.environ.get(name) != value:
+            os.environ[name] = value
+
+
 def execute_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None, save_dataset=True,
                  dataset_paths=None, secrets=None, collections=None, media_dir=None, models=None,
                  dataset_formats=None, package_modules=None, input_slots=None, saved_paths=None,
@@ -542,12 +563,15 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
     from utk_curio.sandbox.util.parsers import _make_id, load_artifact, save_to_duckdb
     from utk_curio.sandbox.util.user_code import compile_user_code
 
-    # _exec_lock serializes sys.stdout mutation and os.chdir.
+    # _exec_lock serializes sys.stdout mutation, os.chdir and os.environ.
     with _exec_lock.hold("exec_in_process"):
         # The run has its place: its reply goes quiet until it ends (#889).
         run_place.took_place()
         t0 = time.perf_counter()
         original_dir = os.getcwd()
+        # Every later node of every dataflow runs in this process: what the
+        # code does to the environment is put back once it ends.
+        original_environment = dict(os.environ)
         if launch_dir:
             os.chdir(launch_dir)
 
@@ -665,6 +689,7 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
             captured_stderr.write(traceback.format_exc())
 
         finally:
+            _put_back_the_environment(original_environment)
             os.chdir(original_dir)
             if modules_dir:
                 cleanup_scratch(modules_dir)

@@ -3,8 +3,9 @@
 UTCI from raster + weather, UTCI Zonal Mean, Reproject census to EPSG:3395 and
 Project gt_65 column hold their settings and a call of a function of the
 package's modules: ``weather_utci``'s ``utci_grid``, and ``weather_census``'s
-``utci_zonal_mean``, ``reproject_census`` and ``gt65_column``. The three
-loaders hold the read of a Data Catalog dataset. Each template's source, its
+``utci_zonal_mean``, ``reproject_census`` and ``gt65_column``. Each of the
+three loaders is one read of a Data Catalog dataset, which gives what a read
+of the dataset's file with its own library gives. Each template's source, its
 references resolved as a run resolves them, is run as the sandbox runs it
 (``input_names.call_as_node``), with the package's modules staged as the
 sandbox stages a node's modules (the ``package_modules`` fixture), on inputs
@@ -333,6 +334,87 @@ def test_the_modules_offer_the_functions_their_all_names(package_modules):
     for starter in STARTERS.values():
         module, function = starter[0].removeprefix("from ").split(" import ")
         assert function in OFFERED[module] and starter[2].startswith(f"{function}("), starter[0]
+
+
+# ---------------------------------------------------------------------------
+# The loaders
+# ---------------------------------------------------------------------------
+
+#: Each loader and the Data Catalog dataset it reads.
+LOADERS = {
+    "mrt-load": "data.utk.milan-mrt",
+    "weather-load": "data.utk.milan-era5-weather",
+    "census-load": "data.utk.milan-census-gt65",
+}
+
+
+def _run_loader(template: str):
+    """``(output, file)``: the loader's output, its code run as the sandbox
+    runs it, with ``curio_load_data`` reading the dataset's shipped file as
+    the sandbox reads it, and that file."""
+    from utk_curio.sandbox.util.catalog_helpers import install_catalog_helpers
+    from utk_curio.sandbox.util.input_names import call_as_node
+
+    dataset_id = LOADERS[template]
+    folder = REPO / "datasets" / f"{dataset_id}@1"
+    manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+    path = folder / manifest["dataFile"]
+    namespace: dict = {}
+    install_catalog_helpers(
+        namespace, data_path={dataset_id: str(path)}.__getitem__,
+        formats={dataset_id: {"format": manifest["format"]}}, collections=None, media_dir=None, models=None,
+    )
+    body = "\n".join("    " + line for line in node_code(template).splitlines())
+    return call_as_node(body, namespace), path
+
+
+@pytest.mark.parametrize("template", sorted(LOADERS))
+def test_each_loader_is_one_read_of_its_data_catalog_dataset(template):
+    """A loader's whole code is the read of its dataset, by the id Curio reads
+    from the code before the node runs."""
+    assert _template_source(template) == f'return curio_load_data("{LOADERS[template]}")\n'
+
+
+def test_milan_mrt_loader_returns_the_raster_open_as_rasterio_opens_it():
+    """An open rasterio dataset, which the next nodes read as a raster, with
+    the grid and the cells ``rasterio.open`` gives of the file."""
+    import numpy as np
+    import rasterio
+
+    out, path = _run_loader("mrt-load")
+    try:
+        assert isinstance(out, rasterio.io.DatasetReader) and not out.closed, type(out)
+        with rasterio.open(path) as read:
+            assert (out.crs, out.transform, out.shape, out.count, out.nodata) == (
+                read.crs, read.transform, read.shape, read.count, read.nodata,
+            )
+            np.testing.assert_array_equal(out.read(), read.read())
+    finally:
+        out.close()
+
+
+def test_era5_milan_weather_returns_the_table_as_pandas_reads_it():
+    """A DataFrame, not a GeoDataFrame, equal to ``pandas.read_csv`` of the
+    file, so UTCI from raster + weather finds its ``it``, ``Td``, ``Wind`` and
+    ``RH`` columns."""
+    import pandas as pd
+
+    out, path = _run_loader("weather-load")
+    assert type(out) is pd.DataFrame, type(out)
+    pd.testing.assert_frame_equal(out, pd.read_csv(path))
+    assert {"it", "Td", "Wind", "RH"} <= set(out.columns), list(out.columns)
+
+
+def test_milan_census_polygons_returns_the_polygons_as_geopandas_reads_them():
+    """A GeoDataFrame equal to ``geopandas.read_file`` of the file, its CRS
+    and ``gt_65`` among them."""
+    import geopandas as gpd
+    from geopandas.testing import assert_geodataframe_equal
+
+    out, path = _run_loader("census-load")
+    assert isinstance(out, gpd.GeoDataFrame), type(out)
+    assert_geodataframe_equal(out, gpd.read_file(path))
+    assert out.crs is not None and "gt_65" in out.columns, (out.crs, list(out.columns))
 
 
 # ---------------------------------------------------------------------------

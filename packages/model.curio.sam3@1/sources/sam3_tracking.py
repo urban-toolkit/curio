@@ -1,5 +1,6 @@
 """SAM 3 through a collection's videos: the frames it looks at, the objects it
-follows from frame to frame, and the overlay and tracks it writes for each video.
+follows from frame to frame, the overlay it writes of each video, and the table
+of every object's track it hands on beside the videos.
 
 Track Objects calls :func:`track_objects`, with its settings and Curio's
 plumbing: the model ``curio_load_model("model.curio.sam3")`` gives, whose
@@ -43,9 +44,11 @@ PER_FILE = frozenset({
     "file_id", "relpath", "name", "ext", "kind", "bytes", "mtime", "duration_s", "fps", "codec",
     "width", "height", "path", "thumbnail", "image_url", "audio_url", "probe_error", "geometry",
 })
-#: The columns of a video's tracks, one row per object, after the video's own.
+#: The columns of the tracks that name each object's video, first.
+VIDEO_COLUMNS = ["video_file_id", "video"]
+#: The columns of the tracks, one row per object, after its video's.
 TRACK_COLUMNS = ["object_id", "label", "start_s", "end_s", "frames", "largest_share", "mean_score"]
-#: How the tag of the overlay and the tracks a video gets begins (``_tag``).
+#: How the tag of the overlay a video gets begins (``_tag``).
 TAG = "sam3"
 #: The overlay's time base: each of its frames plays at its own time in the
 #: video, to the millisecond.
@@ -78,8 +81,8 @@ def track_objects(media, model, derived_file, *, labels, every_seconds=0.5, forg
     """Follow what *labels* name, such as curb ramp or traffic cone, through
     each video of a collection with SAM 3: each video comes back as its
     overlay, its frames with each object's mask and id drawn, which Simple View
-    plays, with a count of the objects of each label and the path of a table of
-    one row per object.
+    plays, with a count of the objects of each label, and every object it
+    followed comes back as a row of a second table, its track.
 
     *media* is a collection's rows, as ``curio_load_collection`` returns them;
     rows that are not videos are left out. *model* is SAM 3 as
@@ -96,16 +99,19 @@ def track_objects(media, model, derived_file, *, labels, every_seconds=0.5, forg
     *max_seconds*, the limit in seconds of a node's code older than
     *max_frames*, with the lines of that code to change.
 
-    Each row keeps the video's own columns, its overlay's (``file_id``,
-    ``path``, ``thumbnail``, ``image_url``, ``duration_s``, ``fps``, ``width``,
-    ``height``), and adds ``video_file_id``, ``t_s`` (where the overlay starts
-    in the video), a ``<label>_objects`` count for each label, spaces written
-    as ``_``, and ``tracks``, the path of the video's tracks: one row per
-    object, with ``video_file_id``, ``video``, ``object_id``, ``label``,
+    It returns the two tables as one dict, ``{"videos": ..., "tracks": ...}``,
+    whose keys a chip names, as ``[!! input_0:tracks !!]``. ``videos`` has one
+    row per video, which keeps the video's own columns, its overlay's
+    (``file_id``, ``path``, ``thumbnail``, ``image_url``, ``duration_s``,
+    ``fps``, ``width``, ``height``), and adds ``video_file_id``, ``t_s`` (where
+    the overlay starts in the video) and a ``<label>_objects`` count for each
+    label, spaces written as ``_``. ``tracks`` has one row per object of every
+    video, with ``video_file_id``, ``video``, ``object_id``, ``label``,
     ``start_s`` and ``end_s`` (in seconds from the video's start), ``frames``,
-    ``largest_share`` and ``mean_score``. A call that asks other labels, frames,
-    forgetting, part or width of a video than an earlier call keeps files of
-    its own; one that asks the same writes the earlier call's files again.
+    ``largest_share`` and ``mean_score``. A call that asks other labels,
+    frames, forgetting, part or width of a video than an earlier call keeps an
+    overlay of its own; one that asks the same writes the earlier call's
+    overlay again.
     """
     if max_seconds is not None:
         raise ValueError(
@@ -119,7 +125,7 @@ def track_objects(media, model, derived_file, *, labels, every_seconds=0.5, forg
         raise ValueError(f"MAX_FRAMES is {max_frames}: a run looks at one frame at least, so set it to 1 or more")
     videos = [video for _, video in media[media["kind"] == "video"].iterrows()]
     ends = [_part_end(video, from_seconds, to_seconds, every_seconds, max_frames) for video in videos]
-    rows = []
+    rows, tables = [], []
     if videos:
         device, dtype = _device()
         run = _Run(
@@ -129,12 +135,20 @@ def track_objects(media, model, derived_file, *, labels, every_seconds=0.5, forg
             every_seconds=every_seconds, forget_seconds=forget_seconds, from_seconds=from_seconds, width=width,
             derived_file=derived_file,
         )
-        rows = [_track(run, video, end) for video, end in zip(videos, ends)]
+        for video, end in zip(videos, ends):
+            row, table = _track(run, video, end)
+            rows.append(row)
+            tables.append(table)
     result = pd.DataFrame(rows)
     if isinstance(media, gpd.GeoDataFrame) and rows:
         geometries = [video["geometry"] if "geometry" in video.index else None for video in videos]
         result = gpd.GeoDataFrame(result, geometry=geometries, crs=media.crs)
-    return result
+    # A video SAM 3 followed no object through adds no track; with no track
+    # at all, the table still has its columns, which the next node's header
+    # lists.
+    found = [table for table in tables if not table.empty]
+    tracks = pd.concat(found, ignore_index=True) if found else pd.DataFrame(columns=VIDEO_COLUMNS + TRACK_COLUMNS)
+    return {"videos": result, "tracks": tracks}
 
 
 def _device():
@@ -286,7 +300,8 @@ class Sam3VideoModel(TransformersSam3VideoModel):
     Face Hub, which has no build for the image's torch and none for a CPU,
     and an isolated run cannot fetch it; without it, it kept every detection
     and every hole and speck. Here it is done in torch, as cv-utils does it,
-    and Transformers no longer looks for the library.
+    and while SAM 3 runs Transformers does not look for the library
+    (:func:`_without_the_kernels_library`).
 
     SAM 3's tracker gives each frame a mask and a score for each object it
     follows as the frame starts, in order. Transformers drops the objects the
@@ -296,10 +311,6 @@ class Sam3VideoModel(TransformersSam3VideoModel):
     frame's masks and scores are paired, as SAM 3's own code pairs them with
     the objects it followed as the frame started, and the frame's output
     leaves the objects dropped out, as Transformers' does."""
-
-    def __init__(self, config):
-        super().__init__(config)
-        _without_the_kernels_library()
 
     def run_detection(self, inference_session, vision_embeds):
         """Each label's detections, as Transformers finds them, without those
@@ -364,15 +375,29 @@ class Sam3VideoModel(TransformersSam3VideoModel):
         return masks, scores, metadata, tracker_scores
 
 
+@contextlib.contextmanager
 def _without_the_kernels_library():
-    """Have Transformers' SAM 3 go on as if it had looked for the kernels
-    library and found none, unless it has loaded it: :class:`Sam3VideoModel`
-    cleans the masks itself, and Transformers would otherwise look for the
-    library on the Hugging Face Hub, then say on each run that the clean-up is
-    skipped."""
+    """While the block runs, have Transformers' SAM 3 go on as if it had
+    looked for the kernels library and found none, unless it has looked
+    already: :class:`Sam3VideoModel` cleans the masks itself, and Transformers
+    would otherwise look for the library on the Hugging Face Hub at the first
+    frame, then say on each run that the clean-up is skipped.
+
+    Transformers keeps what it found in a flag of its module, which the block
+    sets only when Transformers has not looked yet, and puts back once it
+    ends, whether it returns or raises. A node runs in a process the nodes
+    after it may share, as the sandbox's without isolation, and a later run of
+    Transformers' own SAM 3 there looks for the library as in a fresh
+    process."""
     transformers_module = sys.modules[TransformersSam3VideoModel.__module__]
-    if getattr(transformers_module, "cv_utils_kernel", False) is None:
+    not_looked_yet = getattr(transformers_module, "cv_utils_kernel", False) is None
+    if not_looked_yet:
         transformers_module.cv_utils_kernel = False
+    try:
+        yield
+    finally:
+        if not_looked_yet:
+            transformers_module.cv_utils_kernel = None
 
 
 def _kept_by_nms(scores, masks, iou_threshold):
@@ -483,7 +508,9 @@ def _follow(run, frames, let_go_after=None):
     used goes back to the device (:func:`_give_back`). With *let_go_after*, a
     number of frames, it also lets go between two frames of each object it has
     not shown in the last *let_go_after* frames (:class:`_Sightings`), so the
-    objects it follows stop adding up over a long video."""
+    objects it follows stop adding up over a long video. While it runs,
+    Transformers does not look for the kernels library
+    (:func:`_without_the_kernels_library`)."""
     seen = _Frames(run, frames)
     session = run.processor.init_video_session(inference_device=run.device, dtype=run.dtype)
     session.processed_frames = seen
@@ -493,15 +520,16 @@ def _follow(run, frames, let_go_after=None):
     sightings = None if let_go_after is None else _Sightings(session)
     hook = None if sightings is None else run.sam3.register_forward_hook(sightings.note)
     try:
-        for output in run.sam3.propagate_in_video_iterator(inference_session=session):
-            found = run.processor.postprocess_outputs(session, output)
-            _forget(session, seen.latest, run.sam3.tracker_model)
-            # Once SAM 3 has looked at the last frame, it has no frame left to
-            # follow an object through.
-            if sightings is not None and seen.latest < len(frames) - 1:
-                sightings.let_go(seen.latest - let_go_after, output.frame_idx)
-            _give_back(run.device)
-            yield output.frame_idx, found
+        with _without_the_kernels_library():
+            for output in run.sam3.propagate_in_video_iterator(inference_session=session):
+                found = run.processor.postprocess_outputs(session, output)
+                _forget(session, seen.latest, run.sam3.tracker_model)
+                # Once SAM 3 has looked at the last frame, it has no frame left
+                # to follow an object through.
+                if sightings is not None and seen.latest < len(frames) - 1:
+                    sightings.let_go(seen.latest - let_go_after, output.frame_idx)
+                _give_back(run.device)
+                yield output.frame_idx, found
     finally:
         if hook is not None:
             hook.remove()
@@ -639,22 +667,22 @@ def _keep(output, *, memory, alone=False):
 
 
 def _tag(labels, every_seconds, forget_seconds, end, width):
-    """The tag of a video's overlay and tracks: ``TAG``, then the first twelve
-    hex digits of the SHA-256 of what they depend on besides where the part
-    starts, which their name holds: the labels, the gap between frames, how
-    long an object unseen is followed, where the part ends and the width."""
+    """The tag of a video's overlay: ``TAG``, then the first twelve hex digits
+    of the SHA-256 of what it depends on besides where the part starts, which
+    its name holds: the labels, the gap between frames, how long an object
+    unseen is followed, where the part ends and the width."""
     asked = [list(labels), float(every_seconds), None if forget_seconds is None else float(forget_seconds),
              float(end), int(width)]
     return TAG + hashlib.sha256(json.dumps(asked, separators=(",", ":")).encode("utf-8")).hexdigest()[:12]
 
 
 def _track(run, video, end):
-    """Run SAM 3 through one video: its overlay's row, with its tracks file."""
+    """Run SAM 3 through one video: ``(row, tracks)``, its overlay's row and
+    the table of the objects it followed through it."""
     frames, times = _looked_at(run, video, end)
     start_ms = round(run.from_seconds * 1000)
     tag = _tag(run.labels, run.every_seconds, run.forget_seconds, end, run.width)
     overlay = run.derived_file(video["dataset_id"], video["file_id"], start_ms, "mp4", tag=tag)
-    tracks_file = run.derived_file(video["dataset_id"], video["file_id"], start_ms, "parquet", tag=tag)
     width, height = frames[0].size
     # Each frame of the overlay plays at its own time in the video, from the
     # first, in milliseconds, so the overlay plays in real time whatever
@@ -708,9 +736,8 @@ def _track(run, video, end):
         {**{k: v for k, v in seen.items() if k != "scores"}, "mean_score": round(float(np.mean(seen["scores"])), 4)}
         for seen in tracks.values()
     ], columns=TRACK_COLUMNS)
-    table.insert(0, "video_file_id", video["file_id"])
-    table.insert(1, "video", video["name"])
-    table.to_parquet(tracks_file["path"], index=False)
+    table.insert(0, VIDEO_COLUMNS[0], video["file_id"])
+    table.insert(1, VIDEO_COLUMNS[1], video["name"])
     row = {k: video[k] for k in video.index if k not in PER_FILE}
     taken = video.get("taken_at")
     if isinstance(taken, (pd.Timestamp, datetime.datetime)) and not pd.isna(taken):
@@ -719,8 +746,7 @@ def _track(run, video, end):
     row.update({
         "kind": "video", "video_file_id": video["file_id"], "name": video["name"], "t_s": times[0],
         "duration_s": duration_s, "width": width, "height": height, "fps": round(len(frames) / duration_s, 3),
-        "tracks": tracks_file["path"],
     })
     for label in run.labels:
         row[label.replace(" ", "_") + "_objects"] = int((table["label"] == label).sum())
-    return row
+    return row, table

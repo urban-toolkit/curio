@@ -34,6 +34,7 @@ const CLIENTS = [
   "registry/packagesClient.ts",
   "providers/starters.ts",
   "components/nodes/NodeOutcomeStrip.tsx",
+  "NotebookConvertor.ts",
 ];
 
 const relative = (file: string) => path.relative(SRC, file).split(path.sep).join("/");

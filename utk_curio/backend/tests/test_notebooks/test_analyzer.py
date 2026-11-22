@@ -1,9 +1,10 @@
 """What the notebook analyzer says about each cell.
 
-``analyzer.py`` had no coverage at all, which is uncomfortable for a module
-that decides the shape of every imported dataflow *and* ``exec()``s notebook
-code to render Altair charts. These cases pin the contract the importer relies
-on, so a change to the AST walk fails here rather than in someone's canvas.
+``analyzer.py`` decides the shape of every imported dataflow and runs no
+cell's code. These cases pin the contract the importer relies on, so a change
+to the AST walk fails here rather than in someone's canvas. The sandbox makes
+the Vega-Lite spec of each cell ``chart_cells`` names (``charts.py``); those
+specs' cases are ``utk_curio/sandbox/tests/test_notebook_charts.py``.
 
 The ``is_import_only`` cases are the ones added for #235: a notebook with ten
 small setup cells used to import as ten disconnected "Python Computation"
@@ -16,9 +17,11 @@ Run::
 """
 from __future__ import annotations
 
+import sys
 import textwrap
+import types
 
-from utk_curio.backend.app.notebooks.analyzer import analyze_cells
+from utk_curio.backend.app.notebooks.analyzer import analyze_cells, chart_cells
 
 
 def _cells(*sources: str) -> list[str]:
@@ -176,3 +179,56 @@ class TestDependencyEdges:
             assert set(entry) == {
                 "defined", "used", "last_var", "altair_spec", "is_import_only",
             }
+
+
+class TestNoCellCodeRuns:
+    """The analysis reads a cell's code and runs none of it, a cell that
+    draws an Altair chart included."""
+
+    PROBE = "curio_notebook_analysis_probe"
+
+    def test_analyzing_a_chart_cell_runs_none_of_its_code(self, monkeypatch):
+        probe = types.ModuleType(self.PROBE)
+        monkeypatch.setitem(sys.modules, self.PROBE, probe)
+        result = analyze_cells(_cells(
+            f"""
+            import {self.PROBE}
+            {self.PROBE}.ran_in = "the analysis"
+            chart = alt.Chart(df).mark_point().encode(x="a", y="b")
+            """
+        ))
+        assert not hasattr(probe, "ran_in"), "analyze_cells ran the code of a notebook cell"
+        assert result["analysis"][0]["last_var"] == "chart"
+
+
+class TestChartCells:
+    """The cells the sandbox makes a Vega-Lite spec of, and what it gets of each."""
+
+    def test_a_cell_that_assigns_an_altair_chart_is_one(self):
+        cells = _cells(
+            "import altair as alt",
+            "df = load()",
+            'chart = alt.Chart(df).mark_bar().encode(x="city:N", y="population:Q")',
+        )
+        assert chart_cells(cells, analyze_cells(cells)["analysis"]) == [{
+            "cell": 2,
+            "code": cells[2],
+            "last_var": "chart",
+            # Each name the cell reads gets a stand-in frame; `alt` is bound
+            # to Altair itself, which wins.
+            "names": ["alt", "df"],
+            "fields": ["city", "population"],
+        }]
+
+    def test_a_cell_that_keeps_no_chart_or_does_not_parse_is_not_one(self):
+        cells = _cells(
+            "alt.Chart(df).mark_bar()",
+            "x = 1",
+            "broken = alt.Chart( ===",
+        )
+        assert chart_cells(cells, analyze_cells(cells)["analysis"]) == []
+
+    def test_a_mark_name_is_no_field(self):
+        cells = _cells('chart = alt.Chart(df).mark_point().encode(x="a", y="b", shape=alt.value("circle"))')
+        [chart] = chart_cells(cells, analyze_cells(cells)["analysis"])
+        assert chart["fields"] == ["a", "b"]

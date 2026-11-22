@@ -17,7 +17,7 @@ import re
 import shutil
 import subprocess
 import sys
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 import pytest
 
@@ -371,32 +371,31 @@ def test_sources_do_not_read_the_examples_data_directory(package_root: Path):
 UHVI_DIR = CATALOG / "ai.utk.uhvi@1"
 
 
-def _input_text_default(source: Path) -> str:
-    """The default of the one text widget *source* references (#662).
+def _dataset_widget(source: Path) -> dict:
+    """The one dataset widget *source* references (#662).
 
-    The default lives in the manifest's template ``widgets``; *source* names
-    the widget with one ``[!! name !!]`` reference.
+    The widget lives in the manifest's template ``widgets``; *source* names
+    it with one ``[!! name !!]`` reference.
     """
     manifest = json.loads((source.parent.parent / "manifest.json").read_text(encoding="utf-8"))
     rel = f"sources/{source.name}"
     (template,) = [t for t in manifest["templates"] if t.get("source") == rel]
-    (widget,) = [w for w in template.get("widgets", []) if w.get("type") == "text"]
+    (widget,) = [w for w in template.get("widgets", []) if w.get("type") == "dataset"]
     refs = re.findall(r"\[!!\s*(\w+)\s*!!\]", source.read_text(encoding="utf-8"))
     assert refs == [widget["name"]], (source.name, refs)
-    return widget["default"]
+    return widget
 
 
-def test_uhvi_loader_defaults_share_one_folder_and_match_the_readme():
-    """The raster and zones loaders default to the Milan files the README names.
-
-    The README puts both files under ``./milan/``. The zones loader followed it
-    and the raster loader did not, so a workspace laid out as the README says
-    left the raster loader pointing at a file that is not there.
-    """
-    raster = _input_text_default(UHVI_DIR / "sources" / "uhvi-load.py")
-    zones = _input_text_default(UHVI_DIR / "sources" / "uhvi-zones.py")
-    assert PurePosixPath(raster).parent == PurePosixPath(zones).parent, (raster, zones)
+def test_uhvi_loaders_read_the_dataset_their_widget_holds_as_the_readme_says():
+    """The raster and zones loaders each read the Data Catalog dataset their
+    one widget holds, empty until a dataset or a file is dropped on the node,
+    so they name no file of their own. The README gives UHVI Loader's code
+    and names no file path."""
+    raster = _dataset_widget(UHVI_DIR / "sources" / "uhvi-load.py")
+    zones = _dataset_widget(UHVI_DIR / "sources" / "uhvi-zones.py")
+    assert (raster["default"], zones["default"]) == ("", ""), (raster, zones)
 
     readme = (UHVI_DIR / "README.md").read_text(encoding="utf-8")
-    for default in (raster, zones):
-        assert f"`{default}`" in readme, f"README.md does not give the loader default {default}"
+    code = f"return curio_load_data([!! {raster['name']} !!])"
+    assert f"`{code}`" in readme, f"README.md does not give UHVI Loader's code, {code}"
+    assert not re.search(r"\.(tif|tiff|shp|geojson)\b", readme), "README.md names a file for a loader"

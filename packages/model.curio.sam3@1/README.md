@@ -22,7 +22,7 @@ the canvas, offers both nodes.
 
 | Canonical id | Label | Input | Output |
 |---|---|---|---|
-| `model.curio.sam3/track-objects` | Track Objects | A collection's rows, each video with a `path` | One row per video: its overlay, a count of the objects of each label, and the path of its tracks |
+| `model.curio.sam3/track-objects` | Track Objects | A collection's rows, each video with a `path` | Two tables: `videos`, one row per video, its overlay with a count of the objects of each label, and `tracks`, one row per object |
 | `model.curio.sam3/segment-images` | Segment Images | A collection's images, or the frames Sample Video Frames sampled, each with a `path` | Each image with the label covering the most of it, each label's share of it and count of objects, and its overlay |
 
 **Track Objects** samples each video of a collection, one frame every
@@ -52,7 +52,7 @@ return track_objects(
 
 The node hands the function Curio's plumbing: the model, whose `path` is the
 folder of its weights, and `curio_derived_file`, which says where the overlay
-and the tracks are kept. Empty `LABELS`, a part that needs more than
+is kept. Empty `LABELS`, a part that needs more than
 `MAX_FRAMES` frames and a video not on the machine yet stop the node before
 SAM 3 loads.
 
@@ -79,7 +79,11 @@ Apple's MPS), else on the CPU.
 
 ## Output
 
-Each video comes back as one row: its overlay, a video of the frames SAM 3
+Track Objects returns two tables, `videos` and `tracks`, as one dict: the next
+node's code reads each by its key, with a chip such as `[!! input_0:tracks !!]`,
+and Simple View shows each as a tab, `videos` first.
+
+`videos` has one row per video: its overlay, a video of the frames SAM 3
 looked at, each object's mask and box drawn in its label's color with its label
 and id. Simple View plays it in real time, each frame at its own time in the
 video, so it runs as long as the part it tracked. It is H.264, which every
@@ -93,10 +97,8 @@ position, and has:
 | `t_s` | Where the overlay starts in the video: a time in the video is `t_s` plus the time in the overlay |
 | `duration_s`, `fps`, `width`, `height` | The overlay's |
 | `<label>_objects` | How many objects of each label SAM 3 followed, such as `curb_ramp_objects` |
-| `tracks` | The path of a Parquet table of the video's objects |
 
-The tracks table has one row per object, which `pd.read_parquet(row["tracks"])`
-reads:
+`tracks` has one row per object of every video:
 
 | Column | What it holds |
 |---|---|
@@ -108,11 +110,11 @@ reads:
 | `largest_share` | The largest share of a frame its mask covered, from 0 to 1 |
 | `mean_score` | Its mean detection score over those frames |
 
-Both files are kept beside the collection's other files derived from that video.
-Their name holds the video, `FROM_SECONDS` and a tag of `LABELS`,
+The overlay is kept beside the collection's other files derived from that
+video. Its name holds the video, `FROM_SECONDS` and a tag of `LABELS`,
 `EVERY_SECONDS`, `FORGET_SECONDS`, where the part ends and `WIDTH`, so a run
-with other settings keeps files of its own, and a run with the same settings
-writes them again.
+with other settings keeps an overlay of its own, and a run with the same
+settings writes it again.
 
 ## Segment Images
 
@@ -185,19 +187,20 @@ Segment Images' with all 35.
 ## A dataflow
 
 ```
-Data Loading (videos) → Track Objects → Simple View (the overlay)
+Data Loading (videos) → Track Objects → Simple View (the overlay, in its videos tab)
                               ↓
                Python Computation (the tracks) → Vega-Lite (one bar per object)
 
 Data Loading (videos) → Sample Video Frames → Segment Images → Simple View (each frame beside its overlay)
 ```
 
-A Python Computation node reads every video's tracks into one table:
+A Python Computation node wired from Track Objects reads the tracks by their
+key, a table of one row per object:
 
 ```python
-import pandas as pd
+tracks = [!! input_0:tracks !!]
 
-return pd.concat([pd.read_parquet(path) for path in input_0["tracks"]])
+return tracks[tracks["label"] == "curb ramp"]
 ```
 
 ## The weights
