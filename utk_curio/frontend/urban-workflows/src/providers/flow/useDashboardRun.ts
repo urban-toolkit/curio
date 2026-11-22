@@ -11,13 +11,14 @@
 // (dashboardRunFiles). A node a later change no longer reaches gets its saved
 // output back, and so does every node when the values are the saved ones.
 //
-// A step only a browser runs (an Autark compute node) is the
-// page's. The run ends asking for it (`needs_canvas`); the page runs the node
-// as a canvas's run on the server walks its browser part
-// (usePlayAll.playNodes), sends what it made to the run (dashboardRunSteps),
-// and starts the run again with the same values and token, which runs the
-// steps below on that. A node that cannot run here, as without WebGPU, shows
-// why, and the nodes and tiles below say which step could not run (`stopped`).
+// A step only a browser runs (an Autark compute node, or an Autark map or plot
+// that also loads data or runs a pass) is the page's. The run ends asking for
+// it (`needs_canvas`); the page runs the node as a canvas's run on the server
+// walks its browser part (usePlayAll.playNodes), sends what it made to the run
+// (dashboardRunSteps), and starts the run again with the same values and
+// token, which runs the steps below on that. A node that cannot run here, as
+// without WebGPU, shows why, and the nodes and tiles below say which step
+// could not run (`stopped`).
 import React, { useEffect, useRef, useState } from "react";
 import type { ReactFlowInstance } from "reactflow";
 import type { useToastContext } from "../ToastProvider";

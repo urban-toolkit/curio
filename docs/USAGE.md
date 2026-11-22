@@ -546,10 +546,10 @@ saved is saved under its title by its first run.
   compute step) runs on the server, like a code node.
 - A Data Export node writes its file and downloads nothing: its **Download**
   button saves the file.
-- A node that needs data only the browser makes (an Autark compute node)
-  runs, with the nodes below it, in a tab. The tab that
-  started the run runs them by itself; otherwise opening the dataflow offers
-  **Finish run**.
+- A node that needs data only the browser makes (an Autark compute node, or an
+  Autark map or plot that also loads data or runs a pass) runs, with the nodes
+  below it, in a tab. The tab that started the run runs them by itself;
+  otherwise opening the dataflow offers **Finish run**.
 - While a run goes, **Run All** stops it. The run ends before its next node
   starts; a node already running finishes, and its result is not kept.
 
@@ -558,9 +558,10 @@ any browser and after signing in again, each code node of your own dataflow
 shows the last result you ran it to, for 7 days, as long as its code, its
 inputs, your packages and the datasets it reads are unchanged; charts and maps
 below it draw from it. A node with no such result shows its saved output, if its
-**Save output dataset** toggle is on. Nodes below an Autark compute node wait
-for a run. After Curio is upgraded, only saved outputs come
-back. A dashboard shows its saved outputs.
+**Save output dataset** toggle is on. Nodes below an Autark compute node, or
+below an Autark map or plot that also loads data or runs a pass, wait for a
+run. After Curio is upgraded, only saved outputs come back. A dashboard shows
+its saved outputs.
 
 An invited editor's runs are the editor's own: their results show on the
 editor's canvas, not the owner's, and the dataflow's saved outputs stay those of
@@ -1643,6 +1644,12 @@ that table, unless it names a new one:
   beside `compute.twice`.
 - A compute step with a `data` section of its own runs its passes on the tables
   it loads, and on its input's tables when a pass names one.
+- A document that draws a map or a plot and also loads data or runs passes
+  hands on what a compute step would: its input's tables when a view or a
+  pass names one, then the tables it loads, then each new table. A Python node
+  after example 38's node reads the Loop's roads with their minutes of sun as
+  `loop = [!! input_0:loop_road_sun !!]`. A document that only draws its input
+  hands that input on as it came.
 - A pass over a table with no rows does not run, and the table it would write
   has no rows.
 - A pass the GPU cannot run fails the node, and the node's error names the
@@ -1764,8 +1771,8 @@ takes it. This one counts the buildings of each block a clusters pass finds:
 - A compute step hands on the tables its sources after compute make after the
   tables it holds and the tables its passes write, a table one of them changes
   as it left it, and none they drop.
-- A node that draws a map or a plot hands on its input, as it does without
-  them.
+- A node that draws a map or a plot hands them on in the same order, as a
+  compute step does.
 
 ### Layer titles and colors
 
