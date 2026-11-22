@@ -30,6 +30,13 @@ const AUTK_FAMILIES = autkGrammar.families as readonly AutkFamily[];
 /** Drawing wins over computing, and computing over loading. */
 const KIND_ORDER = ["render", "compute", "data"] as const;
 
+/** Whether *spec* names *family*: a map or a plot as soon as it is named, a step list only when it holds a step. */
+function namesFamily(spec: any, family: AutkFamily): boolean {
+  return FAMILY_KIND[family] === "render"
+    ? spec[family] != null
+    : Array.isArray(spec[family]) && spec[family].length > 0;
+}
+
 /**
  * Which kind of step an UrbanSpec describes (#282).
  *
@@ -45,16 +52,25 @@ const KIND_ORDER = ["render", "compute", "data"] as const;
 export function classifyAutkSpec(spec: any): AutkSpecKind {
   // A list is no document, though it answers to `map` (Array.prototype.map).
   if (!spec || typeof spec !== "object" || Array.isArray(spec)) return "unknown";
-  // A map or plot counts as soon as it is named; a step list only when it
-  // holds a step.
-  const names = (family: AutkFamily) =>
-    FAMILY_KIND[family] === "render"
-      ? spec[family] != null
-      : Array.isArray(spec[family]) && spec[family].length > 0;
   const kind = KIND_ORDER.find((k) =>
-    AUTK_FAMILIES.some((family) => FAMILY_KIND[family] === k && names(family))
+    AUTK_FAMILIES.some((family) => FAMILY_KIND[family] === k && namesFamily(spec, family))
   );
   return kind ?? "unknown";
+}
+
+/**
+ * Whether an Autark document only draws its node's input: it draws (a map or
+ * a plot), and has no data source and no pass of its own. A node of such a
+ * document hands on its input as it came, and a run on the server forwards
+ * it; a node that draws and also loads or computes hands on what it loads and
+ * computes, as a compute step does (adapters/node/autkHandOn), and is the
+ * browser's in a run. The canvas's one check for it, which the dashboard walk
+ * and a scenario's saved outputs read (utils/dashboardLayout
+ * `isPassThroughNode`) and the node itself; ``only_draws_its_input`` in
+ * ``execution/autk_spec_kind.py`` is its twin.
+ */
+export function autkOnlyDrawsItsInput(spec: any): boolean {
+  return classifyAutkSpec(spec) === "render" && !namesFamily(spec, "data") && !namesFamily(spec, "compute");
 }
 
 /**
@@ -64,10 +80,22 @@ export function classifyAutkSpec(spec: any): AutkSpecKind {
  * it declares rather than taken for no document.
  */
 export function classifyAutkSpecString(specString: unknown): AutkSpecKind {
-  if (typeof specString !== "string" || specString.trim() === "") return "unknown";
+  const spec = parsedAutkSpec(specString);
+  return spec === undefined ? "unknown" : classifyAutkSpec(spec);
+}
+
+/** ``autkOnlyDrawsItsInput`` of a document as its node holds it, its chips holding their places. */
+export function autkOnlyDrawsItsInputString(specString: unknown): boolean {
+  const spec = parsedAutkSpec(specString);
+  return spec !== undefined && autkOnlyDrawsItsInput(spec);
+}
+
+/** A document as its node holds it, parsed with its chips holding their places; undefined for no JSON. */
+function parsedAutkSpec(specString: unknown): unknown {
+  if (typeof specString !== "string" || specString.trim() === "") return undefined;
   try {
-    return classifyAutkSpec(JSON.parse(withChipPlaceholders(specString)));
+    return JSON.parse(withChipPlaceholders(specString));
   } catch {
-    return "unknown";
+    return undefined;
   }
 }

@@ -46,14 +46,15 @@ dashboard of their own, the copy's (``dashboard:<copy id>``), which joins and
 waits on no other visitor's runs: while the guest has no copy they run the
 dataflow and keep on it, as anyone's run of it does.
 
-A step only a browser runs (an Autark compute node) is the
-page's. The run ends asking for it (``needs_canvas``), as a canvas's run on
-the server does, or ends ``succeeded`` when only a tile reads it; either way
-the page runs the node and sends what it made (:func:`keep_tab_result`), and
-its next start, with the same token, runs the steps below on that
-(``browserOutputs``), or nothing, when the step was a tile's own. The server cannot check what a
-browser sends, so that output and every one made from it are kept for that
-page alone, for ``kept.TAB_OWN_HOURS``.
+A step only a browser runs (an Autark compute node, or an Autark map or plot
+that also loads data or runs a pass) is the page's. The run ends asking for it
+(``needs_canvas``), as a canvas's run on the server does, or ends ``succeeded``
+when only a tile reads it; either way the page runs the node and sends what it
+made (:func:`keep_tab_result`), and its next start, with the same token, runs
+the steps below on that (``browserOutputs``), or nothing, when the step was a
+tile's own. The server cannot check what a browser sends, so that output and
+every one made from it are kept for that page alone, for
+``kept.TAB_OWN_HOURS``.
 
 Limits, constants as a server run's are: a budget per visitor address and
 overall (``common/address_limiter.py``) of the runs of values a visitor tries

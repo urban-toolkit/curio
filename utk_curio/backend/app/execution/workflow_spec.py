@@ -655,10 +655,14 @@ def propagate_node_input(spec, node_id: str, outputs: dict) -> dict | None:
     """Return what a *non-executing* node passes downstream, or ``None``.
 
     Passive and browser-only nodes (VIS_*, DATA_POOL, a JS node in a Python
-    runner, an Autark map) produce nothing of their own, so they forward what
-    is above them. An Autark node whose document only loads data hands on the
-    tables its data section loads and makes, never its input, which that
-    section may read: it forwards nothing (``_hands_on_its_own_tables``).
+    runner, an Autark map that only draws its input) produce nothing of their
+    own, so they forward what is above them. An Autark node whose document
+    only loads data hands on the tables its data section loads and makes,
+    never its input, which that section may read; one that draws and also
+    loads data or runs passes hands on what it loads and computes, which only
+    a browser makes, never its input alone: each forwards nothing
+    (``_hands_on_its_own_tables``). An Autark compute step forwards its input
+    here, as it always has.
     Unlike ``resolve_node_input`` this tolerates gaps: whole branches of a
     dataflow may never have run in the runner that is asking.
     """
@@ -677,13 +681,21 @@ def propagate_node_input(spec, node_id: str, outputs: dict) -> dict | None:
 
 
 def _hands_on_its_own_tables(node) -> bool:
-    """Whether *node* hands on the tables it makes rather than its input: an
-    Autark node whose document only loads data, read as the canvas reads it
-    (``autk_spec_kind.classify_autk_spec_string``), as a run on the server
-    runs it (``run_engine``'s ``autk_data`` steps)."""
-    from utk_curio.backend.app.execution.autk_spec_kind import AUTK_GRAMMAR, classify_autk_spec_string
+    """Whether *node* hands on the tables it makes rather than its input, read
+    as the canvas reads it (``autk_spec_kind``): an Autark node whose document
+    only loads data, as a run on the server runs it (``run_engine``'s
+    ``autk_data`` steps), or one whose document draws and also loads data or
+    runs passes (``only_draws_its_input``), which a run leaves to the browser."""
+    from utk_curio.backend.app.execution.autk_spec_kind import (
+        AUTK_GRAMMAR,
+        classify_autk_spec_string,
+        only_draws_its_input_string,
+    )
 
-    return node.type == AUTK_GRAMMAR and classify_autk_spec_string(node.content) == "data"
+    if node.type != AUTK_GRAMMAR:
+        return False
+    kind = classify_autk_spec_string(node.content)
+    return kind == "data" or (kind == "render" and not only_draws_its_input_string(node.content))
 
 
 # ---------------------------------------------------------------------------

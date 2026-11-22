@@ -205,6 +205,26 @@ const isColumnList = (value: unknown): value is string[] =>
 
 type RasterOptions = { rasters?: boolean; source?: string; values?: boolean };
 
+/**
+ * The element each raster payload came in, by the payload: an Autark node's
+ * envelope, or a Python node's raster as a Data Pool hands it on, its
+ * artifact and its place there beside what the sandbox answered for it
+ * (hook/useTableData). Read through `rasterAsItCame`.
+ */
+const rasterElements = new WeakMap<object, any>();
+
+/**
+ * The element the raster of *payload* came in, which a node that hands a
+ * raster on as it came hands on (adapters/node/autkHandOn): an Autark node's
+ * envelope, or a Python node's raster by its artifact and its place there.
+ */
+export function rasterAsItCame(payload: RasterPayload): any {
+  if ("envelope" in payload) return payload.envelope;
+  return rasterElements.get(payload) ?? {
+    dataType: "raster", artifact: payload.artifact, ...(payload.part == null ? {} : { part: payload.part }),
+  };
+}
+
 function rasterFrameOf(
   payload: RasterPayload,
   name: string | null,
@@ -250,6 +270,7 @@ function rasterFrame(
   if (typeof item.data === "string" && artifact) {
     const part = named ? (isCount(item.part) ? item.part : undefined) : place.part;
     const payload: RasterPayload = part == null ? { artifact } : { artifact, part };
+    rasterElements.set(payload, { ...item, artifact, ...(part == null ? {} : { part }) });
     return rasterFrameOf(payload, name, place, item.meta);
   }
   return null;

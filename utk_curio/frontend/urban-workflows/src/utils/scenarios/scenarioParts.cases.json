@@ -202,6 +202,19 @@
       "savedSources": {"layers": ["layers"], "map": ["layers"]}
     },
     {
+      "name": "an Autark node that draws and also runs a pass or loads data saves its own output, as a compute step does",
+      "nodes": [
+        {"id": "layers", "type": "curio.builtin/autk-grammar@1", "content": "{\"data\": [{\"name\": \"roads\"}]}"},
+        {"id": "sky", "type": "curio.builtin/autk-grammar@1", "content": "{\"compute\": [{\"dataRef\": \"roads\", \"outputTableName\": \"sky\"}], \"map\": {\"layerRefs\": [{\"dataRef\": \"sky\"}]}}"},
+        {"id": "walk", "type": "curio.builtin/autk-grammar@1", "content": "{\"data\": [{\"type\": \"osm\", \"outputTableName\": \"loop\"}], \"map\": {\"layerRefs\": [{\"dataRef\": \"loop_roads\"}, {\"dataRef\": \"roads\"}]}}"}
+      ],
+      "edges": [{"source": "layers", "target": "sky"}, {"source": "layers", "target": "walk"}],
+      "scenarios": [{"id": "s1", "nodes": ["layers"], "context": [], "outcomes": ["sky", "walk"]}],
+      "expected": {"s1": {"nodes": ["layers"], "last": ["layers"], "context": [], "outcomes": ["sky", "walk"], "boundary": []}},
+      "saves": ["layers", "sky", "walk"],
+      "savedSources": {"sky": ["sky"], "walk": ["walk"]}
+    },
+    {
       "name": "a node that is not on the canvas, or that is in a box, is left out",
       "nodes": [
         {"id": "a", "type": "curio.builtin/python-computation@1", "content": "return 1"},

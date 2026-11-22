@@ -323,8 +323,8 @@ PLANTED = {
         "this For statement is no import, setting or return",
     ),
     "an-import-of-a-function-its-module-keeps": (
-        lambda: _sample_video_frames((IMPORT, IMPORT + ", _by_decoding")),
-        "media_collections's __all__ does not offer _by_decoding",
+        lambda: _sample_video_frames((IMPORT, IMPORT + ", _timed")),
+        "media_collections's __all__ does not offer _timed",
     ),
     "an-import-from-a-package-its-manifest-does-not-name": (
         lambda: _sample_video_frames((IMPORT, IMPORT + "\nfrom weather_census import gt65_column")),

@@ -563,10 +563,10 @@ saved is saved under its title by its first run.
   compute step) runs on the server, like a code node.
 - A Data Export node writes its file and downloads nothing: its **Download**
   button saves the file.
-- A node that needs data only the browser makes (an Autark compute node)
-  runs, with the nodes below it, in a tab. The tab that
-  started the run runs them by itself; otherwise opening the dataflow offers
-  **Finish run**.
+- A node that needs data only the browser makes (an Autark compute node, or an
+  Autark map or plot that also loads data or runs a pass) runs, with the nodes
+  below it, in a tab. The tab that started the run runs them by itself;
+  otherwise opening the dataflow offers **Finish run**.
 - While a run goes, **Run All** stops it. The run ends before its next node
   starts; a node already running finishes, and its result is not kept.
 
@@ -575,9 +575,10 @@ any browser and after signing in again, each code node of your own dataflow
 shows the last result you ran it to, for 7 days, as long as its code, its
 inputs, your packages and the datasets it reads are unchanged; charts and maps
 below it draw from it. A node with no such result shows its saved output, if its
-**Save output dataset** toggle is on. Nodes below an Autark compute node wait
-for a run. After Curio is upgraded, only saved outputs come
-back. A dashboard shows its saved outputs.
+**Save output dataset** toggle is on. Nodes below an Autark compute node, or
+below an Autark map or plot that also loads data or runs a pass, wait for a
+run. After Curio is upgraded, only saved outputs come back. A dashboard shows
+its saved outputs.
 
 An invited editor's runs are the editor's own: their results show on the
 editor's canvas, not the owner's, and the dataflow's saved outputs stay those of
@@ -778,7 +779,9 @@ named after its key, and an Autark node's table after its name. A raster's tab
 says it is a raster, then, as an input chip's hover says them, its size in
 cells, its bands and its CRS, for a raster an Autark node hands on or one a
 Python node's tuple, list or dict holds; the pool passes the raster on as it
-came.
+came. A Simple View shows a dict of frames as tabs too, each named after its
+key and shown as a Simple View shows a table, the first one open: Track
+Objects' `videos` tab plays its overlays and its `tracks` tab lists the objects.
 
 In code and in a Vega-Lite or Autark spec, each input is a chip:
 
@@ -1369,7 +1372,7 @@ Removing an interaction edge, or a node at either end, removes the highlight it 
 
 A point selection over fields (`"select": {"type": "point", "fields": ["unit_id"]}`) sends the values of the points picked, such as `{"unit_id": 103}`, and the receiving chart marks every row that holds them, in whatever order it holds its rows. A point selection without fields matches rows by position, so both charts must read the same rows in the same order. An interval selection matches by column name, so the receiving chart needs the columns the interval names.
 
-A Simple View's player is a selection too, an interval on `t_s`, the time in seconds. Draw an interaction edge from the Simple View to a chart or a map: while a video or a recording plays in one of its cards, the view at the other end marks the rows whose `t_s` lies between the file's start and where the player stands, such as a walk's points up to where the walker is. The marks follow the player as it plays and when you seek, and stay where it stands when you pause. They go when another card plays, when the Simple View's rows change, or when the edge or either node is removed. `t_s` is the time in the video as Sample Video Frames and Split Audio write it; a table that holds clock times gets its `t_s` in a Python node before it is linked. A file cut from a longer one, such as Track Objects' overlay, Split Audio's clip or Split Video's block, holds where it starts in its own `t_s`, and its player's range is then in the longer file's time.
+A Simple View's player is a selection too, an interval on `t_s`, the time in seconds. Draw an interaction edge from the Simple View to a chart or a map: while a video or a recording plays in one of its cards, the view at the other end marks the rows whose `t_s` lies between the file's start and where the player stands, such as a walk's points up to where the walker is. The marks follow the player as it plays and when you seek, and stay where it stands when you pause. They go when another card plays, when the Simple View's rows change or another of its tabs opens, or when the edge or either node is removed. `t_s` is the time in the video as Sample Video Frames and Split Audio write it; a table that holds clock times gets its `t_s` in a Python node before it is linked. A file cut from a longer one, such as Track Objects' overlay, Split Audio's clip or Split Video's block, holds where it starts in its own `t_s`, and its player's range is then in the longer file's time.
 
 When several selections reach a Data Pool, the two selects at the top of the pool decide which rows it marks. **Conflict inside visualization** combines the selections of one chart, and **Conflict between visualizations** combines the latest selection of each linked chart:
 
@@ -1658,6 +1661,12 @@ that table, unless it names a new one:
   beside `compute.twice`.
 - A compute step with a `data` section of its own runs its passes on the tables
   it loads, and on its input's tables when a pass names one.
+- A document that draws a map or a plot and also loads data or runs passes
+  hands on what a compute step would: its input's tables when a view or a
+  pass names one, then the tables it loads, then each new table. A Python node
+  after example 38's node reads the Loop's roads with their minutes of sun as
+  `loop = [!! input_0:loop_road_sun !!]`. A document that only draws its input
+  hands that input on as it came.
 - A pass over a table with no rows does not run, and the table it would write
   has no rows.
 - A pass the GPU cannot run fails the node, and the node's error names the
@@ -1779,8 +1788,8 @@ takes it. This one counts the buildings of each block a clusters pass finds:
 - A compute step hands on the tables its sources after compute make after the
   tables it holds and the tables its passes write, a table one of them changes
   as it left it, and none they drop.
-- A node that draws a map or a plot hands on its input, as it does without
-  them.
+- A node that draws a map or a plot hands them on in the same order, as a
+  compute step does.
 
 ### Layer titles and colors
 

@@ -3,7 +3,7 @@ import { Node, Edge } from 'reactflow';
 import { NodeType } from '../constants';
 import { declaresBehavior } from '../registry/declaredNodes';
 import { isVegaLiteNodeType } from '../registry/vegaLiteNodes';
-import { classifyAutkSpecString } from './autkSpecKind';
+import { autkOnlyDrawsItsInputString } from './autkSpecKind';
 import { getFlowNodeCanonicalType } from './flowNodeCanonicalType';
 import { hideNode } from './hiddenNodes';
 
@@ -250,7 +250,7 @@ export const PASS_THROUGH_NODE_TYPES: ReadonlySet<string> = new Set([
   NodeType.DATA_POOL,
 ]);
 
-/** The Autark node, a pass-through only when its spec draws. */
+/** The Autark node, a pass-through only when its document only draws its input. */
 const AUTK_GRAMMAR_BEHAVIORS: ReadonlySet<string> = new Set(['autk-grammar']);
 const AUTK_GRAMMAR_NODE_TYPES: ReadonlySet<string> = new Set([NodeType.AUTK_GRAMMAR]);
 
@@ -266,9 +266,12 @@ const AUTK_GRAMMAR_NODE_TYPES: ReadonlySet<string> = new Set([NodeType.AUTK_GRAM
  * whatever feeds them. Everything else makes new data, and that is what has to
  * be in the Data Catalog for a tile to render without a run.
  *
- * An Autark node is only a pass-through when its spec draws (``map``/``plot``);
- * its data and compute forms produce layers, so they are sources. Mirrors
- * `passes_through` in `projects/dashboard_payload.py`.
+ * An Autark node is only a pass-through when its document only draws its
+ * input (``map``/``plot``, no data source and no pass: utils/autkSpecKind
+ * `autkOnlyDrawsItsInput`). Its data and compute forms produce layers, and so
+ * does one that draws and also loads or computes, which hands on what it loads
+ * and computes: each is a source. Mirrors `passes_through` in
+ * `projects/dashboard_payload.py`.
  */
 export function isPassThroughNode(node: { type?: string | null; data?: any }): boolean {
   const nodeType = getFlowNodeCanonicalType(node as any);
@@ -280,7 +283,7 @@ export function isPassThroughNode(node: { type?: string | null; data?: any }): b
   }
   if (declaresBehavior(nodeType, AUTK_GRAMMAR_BEHAVIORS, AUTK_GRAMMAR_NODE_TYPES)) {
     const spec = node.data?.code ?? node.data?.defaultCode;
-    return classifyAutkSpecString(spec) === 'render';
+    return autkOnlyDrawsItsInputString(spec);
   }
   return false;
 }

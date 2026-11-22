@@ -61,6 +61,12 @@ SOURCE = PACKAGE / "sources" / "track-objects.py"
 #: The package's module, which holds Track Objects' logic.
 MODULE = "sam3_tracking"
 MODULE_SOURCE = PACKAGE / "sources" / f"{MODULE}.py"
+#: Media, whose ``read_video_frames`` Track Objects reads its frames with, and
+#: Rasterization, which Media needs.
+MEDIA = REPO / "packages" / "curio.media@1"
+RASTERIZATION = REPO / "packages" / "curio.rasterization@1"
+#: SAM 3 and the packages it needs, those first: what adding it brings.
+BROUGHT = [RASTERIZATION.name, MEDIA.name, PACKAGE.name]
 #: The node's settings, in its code tab's order, and the arguments they are.
 SETTINGS = {
     "LABELS": "labels", "EVERY_SECONDS": "every_seconds", "FORGET_SECONDS": "forget_seconds",
@@ -185,7 +191,7 @@ def videos(tmp_path):
 
 @pytest.fixture
 def walk(tmp_path):
-    """A 33 s clip at the walk's rate, as ``_sample`` reads a video: from 30 s,
+    """A 33 s clip at the walk's rate, as ``_looked_at`` reads a video: from 30 s,
     its frames come 0.2 ms before 30.5 s, 0.8 ms before 31 s and 1.3 ms before
     31.5 s, each followed by the next frame 33 ms later."""
     import av
@@ -211,15 +217,15 @@ def walk(tmp_path):
 
 @pytest.fixture
 def corner(tmp_path):
-    """The 2 s clip at 4 frames a second, as ``_sample`` reads a video."""
+    """The 2 s clip at 4 frames a second, as ``_looked_at`` reads a video."""
     tiny_sam3.clip(tmp_path / "corner.mp4")
     return {"path": str(tmp_path / "corner.mp4"), "relpath": "corner.mp4"}
 
 
 def _times(module, video, from_seconds, end):
-    """The times of the frames ``_sample`` looks at in *video*, every EVERY
+    """The times of the frames ``_looked_at`` looks at in *video*, every EVERY
     seconds from *from_seconds* up to *end*."""
-    return module._sample(SimpleNamespace(width=960, from_seconds=from_seconds, every_seconds=EVERY), video, end)[1]
+    return module._looked_at(SimpleNamespace(width=960, from_seconds=from_seconds, every_seconds=EVERY), video, end)[1]
 
 
 def _node_source(**settings) -> str:
@@ -239,14 +245,18 @@ def _node_source(**settings) -> str:
 
 @contextlib.contextmanager
 def _staged(tmp_path: Path):
-    """The package's module, importable as a run of Track Objects imports it:
-    staged into a folder of the run's own, then imported by its name."""
+    """The package's module, importable as a run of Track Objects imports it,
+    with Media's, whose reader it reads its frames with: staged into a folder
+    of the run's own, then imported by its name."""
     from utk_curio.sandbox.util.package_modules import importable
     from utk_curio.sandbox.util.staging import stage_package_modules
 
     run = Path(tempfile.mkdtemp(prefix="run-", dir=tmp_path))
-    staged = stage_package_modules([{"root": str(PACKAGE / "sources"), "names": [MODULE]}], str(run))
-    assert staged == {"root": "package_modules", "names": [MODULE]}, staged
+    staged = stage_package_modules([
+        {"root": str(PACKAGE / "sources"), "names": [MODULE]},
+        {"root": str(MEDIA / "sources"), "names": ["media_collections"]},
+    ], str(run))
+    assert staged == {"root": "package_modules", "names": [MODULE, "media_collections"]}, staged
     with importable(str(run / staged["root"]), staged["names"]):
         yield importlib.import_module(MODULE)
 
@@ -412,6 +422,92 @@ def test_the_module_offers_track_objects_says_what_it_does_and_is_handed_curios_
     assert not [node.id for node in ast.walk(tree) if isinstance(node, ast.Name) and node.id.startswith("curio_")]
 
 
+def test_track_objects_reads_its_frames_with_medias_reader_and_decodes_none_itself():
+    """Media's ``read_video_frames`` reads a video's frames for Sample Video
+    Frames and Split Video, and for Track Objects too: SAM 3's module imports
+    it from Media's ``media_collections``, keeps no reader of its own, and
+    neither decodes nor seeks a video, nor threads its decoding."""
+    tree = ast.parse(MODULE_SOURCE.read_text(encoding="utf-8"))
+    imported = sorted(
+        (node.module, alias.name) for node in tree.body if isinstance(node, ast.ImportFrom) for alias in node.names
+    )
+    assert ("media_collections", "read_video_frames") in imported, (
+        f"{MODULE} reads frames with a reader of its own: it imports {imported}")
+    defined = {node.name for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.ClassDef))}
+    assert "_sample" not in defined, f"{MODULE} still defines _sample, a frame reader of its own"
+    reads = [
+        ast.unparse(node) for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in ("decode", "seek")
+    ]
+    threads = [
+        ast.unparse(node) for node in ast.walk(tree) if isinstance(node, ast.Attribute) and node.attr == "thread_type"
+    ]
+    assert (reads, threads) == ([], []), f"{MODULE} reads a video's frames itself: {reads + threads}"
+
+
+def test_the_package_names_media_so_adding_it_and_the_guest_packages_bring_media_and_rasterization(tmp_curio):
+    """SAM 3's manifest names Media in ``dependencies.packages``, as Media
+    names Rasterization. So an add of SAM 3 copies Media and Rasterization
+    into the store first (#1040), here without their libraries as a hosted
+    guest's start adds what ``--guest-packages`` names (#1481), and the
+    launcher installs the libraries of the same three for the guests: deploy.yml
+    names SAM 3 alone."""
+    from utk_curio.backend.app.packages.application.package_dependencies import catalog_packages_to_add
+    from utk_curio.backend.app.packages.application.store_install import _ensure_user_store_install
+    from utk_curio.backend.app.packages.repositories.store import package_dir
+
+    assert _manifest()["dependencies"]["packages"] == {MEDIA.name: "*"}
+    assert catalog_packages_to_add([PACKAGE.name]) == BROUGHT
+    added = _ensure_user_store_install("guest", PACKAGE.name, libraries=False)
+    assert list(added.packages) == BROUGHT, added.packages
+    assert all((package_dir("guest", name) / "manifest.json").is_file() for name in BROUGHT)
+
+
+def test_a_run_of_either_node_is_handed_its_modules_then_medias_and_finds_the_reader_in_both_runtimes(
+        tmp_curio, tmp_path):
+    """A run of Track Objects or Segment Images is handed SAM 3's modules,
+    then Media's, then Rasterization's, its own first
+    (``python_modules.modules_for_node``), though the header above its code
+    lists SAM 3's and Media's alone (test_functions_on_the_node.py). Both
+    runtimes stage them, so Track Objects' module imports Media's reader: in
+    process, and in an isolated child (``child.run_node``, here without the
+    fork)."""
+    from utk_curio.backend.app.packages.application.python_modules import modules_for_node
+    from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
+    from utk_curio.backend.app.packages.repositories.store import package_dir
+    from utk_curio.sandbox.isolation import child, protocol
+    from utk_curio.sandbox.util.package_modules import importable
+    from utk_curio.sandbox.util.staging import stage_package_modules
+
+    for package in (RASTERIZATION, MEDIA, PACKAGE):
+        install_package_from_directory("guest", package)
+    handed = [
+        {"root": str(package_dir("guest", PACKAGE.name) / "sources"), "names": ["sam3_images", MODULE]},
+        {"root": str(package_dir("guest", MEDIA.name) / "sources"), "names": ["media_collections"]},
+        {"root": str(package_dir("guest", RASTERIZATION.name) / "sources"), "names": ["scout_rasters"]},
+    ]
+    for template in ("track-objects", "segment-images"):
+        assert modules_for_node("guest", f"{MODEL_ID}/{template}") == handed, template
+
+    in_process = tmp_path / "run-in-process"
+    in_process.mkdir()
+    staged = stage_package_modules(handed, str(in_process))
+    with importable(str(in_process / staged["root"]), staged["names"]):
+        assert importlib.import_module(MODULE).read_video_frames.__module__ == "media_collections"
+
+    isolated = tmp_path / "run-isolated"
+    isolated.mkdir()
+    request = protocol.build_exec_request(
+        code=f"    from {MODULE} import read_video_frames\n    return read_video_frames.__module__\n",
+        node_type=f"{MODEL_ID}/track-objects", data_type="", scratch_dir=str(isolated),
+        input_spec={"kind": "none"}, session_imports=[],
+        package_modules=stage_package_modules(handed, str(isolated)),
+    )
+    result = child.run_node(request, dict)
+    assert result["ok"], result["stderr"]
+    assert result["output"] == {"kind": "str", "value": "media_collections"}
+
+
 # ---------------------------------------------------------------------------
 # The node, run
 # ---------------------------------------------------------------------------
@@ -427,17 +523,16 @@ def test_without_its_weights_the_node_says_how_to_fetch_them(videos, catalog_cop
 
 def test_the_nodes_code_hands_its_settings_to_the_module(videos, catalog_copy, weights, few_threads, tmp_path):
     """The code tab's call, run as the canvas runs it: the node's settings
-    reach ``track_objects``, and the node returns the overlay's row."""
-    import pandas as pd
-
+    reach ``track_objects``, and the node returns the overlay's row and the
+    tracks of its objects."""
     rows, helpers = videos
     out = _run(rows, helpers, tmp_path, model_folder=catalog_copy, weights=weights,
                LABELS=["pole", "person"], EVERY_SECONDS=1.0)
-    (row,) = out.to_dict("records")
+    (row,) = out["videos"].to_dict("records")
     # One frame a second of the 2 s clip: at 0 s and 1 s.
     assert (row["kind"], row["fps"], row["duration_s"]) == ("video", 1.0, 2.0)
     assert sorted(key for key in row if key.endswith("_objects")) == ["person_objects", "pole_objects"]
-    tracks = pd.read_parquet(row["tracks"])
+    tracks = out["tracks"]
     assert set(tracks["label"]) <= {"pole", "person"}
     assert row["pole_objects"] + row["person_objects"] == len(tracks)
 
@@ -457,14 +552,13 @@ def test_a_run_writes_nothing_of_loading_sam3_and_leaves_progress_bars_on(
     with stderr_of_a_run() as said:
         out = _run(rows, helpers, tmp_path, model_folder=catalog_copy, weights=weights,
                    LABELS=["pole", "person"], EVERY_SECONDS=1.0)
-    assert len(out) == 1, out
+    assert len(out["videos"]) == 1, out
     assert_no_bar(said.getvalue(), "Track Objects")
     assert_bars_draw()
 
 
 def test_track_objects_follows_each_object_through_a_clip(videos, catalog_copy, weights, few_threads, tmp_path):
     import av
-    import pandas as pd
 
     rows, helpers = videos
     (video,) = rows[rows["kind"] == "video"].to_dict("records")
@@ -474,8 +568,8 @@ def test_track_objects_follows_each_object_through_a_clip(videos, catalog_copy, 
                                    every_seconds=EVERY)
         tag = module._tag(DEFAULT_LABELS, EVERY, 10, module._part_end(video, 0, None, EVERY, 450), 960)
 
-    assert len(out) == 1
-    row = out.iloc[0]
+    assert len(out["videos"]) == 1
+    row = out["videos"].iloc[0]
     # The row is the overlay, a video Simple View plays, made from the clip,
     # named by where it starts and by what the call asked.
     assert (row["kind"], row["file_id"]) == ("video", f"{video['file_id']}@0-{tag}.mp4")
@@ -494,7 +588,7 @@ def test_track_objects_follows_each_object_through_a_clip(videos, catalog_copy, 
     assert len(frames) == len(SAMPLED)
     assert (frames[0].width, frames[0].height) == (row["width"], row["height"]) == (96, 64)
 
-    tracks = pd.read_parquet(row["tracks"])
+    tracks = out["tracks"]
     assert list(tracks.columns) == TRACK_COLUMNS
     # Thresholds at 0: random weights find something, six things at most.
     assert 1 <= len(tracks) <= 6
@@ -510,6 +604,41 @@ def test_track_objects_follows_each_object_through_a_clip(videos, catalog_copy, 
     assert counts == {label: int((tracks["label"] == label).sum()) for label in DEFAULT_LABELS}
 
 
+def test_track_objects_hands_on_its_videos_and_their_tracks_as_two_tables_and_writes_no_tracks_file(
+        videos, catalog_copy, weights, few_threads, tmp_path):
+    """Track Objects' one output is two tables, a dict whose keys a chip
+    names (``[!! input_0:tracks !!]``): ``videos``, one row per video, its
+    overlay, and ``tracks``, one row per object of every video. So the tracks
+    are on the edge: the next node's header lists their columns, and a saved
+    output, a Data Export or a dashboard holds their rows. No table of them is
+    written beside the collection, in ``curio_derived_file``'s ``tables``
+    folder, and no row names one."""
+    import pandas as pd
+
+    rows, helpers = videos
+    (video,) = rows[rows["kind"] == "video"].to_dict("records")
+    model = _loaded(catalog_copy, weights)(MODEL_ID)
+    with _staged(tmp_path) as module:
+        out = module.track_objects(rows, model, helpers["curio_derived_file"], labels=DEFAULT_LABELS,
+                                   every_seconds=EVERY)
+
+    media = tmp_path / "media"
+    written = sorted(str(path.relative_to(media)) for path in media.rglob("*") if path.is_file())
+    assert isinstance(out, dict) and list(out) == ["videos", "tracks"], (
+        f"Track Objects returned a {type(out).__name__}, not its videos and their tracks; it wrote {written}")
+    assert not (media / "tables").exists(), f"Track Objects wrote its tracks beside the collection: {written}"
+    (overlay,) = out["videos"].to_dict("records")
+    assert "tracks" not in overlay, overlay
+    assert (overlay["kind"], overlay["video_file_id"]) == ("video", video["file_id"]), overlay
+    tracks = out["tracks"]
+    assert isinstance(tracks, pd.DataFrame) and list(tracks.columns) == TRACK_COLUMNS, tracks
+    # Thresholds at 0: random weights find something, six things at most.
+    assert 1 <= len(tracks) <= 6 and tracks["object_id"].is_unique, tracks
+    assert set(tracks["video_file_id"]) == {video["file_id"]} and set(tracks["video"]) == {video["name"]}
+    counts = {label: int(overlay[label.replace(" ", "_") + "_objects"]) for label in DEFAULT_LABELS}
+    assert counts == {label: int((tracks["label"] == label).sum()) for label in DEFAULT_LABELS}, counts
+
+
 def test_a_part_of_a_video_is_tracked_from_where_it_starts(videos, catalog_copy, weights, few_threads, tmp_path):
     """The 2 s clip from 1 s to 2 s, a part of 2 frames, within a limit of 2
     frames: its files are named by where the part starts, and so is its
@@ -520,7 +649,7 @@ def test_a_part_of_a_video_is_tracked_from_where_it_starts(videos, catalog_copy,
         out = module.track_objects(rows, model, helpers["curio_derived_file"], labels=DEFAULT_LABELS,
                                    every_seconds=EVERY, from_seconds=1, to_seconds=2, max_frames=2)
         tag = module._tag(DEFAULT_LABELS, EVERY, 10, 2, 960)
-    (row,) = out.to_dict("records")
+    (row,) = out["videos"].to_dict("records")
     assert (row["file_id"], row["t_s"], row["duration_s"]) == (
         f"{rows['file_id'].iloc[0]}@1000-{tag}.mp4", 1.0, 2 * EVERY)
 
@@ -529,13 +658,12 @@ def test_two_calls_that_ask_differently_of_one_video_keep_files_of_their_own(
         videos, catalog_copy, weights, few_threads, tmp_path):
     """Two Track Objects runs on one video from one start, with other
     settings, as two dataflows of one account run them: each keeps its own
-    overlay and tracks, which the other's run leaves as they were. On dev a
-    run of 0 to 300 s at a frame every 0.5 s overwrote another dataflow's
-    overlay of the whole walk at a frame every 2 s, which then played 300 s
-    instead of 866 s. A call that asks the same as an earlier one writes that
-    call's files again."""
+    overlay, which the other's run leaves as it was, and hands on the tracks
+    of the frames it looked at. On dev a run of 0 to 300 s at a frame every
+    0.5 s overwrote another dataflow's overlay of the whole walk at a frame
+    every 2 s, which then played 300 s instead of 866 s. A call that asks the
+    same as an earlier one writes that call's overlay again."""
     import av
-    import pandas as pd
 
     rows, helpers = videos
     model = _loaded(catalog_copy, weights)(MODEL_ID)
@@ -544,25 +672,27 @@ def test_two_calls_that_ask_differently_of_one_video_keep_files_of_their_own(
         with av.open(path) as overlay:
             return sum(1 for _ in overlay.decode(overlay.streams.video[0]))
 
+    def times_of(tracks):
+        return set(tracks["start_s"]) | set(tracks["end_s"])
+
     with _staged(tmp_path) as module:
         def track(every):
-            return module.track_objects(rows, model, helpers["curio_derived_file"], labels=DEFAULT_LABELS,
-                                        every_seconds=every).iloc[0]
+            out = module.track_objects(rows, model, helpers["curio_derived_file"], labels=DEFAULT_LABELS,
+                                       every_seconds=every)
+            return out["videos"].iloc[0], out["tracks"]
 
-        first = track(EVERY)
-        first_tracks = pd.read_parquet(first["tracks"])
-        other = track(2 * EVERY)
-        assert first["path"] != other["path"] and first["tracks"] != other["tracks"], (
-            f"two calls that ask differently of one video wrote one overlay ({first['path']}) "
-            f"and one tracks file ({first['tracks']})")
+        first, first_tracks = track(EVERY)
+        other, other_tracks = track(2 * EVERY)
+        assert first["path"] != other["path"], (
+            f"two calls that ask differently of one video wrote one overlay ({first['path']})")
         assert frames_of(first["path"]) == len(SAMPLED), "the other call's run changed the first call's overlay"
         assert frames_of(other["path"]) == len(SAMPLED[::2])
-        assert pd.read_parquet(first["tracks"]).equals(first_tracks), (
-            "the other call's run changed the first call's tracks")
-        again = track(EVERY)
+        # Each call's tracks are of the frames it looked at.
+        assert first_tracks.size and times_of(first_tracks) <= set(SAMPLED), first_tracks
+        assert times_of(other_tracks) <= set(SAMPLED[::2]), other_tracks
+        again, _ = track(EVERY)
 
-    assert (again["path"], again["tracks"]) == (first["path"], first["tracks"]), (
-        "a call that asks the same as an earlier one got files of its own")
+    assert again["path"] == first["path"], "a call that asks the same as an earlier one got an overlay of its own"
 
 
 def test_every_frame_up_to_the_parts_end_decodes_with_frame_threading(videos, tmp_path, monkeypatch):
@@ -578,7 +708,7 @@ def test_every_frame_up_to_the_parts_end_decodes_with_frame_threading(videos, tm
     real_open = av.open
 
     class _Recording:
-        """The container ``_sample`` opens, noting how each stream it decodes is threaded."""
+        """The container Media's reader opens, noting how each stream it decodes is threaded."""
 
         def __init__(self, container):
             self._container = container
@@ -600,7 +730,7 @@ def test_every_frame_up_to_the_parts_end_decodes_with_frame_threading(videos, tm
     with _staged(tmp_path) as module:
         monkeypatch.setattr(module.av, "open", lambda *args, **kwargs: _Recording(real_open(*args, **kwargs)))
         run = SimpleNamespace(width=960, from_seconds=0, every_seconds=EVERY)
-        frames, times = module._sample(run, video, CLIP_SECONDS)
+        frames, times = module._looked_at(run, video, CLIP_SECONDS)
 
     assert times == SAMPLED and len(frames) == len(SAMPLED)
     assert [getattr(kind, "name", kind) for kind in decoded_as] == ["AUTO"], decoded_as
@@ -614,7 +744,7 @@ def test_one_frame_is_looked_at_for_each_step_never_two_for_one(walk, tmp_path):
     to 31.75 s of a clip at that rate, each of the four steps gets one frame."""
     with _staged(tmp_path) as module:
         run = SimpleNamespace(width=960, from_seconds=30, every_seconds=EVERY)
-        frames, times = module._sample(run, walk, 31.75)
+        frames, times = module._looked_at(run, walk, 31.75)
     steps = [round((t - 30) / EVERY) for t in times]
     assert times == [30.0, 30.5, 30.999, 31.532], f"looked at {times}, in steps {steps}, not 30.0, 30.5, 30.999, 31.532"
     assert len(frames) == len(times)
@@ -625,7 +755,7 @@ def test_a_frame_just_before_a_steps_time_is_the_one_looked_at_for_it(walk, tmp_
     the one 0.8 ms before 31 s is looked at."""
     with _staged(tmp_path) as module:
         run = SimpleNamespace(width=960, from_seconds=30, every_seconds=EVERY)
-        times = module._sample(run, walk, 31.75)[1]
+        times = module._looked_at(run, walk, 31.75)[1]
     assert 30.999 in times, f"looked at {times}, not the frame at 30.999 s"
 
 
@@ -680,7 +810,7 @@ def test_with_every_shorter_than_a_frame_the_overlay_plays_in_real_time(
     with _staged(tmp_path) as module:
         out = module.track_objects(rows, model, helpers["curio_derived_file"], labels=DEFAULT_LABELS,
                                    every_seconds=0.1)
-    (row,) = out.to_dict("records")
+    (row,) = out["videos"].to_dict("records")
     with av.open(row["path"]) as overlay:
         stream = overlay.streams.video[0]
         shown = [round(float(frame.time), 3) for frame in overlay.decode(stream)]
@@ -695,7 +825,8 @@ def test_each_stop_comes_before_sam3_loads_and_writes_nothing(videos, tmp_path):
     MAX_FRAMES and a video not on this machine each stop the call before any
     frame is read or file written, and before SAM 3 loads: the model here
     names a folder that holds nothing. A collection with no video loads
-    nothing either."""
+    nothing either, and gives two empty tables, the tracks with their
+    columns."""
     rows, helpers = videos
     relpath = rows["relpath"].iloc[0]
     nothing = SimpleNamespace(path=str(tmp_path / "no-weights"))
@@ -711,7 +842,9 @@ def test_each_stop_comes_before_sam3_loads_and_writes_nothing(videos, tmp_path):
             module.track_objects(rows, nothing, derived, labels=DEFAULT_LABELS, max_seconds=300)
         with pytest.raises(ValueError) as not_cached:
             module.track_objects(rows.assign(path=None), nothing, derived, labels=DEFAULT_LABELS)
-        assert module.track_objects(rows.assign(kind="image"), nothing, derived, labels=DEFAULT_LABELS).empty
+        no_video = module.track_objects(rows.assign(kind="image"), nothing, derived, labels=DEFAULT_LABELS)
+    assert no_video["videos"].empty and no_video["tracks"].empty, no_video
+    assert list(no_video["tracks"].columns) == TRACK_COLUMNS, no_video["tracks"]
     assert str(no_labels.value) == "LABELS is empty: name at least one thing to look for"
     assert str(too_long.value) == (
         f"{relpath}: Track Objects looks at 3 frames of a video at most in one run, and 0 to 2 s at a frame "
@@ -797,7 +930,7 @@ def _code_tab_settings() -> dict:
 
 def _whole_walk(tmp_path: Path) -> dict:
     """A clip as long as the walk, 864.3 s at 10 frames a second, as
-    ``_sample`` reads a video."""
+    ``_looked_at`` reads a video."""
     import av
     import numpy as np
 
@@ -857,8 +990,8 @@ def test_a_part_that_needs_more_frames_than_max_frames_stops_before_sam3_loads_w
 def test_a_run_may_look_at_max_frames_frames_of_a_part_and_not_one_more(corner, walk, tmp_path, no_sam3):
     """The frames the limit counts are the frames a run looks at: each part
     the steps' tests pin, whose frames fall on a step, a millisecond before it
-    or after the part's end, passes a limit of the frames ``_sample`` looks at
-    in it, and stops before SAM 3 loads at one fewer, naming them."""
+    or after the part's end, passes a limit of the frames ``_looked_at`` looks
+    at in it, and stops before SAM 3 loads at one fewer, naming them."""
     nothing = SimpleNamespace(path=str(tmp_path / "no-weights"))
     parts = [
         (corner, 0, None), (corner, 0, 1.0), (corner, 1.0, 1.0),
@@ -887,18 +1020,22 @@ def test_a_run_may_look_at_max_frames_frames_of_a_part_and_not_one_more(corner, 
 
 def test_a_part_of_exactly_max_frames_frames_runs(videos, catalog_copy, weights, few_threads, tmp_path):
     """The 2 s clip at a frame every half second is 4 frames, which a limit of
-    4 runs whole."""
+    4 runs whole: its overlay shows each, and its tracks are of them."""
     import av
 
     rows, helpers = videos
     model = _loaded(catalog_copy, weights)(MODEL_ID)
     with _staged(tmp_path) as module:
-        (row,) = module.track_objects(rows, model, helpers["curio_derived_file"], labels=TWO_LABELS,
-                                      every_seconds=EVERY, max_frames=len(SAMPLED)).to_dict("records")
+        out = module.track_objects(rows, model, helpers["curio_derived_file"], labels=TWO_LABELS,
+                                   every_seconds=EVERY, max_frames=len(SAMPLED))
+    (row,) = out["videos"].to_dict("records")
     with av.open(row["path"]) as overlay:
         shown = [round(float(frame.time), 3) for frame in overlay.decode(overlay.streams.video[0])]
     assert shown == SAMPLED, f"the overlay shows its frames at {shown} s"
-    assert Path(row["tracks"]).is_file()
+    tracks = out["tracks"]
+    assert list(tracks.columns) == TRACK_COLUMNS, tracks
+    assert set(tracks["start_s"]) | set(tracks["end_s"]) <= set(SAMPLED), tracks
+    assert row["pole_objects"] + row["person_objects"] == len(tracks)
 
 
 def test_a_long_part_at_a_large_every_seconds_that_fits_runs(catalog_copy, weights, few_threads, tmp_path):
@@ -916,7 +1053,7 @@ def test_a_long_part_at_a_large_every_seconds_that_fits_runs(catalog_copy, weigh
 
         with pytest.raises(ValueError) as refused:
             track(2)
-        (row,) = track(3).to_dict("records")
+        (row,) = track(3)["videos"].to_dict("records")
     assert " 0 to 30 s at a frame every 10 s is 3 frames; " in str(refused.value), str(refused.value)
     with av.open(row["path"]) as overlay:
         shown = [round(float(frame.time), 3) for frame in overlay.decode(overlay.streams.video[0])]
@@ -932,19 +1069,19 @@ def test_a_file_shorter_than_its_row_is_tracked_as_long_as_the_file_is(catalog_c
     the row's 433 would stop it, and the overlay and its tracks keep to the
     clip's 8 s."""
     import av
-    import pandas as pd
 
     rows, helpers = _collection(tmp_path, seconds=8)
     rows["duration_s"] = 864.2
     model = _loaded(catalog_copy, weights)(MODEL_ID)
     with _staged(tmp_path) as module:
-        (row,) = module.track_objects(rows, model, helpers["curio_derived_file"], labels=TWO_LABELS,
-                                      every_seconds=2, max_frames=4).to_dict("records")
+        out = module.track_objects(rows, model, helpers["curio_derived_file"], labels=TWO_LABELS,
+                                   every_seconds=2, max_frames=4)
+    (row,) = out["videos"].to_dict("records")
     with av.open(row["path"]) as overlay:
         shown = [round(float(frame.time), 3) for frame in overlay.decode(overlay.streams.video[0])]
     assert shown == [0.0, 2.0, 4.0, 6.0], f"the overlay shows its frames at {shown} s"
     assert (row["t_s"], row["duration_s"], row["fps"]) == (0.0, 8.0, 0.5)
-    tracks = pd.read_parquet(row["tracks"])
+    tracks = out["tracks"]
     assert set(tracks["start_s"]) | set(tracks["end_s"]) <= set(shown), tracks
     assert row["pole_objects"] + row["person_objects"] == len(tracks)
 
@@ -971,7 +1108,7 @@ def test_the_code_tabs_max_frames_is_450_which_takes_the_whole_walk_at_a_frame_e
 
         with pytest.raises(_SamLoads):
             track(every_seconds=2)
-        looked_at = module._sample(SimpleNamespace(width=960, from_seconds=0, every_seconds=2), walk, WALK_SECONDS)[1]
+        looked_at = module._looked_at(SimpleNamespace(width=960, from_seconds=0, every_seconds=2), walk, WALK_SECONDS)[1]
         with pytest.raises(ValueError) as whole_walk:
             track(every_seconds=settings["EVERY_SECONDS"])
         with pytest.raises(ValueError) as five_minutes:
@@ -1221,13 +1358,12 @@ class _Street:
         before it."""
         return [index for index, (_, at) in enumerate(self.objects) if any(frame - frames < f <= frame for f in at)]
 
-    def tracks(self, row):
-        """Each of the street's objects SAM 3 found in the video of *row*:
-        its tracks, in order, each as (start_s, end_s, frames)."""
-        import pandas as pd
-
+    def tracks(self, table):
+        """Each of the street's objects SAM 3 found, from *table*, the tracks
+        Track Objects returns: its tracks, in order, each as (start_s, end_s,
+        frames)."""
         found = {}
-        for track in pd.read_parquet(row["tracks"]).sort_values("start_s").itertuples():
+        for track in table.sort_values("start_s").itertuples():
             found.setdefault(self.follows[track.object_id], []).append(
                 (float(track.start_s), float(track.end_s), int(track.frames)))
         return dict(sorted(found.items()))
@@ -1278,10 +1414,10 @@ def test_an_object_back_after_forget_seconds_is_a_new_object_its_first_track_end
     model = _loaded(catalog_copy, street_weights)(MODEL_ID)
     with _staged(tmp_path) as module:
         street = _Street(monkeypatch, module, BACK_AGAIN)
-        (row,) = module.track_objects(rows, model, helpers["curio_derived_file"], labels=TWO_LABELS,
-                                      every_seconds=1).to_dict("records")
+        out = module.track_objects(rows, model, helpers["curio_derived_file"], labels=TWO_LABELS, every_seconds=1)
 
-    tracks = street.tracks(row)
+    (row,) = out["videos"].to_dict("records")
+    tracks = street.tracks(out["tracks"])
     assert tracks == {0: [(0.0, 3.0, 4), (18.0, 23.0, 6)], 1: [(0.0, 23.0, 16)], 2: [(0.0, 23.0, 24)]}, tracks
     # SAM 3's ids, each with the street's object it is: the pole's second is its newest.
     assert street.follows[max(street.follows)] == 0, street.follows
@@ -1297,10 +1433,11 @@ def test_with_forget_seconds_none_sam3_follows_every_object_to_the_end(
     model = _loaded(catalog_copy, street_weights)(MODEL_ID)
     with _staged(tmp_path) as module:
         street = _Street(monkeypatch, module, BACK_AGAIN)
-        (row,) = module.track_objects(rows, model, helpers["curio_derived_file"], labels=TWO_LABELS,
-                                      every_seconds=1, forget_seconds=None).to_dict("records")
+        out = module.track_objects(rows, model, helpers["curio_derived_file"], labels=TWO_LABELS,
+                                   every_seconds=1, forget_seconds=None)
 
-    tracks = street.tracks(row)
+    (row,) = out["videos"].to_dict("records")
+    tracks = street.tracks(out["tracks"])
     assert tracks == {0: [(0.0, 23.0, 10)], 1: [(0.0, 23.0, 16)], 2: [(0.0, 23.0, 24)]}, tracks
     assert (row["pole_objects"], row["person_objects"]) == (1, 2)
     assert {frame: followed for frame, followed, _ in street.followed}[23] == [0, 1, 2]

@@ -434,6 +434,21 @@ class TestADependentPackagesNodeGetsTheModulesItDependsOn:
             _sources_of("ai.test.heights@1", "building_height"),
         ]
 
+    def test_but_the_header_lists_only_the_modules_of_the_packages_its_package_names(self, tmp_curio):
+        """What the header above a node's code lists, and an agent writing it
+        reads, stops at the packages the node's package names (owner, 11-22):
+        a run is handed the modules of the packages those name in turn, the
+        header none of them."""
+        from utk_curio.backend.app.packages.service import modules_for_node
+
+        install_package_from_archive("guest", _archive("ai.test.heights", modules=HEIGHTS))
+        install_package_from_archive("guest", _dependent_archive(
+            "ai.test.labels", {"ai.test.heights@1": "*"}, modules=LABELS,
+        ))
+        install_package_from_archive("guest", _dependent_archive("ai.test.nodes", {"ai.test.labels@1": "*"}))
+        listed = modules_for_node("guest", "ai.test.nodes/caller", direct_only=True)
+        assert listed == _sources_of("ai.test.labels@1", "height_labels"), listed
+
     @pytest.mark.parametrize("depends_on", [
         {"ai.test.absent@1": "*"},
         {"ai.test.heights@3": "*"},

@@ -95,7 +95,7 @@ def test_transformers_sam3_is_as_it_was_once_track_objects_ends(
                 call_as_node(body, namespace, rows, [0])
         else:
             out = call_as_node(body, namespace, rows, [0])
-            assert len(out) == 1, out
+            assert len(out["videos"]) == 1, out
         after = transformers_module.cv_utils_kernel
 
     assert while_it_ran and all(flag is False for flag in while_it_ran), (

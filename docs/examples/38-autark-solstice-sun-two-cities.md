@@ -19,7 +19,10 @@ flowchart LR
   N[two-cities-sun · autk-grammar<br/>data: Back Bay and the Loop, two workspaces<br/>compute: sun per road, one pass per area<br/>views: two maps, two linked histograms]
 ```
 
-The node has no input and hands nothing on: everything happens in its one document.
+The node has no input: everything happens in its one document. It hands on its 12 tables by name, each
+area's five layers, then `back_bay_road_sun` and `loop_road_sun`, each road with its `sunlight`
+minutes, so a Python node wired after it reads the Loop's roads with
+`loop = [!! input_0:loop_road_sun !!]`.
 
 ## Data
 
