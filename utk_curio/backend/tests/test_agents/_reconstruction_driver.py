@@ -4,7 +4,8 @@ A transport, not a runtime: it drives the SAME endpoints a browser drives --
 create a project, install and attach the Dataflow Builder, send one turn, apply
 the installs that came back, Solve, read the persisted spec -- through the Flask test client,
 with the provider and the sandbox replaced the way every agent test replaces
-them (``services.run_chat_turn`` and ``runner._http_exec``). The weights a
+them (``services.run_chat_turn`` and ``runner._http_exec``, with the runner's
+read of a circle a dataset widget is picked by, ``runner._picked_values``). The weights a
 model package's ``fetch`` names, which a node's first run downloads and no test
 may, are a stand-in planted where Curio reads them, as example 31's e2e plants
 its tiny SAM 3 (``/api/testing/fetched-weights``); the faked sandbox reads none.
@@ -44,6 +45,35 @@ DATASET_FINDER_COORD = "agent.curio.dataset-finder@1"
 
 def auth(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
+
+
+def first_choice_reads(spec, node) -> dict:
+    """What the faked sandbox answers a run's read of each wired circle a
+    dataset widget of *node* is picked by (``runner._picked_values``): the
+    value that picks the widget's first choice, a text for ``input_<k>``, or
+    a dict holding it under the key ``input_<k>.<key>`` names. A run writes
+    the node's code with the dataset that value picks
+    (``workflow_spec.picked_inputs``)."""
+    from utk_curio.backend.app.execution.code_references import (
+        is_picked,
+        normalize_widgets,
+        picked_by,
+        picked_choices,
+    )
+
+    wired = set(spec.input_slots(node.id))
+    reads: dict = {}
+    for widget in normalize_widgets(list(node.widgets or [])):
+        address = picked_by(widget) if widget.get("type") == "dataset" and is_picked(widget) else None
+        choices = list(picked_choices(widget))
+        if address is None or not choices or address[0] not in wired:
+            continue
+        slot, key = address
+        if key is None:
+            reads[slot] = {"dataType": "str", "value": choices[0]}
+        else:
+            reads.setdefault(slot, {"dataType": "dict", "value": {}})["value"][key] = choices[0]
+    return reads
 
 
 @dataclass
@@ -375,7 +405,10 @@ class InProcessDriver:
         )
 
     def fake_sandbox(self, kind_for: Callable | None = None) -> None:
-        """Every execution succeeds, reporting the kind the caller chooses.
+        """Every execution succeeds, reporting the kind the caller chooses,
+        and a circle a dataset widget is picked by holds the value that picks
+        the widget's first choice (:func:`first_choice_reads`), which a run
+        reads of the sandbox before it writes the node's code.
 
         The deterministic suite is not testing the sandbox -- ``test_execution``
         and the browser matrix do that. It is testing that verified content
@@ -392,8 +425,14 @@ class InProcessDriver:
                 "output": {"path": f"art-{len(payloads)}", "dataType": kind},
             }
 
+        def _picked(spec, node, outputs, session_id):
+            return first_choice_reads(spec, node)
+
         self.monkeypatch.setattr(
             "utk_curio.backend.app.execution.runner._http_exec", _exec
+        )
+        self.monkeypatch.setattr(
+            "utk_curio.backend.app.execution.runner._picked_values", _picked
         )
 
     # ── the turn, the review, the run ──────────────────────────────────────
@@ -655,7 +694,9 @@ def oracle_attempt(
             return code  # only code nodes reach the sandbox
         language = "javascript" if node.engine == "javascript" else "python"  # as the runner picks
         try:
-            return example_spec.node_code(node, language, code)
+            # A dataset widget an input picks writes its first choice, as the
+            # faked sandbox's read of that input picks it (fake_sandbox).
+            return example_spec.node_code(node, language, code, picked=first_choice_reads(example_spec, node))
         except CodeReferenceError:
             return code
 
