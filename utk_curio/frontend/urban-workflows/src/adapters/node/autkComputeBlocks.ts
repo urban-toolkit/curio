@@ -6,9 +6,14 @@ import { autkKeyProblem } from '../../contracts/autkGrammar';
 import { withDefaultHeights, withHeightsAsHeld } from '../../utils/autkInput';
 import { autkWorkspaceOf } from './autkDataCompile';
 import { checkedPasses } from './autkComputeScopes';
+import { handOnTables } from './autkHandOn';
 
-/** A layer a compute step holds, in the workspace it names when it is not the default one. */
-type Layer = { name: string; type: string; geojson: FeatureCollection; workspace?: string };
+/**
+ * A layer a compute step holds, in the workspace it names when it is not the
+ * default one; a raster of its input as it came, which no pass reads
+ * (`asItCame`, autkHandOn `inputTablesOf`).
+ */
+type Layer = { name: string; type: string; geojson: FeatureCollection; workspace?: string; asItCame?: any };
 
 /**
  * The CRS a compute step's database says it keeps its tables in: autk-db's
@@ -35,10 +40,12 @@ const HELD_TABLES_CRS = 'EPSG:3395';
 // `outputTableName`, leaving the table it computed over as it was, and else in
 // place of that table; a table a pass names has the pass's `layerType`, else
 // that table's type, or `points` for windows (`store` in its
-// adapters/compute.ts). The layers come back in the order the cache holds
-// them: those the step held, as the passes left them, then each table a pass
-// wrote under a new name, in the pass's workspace. Every pass the GPU runs is
-// checked on the GPU's device (`checkedPasses`).
+// adapters/compute.ts). The layers come back as every Autark node hands its
+// tables on (autkHandOn `handOnTables`): those the step held, as the passes
+// left them, then each table a pass wrote under a new name, in the pass's
+// workspace. Every pass the GPU runs is checked on the GPU's device
+// (`checkedPasses`). A raster of the step's input, as it came, is no table a
+// pass reads: it goes on as it came.
 //
 // A pass whose own table (a GPGPU, windows or clusters pass's `dataRef`, a
 // render pass's viewpoints) matches no layer of its workspace is skipped quietly: chained
@@ -82,29 +89,27 @@ export async function applyComputeBlocks(
         return handed.map((layer) => ({ ...layer, type: layer.type ?? 'polygons' }));
     }
     const { createComputeAdapter, tableKey } = await import('@urban-toolkit/autk-grammar');
-    // The grammar's caches, as its own run keeps them: each table by tableKey,
-    // with the name and the workspace it is handed on with.
+    // The grammar's caches, as its own run keeps them: each table by tableKey.
     const cache = new Map<string, FeatureCollection>();
     const types = new Map<string, any>();
-    const held = new Map<string, { name: string; workspace?: string }>();
     // Each buildings layer as the step holds it, where its passes read it with
-    // the default height (withDefaultHeights), by key; and each table a pass
-    // wrote, with the key of the one it computed over.
+    // the default height (withDefaultHeights), by key.
     const asHeld = new Map<string, FeatureCollection>();
-    const wroteFrom = new Map<string, string>();
     for (const layer of layers) {
+        if (layer.asItCame !== undefined) continue;
         const workspace = autkWorkspaceOf(layer);
         const key = tableKey(workspace, layer.name);
         const read = layer.type === 'buildings' ? withDefaultHeights(layer.geojson) : layer.geojson;
         if (read !== layer.geojson) asHeld.set(key, layer.geojson);
         cache.set(key, read);
         types.set(key, layer.type);
-        held.set(key, { name: layer.name, ...(workspace ? { workspace } : {}) });
     }
     // The adapter is handed no data adapter's cache: the step's tables are all
     // in its own cache, which a pass reads first.
     const adapter = checkedPasses(createComputeAdapter(cache, types));
     const db = heldTables(types, HELD_TABLES_CRS);
+    // The passes that ran, in order: what wrote each table handed on.
+    const ran: any[] = [];
     for (const pass of computeBlocks) {
         // A GPGPU pass's type is `gpgpu` or left out. Every other type reaches
         // the grammar's adapter, which runs a render pass on the GPU, a
@@ -116,7 +121,6 @@ export async function applyComputeBlocks(
         if (!pass || !source || (gpgpu && !pass.wgslFunction)) continue;
         const workspace = autkWorkspaceOf(pass);
         if (!cache.has(tableKey(workspace, source))) continue;
-        const sourceCrs = (cache.get(tableKey(workspace, source)) as any)?.crs;
         const name = typeof pass.outputTableName === 'string' && pass.outputTableName ? pass.outputTableName : source;
         const key = tableKey(workspace, name);
         const before = { table: cache.get(key), type: types.get(key) };
@@ -136,20 +140,13 @@ export async function applyComputeBlocks(
             failures.push((e as Error)?.message ?? 'compute failed');
             continue;
         }
-        held.set(key, { name, ...(workspace ? { workspace } : {}) });
-        // A windows pass, and a render pass that looks out of building
-        // windows, write a point a window, not the rows they computed over.
-        const holdsRows = pass.type !== 'windows' && !(render && pass?.viewpoints?.strategy?.type === 'building-windows');
-        const over = tableKey(workspace, source);
-        wroteFrom.set(key, holdsRows ? wroteFrom.get(over) ?? over : '');
+        ran.push(pass);
         const result: any = cache.get(key);
         if (!result) continue;
         // The pipelines write each GPGPU output under properties.compute.<col>.
-        // Also lift them to top-level properties so downstream nodes, and later
-        // passes, can reference the column by its bare name (e.g. `height_m`)
-        // without worrying about whether the nested `compute` object
-        // round-trips through AutkDb's DuckDB storage. Both `compute.<col>`
-        // and `<col>` dot-paths then resolve.
+        // Also lift them to top-level properties so later passes can reference
+        // the column by its bare name (e.g. `height_m`), as the nodes below do
+        // (autkHandOn `withLiftedColumns`, which hands every table on so).
         const outCols: string[] = render ? [] : (pass.outputColumns ?? (pass.outputColumnName ? [pass.outputColumnName] : []));
         if (outCols.length > 0 && Array.isArray(result.features)) {
             for (const f of result.features) {
@@ -161,24 +158,27 @@ export async function applyComputeBlocks(
                 }
             }
         }
-        // Re-attach the source crs hint so downstream re-loads keep coords
-        // aligned: a render pass's windows are a new collection.
-        if (sourceCrs && !result.crs) result.crs = sourceCrs;
     }
-    // A table no pass wrote is handed on as the step holds it; one a pass
-    // wrote over a buildings layer holds each building's own height.
-    const handedOn = (key: string, geojson: FeatureCollection): FeatureCollection => {
-        const from = wroteFrom.get(key);
-        if (from === undefined) return asHeld.get(key) ?? geojson;
-        const source = asHeld.get(from);
-        return source ? withHeightsAsHeld(geojson, source) : geojson;
-    };
-    return [...cache].map(([key, geojson]) => ({
-        name: held.get(key)?.name ?? key,
-        type: types.get(key) ?? 'polygons',
-        geojson: handedOn(key, geojson),
-        ...(held.get(key)?.workspace ? { workspace: held.get(key)!.workspace } : {}),
-    }));
+    // A table no pass wrote is handed on as the step holds it. One a pass
+    // wrote is in the CRS of the table it was computed from, which it says
+    // when it says none of its own (a render pass's windows are a new
+    // collection), and one it wrote over a buildings layer holds each
+    // building's own height.
+    const handed = await handOnTables({
+        held: layers,
+        passes: ran,
+        computed: (name, workspace) => {
+            const key = tableKey(workspace, name);
+            const collection = cache.get(key);
+            return collection ? { collection, layerType: types.get(key) } : undefined;
+        },
+        crs: (collection, _workspace, from) => (collection?.crs ? undefined : (from?.geojson as any)?.crs),
+        heights: (table, rows, how) => {
+            const held = how === 'computed' && rows ? asHeld.get(tableKey(autkWorkspaceOf(rows), rows.name)) : undefined;
+            return held ? { ...table, geojson: withHeightsAsHeld(table.geojson, held) } : table;
+        },
+    });
+    return handed.map((layer) => ({ ...layer, type: layer.type ?? 'polygons' }) as Layer);
 }
 
 /**

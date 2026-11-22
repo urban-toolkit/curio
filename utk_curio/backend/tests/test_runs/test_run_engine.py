@@ -289,6 +289,24 @@ class TestNodesTheServerDoesNotRun:
         assert "map" not in recorder.calls
         assert recorder.calls["count"]["input"] == {"path": "art-buildings", "dataType": "dataframe"}
 
+    def test_a_map_that_runs_a_pass_is_the_browsers_and_the_node_below_it_waits_for_the_canvas(self):
+        # Example 35's sky map: it hands on what its pass computes, which only
+        # the browser makes, so a run never hands the node below its input.
+        draws_and_computes = json.dumps({
+            "compute": [{"dataRef": "[!! input_0 !!]", "outputTableName": "sky", "shader": "x"}],
+            "map": {"layerRefs": [{"dataRef": "sky"}]},
+        })
+        recorder, events, finished = run(spec(
+            [node("buildings"), node("map", AUTARK, draws_and_computes, title="Sky map"), node("count")],
+            [edge("buildings", "map"), edge("map", "count")],
+        ))
+        assert finished["map"]["status"] == "browser"
+        assert "map" not in recorder.calls
+        assert finished["count"]["status"] == "waiting"
+        assert '"Sky map"' in finished["count"]["skipReason"]
+        assert "count" not in recorder.calls
+        assert outcome(events)["status"] == "needs_canvas"
+
     def test_data_only_the_browser_makes_leaves_the_run_needing_the_canvas(self):
         recorder, events, finished = run(spec(
             [node("shade", AUTARK, COMPUTE_SPEC,
