@@ -5,8 +5,8 @@
  *
  * - Simple View's Time column, the one widget of a template with neither code
  *   nor a spec, names the column its player's range is on: it changes no
- *   output, so the view stays current, as it does when a person sets it in
- *   the view's own field.
+ *   output, so a view that is current stays current, as it does when a person
+ *   sets it in the view's own field.
  * - A code node's widget, which its code reads, still leaves the node out of
  *   date.
  */
@@ -187,6 +187,11 @@ afterEach(() => {
 describe("a widget's value the dataflow's doc brings", () => {
     test("a Simple View's Time column reaches the view and leaves it current: it changes no output", async () => {
         await open(serverDoc(spec().dataflow));
+        // The view is current, as a run that showed its input leaves it. The
+        // load left it out of date: it replays each saved connection as a new
+        // one (`onConnect`), and a new input does leave its target out of date.
+        act(() => api.markNodeExecuted("walk"));
+        expect(api.nodeExecStatus.walk).toBe("executed");
 
         await fromOutside((df) => {
             const walk = df.nodes.find((n: any) => n.id === "walk");
