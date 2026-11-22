@@ -252,7 +252,7 @@ def test_the_image_module_offers_find_in_images_and_is_handed_curios_plumbing():
     first = " ".join((ast.get_docstring(function) or "").split("\n\n", 1)[0].split())
     assert "SAM 3" in first and len(first) <= 600, first
     assert [arg.arg for arg in function.args.args] == ["images", "model", "derived_file"]
-    assert [arg.arg for arg in function.args.kwonlyargs] == list(SETTINGS.values())
+    assert [arg.arg for arg in function.args.kwonlyargs] == list(SETTINGS)
     imported = [alias.name for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names]
     imported += [node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
     assert "sam3_tracking" in imported

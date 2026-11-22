@@ -122,7 +122,7 @@ def _parsed(code: str) -> tuple[list, list]:
     return body, chips
 
 
-def _written(text: str, chips: list) -> str:
+def _chips_back(text: str, chips: list) -> str:
     """*text* with each chip's stand-in written back as the chip."""
     return re.sub(r"_chip_(\d+)_", lambda match: chips[int(match.group(1))], text)
 
@@ -270,7 +270,7 @@ def test_each_starter_is_its_settings_and_a_call_into_a_module(template):
     assert isinstance(body[0].value, ast.Constant) and isinstance(body[0].value.value, str), ast.dump(body[0])
     assert ast.unparse(body[1]) == imported
     assert {widget["name"]: widget["default"] for widget in template_widgets(template)} == settings
-    assert _written(ast.unparse(body[-1].value), chips) == call
+    assert _chips_back(ast.unparse(body[-1].value), chips) == call
 
 
 def test_the_modules_offer_the_functions_their_all_names(package_modules):

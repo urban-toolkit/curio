@@ -138,7 +138,7 @@ describe("the node a model card's drop makes", () => {
       widgets: SEGMENTATION_WIDGETS,
     });
     // The node's own widgets, not the template's.
-    expect(options.widgets[0]).not.toBe(SEGMENTATION_WIDGETS[0]);
+    expect(options.widgets?.[0]).not.toBe(SEGMENTATION_WIDGETS[0]);
     // So is a template's code that names no model.
     expect(packageCardNodeOptions(ddrnetNode(), "return input_0\n", SEGMENTATION_WIDGETS)).toEqual({
       code: "return input_0\n",
