@@ -5,8 +5,9 @@ the GPU runner's GPU, and keeps the swimlane's and the map's frames on
 baselines that every GPU kind shares, on the strength of the probes of
 11-17: the tiny SAM 3 of ``tests/_support/tiny_sam3.py`` repeats exactly run
 to run on every GPU runner, in torch's default mode and in the deterministic
-mode examples 27 to 30 switch on in CI's shared sandbox, and deterministic
-mode raises nowhere. This keeps that probe as a guard.
+mode examples 27 to 30 run their work in, which a node's own code may leave on
+in a process later nodes share, and deterministic mode raises nowhere. This
+keeps that probe as a guard.
 
 Each mode runs in a process of its own: deterministic mode is the process's,
 set before CUDA starts. Each runs Track Objects twice on an 8 s clip with
@@ -50,9 +51,9 @@ PARTS = ("row", "tracks", "found", "drawn")
 
 
 def _deterministic_mode() -> None:
-    """Examples 27 to 30's lines, which CI's shared sandbox runs in its
-    process: before CUDA starts, cuBLAS's workspace, then a seed,
-    deterministic kernels only and full float32 precision."""
+    """Examples 27 to 30's settings, as their ``same_numbers_on_every_run``
+    makes them while their work runs: before CUDA starts, cuBLAS's workspace,
+    then a seed, deterministic kernels only and full float32 precision."""
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
     import torch
 
