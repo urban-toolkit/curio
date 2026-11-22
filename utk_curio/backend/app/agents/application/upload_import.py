@@ -148,25 +148,29 @@ def upload_import(user_key: str, manifest_raw: object, prompt_files: object, *, 
     # whether or not the account's store holds a copy of it.
     if builtin.is_shipped(coord):
         raise AgentServiceError(f"{coord!r} is an agent Curio ships; give yours an id of its own", 409)
-    existing = storage.load_installed_agent_definition(user_key, coord)
-    if existing is not None:
-        if agents_manifest.version_order(m.version) <= agents_manifest.version_order(existing.version):
-            raise AgentServiceError(
-                f"{coord!r} holds version {existing.version} in your store, and a version is "
-                f"immutable: upload a version of major {m.major} newer than {existing.version} to replace it",
-                409,
+    # Under the account's lock, as a copy Curio adds is written: the account's
+    # copy of a published agent at this coordinate may be rewritten at the
+    # same moment (catalog._materialize_definition).
+    with storage.writing(user_key):
+        existing = storage.load_installed_agent_definition(user_key, coord)
+        if existing is not None:
+            if agents_manifest.version_order(m.version) <= agents_manifest.version_order(existing.version):
+                raise AgentServiceError(
+                    f"{coord!r} holds version {existing.version} in your store, and a version is "
+                    f"immutable: upload a version of major {m.major} newer than {existing.version} to replace it",
+                    409,
+                )
+        try:
+            storage.write_definition_atomic(
+                user_key, coord, manifest, prompt_files, replace=existing is not None,
             )
-    try:
-        storage.write_definition_atomic(
-            user_key, coord, manifest, prompt_files, replace=existing is not None,
-        )
-    except FileExistsError as exc:
-        raise AgentServiceError(
-            f"{coord!r} was written by another upload at the same time; upload it again",
-            409,
-        ) from exc
-    except PathTraversalError as exc:
-        raise AgentServiceError(str(exc), 400) from exc
+        except FileExistsError as exc:
+            raise AgentServiceError(
+                f"{coord!r} was written by another upload at the same time; upload it again",
+                409,
+            ) from exc
+        except PathTraversalError as exc:
+            raise AgentServiceError(str(exc), 400) from exc
 
     imports.add_imported_agent(user_key, coord)
     return agents_catalog._manifest_to_card(

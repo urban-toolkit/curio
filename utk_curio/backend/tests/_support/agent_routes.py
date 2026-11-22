@@ -132,9 +132,9 @@ def _write_reader(user) -> str:
         "tools": [{"id": tool} for tool in READER_TOOLS],
         "provenance": {"publisher": "me", "trust": "imported"},
     }
-    storage.write_definition(_user_dir_key(user), READER, manifest, {
+    storage.write_definition_atomic(_user_dir_key(user), READER, manifest, {
         "prompts/system.md": READER_PREAMBLE, "prompts/chat.md": READER_PROMPT,
-    })
+    }, replace=True)
     return READER
 
 
