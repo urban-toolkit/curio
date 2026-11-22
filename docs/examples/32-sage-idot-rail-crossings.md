@@ -13,21 +13,7 @@ Everything the example reads of SAGE stays in the `idot` bucket on data.urbantk.
 
 On a Curio that mounts no bucket, open each dataset's details in the Data Catalog and press **Cache files** first.
 
-Two Data Loading nodes, **Records** and **Snapshots**, load the camera's. Each one's Data widget gives a dataset for each camera, and the camera the Settings node returns on its first circle picks one (`pickedBy`), so the Data box shows the camera's dataset and changes with it. Records' widget:
-
-```json
-{
-  "name": "data", "type": "dataset", "label": "Data",
-  "options": {
-    "pickedBy": "input_0.camera",
-    "choices": {
-      "W042": "data.sage.idot-w042-records-2025-08",
-      "W065": "data.sage.idot-w065-records-2025-08",
-      "W06E": "data.sage.idot-w06e-records-2025-12"
-    }
-  }
-}
-```
+Two Data Loading nodes, **Records** and **Snapshots**, load the camera's. Each one's Data widget gives a dataset for each camera, and the camera the Settings node returns on its first circle picks one (`pickedBy`), so the Data box shows the camera's dataset and changes with it. Records' widget is picked by `input_0.camera`, and its `choices` give `data.sage.idot-w042-records-2025-08` for `W042`, `data.sage.idot-w065-records-2025-08` for `W065` and `data.sage.idot-w06e-records-2025-12` for `W06E`.
 
 Its code is Data Loading's own, `data = curio_load_data([!! data !!])`: a run reads the camera first and writes the dataset it picks, `curio_load_data("data.sage.idot-w065-records-2025-08")` for W065.
 
