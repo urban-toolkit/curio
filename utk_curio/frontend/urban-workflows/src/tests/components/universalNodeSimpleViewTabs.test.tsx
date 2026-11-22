@@ -11,11 +11,17 @@
  * - Its header has no Play, run status or Save output toggle. NodeContainer
  *   draws those three only for a node that hands it a send-code callback
  *   (`sendCodeToWidgets`), and Simple View hands it none.
+ * - An agent's Time column (`node.settings.write`, through FlowProvider's
+ *   `applyNodeSettings`) is set as the field sets one: written to the node,
+ *   its template's widget on a view saved before it, and nothing goes out of
+ *   date or runs, since the column changes no output.
+ * - A dict of frames shows its tabs on the cards, and the Widgets tab still
+ *   holds the Time column.
  */
 import fs from "fs";
 import path from "path";
 import React from "react";
-import { act, fireEvent, render } from "@testing-library/react";
+import { act, fireEvent, render, within } from "@testing-library/react";
 
 // vega ships ESM Jest's default transform skips; nothing here draws a chart.
 jest.mock("vega", () => ({}), { virtual: true });
@@ -83,11 +89,19 @@ jest.mock("../../providers/ProvenanceProvider", () => ({
   useProvenanceContext: () => ({ nodeExecProv: () => undefined }),
 }));
 jest.mock("../../providers/ToastProvider", () => ({ useToastContext: () => ({ showToast: () => undefined }) }));
+// The value useCollab gives off a room, as its context's own default does
+// (CollaborationProvider's NOOP_VALUE): the node locks when focus enters it
+// and lets go when focus leaves it.
 jest.mock("../../providers/CollaborationProvider", () => ({
   useCollab: () => ({
     connected: false,
+    participantId: null,
+    role: null,
     users: [],
     lockedNodes: {},
+    activity: [],
+    lockNode: () => undefined,
+    unlockNode: () => undefined,
     onRemote: () => () => undefined,
   }),
 }));
@@ -110,6 +124,7 @@ import "../../registry/iconRegistry";
 import { registerPackageTemplates } from "../../registry/packagesClient";
 import { clearPackageNodes } from "../../registry/nodeRegistry";
 import UniversalNode from "../../components/UniversalNode";
+import { writeNodeSettings, type NodeSettings } from "../../utils/nodeSettingsWriters";
 
 /** The built-in templates as packages/curio.builtin@1/manifest.json declares them. */
 const MANIFEST = JSON.parse(
@@ -155,6 +170,22 @@ const VIDEOS = {
     name: { 0: "walk.mp4" },
   },
 };
+
+/** Track Objects' output, a dict of two frames: the walk's video and the
+ *  objects it followed. */
+const TWO_TABLES = {
+  dataType: "dict",
+  data: {
+    videos: VIDEOS,
+    tracks: {
+      dataType: "dataframe",
+      data: { object_id: { 0: 0, 1: 1 }, label: { 0: "curb ramp", 1: "person" }, start_s: { 0: 50, 1: 52.5 } },
+    },
+  },
+};
+
+/** The Time column widget as the shipped template declares it. */
+const TIME_COLUMN = { name: "time_column", type: "text", label: "Time column", default: "t_s" };
 
 function viewData(extra: Record<string, unknown> = {}) {
   return {
@@ -222,6 +253,22 @@ const written = () => {
   return calls.length ? calls[calls.length - 1][1] : undefined;
 };
 
+/** An agent's change of the view's settings, landed on this canvas, as
+ *  FlowProvider's applyNodeSettings hands it to the node: each setting
+ *  through the setter the node registered for it. */
+async function agentWrites(settings: NodeSettings) {
+  await act(async () => {
+    writeNodeSettings({
+      nodes: () => mockFlow.nodes as any,
+      updateDataNode: mockFlow.updateDataNode as any,
+      markNodeStale: mockFlow.markNodeStale as any,
+      markDirty: mockFlow.markDirty as any,
+      requestAutoRun: mockFlow.requestAutoRun as any,
+    }, VIEW, settings);
+  });
+  await settle();
+}
+
 beforeAll(() => {
   (globalThis as any).ResizeObserver ??= class {
     observe() {}
@@ -251,11 +298,11 @@ beforeEach(() => {
     updateDataNode: jest.fn((_nodeId: string, data: any) => mockSetData?.(data)),
     signalNodeExecDone: () => undefined,
     playNodesUpTo: () => undefined,
-    markDirty: () => undefined,
-    markNodeStale: () => undefined,
+    markDirty: jest.fn(),
+    markNodeStale: jest.fn(),
     markNodeErrored: () => undefined,
     markNodeExecuted: () => undefined,
-    requestAutoRun: () => undefined,
+    requestAutoRun: jest.fn(),
     isDashboardSource: () => false,
     clearSelectionTagsOf: () => undefined,
   };
@@ -317,5 +364,58 @@ describe("a Simple View on the canvas", () => {
     const pane = activePane(container);
     expect(timeColumnField(pane)).not.toBeNull();
     expect(timeColumnField(pane)!.value).toBe("walked_s");
+    // The column changes no output: nothing goes out of date, nothing runs.
+    expect(mockFlow.markNodeStale).not.toHaveBeenCalled();
+    expect(mockFlow.requestAutoRun).not.toHaveBeenCalled();
+  });
+
+  test("takes an agent's Time column as its field takes one: the node's, leaving it current and running nothing", async () => {
+    const { container } = await mount(viewData({ input: VIDEOS, widgets: SHIPPED.widgets }));
+
+    await agentWrites({ widgets: { time_column: "walked_s" } });
+
+    // As a value typed in the field: the column changes no output.
+    expect(mockFlow.markNodeStale).not.toHaveBeenCalled();
+    expect(mockFlow.requestAutoRun).not.toHaveBeenCalled();
+    expect(written()?.widgets).toEqual([{ ...TIME_COLUMN, value: "walked_s" }]);
+    fireEvent.click(tabOf(container, "widgets"));
+    expect(timeColumnField(activePane(container))!.value).toBe("walked_s");
+  });
+
+  test("takes an agent's Time column on a view saved before it, as its field does: its template's widget, with the value", async () => {
+    const { container } = await mount(viewData({ input: VIDEOS }));
+
+    await agentWrites({ widgets: { time_column: "walked_s" } });
+
+    expect(written()?.widgets).toEqual([{ ...TIME_COLUMN, value: "walked_s" }]);
+    expect(mockFlow.markNodeStale).not.toHaveBeenCalled();
+    expect(mockFlow.requestAutoRun).not.toHaveBeenCalled();
+    fireEvent.click(tabOf(container, "widgets"));
+    expect(timeColumnField(activePane(container))!.value).toBe("walked_s");
+  });
+
+  test("holding a dict of frames, shows them as tabs on its cards, and its Widgets tab still holds its Time column", async () => {
+    const { container } = await mount(viewData({ input: TWO_TABLES, widgets: SHIPPED.widgets }));
+    const strip = () => container.querySelector<HTMLElement>('[data-testid="simple-view-tabs"]');
+
+    // It opens on its cards, a tab per frame above them, the first one open.
+    expect(strip()).not.toBeNull();
+    expect(shown(strip())).toBe(true);
+    expect(Array.from(strip()!.querySelectorAll(".nav-link")).map((tab) => tab.textContent)).toEqual(["videos", "tracks"]);
+    expect(strip()!.querySelector(".nav-link.active")?.textContent).toBe("videos");
+    expect(shown(container.querySelector(`#imageBox_content_${VIEW}`))).toBe(true);
+
+    // A frame's tab opens its frame, and the node stays on what it shows.
+    fireEvent.click(within(strip()!).getByText("tracks"));
+    expect(strip()!.querySelector(".nav-link.active")?.textContent).toBe("tracks");
+    expect(activePane(container).contains(strip())).toBe(true);
+    expect(within(activePane(container)).getByText("curb ramp")).toBeTruthy();
+
+    // Its Widgets tab holds one field, Time column.
+    fireEvent.click(tabOf(container, "widgets"));
+    const pane = activePane(container);
+    expect(pane.contains(strip())).toBe(false);
+    expect(timeColumnField(pane)!.value).toBe("t_s");
+    expect(pane.querySelectorAll("input")).toHaveLength(1);
   });
 });
