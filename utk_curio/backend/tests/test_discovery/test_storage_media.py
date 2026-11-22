@@ -681,7 +681,8 @@ class TestDerivedFiles:
         for path in made:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b"x")
-        assert client.delete(f"/api/datasets/{dataset['id']}", headers=auth).status_code == 200
+        deleted = client.delete(f"/api/datasets/{dataset['id']}", headers=auth)
+        assert deleted.status_code == 200
         assert [str(path.relative_to(root)) for path in made if path.exists()] == []
 
 
