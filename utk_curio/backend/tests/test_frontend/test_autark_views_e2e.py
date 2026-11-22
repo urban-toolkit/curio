@@ -688,7 +688,9 @@ def test_a_python_node_after_example_35s_sky_map_reads_each_streets_share_of_sky
     )
     frame_nodes(page, [EXAMPLE_35_MAP])
     assert_autark_map_drawn(page, EXAMPLE_35_MAP, timeout=120000)
-    state = page.evaluate(_STATE_JS, [EXAMPLE_35_MAP, None]) or {}
+    # Its one map's state, asked with no view: a view of None reaches the page
+    # as null, which names no view.
+    state = page.evaluate("(id) => window.__curio_mapState(id)", EXAMPLE_35_MAP) or {}
     drawn = (state.get("street_sky") or {}).get("drawn")
     assert drawn == len(shares), (
         f"example 35's sky map drew {drawn} streets of street_sky, and handed on {len(shares)}"
