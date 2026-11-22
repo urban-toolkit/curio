@@ -59,8 +59,10 @@ STARTERS = {
     ),
 }
 #: What each module the starters import offers node code: its ``__all__``.
+#: Media's ends with the reader its video nodes, and SAM 3's Track Objects,
+#: read their frames with.
 OFFERED = {
-    "media_collections": ["sample_video_frames", "split_audio", "split_video"],
+    "media_collections": ["sample_video_frames", "split_audio", "split_video", "read_video_frames"],
     "scout_rasters.mosaic": ["mosaic_rasters", "mosaic_collection"],
 }
 

@@ -1216,14 +1216,14 @@ class TestToolLoop:
         # definition that declares neither stands in for a grant-less run. It
         # names no skills either: a run that lists skills holds skill.read.
         coord = "agent.test.plain-helper@1"
-        storage.write_definition(_user_dir_key(user), coord, {
+        storage.write_definition_atomic(_user_dir_key(user), coord, {
             "id": "agent.test.plain-helper", "name": "Plain Helper", "category": "node",
             "version": "1.0.0", "skills": [],
             "capabilities": [{"id": "conversation.respond", "contractVersion": "1"}],
             "compatibleTargets": [{"kind": "node", "requires": []}],
             "provenance": {"publisher": "curio", "trust": "imported"},
             "prompts": {"instruction": {"path": "prompts/instruction.txt", "variables": []}},
-        }, {"prompts/instruction.txt": "Answer briefly."})
+        }, {"prompts/instruction.txt": "Answer briefly."}, replace=True)
         self._save_node(client, token, alice_project, {"id": "n1", "type": "CODE", "content": "x"})
         att_id = self._install_attach(
             client, token, alice_project, coord, {"kind": "node", "targetId": "n1"},
@@ -2444,7 +2444,7 @@ class TestRosterGrantCoverage:
 
         agent_id = "agent.test.my-" + tool.replace(".", "-")
         coord = f"{agent_id}@1"
-        storage.write_definition(_user_dir_key(user), coord, {
+        storage.write_definition_atomic(_user_dir_key(user), coord, {
             "id": agent_id, "name": f"My {tool}", "category": "package",
             "version": "1.0.0",
             "capabilities": [{"id": "conversation.respond", "contractVersion": "1"}],
@@ -2453,7 +2453,7 @@ class TestRosterGrantCoverage:
             "tools": [{"id": tool}],
             "provenance": {"publisher": "me", "trust": "imported"},
             "prompts": {"instruction": {"path": "prompts/instruction.txt", "variables": []}},
-        }, {"prompts/instruction.txt": "Answer briefly."})
+        }, {"prompts/instruction.txt": "Answer briefly."}, replace=True)
         return coord
 
     def test_the_package_install_lane_run_carries_the_roster(

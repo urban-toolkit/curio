@@ -5,7 +5,9 @@ of every object's track it hands on beside the videos.
 Track Objects calls :func:`track_objects`, with its settings and Curio's
 plumbing: the model ``curio_load_model("model.curio.sam3")`` gives, whose
 ``path`` is the folder of SAM 3's weights, and ``curio_derived_file``, which
-says where a file made from a collection's video is kept and served.
+says where a file made from a collection's video is kept and served. It reads
+each video's frames with Media's ``read_video_frames`` (``curio.media@1``,
+which the package names in ``dependencies.packages``).
 
 Its SAM 3 is Transformers' video model with two corrections
 (:class:`Sam3VideoModel`): it cleans its masks as SAM 3 does, on any device
@@ -33,6 +35,8 @@ import torch
 from PIL import Image, ImageDraw
 from transformers import Sam3VideoModel as TransformersSam3VideoModel, Sam3VideoProcessor
 
+from media_collections import read_video_frames
+
 __all__ = ["track_objects"]
 
 #: A video's own columns that describe its file, which the overlay's replace.
@@ -46,9 +50,6 @@ VIDEO_COLUMNS = ["video_file_id", "video"]
 TRACK_COLUMNS = ["object_id", "label", "start_s", "end_s", "frames", "largest_share", "mean_score"]
 #: How the tag of the overlay a video gets begins (``_tag``).
 TAG = "sam3"
-#: How long before a step's time a frame may come and still be the frame
-#: looked at for that step.
-EARLY_SECONDS = 1e-3
 #: The overlay's time base: each of its frames plays at its own time in the
 #: video, to the millisecond.
 MILLISECOND = Fraction(1, 1000)
@@ -212,10 +213,8 @@ def _part_end(video, from_seconds, to_seconds, every_seconds, max_frames):
     with no frame read: the file is on this machine, its end is known, and the
     part needs no more than *max_frames* frames, one every *every_seconds*.
 
-    The frames a part needs are its steps (:func:`_steps`), the frames
-    :func:`_sample` looks at: one for each step, or fewer when the video's
-    frames come further apart than *every_seconds* or the part runs past the
-    video's end."""
+    The frames a part needs are :func:`_frames_needed`'s, the most Media's
+    ``read_video_frames`` reads for it (:func:`_looked_at`)."""
     if not isinstance(video["path"], str) or not video["path"]:
         raise ValueError(f"{video['relpath']} is not on this machine yet; cache the collection's files first")
     end = to_seconds
@@ -224,7 +223,7 @@ def _part_end(video, from_seconds, to_seconds, every_seconds, max_frames):
             end = _length_of(container, container.streams.video[0])
     if end is None:
         raise ValueError(f"{video['relpath']} does not say how long it is: set TO_SECONDS to where to stop")
-    frames = _steps(from_seconds, end, every_seconds)[0]
+    frames = _frames_needed(from_seconds, end, every_seconds)
     if frames > max_frames:
         # What fits: the gap, in tenths of a second, at which the whole part
         # needs max_frames frames at most, and the part's first max_frames
@@ -240,51 +239,31 @@ def _part_end(video, from_seconds, to_seconds, every_seconds, max_frames):
     return end
 
 
-def _steps(from_seconds, end, every_seconds):
-    """``(count, stop)``: the steps of *every_seconds* from *from_seconds* up to
-    *end*, never the step at *end*, ceil(W / every_seconds) of a part of W
-    seconds (the 1e-9 is for float rounding), and where the frames of the step
-    at *end* would start. A part of no length has one step and no such end."""
+def _frames_needed(from_seconds, end, every_seconds):
+    """How many frames the part from *from_seconds* to *end* needs, one every
+    *every_seconds*: one for each step from *from_seconds* up to *end*, never
+    the step at *end*, ceil(W / every_seconds) of a part of W seconds (the
+    1e-9 is for float rounding), and one for a part of no length. Media's
+    ``read_video_frames`` reads one frame for each of those steps, or fewer
+    when the video's frames come further apart than *every_seconds* or the
+    part runs past the video's end."""
     if end > from_seconds:
-        count = math.ceil((end - from_seconds) / every_seconds - 1e-9)
-        return count, from_seconds + count * every_seconds - EARLY_SECONDS
-    return int(end == from_seconds), float("inf")
+        return math.ceil((end - from_seconds) / every_seconds - 1e-9)
+    return int(end == from_seconds)
 
 
-def _sample(run, video, end):
-    """The frames SAM 3 looks at, read in order, and their times in seconds:
-    one for each step of *every_seconds* from *from_seconds* up to *end*, never
-    the step at *end*. Each is the first frame from a millisecond before its
-    step's time to a millisecond before the next step's, even one that comes
-    after *end*. A part of no length looks at one frame wherever the frames
-    fall: the first no more than a millisecond before *from_seconds*, or after
-    it."""
+def _looked_at(run, video, end):
+    """The frames SAM 3 looks at in *video*, as images, and their times in
+    seconds: those Media's ``read_video_frames`` reads one every
+    *every_seconds* from *from_seconds* up to *end*, at most *width* wide. A
+    part with no frame stops the call."""
     frames, times = [], []
-    with av.open(video["path"]) as container:
-        stream = container.streams.video[0]
-        # Every frame up to the last one looked at is decoded, not only those:
-        # FFmpeg decodes several at once with frame threading, about five
-        # times faster than with its default, slice threading, at 1080p.
-        stream.thread_type = "AUTO"
-        width = 2 * (min(run.width, stream.codec_context.width) // 2)
-        height = 2 * round(stream.codec_context.height * width / stream.codec_context.width / 2)
-        container.seek(int(run.from_seconds / stream.time_base), stream=stream, backward=True)
-        count, stop = _steps(run.from_seconds, end, run.every_seconds)
-        steps, wanted = 0, run.from_seconds
-        for frame in container.decode(stream):
-            if steps >= count:
-                break
-            if frame.time is None or frame.time < wanted - EARLY_SECONDS:
-                continue
-            if frame.time >= stop:
-                break
-            frames.append(frame.to_image(width=width, height=height))
-            times.append(round(float(frame.time), 3))
-            # On by whole steps, at least one, to the first this frame comes
-            # more than a millisecond before: a frame just before a step's
-            # time is that step's, and the next frame is not looked at for it.
-            steps = max(steps + 1, int((frame.time - run.from_seconds + EARLY_SECONDS) / run.every_seconds) + 1)
-            wanted = run.from_seconds + steps * run.every_seconds
+    read = read_video_frames(video["path"], every_seconds=run.every_seconds, from_seconds=run.from_seconds,
+                             to_seconds=end, width=run.width, pixel_format="rgb24")
+    with contextlib.closing(read):
+        for at, frame in read:
+            frames.append(frame.to_image())
+            times.append(round(at, 3))
     if not frames:
         raise ValueError(f"{video['relpath']} has no frames from {run.from_seconds} to {end} s")
     return frames, times
@@ -700,7 +679,7 @@ def _tag(labels, every_seconds, forget_seconds, end, width):
 def _track(run, video, end):
     """Run SAM 3 through one video: ``(row, tracks)``, its overlay's row and
     the table of the objects it followed through it."""
-    frames, times = _sample(run, video, end)
+    frames, times = _looked_at(run, video, end)
     start_ms = round(run.from_seconds * 1000)
     tag = _tag(run.labels, run.every_seconds, run.forget_seconds, end, run.width)
     overlay = run.derived_file(video["dataset_id"], video["file_id"], start_ms, "mp4", tag=tag)
