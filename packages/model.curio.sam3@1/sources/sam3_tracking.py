@@ -15,6 +15,7 @@ a moment, each other object keeps its own mask and score.
 """
 
 import colorsys
+import contextlib
 import datetime
 import hashlib
 import json
@@ -306,7 +307,8 @@ class Sam3VideoModel(TransformersSam3VideoModel):
     Face Hub, which has no build for the image's torch and none for a CPU,
     and an isolated run cannot fetch it; without it, it kept every detection
     and every hole and speck. Here it is done in torch, as cv-utils does it,
-    and Transformers no longer looks for the library.
+    and while SAM 3 runs Transformers does not look for the library
+    (:func:`_without_the_kernels_library`).
 
     SAM 3's tracker gives each frame a mask and a score for each object it
     follows as the frame starts, in order. Transformers drops the objects the
@@ -316,10 +318,6 @@ class Sam3VideoModel(TransformersSam3VideoModel):
     frame's masks and scores are paired, as SAM 3's own code pairs them with
     the objects it followed as the frame started, and the frame's output
     leaves the objects dropped out, as Transformers' does."""
-
-    def __init__(self, config):
-        super().__init__(config)
-        _without_the_kernels_library()
 
     def run_detection(self, inference_session, vision_embeds):
         """Each label's detections, as Transformers finds them, without those
@@ -384,15 +382,29 @@ class Sam3VideoModel(TransformersSam3VideoModel):
         return masks, scores, metadata, tracker_scores
 
 
+@contextlib.contextmanager
 def _without_the_kernels_library():
-    """Have Transformers' SAM 3 go on as if it had looked for the kernels
-    library and found none, unless it has loaded it: :class:`Sam3VideoModel`
-    cleans the masks itself, and Transformers would otherwise look for the
-    library on the Hugging Face Hub, then say on each run that the clean-up is
-    skipped."""
+    """While the block runs, have Transformers' SAM 3 go on as if it had
+    looked for the kernels library and found none, unless it has looked
+    already: :class:`Sam3VideoModel` cleans the masks itself, and Transformers
+    would otherwise look for the library on the Hugging Face Hub at the first
+    frame, then say on each run that the clean-up is skipped.
+
+    Transformers keeps what it found in a flag of its module, which the block
+    sets only when Transformers has not looked yet, and puts back once it
+    ends, whether it returns or raises. A node runs in a process the nodes
+    after it may share, as the sandbox's without isolation, and a later run of
+    Transformers' own SAM 3 there looks for the library as in a fresh
+    process."""
     transformers_module = sys.modules[TransformersSam3VideoModel.__module__]
-    if getattr(transformers_module, "cv_utils_kernel", False) is None:
+    not_looked_yet = getattr(transformers_module, "cv_utils_kernel", False) is None
+    if not_looked_yet:
         transformers_module.cv_utils_kernel = False
+    try:
+        yield
+    finally:
+        if not_looked_yet:
+            transformers_module.cv_utils_kernel = None
 
 
 def _kept_by_nms(scores, masks, iou_threshold):
@@ -503,7 +515,9 @@ def _follow(run, frames, let_go_after=None):
     used goes back to the device (:func:`_give_back`). With *let_go_after*, a
     number of frames, it also lets go between two frames of each object it has
     not shown in the last *let_go_after* frames (:class:`_Sightings`), so the
-    objects it follows stop adding up over a long video."""
+    objects it follows stop adding up over a long video. While it runs,
+    Transformers does not look for the kernels library
+    (:func:`_without_the_kernels_library`)."""
     seen = _Frames(run, frames)
     session = run.processor.init_video_session(inference_device=run.device, dtype=run.dtype)
     session.processed_frames = seen
@@ -513,15 +527,16 @@ def _follow(run, frames, let_go_after=None):
     sightings = None if let_go_after is None else _Sightings(session)
     hook = None if sightings is None else run.sam3.register_forward_hook(sightings.note)
     try:
-        for output in run.sam3.propagate_in_video_iterator(inference_session=session):
-            found = run.processor.postprocess_outputs(session, output)
-            _forget(session, seen.latest, run.sam3.tracker_model)
-            # Once SAM 3 has looked at the last frame, it has no frame left to
-            # follow an object through.
-            if sightings is not None and seen.latest < len(frames) - 1:
-                sightings.let_go(seen.latest - let_go_after, output.frame_idx)
-            _give_back(run.device)
-            yield output.frame_idx, found
+        with _without_the_kernels_library():
+            for output in run.sam3.propagate_in_video_iterator(inference_session=session):
+                found = run.processor.postprocess_outputs(session, output)
+                _forget(session, seen.latest, run.sam3.tracker_model)
+                # Once SAM 3 has looked at the last frame, it has no frame left
+                # to follow an object through.
+                if sightings is not None and seen.latest < len(frames) - 1:
+                    sightings.let_go(seen.latest - let_go_after, output.frame_idx)
+                _give_back(run.device)
+                yield output.frame_idx, found
     finally:
         if hook is not None:
             hook.remove()

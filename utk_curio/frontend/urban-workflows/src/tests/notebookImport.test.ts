@@ -15,6 +15,7 @@ jest.mock("uuid", () => {
 
 import { mergeImportCells, notebookToTrill, SETUP_NODE_TITLE, trillToNotebook, type TrillSpec } from "../NotebookConvertor";
 import { NodeType } from "../constants";
+import { clearToken, setToken } from "../utils/authApi";
 
 type Analysis = {
   defined?: string[];
@@ -320,5 +321,26 @@ describe("notebookToTrill", () => {
     });
     const { dataflow } = await notebookToTrill(nb, "http://backend");
     expect(dataflow.nodes).toHaveLength(1);
+  });
+
+  it("asks for the analysis with the page's sign-in", async () => {
+    // The analysis needs a sign-in, as a Play does: the backend has the
+    // sandbox make the Vega-Lite spec of each Altair cell under it.
+    setToken("a-session-token");
+    try {
+      stubAnalyzer([{ last_var: "df" }], []);
+      await notebookToTrill(notebook("df = load()"), "http://backend");
+
+      const [url, init] = (global as any).fetch.mock.calls[0];
+      expect(url).toBe("http://backend/api/analyzeNotebook");
+      expect(init.headers).toEqual(
+        expect.objectContaining({
+          Authorization: "Bearer a-session-token",
+          "Content-Type": "application/json",
+        }),
+      );
+    } finally {
+      clearToken();
+    }
   });
 });

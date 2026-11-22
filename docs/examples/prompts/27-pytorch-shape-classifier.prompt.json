@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/27-pytorch-shape-classifier.json",
-    "sha256": "f9ca5b796428c44d2ea78265f4903e45fb26e84fd001510d68247cc448d35cab",
+    "sha256": "d6c7529ce79fd8e63a799ba5944cca62e1303fddf3c54be719421989e3df6f5c",
     "walkthrough": "docs/examples/27-pytorch-shape-classifier.md"
   },
   "prompt": "Draw sixty small labeled pictures in code, twenty each of circles, squares and triangles, each shape at a random size, position, rotation and colour on a light background, kept as images in a column. Load the trained weights of a tiny convolutional network from the repository file docs/examples/data/shape-cnn.npz without unpickling anything, and classify every picture with that network in PyTorch, on the GPU when there is one and on the CPU otherwise, seeded and deterministic, recording which device it ran on. Show each picture with its true shape, the predicted one and the confidence, and chart the share of each shape the network gets right.",
