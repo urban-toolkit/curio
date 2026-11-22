@@ -1,6 +1,11 @@
 """
-Static analysis of Jupyter notebook cells: dependency edges and Altair → Vega-Lite
-spec extraction.
+What the notebook import reads of each Jupyter cell's code, with ``ast`` and
+patterns alone: the names a cell defines and uses, its last variable, the
+edges between cells, the cells that only import, and the cells that draw an
+Altair chart, with the field names their strings mention.
+
+No cell's code runs here. The sandbox makes the Vega-Lite spec of each chart
+cell, as it runs node code (``charts.py``).
 """
 import ast
 import builtins
@@ -166,7 +171,7 @@ class _UsedNamesVisitor(ast.NodeVisitor):
             self.visit(decorator)
 
 
-# ── Altair → Vega-Lite spec extraction ───────────────────────────────────────
+# ── Cells that draw an Altair chart ──────────────────────────────────────────
 
 _ALTAIR_RE = re.compile(r'\balt\.\w+\s*\(')
 _ALTAIR_MARK_TYPES = frozenset([
@@ -187,42 +192,6 @@ def _extract_altair_fields(code):
     return fields
 
 
-def _try_altair_to_spec(code, last_var, external_vars=()):
-    """
-    Execute Altair code in a mock namespace and return the Vega-Lite spec dict,
-    or None if the conversion fails.
-
-    A mock DataFrame built from field names mentioned in the code is used as
-    data so Altair can infer column types for shorthand fields.  The 'data' and
-    'datasets' keys are stripped from the result so the VIS_VEGA node receives
-    real data from its upstream Curio connection at runtime.
-    """
-    try:
-        import altair as alt
-        import pandas as pd
-        import numpy as np
-
-        fields = _extract_altair_fields(code)
-        mock_df = pd.DataFrame({f: [1, 2] for f in fields}) if fields else pd.DataFrame({'_x': [1]})
-
-        ns = {'alt': alt, 'pd': pd, 'np': np, '__builtins__': __builtins__}
-        for var in external_vars:
-            if var not in ns:
-                ns[var] = mock_df.copy()
-
-        exec(compile(code, '<notebook_cell>', 'exec'), ns)
-        chart = ns.get(last_var)
-        if chart is None or not hasattr(chart, 'to_dict'):
-            return None
-
-        spec = chart.to_dict(validate=False)
-        spec.pop('data', None)
-        spec.pop('datasets', None)
-        return spec
-    except Exception:
-        return None
-
-
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def analyze_cells(cells: list[str]) -> dict:
@@ -231,8 +200,9 @@ def analyze_cells(cells: list[str]) -> dict:
 
     Returns a dict with:
       - 'analysis': per-cell dicts with 'defined', 'used', 'last_var',
-                    'altair_spec' (Vega-Lite spec or null), and
-                    'is_import_only' (see :func:`_is_import_only`).
+                    'altair_spec' (always null here: the route fills in the
+                    spec the sandbox makes of each cell :func:`chart_cells`
+                    names), and 'is_import_only' (see :func:`_is_import_only`).
       - 'edges': list of {source, target} cell-index pairs representing
                  data-flow dependencies.
     """
@@ -273,17 +243,12 @@ def analyze_cells(cells: list[str]) -> dict:
         used = visitor.used - import_names - _PYTHON_BUILTINS
 
         last_var = _last_assigned_var(tree)
-        altair_spec = (
-            _try_altair_to_spec(code, last_var, external_vars=used)
-            if last_var and _ALTAIR_RE.search(code)
-            else None
-        )
 
         analysis.append({
             'defined': list(defined),
             'used': list(used),
             'last_var': last_var,
-            'altair_spec': altair_spec,
+            'altair_spec': None,
             'is_import_only': _is_import_only(tree, used),
         })
         import_names_per_cell.append(import_names)
@@ -308,3 +273,27 @@ def analyze_cells(cells: list[str]) -> dict:
                 producer[name] = i
 
     return {'analysis': analysis, 'edges': edges}
+
+
+def chart_cells(cells: list[str], analysis: list[dict]) -> list[dict]:
+    """The cells of *cells* that draw an Altair chart, as the sandbox makes
+    their Vega-Lite specs (``charts.altair_specs``): each one that parses,
+    assigns a variable and calls ``alt.<name>(``, with *analysis*, what
+    :func:`analyze_cells` read of the same cells.
+
+    Each is ``{"cell", "code", "last_var", "names", "fields"}``: its index,
+    its code as the notebook holds it, the variable that holds its chart, the
+    names it reads (its imports and Python's builtins aside), each of which
+    the sandbox binds to a stand-in frame before the cell runs, and the field
+    names its strings mention, that frame's columns."""
+    charts = []
+    for index, (code, cell) in enumerate(zip(cells, analysis)):
+        if cell['last_var'] and _ALTAIR_RE.search(code):
+            charts.append({
+                'cell': index,
+                'code': code,
+                'last_var': cell['last_var'],
+                'names': sorted(cell['used']),
+                'fields': sorted(_extract_altair_fields(code)),
+            })
+    return charts
