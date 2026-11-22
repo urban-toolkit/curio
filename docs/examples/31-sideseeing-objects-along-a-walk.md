@@ -62,21 +62,21 @@ return track_objects(
 )
 ```
 
-It gives the video back as its overlay, the frames SAM 3 looked at with each object's mask and id drawn, with `t_s`, where the overlay starts in the video, a count of the objects of each label, and `tracks`, the path of a table of one row per object.
+It gives back two tables. `videos` is the video as its overlay, the frames SAM 3 looked at with each object's mask and id drawn, with `t_s`, where the overlay starts in the video, and a count of the objects of each label. `tracks` has one row per object it followed.
 
 ## Play the overlay
 
-`Simple View` plays the overlay, each frame for 2.5 s, so it keeps time with the walk. Its interaction edges link the player to the swimlane and to the map: what the player has played, from the video's start to where it stands, is a range on `t_s`, and each view marks its rows whose `t_s` is in the range: the swimlane draws their bars in their label's color, and the map draws their fixes in Autark's highlight color. A seek back marks fewer.
+`Simple View` shows the two tables as tabs, and plays the overlay in the first, `videos`, each frame for 2.5 s, so it keeps time with the walk. Its interaction edges link the player to the swimlane and to the map: what the player has played, from the video's start to where it stands, is a range on `t_s`, and each view marks its rows whose `t_s` is in the range: the swimlane draws their bars in their label's color, and the map draws their fixes in Autark's highlight color. A seek back marks fewer.
 
 ## One row per object
 
-```python
-import pandas as pd
+The node reads Track Objects' `tracks` by its key, with the chip `[!! input_0:tracks !!]`, and gives each object `t_s`.
 
-# One row per object Track Objects followed, from the tracks table each of
-# its rows names. t_s, the time the player's range is matched on, is when
-# SAM 3 first saw the object, so its bar takes its label's color from there.
-objects = pd.concat([pd.read_parquet(path) for path in input_0["tracks"]], ignore_index=True)
+```python
+# One row per object Track Objects followed: its tracks table, read by its
+# key. t_s, the time the player's range is matched on, is when SAM 3 first
+# saw the object, so its bar takes its label's color from there.
+objects = [!! input_0:tracks !!]
 objects["t_s"] = objects["start_s"]
 
 return objects
@@ -207,5 +207,5 @@ The streets of the extract, with the fixes on top, colored by their time in the 
 ## Good to know
 
 - **A run looks at `MAX_FRAMES` frames at most.** A smaller `EVERY_SECONDS` takes more frames of the walk, and past 450 the node stops before SAM 3 loads and says which part fits; `FROM_SECONDS` and `TO_SECONDS` pick a part.
-- **Each setting keeps files of its own.** A run that asks other labels, frames, forgetting, part or width than an earlier one writes an overlay and tracks of its own; one that asks the same writes the earlier run's again.
+- **Each setting keeps an overlay of its own.** A run that asks other labels, frames, forgetting, part or width than an earlier one writes an overlay of its own; one that asks the same writes the earlier run's again.
 - **The labels are words.** SAM 3 takes any short noun phrase; the Model Catalog lists the 35 the package suggests.

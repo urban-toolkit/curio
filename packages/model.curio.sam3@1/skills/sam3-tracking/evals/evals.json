@@ -22,17 +22,17 @@
     {
       "id": 2,
       "prompt": "Add a node that puts every object Track Objects followed in one table, one row per object, with when it was first and last seen.",
-      "expected_output": "One node.create of curio.builtin/python-computation whose code returns pd.concat of pd.read_parquet over each path in input_0's tracks column, with the answer connecting walk-objects to it or saying to.",
+      "expected_output": "One node.create of curio.builtin/python-computation whose code returns Track Objects' tracks table, read by its key of input_0 with the chip [!! input_0:tracks !!], and opens no file, with the answer connecting walk-objects to it or saying to.",
       "assertions": [
         "The answer makes one node.create of type curio.builtin/python-computation.",
-        "The code it writes reads each path of input_0's tracks column with pd.read_parquet.",
-        "The code returns every video's tracks as one table, with pd.concat.",
+        "The code it writes reads the tracks table by its key of input_0: the chip [!! input_0:tracks !!], curio_layer(input_0, \"tracks\") or input_0[\"tracks\"].",
+        "The code opens no file of the tracks: no pd.read_parquet.",
         "The answer connects the Track Objects node walk-objects to the new node, or tells the user to."
       ],
       "checks": [
         {"assertion": 1, "kind": "node-added", "type": "curio.builtin/python-computation", "count": 1},
-        {"assertion": 2, "kind": "code", "type": "curio.builtin/python-computation", "pattern": "read_parquet"},
-        {"assertion": 3, "kind": "code", "type": "curio.builtin/python-computation", "pattern": "concat\\("}
+        {"assertion": 2, "kind": "code", "type": "curio.builtin/python-computation", "pattern": "\\[!!\\s*input_0\\s*:\\s*tracks\\s*!!\\]|curio_layer\\(\\s*input_0\\s*,\\s*[\"']tracks[\"']|input_0\\s*\\[\\s*[\"']tracks[\"']\\s*\\]"},
+        {"assertion": 3, "kind": "code", "type": "curio.builtin/python-computation", "pattern": "read_parquet", "absent": true}
       ]
     },
     {
@@ -54,7 +54,7 @@
   "trigger_queries": [
     {"query": "Can the tracking also look for bicycles and fire hydrants?", "should_trigger": true},
     {"query": "How do I draw when each tracked object was seen, one bar per object?", "should_trigger": true},
-    {"query": "What is in the tracks column, and how do I read it in another node?", "should_trigger": true},
+    {"query": "What is in the tracks table, and how do I read it in another node?", "should_trigger": true},
     {"query": "Track Objects says the video is too long. How do I track only part of it?", "should_trigger": true},
     {"query": "Why does the overlay play at two frames a second?", "should_trigger": true},
     {"query": "How many traffic cones did each video have?", "should_trigger": true},

@@ -761,7 +761,9 @@ named after its key, and an Autark node's table after its name. A raster's tab
 says it is a raster, then, as an input chip's hover says them, its size in
 cells, its bands and its CRS, for a raster an Autark node hands on or one a
 Python node's tuple, list or dict holds; the pool passes the raster on as it
-came.
+came. A Simple View shows a dict of frames as tabs too, each named after its
+key and shown as a Simple View shows a table, the first one open: Track
+Objects' `videos` tab plays its overlays and its `tracks` tab lists the objects.
 
 In code and in a Vega-Lite or Autark spec, each input is a chip:
 
@@ -1352,7 +1354,7 @@ Removing an interaction edge, or a node at either end, removes the highlight it 
 
 A point selection over fields (`"select": {"type": "point", "fields": ["unit_id"]}`) sends the values of the points picked, such as `{"unit_id": 103}`, and the receiving chart marks every row that holds them, in whatever order it holds its rows. A point selection without fields matches rows by position, so both charts must read the same rows in the same order. An interval selection matches by column name, so the receiving chart needs the columns the interval names.
 
-A Simple View's player is a selection too, an interval on its **Time column**, the time in seconds. Draw an interaction edge from the Simple View to a chart or a map: while a video or a recording plays in one of its cards, the view at the other end marks the rows whose value in that column lies between the file's start and where the player stands, such as a walk's points up to where the walker is. The marks follow the player as it plays and when you seek, and stay where it stands when you pause. They go when another card plays, when the Simple View's rows change, or when the edge or either node is removed. Time column, on the Simple View's Widgets tab, names the column the linked rows keep their seconds in: `t_s`, the time in the video as Sample Video Frames and Split Audio write it, until you set another. A table that holds clock times gets a column of seconds in a Python node before it is linked. A file cut from a longer one, such as Track Objects' overlay, Split Audio's clip or Split Video's block, holds where it starts in its own `t_s`, and its player's range is then in the longer file's time.
+A Simple View's player is a selection too, an interval on its **Time column**, the time in seconds. Draw an interaction edge from the Simple View to a chart or a map: while a video or a recording plays in one of its cards, the view at the other end marks the rows whose value in that column lies between the file's start and where the player stands, such as a walk's points up to where the walker is. The marks follow the player as it plays and when you seek, and stay where it stands when you pause. They go when another card plays, when the Simple View's rows change or another tab of its frames opens, or when the edge or either node is removed. Time column, on the Simple View's Widgets tab, names the column the linked rows keep their seconds in: `t_s`, the time in the video as Sample Video Frames and Split Audio write it, until you set another. A table that holds clock times gets a column of seconds in a Python node before it is linked. A file cut from a longer one, such as Track Objects' overlay, Split Audio's clip or Split Video's block, holds where it starts in its own `t_s`, and its player's range is then in the longer file's time.
 
 When several selections reach a Data Pool, the two selects at the top of the pool decide which rows it marks. **Conflict inside visualization** combines the selections of one chart, and **Conflict between visualizations** combines the latest selection of each linked chart:
 
