@@ -719,7 +719,13 @@ def test_examples_that_load_catalog_data_declare_it_in_the_spec():
     shows an empty Data palette with nothing marked as in-dataflow. The ref is
     also what ``datasets/seed.py`` reads to decide what to provision, so without
     it the dataset is never copied into the user's store either.
+
+    Each node's code is read as a run writes it (``node_run_code``): a call
+    that reads a Data widget, ``curio_load_data([!! data !!])``, loads the id
+    the widget holds, or each choice of one an input picks.
     """
+    from utk_curio.backend.app.execution.code_references import node_run_code
+
     for path in _example_json_paths():
         with open(path, encoding="utf-8") as handle:
             spec = json.load(handle)
@@ -729,7 +735,7 @@ def test_examples_that_load_catalog_data_declare_it_in_the_spec():
             used.update(
                 re.findall(
                     r"""curio_(?:load_data|data_path|load_collection)\(\s*["']([^"']+)["']\s*\)""",
-                    node.get("content") or "",
+                    node_run_code(node),
                 )
             )
         declared = {
