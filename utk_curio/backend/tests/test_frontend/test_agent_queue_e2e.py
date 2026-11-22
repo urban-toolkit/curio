@@ -141,12 +141,16 @@ _CARRYING_JS = """() => Array.from(window.__curio_awareness.getStates().values()
 #: focused, then Enter, which React Flow's own selection takes by the node's
 #: id, leaving every other node of the canvas as it is. Never
 #: ``window.__curio_reactFlow.setNodes``, which replaces the canvas's whole
-#: list with React Flow's own copy of it (``test_frontend/README.md``).
+#: list with React Flow's own copy of it (``test_frontend/README.md``). Enter
+#: is pressed and let go: React Flow's key handlers count a key held until its
+#: keyup, and with Enter held, Delete alone would match none of them.
 _SELECT_ONLY_JS = """(id) => {
     const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
     if (!node) throw new Error(`no node ${id} is drawn`);
     node.focus({preventScroll: true});
-    node.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', bubbles: true, cancelable: true}));
+    for (const type of ['keydown', 'keyup']) {
+        node.dispatchEvent(new KeyboardEvent(type, {key: 'Enter', code: 'Enter', bubbles: true, cancelable: true}));
+    }
 }"""
 
 #: Ben's selection, made at the commit in which his canvas takes a node the
