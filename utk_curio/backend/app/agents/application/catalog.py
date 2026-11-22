@@ -320,7 +320,10 @@ def _copy_published(user_key: str, coord: str, *, newer_than: str | None = None)
 
     With *newer_than*, the version of an earlier copy, the published one
     replaces that copy only when its version is newer: one ``<id>@<major>``
-    holds one version, so a new release of the same major reaches the adder."""
+    holds one version, so a new release of the same major reaches the adder.
+
+    Called only by :func:`_materialize_definition`, under the account's
+    lock, and written as a built-in's copy is (:func:`_write_copy`)."""
     try:
         bundle = storage.read_definition_bundle_from_dir(
             publications.published_agent_dir(coord), carry_shared=False,
@@ -333,12 +336,20 @@ def _copy_published(user_key: str, coord: str, *, newer_than: str | None = None)
     if newer_than is not None and version_order(str(manifest.get("version", ""))) <= version_order(newer_than):
         return
     manifest["provenance"] = {**(manifest.get("provenance") or {}), "trust": "global"}
-    try:
-        storage.write_definition_atomic(
-            user_key, coord, manifest, bundle["prompts"], replace=newer_than is not None,
-        )
-    except FileExistsError:
-        pass  # a concurrent add wrote it first
+    _write_copy(user_key, coord, manifest, bundle["prompts"])
+
+
+def _write_copy(user_key: str, coord: str, manifest: dict, files: dict[str, str]) -> None:
+    """Write *coord*'s copy into the account's store whole
+    (``storage.write_definition_atomic``), in place of the folder there if
+    there is one: a copy of an agent Curio ships and a copy of a published
+    one alike. The caller holds the account's lock (``storage.writing``)
+    across its look at the store and this write, so no other write of the
+    store comes between them."""
+    storage.write_definition_atomic(
+        user_key, coord, manifest, files,
+        replace=storage.agent_definition_dir(user_key, coord).exists(),
+    )
 
 
 def _materialize_definition(user_key: str, coord: str) -> None:
@@ -353,39 +364,47 @@ def _materialize_definition(user_key: str, coord: str) -> None:
     the current shipped set on the next install/import, idempotently. An
     earlier copy of a published one is replaced when the publication's version
     is newer, and an owned import deliberately shadowing a built-in coord keeps
-    its own bytes."""
-    existing = storage.load_installed_agent_definition(user_key, coord)
-    if existing is not None and existing.provenance.trust == "global":
-        _copy_published(user_key, coord, newer_than=existing.version)
-        return
-    if existing is not None and existing.provenance.trust != "built-in":
-        return  # owned/imported shadow: its bytes are authoritative
-    bundle = builtin_definition_bundle(coord)
-    if bundle is None:
-        if existing is None:
-            _copy_published(user_key, coord)
-        return
-    manifest, files = bundle["manifest"], bundle["prompts"]
-    if existing is not None:
-        base = storage.agent_definition_dir(user_key, coord)
-        declared = manifest["prompts"]
-        complete = set(existing.prompts) == set(declared) and all(
-            (base / asset["path"]).is_file() for asset in declared.values()
-        )
-        if complete:
-            # Completeness isn't freshness (dev/60): a shipped prompt UPDATE
-            # must reach the materialized copy too, so rewrite on byte drift.
-            fresh = all(
-                (base / asset["path"]).read_text(encoding="utf-8") == files.get(asset["path"], "")
-                for asset in declared.values()
+    its own bytes.
+
+    Each copy lands whole (:func:`_write_copy`), so a request that reads the
+    store meanwhile, such as the agents listing a page asks for while a first
+    visit adds the default agents, finds no copy, the old one or the new one,
+    never a part of one. All of it runs under the account's lock
+    (``storage.writing``), in every backend process, so two of these at once
+    never rewrite one copy together."""
+    with storage.writing(user_key):
+        existing = storage.load_installed_agent_definition(user_key, coord)
+        if existing is not None and existing.provenance.trust == "global":
+            _copy_published(user_key, coord, newer_than=existing.version)
+            return
+        if existing is not None and existing.provenance.trust != "built-in":
+            return  # owned/imported shadow: its bytes are authoritative
+        bundle = builtin_definition_bundle(coord)
+        if bundle is None:
+            if existing is None:
+                _copy_published(user_key, coord)
+            return
+        manifest, files = bundle["manifest"], bundle["prompts"]
+        if existing is not None:
+            base = storage.agent_definition_dir(user_key, coord)
+            declared = manifest["prompts"]
+            complete = set(existing.prompts) == set(declared) and all(
+                (base / asset["path"]).is_file() for asset in declared.values()
             )
-            if fresh:
-                return  # matches the shipped asset set AND bytes
-    if builtin.read_prompt_text(coord, "instruction") is None:
-        return  # prompt file missing: leave the built-in fallback to handle runtime
-    # Every prompt the manifest declares: the preamble, the instruction, and
-    # each mode's own.
-    storage.write_definition(user_key, coord, manifest, files)
+            if complete:
+                # Completeness isn't freshness (dev/60): a shipped prompt UPDATE
+                # must reach the materialized copy too, so rewrite on byte drift.
+                fresh = all(
+                    (base / asset["path"]).read_text(encoding="utf-8") == files.get(asset["path"], "")
+                    for asset in declared.values()
+                )
+                if fresh:
+                    return  # matches the shipped asset set AND bytes
+        if builtin.read_prompt_text(coord, "instruction") is None:
+            return  # prompt file missing: leave the built-in fallback to handle runtime
+        # Every prompt the manifest declares: the preamble, the instruction, and
+        # each mode's own.
+        _write_copy(user_key, coord, manifest, files)
 
 
 # ── read ────────────────────────────────────────────────────────────────────

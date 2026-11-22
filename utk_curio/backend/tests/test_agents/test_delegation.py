@@ -877,7 +877,7 @@ def _write_one_capability_agent(user, slug: str, name: str, capability: str) -> 
     from utk_curio.backend.app.agents.repositories import storage
 
     coord = f"agent.test.{slug}@1"
-    storage.write_definition(_user_dir_key(user), coord, {
+    storage.write_definition_atomic(_user_dir_key(user), coord, {
         "id": f"agent.test.{slug}",
         "name": name,
         "category": "node",
@@ -887,7 +887,7 @@ def _write_one_capability_agent(user, slug: str, name: str, capability: str) -> 
         "compatibleTargets": [{"kind": "canvas", "requires": []}],
         "inputs": {"reads": [], "requiredConfig": []},
         "provenance": {"publisher": "me", "trust": "imported"},
-    }, {"prompts/instruction.md": f"You are {name}."})
+    }, {"prompts/instruction.md": f"You are {name}."}, replace=True)
     return coord
 
 
@@ -1058,9 +1058,9 @@ def _write_my_helper(user):
         "inputs": {"reads": [], "requiredConfig": []},
         "provenance": {"publisher": "me", "trust": "imported"},
     }
-    storage.write_definition(_user_dir_key(user), MINE, manifest, {
+    storage.write_definition_atomic(_user_dir_key(user), MINE, manifest, {
         "prompts/chat.md": CHAT_PROMPT, "prompts/interpret.md": MODE_PROMPT,
-    })
+    }, replace=True)
 
 
 class TestOwnModes:
