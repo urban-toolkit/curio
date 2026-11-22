@@ -15,11 +15,11 @@ code reads the file from its ``path``.
 
 ``curio_derived_file(dataset_id, file_id, t_ms, ext)`` names a file a node
 writes from one of a collection's files: a video's frame, a video made from a
-video (an overlay of it, say), a table of what a node found in a video, a
-recording's window, a photo's overlay. ``DERIVED`` lists what may be derived
-from a file of each kind. A ``tag`` tells two derived files of one file and
-time apart: an overlay's names the model that drew it. The backend serves the
-file back under the same id (``DERIVED_ID_RE``). A dashboard viewer's step
+video (an overlay of it, say), a recording's window, a photo's overlay.
+``DERIVED`` lists what may be derived from a file of each kind. A ``tag``
+tells two derived files of one file and time apart: an overlay's names the
+model that drew it. The backend serves the file back under the same id
+(``DERIVED_ID_RE``). A dashboard viewer's step
 writes in a folder of its own (``KEPT_MEDIA``), which the URLs of the rows it
 derives name (``?kept=<name>``), so a row is read from where its run wrote
 it. Both paths, in process and isolated, build these from one function, so
@@ -57,12 +57,10 @@ _MAX_T_MS = 10**12 - 1
 #: does, so a video's frame and a video made from it at one time and tag are
 #: two ids, each naming one file.
 DERIVED = {
-    # A video's frame, a video made from it (an overlay, say), the overlay of
-    # one of its frames, and a table of what a node found in it, which later
-    # nodes read by its path and the media route does not serve.
+    # A video's frame, a video made from it (an overlay, say), and the overlay
+    # of one of its frames.
     "video": {
         "jpg": ("frames", "frame"), "mp4": ("videos", "video"), "png": ("overlays", "image"),
-        "parquet": ("tables", "table"),
     },
     "audio": {"wav": ("clips", "audio")},
     # A segmentation's overlay of a photo, or of a sequence's frame.
@@ -71,7 +69,7 @@ DERIVED = {
 }
 
 #: The kinds of row the media route draws a thumbnail of: a collection's
-#: files but those of a ``files`` resource, and the derived ones but a table.
+#: files but those of a ``files`` resource, and the derived ones.
 DRAWN = ("image", "frame", "raster", "video", "audio")
 
 #: In an account's media folder, the folder of each dashboard viewer's step's
@@ -155,8 +153,8 @@ def media_urls(dataset_id, file_id, kind, kept=None):
     *kind*: what Simple View draws; the image a reader of images reads (the
     file itself, or a video's or a raster's thumbnail); a recording's file,
     for a player. None of them for a kind the media route draws nothing of:
-    a table, and a ``file``, which node code reads from its ``path``. A
-    collection's rows and a derived file's row get them here; *kept* is the
+    a ``file``, which node code reads from its ``path``. A collection's rows
+    and a derived file's row get them here; *kept* is the
     folder a dashboard viewer's step derived the file in (``KEPT_MEDIA``)."""
     if kind not in DRAWN:
         return {"thumbnail": None, "image_url": None, "audio_url": None}
@@ -311,20 +309,18 @@ def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir
 
         *kind* is that file's kind and *ext* what is derived from it
         (``DERIVED``): from a video, its frame at *t_ms* (``jpg``, the
-        default), a video made from it that starts at *t_ms* (``mp4``), the
-        overlay of its frame at *t_ms* (``png``), or a table of what a node
-        found in it (``parquet``); a recording's clip (``wav``); an image's
-        or a frame's overlay (``png``). *tag*, up to 32 lowercase letters and
-        digits, tells two derived files of one file and time apart, as the
-        model that drew an overlay does.
+        default), a video made from it that starts at *t_ms* (``mp4``), or
+        the overlay of its frame at *t_ms* (``png``); a recording's clip
+        (``wav``); an image's or a frame's overlay (``png``). *tag*, up to 32
+        lowercase letters and digits, tells two derived files of one file and
+        time apart, as the model that drew an overlay does.
 
         Returns the row the media route serves it under, with the columns a
         collection's row of its kind has: ``file_id``, ``dataset_id``,
-        ``kind``, ``path``, ``thumbnail``, ``image_url`` and ``audio_url``,
-        the last three None for a table, which later nodes read by its
-        ``path``. A dashboard viewer's step's URLs name its own folder
-        (``kept``), where it writes. The directory exists when this returns;
-        the node writes the bytes to ``path``.
+        ``kind``, ``path``, ``thumbnail``, ``image_url`` and ``audio_url``. A
+        dashboard viewer's step's URLs name its own folder (``kept``), where
+        it writes. The directory exists when this returns; the node writes the
+        bytes to ``path``.
         """
         dataset_id, file_id = str(dataset_id), str(file_id)
         if not _ID_RE.match(dataset_id) or not _FILE_ID_RE.match(file_id):

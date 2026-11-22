@@ -305,8 +305,8 @@ def _draw(found: Located, variant: str):
     if variant == "poster" and kind != "video":
         raise MediaUnavailable("only a video has a poster")
     if kind not in DRAWN:
-        # Refused before the file is read or fetched: a table a node found,
-        # or a ``files`` resource's file, has no preview.
+        # Refused before the file is read or fetched: a ``files`` resource's
+        # file has no preview.
         raise CapabilityUnsupported(f"no preview for a {kind}")
     path, temporary = _source_path(found)
     try:
