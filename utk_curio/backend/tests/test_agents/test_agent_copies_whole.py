@@ -12,6 +12,12 @@ find no copy or one whole copy, the old one or the new one, never a part.
 Each file written into the store hands the moment it is opened to a reader,
 as a request on another thread could read it then, and so does each rename
 there. No thread and no wait: the writes themselves make the moments.
+
+Two rewrites of one stale copy at once, as two backend processes can make
+for one account, both end and leave one whole copy. The second starts at
+each moment of the first in turn, on a thread of its own, and the first goes
+on only once the second has ended or waits for the account's lock, so no two
+writes ever run at once.
 """
 
 from __future__ import annotations
@@ -34,6 +40,10 @@ STALE = "the stale copy"
 EARLIER_INSTRUCTION = "The instruction an earlier Curio shipped.\n"
 #: The open modes that write.
 WRITES = set("wax+")
+#: How long the first of two rewrites waits for the second to end or to wait
+#: for the account's lock, and the test for the second to end. It decides
+#: nothing: either comes at once, unless something hangs.
+HANG_S = 60
 
 
 def _files(manifest: dict, prompts: dict[str, str]) -> dict[str, object]:
@@ -147,6 +157,77 @@ class _Reads:
         return [what for what, _ in self.moments if what.endswith("/manifest.json opened")]
 
 
+class _SecondRewrite:
+    """A second rewrite of *coord*'s copy in *key*'s store, started on a
+    thread of its own at the moment numbered *at* (from 0) of the first
+    rewrite, which runs on this thread: each moment it opens a file or
+    renames a folder in the store, while *patch* (a ``monkeypatch.context()``)
+    holds. The first goes on only once the second has ended or waits for the
+    account's lock (``storage.writing``), so no two writes run at once and
+    the moment, not the threads' timing, decides what each finds. With *at*
+    None it only counts the first's moments."""
+
+    def __init__(self, patch, key: str, coord: str, at: int | None):
+        self.key, self.coord, self.at = key, coord, at
+        self.store = storage.user_agents_dir(key).resolve()
+        self.first = threading.get_ident()
+        self.moments = 0
+        self.thread: threading.Thread | None = None
+        self.stopped = threading.Event()
+        self.outcome = "never started"
+        self.hung = False
+        real_open, real_replace = Path.open, os.replace
+        real_writing = getattr(storage, "writing", None)
+
+        def open_(path, mode="r", *args, **kwargs):
+            handle = real_open(path, mode, *args, **kwargs)
+            if set(mode) & WRITES:
+                self._moment(path)
+            return handle
+
+        def replace(src, dst, *args, **kwargs):
+            real_replace(src, dst, *args, **kwargs)
+            self._moment(src, dst)
+
+        def writing(user_key):
+            if threading.get_ident() != self.first:
+                self.stopped.set()  # the second waits here while the first holds the lock
+            return real_writing(user_key)
+
+        patch.setattr(Path, "open", open_)
+        patch.setattr(os, "replace", replace)
+        if real_writing is not None:  # a checkout with no lock has no wait to see
+            patch.setattr(storage, "writing", writing)
+
+    def _moment(self, *paths) -> None:
+        if threading.get_ident() != self.first or self.thread is not None:
+            return
+        if not any(Path(p).resolve().is_relative_to(self.store) for p in paths):
+            return
+        at, self.moments = self.moments, self.moments + 1
+        if at != self.at:
+            return
+        self.thread = threading.Thread(target=self._rewrite, name="second-rewrite", daemon=True)
+        self.thread.start()
+        self.hung = not self.stopped.wait(HANG_S)
+
+    def _rewrite(self) -> None:
+        try:
+            catalog._materialize_definition(self.key, self.coord)
+            self.outcome = "ended"
+        except Exception as exc:  # noqa: BLE001 - what the second rewrite raised is the finding
+            self.outcome = f"{type(exc).__name__}: {exc}"
+        finally:
+            self.stopped.set()
+
+    def end(self) -> None:
+        """Wait for the second rewrite to end."""
+        if self.thread is not None:
+            self.thread.join(HANG_S)
+            if self.thread.is_alive():
+                self.outcome = "still running"
+
+
 def _shipped(coord: str) -> dict:
     """The bundle Curio writes as *coord*'s copy."""
     bundle = catalog.builtin_definition_bundle(coord)
@@ -233,3 +314,52 @@ def test_a_request_while_a_stale_copy_is_rewritten_never_reads_a_part_of_a_copy(
     assert not wrong, _report(wrong)
     assert reads.now() == {coord: SHIPPED for coord in coords}
     assert _hidden(key) == []
+
+
+def test_two_rewrites_of_one_stale_copy_at_once_both_end_and_leave_one_whole_copy(
+    new_account_and_token, monkeypatch,
+):
+    """Two requests of one account rewrite its stale copy of an agent at once,
+    as two backend processes can: an install in one, a File > New in the
+    other. The second starts at each moment of the first in turn; both end,
+    and the store holds one whole copy and nothing staged."""
+    user, _token = new_account_and_token
+    key = _user_dir_key(user)
+    coords = lifecycle.default_agent_coords()
+    assert coords, "Curio ships no default agent, so this proves nothing"
+    coord = coords[0]
+    bundle = _shipped(coord)
+    instruction = bundle["manifest"]["prompts"]["instruction"]["path"]
+    stale = {**bundle["prompts"], instruction: EARLIER_INSTRUCTION}
+    copies = {STALE: _files(bundle["manifest"], stale), SHIPPED: _files(bundle["manifest"], bundle["prompts"])}
+
+    def rewrite(at: int | None) -> tuple[_SecondRewrite, str]:
+        storage.write_definition_atomic(key, coord, bundle["manifest"], stale, replace=True)
+        assert _read(key, coord, copies) == STALE
+        with monkeypatch.context() as patch:
+            second = _SecondRewrite(patch, key, coord, at)
+            try:
+                catalog._materialize_definition(key, coord)
+                first = "ended"
+            except Exception as exc:  # noqa: BLE001 - what the first rewrite raised is the finding
+                first = f"{type(exc).__name__}: {exc}"
+            second.end()
+        return second, first
+
+    alone, first = rewrite(None)
+    assert first == "ended", first
+    assert _read(key, coord, copies) == SHIPPED
+    assert alone.moments, "the rewrite opened no file and renamed no folder in the store"
+
+    wrong = []
+    for at in range(alone.moments):
+        second, first = rewrite(at)
+        store = _read(key, coord, copies)
+        staged = _hidden(key)
+        if (first, second.outcome, second.hung, store, staged) != ("ended", "ended", False, SHIPPED, []):
+            wrong.append(
+                f"the second starting at moment {at} of {alone.moments}: the first {first}, the second "
+                f"{second.outcome}{' after the first gave up waiting' if second.hung else ''}; "
+                f"the store then reads {store}, staged {staged}"
+            )
+    assert not wrong, "\n".join(wrong)
