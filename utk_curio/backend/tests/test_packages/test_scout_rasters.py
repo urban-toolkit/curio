@@ -271,13 +271,20 @@ def test_every_shipped_dataflow_with_a_raster_node_declares_the_package():
     """A dataflow's lockfile is how opening it, a scenario dropped from it and
     ``--with-examples`` add the package: each shipped dataflow with one of the
     two raster nodes names ``curio.rasterization@1``, and so does each with a
-    node of a package that names it in ``dependencies.packages`` (Media's
-    Mosaic Rasters calls its mosaic), and no other does."""
-    dependents = set()
+    node of a package that needs it, and no other does. A package needs it when
+    it names it in ``dependencies.packages`` (Media, whose Mosaic Rasters calls
+    its mosaic) or names a package that needs it (SAM 3, which names Media):
+    adding such a package writes every package it needs, and theirs in turn,
+    in the dataflow's lockfile (``project_packages.install_to_project``)."""
+    names = {}
     for manifest_path in sorted((REPO / "packages").glob("*/manifest.json")):
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        if f"{PACKAGE_ID}@1" in ((manifest.get("dependencies") or {}).get("packages") or {}):
-            dependents.add(manifest["id"])
+        packages = (manifest.get("dependencies") or {}).get("packages") or {}
+        names[manifest["id"]] = {str(key).split("@")[0] for key in packages}
+    needing = {PACKAGE_ID}
+    while more := {package for package, named in names.items() if named & needing} - needing:
+        needing |= more
+    dependents = needing - {PACKAGE_ID}
     with_a_raster_node, with_a_node, with_a_dependents_node, declaring = set(), set(), set(), set()
     for pattern in SHIPPED_JSON[:2]:
         for path in sorted(REPO.glob(pattern)):
@@ -305,6 +312,7 @@ def test_every_shipped_dataflow_with_a_raster_node_declares_the_package():
         "docs/examples/18-storage-orthorectified-imagery.json",
         "docs/examples/21-storage-photos-and-videos.json",
         "docs/examples/22-storage-audio-recordings.json",
+        "docs/examples/31-sideseeing-objects-along-a-walk.json",
     } <= with_a_dependents_node, sorted(with_a_dependents_node)
 
 

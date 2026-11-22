@@ -200,6 +200,8 @@
     "timestamp": 0,
     "provenance_id": "sideseeing-objects-along-a-walk",
     "packages": [
+      "curio.media@1",
+      "curio.rasterization@1",
       "model.curio.sam3@1"
     ],
     "datasets": [

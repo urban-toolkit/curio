@@ -52,13 +52,15 @@ reads the time of the video it was cut from.
 ## Functions
 
 Each node's code is its settings and the call of one function, which does its
-work:
+work. Sample Video Frames and Split Video read a video's frames with
+`read_video_frames`, which node code can call too:
 
 | Function | Module | What it does |
 |---|---|---|
 | `sample_video_frames(media, derived_file, *, every_seconds=2.0, max_frames_per_video=300)` | `media_collections`, this package's | A frame every `every_seconds` seconds from each video in a collection's rows, at most `max_frames_per_video` from one video: one image row per frame |
 | `split_audio(media, derived_file, *, window_seconds=5.0, max_windows_per_recording=2000)` | `media_collections`, this package's | Each recording in a collection's rows split into windows of `window_seconds` seconds: one row per window, with its level, its peak and its clip |
 | `split_video(media, derived_file, cuts=None, *, block_seconds=60.0, width=960, max_frames=30000)` | `media_collections`, this package's | Each video in a collection's rows cut into blocks, every `block_seconds` seconds or where the rows of `cuts` say: one row per block, each a video of its own |
+| `read_video_frames(path, *, every_seconds=None, from_seconds=0, to_seconds=None, max_frames=None, width=None, pixel_format=None)` | `media_collections`, this package's | The frames of one video, each with its time: one every `every_seconds` seconds, or every frame, from `from_seconds` up to `to_seconds`, at most `max_frames`, each at most `width` wide |
 | `mosaic_collection(tiles, output_file)` | `scout_rasters.mosaic`, [Rasterization](../curio.rasterization@1/README.md)'s | A raster collection's rows side by side in one virtual mosaic, opened |
 
 Sample Video Frames' code, for one:
@@ -78,7 +80,9 @@ return sample_video_frames(
 The package depends on Rasterization (`curio.rasterization@1` in its
 `dependencies.packages`), whose mosaic Mosaic Rasters calls: adding Media
 adds Rasterization too, and a run of a Media node is handed both packages'
-modules.
+modules. SAM 3 ([`model.curio.sam3@1`](../model.curio.sam3@1/README.md))
+names Media the same way, since its Track Objects reads each video's frames
+with `read_video_frames`.
 
 ## A dataflow
 

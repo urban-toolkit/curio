@@ -171,17 +171,22 @@ def test_deep_umbra_depends_on_it_and_finds_it_in_the_catalog():
 
 def test_a_shipped_dataflow_lists_rasterization_only_when_a_node_of_it_needs_it():
     """A dataflow lists Rasterization when it holds one of its nodes, or a node
-    of a package that names Rasterization in ``dependencies.packages``, which
-    adding that package adds too: Deep Umbra's, and Media's, whose Mosaic
-    Rasters calls Rasterization's mosaic. Example 06 and the charts dataflow
-    hold none of them, so neither lists it; example 24 holds Rasterize
-    Buildings, and examples 18, 21 and 22 hold Media's nodes."""
-    needing = {PACKAGE_ID}
+    of a package that needs Rasterization, which adding that package adds too:
+    Deep Umbra's and Media's, which name it in ``dependencies.packages``, Media
+    as Mosaic Rasters calls Rasterization's mosaic, and SAM 3's, which names
+    Media, whose frame reader Track Objects calls. Example 06 and the charts
+    dataflow hold none of them, so neither lists it; example 24 holds Rasterize
+    Buildings, examples 18, 21 and 22 hold Media's nodes, and example 31 SAM
+    3's."""
+    names = {}
     for path in sorted((REPO / "packages").glob("*/manifest.json")):
         manifest = json.loads(path.read_text(encoding="utf-8"))
-        if f"{PACKAGE_ID}@1" in ((manifest.get("dependencies") or {}).get("packages") or {}):
-            needing.add(manifest["id"])
-    assert needing == {PACKAGE_ID, "model.scout.deep-umbra", "curio.media"}, needing
+        packages = (manifest.get("dependencies") or {}).get("packages") or {}
+        names[manifest["id"]] = {str(key).split("@")[0] for key in packages}
+    needing = {PACKAGE_ID}
+    while more := {package for package, named in names.items() if named & needing} - needing:
+        needing |= more
+    assert needing == {PACKAGE_ID, "model.scout.deep-umbra", "curio.media", "model.curio.sam3"}, needing
     listed, holding = set(), set()
     for path in sorted((REPO / "docs" / "examples").rglob("*.json")):
         if any(part in path.parts for part in ("prompts", "expected_outputs")):
@@ -201,6 +206,7 @@ def test_a_shipped_dataflow_lists_rasterization_only_when_a_node_of_it_needs_it(
         "docs/examples/21-storage-photos-and-videos.json",
         "docs/examples/22-storage-audio-recordings.json",
         "docs/examples/24-scout-shadow-model-chicago-loop.json",
+        "docs/examples/31-sideseeing-objects-along-a-walk.json",
     } <= holding, sorted(holding)
     assert "docs/examples/06-back-bay-road-sunlight.json" not in listed
     assert "docs/examples/dataflows/scenario-comparison-charts.json" not in listed
