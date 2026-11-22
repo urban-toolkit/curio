@@ -190,7 +190,7 @@ def _user_agent(user, coord: str, *, preamble: str | None = None, skills=None, t
             files["prompts/system.md"] = preamble
     if skills is not None:
         manifest["skills"] = list(skills)
-    storage.write_definition(_user_dir_key(user), coord, manifest, files)
+    storage.write_definition_atomic(_user_dir_key(user), coord, manifest, files, replace=True)
     return coord
 
 

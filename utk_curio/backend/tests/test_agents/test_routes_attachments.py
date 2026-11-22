@@ -200,7 +200,7 @@ class TestAttachCompatibility:
             "prompts": {"instruction": {"path": "prompts/old_instruction.txt", "variables": []}},
             "provenance": {"publisher": "curio", "license": "MIT", "trust": "built-in"},
         }
-        storage.write_definition(ukey, coord, stale, {"prompts/old_instruction.txt": "hi"})
+        storage.write_definition_atomic(ukey, coord, stale, {"prompts/old_instruction.txt": "hi"}, replace=True)
         client.post(
             f"/api/agents/projects/{alice_project}/install",
             json={"coord": coord}, headers=_auth(token),
