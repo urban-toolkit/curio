@@ -46,12 +46,12 @@
     {
       "behavior": "code",
       "category": "computation",
-      "description": "Label every pixel of each image with a Model Catalog model: drag a model onto the node to choose it. Input: a collection's rows, each with a path (Data Loading on street-level images). Output: the same rows with one column per class asked for (its share of the image's pixels, in percent), dominant_class, dominant_pct and an overlay_url a Simple View shows.",
+      "description": "Label every pixel of each image with a Model Catalog model: drag a model onto the node to choose it. Input: a collection's rows, each with a path (Data Loading on street-level images). Output: the same rows with one column per class asked for (its share of the image's pixels, in percent), dominant_class, dominant_pct and an overlay_url a Simple View shows. Its classes widget lists the classes asked for; empty, as it starts, asks for every class the model names.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
       "hasGrammar": false,
-      "hasWidgets": false,
+      "hasWidgets": true,
       "iconRef": "fa-solid:wand-magic-sparkles",
       "id": "image-segmentation",
       "inputPorts": [
@@ -68,7 +68,10 @@
         }
       ],
       "paletteOrder": 0,
-      "source": "sources/image-segmentation.py"
+      "source": "sources/image-segmentation.py",
+      "widgets": [
+        {"name": "classes", "type": "text-list", "label": "Classes", "default": []}
+      ]
     }
   ],
   "version": "1.0.0"

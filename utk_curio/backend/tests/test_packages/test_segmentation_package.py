@@ -287,10 +287,12 @@ def test_it_loads_a_transformers_model_as_sam3s_package_loads_its_own():
 def test_ddrnet_names_the_package_and_its_node_is_its_settings_and_one_call():
     """DDRNet23-Slim names the Segmentation package in
     ``dependencies.packages``, and its Image Segmentation node's code is its
-    docstring, the import of ``segment_images``, its two settings (the model
-    by its id and the classes) and the return of that one call, which reads
-    both and hands it ``curio_derived_file``. DDRNet23-Slim ships no module:
-    its source is its node's."""
+    docstring, the import of ``segment_images``, its model by its id and the
+    return of that one call, which reads the model, the classes by their
+    widget's chip, and hands it ``curio_derived_file``. The classes are a text
+    list whose default, empty, reports every class the model names.
+    DDRNet23-Slim ships no module: its source is its node's."""
+    from utk_curio.backend.app.execution.code_references import REFERENCE_RE
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
     from utk_curio.backend.app.packages.repositories.python_modules import module_names
 
@@ -300,28 +302,37 @@ def test_ddrnet_names_the_package_and_its_node_is_its_settings_and_one_call():
     assert (template["id"], template["label"], template["source"]) == (
         "image-segmentation", "Image Segmentation", "sources/image-segmentation.py",
     )
+    assert template["hasWidgets"] is True
+    assert template["widgets"] == [{"name": "classes", "type": "text-list", "label": "Classes", "default": []}]
     assert module_names(DDRNET, load_package_manifest(DDRNET)) == frozenset()
     code = (DDRNET / template["source"]).read_text(encoding="utf-8")
     assert "utk_curio" not in code
-    body = ast.parse("def node():\n" + "\n".join("    " + line for line in code.splitlines())).body[0].body
+    assert REFERENCE_RE.findall(code) == ["classes"], code
+    text = code.replace("[!! classes !!]", "_classes_chip_")
+    body = ast.parse("def node():\n" + "\n".join("    " + line for line in text.splitlines())).body[0].body
     kinds = [type(statement).__name__ for statement in body]
-    assert kinds == ["Expr", "ImportFrom", "Assign", "Assign", "Return"], kinds
+    assert kinds == ["Expr", "ImportFrom", "Assign", "Return"], kinds
     assert ast.unparse(body[1]) == f"from {MODULE} import segment_images"
     assert ast.unparse(body[2]) == f"model = curio_load_model('{DDRNET_ID}')"
-    assert ast.unparse(body[3]) == "classes = None"
-    assert ast.unparse(body[4].value) == "segment_images(input_0, model, curio_derived_file, classes=classes)"
+    assert ast.unparse(body[3].value) == "segment_images(input_0, model, curio_derived_file, classes=_classes_chip_)"
 
 
 def test_ddrnets_node_runs_its_code_as_it_is(segmentation, photos):
-    """DDRNet23-Slim's node's code, run as the sandbox runs a node's code,
-    with the module a run of it is handed: every class the model names gets
-    its share of each photo, the shares cover the image, and each photo gets
-    its overlay."""
+    """DDRNet23-Slim's node's code, its classes widget at its default written
+    in as a run writes it, run as the sandbox runs a node's code, with the
+    module a run of it is handed: every class the model names gets its share
+    of each photo, the shares cover the image, and each photo gets its
+    overlay."""
+    from utk_curio.backend.app.execution.code_references import resolve_references
     from utk_curio.sandbox.util.catalog_helpers import CurioModel
     from utk_curio.sandbox.util.input_names import call_as_node
 
     frame, helpers = photos
-    code = (DDRNET / "sources" / "image-segmentation.py").read_text(encoding="utf-8")
+    [template] = _manifest(DDRNET)["templates"]
+    code, problems = resolve_references(
+        (DDRNET / "sources" / "image-segmentation.py").read_text(encoding="utf-8"), template["widgets"],
+    )
+    assert problems == [] and "classes=[])" in code, (problems, code)
     namespace = {
         "curio_load_model": lambda model_id: CurioModel(model_id, str(DDRNET)),
         "curio_derived_file": helpers["curio_derived_file"],
@@ -337,8 +348,9 @@ def test_ddrnets_node_runs_its_code_as_it_is(segmentation, photos):
 
 def test_example_10s_nodes_are_ddrnets_and_call_the_function(segmentation):
     """Example 10's two Image Segmentation nodes are DDRNet23-Slim's, each
-    the settings and one call of ``segment_images``, and its lockfile names
-    the Segmentation package beside DDRNet23-Slim's."""
+    the settings and one call of ``segment_images``, which reads the node's
+    classes widget, and its lockfile names the Segmentation package beside
+    DDRNet23-Slim's."""
     spec = json.loads(EXAMPLE_10.read_text(encoding="utf-8"))["dataflow"]
     nodes = [node for node in spec["nodes"] if node["type"].endswith("/image-segmentation")]
     assert [node["type"] for node in nodes] == [DDRNET_NODE] * 2
@@ -346,8 +358,9 @@ def test_example_10s_nodes_are_ddrnets_and_call_the_function(segmentation):
         assert "curio_segment" not in node["content"]
         assert f"from {MODULE} import segment_images" in node["content"]
         assert node["content"].rstrip().endswith(
-            "return segment_images(input_0, model, curio_derived_file, classes=classes)"
+            "return segment_images(input_0, model, curio_derived_file, classes=[!! classes !!])"
         )
+        assert [widget["name"] for widget in node["metadata"]["widgets"]] == ["classes"], node["metadata"]
     assert spec["packages"] == [f"{PACKAGE_ID}@1", f"{DDRNET_ID}@1"]
 
 
@@ -476,6 +489,19 @@ def test_a_share_is_of_all_the_pixels(segmentation, photos):
     labels = _manifest(DDRNET)["model"]["labels"]
     totals = every[[f"{name}_pct" for name in labels]].sum(axis=1)
     assert totals.between(99.5, 100.5).all()
+
+
+def test_no_classes_report_every_class_as_none_does(segmentation, photos):
+    """Image Segmentation's classes widget is a text list, which holds no
+    None, and its default is empty: an empty list reports every class the
+    model names, the same rows None gives."""
+    frame, helpers = photos
+    derive = helpers["curio_derived_file"]
+    empty = segmentation.segment_images(frame, _loaded(DDRNET), derive, classes=[])
+    every = segmentation.segment_images(frame, _loaded(DDRNET), derive, classes=None)
+    pd.testing.assert_frame_equal(empty, every)
+    labels = _manifest(DDRNET)["model"]["labels"]
+    assert all(f"{name}_pct" in empty.columns for name in labels), list(empty.columns)
 
 
 def test_each_photo_gets_an_overlay_served_by_id(segmentation, photos):

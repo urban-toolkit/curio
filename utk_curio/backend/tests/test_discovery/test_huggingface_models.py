@@ -255,17 +255,19 @@ class TestItLandsAsAModelPackage:
         assert starter["name"] == "image-segmentation"
         assert starter["code"] == _ddrnet_code(model["id"])
         assert f'model = curio_load_model("{model["id"]}")' in starter["code"]
-        assert "return segment_images(input_0, model, curio_derived_file, classes=classes)" in starter["code"]
+        assert "return segment_images(input_0, model, curio_derived_file, classes=[!! classes !!])" in starter["code"]
 
     def test_an_added_model_runs_in_its_node(self, app, client, auth, live, user_and_token, tmp_path):
         """The whole route: what an add writes is what the backend resolves for
         a run of its node from the user's store, the model's folder and the
         modules the node is handed (the Segmentation package's), and the
-        node's own code runs on them as the sandbox runs it, on two of example
-        10's photos. The graph is the synthetic stand-in, so the classes are
-        noise; their shares still have to cover the image."""
+        node's own code, its classes widget at its default written in as a run
+        writes it, runs on them as the sandbox runs it, on two of example 10's
+        photos. The graph is the synthetic stand-in, so the classes are noise;
+        their shares still have to cover the image."""
         import importlib.util
 
+        from utk_curio.backend.app.execution.code_references import resolve_references
         from utk_curio.backend.app.packages.service import modules_for_node, resolve_model_dirs
         from utk_curio.sandbox.util.catalog_helpers import CurioModel
         from utk_curio.sandbox.util.collections import make_collection_helpers
@@ -289,8 +291,12 @@ class TestItLandsAsAModelPackage:
             lambda _id: str(index), {sample: {"kind": "images", "root": str(storage)}}, str(tmp_path / "media")
         )
         photos = helpers["curio_load_collection"](sample).head(2)
-        code = (self._package_folder(user, model["dirName"]) / "sources" / "image-segmentation.py").read_text(
-            encoding="utf-8")
+        package = self._package_folder(user, model["dirName"])
+        [template] = json.loads((package / "manifest.json").read_text(encoding="utf-8"))["templates"]
+        code, problems = resolve_references(
+            (package / "sources" / "image-segmentation.py").read_text(encoding="utf-8"), template["widgets"],
+        )
+        assert problems == [], problems
         run = tmp_path / "run"
         run.mkdir()
         staged = stage_package_modules(handed, str(run))

@@ -1,3 +1,4 @@
+import { normalizeWidgets, type WidgetDef } from "../../utils/widgets/widgetModel";
 import { currentCode } from "../codeOnlyUsage";
 import type { ModelBlockPayload, PackagePayload } from "./types";
 import { hasRewritableModelCall, modelIdsInCode, rewriteFirstModelCall } from "./modelCode";
@@ -140,19 +141,24 @@ export function modelDropRequest(dataTransfer: DataTransfer): { dirName: string;
  * A model package's node is bound to its model (`modelRefs`) and, once its
  * template's code has arrived (*starter*), opens with that code naming the
  * model: its own code, or the default cell of the model's type the backend
- * writes for a template without one. A node package's node opens with its
+ * writes for a template without one. With that code it gets the *widgets* its
+ * template declares, which the code reads by chip, as a palette drop's node
+ * gets them beside its starter. A node package's node opens with its
  * template's code as a palette drop does, so nothing is added.
  */
 export function packageCardNodeOptions(
   node: PackageCardNode,
   starter: string | undefined,
-): { code?: string; modelRefs?: ModelRef[] } {
+  widgets?: unknown,
+): { code?: string; modelRefs?: ModelRef[]; widgets?: WidgetDef[] } {
   if (!node.model) return {};
   const model = { packageId: node.model.id, name: node.model.name };
   const made = modelNodeForCanvas([{ nodeType: node.nodeType, label: node.label, code: starter }], model);
-  if (made) return { code: made.code, modelRefs: made.modelRefs };
+  const declared = normalizeWidgets(widgets);
+  const itsWidgets = declared.length > 0 ? { widgets: declared } : {};
+  if (made) return { code: made.code, modelRefs: made.modelRefs, ...itsWidgets };
   return {
-    ...(starter !== undefined ? { code: starter } : {}),
+    ...(starter !== undefined ? { code: starter, ...itsWidgets } : {}),
     modelRefs: [{ id: model.packageId, name: model.name }],
   };
 }

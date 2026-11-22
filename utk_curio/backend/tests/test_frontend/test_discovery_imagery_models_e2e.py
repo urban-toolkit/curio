@@ -320,7 +320,7 @@ def test_a_hugging_face_model_goes_onto_a_node_and_runs(
     )
     code = read_node_code(page, ROUTE_TWO)
     assert "model.curio.ddrnet23-slim" not in code, code
-    assert "classes = None" in code, "the drop rewrites the model and nothing else"
+    assert "classes=[!! classes !!])" in code, "the drop rewrites the model and nothing else"
 
     # And it runs: the photos through the downloaded model, overlays and all.
     # The palette floats over the left of the canvas, where the photos node is.
