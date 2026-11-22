@@ -593,6 +593,25 @@ def _node_limit_s() -> int:
         return DEFAULT_WALL_TIMEOUT_SECONDS
 
 
+def _picked_values(spec, node, outputs: dict) -> dict:
+    """What a run reads of the circles a dataset widget of *node* is picked
+    by, before it writes the node's code, as the headless runner reads them
+    (``runner._picked_values``): the output of the node on each such circle,
+    read back from the sandbox as a run reads an input (``node_exec.plain_value``)."""
+    from utk_curio.backend.app.execution.node_exec import plain_value
+    from utk_curio.backend.app.execution.workflow_spec import picked_inputs
+
+    if not node.widgets:
+        return {}
+    refs = {
+        slot: outputs.get(upstream)
+        for slot, upstream in zip(spec.input_slots(node.id), spec.upstream_nodes(node.id))
+    }
+    return picked_inputs(
+        node.widgets, refs, lambda _slot, ref: plain_value(load_artifact_as_dict(str(ref.get("path") or ""))),
+    )
+
+
 def execute_workflow_programmatically(
     spec, seed: int = 42, username: str | None = None
 ) -> dict[str, dict]:
@@ -658,8 +677,10 @@ def execute_workflow_programmatically(
         data_type = parsed["dataType"]
         file_path = str(parsed["path"]) if data_type == "outputs" else parsed["path"]
 
-        # Sandbox /exec expects code already indented as a function body
-        resolved = spec.node_code(node, "python")
+        # Sandbox /exec expects code already indented as a function body. A
+        # dataset widget an input picks writes the dataset that input's value
+        # picks, the value read first, as a run on the server reads it.
+        resolved = spec.node_code(node, "python", picked=_picked_values(spec, node, outputs))
         seeded = seed_node_code(resolved, seed)
         indented_code = textwrap.indent(seeded, "    ")
         resolution = _catalog_resolution(indented_code, username, node.raw_type)
