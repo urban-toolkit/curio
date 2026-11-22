@@ -314,7 +314,7 @@ def _sample_video_frames(*replacements: tuple[str, str], then: str = "") -> tupl
 
 IMPORT = "from media_collections import sample_video_frames"
 CALL = "return sample_video_frames("
-EVERY = "every_seconds=EVERY_SECONDS"
+EVERY = "every_seconds=float([!! every_seconds !!])"
 #: Code planted with one break of the rule each: how to make it, and the
 #: words the problem it must raise holds. Loaders are written whole.
 PLANTED = {
@@ -342,8 +342,8 @@ PLANTED = {
         "frames = sample_video_frames(input_0",
     ),
     "a-library-call-in-an-argument": (
-        lambda: _sample_video_frames((EVERY, "every_seconds=max(EVERY_SECONDS, 1.0)")),
-        "the argument every_seconds=max(EVERY_SECONDS, 1.0)",
+        lambda: _sample_video_frames((EVERY, "every_seconds=max(float([!! every_seconds !!]), 1.0)")),
+        "the argument every_seconds=max(float([!! every_seconds !!]), 1.0)",
     ),
     "a-cast-of-an-input": (
         lambda: _sample_video_frames((EVERY, "every_seconds=float(input_0)")),
@@ -354,9 +354,7 @@ PLANTED = {
         "the argument curio_load_collection",
     ),
     "a-catalog-read-of-an-id-the-code-does-not-write": (
-        lambda: _sample_video_frames(
-            ("MAX_FRAMES_PER_VIDEO = 300", "MAX_FRAMES_PER_VIDEO = 300\nROWS = curio_load_collection(input_0)"),
-        ),
+        lambda: _sample_video_frames((IMPORT, IMPORT + "\nROWS = curio_load_collection(input_0)")),
         "ROWS = curio_load_collection(input_0): no setting",
     ),
     "a-loader-that-reads-a-catalog-path-with-a-library": (
