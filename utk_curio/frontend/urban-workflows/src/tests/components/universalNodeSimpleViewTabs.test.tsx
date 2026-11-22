@@ -302,10 +302,11 @@ describe("a Simple View on the canvas", () => {
 
     fireEvent.click(tabOf(container, "widgets"));
     const field = timeColumnField(activePane(container))!;
-    await act(async () => {
-      fireEvent.change(field, { target: { value: "walked_s" } });
-      fireEvent.blur(field);
-    });
+    // Each its own step, as a person types and then leaves the field: the
+    // field shows what was typed before it is left.
+    fireEvent.change(field, { target: { value: "walked_s" } });
+    expect(field.value).toBe("walked_s");
+    fireEvent.blur(field);
     await settle();
 
     const widgets = written()?.widgets ?? [];
