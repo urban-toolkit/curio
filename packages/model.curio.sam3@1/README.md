@@ -119,11 +119,9 @@ position, and has:
 | `largest_share` | The largest share of a frame its mask covered, from 0 to 1 |
 | `mean_score` | Its mean detection score over those frames |
 
-The overlay is kept beside the collection's other files derived from that
-video. Its name holds the video, where the part starts, and a tag of the
-labels, the gap between frames, `FORGET_SECONDS`, where the part ends and the
-width, so a run with other settings keeps an overlay of its own, and a run
-with the same settings writes it again.
+The overlay is a file of the node's run, kept in a folder of the run's own. Its
+name holds the video and where the part starts, so a run with other settings
+keeps an overlay of its own.
 
 ## Segment Images
 
@@ -166,12 +164,11 @@ Image Segmentation gives, then its own:
 | `overlay_url` | The image with each object's mask, box and label drawn, which Simple View shows beside it |
 | `segment_error` | Why a row has no results: its image is not on the machine, or cannot be read |
 
-An overlay is a PNG kept beside the collection's other derived files. It is
+An overlay is a PNG of the node's run, kept in a folder of the run's own. It is
 named as Image Segmentation names an overlay, after the image, or after its
-video at its time for a sampled frame, and after a tag of its labels, its
-score threshold and its width, so a run with other settings keeps overlays of
-its own. Empty **Labels**, a label named twice and more rows than **Maximum
-images per run** stop the node before SAM 3 loads.
+video at its time for a sampled frame, so a run with other settings keeps
+overlays of its own. Empty **Labels**, a label named twice and more rows than
+**Maximum images per run** stop the node before SAM 3 loads.
 
 ## Labels
 

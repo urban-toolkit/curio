@@ -2,6 +2,6 @@
   "sha256": {
     "README.md": "b93caaab8659f7d4d348fdc433fafd058a1ba5e59143904b6a0707263589097f",
     "manifest.json": "add0619361128eb1b49ea3e6e89720014e787253dcfb76353a852a5bfc734e98",
-    "sources/semantic_segmentation.py": "814817d387283adf1dbf7a4695d32238f3f78e4b94ad35a553fef58475b3761e"
+    "sources/semantic_segmentation.py": "b19a4243161240c9c5a5157851b88454f6861554149037aac78c9a6f99f80234"
   }
 }

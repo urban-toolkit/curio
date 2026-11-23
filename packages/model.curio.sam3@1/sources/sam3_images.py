@@ -13,8 +13,6 @@ cleans it, and draws each object as Track Objects draws one
 (``sam3_tracking``).
 """
 
-import hashlib
-import json
 import os
 import re
 from dataclasses import dataclass
@@ -30,8 +28,6 @@ from sam3_tracking import _cleaned, _colors, _device, _draw, _kept_by_nms, _pret
 #: What node code calls.
 __all__ = ["find_in_images"]
 
-#: How the tag of an image's overlay begins (``_tag``).
-TAG = "sam3"
 #: How many labels SAM 3 looks for at once in an image's features: more runs
 #: faster and holds more memory at once.
 LABELS_AT_ONCE = 8
@@ -90,10 +86,11 @@ def find_in_images(images, model, derived_file, *, labels, threshold=0.5, width=
     how many it found, a space written as ``_`` as Track Objects writes it;
     ``overlay_url``, the image with each object's mask, box and label drawn;
     and ``segment_error``. An overlay is a PNG written where *derived_file*
-    says, named after the image, or after its video at its time for a frame
-    Sample Video Frames sampled, as Image Segmentation names one, and after
-    the labels, *threshold* and *width*, so calls that ask differently keep
-    overlays of their own. Empty *labels*, a label named twice, more rows than
+    says, in the folder of the node's run, named after the image, or after
+    its video at its time for a frame Sample Video Frames sampled, as Image
+    Segmentation names one: each run writes in a folder of its own, so runs
+    that ask differently keep overlays of their own. Empty *labels*, a label
+    named twice, more rows than
     *max_images* and rows with no ``path`` stop the call before SAM 3 loads;
     an image that is not on this machine, or cannot be read, gets no results
     and says why in ``segment_error``.
@@ -123,9 +120,8 @@ def find_in_images(images, model, derived_file, *, labels, threshold=0.5, width=
     results["segment_error"] = []
     if len(images):
         run = _loaded(model, labels, threshold, width)
-        tag = _tag(labels, threshold, width)
         for _, row in images.iterrows():
-            _look(run, row, derived_file, tag, names, results)
+            _look(run, row, derived_file, names, results)
     # First, so a card's caption leads with what SAM 3 found. One join, not a
     # column at a time: 35 labels make 72 columns.
     rest = images.drop(columns=[c for c in results if c in images.columns])
@@ -153,7 +149,7 @@ def _loaded(model, labels, threshold, width):
     )
 
 
-def _look(run, row, derived_file, tag, names, results):
+def _look(run, row, derived_file, names, results):
     """SAM 3 on *row*'s image: its results added to *results*, its overlay
     written where *derived_file* says."""
     path = row.get("path")
@@ -185,7 +181,7 @@ def _look(run, row, derived_file, tag, names, results):
     source = _overlay_source(row) if row.get("dataset_id") and row.get("file_id") else None
     if source is not None:
         file_id, t_ms, kind = source
-        derived = derived_file(row["dataset_id"], file_id, t_ms, "png", kind=kind, tag=tag)
+        derived = derived_file(row["dataset_id"], file_id, t_ms, "png", kind=kind)
         _drawn(run, image, found).save(derived["path"])
         url = derived.get("image_url")
     results["overlay_url"].append(url)
@@ -314,11 +310,3 @@ def _overlay_source(row):
     if row.get("kind") == "frame" and tag is None and ext is None:
         return video, int(t_ms), "video"
     return None
-
-
-def _tag(labels, threshold, width):
-    """The tag of an image's overlay: ``TAG``, then the first twelve hex digits
-    of the SHA-256 of what the overlay depends on besides its image: the
-    labels, the threshold and the width."""
-    asked = [list(labels), float(threshold), int(width)]
-    return TAG + hashlib.sha256(json.dumps(asked, separators=(",", ":")).encode("utf-8")).hexdigest()[:12]

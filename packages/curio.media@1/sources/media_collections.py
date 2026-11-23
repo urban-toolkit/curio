@@ -3,8 +3,8 @@ them: frames sampled from its videos (``sample_video_frames``), its
 recordings split into windows with their levels (``split_audio``) and its
 videos cut into blocks (``split_video``). Sample Video Frames, Split Audio and
 Split Video call them with their settings. Each frame, window or block is a
-file written where ``curio_derived_file``, which a node hands in, says:
-beside the collection's other derived files.
+file written where ``curio_derived_file``, which a node hands in, says: in
+the folder of the node's run, named after its file and where it starts.
 
 ``read_video_frames`` reads a video's frames, one every so many seconds or
 every one, for Sample Video Frames and Split Video, and for SAM 3's Track
@@ -259,9 +259,11 @@ def _timed(frames, start, rate):
 # Windows of recordings
 # ---------------------------------------------------------------------------
 
-#: The shortest window, in seconds. A window's clip is named after where the
-#: window starts and ends, in milliseconds (``_file_tag``), so shorter windows
-#: of one recording would share names.
+#: The shortest window, in seconds. A window's clip is named after its
+#: recording and where the window starts, in milliseconds, so shorter windows
+#: of one recording would share names; so would a window that holds less than
+#: a millisecond of the recording's samples once cut to whole samples
+#: (``_shortest_at``).
 SHORTEST_WINDOW_SECONDS = 0.001
 
 
@@ -280,12 +282,14 @@ def split_audio(media, derived_file, *, window_seconds=5.0, max_windows_per_reco
     recording is read one window at a time. A recording whose file is not on
     this machine yet is refused with its path in the collection.
 
-    A window's clip is named after its recording and where the window starts
-    and ends, in milliseconds: two nodes whose windows differ in length keep
-    clips of their own, and two windows that start and end at the same
-    sample hold the same bytes and share one file. A *window_seconds* under a
-    millisecond (``SHORTEST_WINDOW_SECONDS``), or one that is not a number,
-    stops the call before any clip is written.
+    A window's clip is named after its recording and where the window starts,
+    in milliseconds; each run of a node writes in a folder of its own, so two
+    nodes whose windows differ in length keep clips of their own. A
+    *window_seconds* under a millisecond (``SHORTEST_WINDOW_SECONDS``), one
+    that is not a number, a recording not on this machine, and a window that
+    holds less than a millisecond of a recording's samples, so that two of its
+    windows would start in one millisecond, stop the call before any clip is
+    written.
     """
     if (isinstance(window_seconds, bool) or not isinstance(window_seconds, (int, float))
             or not window_seconds >= SHORTEST_WINDOW_SECONDS):
@@ -294,19 +298,25 @@ def split_audio(media, derived_file, *, window_seconds=5.0, max_windows_per_reco
             f"a number of {SHORTEST_WINDOW_SECONDS} or more"
         )
     recordings = media[media["kind"] == "audio"]
-    rows = []
     for _, recording in recordings.iterrows():
         if not isinstance(recording["path"], str) or not recording["path"]:
             raise ValueError(
                 f"{recording['relpath']} is not on this machine yet; cache the collection's files first"
             )
+        rate = _rate_of(recording["path"])
+        width = _window_width(window_seconds, rate)
+        if width * 1000 < rate:
+            raise ValueError(
+                f"{recording['relpath']} is sampled at {rate} Hz, where a window of {window_seconds:g} s "
+                f"holds {width} samples, less than a millisecond: give window_seconds "
+                f"{_shortest_at(rate):g} or more"
+            )
+    rows = []
+    for _, recording in recordings.iterrows():
         for rate, start, window in _windows(recording["path"], window_seconds, max_windows_per_recording):
             scaled = window.astype(np.float64) / 32768.0
             t_s = round(start / rate, 3)
-            derived = derived_file(
-                recording["dataset_id"], recording["file_id"], round(t_s * 1000), kind="audio",
-                tag=_file_tag((start + len(window)) / rate),
-            )
+            derived = derived_file(recording["dataset_id"], recording["file_id"], round(t_s * 1000), kind="audio")
             with wave.open(derived["path"], "wb") as handle:
                 handle.setnchannels(window.shape[1])
                 handle.setsampwidth(2)
@@ -338,14 +348,39 @@ def _dbfs(value):
     return round(20 * math.log10(value), 2) if value > 0 else -120.0
 
 
+def _stream_rate(stream):
+    """The samples a second of a recording's audio *stream*, 16000 when its
+    file does not say."""
+    return stream.codec_context.sample_rate or 16000
+
+
+def _rate_of(path):
+    """The samples a second of the recording at *path* (``_stream_rate``)."""
+    with av.open(path) as container:
+        return _stream_rate(container.streams.audio[0])
+
+
+def _window_width(window_seconds, rate):
+    """How many samples a window of *window_seconds* holds at *rate*: the
+    seconds cut to whole samples, one at least."""
+    return max(1, int(window_seconds * rate))
+
+
+def _shortest_at(rate):
+    """The shortest window, in seconds to the microsecond, that holds a
+    millisecond of samples at *rate*, so that no two of its windows start in
+    one millisecond (``split_audio``)."""
+    return math.ceil(math.ceil(rate / 1000) / rate * 1e6) / 1e6
+
+
 def _windows(path, window_seconds, max_windows_per_recording):
     """``(rate, start, samples)`` per window, where *samples* is one row per
     sample and one column per channel, decoded as it is needed."""
     with av.open(path) as container:
         stream = container.streams.audio[0]
-        rate = stream.codec_context.sample_rate or 16000
+        rate = _stream_rate(stream)
         resampler = av.AudioResampler(format="s16", layout=stream.codec_context.layout, rate=rate)
-        width = max(1, int(window_seconds * rate))
+        width = _window_width(window_seconds, rate)
         pending, held, start, made = [], 0, 0, 0
 
         def decoded():
@@ -416,13 +451,16 @@ def split_video(media, derived_file, cuts=None, *, block_seconds=60.0, width=960
     cut's columns of those names, such as those of a frame it was made from,
     describe another file, and are not copied.
 
+    A block's file is named after its video and where it starts, in
+    milliseconds; each run of a node writes in a folder of its own, so two
+    nodes that cut a video otherwise keep blocks of their own.
+
     One call re-encodes at most *max_frames* frames. Blocks that need more, a
     block that starts before 0 or past its video's end, blocks that overlap,
-    a cut without ``t_s``, and a video not on this machine stop the call
-    before any block is written; a video whose file does not say how long it
-    is stops at the frame past *max_frames*, or at its end when a block starts
-    past it. A call that cuts a video into the same blocks at the same width
-    writes the same files again.
+    two blocks that start in one millisecond, a cut without ``t_s``, and a
+    video not on this machine stop the call before any block is written; a
+    video whose file does not say how long it is stops at the frame past
+    *max_frames*, or at its end when a block starts past it.
     """
     if isinstance(block_seconds, bool) or not isinstance(block_seconds, (int, float)) or not block_seconds > 0:
         raise ValueError("block_seconds is the length of a block, in seconds: a number above 0")
@@ -537,6 +575,12 @@ def _blocks_of(video, table, block_seconds, length, rate):
             raise ValueError(f"{name} lasts {length:.3f} s, and a block starts at {start:g} s")
         if following is not None and following - start < EARLY_SECONDS:
             raise ValueError(f"{name}: two blocks start at {start:g} s")
+        if following is not None and round(following * 1000) == round(start * 1000):
+            # A block's file is named by where it starts, to the millisecond.
+            raise ValueError(
+                f"{name}: the blocks from {start:g} s and from {following:g} s start in one millisecond, "
+                "which names a block's file: start them further apart"
+            )
         if block["end"] is None:
             block["end"] = following if following is not None else length
         elif following is not None and block["end"] > following + EARLY_SECONDS:
@@ -632,10 +676,7 @@ def _cut(video, blocks, derived_file, width, rate, left, max_frames):
             if at < blocks[index]["start"] - EARLY_SECONDS:
                 continue  # before the block: a gap between two
             if block is None:
-                derived = derived_file(
-                    video["dataset_id"], video["file_id"], round(blocks[index]["start"] * 1000), "mp4",
-                    tag=_file_tag(blocks[index]["end"], width),
-                )
+                derived = derived_file(video["dataset_id"], video["file_id"], round(blocks[index]["start"] * 1000), "mp4")
                 block = _Block(derived, frame.width, frame.height, rate, at)
                 opened.add(index)
             if left is not None:
@@ -657,15 +698,6 @@ def _cut(video, blocks, derived_file, width, rate, left, max_frames):
             + (f"; its last frame is at {last:.3f} s" if last is not None else "")
         )
     return rows
-
-
-def _file_tag(end, width=None):
-    """The tag of a block's or a window's file, which its name holds besides
-    where it starts: where it ends, in milliseconds, or ``end`` for a block to
-    the end of a video that does not say how long it is, and how wide a block
-    is drawn, so blocks or windows that differ keep files of their own."""
-    tag = f"to{round(end * 1000)}" if end is not None else "toend"
-    return tag if width is None else f"{tag}w{int(width)}"
 
 
 def _finished(block, video, planned, number):
