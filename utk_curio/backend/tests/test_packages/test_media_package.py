@@ -34,6 +34,13 @@ MODULES = [
     {"root": str(PACKAGE / "sources"), "names": [MODULE]},
     {"root": str(RASTERIZATION / "sources"), "names": [RASTER_MODULE]},
 ]
+
+
+def another_run(tmp_path: Path, mark: str = "f") -> Path:
+    """The folder another run of a node derives its files in, named as the
+    backend names a run's folder (``<media>/kept/<name>``): two runs of a node
+    never write in one folder. *mark* tells two such runs apart."""
+    return tmp_path / f"run-{mark}" / "kept" / ("k" + mark * 32)
 #: Each starter's import, its settings, its widgets with their defaults, and
 #: the call it returns, which reads each widget by its chip.
 STARTERS = {
@@ -127,9 +134,10 @@ def _chips_back(text: str, chips: list) -> str:
     return re.sub(r"_chip_(\d+)_", lambda match: chips[int(match.group(1))], text)
 
 
-def collection_rows(manifest, resource_id: str, tmp_path: Path):
+def collection_rows(manifest, resource_id: str, tmp_path: Path, *, media: Path | None = None):
     """``(rows, helpers)``: what ``curio_load_collection`` returns for a resource of
-    *manifest*, and the helpers a node runs with."""
+    *manifest*, and the helpers a node runs with, which derive files in
+    *media*, the run's folder (``tmp_path / "media"`` unless given)."""
     from utk_curio.backend.app.discovery.application import index_collection, scan
     from utk_curio.backend.app.discovery.infrastructure.storage import storage_root
     from utk_curio.backend.app.discovery.providers import build_storage
@@ -147,7 +155,7 @@ def collection_rows(manifest, resource_id: str, tmp_path: Path):
     helpers = make_collection_helpers(
         lambda _id: str(index_path),
         {f"imported.x{resource_id}": {"root": str(storage_root(manifest))}},
-        str(tmp_path / "media"),
+        str(media or tmp_path / "media"),
         output_dir=str(tmp_path / "outputs"),
     )
     return helpers["curio_load_collection"](f"imported.x{resource_id}"), helpers
@@ -182,15 +190,16 @@ def collection(tmp_path, package_modules):
 @pytest.fixture()
 def folder_collection(tmp_path, package_modules):
     """``(rows, helpers)`` for one resource over a folder a test writes, with
-    the modules a Media node's run is handed importable (``package_modules``)."""
+    the modules a Media node's run is handed importable (``package_modules``).
+    ``media=`` names the folder the helpers' run derives files in."""
     from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
     from utk_curio.backend.tests.test_discovery.conftest import a_storage_manifest, write_source
 
-    def rows_over(root: Path, resource: dict):
+    def rows_over(root: Path, resource: dict, **options):
         source = write_source(
             tmp_path / "discovery", "source.example.folder@1", a_storage_manifest(root, [resource])
         )
-        return collection_rows(load_source_manifest(source), resource["id"], tmp_path)
+        return collection_rows(load_source_manifest(source), resource["id"], tmp_path, **options)
 
     return rows_over
 
@@ -580,17 +589,21 @@ def test_split_audio_measures_every_channel_and_keeps_them(folder_collection, tm
 def test_two_split_audio_nodes_with_other_windows_keep_their_own_clips(folder_collection, tmp_path):
     """Two Split Audio nodes on one recording, one with windows of 5 s and one
     with windows of 10 s, both have a window at 0 s and one at 10 s. Each
-    window's clip is a file of its own: after the second node runs, every clip
-    of the first still holds what the first wrote, 5 s of the recording, as
-    its row says, and the two rows at 0 s name two files."""
+    node's run writes in a folder of its own, so each window's clip is a file
+    of its own: after the second node runs, every clip of the first still
+    holds what the first wrote, 5 s of the recording, as its row says, and
+    the two rows at 0 s, both named by where their window starts, name two
+    files."""
     import wave
 
     root = tmp_path / "noise"
     root.mkdir()
     _stereo_left_only(root / "long.wav", seconds=20.0)
-    media, helpers = folder_collection(root, {"id": "noise", "name": "Noise", "kind": "audio", "path": "*"})
+    resource = {"id": "noise", "name": "Noise", "kind": "audio", "path": "*"}
+    media, helpers = folder_collection(root, resource)
     first = run_node("split-audio", media, helpers, window_seconds=5.0)
     wrote = {path: Path(path).read_bytes() for path in first["path"]}
+    media, helpers = folder_collection(root, resource, media=another_run(tmp_path))
     second = run_node("split-audio", media, helpers, window_seconds=10.0)
     assert (list(first["t_s"]), list(second["t_s"])) == ([0.0, 5.0, 10.0, 15.0], [0.0, 10.0])
     replaced = [path for path, data in wrote.items() if Path(path).read_bytes() != data]
@@ -598,7 +611,8 @@ def test_two_split_audio_nodes_with_other_windows_keep_their_own_clips(folder_co
     for row in first.itertuples():
         with wave.open(row.path) as clip:
             assert (clip.getnframes() / clip.getframerate(), row.duration_s) == (5.0, 5.0), row.path
-    assert first["file_id"].iloc[0] != second["file_id"].iloc[0]
+    assert first["file_id"].iloc[0] == second["file_id"].iloc[0] == f"{media['file_id'].iloc[0]}@0"
+    assert first["path"].iloc[0] != second["path"].iloc[0]
     with wave.open(second["path"].iloc[0]) as clip:
         assert clip.getnframes() / clip.getframerate() == 10.0
 
@@ -611,21 +625,23 @@ def _noise(folder_collection, tmp_path: Path, seconds: float = 1.0):
     return folder_collection(root, {"id": "noise", "name": "Noise", "kind": "audio", "path": "*"})
 
 
-def test_a_windows_clip_is_named_after_where_it_starts_and_ends(folder_collection, tmp_path):
-    """A clip's id is its recording's, then where its window starts and ends,
-    in milliseconds; the last window ends where the recording does. Two
-    nodes' windows that start and end at the same sample hold the same bytes
-    and share one file: here the last of 0.4 s windows and of 0.8 s ones,
-    from 0.8 s to the recording's end at 1 s."""
+def test_a_windows_clip_is_named_after_where_it_starts(folder_collection, tmp_path):
+    """A clip's id is its recording's, then where its window starts, in
+    milliseconds, and nothing of the settings that cut it: each run of the
+    node writes in a folder of its own. The last window ends where the
+    recording does. In one run's folder, a window that starts and ends at the
+    same sample as one written before holds the same bytes, in the same file:
+    here the last of 0.4 s windows and of 0.8 s ones, from 0.8 s to the
+    recording's end at 1 s."""
     media, helpers = _noise(folder_collection, tmp_path)
     recording = media["file_id"].iloc[0]
     shorter = run_node("split-audio", media, helpers, window_seconds=0.4)
-    assert list(shorter["file_id"]) == [f"{recording}@{span}" for span in ("0-to400", "400-to800", "800-to1000")]
+    assert list(shorter["file_id"]) == [f"{recording}@{start}" for start in (0, 400, 800)]
     assert list(shorter["duration_s"]) == [0.4, 0.4, 0.2]
-    assert Path(shorter["path"].iloc[0]).name == "0-to400.wav"
+    assert Path(shorter["path"].iloc[0]).name == "0.wav"
     last = Path(shorter["path"].iloc[2]).read_bytes()
     longer = run_node("split-audio", media, helpers, window_seconds=0.8)
-    assert list(longer["file_id"]) == [f"{recording}@0-to800", f"{recording}@800-to1000"]
+    assert list(longer["file_id"]) == [f"{recording}@0", f"{recording}@800"]
     assert longer["path"].iloc[1] == shorter["path"].iloc[2]
     assert Path(longer["path"].iloc[1]).read_bytes() == last
 
@@ -652,9 +668,9 @@ def test_split_audio_cuts_windows_as_short_as_a_millisecond(folder_collection, t
     pytest.param("5", id="a-string"),
 ])
 def test_split_audio_refuses_a_window_under_a_millisecond(folder_collection, tmp_path, window):
-    """A clip is named after where its window starts and ends, in
-    milliseconds, so a window_seconds under 0.001, zero and below too, or one
-    that is not a number, stops the node before it writes a clip. A number
+    """A clip is named after where its window starts, in milliseconds, so a
+    window_seconds under 0.001, zero and below too, or one that is not a
+    number, stops the node before it writes a clip. A number
     reaches split_audio through the node's widget. One that is not a number
     the Widgets tab refuses, and the node's call reads its widget as a
     number, so only code that calls split_audio hands it one."""
@@ -674,6 +690,27 @@ def test_split_audio_refuses_a_window_under_a_millisecond(folder_collection, tmp
         with pytest.raises(ValueError, match=re.escape(says)):
             run_node("split-audio", media, helpers, window_seconds=window)
     assert sorted((tmp_path / "media").rglob("*.wav")) == []
+
+
+def test_split_audio_refuses_a_window_that_holds_less_than_a_millisecond_of_samples(folder_collection, tmp_path):
+    """At 44100 samples a second, 0.001 s is 44 samples once cut to whole
+    samples, 0.998 ms, and windows 220 and 221 would both start at 220 ms,
+    which names each one's clip. The node stops before it writes a clip and
+    says the shortest window it takes at that rate, whose windows each start
+    in a millisecond of their own."""
+    root = tmp_path / "noise"
+    root.mkdir()
+    _stereo_left_only(root / "fine.wav", seconds=0.1, rate=44100)
+    media, helpers = folder_collection(root, {"id": "noise", "name": "Noise", "kind": "audio", "path": "*"})
+    says = (
+        "fine.wav is sampled at 44100 Hz, where a window of 0.001 s holds 44 samples, less than a "
+        "millisecond: give window_seconds 0.001021 or more"
+    )
+    with pytest.raises(ValueError, match=re.escape(says)):
+        run_node("split-audio", media, helpers, window_seconds=0.001)
+    assert sorted((tmp_path / "media").rglob("*.wav")) == []
+    windows = run_node("split-audio", media, helpers, window_seconds=0.001021)
+    assert len(windows) == 98 and windows["file_id"].is_unique and windows["path"].is_unique
 
 
 def test_split_audios_window_widget_takes_what_split_audio_takes(package_modules):
@@ -714,15 +751,19 @@ def _clip(path: Path, seconds: float, rate: int = 10, size: tuple[int, int] = (9
             out.mux(packet)
 
 
-def _walks(folder_collection, tmp_path: Path, clips: dict[str, float]):
-    """``(rows, helpers)`` for a folder of clips, each ``{name: seconds}``."""
+#: The folder of clips ``_walks`` writes, as a resource.
+WALKS = {"id": "walks", "name": "Walks", "kind": "videos", "path": "*", "extensions": ["mp4"]}
+
+
+def _walks(folder_collection, tmp_path: Path, clips: dict[str, float], **options):
+    """``(rows, helpers)`` for a folder of clips, each ``{name: seconds}``,
+    written once; ``media=`` names the folder the helpers' run derives in."""
     root = tmp_path / "walks"
-    root.mkdir()
-    for name, seconds in clips.items():
-        _clip(root / name, seconds)
-    return folder_collection(
-        root, {"id": "walks", "name": "Walks", "kind": "videos", "path": "*", "extensions": ["mp4"]}
-    )
+    if not root.is_dir():
+        root.mkdir()
+        for name, seconds in clips.items():
+            _clip(root / name, seconds)
+    return folder_collection(root, WALKS, **options)
 
 
 def run_split(media, helpers, cuts=None, **settings):
@@ -756,9 +797,10 @@ def test_with_nothing_on_its_bottom_circle_split_video_cuts_every_block_seconds(
     """Nothing wired below is ``input_1`` None, and each video is cut every
     block_seconds, the last block what is left. Each block is an H.264 file in
     yuv420p no wider than its video, whose frames play at their own times from
-    its start, named after the video, where the block starts and ends and the
-    width; its row leads with block, t_s and end_s, where it starts and ends
-    in the video, and Simple View plays it."""
+    its start, named after the video and where the block starts, and nothing
+    of the settings that cut it, since each run of the node writes in a
+    folder of its own; its row leads with block, t_s and end_s, where it
+    starts and ends in the video, and Simple View plays it."""
     media, helpers = _walks(folder_collection, tmp_path, {"corner.mp4": 7.0})
     video = media.iloc[0]
     blocks = run_split(media, helpers, block_seconds=2.0)
@@ -767,10 +809,8 @@ def test_with_nothing_on_its_bottom_circle_split_video_cuts_every_block_seconds(
     assert list(blocks["t_s"]) == [0.0, 2.0, 4.0, 6.0]
     assert list(blocks["end_s"]) == [2.0, 4.0, 6.0, 7.0]
     assert list(blocks["duration_s"]) == [2.0, 2.0, 2.0, 1.0]
-    assert list(blocks["file_id"]) == [
-        f"{video['file_id']}@{start}-to{end}w960.mp4"
-        for start, end in ((0, 2000), (2000, 4000), (4000, 6000), (6000, 7000))
-    ]
+    assert list(blocks["file_id"]) == [f"{video['file_id']}@{start}.mp4" for start in (0, 2000, 4000, 6000)]
+    assert [Path(path).name for path in blocks["path"]] == ["0.mp4", "2000.mp4", "4000.mp4", "6000.mp4"]
     assert set(blocks["kind"]) == {"video"} and set(blocks["video_file_id"]) == {video["file_id"]}
     assert set(blocks["name"]) == {"corner.mp4"} and set(blocks["dataset_id"]) == {video["dataset_id"]}
     assert blocks["thumbnail"].str.contains("variant=thumb").all() and blocks["audio_url"].isna().all()
@@ -817,7 +857,7 @@ def test_split_video_cuts_where_its_bottom_circle_says_and_keeps_each_cuts_colum
     assert list(blocks["end_s"]) == [2.5, 4.0, 5.0]
     assert list(blocks["width"]) == [96, 96, 96] and "frame.jpg" not in set(blocks["path"])
     assert [len(_played(path)[4]) for path in blocks["path"]] == [25, 15, 10]
-    assert blocks["file_id"].iloc[1].endswith("@2500-to4000w960.mp4")
+    assert blocks["file_id"].iloc[1].endswith("@2500.mp4")
 
 
 def test_a_cut_with_a_video_file_id_cuts_that_video_and_one_without_every_video(folder_collection, tmp_path):
@@ -860,6 +900,23 @@ def test_split_video_stops_before_it_writes_a_block(folder_collection, tmp_path,
     with pytest.raises(ValueError, match=re.escape(says)):
         run_split(media, helpers, table, **settings)
     assert _written(tmp_path) == []
+
+
+def test_two_blocks_that_start_in_one_millisecond_stop_the_call(package_modules):
+    """A block is named by where it starts, to the millisecond: blocks that
+    start 1.5 ms and 2.5 ms in, a millisecond apart, would both be named 2 ms.
+    A video whose file gives no frame rate has no frame to measure them by,
+    so their names decide, and the call stops before it writes a block."""
+    import importlib
+
+    import pandas as pd
+
+    blocks_of = importlib.import_module(MODULE)._blocks_of
+    video = pd.Series({"relpath": "walk.mp4", "file_id": "0" * 16})
+    with pytest.raises(ValueError, match=re.escape("walk.mp4: the blocks from 0.0015 s and from 0.0025 s")):
+        blocks_of(video, pd.DataFrame([{"t_s": 0.0015}, {"t_s": 0.0025}]), 1.0, 10.0, None)
+    assert [block["start"] for block in blocks_of(video, pd.DataFrame([{"t_s": 0.0015}, {"t_s": 0.0035}]),
+                                                    1.0, 10.0, None)] == [0.0015, 0.0035]
 
 
 def test_split_video_names_a_video_not_on_this_machine(collection, tmp_path):
@@ -906,16 +963,22 @@ def test_past_max_frames_a_video_that_gives_no_length_stops_and_its_half_written
     with pytest.raises(ValueError, match="re-encodes in one run"):
         run_split(media, helpers, block_seconds=0.4, max_frames=12)
     # Block 1, ten frames, was done; block 2 had two when the 13th frame came.
-    assert _written(tmp_path) == ["0-to400w960.mp4"]
+    assert _written(tmp_path) == ["0.mp4"]
 
 
 def test_the_same_blocks_write_the_same_files_and_another_end_or_width_others(folder_collection, tmp_path):
+    """A run that cuts the same blocks in its folder writes the same files
+    again. Runs with another block length or width, as other nodes run, each
+    write in a folder of their own, so every block of every run is a file of
+    its own, though each run's first block is named by its start, 0."""
     media, helpers = _walks(folder_collection, tmp_path, {"corner.mp4": 4.0})
     first = run_split(media, helpers, block_seconds=2.0)
     assert list(run_split(media, helpers, block_seconds=2.0)["path"]) == list(first["path"])
-    longer = run_split(media, helpers, block_seconds=3.0)
-    narrower = run_split(media, helpers, block_seconds=2.0, width=48)
-    # Each starts at 0, and the files differ by the block's end or the width.
+    media, longer_helpers = _walks(folder_collection, tmp_path, {}, media=another_run(tmp_path, "e"))
+    longer = run_split(media, longer_helpers, block_seconds=3.0)
+    media, narrower_helpers = _walks(folder_collection, tmp_path, {}, media=another_run(tmp_path, "f"))
+    narrower = run_split(media, narrower_helpers, block_seconds=2.0, width=48)
+    assert len({first["file_id"].iloc[0], longer["file_id"].iloc[0], narrower["file_id"].iloc[0]}) == 1
     assert len({first["path"].iloc[0], longer["path"].iloc[0], narrower["path"].iloc[0]}) == 3
     assert len({*first["path"], *longer["path"], *narrower["path"]}) == 6
     assert _played(narrower["path"].iloc[0])[2:4] == (48, 32)

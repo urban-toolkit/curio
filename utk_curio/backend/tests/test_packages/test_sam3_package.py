@@ -171,20 +171,22 @@ def few_threads(monkeypatch):
 # The clip and the node
 # ---------------------------------------------------------------------------
 
-def _collection(tmp_path: Path, seconds: float = CLIP_SECONDS):
+def _collection(tmp_path: Path, seconds: float = CLIP_SECONDS, *, media: Path | None = None):
     """``(rows, helpers)``: what Data Loading's ``curio_load_collection`` gives
-    for a folder holding one clip *seconds* long, and the helpers a node runs
-    with."""
+    for a folder holding one clip *seconds* long, written once, and the
+    helpers a node runs with, which derive files in *media*, the run's
+    folder (``collection_rows``)."""
     from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
     from utk_curio.backend.tests.test_discovery.conftest import a_storage_manifest, write_source
     from utk_curio.backend.tests.test_packages.test_media_package import collection_rows
 
     root = tmp_path / "walk"
-    root.mkdir()
-    tiny_sam3.clip(root / "corner.mp4", seconds)
+    if not root.is_dir():
+        root.mkdir()
+        tiny_sam3.clip(root / "corner.mp4", seconds)
     resource = {"id": "walk", "name": "Walk", "kind": "videos", "path": "*", "extensions": ["mp4"]}
     source = write_source(tmp_path / "discovery", "source.example.folder@1", a_storage_manifest(root, [resource]))
-    return collection_rows(load_source_manifest(source), "walk", tmp_path)
+    return collection_rows(load_source_manifest(source), "walk", tmp_path, media=media)
 
 
 @pytest.fixture
@@ -599,13 +601,12 @@ def test_track_objects_follows_each_object_through_a_clip(videos, catalog_copy, 
     with _staged(tmp_path) as module:
         out = module.track_objects(rows, model, helpers["curio_derived_file"], labels=DEFAULT_LABELS,
                                    every_seconds=EVERY)
-        tag = module._tag(DEFAULT_LABELS, EVERY, 10, module._part_end(video, 0, None, EVERY, 450), 960)
 
     assert len(out["videos"]) == 1
     row = out["videos"].iloc[0]
     # The row is the overlay, a video Simple View plays, made from the clip,
-    # named by where it starts and by what the call asked.
-    assert (row["kind"], row["file_id"]) == ("video", f"{video['file_id']}@0-{tag}.mp4")
+    # named by where it starts alone: each run writes in a folder of its own.
+    assert (row["kind"], row["file_id"]) == ("video", f"{video['file_id']}@0.mp4")
     assert (row["video_file_id"], row["name"], row["dataset_id"]) == (video["file_id"], video["name"], video["dataset_id"])
     assert row["thumbnail"].endswith(f"/media/{row['file_id']}?variant=thumb")
     assert (row["t_s"], row["duration_s"], row["fps"]) == (0.0, len(SAMPLED) * EVERY, 1 / EVERY)
@@ -681,24 +682,28 @@ def test_a_part_of_a_video_is_tracked_from_where_it_starts(videos, catalog_copy,
     with _staged(tmp_path) as module:
         out = module.track_objects(rows, model, helpers["curio_derived_file"], labels=DEFAULT_LABELS,
                                    every_seconds=EVERY, from_seconds=1, to_seconds=2, max_frames=2)
-        tag = module._tag(DEFAULT_LABELS, EVERY, 10, 2, 960)
     (row,) = out["videos"].to_dict("records")
     assert (row["file_id"], row["t_s"], row["duration_s"]) == (
-        f"{rows['file_id'].iloc[0]}@1000-{tag}.mp4", 1.0, 2 * EVERY)
+        f"{rows['file_id'].iloc[0]}@1000.mp4", 1.0, 2 * EVERY)
 
 
 def test_two_calls_that_ask_differently_of_one_video_keep_files_of_their_own(
         videos, catalog_copy, weights, few_threads, tmp_path):
     """Two Track Objects runs on one video from one start, with other
-    settings, as two dataflows of one account run them: each keeps its own
-    overlay, which the other's run leaves as it was, and hands on the tracks
-    of the frames it looked at. On dev a run of 0 to 300 s at a frame every
-    0.5 s overwrote another dataflow's overlay of the whole walk at a frame
-    every 2 s, which then played 300 s instead of 866 s. A call that asks the
-    same as an earlier one writes that call's overlay again."""
+    settings, as two dataflows of one account run them: each run writes in a
+    folder of its own, so each keeps its own overlay, which the other's run
+    leaves as it was, though both are named by where they start, and each
+    hands on the tracks of the frames it looked at. On dev a run of 0 to
+    300 s at a frame every 0.5 s overwrote another dataflow's overlay of the
+    whole walk at a frame every 2 s, which then played 300 s instead of
+    866 s. A call that asks the same in the same run's folder writes that
+    call's overlay again."""
     import av
 
+    from utk_curio.backend.tests.test_packages.test_media_package import another_run
+
     rows, helpers = videos
+    _rows, other_helpers = _collection(tmp_path, media=another_run(tmp_path))
     model = _loaded(catalog_copy, weights)(MODEL_ID)
 
     def frames_of(path):
@@ -709,13 +714,14 @@ def test_two_calls_that_ask_differently_of_one_video_keep_files_of_their_own(
         return set(tracks["start_s"]) | set(tracks["end_s"])
 
     with _staged(tmp_path) as module:
-        def track(every):
-            out = module.track_objects(rows, model, helpers["curio_derived_file"], labels=DEFAULT_LABELS,
+        def track(every, run_helpers):
+            out = module.track_objects(rows, model, run_helpers["curio_derived_file"], labels=DEFAULT_LABELS,
                                        every_seconds=every)
             return out["videos"].iloc[0], out["tracks"]
 
-        first, first_tracks = track(EVERY)
-        other, other_tracks = track(2 * EVERY)
+        first, first_tracks = track(EVERY, helpers)
+        other, other_tracks = track(2 * EVERY, other_helpers)
+        assert first["file_id"] == other["file_id"]
         assert first["path"] != other["path"], (
             f"two calls that ask differently of one video wrote one overlay ({first['path']})")
         assert frames_of(first["path"]) == len(SAMPLED), "the other call's run changed the first call's overlay"
@@ -723,7 +729,7 @@ def test_two_calls_that_ask_differently_of_one_video_keep_files_of_their_own(
         # Each call's tracks are of the frames it looked at.
         assert first_tracks.size and times_of(first_tracks) <= set(SAMPLED), first_tracks
         assert times_of(other_tracks) <= set(SAMPLED[::2]), other_tracks
-        again, _ = track(EVERY)
+        again, _ = track(EVERY, helpers)
 
     assert again["path"] == first["path"], "a call that asks the same as an earlier one got an overlay of its own"
 

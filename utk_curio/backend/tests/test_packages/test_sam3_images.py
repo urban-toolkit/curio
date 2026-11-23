@@ -295,8 +295,8 @@ def test_segment_images_finds_each_label_in_each_frame_sample_video_frames_sampl
     the label covering the most and its share, then each label's share and
     count, the overlay and the error; then the frame's own columns, its t_s
     among them. Each overlay is a PNG of the frame's size, named after its
-    video at the frame's time and after what the call asked, as Image
-    Segmentation names an overlay of a sampled frame."""
+    video at the frame's time alone, as Image Segmentation names an overlay
+    of a sampled frame: each run writes in a folder of its own."""
     import pandas as pd
     from PIL import Image
 
@@ -304,7 +304,6 @@ def test_segment_images_finds_each_label_in_each_frame_sample_video_frames_sampl
         frames, helpers = _frames(modules, videos)
         out = _run(frames, helpers, model_folder=catalog_copy, weights=every_detection_weights,
                    labels=TWO, threshold=0.0)
-        tag = modules[MODULE]._tag(TWO, 0.0, 960)
     assert list(out.columns) == [*RESULTS, *frames.columns]
     assert list(out["t_s"]) == list(frames["t_s"]) and list(out["file_id"]) == list(frames["file_id"])
     # At a threshold of 0, with no overlapping detection suppressed, every
@@ -322,7 +321,7 @@ def test_segment_images_finds_each_label_in_each_frame_sample_video_frames_sampl
         else:
             assert pd.isna(row["dominant_class"])
         video, t_ms = row["file_id"].split("@")
-        assert row["overlay_url"].endswith(f"/media/{video}@{t_ms}-{tag}.png?variant=original"), row["overlay_url"]
+        assert f"/media/{video}@{t_ms}.png?variant=original" in row["overlay_url"], row["overlay_url"]
         with Image.open(_overlay(row["overlay_url"], tmp_path)) as overlay:
             assert (overlay.format, overlay.size) == ("PNG", (96, 64))
 
@@ -394,7 +393,7 @@ def test_photos_get_overlays_named_after_themselves_and_a_row_without_an_image_s
     for name, size in (("a.png", (96, 64)), ("b.png", (960, 640))):
         row = by_name[name]
         assert pd.isna(row["segment_error"]) and row["pole_objects"] == QUERIES
-        assert f"/media/{row['file_id']}@0-sam3" in row["overlay_url"], row["overlay_url"]
+        assert f"/media/{row['file_id']}@0?variant=original" in row["overlay_url"], row["overlay_url"]
         with Image.open(_overlay(row["overlay_url"], tmp_path)) as overlay:
             assert overlay.size == size
 
@@ -419,18 +418,22 @@ def test_overlays_are_named_as_image_segmentation_names_them(tmp_path):
 
 
 def test_calls_that_ask_differently_keep_overlays_of_their_own(videos, catalog_copy, weights, few_threads, tmp_path):
-    """The overlay's name holds the labels, the threshold and the width, so a
-    call that asks otherwise of the same frames keeps files of its own, and one
-    that asks the same writes the same files again."""
+    """An overlay is named after its frame alone, and each run writes in a
+    folder of its own, which its rows' URLs name: a run that asks otherwise of
+    the same frames, as another node does, keeps files of its own, and a call
+    that asks the same in the same run's folder writes the same files again."""
+    from utk_curio.backend.tests.test_packages.test_media_package import another_run
+
+    _rows, other_helpers = _collection(tmp_path, media=another_run(tmp_path))
     with _staged(tmp_path) as modules:
-        tag = modules[MODULE]._tag
-        assert len({tag(TWO, 0.5, 960), tag(["pole"], 0.5, 960), tag(TWO, 0.4, 960), tag(TWO, 0.5, 480)}) == 4
         frames, helpers = _frames(modules, videos)
         first = _run(frames, helpers, model_folder=catalog_copy, weights=weights, labels=TWO, threshold=0.0)
         again = _run(frames, helpers, model_folder=catalog_copy, weights=weights, labels=TWO, threshold=0.0)
-        other = _run(frames, helpers, model_folder=catalog_copy, weights=weights, labels=["pole"], threshold=0.0)
+        other = _run(frames, other_helpers, model_folder=catalog_copy, weights=weights, labels=["pole"],
+                     threshold=0.0)
     assert list(first["overlay_url"]) == list(again["overlay_url"])
     assert not set(first["overlay_url"]) & set(other["overlay_url"])
+    assert [url.split("?")[0] for url in first["overlay_url"]] == [url.split("?")[0] for url in other["overlay_url"]]
 
 
 # ---------------------------------------------------------------------------
