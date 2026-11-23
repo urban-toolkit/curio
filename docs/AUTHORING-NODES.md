@@ -155,6 +155,10 @@ data = curio_load_data([!! data !!])
 return data
 ```
 
+An input can pick a `dataset` widget's dataset instead: its `options` name the
+input in `pickedBy` and give in `choices` the dataset each of its texts picks
+([Inside a node](USAGE.md#inside-a-node)).
+
 To have the node's **Widgets** tab show only its controls, add
 `"opensOnControls": true`, as Data Loading and Data Export do: a label and a
 control for each widget, as on a dashboard tile, with no tags, **Edit**,

@@ -58,6 +58,12 @@ CHARTS = ("idot-zone-occupancy-chart", "idot-per-hour-chart", "idot-confidence-c
           "idot-agreement-chart")
 #: The dashboard's eight tiles.
 TILES = {SETTINGS, FRAMES, GROUND, *CHARTS}
+#: The collection each Data Loading node the camera picks for loads with the
+#: Settings tile's default camera, W042.
+PICKED_DEFAULTS = {
+    "idot-records": "data.sage.idot-w042-records-2025-08",
+    "idot-snapshots": "data.sage.idot-w042-snapshots-2025-08-09",
+}
 #: How long a run of the whole example may take on a loaded runner.
 RUN_TIMEOUT_MS = 600000
 
@@ -150,6 +156,12 @@ def test_the_example_runs_on_its_cached_files_and_its_dashboard_follows_a_visito
         wait_for_node_done(page, node["id"], node_type=node["type"].split("/")[-1], timeout_ms=RUN_TIMEOUT_MS)
     _tiles_drew(page)
     _frames_read(page, W042_CAPTIONS)
+    # Records and Snapshots show on their Data box the collection the
+    # Settings node's camera picks, and take no file of their own.
+    for node_id, dataset_id in PICKED_DEFAULTS.items():
+        box = node_locator(page, node_id).locator('[data-picked-by="input_0.camera"]')
+        expect(box.locator(f'[data-tooltip="{dataset_id}"]')).to_be_visible(timeout=60000)
+        expect(box.get_by_role("button", name="Choose file")).to_have_count(0)
     save_dataflow(page)
 
     # The owner's dashboard: the eight tiles, drawn from the saved outputs. The

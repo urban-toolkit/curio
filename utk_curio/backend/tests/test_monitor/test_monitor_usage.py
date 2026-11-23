@@ -437,9 +437,10 @@ def test_a_python_node_whose_download_failed_counts_as_failed(clock, signed_in, 
 
 def _ending(status: str | None = None, *, raises: Exception | None = None, seconds: float = 0.0):
     """The engine's events of a run that takes *seconds*, then ends *status*,
-    or raises *raises*."""
+    or raises *raises*. It takes what the engine takes, *read* among it, the
+    read of a circle a dataset widget is picked by."""
 
-    def run_events(plan, execute, cancelled=None, wrap=None):
+    def run_events(plan, execute, cancelled=None, wrap=None, read=None):
         time.sleep(seconds)
         if raises is not None:
             raise raises

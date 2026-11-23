@@ -78,6 +78,7 @@ import {
   NUMERIC_KINDS,
   WIDGET_KIND_LABELS,
   effectiveValue,
+  listedChoices,
   type WidgetDef,
   type WidgetValue,
 } from "../../../utils/widgets/widgetModel";
@@ -961,7 +962,7 @@ function rangeText(options: WidgetDef["options"]): string | null {
 function widgetLines(widget: WidgetDef, language: CodeLanguage): React.ReactNode {
   const value = effectiveValue(widget);
   const control = WIDGET_KIND_LABELS[widget.type] ?? widget.type;
-  const choices = CHOICE_KINDS.includes(widget.type) ? widget.options?.choices ?? [] : [];
+  const choices = CHOICE_KINDS.includes(widget.type) ? listedChoices(widget.options) : [];
   const range = NUMERIC_KINDS.includes(widget.type) ? rangeText(widget.options) : null;
   return (
     <>

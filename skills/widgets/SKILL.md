@@ -18,7 +18,7 @@ A widget is a value a node's code reads that the user sets in the node's Widgets
 
 The node's code or spec places each widget where its value is used, as its reference: `{{widgets.reference:threshold}}` for the widget named threshold. A run replaces the reference with the widget's value ("value" once the user set one, else "default"). On its own a reference becomes a value of the code's language: a number, a quoted text, a list, true or false. Inside a quoted text it becomes the value's text. Never type a widget's value into the code in its place, and never place a reference to a widget the node does not declare.
 
-A dataset widget's value is the id of a Data Catalog dataset, layer group or collection, empty until a file or a dataset is dropped on its node; its reference becomes that id as a quoted text, so `curio_load_data({{widgets.reference:data}})` loads it. A run refuses code that reads an empty one.
+A dataset widget's value is the id of a Data Catalog dataset, layer group or collection, empty until a file or a dataset is dropped on its node; its reference becomes that id as a quoted text, so `curio_load_data({{widgets.reference:data}})` loads it. A run refuses code that reads an empty one. An input can pick the id, never code: "pickedBy" is input_0, or input_0.key for a key of its dict, and "choices" maps each text to an id.
 
 A value several nodes read is a widget on one {{template.label:curio.builtin/python-computation}} node that returns it, wired into each reader.
 

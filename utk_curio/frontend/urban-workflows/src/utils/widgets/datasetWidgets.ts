@@ -4,7 +4,7 @@
  * its node sets it. The node's code reads it as `[!! name !!]`, which a run
  * writes as the id, so `curio_load_data([!! data !!])` loads what was dropped.
  */
-import { effectiveValue, normalizeWidgets, type WidgetDef } from "./widgetModel";
+import { effectiveValue, isPicked, normalizeWidgets, pickedChoices, type WidgetDef } from "./widgetModel";
 
 /** Whether *code* places a reference to the widget *name*. */
 function reads(code: string, name: string): boolean {
@@ -21,6 +21,16 @@ export function datasetWidgetReadBy(widgets: unknown, code: unknown): WidgetDef 
   return normalizeWidgets(widgets).find((w) => w.type === "dataset" && reads(code, w.name)) ?? null;
 }
 
+/** Why a node whose *code* reads a dataset widget an input picks
+ * (`options.pickedBy`) takes no drop of a file or a dataset, or null when it
+ * takes one: what that input holds says which dataset it loads, and a drop
+ * would say another. */
+export function pickedDropRefusal(widgets: unknown, code: unknown): string | null {
+  const widget = datasetWidgetReadBy(widgets, code);
+  if (!widget || !isPicked(widget)) return null;
+  return `${widget.label || widget.name} is picked by ${widget.options?.pickedBy}: change what that input holds to load another dataset.`;
+}
+
 /** Whether *code* reads any of *widgets*: a node whose template opens on its
  * Widgets tab opens there when it does (NodeEditor). */
 export function readsAWidget(widgets: unknown, code: unknown): boolean {
@@ -33,11 +43,17 @@ export function firstDatasetWidget(widgets: unknown): WidgetDef | null {
   return normalizeWidgets(widgets).find((w) => w.type === "dataset") ?? null;
 }
 
-/** The ids the dataset widgets among *widgets* hold, each once. */
+/** The ids the dataset widgets among *widgets* hold, each once: each one's
+ * value, and every choice of one an input picks (`options.pickedBy`), which
+ * loads whichever its input's value picks. */
 export function datasetWidgetIds(widgets: unknown): string[] {
   const ids = new Set<string>();
   for (const widget of normalizeWidgets(widgets)) {
     if (widget.type !== "dataset") continue;
+    if (isPicked(widget)) {
+      for (const id of Object.values(pickedChoices(widget))) if (typeof id === "string" && id !== "") ids.add(id);
+      continue;
+    }
     const value = effectiveValue(widget);
     if (typeof value === "string" && value !== "") ids.add(value);
   }

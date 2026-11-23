@@ -3728,6 +3728,44 @@ agent's node run (`run_node._run_inputs`, `_dataset_look_up`), each over the
 slice the run goes through, and Solve's blocker signature, so a dataset dropped
 on an upstream loader is progress.
 
+An input can pick a dataset widget's dataset: `options.pickedBy` names the
+circle, `input_<k>` or `input_<k>.<key>` for a key of the dict on it, and
+`options.choices` maps each text that circle may hold to a catalog id
+(`code_references.pick_problem` and its twin `pickProblem` check the
+definition, at most `MAX_PICKED_CHOICES`, a scan's cap). The resolvers write the
+id the circle's value picks (`code_references._picked`, `pickedDataset` in
+`codeReferences.ts`), from the input entry's `value`, which a run fills before
+it writes the code; without it the reference waits for its data
+(`picked_waits_message`, `waits_for_data`). A text no choice names is refused
+naming it and the choices, and so are a value that is no text, a table, a
+missing key and a reference in code that is not Python: only Python code reads
+such a widget.
+
+- **Runs on the server.** The engine reads the circles a step's picked widgets
+  name before `sent_code` (`run_engine.picked_values`, through
+  `workflow_spec.picked_inputs`) with the caller's `read`: `runs/service.py` and
+  `runs/viewer.py` each build it from the `NodeRun` they execute, and
+  `node_exec.input_value` reads the value as the node's own run reads that input
+  (`_input_access`: the kept session that made it, the saved output's file, or
+  the run's session), through the sandbox's `/get`, bounded to
+  `INPUT_VALUE_MAX_BYTES`. A value the run could not read is not read, so a
+  page's reuse ref cannot show another session's text. The headless runner
+  reads under its own session (`runner._picked_values`). The run's code then
+  names the picked id, which its scans find as any literal call's.
+- **Scans of a saved spec.** `node_run_code` writes the code once per choice
+  (`_with_each_choice`), so every choice is staged; the scans that read a node's
+  raw code, its lineage (`datasets/application/export.py`, `listing.py`), the
+  worked examples' datasets (`turns/examples.dataset_ids_of`) and a fixture's
+  sources (`evaluation/dependencies.referenced_sources`), add what its dataset
+  widgets hold (`code_refs.dataset_widget_ids`), every choice of a picked one.
+- **The canvas.** `useInputScope` reads the value on a picked circle through
+  the same `/get-preview` a chip's hover reads (`readInputValue`), and the
+  controls show the dataset it picks (`withPickedValues`); the box offers no
+  **Choose file**, and the node refuses a drop with why, before a file is
+  imported for it (`datasetWidgets.pickedDropRefusal`, asked by
+  `NodeContainer`). `nodeBoundDatasetIds` binds every choice. The agents declare it through the widget grammar, whose native tools
+  offer `choices` as JSON text, a choice widget's list or this map.
+
 ### Auth Routes
 
 | Endpoint | Method | Purpose |

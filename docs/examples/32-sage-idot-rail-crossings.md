@@ -13,6 +13,10 @@ Everything the example reads of SAGE stays in the `idot` bucket on data.urbantk.
 
 On a Curio that mounts no bucket, open each dataset's details in the Data Catalog and press **Cache files** first.
 
+Two Data Loading nodes, **Records** and **Snapshots**, load the camera's. Each one's Data widget gives a dataset for each camera, and the camera the Settings node returns on its first circle picks one (`pickedBy`), so the Data box shows the camera's dataset and changes with it. Records' widget is picked by `input_0.camera`, and its `choices` give `data.sage.idot-w042-records-2025-08` for `W042`, `data.sage.idot-w065-records-2025-08` for `W065` and `data.sage.idot-w06e-records-2025-12` for `W06E`.
+
+Its code is Data Loading's own, `data = curio_load_data([!! data !!])`: a run reads the camera first and writes the dataset it picks, `curio_load_data("data.sage.idot-w065-records-2025-08")` for W065.
+
 Two more datasets hold the team's own files: `data.cities-in-motion.idot-cameras`, each camera's control points, which tie pixels of its snapshots to the ground in UTM zone 16N (EPSG:26916), and its four zones, a lane before or after the crossing each, in pixels; and `data.cities-in-motion.idot-yolo26n`, Keira's YOLO26n boxes on the snapshots.
 
 ## Pipeline overview
@@ -22,6 +26,8 @@ flowchart LR
   S[`Python Computation`<br/>Settings]
   CA[`Data Loading`<br/>Cameras]
   Y[`Data Loading`<br/>YOLO26n boxes]
+  RL[`Data Loading`<br/>Records]
+  PL[`Data Loading`<br/>Snapshots]
   H[`Python Computation`<br/>Camera on the ground]
   Z[`Python Computation`<br/>Zones on the ground]
   R[`Python Computation`<br/>Records of the day]
@@ -47,7 +53,9 @@ flowchart LR
   BC[`Vega-Lite`<br/>By model]
   AG[`Python Computation`<br/>Agreement between models]
   AC[`Vega-Lite`<br/>Agreement]
-  S --> H & R & P & M & G & O & HH & F
+  S --> RL & PL & H & R & M & G & O & HH & F
+  RL --> R
+  PL --> P
   CA --> H & Z & F
   H --> Z & G & LI
   R --> M & G & O
@@ -121,7 +129,7 @@ return zones
 
 ## The records of the day
 
-A month's file runs day by day: each UTC day is one block of lines, first a line per image the models looked at, in time order, then a line per snapshot uploaded. A line's date never goes down through the file, so **Records of the day** bisects on the dates for where the day starts and where the next one does, and reads only that block, 49 to 58 MB of the month's 1.4 to 1.6 GB. It gives one row per box and one row with no class for each image a model saw nothing in:
+A month's file runs day by day: each UTC day is one block of lines, first a line per image the models looked at, in time order, then a line per snapshot uploaded. A line's date never goes down through the file, so **Records of the day** bisects on the dates for where the day starts and where the next one does, and reads only that block, 49 to 58 MB of the month's 1.4 to 1.6 GB, of the file whose path the **Records** node's one row gives. It gives one row per box and one row with no class for each image a model saw nothing in:
 
 ```python
 import json
@@ -131,19 +139,14 @@ from datetime import date, timedelta
 import pandas as pd
 
 # The camera's records of its day, a UTC date, out of its month's JSON Lines
-# file, read where it is. The month runs day by day, each day's lines in a
-# block: one line per image the models looked at, in time order, then one per
-# snapshot uploaded. A line's date never goes down, so a bisection on the
-# dates finds where the day starts and where the next one does, and only
-# those bytes are read.
+# file, which the Records node loads (input_1) and this node reads where it
+# is. The month runs day by day, each day's lines in a block: one line per
+# image the models looked at, in time order, then one per snapshot uploaded.
+# A line's date never goes down, so a bisection on the dates finds where the
+# day starts and where the next one does, and only those bytes are read.
 DAYS = {"W042": "2025-08-09", "W065": "2025-08-17", "W06E": "2025-12-02"}
-MONTHS = {
-    "W042": curio_load_collection("data.sage.idot-w042-records-2025-08"),
-    "W065": curio_load_collection("data.sage.idot-w065-records-2025-08"),
-    "W06E": curio_load_collection("data.sage.idot-w06e-records-2025-12"),
-}
 camera = input_0["camera"]
-path = MONTHS[camera]["path"].iloc[0]
+path = input_1["path"].iloc[0]
 if pd.isna(path):
     raise RuntimeError(
         f"The records of {camera} are not on this machine: open their dataset's details in the "
@@ -196,7 +199,7 @@ print(f"{camera} on {day}: {end - start:,} bytes from {start:,}, {records['image
 return records
 ```
 
-**Snapshots of the day** lists the camera's snapshots, each named by when it was taken in nanoseconds, the same number as the records' `image_timestamp_ns` of that image, with its time on a Chicago clock.
+**Snapshots of the day** orders the snapshots the **Snapshots** node loads, each named by when it was taken in nanoseconds, the same number as the records' `image_timestamp_ns` of that image, and gives its time on a Chicago clock.
 
 ## On the ground
 

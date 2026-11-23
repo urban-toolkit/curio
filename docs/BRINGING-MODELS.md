@@ -408,7 +408,9 @@ Each widget has:
   list for the other kinds.
 - `options`: `choices` for a `choice`, `checkbox-group` or `multi-select`, and
   for a `choice` its `display`, `dropdown` or `radio`; `min`, `max`, `step` and
-  `units` for a `number` or a `slider`, and a `slider` needs `min` and `max`.
+  `units` for a `number` or a `slider`, and a `slider` needs `min` and `max`;
+  for a `dataset` an input picks, `pickedBy`, that input, and `choices`, the
+  dataset each of its values picks.
 
 Curio refuses a manifest with a widget the Widgets tab would refuse, in the
 tab's words: a name or a type that breaks the rules above, a choice kind

@@ -910,8 +910,9 @@ def test_scouts_flood_rasters_are_downloaded_the_first_time_the_flood_dataflows_
 ):
     """SCOUT's seven flood rasters are in the repository and out of the pip
     package. On a pip install's catalog, the first run of each of the
-    quad-cities-flood-vulnerability dataflow's Data Loading nodes downloads the rasters its code
-    names, each once, and hands the sandbox the files where they were placed;
+    quad-cities-flood-vulnerability dataflow's Data Loading nodes, a depth loader's for each
+    period its Data widget picks among, downloads the rasters its code names as the run writes
+    it, each once, and hands the sandbox the files where they were placed;
     a second run downloads nothing. The census tracts and the waterways it
     also reads ship in the package: their loaders get the package's own files,
     and nothing is downloaded for them."""
@@ -940,14 +941,19 @@ def test_scouts_flood_rasters_are_downloaded_the_first_time_the_flood_dataflows_
     github = FakeGitHub().serve(monkeypatch)
     captured = _capture_sandbox(monkeypatch)
 
-    # The loaders read the region and the period from the nodes wired into
-    # them, not from their code, so the datasets their code names are the same
-    # whatever those hold.
+    # The loaders read the region from the node wired into their first circle.
+    # A depth loader's Data widget is picked by the period on its second, which
+    # a run reads before it writes the code: its run for each period names
+    # that period's raster.
     codes = []
     for loader in (n for n in spec["nodes"] if n["type"] == "curio.builtin/data-loading"):
-        code, problems = resolve_references(loader["content"], [], "python")
-        assert problems == [], problems
-        codes.append(textwrap.indent(code, "    "))
+        widgets = (loader.get("metadata") or {}).get("widgets") or []
+        periods = [period for widget in widgets for period in (widget.get("options") or {}).get("choices") or {}]
+        for period in periods or [None]:
+            inputs = [{"slot": 0}, {"slot": 1, "value": period}] if period is not None else []
+            code, problems = resolve_references(loader["content"], widgets, "python", inputs)
+            assert problems == [], problems
+            codes.append(textwrap.indent(code, "    "))
     fetched, read_in_place = [], []
     for code in codes:
         resp = _run_code(client, token, code)

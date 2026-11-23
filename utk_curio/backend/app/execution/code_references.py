@@ -215,6 +215,159 @@ def empty_dataset_message(reference: str, widget: dict) -> str:
     return f"{reference}: drop a file or a Data Catalog dataset on {widget.get('label') or widget.get('name')} first."
 
 
+#: How a dataset widget names the input that picks its dataset
+#: (``options.pickedBy``): ``input_<k>``, the value on circle k, or
+#: ``input_<k>.<key>``, the value under a key of the dict on it. Its
+#: ``options.choices`` give the dataset each value picks. Kept in sync with
+#: ``PICKED_BY_PATTERN`` in ``widgetModel.ts``.
+PICKED_BY_RE = re.compile(r"^input_(\d{1,3})(?:\.(.+))?$")
+#: The most circles a node has (``node_exec.parse_input_slots``).
+MAX_PICKED_SLOT = 255
+#: The most choices a picked dataset widget gives: a scan of a node names at
+#: most this many datasets (``datasets/domain/code_refs.MAX_DATASET_IDS``).
+MAX_PICKED_CHOICES = 32
+
+
+def is_picked(widget: dict) -> bool:
+    """Whether *widget* says an input picks its value (``options.pickedBy``)."""
+    options = widget.get("options") if isinstance(widget, dict) else None
+    return isinstance(options, dict) and "pickedBy" in options
+
+
+def picked_by(widget: dict) -> tuple[int, str | None] | None:
+    """The circle and the key a picked dataset widget reads: ``(k, key)`` for
+    ``input_<k>.<key>``, ``(k, None)`` for ``input_<k>``; None when its
+    ``pickedBy`` names no circle."""
+    options = widget.get("options") if isinstance(widget.get("options"), dict) else {}
+    by = options.get("pickedBy")
+    match = PICKED_BY_RE.fullmatch(by) if isinstance(by, str) else None
+    if match is None or int(match.group(1)) > MAX_PICKED_SLOT:
+        return None
+    return int(match.group(1)), match.group(2)
+
+
+def picked_choices(widget: dict) -> dict:
+    """``{value: dataset id}``: a picked dataset widget's choices, or {}."""
+    options = widget.get("options") if isinstance(widget.get("options"), dict) else {}
+    choices = options.get("choices")
+    return dict(choices) if isinstance(choices, dict) else {}
+
+
+def pick_problem(definition: dict) -> str | None:
+    """What is wrong with how *definition* says an input picks its value, or
+    None: only a dataset widget is picked, by an input circle it names, among
+    choices that each name a catalog item (:data:`DATASET_ID_RE`). A dataset
+    widget's choices go with ``pickedBy``. ``pickProblem`` in
+    ``widgetModel.ts``."""
+    options = definition.get("options") if isinstance(definition.get("options"), dict) else {}
+    named = "pickedBy" in options
+    choices = options.get("choices")
+    if not named:
+        if definition.get("type") == "dataset" and isinstance(choices, dict):
+            return "A dataset widget's choices go with pickedBy, the input that picks one of them."
+        return None
+    if definition.get("type") != "dataset":
+        return "Only a dataset widget is picked by an input."
+    if picked_by(definition) is None:
+        return "pickedBy names an input circle, such as input_0, or a key of the dict on it, such as input_0.camera."
+    if not isinstance(choices, dict) or not choices or any(key == "" for key in choices):
+        return (
+            "A dataset widget an input picks gives its choices: each value the input may hold, "
+            "and the dataset that value picks."
+        )
+    if len(choices) > MAX_PICKED_CHOICES:
+        return f"A dataset widget an input picks gives at most {MAX_PICKED_CHOICES} choices."
+    if any(not isinstance(value, str) or DATASET_ID_RE.fullmatch(value) is None for value in choices.values()):
+        return "Each choice names a Data Catalog dataset, layer group or collection by its id."
+    return None
+
+
+def _kind_of(value) -> str:
+    """What *value* is, in the words a picked widget's refusal says it:
+    ``kindOf`` in ``codeReferences.ts``."""
+    if value is None:
+        return "nothing"
+    if isinstance(value, bool):
+        return "true or false"
+    if isinstance(value, (int, float)):
+        return "a number"
+    if isinstance(value, (list, tuple)):
+        return "a list"
+    if isinstance(value, dict):
+        return "a dict"
+    return "a value"
+
+
+def _choice_list(choices: dict) -> str:
+    """The values a picked widget's choices answer, quoted, as one text:
+    ``"a"``, ``"a" and "b"``, ``"a", "b" and "c"``."""
+    quoted = [json.dumps(key, ensure_ascii=False) for key in choices]
+    return quoted[0] if len(quoted) == 1 else ", ".join(quoted[:-1]) + " and " + quoted[-1]
+
+
+def picked_waits_message(reference: str, widget: dict, slot: int) -> str:
+    """What a run refuses while the input that picks *widget* holds no value
+    yet: a node not given its data, not code at fault (:func:`waits_for_data`)."""
+    by = (widget.get("options") or {}).get("pickedBy")
+    return (
+        f"{reference}: {widget.get('label') or widget.get('name')} is picked by {by}, "
+        f"and input_{slot} has no value yet. Run the node that feeds it first."
+    )
+
+
+def _picked(reference: str, widget: dict, inputs: list, language: str) -> tuple[str | None, str | None]:
+    """``(dataset id, None)``: the choice of *widget* the value on its input
+    picks; or ``(None, why)`` when none can be picked. *inputs* are the node's
+    wired circles, the value each holds under ``value`` once a run has read it.
+    ``pickedDataset`` in ``codeReferences.ts``."""
+    label = widget.get("label") or widget.get("name")
+    by = (widget.get("options") or {}).get("pickedBy")
+    if language != "python":
+        return None, f"{reference}: {label} is picked by {by}, and only a Python node's code reads it."
+    problem = pick_problem(widget)
+    if problem is not None:
+        return None, f"{reference}: {problem}"
+    slot, key = picked_by(widget)
+    choices = picked_choices(widget)
+    found = next((i for i in inputs if i.get("slot") == slot), None)
+    if found is None:
+        return None, f"{reference}: {label} is picked by {by}, and input_{slot} has no edge. Connect one to that circle."
+    kind = str(found.get("dataType") or "").lower()
+    if kind in TABLE_TYPES or kind == "raster":
+        what = "a raster" if kind == "raster" else "a table"
+        return None, f"{reference}: {label} is picked by {by}, and input_{slot} holds {what}, not a text."
+    if "value" not in found:
+        return None, picked_waits_message(reference, widget, slot)
+    value = found["value"]
+    if key is not None:
+        if not isinstance(value, dict) or key not in value:
+            return None, f"{reference}: {label} is picked by {by}, and input_{slot} holds no {key}."
+        value = value[key]
+    if not isinstance(value, str):
+        return None, (
+            f"{reference}: {label} is picked by {by}, which holds {_kind_of(value)}, not a text. "
+            f"Its choices are {_choice_list(choices)}."
+        )
+    if value not in choices:
+        return None, (
+            f"{reference}: {label} has no choice for {json.dumps(value, ensure_ascii=False)}, "
+            f"the value of {by}. Its choices are {_choice_list(choices)}."
+        )
+    return choices[value], None
+
+
+def picked_slots(widgets: Iterable) -> list[int]:
+    """The circles the picked dataset widgets among *widgets* read, in
+    order, each once: the inputs a run reads the value of before it writes
+    the node's code (``run_engine``)."""
+    slots: list[int] = []
+    for widget in normalize_widgets(list(widgets or [])):
+        address = picked_by(widget) if widget.get("type") == "dataset" and is_picked(widget) else None
+        if address is not None and address[0] not in slots:
+            slots.append(address[0])
+    return slots
+
+
 class CodeReferenceError(ValueError):
     """A node's code holds references it cannot resolve."""
 
@@ -225,15 +378,22 @@ def effective_value(widget: dict):
 
 def waits_for_data(problem: dict, widgets: Iterable = ()) -> bool:
     """Whether *problem* (``{"reference", "message"}``, as
-    :func:`resolve_references` lists one) is only an empty dataset widget of
-    *widgets* waiting for its data: a node that has not been given its data,
-    not code at fault. A run still refuses it. Kept in sync with
-    ``waitsForData`` in ``codeReferences.ts``."""
-    return any(
-        widget.get("type") == "dataset" and effective_value(widget) == ""
-        and problem.get("message") == empty_dataset_message(problem.get("reference"), widget)
-        for widget in normalize_widgets(list(widgets or []))
-    )
+    :func:`resolve_references` lists one) is only a dataset widget of
+    *widgets* waiting for its data: an empty one, or one whose input holds no
+    value yet to pick its dataset by (:func:`picked_waits_message`). A node
+    that has not been given its data, not code at fault. A run still refuses
+    it. Kept in sync with ``waitsForData`` in ``codeReferences.ts``."""
+    for widget in normalize_widgets(list(widgets or [])):
+        if widget.get("type") != "dataset":
+            continue
+        reference, message = problem.get("reference"), problem.get("message")
+        if is_picked(widget):
+            address = picked_by(widget)
+            if address is not None and message == picked_waits_message(reference, widget, address[0]):
+                return True
+        elif effective_value(widget) == "" and message == empty_dataset_message(reference, widget):
+            return True
+    return False
 
 
 def js_number(x) -> str:
@@ -991,6 +1151,11 @@ def reference_problem(
     widget = next((w for w in widgets if w.get("name") == inner), None)
     if widget is None:
         return f"{reference}: this node has no widget named {inner}. Add it in the Widgets tab."
+    # A dataset widget an input picks names the dataset that input's value
+    # picks; text that only mentions it, in a comment or a string, writes ""
+    # when none can be picked yet, as an empty one does.
+    if widget.get("type") == "dataset" and is_picked(widget):
+        return _picked(reference, widget, inputs, language)[1] if context[0] == "code" else None
     # An empty dataset widget names no dataset for the code to load; text
     # that only mentions it, in a comment or a string, still writes "".
     if widget.get("type") == "dataset" and context[0] == "code" and effective_value(widget) == "":
@@ -1218,6 +1383,8 @@ def check_widget_def(definition: dict, others=()) -> str | None:
     (:func:`widget_with_default`, ``packages/repositories/manifests.py``)."""
     if problem := widget_name_or_type_problem(definition, others):
         return problem
+    if problem := pick_problem(definition):
+        return problem
     kind = definition.get("type")
     options = definition.get("options") if isinstance(definition.get("options"), dict) else {}
     if kind in CHOICE_KINDS:
@@ -1348,7 +1515,12 @@ def _resolved_text(
         if "layer" in parsed:
             return f"{LAYER_HELPER}({value}, {widget_literal(parsed['layer'], language)}, {parsed['slot']})"
         return value
-    value = effective_value(by_name[inner])
+    widget = by_name[inner]
+    if widget.get("type") == "dataset" and is_picked(widget):
+        # The dataset its input's value picks, as a run reads that value.
+        value = _picked("", widget, inputs, language)[0] or ""
+    else:
+        value = effective_value(widget)
     if context[0] == "code":
         return widget_literal(_field_value(value, place) if place else value, language)
     return _escape_for(named(_text_of(value, language)), context, language)
@@ -1484,6 +1656,9 @@ def node_run_code(node) -> str:
     as a run writes them, every other reference left as written: what a scan
     for the datasets and collections a run reads looks at, since the id a
     dataset widget holds is in no literal ``curio_load_data`` call until then.
+    A dataset widget an input picks has no value until a run reads that
+    input, so the code is written once per choice (:func:`_with_each_choice`),
+    one copy after another, and the scan names every dataset a run may read.
     Never raises: a scan must not fail its run."""
     if not isinstance(node, dict) or not isinstance(node.get("content"), str):
         return ""
@@ -1492,6 +1667,31 @@ def node_run_code(node) -> str:
     if "[!!" not in code or not isinstance(metadata, dict):
         return code
     try:
-        return resolve_references(code, metadata.get("widgets") or [])[0]
+        return "\n".join(
+            resolve_references(code, widgets)[0] for widgets in _with_each_choice(metadata.get("widgets") or [])
+        )
     except Exception:  # noqa: BLE001 - a scan reads what it can
         return code
+
+
+def _with_each_choice(widgets: list) -> list:
+    """*widgets* as a scan writes them: one list when no widget is picked by
+    an input, else a list per choice, the most choices any picked widget
+    gives, each picked widget holding its next choice as its value in a copy
+    with no ``pickedBy``. Only what a scan reads: a run picks by its input."""
+    picked = [
+        w for w in normalize_widgets(widgets)
+        if w.get("type") == "dataset" and is_picked(w) and pick_problem(w) is None
+    ]
+    if not picked:
+        return [widgets]
+    names = {w["name"]: list(picked_choices(w).values()) for w in picked}
+    rounds = max(len(ids) for ids in names.values())
+    out = []
+    for index in range(rounds):
+        out.append([
+            {**{k: v for k, v in w.items() if k != "options"}, "value": names[w["name"]][index % len(names[w["name"]])]}
+            if isinstance(w, dict) and w.get("name") in names else w
+            for w in widgets
+        ])
+    return out

@@ -345,7 +345,19 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "choices": { "type": "array", "items": { "type": "string" } },
+            "choices": {
+              "type": ["array", "object"],
+              "items": { "type": "string" },
+              "minProperties": 1,
+              "maxProperties": 32,
+              "additionalProperties": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._@-]{0,199}$" },
+              "description": "A choice widget's options, a list; for a dataset widget an input picks (pickedBy), each value of that input and the Data Catalog id it picks."
+            },
+            "pickedBy": {
+              "type": "string",
+              "pattern": "^input_\\d{1,3}(\\..+)?$",
+              "description": "A dataset widget's input that picks its dataset among its choices: input_0, or input_0.camera for a key of the dict on circle 0."
+            },
             "display": { "type": "string", "enum": ["dropdown", "radio"] },
             "min": { "type": "number" },
             "max": { "type": "number" },

@@ -469,6 +469,17 @@ def _run_thread(
         reply, _status = run_node(user, token, node_run)
         return reply
 
+    def read(step, input_ref, slot):
+        # The value on one of the step's circles, for a dataset widget it
+        # picks, read as the step's own run reads that input.
+        user = db.session.get(User, user_id)
+        node_run = node_exec.NodeRun(
+            code="", node_type=step.node_type, node_id=step.node_id, input=input_ref,
+            dataflow_id=project_id, node_name=step.label,
+            input_slots=tuple(plan.spec.input_slots(step.node_id)) or None,
+        )
+        return node_exec.input_value(user, token, node_run, slot)
+
     def wrap(fn):
         def in_context():
             with app.app_context():
@@ -479,7 +490,7 @@ def _run_thread(
     counted = False
     try:
         runs_repo.update_run(run_id, status="running", started_at=datetime.now(timezone.utc))
-        for kind, payload in run_events(plan, execute, cancelled=cancelled, wrap=wrap):
+        for kind, payload in run_events(plan, execute, cancelled=cancelled, wrap=wrap, read=read):
             if kind == "step_started":
                 runs_repo.update_step(
                     run_id, payload["nodeId"], status="running", started_at=_at(payload["startedAt"]),

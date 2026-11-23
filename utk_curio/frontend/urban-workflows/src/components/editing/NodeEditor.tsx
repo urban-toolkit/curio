@@ -41,6 +41,7 @@ import {
     describeReferenceProblems,
     parseReference,
     resolveReferences,
+    withPickedValues,
     type CodeLanguage,
     type ReferenceScope,
 } from "../../utils/references/codeReferences";
@@ -408,6 +409,9 @@ function NodeEditor({
     const controlWidgets = ownWidgets?.length
         ? widgets.filter((widget) => !ownWidgets.includes(widget.name))
         : widgets;
+    // As the controls show them: a dataset widget an input picks holds the
+    // dataset the value on its input picks.
+    const shownControls = withPickedValues(controlWidgets, inputs);
     const tileControls = Boolean(dashboardOn) && ((widgetsTab && controlWidgets.length > 0) || hasOwnControls);
     const controlsAboveOutput = tileControls && hasOutputPane;
     // A notebook cell shows its input and its output at once: the output pane
@@ -785,7 +789,7 @@ function NodeEditor({
                                     <Tab.Pane eventKey="controls" style={paneStyle}>
                                         {widgetsTab && controlWidgets.length > 0 ? (
                                             <WidgetValueControls
-                                                widgets={controlWidgets}
+                                                widgets={shownControls}
                                                 dashboard
                                                 disabled={disableWidgets}
                                                 onCommit={commitValue}
@@ -838,7 +842,7 @@ function NodeEditor({
                                             // the tile's own pane holds them.
                                             dashboardOn ? null : (
                                                 <WidgetValueControls
-                                                    widgets={controlWidgets}
+                                                    widgets={shownControls}
                                                     disabled={disableWidgets}
                                                     onCommit={commitValue}
                                                     controls={hasOwnControls ? controlsComponent : undefined}
@@ -926,7 +930,7 @@ function NodeEditor({
                                                     widget rows to draw here. */}
                                                 {controlWidgets.length > 0 ? (
                                                     <WidgetValueControls
-                                                        widgets={controlWidgets}
+                                                        widgets={shownControls}
                                                         dashboard
                                                         disabled={disableWidgets}
                                                         onCommit={commitValue}

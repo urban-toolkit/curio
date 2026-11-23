@@ -637,6 +637,19 @@ def _run_events(
         media_dirs.forget_kept(user_key, [kept_media])
         return reply
 
+    def read(step, input_ref, slot):
+        # The value on one of the step's circles, for a dataset widget it
+        # picks, read as the step's own run reads that input: as the
+        # dataflow's own, in a kept session of the step's (execute above).
+        owner = db.session.get(User, owner_id)
+        node_run = node_exec.NodeRun(
+            code="", node_type=step.node_type, node_id=None, input=input_ref, dataflow_id=project_id,
+            node_name=step.label, save_output_dataset=False,
+            input_slots=tuple(plan.spec.input_slots(step.node_id)) or None,
+            kept_on=kept_on if kept_on != project_id else None,
+        )
+        return node_exec.input_value(owner, new_session_id(), node_run, slot)
+
     def wrap(fn):
         # The engine runs each step on a thread of its pool, which holds no
         # request and none of this thread's context.
@@ -648,7 +661,7 @@ def _run_events(
     started = time.perf_counter()
     counted = False
     try:
-        for kind, payload in run_events(plan, execute, cancelled=threading.Event(), wrap=wrap):
+        for kind, payload in run_events(plan, execute, cancelled=threading.Event(), wrap=wrap, read=read):
             if kind == "run_finished":
                 counted = True
                 monitor_usage.record("run", ms=(time.perf_counter() - started) * 1000.0,
