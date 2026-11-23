@@ -238,19 +238,31 @@ _PRESS_POINT_JS = """([x, y, id]) => {
     };
 }"""
 
-_SELECT_ONLY_JS = """(id) => window.__curio_reactFlow.setNodes(
-    (nodes) => nodes.map((node) => ({ ...node, selected: node.id === id })))"""
+#: Select the node *id* alone, as a person does from the keyboard: the node
+#: focused, then Enter, which React Flow's own selection takes by the node's
+#: id, leaving every other node of the canvas as it is. Never
+#: ``window.__curio_reactFlow.setNodes``, which replaces the canvas's whole
+#: list with React Flow's own copy of it (``test_frontend/README.md``). Enter
+#: is pressed and let go: React Flow's key handlers count a key held until its
+#: keyup, and with Enter held, Delete alone would match none of them.
+_SELECT_ONLY_JS = """(id) => {
+    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
+    if (!node) throw new Error(`no node ${id} is drawn`);
+    node.focus({preventScroll: true});
+    for (const type of ['keydown', 'keyup']) {
+        node.dispatchEvent(new KeyboardEvent(type, {key: 'Enter', code: 'Enter', bubbles: true, cancelable: true}));
+    }
+}"""
 
 
 def _delete_with_the_key(page, node_id: str) -> None:
     """Select *node_id* alone and press Delete, as a person removes a node."""
-    page.evaluate("() => document.activeElement && document.activeElement.blur && document.activeElement.blur()")
     page.evaluate(_SELECT_ONLY_JS, node_id)
     page.wait_for_function(
         """(id) => !!window.__curio_reactFlow.getNodes().find((n) => n.id === id && n.selected)""",
         arg=node_id, timeout=10000,
     )
-    page.keyboard.press("Delete")
+    node_locator(page, node_id).press("Delete")
 
 
 def _open_tab(page, node_id: str, key: str) -> None:

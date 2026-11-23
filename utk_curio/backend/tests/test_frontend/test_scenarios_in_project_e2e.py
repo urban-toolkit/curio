@@ -111,6 +111,22 @@ def _spec() -> dict:
 
 _SELECTED_JS = """() => window.__curio_reactFlow.getNodes().filter((n) => n.selected).map((n) => n.id).sort()"""
 
+#: Select the node *id* alone, as a person does from the keyboard: the node
+#: focused, then Enter, which React Flow's own selection takes by the node's
+#: id, leaving every other node of the canvas as it is. Never
+#: ``window.__curio_reactFlow.setNodes``, which replaces the canvas's whole
+#: list with React Flow's own copy of it (``test_frontend/README.md``). Enter
+#: is pressed and let go: React Flow's key handlers count a key held until its
+#: keyup.
+_SELECT_ONLY_JS = """(id) => {
+    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
+    if (!node) throw new Error(`no node ${id} is drawn`);
+    node.focus({preventScroll: true});
+    for (const type of ['keydown', 'keyup']) {
+        node.dispatchEvent(new KeyboardEvent(type, {key: 'Enter', code: 'Enter', bubbles: true, cancelable: true}));
+    }
+}"""
+
 _ON_PANE_JS = """([x, y]) => {
     const hit = document.elementFromPoint(x, y);
     return !!hit && !!hit.closest('.react-flow__pane') && !hit.closest('.react-flow__node');
@@ -194,10 +210,24 @@ def _edit_scenario_nodes(page, scenario_id: str, *, add: str | None = None, remo
     expect(panel).to_be_visible(timeout=10000)
     nodes = panel.get_by_test_id("scenario-define-nodes")
     if add:
-        page.evaluate(
-            "(id) => window.__curio_reactFlow.setNodes((all) => all.map((n) => ({...n, selected: n.id === id})))",
-            add,
-        )
+        # *add* becomes the canvas's selection alone, from the keyboard, unless
+        # it is already, as the Shift-drag that starts the test leaves it: an
+        # Enter on a selected node would also take away the box React Flow
+        # draws around a Shift-drag's selection, which the frames show.
+        if page.evaluate(_SELECTED_JS) != [add]:
+            page.evaluate(_SELECT_ONLY_JS, add)
+        try:
+            page.wait_for_function(
+                """(id) => {
+                    const selected = window.__curio_reactFlow.getNodes().filter((n) => n.selected).map((n) => n.id);
+                    return selected.length === 1 && selected[0] === id;
+                }""",
+                arg=add, timeout=10000,
+            )
+        except Exception as exc:  # noqa: BLE001 - said in the test's words
+            raise AssertionError(
+                f"{add} never became the canvas's selection alone: {page.evaluate(_SELECTED_JS)}"
+            ) from exc
         nodes.get_by_role("button", name="+ Add selected node").click()
         expect(nodes.locator(f'[data-node="{add}"]')).to_have_count(1)
     if remove:
