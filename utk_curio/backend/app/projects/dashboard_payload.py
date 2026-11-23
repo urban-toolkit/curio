@@ -66,7 +66,7 @@ _PASS_THROUGH_TYPES = frozenset({
     "curio.builtin/vis-vega", "curio.builtin/vis-simple", "curio.builtin/data-pool",
 })
 
-#: The Autark node, a pass-through only when its spec draws.
+#: The Autark node, a pass-through only when its document only draws its input.
 _AUTK_GRAMMAR_BEHAVIORS = frozenset({"autk-grammar"})
 _AUTK_GRAMMAR_TYPES = frozenset({"curio.builtin/autk-grammar"})
 
@@ -138,32 +138,6 @@ def _mb(num_bytes: int) -> str:
     if num_bytes < 1024 * 1024:
         return f"{num_bytes / 1024:.0f} KB"
     return f"{num_bytes / (1024 * 1024):.1f} MB"
-
-
-def _classify_autk_spec(spec_text: object) -> str:
-    """``render`` when the grammar draws something, else ``data``/``compute``.
-
-    Matches ``classifyAutkSpec`` on the frontend: a spec counts as render
-    whenever it declares a map or a plot, whatever else it also declares. A
-    chip standing on its own holds its place (``with_chip_placeholders``).
-    """
-    from utk_curio.backend.app.execution.code_references import with_chip_placeholders
-
-    if not isinstance(spec_text, str) or not spec_text.strip():
-        return "unknown"
-    try:
-        parsed = json.loads(with_chip_placeholders(spec_text))
-    except (ValueError, TypeError):
-        return "unknown"
-    if not isinstance(parsed, dict):
-        return "unknown"
-    if parsed.get("map") is not None or parsed.get("plot") is not None:
-        return "render"
-    if parsed.get("compute") is not None:
-        return "compute"
-    if parsed.get("data") is not None:
-        return "data"
-    return "unknown"
 
 
 class DashboardCannotBeStandaloneError(Exception):
@@ -271,9 +245,13 @@ def passes_through(node: dict, packages: Optional["TemplateGrammars"] = None) ->
     """Whether a saved *node* shows what reaches it rather than making rows:
     a node whose template declares a Vega-Lite chart's, a Simple View's or a
     Data Pool's behavior, or draws with the Vega-Lite grammar
-    (``template_grammars``), or the Autark node when its spec draws, as
-    ``isPassThroughNode`` reads it. *packages* reads the manifests
+    (``template_grammars``), or the Autark node when its document only draws
+    its input, a map or a plot with no data source and no pass
+    (``autk_spec_kind.only_draws_its_input``), as ``isPassThroughNode`` reads
+    it. An Autark node that draws and also loads or computes hands on what it
+    loads and computes, so it makes rows. *packages* reads the manifests
     (``TemplateGrammars.for_account()`` when None)."""
+    from utk_curio.backend.app.execution.autk_spec_kind import only_draws_its_input_string
     from utk_curio.backend.app.projects.template_grammars import (
         TemplateGrammars,
         declares_behavior,
@@ -286,7 +264,7 @@ def passes_through(node: dict, packages: Optional["TemplateGrammars"] = None) ->
             or draws_with_vega_lite(node_type, packages)):
         return True
     if _is_autark_node(node, packages):
-        return _classify_autk_spec(node.get("content")) == "render"
+        return only_draws_its_input_string(node.get("content"))
     return False
 
 

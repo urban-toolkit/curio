@@ -28,12 +28,14 @@ export const MODEL_RUNTIME_LABEL: Record<ModelBlockPayload["runtime"], string> =
   transformers: "Transformers",
 };
 
-export const MODEL_TYPE_LABEL: Record<ModelBlockPayload["type"], string> = {
-  "semantic-segmentation": "Semantic segmentation",
-  "image-to-image": "Image to image",
-  "node-regression": "Node regression",
-  "concept-segmentation": "Concept segmentation",
-};
+/** A model's type in words, as the Model Catalog shows it: the manifest's
+ *  name, its hyphens spaces and its first letter a capital, so
+ *  `semantic-segmentation` reads "Semantic segmentation" and a type no
+ *  package Curio ships runs, such as `depth-estimation`, reads alike. */
+export function modelTypeWords(type: string): string {
+  const words = type.split("-").filter(Boolean).join(" ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
 
 /** Dispatched after anything that changes the packages an account holds
  *  outside a catalog surface's own actions (a Discovery add), so every

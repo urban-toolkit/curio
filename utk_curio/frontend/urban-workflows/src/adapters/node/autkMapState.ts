@@ -13,6 +13,7 @@
 import { grammarMaps } from './autkMapDrawing';
 import { mapEntries, mapIndexOf, pickLayerOf, type ViewPanes } from './autkViews';
 import { INPUT_ROW, tablePositions } from '../../utils/autkInput';
+import { TOP_KEYS } from '../../utils/buildingHeight';
 import { idKey } from '../../utils/editFeatures/applyEdits';
 import { isMapEditToolLayer } from '../../utils/editFeatures/mapEditLayers';
 
@@ -286,7 +287,14 @@ export function snapshotBeforeSolo(grammar: unknown, index = 0): MapLayerState |
     return state;
 }
 
-/** The settings of each layer map *index* of *grammar* draws, the first by default. */
+/**
+ * The layer each snapshot's legend showed (the map UI's `activeLayer`), by
+ * the layer's id: the document's `legend` layer, or the one picked in the
+ * map's menu.
+ */
+const legendOf = new WeakMap<MapLayerState, string>();
+
+/** The settings of each layer map *index* of *grammar* draws, the first by default, and the layer its legend shows. */
 export function snapshotMapLayers(grammar: unknown, index = 0): MapLayerState | null {
     const map = grammarMaps(grammar)[index];
     if (!map) return null;
@@ -301,10 +309,19 @@ export function snapshotMapLayers(grammar: unknown, index = 0): MapLayerState | 
         if (info.colormap?.config) kept.colormap = { ...info.colormap.config };
         out[id] = kept;
     }
+    const legend = idOf(map.ui?.activeLayer);
+    if (legend) legendOf.set(out, legend);
     return out;
 }
 
-/** Put *state* back on the layers of *map* that have the same id. */
+/**
+ * Put *state* back on the layers of *map* that have the same id, then show in
+ * the legend the layer it showed when *state* was taken: autk-map moves the
+ * legend to each layer whose colors are set, the last one put back here. It
+ * sets the legend's layer alone, through the map UI's `activeLayer`, as
+ * autk-grammar's `legend` does: autk-map's `changeActiveLayer` would also make
+ * that layer the one that picks.
+ */
 export function restoreMapLayers(map: any, state: MapLayerState | null): void {
     if (!map || !state) return;
     for (const layer of layersOf(map)) {
@@ -318,6 +335,15 @@ export function restoreMapLayers(map: any, state: MapLayerState | null): void {
         } catch (error) {
             // A setting the new layer cannot take is left as the document draws it.
             console.warn('[autk-map] keeping a layer setting across a redraw failed:', id, error);
+        }
+    }
+    const legend = layersOf(map).find((layer) => idOf(layer) === legendOf.get(state));
+    if (legend && map.ui && idOf(map.ui.activeLayer) !== idOf(legend)) {
+        try {
+            map.ui.activeLayer = legend;
+            map.ui.refreshLegend?.(null);
+        } catch (error) {
+            console.warn('[autk-map] keeping the legend\'s layer across a redraw failed:', error);
         }
     }
     map.requestRender?.();
@@ -360,6 +386,145 @@ export function soloMapLayer(
     if (table !== null) set(table, { isPick: true });
     else if (picking) set(picking, { isPick: true });
     map.requestRender?.();
+}
+
+/** What a map draws of a document's keys on its layers, read from autk-map's own layer. */
+export type DrawnLayer = {
+    /** The layer's id in its map: its `title`, else its table. */
+    id: string;
+    /** The type autk-map draws it as (`layerType`). */
+    type: string | null;
+    /** The features it lights, by their positions among those it draws. */
+    highlighted: number[];
+    /** The features it hides (`skippedComps`), by their positions among those it draws. */
+    skipped: number[];
+    /** Each line's width (`widthBy`), or null when the layer gives its lines none of their own. */
+    widths: number[] | null;
+    /** Each building's top, in the order the layer draws them, null for one drawn with no point (`buildingsZeroHeight`). */
+    tops: Array<number | null> | null;
+    /** Each building's points in the layer's mesh, from its first to past its last, in the same order. */
+    spans: Array<[number, number]> | null;
+};
+
+/** What a map draws of a document's keys on the map: its layers, its legend, its controls and its terrain. */
+export type MapDrawing = {
+    layers: DrawnLayer[];
+    /** The layer the legend shows (`legend`), by its id. */
+    legend: string | null;
+    /** Whether autk-map's menu and legend are on the page (`showUi`). */
+    controls: boolean;
+    /** The heights the ground rises to (`terrain`), or null on a flat map. */
+    terrain: { minHeight: number; maxHeight: number; width: number; height: number } | null;
+    /**
+     * The colors the map draws picked features and values it cannot color in
+     * (`highlightColor`, `invalidValueColor`), as autk-map's style holds them.
+     */
+    highlightColor: unknown;
+    invalidValueColor: unknown;
+};
+
+/**
+ * Where each building a buildings layer draws lies in its mesh: its points,
+ * from its first to past its last. autk-map keeps on each component of a layer
+ * the points of it and of every component before it (`nPoints`, a running
+ * count, its `loadComponent`'s), as `pointDrift` reads a layer of points.
+ */
+function buildingSpans(layer: any): Array<[number, number]> | null {
+    const components = layer?.components;
+    if (layer?._dimension !== 3 || !ArrayBuffer.isView(layer?.position) || !Array.isArray(components)) return null;
+    let start = 0;
+    return components.map((component: any) => {
+        const end = Math.max(start, Number(component?.nPoints) || 0);
+        const span: [number, number] = [start, end];
+        start = end;
+        return span;
+    });
+}
+
+/** The top of each building a buildings layer draws (*spans*): the highest of its points, null when it drew none. */
+function buildingTops(layer: any, spans: Array<[number, number]> | null): Array<number | null> | null {
+    if (!spans) return null;
+    const values = layer.position as ArrayLike<number>;
+    return spans.map(([start, end]) => {
+        let top: number | null = null;
+        for (let point = start; point < end; point += 1) {
+            const z = values[point * 3 + 2];
+            if (Number.isFinite(z) && (top === null || z > top)) top = z;
+        }
+        return top;
+    });
+}
+
+/**
+ * What map *index* of *grammar* draws of the keys a document writes on a map
+ * and its layers, read from autk-map's own objects: each layer's type, the
+ * features it lights and hides, each line's width, each building's top and
+ * its points,
+ * the layer its legend shows, whether its menu and legend are on the page, and
+ * the heights of its terrain. The drawing tools a Map Editor node puts on the
+ * map are left out. The e2e tests read it (`window.__curio_mapDrawing`).
+ */
+export function mapDrawingOf(grammar: unknown, index = 0): MapDrawing | null {
+    const map = grammarMaps(grammar)[index];
+    if (!map) return null;
+    const numbers = (values: unknown): number[] => (
+        values && typeof (values as any)[Symbol.iterator] === 'function' ? Array.from(values as Iterable<number>, Number) : []
+    );
+    const layers = layersOf(map).flatMap((layer): DrawnLayer[] => {
+        const id = idOf(layer);
+        if (!id || isMapEditToolLayer(id)) return [];
+        const widths = layer?.layerRenderInfo?.polylinesWidthByComponent;
+        const spans = buildingSpans(layer);
+        return [{
+            id,
+            type: layer?.layerInfo?.typeLayer ?? null,
+            highlighted: numbers(layer?.highlightedIds),
+            // A points layer keeps the features it hides in a set of its own.
+            skipped: numbers(layer?.skippedIds ?? layer?._skippedIds).sort((a, b) => a - b),
+            widths: ArrayBuffer.isView(widths) ? numbers(widths) : null,
+            tops: buildingTops(layer, spans),
+            spans,
+        }];
+    });
+    const ui = map.ui;
+    const shown = (element: any) => !!element?.isConnected;
+    const heightfield = map._terrainRenderPath?.heightfield;
+    return {
+        layers,
+        legend: idOf(ui?.activeLayer) ?? null,
+        controls: shown(ui?._menuIcon) || shown(ui?._subMenu) || shown(ui?._legend),
+        terrain: heightfield
+            ? { minHeight: heightfield.minHeight, maxHeight: heightfield.maxHeight, width: heightfield.width, height: heightfield.height }
+            : null,
+        highlightColor: map.style?.getHighlightColor?.() ?? null,
+        invalidValueColor: map.style?.getInvalidValueColor?.() ?? null,
+    };
+}
+
+/** A feature a grammar handed autk-map: its input row, and the keys autk-map reads a building's top from that it holds. */
+export type HandedFeature = { row: number | null; tops: Record<string, unknown> };
+
+/**
+ * The features the map of *grammar*'s last run at *mapIndex* (its index among
+ * the document's maps) was handed for the table *table*, in the order its
+ * layer draws them: the collection the run handed autk-map for the layer
+ * (autk-grammar's `mapLayer`, whose `collection` 5.6.0 gives), each feature
+ * with a geometry. Null when no layer of that map draws the table. The e2e
+ * tests read it (`window.__curio_mapHanded`).
+ */
+export function handedFeaturesOf(grammar: unknown, table: string, mapIndex: number): HandedFeature[] | null {
+    type Layer = { collection?: { features?: unknown } };
+    const lookup = (grammar as { mapLayer?: (dataRef: string, mapId?: number) => Layer | undefined } | null | undefined)?.mapLayer;
+    const handed: any = typeof lookup === 'function' ? lookup.call(grammar, table, mapIndex)?.collection : undefined;
+    if (!Array.isArray(handed?.features)) return null;
+    return handed.features.filter((feature: any) => feature?.geometry != null).map((feature: any) => {
+        const properties = feature?.properties ?? {};
+        const row = properties[INPUT_ROW];
+        return {
+            row: Number.isInteger(row) ? row : null,
+            tops: Object.fromEntries(TOP_KEYS.filter((top) => top in properties).map((top) => [top, properties[top]])),
+        };
+    });
 }
 
 /** What a Map Editor node feeding a map asks of it: the layer shown alone, and the layer an action works on. */

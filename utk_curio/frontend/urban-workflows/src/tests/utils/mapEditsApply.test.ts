@@ -6,12 +6,16 @@
  * count read (`applyEdits`). Every case of `editFeaturesApply.cases.json` goes
  * through it, and each must hand on the layer a run hands on:
  * `utk_curio/sandbox/tests/test_feature_edits_cases.py` runs the same cases
- * through `curio_edit_features`, so `expected` is the run's.
+ * through `curio_edit_features`, so `expected` is the run's. The map draws a
+ * buildings layer's heights as autk-map reads them, but its preview applies
+ * the log to the layer as the data holds it, as a run does (`editedOutput`).
  */
 import shared from "../../utils/editFeatures/editFeaturesApply.cases.json";
 import { applyEdits, editedCollection } from "../../utils/editFeatures/applyEdits";
 import { normalizeEditFeatures, type FeatureEdit } from "../../utils/editFeatures/editFeatures";
 import { editedFeatures } from "../../utils/editFeatures/layerModel";
+import { editedOutput } from "../../utils/editFeatures/mapEditsPreview";
+import type { GrammarFrame } from "../../utils/grammarInput";
 
 type Feature = { type: "Feature"; geometry: unknown; properties: Record<string, unknown> };
 type Layer = { type: "FeatureCollection"; features: Feature[] };
@@ -48,5 +52,18 @@ describe("what the node reads the log through hands on the same", () => {
     const rows = layers[c.layer].features.map((feature) => feature.properties);
     const { state } = applyEdits(rows, editsOf(c), c.key);
     expect(state.filter((row) => row !== null)).toEqual(c.expected.features.map((feature) => feature.properties));
+  });
+});
+
+describe("the map the node feeds previews a buildings layer as a run hands it on (editedOutput)", () => {
+  // A part that holds only building:levels is drawn 3.4 m a level, but holds
+  // no height a scale doubles or a condition reads, in the run as in the map.
+  test.each(cases.map((c) => [c.name, c] as const))("%s", (_name, c) => {
+    const frame: GrammarFrame = {
+      name: null, dataType: "geodataframe", payload: layers[c.layer], schema: null, geometryName: null, crsName: null,
+      layerType: "buildings", fromBundle: false, index: 0, circle: 0,
+    };
+    const drawn = editedOutput({ frames: [frame] }, { settings: { key: c.key, edits: editsOf(c) }, circles: 1 }) as any;
+    expect(drawn?.data).toEqual(c.expected);
   });
 });

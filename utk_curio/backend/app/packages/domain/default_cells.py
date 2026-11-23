@@ -4,7 +4,8 @@ A model package's template names its own ``source`` when its node has code of
 its own: DDRNet23-Slim's Image Segmentation, and the node of a model
 downloaded from the Discovery Catalog, call the Segmentation package's
 ``segment_images``; Deep Umbra's Accumulated Shadow calls its package's
-module. A template that ships none (a person's own package) opens with
+module. A template that ships none (a person's own package of an onnx model:
+a model on another runtime names its source, ``manifest.py``) opens with
 :func:`run_skeleton` (``application/starters.py``): the model loaded by its
 id, its ONNX file (``model.path``) opened in an onnxruntime session on the
 CPU, then a ``session.run`` skeleton naming each array the model's graph

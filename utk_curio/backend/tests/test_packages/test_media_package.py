@@ -6,7 +6,9 @@ for the example storage source's collections, so the input is what a Data
 Loading node would hand it. A starter is its settings and a call into a
 module: Media's ``media_collections``, or Rasterization's ``scout_rasters``,
 which Media names in ``dependencies.packages``. Both are staged for each run
-as the sandbox stages a node's modules (the ``package_modules`` fixture).
+as the sandbox stages a node's modules (the ``package_modules`` fixture). Its
+settings are its template's widgets, whose chips a run writes in as their
+values (``resolve_references``): their defaults, or what a test sets.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from __future__ import annotations
 import ast
 import json
 import math
+import re
 from pathlib import Path
 
 import pytest
@@ -31,26 +34,27 @@ MODULES = [
     {"root": str(PACKAGE / "sources"), "names": [MODULE]},
     {"root": str(RASTERIZATION / "sources"), "names": [RASTER_MODULE]},
 ]
-#: Each starter's import, its settings with their values, and the call it returns.
+#: Each starter's import, its settings, its widgets with their defaults, and
+#: the call it returns, which reads each widget by its chip.
 STARTERS = {
     "video-frames": (
         "from media_collections import sample_video_frames",
-        {"EVERY_SECONDS": 2.0, "MAX_FRAMES_PER_VIDEO": 300},
-        "sample_video_frames(input_0, curio_derived_file, every_seconds=EVERY_SECONDS, "
-        "max_frames_per_video=MAX_FRAMES_PER_VIDEO)",
+        {"every_seconds": 2.0, "max_frames_per_video": 300},
+        "sample_video_frames(input_0, curio_derived_file, every_seconds=float([!! every_seconds !!]), "
+        "max_frames_per_video=int([!! max_frames_per_video !!]))",
     ),
     "split-audio": (
         "from media_collections import split_audio",
-        {"WINDOW_SECONDS": 5.0, "MAX_WINDOWS_PER_RECORDING": 2000},
-        "split_audio(input_0, curio_derived_file, window_seconds=WINDOW_SECONDS, "
-        "max_windows_per_recording=MAX_WINDOWS_PER_RECORDING)",
+        {"window_seconds": 5.0, "max_windows_per_recording": 2000},
+        "split_audio(input_0, curio_derived_file, window_seconds=float([!! window_seconds !!]), "
+        "max_windows_per_recording=int([!! max_windows_per_recording !!]))",
     ),
     # Its bottom circle, where to cut, is input_1: None when nothing is wired there.
     "split-video": (
         "from media_collections import split_video",
-        {"BLOCK_SECONDS": 60.0, "WIDTH": 960, "MAX_FRAMES": 30000},
-        "split_video(input_0, curio_derived_file, input_1, block_seconds=BLOCK_SECONDS, width=WIDTH, "
-        "max_frames=MAX_FRAMES)",
+        {"block_seconds": 60.0, "width": 960, "max_frames": 30000},
+        "split_video(input_0, curio_derived_file, input_1, block_seconds=float([!! block_seconds !!]), "
+        "width=int([!! width !!]), max_frames=int([!! max_frames !!]))",
     ),
     "mosaic-rasters": (
         "from scout_rasters.mosaic import mosaic_collection",
@@ -59,29 +63,68 @@ STARTERS = {
     ),
 }
 #: What each module the starters import offers node code: its ``__all__``.
+#: Media's ends with the reader its video nodes, and SAM 3's Track Objects,
+#: read their frames with.
 OFFERED = {
-    "media_collections": ["sample_video_frames", "split_audio", "split_video"],
+    "media_collections": ["sample_video_frames", "split_audio", "split_video", "read_video_frames"],
     "scout_rasters.mosaic": ["mosaic_rasters", "mosaic_collection"],
 }
 
 
-def node_source(name: str, **settings) -> str:
-    code = (PACKAGE / "sources" / f"{name}.py").read_text(encoding="utf-8")
-    for key, value in settings.items():
-        prefix = f"{key} = "
-        lines = code.splitlines()
-        for index, line in enumerate(lines):
-            if line.startswith(prefix):
-                lines[index] = f"{prefix}{value!r}"
-        code = "\n".join(lines)
+def template_code(name: str) -> str:
+    """Template *name*'s source, its chips as written."""
+    return (PACKAGE / "sources" / f"{name}.py").read_text(encoding="utf-8")
+
+
+def template_widgets(name: str) -> list[dict]:
+    """The widgets a new node of template *name* starts with, as the manifest declares them."""
+    raw = json.loads((PACKAGE / "manifest.json").read_text(encoding="utf-8"))
+    (template,) = [t for t in raw["templates"] if t["id"] == name]
+    return template.get("widgets") or []
+
+
+def node_source(name: str, **values) -> str:
+    """Template *name*'s code as a run writes it: each widget's chip written
+    in as its value, which is its default unless *values* sets it. Each name
+    in *values* is one of the template's widgets."""
+    from utk_curio.backend.app.execution.code_references import resolve_references
+
+    widgets = template_widgets(name)
+    unknown = sorted(set(values) - {widget["name"] for widget in widgets})
+    assert not unknown, f"{name} has no widget {', '.join(unknown)}"
+    set_to = [{**widget, "value": values[widget["name"]]} if widget["name"] in values else widget for widget in widgets]
+    code, problems = resolve_references(template_code(name), set_to)
+    assert problems == [], problems
     return code
 
 
-def run_node(name: str, value, namespace: dict, **settings):
+def run_node(name: str, value, namespace: dict, **values):
     from utk_curio.sandbox.util.input_names import call_as_node
 
-    body = "\n".join("    " + line for line in node_source(name, **settings).splitlines())
+    body = "\n".join("    " + line for line in node_source(name, **values).splitlines())
     return call_as_node(body, dict(namespace), value, [0])
+
+
+def _parsed(code: str) -> tuple[list, list]:
+    """*code*'s statements, parsed as the sandbox runs it, inside a function,
+    each chip standing as the name ``_chip_<k>_``, and the chips as written,
+    ``chips[k]``."""
+    from utk_curio.backend.app.execution.code_references import REFERENCE_RE
+
+    chips: list[str] = []
+
+    def stand_in(match) -> str:
+        chips.append(match.group(0))
+        return f"_chip_{len(chips) - 1}_"
+
+    text = REFERENCE_RE.sub(stand_in, code)
+    body = ast.parse("def node():\n" + "\n".join("    " + line for line in text.splitlines())).body[0].body
+    return body, chips
+
+
+def _chips_back(text: str, chips: list) -> str:
+    """*text* with each chip's stand-in written back as the chip."""
+    return re.sub(r"_chip_(\d+)_", lambda match: chips[int(match.group(1))], text)
 
 
 def collection_rows(manifest, resource_id: str, tmp_path: Path):
@@ -214,24 +257,20 @@ def test_a_run_of_a_media_node_is_handed_its_module_then_rasterizations(tmp_curi
 def test_each_starter_is_its_settings_and_a_call_into_a_module(template):
     """A node's logic is in functions of its package's modules, and its code
     holds its settings and a short call: its docstring, the import of one
-    function of a module, its settings as constants, and the return of that
-    function's call, which reads every setting. No other statement, so no
-    logic of its own, and nothing of Curio's code."""
+    function of a module, and the return of that function's call, which reads
+    every setting by its widget's chip. Its settings are its template's
+    widgets, each with its default. No other statement, so no logic of its
+    own, and nothing of Curio's code."""
     imported, settings, call = STARTERS[template]
-    code = node_source(template)
+    code = template_code(template)
     assert "utk_curio" not in code
-    body = ast.parse("def node():\n" + "\n".join("    " + line for line in code.splitlines())).body[0].body
+    body, chips = _parsed(code)
     kinds = [type(statement).__name__ for statement in body]
-    assert kinds == ["Expr", "ImportFrom", *["Assign"] * len(settings), "Return"], kinds
+    assert kinds == ["Expr", "ImportFrom", "Return"], kinds
     assert isinstance(body[0].value, ast.Constant) and isinstance(body[0].value.value, str), ast.dump(body[0])
     assert ast.unparse(body[1]) == imported
-    assigned = {
-        statement.targets[0].id: ast.literal_eval(statement.value)
-        for statement in body[2:-1]
-        if len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name)
-    }
-    assert assigned == settings
-    assert ast.unparse(body[-1].value) == call
+    assert {widget["name"]: widget["default"] for widget in template_widgets(template)} == settings
+    assert _chips_back(ast.unparse(body[-1].value), chips) == call
 
 
 def test_the_modules_offer_the_functions_their_all_names(package_modules):
@@ -254,11 +293,63 @@ def test_the_modules_offer_the_functions_their_all_names(package_modules):
         assert function in OFFERED[module] and call.startswith(f"{function}("), imported
 
 
+#: Each Media node's code as a node saved before its settings were widgets
+#: holds it, its settings constants: ``(template, collection, code, the same
+#: values set in today's widgets)``.
+SAVED_WITH_CONSTANTS = {
+    "video-frames": ("survey", (
+        "from media_collections import sample_video_frames\n\n"
+        "EVERY_SECONDS = 0.5\nMAX_FRAMES_PER_VIDEO = 300\n\n"
+        "return sample_video_frames(\n"
+        "    input_0, curio_derived_file,\n"
+        "    every_seconds=EVERY_SECONDS, max_frames_per_video=MAX_FRAMES_PER_VIDEO,\n"
+        ")\n"
+    ), {"every_seconds": 0.5}),
+    "split-audio": ("noise", (
+        "from media_collections import split_audio\n\n"
+        "WINDOW_SECONDS = 0.25\nMAX_WINDOWS_PER_RECORDING = 2000\n\n"
+        "return split_audio(\n"
+        "    input_0, curio_derived_file,\n"
+        "    window_seconds=WINDOW_SECONDS, max_windows_per_recording=MAX_WINDOWS_PER_RECORDING,\n"
+        ")\n"
+    ), {"window_seconds": 0.25}),
+    "split-video": ("survey", (
+        "from media_collections import split_video\n\n"
+        "BLOCK_SECONDS = 0.5\nWIDTH = 960\nMAX_FRAMES = 30000\n\n"
+        "return split_video(\n"
+        "    input_0, curio_derived_file, input_1,\n"
+        "    block_seconds=BLOCK_SECONDS, width=WIDTH, max_frames=MAX_FRAMES,\n"
+        ")\n"
+    ), {"block_seconds": 0.5}),
+}
+
+
+@pytest.mark.parametrize("template", sorted(SAVED_WITH_CONSTANTS))
+def test_a_node_saved_with_its_settings_as_constants_runs_as_its_widgets_do(collection, template):
+    """A node's code is its content: a node saved with its settings as
+    constants in its code, and no widgets, keeps running as it was saved, and
+    makes what a node of today's template makes with the same values in its
+    widgets, row for row and file for file."""
+    import pandas as pd
+
+    from utk_curio.sandbox.util.input_names import call_as_node
+
+    resource, code, values = SAVED_WITH_CONSTANTS[template]
+    media, helpers = collection(resource)
+    body = "\n".join("    " + line for line in code.splitlines())
+    saved = call_as_node(body, dict(helpers), media, [0])
+    assert len(saved) >= 2, saved
+    files = {path: Path(path).read_bytes() for path in saved["path"]}
+    widgets = run_node(template, media, helpers, **values)
+    pd.testing.assert_frame_equal(widgets, saved)
+    assert {path: Path(path).read_bytes() for path in widgets["path"]} == files
+
+
 def test_sample_video_frames_makes_image_rows(collection):
     from PIL import Image
 
     media, helpers = collection("survey")
-    frames = run_node("video-frames", media, helpers, EVERY_SECONDS=0.5)
+    frames = run_node("video-frames", media, helpers, every_seconds=0.5)
     # A one-second clip at 10 fps: its frames are 0.0 to 0.9, so there is no
     # frame at 1.0 to sample.
     assert list(frames["t_s"]) == [0.0, 0.5]
@@ -275,7 +366,7 @@ def test_sample_video_frames_makes_image_rows(collection):
 
 def test_split_audio_measures_each_window(collection):
     media, helpers = collection("noise")
-    windows = run_node("split-audio", media, helpers, WINDOW_SECONDS=0.25)
+    windows = run_node("split-audio", media, helpers, window_seconds=0.25)
     quiet = windows[
         (windows["sensor"] == "sensor_01") & (windows["recorded_at"].astype(str).str.startswith("2024-05-01 06"))
     ]
@@ -398,7 +489,7 @@ def test_a_video_that_gives_no_length_is_sampled_all_through(folder_collection, 
     media, helpers = folder_collection(
         root, {"id": "clips", "name": "Clips", "kind": "videos", "path": "*", "extensions": ["mjpeg"]}
     )
-    frames = run_node("video-frames", media, helpers, EVERY_SECONDS=0.5)
+    frames = run_node("video-frames", media, helpers, every_seconds=0.5)
     assert list(frames["t_s"]) == [0.0, 0.52]
 
 
@@ -444,7 +535,7 @@ def test_sample_video_frames_reads_each_video_once_with_frame_threading(folder_c
             return self._container.decode(*args, **kwargs)
 
     monkeypatch.setattr(module.av, "open", lambda *args, **kwargs: _Recording(real_open(*args, **kwargs)))
-    frames = run_node("video-frames", media, helpers, EVERY_SECONDS=0.5)
+    frames = run_node("video-frames", media, helpers, every_seconds=0.5)
     # The same frames as before: the first at or past each half second.
     assert list(frames["t_s"]) == [k / 2 for k in range(14)]
     assert list(frames["frame"]) == [5 * k for k in range(14)]
@@ -477,13 +568,126 @@ def test_split_audio_measures_every_channel_and_keeps_them(folder_collection, tm
     root.mkdir()
     _stereo_left_only(root / "left.wav")
     media, helpers = folder_collection(root, {"id": "noise", "name": "Noise", "kind": "audio", "path": "*"})
-    windows = run_node("split-audio", media, helpers, WINDOW_SECONDS=0.5)
+    windows = run_node("split-audio", media, helpers, window_seconds=0.5)
     assert len(windows) == 2
     # Over both channels: RMS sqrt((0.5^2 / 2 + 0) / 2) = 0.25, peak 0.5.
     assert windows["level_dbfs"].iloc[0] == pytest.approx(20 * math.log10(0.25), abs=0.3)
     assert windows["peak_dbfs"].iloc[0] == pytest.approx(20 * math.log10(0.5), abs=0.3)
     with wave.open(windows["path"].iloc[0]) as clip:
         assert clip.getnchannels() == 2 and clip.getnframes() == 4000
+
+
+def test_two_split_audio_nodes_with_other_windows_keep_their_own_clips(folder_collection, tmp_path):
+    """Two Split Audio nodes on one recording, one with windows of 5 s and one
+    with windows of 10 s, both have a window at 0 s and one at 10 s. Each
+    window's clip is a file of its own: after the second node runs, every clip
+    of the first still holds what the first wrote, 5 s of the recording, as
+    its row says, and the two rows at 0 s name two files."""
+    import wave
+
+    root = tmp_path / "noise"
+    root.mkdir()
+    _stereo_left_only(root / "long.wav", seconds=20.0)
+    media, helpers = folder_collection(root, {"id": "noise", "name": "Noise", "kind": "audio", "path": "*"})
+    first = run_node("split-audio", media, helpers, window_seconds=5.0)
+    wrote = {path: Path(path).read_bytes() for path in first["path"]}
+    second = run_node("split-audio", media, helpers, window_seconds=10.0)
+    assert (list(first["t_s"]), list(second["t_s"])) == ([0.0, 5.0, 10.0, 15.0], [0.0, 10.0])
+    replaced = [path for path, data in wrote.items() if Path(path).read_bytes() != data]
+    assert replaced == [], f"the second node wrote over the first's clips: {replaced}"
+    for row in first.itertuples():
+        with wave.open(row.path) as clip:
+            assert (clip.getnframes() / clip.getframerate(), row.duration_s) == (5.0, 5.0), row.path
+    assert first["file_id"].iloc[0] != second["file_id"].iloc[0]
+    with wave.open(second["path"].iloc[0]) as clip:
+        assert clip.getnframes() / clip.getframerate() == 10.0
+
+
+def _noise(folder_collection, tmp_path: Path, seconds: float = 1.0):
+    """``(rows, helpers)`` for a folder holding one recording *seconds* long."""
+    root = tmp_path / "noise"
+    root.mkdir()
+    _stereo_left_only(root / "left.wav", seconds=seconds)
+    return folder_collection(root, {"id": "noise", "name": "Noise", "kind": "audio", "path": "*"})
+
+
+def test_a_windows_clip_is_named_after_where_it_starts_and_ends(folder_collection, tmp_path):
+    """A clip's id is its recording's, then where its window starts and ends,
+    in milliseconds; the last window ends where the recording does. Two
+    nodes' windows that start and end at the same sample hold the same bytes
+    and share one file: here the last of 0.4 s windows and of 0.8 s ones,
+    from 0.8 s to the recording's end at 1 s."""
+    media, helpers = _noise(folder_collection, tmp_path)
+    recording = media["file_id"].iloc[0]
+    shorter = run_node("split-audio", media, helpers, window_seconds=0.4)
+    assert list(shorter["file_id"]) == [f"{recording}@{span}" for span in ("0-to400", "400-to800", "800-to1000")]
+    assert list(shorter["duration_s"]) == [0.4, 0.4, 0.2]
+    assert Path(shorter["path"].iloc[0]).name == "0-to400.wav"
+    last = Path(shorter["path"].iloc[2]).read_bytes()
+    longer = run_node("split-audio", media, helpers, window_seconds=0.8)
+    assert list(longer["file_id"]) == [f"{recording}@0-to800", f"{recording}@800-to1000"]
+    assert longer["path"].iloc[1] == shorter["path"].iloc[2]
+    assert Path(longer["path"].iloc[1]).read_bytes() == last
+
+
+def test_split_audio_cuts_windows_as_short_as_a_millisecond(folder_collection, tmp_path):
+    """A millisecond, 8 samples at 8000 a second, is the shortest window, and
+    each such window is a clip of its own."""
+    import wave
+
+    media, helpers = _noise(folder_collection, tmp_path, seconds=0.01)
+    windows = run_node("split-audio", media, helpers, window_seconds=0.001)
+    assert list(windows["t_s"]) == [round(k / 1000, 3) for k in range(10)]
+    assert len(set(windows["path"])) == 10
+    for path in windows["path"]:
+        with wave.open(path) as clip:
+            assert clip.getnframes() == 8
+
+
+@pytest.mark.parametrize("window", [
+    pytest.param(0.0009, id="under-a-millisecond"),
+    pytest.param(0, id="zero"),
+    pytest.param(-5.0, id="below-zero"),
+    pytest.param(True, id="a-bool"),
+    pytest.param("5", id="a-string"),
+])
+def test_split_audio_refuses_a_window_under_a_millisecond(folder_collection, tmp_path, window):
+    """A clip is named after where its window starts and ends, in
+    milliseconds, so a window_seconds under 0.001, zero and below too, or one
+    that is not a number, stops the node before it writes a clip. A number
+    reaches split_audio through the node's widget. One that is not a number
+    the Widgets tab refuses, and the node's call reads its widget as a
+    number, so only code that calls split_audio hands it one."""
+    import importlib
+
+    from utk_curio.backend.app.execution.code_references import check_widget_value
+
+    media, helpers = _noise(folder_collection, tmp_path)
+    says = "window_seconds is the length of a window, in seconds: a number of 0.001 or more"
+    if isinstance(window, bool) or not isinstance(window, (int, float)):
+        (widget,) = [w for w in template_widgets("split-audio") if w["name"] == "window_seconds"]
+        assert check_widget_value(widget, window) == "Enter a number.", window
+        split_audio = importlib.import_module(MODULE).split_audio
+        with pytest.raises(ValueError, match=re.escape(says)):
+            split_audio(media, helpers["curio_derived_file"], window_seconds=window)
+    else:
+        with pytest.raises(ValueError, match=re.escape(says)):
+            run_node("split-audio", media, helpers, window_seconds=window)
+    assert sorted((tmp_path / "media").rglob("*.wav")) == []
+
+
+def test_split_audios_window_widget_takes_what_split_audio_takes(package_modules):
+    """The window's widget has split_audio's own floor, a millisecond: the
+    Widgets tab takes 0.001 and refuses a shorter window, as the call does."""
+    import importlib
+
+    from utk_curio.backend.app.execution.code_references import check_widget_value
+
+    shortest = importlib.import_module(MODULE).SHORTEST_WINDOW_SECONDS
+    (widget,) = [w for w in template_widgets("split-audio") if w["name"] == "window_seconds"]
+    assert widget["options"]["min"] == shortest == 0.001
+    assert check_widget_value(widget, shortest) is None
+    assert check_widget_value(widget, 0.0009) == "Enter a number of at least 0.001."
 
 
 # ---------------------------------------------------------------------------
@@ -550,14 +754,14 @@ def _written(tmp_path: Path) -> list[str]:
 
 def test_with_nothing_on_its_bottom_circle_split_video_cuts_every_block_seconds(folder_collection, tmp_path):
     """Nothing wired below is ``input_1`` None, and each video is cut every
-    BLOCK_SECONDS, the last block what is left. Each block is an H.264 file in
+    block_seconds, the last block what is left. Each block is an H.264 file in
     yuv420p no wider than its video, whose frames play at their own times from
     its start, named after the video, where the block starts and ends and the
     width; its row leads with block, t_s and end_s, where it starts and ends
     in the video, and Simple View plays it."""
     media, helpers = _walks(folder_collection, tmp_path, {"corner.mp4": 7.0})
     video = media.iloc[0]
-    blocks = run_split(media, helpers, BLOCK_SECONDS=2.0)
+    blocks = run_split(media, helpers, block_seconds=2.0)
     assert list(blocks.columns[:3]) == ["block", "t_s", "end_s"]
     assert list(blocks["block"]) == [1, 2, 3, 4]
     assert list(blocks["t_s"]) == [0.0, 2.0, 4.0, 6.0]
@@ -582,13 +786,13 @@ def test_a_block_keeps_its_videos_fields_and_time(collection, folder_collection,
     import pandas as pd
 
     media, helpers = collection("survey")
-    blocks = run_split(media, helpers, BLOCK_SECONDS=0.5)
+    blocks = run_split(media, helpers, block_seconds=0.5)
     assert list(blocks["t_s"]) == [0.0, 0.5]
     assert "year" in blocks.columns  # the video's own field travels with its blocks
 
     media, helpers = _walks(folder_collection, tmp_path, {"corner.mp4": 3.0})
     began = pd.Timestamp("2026-10-26 21:03:17.016")
-    blocks = run_split(media.assign(taken_at=began), helpers, BLOCK_SECONDS=1.5)
+    blocks = run_split(media.assign(taken_at=began), helpers, block_seconds=1.5)
     assert list(blocks["taken_at"]) == [began, began + pd.Timedelta(seconds=1.5)]
 
 
@@ -606,7 +810,7 @@ def test_split_video_cuts_where_its_bottom_circle_says_and_keeps_each_cuts_colum
         {"t_s": 4.0, "end_s": 5.0, "street": "N Union Ave", "from": "W Randolph St", "to": "W Lake St"},
         {"t_s": 2.5, "street": "W Randolph St", "from": "N Halsted St", "to": "N Union Ave"},
     ]).assign(width=1920, path="frame.jpg")
-    blocks = run_split(media, helpers, cuts, BLOCK_SECONDS=2.0)
+    blocks = run_split(media, helpers, cuts, block_seconds=2.0)
     assert list(blocks.columns[:6]) == ["block", "street", "from", "to", "t_s", "end_s"]
     assert list(blocks["street"]) == ["N Halsted St", "W Randolph St", "N Union Ave"]
     assert list(blocks["t_s"]) == [0.0, 2.5, 4.0]
@@ -642,9 +846,9 @@ EMPTY = object()
     pytest.param([{"t_s": 1.0, "end_s": 0.5}], {}, "before it starts", id="ends-first"),
     pytest.param([{"t_s": 1.0, "end_s": 1.05}], {}, "shorter than one of its frames", id="under-a-frame"),
     pytest.param([{"t_s": 0.0, "video_file_id": "ffffffffffffffff"}], {}, "No row of the cuts", id="no-video"),
-    pytest.param(None, {"MAX_FRAMES": 50}, "hold about 70 frames", id="max-frames"),
-    pytest.param(None, {"BLOCK_SECONDS": 0}, "BLOCK_SECONDS is the length", id="no-block-length"),
-    pytest.param(None, {"WIDTH": 1}, "WIDTH is the widest", id="too-narrow"),
+    pytest.param(None, {"max_frames": 50}, "hold about 70 frames", id="max-frames"),
+    pytest.param(None, {"block_seconds": 0}, "block_seconds is the length", id="no-block-length"),
+    pytest.param(None, {"width": 1}, "width is the widest", id="too-narrow"),
 ])
 def test_split_video_stops_before_it_writes_a_block(folder_collection, tmp_path, cuts, settings, says):
     import re
@@ -680,7 +884,7 @@ def test_a_video_that_gives_no_length_is_cut_as_its_frames_come(folder_collectio
     """Raw MJPEG says nothing of its length, 25 frames at 25 a second: its
     blocks are made as its frames come, the last one what is left."""
     media, helpers = _no_length(folder_collection, tmp_path)
-    blocks = run_split(media, helpers, BLOCK_SECONDS=0.4)
+    blocks = run_split(media, helpers, block_seconds=0.4)
     assert list(blocks["t_s"]) == [0.0, 0.4, 0.8]
     assert [len(_played(path)[4]) for path in blocks["path"]] == [10, 10, 5]
 
@@ -696,21 +900,21 @@ def test_a_cut_past_the_end_of_a_video_that_gives_no_length_stops_the_node_at_it
 def test_past_max_frames_a_video_that_gives_no_length_stops_and_its_half_written_block_goes(
     folder_collection, tmp_path,
 ):
-    """Its frames cannot be counted before it is read: the 13th of MAX_FRAMES
+    """Its frames cannot be counted before it is read: the 13th of max_frames
     12 stops the node, and the block it would have gone in is removed."""
     media, helpers = _no_length(folder_collection, tmp_path)
     with pytest.raises(ValueError, match="re-encodes in one run"):
-        run_split(media, helpers, BLOCK_SECONDS=0.4, MAX_FRAMES=12)
+        run_split(media, helpers, block_seconds=0.4, max_frames=12)
     # Block 1, ten frames, was done; block 2 had two when the 13th frame came.
     assert _written(tmp_path) == ["0-to400w960.mp4"]
 
 
 def test_the_same_blocks_write_the_same_files_and_another_end_or_width_others(folder_collection, tmp_path):
     media, helpers = _walks(folder_collection, tmp_path, {"corner.mp4": 4.0})
-    first = run_split(media, helpers, BLOCK_SECONDS=2.0)
-    assert list(run_split(media, helpers, BLOCK_SECONDS=2.0)["path"]) == list(first["path"])
-    longer = run_split(media, helpers, BLOCK_SECONDS=3.0)
-    narrower = run_split(media, helpers, BLOCK_SECONDS=2.0, WIDTH=48)
+    first = run_split(media, helpers, block_seconds=2.0)
+    assert list(run_split(media, helpers, block_seconds=2.0)["path"]) == list(first["path"])
+    longer = run_split(media, helpers, block_seconds=3.0)
+    narrower = run_split(media, helpers, block_seconds=2.0, width=48)
     # Each starts at 0, and the files differ by the block's end or the width.
     assert len({first["path"].iloc[0], longer["path"].iloc[0], narrower["path"].iloc[0]}) == 3
     assert len({*first["path"], *longer["path"], *narrower["path"]}) == 6
@@ -721,7 +925,7 @@ def test_the_same_blocks_write_the_same_files_and_another_end_or_width_others(fo
 def test_a_tail_shorter_than_a_frame_is_the_last_blocks(folder_collection, tmp_path):
     """2.1 s cut every 2.05 s leaves 0.05 s, half a frame: no block of its own."""
     media, helpers = _walks(folder_collection, tmp_path, {"corner.mp4": 2.1})
-    blocks = run_split(media, helpers, BLOCK_SECONDS=2.05)
+    blocks = run_split(media, helpers, block_seconds=2.05)
     assert list(blocks["t_s"]) == [0.0] and list(blocks["duration_s"]) == [2.1]
     assert len(_played(blocks["path"].iloc[0])[4]) == 21
 
@@ -731,7 +935,7 @@ def test_the_blocks_of_a_video_with_a_position_keep_it(folder_collection, tmp_pa
 
     media, helpers = _walks(folder_collection, tmp_path, {"corner.mp4": 3.0})
     placed = gpd.GeoDataFrame(media, geometry=gpd.points_from_xy([-87.6475], [41.8842]), crs="EPSG:4326")
-    blocks = run_split(placed, helpers, BLOCK_SECONDS=1.5)
+    blocks = run_split(placed, helpers, block_seconds=1.5)
     assert isinstance(blocks, gpd.GeoDataFrame) and blocks.crs == placed.crs
     assert list(blocks.geometry.x) == [-87.6475, -87.6475]
 

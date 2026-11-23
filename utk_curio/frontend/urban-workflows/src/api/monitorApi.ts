@@ -1,16 +1,18 @@
 /**
  * The monitor page's backend calls.
  *
- * Five read routes plus one write. All are public and unauthenticated, but
+ * Six read routes plus one write. All are public and unauthenticated, but
  * they go through `apiFetch` anyway: it resolves the backend origin through
  * `backendUrl()` (which the e2e harness injects per browser context) and
  * throws an Error carrying `.status`, which is the convention every other
  * `src/api/*Api.ts` module follows. The Bearer token it attaches when a
  * session cookie happens to exist is harmless on a public route.
  *
- * The four aggregate payloads carry no identifiers by design, the LLM one
- * naming only models; the error log deliberately does. See
- * `utk_curio/backend/app/monitor/errors.py` and `llm_tokens.py`.
+ * The five aggregate payloads carry no identifiers by design, the LLM one
+ * naming only this Curio's own models, and the usage and open-files ones only
+ * the versions of Curio its deploys started; the error log deliberately does
+ * name things. See `utk_curio/backend/app/monitor/errors.py`,
+ * `llm_performance.py` and `usage.py`.
  */
 import { apiFetch } from "../utils/authApi";
 import { backendUrl } from "../utils/backendUrl";
@@ -120,8 +122,8 @@ export interface MonitorHardware {
  * Which backend processes a payload holds the part of, in a start of several
  * (`curio.py start --backend-processes N`): the home process asks every other
  * one for its part and merges them. Those that did not answer are left out.
- * Absent with one process, and from the payloads of the histories (LLM tokens,
- * open files), which every process writes into one file.
+ * Absent with one process, and from the payloads of the histories (usage,
+ * LLM performance, open files), which every process writes into one file each.
  */
 export interface MonitorBackendProcesses {
   count: number;
@@ -194,46 +196,166 @@ export interface MonitorStoragePayload {
   disk: { totalBytes: number | null; freeBytes: number | null };
 }
 
-/** Tokens and requests in one window, or in one hour. */
-export interface MonitorLlmCounts {
-  inputTokens: number;
-  outputTokens: number;
-  requests: number;
-}
+/**
+ * The windows the Usage tab's routes view their rows in: the last 24 hours in
+ * 5-minute steps, the last 7 days hourly and the last 90 days daily.
+ */
+export type MonitorWindow = "24h" | "7d" | "90d";
 
-/** One model's tokens in one UTC hour (`hour`, `YYYY-MM-DDTHH:00:00Z`). */
-export interface MonitorLlmHour extends MonitorLlmCounts {
-  hour: string;
-  model: string;
-  /** On this Curio's own endpoint, rather than on a key a user set for their own. */
-  curio: boolean;
-}
+/** The windows the LLM route views its requests in. */
+export type MonitorLlmWindow = MonitorWindow;
 
-/** One model's totals: the last 24 hours, the last 7 days, every hour kept. */
-export interface MonitorLlmModel {
-  model: string;
-  curio: boolean;
-  last24h: MonitorLlmCounts;
-  last7d: MonitorLlmCounts;
-  kept: MonitorLlmCounts;
+/**
+ * A start of the backend whose version differs from the start before it: a
+ * deploy of another version, or the first start kept. `at` is when it
+ * started, `YYYY-MM-DDTHH:MM:SSZ`.
+ */
+export interface MonitorDeploy {
+  at: string;
+  version: string;
 }
 
 /**
- * `GET /api/monitor/llm`: each model's tokens over the last `maxDays` days,
- * kept across restarts, from `startedAt` (when the oldest row kept began), as
- * hourly rows from `hourlyFrom` to `hourlyTo` (the last 7 days, hours with no
- * request left out) and totals.
+ * What a window's requests read, one model's or every model's together:
+ * times in milliseconds, each null when no request gave it.
+ */
+export interface MonitorLlmStats {
+  requests: number;
+  failed: number;
+  averageMs: number | null;
+  p95Ms: number | null;
+  /** The average time to the first word or call of the streamed requests. */
+  firstTokenMs: number | null;
+  /** The output tokens over the time of the requests whose provider reported them. */
+  tokensPerSecond: number | null;
+}
+
+/** One model's stats over a window. */
+export interface MonitorLlmModel extends MonitorLlmStats {
+  model: string;
+}
+
+/**
+ * One model's requests in one 5-minute slot, hour or UTC day (`at`, its
+ * start, `YYYY-MM-DDTHH:MM:00Z`): how many, how many failed, and their
+ * total milliseconds.
+ */
+export interface MonitorLlmRow {
+  at: string;
+  model: string;
+  requests: number;
+  failed: number;
+  ms: number;
+}
+
+/**
+ * One window of the requests: its rows, one every `stepSeconds` from the
+ * start of the first (`from`) to the start of the current one (`to`), steps
+ * with no request left out, and each model's stats over the window, most
+ * requests first, with every model's together (`all`).
+ */
+export interface MonitorLlmView {
+  from: string;
+  to: string;
+  stepSeconds: number;
+  rows: MonitorLlmRow[];
+  models: MonitorLlmModel[];
+  all: MonitorLlmStats;
+}
+
+/**
+ * `GET /api/monitor/llm`: the requests of this Curio's own LLM models, kept
+ * across restarts for the last `maxDays` days, in three views: the last 24
+ * hours in 5-minute rows, the last 7 days in hourly rows and the last 90
+ * days in daily rows. A request on a key a user set for their own is not
+ * counted.
  */
 export interface MonitorLlmPayload {
   computedAt: string;
-  startedAt: string;
   maxDays: number;
   ageSeconds: number;
   ttlSeconds: number;
-  hourlyFrom: string;
-  hourlyTo: string;
-  hourly: MonitorLlmHour[];
-  models: MonitorLlmModel[];
+  views: Record<MonitorLlmWindow, MonitorLlmView>;
+}
+
+/**
+ * What the Usage tab counts: a Python or a JavaScript node's run as Play runs
+ * it, a dataflow's run on the server (Run All, a run up to a node, an
+ * automatic run, a dashboard viewer's run), an agent's chat turn, and the
+ * backend's answer to a request.
+ */
+export type MonitorUsageMeasure = "node.python" | "node.javascript" | "run" | "turn" | "request";
+
+/**
+ * One measure's work over a window: how many, how many failed, their total
+ * milliseconds, their average and their 95th percentile time, each time null
+ * when nothing was counted.
+ */
+export interface MonitorUsageStats {
+  key: MonitorUsageMeasure;
+  count: number;
+  failed: number;
+  ms: number;
+  averageMs: number | null;
+  p95Ms: number | null;
+}
+
+/**
+ * One measure's work in one 5-minute slot, hour or UTC day (`at`, its start,
+ * `YYYY-MM-DDTHH:MM:00Z`): how many, how many failed, their total
+ * milliseconds and their 95th percentile time.
+ */
+export interface MonitorUsageRow {
+  at: string;
+  key: MonitorUsageMeasure;
+  count: number;
+  failed: number;
+  ms: number;
+  p95Ms: number | null;
+}
+
+/**
+ * The sessions seen in one step of a window: sign-ins of accounts and of
+ * guests apart, in its 5 minutes, its hour or its day.
+ */
+export interface MonitorUsageSessions {
+  at: string;
+  accounts: number;
+  guests: number;
+}
+
+/**
+ * One window of the usage: its steps, one every `stepSeconds` from the start
+ * of the first (`from`) to the start of the current one (`to`); each
+ * measure's rows, steps with none left out; every measure's numbers over the
+ * window, in the page's order; the sessions of each step sampled; and the
+ * deploys within it.
+ */
+export interface MonitorUsageView {
+  from: string;
+  to: string;
+  stepSeconds: number;
+  rows: MonitorUsageRow[];
+  measures: MonitorUsageStats[];
+  sessions: MonitorUsageSessions[];
+  deploys: MonitorDeploy[];
+}
+
+/**
+ * `GET /api/monitor/usage`: what this Curio did for the people using it, kept
+ * across restarts for the last `maxDays` days, in three views: the last 24
+ * hours in 5-minute steps, the last 7 days hourly and the last 90 days daily;
+ * and the sessions seen in the last 24 hours, null when the database could
+ * not be read.
+ */
+export interface MonitorUsagePayload {
+  computedAt: string;
+  maxDays: number;
+  ageSeconds: number;
+  ttlSeconds: number;
+  measures: MonitorUsageMeasure[];
+  sessionsLast24h: { accounts: number; guests: number } | null;
+  views: Record<MonitorWindow, MonitorUsageView>;
 }
 
 /** One server's open files and its soft limit on them; null where unknown. */
@@ -257,9 +379,9 @@ export interface MonitorOpenFilesSample {
 /**
  * `GET /api/monitor/open-files`: a sample an hour over the last `maxDays`
  * days, kept across restarts, from `startedAt` (when the oldest was taken),
- * one each `intervalSeconds`. A sample above `warnAbovePercent` of a server's
- * limit records an error, and another only once its count fell below
- * `clearBelowPercent`.
+ * one each `intervalSeconds`, and the deploys since then, which the chart
+ * marks. A sample above `warnAbovePercent` of a server's limit records an
+ * error, and another only once its count fell below `clearBelowPercent`.
  */
 export interface MonitorOpenFilesPayload {
   computedAt: string;
@@ -269,6 +391,8 @@ export interface MonitorOpenFilesPayload {
   warnAbovePercent: number;
   clearBelowPercent: number;
   samples: MonitorOpenFilesSample[];
+  /** The deploys since the first sample, oldest first; none marked when absent. */
+  deploys?: MonitorDeploy[];
 }
 
 export type MonitorErrorSource = "node" | "sandbox" | "backend" | "client";
@@ -316,6 +440,10 @@ export function fetchMonitorLlm(signal?: AbortSignal): Promise<MonitorLlmPayload
 
 export function fetchMonitorOpenFiles(signal?: AbortSignal): Promise<MonitorOpenFilesPayload> {
   return apiFetch<MonitorOpenFilesPayload>("/api/monitor/open-files", { signal });
+}
+
+export function fetchMonitorUsage(signal?: AbortSignal): Promise<MonitorUsagePayload> {
+  return apiFetch<MonitorUsagePayload>("/api/monitor/usage", { signal });
 }
 
 /**

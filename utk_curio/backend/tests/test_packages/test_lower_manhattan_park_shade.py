@@ -134,44 +134,48 @@ GRID = (1024, 1280)
 TILE = {"zoom": "16", "tile_x": "19293", "tile_y": "24639"}
 
 #: Each park's mean minutes of shadow in summer, per scenario, from a run on 8
-#: threads; a run on another machine is within MINUTES of each.
+#: threads; a run on another machine is within MINUTES of each. A building
+#: part OpenStreetMap gives no height is handed on with none, so the
+#: example's Default height widget, 10 m, gives it its height, where the
+#: loader wrote 6 m into it before: every park's minutes are from run
+#: 44783918765.
 MINUTES = 1.0
 MEANS = {
     "existing": {
-        "Battery Park": 77.78, "Battery Playscape": 105.11, "Bowling Green": 369.75, "City Hall Park": 160.02,
-        "Coenties Slip": 486.00, "DeLury Square": 472.17, "Drumgoole Plaza": 229.16,
-        "East River Waterfront Esplanade": 95.83, "Elizabeth H. Berger Plaza": 371.09,
-        "Imagination Playground": 261.89, "Liberty Park": 213.36, "Little West Dog Run": 313.45,
-        "Living Memorial Grove": 101.86, "Louise Nevelson Plaza": 569.35, "Mannahatta Park": 458.83,
-        "Old Slip Park": 504.19, "Parks Dog Run": 105.60, "Pearl Street Playground": 358.58,
-        "Rector Park": 144.58, "Robert F. Wagner Jr. Park": 45.67, "South Cove Park": 236.46,
-        "The Battery Oval": 47.45, "The Battery Woodland": 47.13, "The Esplanade": 184.48,
-        "The Queen Elizabeth II September 11th Garden": 498.29, "Trinity Churchyard": 403.59,
-        "Vietnam Veterans Plaza": 378.02, "West Thames Park": 295.10, "Zuccotti Park": 354.78,
+        "Battery Park": 80.02, "Battery Playscape": 117.89, "Bowling Green": 369.84, "City Hall Park": 160.18,
+        "Coenties Slip": 485.83, "DeLury Square": 472.94, "Drumgoole Plaza": 229.78,
+        "East River Waterfront Esplanade": 100.36, "Elizabeth H. Berger Plaza": 371.95,
+        "Imagination Playground": 262.09, "Liberty Park": 226.92, "Little West Dog Run": 316.56,
+        "Living Memorial Grove": 102.40, "Louise Nevelson Plaza": 566.89, "Mannahatta Park": 458.80,
+        "Old Slip Park": 504.01, "Parks Dog Run": 106.15, "Pearl Street Playground": 359.03,
+        "Rector Park": 142.43, "Robert F. Wagner Jr. Park": 55.53, "South Cove Park": 239.41,
+        "The Battery Oval": 49.31, "The Battery Woodland": 47.46, "The Esplanade": 184.52,
+        "The Queen Elizabeth II September 11th Garden": 498.07, "Trinity Churchyard": 405.85,
+        "Vietnam Veterans Plaza": 378.51, "West Thames Park": 293.86, "Zuccotti Park": 355.14,
     },
     "towers-removed": {
-        "Battery Park": 41.26, "Battery Playscape": 63.28, "Bowling Green": 173.25, "City Hall Park": 115.40,
-        "Coenties Slip": 374.35, "DeLury Square": 204.90, "Drumgoole Plaza": 180.55,
-        "East River Waterfront Esplanade": 31.14, "Elizabeth H. Berger Plaza": 187.69,
-        "Imagination Playground": 191.24, "Liberty Park": 134.23, "Little West Dog Run": 48.33,
-        "Living Memorial Grove": 71.16, "Louise Nevelson Plaza": 350.21, "Mannahatta Park": 257.11,
-        "Old Slip Park": 355.70, "Parks Dog Run": 39.64, "Pearl Street Playground": 231.65,
-        "Rector Park": 44.49, "Robert F. Wagner Jr. Park": 28.51, "South Cove Park": 192.51,
-        "The Battery Oval": 26.46, "The Battery Woodland": 3.43, "The Esplanade": 120.95,
-        "The Queen Elizabeth II September 11th Garden": 196.43, "Trinity Churchyard": 166.84,
-        "Vietnam Veterans Plaza": 96.32, "West Thames Park": 123.39, "Zuccotti Park": 99.29,
+        "Battery Park": 43.93, "Battery Playscape": 78.35, "Bowling Green": 177.06, "City Hall Park": 116.17,
+        "Coenties Slip": 378.42, "DeLury Square": 205.31, "Drumgoole Plaza": 181.96,
+        "East River Waterfront Esplanade": 36.06, "Elizabeth H. Berger Plaza": 189.42,
+        "Imagination Playground": 193.71, "Liberty Park": 151.00, "Little West Dog Run": 52.33,
+        "Living Memorial Grove": 72.83, "Louise Nevelson Plaza": 367.05, "Mannahatta Park": 256.50,
+        "Old Slip Park": 361.83, "Parks Dog Run": 43.27, "Pearl Street Playground": 237.80,
+        "Rector Park": 43.38, "Robert F. Wagner Jr. Park": 42.24, "South Cove Park": 194.19,
+        "The Battery Oval": 28.44, "The Battery Woodland": 3.91, "The Esplanade": 122.34,
+        "The Queen Elizabeth II September 11th Garden": 201.10, "Trinity Churchyard": 184.04,
+        "Vietnam Veterans Plaza": 115.57, "West Thames Park": 125.15, "Zuccotti Park": 101.47,
     },
     "height-cap": {
-        "Battery Park": 55.70, "Battery Playscape": 79.01, "Bowling Green": 304.88, "City Hall Park": 134.17,
-        "Coenties Slip": 392.74, "DeLury Square": 422.19, "Drumgoole Plaza": 203.16,
-        "East River Waterfront Esplanade": 65.40, "Elizabeth H. Berger Plaza": 255.07,
-        "Imagination Playground": 207.74, "Liberty Park": 159.93, "Little West Dog Run": 248.95,
-        "Living Memorial Grove": 87.30, "Louise Nevelson Plaza": 472.49, "Mannahatta Park": 406.78,
-        "Old Slip Park": 456.21, "Parks Dog Run": 78.92, "Pearl Street Playground": 282.67,
-        "Rector Park": 108.53, "Robert F. Wagner Jr. Park": 36.57, "South Cove Park": 195.65,
-        "The Battery Oval": 32.83, "The Battery Woodland": 23.29, "The Esplanade": 148.71,
-        "The Queen Elizabeth II September 11th Garden": 437.02, "Trinity Churchyard": 306.58,
-        "Vietnam Veterans Plaza": 296.94, "West Thames Park": 229.16, "Zuccotti Park": 223.35,
+        "Battery Park": 57.91, "Battery Playscape": 92.47, "Bowling Green": 305.06, "City Hall Park": 134.32,
+        "Coenties Slip": 392.70, "DeLury Square": 422.67, "Drumgoole Plaza": 203.67,
+        "East River Waterfront Esplanade": 69.85, "Elizabeth H. Berger Plaza": 256.00,
+        "Imagination Playground": 207.90, "Liberty Park": 173.77, "Little West Dog Run": 252.77,
+        "Living Memorial Grove": 87.69, "Louise Nevelson Plaza": 471.88, "Mannahatta Park": 406.67,
+        "Old Slip Park": 455.88, "Parks Dog Run": 79.51, "Pearl Street Playground": 283.05,
+        "Rector Park": 107.36, "Robert F. Wagner Jr. Park": 47.72, "South Cove Park": 196.87,
+        "The Battery Oval": 34.85, "The Battery Woodland": 23.48, "The Esplanade": 148.85,
+        "The Queen Elizabeth II September 11th Garden": 436.59, "Trinity Churchyard": 309.17,
+        "Vietnam Veterans Plaza": 297.90, "West Thames Park": 228.31, "Zuccotti Park": 223.57,
     },
 }
 
@@ -757,8 +761,10 @@ def test_the_three_scenarios_rasters_share_one_grid(ran):
 def test_each_park_has_its_minutes_of_shadow_and_the_levers_take_shadow_away(ran):
     """One row per park in each scenario, its mean minutes within MINUTES of
     the pinned run's; in every park removing the towers takes away more shadow
-    than capping them, and capping them takes some away."""
-    means = {}
+    than capping them, and capping them takes some away. A failure names each
+    scenario's parks off their pinned minutes, and gives every park's minutes
+    of the run."""
+    means, off = {}, {}
     for scenario, _name, _color, key in SCENARIOS:
         shade = _value(ran, _node_id(key, "shade"))
         assert list(shade["park"]) == PARKS, scenario
@@ -767,9 +773,13 @@ def test_each_park_has_its_minutes_of_shadow_and_the_levers_take_shadow_away(ran
         shares = shade["share_sun"] + shade["share_partial"] + shade["share_deep"]
         assert all(abs(total - 1) < 1e-9 for total in shares), scenario
         means[scenario] = dict(zip(shade["park"], shade["mean_min"]))
-        off = {park: (round(means[scenario][park], 2), pinned)
-               for park, pinned in MEANS[scenario].items() if abs(means[scenario][park] - pinned) > MINUTES}
-        assert not off, f"{scenario}: (ours, pinned) {off}"
+        off[scenario] = {park: (round(means[scenario][park], 2), pinned)
+                         for park, pinned in MEANS[scenario].items() if abs(means[scenario][park] - pinned) > MINUTES}
+    run = {scenario: {park: round(float(mean), 2) for park, mean in parks.items()} for scenario, parks in means.items()}
+    assert not any(off.values()), (
+        f"(ours, pinned) {({scenario: parks for scenario, parks in off.items() if parks})}; "
+        f"every park's minutes of this run: {json.dumps(run)}"
+    )
     for park in PARKS:
         assert means["towers-removed"][park] < means["height-cap"][park] < means["existing"][park], park
 

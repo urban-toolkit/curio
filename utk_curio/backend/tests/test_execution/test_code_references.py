@@ -99,6 +99,12 @@ class TestTheSharedCases:
             "a selection tag takes",
             "is for a Vega-Lite spec, not for code",
             "has no input to stack",
+            # A dataset widget an input picks.
+            "has no choice for",
+            "has no value yet",
+            "holds no camera",
+            "not a text",
+            "only a Python node's code reads it",
         ):
             assert kind in messages, kind
 
@@ -377,8 +383,8 @@ class TestThePatternsAreShared:
 
     def test_the_options_the_controls_read(self):
         options = re.search(r"export interface WidgetOptions \{(.*?)\n\}", self._ts("widgetModel.ts"), re.S)
-        keys = re.findall(r"^\s*([a-z]+)\?:", options.group(1), re.M)
-        assert keys == ["choices", "display", "min", "max", "step", "units"]
+        keys = re.findall(r"^\s*([a-z][A-Za-z]*)\?:", options.group(1), re.M)
+        assert keys == ["choices", "pickedBy", "display", "min", "max", "step", "units"]
         for schema in self._schemas():
             assert list(schema["properties"]["options"]["properties"]) == keys
 

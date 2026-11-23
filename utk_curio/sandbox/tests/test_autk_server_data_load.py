@@ -27,10 +27,21 @@ the document names by its path, which the compiled code fetches from the
 backend's ``/file/`` route (served from disk here, as an extract is). Its
 raster table is handed on as a heatmap's is: the file's cells, laid over its
 corners in the workspace's CRS.
+
+OpenStreetMap writes every tag as text, and the load hands each numeric tag
+on as a number (``withOsmNumbers``), as the Discovery Catalog's downloads hold
+it (``osm_values.py``): a plain number as that number ("65.5"), a length with
+its unit in metres ("86 m", "45 ft"), a speed in km/h ("30 mph"), and a value
+with no number that can be read ("7-7") as none. A Map Editor node below such
+a load edits what it hands on: its scale, offset, rule and expression read
+each such tag as the number it is.
 """
 from __future__ import annotations
 
+import copy
 import json
+import math
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -82,6 +93,20 @@ LOWER_MANHATTAN_PARKS = [
     ("table_osm_buildings", "buildings", 2688, EPSG_3395, WITHOUT_ID),
 ]
 
+#: The building parts the shadow passes of examples 06 and 07 read, by their
+#: geometry, and every polygon among them: a part OpenStreetMap maps as one
+#: element of several polygons is handed on as one MultiPolygon, as autk-db
+#: keeps it. Back Bay holds none; in the Chicago Loop, these, by osm_id with
+#: their polygons: Quincy Station, LaSalle/Van Buren and LaSalle Street
+#: stations, Riverwalk Gateway, and a part of building 15930575.
+PARTS_BY_GEOMETRY = {
+    "06-back-bay-road-sunlight.json": ({"Polygon": 2102}, 2102, []),
+    "07-autark-gpu-shader.json": (
+        {"MultiPolygon": 5, "Polygon": 1496}, 1507,
+        [(15930577, 3), (17516289, 2), (20048625, 2), (20048626, 2), (20445315, 2)],
+    ),
+}
+
 #: Put before the compiled code: serves the one extract the document loads,
 #: from disk, as the backend's ``/file/`` route would, says so on stdout, and
 #: refuses any other request. The sandbox writes its backend address for the
@@ -106,20 +131,14 @@ def _loader_content(example: str, node_id: str) -> str:
     return next(node["content"] for node in dataflow["nodes"] if node["id"] == node_id)
 
 
-@pytest.mark.parametrize("example, node_id, extract, layers", [
-    ("06-back-bay-road-sunlight.json", "whatif-data", "docs/examples/data/back_bay.osm.pbf", BACK_BAY),
-    ("07-autark-gpu-shader.json", "sh-data", "docs/examples/data/chicago_loop.osm.pbf", CHICAGO_LOOP),
-    ("08-autark-spatial-join-regression.json", "niteroi-osm", "docs/examples/data/niteroi.osm.pbf", NITEROI),
-    ("11-autark-pbf-loading.json", "pbf-load", "docs/examples/data/lower_mnt.osm.pbf", LOWER_MANHATTAN),
-    ("dataflows/lower-manhattan-park-shade.json", "park-shade-layers", "docs/examples/data/lower_mnt.osm.pbf",
-     LOWER_MANHATTAN_PARKS),
-], ids=["back_bay", "chicago_loop", "niteroi", "lower_mnt", "lower_mnt_parks"])
-def test_the_server_compiled_load_hands_on_the_layers(example, node_id, extract, layers, tmp_path, monkeypatch):
+def _run_example_load(example: str, node_id: str, extract: str, tmp_path, monkeypatch) -> dict:
+    """What ``execute_js_code`` answers for the server-compiled load of the
+    node *node_id* of *example*, its extract served from disk (``_run_load``,
+    below, runs a document of the test's own with nothing served)."""
     from utk_curio.cli import dependencies
     from utk_curio.common.autk_data_compiler import compile_data_spec
     from utk_curio.sandbox.app.worker import _worker_init, execute_js_code
     from utk_curio.sandbox.util.node_runtime import node_modules_dir
-    from utk_curio.sandbox.util.parsers import load_from_duckdb
 
     installed = json.loads(
         (node_modules_dir() / "@urban-toolkit" / "autk-db" / "package.json").read_text(encoding="utf-8")
@@ -141,9 +160,23 @@ def test_the_server_compiled_load_hands_on_the_layers(example, node_id, extract,
     monkeypatch.setenv("FLASK_BACKEND_PORT", "1")
     dependencies.seed_duckdb_extensions()
     _worker_init()
-    result = execute_js_code(
+    return execute_js_code(
         serve + code, "", "AUTK_GRAMMAR", "", launch_dir=str(REPO_ROOT), session_id=None,
     )
+
+
+@pytest.mark.parametrize("example, node_id, extract, layers", [
+    ("06-back-bay-road-sunlight.json", "whatif-data", "docs/examples/data/back_bay.osm.pbf", BACK_BAY),
+    ("07-autark-gpu-shader.json", "sh-data", "docs/examples/data/chicago_loop.osm.pbf", CHICAGO_LOOP),
+    ("08-autark-spatial-join-regression.json", "niteroi-osm", "docs/examples/data/niteroi.osm.pbf", NITEROI),
+    ("11-autark-pbf-loading.json", "pbf-load", "docs/examples/data/lower_mnt.osm.pbf", LOWER_MANHATTAN),
+    ("dataflows/lower-manhattan-park-shade.json", "park-shade-layers", "docs/examples/data/lower_mnt.osm.pbf",
+     LOWER_MANHATTAN_PARKS),
+], ids=["back_bay", "chicago_loop", "niteroi", "lower_mnt", "lower_mnt_parks"])
+def test_the_server_compiled_load_hands_on_the_layers(example, node_id, extract, layers, tmp_path, monkeypatch):
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    result = _run_example_load(example, node_id, extract, tmp_path, monkeypatch)
 
     assert result["output"]["path"], result["stderr"]
     assert result["output"]["dataType"] == "list"
@@ -162,9 +195,347 @@ def test_the_server_compiled_load_hands_on_the_layers(example, node_id, extract,
     ] == layers
     for layer in loaded:
         _assert_osm_ids(layer)
+    if example in PARTS_BY_GEOMETRY:
+        (buildings,) = [layer for layer in loaded if layer["type"] == "buildings"]
+        features = buildings["geojson"]["features"]
+        kinds: dict[str, int] = {}
+        for feature in features:
+            kinds[feature["geometry"]["type"]] = kinds.get(feature["geometry"]["type"], 0) + 1
+        polygons = sum(len(f["geometry"]["coordinates"]) if f["geometry"]["type"] == "MultiPolygon" else 1
+                       for f in features)
+        several = sorted((f["properties"]["osm_id"], len(f["geometry"]["coordinates"]))
+                         for f in features if f["geometry"]["type"] == "MultiPolygon")
+        assert (kinds, polygons, several) == PARTS_BY_GEOMETRY[example]
 
 
-AUTK_GRAMMAR_VERSION = "5.2.0"
+#: The keys an Autark map reads a building part's top from.
+TOP_KEYS = ("height", "building:height", "levels", "building:levels")
+
+
+def _number(value) -> float | None:
+    """*value* as a number, when it is one or text that is one, else None."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def test_the_server_compiled_load_hands_on_a_building_part_with_no_height_with_none(tmp_path, monkeypatch):
+    """The test dataflow lower-manhattan-park-shade's load hands its building
+    parts on as OpenStreetMap has them: a part with no height (none of
+    ``height``, ``building:height``, ``levels`` and ``building:levels`` holds a
+    number) holds none, so a node that uses one takes the default where it
+    uses it, and the others hold their own.
+
+    So what reads the data sees the gap: a Map Editor node's scale of the
+    heights leaves such a part as it is (``feature_edits``: a feature whose
+    column holds no number), and the dataflow's Building heights node gives it
+    its Default height widget's value, 10 m (``fillna``)."""
+    import geopandas as gpd
+
+    from utk_curio.sandbox.util.feature_edits import edit_features
+    from utk_curio.sandbox.util.input_layers import curio_layer
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    example, node_id = "dataflows/lower-manhattan-park-shade.json", "park-shade-layers"
+    result = _run_example_load(example, node_id, "docs/examples/data/lower_mnt.osm.pbf", tmp_path, monkeypatch)
+    assert result["output"]["path"], result["stderr"]
+    loaded = load_from_duckdb(result["output"]["path"], session_id=None)
+    (buildings,) = [layer for layer in loaded if layer["name"] == "table_osm_buildings"]
+    parts = [feature["properties"] for feature in buildings["geojson"]["features"]]
+    # No number in any key of a top: the parts the load gives no height.
+    bare = [index for index, properties in enumerate(parts)
+            if all(_number(properties.get(key)) is None for key in TOP_KEYS)]
+    tall = [index for index, properties in enumerate(parts) if (_number(properties.get("height")) or 0) > 0]
+    assert bare, (
+        f"none of the {len(parts)} building parts holds no height: a part OpenStreetMap gives none is handed on "
+        "with one made for it"
+    )
+    assert tall, f"none of the {len(parts)} building parts holds a height of its own"
+
+    # A Map Editor node's scale of the heights of up to five such parts'
+    # buildings, and of one whose height it first sets to 20 m, which it doubles.
+    bare_buildings = {parts[index]["building_id"] for index in bare}
+    probe = next((index for index in tall if parts[index]["building_id"] not in bare_buildings), tall[0])
+    others = [index for index in bare if parts[index]["building_id"] != parts[probe]["building_id"]][:5]
+    assert others, f"every one of the {len(bare)} parts with no height is in the building of part {probe}"
+    edits = [
+        {"op": "set", "column": "height", "value": 20, "ids": [parts[probe]["building_id"]]},
+        {"op": "scale", "column": "height", "value": 2,
+         "ids": sorted({parts[index]["building_id"] for index in [probe, *others]})},
+    ]
+    edited = edit_features(loaded, edits, key="building_id", layer="table_osm_buildings")
+    (layer,) = [item for item in edited["data"] if item.get("layerName") == "table_osm_buildings"]
+    after = [feature["properties"] for feature in layer["data"]["features"]]
+    assert _number(after[probe]["height"]) == 40, after[probe]
+    assert [_number(after[index].get("height")) for index in others] == [None] * len(others), (
+        [after[index] for index in others]
+    )
+
+    # The dataflow's Building heights node, its chips as its widgets set them.
+    code = _loader_content(example, "park-shade-heights")
+    for chip, value in (("[!! input_0:table_osm_buildings !!]", "frame"), ("[!! floor_height !!]", "3.4"),
+                        ("[!! default_height !!]", "10")):
+        assert chip in code, chip
+        code = code.replace(chip, value)
+    frame = curio_layer(loaded, "table_osm_buildings")
+    assert isinstance(frame, gpd.GeoDataFrame) and len(frame) == len(parts)
+    namespace: dict = {"frame": frame}
+    exec("def node():\n" + textwrap.indent(code, "    "), namespace)  # noqa: S102  (the dataflow's own node code)
+    heights = namespace["node"]()["height"].tolist()
+    assert [heights[index] for index in bare] == [10.0] * len(bare)
+    assert [heights[index] for index in tall[:5]] == [_number(parts[index]["height"]) for index in tall[:5]]
+
+
+#: Example 07's loader: the Chicago Loop's OpenStreetMap layers, and its
+#: building parts among them, about 250 of which OpenStreetMap gives a height.
+LOOP_LOAD = ("07-autark-gpu-shader.json", "sh-data", "docs/examples/data/chicago_loop.osm.pbf")
+#: Example 06's loader: Back Bay's OpenStreetMap layers.
+BACK_BAY_LOAD = ("06-back-bay-road-sunlight.json", "whatif-data", "docs/examples/data/back_bay.osm.pbf")
+
+#: OpenStreetMap's numeric building tags, which an Autark node hands on as
+#: numbers (``withOsmNumbers`` in autkDataCompile.ts): the lengths, in metres,
+#: then the levels.
+NUMERIC_TAGS = (
+    "height", "min_height", "building:height", "roof:height",
+    "building:levels", "building:min_level", "levels", "min_level", "roof:levels", "building:levels:underground",
+)
+#: Each load's building parts, by OSM id, whose numeric tags OpenStreetMap
+#: writes with a unit or with no number that can be read, and what the load
+#: hands on for them, the text in the extract beside each.
+WRITTEN_OTHERWISE = {
+    "chicago_loop": {
+        124873939: {"height": 133.5},  # "133.5 m"
+        126982631: {"height": 86},  # "86 m"
+        126982632: {"height": 67.7},  # "67.7 m"
+        144846553: {"height": 91},  # "91 m"
+        145625877: {"height": 61.5},  # "61.5 m"
+        147478105: {"height": 87},  # "87 m"
+        148164130: {"height": 86},  # "86m"
+        1178203072: {"building:levels": None},  # "7-7", a range
+    },
+    "back_bay": {
+        29623484: {"height": 241},  # "241m", 200 Clarendon's tower
+        29869880: {"height": 228.6},  # "228.6m", the Prudential Tower
+        117889600: {"height": 102},  # "102m"
+        240278719: {"height": 64, "roof:height": 15},  # "64m", and "15"
+    },
+}
+#: Each load's building parts, by OSM id, whose numeric tags OpenStreetMap
+#: writes as plain numbers, and the numbers the load hands on.
+WRITTEN_PLAIN = {
+    "chicago_loop": {
+        15930576: {"height": 42.3, "building:levels": 12},
+        15937050: {"height": 261.8, "building:levels": 82},
+        1179624203: {"height": 175, "building:levels": 44, "roof:levels": 1},
+        1433561730: {"height": 240, "building:levels": 74, "building:min_level": 12},
+    },
+    "back_bay": {
+        823008368: {"height": 6.8, "min_height": 3.4, "building:levels": 2, "building:min_level": 1},
+        240711152: {"height": 45, "roof:height": 4, "building:levels": 9},
+    },
+}
+#: How many of the Chicago Loop's building parts the load gives a height above
+#: 100 m: 179 written as plain numbers, and one written "133.5 m".
+LOOP_PARTS_ABOVE_100_M = 180
+
+
+def _a_number(value) -> bool:
+    """Whether *value* is a number, never a text or a bool."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _served_layers(example: str, node_id: str, extract: str, tmp_path, monkeypatch) -> list:
+    """What the server-compiled load of *example*'s node *node_id* stores,
+    *extract* served from disk, as the tests above run it
+    (``_run_example_load``): a layer record ``{name, type, geojson}`` each."""
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    result = _run_example_load(example, node_id, extract, tmp_path, monkeypatch)
+    assert result["output"]["path"], result["stderr"]
+    return load_from_duckdb(result["output"]["path"], session_id=None)
+
+
+def _as_stored(layers: list) -> dict:
+    """*layers*, the records a load returned, as each place keeps them that a
+    Map Editor reads them from: as a run on the server stores them, and as the
+    canvas's Autark node stores them (``persistLayersToBackend``), an envelope
+    a layer, which reach the Map Editor as tables."""
+    return {
+        "as a run on the server stores them": layers,
+        "as the canvas stores them": {"dataType": "outputs", "data": [
+            {"dataType": "geodataframe", "data": layer["geojson"],
+             "layerName": layer["name"], "layerType": layer["type"]}
+            for layer in layers
+        ]},
+    }
+
+
+@pytest.mark.parametrize("load, extract", [(LOOP_LOAD, "chicago_loop"), (BACK_BAY_LOAD, "back_bay")],
+                         ids=["chicago_loop", "back_bay"])
+def test_the_server_compiled_load_hands_on_openstreetmaps_numeric_building_tags_as_numbers(
+    load, extract, tmp_path, monkeypatch,
+):
+    """OpenStreetMap writes every tag as text, and autk-db keeps it so. The
+    load hands each numeric building tag on as a number: a plain number as
+    that number, a length with its unit in metres, and a value with no number
+    that can be read, such as a range of levels, as none. No such tag of any
+    building part is left as text."""
+    layers = _served_layers(*load, tmp_path, monkeypatch)
+    buildings = next(layer for layer in layers if layer["name"] == "table_osm_buildings")
+    parts = [feature["properties"] for feature in buildings["geojson"]["features"]]
+    texts = sorted({
+        (key, repr(part[key])) for part in parts for key in NUMERIC_TAGS
+        if key in part and part[key] is not None and not _a_number(part[key])
+    })
+    assert texts == [], (
+        f"the load hands on {len(texts)} values of numeric building tags that are no numbers, such as {texts[:12]}"
+    )
+    by_id = {part["osm_id"]: part for part in parts}
+    for expected in (WRITTEN_OTHERWISE[extract], WRITTEN_PLAIN[extract]):
+        handed = {
+            osm_id: {key: by_id[osm_id].get(key, "missing") for key in tags} if osm_id in by_id else "missing"
+            for osm_id, tags in expected.items()
+        }
+        assert handed == expected
+
+
+#: The cases both twins of the number rule run (``withOsmNumbers`` and the
+#: Discovery Catalog's ``osm_values.py``), whose ``keys`` list every numeric tag.
+SHARED_CASES = (REPO_ROOT / "utk_curio" / "frontend" / "urban-workflows" / "src" / "adapters" / "node"
+                / "autkOsmNumbers.cases.json")
+#: Each load's roads, by OSM id, and what the load hands on for their numeric
+#: tags, the text in the extract beside each.
+ROADS_WRITTEN = {
+    "chicago_loop": {
+        # The Eisenhower Expressway: 13'6", 12'0", "3" and "1".
+        56152933: {"maxheight": 4.11, "maxwidth": 3.66, "lanes": 3, "layer": 1},
+        # South Columbus Drive: "30 mph", "7", "3" and "4".
+        235714536: {"maxspeed": 48.28, "lanes": 7, "lanes:forward": 3, "lanes:backward": 4},
+    },
+    "back_bay": {
+        # David G. Mugar Way: "3.7", 14'0", "25 mph" and "1".
+        8637722: {"width": 3.7, "maxheight": 4.27, "maxspeed": 40.23, "lanes": 1},
+        # Public Alley 419: "2.7", "none", "15 mph" and "1".
+        8637791: {"width": 2.7, "maxheight": None, "maxspeed": 24.14, "lanes": 1},
+    },
+}
+
+
+@pytest.mark.parametrize("load, extract", [(LOOP_LOAD, "chicago_loop"), (BACK_BAY_LOAD, "back_bay")],
+                         ids=["chicago_loop", "back_bay"])
+def test_the_server_compiled_load_hands_on_every_numeric_tag_of_its_layers_as_a_number(
+    load, extract, tmp_path, monkeypatch,
+):
+    """Every OpenStreetMap layer the load hands on but the surface holds each
+    numeric tag the shared cases list, a length, a speed or a count, as a
+    number or as none, never as text, as the Discovery Catalog's downloads
+    hold it: a road's speed in km/h, its clearance and width in metres, its
+    lanes and its layer as counts."""
+    keys = json.loads(SHARED_CASES.read_text(encoding="utf-8"))["keys"]
+    numeric = set(keys["lengths"]) | set(keys["speeds"]) | set(keys["counts"])
+    layers = _served_layers(*load, tmp_path, monkeypatch)
+    texts = sorted({
+        (layer["name"], key, repr(value))
+        for layer in layers if layer["type"] != "surface"
+        for feature in layer["geojson"]["features"]
+        for key, value in (feature["properties"] or {}).items()
+        if key in numeric and value is not None and not _a_number(value)
+    })
+    assert texts == [], f"the load hands on {len(texts)} numeric tag values that are no numbers, such as {texts[:12]}"
+    roads = next(layer for layer in layers if layer["name"] == "table_osm_roads")
+    by_id = {feature["properties"]["osm_id"]: feature["properties"] for feature in roads["geojson"]["features"]}
+    handed = {
+        osm_id: {key: by_id[osm_id].get(key, "missing") for key in tags} if osm_id in by_id else "missing"
+        for osm_id, tags in ROADS_WRITTEN[extract].items()
+    }
+    assert handed == ROADS_WRITTEN[extract]
+
+
+def test_a_map_editor_rule_picks_the_loops_tall_buildings_and_an_expression_halves_them(tmp_path, monkeypatch):
+    """On the Chicago Loop's load, the rule ``height > 100``, the rule the
+    Map Editor's guide gives, picks every building part the load gives a
+    height above 100 m, a height written with its unit among them, and the
+    expression ``height * 0.5`` halves each: on the layers as a run on the
+    server stores them and as the canvas stores them, a table each. Every
+    other part keeps its height."""
+    from utk_curio.sandbox.util.feature_edits import edit_features
+    from utk_curio.sandbox.util.stored_inputs import read_stored
+
+    layers = _served_layers(*LOOP_LOAD, tmp_path, monkeypatch)
+    buildings = next(layer for layer in layers if layer["name"] == "table_osm_buildings")
+    before = [feature["properties"].get("height") for feature in buildings["geojson"]["features"]]
+    tall = [at for at, height in enumerate(before) if _a_number(height) and height > 100]
+    assert len(tall) == LOOP_PARTS_ABOVE_100_M, (
+        f"the load gives {len(tall)} parts a height above 100 m as a number, not {LOOP_PARTS_ABOVE_100_M}"
+    )
+    osm_ids = [feature["properties"]["osm_id"] for feature in buildings["geojson"]["features"]]
+    assert osm_ids.index(124873939) in tall, "the part OpenStreetMap writes as 133.5 m is not among them"
+    edits = [{"op": "expr", "where": "height > 100", "column": "height", "value": "height * 0.5",
+              "label": "Every part above 100 m at half its height"}]
+    for how, value in _as_stored(layers).items():
+        out = edit_features(
+            read_stored(copy.deepcopy(value)), copy.deepcopy(edits), key="osm_id", layer="table_osm_buildings",
+        )
+        edited = next(item for item in out["data"] if item.get("layerName") == "table_osm_buildings")
+        after = [feature["properties"].get("height") for feature in edited["data"]["features"]]
+        assert [feature["properties"]["osm_id"] for feature in edited["data"]["features"]] == osm_ids, how
+        picked = [at for at in range(len(before)) if after[at] != before[at]]
+        assert picked == tall, (
+            f"{how}: the rule height > 100 changed {len(picked)} parts, not the {len(tall)} above 100 m"
+        )
+        assert all(_a_number(after[at]) for at in tall), (how, [after[at] for at in tall[:5]])
+        assert [after[at] for at in tall] == pytest.approx([before[at] * 0.5 for at in tall]), how
+
+
+def test_a_map_editor_scales_and_offsets_the_heights_openstreetmap_writes_as_text(tmp_path, monkeypatch):
+    """OpenStreetMap writes each height of the Chicago Loop's building parts
+    as text ("42.3", "133.5 m"), and the load hands each on as the number it
+    is. A Map Editor below the load scales and offsets three of them, one
+    written with its unit among them: each becomes twice its height plus one,
+    a number, on the layers as a run on the server stores them and as the
+    canvas stores them, a table each."""
+    from utk_curio.sandbox.util.feature_edits import edit_features
+    from utk_curio.sandbox.util.stored_inputs import read_stored
+
+    layers = _served_layers(*LOOP_LOAD, tmp_path, monkeypatch)
+    buildings = next(layer for layer in layers if layer["name"] == "table_osm_buildings")
+    heights = {
+        feature["properties"]["osm_id"]: feature["properties"].get("height")
+        for feature in buildings["geojson"]["features"]
+    }
+    # "42.3", "184" and "133.5 m" in the extract.
+    picked = [15930576, 28951633, 124873939]
+    before = {osm_id: heights.get(osm_id) for osm_id in picked}
+    # The case: the load hands each height on as the number it is.
+    assert all(_a_number(height) for height in before.values()), (
+        f"the load hands on these heights as {before}, not as numbers"
+    )
+    edits = [
+        {"op": "scale", "ids": picked, "column": "height", "value": 2},
+        {"op": "offset", "ids": picked, "column": "height", "value": 1},
+    ]
+    for how, value in _as_stored(layers).items():
+        out = edit_features(
+            read_stored(copy.deepcopy(value)), copy.deepcopy(edits), key="osm_id", layer="table_osm_buildings",
+        )
+        edited = next(item for item in out["data"] if item.get("layerName") == "table_osm_buildings")
+        after = {
+            feature["properties"]["osm_id"]: feature["properties"].get("height")
+            for feature in edited["data"]["features"]
+            if feature["properties"].get("osm_id") in picked
+        }
+        assert sorted(after) == sorted(picked), (how, sorted(after))
+        assert all(_a_number(after[osm_id]) for osm_id in picked), (how, before, after)
+        assert after == pytest.approx(
+            {osm_id: before[osm_id] * 2 + 1 for osm_id in picked}
+        ), f"{how}: heights {before} became {after}, not twice them plus one"
+
+
+AUTK_GRAMMAR_VERSION = "5.6.0"
 
 #: Four readings at the corners of a box about 1.1 km by 1.5 km in the Chicago
 #: Loop, binned twice into 3 columns by 2 rows over their extent: each cell of
@@ -367,6 +738,80 @@ def test_the_server_compiled_load_builds_every_heatmap_aggregate_from_the_readin
     finally:
         for item in handed[1:]:
             item.close()
+
+
+def _run_load(document: dict, tmp_path, monkeypatch) -> dict:
+    """*document* compiled as a run on the server compiles an Autark data node,
+    run through ``execute_js_code``, with no socket and nothing in."""
+    from utk_curio.cli import dependencies
+    from utk_curio.common.autk_data_compiler import compile_data_spec
+    from utk_curio.sandbox.app.worker import _worker_init, execute_js_code
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setenv("FLASK_BACKEND_HOST", "curio-backend.invalid")
+    monkeypatch.setenv("FLASK_BACKEND_PORT", "1")
+    dependencies.seed_duckdb_extensions()
+    _worker_init()
+    return execute_js_code(
+        _NO_SOCKET + compile_data_spec(json.dumps(document)), "", "AUTK_GRAMMAR", "",
+        launch_dir=str(REPO_ROOT), session_id=None,
+    )
+
+
+def test_the_server_compiled_load_counts_the_rows_near_each_cell_of_a_heatmap_without_group_by(tmp_path, monkeypatch):
+    """A heatmap that writes no ``groupBy`` has one band, which counts the
+    readings near each cell's center, as one that writes a count does
+    (autk-grammar 5.5.0 hands autk-db that count; left to itself, autk-db
+    labelled the band a count and joined no aggregate, so every cell read 0)."""
+    import numpy as np
+
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+    from utk_curio.sandbox.util.rasters import envelope_arrays
+
+    readings, heatmap = LEVEL_HEATMAP["data"]
+    without = {key: value for key, value in heatmap.items() if key != "groupBy"}
+    result = _run_load({"data": [readings, without]}, tmp_path, monkeypatch)
+
+    assert result["output"]["path"], result["stderr"]
+    loaded = load_from_duckdb(result["output"]["path"], session_id=None)
+    assert [(item.get("dataType"), item.get("layerName")) for item in loaded[1:]] == [("raster", "noise")]
+    noise = loaded[1]
+    _grid, bands, cells = envelope_arrays(noise)
+    assert bands == ["band_1"]
+    assert noise["data"]["features"][0]["properties"]["bands"] == [{"id": "band_1", "label": "count_levels"}]
+    expected = _cells_from_the_levels()["count"]
+    # Cells of none to four readings, so a band of zeros cannot pass.
+    assert {value for row in expected for value in row} == {0.0, 1.0, 2.0, 3.0, 4.0}
+    np.testing.assert_allclose(cells[0], expected, err_msg="the count of the readings near each cell")
+
+
+def test_the_server_compiled_load_refuses_a_heatmap_entry_without_an_aggregate(tmp_path, monkeypatch):
+    """A ``groupBy`` entry without ``aggregateFn`` combines nothing, and a cell
+    holds one value: the load fails, in autk-grammar 5.5.1's words, and hands
+    nothing on (autk-db built such a band, labelled ``value_levels``, of zeros)."""
+    readings, heatmap = LEVEL_HEATMAP["data"]
+    entries = [{"column": "*", "aggregateFn": "count"}, {"column": "db"}]
+    result = _run_load({"data": [readings, {**heatmap, "groupBy": entries}]}, tmp_path, monkeypatch)
+
+    assert not result["output"]["path"], "the load handed on a heatmap with a band that combines nothing"
+    assert (
+        'Heatmap "noise": the groupBy entry for column "db" has no aggregateFn to combine the rows near a cell, '
+        "and a cell holds one value; use sum, avg, count, min, max or weighted."
+    ) in result["stderr"], result["stderr"]
+
+
+def test_the_server_compiled_load_refuses_a_source_whose_after_is_not_compute(tmp_path, monkeypatch):
+    """A source runs after compute or before it: autk-grammar's ``dataPhases``,
+    which the load asks before anything loads, refuses any other ``after``,
+    in its words."""
+    readings, _heatmap = LEVEL_HEATMAP["data"]
+    result = _run_load({"data": [{**readings, "after": "map"}]}, tmp_path, monkeypatch)
+
+    assert not result["output"]["path"], "the load handed on a source whose after names no phase"
+    assert result["stderr"].startswith(
+        "Data source 0 (geojson): after must be 'compute', the one phase a source runs after, not \"map\"."
+    ), result["stderr"]
 
 
 def test_the_server_compiled_load_bins_a_table_of_the_nodes_input(tmp_path, monkeypatch):

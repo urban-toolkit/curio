@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PackageKind, PackagePayload, SortMode } from "../../services/packages";
 import {
   MODEL_RUNTIME_LABEL,
-  MODEL_TYPE_LABEL,
   catalogAndOwnPackages,
   isNewerPackageVersion,
   matchesSearch,
+  modelTypeWords,
   primaryCategory,
   sortPackages,
   usePackageCatalog,
@@ -17,7 +17,9 @@ import { usePackageArchiveImport } from "../../providers/packages/usePackageArch
 import type { NodeCatalogFilterTab } from "./nodeCatalogBrowseTypes";
 
 /** One way the rail narrows the grid: a package's category for the Node
- *  Catalog; a model's type and runtime for the Model Catalog. */
+ *  Catalog; a model's type and runtime for the Model Catalog. A model's type
+ *  is any name its manifest gives, so its rows are the types present, as a
+ *  package's categories are. */
 export interface CatalogFacet {
   key: string;
   label: string;
@@ -26,6 +28,9 @@ export interface CatalogFacet {
   /** The rows in a fixed order, so a value with nothing in it reads zero;
    *  left out, the values present, by count. */
   order?: string[];
+  /** With no `order`, rows of one count follow their labels in alphabetical
+   *  order, so the rail does not change with the order the listing gives. */
+  tiesByLabel?: boolean;
   /** Rows carry a dot keyed like the card strips. */
   dotted?: boolean;
 }
@@ -39,8 +44,8 @@ export const CATALOG_FACETS: Record<PackageKind, CatalogFacet[]> = {
       key: "type",
       label: "By type",
       valueOf: (pkg) => pkg.model?.type ?? "",
-      labelOf: (value) => MODEL_TYPE_LABEL[value as keyof typeof MODEL_TYPE_LABEL] ?? value,
-      order: Object.keys(MODEL_TYPE_LABEL),
+      labelOf: modelTypeWords,
+      tiesByLabel: true,
     },
     {
       key: "runtime",
@@ -164,7 +169,10 @@ export function useNodeCatalogBrowse(packageKind: PackageKind = "node") {
         }
         let rows: [string, number][] = facet.order
           ? facet.order.map((value) => [value, counts.get(value) ?? 0])
-          : Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+          : Array.from(counts.entries()).sort(
+              (a, b) =>
+                b[1] - a[1] || (facet.tiesByLabel ? facet.labelOf(a[0]).localeCompare(facet.labelOf(b[0])) : 0),
+            );
         const selected = facetFilters[facet.key];
         if (selected && !rows.some(([value]) => value === selected)) rows = [...rows, [selected, 0]];
         return { facet, rows };

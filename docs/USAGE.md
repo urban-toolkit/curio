@@ -105,7 +105,7 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 | Flag | Default | Effect |
 |---|---|---|
 | `--state-dir PATH` | `.curio/` in the directory Curio starts from | Where Curio keeps its state: every user's store, the caches and the launcher's log |
-| `--monitor-dir PATH` | `.curio/monitor/` | Where the monitor page keeps its histories, the LLM tokens and the open files of the last 90 days, across restarts, readable by the backend's own account alone. Name a folder outside `.curio` when your deploys delete it. See [DEPLOYMENT.md](DEPLOYMENT.md#the-monitor-page) |
+| `--monitor-dir PATH` | `.curio/monitor/` | Where the monitor page keeps its histories, the Usage tab's figures and the open files of the last 90 days, across restarts, readable by the backend's own account alone. Name a folder outside `.curio` when your deploys delete it. See [DEPLOYMENT.md](DEPLOYMENT.md#the-monitor-page) |
 | `--backend-processes N` | 1 | How many backend processes serve, each keeping the dataflows it owns. Above 1 they serve behind nginx on the backend's host and port, which sends each request to the process that owns its dataflow; nginx must be on `PATH`, and `--dev` runs one. See [DEPLOYMENT.md](DEPLOYMENT.md#3-build-and-run) |
 | `--js-parallelism N` | half the host's cores, from 2 to 16 | How many JavaScript nodes the sandbox runs at once |
 | `--package-workers N` | half the host's cores, from 2 to 8 | How many package backend handlers run at once |
@@ -438,6 +438,23 @@ A Data Loading node opens on its **Widgets** tab, which holds only its **Data**
 box: drop a file or a Data Catalog dataset on the node, or click **Choose file**
 to pick a file, and its code, on the **Code** tab, loads it ([Data Catalog](#data-catalog)).
 
+An input can pick the dataset the **Data** box holds, as the camera of example
+32's Settings node picks the collections its **Records** and **Snapshots** nodes
+load. The widget names that input in `pickedBy`, `input_0` for the text on
+circle 0 or `input_0.camera` for the text under the key `camera` of the dict on
+it, and maps each text the input may hold to a dataset in `choices`:
+
+```json
+{"name": "data", "type": "dataset", "label": "Data",
+ "options": {"pickedBy": "input_0.camera",
+             "choices": {"W042": "data.sage.idot-w042-records-2025-08",
+                         "W065": "data.sage.idot-w065-records-2025-08"}}}
+```
+
+The box then shows the dataset the input picks, and takes no drop or file. A run
+reads the input first and loads the dataset it picks; a text no choice names
+stops the run, which names the text and the choices.
+
 A Data Export node opens on its **Widgets** tab, which holds only its
 **File name** and its **Download** button, and its **Part** dropdown when its
 input holds several parts. Its code, on the
@@ -546,10 +563,10 @@ saved is saved under its title by its first run.
   compute step) runs on the server, like a code node.
 - A Data Export node writes its file and downloads nothing: its **Download**
   button saves the file.
-- A node that needs data only the browser makes (an Autark compute node)
-  runs, with the nodes below it, in a tab. The tab that
-  started the run runs them by itself; otherwise opening the dataflow offers
-  **Finish run**.
+- A node that needs data only the browser makes (an Autark compute node, or an
+  Autark map or plot that also loads data or runs a pass) runs, with the nodes
+  below it, in a tab. The tab that started the run runs them by itself;
+  otherwise opening the dataflow offers **Finish run**.
 - While a run goes, **Run All** stops it. The run ends before its next node
   starts; a node already running finishes, and its result is not kept.
 
@@ -558,9 +575,10 @@ any browser and after signing in again, each code node of your own dataflow
 shows the last result you ran it to, for 7 days, as long as its code, its
 inputs, your packages and the datasets it reads are unchanged; charts and maps
 below it draw from it. A node with no such result shows its saved output, if its
-**Save output dataset** toggle is on. Nodes below an Autark compute node wait
-for a run. After Curio is upgraded, only saved outputs come
-back. A dashboard shows its saved outputs.
+**Save output dataset** toggle is on. Nodes below an Autark compute node, or
+below an Autark map or plot that also loads data or runs a pass, wait for a
+run. After Curio is upgraded, only saved outputs come back. A dashboard shows
+its saved outputs.
 
 An invited editor's runs are the editor's own: their results show on the
 editor's canvas, not the owner's, and the dataflow's saved outputs stay those of
@@ -761,7 +779,9 @@ named after its key, and an Autark node's table after its name. A raster's tab
 says it is a raster, then, as an input chip's hover says them, its size in
 cells, its bands and its CRS, for a raster an Autark node hands on or one a
 Python node's tuple, list or dict holds; the pool passes the raster on as it
-came.
+came. A Simple View shows a dict of frames as tabs too, each named after its
+key and shown as a Simple View shows a table, the first one open: Track
+Objects' `videos` tab plays its overlays and its `tracks` tab lists the objects.
 
 In code and in a Vega-Lite or Autark spec, each input is a chip:
 
@@ -1000,7 +1020,12 @@ named after it.
 In **Edit**, the form of a building of several parts is for all of them: a
 property its parts differ in is empty, with their values beside it, and a value
 typed there goes to every part. Its **Parts** menu picks one part, by its
-`osm_id`, and the form then shows and changes that part's values alone.
+`osm_id`, and the form then shows and changes that part's values alone. A
+building part with no height shows the height a map draws it at, 6 m above its
+base, marked: `6 (default)`. Its height stays empty until one is typed. A
+scale, an offset, an expression or a rule on `height` reads the height a part
+holds: a part with none, or with only its levels, keeps none, and a rule on
+`height` does not pick it.
 
 A rule or an expression reads a feature's columns by name (`height`, or
 `` `Mean Acc shadow` `` in backticks). It takes numbers, quoted texts, `true`,
@@ -1347,7 +1372,7 @@ Removing an interaction edge, or a node at either end, removes the highlight it 
 
 A point selection over fields (`"select": {"type": "point", "fields": ["unit_id"]}`) sends the values of the points picked, such as `{"unit_id": 103}`, and the receiving chart marks every row that holds them, in whatever order it holds its rows. A point selection without fields matches rows by position, so both charts must read the same rows in the same order. An interval selection matches by column name, so the receiving chart needs the columns the interval names.
 
-A Simple View's player is a selection too, an interval on `t_s`, the time in seconds. Draw an interaction edge from the Simple View to a chart or a map: while a video or a recording plays in one of its cards, the view at the other end marks the rows whose `t_s` lies between the file's start and where the player stands, such as a walk's points up to where the walker is. The marks follow the player as it plays and when you seek, and stay where it stands when you pause. They go when another card plays, when the Simple View's rows change, or when the edge or either node is removed. `t_s` is the time in the video as Sample Video Frames and Split Audio write it; a table that holds clock times gets its `t_s` in a Python node before it is linked. A file cut from a longer one, such as Track Objects' overlay, Split Audio's clip or Split Video's block, holds where it starts in its own `t_s`, and its player's range is then in the longer file's time.
+A Simple View's player is a selection too, an interval on its **Time column**, the time in seconds. Draw an interaction edge from the Simple View to a chart or a map: while a video or a recording plays in one of its cards, the view at the other end marks the rows whose value in that column lies between the file's start and where the player stands, such as a walk's points up to where the walker is. The marks follow the player as it plays and when you seek, and stay where it stands when you pause. They go when another card plays, when the Simple View's rows change or another tab of its frames opens, or when the edge or either node is removed. Time column, on the Simple View's Widgets tab, names the column the linked rows keep their seconds in: `t_s`, the time in the video as Sample Video Frames and Split Audio write it, until you set another. A table that holds clock times gets a column of seconds in a Python node before it is linked. A file cut from a longer one, such as Track Objects' overlay, Split Audio's clip or Split Video's block, holds where it starts in its own `t_s`, and its player's range is then in the longer file's time.
 
 When several selections reach a Data Pool, the two selects at the top of the pool decide which rows it marks. **Conflict inside visualization** combines the selections of one chart, and **Conflict between visualizations** combines the latest selection of each linked chart:
 
@@ -1374,14 +1399,36 @@ The values are read from the node's input, so the table must come from an input,
 
 ## Autark node
 
-The `Autark` node draws an Autark document: map layers or a plot, and GPU
-compute over tables. A table comes from the document's own `data` section (an
-OSM extract, a GeoJSON or CSV file, a GeoTIFF) or from the node's input. The
-document writes no `data` entry for its input; it names the tables the input
-provides.
+The `Autark` node draws every map and plot an Autark document writes, and
+runs its compute passes over tables: GPGPU and render passes on the GPU,
+windows and clusters passes on the CPU. A table comes from the document's own
+`data` section (an OSM extract, a GeoJSON or CSV file, a GeoTIFF) or from the
+node's input. The document writes no `data` entry for its input; it names the
+tables the input provides.
 
 Each feature of an OpenStreetMap layer the node hands on has its OpenStreetMap
 id in `osm_id`, and a building's parts share its `building_id`.
+
+Its numeric tags are numbers: the lengths `height`, `min_height`,
+`building:height`, `roof:height`, `width`, `est_width`, `maxheight`,
+`maxwidth`, `maxlength`, `ele` and `depth`, in metres; the speeds `maxspeed`,
+`maxspeed:forward`, `maxspeed:backward` and `minspeed`, in km/h; and the
+counts `building:levels`, `building:min_level`, `building:levels:underground`,
+`roof:levels`, `levels`, `min_level`, `lanes`, `lanes:forward`,
+`lanes:backward`, `lanes:both_ways`, `layer`, `capacity`, `seats`, `beds`,
+`rooms` and `building:flats`. A value written with its unit is converted:
+`86 m` and `86 metres` are 86, `282 ft` is 85.95, `16'6"` is 5.03 and
+`30 mph` is 48.28; a speed with no unit is in km/h. Any other value, such as
+`7-7`, `4.0;11.6`, `tall`, `none` or a count written with a word beside its
+number (`4 floors`), is handed on with no value. A Discovery Catalog download
+of OpenStreetMap writes the same numbers. A Map Editor's rule such as
+`height > 100`, its expressions and a Python node read these tags as numbers.
+
+A building part with no height, none of `height`, `building:height`, `levels`
+and `building:levels` holding a number, is handed on with none: a Python node
+reads no value (NaN) in its `height`. Where an Autark node uses a height, such a part is 6 m
+tall above its base: a map draws it and colors it by that height, and a
+compute pass reads it. A plot shows the heights its table holds.
 
 ### Several views
 
@@ -1449,8 +1496,8 @@ interaction dot of its own, which links that view alone (see
 - A `GeoDataFrame` whose `metadata` names one of Autark's layer types loads as
   that layer: `gdf.metadata = {"layerType": "buildings"}` draws its rows as
   buildings, raised to their height. A building's height comes from `height`,
-  else `building:height`, else `building:levels` (3.4 m a level); one with none
-  of them stands 6 m high. The
+  else `building:height`, else 3.4 m a level of `levels`, else of
+  `building:levels`; one with none of them is 6 m tall above its base. The
   loader of an OpenStreetMap layer downloaded from the Discovery Catalog sets it.
 - Coordinates are read in the CRS the frame declares. A frame with no CRS is
   read as EPSG:4326 when its coordinates look like longitude and latitude, and
@@ -1460,7 +1507,9 @@ interaction dot of its own, which links that view alone (see
 - A raster is a table too: a `rasterio` dataset from a Python node, or a raster
   another Autark node hands on. A map draws it as a raster layer coloured by one
   band, `{"dataRef": "input_0", "getFnv": "band_1"}`; its bands are `band_1`,
-  `band_2`, and so on. Every cell with a value is drawn opaque, 0 included, in
+  `band_2`, and so on. A `getFnv` that names none of the bands of a raster of
+  several fails the node, and a raster of one band draws it whatever `getFnv`
+  names. Every cell with a value is drawn opaque, 0 included, in
   the layerRef's `colorMapInterpolator` (reds without one) from the band's lowest
   value to its highest, and a cell with no value is clear: the raster's nodata,
   or 0 when the GeoTIFF names no nodata. The layers listed after a raster in
@@ -1585,7 +1634,9 @@ pressing play says why.
 
 ### Compute passes
 
-Each entry of `compute` is a pass, run in order on the GPU. A GPGPU pass, one
+Each entry of `compute` is a pass, run in order: a GPGPU pass and a render
+pass on the GPU, a windows pass and a clusters pass on the CPU. A pass of
+another `type` fails the node, which names the type. A GPGPU pass, one
 with no `type`, runs a WGSL function over every feature of the table its
 `dataRef` names, and writes the result to each feature as `compute.<column>`,
 under the names `outputColumnName` or `outputColumns` give. A pass writes into
@@ -1610,6 +1661,12 @@ that table, unless it names a new one:
   beside `compute.twice`.
 - A compute step with a `data` section of its own runs its passes on the tables
   it loads, and on its input's tables when a pass names one.
+- A document that draws a map or a plot and also loads data or runs passes
+  hands on what a compute step would: its input's tables when a view or a
+  pass names one, then the tables it loads, then each new table. A Python node
+  after example 38's node reads the Loop's roads with their minutes of sun as
+  `loop = [!! input_0:loop_road_sun !!]`. A document that only draws its input
+  hands that input on as it came.
 - A pass over a table with no rows does not run, and the table it would write
   has no rows.
 - A pass the GPU cannot run fails the node, and the node's error names the
@@ -1657,6 +1714,82 @@ sky it sees through the buildings:
   windows, unless `layerType` says another. A pick on it names the rows of the
   viewpoints' table; a pick on windows names the windows.
 - A compute step hands the new table on after the tables it holds.
+
+### Windows and clusters passes
+
+A pass with `"type": "windows"` places the windows of a buildings table in a
+new table, `outputTableName`, one point a window: `floors` rows of them up
+each facade, where a render pass's `building-windows` viewpoints stand. A pass
+with `"type": "clusters"` writes each row's cluster in
+`compute.<outputColumnName>`: rows whose geometries touch, directly or through
+other rows, share one, numbered from 0 in the order of each cluster's first
+row, and a row without a geometry is in none. It writes into its table, or
+into a new one, `outputTableName`.
+
+```json
+{
+  "compute": [
+    {"type": "windows", "dataRef": "table_osm_buildings", "floors": 4, "outputTableName": "windows"},
+    {"type": "clusters", "dataRef": "table_osm_buildings", "outputColumnName": "block", "outputTableName": "blocks"}
+  ],
+  "map": {"layerRefs": [{"dataRef": "blocks", "getFnv": "compute.block"}, {"dataRef": "windows"}]}
+}
+```
+
+- Each window's properties name its building, `sourceFeatureIndex`, its floor,
+  `floorIndex`, from 0 at the bottom, and its size. The windows table is drawn
+  and handed on as points, unless `layerType` says another.
+- A compute step hands both tables on after the tables it holds, the cluster
+  ids also as a column of their own, `block` beside `compute.block`.
+
+### writeBack
+
+A pass of any type with `"writeBack": true` also keeps the table it writes in
+autk-db, the node's database: its `outputTableName`, or its own table in
+place. The sources that run after compute read it there (see
+[after](#after)). Later passes, the map and the plot read the pass's table as
+they do without it.
+
+- autk-db keeps every row of it, each coordinate on the workspace's precision
+  grid.
+- `writeBack` on a pass over a raster, or on a new table whose layer type is
+  not known, fails the node: set the pass's `layerType`.
+- A table a pass changes in place and keeps in autk-db is read row by row,
+  `osmElements` or not (see [OpenStreetMap elements](#openstreetmap-elements)).
+
+### after
+
+A source with `"after": "compute"` runs once every pass has run, after the
+sources without it, in the order of `data`, wherever it stands there. It reads
+what the passes kept in autk-db with `writeBack`: a join or a heatmap of a
+pass's table, a SQL query of it, an update or a drop. Every type of source
+takes it. This one counts the buildings of each block a clusters pass finds:
+
+```json
+{
+  "data": [
+    {"type": "sql", "outputTableName": "block_sizes", "after": "compute",
+     "query": "SELECT CAST(properties->'compute'->>'block' AS INTEGER) AS block, CAST(count(*) AS INTEGER) AS buildings FROM blocks GROUP BY block ORDER BY buildings DESC LIMIT 10"}
+  ],
+  "compute": [{"type": "clusters", "dataRef": "table_osm_buildings", "outputColumnName": "block",
+               "outputTableName": "blocks", "writeBack": true}],
+  "plot": {"dataRef": "block_sizes", "mark": "bar", "axis": ["block", "buildings"]}
+}
+```
+
+- A source after compute that reads a table a pass writes without `writeBack`
+  fails the node before anything runs, and the error names the source and the
+  pass. So does an `after` other than `"compute"`.
+- A join's or a heatmap's `groupBy` reads a pass's column by its path,
+  `{"column": "compute.block", "aggregateFn": "max"}`, and a layer's `getFnv`
+  names what a join wrote of it, `"sjoin.max.blocks.compute.block"`.
+- A node whose document has no compute pass runs its sources after compute
+  after its other sources, and hands their tables on with the others.
+- A compute step hands on the tables its sources after compute make after the
+  tables it holds and the tables its passes write, a table one of them changes
+  as it left it, and none they drop.
+- A node that draws a map or a plot hands them on in the same order, as a
+  compute step does.
 
 ### Layer titles and colors
 
@@ -1706,6 +1839,65 @@ chip as its color, which its tag under **Scenarios** above the spec drags in
 The chip writes the box's color, and for an input from no box a gray of its
 own. A box recolored gives the layer its new color on the map's next run.
 
+### Layer types, widths, legend, hidden and picked features
+
+```json
+{
+  "map": {
+    "layerRefs": [
+      {"dataRef": "segments", "layerType": "roads", "widthBy": "lane_width"},
+      {"dataRef": "parcels", "getFnv": "value", "legend": true, "skippedComps": [2, 5]},
+      {"dataRef": "sites", "isPick": true, "pickedComps": [0, 4]},
+      {"dataRef": "table_osm_buildings", "buildingsZeroHeight": true}
+    ]
+  }
+}
+```
+
+- `layerType` draws a layer's table as another type of its kind of geometry:
+  polygons as `polygons`, `surface`, `parks`, `water` or `buildings`, lines as
+  `polylines` or `roads`. A type of another kind of geometry fails the node.
+  The map draws `surface`, `parks`, `water` and `roads` layers below its other
+  layers.
+- `widthBy` is the path to each line's own width in a roads layer, in the
+  map's planar units. A line without a positive number there keeps its kind of
+  road's width. A layer sets `width` or `widthBy`, not both, and a polylines
+  layer takes no `widthBy`: draw its table as roads.
+- `"legend": true` puts the layer's color scale in the map's legend, which
+  otherwise shows the last layer colored by value. One layer of a map sets it,
+  a layer colored by value or a raster, on a map that shows its legend. A Map
+  Editor node's edit that draws the map again keeps the legend on the layer it
+  showed.
+- `skippedComps` hides features of the layer, by their positions among those
+  it draws, from 0. A Map Editor node's drawing tools hide the feature they
+  draw too, and show it again when they stop, on a layer of points as on any
+  other.
+- `pickedComps` draws features as picked as the map opens, in the map's
+  highlight color, by their positions; the layer sets `"isPick": true`. They
+  stay lit until a selection reaches the node, from its input or over an
+  interaction edge, which takes their place, and are lit again when it
+  clears. They reach no other node.
+- `"buildingsZeroHeight": true` draws each part of a buildings layer that has
+  no height at a random 3 to 7 floors, 10.2 to 23.8 m, drawn again at each
+  run, and the node's compute passes read no height for such a part, so a pass
+  that requires one leaves it out. Without it, a part with no height is drawn
+  6 m tall, and a pass reads it so.
+
+### Map styles, colors and controls
+
+A map's `style` names one of autk-map's styles, such as `light`, or gives the
+nine colors of a style of its own, each `#rrggbb`: `background`, `surface`,
+`parks`, `water`, `roads`, `buildings`, `points`, `polylines` and `polygons`.
+`highlightColor` colors the features the map draws as picked, `#5dade2` by
+default, and the drawing tools of a Map Editor node that edits it;
+`invalidValueColor` colors the features whose value the map cannot color,
+`#ffffff` by default. Each map has its own. `"showUi": false` hides the map's
+menu of layers and its legend.
+
+```json
+{"map": {"style": "light", "highlightColor": "#ff7f0e", "showUi": false, "layerRefs": [{"dataRef": "input_0"}]}}
+```
+
 ### Plot colors, ticks, titles and selection
 
 A plot colors its marks by the column `color` names. Numbers take
@@ -1749,12 +1941,25 @@ clockwise from north, which is then up on the screen. A map whose `pitch` is
 90, which would set its eye on the ground, does not run, and the node's error
 says why. The eye stays as far from that point as the
 framing put it, unless `zoom` sets the distance: `10000 / 2^(zoom - 10)` of the
-map's planar units, half as far for each step up.
+map's planar units, half as far for each step up. `center`,
+`[longitude, latitude]` in degrees, is the point the view looks at, in place
+of the middle of the framed layers.
+
+`motion` is a tour the map plays once it opens, from the view the rest of the
+camera sets: steps one after another, each easing in and out over its
+`seconds`. A `zoom` step's `amount` is in zoom levels, a `pitch` step's in
+degrees of tilt, with a `pan` in planar units that moves the point the view
+turns around toward the top of the view, and a `bearing` or `roll` step's in
+degrees, clockwise. A drag, a scroll or a key on the map stops the tour, where
+it is.
 
 ```json
 {
   "map": {
-    "camera": {"pitch": 50, "bearing": 30},
+    "camera": {
+      "center": [-87.6298, 41.8781], "zoom": 15, "pitch": 50, "bearing": 30,
+      "motion": [{"type": "bearing", "amount": 90, "seconds": 4}]
+    },
     "layerRefs": [
       {"dataRef": "table_osm_buildings", "getFnv": "height", "getFnvType": "quantitative"}
     ]
@@ -1762,9 +1967,32 @@ map's planar units, half as far for each step up.
 }
 ```
 
-Pressing R on the map frames it and turns it by its camera again. A map a Map
-Editor node feeds keeps the view you zoomed or panned to when an edit draws it
-again, and a change to its `camera` shows that camera's view.
+Pressing R on the map frames it, turns it by its camera and plays its tour
+again. A map a Map Editor node feeds keeps the view you zoomed or panned to
+when an edit draws it again, and plays no tour; a change to its `camera`, its
+center or its tour shows that camera's view and plays its tour.
+
+### Terrain
+
+A map's `terrain` raises its ground to the heights of a raster's band:
+`{"dataRef": "elevation", "band": "band_1"}`, a raster of the map's workspace,
+a `geotiff` the document loads or a raster of the node's input, its band by
+id or label, the first band without one. The map's flat layers are draped
+over the ground, its buildings stand on it, and a cell with no value lies at
+height 0. The map opens fitted to the raster and turned by its `camera`;
+pressing R fits and turns it again. A band that names none of a raster's
+several bands fails the node, as a raster layer's `getFnv` does.
+
+```json
+{
+  "data": [{"type": "geotiff", "outputTableName": "elevation", "geotiffFileUrl": "data/dem.tif"}],
+  "map": {
+    "terrain": {"dataRef": "elevation"},
+    "camera": {"pitch": 60, "bearing": 30},
+    "layerRefs": [{"dataRef": "input_0"}, {"dataRef": "elevation", "colorMapInterpolator": "interpolateYlGn"}]
+  }
+}
+```
 
 ### GeoTIFF rasters
 
@@ -1826,13 +2054,15 @@ Each `groupBy` entry is a band, labelled `<aggregateFn>_<table>`:
   `{"column": "db", "aggregateFn": "avg"}`, over the rows that have a value
   in it.
 
-An entry with `"normalize": true` rescales its band from 0 at its least cell to
-1 at its greatest, and its label ends in `_norm`. Bands of one aggregate over
-different columns each name their column too, such as `avg_<table>_db` and
-`avg_<table>_peak`, so every label names one band. A cell no row reaches holds
-0 in every band, and so does a `sum`, `avg`, `min` or `max` band in a cell
-whose rows have no value in its column. A heatmap without `groupBy` has one
-band, `count`.
+Every entry names its `aggregateFn`: an entry without one fails the node, and
+the error names the heatmap and the column. An entry with `"normalize": true`
+rescales its band from 0 at its least cell to 1 at its greatest, and its label
+ends in `_norm`. Bands of one aggregate over different columns each name their
+column too, such as `avg_<table>_db` and `avg_<table>_peak`, so every label
+names one band. A cell no row reaches holds 0 in every band, and so does a
+`sum`, `avg`, `min` or `max` band in a cell whose rows have no value in its
+column. A heatmap without `groupBy` has one band, `count_<table>`, which counts
+the rows near each cell.
 
 The table a heatmap bins is one its `data` section loads before it, into the
 heatmap's own workspace, or a table of the node's input, such as the points a
@@ -1940,10 +2170,13 @@ A map layer or a plot with `"osmElements": true` reads an OpenStreetMap layer
 table the document's own `osm` source loads as one feature per OpenStreetMap
 element it was built from, each with the element's tags, `osm_type` and
 `osm_id` (and `building_id` in a buildings table) as its properties. A table
-of the node's input, a surface and a table an `update` changed are read row by
-row. Every view of the node that reads one table writes `osmElements` alike: a
+of the node's input, a surface, a table an `update` changed and a table a
+compute pass changes in place and keeps in autk-db (`writeBack`) are read row
+by row. Every view of the node that reads one table writes `osmElements` alike: a
 document where one view of a table writes it and another does not, does not
-run, and the node's error names the table.
+run, and the node's error names the table. Nor does a document whose view
+reads a table as elements while a compute pass changes that table in place
+without `writeBack`: the node's error names the table and the pass.
 
 ### The starter document
 
@@ -2184,10 +2417,10 @@ A dataflow file opened with **File → Load dataflow** is a new dataflow: saving
 your dataflows under its own name, and the dataflow that was open stays as it was.
 
 Tags and data types come from the dataflow and from what it uses: the libraries its code
-imports and the files it names, the grammar each node draws with, the type of each model
-it runs (a segmentation model gives Computer vision and Imagery), the format of each
-dataset (a GeoTIFF gives Rasters), and the tags and data types its packages, models and
-datasets declare in their manifests' `dataflowCategories` (SCOUT's give SCOUT). A package
+imports and the files it names, the grammar each node draws with, the format of each
+dataset (a GeoTIFF gives Rasters) and the kind of each collection, and the tags and data
+types its packages, models and datasets declare in their manifests' `dataflowCategories`
+(SCOUT's give SCOUT, a segmentation model Computer vision and Imagery). A package, model
 or dataset of your own can declare them too ([Authoring nodes](AUTHORING-NODES.md#tags-and-data-types),
 [Data Catalog](DATA-CATALOG.md#7-the-manifest)), and a new name adds an entry to the
 rail. They follow the dataflow's changes within a few seconds, in every tab that has it

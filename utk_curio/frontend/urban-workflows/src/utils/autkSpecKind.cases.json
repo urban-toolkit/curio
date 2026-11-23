@@ -1,175 +1,245 @@
 {
-  "description": "What kind of step an Autark document describes, from the text an Autark node holds. Read by src/tests/utils/autkSpecKindCases.test.ts (classifyAutkSpecString) and by backend/tests/test_runs/test_autk_spec_kind.py (execution/autk_spec_kind.classify_autk_spec_string, and run_plan.node_role: a run on the server runs a data node, forwards a render node and leaves the rest to the browser).",
+  "description": "What kind of step an Autark document describes, from the text an Autark node holds, and the role a run on the server gives its node. Read by src/tests/utils/autkSpecKindCases.test.ts (classifyAutkSpecString, and isPassThroughNode: a node that only draws its input passes it through) and by backend/tests/test_runs/test_autk_spec_kind.py (execution/autk_spec_kind.classify_autk_spec_string, and run_plan.node_role: a run on the server runs a node whose document only loads data, forwards one that only draws its input, a map or a plot with no data source and no pass, and leaves the rest to the browser, a node that draws and also loads or computes among them).",
   "cases": [
     {
       "name": "an OSM extract only loads",
       "spec": "{\"data\": [{\"type\": \"osm\", \"pbfFileUrl\": \"docs/examples/data/back_bay.osm.pbf\", \"outputTableName\": \"table_osm\", \"autoLoadLayers\": {\"layers\": [\"roads\", \"buildings\"]}}]}",
-      "kind": "data"
+      "kind": "data",
+      "role": "run"
     },
     {
       "name": "several sources only load",
       "spec": "{\"data\": [{\"type\": \"csv\", \"csvFileUrl\": \"a.csv\", \"outputTableName\": \"a\"}, {\"type\": \"join\", \"dataRef\": \"a\"}]}",
-      "kind": "data"
+      "kind": "data",
+      "role": "run"
     },
     {
       "name": "workspaces set where the sources load, and describe no step of their own",
       "spec": "{\"workspaces\": [{\"coordinateFormat\": \"EPSG:3857\", \"precisionGrid\": 1}], \"data\": [{\"type\": \"sql\", \"outputTableName\": \"a\", \"query\": \"SELECT 1 AS a\"}]}",
-      "kind": "data"
+      "kind": "data",
+      "role": "run"
     },
     {
       "name": "workspaces alone describe no step",
       "spec": "{\"workspaces\": [{\"coordinateFormat\": \"EPSG:3857\", \"precisionGrid\": 1}]}",
-      "kind": "unknown"
+      "kind": "unknown",
+      "role": "browser"
     },
     {
       "name": "a key no family names changes nothing",
       "spec": "{\"data\": [{\"type\": \"osm\"}], \"title\": \"Loop\"}",
-      "kind": "data"
+      "kind": "data",
+      "role": "run"
     },
     {
       "name": "an empty data section loads nothing, so the node reads its input",
       "spec": "{\"data\": []}",
-      "kind": "unknown"
+      "kind": "unknown",
+      "role": "browser"
     },
     {
       "name": "a data section that is not a list loads nothing",
       "spec": "{\"data\": {\"type\": \"osm\"}}",
-      "kind": "unknown"
+      "kind": "unknown",
+      "role": "browser"
     },
     {
-      "name": "a map draws what the node loads",
+      "name": "a map draws what the node loads, so the node makes tables of its own",
       "spec": "{\"data\": [{\"type\": \"osm\"}], \"map\": {\"layers\": [{\"dataRef\": \"table_osm_roads\"}]}}",
-      "kind": "render"
+      "kind": "render",
+      "role": "browser"
     },
     {
-      "name": "a plot draws what the node loads",
+      "name": "a plot draws what the node loads, so the node makes tables of its own",
       "spec": "{\"data\": [{\"type\": \"osm\"}], \"plot\": {\"dataRef\": \"table_osm_buildings\"}}",
-      "kind": "render"
+      "kind": "render",
+      "role": "browser"
     },
     {
       "name": "a layout arranges views and draws none, so a data section with one only loads",
       "spec": "{\"data\": [{\"type\": \"osm\"}], \"layout\": {\"type\": \"horizontal\"}}",
-      "kind": "data"
+      "kind": "data",
+      "role": "run"
     },
     {
       "name": "links join views and draw none, so a data section with them only loads",
       "spec": "{\"data\": [{\"type\": \"osm\"}], \"links\": [{\"source\": \"heights\", \"target\": \"city\"}]}",
-      "kind": "data"
+      "kind": "data",
+      "role": "run"
     },
     {
       "name": "a layout alone is no step",
       "spec": "{\"layout\": {\"type\": \"grid\", \"columns\": 2}}",
-      "kind": "unknown"
+      "kind": "unknown",
+      "role": "browser"
     },
     {
-      "name": "a map written as an empty list is still named",
+      "name": "a map written as an empty list is still named, beside a data section that loads",
       "spec": "{\"data\": [{\"type\": \"osm\"}], \"map\": []}",
-      "kind": "render"
+      "kind": "render",
+      "role": "browser"
     },
     {
-      "name": "a map written as false is still named",
+      "name": "a map written as false is still named, beside a data section that loads",
       "spec": "{\"data\": [{\"type\": \"osm\"}], \"map\": false}",
-      "kind": "render"
+      "kind": "render",
+      "role": "browser"
     },
     {
       "name": "a map written as null names no map",
       "spec": "{\"data\": [{\"type\": \"osm\"}], \"map\": null}",
-      "kind": "data"
+      "kind": "data",
+      "role": "run"
     },
     {
       "name": "a compute step over what the node loads computes",
       "spec": "{\"data\": [{\"type\": \"osm\"}], \"compute\": [{\"dataRef\": \"table_osm_roads\"}]}",
-      "kind": "compute"
+      "kind": "compute",
+      "role": "browser"
     },
     {
       "name": "an empty compute list computes nothing",
       "spec": "{\"data\": [{\"type\": \"osm\"}], \"compute\": []}",
-      "kind": "data"
+      "kind": "data",
+      "role": "run"
     },
     {
       "name": "a compute step alone computes",
       "spec": "{\"compute\": [{\"dataRef\": \"input_0\"}]}",
-      "kind": "compute"
+      "kind": "compute",
+      "role": "browser"
     },
     {
       "name": "an empty compute list alone is nothing",
       "spec": "{\"compute\": []}",
-      "kind": "unknown"
+      "kind": "unknown",
+      "role": "browser"
     },
     {
       "name": "an empty document",
       "spec": "{}",
-      "kind": "unknown"
+      "kind": "unknown",
+      "role": "browser"
     },
     {
       "name": "an empty editor",
       "spec": "",
-      "kind": "unknown"
+      "kind": "unknown",
+      "role": "browser"
     },
     {
       "name": "an editor holding only blanks",
       "spec": "  \n\t ",
-      "kind": "unknown"
+      "kind": "unknown",
+      "role": "browser"
     },
     {
       "name": "a document cut short",
       "spec": "{\"data\": [{\"type\": \"osm\"",
-      "kind": "unknown"
+      "kind": "unknown",
+      "role": "browser"
     },
     {
       "name": "a reference outside quotes holds its place until it is resolved, so the document still loads",
       "spec": "{\"data\": [{\"type\": \"csv\", \"csvFileUrl\": \"a.csv\", \"outputTableName\": [!! name !!]}]}",
-      "kind": "data"
+      "kind": "data",
+      "role": "run"
     },
     {
       "name": "a map whose layer takes its box's color from a chip standing on its own still draws",
       "spec": "{\"map\": {\"layerRefs\": [{\"dataRef\": \"[!! input_1 !!]\", \"width\": 80, \"color\": [!! scenario input_1 !!]}]}}",
-      "kind": "render"
+      "kind": "render",
+      "role": "forward"
     },
     {
       "name": "a plot whose sort and scale are chips standing on their own still draws",
       "spec": "{\"plot\": {\"dataRef\": \"[!! input_0 !!]\", \"sort\": [!! scenario order !!], \"scale\": [!! scenario colors !!]}}",
-      "kind": "render"
+      "kind": "render",
+      "role": "forward"
     },
     {
       "name": "a compute step whose shader is a widget standing on its own still computes",
       "spec": "{\"compute\": [{\"dataRef\": \"[!! input_0 !!]\", \"shader\": [!! shader !!]}]}",
-      "kind": "compute"
+      "kind": "compute",
+      "role": "browser"
     },
     {
-      "name": "a map that is itself a chip is still named",
+      "name": "a map that is itself a chip is still named, beside a data section that loads",
       "spec": "{\"data\": [{\"type\": \"osm\"}], \"map\": [!! layout !!]}",
-      "kind": "render"
+      "kind": "render",
+      "role": "browser"
     },
     {
       "name": "a chip cut short is no reference, and the document is no JSON",
       "spec": "{\"map\": {\"layerRefs\": [{\"color\": [!! scenario input_1 }]}}",
-      "kind": "unknown"
+      "kind": "unknown",
+      "role": "browser"
     },
     {
       "name": "a reference inside quotes leaves the document JSON",
       "spec": "{\"data\": [{\"type\": \"osm\", \"pbfFileUrl\": \"[!! extract !!]\", \"outputTableName\": \"table_osm\"}]}",
-      "kind": "data"
+      "kind": "data",
+      "role": "run"
     },
     {
       "name": "NaN is not JSON",
       "spec": "{\"data\": [{\"type\": \"osm\"}], \"scale\": NaN}",
-      "kind": "unknown"
+      "kind": "unknown",
+      "role": "browser"
     },
     {
       "name": "a JSON list is not a document",
       "spec": "[{\"data\": [{\"type\": \"osm\"}]}]",
-      "kind": "unknown"
+      "kind": "unknown",
+      "role": "browser"
     },
     {
       "name": "JSON null is not a document",
       "spec": "null",
-      "kind": "unknown"
+      "kind": "unknown",
+      "role": "browser"
     },
     {
       "name": "a JSON string is not a document",
       "spec": "\"data\"",
-      "kind": "unknown"
+      "kind": "unknown",
+      "role": "browser"
+    },
+    {
+      "name": "a map that runs a render pass over its input draws and computes, as example 35's sky map does",
+      "spec": "{\"compute\": [{\"type\": \"render\", \"outputTableName\": \"street_sky\", \"viewpoints\": {\"dataRef\": \"wall_st_roads\"}, \"layers\": [{\"dataRef\": \"wall_st_buildings\", \"type\": \"buildings\"}], \"aggregation\": {\"type\": \"classes\"}}], \"map\": {\"layerRefs\": [{\"dataRef\": \"street_sky\"}]}}",
+      "kind": "render",
+      "role": "browser"
+    },
+    {
+      "name": "a node that loads, runs a pass and draws two maps and two plots, as example 38's does",
+      "spec": "{\"layout\": {\"type\": \"grid\", \"columns\": 2}, \"data\": [{\"type\": \"osm\", \"outputTableName\": \"loop\", \"workspace\": \"chicago\"}], \"compute\": [{\"dataRef\": \"loop_roads\", \"outputTableName\": \"loop_road_sun\", \"workspace\": \"chicago\", \"outputColumnName\": \"sunlight\"}], \"map\": [{\"id\": \"loop\", \"workspace\": \"chicago\", \"layerRefs\": [{\"dataRef\": \"loop_road_sun\"}]}], \"plot\": [{\"id\": \"loop_sun\", \"workspace\": \"chicago\", \"dataRef\": \"loop_road_sun\"}]}",
+      "kind": "render",
+      "role": "browser"
+    },
+    {
+      "name": "a plot of a table a source after compute makes draws and loads",
+      "spec": "{\"data\": [{\"type\": \"sql\", \"after\": \"compute\", \"outputTableName\": \"busy\", \"query\": \"SELECT * FROM input_0\"}], \"compute\": [{\"dataRef\": \"input_0\", \"outputColumnName\": \"twice\", \"writeBack\": true}], \"plot\": {\"dataRef\": \"busy\"}}",
+      "kind": "render",
+      "role": "browser"
+    },
+    {
+      "name": "a map beside an empty data section only draws its input",
+      "spec": "{\"data\": [], \"map\": {\"layerRefs\": [{\"dataRef\": \"input_0\"}]}}",
+      "kind": "render",
+      "role": "forward"
+    },
+    {
+      "name": "a map beside an empty compute list only draws its input",
+      "spec": "{\"compute\": [], \"map\": {\"layerRefs\": [{\"dataRef\": \"input_0\"}]}}",
+      "kind": "render",
+      "role": "forward"
+    },
+    {
+      "name": "a map and a plot of the input, arranged and linked, in a workspace of their own, only draw their input",
+      "spec": "{\"workspaces\": [{\"name\": \"loop\", \"coordinateFormat\": \"EPSG:3857\"}], \"layout\": {\"type\": \"horizontal\"}, \"map\": {\"id\": \"city\", \"workspace\": \"loop\", \"layerRefs\": [{\"dataRef\": \"input_0\"}]}, \"plot\": {\"id\": \"values\", \"workspace\": \"loop\", \"dataRef\": \"input_0\"}, \"links\": [{\"source\": \"values\", \"target\": \"city\"}]}",
+      "kind": "render",
+      "role": "forward"
     }
   ]
 }

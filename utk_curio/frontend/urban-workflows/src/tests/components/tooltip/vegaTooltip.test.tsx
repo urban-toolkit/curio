@@ -242,14 +242,15 @@ describe("every Vega view Curio builds uses it", () => {
     render(
       <LinesOverTime
         rows={[
-          { t: 0, line: "gemma4 (Curio)", tokens: 120 },
-          { t: 3600000, line: "gemma4 (Curio)", tokens: 0 },
+          { t: 0, line: "gemma4", averageMs: 1200 },
+          { t: 3600000, line: "gemma4", averageMs: 900 },
         ]}
         timeField="t"
-        valueField="tokens"
+        valueField="averageMs"
         seriesField="line"
-        valueTitle="input tokens"
-        label="Input tokens per hour by model, last 7 days"
+        valueTitle="average response time"
+        durations
+        label="Average response time by model, last 7 days"
       />,
     );
     expectCuriosHandler("MonitorCharts lines");

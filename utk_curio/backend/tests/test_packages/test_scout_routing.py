@@ -121,12 +121,13 @@ LOOP_WEIGHTS = {"rain-first": (0.85834, 0.01657), "wind-first": (0.01657, 0.8583
 
 #: SCOUT's weather routing example as the shipped dataflow runs it, on the
 #: roads its Autark node loads (OpenStreetMap today, not SCOUT's snapshot, so
-#: close to SCOUT's routes but not the same), from the weather step SCOUT read:
-#: per route, as ``LOOP_ROUTES``. As in SCOUT's, the weather-aware route trades
-#: time and wind for less rain.
+#: close to SCOUT's routes but not the same), each road's ``maxspeed`` a number
+#: in km/h as the node hands it on (``30 mph`` as 48.28), from the weather step
+#: SCOUT read: per route, as ``LOOP_ROUTES``. As in SCOUT's, the weather-aware
+#: route trades time and wind for less rain.
 EXAMPLE = [
-    ("fastest-route", 0, 346, 7.288633501866914, 10.073609824217908, 2608.040680408478, 599.0779349505901),
-    ("weighted-route", 1, 277, 7.632773950176487, 12.336045428914524, 2147.605302333832, 732.5747601687908),
+    ("fastest-route", 0, 346, 7.288633501866914, 10.073935055026102, 2608.043447971344, 599.0971246138215),
+    ("weighted-route", 1, 277, 7.632773950176487, 12.335918089865915, 2147.60422039032, 732.5672506690025),
 ]
 #: The example's two scenarios, each keeping one of the routes, SCOUT's C and
 #: D, in SCOUT's colors: ``(name, color, route)``.

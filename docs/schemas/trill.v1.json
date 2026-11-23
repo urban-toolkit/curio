@@ -260,7 +260,7 @@
         },
         "content": {
           "type": "string",
-          "description": "The node's payload: Python or JavaScript source, or a grammar document (Vega-Lite, Autark), depending on the template's 'engine' and 'editor'. A curio.builtin/note node holds its text here, in simple markdown. Absent on the other presentation-only templates - across the committed examples, 'editor: none' in the manifest and an absent-or-empty content correspond exactly."
+          "description": "The node's payload: Python or JavaScript source, or a grammar document (Vega-Lite, Autark), depending on the template's 'engine' and 'editor'. A curio.builtin/note node holds its text here, in simple markdown. Absent on a node whose template has neither code nor a grammar ('hasCode' and 'hasGrammar' false) and is no note, such as a Data Pool or a Simple View, which show their input: across the committed examples, such a template and an absent-or-empty content correspond exactly."
         },
         "in": { "$ref": "#/$defs/portType" },
         "out": { "$ref": "#/$defs/portType" },
@@ -359,7 +359,19 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "choices": { "type": "array", "items": { "type": "string" }, "description": "A choice, checkbox group or multi-select widget's options." },
+            "choices": {
+              "type": ["array", "object"],
+              "items": { "type": "string" },
+              "minProperties": 1,
+              "maxProperties": 32,
+              "additionalProperties": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._@-]{0,199}$" },
+              "description": "A choice, checkbox group or multi-select widget's options, a list. For a dataset widget an input picks (pickedBy), an object: each value that input may hold, and the Data Catalog id of the dataset that value picks."
+            },
+            "pickedBy": {
+              "type": "string",
+              "pattern": "^input_\\d{1,3}(\\..+)?$",
+              "description": "A dataset widget's input that picks its dataset among its choices: input_0, the value on circle 0, or input_0.camera, the value under the key camera of the dict on it. A run reads that value before it writes the node's code, and writes the dataset it picks."
+            },
             "display": { "type": "string", "enum": ["dropdown", "radio"], "description": "How a choice widget is drawn; a dropdown when absent." },
             "min": { "type": "number", "description": "A number or slider widget's smallest value. A slider needs it." },
             "max": { "type": "number", "description": "A number or slider widget's largest value. A slider needs it." },

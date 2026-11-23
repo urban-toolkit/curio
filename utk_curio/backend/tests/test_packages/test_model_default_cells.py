@@ -153,14 +153,19 @@ def test_an_added_ddrnet_opens_with_its_own_source(tmp_curio):
     """Added (its copy holds no weights), DDRNet23-Slim's node opens with its
     template's source, the starters the canvas fills a fresh node from list
     under the file's name: the code that loads it by id and segments every
-    class it names with the Segmentation package's function."""
+    class it names with the Segmentation package's function, since the
+    classes widget a new node starts with is empty."""
     from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
 
     install_package_from_directory("guest", DDRNET)
     starter = _starters("guest")[f"{DDRNET_ID}/image-segmentation@1"]
     assert (starter["name"], starter["code"]) == ("image-segmentation", DDRNET_SOURCE.read_text(encoding="utf-8"))
-    assert f'model = curio_load_model("{DDRNET_ID}")\nclasses = None' in starter["code"]
-    assert "return segment_images(input_0, model, curio_derived_file, classes=classes)" in starter["code"]
+    assert (
+        f'model = curio_load_model("{DDRNET_ID}")\n\n'
+        "return segment_images(input_0, model, curio_derived_file, classes=[!! classes !!])"
+    ) in starter["code"]
+    [template] = _manifest(DDRNET)["templates"]
+    assert [(widget["name"], widget["default"]) for widget in template["widgets"]] == [("classes", [])]
 
 
 def test_a_segmentation_template_with_no_source_opens_with_the_session_skeleton(tmp_curio):

@@ -50,13 +50,13 @@ Reads a collection's index, one row per file: where this node can open the file 
 
 Engines: python.
 
-Gives where to write a file derived from one file of a collection, as its row, with a collection row's columns for its kind and a `path` whose folder exists; the node writes the file.
+Gives where to write an image, a video or a recording derived from one file of a collection, of any kind, as its row, with a collection row's columns for its kind and a `path` whose folder exists; the node writes the file.
 
 - `dataset_id`: the collection's id, as a row of `curio_load_collection` holds it.
 - `file_id`: the file's id, as that row holds it.
 - `t_ms`: the time in the file it is taken at, in milliseconds; 0 for a photo.
-- `ext`: `jpg` for a video's frame (None), `mp4` for a video of it (H.264, `yuv420p`), `parquet` for a table of it, whose row links no media, `png` for an overlay, `wav` for a clip; any but a kind's first adds `.<ext>` to `file_id`.
-- `kind`: the kind of the file it comes from: `"video"`, `"audio"`, `"image"` or `"frame"`.
+- `ext`: the extension of what it derives, an image (`jpg`, `jpeg`, `png`, `webp`, `gif`, `bmp`, `tif` or `tiff`), a video (`mp4`, `mov`, `m4v`, `webm`, `mkv` or `avi`) or a recording (`wav`, `flac`, `mp3`, `ogg`, `opus`, `m4a`, `aiff` or `aif`), with an `mp4` written as H.264 in `yuv420p`, which a browser plays; None derives the file's kind's own: a video's frame (`jpg`), a recording's clip (`wav`), an image's or a frame's overlay (`png`). Any other adds `.<ext>` to `file_id`. A table is no derived file: the node returns it, and writes any other file it returns with `curio_output_file`.
+- `kind`: the kind of the file it comes from, as its row holds it: `"video"`, `"audio"`, `"image"`, `"frame"`, `"raster"` or `"file"`; a raster's or a file's `ext` is named.
 - `tag`: 1 to 32 lowercase letters and digits that tell two derived files of one file and time apart, such as the model that drew an overlay.
 
 ### curio_output_file(name)

@@ -29,7 +29,9 @@ The first test drives the example as it ships:
    one scenario in place, and its map is drawn.
 3. The chart: Twice as tall has the lowest mean sunlight and Two towers removed
    the highest, in the rows the Bars chart reads, and the chart draws every
-   scenario's colour.
+   scenario's colour. Each scenario's mean, how many of its roads get each
+   number of minutes and a digest of every road's minutes are recorded on the
+   test (``record_property``), which runs on other GPUs match road for road.
 4. The difference: each road's sunlight change, one row per road Baseline's
    Roads node hands on, below zero where the taller shadows reach it and zero
    elsewhere, in its ``sunlight`` and in its nested ``compute`` values, within
@@ -459,10 +461,9 @@ def _loaded_buildings(read: dict) -> dict:
 
 def _assert_parts_pack_a_box(fc: dict) -> None:
     """Every building part the data node hands on is a Polygon, and its outer
-    ring spans a box: the shadow step packs each part's
-    ``geometry.coordinates.0`` (``iterate: "batched"``), and a part handed on
-    as autk-db keeps a building, one GeometryCollection, would pack a box of
-    zero area."""
+    ring spans a box: Curio's loaders hand on each part of a building as a row
+    of its own, and Back Bay holds no part of several polygons. The shadow step
+    packs each part's ``geometry.coordinates.0`` (``iterate: "batched"``)."""
     flat = []
     for feature in fc["features"]:
         geometry = feature.get("geometry") or {}
@@ -559,7 +560,7 @@ def _assert_cards(page) -> None:
 
 
 def test_example_06_compares_its_three_scenarios_in_the_canvas(
-    app_frontend: "FrontendPage", current_server: str, page,
+    app_frontend: "FrontendPage", current_server: str, page, record_property,
 ):
     require_project_page()
     require_user_auth()
@@ -655,6 +656,17 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
     assert means["Twice as tall"] < means["Baseline"] < means["Two towers removed"], (
         f"mean road sunlight per scenario: {means}"
     )
+    # Each scenario's mean, how many roads get each number of minutes and a
+    # digest of every road's minutes, as its Roads node hands them on, so
+    # runs on other GPUs compare road for road.
+    from .test_autark_views_e2e import _minutes_counts, _minutes_digest
+
+    for scenario_id, roads_node in ((BASELINE, B_ROADS), (TWICE, T_ROADS), (TOWERS, E_ROADS)):
+        minutes = [row["sunlight"] for row in _rows(page, roads_node)]
+        key = scenario_id.removeprefix("s-")
+        record_property(f"{key}_mean_sun_minutes", round(means[NAMES[scenario_id]], 1))
+        record_property(f"{key}_roads_by_sun_minutes", _minutes_counts(minutes))
+        record_property(f"{key}_sun_minutes_sha256", _minutes_digest(minutes))
 
     # 4. The difference: each road's change, below zero where shadows grew, on
     # a scale centered on no change, one row per road Baseline's Roads node
@@ -673,15 +685,20 @@ def test_example_06_compares_its_three_scenarios_in_the_canvas(
     # in the same order, with the same columns, types, values and shapes
     # (roads_change, which the fixture of Compare's own output holds to it,
     # the order of its columns too: the sandbox's /get writes its JSON with the
-    # keys sorted, so a page cannot see that order). The node reads its roads
-    # from the two maps, which name the coordinate system Autark draws in; the
-    # Roads nodes read the same roads from the shadow steps, whose layers name
-    # none. So the node's coordinate system is held to Autark's, as the unit
-    # test holds it, and the rest of its layer to the rule's.
-    from utk_curio.backend.tests._support.scenario_changes import first_difference, roads_change
+    # keys sorted, so a page cannot see that order), each road's numeric tags
+    # kept as they came, where Compare took their differences (the unit test
+    # holds both). The node reads its roads from the two maps, which name the
+    # coordinate system Autark draws in; the Roads nodes read the same roads
+    # from the shadow steps, whose layers name none. So the node's coordinate
+    # system is held to Autark's, as the unit test holds it, and the rest of
+    # its layer to the rule's.
+    from utk_curio.backend.tests._support.scenario_changes import first_difference, numeric_tags, roads_change
     from utk_curio.sandbox.util.parsers import parseOutput
 
-    expected = parseOutput(roads_change(_layer_of(_stored(page, B_ROADS)), _layer_of(_stored(page, T_ROADS))))
+    before, after = _layer_of(_stored(page, B_ROADS)), _layer_of(_stored(page, T_ROADS))
+    tags = numeric_tags(before)
+    assert tags, f"Back Bay's roads carry no numeric tag: {list(before.columns)}"
+    expected = parseOutput(roads_change(before, after, kept=tags))
     assert written["data"].get("crs") == AUTARK_CRS, written["data"].get("crs")
     assert expected["data"].get("crs") in (None, AUTARK_CRS), expected["data"].get("crs")
 

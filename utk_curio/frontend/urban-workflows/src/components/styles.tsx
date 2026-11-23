@@ -58,7 +58,7 @@ import {
     widgetLoaderCode,
     type DatasetDragPayload,
 } from "../services/datasetCatalog";
-import { datasetWidgetBindings, datasetWidgetReadBy } from "../utils/widgets/datasetWidgets";
+import { datasetWidgetBindings, datasetWidgetReadBy, pickedDropRefusal } from "../utils/widgets/datasetWidgets";
 import { DatasetWidgetContext, type DatasetWidgetNode } from "./editing/widgets/datasetWidgetContext";
 import { hasFileDrag, useDataFileImport } from "./datasets/useDataFileImport";
 import { useAskTheOwner } from "./datasets/useAskTheOwner";
@@ -467,8 +467,21 @@ export const NodeContainer = ({
     // A dataset reaching this node, dropped as a Data Catalog card or as a
     // file it has just imported: it sets the dataset widget the node's code
     // reads, or, on a node with none, its loader goes into the code.
+    // A node whose Data an input picks (`options.pickedBy`) takes no drop:
+    // what that input holds says which dataset it loads, and a drop would
+    // say another. Refused with why, before a file is imported for it.
+    const pickedRefusalRef = useRef<() => string | null>(() => null);
+    pickedRefusalRef.current = () => {
+        const current = getNodes().find((node) => node.id === nodeId)?.data ?? data;
+        return pickedDropRefusal(current.widgets, code ?? current.code ?? current.defaultCode);
+    };
     const takeDatasetRef = useRef<(dataset: DatasetDragPayload) => void>(() => {});
     takeDatasetRef.current = (dataset: DatasetDragPayload) => {
+        const refused = pickedRefusalRef.current();
+        if (refused) {
+            showToast(refused, "warning");
+            return;
+        }
         // The node as it is now: an import may have taken a while.
         const current = getNodes().find((node) => node.id === nodeId)?.data ?? data;
         const live = code ?? current.code ?? current.defaultCode;
@@ -512,6 +525,11 @@ export const NodeContainer = ({
     // widget: imported and added to the dataflow, then taken as a card is.
     const takeFilesRef = useRef<(files: File[]) => void>(() => {});
     takeFilesRef.current = (files: File[]) => {
+        const refused = pickedRefusalRef.current();
+        if (refused) {
+            showToast(refused, "warning");
+            return;
+        }
         void importDataFile(files).then((dataset) => {
             if (dataset) takeDatasetRef.current(dataset);
         });

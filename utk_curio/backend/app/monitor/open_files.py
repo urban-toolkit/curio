@@ -8,7 +8,8 @@ it starts (:func:`start_sampler`, which ``server.py``'s ``serve()`` calls in the
 home process when it serves): its own count and limit (``common/open_files.py``'s
 ``in_use``), and the sandbox's, which its ``/monitor`` reply carries beside its
 memory. ``GET /api/monitor/open-files`` publishes every hour kept
-(:func:`snapshot`): timestamps and numbers only.
+(:func:`snapshot`): timestamps and numbers only, but for the versions of the
+deploys since the first sample (``usage.deploys``), which the chart marks.
 
 The samples are the monitor history ``open-files`` (``history.py``), one file
 every backend process writes, ``open-files.json`` in the monitor folder: each
@@ -43,6 +44,7 @@ from typing import Optional
 
 from utk_curio.backend.app.monitor import errors
 from utk_curio.backend.app.monitor import history as monitor_history
+from utk_curio.backend.app.monitor import usage as monitor_usage
 from utk_curio.common import backend_processes, open_files
 
 log = logging.getLogger(__name__)
@@ -128,18 +130,21 @@ def sample(*, wait_for_sandbox: float = 0) -> dict:
 
 def snapshot() -> dict:
     """The route's body: each hour's sample kept, oldest first, and what the
-    page reads them by. ``startedAt`` is when the oldest was taken."""
+    page reads them by. ``startedAt`` is when the oldest was taken, and
+    ``deploys`` each start of another version from then on (``usage.deploys``)."""
     now = _now()
     samples = [_shown(row) for row in HISTORY.rows(now=now) if isinstance(row.get("sampledAt"), str)]
     computed = now.strftime(monitor_history.STAMP)
+    started = samples[0]["at"] if samples else computed
     return {
         "computedAt": computed,
-        "startedAt": samples[0]["at"] if samples else computed,
+        "startedAt": started,
         "maxDays": HISTORY.max_days,
         "intervalSeconds": INTERVAL_SECONDS,
         "warnAbovePercent": round(WARN_ABOVE * 100),
         "clearBelowPercent": round(CLEAR_BELOW * 100),
         "samples": samples,
+        "deploys": [deploy for deploy in monitor_usage.deploys() if deploy["at"] >= started],
     }
 
 

@@ -169,8 +169,9 @@ let height = height_factor * bld_height[bi];
 ```
 
 For each road segment, for every daylight hour on the June solstice (`doy = 172`), the shader
-projects every building's footprint AABB along the sun direction by `shadow_len = height / tan(alt)`
-and checks whether the road segment intersects that shadow rectangle. If no building shades the
+projects every building's footprint AABB along the sun direction by `shadow_len = height / tan(alt)`,
+with every coordinate measured from the segment's first point, and checks whether the road segment
+intersects that shadow rectangle. If no building shades the
 segment for that hour, the segment earns 60 minutes of sunlight. Boston coordinates: `lat_rad = 0.7393`
 (≈ 42.36 °N), `lon_loc = -71.06`. A factor of 2 doubles `shadow_len`, so Twice as tall's shadows
 reach twice as far down-sun.

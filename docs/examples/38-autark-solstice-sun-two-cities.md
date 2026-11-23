@@ -19,7 +19,10 @@ flowchart LR
   N[two-cities-sun · autk-grammar<br/>data: Back Bay and the Loop, two workspaces<br/>compute: sun per road, one pass per area<br/>views: two maps, two linked histograms]
 ```
 
-The node has no input and hands nothing on: everything happens in its one document.
+The node has no input: everything happens in its one document. It hands on its 12 tables by name, each
+area's five layers, then `back_bay_road_sun` and `loop_road_sun`, each road with its `sunlight`
+minutes, so a Python node wired after it reads the Loop's roads with
+`loop = [!! input_0:loop_road_sun !!]`.
 
 ## Data
 
@@ -54,12 +57,14 @@ each keep a workspace of their own.
 
 ## Step 2: Each road's minutes of sun
 
-Each area has a compute pass of its own, in its workspace: example 07's shadow shader, run once per
-road. For each hour from 7:00 to 19:00 of day 172 of the year, June 21, it finds the sun's altitude and
-azimuth at the area's latitude and longitude, projects every building's footprint along the sun by its
-height, and counts 60 minutes for the hour when no building's shadow touches the road. Every building
-part casts a shadow: its height is its OSM `height`, else its `building:levels` at 3.4 m each, else
-6 m above its base. The Back Bay
+Each area has a compute pass of its own, in its workspace: a shadow shader run once per road, which
+measures every coordinate from the road's first point. For each hour from 7:00 to 19:00 of day 172 of
+the year, June 21, it finds the sun's altitude and azimuth at the area's latitude and longitude,
+projects the footprint of every polygon of every building part along the sun by the part's height, and
+counts 60 minutes for the hour when no building's shadow touches the road. Every building
+part casts a shadow: its height is its OSM `height`, else its `building:height`, else its `levels`
+at 3.4 m each, else its `building:levels` at 3.4 m each, else 6 m above its base. A road of several
+lines is read from its first point. The Back Bay
 pass writes example 06's latitude and longitude into the shader (`lat_rad = 0.7393`,
 `lon_loc = -71.06`), and the Loop pass example 07's (`lat_rad = 0.73027`, `lon_loc = -87.65`). Each
 pass writes its roads with their minutes of sun, from 0 to 780, as a new table of roads,
@@ -116,7 +121,7 @@ both legends read, 0 to 780 minutes. Brushing bars of a histogram lights the roa
 map alone, and picking a road selects its bar. Each map has its own menu, legend and R key, which
 reframes the map you clicked last.
 
-The Loop's streets get more sun. On June 21 its 2,120 roads get 244 minutes of sun on average, and Back
-Bay's 735 roads 205, about 39 minutes less. In both areas nearly every road spends an hour or more in a
-building's shadow: 96.2% of the Loop's roads get at least an hour less sun than its sunniest road, and
-94.8% of Back Bay's.
+The Loop's streets get more sun. On June 21 its 2,120 roads get 243 minutes of sun on average, and Back
+Bay's 735 roads 205, about 38 minutes less. In both areas nearly every road spends an hour or more in a
+building's shadow: 96.3% of the Loop's roads get at least an hour less sun than its sunniest road, and
+95.1% of Back Bay's.

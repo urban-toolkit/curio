@@ -3,8 +3,9 @@
 UTCI from raster + weather, UTCI Zonal Mean, Reproject census to EPSG:3395 and
 Project gt_65 column hold their settings and a call of a function of the
 package's modules: ``weather_utci``'s ``utci_grid``, and ``weather_census``'s
-``utci_zonal_mean``, ``reproject_census`` and ``gt65_column``. The three
-loaders hold the read of a Data Catalog dataset. Each template's source, its
+``utci_zonal_mean``, ``reproject_census`` and ``gt65_column``. Each of the
+three loaders is one read of a Data Catalog dataset, which gives what a read
+of the dataset's file with its own library gives. Each template's source, its
 references resolved as a run resolves them, is run as the sandbox runs it
 (``input_names.call_as_node``), with the package's modules staged as the
 sandbox stages a node's modules (the ``package_modules`` fixture), on inputs
@@ -35,14 +36,14 @@ PACKAGE = REPO / "packages" / "curio.weather@1"
 PACKAGE_ID = "curio.weather"
 #: The package's modules: the index, and the steps over the census polygons.
 MODULES = ["weather_census", "weather_utci"]
-#: Each starter that calls a module: its import, its settings with their
-#: values, and the call it returns, its references written as a run writes
-#: them.
+#: Each starter that calls a module: its import, its settings, its widgets
+#: with their defaults, and the call it returns, its references written as a
+#: run writes them, each widget at its default.
 STARTERS = {
     "utci-compute": (
         "from weather_utci import utci_grid",
-        {"TIMESTAMP": 12, "UPSCALE_FACTOR": 1.0},
-        "utci_grid(input_0, input_1, timestamp=TIMESTAMP, upscale_factor=UPSCALE_FACTOR)",
+        {"timestamp": 12, "upscale_factor": 1.0},
+        "utci_grid(input_0, input_1, timestamp=int(12), upscale_factor=float(1))",
     ),
     "utci-zonal": (
         "from weather_census import utci_zonal_mean",
@@ -51,8 +52,8 @@ STARTERS = {
     ),
     "census-reproject": (
         "from weather_census import reproject_census",
-        {"SOURCE_CRS": 32632, "TARGET_CRS": 3395},
-        "reproject_census(input_0, source_crs=SOURCE_CRS, target_crs=TARGET_CRS)",
+        {"source_crs": 32632, "target_crs": 3395},
+        "reproject_census(input_0, source_crs=int(32632), target_crs=int(3395))",
     ),
     "gt65-projection": (
         "from weather_census import gt65_column",
@@ -60,11 +61,11 @@ STARTERS = {
         "gt65_column(input_0)",
     ),
 }
-#: The chips each starter reads its inputs through (#706, #707).
+#: The chips each starter reads its inputs (#706, #707) and its widgets through.
 CHIPS = {
-    "utci-compute": ["[!! input_0 !!]", "[!! input_1 !!]"],
+    "utci-compute": ["[!! input_0 !!]", "[!! input_1 !!]", "[!! timestamp !!]", "[!! upscale_factor !!]"],
     "utci-zonal": ["[!! input_0 !!]", "[!! input_1 !!]", "[!! input_2 !!]"],
-    "census-reproject": [],
+    "census-reproject": ["[!! source_crs !!]", "[!! target_crs !!]"],
     "gt65-projection": [],
 }
 #: What each module offers node code: its ``__all__``.
@@ -126,27 +127,36 @@ def _template_source(template: str) -> str:
     return (PACKAGE / entry["source"]).read_text(encoding="utf-8")
 
 
-def node_code(template: str, **settings) -> str:
-    """The template's code with *settings* set, as a person edits them, and
-    its references written as a run writes them."""
+def _widgets(template: str) -> list[dict]:
+    """The widgets a new node of *template* starts with, as the manifest declares them."""
+    (entry,) = [t for t in _manifest()["templates"] if t["id"] == template]
+    return entry.get("widgets") or []
+
+
+def node_code(template: str, **values) -> str:
+    """The template's code with its widgets at *values*, as a person sets
+    them in its Widgets tab, else at their defaults, and its references
+    written as a run writes them. Each name in *values* is one of its widgets."""
     from utk_curio.backend.app.execution.code_references import resolve_references
 
-    code = _template_source(template)
-    for name, value in settings.items():
-        code, count = re.subn(rf"^{name} = .*$", f"{name} = {value!r}", code, count=1, flags=re.M)
-        assert count == 1, f"{template} sets no {name}"
-    resolved, problems = resolve_references(code, [], "python", inputs=[{"slot": k} for k in range(3)])
+    widgets = _widgets(template)
+    unknown = sorted(set(values) - {widget["name"] for widget in widgets})
+    assert not unknown, f"{template} has no widget {', '.join(unknown)}"
+    set_to = [{**widget, "value": values[widget["name"]]} if widget["name"] in values else widget for widget in widgets]
+    resolved, problems = resolve_references(
+        _template_source(template), set_to, "python", inputs=[{"slot": k} for k in range(3)],
+    )
     assert problems == [], problems
     return resolved
 
 
-def run_node(template: str, value, slots, **settings):
+def run_node(template: str, value, slots, **values):
     """The node's output for *value* on the circles *slots*, its code run as
-    the sandbox runs it. The package's modules must be staged
-    (``package_modules``)."""
+    the sandbox runs it, its widgets at *values*. The package's modules must
+    be staged (``package_modules``)."""
     from utk_curio.sandbox.util.input_names import call_as_node
 
-    body = "\n".join("    " + line for line in node_code(template, **settings).splitlines())
+    body = "\n".join("    " + line for line in node_code(template, **values).splitlines())
     return call_as_node(body, {}, value, slots)
 
 
@@ -284,9 +294,10 @@ def test_a_run_of_each_node_is_handed_the_packages_modules(tmp_curio):
 def test_each_starter_is_its_settings_and_a_call_into_a_module(template):
     """A node's logic is in functions of its package's modules, and its code
     holds its settings and a short call: its docstring, the import of one
-    function of a module, its settings as constants, and the return of that
-    function's call, which reads every setting. UTCI from raster + weather and
-    UTCI Zonal Mean read their inputs through chips (#706)."""
+    function of a module, and the return of that function's call, which reads
+    every setting by its widget's chip. Its settings are its template's
+    widgets, each with its default. UTCI from raster + weather and UTCI Zonal
+    Mean read their inputs through chips (#706)."""
     imported, settings, call = STARTERS[template]
     code = _template_source(template)
     assert "utk_curio" not in code
@@ -294,15 +305,10 @@ def test_each_starter_is_its_settings_and_a_call_into_a_module(template):
     tree = ast.parse("def node():\n" + "\n".join("    " + line for line in node_code(template).splitlines()))
     body = tree.body[0].body
     kinds = [type(statement).__name__ for statement in body]
-    assert kinds == ["Expr", "ImportFrom", *["Assign"] * len(settings), "Return"], kinds
+    assert kinds == ["Expr", "ImportFrom", "Return"], kinds
     assert isinstance(body[0].value, ast.Constant) and isinstance(body[0].value.value, str), ast.dump(body[0])
     assert ast.unparse(body[1]) == imported
-    assigned = {
-        statement.targets[0].id: ast.literal_eval(statement.value)
-        for statement in body[2:-1]
-        if len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name)
-    }
-    assert assigned == settings
+    assert {widget["name"]: widget["default"] for widget in _widgets(template)} == settings
     assert ast.unparse(body[-1].value) == call
 
 
@@ -336,6 +342,87 @@ def test_the_modules_offer_the_functions_their_all_names(package_modules):
 
 
 # ---------------------------------------------------------------------------
+# The loaders
+# ---------------------------------------------------------------------------
+
+#: Each loader and the Data Catalog dataset it reads.
+LOADERS = {
+    "mrt-load": "data.utk.milan-mrt",
+    "weather-load": "data.utk.milan-era5-weather",
+    "census-load": "data.utk.milan-census-gt65",
+}
+
+
+def _run_loader(template: str):
+    """``(output, file)``: the loader's output, its code run as the sandbox
+    runs it, with ``curio_load_data`` reading the dataset's shipped file as
+    the sandbox reads it, and that file."""
+    from utk_curio.sandbox.util.catalog_helpers import install_catalog_helpers
+    from utk_curio.sandbox.util.input_names import call_as_node
+
+    dataset_id = LOADERS[template]
+    folder = REPO / "datasets" / f"{dataset_id}@1"
+    manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+    path = folder / manifest["dataFile"]
+    namespace: dict = {}
+    install_catalog_helpers(
+        namespace, data_path={dataset_id: str(path)}.__getitem__,
+        formats={dataset_id: {"format": manifest["format"]}}, collections=None, media_dir=None, models=None,
+    )
+    body = "\n".join("    " + line for line in node_code(template).splitlines())
+    return call_as_node(body, namespace), path
+
+
+@pytest.mark.parametrize("template", sorted(LOADERS))
+def test_each_loader_is_one_read_of_its_data_catalog_dataset(template):
+    """A loader's whole code is the read of its dataset, by the id Curio reads
+    from the code before the node runs."""
+    assert _template_source(template) == f'return curio_load_data("{LOADERS[template]}")\n'
+
+
+def test_milan_mrt_loader_returns_the_raster_open_as_rasterio_opens_it():
+    """An open rasterio dataset, which the next nodes read as a raster, with
+    the grid and the cells ``rasterio.open`` gives of the file."""
+    import numpy as np
+    import rasterio
+
+    out, path = _run_loader("mrt-load")
+    try:
+        assert isinstance(out, rasterio.io.DatasetReader) and not out.closed, type(out)
+        with rasterio.open(path) as read:
+            assert (out.crs, out.transform, out.shape, out.count, out.nodata) == (
+                read.crs, read.transform, read.shape, read.count, read.nodata,
+            )
+            np.testing.assert_array_equal(out.read(), read.read())
+    finally:
+        out.close()
+
+
+def test_era5_milan_weather_returns_the_table_as_pandas_reads_it():
+    """A DataFrame, not a GeoDataFrame, equal to ``pandas.read_csv`` of the
+    file, so UTCI from raster + weather finds its ``it``, ``Td``, ``Wind`` and
+    ``RH`` columns."""
+    import pandas as pd
+
+    out, path = _run_loader("weather-load")
+    assert type(out) is pd.DataFrame, type(out)
+    pd.testing.assert_frame_equal(out, pd.read_csv(path))
+    assert {"it", "Td", "Wind", "RH"} <= set(out.columns), list(out.columns)
+
+
+def test_milan_census_polygons_returns_the_polygons_as_geopandas_reads_them():
+    """A GeoDataFrame equal to ``geopandas.read_file`` of the file, its CRS
+    and ``gt_65`` among them."""
+    import geopandas as gpd
+    from geopandas.testing import assert_geodataframe_equal
+
+    out, path = _run_loader("census-load")
+    assert isinstance(out, gpd.GeoDataFrame), type(out)
+    assert_geodataframe_equal(out, gpd.read_file(path))
+    assert out.crs is not None and "gt_65" in out.columns, (out.crs, list(out.columns))
+
+
+# ---------------------------------------------------------------------------
 # UTCI from raster + weather
 # ---------------------------------------------------------------------------
 
@@ -351,20 +438,20 @@ def test_utci_from_raster_and_weather_at_noon(package_modules, mrt):
 
 
 def test_utci_from_raster_and_weather_reads_the_hour_its_timestamp_names(package_modules, mrt):
-    grid, shape = run_node("utci-compute", [mrt, _weather()], [0, 1], TIMESTAMP=13)
+    grid, shape = run_node("utci-compute", [mrt, _weather()], [0, 1], timestamp=13)
     assert shape == [4, 3]
     assert _same(grid, UTCI_AT_13), grid
 
 
 def test_utci_from_raster_and_weather_reads_the_raster_at_its_upscale_factor(package_modules, mrt):
-    grid, shape = run_node("utci-compute", [mrt, _weather()], [0, 1], UPSCALE_FACTOR=0.5)
+    grid, shape = run_node("utci-compute", [mrt, _weather()], [0, 1], upscale_factor=0.5)
     assert shape == [2, 1]
     assert _same(grid, UTCI_AT_HALF_SIZE), grid
 
 
 def test_utci_from_raster_and_weather_fails_on_an_hour_the_table_lacks(package_modules, mrt):
     with pytest.raises(IndexError, match="index 0 is out of bounds for axis 0 with size 0"):
-        run_node("utci-compute", [mrt, _weather()], [0, 1], TIMESTAMP=99)
+        run_node("utci-compute", [mrt, _weather()], [0, 1], timestamp=99)
 
 
 def test_the_milan_weather_dataset_says_its_temperature_is_the_air_temperature_utci_reads():

@@ -284,6 +284,9 @@ class ModelSource:
     #: Its files to copy, by package-relative path: the weights under
     #: ``models/``, and the weights' license file.
     files: dict = field(default_factory=dict)
+    #: What the model's package declares in ``dataflowCategories``, which the
+    #: copy declares too: what a dataflow that uses the model is filed under.
+    dataflow_categories: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -305,16 +308,40 @@ def rename_model_calls(code: str, from_id: str, to_id: str) -> str:
     return call.sub(lambda m: f"{m.group(1)}{to_id}{m.group(3)}", code)
 
 
+def _declared_together(*declarations: object) -> dict[str, list[str]]:
+    """The ``dataflowCategories`` *declarations* make together, the first's
+    names first, cleaned as a manifest's are (``clean_dataflow_categories``):
+    each name once ignoring case, its first spelling kept. A value that is
+    not a declaration adds nothing."""
+    from utk_curio.backend.app.packages.domain.dataflow_categories import (
+        FIELD,
+        SECTIONS,
+        clean_dataflow_categories,
+        declared_dataflow_categories,
+    )
+
+    names: dict[str, list[str]] = {section: [] for section in SECTIONS}
+    for declared in declarations:
+        for section, values in declared_dataflow_categories({FIELD: declared}).items():
+            names[section] += values
+    return clean_dataflow_categories({key: value for key, value in names.items() if value}, where=FIELD) or {}
+
+
 def _as_model_package(
     draft: dict[str, Any], model: ModelSource,
 ) -> tuple[dict[str, Any], dict[str, dict[str, str]]]:
     """*draft* as the model package of :class:`ModelSource` *model*: its
-    manifest says ``kind: model`` with the model's block, and its sources name
-    the package's own id where they named the model's. Returns the draft and
-    the libraries it declares beside what its sources import."""
+    manifest says ``kind: model`` with the model's block and declares what the
+    model's package declares in ``dataflowCategories``, beside what the draft
+    declares, and its sources name the package's own id where they named the
+    model's. Returns the draft and the libraries it declares beside what its
+    sources import."""
     manifest = dict(draft.get("manifest") or {})
     manifest["kind"] = "model"
     manifest["model"] = json.loads(json.dumps(model.block))
+    declared = _declared_together(manifest.get("dataflowCategories"), model.dataflow_categories)
+    if declared:
+        manifest["dataflowCategories"] = declared
     new_id = str(manifest.get("id") or "")
     sources = {
         template_id: (

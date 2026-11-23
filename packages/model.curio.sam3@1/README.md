@@ -22,39 +22,41 @@ the canvas, offers both nodes.
 
 | Canonical id | Label | Input | Output |
 |---|---|---|---|
-| `model.curio.sam3/track-objects` | Track Objects | A collection's rows, each video with a `path` | One row per video: its overlay, a count of the objects of each label, and the path of its tracks |
+| `model.curio.sam3/track-objects` | Track Objects | A collection's rows, each video with a `path` | Two tables: `videos`, one row per video, its overlay with a count of the objects of each label, and `tracks`, one row per object |
 | `model.curio.sam3/segment-images` | Segment Images | A collection's images, or the frames Sample Video Frames sampled, each with a `path` | Each image with the label covering the most of it, each label's share of it and count of objects, and its overlay |
 
 **Track Objects** samples each video of a collection, one frame every
-`EVERY_SECONDS`, and runs SAM 3 on those frames with the phrases in `LABELS`.
+**Gap between frames**, and runs SAM 3 on those frames with the phrases in
+its **Labels** widget.
 SAM 3 holds each frame back until it has seen a few after it, so it can drop an
 object that showed up for a moment and was never there. It cleans what it finds
 in each frame as Meta's SAM 3 does: of two detections of one label whose masks
 overlap, it keeps the one it scores higher, and it fills the small holes and
 removes the small specks of each mask.
 
-Its code tab holds its settings and one call of `track_objects`, the function of
-the package's module `sam3_tracking`, which the header above the code lists:
+Its code is one call of `track_objects`, the function of the package's module
+`sam3_tracking`, which the header above the code lists. The call reads the
+node's widgets by their chips, and two settings set above it:
 
 ```python
 from sam3_tracking import track_objects
 
-LABELS = [...]
-EVERY_SECONDS = 0.5
-...
+FORGET_SECONDS = 10
+TO_SECONDS = None
 
 return track_objects(
     input_0, curio_load_model("model.curio.sam3"), curio_derived_file,
-    labels=LABELS, every_seconds=EVERY_SECONDS, forget_seconds=FORGET_SECONDS,
-    from_seconds=FROM_SECONDS, to_seconds=TO_SECONDS, max_frames=MAX_FRAMES, width=WIDTH,
+    labels=[!! labels !!], every_seconds=float([!! every_seconds !!]), forget_seconds=FORGET_SECONDS,
+    from_seconds=float([!! from_seconds !!]), to_seconds=TO_SECONDS,
+    max_frames=int([!! max_frames !!]), width=int([!! width !!]),
 )
 ```
 
 The node hands the function Curio's plumbing: the model, whose `path` is the
 folder of its weights, and `curio_derived_file`, which says where the overlay
-and the tracks are kept. Empty `LABELS`, a part that needs more than
-`MAX_FRAMES` frames and a video not on the machine yet stop the node before
-SAM 3 loads.
+is kept. Empty **Labels**, a part that needs more than **Maximum frames per
+video** frames and a video not on the machine yet stop the node before SAM 3
+loads.
 
 The input is a collection's rows, as a Data Loading node gives them with
 `curio_load_collection(...)`, each video's file on the machine, in a mounted
@@ -62,24 +64,35 @@ bucket or cached. Rows that are not videos are left out.
 
 ## Settings
 
-The constants at the top of the node's code, each handed to `track_objects` as
-the argument of its name in lowercase:
+Its widgets, which you set in its Widgets tab, pin to a dashboard or vary in a
+scenario, each handed to `track_objects` as the argument of its name:
+
+| Widget | Default | What it sets |
+|---|---|---|
+| **Labels** (`labels`) | curb ramp, curb cut, tactile paving, bollard, pole, construction barrier, traffic cone, person | What to look for, in plain words. SAM 3 takes any short noun phrase, not only the package's labels below. |
+| **Gap between frames** (`every_seconds`) | 0.5 s | The gap between two frames SAM 3 looks at. |
+| **Track from** (`from_seconds`) | 0 s | Where the part of each video to track starts, in seconds from its start. |
+| **Maximum frames per video** (`max_frames`) | 450 | The most frames of a video one run looks at. A part of W seconds needs W / `every_seconds` frames, rounded up, and one that needs more stops the node, with a message naming the limit, the frames the part needs, and a gap and a shorter part that fit. |
+| **Maximum width** (`width`) | 960 px | The widest frames are read and drawn at. A narrower video keeps its size. |
+
+Two settings may be `None`, which no widget holds, so they are set at the top
+of the node's code, each handed as the argument of its name in lowercase:
 
 | Setting | Default | What it sets |
 |---|---|---|
-| `LABELS` | curb ramp, curb cut, tactile paving, bollard, pole, construction barrier, traffic cone, person | What to look for, in plain words. SAM 3 takes any short noun phrase, not only the package's labels below. |
-| `EVERY_SECONDS` | `0.5` | The gap between two frames SAM 3 looks at. |
 | `FORGET_SECONDS` | `10` | How long SAM 3 follows an object it no longer sees. An object it has not seen for that long is let go: its track ends where it was last seen, and if it comes back SAM 3 finds it again as a new object, with a new id, and counts it again. `None` follows every object to the end of the part. |
-| `FROM_SECONDS`, `TO_SECONDS` | `0`, `None` | The part of each video to track, in seconds from its start; `None` is its end. |
-| `MAX_FRAMES` | `450` | The most frames of a video one run looks at. A part of W seconds needs W / `EVERY_SECONDS` frames, rounded up, and one that needs more stops the node, with a message naming the limit, the frames the part needs, and an `EVERY_SECONDS` and a shorter part that fit. |
-| `WIDTH` | `960` | The widest frames are read and drawn at. A narrower video keeps its size. |
+| `TO_SECONDS` | `None` | Where the part of each video to track ends, in seconds from its start; `None` is its end. |
 
 The node runs on the GPU when the machine has one (CUDA, in bfloat16, or
 Apple's MPS), else on the CPU.
 
 ## Output
 
-Each video comes back as one row: its overlay, a video of the frames SAM 3
+Track Objects returns two tables, `videos` and `tracks`, as one dict: the next
+node's code reads each by its key, with a chip such as `[!! input_0:tracks !!]`,
+and Simple View shows each as a tab, `videos` first.
+
+`videos` has one row per video: its overlay, a video of the frames SAM 3
 looked at, each object's mask and box drawn in its label's color with its label
 and id. Simple View plays it in real time, each frame at its own time in the
 video, so it runs as long as the part it tracked. It is H.264, which every
@@ -93,56 +106,50 @@ position, and has:
 | `t_s` | Where the overlay starts in the video: a time in the video is `t_s` plus the time in the overlay |
 | `duration_s`, `fps`, `width`, `height` | The overlay's |
 | `<label>_objects` | How many objects of each label SAM 3 followed, such as `curb_ramp_objects` |
-| `tracks` | The path of a Parquet table of the video's objects |
 
-The tracks table has one row per object, which `pd.read_parquet(row["tracks"])`
-reads:
+`tracks` has one row per object of every video:
 
 | Column | What it holds |
 |---|---|
 | `video_file_id`, `video` | The video |
 | `object_id` | The object's id, the one drawn on the overlay |
-| `label` | The phrase of `LABELS` that found it |
+| `label` | The phrase of **Labels** that found it |
 | `start_s`, `end_s` | The first and the last time SAM 3 saw it, in seconds from the video's start |
 | `frames` | How many of the frames it looked at it was seen in |
 | `largest_share` | The largest share of a frame its mask covered, from 0 to 1 |
 | `mean_score` | Its mean detection score over those frames |
 
-Both files are kept beside the collection's other files derived from that video.
-Their name holds the video, `FROM_SECONDS` and a tag of `LABELS`,
-`EVERY_SECONDS`, `FORGET_SECONDS`, where the part ends and `WIDTH`, so a run
-with other settings keeps files of its own, and a run with the same settings
-writes them again.
+The overlay is kept beside the collection's other files derived from that
+video. Its name holds the video, where the part starts, and a tag of the
+labels, the gap between frames, `FORGET_SECONDS`, where the part ends and the
+width, so a run with other settings keeps an overlay of its own, and a run
+with the same settings writes it again.
 
 ## Segment Images
 
 **Segment Images** runs SAM 3 on each image of a collection, or each frame a
-Sample Video Frames node sampled from its videos, with the phrases in
-`LABELS`, and finds every object each one names. SAM 3 reads the image's
-features once and looks for every label in them. Its code tab holds its
-settings and one call of `find_in_images`, the function of the package's module
-`sam3_images`:
+Sample Video Frames node sampled from its videos, with the phrases in its
+**Labels** widget, and finds every object each one names. SAM 3 reads the
+image's features once and looks for every label in them. Its code is one call
+of `find_in_images`, the function of the package's module `sam3_images`, which
+reads the node's widgets by their chips:
 
 ```python
 from sam3_images import find_in_images
 
-LABELS = [...]  # the package's 35 labels
-THRESHOLD = 0.5
-WIDTH = 960
-MAX_IMAGES = 300
-
 return find_in_images(
     input_0, curio_load_model("model.curio.sam3"), curio_derived_file,
-    labels=LABELS, threshold=THRESHOLD, width=WIDTH, max_images=MAX_IMAGES,
+    labels=[!! labels !!], threshold=float([!! threshold !!]),
+    width=int([!! width !!]), max_images=int([!! max_images !!]),
 )
 ```
 
-| Setting | Default | What it sets |
+| Widget | Default | What it sets |
 |---|---|---|
-| `LABELS` | the package's 35 labels, in their seven groups | What to look for, in plain words. Fewer labels run faster. |
-| `THRESHOLD` | `0.5` | The score SAM 3 needs to keep an object. |
-| `WIDTH` | `960` | The widest an image is read and its overlay drawn. |
-| `MAX_IMAGES` | `300` | The most images one run looks at, as many as Sample Video Frames samples from one video by default. More rows stop the node before SAM 3 loads. |
+| **Labels** (`labels`) | the package's 35 labels, in their seven groups | What to look for, in plain words. Fewer labels run faster. |
+| **Score threshold** (`threshold`) | 0.5, from 0 to 1 | The score SAM 3 needs to keep an object. |
+| **Maximum width** (`width`) | 960 px | The widest an image is read and its overlay drawn. |
+| **Maximum images per run** (`max_images`) | 300 | The most images one run looks at, as many as Sample Video Frames samples from one video by default. More rows stop the node before SAM 3 loads. |
 
 It reads the model as Track Objects does, on the same device, and draws each
 object as Track Objects draws one. It also cleans what SAM 3 finds as Track
@@ -161,16 +168,16 @@ Image Segmentation gives, then its own:
 
 An overlay is a PNG kept beside the collection's other derived files. It is
 named as Image Segmentation names an overlay, after the image, or after its
-video at its time for a sampled frame, and after a tag of `LABELS`,
-`THRESHOLD` and `WIDTH`, so a run with other settings keeps overlays of its
-own. Empty `LABELS`, a label named twice and more rows than `MAX_IMAGES` stop
-the node before SAM 3 loads.
+video at its time for a sampled frame, and after a tag of its labels, its
+score threshold and its width, so a run with other settings keeps overlays of
+its own. Empty **Labels**, a label named twice and more rows than **Maximum
+images per run** stop the node before SAM 3 loads.
 
 ## Labels
 
 The package's labels are 35 phrases for what a camera looking at a sidewalk
-sees, in seven groups. Track Objects' `LABELS` starts with eight of them, and
-Segment Images' with all 35.
+sees, in seven groups. Track Objects' **Labels** widget starts with eight of
+them, and Segment Images' with all 35.
 
 | Group | Labels |
 |---|---|
@@ -185,19 +192,20 @@ Segment Images' with all 35.
 ## A dataflow
 
 ```
-Data Loading (videos) → Track Objects → Simple View (the overlay)
+Data Loading (videos) → Track Objects → Simple View (the overlay, in its videos tab)
                               ↓
                Python Computation (the tracks) → Vega-Lite (one bar per object)
 
 Data Loading (videos) → Sample Video Frames → Segment Images → Simple View (each frame beside its overlay)
 ```
 
-A Python Computation node reads every video's tracks into one table:
+A Python Computation node wired from Track Objects reads the tracks by their
+key, a table of one row per object:
 
 ```python
-import pandas as pd
+tracks = [!! input_0:tracks !!]
 
-return pd.concat([pd.read_parquet(path) for path in input_0["tracks"]])
+return tracks[tracks["label"] == "curb ramp"]
 ```
 
 ## The weights
@@ -220,3 +228,9 @@ Curio installs the package's Python libraries with it: `transformers` 5,
 `pandas`, `geopandas`, `numpy`, `pillow` and `pyarrow`. It asks for no version of
 torch or torchvision: Curio's images hold both, built for CUDA, so adding the
 model there installs neither.
+
+The package needs [Media](../curio.media@1/README.md) (`curio.media@1` in its
+`dependencies.packages`): Track Objects reads each video's frames with Media's
+`read_video_frames`, as Sample Video Frames does. Adding SAM 3 adds Media too,
+with Rasterization, which Media needs, and the header above each node's code
+lists Media's functions after the package's own.

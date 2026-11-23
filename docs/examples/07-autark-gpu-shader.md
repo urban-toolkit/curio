@@ -59,13 +59,16 @@ nodes reference these layers by name (`table_osm_roads`, `table_osm_buildings`),
 The `compute` block binds each road's geometry as a per-feature matrix (`attributes.seg` =
 `geometry.coordinates`, `attributeMatrices.seg`) and pulls every building's footprint and height from the
 upstream `table_osm_buildings` layer via a `fromFeature` directive with `iterate: "batched"`. The runtime
-packs each building's **AABB** (4 corners × 2 floats = 8 f32 per building) into a flat array exposed as
-`uniformArrays.ring`, packs the height array as `uniformArrays.bld_height`, and runs the shader **once**,
-not once per building. A `num_features` uniform tells the WGSL how many buildings are in the pack.
+packs the **AABB** of each polygon of each building part (4 corners × 2 floats = 8 f32 per polygon) into a
+flat array exposed as `uniformArrays.ring`, packs the height array as `uniformArrays.bld_height`, a part's
+height beside each of its polygons, and runs the shader **once**, not once per building. A part that
+OpenStreetMap maps as one element of several polygons, such as the LaSalle/Van Buren CTA station's two,
+packs a box for each, so every polygon casts its shadow. A `num_features` uniform tells the WGSL how many
+boxes are in the pack. A road of several lines is read as one list of its points, from its first point.
 `required: true` on `bld_height` tells the runtime to drop a building whose `properties.height` does not
-resolve to a finite value. Curio gives every building part a height, its OSM `height` or its
-`building:levels` at 3.4 m each, or 6 m above its base when neither puts its top above its base, so none is
-dropped here.
+resolve to a finite value. Curio gives every building part a height: its OSM `height`, else its
+`building:height`, else its `levels` at 3.4 m each, else its `building:levels` at 3.4 m each, or 6 m above
+its base when that gives it no height above its base, so none is dropped here.
 
 ```json
 "compute": [{
@@ -111,8 +114,8 @@ shading this road right now" per hour, which is a union the runtime can't comput
 
 ### AABB simplification
 
-Each batched matrix entry is reduced to a per-source AABB before being packed (4 corners × 2 floats = 8
-f32 per source feature), not the full polygon outline. AABBs project to a conservative shadow envelope
+Each batched matrix entry is reduced to an AABB per polygon of a source feature before being packed (4
+corners × 2 floats = 8 f32 per polygon), not the full polygon outline. AABBs project to a conservative shadow envelope
 (correct for axis-aligned buildings, a slight over-estimate for rotated/irregular ones).
 
 ### Shader sketch
@@ -121,8 +124,10 @@ The WGSL the example ships is (formatted):
 
 ```wgsl
 let dec_rad = -0.40928 * cos(2.0 * pi / 365.0 * (doy + 10.0));
-let ax = seg[0u]; let ay = seg[1u];
-let bx = seg[2u]; let by = seg[3u];
+// every coordinate measured from the road's first point
+let ox = seg[0u]; let oy = seg[1u];
+let ax = seg[0u] - ox; let ay = seg[1u] - oy;
+let bx = seg[2u] - ox; let by = seg[3u] - oy;
 
 var sunlight: f32 = 0.0;
 for (var hour = 7i; hour <= 19i; hour++) {
@@ -150,8 +155,8 @@ for (var hour = 7i; hour <= 19i; hour++) {
         var u_lo = 1e30; var u_hi = -1e30;
         var v_lo = 1e30; var v_hi = -1e30;
         for (var ci = 0u; ci < 4u; ci++) {
-            let rx = ring[base + ci * 2u];
-            let ry = ring[base + ci * 2u + 1u];
+            let rx = ring[base + ci * 2u] - ox;
+            let ry = ring[base + ci * 2u + 1u] - oy;
             // ... update bbox ...
         }
         let v_hi_shadow = v_hi + shadow_len;

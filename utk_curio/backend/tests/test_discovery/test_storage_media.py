@@ -55,6 +55,24 @@ def segment(tmp_path, monkeypatch):
         yield module.segment_images
 
 
+@pytest.fixture()
+def split_audio(tmp_path):
+    """The Media package's ``split_audio``, staged and imported as a run of
+    Split Audio imports it."""
+    import importlib
+    from pathlib import Path
+
+    from utk_curio.sandbox.util.package_modules import importable
+    from utk_curio.sandbox.util.staging import stage_package_modules
+
+    sources = Path(__file__).resolve().parents[4] / "packages" / "curio.media@1" / "sources"
+    run = tmp_path / "run-media"
+    run.mkdir()
+    staged = stage_package_modules({"root": str(sources), "names": ["media_collections"]}, str(run))
+    with importable(str(run / staged["root"]), staged["names"]):
+        yield importlib.import_module("media_collections").split_audio
+
+
 def wait_for(client, auth, job_id, timeout=15.0):
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -115,6 +133,37 @@ def _a_video(path) -> bytes:
             container.mux(packet)
     with open(path, "rb") as handle:
         return handle.read()
+
+
+def _a_jpeg(path) -> None:
+    """A small JPEG, as node code writes a photo's copy."""
+    from PIL import Image
+
+    Image.new("RGB", (64, 48), (90, 90, 90)).save(path, "JPEG")
+
+
+def _a_png(path) -> None:
+    """A small PNG, as node code writes an overlay or a picture of a file."""
+    from PIL import Image
+
+    Image.new("RGB", (64, 48), (30, 200, 30)).save(path, "PNG")
+
+
+def _a_webm(path) -> None:
+    """A second of a tiny WebM, VP8 in WebM's own container as a browser plays
+    it, written with PyAV, whose builds encode VP8 with libvpx."""
+    import av
+    import numpy as np
+
+    with av.open(str(path), "w", format="webm") as container:
+        stream = container.add_stream("libvpx", rate=10)
+        stream.width, stream.height, stream.pix_fmt = 64, 48, "yuv420p"
+        for shade in range(0, 200, 20):
+            pixels = np.full((48, 64, 3), shade, dtype=np.uint8)
+            for packet in stream.encode(av.VideoFrame.from_ndarray(pixels, format="rgb24")):
+                container.mux(packet)
+        for packet in stream.encode():
+            container.mux(packet)
 
 
 class TestThumbnails:
@@ -351,9 +400,68 @@ class TestDerivedFiles:
         assert by_road != by_sky
         assert served(road_url) == by_road, "the second model's overlay replaced the first's"
 
-    def test_a_raster_has_no_derived_files(self, client, auth, app, shipped_root):
+    def test_two_split_audio_nodes_on_one_recording_each_play_their_own_clip(
+        self, client, auth, app, shipped_root, user_and_token, split_audio,
+    ):
+        """Split Audio on one recording with windows of 0.25 s and of 0.5 s:
+        both have a window at 0 s. Simple View plays a window's row as it
+        plays a recording, through a signed link to the row's id, and each
+        node's row at 0 s plays the clip that node wrote, after the other
+        node ran too."""
+        from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
+        from utk_curio.backend.app.discovery.infrastructure import media_dirs
+        from utk_curio.backend.app.discovery.infrastructure.storage import storage_root
+        from utk_curio.backend.tests.test_discovery.conftest import SHIPPED_ROOT
+        from utk_curio.sandbox.util.collections import make_collection_helpers
+
+        user, _token = user_and_token
+        dataset, _index = collection(client, auth, "noise")
+        root = storage_root(load_source_manifest(SHIPPED_ROOT / EXAMPLE))
+        helpers = make_collection_helpers(
+            lambda _id: dataset["path"],
+            {dataset["id"]: {"kind": "audio", "root": str(root)}},
+            str(media_dirs.media_work_root(str(user.id))),
+        )
+        rows = helpers["curio_load_collection"](dataset["id"])
+        recording = rows[(rows["sensor"] == "sensor_01") & (rows["name"] == "20240501_060000.wav")]
+        assert len(recording) == 1
+
+        def played(row):
+            """What the player plays for *row*: its link, asked for as Simple View asks."""
+            link = client.post(
+                f"/api/datasets/{dataset['id']}/media/{quote(row['file_id'], safe='')}/link", headers=auth
+            )
+            assert link.status_code == 200, link.get_data(as_text=True)[:300]
+            clip = client.get(link.get_json()["url"])
+            assert clip.status_code == 200 and clip.mimetype == "audio/wav", clip.get_data()[:300]
+            return clip.data
+
+        shorter = split_audio(recording, helpers["curio_derived_file"], window_seconds=0.25).iloc[0]
+        by_shorter = played(shorter)
+        longer = split_audio(recording, helpers["curio_derived_file"], window_seconds=0.5).iloc[0]
+        assert (shorter["t_s"], longer["t_s"]) == (0.0, 0.0)
+        assert played(shorter) == by_shorter, "the 0.5 s node's clip replaced the 0.25 s node's"
+        assert played(longer) != by_shorter
+        assert shorter["file_id"] != longer["file_id"]
+
+    def test_a_raster_tile_derives_no_file_of_its_own(self, client, auth, app, shipped_root, user_and_token):
+        """A raster tile has no file it derives by default, as a video has its
+        frame: an id that names no extension names no file of a tile, even
+        where a photo's own file would be, and the same file is served by its
+        own id, which names its extension."""
+        from PIL import Image
+
+        from utk_curio.backend.app.discovery.infrastructure import media_dirs
+
+        user, _token = user_and_token
         dataset, index = collection(client, auth, "orthos")
-        assert media(client, auth, dataset["id"], f"{index['file_id'].iloc[0]}@0").status_code == 404
+        tile = index["file_id"].iloc[0]
+        assert media(client, auth, dataset["id"], f"{tile}@0").status_code == 404
+        there = media_dirs.media_work_dir(str(user.id), "overlays", dataset["id"], tile) / "0.png"
+        Image.new("RGB", (64, 48), (30, 200, 30)).save(there, "PNG")
+        assert media(client, auth, dataset["id"], f"{tile}@0", "original").status_code == 404
+        drawn = media(client, auth, dataset["id"], f"{tile}@0.png", "original")
+        assert (drawn.status_code, drawn.mimetype) == (200, "image/png"), drawn.get_data(as_text=True)[:300]
 
     def test_a_video_a_node_made_from_a_video_plays_and_seeks(self, client, auth, app, shipped_root, user_and_token):
         """What Track Objects writes beside a collection's video: an overlay
@@ -398,12 +506,14 @@ class TestDerivedFiles:
                         f"{video_id}@0-overlay.jpg"):
             assert media(client, auth, dataset["id"], missing, "original").status_code == 404, missing
 
-    def test_a_table_a_node_found_in_a_video_is_kept_and_never_served(
+    def test_a_table_a_node_found_in_a_video_is_no_derived_file_and_never_served(
         self, client, auth, app, shipped_root, user_and_token
     ):
-        """Track Objects' tracks: a Parquet beside its overlay, which a later
-        node reads by its path. Its row links nothing, and the media route
-        serves none of it."""
+        """What a node finds in a video, such as Track Objects' tracks, is a
+        table the node returns, which goes on its edge: ``curio_derived_file``
+        refuses to name a file for it, saying to return it, and the media
+        route serves no file under a table's id, even one where such an id
+        would put it."""
         import pandas as pd
 
         from utk_curio.backend.app.discovery.infrastructure import media_dirs
@@ -413,14 +523,14 @@ class TestDerivedFiles:
         dataset, index = collection(client, auth, "survey")
         video_id = file_id_of(index, "clip_01.mp4")
         root = media_dirs.media_work_root(str(user.id))
-        row = make_collection_helpers(None, {}, str(root))["curio_derived_file"](
-            dataset["id"], video_id, 0, "parquet", tag="overlay"
-        )
-        pd.DataFrame({"label": ["car"], "frames_seen": [12]}).to_parquet(row["path"])
-        assert row["path"] == str(root / "tables" / dataset["id"] / video_id / "0-overlay.parquet")
-        assert (row["thumbnail"], row["image_url"], row["audio_url"]) == (None, None, None)
-        assert pd.read_parquet(row["path"])["frames_seen"].tolist() == [12]
-        assert media(client, auth, dataset["id"], row["file_id"], "original").status_code == 415
+        derive = make_collection_helpers(None, {}, str(root))["curio_derived_file"]
+        with pytest.raises(ValueError, match="not 'parquet': return a table from the node as its output"):
+            derive(dataset["id"], video_id, 0, "parquet", tag="overlay")
+        assert not (root / "tables").exists()
+        there = root / "tables" / dataset["id"] / video_id / "0-overlay.parquet"
+        there.parent.mkdir(parents=True)
+        pd.DataFrame({"label": ["car"], "frames_seen": [12]}).to_parquet(there)
+        assert media(client, auth, dataset["id"], f"{video_id}@0-overlay.parquet", "original").status_code == 404
 
     def test_an_overlay_of_a_sequences_frame_is_served(self, client, auth, app, shipped_root, user_and_token):
         """A frames collection's file (dashcam) is an image, as a photo is:
@@ -480,6 +590,120 @@ class TestDerivedFiles:
         overlay = client.get(url, headers=auth)
         assert overlay.status_code == 200 and overlay.mimetype == "image/png", overlay.get_data(as_text=True)[:300]
         assert url.startswith(f"/api/datasets/{dataset['id']}/media/{video_id}@500-")
+
+    @pytest.mark.parametrize("resource_id, name, kind, ext, write, row_kind, mimetype", [
+        ("survey", "IMG_0001.jpg", "image", "jpg", _a_jpeg, "image", "image/jpeg"),
+        ("orthos", "tile_0001.tif", "raster", "png", _a_png, "image", "image/png"),
+        ("noise", "20240501_060000.wav", "audio", "png", _a_png, "image", "image/png"),
+        ("survey", "clip_01.mp4", "video", "webm", _a_webm, "video", "video/webm"),
+    ], ids=["a-jpg-from-a-photo", "a-png-from-a-raster-tile", "a-png-from-a-recording", "a-webm-from-a-video"])
+    def test_an_image_a_video_or_a_recording_a_node_wrote_from_a_file_of_any_kind_is_served_by_its_id(
+        self, client, auth, app, shipped_root, user_and_token, resource_id, name, kind, ext, write, row_kind, mimetype,
+    ):
+        """What a node writes from a collection's file of any kind, as an image,
+        a video or a recording: its row is that family's, and every link it
+        carries is served by the id ``curio_derived_file`` gave it, the file
+        itself as its format, through a signed link with Range too. A page
+        written in its place is refused: what is served is decided by bytes."""
+        from pathlib import Path
+
+        from utk_curio.backend.app.discovery.infrastructure import media_dirs
+        from utk_curio.sandbox.util.collections import make_collection_helpers
+
+        user, _token = user_and_token
+        dataset, index = collection(client, auth, resource_id)
+        source = file_id_of(index, name)
+        assert index.loc[[name], "kind"].iloc[0] == kind
+        derive = make_collection_helpers(None, {}, str(media_dirs.media_work_root(str(user.id))))[
+            "curio_derived_file"
+        ]
+        row = derive(dataset["id"], source, 0, ext, kind=kind, tag="made")
+        write(row["path"])
+        assert (row["file_id"], row["kind"], row["dataset_id"]) == (f"{source}@0-made.{ext}", row_kind, dataset["id"])
+        links = {column: row[column] for column in ("thumbnail", "image_url", "audio_url") if row[column]}
+        assert "thumbnail" in links
+        for column, url in links.items():
+            res = client.get(url, headers=auth)
+            served_as = mimetype if "variant=original" in url else "image/jpeg"
+            assert (res.status_code, res.mimetype) == (200, served_as), (column, res.get_data()[:300])
+        itself = media(client, auth, dataset["id"], row["file_id"], "original")
+        assert (itself.status_code, itself.mimetype) == (200, mimetype), itself.get_data()[:300]
+        assert itself.data == Path(row["path"]).read_bytes()
+        link = client.post(f"/api/datasets/{dataset['id']}/media/{quote(row['file_id'], safe='')}/link", headers=auth)
+        assert link.status_code == 200, link.get_data(as_text=True)[:300]
+        part = client.get(link.get_json()["url"], headers={"Range": "bytes=0-9"})
+        assert (part.status_code, part.data) == (206, itself.data[:10])
+
+        Path(row["path"]).write_text("<html><script>alert(1)</script></html>", encoding="utf-8")
+        assert media(client, auth, dataset["id"], row["file_id"], "original").status_code == 415
+
+    def test_a_derived_file_that_holds_a_page_is_never_served(self, client, auth, app, shipped_root, user_and_token):
+        """What is served is decided by a file's first bytes, a derived file's
+        too: an overlay a node named ``.png`` that holds a page is refused as
+        itself, as a thumbnail and as a link."""
+        from pathlib import Path
+
+        from utk_curio.backend.app.discovery.infrastructure import media_dirs
+        from utk_curio.sandbox.util.collections import make_collection_helpers
+
+        user, _token = user_and_token
+        dataset, index = collection(client, auth, "survey")
+        photo = file_id_of(index, "IMG_0001.jpg")
+        derive = make_collection_helpers(None, {}, str(media_dirs.media_work_root(str(user.id))))[
+            "curio_derived_file"
+        ]
+        row = derive(dataset["id"], photo, 0, "png", kind="image", tag="page")
+        Path(row["path"]).write_text("<html><script>alert(1)</script></html>", encoding="utf-8")
+        assert media(client, auth, dataset["id"], row["file_id"], "original").status_code == 415
+        assert client.get(row["thumbnail"], headers=auth).status_code == 415
+        assert client.post(f"/api/datasets/{dataset['id']}/media/{row['file_id']}/link", headers=auth).status_code == 415
+
+    def test_deleting_a_collection_removes_what_nodes_derived_in_every_folder(
+        self, client, auth, app, shipped_root, user_and_token
+    ):
+        """A derived file goes in the folder of its row's kind, whatever it is
+        derived from: frames, overlays, videos or clips. Deleting the
+        collection removes its files in each of them, of any extension: a
+        video's frame, a photo's JPEG among the overlays, a video's WebM among
+        the videos and its sound among the clips."""
+        from utk_curio.backend.app.discovery.infrastructure import media_dirs
+
+        user, _token = user_and_token
+        dataset, index = collection(client, auth, "survey")
+        photo, video = file_id_of(index, "IMG_0001.jpg"), file_id_of(index, "clip_01.mp4")
+        root = media_dirs.media_work_root(str(user.id))
+        made = [
+            root / "frames" / dataset["id"] / video / "0.jpg",
+            root / "overlays" / dataset["id"] / photo / "0-gray.jpg",
+            root / "videos" / dataset["id"] / video / "0-vp8.webm",
+            root / "clips" / dataset["id"] / video / "0-sound.wav",
+        ]
+        for path in made:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"x")
+        deleted = client.delete(f"/api/datasets/{dataset['id']}", headers=auth)
+        assert deleted.status_code == 200
+        assert [str(path.relative_to(root)) for path in made if path.exists()] == []
+
+
+def test_a_node_derives_from_a_file_of_every_kind_a_collection_sorts_its_files_into():
+    """``curio_derived_file`` takes a file of every kind a collection's index
+    gives its files (``probe.file_kind``, over every resource kind and every
+    extension one takes by default): from each, an image, a video and a
+    recording."""
+    from utk_curio.backend.app.discovery.application.probe import file_kind
+    from utk_curio.backend.app.discovery.domain.manifest import COLLECTION_KINDS, DEFAULT_EXTENSIONS
+    from utk_curio.sandbox.util.collections import derived_type
+
+    names = {f"x.{ext}" for extensions in DEFAULT_EXTENSIONS.values() for ext in extensions} | {"x.csv", "README"}
+    kinds = {file_kind(resource, name) for resource in COLLECTION_KINDS for name in names}
+    derived = {}
+    for kind in sorted(kinds):
+        try:
+            derived[kind] = [derived_type(kind, ext)[2] for ext in ("png", "mp4", "wav")]
+        except ValueError as exc:
+            derived[kind] = str(exc)
+    assert derived == {kind: ["image", "video", "audio"] for kind in kinds}
 
 
 class TestExecutionResolution:

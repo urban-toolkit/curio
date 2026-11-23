@@ -155,12 +155,17 @@ data = curio_load_data([!! data !!])
 return data
 ```
 
+An input can pick a `dataset` widget's dataset instead: its `options` name the
+input in `pickedBy` and give in `choices` the dataset each of its texts picks
+([Inside a node](USAGE.md#inside-a-node)).
+
 To have the node's **Widgets** tab show only its controls, add
 `"opensOnControls": true`, as Data Loading and Data Export do: a label and a
 control for each widget, as on a dashboard tile, with no tags, **Edit**,
 **Delete**, **Add widget** or selections. The node opens there while its code
 reads one of its widgets, and the code stays on the **Code** tab. A node whose
-code reads none of its widgets opens on its code.
+code reads none of its widgets opens on its code. A node with neither code nor
+a spec opens on what its behavior shows, as Simple View opens on its cards.
 
 When the starter is the node's whole content and only its widgets change from
 one use to the next, add `"starterIsContent": true` beside `source`. A node the
@@ -222,8 +227,9 @@ return convert_raster(input_0, zoom=[!! zoom !!])
 - A node's logic is in its package's functions
   ([Extending](EXTENDING.md#a-nodes-logic-is-in-its-packages-functions)). The
   template's source holds the node's settings, as widgets or constants, and a
-  short call: Media's Sample Video Frames sets `EVERY_SECONDS` and returns a
-  call of `sample_video_frames`, from Media's `media_collections`.
+  short call: Media's Sample Video Frames returns a call of
+  `sample_video_frames`, from Media's `media_collections`, which reads its
+  `every_seconds` widget as `float([!! every_seconds !!])`.
 - A module's `__all__` names what it offers, and each function it offers says
   what it does in the first paragraph of its docstring. That is what users and
   agents read of it: the header above a node's code lists those functions

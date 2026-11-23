@@ -108,6 +108,36 @@ def node_code(node: object) -> str:
     return content if isinstance(content, str) else ""
 
 
+#: A whole catalog id, as a dataset widget holds one.
+_ITEM_ID_RE = re.compile(ITEM_ID)
+
+
+def dataset_widget_ids(node: object) -> list[str]:
+    """The ids a saved spec *node*'s dataset widgets hold, first seen first:
+    each one's value, or every choice of one an input picks
+    (``options.pickedBy``), which loads whichever its input's value picks. A
+    node reads them through ``curio_load_data([!! data !!])``, which names
+    none in its code until a run writes it in, so a scan of what a dataflow
+    reads adds these to the ids its code names."""
+    if not isinstance(node, dict) or not isinstance(node.get("metadata"), dict):
+        return []
+    widgets = node["metadata"].get("widgets")
+    ids: list[str] = []
+    for widget in widgets if isinstance(widgets, list) else []:
+        if not isinstance(widget, dict) or widget.get("type") != "dataset":
+            continue
+        options = widget.get("options") if isinstance(widget.get("options"), dict) else {}
+        choices = options.get("choices")
+        if "pickedBy" in options:
+            held = list(choices.values()) if isinstance(choices, dict) else []
+        else:
+            held = [widget["value"] if "value" in widget else widget.get("default")]
+        for value in held:
+            if isinstance(value, str) and _ITEM_ID_RE.fullmatch(value) and value not in ids:
+                ids.append(value)
+    return ids
+
+
 def model_ids_in_code(code: object, *, limit: int = MAX_MODEL_IDS) -> list[str]:
     """Model ids referenced by literal ``curio_load_model`` calls, first seen first."""
     if not isinstance(code, str) or "curio_load_model" not in code:

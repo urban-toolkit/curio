@@ -103,9 +103,14 @@ class Run:
         self.printed: dict[str, str] = {}
 
     def load_data(self, dataset_id):
+        """``curio_load_data`` as the sandbox reads each of the example's
+        datasets: a collection's rows, as ``curio_load_collection`` gives
+        them (``catalog_helpers.read_one``), or the team's CSV."""
         import pandas as pd
 
         root, manifest = self.catalog[dataset_id]
+        if manifest["format"] == "collection":
+            return self.helpers["curio_load_collection"](dataset_id)
         return pd.read_csv(root / manifest["dataFile"])
 
     def __getitem__(self, name):
@@ -127,7 +132,10 @@ class Run:
             for widget in node.get("metadata", {}).get("widgets", [])
         ]
         slots = list(range(len(values)))
-        code, problems = resolve_references(node["content"], widgets, "python", [{"slot": slot} for slot in slots])
+        # Each circle with the value a run reads of it, which a dataset
+        # widget it picks reads (Records' and Snapshots' Data).
+        inputs = [{"slot": slot, "value": value} for slot, value in zip(slots, values)]
+        code, problems = resolve_references(node["content"], widgets, "python", inputs)
         assert problems == [], problems
         printed = io.StringIO()
         with contextlib.redirect_stdout(printed):
@@ -222,6 +230,30 @@ def test_records_of_the_day_reads_the_day_alone(run):
     empty = records[records["class"].isna()]
     assert len(empty) and empty[["x0", "y0", "x1", "y1", "confidence"]].isna().all().all()
     assert "W042 on 2025-08-09: 906,444 bytes from 1,587, 375 images" in run.printed["records-of-the-day"]
+
+
+@pytest.mark.parametrize(
+    "camera,records,snapshots",
+    [
+        ("W042 · Aug 9, 2025", "data.sage.idot-w042-records-2025-08", "data.sage.idot-w042-snapshots-2025-08-09"),
+        ("W065 · Aug 17, 2025", "data.sage.idot-w065-records-2025-08", "data.sage.idot-w065-snapshots-2025-08-17"),
+        ("W06E · Dec 2, 2025", "data.sage.idot-w06e-records-2025-12", "data.sage.idot-w06e-snapshots-2025-12-02"),
+    ],
+)
+def test_records_and_snapshots_load_the_collections_the_camera_picks(tmp_path, camera, records, snapshots):
+    """The Records and Snapshots nodes read their Data widget, which the
+    Settings node's camera picks among the three cameras' collections: each
+    loads its camera's, every row of it, as that collection's own index
+    lists them."""
+    import pandas as pd
+
+    run = Run(tmp_path, camera=camera)
+    for name, dataset_id in (("records", records), ("snapshots", snapshots)):
+        loaded = run[name]
+        root, manifest = run.catalog[dataset_id]
+        assert set(loaded["dataset_id"]) == {dataset_id}, name
+        assert len(loaded) == len(pd.read_parquet(root / manifest["dataFile"])), name
+        assert set(loaded["crossing"]) == {camera.split(" ")[0]}, name
 
 
 def test_yolo26ns_boxes_join_the_snapshots_by_their_names(run):

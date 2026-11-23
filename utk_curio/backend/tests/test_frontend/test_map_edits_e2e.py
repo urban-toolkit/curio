@@ -2645,14 +2645,19 @@ def test_a_chicago_building_of_several_parts_takes_a_height_on_one_part_chosen_i
     each with an ``osm_id`` of its own, picked on the map in the node's Edit.
 
     1. Its form is for all its parts: a height they differ in is empty, with
-       a note that lists their heights, and osm_id cannot be changed.
-    2. Its parts menu offers all the parts, then each part by its osm_id. A
-       part after the first, of another height, chosen there: the field shows
-       that part's height, the map still lights the whole building, and a
-       height typed and applied is one edit that names that part alone,
+       a note that lists their heights, and osm_id cannot be changed. A part
+       the node hands on with no height is listed at the height the map draws
+       it at, 6 m above its base, marked as the default.
+    2. Its parts menu offers all the parts, then each part by its osm_id and
+       its height as the form shows it. A part with no height chosen there:
+       its field holds none and shows its default in its place. A part after
+       the first, of another height, chosen there: the field shows that
+       part's height, the map still lights the whole building, and a height
+       typed and applied is one edit that names that part alone,
        ``where building_id == <building> and osm_id == <part>``.
     3. Commit edits runs the node, which hands that part on with the new
-       height and the building's other parts with their own.
+       height and the building's other parts with their own, a part with no
+       height with none.
 
     What is wrong at each step is kept, and the test fails with all of it
     before its capture: the node's body, without its header, scrolled to the
@@ -2681,18 +2686,24 @@ def test_a_chicago_building_of_several_parts_takes_a_height_on_one_part_chosen_i
     )
     parts = [(row.get("properties") or {}).get(PART_KEY) for row in rows]
     heights = [(row.get("properties") or {}).get("height") for row in rows]
+    # Each part's height as the node's form reads it and shows it: its own,
+    # else, for a part with none, the height the map draws it at, marked as
+    # the default; and the first part with none.
+    in_form = [_form_height(row.get("properties") or {}) for row in rows]
+    form_texts = [text for _value, text in in_form]
+    bare = next((i for i, (value, _text) in enumerate(in_form) if value is None), None)
     drawn = page.evaluate(_DRAWN_PARTS_JS, {"id": map_id, "table": BUILDINGS, "key": KEY, "part": PART_KEY}) or []
     lit_rows = [building] * sum(1 for key, _part in drawn if key == building)
     assert len(lit_rows) >= 2, f"the map draws {len(lit_rows)} rows of building {building}, not two parts or more"
-    # The part chosen: the first after the first part whose height differs
-    # from the first part's, else the last; the height it is given, none of
-    # its parts' heights.
-    chosen = next((i for i in range(1, len(rows)) if not _same_number(heights[i], heights[0])), len(rows) - 1)
+    # The part chosen: the first after the first part whose height, as the
+    # form shows it, differs from the first part's, else the last; the height
+    # it is given, none of its parts' heights.
+    chosen = next((i for i in range(1, len(rows)) if form_texts[i] != form_texts[0]), len(rows) - 1)
     part_id = parts[chosen]
     part = _as_text(part_id)
     where = f"{KEY} == {_literal(building)} and {PART_KEY} == {_literal(part_id)}"
     new_height = NEW_HEIGHT
-    while any(_same_number(new_height, height) for height in heights):
+    while any(_same_number(new_height, height) for height in [*heights, *map(_leading_number, form_texts)]):
         new_height += 1
     every = f"All {len(rows)} parts"
 
@@ -2716,19 +2727,30 @@ def test_a_chicago_building_of_several_parts_takes_a_height_on_one_part_chosen_i
         return (found.first.text_content() or "").strip() if found.count() else None
 
     # 1. The form is for all its parts: a height they differ in is empty, with
-    # a note that lists their heights, and osm_id cannot be changed.
-    if len(set(heights)) > 1:
+    # a note that lists their heights, a part with no height at its default,
+    # marked, and osm_id cannot be changed.
+    if bare is None:
+        wrong.append(
+            f"the node hands on no part of building {building} with no height: its {len(rows)} parts are "
+            f"{', '.join(_as_text(height) for height in heights)} m tall"
+        )
+    if len(set(form_texts)) > 1:
         shown = field.input_value()
         if shown != "":
             wrong.append(
                 f"the form shows the height {shown}, building {building}'s first part's, as the building's: its "
-                f"{len(rows)} parts are {', '.join(_as_text(height) for height in heights)} m tall"
+                f"{len(rows)} parts are {', '.join(form_texts)} m tall"
             )
+        # A field the parts differ in shows no default in its place.
+        placeholder = field.get_attribute("placeholder")
+        if placeholder:
+            wrong.append(f"on all of building {building}'s parts, the height field shows {placeholder!r} in its place")
         listed = text_of("interaction-mixed-height")
-        if not re.match(rf"{len(set(heights))} values: ", listed or ""):
+        note = _values_note(form_texts)
+        if listed != note:
             wrong.append(
-                f"no note beside the height lists the {len(set(heights))} heights of building {building}'s parts: "
-                f"it reads {listed!r}"
+                f"no note beside the height lists the {len(set(form_texts))} heights of building {building}'s parts "
+                f"as {note!r}: it reads {listed!r}"
             )
     if edit.get_by_test_id(f"interaction-field-{PART_KEY}").count():
         wrong.append(
@@ -2763,19 +2785,45 @@ def test_a_chicago_building_of_several_parts_takes_a_height_on_one_part_chosen_i
             pattern.match(label or "") for pattern, label in zip(named, labels[1:])
         ):
             wrong.append(f"the parts menu offers {labels}, not {every!r} and then each part by its {PART_KEY}: {parts}")
+        # Each part is named at its height as the form shows it, a part with
+        # no height at its default, marked.
+        if len(set(form_texts)) > 1:
+            unsaid = [
+                label for label, text in zip(labels[1:], form_texts)
+                if not re.search(rf"(^|, )height {re.escape(text)}(, |$)", label or "")
+            ]
+            if unsaid:
+                wrong.append(
+                    f"the parts menu names the parts {unsaid}, not each at its height as the form shows it: {form_texts}"
+                )
         selected = menu.evaluate("(menu) => (menu.selectedOptions[0] ? menu.selectedOptions[0].textContent : null)")
         if selected != every:
             wrong.append(f"the parts menu opens on {selected!r}, not {every!r}")
+        # A part with no height chosen: its field holds none, and shows in its
+        # place the height the map draws the part at, marked as the default.
+        bare_label = None if bare is None else next((label for label in labels if named[bare].match(label or "")), None)
+        if bare_label is not None:
+            menu.select_option(label=bare_label)
+            try:
+                expect(field).to_have_attribute("placeholder", form_texts[bare], timeout=5000)
+                expect(field).to_have_value("", timeout=5000)
+            except AssertionError:
+                wrong.append(
+                    f"with part {_as_text(parts[bare])}, which holds no height, chosen in the parts menu, the height "
+                    f"field holds {field.input_value()!r} and shows {field.get_attribute('placeholder')!r} in its "
+                    f"place, not none and its default {form_texts[bare]!r}"
+                )
         label = next((label for label in labels if named[chosen].match(label or "")), None)
         if label is None:
             wrong.append(f"the parts menu offers no option for part {part}: {labels}")
         else:
             menu.select_option(label=label)
-            shown = _wait_for_field(field, heights[chosen])
-            if not _shows(shown, heights[chosen]):
+            own = in_form[chosen][0]
+            shown = _wait_for_field(field, own)
+            if not _shows(shown, own):
                 wrong.append(
                     f"with part {part} chosen in the parts menu, the height field shows {shown!r}, not that part's "
-                    f"{_as_text(heights[chosen])}"
+                    f"{form_texts[chosen]}"
                 )
             fixed = text_of(f"interaction-fixed-{PART_KEY}")
             if fixed != f"{part}, cannot be changed":
@@ -2812,7 +2860,8 @@ def test_a_chicago_building_of_several_parts_takes_a_height_on_one_part_chosen_i
     _wait_for_redraw(page, map_id, "the Apply")
 
     # 3. Commit edits: the node hands that part on with the new height, and
-    # the building's other parts with their own.
+    # the building's other parts with their own, a part with no height with
+    # none.
     _commit(page, edit_id, [edit_id], [map_id], below=1)
     out = _handed_layers(load_artifact_as_dict(page.evaluate(_OUTPUT_ARTIFACT_JS, edit_id)))[BUILDINGS]["features"]
     now = {
@@ -2870,6 +2919,59 @@ def test_a_chicago_building_of_several_parts_takes_a_height_on_one_part_chosen_i
 def _as_text(value) -> str:
     """*value* as a form shows it: a number as JavaScript writes it, a text as it is."""
     return value if isinstance(value, str) else _literal(value)
+
+
+#: The metres a building's level counts for, and how tall, above its base, a
+#: map draws a building part that holds no height (utils/buildingHeight
+#: ``METRES_PER_LEVEL`` and ``DEFAULT_BUILDING_HEIGHT``).
+METRES_PER_LEVEL = 3.4
+DEFAULT_HEIGHT = 6
+
+
+def _leading_number(value) -> float:
+    """*value* as the map reads a height or a level: the number its text
+    starts with when above 0, else 0 (JavaScript's ``parseFloat``)."""
+    found = re.match(r"\s*[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?", "" if value is None else str(value))
+    number = float(found.group(0)) if found else 0.0
+    return number if math.isfinite(number) and number > 0 else 0.0
+
+
+def _form_height(properties: dict) -> tuple[object, str]:
+    """A building part's height as the Map Editor's form reads it, and the
+    text it shows it by (utils/buildingHeight ``readableBuildingProperties``,
+    featureParts ``buildingDefault``).
+
+    Its own is the top the map reads, ``height``, else ``building:height``,
+    else its levels at 3.4 m each, when above its base (``min_height``, else
+    its lowest level): its ``height`` when that holds this top, else the top.
+    A part with none holds no value, and is shown at the height the map draws
+    it at, 6 m above its base, marked as the default."""
+    value = properties.get
+    base = (
+        _leading_number(value("min_height")) or METRES_PER_LEVEL * _leading_number(value("min_level"))
+        or METRES_PER_LEVEL * _leading_number(value("building:min_level"))
+    )
+    top = (
+        _leading_number(value("height")) or _leading_number(value("building:height"))
+        or METRES_PER_LEVEL * _leading_number(value("levels"))
+        or METRES_PER_LEVEL * _leading_number(value("building:levels"))
+    )
+    held = value("height")
+    if top > base:
+        own = held if _leading_number(held) == top else top
+        return own, _as_text(own)
+    if held is not None and _as_text(held) != "":
+        return held, _as_text(held)
+    return None, f"{_as_text(base + DEFAULT_HEIGHT)} (default)"
+
+
+def _values_note(texts: list[str]) -> str:
+    """The note beside a property a feature's parts differ in, from the text
+    the form shows of each part's value, in the parts' order: how many values,
+    the first three, and how many more (featureParts ``valuesNote``)."""
+    distinct = list(dict.fromkeys(texts))
+    more = f", and {len(distinct) - 3} more" if len(distinct) > 3 else ""
+    return f"{len(distinct)} values: {', '.join(text or 'empty' for text in distinct[:3])}{more}"
 
 
 def _same_number(a, b) -> bool:

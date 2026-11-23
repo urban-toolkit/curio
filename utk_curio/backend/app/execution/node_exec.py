@@ -26,6 +26,7 @@ from utk_curio.backend.app.discovery.application.exec_collections import (
 from utk_curio.backend.app.execution.sandbox_client import sandbox_request
 from utk_curio.backend.app.monitor import counters as _monitor_counters
 from utk_curio.backend.app.monitor import errors as _monitor_errors
+from utk_curio.backend.app.monitor import usage as _monitor_usage
 from utk_curio.backend.config import CURIO_DEFAULT_SAVE_NODE_OUTPUT
 
 # The sandbox round trip for one node run, in seconds. It was 120 historically;
@@ -779,17 +780,25 @@ def _keep_run_output(user, run: NodeRun, kept_run: _KeptRun, output, *,
               f"{e.__class__.__name__}: {e}", flush=True)
 
 
-def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict, int]:
-    t0 = time.perf_counter()
-    label = _LABELS[language]
-    tag = label.lstrip('/')
-    input_ref = parse_input_ref(run.input)
-    inline_rows = inline_rows_problem(run, language=language)
-    if inline_rows:
-        return {
-            'stdout': [], 'stderr': inline_rows, 'input': input_ref,
-            'output': {'path': '', 'dataType': 'str'},
-        }, 200
+@dataclass(frozen=True)
+class _InputAccess:
+    """How a run reads its inputs (:func:`_input_access`): the hosted guest
+    it is the play of, the dataflow its outputs are kept on, the names it
+    reads, the saved and kept outputs among them by name, what a wrapper
+    among them names, and the kept session it runs in, if any."""
+
+    visitor: _Visitor | None
+    kept_on: str | None
+    names: list
+    saved_inputs: dict
+    wrapped: list | None
+    kept_run: _KeptRun | None
+
+
+def _input_access(user, session_token, run: NodeRun, input_ref: dict) -> _InputAccess:
+    """How *run*, as *user* signed in as *session_token*, reads its inputs:
+    the one rule its run on the sandbox reads them by (:func:`_execute`) and a
+    read of a value on one of its circles (:func:`input_value`) follows."""
     # A hosted guest's play keeps what it makes on their own copy of the
     # dataflow, made before anything is written (the spec lock comes before
     # the database, #909); a viewer's step on that guest's dashboard reads
@@ -812,13 +821,130 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
             **saved_inputs,
             **resolve_kept_inputs(user, names, run.dataflow_id, saved_inputs, kept_on=kept_on),
         }
-        from utk_curio.common.kept_sessions import is_kept_session
+    return _InputAccess(visitor, kept_on, names, saved_inputs, wrapped, kept_run)
 
-        if is_kept_session(session_token) and _foreign_wrapped(kept_on, wrapped, saved_inputs):
-            return {
-                'stdout': [], 'stderr': FOREIGN_WRAPPER_MESSAGE, 'input': input_ref,
-                'output': {'path': '', 'dataType': 'str'},
-            }, 200
+
+def _reads_a_foreign_wrapper(session_token, access: _InputAccess) -> bool:
+    """Whether a run in a kept session of its own that is not kept, a
+    dashboard viewer's step, reads an output that is not its dataflow's
+    through a wrapper among its inputs (:func:`_foreign_wrapped`)."""
+    from utk_curio.common.kept_sessions import is_kept_session
+
+    return (
+        access.kept_run is None and is_kept_session(session_token)
+        and _foreign_wrapped(access.kept_on, access.wrapped, access.saved_inputs)
+    )
+
+
+class InputReadError(Exception):
+    """A value on a node's circle could not be read (:func:`input_value`)."""
+
+
+#: How long a read of a value on a node's circle may take, in seconds.
+INPUT_VALUE_TIMEOUT = 60
+#: The most bytes a read of a value on a node's circle holds: a picked
+#: dataset widget reads a text, or a dict that holds one.
+INPUT_VALUE_MAX_BYTES = 512_000
+
+
+def plain_value(envelope):
+    """A value as node code reads it back from its envelope (``parseOutput``):
+    a list's and a bundle's items each unwrapped too, a dict of envelopes'
+    values too, and a float that is no number as NaN. ``plainOf`` in
+    ``utils/references/inputScope.ts``."""
+    if not isinstance(envelope, dict) or not isinstance(envelope.get("dataType"), str) or "data" not in envelope:
+        return envelope
+    kind, data = envelope["dataType"], envelope["data"]
+    if kind in ("list", "outputs") and isinstance(data, list):
+        return [plain_value(item) for item in data]
+    if kind == "dict" and isinstance(data, dict):
+        return {key: plain_value(cell) for key, cell in data.items()}
+    if kind == "float" and data is None:
+        return float("nan")
+    return data
+
+
+def read_artifact_value(name: str, *, session_id: str | None, saved_path: str | None = None):
+    """The value the artifact *name* holds, read by the sandbox under
+    *session_id*, else from the saved output's file *saved_path*, as a run
+    reads an input (``parsers.load_artifact``). Raises :class:`InputReadError`
+    when the sandbox refuses it, or it holds more than
+    :data:`INPUT_VALUE_MAX_BYTES`."""
+    params = {"fileName": name, "sessionId": session_id}
+    if saved_path:
+        params["savedPath"] = str(saved_path)
+    response = sandbox_request(
+        "get", "/get", label="/get input value", timeout=INPUT_VALUE_TIMEOUT, params=params, stream=True,
+    )
+    try:
+        chunks, total = [], 0
+        for chunk in response.iter_content(chunk_size=32_768):
+            total += len(chunk or b"")
+            if total > INPUT_VALUE_MAX_BYTES:
+                raise InputReadError(f"it holds more than {INPUT_VALUE_MAX_BYTES:,} bytes")
+            chunks.append(chunk or b"")
+    finally:
+        response.close()
+    try:
+        body = json.loads(b"".join(chunks).decode("utf-8", "replace"))
+    except ValueError as exc:
+        raise InputReadError("the sandbox's answer is no JSON") from exc
+    if not response.ok:
+        message = body.get("message") if isinstance(body, dict) else None
+        raise InputReadError(str(message or f"the sandbox answered {response.status_code}"))
+    return plain_value(body)
+
+
+def _input_on(run: NodeRun, slot: int) -> dict | None:
+    """The reference *run*'s input holds on circle *slot*, or None when no
+    edge reaches it: one upstream's output, or one item of an ``outputs``
+    bundle, in circle order (``input_slots``)."""
+    raw = run.input if isinstance(run.input, dict) else {}
+    slots = list(run.input_slots or (0,))
+    refs = raw.get("data") if raw.get("dataType") == "outputs" and isinstance(raw.get("data"), list) else [raw]
+    if slot not in slots or slots.index(slot) >= len(refs):
+        return None
+    ref = refs[slots.index(slot)]
+    return ref if isinstance(ref, dict) else None
+
+
+def input_value(user, session_token: str | None, run: NodeRun, slot: int):
+    """The value on circle *slot* of *run*'s input, read as the run's own code
+    would read that input (:func:`_input_access`): under the kept session
+    that made it, the saved output's file, or the session the run runs in. A
+    value *run* could not read is not read: :class:`InputReadError`. What a
+    run reads before it writes a node's code, for a dataset widget the value
+    picks (``code_references._picked``)."""
+    ref = _input_on(run, slot)
+    name = (ref or {}).get("filename") or (ref or {}).get("path")
+    if not isinstance(name, str) or not name:
+        raise InputReadError("no stored output reaches it")
+    access = _input_access(user, session_token, run, parse_input_ref(run.input))
+    if _reads_a_foreign_wrapper(session_token, access):
+        raise InputReadError(FOREIGN_WRAPPER_MESSAGE)
+    entry = access.saved_inputs.get(name) or {}
+    session = entry.get("session") or (access.kept_run.session_id if access.kept_run else session_token)
+    return read_artifact_value(name, session_id=session, saved_path=entry.get("path"))
+
+
+def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict, int]:
+    t0 = time.perf_counter()
+    label = _LABELS[language]
+    tag = label.lstrip('/')
+    input_ref = parse_input_ref(run.input)
+    inline_rows = inline_rows_problem(run, language=language)
+    if inline_rows:
+        return {
+            'stdout': [], 'stderr': inline_rows, 'input': input_ref,
+            'output': {'path': '', 'dataType': 'str'},
+        }, 200
+    access = _input_access(user, session_token, run, input_ref)
+    visitor, saved_inputs, kept_run = access.visitor, access.saved_inputs, access.kept_run
+    if _reads_a_foreign_wrapper(session_token, access):
+        return {
+            'stdout': [], 'stderr': FOREIGN_WRAPPER_MESSAGE, 'input': input_ref,
+            'output': {'path': '', 'dataType': 'str'},
+        }, 200
 
     body = {
         "code": run.code,
@@ -1006,12 +1132,16 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
     # record_runtime_outcome returns early whenever node/dataflow/user is
     # missing, which is every execution from an unsaved canvas. Counters placed
     # in there would silently under-count exactly the runs a new user makes.
+    ok = bool(isinstance(output, dict) and output.get("path"))
+    ran_ms = (time.perf_counter() - t0) * 1000.0
     _monitor_counters.record_execution(
         language=language,
         node_type=run.node_type,
-        ok=bool(isinstance(output, dict) and output.get("path")),
-        duration_ms=(time.perf_counter() - t0) * 1000.0,
+        ok=ok,
+        duration_ms=ran_ms,
     )
+    # The same run in the Usage tab's history, kept across restarts.
+    _monitor_usage.record(f"node.{language}", ms=ran_ms, failed=not ok)
     if not (isinstance(output, dict) and output.get("path")):
         # Same canonical predicate as above: an EMPTY output path. A non-empty
         # stderr is NOT the predicate, because benign warnings land there too
@@ -1058,6 +1188,7 @@ def _unavailable_reply(
     _monitor_counters.record_execution(
         language="python", node_type=run.node_type, ok=False, duration_ms=duration_ms,
     )
+    _monitor_usage.record("node.python", ms=duration_ms, failed=True)
     _monitor_errors.record(
         "node",
         summary="A file Curio downloads on first use could not be downloaded",

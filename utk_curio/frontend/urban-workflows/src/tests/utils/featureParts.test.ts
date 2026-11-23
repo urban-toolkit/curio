@@ -3,7 +3,9 @@
  * (utils/editFeatures/featureParts, #1092): an OSM building of several parts
  * is a row for each, holding its building's building_id and an osm_id of its
  * own. An edit of one part names it by both, through `where`; a feature of one
- * row by its id; a feature whose rows nothing tells apart is refused.
+ * row by its id; a feature whose rows nothing tells apart is refused. The
+ * node's form lists a building's parts, a part with no height at the height
+ * the map draws it at, marked as the default (`partsForm`, `buildingDefault`).
  */
 import { applyEdits } from "../../utils/editFeatures/applyEdits";
 import { partConditions, partRedraw, partsRefusal, partsToldApart, rowsOf, samePart } from "../../utils/editFeatures/featureParts";
@@ -74,4 +76,56 @@ test("a feature's rows are found by its id as a selection names it, and a part b
   expect(samePart(TOWER[1], { ...TOWER[1] })).toBe(true);
   expect(samePart(TOWER[0], TOWER[1])).toBe(false);
   expect(samePart(TOWER[0], null)).toBe(false);
+});
+
+describe("the form of a building's parts, as a buildings layer draws them", () => {
+  // Read off the module, so a checkout without them fails each case on its own.
+  const { buildingDefault, partsForm } = require("../../utils/editFeatures/featureParts") as any;
+  // A part 140 m tall, one 13.6 m tall from its levels, one with no height,
+  // and one with none above its base of 10 m.
+  const PARTS = [
+    row({ building_id: 7, osm_id: 1, height: 140 }),
+    row({ building_id: 7, osm_id: 2, height: 13.6, "building:levels": 4 }),
+    row({ building_id: 7, osm_id: 3, height: null }),
+    row({ building_id: 7, osm_id: 4, min_height: 10 }),
+  ];
+  const NAMES = ["osm_id", "height"];
+
+  test("on all the parts, a part with no height is listed at the height the map draws it at, marked as the default", () => {
+    const form = partsForm(PARTS, NAMES, null, buildingDefault);
+    expect(form.mixed.height).toBe("4 values: 140, 13.6, 6 (default), and 1 more");
+    expect(form.labels).toEqual([
+      "osm_id 1, height 140", "osm_id 2, height 13.6", "osm_id 3, height 6 (default)", "osm_id 4, height 16 (default)",
+    ]);
+    // The field of a value the parts differ in shows none, and no default.
+    expect(form.values).not.toHaveProperty("height");
+    expect(form.defaults).toEqual({});
+  });
+
+  test("a part with no height chosen holds none, and its field shows the default in its place", () => {
+    const form = partsForm(PARTS, NAMES, PARTS[2], buildingDefault);
+    expect(form.values.height).toBeNull();
+    expect(form.defaults).toEqual({ height: "6 (default)" });
+    expect(partsForm(PARTS, NAMES, PARTS[3], buildingDefault).defaults).toEqual({ height: "16 (default)" });
+    expect(partsForm(PARTS, NAMES, PARTS[0], buildingDefault).defaults).toEqual({});
+  });
+
+  test("a building of one part with no height shows the default too, and parts that share none show it once", () => {
+    expect(partsForm([PARTS[2]], NAMES, null, buildingDefault).defaults).toEqual({ height: "6 (default)" });
+    const bare = [row({ building_id: 8, osm_id: 1 }), row({ building_id: 8, osm_id: 2 })];
+    const form = partsForm(bare, NAMES, null, buildingDefault);
+    expect(form.mixed).toEqual({});
+    expect(form.defaults).toEqual({ height: "6 (default)" });
+  });
+
+  test("a height of 0 is the part's own, and another layer, or another property, has no default", () => {
+    expect(buildingDefault("height", { height: 0 })).toBeNull();
+    expect(buildingDefault("height", { "building:levels": 3 })).toBeNull();
+    expect(buildingDefault("name", {})).toBeNull();
+    expect(buildingDefault("height", {})).toBe(6);
+    // Without a layer's default, the two parts with no height are one empty value.
+    const form = partsForm(PARTS, NAMES);
+    expect(form.mixed.height).toBe("3 values: 140, 13.6, empty");
+    expect(form.defaults).toEqual({});
+  });
 });

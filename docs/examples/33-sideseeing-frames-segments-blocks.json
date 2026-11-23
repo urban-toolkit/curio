@@ -92,12 +92,33 @@
         "type": "curio.media/video-frames",
         "x": 645,
         "y": 346,
-        "content": "\"\"\"Sample Video Frames.\n\nInput: a collection's rows, as Data Loading's `curio_load_collection(...)` returns\nthem. Every video row becomes one row per sampled frame, and each frame is a\nJPEG written beside the collection's other derived files. A frame row has the\ncolumns of an image row (`path`, `thumbnail`, `image_url`, `width`, `height`),\nso Simple View shows the frames and any node that reads images reads them. It\nalso keeps the video's own columns: its fields, its position, and its time,\nmoved forward by the frame's offset. `t_s` is the frame's time in the video,\nand `frame` its number there.\n\nSettings:\n- EVERY_SECONDS: the gap between two sampled frames.\n- MAX_FRAMES_PER_VIDEO: frames kept from one video at most.\n\"\"\"\n\nfrom media_collections import sample_video_frames\n\nEVERY_SECONDS = 2.0\nMAX_FRAMES_PER_VIDEO = 450\n\nreturn sample_video_frames(\n    input_0, curio_derived_file,\n    every_seconds=EVERY_SECONDS, max_frames_per_video=MAX_FRAMES_PER_VIDEO,\n)\n",
+        "content": "\"\"\"Sample Video Frames.\n\nInput: a collection's rows, as Data Loading's `curio_load_collection(...)` returns\nthem. Every video row becomes one row per sampled frame, and each frame is a\nJPEG written beside the collection's other derived files. A frame row has the\ncolumns of an image row (`path`, `thumbnail`, `image_url`, `width`, `height`),\nso Simple View shows the frames and any node that reads images reads them. It\nalso keeps the video's own columns: its fields, its position, and its time,\nmoved forward by the frame's offset. `t_s` is the frame's time in the video,\nand `frame` its number there.\n\nThe Widgets tab sets the gap between two sampled frames, in seconds, and the\nmost frames kept from one video.\n\"\"\"\n\nfrom media_collections import sample_video_frames\n\nreturn sample_video_frames(\n    input_0, curio_derived_file,\n    every_seconds=float([!! every_seconds !!]),\n    max_frames_per_video=int([!! max_frames_per_video !!]),\n)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Sample a frame every 2 s over the whole walk.",
         "metadata": {
-          "keywords": []
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "every_seconds",
+              "type": "number",
+              "label": "Gap between frames",
+              "default": 2.0,
+              "options": {
+                "units": "s"
+              }
+            },
+            {
+              "name": "max_frames_per_video",
+              "type": "number",
+              "label": "Maximum frames per video",
+              "default": 300,
+              "options": {
+                "step": 1
+              },
+              "value": 450
+            }
+          ]
         }
       },
       {
@@ -118,12 +139,98 @@
         "type": "model.curio.sam3/segment-images",
         "x": 1290,
         "y": 557,
-        "content": "from sam3_images import find_in_images\n\n# What to look for, in plain words: SAM 3 takes any short noun phrase. These are\n# the 9 labels the SideSeeing walk example tracks: the ways a curb meets the\n# street, what marks a crossing underfoot, and what stands in a walker's way.\nLABELS = [\n    \"curb cut\", \"curb ramp\", \"wheelchair ramp\", \"tactile paving\",\n    \"pole\", \"bollard\", \"construction barrier\", \"traffic cone\", \"person\",\n]\nTHRESHOLD = 0.5  # the score SAM 3 needs to keep an object\nWIDTH = 960  # the widest images are read and drawn at\nMAX_IMAGES = 450  # the most images one run looks at\n\nreturn find_in_images(\n    input_0, curio_load_model(\"model.curio.sam3\"), curio_derived_file,\n    labels=LABELS, threshold=THRESHOLD, width=WIDTH, max_images=MAX_IMAGES,\n)\n",
+        "content": "from sam3_images import find_in_images\n\n# The Widgets tab sets what to look for, in plain words (SAM 3 takes any short\n# noun phrase): here the 9 labels the SideSeeing walk example tracks, the ways\n# a curb meets the street, what marks a crossing underfoot, and what stands in\n# a walker's way. It also sets the score SAM 3 needs to keep an object, the\n# widest images are read and drawn at, and the most images one run looks at.\n\nreturn find_in_images(\n    input_0, curio_load_model(\"model.curio.sam3\"), curio_derived_file,\n    labels=[!! labels !!], threshold=float([!! threshold !!]),\n    width=int([!! width !!]), max_images=int([!! max_images !!]),\n)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Find what each of the 9 labels names in each frame.",
         "metadata": {
-          "keywords": []
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "labels",
+              "type": "text-list",
+              "label": "Labels",
+              "default": [
+                "sidewalk",
+                "crosswalk",
+                "curb",
+                "driveway",
+                "alley",
+                "tactile paving",
+                "stairs",
+                "curb ramp",
+                "curb cut",
+                "wheelchair ramp",
+                "ramp",
+                "curbramp",
+                "traffic light",
+                "pedestrian signal",
+                "stop sign",
+                "pole",
+                "fire hydrant",
+                "trash bin",
+                "bench",
+                "bollard",
+                "tree",
+                "planter",
+                "parking meter",
+                "bicycle rack",
+                "bus stop",
+                "construction barrier",
+                "traffic cone",
+                "scaffolding",
+                "pothole",
+                "puddle",
+                "manhole cover",
+                "sidewalk crack",
+                "person",
+                "car",
+                "bicycle"
+              ],
+              "value": [
+                "curb cut",
+                "curb ramp",
+                "wheelchair ramp",
+                "tactile paving",
+                "pole",
+                "bollard",
+                "construction barrier",
+                "traffic cone",
+                "person"
+              ]
+            },
+            {
+              "name": "threshold",
+              "type": "slider",
+              "label": "Score threshold",
+              "default": 0.5,
+              "options": {
+                "min": 0,
+                "max": 1
+              }
+            },
+            {
+              "name": "width",
+              "type": "number",
+              "label": "Maximum width",
+              "default": 960,
+              "options": {
+                "step": 1,
+                "units": "px"
+              }
+            },
+            {
+              "name": "max_images",
+              "type": "number",
+              "label": "Maximum images per run",
+              "default": 300,
+              "options": {
+                "min": 1,
+                "step": 1
+              },
+              "value": 450
+            }
+          ]
         }
       },
       {
@@ -196,12 +303,43 @@
         "type": "curio.media/split-video",
         "x": 1935,
         "y": 1005,
-        "content": "\"\"\"Split Video.\n\nInput: on the top circle, a collection's rows, as Data Loading's\n`curio_load_collection(...)` returns them; on the bottom circle, if anything is\nwired there, where to cut: one row per block, with `t_s`, where the block\nstarts in seconds from its video's start, and maybe `end_s`, where it ends, and\n`video_file_id`, the video it cuts. Every video becomes one row per block, each\nblock an MP4 of its own that Simple View plays, with no sound. A block's row\nleads with `block`, the cut's own columns (a street's name, say), `t_s` and\n`end_s`, where the block starts and ends in the video, so a player linked by\ntime reads the video's time; then it keeps the video's own columns.\n\nSettings:\n- BLOCK_SECONDS: the length of one block, when nothing is wired to the bottom circle.\n- WIDTH: the widest a block is drawn.\n- MAX_FRAMES: the most frames one run re-encodes.\n\"\"\"\n\nfrom media_collections import split_video\n\nBLOCK_SECONDS = 60.0\nWIDTH = 960\nMAX_FRAMES = 30000\n\nreturn split_video(\n    input_0, curio_derived_file, input_1,\n    block_seconds=BLOCK_SECONDS, width=WIDTH, max_frames=MAX_FRAMES,\n)\n",
+        "content": "\"\"\"Split Video.\n\nInput: on the top circle, a collection's rows, as Data Loading's\n`curio_load_collection(...)` returns them; on the bottom circle, if anything is\nwired there, where to cut: one row per block, with `t_s`, where the block\nstarts in seconds from its video's start, and maybe `end_s`, where it ends, and\n`video_file_id`, the video it cuts. Every video becomes one row per block, each\nblock an MP4 of its own that Simple View plays, with no sound. A block's row\nleads with `block`, the cut's own columns (a street's name, say), `t_s` and\n`end_s`, where the block starts and ends in the video, so a player linked by\ntime reads the video's time; then it keeps the video's own columns.\n\nThe Widgets tab sets the length of one block, in seconds, when nothing is\nwired to the bottom circle; the widest a block is drawn, in pixels; and the\nmost frames one run re-encodes.\n\"\"\"\n\nfrom media_collections import split_video\n\nreturn split_video(\n    input_0, curio_derived_file, input_1,\n    block_seconds=float([!! block_seconds !!]),\n    width=int([!! width !!]),\n    max_frames=int([!! max_frames !!]),\n)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Cut the walk into its blocks, one video each.",
         "metadata": {
-          "keywords": []
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "block_seconds",
+              "type": "number",
+              "label": "Block length",
+              "default": 60.0,
+              "options": {
+                "units": "s"
+              }
+            },
+            {
+              "name": "width",
+              "type": "number",
+              "label": "Maximum width",
+              "default": 960,
+              "options": {
+                "min": 2,
+                "step": 1,
+                "units": "px"
+              }
+            },
+            {
+              "name": "max_frames",
+              "type": "number",
+              "label": "Maximum frames per run",
+              "default": 30000,
+              "options": {
+                "step": 1
+              }
+            }
+          ]
         }
       },
       {

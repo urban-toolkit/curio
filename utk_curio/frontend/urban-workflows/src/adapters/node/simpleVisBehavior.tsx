@@ -16,12 +16,32 @@ import { resolveImageColumns } from '../../utils/imageColumns';
 import ContentTable from './components/ContentTable';
 import { CopyButton } from '../../components/CopyButton';
 import ImageCardGrid from './components/ImageCardGrid';
+import FrameTabs from './components/FrameTabs';
 import { toRows } from '../../utils/rowSource';
-import { unwrapValueEnvelopes } from '../../utils/sandboxEnvelope';
-import { registerNodeSettingWriter } from '../../utils/nodeSettingsWriters';
+import { keyedFramesAsOutputs, unwrapValueEnvelopes } from '../../utils/sandboxEnvelope';
+import {
+  registerNodeSettingWriter,
+  registerNodeWidgetWriter,
+  withDeclaredWidgetValues,
+} from '../../utils/nodeSettingsWriters';
 import nodeSettings from '../../contracts/nodeSettings.json';
 import type { SelectDetail } from '../../utils/selectionMatch';
-import { CARD_SELECT, PLAYER_SELECT, latestSelect, playedRange, playerSelect } from '../../utils/playerSelection';
+import {
+  CARD_SELECT,
+  PLAYER_SELECT,
+  TIME_COLUMN_WIDGET,
+  latestSelect,
+  playedRange,
+  playerSelect,
+  timeColumnOf,
+} from '../../utils/playerSelection';
+import { tryGetNodeDescriptor } from '../../registry/nodeRegistry';
+import { normalizeWidgets, type WidgetDef } from '../../utils/widgets/widgetModel';
+import { SimpleViewTimeColumn } from './SimpleViewTimeColumn';
+
+/** The widgets Simple View's own controls draw: its Time column, set from
+ *  its Widgets tab, has no row of the editor's (NodeEditor's `ownWidgets`). */
+const OWN_WIDGETS = [TIME_COLUMN_WIDGET];
 
 /** The picker's label, and its word for every image column, which an agent's
  *  review card and the backend say the setting in too
@@ -53,6 +73,22 @@ function toDisplayString(input: any): string {
 function isFrame(input: any): boolean {
   const dt = input?.dataType;
   return dt === 'dataframe' || dt === 'geodataframe';
+}
+
+/** A reference to an artifact whose content the view has not read yet. */
+function isUnread(input: any): boolean {
+  return typeof input?.path === 'string' && input.path !== '' && !('data' in input);
+}
+
+/**
+ * The frames of a dict of frames, as a node returns one (`{"videos": ...,
+ * "tracks": ...}`), each a tab named after its key, as a Data Pool shows them
+ * (hook/useTableData); null for any other input, a JSON dict among them,
+ * which shows as its text.
+ */
+function frameTabs(parsedInput: any): any[] | null {
+  if (parsedInput?.dataType !== 'dict') return null;
+  return keyedFramesAsOutputs(parsedInput.data)?.data ?? null;
 }
 
 /** The node's persisted image-column choice; see the picker below. */
@@ -90,7 +126,22 @@ function deriveView(parsedInput: any): {
   const imageColumns = resolveImageColumns(rows);
   if (imageColumns.length > 0) return { mode: 'image', rows, imageColumns, textContent: '' };
   if (isFrame(parsedInput)) return { mode: 'table', rows, imageColumns: [], textContent: '' };
+  // A reference the view reads before it shows it, of anything but a table
+  // (a dict of frames a node returns, say), is no text: until its read ends,
+  // the body says its input is on its way.
+  if (isUnread(parsedInput)) return { mode: 'text', rows: [], imageColumns: [], textContent: '' };
   return { mode: 'text', rows: [], imageColumns: [], textContent: toDisplayString(parsedInput) };
+}
+
+/**
+ * What to render of an input: a dict of frames as its tabs, the one at
+ * *open* shown (the first when it has no tab there), and any other input as
+ * itself, with no tabs.
+ */
+function deriveInput(parsedInput: any, open: number) {
+  const tabs = frameTabs(parsedInput);
+  const shown = tabs && open < tabs.length ? open : 0;
+  return { tabs, open: shown, ...deriveView(tabs ? tabs[shown] : parsedInput) };
 }
 
 export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
@@ -106,12 +157,18 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   const downloadsSaid = upstreamDownloads.join("\n");
   // Lazy init: if input is already present on mount seed the view so the
   // first render already produces a contentComponent. One that carries its
-  // rows shows at once; the effect reads one that names its artifact.
-  const initial = useMemo(() => deriveView(data.input), []);
+  // rows shows at once, a dict of frames as its tabs; the effect reads one
+  // that names its artifact.
+  const initial = useMemo(() => deriveInput(data.input, 0), []);
   const [currentMode, setCurrentMode] = useState<SimpleVisMode>(initial.mode);
   const [rows, setRows] = useState<any[]>(initial.rows);
   const [imageColumns, setImageColumns] = useState<string[]>(initial.imageColumns);
   const [textContent, setTextContent] = useState<string>(initial.textContent);
+  // A dict of frames' tabs, and the open one, whose frame the view shows.
+  const [tabs, setTabs] = useState<any[] | null>(initial.tabs);
+  const [openTab, setOpenTab] = useState<number>(initial.open);
+  const tabsRef = useRef<any[] | null>(initial.tabs);
+  const openTabRef = useRef<number>(initial.open);
   const [interactions, setInteractions] = useState<Record<string, SelectDetail>>({});
   const interactionsRef = useRef(interactions);
   const dataInputBypass = useRef(false);
@@ -136,6 +193,11 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
 
   const { nodeExecProv } = useProvenanceContext();
   const { workflowNameRef, updateDataNode } = useFlowContext();
+  // The node's data as it is now, which the writes and the player's tell below
+  // read: through a ref, so they keep their identity, and so does the view's
+  // body, whatever the node's data becomes.
+  const dataRef = useRef(data);
+  dataRef.current = data;
   // The dataflow the cards read a collection's files through, as the canvas's
   // Data Catalog lists them (`useAgentsDataflowId`): on an invited editor's
   // canvas, the owner's, whose collections the editor's runs load.
@@ -144,6 +206,32 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   // The read of the input that arrived last, until it ends: what a run that
   // asks the view waits for (`untilHandedOn`, below).
   const readingRef = useRef<Promise<void> | null>(null);
+
+  /** Shows one frame, or a value, as derived (`deriveView`). */
+  const show = useCallback((view: ReturnType<typeof deriveView>) => {
+    setCurrentMode(view.mode);
+    setRows(view.rows);
+    setImageColumns(view.imageColumns);
+    setTextContent(view.textContent);
+  }, []);
+
+  /** Opens the tab at *open* of *frames*, a dict of frames' tabs, or none. */
+  const openTabOf = useCallback((frames: any[] | null, open: number) => {
+    tabsRef.current = frames;
+    openTabRef.current = open;
+    setTabs(frames);
+    setOpenTab(open);
+  }, []);
+
+  // A click on a tab shows its frame as the view shows any frame. A player
+  // that plays in the tab it leaves closes, which takes its range away.
+  const selectTab = useCallback((key: string) => {
+    const frames = tabsRef.current;
+    const index = Number(key);
+    if (!frames || !Number.isInteger(index) || index < 0 || index >= frames.length) return;
+    openTabOf(frames, index);
+    show(deriveView(frames[index]));
+  }, [openTabOf, show]);
 
   useEffect(() => {
     const handleInput = async () => {
@@ -175,11 +263,11 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
           nodeExecProv(startTime, startTime, workflowNameRef.current, data.nodeId, mapTypes(typesInput), mapTypes(typesInput), '');
         }
 
-        const view = deriveView(parsedInput);
-        setCurrentMode(view.mode);
-        setRows(view.rows);
-        setImageColumns(view.imageColumns);
-        setTextContent(view.textContent);
+        // A dict of frames keeps the tab open at its place, as a Data
+        // Pool's tabs do, when the new input has one there.
+        const view = deriveInput(parsedInput, openTabRef.current);
+        openTabOf(view.tabs, view.open);
+        show(view);
 
         // Downstream first, then the outcome: the outcome is what tells a Run All
         // this node is done, and the nodes it feeds must have the rows by then.
@@ -231,12 +319,32 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
     } as SelectDetail);
   }, [tellSelect]);
 
+  // The column the player's range names in the views linked to this one: its
+  // Time column, t_s until set (utils/playerSelection).
+  const timeColumn = timeColumnOf((data as any).widgets);
+
   // What a card's player has played, from its file's start to where it
-  // stands, as an interval on `t_s`; one that holds nothing once it closes.
-  // A selection this view receives moves no player.
+  // stands, as an interval on the Time column; one that holds nothing once it
+  // closes. A selection this view receives moves no player. The column is
+  // read from the node's data as it tells, so a new value changes no
+  // callback the view's body holds: NodeEditor would take a new body for a
+  // new run and leave the Widgets tab the value was set on.
   const played = useCallback((row: Record<string, unknown>, at: number | null) => {
-    tellSelect(PLAYER_SELECT, playerSelect(at === null ? null : playedRange(row, at)));
+    const column = timeColumnOf((dataRef.current as any).widgets);
+    tellSelect(PLAYER_SELECT, playerSelect(at === null ? null : playedRange(row, at), column));
   }, [tellSelect]);
+
+  // A Time column set while a player holds a range moves the range to it at
+  // once, at the priority it holds: the linked views light their rows by the
+  // new column without waiting for the player to tell its time again.
+  useEffect(() => {
+    const held = interactionsRef.current[PLAYER_SELECT];
+    const [column] = Object.keys(held?.data ?? {});
+    if (!held || column === undefined || column === timeColumn) return;
+    const next = { ...interactionsRef.current, [PLAYER_SELECT]: { ...held, data: { [timeColumn]: held.data[column] } } };
+    interactionsRef.current = next;
+    setInteractions(next);
+  }, [timeColumn]);
 
   // Written back by a linked Data Pool, onto the row itself for both frame
   // shapes, so this no longer has to know which shape it came from.
@@ -259,12 +367,55 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   // which the node still reads as every column.
   const pickColumn = useCallback(
     (value: string) => {
-      const simpleVis = { ...(data as any).simpleVis };
+      const current = dataRef.current as any;
+      const simpleVis = { ...current.simpleVis };
       if (value === ALL_IMAGE_COLUMNS) delete simpleVis.imageColumn;
       else simpleVis.imageColumn = value;
-      updateDataNode(data.nodeId, { ...data, simpleVis });
+      updateDataNode(current.nodeId, { ...current, simpleVis });
     },
-    [data, updateDataNode],
+    [updateDataNode],
+  );
+
+  // The Time column's widget: the node's own, else its template's, for a node
+  // that holds none yet (one saved before it had the setting), which names t_s.
+  const heldTimeWidget = normalizeWidgets((data as any).widgets).find((widget) => widget.name === TIME_COLUMN_WIDGET);
+  const timeWidget: WidgetDef | undefined = heldTimeWidget
+    ?? (tryGetNodeDescriptor((data as any).nodeType)?.widgets ?? []).find((widget) => widget.name === TIME_COLUMN_WIDGET);
+  const timeWidgetRef = useRef(timeWidget);
+  timeWidgetRef.current = timeWidget;
+
+  // A Time column set on the Widgets tab is the node's, as a pick of its image
+  // column is: kept in its widgets, saved with it, and run by nothing, since
+  // it changes no rows the view hands on. A node with no widget of it yet
+  // takes its template's, with the value set.
+  const setTimeColumn = useCallback(
+    (value: string) => {
+      const current = dataRef.current as any;
+      const template = timeWidgetRef.current ? [timeWidgetRef.current] : [];
+      const next = withDeclaredWidgetValues(normalizeWidgets(current.widgets), { [TIME_COLUMN_WIDGET]: value }, template);
+      updateDataNode(current.nodeId, { ...current, widgets: next });
+    },
+    [updateDataNode],
+  );
+  // An agent's applied change sets the Time column as the field does
+  // (utils/nodeSettingsWriters): the same write, which runs nothing.
+  const setTimeColumnRef = useRef(setTimeColumn);
+  setTimeColumnRef.current = setTimeColumn;
+  useEffect(
+    () => registerNodeWidgetWriter(data.nodeId, TIME_COLUMN_WIDGET, (value) =>
+      setTimeColumnRef.current(typeof value === 'string' ? value : '')),
+    [data.nodeId],
+  );
+
+  // The Time column's field, the node's own control: on its Widgets tab, and
+  // on its dashboard tile, read-only there as every text widget is.
+  const timeWidgetKey = JSON.stringify(timeWidget ?? null);
+  const controlsComponent = useMemo<React.ReactNode | undefined>(
+    () => (timeWidget
+      ? <SimpleViewTimeColumn widget={timeWidget} onCommit={setTimeColumn} dashboard={onDashboard} />
+      : undefined),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [timeWidgetKey, setTimeColumn, onDashboard],
   );
 
   // An agent's applied change picks the column as the picker does
@@ -282,11 +433,19 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   // identity — without this, any re-render (e.g. React Flow deselecting the
   // node on a pane click) would yank the user out of the code editor.
   const contentComponent = useMemo<React.ReactNode | undefined>(() => {
+    // A dict of frames: a tab per frame, as a Data Pool's, above the open
+    // tab's frame, shown as the view shows any frame.
+    const inTabs = (body: React.ReactNode) => (tabs ? (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <FrameTabs tabs={tabs} activeKey={String(openTab)} onSelect={selectTab} testId="simple-view-tabs" />
+        <div style={{ flex: 1, minHeight: 0 }}>{body}</div>
+      </div>
+    ) : body);
     if (currentMode === 'table' && rows.length > 0) {
-      return <ContentTable tableData={rows} nodeId={data.nodeId} />;
+      return inTabs(<ContentTable tableData={rows} nodeId={data.nodeId} />);
     }
     if (currentMode === 'image' && rows.length > 0 && shownImageColumns.length > 0) {
-      return (
+      return inTabs(
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
           {imageColumns.length > 1 && (
             <label
@@ -319,7 +478,7 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
               onPlayed={played}
             />
           </div>
-        </div>
+        </div>,
       );
     }
     if (currentMode === 'text' && textContent) {
@@ -329,7 +488,7 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
       // unselectable; `nodrag` releases the gesture and `userSelect` re-enables
       // the selection, the same pairing CodeEditor's output pane uses. `nowheel`
       // because the pane scrolls horizontally on its own.
-      return (
+      return inTabs(
         <div style={{ position: 'relative', height: '100%' }}>
           {/* Floated over the pane rather than above it: the node body is
               short, and a header row would cost a line of the text itself. */}
@@ -355,7 +514,7 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
           >
             {textContent}
           </pre>
-        </div>
+        </div>,
       );
     }
     // Every branch above now requires actual content, so this is reached
@@ -376,18 +535,22 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
       tabular: currentMode !== 'text',
       rowCount: rows.length,
     }) ?? 'not-tabular';
-    return (
+    return inTabs(
       <NodeEmptyState
         reason={reason}
         hint={reason === 'upstream-stopped' ? upstreamStopped ?? undefined : undefined}
         progress={reason === 'upstream-running' ? upstreamDownloads : undefined}
-      />
+      />,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentMode, rows, imageColumns, shownImageColumns, choice, interacted, textContent, data.nodeId, data.input, connected, upstreamErrored, upstreamRunning, upstreamStopped, downloadsSaid, reading, onDashboard, clickRow, played, pickColumn]);
+  }, [currentMode, rows, imageColumns, shownImageColumns, choice, interacted, textContent, data.nodeId, data.input, connected, upstreamErrored, upstreamRunning, upstreamStopped, downloadsSaid, reading, onDashboard, clickRow, played, pickColumn, tabs, openTab, selectTab]);
 
   return {
     contentComponent,
+    controlsComponent,
+    ownWidgets: OWN_WIDGETS,
+    // No Play: the editor's send-code callback reaches no header, so the node
+    // shows no Play, run status or Save output toggle.
     setSendCodeCallbackOverride: (_: any) => {},
     untilHandedOn,
   };

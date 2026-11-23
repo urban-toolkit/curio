@@ -100,12 +100,12 @@
       "dataflowCategories": {
         "dataTypes": ["Rasters"]
       },
-      "description": "Compute the Universal Thermal Climate Index per raster pixel using pythermalcomfort. Reads raster + weather DataFrame on its two input circles (input_0 / input_1) and returns the UTCI grid + shape so the zonal-stats step can rebuild it.",
+      "description": "Compute the Universal Thermal Climate Index per raster pixel using pythermalcomfort. Reads raster + weather DataFrame on its two input circles (input_0 / input_1) and returns the UTCI grid + shape so the zonal-stats step can rebuild it. Its widgets: timestamp, the hour (the weather table's it) whose weather is used, and upscale_factor, how many times its width and height the raster is read at.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
       "hasGrammar": false,
-      "hasWidgets": false,
+      "hasWidgets": true,
       "icon": null,
       "id": "utci-compute",
       "inputPorts": [
@@ -127,7 +127,26 @@
           ]
         }
       ],
-      "source": "sources/utci-compute.py"
+      "source": "sources/utci-compute.py",
+      "widgets": [
+        {
+          "name": "timestamp",
+          "type": "slider",
+          "label": "Hour",
+          "default": 12,
+          "options": {
+            "min": 0,
+            "max": 23,
+            "step": 1
+          }
+        },
+        {
+          "name": "upscale_factor",
+          "type": "number",
+          "label": "Upscale factor",
+          "default": 1.0
+        }
+      ]
     },
     {
       "category": "computation",
@@ -163,12 +182,12 @@
     },
     {
       "category": "computation",
-      "description": "Reproject the merged census GeoDataFrame from UTM 32632 to EPSG:3395, drop polygons with non-positive UTCI, and tag the table with metadata.name='census' so downstream views can reference it by name.",
+      "description": "Reproject the merged census GeoDataFrame from UTM 32632 to EPSG:3395, drop polygons with non-positive UTCI, and tag the table with metadata.name='census' so downstream views can reference it by name. Its widgets source_crs and target_crs hold the two EPSG codes.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
       "hasGrammar": false,
-      "hasWidgets": false,
+      "hasWidgets": true,
       "icon": null,
       "id": "census-reproject",
       "inputPorts": [
@@ -189,7 +208,27 @@
           ]
         }
       ],
-      "source": "sources/census-reproject.py"
+      "source": "sources/census-reproject.py",
+      "widgets": [
+        {
+          "name": "source_crs",
+          "type": "number",
+          "label": "Source CRS",
+          "default": 32632,
+          "options": {
+            "step": 1
+          }
+        },
+        {
+          "name": "target_crs",
+          "type": "number",
+          "label": "Target CRS",
+          "default": 3395,
+          "options": {
+            "step": 1
+          }
+        }
+      ]
     },
     {
       "category": "computation",

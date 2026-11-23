@@ -105,8 +105,11 @@ the maximum height over 255 (2.16 m at 550 m). An Autark map draws it as
 A tile is written when a building is near it. A tile that is not written is no
 data (NaN, the file's no-data value): a map leaves it out, and so do a Raster
 Calculator's statistics and Accumulated Shadow. Inside a written tile, every pixel with no
-building is 0, the ground. A building with no value in the height column adds
-nothing, and a building taller than the maximum height is drawn at the maximum.
+building is 0, the ground. A building with no number in the height column is
+drawn at the height an Autark map draws it: its `height` or `building:height`,
+else 3.4 m a level of its `levels` or `building:levels`, and else 6 m above its
+base (`min_height`, or 3.4 m a level of `min_level` or `building:min_level`). A
+building taller than the maximum height is drawn at the maximum.
 
 ## Dataflows
 

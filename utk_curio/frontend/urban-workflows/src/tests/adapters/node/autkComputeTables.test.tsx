@@ -96,7 +96,7 @@ import { applyComputeBlocks } from '../../../adapters/node/autkComputeBlocks';
 import { useAutkGrammarBehavior } from '../../../adapters/node/autkGrammarBehavior';
 import { withOpaqueRasters } from '../../../adapters/node/autkRasters';
 import { autkNeedsInput } from '../../../utils/autkInput';
-import { METRES_PER_LEVEL } from '../../../utils/buildingHeight';
+import { METRES_PER_LEVEL, deriveBuildingHeight } from '../../../utils/buildingHeight';
 import {
   drawnExports,
   grammarComputes,
@@ -473,9 +473,53 @@ describe('a document with data and compute and no view', () => {
       const { uniforms, uniformArrays } = computeRuns.gpgpu.mock.calls[0][0];
       expect(uniforms.num_features).toBe(parts.length);
       expect(uniformArrays.heights).toEqual([12, 3 * METRES_PER_LEVEL, 2 * METRES_PER_LEVEL, 30, 6]);
+      // The step hands the parts on as it holds them: the default is the
+      // pass's, and the part with no height holds none.
+      const [handed] = step.handedOn();
+      const blocks = handed.data.find((layer: any) => layer.layerName === 'blocks');
+      expect(blocks.data.features.map((f: any) => f.properties)).toEqual([
+        { height: 12 },
+        { 'building:levels': 3, height: 3 * METRES_PER_LEVEL },
+        { height: 2 * METRES_PER_LEVEL, 'building:levels': 2 },
+        { 'building:height': 30, height: 30 },
+        {},
+      ]);
     } finally {
       info.mockRestore();
     }
+  });
+
+  test('a pass over the buildings it loaded reads a part with no height at the default, and the step hands it on with none', async () => {
+    const footprint = (i: number) => ({
+      type: 'Polygon',
+      coordinates: [[[10 * i, 0], [10 * i + 5, 0], [10 * i + 5, 5], [10 * i, 0]]],
+    });
+    // A part with a height, one with none above its base, one with none.
+    const parts = [{ height: 12, value: 1 }, { min_height: 4, value: 2 }, { value: 3 }];
+    const features = parts.map((properties, i) => ({ type: 'Feature', geometry: footprint(i), properties }));
+    mockLoaded.layers = [{ name: 'blocks', type: 'buildings', features }];
+    const step = mountStep('data-compute');
+
+    await step.run({
+      data: [{ type: 'geojson', outputTableName: 'blocks', geojsonObject: { type: 'FeatureCollection', features } }],
+      compute: [pass('blocks', 'twice', { attributes: { v: 'properties.value', h: 'properties.height' } })],
+    });
+
+    expect(step.lastOutput()).toEqual({ code: 'success', content: 'Computed 1 layer: blocks (3 rows)' });
+    // What the pass read: each part as a map draws it, 6 m above its base
+    // where it has no height.
+    const { collection } = computeRuns.gpgpu.mock.calls[0][0];
+    expect(collection.features.map((f: any) => f.properties.height))
+      .toEqual([12, deriveBuildingHeight({ min_height: 4 }), deriveBuildingHeight({})]);
+    expect(collection.features.map((f: any) => f.properties.height)).toEqual([12, 10, 6]);
+    // What the step hands on: the pass's column, and each part's own height.
+    const [handed] = step.handedOn();
+    expect(handed.layerName).toBe('blocks');
+    expect(handed.data.features.map((f: any) => f.properties)).toEqual([
+      { height: 12, value: 1, compute: { twice: 2 }, twice: 2 },
+      { min_height: 4, value: 2, compute: { twice: 4 }, twice: 4 },
+      { value: 3, compute: { twice: 6 }, twice: 6 },
+    ]);
   });
 });
 

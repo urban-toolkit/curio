@@ -10,9 +10,13 @@
  * the only place that refusal can be seen. autk-compute's render pipeline
  * opens none of its own, so a render pass the GPU refused would count nothing.
  *
- * Every pass Curio runs, a map node's in the grammar's run and a compute
- * step's, goes through ``checkedPasses``: in error scopes on the device, one
- * pass at a time on the page, named by the table it writes when it fails.
+ * Every pass Curio runs, a map node's in the grammar's run (its grammar takes
+ * ``checkedPasses`` as its ``wrapComputeAdapter``, autk-grammar 5.6.0) and a
+ * compute step's, goes through ``checkedPasses``: in error scopes on the
+ * device, one pass at a time on the page, named by the table it writes when
+ * it fails. A
+ * windows or clusters pass, which the grammar runs on the CPU, asks no device:
+ * it runs as it is, named the same way when it fails.
  *
  * The device is autk-compute's own, shared by every one of its pipelines;
  * ``getDevice`` is protected in its types, hence the cast.
@@ -72,16 +76,12 @@ export async function runComputeChecked<P, R>(
 
 /**
  * autk-grammar's compute adapter, as ``createComputeAdapter`` makes it and an
- * ``AutkGrammar`` keeps it: ``resolveCompute`` runs one pass of a document.
+ * ``AutkGrammar`` hands it to ``wrapComputeAdapter``, or its compute steps
+ * (``createComputeSteps``): ``resolveCompute`` runs one pass of a document.
  */
 export interface PassAdapter {
     resolveCompute(context: unknown, pass: any): Promise<unknown>;
 }
-
-/** What a map node says when its grammar keeps no compute adapter where Curio checks its passes. */
-export const COMPUTE_ADAPTER_MISSING =
-    'Autark cannot run these compute passes: this autk-grammar build runs them differently, '
-    + "and Curio's check of each pass (adapters/node/autkComputeScopes.ts) has to follow it.";
 
 // The error scopes are the device's: two passes in them at once would each
 // read the other's errors. Every checked pass on the page waits for the last.
@@ -99,15 +99,22 @@ async function computeDevice(): Promise<ScopedDevice> {
     return (new ComputeGpgpu() as unknown as { getDevice(): Promise<ScopedDevice> }).getDevice();
 }
 
-/** The table *pass* writes: its `outputTableName`, else a GPGPU pass's `dataRef`. */
+/** The table *pass* writes: its `outputTableName`, else a GPGPU or clusters pass's `dataRef`. */
 function tableWrittenBy(pass: any): string {
     const name = pass?.outputTableName ?? (pass?.type === 'render' ? undefined : pass?.dataRef);
     return typeof name === 'string' && name ? name : 'compute';
 }
 
 /**
+ * The passes autk-grammar runs on the CPU, through autk-core, with no GPU: a
+ * windows pass and a clusters pass (autk-grammar 5.4.0).
+ */
+const CPU_PASSES: ReadonlySet<unknown> = new Set(['windows', 'clusters']);
+
+/**
  * *adapter* with every pass it runs checked: in error scopes on autk-compute's
- * device (``runComputeChecked``), one pass at a time on the page. A pass that
+ * device (``runComputeChecked``), one pass at a time on the page. A pass the
+ * grammar runs on the CPU asks no device and runs as it is. A pass that
  * fails, the GPU refusing it or the grammar, is named by the table it writes.
  * Each pass runs on the database it was given, as autk-grammar's engine hands
  * it on: the grammar's compute reads a `fromFeature` table from the cache of
@@ -115,29 +122,21 @@ function tableWrittenBy(pass: any): string {
  * read for it here.
  */
 export function checkedPasses(adapter: PassAdapter): PassAdapter {
+    const named = async <T>(pass: any, run: () => Promise<T>): Promise<T> => {
+        try {
+            return await run();
+        } catch (e) {
+            throw new Error(`${tableWrittenBy(pass)}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+    };
     return {
-        resolveCompute: (context, pass) => onePassAtATime(async () => {
+        resolveCompute: (context, pass) => {
+            if (CPU_PASSES.has(pass?.type)) return named(pass, () => adapter.resolveCompute(context, pass));
             const compute = {
                 getDevice: computeDevice,
                 run: (params: any) => adapter.resolveCompute(context, params),
             };
-            try {
-                return await runComputeChecked(compute, pass);
-            } catch (e) {
-                throw new Error(`${tableWrittenBy(pass)}: ${e instanceof Error ? e.message : String(e)}`);
-            }
-        }),
+            return onePassAtATime(() => named(pass, () => runComputeChecked(compute, pass)));
+        },
     };
-}
-
-/**
- * Let one grammar instance run each pass of its document checked
- * (``checkedPasses``), as a compute step runs its passes: autk-grammar runs
- * them through the compute adapter it keeps, which it made with its own data
- * adapter's cache, of the same entry.
- */
-export function withCheckedPasses(grammar: any): void {
-    const adapter = grammar?.computeAdapter;
-    if (!adapter || typeof adapter.resolveCompute !== 'function') throw new Error(COMPUTE_ADAPTER_MISSING);
-    grammar.computeAdapter = checkedPasses(adapter);
 }

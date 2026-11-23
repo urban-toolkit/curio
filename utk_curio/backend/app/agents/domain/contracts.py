@@ -255,7 +255,9 @@ def autk_view_problem(document: object) -> str | None:
 
 #: The keys autk-grammar 5 renamed, each where it is written and its new name.
 #: ``in`` is ``""`` for the document, or a section whose one object or each
-#: object of its list holds the key (``"compute[]"`` a pass).
+#: object of its list holds the key (``"compute[]"`` a pass), or a list in each
+#: of those objects, a dot before it (``"map[].layerRefs[]"`` each layer of
+#: each map).
 AUTK_RENAMED_KEYS: tuple[dict, ...] = tuple(_AUTK_GRAMMAR["renamedKeys"])
 #: The keys of autk-grammar 5 a node does not run yet, each where it is
 #: written; with ``value``, only that value of the key counts (a heatmap
@@ -272,16 +274,26 @@ AUTK_DEFAULT_WORKSPACE: str = _AUTK_GRAMMAR["defaultWorkspace"]
 
 def _objects_at(document: dict, place: str) -> list[tuple[str, object]]:
     """Each object *document* holds where *place* says, with its path
-    (``map``, ``compute[0]``)."""
+    (``map``, ``compute[0]``, ``map[1].layerRefs[0]``): through each step of
+    the place, the one object or each object of a list its key holds in each
+    object before. ``objectsAt`` is the node's twin."""
+    found: list[tuple[str, object]] = [("", document)]
     if place == "":
-        return [("", document)]
-    section = place.removesuffix("[]")
-    held = document.get(section)
-    if held is None:
-        return []
-    if isinstance(held, list):
-        return [(f"{section}[{i}]", item) for i, item in enumerate(held)]
-    return [(section, held)]
+        return found
+    for step in place.split("."):
+        key = step.removesuffix("[]")
+        reached: list[tuple[str, object]] = []
+        for path, holder in found:
+            held = holder.get(key) if isinstance(holder, dict) else None
+            if held is None:
+                continue
+            at = f"{path}.{key}" if path else key
+            if isinstance(held, list):
+                reached += [(f"{at}[{i}]", item) for i, item in enumerate(held)]
+            else:
+                reached.append((at, held))
+        found = reached
+    return found
 
 
 def _written(document: dict, rule: dict) -> str | None:
@@ -352,6 +364,23 @@ def _listed(held: object) -> list:
     return held if isinstance(held, list) else [held]
 
 
+def _changed_in_place(document: dict) -> dict[str, int]:
+    """The tables *document*'s compute passes change in place without keeping
+    the result in autk-db, each by its key with the first such pass's place in
+    ``compute``: a GPGPU or clusters pass without ``outputTableName`` or
+    ``writeBack``, in the pass's workspace. ``changedInPlace`` is the node's twin."""
+    changed: dict[str, int] = {}
+    for at, held in enumerate(_listed(document.get("compute"))):
+        if not isinstance(held, dict):
+            continue
+        out, table, workspace = held.get("outputTableName"), held.get("dataRef"), _workspace_of(held)
+        in_place = held.get("type") in (None, "gpgpu", "clusters") and not (isinstance(out, str) and out)
+        if not in_place or held.get("writeBack") or not isinstance(table, str) or not table:
+            continue
+        changed.setdefault(table if workspace is None else f"{workspace}/{table}", at)
+    return changed
+
+
 def autk_osm_elements_problem(document: object) -> str | None:
     """What a document is told when its views read an OpenStreetMap table its
     own data section loads both as OpenStreetMap elements (``osmElements``) and
@@ -363,7 +392,9 @@ def autk_osm_elements_problem(document: object) -> str | None:
     ``<outputTableName>_<name>_<type>``, each in the source's workspace; a view
     reads its table in its own. A table of the node's input is read row by row,
     whatever a view says. The maps' layers are read first, then the plots.
-    ``autkOsmElementsProblem`` is the node's twin."""
+    So is a view that reads such a table as elements while a compute pass
+    changes it in place without ``writeBack`` (the file's ``osmElementsInPlace``,
+    ``_changed_in_place``). ``autkOsmElementsProblem`` is the node's twin."""
     if not isinstance(document, dict):
         return None
 
@@ -385,8 +416,9 @@ def autk_osm_elements_problem(document: object) -> str | None:
         own.update(key(source, table) for table in layers + tag_sets)
     # Each such table and the way its first view reads it, by key.
     first_way: dict[str, bool] = {}
+    in_place = _changed_in_place(document)
 
-    def read_otherwise(view: object, reader: object) -> str | None:
+    def problem_of(view: object, reader: object) -> str | None:
         table = reader.get("dataRef") if isinstance(reader, dict) else None
         if not isinstance(table, str):
             return None
@@ -395,19 +427,23 @@ def autk_osm_elements_problem(document: object) -> str | None:
             return None
         as_elements = reader.get("osmElements") is True
         first_way.setdefault(table_key, as_elements)
-        return None if first_way[table_key] == as_elements else table_key
+        if first_way[table_key] != as_elements:
+            return _fill(_AUTK_GRAMMAR["osmElementsMixed"], table=table_key)
+        if as_elements and table_key in in_place:
+            return _fill(_AUTK_GRAMMAR["osmElementsInPlace"], table=table_key, **{"pass": str(in_place[table_key])})
+        return None
 
     for path, view in _objects_at(document, "map[]"):
         layers = view.get("layerRefs") if isinstance(view, dict) else None
         for i, layer in enumerate(_listed(layers)):
-            table = read_otherwise(view, layer)
-            if table is not None:
+            what = problem_of(view, layer)
+            if what is not None:
                 at = f"{path}.layerRefs[{i}]" if isinstance(layers, list) else f"{path}.layerRefs"
-                return _not_run_yet(_fill(_AUTK_GRAMMAR["osmElementsMixed"], table=table), at)
+                return _not_run_yet(what, at)
     for path, plot in _objects_at(document, "plot[]"):
-        table = read_otherwise(plot, plot)
-        if table is not None:
-            return _not_run_yet(_fill(_AUTK_GRAMMAR["osmElementsMixed"], table=table), path)
+        what = problem_of(plot, plot)
+        if what is not None:
+            return _not_run_yet(what, path)
     return None
 
 
@@ -436,6 +472,66 @@ def autk_key_problem(document: object) -> str | None:
         if path is not None:
             return _not_run_yet(rule["what"], path)
     return autk_osm_elements_problem(document) or autk_raster_pass_problem(document, _own_rasters(document))
+
+
+#: autk-grammar's own words for what its run refuses in a document its schema
+#: takes (``autk_grammar_refusal``). The node's run says them through the
+#: grammar itself.
+AUTK_GRAMMAR_REFUSES: dict[str, str] = dict(_AUTK_GRAMMAR["grammarRefuses"])
+
+
+def _tables_read_after(source: dict) -> list:
+    """The tables a source reads by name, as autk-grammar's ``dataPhases``
+    reads them: a join's two, a heatmap's, and an update's or a drop's."""
+    kind = source.get("type")
+    if kind == "join":
+        return [source.get("dataRef"), source.get("joinDataRef")]
+    if kind == "heatmap":
+        return [source.get("joinDataRef")]
+    if kind in ("update", "drop"):
+        return [source.get("dataRef")]
+    return []
+
+
+def autk_grammar_refusal(document: object) -> str | None:
+    """What autk-grammar's run refuses in a document its schema takes, in the
+    grammar's own words (``AUTK_GRAMMAR_REFUSES``), else None. First what its
+    ``dataPhases`` refuses before anything runs, as the node's run asks it: a
+    source whose ``after`` is not ``'compute'``, and a source after compute
+    that reads a table a compute pass of its workspace writes without
+    ``writeBack``, its ``outputTableName``, else its ``dataRef``, named with the
+    first such pass. Then what its data adapter refuses as it builds a heatmap:
+    a ``groupBy`` entry without ``aggregateFn``, which no aggregate combines
+    (autk-grammar 5.5.1). The sources in the order of ``data``."""
+    if not isinstance(document, dict):
+        return None
+    sources = _listed(document.get("data"))
+    passes = _listed(document.get("compute"))
+    for at, source in enumerate(sources):
+        if not isinstance(source, dict) or "after" not in source:
+            continue
+        kind = str(source.get("type"))
+        if source["after"] != "compute":
+            return _fill(AUTK_GRAMMAR_REFUSES["afterNotCompute"], at=str(at), type=kind,
+                         value=json.dumps(source["after"]))
+        for table in _tables_read_after(source):
+            for index, held in enumerate(passes):
+                if not isinstance(held, dict) or held.get("writeBack") is True:
+                    continue
+                if held.get("workspace") != source.get("workspace"):
+                    continue
+                written = held.get("outputTableName") if held.get("outputTableName") is not None else held.get("dataRef")
+                if written == table:
+                    return _fill(AUTK_GRAMMAR_REFUSES["afterReadsUnwritten"], at=str(at), type=kind,
+                                 table=str(table), **{"pass": str(index)})
+    for source in sources:
+        if not isinstance(source, dict) or source.get("type") != "heatmap":
+            continue
+        for entry in _listed(source.get("groupBy")):
+            if isinstance(entry, dict) and not entry.get("aggregateFn"):
+                return _fill(AUTK_GRAMMAR_REFUSES["heatmapWithoutAggregate"],
+                             table=str(source.get("outputTableName")), column=str(entry.get("column")))
+    return None
 
 
 def load_autk_schema(path: Path = AUTK_SCHEMA_PATH) -> dict:
@@ -470,11 +566,21 @@ def _resolved(schema: dict, node: object) -> object:
     return _definition(schema, node["$ref"]) if isinstance(node, dict) and "$ref" in node else node
 
 
-def _place(schema: dict, place: str) -> object:
-    """The schema of what a document holds where *place* says (``""`` the
-    document, ``"map[]"`` its map or its list of maps)."""
+def _places(schema: dict, place: str) -> list:
+    """The schemas of what a document holds where *place* says: ``""`` the
+    document, ``"map[]"`` its map or its list of maps, and for a list in each
+    of a section's objects (``"map[].layerRefs[]"``) that list in each object
+    the section can be (``_objects_under``)."""
     root = _definition(schema, schema.get("$ref", "UrbanSpec"))
-    return root if place == "" else root.get("properties", {}).get(place.removesuffix("[]"))
+    if place == "":
+        return [root]
+    first, *rest = place.split(".")
+    nodes = [root.get("properties", {}).get(first.removesuffix("[]"))]
+    for step in rest:
+        key = step.removesuffix("[]")
+        nodes = [held for node in nodes for holder in _objects_under(schema, node, set())
+                 if (held := holder.get("properties", {}).get(key)) is not None]
+    return [node for node in nodes if node is not None]
 
 
 def _objects_under(schema: dict, node: object, seen: set[int]) -> list[dict]:
@@ -538,22 +644,40 @@ def _drop_kind(schema: dict, node: object, key: str, value: str, seen: set[int])
         _drop_kind(schema, node["items"], key, value, seen)
 
 
+#: The keys autk-grammar's schema leaves optional where its run refuses an
+#: object without them, each by the definition that holds the object and the
+#: path to it there: a heatmap's ``groupBy`` entry names its ``aggregateFn``
+#: (autk-grammar 5.5.1, ``autk_grammar_refusal``).
+AUTK_REQUIRED_KEYS: tuple[dict, ...] = (
+    {"definition": "HeatmapSourceSpec", "path": ("groupBy", "items"), "key": "aggregateFn"},
+)
+
+
 def autk_schema_curio_runs(schema: dict) -> dict:
     """A copy of *schema* without what a node does not run yet
     (``AUTK_NOT_RUN_YET``): each such key taken out of the objects that hold
     it where it is written, and each kind a value names (a heatmap source)
-    out of its union. The agents' text and reply schema are
-    made from it, so an agent does not write what a node refuses."""
+    out of its union. And with the keys the grammar's run requires where its
+    schema does not (``AUTK_REQUIRED_KEYS``) required. The agents' text and
+    reply schema are made from it, so an agent does not write what a node
+    refuses."""
     schema = json.loads(json.dumps(schema))
     for rule in AUTK_NOT_RUN_YET:
-        place = _place(schema, rule["in"])
-        if "value" in rule:
-            _drop_kind(schema, place, rule["key"], rule["value"], set())
-            continue
-        for holder in _objects_under(schema, place, set()):
-            holder.get("properties", {}).pop(rule["key"], None)
-            if rule["key"] in holder.get("required", []):
-                holder["required"] = [name for name in holder["required"] if name != rule["key"]]
+        for place in _places(schema, rule["in"]):
+            if "value" in rule:
+                _drop_kind(schema, place, rule["key"], rule["value"], set())
+                continue
+            for holder in _objects_under(schema, place, set()):
+                holder.get("properties", {}).pop(rule["key"], None)
+                if rule["key"] in holder.get("required", []):
+                    holder["required"] = [name for name in holder["required"] if name != rule["key"]]
+    for rule in AUTK_REQUIRED_KEYS:
+        holder = _definition(schema, rule["definition"])
+        for step in rule["path"]:
+            holder = _property(holder, step) if step != "items" else (holder.get("items") if isinstance(holder, dict) else None)
+        if isinstance(holder, dict) and rule["key"] in holder.get("properties", {}):
+            if rule["key"] not in holder.get("required", []):
+                holder["required"] = [*holder.get("required", []), rule["key"]]
     return schema
 
 
@@ -654,6 +778,25 @@ def _render_words(render: dict) -> str:
             layer_types=_either(render["layer_types"]), viewpoint_fields=_every(render["viewpoint_fields"]),
         )
     return words
+
+
+#: The compute passes autk-grammar runs on the CPU, by their ``type``: the
+#: ``autark`` skill gives a line to each, after the render pass's.
+AUTK_CPU_PASSES = ("windows", "clusters")
+
+
+def _pass_words(schema: dict, kind: str) -> str:
+    """The ``autark`` skill's line on the compute pass whose ``type`` is
+    *kind*: what it is, in the schema's words less its note on which adapters
+    read it, and the fields it requires; "" when *schema*, the schema of what a
+    node runs, holds no such pass."""
+    description, branches = _compute_passes(schema).get(kind, ("", []))
+    if not branches:
+        return ""
+    required = [field for field in branches[0].get("required", []) if field != "type"]
+    return _autk_words(
+        "pass", kind=kind, description=description.split(" Read by the ", 1)[0], fields=_every(required),
+    )
 
 
 def _compute_required(schema: dict) -> tuple[list[str], list[str]]:
@@ -758,6 +901,10 @@ def render_autk_region(schema: dict, label: str) -> str:
             + (" " + _autk_words("requires", fields=_every(required)) if required else "")
             + (" " + fields if fields else "")
         )
+    # When a source runs, in the schema's words less its note on which adapters read it.
+    after = _definition(schema, "SourcePhase").get("description", "").split(" Read by the ", 1)[0]
+    if after:
+        lines.append("  - " + _autk_words("after", after=after))
     lines += _workspace_lines(schema)
     lines += [
         "- " + _autk_words(
@@ -775,6 +922,11 @@ def render_autk_region(schema: dict, label: str) -> str:
     render = _render_pass(schema)
     if render:
         lines.append("  - " + _render_words(render))
+    lines += [f"  - {words}" for words in (_pass_words(schema, kind) for kind in AUTK_CPU_PASSES) if words]
+    # What a GPGPU pass's writeBack does, which every pass takes, in the schema's words.
+    write_back = compute_fields.get("writeBack", {}).get("description", "").split(" Read by the ", 1)[0]
+    if write_back:
+        lines.append("  - " + _autk_words("write-back", write_back=write_back))
     lines += [
         "- " + _autk_words("views"),
         ("- " + _autk_words(
@@ -785,6 +937,7 @@ def render_autk_region(schema: dict, label: str) -> str:
         )).rstrip(),
     ]
     lines += _camera_lines(schema)
+    lines += _map_key_lines(schema)
     lines.append("- " + _autk_words(
         "plot", description=props.get("plot", {}).get("description", ""), plot_fields=_every(_plot_required(schema)),
     ))
@@ -875,6 +1028,27 @@ def _view_lines(schema: dict) -> list[str]:
             f'  - "{name}": {field.get("description", "")}'
             for name, field in spec.get("properties", {}).items()
         ]
+    return lines
+
+
+#: The keys of a map, and of each of its layers, whose schema's words the
+#: ``autark`` skill gives below the map's line, one line each.
+AUTK_MAP_KEYS = ("style", "highlightColor", "invalidValueColor", "showUi", "terrain")
+AUTK_LAYER_KEYS = ("layerType", "widthBy", "legend", "skippedComps", "pickedComps", "buildingsZeroHeight")
+
+
+def _map_key_lines(schema: dict) -> list[str]:
+    """The lines of a map's keys and its layers' in the ``autark`` skill
+    (``AUTK_MAP_KEYS``, ``AUTK_LAYER_KEYS``): each in the schema's words, less
+    its note on which adapters read it, the layers' under a line of their own.
+    A key *schema*, the schema of what a node runs, does not hold is left out."""
+    map_spec = _definition(schema, "MapSpec")
+    layer_spec = _definition(schema, "MapLayerSpec")
+    lines = [f'  - "{key}": {said}' for key in AUTK_MAP_KEYS if (said := _said(schema, map_spec, key))]
+    layer_lines = [f'    - "{key}": {said}' for key in AUTK_LAYER_KEYS if (said := _said(schema, layer_spec, key))]
+    if layer_lines:
+        layers, _required = map_layers(schema)
+        lines += ["  - " + _autk_words("layer-keys", layers=layers), *layer_lines]
     return lines
 
 

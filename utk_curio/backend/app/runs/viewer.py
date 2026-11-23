@@ -46,14 +46,15 @@ dashboard of their own, the copy's (``dashboard:<copy id>``), which joins and
 waits on no other visitor's runs: while the guest has no copy they run the
 dataflow and keep on it, as anyone's run of it does.
 
-A step only a browser runs (an Autark compute node) is the
-page's. The run ends asking for it (``needs_canvas``), as a canvas's run on
-the server does, or ends ``succeeded`` when only a tile reads it; either way
-the page runs the node and sends what it made (:func:`keep_tab_result`), and
-its next start, with the same token, runs the steps below on that
-(``browserOutputs``), or nothing, when the step was a tile's own. The server cannot check what a
-browser sends, so that output and every one made from it are kept for that
-page alone, for ``kept.TAB_OWN_HOURS``.
+A step only a browser runs (an Autark compute node, or an Autark map or plot
+that also loads data or runs a pass) is the page's. The run ends asking for it
+(``needs_canvas``), as a canvas's run on the server does, or ends ``succeeded``
+when only a tile reads it; either way the page runs the node and sends what it
+made (:func:`keep_tab_result`), and its next start, with the same token, runs
+the steps below on that (``browserOutputs``), or nothing, when the step was a
+tile's own. The server cannot check what a browser sends, so that output and
+every one made from it are kept for that page alone, for
+``kept.TAB_OWN_HOURS``.
 
 Limits, constants as a server run's are: a budget per visitor address and
 overall (``common/address_limiter.py``) of the runs of values a visitor tries
@@ -569,12 +570,17 @@ def _run_events(
     the dataflow on that guest's dashboard, else the dataflow. Each step runs
     as the dataflow's own (its saved outputs, its owner's store) and is
     served the guest signed in as *sign_in*, on its thread, so it reads that
-    guest's datasets as the guest's plays do (``visitor_copies.serving``)."""
+    guest's datasets as the guest's plays do (``visitor_copies.serving``).
+
+    The run counts once in the monitor's Usage tab, as a run on the server's
+    does (``monitor/usage.py``'s ``run``): as it finishes, failed when it ends
+    ``failed``, or as it stops on an error, failed."""
     from contextlib import nullcontext
 
     from utk_curio.backend.app.discovery.infrastructure import media_dirs
     from utk_curio.backend.app.execution import node_exec
     from utk_curio.backend.app.execution.run_engine import run_events
+    from utk_curio.backend.app.monitor import usage as monitor_usage
     from utk_curio.backend.app.projects import visitor_copies
     from utk_curio.backend.app.users.connection_keys import secret_names
     from utk_curio.backend.app.users.models import User
@@ -631,6 +637,19 @@ def _run_events(
         media_dirs.forget_kept(user_key, [kept_media])
         return reply
 
+    def read(step, input_ref, slot):
+        # The value on one of the step's circles, for a dataset widget it
+        # picks, read as the step's own run reads that input: as the
+        # dataflow's own, in a kept session of the step's (execute above).
+        owner = db.session.get(User, owner_id)
+        node_run = node_exec.NodeRun(
+            code="", node_type=step.node_type, node_id=None, input=input_ref, dataflow_id=project_id,
+            node_name=step.label, save_output_dataset=False,
+            input_slots=tuple(plan.spec.input_slots(step.node_id)) or None,
+            kept_on=kept_on if kept_on != project_id else None,
+        )
+        return node_exec.input_value(owner, new_session_id(), node_run, slot)
+
     def wrap(fn):
         # The engine runs each step on a thread of its pool, which holds no
         # request and none of this thread's context.
@@ -639,9 +658,19 @@ def _run_events(
                 return fn()
         return in_context
 
+    started = time.perf_counter()
+    counted = False
     try:
-        for kind, payload in run_events(plan, execute, cancelled=threading.Event(), wrap=wrap):
+        for kind, payload in run_events(plan, execute, cancelled=threading.Event(), wrap=wrap, read=read):
+            if kind == "run_finished":
+                counted = True
+                monitor_usage.record("run", ms=(time.perf_counter() - started) * 1000.0,
+                                     failed=payload.get("status") == "failed")
             yield kind, _public(payload)
+    except Exception:
+        if not counted:
+            monitor_usage.record("run", ms=(time.perf_counter() - started) * 1000.0, failed=True)
+        raise
     finally:
         prune_quietly()
 

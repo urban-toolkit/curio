@@ -18,10 +18,10 @@ A widget is a value a node's code reads that the user sets in the node's Widgets
 
 The node's code or spec places each widget where its value is used, as its reference: `{{widgets.reference:threshold}}` for the widget named threshold. A run replaces the reference with the widget's value ("value" once the user set one, else "default"). On its own a reference becomes a value of the code's language: a number, a quoted text, a list, true or false. Inside a quoted text it becomes the value's text. Never type a widget's value into the code in its place, and never place a reference to a widget the node does not declare.
 
-A dataset widget's value is the id of a Data Catalog dataset, layer group or collection, empty until a file or a dataset is dropped on its node; its reference becomes that id as a quoted text, so `curio_load_data({{widgets.reference:data}})` loads it. A run refuses code that reads an empty one.
+A dataset widget's value is the id of a Data Catalog dataset, layer group or collection, empty until a file or a dataset is dropped on its node; its reference becomes that id as a quoted text, so `curio_load_data({{widgets.reference:data}})` loads it. A run refuses code that reads an empty one. An input can pick the id, never code: "pickedBy" is input_0, or input_0.key for a key of its dict, and "choices" maps each text to an id.
 
 A value several nodes read is a widget on one {{template.label:curio.builtin/python-computation}} node that returns it, wired into each reader.
 
 A new node of a template that declares widgets starts with them: in a plan or a node.create, give one its name, its type and its value, and it keeps the template's default, choices, minimum, maximum and step, which the value must fit. A duplicate's values may set them too.
 
-A node already on the canvas takes new widget values through node.settings.write: its "widgets" maps each widget's name to the new value, which must fit the widget's type and options as a value typed in the Widgets tab must. The node's code stays as it was. Only the user adds a widget to a node already on the canvas, in its Widgets tab.
+A node already on the canvas takes new widget values through node.settings.write: its "widgets" maps each widget's name to the new value, which must fit the widget's type and options as a value typed in the Widgets tab must. The node's code stays as it was. Only the user adds a widget to a node already on the canvas, in its Widgets tab; a {{template.label:curio.builtin/vis-simple}} lacking "time_column" takes it with the value.

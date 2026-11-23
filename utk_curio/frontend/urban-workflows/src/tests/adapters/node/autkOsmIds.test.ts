@@ -171,11 +171,12 @@ describe.each([
 
   test("hands on every building part with its own part's OSM id as osm_id, and its building_id", async () => {
     const layers = await layersOf();
+    // Its heights and levels as numbers (withOsmNumbers, autkOsmNumbers.test.ts).
     expect(rows(layers, "table_osm_buildings")).toEqual([
-      { building: "yes", name: "200 Clarendon", height: "240.8", osm_id: 29623484, building_id: 29623484 },
-      { building: "yes", height: "30", osm_id: 236608503, building_id: 29623484 },
-      { building: "house", "building:height": "9", osm_id: 11, building_id: 11 },
-      { building: "house", "building:levels": "2", osm_id: 12, building_id: 11 },
+      { building: "yes", name: "200 Clarendon", height: 240.8, osm_id: 29623484, building_id: 29623484 },
+      { building: "yes", height: 30, osm_id: 236608503, building_id: 29623484 },
+      { building: "house", "building:height": 9, osm_id: 11, building_id: 11 },
+      { building: "house", "building:levels": 2, osm_id: 12, building_id: 11 },
     ]);
   });
 
@@ -195,7 +196,7 @@ describe.each([
     const layers = await layersOf();
     expect(rows(layers, "table_osm_water")).toEqual([{ natural: "water", name: "Charles River", osm_id: 41 }]);
     expect(rows(layers, "table_osm_buildings")).toEqual([
-      { building: "house", "building:levels": "2", osm_id: 42, building_id: 11 },
+      { building: "house", "building:levels": 2, osm_id: 42, building_id: 11 },
     ]);
   });
 

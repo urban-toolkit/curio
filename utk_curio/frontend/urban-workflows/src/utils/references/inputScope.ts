@@ -290,6 +290,23 @@ export async function readInputPreview(value: unknown): Promise<InputPreview> {
     return previewOf(grammar, path ? reads.get(path) : value, declared, reads);
 }
 
+/**
+ * The value *value*, an input's, holds, as a dataset widget it picks reads it
+ * (`options.pickedBy`): from one read of the artifact it names, through the
+ * same `/get-preview` a chip's hover reads, or the value itself when it is
+ * inline. A table, a raster or a bundle of outputs is not read: undefined, as
+ * nothing a widget is picked by. A failed read throws.
+ */
+export async function readInputValue(value: unknown): Promise<unknown> {
+    if (value == null || value === "") return undefined;
+    const declared = isRecord(value) && typeof value.dataType === "string" ? value.dataType : undefined;
+    if (declared !== undefined && (FRAME_TYPES.has(declared) || declared === "raster" || declared === "outputs")) {
+        return undefined;
+    }
+    const path = isRecord(value) && typeof value.path === "string" && value.path ? value.path : null;
+    return plainOf(path ? await fetchPreviewData(path) : value);
+}
+
 function previewOf(
     grammar: GrammarInput,
     envelope: unknown,

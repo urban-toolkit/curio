@@ -24,6 +24,8 @@ import {
 import {
   FILE_WIDGET_MAX_CHARS,
   checkWidgetValue,
+  isPicked,
+  listedChoices,
   normalizeDate,
   normalizeDateTime,
   type WidgetDef,
@@ -125,7 +127,7 @@ export function WidgetControl({ widget, value, onChange, disabled = false, ariaL
   };
 
   const options = widget.options ?? {};
-  const choices = options.choices ?? [];
+  const choices = listedChoices(options);
   // The units sit inside the number's field, at its end.
   const unitsAdornment = options.units
     ? { endAdornment: <InputAdornment position="end">{options.units}</InputAdornment> }
@@ -450,16 +452,20 @@ export function WidgetControl({ widget, value, onChange, disabled = false, ariaL
     case "dataset": {
       // Where a file or a Data Catalog dataset is dropped. The node takes the
       // drop on its whole card (NodeContainer), so this shows what it holds,
-      // lights up while a drop is over the node, and offers Choose file.
+      // lights up while a drop is over the node, and offers Choose file. One
+      // an input picks shows the dataset that input's value picks, its value
+      // here, and takes no drop and no file.
+      const picked = isPicked(widget);
       const id = typeof value === "string" ? value : "";
       const known = id ? datasetNode.describe(id) : undefined;
       const format = known?.format as DatasetFormat | undefined;
       const formatLabel = format ? DATASET_FORMAT_LABEL[format] : undefined;
-      const canChoose = !disabled && datasetNode.takeFiles !== undefined;
+      const canChoose = !disabled && !picked && datasetNode.takeFiles !== undefined;
       control = (
         <span
-          className={`${styles.datasetDrop}${datasetNode.dropping ? ` ${styles.datasetDropActive}` : ""}`}
+          className={`${styles.datasetDrop}${datasetNode.dropping && !picked ? ` ${styles.datasetDropActive}` : ""}`}
           data-dataset-drop={id ? "set" : "empty"}
+          data-picked-by={picked ? String(options.pickedBy) : undefined}
         >
           {id ? (
             <>
@@ -468,6 +474,8 @@ export function WidgetControl({ widget, value, onChange, disabled = false, ariaL
               </span>
               {format && formatLabel ? <CatalogFormatBadge label={formatLabel} formatKey={format} /> : null}
             </>
+          ) : picked ? (
+            <span className={styles.datasetHint}>Picked by {String(options.pickedBy)}</span>
           ) : (
             <span className={styles.datasetHint}>Drop a file or a Data Catalog dataset here</span>
           )}

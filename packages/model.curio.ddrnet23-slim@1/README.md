@@ -35,13 +35,13 @@ A new node opens with this code, under a docstring that says what it does:
 from semantic_segmentation import segment_images
 
 model = curio_load_model("model.curio.ddrnet23-slim")
-classes = None  # every class the model names
 
-return segment_images(input_0, model, curio_derived_file, classes=classes)
+return segment_images(input_0, model, curio_derived_file, classes=[!! classes !!])
 ```
 
-Set `classes` to the labels to report, such as
-`["vegetation", "sky", "road"]`, or leave `None` for every label.
+Its Widgets tab's **Classes** (`classes`, a list of texts) names the labels to
+report, such as `vegetation`, `sky` and `road`. Empty, as a new node starts,
+it reports every label.
 `segment_images` is the [Segmentation](../curio.segmentation@1/README.md)
 package's, which this package names in `dependencies.packages`: adding
 DDRNet23-Slim adds it too, and the header above the node's code lists it

@@ -597,6 +597,7 @@ class TestNativeToolCall:
             f"this test needs an agent whose characteristic call is node.create; "
             f"{spec.agent_id} now calls {tool!r}"
         )
+        created_id = _created_node_id(spec)
 
         page.emulate_media(reduced_motion="reduce")
         login = stub_db_user(current_server, username="agentnative", name="Agent Native User")
@@ -609,7 +610,7 @@ class TestNativeToolCall:
         }
         project_id, _attachment_id, _base = _open_dataflow_with_agent(
             session, spec, project_name="Native tool call", replies=replies,
-            native_tools=True,
+            native_tools=True, node_ids=(created_id,),
         )
         before = _saved_nodes(current_server, login["token"], project_id)
 
@@ -637,7 +638,13 @@ class TestNativeToolCall:
         )
         added = [n for n in after if n["id"] not in {b["id"] for b in before}]
         assert len(added) == 1 and CREATED_CONTENT in (added[0].get("content") or ""), added
+        # Else the frame below prints a new id on every run.
+        assert added[0]["id"] == created_id, (
+            f"the new node is {added[0]['id']}, not the scripted id {created_id}"
+        )
         expect(page.locator(f'[data-id="{added[0]["id"]}"]')).to_be_visible(timeout=20000)
+        # And the change card names it: it is in the capture.
+        expect(panel.get_by_text(f"node {created_id}")).to_be_visible(timeout=20000)
 
         dismiss_toasts(page)
         save_workflow_test_screenshot(

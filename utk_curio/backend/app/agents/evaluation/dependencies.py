@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from typing import Iterable, Mapping
 
 from utk_curio.backend.app.agents.application import source_grounding
+from utk_curio.backend.app.datasets.domain.code_refs import dataset_widget_ids
 from utk_curio.backend.app.agents.evaluation.canonical import (
     Sources,
     TemplateIndex,
@@ -121,7 +122,9 @@ def referenced_sources(
     *,
     templates: TemplateIndex | None = None,
 ) -> Sources:
-    """Every source the graph's node code reads, via the ``DEC-072`` scanner.
+    """Every source the graph's node code reads, via the ``DEC-072`` scanner,
+    and the datasets its nodes' dataset widgets hold: each one's, or every
+    choice of one an input picks (``code_refs.dataset_widget_ids``).
 
     The engine passed to the scanner is the node template's own (``python`` by
     default), so a JavaScript node's literals are read by the regex fallback
@@ -138,6 +141,7 @@ def referenced_sources(
         content = node.get("content")
         if not isinstance(content, str) or not content.strip():
             continue
+        dataset_ids.update(dataset_widget_ids(node))
         facts = index.get(canonical_template_id(node.get("type")))
         engine = getattr(facts, "engine", None) or "python"
         for ref in source_grounding.scan_sources(content, engine):

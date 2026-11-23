@@ -4,10 +4,10 @@
  *
  * The shadow steps of examples 06, 07 and 38 read every building's
  * `properties.height` with `required: true`, so autk-grammar would leave out a
- * building whose height is not a number. Curio first gives every building part
- * the height autk-map draws for it (`readableBuildingProperties`), so the
- * shader reads every part and no Autark compute meets a building with no
- * height. The texts say the same:
+ * building whose height is not a number. Curio hands a pass every building part
+ * at the height autk-map draws for it (`withDefaultHeight`), so the shader reads
+ * every part and no Autark compute meets a building with no height. The texts
+ * say the same:
  * - no text of their dataflows says a building is skipped;
  * - each shadow step's goal, which an agent reads when the example is a worked
  *   example, gives the heights the code gives, and so does example 07's

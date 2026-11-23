@@ -71,6 +71,57 @@ export function inItsWorkspace(source: any): any {
     return workspace === undefined ? rest : { ...rest, workspace };
 }
 
+// Where each source of a data section runs. autk-grammar runs a source with
+// `after: 'compute'` once every compute pass has run, in the order of `data`,
+// after every source without it, wherever it stands in `data`; its own
+// `dataPhases` splits a document so, and refuses an `after` other than
+// 'compute' and a source after compute that reads a table a pass writes
+// without `writeBack`. The node calls it where it has the grammar at hand (its
+// run in the browser, the sandbox's code); here, without the grammar, the
+// order alone. A node loads the sources before compute where it loads its data
+// section (the sandbox, or the browser's loader), and runs those after compute
+// in the browser once its passes have run. A document with no compute pass has
+// nothing for them to wait for: they load with the others, after them.
+
+// Whether a source of *dataSources* writes `after`, the key that moves it
+// after the compute passes.
+export function writesAfter(dataSources: unknown): boolean {
+    return Array.isArray(dataSources)
+        && dataSources.some((source) => source != null && typeof source === 'object' && source.after !== undefined);
+}
+
+// *dataSources* in the order autk-grammar runs them when no pass runs between
+// them: those without `after`, then those with it, each in the order of `data`.
+export function inPhaseOrder(dataSources: any[]): any[] {
+    const sources: any[] = Array.isArray(dataSources) ? dataSources : [];
+    if (!writesAfter(sources)) return sources;
+    return [
+        ...sources.filter((source) => source == null || source.after === undefined),
+        ...sources.filter((source) => source != null && source.after !== undefined),
+    ];
+}
+
+// Whether *spec* has compute passes, which its sources after compute wait for.
+function hasPasses(spec: any): boolean {
+    return spec != null && Array.isArray(spec.compute) && spec.compute.length > 0;
+}
+
+// The sources a node loads where it loads a document's data section: those
+// before compute, then, when the document has no compute pass, those after
+// compute (inPhaseOrder).
+export function loadedSources(spec: any): any[] {
+    const sources: any[] = spec != null && Array.isArray(spec.data) ? spec.data : [];
+    if (!writesAfter(sources)) return sources;
+    return hasPasses(spec) ? sources.filter((source) => source == null || source.after === undefined) : inPhaseOrder(sources);
+}
+
+// The sources a node runs in the browser once its compute passes have run:
+// those after compute, in the order of `data`, of a document that has passes.
+export function sourcesAfterPasses(spec: any): any[] {
+    const sources: any[] = spec != null && Array.isArray(spec.data) ? spec.data : [];
+    return hasPasses(spec) ? sources.filter((source) => source != null && source.after !== undefined) : [];
+}
+
 // Resolve relative URLs in data source specs to the Curio backend's /file/
 // route, which serves files by their path *relative to CURIO_LAUNCH_CWD* — the
 // same root and relative-path convention the Python sandbox uses. So users can
@@ -140,17 +191,26 @@ function osmTables(source: any): string[] {
 // elements (`osmElements`), each in the view's workspace: both loaders read
 // each as one feature per element, which the views then draw. A table of the
 // node's input is no OpenStreetMap table of its database, so a view reads it
-// row by row, as autk-grammar reads any other table.
+// row by row, as autk-grammar reads any other table. So is a table a GPGPU or
+// clusters pass changes in place and keeps in autk-db (`writeBack`):
+// autk-grammar then reads it row by row, the pass's rows. (A view of one a
+// pass changes in place without `writeBack` is refused:
+// contracts/autkGrammar autkOsmElementsProblem.)
 export function osmElementTables(spec: any): string[] {
     const list = (held: any): any[] => (held == null ? [] : Array.isArray(held) ? held : [held]);
     const own = new Set(list(spec?.data)
         .filter((source) => source?.type === 'osm')
         .flatMap((source) => osmTables(source).map((table) => autkTableKey(autkWorkspaceOf(source), table))));
+    const writtenBack = new Set(list(spec?.compute)
+        .filter((pass) => (pass?.type == null || pass.type === 'gpgpu' || pass.type === 'clusters')
+            && !(typeof pass?.outputTableName === 'string' && pass.outputTableName !== '')
+            && Boolean(pass?.writeBack) && typeof pass?.dataRef === 'string')
+        .map((pass) => autkTableKey(autkWorkspaceOf(pass), pass.dataRef)));
     const keys: string[] = [];
     const read = (view: any, table: unknown) => {
         if (typeof table !== 'string' || table === '') return;
         const key = autkTableKey(autkWorkspaceOf(view), table);
-        if (own.has(key) && !keys.includes(key)) keys.push(key);
+        if (own.has(key) && !writtenBack.has(key) && !keys.includes(key)) keys.push(key);
     };
     for (const map of list(spec?.map)) {
         for (const layer of list(map?.layerRefs)) if (layer?.osmElements === true) read(map, layer.dataRef);
@@ -175,13 +235,15 @@ export function osmElementTables(spec: any): string[] {
 // its source loads it into, once, in the order its sources make them. A
 // heatmap's or a GeoTIFF's raster table is one of them: the loaders read it
 // back by its key. A table a later `drop` drops is no longer asked for, until
-// a source after it makes one of that name again.
+// a source after it makes one of that name again. The sources are read in the
+// order autk-grammar runs them (inPhaseOrder), so a drop after compute drops
+// the table a source before compute made, wherever each stands in `data`.
 export function requestedLayerTables(dataSources: any[]): string[] {
     const names: string[] = [];
     const add = (key: string) => {
         if (!names.includes(key)) names.push(key);
     };
-    for (const source of dataSources ?? []) {
+    for (const source of inPhaseOrder(dataSources ?? [])) {
         const { type, ...rest } = (source ?? {}) as any;
         const workspace = autkWorkspaceOf(rest);
         if (type === 'osm') {
@@ -209,6 +271,17 @@ export function requestedLayerTables(dataSources: any[]): string[] {
 // `joinDataRef`, the table joined onto it; an update changes the rows of its
 // `dataRef`, and a drop drops it.
 type SectionRead = { at: number; name: string; workspace?: string; key: string; reader: string };
+
+// The tables a data source reads by name, in its own workspace, as sectionReads
+// finds them: a heatmap's `joinDataRef`, a join's `dataRef` and `joinDataRef`,
+// and an update's or a drop's `dataRef`. A SQL query is not read for its tables.
+export function tablesReadBy(source: any): string[] {
+    const named = (table: unknown): table is string => typeof table === 'string' && table !== '';
+    if (source?.type === 'heatmap') return [source.joinDataRef].filter(named);
+    if (source?.type === 'join') return [source.dataRef, source.joinDataRef].filter(named);
+    if (source?.type === 'update' || source?.type === 'drop') return [source.dataRef].filter(named);
+    return [];
+}
 
 function sectionReads(dataSources: any[]): SectionRead[] {
     const sources: any[] = Array.isArray(dataSources) ? dataSources : [];
@@ -254,6 +327,20 @@ export function sectionTableProblem(dataSources: any[]): string | null {
     return null;
 }
 
+// The keys of a data section's own tables: those its sources load and make
+// (requestedLayerTables), and every name a source of it gives its table
+// (`outputTableName`, an OSM load's and a SQL query's included), dropped or
+// not. Any other table a source of it reads is one of the node's input.
+export function sectionOwnTables(dataSources: any[]): Set<string> {
+    const sources: any[] = Array.isArray(dataSources) ? dataSources : [];
+    return new Set([
+        ...requestedLayerTables(sources),
+        ...sources
+            .filter((source) => typeof source?.outputTableName === 'string' && source.outputTableName !== '')
+            .map((source) => autkTableKey(autkWorkspaceOf(source), source.outputTableName)),
+    ]);
+}
+
 // A table of the node's input that a data section's heatmap or join reads: its
 // name and the workspace of the entry that reads it first, `before`, that
 // entry's place, where both loaders load it into the section's database, and
@@ -268,15 +355,12 @@ export type SectionInputTable = { name: string; workspace?: string; before: numb
 // query's included). The input names them as the node reads its input
 // everywhere (utils/autkInput autkSourcesFrom): `input_<k>` for what arrives
 // on circle k, a layer by its own name. A section that reads none of them
-// reads no input.
+// reads no input. The section is read in the order autk-grammar runs it
+// (inPhaseOrder), and `before` is a place in that order, the order both
+// loaders load it in.
 export function sectionInputTables(dataSources: any[]): SectionInputTable[] {
-    const sources: any[] = Array.isArray(dataSources) ? dataSources : [];
-    const loaded = new Set([
-        ...requestedLayerTables(sources),
-        ...sources
-            .filter((source) => typeof source?.outputTableName === 'string' && source.outputTableName !== '')
-            .map((source) => autkTableKey(autkWorkspaceOf(source), source.outputTableName)),
-    ]);
+    const sources: any[] = inPhaseOrder(Array.isArray(dataSources) ? dataSources : []);
+    const loaded = sectionOwnTables(sources);
     const seen = new Set<string>();
     const tables: SectionInputTable[] = [];
     for (const read of sectionReads(sources)) {
@@ -565,6 +649,123 @@ export function withOsmIds(table: { source?: string; type?: string } | null | un
     });
 }
 
+// A layer's features with OpenStreetMap's numeric tags as numbers. autk-db
+// keeps every tag as text ("65.5", "86 m", "25 mph"); each value of these keys
+// becomes a number, or null when it holds none that can be read:
+// - lengths, in metres: `height`, `min_height`, `building:height`,
+//   `roof:height`, `width`, `est_width`, `maxheight`, `maxwidth`, `maxlength`,
+//   `ele` and `depth`. A number followed by its unit is converted: `m`,
+//   `metre`, `metres`, `meter`, `meters`, `km`, `mi`, `nmi` and `ft`, in any
+//   case, and feet and inches (`282'`, `16'6"`, `6"`);
+// - speeds, in kilometres per hour: `maxspeed`, `maxspeed:forward`,
+//   `maxspeed:backward` and `minspeed`. `km/h`, `mph` and `knots` are converted;
+// - counts, which take a plain number alone: `building:levels`,
+//   `building:min_level`, `building:levels:underground`, `roof:levels`,
+//   `levels`, `min_level`, `lanes`, `lanes:forward`, `lanes:backward`,
+//   `lanes:both_ways`, `layer`, `capacity`, `seats`, `beds`, `rooms` and
+//   `building:flats`.
+// A plain number is written as the expression language writes one, signed,
+// with nothing around it once trimmed (NUMBER_TEXT in
+// utils/editFeatures/applyEdits.ts), and stays the number it writes, as does
+// one written in its key's own unit ("86 metres", "50 km/h"). A value converted
+// from another unit is rounded to two decimals (`Math.round`). Any other text
+// ("tall", "~20", "7-7", "none") is null, so a building with no height that
+// can be read takes the default height where a height is used
+// (utils/buildingHeight). A number stays the number it is, and a key a feature
+// does not have stays missing. A building's own tags and each part's in
+// `properties.parts` are read alike. The Discovery Catalog's OpenStreetMap
+// downloads write their numbers by this rule and these keys (its Python twin,
+// discovery/domain/osm_values.py), and both run the cases of
+// autkOsmNumbers.cases.json. The surface, a raster and a layer from another
+// source come back as they are; the input is never changed. Both loaders hand
+// their layers on through this one function, after withOsmIds, and so does a
+// compute step that reads a table back from its database
+// (autkComputeDatabase); the sandbox's code embeds its source, so the body
+// avoids what withOsmIds avoids.
+export function withOsmNumbers(table: { source?: string; type?: string } | null | undefined, features: any[]): any[] {
+    if (table == null || table.source !== 'osm' || table.type === 'surface' || table.type === 'raster'
+        || !Array.isArray(features)) return features;
+    const lengths = [
+        'height', 'min_height', 'building:height', 'roof:height',
+        'width', 'est_width', 'maxheight', 'maxwidth', 'maxlength', 'ele', 'depth',
+    ];
+    const speeds = ['maxspeed', 'maxspeed:forward', 'maxspeed:backward', 'minspeed'];
+    const counts = [
+        'building:levels', 'building:min_level', 'building:levels:underground', 'roof:levels', 'levels', 'min_level',
+        'lanes', 'lanes:forward', 'lanes:backward', 'lanes:both_ways', 'layer',
+        'capacity', 'seats', 'beds', 'rooms', 'building:flats',
+    ];
+    const keys = lengths.concat(speeds, counts);
+    const number = '[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?';
+    const plain = new RegExp('^' + number + '$');
+    const length = new RegExp('^(' + number + ')\\s*(m|metres?|meters?|km|mi|nmi|ft)$', 'i');
+    const speed = new RegExp('^(' + number + ')\\s*(km/h|mph|knots)$', 'i');
+    const feetAndInches = /^(?:([0-9]+(?:\.[0-9]+)?)\s*')?\s*(?:([0-9]+(?:\.[0-9]+)?)\s*")?$/;
+    const metresIn: Record<string, number> = {
+        m: 1, metre: 1, metres: 1, meter: 1, meters: 1, km: 1000, mi: 1609.344, nmi: 1852, ft: 0.3048,
+    };
+    const kmhIn: Record<string, number> = { 'km/h': 1, mph: 1.609344, knots: 1.852 };
+    const finite = function (value: number) { return Number.isFinite(value) ? value : null; };
+    const hundredths = function (value: number) { return finite(Math.round(value * 100) / 100); };
+    // A number followed by one of *units*: as written in the unit worth 1, else converted.
+    const withUnit = function (pattern: RegExp, units: Record<string, number>, text: string): any {
+        const unit = pattern.exec(text);
+        if (unit === null) return undefined;
+        const factor = units[unit[2].toLowerCase()];
+        return factor === 1 ? finite(Number(unit[1])) : hundredths(Number(unit[1]) * factor);
+    };
+    const read = function (key: string, value: any): any {
+        if (value === null || value === undefined) return value;
+        if (typeof value === 'number') return finite(value);
+        if (typeof value !== 'string') return null;
+        const text = value.trim();
+        if (plain.test(text)) return finite(Number(text));
+        if (speeds.indexOf(key) >= 0) {
+            const kmh = withUnit(speed, kmhIn, text);
+            return kmh === undefined ? null : kmh;
+        }
+        if (lengths.indexOf(key) < 0) return null;
+        const metres = withUnit(length, metresIn, text);
+        if (metres !== undefined) return metres;
+        const imperial = feetAndInches.exec(text);
+        if (imperial !== null && (imperial[1] !== undefined || imperial[2] !== undefined)) {
+            return hundredths(Number(imperial[1] || 0) * 0.3048 + Number(imperial[2] || 0) * 0.0254);
+        }
+        return null;
+    };
+    const numbered = function (properties: any): any {
+        if (properties == null || Object.prototype.toString.call(properties) !== '[object Object]') return properties;
+        let out = properties;
+        for (let i = 0; i < keys.length; i++) {
+            const key = keys[i];
+            if (!Object.prototype.hasOwnProperty.call(properties, key)) continue;
+            const value = read(key, properties[key]);
+            if (value === properties[key]) continue;
+            if (out === properties) out = Object.assign({}, properties);
+            out[key] = value;
+        }
+        return out;
+    };
+    return features.map(function (feature: any) {
+        if (feature == null) return feature;
+        const properties = numbered(feature.properties);
+        const given = properties != null && Array.isArray(properties.parts) ? properties.parts : [];
+        const parts = given.map(numbered);
+        const partsChanged = parts.some(function (part: any, at: number) { return part !== given[at]; });
+        if (properties === feature.properties && !partsChanged) return feature;
+        const next = partsChanged ? Object.assign({}, properties, { parts: parts }) : properties;
+        return Object.assign({}, feature, { properties: next });
+    });
+}
+
+// The number withOsmNumbers makes of the value *value* of the tag *key* of an
+// OpenStreetMap feature: a number, null, or, for a key it does not read, the
+// value as it is.
+export function osmNumber(key: string, value: any): any {
+    const out = withOsmNumbers({ source: 'osm', type: 'buildings' }, [{ properties: { [key]: value } }]);
+    return out[0].properties[key];
+}
+
 // A raster table's `getRaster` collection with `grid`, the grid its cells lie
 // on (utils/raster/rasterWire.ts), which autk-db keeps for no raster it makes.
 // A raster's cells lie on a regular grid over the collection's extent,
@@ -796,7 +997,11 @@ for (const __plain of __plainTables) __have.add(${key});`,
 // loads each just before the first entry that reads it; one that reads none
 // compiles without them. An OpenStreetMap table a view of the node reads with
 // `osmElements` (*options.elements*, by key) is read as one feature per
-// OpenStreetMap element. The function returns Array<{name, type, geojson}>,
+// OpenStreetMap element. The sources load in the order autk-grammar runs them
+// (inPhaseOrder): a section with sources after compute, which is a section of
+// no compute pass, loads them after the others, and its code first asks the
+// grammar's own `dataPhases` of the section, which refuses an `after` other
+// than 'compute' before anything loads. The function returns Array<{name, type, geojson}>,
 // each table in the CRS of its workspace, each raster table after them in its
 // envelope (rasterEnvelope), each table or raster in another workspace than
 // the default one with its `workspace` too, which the sandbox persists to
@@ -805,11 +1010,17 @@ export function compileDataSpecToAutkDbJs(
     dataSources: any[],
     options: { workspaces?: unknown; elements?: string[] } = {},
 ): string {
-    const sources = (dataSources ?? []).map(inItsWorkspace);
+    const sources = inPhaseOrder(dataSources ?? []).map(inItsWorkspace);
     const usesWorkspaces = autkUsesWorkspaces({ data: sources });
     const parts = workspaceCode(usesWorkspaces);
     const workspaces = Array.isArray(options.workspaces) && options.workspaces.length > 0 ? options.workspaces : null;
-    const fromDataEntry = ['createDataAdapter', ...parts.fromDataEntry];
+    const phased = writesAfter(sources);
+    const fromDataEntry = ['createDataAdapter', ...(phased ? ['dataPhases'] : []), ...parts.fromDataEntry];
+    const phaseCheck = phased ? `// The grammar's own phases of the section, which refuse an \`after\` other than
+// 'compute' before anything loads. The section has no compute pass, so its
+// sources after compute load after the others, as __sources holds them.
+dataPhases({ data: __sources });
+` : '';
     const tableCheck = sectionReads(sources).length > 0 ? `// A heatmap, a join, an update or a drop that reads a table this section
 // loads only after it fails before anything loads, with the words the host
 // gives it (sectionTableProblem).
@@ -867,10 +1078,11 @@ const __loadErrors = [];
 // contract check.
 const __changeErrors = [];
 const __joinErrors = [];
-// withOsmIds and layerEpsg, as the host defines them (autkDataCompile.ts).
+// withOsmIds, withOsmNumbers and layerEpsg, as the host defines them (autkDataCompile.ts).
 const __withOsmIds = ${withOsmIds.toString()};
+const __withOsmNumbers = ${withOsmNumbers.toString()};
 const __layerEpsg = ${layerEpsg.toString()};
-${tableCheck}${inputTables}${handOnCheck}// autk-grammar's own data adapter, which loads every source as the grammar's run
+${phaseCheck}${tableCheck}${inputTables}${handOnCheck}// autk-grammar's own data adapter, which loads every source as the grammar's run
 // loads one. A raster table it makes is read back at once, in the workspace it
 // was built in, with the grid its cells lie on (withRasterGrid), in the
 // envelope it is handed on in (rasterEnvelope), as the host defines them.
@@ -944,35 +1156,22 @@ const __flattenToMultiPolygon = (geom) => {
   collect(geom);
   return polys.length > 0 ? { type: 'MultiPolygon', coordinates: polys } : null;
 };
-const __buildingHeight = (props) => {
-  const num = (v) => { const n = parseFloat(String(v)); return Number.isFinite(n) && n > 0 ? n : 0; };
-  const L = 3.4; // metres per level (matches autk-map's building renderer)
-  const p = props || {};
-  // autk-map culls a part when its top height <= its base (min_height) — which also
-  // covers the no-height case (0 <= 0). Mirror its height computation and, only when
-  // the part would be culled, return a height that clears the base by a visible
-  // amount; otherwise return null to leave the real tags untouched.
-  const base = num(p.min_height) || L * num(p.min_level) || L * num(p['building:min_level']);
-  let top = num(p.height) || num(p['building:height']) || L * num(p.levels) || L * num(p['building:levels']);
-  if (top === 0 && Array.isArray(p.parts)) {
-    for (const q of p.parts) { const h = num(q && q.height) || L * num(q && q.levels); if (h > top) top = h; }
-  }
-  return top > base ? null : base + 6;
-};
 const __out = [];
 ${parts.each}
 ${wanted.length > 0 ? `${parts.skip}\n` : ''}  // An OpenStreetMap table a view reads as elements: one feature per element.
   const geojson = __elements.includes(${keyOf}) ? await db.getLayer(t.name, { osmElements: true }) : await db.getLayer(t.name);
   let type = t.type ?? 'polygons';
-  // Each OpenStreetMap feature's OSM id in osm_id, a building part's in that part.
-  if (geojson && Array.isArray(geojson.features)) geojson.features = __withOsmIds(t, geojson.features);
+  // Each OpenStreetMap feature's OSM id in osm_id, a building part's in that
+  // part, and its numeric tags as numbers.
+  if (geojson && Array.isArray(geojson.features)) geojson.features = __withOsmNumbers(t, __withOsmIds(t, geojson.features));
   if (type === 'buildings' && Array.isArray(geojson?.features)) {
     // autk-db keeps a building as one GeometryCollection, each part's tags in
     // properties.parts naming its geometry by geometryIndex. Explode each building
-    // into one footprint feature per part, carrying that part's tags and height, as
-    // explodeBuildingParts does in the browser (autkLayerMaterialize.ts). The
-    // downstream loadGeojson('buildings') makes every row a building of its own, so
-    // each part also carries, as a property, the building_id it came from. A part's
+    // into one footprint feature per part, carrying that part's tags, as
+    // explodeBuildingParts does in the browser (autkLayerMaterialize.ts): a part
+    // with no height is handed on with none. The downstream
+    // loadGeojson('buildings') makes every row a building of its own, so each part
+    // also carries, as a property, the building_id it came from. A part's
     // geometryIndex is autk-db's bookkeeping and is left out, and so is its id,
     // which the part carries as its osm_id.
     const __exploded = [];
@@ -991,7 +1190,6 @@ ${wanted.length > 0 ? `${parts.skip}\n` : ''}  // An OpenStreetMap table a view 
         if (!gg) return;
         const p = { ...(meta || {}) }; delete p.parts;
         if (props.building_id != null) p.building_id = props.building_id;
-        const h = __buildingHeight(p); if (h != null) p.height = h;
         __exploded.push({ type: 'Feature', geometry: gg, properties: p });
       };
       if (geom && geom.type === 'GeometryCollection' && Array.isArray(geom.geometries)) {

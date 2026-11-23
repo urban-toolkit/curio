@@ -41,11 +41,50 @@ __all__ = ["rasterize_buildings"]
 TILE_SIZE = 256
 MOSAIC_CRS = "EPSG:3395"
 TILE_FILE = re.compile(r"^(\d+)_(\d+)_(\d+)\.png$")
+#: Metres per level, as an Autark map counts a building's levels.
+METRES_PER_LEVEL = 3.4
+#: How tall, in metres above its base, an Autark map draws a building with no
+#: height, and so Rasterize Buildings rasterizes it.
+DEFAULT_HEIGHT = 6.0
+
+
+def _positive(buildings, column):
+    """The numbers above 0 of *column* of *buildings*, NaN elsewhere and in
+    every row when it has no such column."""
+    if column not in buildings.columns:
+        return pd.Series(np.nan, index=buildings.index, dtype="float64")
+    values = pd.to_numeric(buildings[column], errors="coerce").astype("float64")
+    return values.where(values > 0)
+
+
+def drawn_heights(buildings, attribute):
+    """The heights in column *attribute* of *buildings*, in metres, and for a
+    building with no number there the height an Autark map draws it at, read
+    from its OpenStreetMap keys: its ``height`` or ``building:height``, else
+    3.4 m a level (``levels``, else ``building:levels``), when that is above
+    its base (``min_height``, else 3.4 m a level of ``min_level`` or
+    ``building:min_level``), and else 6 m above its base, the height Curio
+    gives a building with none."""
+    heights = pd.to_numeric(buildings[attribute], errors="coerce").astype("float64")
+    tops = [column for column in ("height", "building:height") if column != attribute]
+    top = pd.Series(np.nan, index=buildings.index, dtype="float64")
+    for column in tops:
+        top = top.fillna(_positive(buildings, column))
+    for column in ("levels", "building:levels"):
+        top = top.fillna(METRES_PER_LEVEL * _positive(buildings, column))
+    base = _positive(buildings, "min_height")
+    for column in ("min_level", "building:min_level"):
+        base = base.fillna(METRES_PER_LEVEL * _positive(buildings, column))
+    base = base.fillna(0.0)
+    drawn = top.where(top > base, base + DEFAULT_HEIGHT)
+    return heights.fillna(drawn)
 
 
 def height_layer(buildings, attribute):
     """*buildings* as ``convert_raster`` reads a layer: one ``height`` column
-    taken from *attribute*, a fresh index, and only rows with a geometry."""
+    taken from *attribute*, a building with no number there at the height an
+    Autark map draws it (``drawn_heights``), a fresh index, and only rows with
+    a geometry."""
     if not isinstance(buildings, gpd.GeoDataFrame):
         raise ValueError("Rasterize Buildings needs a buildings layer, a GeoDataFrame of polygons.")
     if buildings.crs is None:
@@ -57,7 +96,7 @@ def height_layer(buildings, attribute):
         columns = ", ".join(str(c) for c in buildings.columns if c != buildings.geometry.name)
         raise ValueError(f"The buildings layer has no column '{attribute}'. Its columns: {columns}.")
     layer = gpd.GeoDataFrame(
-        {"height": pd.to_numeric(buildings[attribute], errors="coerce").to_numpy(dtype="float64")},
+        {"height": drawn_heights(buildings, attribute).to_numpy(dtype="float64")},
         geometry=buildings.geometry.to_numpy(),
         crs=buildings.crs,
     )

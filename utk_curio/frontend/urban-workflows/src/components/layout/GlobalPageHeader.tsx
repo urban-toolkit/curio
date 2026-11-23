@@ -70,7 +70,6 @@ export function GlobalPageHeader({ children, onLeave, className }: GlobalPageHea
             ) : (
               <NavLink
                 to="/monitor"
-                end
                 className={({ isActive }) => clsx(styles.pill, isActive && styles.pillCurrent)}
               >
                 Monitor

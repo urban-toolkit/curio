@@ -22,10 +22,6 @@
       }
     }
   },
-  "modelTypes": {
-    "semantic-segmentation": { "tags": ["Computer vision"], "dataTypes": ["Imagery"] },
-    "concept-segmentation": { "tags": ["Computer vision"], "dataTypes": ["Imagery"] }
-  },
   "datasetFormats": {
     "csv": { "dataTypes": ["Tables"] },
     "parquet": { "dataTypes": ["Tables"] },

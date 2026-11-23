@@ -2,8 +2,10 @@
 
 ``execution/autk_spec_kind`` runs the cases in ``utils/autkSpecKind.cases.json``,
 which ``src/tests/utils/autkSpecKindCases.test.ts`` runs through the canvas's
-own ``classifyAutkSpecString``. A run then runs a node whose document only
-loads data, forwards one that draws, and leaves the rest to the browser.
+own ``classifyAutkSpecString`` and ``isPassThroughNode``. Each case says the
+role a run gives its node: a run runs a node whose document only loads data,
+forwards one that only draws its input, and leaves the rest to the browser, a
+node that draws and also loads or computes among them.
 ``autk_spec_kind`` and ``run_plan`` are imported inside each test, so a
 checkout without them fails each test on its own.
 """
@@ -18,9 +20,6 @@ CASES_FILE = (
     Path(__file__).resolve().parents[3]
     / "frontend" / "urban-workflows" / "src" / "utils" / "autkSpecKind.cases.json"
 )
-
-#: What a run does with an Autark node of each kind.
-ROLE_OF_KIND = {"data": "run", "render": "forward", "compute": "browser", "unknown": "browser"}
 
 
 def _cases():
@@ -41,11 +40,12 @@ def test_a_document_has_the_kind_the_canvas_gives_it(case):
 @pytest.mark.parametrize("case", _cases())
 @pytest.mark.parametrize("node_type", ["curio.builtin/autk-grammar", "curio.builtin/autk-grammar@1"])
 def test_a_run_runs_only_the_autark_nodes_that_only_load_data(case, node_type):
+    """And forwards only those that only draw their input: the role each case says."""
     assert case is not None, f"{CASES_FILE} is missing"
     from utk_curio.backend.app.execution.run_plan import node_role
 
     node = {"id": "n", "type": node_type, "content": case["spec"]}
-    assert node_role(node) == ROLE_OF_KIND[case["kind"]]
+    assert node_role(node) == case["role"]
 
 
 def test_a_data_section_in_another_kind_of_node_is_not_an_autark_load():

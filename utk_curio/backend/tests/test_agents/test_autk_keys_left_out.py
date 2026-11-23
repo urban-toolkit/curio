@@ -14,8 +14,9 @@ import json
 
 import pytest
 
-#: Where each place of a rule is in the schema: the root's property it names.
-_PLACES = ("", "data[]", "compute[]", "map[]", "plot[]")
+#: Where each place of a rule is in the schema: the root's property it names,
+#: or a list in each object that property holds (``map[].layerRefs[]``).
+_PLACES = ("", "data[]", "compute[]", "map[]", "plot[]", "map[].layerRefs[]")
 
 #: Rules of the shape ``notRunYet`` holds, for the keys a node ran last, a
 #: document's ``layout`` and ``links``: what leaves a key out is tested on
@@ -49,18 +50,25 @@ def _holders(defs: dict, node, seen=None) -> list[dict]:
     return found
 
 
-def _place(schema: dict, defs: dict, place: str):
+def _place(schema: dict, defs: dict, place: str) -> list:
+    """The schemas of what a document holds at *place*: the root's property
+    the place names, then each further step's property in each object the
+    step before can be (``_holders``)."""
     root = _resolve(defs, {"$ref": schema.get("$ref", "#/definitions/UrbanSpec")}) if "$ref" in schema else schema
     if place == "":
-        return root
-    return root.get("properties", {}).get(place.removesuffix("[]"))
+        return [root]
+    first, *rest = place.split(".")
+    nodes = [root.get("properties", {}).get(first.removesuffix("[]"))]
+    for step in rest:
+        nodes = [holder["properties"].get(step.removesuffix("[]")) for node in nodes for holder in _holders(defs, node)]
+    return nodes
 
 
 def _written(schema: dict, rule: dict) -> list[str]:
     """Where *schema* still lets a document write what *rule* refuses."""
     defs = schema.get("definitions") or schema.get("$defs") or {}
     found = []
-    for holder in _holders(defs, _place(schema, defs, rule["in"])):
+    for holder in [holder for place in _place(schema, defs, rule["in"]) for holder in _holders(defs, place)]:
         prop = _resolve(defs, holder["properties"].get(rule["key"]))
         if not isinstance(prop, dict):
             continue
@@ -250,3 +258,30 @@ def test_the_autark_skill_names_no_family_or_kind_a_node_refuses():
     for family in ("compute", "data", "map", "plot"):
         assert f'"{family}"' in families
     assert '- "join":' in text
+
+
+#: A map whose buildings layer writes ``buildingsZeroHeight``, which a node
+#: runs: autk-map raises the parts of its buildings that have no height at
+#: random.
+ZERO_HEIGHTS = {"map": {"layerRefs": [{"dataRef": "input_0", "buildingsZeroHeight": True}]}}
+
+
+def test_a_buildings_layers_buildings_zero_height_is_in_what_the_agents_read():
+    """autk-grammar draws the parts of a buildings layer that have no height at
+    random heights (``buildingsZeroHeight``), and a node runs the key. So the
+    schema the agents read, the autark skill and the reply schema, in both
+    flavors, hold it, and a reply that writes it keeps it."""
+    from utk_curio.backend.app.agents.application import reply_schemas as rs
+    from utk_curio.backend.app.agents.domain import contracts
+    from utk_curio.backend.tests._support.prompt_files import prompt_text
+
+    schema = contracts.load_autk_schema()
+    assert "buildingsZeroHeight" in contracts._definition(schema, "MapLayerSpec").get("properties", {})
+    assert "buildingsZeroHeight" in json.dumps(contracts.autk_schema_curio_runs(schema))
+    assert '"buildingsZeroHeight"' in prompt_text("autark/SKILL.md")
+    for flavor in (rs.FLAVOR_CLOSED, rs.FLAVOR_STRICT):
+        reply = rs.autk_reply_schema(flavor)
+        assert "buildingsZeroHeight" in json.dumps(reply.schema), flavor
+        encoded, dropped = reply.encode(ZERO_HEIGHTS)
+        assert dropped == [], flavor
+        assert json.loads(reply.decode(json.dumps(encoded))) == ZERO_HEIGHTS, flavor

@@ -52,14 +52,36 @@ export function idKey(value: unknown): string | null {
 
 const propertiesOf = (feature: EditableFeature | null | undefined): Row => (feature?.properties ?? {}) as Row;
 
-/** What a writing *edit* puts into its column of *row*, or undefined when it leaves the row alone. */
+/**
+ * A number written as text ("30", "12.5"), as a table read from a file may
+ * hold one: the expression language's own number, signed, with nothing around
+ * it once trimmed. `_NUMBER_TEXT` in `feature_edits.py` is the same, and so is
+ * the plain number an Autark node reads an OpenStreetMap tag's text as
+ * (`withOsmNumbers` in `adapters/node/autkDataCompile.ts`).
+ */
+const NUMBER_TEXT = /^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$/;
+
+/** *value* as a scale or an offset reads it: a number, or a text that writes one; null for anything else. */
+function amountIn(value: unknown): number | null {
+  if (typeof value !== "string") return exprNumber(value);
+  const text = value.trim();
+  return NUMBER_TEXT.test(text) ? exprNumber(Number(text)) : null;
+}
+
+/**
+ * What a writing *edit* puts into its column of *row*, or undefined when it
+ * leaves the row alone. A scale or an offset of a number written as text
+ * writes its result back as text, as JavaScript writes the number.
+ */
 function written(edit: FeatureEdit, formula: Expr | null, row: Row): ExprValue | undefined {
   if (edit.op === "set") return edit.value ?? null;
   if (edit.op === "expr") return evaluate(formula as Expr, row);
-  const current = exprNumber(row[edit.column as string]);
+  const current = row[edit.column as string];
+  const amount = amountIn(current);
   const by = exprNumber(edit.value);
-  if (current === null || by === null) return undefined;
-  return exprResult(edit.op === "scale" ? current * by : current + by);
+  if (amount === null || by === null) return undefined;
+  const result = exprResult(edit.op === "scale" ? amount * by : amount + by);
+  return typeof current === "string" && result !== null ? String(result) : result;
 }
 
 /** The feature an add makes: its values, then its id in *key*, and its shape. */

@@ -5,6 +5,10 @@ The twin of ``classifyAutkSpec`` and ``classifyAutkSpecString`` in
 ``utils/autkSpecKind.ts``; ``utils/autkSpecKind.cases.json`` beside it holds
 the cases both run. ``render`` draws a map or a plot, ``compute`` runs WGSL
 over layers, ``data`` only loads sources, and anything else is ``unknown``.
+A document that draws and has no data source and no pass of its own only
+draws its node's input (:func:`only_draws_its_input`), the twin of
+``autkOnlyDrawsItsInput``: its node hands on its input as it came, where a node
+that draws and also loads or computes hands on what it loads and computes.
 
 Also which tables of the node's input a document's data section reads
 (:func:`section_input_tables`), the twin of ``sectionInputTables`` in
@@ -36,43 +40,65 @@ KIND_ORDER = ("render", "compute", "data")
 AUTK_GRAMMAR = "AUTK_GRAMMAR"
 
 
+def _names(spec: dict, family: str) -> bool:
+    """Whether *spec* names *family*: a map or a plot as soon as it is named,
+    a step list only when it holds a step."""
+    if FAMILY_KIND[family] == "render":
+        return spec.get(family) is not None
+    value = spec.get(family)
+    return isinstance(value, list) and len(value) > 0
+
+
 def classify_autk_spec(spec) -> str:
     """``render``, ``compute``, ``data`` or ``unknown`` for a parsed document.
     A map or a plot counts as soon as it is named; a step list only when it
     holds a step."""
     if not isinstance(spec, dict):
         return "unknown"
-
-    def names(family: str) -> bool:
-        if FAMILY_KIND[family] == "render":
-            return spec.get(family) is not None
-        value = spec.get(family)
-        return isinstance(value, list) and len(value) > 0
-
     for kind in KIND_ORDER:
-        if any(FAMILY_KIND[family] == kind and names(family) for family in FAMILY_KIND):
+        if any(FAMILY_KIND[family] == kind and _names(spec, family) for family in FAMILY_KIND):
             return kind
     return "unknown"
+
+
+def only_draws_its_input(spec) -> bool:
+    """Whether a parsed document only draws its node's input: it draws (a map
+    or a plot) and has no data source and no pass of its own. Its node hands
+    on its input as it came, which a run on the server forwards; a node that
+    draws and also loads or computes hands on what it loads and computes, as a
+    compute step does, which only the browser makes."""
+    return classify_autk_spec(spec) == "render" and not _names(spec, "data") and not _names(spec, "compute")
 
 
 def _not_json(constant: str):
     raise ValueError(f"{constant} is not JSON")
 
 
-def classify_autk_spec_string(spec_text) -> str:
-    """:func:`classify_autk_spec` for a document as text, read as
-    ``JSON.parse`` reads it, before its chips are resolved: a chip standing on
-    its own, ``"color": [!! scenario input_1 !!]``, holds its place
-    (``code_references.with_chip_placeholders``), so the document is read for
-    what it declares rather than taken for no document."""
+def _parsed(spec_text):
+    """A document as text, read as ``JSON.parse`` reads it, before its chips
+    are resolved: a chip standing on its own, ``"color": [!! scenario input_1 !!]``,
+    holds its place (``code_references.with_chip_placeholders``), so the
+    document is read for what it declares rather than taken for no document.
+    None for no document, and for text that is no JSON."""
     from utk_curio.backend.app.execution.code_references import with_chip_placeholders
 
     if not isinstance(spec_text, str) or not spec_text.strip():
-        return "unknown"
+        return None
     try:
-        return classify_autk_spec(json.loads(with_chip_placeholders(spec_text), parse_constant=_not_json))
+        return json.loads(with_chip_placeholders(spec_text), parse_constant=_not_json)
     except ValueError:
-        return "unknown"
+        return None
+
+
+def classify_autk_spec_string(spec_text) -> str:
+    """:func:`classify_autk_spec` for a document as text, read as
+    ``JSON.parse`` reads it, before its chips are resolved (``_parsed``)."""
+    return classify_autk_spec(_parsed(spec_text))
+
+
+def only_draws_its_input_string(spec_text) -> bool:
+    """:func:`only_draws_its_input` for a document as text (``_parsed``)."""
+    return only_draws_its_input(_parsed(spec_text))
 
 
 def is_autk_data_node(node: dict) -> bool:
@@ -129,18 +155,27 @@ def _loaded_tables(sources: list) -> set[str]:
 _READS = {"heatmap": ("joinDataRef",), "join": ("dataRef", "joinDataRef"), "update": ("dataRef",), "drop": ("dataRef",)}
 
 
+def _in_phase_order(sources: list) -> list:
+    """*sources* in the order autk-grammar runs them when no pass runs between
+    them: those without ``after``, then those with it (``after: 'compute'``),
+    each in the order of ``data``. ``inPhaseOrder`` is the node's twin."""
+    return ([source for source in sources if not isinstance(source, dict) or "after" not in source]
+            + [source for source in sources if isinstance(source, dict) and "after" in source])
+
+
 def section_input_tables(spec) -> list[str]:
     """The keys of the tables a document's data section reads from the node's
     input, in the order it first reads them: each table a heatmap bins
     (``joinDataRef``), a join reads (``dataRef``, ``joinDataRef``) or an update
     or a drop changes (``dataRef``), in the entry's workspace, that none of the
-    section's own sources loads."""
+    section's own sources loads. The section is read in the order autk-grammar
+    runs it (``_in_phase_order``)."""
     sources = spec.get("data") if isinstance(spec, dict) else None
     if not isinstance(sources, list):
         return []
     loaded = _loaded_tables(sources)
     keys: list[str] = []
-    for source in sources:
+    for source in _in_phase_order(sources):
         if not isinstance(source, dict) or source.get("type") not in _READS:
             continue
         read = [source.get(field) for field in _READS[source["type"]]]

@@ -48,9 +48,16 @@ from utk_curio.backend.app.agents.domain import agent_text
 #: The keys a widget has, in the order a node stores them.
 WIDGET_KEYS = ("name", "type", "label", "default", "value", "options")
 #: The keys of a widget's options.
-OPTION_KEYS = ("choices", "display", "min", "max", "step", "units")
+OPTION_KEYS = ("choices", "pickedBy", "display", "min", "max", "step", "units")
 #: How a choice widget is drawn.
 CHOICE_DISPLAYS = ("dropdown", "radio")
+
+#: What a node's content is (the roster's ``contentKind``) when its code or
+#: spec places a widget's reference. A node of any other kind, such as a
+#: Simple View, holds only the widgets its template declares, which its body
+#: reads: a plan and a node.create set them by name, and a node saved before
+#: its template declared one is set through the template's (:func:`with_declared`).
+PLACES_WIDGETS = ("code", "grammar")
 
 #: Bounds on what one declaration may carry: abuse backstops, not product rules.
 MAX_WIDGETS = 16
@@ -89,11 +96,19 @@ def _options_problems(options: object, where: str) -> list[str]:
             "widget.options-unknown-keys", where=where, unknown=', '.join(unknown), option_keys=', '.join(OPTION_KEYS),
         ))
     choices = options.get("choices")
-    if choices is not None and (
+    # A list of texts, or, for a dataset widget an input picks, each value of
+    # that input and the dataset it picks, which check_widget_def judges.
+    picked = isinstance(choices, dict) and len(choices) <= _CHOICES_MAX and all(
+        isinstance(k, str) and len(k) <= _TEXT_MAX_CHARS and isinstance(v, str) and len(v) <= _VALUE_MAX_CHARS
+        for k, v in choices.items()
+    )
+    if choices is not None and not picked and (
         not isinstance(choices, list) or len(choices) > _CHOICES_MAX
         or not all(isinstance(c, str) and len(c) <= _TEXT_MAX_CHARS for c in choices)
     ):
         problems.append(agent_text.message("widget.choices-shape", where=where, choices_max=_CHOICES_MAX))
+    if "pickedBy" in options and not isinstance(options["pickedBy"], str):
+        problems.append(agent_text.message("widget.picked-by-shape", where=where))
     if options.get("display") is not None and options["display"] not in CHOICE_DISPLAYS:
         problems.append(agent_text.message(
             "widget.display-choice", where=where, choice_displays=', '.join(CHOICE_DISPLAYS),
@@ -270,6 +285,24 @@ def set_over(declared: list[dict], written: list[dict]) -> list[dict]:
     by_name = {w["name"]: w for w in written}
     merged = [_merged(w, by_name[w["name"]]) if w["name"] in by_name else dict(w) for w in declared]
     return normalize_widgets(merged + [dict(w) for w in written if w["name"] not in names])
+
+
+def undeclared(widgets: list[dict], declared: list[dict]) -> list[str]:
+    """The names of *widgets*, the ones an agent writes on a node whose
+    content places none (:data:`PLACES_WIDGETS`), that *declared*, its
+    template's widgets, has none of: only a node's code or spec places a
+    widget of another name."""
+    names = {w.get("name") for w in declared}
+    return [w["name"] for w in widgets if w.get("name") not in names]
+
+
+def with_declared(held: list[dict], declared: list[dict]) -> list[dict]:
+    """*held*, the widgets of a node whose content places none
+    (:data:`PLACES_WIDGETS`), then each of *declared*, its template's, that
+    it holds none of: a node saved before its template declared one shows the
+    template's in its Widgets tab, and a value set there gives it that one."""
+    names = {w["name"] for w in held}
+    return [*held, *(dict(w) for w in declared if w["name"] not in names)]
 
 
 def _keeps_problem(written: dict, template: dict, here: str) -> str | None:

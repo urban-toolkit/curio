@@ -127,18 +127,37 @@ def passed_on(output: dict) -> dict:
     return {k: v for k, v in output.items() if k in _INPUT_KEYS}
 
 
-def sent_code(plan: "Plan", step: "Step") -> str:
+def sent_code(plan: "Plan", step: "Step", picked: Optional[dict] = None) -> str:
     """*step*'s code as a run sends it: its widgets, its wired circles and its
     selection tags written in, as the canvas and the headless runner resolve
-    them. Python is indented as ``PythonInterpreter.ts`` posts it;
+    them, a dataset widget an input picks as the dataset the value *picked*
+    holds for that circle picks (``workflow_spec.picked_inputs``). Python is
+    indented as ``PythonInterpreter.ts`` posts it;
     JavaScript goes as written, as ``JavaScriptInterpreter.ts`` posts it (an
     indented ``import`` is no longer a module's own), and so does an Autark
     document, whose references resolve as a spec's do. Raises
     ``CodeReferenceError`` for a reference that names nothing."""
     language = "json" if step.autk_data else "javascript" if step.engine == "javascript" else "python"
     node = next(n for n in plan.spec.nodes if n.id == step.node_id)
-    code = plan.spec.node_code(node, language, step.content)
+    code = plan.spec.node_code(node, language, step.content, picked=picked)
     return play_indent(code) if language == "python" else code
+
+
+def picked_values(plan: "Plan", step: "Step", input_ref, read) -> dict:
+    """What *step*'s run reads of the circles a dataset widget of its node is
+    picked by, before it writes the node's code: each one's data type, and
+    the value ``read(step, input_ref, circle)`` gives (``workflow_spec.picked_inputs``),
+    the caller's read as the step's own run would read that input. Empty
+    for a node with no such widget. Raises ``CodeReferenceError`` when a read
+    fails."""
+    from utk_curio.backend.app.execution.workflow_spec import picked_inputs
+
+    node = next(n for n in plan.spec.nodes if n.id == step.node_id)
+    if step.autk_data or not node.widgets:
+        return {}
+    refs = plan.spec.input_refs(step.node_id, input_ref)
+    reader = None if read is None else (lambda slot, _ref: read(step, input_ref, slot))
+    return picked_inputs(node.widgets, refs, reader)
 
 
 def _is_ref(value) -> bool:
@@ -257,14 +276,16 @@ class _Outcome:
     finished_at: float = 0.0
 
 
-def _execute_step(plan: Plan, step: Step, input_ref, execute, report=None) -> _Outcome:
+def _execute_step(plan: Plan, step: Step, input_ref, execute, report=None, read=None) -> _Outcome:
     """Run *step* on this thread, a thread of the level's pool; each download
-    on first use its run makes reports its progress to *report*."""
+    on first use its run makes reports its progress to *report*. *read* reads
+    a value on one of its circles for a dataset widget it picks
+    (:func:`picked_values`)."""
     from utk_curio.backend.app.datasets.infrastructure import left_out_files
 
     started = time.time()
     try:
-        sent = sent_code(plan, step)
+        sent = sent_code(plan, step, picked_values(plan, step, input_ref, read))
     except CodeReferenceError as exc:
         # The node's own failure, reported without asking the sandbox.
         return _Outcome("error", {}, stderr=str(exc), started_at=started, finished_at=time.time())
@@ -357,12 +378,17 @@ def run_events(
     *,
     cancelled: Optional[threading.Event] = None,
     wrap: Callable = lambda fn: fn,
+    read: Optional[Callable] = None,
 ) -> Iterator[tuple[str, dict]]:
     """Walk *plan* and yield its events.
 
     *execute(step, code, input_ref)* runs one node and returns its reply
     (``stdout``, ``stderr``, ``output``, ...); *wrap* wraps the work handed to
-    the level's threads (an app context in a real run). Once *cancelled* is
+    the level's threads (an app context in a real run). *read(step,
+    input_ref, circle)* gives the value on one of a step's circles, read as
+    its run would read that input, for a dataset widget it picks
+    (:func:`picked_values`); without it such a widget picks nothing and its
+    node fails, saying its input has no value yet. Once *cancelled* is
     set, nothing new starts, and a node that finishes afterwards is cancelled
     and its output dropped.
     """
@@ -427,6 +453,7 @@ def run_events(
                 yield "step_started", {"nodeId": step.node_id, "startedAt": time.time()}
                 work = wrap(lambda s=step, i=input_ref: _execute_step(
                     plan, s, i, execute, report=lambda progress, s=s: arrivals.put(("progress", s, progress)),
+                    read=read,
                 ))
                 pool.submit(_handed_back, work, step, arrivals)
                 running += 1

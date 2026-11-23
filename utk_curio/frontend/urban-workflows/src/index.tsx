@@ -221,8 +221,9 @@ const App: React.FC = () => {
                     </Route>
                     {/* Deliberately outside RequireAuth: the monitor is
                         public, so whoever is hitting a problem can read it and
-                        share it without an account. */}
-                    <Route path="/monitor" element={<MonitorPage />} />
+                        share it without an account. /monitor is its Status
+                        tab, /monitor/usage its Usage tab. */}
+                    <Route path="/monitor/:tab?" element={<MonitorPage />} />
                     {/* API Settings: /settings/keys and /settings/agents. */}
                     <Route
                       path="/settings/:tab?"

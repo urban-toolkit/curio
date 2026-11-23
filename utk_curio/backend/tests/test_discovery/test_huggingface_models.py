@@ -245,6 +245,21 @@ class TestItLandsAsAModelPackage:
         segmentation = self._package_folder(user, SEGMENTATION_DIR)
         assert (segmentation / "sources" / "semantic_segmentation.py").is_file()
 
+    def test_it_takes_the_type_and_categories_of_the_package_whose_node_it_gets(
+            self, client, auth, live, user_and_token):
+        """The model's type, and what a dataflow that uses it is filed under,
+        are what the package whose node the source names says, DDRNet23-Slim's,
+        as the packages that node calls are: Curio's code names neither."""
+        job = self._add(client, auth, ONNX_REPO)
+        assert job["status"] == "completed", job
+        user, _ = user_and_token
+        _folder, manifest = self._package(user, job["model"]["id"])
+        node = json.loads((Path(__file__).resolve().parents[4] / "packages" / DDRNET_DIR / "manifest.json")
+                          .read_text(encoding="utf-8"))
+        assert manifest["model"]["type"] == node["model"]["type"] == "semantic-segmentation"
+        assert manifest.get("dataflowCategories") == node.get("dataflowCategories") == {
+            "tags": ["Computer vision"], "dataTypes": ["Imagery"]}
+
     def test_its_node_opens_with_ddrnets_code_naming_it(self, client, auth, live):
         """The starters the canvas fills a fresh node from: the package's Image
         Segmentation node loads the model by its id and segments with the
@@ -255,17 +270,19 @@ class TestItLandsAsAModelPackage:
         assert starter["name"] == "image-segmentation"
         assert starter["code"] == _ddrnet_code(model["id"])
         assert f'model = curio_load_model("{model["id"]}")' in starter["code"]
-        assert "return segment_images(input_0, model, curio_derived_file, classes=classes)" in starter["code"]
+        assert "return segment_images(input_0, model, curio_derived_file, classes=[!! classes !!])" in starter["code"]
 
     def test_an_added_model_runs_in_its_node(self, app, client, auth, live, user_and_token, tmp_path):
         """The whole route: what an add writes is what the backend resolves for
         a run of its node from the user's store, the model's folder and the
         modules the node is handed (the Segmentation package's), and the
-        node's own code runs on them as the sandbox runs it, on two of example
-        10's photos. The graph is the synthetic stand-in, so the classes are
-        noise; their shares still have to cover the image."""
+        node's own code, its classes widget at its default written in as a run
+        writes it, runs on them as the sandbox runs it, on two of example 10's
+        photos. The graph is the synthetic stand-in, so the classes are noise;
+        their shares still have to cover the image."""
         import importlib.util
 
+        from utk_curio.backend.app.execution.code_references import resolve_references
         from utk_curio.backend.app.packages.service import modules_for_node, resolve_model_dirs
         from utk_curio.sandbox.util.catalog_helpers import CurioModel
         from utk_curio.sandbox.util.collections import make_collection_helpers
@@ -289,8 +306,12 @@ class TestItLandsAsAModelPackage:
             lambda _id: str(index), {sample: {"kind": "images", "root": str(storage)}}, str(tmp_path / "media")
         )
         photos = helpers["curio_load_collection"](sample).head(2)
-        code = (self._package_folder(user, model["dirName"]) / "sources" / "image-segmentation.py").read_text(
-            encoding="utf-8")
+        package = self._package_folder(user, model["dirName"])
+        [template] = json.loads((package / "manifest.json").read_text(encoding="utf-8"))["templates"]
+        code, problems = resolve_references(
+            (package / "sources" / "image-segmentation.py").read_text(encoding="utf-8"), template["widgets"],
+        )
+        assert problems == [], problems
         run = tmp_path / "run"
         run.mkdir()
         staged = stage_package_modules(handed, str(run))
@@ -512,6 +533,27 @@ class TestTheNodeAModelGets:
 
         acquire_ = ModelAcquire(user=None, user_key="guest", provider_for=lambda m: Unasked())
         with pytest.raises(CapabilityUnsupported, match=refusal):
+            acquire_.acquire(source, ONNX_REPO)
+
+    def test_a_source_naming_the_node_of_a_package_with_no_model_adds_none_and_fetches_nothing(self, app):
+        """A model takes its type from the package whose node its source
+        names, so a source naming a node package's node (Media's Sample Video
+        Frames, which has code of its own) adds no model and asks the Hub for
+        nothing, saying why."""
+        import dataclasses
+
+        from utk_curio.backend.app.discovery.application.model_acquire import ModelAcquire
+
+        manifest = _manifest()
+        options = {**manifest.provider.options, "node": "curio.media/video-frames"}
+        source = dataclasses.replace(manifest, provider=dataclasses.replace(manifest.provider, options=options))
+
+        class Unasked:
+            def plan(self, repo):
+                raise AssertionError(f"the Hub was asked for {repo}, which this source gives no model's node")
+
+        acquire_ = ModelAcquire(user=None, user_key="guest", provider_for=lambda m: Unasked())
+        with pytest.raises(CapabilityUnsupported, match="is a node package's: a model takes its type"):
             acquire_.acquire(source, ONNX_REPO)
 
 

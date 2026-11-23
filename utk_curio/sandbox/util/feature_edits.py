@@ -16,8 +16,11 @@ that write, a ``column`` and a ``value``:
   it;
 - ``set`` writes ``value`` into ``column``;
 - ``scale`` multiplies the number in ``column`` by ``value``, and ``offset``
-  adds ``value`` to it; a feature whose ``column`` holds no number is left as
-  it is;
+  adds ``value`` to it. A number written as text (``"30"``), as a table read
+  from a file may hold one, is read as that number and written back as text
+  (``"45"``); a feature whose ``column`` holds no number, or text that writes
+  none (``"30 m"``), is left as it is. An Autark node hands on OpenStreetMap's
+  numeric tags as numbers;
 - ``expr`` writes into ``column`` what the expression ``value`` makes of the
   feature, such as ``levels * 3.2`` (``edit_expr``);
 - ``add`` adds a feature drawn on the map: its ``geometry`` (GeoJSON, in the
@@ -83,7 +86,7 @@ from __future__ import annotations
 import math
 import re
 
-from utk_curio.sandbox.util import area_check, edit_expr
+from utk_curio.sandbox.util import area_check, edit_expr, js_values
 
 REMOVE = "remove"
 SET = "set"
@@ -378,20 +381,44 @@ def _checked_edits(edits, key):
     return checked
 
 
+#: A number written as text ("30", "12.5"), as a table read from a file may
+#: hold one: the expression language's own number, signed, with nothing around
+#: it once trimmed. ``NUMBER_TEXT`` in ``applyEdits.ts`` is the same, and so is
+#: the plain number an Autark node reads an OpenStreetMap tag's text as
+#: (``withOsmNumbers`` in ``autkDataCompile.ts``).
+_NUMBER_TEXT = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
+
+
+def _amount(value):
+    """*value* as a scale or an offset reads it: a number, or a text that
+    writes one; None for anything else. A text is trimmed of the spaces
+    JavaScript's ``trim`` takes off, as the browser trims it."""
+    if not isinstance(value, str):
+        return edit_expr.number(value)
+    text = js_values.trim(value)
+    return edit_expr.number(float(text)) if _NUMBER_TEXT.fullmatch(text) else None
+
+
 def _written(edit, properties):
     """``(True, value)``: what a writing *edit* puts into its column of a
     feature whose properties are *properties*, or ``(False, None)`` when it
-    leaves the feature alone (a number edit on a column with no number)."""
+    leaves the feature alone (a number edit on a column with no number). A
+    scale or an offset of a number written as text writes its result back as
+    text, as JavaScript writes the number, so the node's table and a run agree."""
     op = edit["op"]
     if op == SET:
         return True, edit.get("value")
     if op == EXPR:
         return True, edit_expr.evaluate(edit["_expr"], properties)
-    current = edit_expr.number(properties.get(edit["column"]))
-    if current is None:
+    current = properties.get(edit["column"])
+    amount = _amount(current)
+    if amount is None:
         return False, None
     by = edit_expr.number(edit["value"])
-    return True, edit_expr.result(current * by if op == SCALE else current + by)
+    value = edit_expr.result(amount * by if op == SCALE else amount + by)
+    if isinstance(current, str) and value is not None:
+        return True, js_values.number(value)
+    return True, value
 
 
 def _where_holds(edit, properties) -> bool:

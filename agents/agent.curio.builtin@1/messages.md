@@ -356,6 +356,10 @@ someone removed {gone} before the plan could join it, so nothing changed: read t
 
 params.widgets: a {label} node cannot hold widgets; a widget is placed in a node's code or spec
 
+## mint.widgets-not-declared
+
+params.widgets: a {label} node holds only its template's widgets ({widgets}), which it reads itself; any other widget ({others}) is placed in a node's code or spec
+
 ## mint.starter-is-content
 
 params.content: a {label} node starts from its template's own content, which a node.create does not replace. Leave content empty, and put the values it shows in params.widgets, under the names of its template's widgets: {widgets}
@@ -511,6 +515,10 @@ params changes nothing: the {label} node already has {settings}
 ## plan.widgets-not-placeable
 
 plan node {ref} ({label}) cannot hold widgets: a widget is placed in a node's code or spec
+
+## plan.widgets-not-declared
+
+plan node {ref} ({label}) holds only its template's widgets ({widgets}), which it reads itself; any other widget ({others}) is placed in a node's code or spec
 
 ## plan.scenario-name-taken
 
@@ -842,7 +850,11 @@ scenarios has {count} entries (max {scenarios_max})
 
 ## widget.choices-shape
 
-{where}.choices must be a list of up to {choices_max} texts
+{where}.choices must be a list of up to {choices_max} texts, or, for a dataset widget an input picks, an object of up to {choices_max} values of that input, each with the id of the dataset it picks
+
+## widget.picked-by-shape
+
+{where}.pickedBy must be a text naming an input circle, such as input_0, or a key of the dict on it, such as input_0.camera
 
 ## widget.display-choice
 

@@ -28,7 +28,7 @@
         "The code it writes reads the photos with curio_load_collection(\"data.curio.mapillary-sample\").",
         "The code loads the model with curio_load_model and the model's id written as a string, model.curio.ddrnet23-slim (with or without @1).",
         "The code labels the photos with the Segmentation package's function: it imports segment_images from semantic_segmentation and returns segment_images(photos, model, curio_derived_file, ...) of the photos and the model it loaded; it runs no model of its own, opening no onnxruntime session.",
-        "The code names vegetation and sky as the classes to report (classes=[\"vegetation\", \"sky\"]), so each photo's row carries vegetation_pct and sky_pct, each the class's share of the photo's pixels in percent, and overlay_url, its overlay's link."
+        "The node names vegetation and sky as the classes to report, as its classes widget's value or in its code (classes=[\"vegetation\", \"sky\"]), so each photo's row carries vegetation_pct and sky_pct, each the class's share of the photo's pixels in percent, and overlay_url, its overlay's link."
       ]
     },
     {
@@ -207,7 +207,7 @@
       "case": 2,
       "name": "golden",
       "kind": "golden",
-      "source": "docs/examples/dataflows/quad-cities-flood-vulnerability.json node a5b6c7d8-4e5f-4a6b-8c7d-8e9fa0b1c2d5 (Depth without NbS), its content: curio_load_data(\"data.scout.flood-depth-2050-2080-no-nbs\", bounds=bounds) with bounds ordered west, south, east, north, here the prompt's box; the masked read of band 1 as node 34326814-c132-4eb4-9d73-268368968592's content reads a depth raster's cells",
+      "source": "docs/examples/dataflows/quad-cities-flood-vulnerability.json node a5b6c7d8-4e5f-4a6b-8c7d-8e9fa0b1c2d5 (Depth without NbS), which for the period 2050 - 2080 loads data.scout.flood-depth-2050-2080-no-nbs as curio_load_data(\"data.scout.flood-depth-2050-2080-no-nbs\", bounds=bounds) with bounds ordered west, south, east, north, here the prompt's box; the masked read of band 1 as node 34326814-c132-4eb4-9d73-268368968592's content reads a depth raster's cells",
       "fails": [],
       "reply": "I added a Python Computation node, Mean depth in the box. Its code reads only the window with curio_load_data(\"data.scout.flood-depth-2050-2080-no-nbs\", bounds=(-90.60, 41.50, -90.55, 41.53)), the box ordered west, south, east, north as bounds takes it, reads the cells of that window masked so the cells with no value are left out, and returns their mean.",
       "changes": {

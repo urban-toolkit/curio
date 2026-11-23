@@ -9,11 +9,11 @@ A dataflow's categories come from three places, and each has exactly one:
 * **automatic** - ``tags`` and ``data_type``, read off the saved spec by
   :func:`derive`: what the rules in ``category_rules.json`` find in it (the
   modules its code imports and the files it names, the grammar its nodes'
-  templates draw with, the type of a model it uses, the format and collection
-  kind of a dataset it names), and what the manifests of its nodes' packages,
-  of the models its code loads and of its datasets declare in
-  ``dataflowCategories`` (:class:`ManifestLookup`). This module names no
-  package, model or dataset. Nothing stores them: they are recomputed on every
+  templates draw with, the format and collection kind of a dataset it names),
+  and what the manifests of its nodes' packages, of the models its code loads
+  and of its datasets declare in ``dataflowCategories``
+  (:class:`ManifestLookup`). This module names no package, model, model type
+  or dataset. Nothing stores them: they are recomputed on every
   read, so they follow the nodes and the manifests, and a dataflow saved
   before this existed gets them without a back-fill.
 * **hand-set** - ``dataflow.categories`` in the spec: the user's own tags plus
@@ -118,7 +118,6 @@ class _Rules:
     code: tuple[_Rule, ...]
     #: ``{grammarId: (row, its spec keys' rules)}``.
     grammars: dict[str, tuple[dict, tuple[_Rule, ...]]]
-    model_types: dict[str, dict]
     dataset_formats: dict[str, dict]
     collection_kinds: dict[str, dict]
     display_order: dict[str, list[str]]
@@ -156,7 +155,6 @@ def _rules() -> _Rules:
             ))
             for grammar, row in raw["grammars"].items()
         },
-        model_types=raw["modelTypes"],
         dataset_formats=raw["datasetFormats"],
         collection_kinds=raw["collectionKinds"],
         display_order=raw["displayOrder"],
@@ -259,11 +257,11 @@ def derive(
     Reads what is in the dataflow and what the manifests of what it uses say.
     The rules in ``category_rules.json`` read the import lines and file names
     in its code, the grammar each node's template draws with (and the keys of
-    the node's document), the type of each model it uses (a node of a model
-    package, or a ``curio_load_model`` call), and the format and collection
-    kind of each dataset it names. A node's package and template, a loaded
-    model's package and a dataset add what they declare in
-    ``dataflowCategories``. The table's names come first, in its
+    the node's document), and the format and collection kind of each dataset
+    it names. A node's package and template, the package of a model it uses
+    (a node of a model package, or a ``curio_load_model`` call) and a dataset
+    add what they declare in ``dataflowCategories``: a model's type gives
+    nothing of its own. The table's names come first, in its
     ``displayOrder``; any other name follows, alphabetically ignoring case.
 
     *lookup* reads the manifests (:class:`ManifestLookup`); without one, the
@@ -291,7 +289,6 @@ def derive(
             found.add(row)
     for node, node_type, declared in _declared_nodes(nodes, majors, lookup):
         found.add_declared(declared)
-        found.add(rules.model_types.get(declared.model_type))
         grammar = rules.grammars.get(grammar_of(node_type))
         if grammar is not None:
             row, spec_keys = grammar
@@ -301,9 +298,7 @@ def derive(
                 if pattern.search(document):
                     found.add(gives)
     for model_id in dict.fromkeys(m for n in nodes for m in model_ids_in_code(n.get("content"))):
-        declared = lookup.packages.model(_at_lockfile_major(model_id, model_id, majors))
-        found.add_declared(declared)
-        found.add(rules.model_types.get(declared.model_type))
+        found.add_declared(lookup.packages.model(_at_lockfile_major(model_id, model_id, majors)))
     for dataset_id in _dataset_ids(dataflow, code):
         fmt, kind = kind_of(dataset_id)
         found.add(rules.dataset_formats.get(fmt))
@@ -425,8 +420,8 @@ class DatasetKinds:
 class ManifestLookup:
     """What the manifests of a dataflow's packages, models and datasets say,
     for one request. :class:`TemplateGrammars` reads the packages: a node
-    template's grammar, what a node's package and template declare, and a
-    model package's declaration and model type. :class:`DatasetKinds` reads
+    template's grammar, what a node's package and template declare, and what
+    a model package declares. :class:`DatasetKinds` reads
     the datasets. Both read the account's copy of a manifest and the
     catalog's, and with no account the catalog's alone. Each manifest is read
     once, so a listing reads it once for every row.

@@ -7,9 +7,9 @@ file (any extension: ``.py``, ``.js``, ``.vl.json``, etc.). When present, the
 file content becomes one ``Starter`` entry keyed on the package's canonical
 template id ``<packageId>/<templateId>@<major>``, named for the file.
 
-A model package's template without ``source`` opens with the cell Curio
-writes for the package's model type (``model_packages.model_default_cell``),
-named for the template's id. Other templates without ``source`` (e.g. the
+A model package's template without ``source``, an onnx model's, opens with
+the cell Curio writes for it, whatever its type
+(``model_packages.model_default_cell``), named for the template's id. Other templates without ``source`` (e.g. the
 Data Pool or Python Computation built-ins) contribute no starter, and the
 editor opens empty.
 

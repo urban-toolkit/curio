@@ -53,8 +53,12 @@ export default function EditFeatureForm({
   /** Its parts menu, when it has several parts. */
   parts?: PartsChoice | null;
   defs: PropertyDef[];
-  /** What the form shows of its properties: their values, and those its parts differ in or that cannot be changed. */
-  shown: Pick<PartsForm, "values" | "mixed" | "fixed">;
+  /**
+   * What the form shows of its properties: their values, those its parts
+   * differ in or that cannot be changed, and the default a field with no
+   * value shows in its place, marked.
+   */
+  shown: Pick<PartsForm, "values" | "mixed" | "fixed" | "defaults">;
   /** The values its fields show, as text; none for a field its parts differ in that nothing was typed or chosen in. */
   texts: Record<string, string>;
   setTexts: (texts: Record<string, string>) => void;
@@ -173,7 +177,9 @@ export default function EditFeatureForm({
                       ))}
                     </SelectInput>
                   ) : (
-                    <TextInput id={id} label={def.name} className={isDirty ? styles.dirty : undefined} testId={`interaction-field-${def.name}`} value={text} onChange={change} />
+                    // A field with no value shows the default its feature is
+                    // drawn at, marked, in its place; the value stays empty.
+                    <TextInput id={id} label={def.name} className={isDirty ? styles.dirty : undefined} testId={`interaction-field-${def.name}`} value={text} onChange={change} placeholder={shown.defaults[def.name]} />
                   )}
                 </span>
                 {note !== null ? (

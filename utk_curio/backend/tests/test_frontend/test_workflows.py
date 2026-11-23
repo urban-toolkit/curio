@@ -555,12 +555,17 @@ _PLAYER_JS = """(selector) => {
 }"""
 
 
-def _stored_rows(page, node_id: str) -> list[dict]:
+def _stored_rows(page, node_id: str, key: str | None = None) -> list[dict]:
     """The rows of *node_id*'s saved output as the sandbox stores them: a
-    table's, or a layer's features' properties."""
+    table's, or a layer's features' properties; of a dict of frames, those of
+    the frame under *key*."""
     artifact = page.evaluate(_OUTPUT_ARTIFACT_JS, node_id)
     assert artifact, f"{node_id} shows no saved output"
     stored = load_artifact_as_dict(artifact)
+    if key is not None:
+        assert stored["dataType"] == "dict" and key in stored["data"], (
+            f"{node_id} saved a {stored['dataType']} with no {key!r}")
+        stored = stored["data"][key]
     data = stored["data"]
     if stored["dataType"] == "geodataframe":
         return [feature["properties"] for feature in data["features"]]
@@ -591,12 +596,19 @@ def _niteroi_summers_of(cells: list[dict]):
 
 
 def _code_settings(spec, node_id: str) -> dict:
-    """The settings a node's code tab sets at its top, by name."""
-    code = next(node.content for node in spec.nodes if node.id == node_id)
+    """A node's settings, by name: its widgets' values, which a run writes in
+    for their chips, and the constants its code tab sets at its top."""
+    from utk_curio.backend.app.execution.code_references import REFERENCE_RE, effective_value
+
+    node = next(node for node in spec.nodes if node.id == node_id)
+    code = REFERENCE_RE.sub("None", node.content)
     body = ast.parse("def node(input_0):\n" + "\n".join("    " + line for line in code.splitlines())).body[0].body
     return {
-        statement.targets[0].id: ast.literal_eval(statement.value)
-        for statement in body if isinstance(statement, ast.Assign) and isinstance(statement.targets[0], ast.Name)
+        **{widget["name"]: effective_value(widget) for widget in node.widgets},
+        **{
+            statement.targets[0].id: ast.literal_eval(statement.value)
+            for statement in body if isinstance(statement, ast.Assign) and isinstance(statement.targets[0], ast.Name)
+        },
     }
 
 
@@ -1463,10 +1475,11 @@ class TestWorkflowCanvas:
 
         # ---- VIS_SIMPLE content verification -----------------------------------
         # VIS_SIMPLE has no play button so the loop above skips it.  After all
-        # upstream code nodes have finished, VIS_SIMPLE fetches the data async
-        # and sets its contentComponent (table / image mode) or leaves it empty
-        # (text / passthrough mode).  Wait up to 10 s for the async fetch, then
-        # verify the rendered content makes sense for the mode.
+        # upstream code nodes have finished, VIS_SIMPLE reads its input and
+        # shows it on its Output tab, which it opens on (its Widgets tab holds
+        # its Time column): a table, a card per row with its images, or the
+        # text of any other value.  The read and an image's fetch are async,
+        # so wait for the content, then verify it makes sense for the mode.
         for node in self.spec.nodes:
             if node.type != "VIS_SIMPLE":
                 continue
@@ -1474,34 +1487,26 @@ class TestWorkflowCanvas:
             output_tab = node_el.locator(
                 '.nav-link[data-rr-ui-event-key="output"]'
             )
-            # table and image modes → NodeEditor auto-switches to output tab;
-            # text (passthrough) mode → no output tab at all.
-            output_tab_visible = False
+            assert output_tab.count() >= 1, (
+                f"VIS_SIMPLE node {node.id} has no Output tab"
+            )
+            assert "active" in (output_tab.first.get_attribute("class") or ""), (
+                f"VIS_SIMPLE node {node.id} is not on its Output tab"
+            )
+            active_pane = node_el.locator(".tab-pane.active")
+            active_pane.first.wait_for(state="visible", timeout=5000)
+
+            # table mode → MUI TableCell; image mode → <img> elements; text
+            # mode → the value's text.
+            content = active_pane.locator(
+                "td.MuiTableCell-root, th.MuiTableCell-root, img, [data-curio-node-text]"
+            )
             with contextlib.suppress(Exception):
-                output_tab.first.wait_for(state="visible", timeout=10000)
-                output_tab_visible = True
-
-            if output_tab_visible:
-                # Ensure the tab is active.
-                is_active = "active" in (
-                    output_tab.first.get_attribute("class") or ""
-                )
-                if not is_active:
-                    output_tab.first.click(force=True)
-
-                active_pane = node_el.locator(".tab-pane.active")
-                active_pane.first.wait_for(state="visible", timeout=5000)
-
-                # table mode → MUI TableCell; image mode → <img> elements.
-                table_cells = active_pane.locator(
-                    "td.MuiTableCell-root, th.MuiTableCell-root"
-                )
-                images = active_pane.locator("img")
-                assert table_cells.count() >= 1 or images.count() >= 1, (
-                    f"VIS_SIMPLE node {node.id}: output tab is visible but "
-                    f"contains neither table cells nor images"
-                )
-            # text mode: no output tab → nothing further to assert.
+                content.first.wait_for(state="attached", timeout=30000)
+            assert content.count() >= 1, (
+                f"VIS_SIMPLE node {node.id}: its Output tab shows neither "
+                f"table cells, images nor text"
+            )
 
         # A Map Editor node lists its layers, linked to the map it edits on,
         # which drew.
@@ -1874,11 +1879,13 @@ class TestWorkflowCanvas:
         the tiny SAM 3 planted as fetched, and the walk's 8 s recorded clip and
         three GPS fixes, cached for the account.
 
-        Track Objects gives the walk back as its overlay, one video that
-        starts at ``t_s`` 0 and shows a frame every ``EVERY_SECONDS``, which
-        Simple View plays through the media route. Objects gives one row per
-        object of its tracks, which keep the module's invariants, and ``t_s``,
-        its first sighting. The player's range lights exactly the bars and the
+        Track Objects gives two tables: ``videos``, the walk as its overlay,
+        one video that starts at ``t_s`` 0 and shows a frame every
+        ``every_seconds``, which Simple View plays through the media route in
+        its first tab; and ``tracks``, one row per object. Objects gives one
+        row per object of those tracks, read by their key, which keep the
+        module's invariants, and ``t_s``, its first sighting. The player's
+        range lights exactly the bars and the
         fixes whose ``t_s`` it holds, read from the nodes' own outputs: none
         before the overlay plays, and after a seek to 7 s and back to 5 s,
         fewer fixes than at 7 s. The tiny SAM 3 takes its objects in its first
@@ -1893,16 +1900,20 @@ class TestWorkflowCanvas:
         page = self.page
         self._execute_all_playable_nodes()
         settings = _code_settings(self.spec, WALK_TRACKING)
-        labels, every = settings["LABELS"], settings["EVERY_SECONDS"]
+        labels, every = settings["labels"], settings["every_seconds"]
 
         # The overlay: the walk as one video that starts where the walk does,
-        # a frame every EVERY_SECONDS.
-        (overlay,) = _stored_rows(page, WALK_TRACKING)
+        # a frame every every_seconds.
+        (overlay,) = _stored_rows(page, WALK_TRACKING, "videos")
         assert (overlay["kind"], overlay["t_s"]) == ("video", 0.0), overlay
         frames = round(overlay["duration_s"] / every)
         assert frames >= 2 and overlay["fps"] == round(1 / every, 3), overlay
-        # One row per object of its tracks, as Objects reads them.
+        # One row per object of its tracks, as Objects reads them: Track
+        # Objects' own tracks table, each row with its t_s.
         objects = _stored_rows(page, WALK_OBJECTS)
+        tracks = _stored_rows(page, WALK_TRACKING, "tracks")
+        assert [{key: value for key, value in row.items() if key != "t_s"} for row in objects] == tracks, (
+            objects, tracks)
         counts = {label: int(overlay[label.replace(" ", "_") + "_objects"]) for label in labels}
         # In the job's results, to compare what the tiny SAM 3 finds on each GPU.
         request.node.user_properties.append(("walk_objects", json.dumps(counts, sort_keys=True)))
@@ -2172,7 +2183,7 @@ class TestWorkflowCanvas:
             assert abs(block["t_s"] - cut["t_s"]) < 1 / block["fps"], (cut, block)
             assert all(_same_cell(block[key], cut[key]) for key in ("street", "from", "to")), (cut, block)
         # Each block's share of frames showing a label, of the frames it holds.
-        labels = _code_settings(self.spec, FRAME_SEGMENTS)["LABELS"]
+        labels = _code_settings(self.spec, FRAME_SEGMENTS)["labels"]
         shares = _stored_rows(page, BLOCK_SHARES)
         assert len(shares) == len(blocks) * len(labels), shares
         for block in blocks:

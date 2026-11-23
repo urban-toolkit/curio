@@ -188,8 +188,8 @@ describe("a raster a map draws", () => {
       },
       async getLayer(name: string) { throw new Error(`Table ${name} not found.`); },
     };
-    const grammar: any = { dataAdapter: { resolveSource: async (given: any) => given } };
-    withRasterSources(grammar, async () => db, enterWorkspace);
+    // autk-grammar's data adapter, with the raster loader around it, as a map node hands it to the grammar.
+    const adapter = withRasterSources({ resolveSource: async (given: any) => given }, enterWorkspace);
     const raster = (workspace?: string) => ({
       type: CURIO_RASTER_SOURCE,
       outputTableName: "input_0",
@@ -199,9 +199,9 @@ describe("a raster a map draws", () => {
       cells: 1,
       ...(workspace ? { workspace } : {}),
     });
-    await grammar.dataAdapter.resolveSource(db, raster("east"));
+    await adapter.resolveSource(db, raster("east"));
     // The default one is entered too: the source before left the database in east.
-    await grammar.dataAdapter.resolveSource(db, raster());
+    await adapter.resolveSource(db, raster());
     expect(loaded).toEqual([["input_0", "east"], ["input_0", "autk"]]);
     // A map reads a raster in its own workspace.
     await enterWorkspace(db, "east");

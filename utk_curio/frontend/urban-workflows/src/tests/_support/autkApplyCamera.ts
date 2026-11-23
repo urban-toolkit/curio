@@ -49,3 +49,20 @@ export function grammarApplyCamera(): ApplyCamera {
   }
   return applyCamera;
 }
+
+/**
+ * autk-grammar's `resolveCameraCenter(db, map, center)`: puts a camera's
+ * `center`, `[longitude, latitude]`, in the CRS of the workspace *db* works
+ * in, through autk-db's transform (`rawQuery`), and keeps it with *map* for
+ * the `applyCamera` of the same build.
+ */
+export type ResolveCameraCenter = (db: any, map: any, center: number[]) => Promise<void>;
+
+/** The grammar build's `resolveCameraCenter`; fails when the build exports none. Read it inside a test. */
+export function grammarResolveCameraCenter(): ResolveCameraCenter {
+  const { resolveCameraCenter } = jest.requireActual(GRAMMAR_BUILD) as { resolveCameraCenter?: ResolveCameraCenter };
+  if (typeof resolveCameraCenter !== 'function') {
+    throw new Error(`autk-grammar's build at ${GRAMMAR_BUILD} exports no resolveCameraCenter`);
+  }
+  return resolveCameraCenter;
+}

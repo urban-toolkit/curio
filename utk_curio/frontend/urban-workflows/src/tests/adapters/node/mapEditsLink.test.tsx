@@ -64,7 +64,9 @@ import ProvenanceProvider, { useProvenanceContext } from "../../../providers/Pro
 import { editFeaturesCode, readEditFeaturesCode, type EditFeaturesSettings } from "../../../utils/editFeatures/editFeatures";
 import { editSelection } from "../../../utils/editFeatures/mapEditSelection";
 import { toMercator } from "../../../utils/editFeatures/mapEditBus";
-import { drawnExports, drawnMaps, grammarRuns, heldDraws, nodeInput, resetAutkNodeMocks } from "../../_support/autkNodeMocks";
+import {
+  drawnExports, drawnMaps, grammarRuns, heldDraws, inputsByPath, nodeInput, resetAutkNodeMocks,
+} from "../../_support/autkNodeMocks";
 import { stubWebGpu, unstubWebGpu } from "../../_support/autkNode";
 
 const LOADER = "buildings";
@@ -529,12 +531,37 @@ function layOutCanvases(): () => void {
  * A layer loaded from a collection is added last to its layers, with its id,
  * type and features, and a layer removed leaves them; the positions skipped
  * in each layer are kept by its id, each toggled as autk-map's vector layers
- * do, until the layer's are cleared.
+ * do, until the layer's are cleared. The layer manager finds a document's
+ * layer by its id (`searchByLayerId`), and its own `setSkippedIds` and
+ * `clearSkippedIds` keep them, which the map's own calls reach too, as
+ * autk-map's reach a vector layer's.
  */
 function projectingMap() {
   const span = SIZE * 1000;
   const layers: any[] = [{ position: new Float32Array([0, 0, 100, 50]), _dimension: 2 }];
   const skipped: Record<string, number[]> = {};
+  const toggle = (id: string, positions: number[]) => {
+    const now = new Set(skipped[id] ?? []);
+    for (const position of positions) {
+      if (now.has(position)) now.delete(position);
+      else now.add(position);
+    }
+    skipped[id] = [...now].sort((a, b) => a - b);
+  };
+  // The document's layers, each as autk-map's vector layer hides features, made as they are first found.
+  const documentLayers = new Map<string, any>();
+  const searchByLayerId = (id: string) => layers.find((layer) => layer.layerInfo?.id === id) ?? (
+    documentLayers.get(id) ?? documentLayers.set(id, {
+      layerInfo: { id },
+      get skippedIds() {
+        return [...(skipped[id] ?? [])];
+      },
+      setSkippedIds: jest.fn((positions: number[]) => toggle(id, positions)),
+      clearSkippedIds: jest.fn(() => {
+        skipped[id] = [];
+      }),
+    }).get(id)
+  );
   const camera: any = {
     eye: [span / 2, span / 2, 10000],
     lookAt: [span / 2, span / 2, 0],
@@ -559,7 +586,7 @@ function projectingMap() {
     camera,
     canvas: document.getElementById(`autk-grammar-map-${MAP}`),
     renderer: { pixelWidth: SIZE, pixelHeight: SIZE, cssWidth: SIZE, cssHeight: SIZE },
-    layerManager: { layers, hasOrigin: true, origin: [0, 0] },
+    layerManager: { layers, hasOrigin: true, origin: [0, 0], searchByLayerId },
     // autk-map's highlight, #5dade2.
     style: { getHighlightColor: () => ({ r: 93, g: 173, b: 226 }) },
     loadCollection: jest.fn((id: string, { collection, type }: { collection: { features: any[] }; type?: string }) => {
@@ -569,17 +596,8 @@ function projectingMap() {
       const at = layers.findIndex((layer) => layer.layerInfo?.id === id);
       if (at >= 0) layers.splice(at, 1);
     }),
-    setSkippedIds: jest.fn((id: string, positions: number[]) => {
-      const now = new Set(skipped[id] ?? []);
-      for (const position of positions) {
-        if (now.has(position)) now.delete(position);
-        else now.add(position);
-      }
-      skipped[id] = [...now].sort((a, b) => a - b);
-    }),
-    clearSkippedIds: jest.fn((id: string) => {
-      skipped[id] = [];
-    }),
+    setSkippedIds: jest.fn((id: string, positions: number[]) => searchByLayerId(id)?.setSkippedIds?.(positions)),
+    clearSkippedIds: jest.fn((id: string) => searchByLayerId(id)?.clearSkippedIds?.()),
     skipped,
     resetCamera: jest.fn(),
     requestRender: jest.fn(),
@@ -1228,6 +1246,87 @@ test("a building of two parts, each with its own osm_id, opens on all its parts:
   const after = partsMenu();
   must(after, "The parts menu left the form after an Apply on all the parts of building 136.");
   expect(optionTexts(after)).toEqual(["All 2 parts", "osm_id 136", "osm_id 1361"]);
+});
+
+/** OSM_PARTED with building 136's first part holding no height, as OpenStreetMap leaves a part. */
+const OSM_PARTED_NO_HEIGHT = {
+  ...OSM_PARTED,
+  features: OSM_PARTED.features.map((feature) => (feature.properties.osm_id === 136
+    ? { ...feature, properties: { building_id: 136, osm_id: 136 } }
+    : feature)),
+};
+
+test("a part of a buildings layer with no height shows the height the map draws it at, 6 m, marked as the default, and keeps none", async () => {
+  // Handed on as buildings, to the node and to its map.
+  const buildings = { dataType: "geodataframe", data: OSM_PARTED_NO_HEIGHT, layerType: "buildings" };
+  inputsByPath.current = { [LOADED.path]: buildings, [COMMITTED.path]: buildings };
+  const canvas = mountCanvas();
+  await canvas.playMap();
+  await openAction("edit");
+
+  // Building 136 picked: its parts are 6 m by default and 30 m tall, so its
+  // height is empty, and the note lists the default, marked.
+  pickOnMap([1]);
+  const height = (await screen.findByTestId("interaction-field-height")) as HTMLInputElement;
+  must(height.value === "", `The form shows the height ${JSON.stringify(height.value)} for building 136's two parts.`);
+  const listed = screen.queryByTestId("interaction-mixed-height");
+  must(
+    listed?.textContent === "2 values: 6 (default), 30",
+    `No note lists building 136's heights as "2 values: 6 (default), 30": the note reads ${JSON.stringify(listed?.textContent ?? null)}.`,
+  );
+  const menu = partsMenu();
+  must(menu, "There is no parts menu: the form of building 136, of two parts, works on its first part alone.");
+  expect(optionTexts(menu)).toEqual(["All 2 parts", "osm_id 136, height 6 (default)", "osm_id 1361, height 30"]);
+
+  // The part with no height chosen: its field holds none, and shows the
+  // default, marked, in its place.
+  choose(menu, "osm_id 136, height 6 (default)");
+  await waitFor(() => expect(fieldOf("height").placeholder).toBe("6 (default)"));
+  expect(fieldOf("height").value).toBe("");
+  // Nothing typed: Apply is off, and nothing is written.
+  expect(screen.getByTestId("interaction-form-submit")).toBeDisabled();
+  expect(canvas.settings()?.edits ?? []).toEqual([]);
+
+  // The part with a height chosen: its own, and no default.
+  choose(menu, "osm_id 1361, height 30");
+  await waitFor(() => expect(fieldOf("height").value).toBe("30"));
+  expect(fieldOf("height").placeholder).toBe("");
+});
+
+/**
+ * OSM_PARTED with building 136's second part holding no height, only
+ * building:levels: 4, which a map draws 13.6 m tall.
+ */
+const OSM_PARTED_BY_LEVELS = {
+  ...OSM_PARTED,
+  features: OSM_PARTED.features.map((feature) => (feature.properties.osm_id === 1361
+    ? { ...feature, properties: { building_id: 136, osm_id: 1361, "building:levels": 4 } }
+    : feature)),
+};
+
+test("edits apply to a buildings layer as the data holds it, as the node's run applies them: a part with only building:levels keeps no height a scale doubles, and is drawn, counted and shown at its levels' 13.6 m", async () => {
+  // Handed on as buildings, to the node and to its map.
+  const buildings = { dataType: "geodataframe", data: OSM_PARTED_BY_LEVELS, layerType: "buildings" };
+  inputsByPath.current = { [LOADED.path]: buildings, [COMMITTED.path]: buildings };
+  // Every building's height doubled, as the node's code holds it.
+  const canvas = mountCanvas({ settings: { ...KEYED, edits: [{ op: "scale", ids: [119, 136, 200], column: "height", value: 2 }] } });
+  await canvas.playMap();
+
+  // The map draws building 136 as the run hands it on: its first part
+  // doubled, its second as tall as its levels make it, 4 at 3.4 m.
+  await waitFor(() => expect(drawnRowsOf(136).map((row) => [row.osm_id, row.height])).toEqual([[136, 40], [1361, 4 * 3.4]]));
+  // The node counts the rows the run changes: three, not the part with only its levels.
+  expect(screen.getByTestId("interaction-counts")).toHaveTextContent("0 removed, 3 changed");
+
+  // Building 136 picked: the form shows its parts as the map draws them.
+  await openAction("edit");
+  pickOnMap([1]);
+  await screen.findByTestId("interaction-field-height");
+  const listed = screen.queryByTestId("interaction-mixed-height");
+  must(
+    listed?.textContent === "2 values: 40, 13.6",
+    `No note lists building 136's heights as "2 values: 40, 13.6": the note reads ${JSON.stringify(listed?.textContent ?? null)}.`,
+  );
 });
 
 /** OSM_PARTED with each row's levels too: 2, then 3 and 4 for building 136's parts, then 5. */

@@ -95,7 +95,9 @@ export interface ModelFetchPayload {
 
 /** How a model package's weights run: its manifest's `model` block. */
 export interface ModelBlockPayload {
-  type: "semantic-segmentation" | "image-to-image" | "node-regression" | "concept-segmentation";
+  /** What the model does, any lowercase name its manifest gives, such as
+   *  `semantic-segmentation`: a model swaps a node's only of its own type. */
+  type: string;
   runtime: "onnx" | "transformers";
   /** The weights under `models/`. */
   entry: string;

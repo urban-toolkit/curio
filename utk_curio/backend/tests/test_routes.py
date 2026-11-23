@@ -21,6 +21,7 @@ def test_app_routes(app):
         "/api/monitor/errors",
         "/api/monitor/errors/client",
         "/api/monitor/llm",
+        "/api/monitor/usage",
         "/api/monitor/open-files",
     ]
 
@@ -37,6 +38,7 @@ def test_app_routes(app):
         "monitor.monitor_errors_route",
         "monitor.monitor_client_error_route",
         "monitor.monitor_llm_route",
+        "monitor.monitor_usage_route",
         "monitor.monitor_open_files_route",
     ]
 

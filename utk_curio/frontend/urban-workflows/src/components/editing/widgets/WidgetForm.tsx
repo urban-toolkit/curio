@@ -10,6 +10,9 @@ import {
   checkWidgetDef,
   dateTimeValue,
   defaultValueFor,
+  isPicked,
+  listedChoices,
+  pickedChoices,
   type WidgetDef,
   type WidgetKind,
   type WidgetOptions,
@@ -49,7 +52,7 @@ export function WidgetForm({
   const [name, setName] = useState(initial?.name ?? "");
   const [type, setType] = useState<WidgetKind>(initial?.type ?? "number");
   const [label, setLabel] = useState(initial?.label ?? "");
-  const [choicesText, setChoicesText] = useState((initial?.options?.choices ?? []).join(", "));
+  const [choicesText, setChoicesText] = useState(listedChoices(initial?.options).join(", "));
   const [display, setDisplay] = useState<"dropdown" | "radio">(initial?.options?.display ?? "dropdown");
   const [minText, setMinText] = useState(numberText(initial?.options?.min));
   const [maxText, setMaxText] = useState(numberText(initial?.options?.max));
@@ -71,6 +74,11 @@ export function WidgetForm({
       if (bounds.step !== undefined) out.step = bounds.step;
       if (units.trim()) out.units = units.trim();
       return Object.keys(out).length > 0 ? out : undefined;
+    }
+    // A dataset widget an input picks keeps how it is picked: the form has
+    // no field for it.
+    if (kind === "dataset" && initial && isPicked(initial)) {
+      return { pickedBy: initial.options?.pickedBy, choices: pickedChoices(initial) };
     }
     return undefined;
   };

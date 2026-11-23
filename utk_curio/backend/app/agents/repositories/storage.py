@@ -6,9 +6,11 @@ database for users and the project index only. A definition lives in a directory
 named ``<agentId>@<major>``, the major of its version, holding ``manifest.json``
 (validated by ``app/agents/manifest.py``) and a ``prompts/`` directory.
 
-This module resolves and lists definitions under a user's store, reusing the
-same ``.curio/users/<user_key>/`` root as node packages and the shared
-path-containment guard in ``app/common/safe_paths.py``. Companion modules:
+This module resolves and lists definitions under a user's store, and writes
+each one whole (:func:`write_definition_atomic`) under the account's lock
+(:func:`writing`), reusing the same ``.curio/users/<user_key>/`` root as node
+packages and the shared path-containment guard in
+``app/common/safe_paths.py``. Companion modules:
 ``imports.py`` (the account-level "My Imports" registry) and ``project_agents.py``
 (the per-project installed-template lockfile).
 
@@ -20,8 +22,11 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
+from utk_curio.backend.app.common.file_locks import exclusive_lock
 from utk_curio.backend.app.common.safe_paths import PathTraversalError, is_within, resolve_base
 from utk_curio.backend.app.common.user_storage import (
     user_key_segment as _user_key_segment,
@@ -38,6 +43,10 @@ from utk_curio.backend.app.agents.domain.manifest import (
 )
 
 log = logging.getLogger(__name__)
+
+#: ``common.file_locks`` namespace of the lock a write of an account's store
+#: holds (:func:`writing`).
+_WRITE_LOCK_NAMESPACE = "agent-store"
 
 # On-disk directory for one definition: ``<agentId>@<major>`` (the id and the
 # major grammars come straight from the manifest module so the dir name and
@@ -82,43 +91,37 @@ def agent_definition_dir(user_key: str, dir_name: str) -> Path:
     return target
 
 
-def write_definition(
-    user_key: str, dir_name: str, manifest: dict, prompt_files: dict[str, str]
-) -> Path:
-    """Materialize a definition into the user store: ``manifest.json`` + prompt assets.
+@contextmanager
+def writing(user_key: str) -> Iterator[None]:
+    """Hold the account's lock for writing its store: one write of a copy of
+    an agent at a time, the check of what the store holds and the write that
+    follows it together, across every backend process (``exclusive_lock``).
+    Two rewrites of one copy at once would otherwise swap its folder
+    together, and one of them would fail.
 
-    Each prompt path must stay contained inside the definition directory. Overwrites
-    an existing definition (idempotent). Returns the definition directory.
-    """
-    target = agent_definition_dir(user_key, dir_name)  # validated + contained
-    target.mkdir(parents=True, exist_ok=True)
-    (target / "manifest.json").write_text(
-        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-    )
-    for rel, text in prompt_files.items():
-        dest = (target / rel).resolve()
-        if not is_within(dest, target.resolve()):
-            raise PathTraversalError(
-                f"Path traversal blocked: prompt asset {dest!s} escapes {target!s}"
-            )
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(text, encoding="utf-8")
-    return target
+    A reader takes no lock: every write lands whole
+    (:func:`write_definition_atomic`). Nothing done under it takes another
+    lock, and an account's seeding of its default agents takes it inside its
+    own (``imports.seeding``), never the other way round."""
+    folder = _users_base() / _user_key_segment(user_key)
+    folder.mkdir(parents=True, exist_ok=True)
+    with exclusive_lock(folder / ".agents.lock", namespace=_WRITE_LOCK_NAMESPACE, key=str(user_key)):
+        yield
 
 
 def read_definition_bundle(user_key: str, dir_name: str) -> dict | None:
     """The full on-disk definition: its manifest and every prompt asset.
 
-    The inverse of :func:`write_definition`, and the thing the product had no
-    way to do at all. There was an import path for agents
+    The inverse of :func:`write_definition_atomic`, and the thing the product
+    had no way to do at all. There was an import path for agents
     (``POST /api/agents/imports/upload``) with no export on the other side, so a
     definition could go into a Curio and never come back out, and the "View
     details" screen could describe an agent's prompts only by not showing them.
 
     Returns ``{"manifest": {...}, "prompts": {"prompts/x.txt": "..."}}`` with
     prompt keys relative to the definition directory - the exact shape
-    ``write_definition`` and ``upload_import`` consume, so the two round-trip.
-    ``None`` when there is no such definition.
+    ``write_definition_atomic`` and ``upload_import`` consume, so the two
+    round-trip. ``None`` when there is no such definition.
     """
     return read_definition_bundle_from_dir(agent_definition_dir(user_key, dir_name))
 
@@ -195,16 +198,21 @@ def write_definition_atomic(
     *,
     replace: bool = False,
 ) -> Path:
-    """Atomic variant of :func:`write_definition` for user uploads (memo dev/36).
+    """Write a definition into the user store whole: ``manifest.json`` and its
+    prompt assets. Every copy in a store is written so: an upload (memo
+    dev/36), a copy of a published agent and a copy of one Curio ships
+    (``catalog._materialize_definition``).
 
     Stages the definition in a temp directory inside the user's agents store and
-    ``os.replace``s it into place, so a failed/interrupted upload never leaves a
-    partially visible artifact (``RISK-IMPORT-001``). Refuses to replace an
-    existing definition unless *replace*: one ``<agentId>@<major>`` folder holds
-    one version at a time, so a newer version of the same major takes it, as a
-    node package's Update takes its own, and the caller decides when
-    (a version itself is immutable, ``DEC-029``). The old folder is moved aside
-    first and put back if the swap fails.
+    ``os.replace``s it into place, so a failed or interrupted write never leaves
+    a partially visible artifact (``RISK-IMPORT-001``), and a request that reads
+    the store meanwhile finds no copy, the old one or the new one. Refuses to
+    replace an existing definition unless *replace*: one ``<agentId>@<major>``
+    folder holds one version at a time, so a newer version of the same major
+    takes it, as a node package's Update takes its own, and the caller decides
+    when (a version itself is immutable, ``DEC-029``). The old folder is moved
+    aside first and put back if the swap fails. The caller holds the account's
+    lock (:func:`writing`) across its look at the store and this write.
     """
     target = agent_definition_dir(user_key, dir_name)  # validated + contained
     files = {"manifest.json": json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", **prompt_files}

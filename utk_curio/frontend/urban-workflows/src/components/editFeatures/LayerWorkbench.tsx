@@ -61,7 +61,8 @@ import { mapTableName } from "../../utils/editFeatures/mapEditsPreview";
 import { withPart } from "../../utils/editFeatures/geometryParts";
 // The form of a feature of several parts (#1110).
 import { idKey } from "../../utils/editFeatures/applyEdits";
-import { PART_COLUMN, partConditions, partsForm, valueText } from "../../utils/editFeatures/featureParts";
+import { PART_COLUMN, buildingDefault, partConditions, partsForm, valueText } from "../../utils/editFeatures/featureParts";
+import { readableBuildingProperties } from "../../utils/buildingHeight";
 import { NodeType } from "../../constants";
 import LayerList from "./LayerList";
 import NewLayerForm from "./NewLayerForm";
@@ -98,11 +99,19 @@ export interface WorkbenchLayer {
   table?: string;
   /** Whether the input names the layer itself, rather than by its place. */
   ownName?: boolean;
+  /** Its features as the node shows them: a buildings layer's heights as a map reads them. */
   fc: { features?: any[]; crs?: any };
+  /**
+   * Its features as the data holds them, which the edits apply to, as the
+   * node's run applies them; `fc` when it holds the same.
+   */
+  held?: { features?: any[]; crs?: any };
   /** The column that identifies its features, or undefined when it has none. */
   key?: string;
   /** Set for a layer the node makes. */
   newLayer?: NewLayerDef;
+  /** The type the input's layer is drawn as (`buildings`), when it names one. */
+  layerType?: string;
 }
 
 export type Action = "add" | "edit" | "remove" | "property";
@@ -205,8 +214,11 @@ export default function LayerWorkbench({
     () => (active ? withAddedColumns(propertiesFor(active.fc, active.key, active.newLayer), edits, active.name, nodeLayer) : []),
     [active, edits, nodeLayer],
   );
+  // The features as the edits leave them, applied to the layer as the data
+  // holds it, as the node's run applies them: what a rule matches, what is
+  // picked and what the tools draw.
   const features = useMemo(
-    () => (active ? editedFeatures(active.fc, edits, active.key ?? (active.newLayer ? "id" : undefined), active.name, nodeLayer) : []),
+    () => (active ? editedFeatures(active.held ?? active.fc, edits, active.key ?? (active.newLayer ? "id" : undefined), active.name, nodeLayer) : []),
     [active, edits, nodeLayer],
   );
   // A fresh rule for each layer. Keyed on the layer, not on defs: defs is
@@ -232,9 +244,24 @@ export default function LayerWorkbench({
   const partWheres = useMemo(() => (layerKey && pickedRows.length > 1 ? partConditions(pickedRows, layerKey) : null), [pickedRows, layerKey]);
   const partKeys = pickedRows.map((row) => idKey(row.properties[PART_COLUMN]) ?? "");
   const chosenAt = partWheres && partChoice !== null ? partKeys.indexOf(partChoice) : -1;
+  // The picked rows as the form shows them: in a buildings layer, each part's
+  // heights as a map reads them (utils/buildingHeight
+  // readableBuildingProperties), and a part with no height at the height the
+  // map draws it at, marked as the default (featureParts `buildingDefault`).
+  const buildings = active?.layerType === "buildings";
+  const formRows = useMemo(
+    () => (buildings
+      ? pickedRows.map((row) => {
+        const properties = readableBuildingProperties(row.properties);
+        return properties === row.properties ? row : { ...row, properties };
+      })
+      : pickedRows),
+    [pickedRows, buildings],
+  );
+  const defaultOf = buildings ? buildingDefault : undefined;
   const form = useMemo(
-    () => partsForm(pickedRows, defs.map((def) => def.name), chosenAt >= 0 ? pickedRows[chosenAt] : null),
-    [pickedRows, defs, chosenAt],
+    () => partsForm(formRows, defs.map((def) => def.name), chosenAt >= 0 ? formRows[chosenAt] : null, defaultOf),
+    [formRows, defs, chosenAt, defaultOf],
   );
   // Its fields start on the values the form shows; one the parts differ in
   // starts on none, until something is typed or chosen in it.

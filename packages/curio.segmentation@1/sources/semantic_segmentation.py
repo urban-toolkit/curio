@@ -9,7 +9,10 @@ manifest that says how to run it, so nothing here is fitted to one model:
 - ``onnx``: onnxruntime on the CPU, on as many threads as ``OMP_NUM_THREADS``
   names, as torch is, else on one per core. Each image is resized to the
   manifest's input, fed as ``uint8`` pixels or as ``float32`` scaled and
-  normalized, and each pixel takes the channel the graph scores highest;
+  normalized, in ``NCHW``, and each pixel takes the channel the graph scores
+  highest, which the manifest's labels name. Curio reads every model type
+  alike, so a model whose manifest gives no input size, an ``NHWC`` one, or
+  no labels is refused here, before the model is opened, naming the field;
 - ``transformers``: the checkpoint's own image processor and
   ``AutoModelForSemanticSegmentation``, read from the folder alone
   (``local_files_only``, safetensors only), with torch on the CPU.
@@ -111,8 +114,31 @@ def _pretrained(model_class, path, **options):
             transformers_logging.enable_progress_bar()
 
 
+def _refuse_what_it_cannot_feed(manifest: dict) -> None:
+    """Raise ValueError, naming the field, for an onnx model this module
+    cannot run: no input size to resize each image to, input in a layout
+    other than the ``NCHW`` it feeds, or no labels to name its output
+    channels by."""
+    model_input = manifest.get("input")
+    if not isinstance(model_input, dict) or "width" not in model_input or "height" not in model_input:
+        raise ValueError(
+            "segment_images feeds an onnx model images of the size its manifest gives, and its "
+            "model.input gives none: name its width and height there"
+        )
+    if model_input.get("layout", "NCHW") != "NCHW":
+        raise ValueError(
+            f"segment_images feeds images in NCHW, and the model's model.input.layout is {model_input['layout']}"
+        )
+    if not manifest.get("labels"):
+        raise ValueError(
+            "segment_images names each of an onnx model's output channels by its labels, and its "
+            "model.labels lists none: name one per channel there"
+        )
+
+
 class _OnnxRunner:
     def __init__(self, path: str, manifest: dict) -> None:
+        _refuse_what_it_cannot_feed(manifest)
         try:
             import onnxruntime as ort
         except ImportError as exc:  # pragma: no cover - a package dependency

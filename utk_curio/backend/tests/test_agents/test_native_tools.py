@@ -988,10 +988,17 @@ class TestTypedValuesInANativeCall:
                            .read_text(encoding="utf-8"))["$defs"]["widget"]["properties"]
         plan = _offered_schema("dataflow.plan.write")["properties"]
         created = _offered_schema("node.create")["properties"]
+        # An option whose JSON type the trill schema does not fix, the
+        # choices (a list, or the map of a dataset widget an input picks), is
+        # JSON text, as a value is.
+        loose = {key for key, value in trill["options"]["properties"].items() if isinstance(value["type"], list)}
+        assert loose == {"choices"}
         for widget in (plan["nodes"]["items"]["properties"]["widgets"]["items"], created["widgets"]["items"]):
             options = (widget["properties"].get("options") or {}).get("properties") or {}
             assert {key: value.get("type") for key, value in options.items()} == {
-                key: value["type"] for key, value in trill["options"]["properties"].items()}
+                key: "string" if key in loose else value["type"]
+                for key, value in trill["options"]["properties"].items()}
+            assert all(options[key].get("contentMediaType") == "application/json" for key in loose)
             assert (widget["properties"].get("default") or {}).get("contentMediaType") == "application/json"
         values = plan["scenarios"]["items"]["properties"]["values"]
         assert values.get("additionalProperties", {}).get("additionalProperties", {}).get(

@@ -18,7 +18,7 @@ import "@testing-library/jest-dom";
  */
 
 jest.mock("reactflow", () => ({
-    useReactFlow: () => ({ setNodes: jest.fn() }),
+    useStoreApi: () => ({ getState: () => ({ getNodes: () => [], addSelectedNodes: jest.fn() }) }),
 }));
 
 import { PackageTemplateRow } from "../../../components/menus/nodes/toolsMenuPackagePalette/PackagePaletteRows";

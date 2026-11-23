@@ -1,8 +1,14 @@
-"""OpenStreetMap tags that hold a number, written as numbers (``domain/osm_values.py``)."""
+"""OpenStreetMap tags that hold a number, written as numbers (``domain/osm_values.py``).
+
+Its rule is the one Curio's Autark loaders hand an OpenStreetMap table on by
+(``withOsmNumbers`` in the frontend's ``src/adapters/node/autkDataCompile.ts``),
+and both run the cases of ``autkOsmNumbers.cases.json`` beside it, as Jest
+runs them through the loaders."""
 from __future__ import annotations
 
 import copy
 import json
+from pathlib import Path
 
 import pytest
 
@@ -15,14 +21,46 @@ from utk_curio.backend.app.discovery.domain.osm_values import (
     with_numbers,
 )
 
+#: The cases both twins of the rule run: this module, and the Autark loaders'
+#: ``withOsmNumbers``.
+SHARED_CASES = (Path(__file__).resolve().parents[4] / "utk_curio" / "frontend" / "urban-workflows" / "src"
+                / "adapters" / "node" / "autkOsmNumbers.cases.json")
+
+
+def _same(got, want) -> bool:
+    """Whether *got* is *want*: the same number (an int or a float), the same
+    text, or None for both; True and False are no numbers."""
+    if got is None or want is None:
+        return got is None and want is None
+    if isinstance(want, bool) or isinstance(got, bool):
+        return got is want
+    if isinstance(want, str) or isinstance(got, str):
+        return isinstance(got, str) and isinstance(want, str) and got == want
+    return isinstance(got, (int, float)) and isinstance(want, (int, float)) and got == want
+
+
+def test_the_shared_cases_read_as_the_autark_loaders_read_them():
+    """Each kind of key the shared cases list is this module's, and each case's
+    value becomes what the cases say, through ``with_numbers`` on a feature's
+    properties: the numbers an Autark node hands on for the same text."""
+    held = json.loads(SHARED_CASES.read_text(encoding="utf-8"))
+    keys = held["keys"]
+    assert (set(keys["lengths"]), set(keys["speeds"]), set(keys["counts"])) == (LENGTH_KEYS, SPEED_KEYS, COUNT_KEYS)
+    wrong = []
+    for case in held["cases"]:
+        (feature,) = with_numbers(_collection({case["key"]: case["value"]}))["features"]
+        if not _same(feature["properties"][case["key"]], case["becomes"]):
+            wrong.append((case["name"], case["value"], feature["properties"][case["key"]], case["becomes"]))
+    assert wrong == [], f"{len(wrong)} of {len(held['cases'])} cases read otherwise: {wrong}"
+
 
 @pytest.mark.parametrize("raw, expected", [
     ("12", 12), (" 12 ", 12), ("12.5", 12.5), (".5", 0.5), ("5.", 5), ("+3", 3), ("-2", -2),
     ("12 m", 12), ("12m", 12), ("12 M", 12), ("1.2 km", 1200),
     ("40 ft", 12.19), ("1 mi", 1609.34), ("1 nmi", 1852),
     ("10'0\"", 3.05), ("12'", 3.66), ("6\"", 0.15), ("12' 6\"", 3.81),
-    ("none", None), ("3;4", None), ("~10", None), ("10-12", None), ("1e3", None),
-    ("nan", None), ("inf", None), ("2,5", None), ("12 metres", None), ("12 mph", None), ("", None),
+    ("none", None), ("3;4", None), ("~10", None), ("10-12", None), ("1e3", 1000),
+    ("nan", None), ("inf", None), ("2,5", None), ("12 metres", 12), ("12 mph", None), ("", None),
 ])
 def test_a_length_is_in_metres(raw, expected):
     assert number("height", raw) == expected
@@ -53,7 +91,7 @@ def test_whole_numbers_are_ints():
 
 def test_a_value_that_is_already_a_number_is_kept():
     assert number("height", 12) == 12
-    assert number("height", 12.346) == 12.35
+    assert number("height", 12.346) == 12.346
     assert number("height", float("nan")) is None
     assert number("height", float("inf")) is None
     assert number("height", True) is None

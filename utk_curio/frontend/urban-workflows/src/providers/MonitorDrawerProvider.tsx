@@ -1,6 +1,7 @@
-import React, { Suspense, createContext, useContext, useEffect, useMemo } from "react";
+import React, { Suspense, createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSlideDrawerPresentation } from "../hook/useSlideDrawerPresentation";
+import type { MonitorTab } from "../pages/monitor/monitorTabs";
 
 /** Loaded when first opened, with its charts. */
 const MonitorDrawer = React.lazy(() => import("../pages/monitor/MonitorDrawer"));
@@ -15,10 +16,12 @@ const MonitorDrawerContext = createContext<MonitorDrawerContextValue | null>(nul
 
 /**
  * Mounts the monitor as a drawer on the canvas and the dashboard, so checking
- * it never leaves the dataflow. Shaped like the catalog drawer providers.
+ * it never leaves the dataflow. Shaped like the catalog drawer providers, and
+ * like API Settings' drawer it keeps its tab in its state, opening on Status.
  */
 export function MonitorDrawerProvider({ children }: { children: React.ReactNode }) {
   const { mounted, presented, open, close, finishExit } = useSlideDrawerPresentation();
+  const [tab, setTab] = useState<MonitorTab>("status");
 
   useEffect(() => {
     if (!mounted) return;
@@ -29,15 +32,26 @@ export function MonitorDrawerProvider({ children }: { children: React.ReactNode 
     };
   }, [mounted]);
 
+  const openMonitor = useCallback(() => {
+    setTab("status");
+    open();
+  }, [open]);
+
   const ctx = useMemo(
-    () => ({ openMonitor: open, closeMonitor: close, isMonitorOpen: mounted }),
-    [close, open, mounted],
+    () => ({ openMonitor, closeMonitor: close, isMonitorOpen: mounted }),
+    [close, openMonitor, mounted],
   );
 
   const drawer = mounted
     ? createPortal(
         <Suspense fallback={null}>
-          <MonitorDrawer presented={presented} onRequestClose={close} onExitComplete={finishExit} />
+          <MonitorDrawer
+            presented={presented}
+            tab={tab}
+            onTabChange={setTab}
+            onRequestClose={close}
+            onExitComplete={finishExit}
+          />
         </Suspense>,
         document.body,
       )

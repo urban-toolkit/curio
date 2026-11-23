@@ -212,6 +212,44 @@
   padding-right: 0;
 }
 
+/* The window a section's chart and table show: one pressed button of a few. */
+.switchRow {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.switch {
+  display: inline-flex;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: var(--curio-radius-md);
+  overflow: hidden;
+}
+
+.switchButton {
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 12px;
+  border: none;
+  background: #fff;
+  color: var(--curio-text-secondary);
+}
+
+.switchButton + .switchButton {
+  border-left: 1px solid var(--curio-border-strong);
+}
+
+.switchButton:hover {
+  background: var(--curio-surface-muted);
+}
+
+.switchButton[aria-pressed="true"] {
+  background: var(--curio-surface-alt);
+  color: var(--curio-text-primary);
+  font-weight: 600;
+}
+
 /* A model's line key: the colour of its line in the charts above. */
 .swatch {
   display: inline-block;

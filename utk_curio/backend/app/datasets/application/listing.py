@@ -25,6 +25,7 @@ from utk_curio.backend.app.datasets.application.export import (
 )
 from utk_curio.backend.app.datasets.domain.code_refs import (
     dataset_ids_in_code,
+    dataset_widget_ids,
     node_code,
 )
 from utk_curio.backend.app.datasets.domain.computed import ComputedDatasetIndexer
@@ -1084,7 +1085,7 @@ class CatalogListing:
             # every dataset id; on the shipped examples that was ~2.7x the work
             # of the pre-#250 body, and it grows with node code size.
             code_ids_by_node = {
-                node.get("id") or "": set(dataset_ids_in_code(node_code(node)))
+                node.get("id") or "": set(dataset_ids_in_code(node_code(node))) | set(dataset_widget_ids(node))
                 for node in (spec.get("dataflow") or {}).get("nodes") or []
                 if isinstance(node, dict)
             }

@@ -19,7 +19,6 @@ import { closeAutkDb } from './autkDbClose';
 import { autkKeyProblem } from '../../contracts/autkGrammar';
 import { autkTableName } from '../../utils/autkInput';
 import { framesFromPayload } from '../../utils/grammarInput';
-import { deriveBuildingHeight } from '../../utils/buildingHeight';
 import { decodeRasterEnvelope } from '../../utils/raster/rasterWire';
 import {
     GRAMMAR_RASTER_SOURCES,
@@ -29,6 +28,7 @@ import {
     autkWorkspaceOf,
     handedOn,
     inItsWorkspace,
+    inPhaseOrder,
     layerEpsg,
     plainTableRecord,
     rasterEnvelope,
@@ -38,15 +38,20 @@ import {
     sectionTableProblem,
     withInputTables,
     withOsmIds,
+    withOsmNumbers,
     withRasterGrid,
     workspaceCrsOf,
+    writesAfter,
 } from './autkDataCompile';
 import { oneRasterAtATime } from './autkRasters';
 import { featureCount } from './autkRunDescriptions';
 
 /** A table an Autark node loaded or hands on: its name, its autk-db layer type, its
- * rows, and the workspace it is in when that is not the default one. */
-export type AutkLayer = { name: string; type?: string; geojson: any; workspace?: string };
+ * rows, and the workspace it is in when that is not the default one. A raster of
+ * the node's input is handed on as the element it came in (`asItCame`,
+ * adapters/node/autkHandOn): its rows are then that raster's collection, when the
+ * node holds one. */
+export type AutkLayer = { name: string; type?: string; geojson: any; workspace?: string; asItCame?: any };
 
 /** autk-db's layer type for a raster table, which both loaders hand on beside the layers. */
 export const RASTER_TABLE = 'raster';
@@ -203,14 +208,20 @@ function flattenToMultiPolygon(geom: any): any | null {
 // autk-db keeps a building as one feature: a GeometryCollection of its parts, each
 // part's tags in `properties.parts` naming its geometry by `geometryIndex`. An
 // Autark node hands buildings on one row per part (#536), a Polygon (or
-// MultiPolygon) with that part's tags and height: a table lists every part, Edit
-// Features removes a building by `building_id`, and a batched compute packs each
-// part's `geometry.coordinates.0`, a Polygon's outer ring. The downstream
+// MultiPolygon) with that part's tags: a table lists every part, Edit Features
+// removes a building by `building_id`, and a batched compute packs each polygon
+// of a part, its `geometry.coordinates.0`, its outer ring, beside the part's
+// values (autk-grammar packs each polygon of a MultiPolygon as a feature of its
+// own when a batched entry reads the geometry). A part with no height is
+// handed on with none: a node that uses one takes the default where it uses it
+// (utils/buildingHeight `withDefaultHeight`). The downstream
 // `loadGeojson('buildings')` makes every row a building of its own, so each part
 // also carries, as a property, the `building_id` it came from. A part's
 // `geometryIndex` is autk-db's bookkeeping, not a tag, and is left out, and so is
-// its `id`, which the part carries as its `osm_id` (withOsmIds).
-function explodeBuildingParts(features: any[]): any[] {
+// its `id`, which the part carries as its `osm_id` (withOsmIds). A compute step
+// hands on a buildings table it read back from autk-db the same way
+// (autkComputeDatabase).
+export function explodeBuildingParts(features: any[]): any[] {
     const out: any[] = [];
     for (const f of features ?? []) {
         const geom = f?.geometry;
@@ -228,8 +239,6 @@ function explodeBuildingParts(features: any[]): any[] {
             const p = { ...(meta ?? {}) };
             delete p.parts;
             if (props.building_id != null) p.building_id = props.building_id;
-            const h = deriveBuildingHeight(p);
-            if (h != null) p.height = h;
             out.push({ type: 'Feature', geometry: gg, properties: p });
         };
         if (geom?.type === 'GeometryCollection' && Array.isArray(geom.geometries)) {
@@ -247,8 +256,9 @@ function explodeBuildingParts(features: any[]): any[] {
 // at once, in the workspace it was made in, with the grid its cells lie on.
 // autk-db keeps a raster's cells in one store for the whole page, so the
 // making and the read are one raster at a time (oneRasterAtATime). A raster
-// in another workspace than the default one keeps it.
-async function grammarRaster(
+// in another workspace than the default one keeps it. A compute step's
+// heatmap after compute is made and read the same way (autkComputeDatabase).
+export async function grammarRaster(
     db: any,
     source: any,
     adapter: { resolveSource: (db: any, source: any) => Promise<unknown> },
@@ -292,6 +302,9 @@ const CHANGING_SOURCES = ['join', 'update', 'drop'];
 // onto it or an update changed it (handedOn), as in the sandbox's loader. An
 // OpenStreetMap table a view of the node reads with `osmElements`
 // (*options.elements*, by key) is read as one feature per OpenStreetMap element.
+// The sources load in the order autk-grammar runs them (inPhaseOrder), those
+// after compute after the others, once the grammar's own `dataPhases` took the
+// section, as the sandbox's loader does.
 export async function loadSpecLayers(
     spec: any,
     input: ReadonlyArray<{
@@ -301,9 +314,10 @@ export async function loadSpecLayers(
 ): Promise<Array<{ name: string; type: string; geojson: FeatureCollection; workspace?: string }>> {
     const keyProblem = autkKeyProblem({ data: spec?.data });
     if (keyProblem) throw new Error(keyProblem);
-    const tableProblem = sectionTableProblem(spec?.data ?? []);
+    const ordered = inPhaseOrder(spec?.data ?? []);
+    const tableProblem = sectionTableProblem(ordered);
     if (tableProblem) throw new Error(tableProblem);
-    const authored: any[] = (spec?.data ?? []).map(inItsWorkspace);
+    const authored: any[] = ordered.map(inItsWorkspace);
     const wanted = sectionInputTables(authored);
     const inputKeys = wanted.map((table) => autkTableKey(table.workspace, table.name));
     const changed = sectionChangedTables(authored);
@@ -336,6 +350,9 @@ export async function loadSpecLayers(
         import('@urban-toolkit/autk-db'),
         import('@urban-toolkit/autk-grammar/data'),
     ]);
+    // The grammar's own phases of the section, which refuse an `after` other
+    // than 'compute' before anything loads.
+    if (writesAfter(authored)) grammarData.dataPhases({ data: authored });
     const enterWorkspace = usesWorkspaces
         ? grammarData.enterWorkspace
         : async (_db: unknown, _workspace?: string) => undefined;
@@ -420,11 +437,12 @@ export async function loadSpecLayers(
                     // right rendering.
                     const type = (t.type as string) ?? 'polygons';
                     // Each OpenStreetMap feature's OSM id in `osm_id`, a building
-                    // part's in that part, as the sandbox's loader hands them on.
-                    if (Array.isArray(geojson?.features)) geojson.features = withOsmIds(t, geojson.features);
+                    // part's in that part, and its numeric tags as numbers,
+                    // as the sandbox's loader hands them on.
+                    if (Array.isArray(geojson?.features)) geojson.features = withOsmNumbers(t, withOsmIds(t, geojson.features));
                     // Buildings: explode the grouped GeometryCollection into one footprint
-                    // feature per part (each with its own height) and KEEP type 'buildings',
-                    // so autk-map extrudes each part by its real height. See
+                    // feature per part (each with its own tags) and KEEP type 'buildings',
+                    // so autk-map extrudes each part by its own height. See
                     // explodeBuildingParts.
                     if (type === 'buildings' && Array.isArray(geojson?.features)) {
                         geojson.features = explodeBuildingParts(geojson.features);
@@ -532,20 +550,20 @@ async function plainTables(
     return plain;
 }
 
-// Persist a pool-compatible wrapper (output of `layersToPoolWrapper`) to the
-// backend sandbox so a downstream Data Pool can ingest it via its normal
-// `{path, dataType}` fetch path — the same convention `ia-data` uses. The
-// augmented FC was computed in the browser (WGSL needs a GPU); this just
-// ships the result to the backend for persistence, so every downstream node
-// sees a DuckDB artifact reference instead of an inline payload.
+// Persist a pool-compatible wrapper (output of `layersToPoolWrapper`), as its
+// JSON *literal*, to the backend sandbox so a downstream Data Pool can ingest
+// it via its normal `{path, dataType}` fetch path — the same convention
+// `ia-data` uses. The augmented FC was computed in the browser (WGSL needs a
+// GPU); this just ships the result to the backend for persistence, so every
+// downstream node sees a DuckDB artifact reference instead of an inline payload.
 function persistLayersToBackend(
     jsInterpreter: JavaScriptInterpreter,
-    wrapper: any,
+    literal: string,
     nodeId: string,
 ): Promise<{ path: string; dataType: string }> {
     // The sandbox JS just inlines the wrapper as a literal and returns it; the
     // sandbox wraps return values into a `{path, dataType}` artifact ref.
-    const code = `const __wrapper = ${JSON.stringify(wrapper)};\nreturn __wrapper;`;
+    const code = `const __wrapper = ${literal};\nreturn __wrapper;`;
     return new Promise((resolve, reject) => {
         jsInterpreter.interpretCode(
             code, code, '', [],
@@ -562,6 +580,24 @@ function persistLayersToBackend(
     });
 }
 
+/** A hand-on a node kept in the sandbox: a digest of what it kept, and the reference it is kept under. */
+export type StoredHandOn = { digest: string; output: { path: string; dataType: string } };
+
+/**
+ * A digest of *text*: its length and two 32-bit FNV-1a hashes of its UTF-16
+ * code units, one read forwards and one backwards. Two hand-ons of the same
+ * tables have the same one.
+ */
+function digestOf(text: string): string {
+    let forwards = 0x811c9dc5;
+    let backwards = 0x811c9dc5;
+    for (let i = 0, j = text.length - 1; i < text.length; i++, j--) {
+        forwards = Math.imul(forwards ^ text.charCodeAt(i), 0x01000193);
+        backwards = Math.imul(backwards ^ text.charCodeAt(j), 0x01000193);
+    }
+    return `${text.length}:${(forwards >>> 0).toString(16)}:${(backwards >>> 0).toString(16)}`;
+}
+
 // Hand layers downstream in a shape the Data Pool can read: the pool-compatible
 // wrapper, persisted to the backend sandbox so downstream nodes see a
 // `{path, dataType}` ref — same shape `ia-data` emits, so the Data Pool's normal
@@ -569,17 +605,26 @@ function persistLayersToBackend(
 // wrapper when no JS interpreter is available or the persist call fails, and
 // to null when there are no layers to wrap. A step a dashboard viewer's run
 // left to this page goes to that run instead, which keeps it for this page
-// (#1117): a viewer has no session to persist it with.
+// (#1117): a viewer has no session to persist it with. With *stored*, what the
+// node kept last (adapters/node/autkHandOn `handOnOutput`): a wrapper the same
+// as that goes on as its reference again, with no call to the sandbox, and
+// one the sandbox keeps is what *stored* holds next.
 export async function toPoolOutput(
     layers: AutkLayer[],
     jsInterpreter: JavaScriptInterpreter | undefined,
     nodeId: string,
+    stored?: { current: StoredHandOn | null },
 ): Promise<any> {
     const wrapper = layersToPoolWrapper(layers);
     if (wrapper && askedOfPage(nodeId)) return keepPageResult(nodeId, wrapper);
     if (wrapper && jsInterpreter) {
+        const literal = JSON.stringify(wrapper);
+        const digest = stored ? digestOf(literal) : '';
+        if (stored?.current && stored.current.digest === digest) return stored.current.output;
         try {
-            return await persistLayersToBackend(jsInterpreter, wrapper, nodeId);
+            const output = await persistLayersToBackend(jsInterpreter, literal, nodeId);
+            if (stored) stored.current = { digest, output };
+            return output;
         } catch (e) {
             console.warn('[autk-grammar] backend persist failed; emitting inline wrapper', e);
         }
@@ -595,11 +640,12 @@ export async function toPoolOutput(
 // metadata at the wrapper level so a downstream Autark node's input can restore
 // the original layer identity (e.g. `dataRef: "table_osm_buildings"`). A raster
 // table goes in its envelope (rasterEnvelope), as the sandbox's loader hands it
-// on. A layer or a raster in another workspace than the default one names it
+// on, and a raster of the node's input as the element it came in (`asItCame`).
+// A layer or a raster in another workspace than the default one names it
 // (`workspace`), so the node it is handed to loads it there.
 export function layersToPoolWrapper(layers: AutkLayer[]): any {
     if (!Array.isArray(layers) || layers.length === 0) return null;
-    const envelope = (l: AutkLayer) => ({
+    const envelope = (l: AutkLayer) => (l.asItCame !== undefined ? l.asItCame : {
         ...(l.type === RASTER_TABLE
             ? rasterEnvelope(l.geojson, l.name)
             : { dataType: 'geodataframe', data: l.geojson, layerName: l.name, layerType: l.type }),

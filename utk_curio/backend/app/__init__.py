@@ -104,6 +104,11 @@ def create_app(config_class=config_class, *, startup_work=None):
     db.init_app(app)
     migrate.init_app(app, db)
 
+    # Each request's time, for the monitor's Usage tab: before any other hook,
+    # so its stamp comes first and its count last (monitor/requests.py).
+    from utk_curio.backend.app.monitor import requests as monitor_requests
+    monitor_requests.install(app)
+
     # Settings whose meaning changed in this release. Warns and continues:
     # each of these leaves a working boot and a quietly broken feature.
     from utk_curio.backend.app.upgrade_notices import check_upgrade_notices

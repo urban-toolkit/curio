@@ -96,8 +96,9 @@ def refuse_read_only_draft(user_key: str, manifest_raw: object) -> None:
 
 def model_source_for_draft(user_key: str, draft: dict, existing_dir: Path | None) -> ModelSource | None:
     """The model a new package's one node loads, which the package then
-    copies: Save as package node of a node that loads a model makes a model
-    package of its own. The first model the node's code names
+    copies, with what the model's package declares in ``dataflowCategories``:
+    Save as package node of a node that loads a model makes a model package
+    of its own. The first model the node's code names
     (``curio_load_model("<id>")``) that the account's store holds is the one.
 
     None, and a node package as before, for a draft saved into an installed
@@ -118,7 +119,11 @@ def model_source_for_draft(user_key: str, draft: dict, existing_dir: Path | None
         if copy is not None:
             raw, files = copy
             python = (raw.get("dependencies") or {}).get("python") or {}
-            return ModelSource(model_id=model_id, block=raw["model"], python=dict(python), files=files)
+            declared = raw.get("dataflowCategories")
+            return ModelSource(
+                model_id=model_id, block=raw["model"], python=dict(python), files=files,
+                dataflow_categories=dict(declared) if isinstance(declared, dict) else {},
+            )
     return None
 
 

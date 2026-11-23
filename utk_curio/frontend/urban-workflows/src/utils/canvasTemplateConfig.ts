@@ -147,7 +147,9 @@ export function resolveEditorTabFlags(
  * Order follows the tab strip, so the first tab the user can actually see is the
  * one that opens. `"output"` is the last resort: every node has an output pane.
  * A node whose template opens on its controls (`opensOnControls`), and whose
- * code reads one of its widgets, opens on its Widgets tab instead.
+ * code reads one of its widgets, opens on its Widgets tab instead. A node with
+ * neither code nor a spec opens on what it shows, when it shows something, its
+ * widgets a tab away: Simple View opens on its cards.
  */
 export function resolveInitialEditorTab(flags: {
   code: boolean;
@@ -156,10 +158,13 @@ export function resolveInitialEditorTab(flags: {
   /** The template opens on its controls, on its Widgets tab, and the node's
    * code reads one of its widgets (`opensOnControls`). */
   widgetsFirst?: boolean;
+  /** The node has an output pane: a chart, a map, or what its behavior draws. */
+  output?: boolean;
 }): "code" | "grammar" | "widgets" | "output" {
   if (flags.widgets && flags.widgetsFirst) return "widgets";
   if (flags.code) return "code";
   if (flags.grammar) return "grammar";
+  if (flags.output) return "output";
   if (flags.widgets) return "widgets";
   return "output";
 }

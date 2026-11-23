@@ -105,21 +105,52 @@ function holds(map: any, id: string): boolean {
   return Array.isArray(layers) && layers.some((layer: any) => layer?.layerInfo?.id === id);
 }
 
-/** What a map shows of the tools: its tool layers and what they were loaded from, their size, and the feature skipped. */
+/**
+ * What a map shows of the tools: its tool layers and what they were loaded
+ * from, their size, and the feature skipped, with the features its layer hid
+ * of its own before (a document's `skippedComps`).
+ */
 interface Shown {
   ids: string[];
   features: string;
   units: string;
-  hidden: { layer: string; key: string } | null;
+  hidden: { layer: string; key: string; own: number[] } | null;
 }
 
 const shownOn = new WeakMap<object, Shown>();
+
+/** The layer *id* of *map*, as autk-map finds it. */
+function layerOf(map: any, id: string): any {
+  return map?.layerManager?.searchByLayerId?.(id) ?? null;
+}
+
+/**
+ * The features *layer* hides, by their positions: a vector layer's
+ * `skippedIds`, and the set a layer of points keeps to itself.
+ */
+function skippedBy(layer: any): number[] {
+  const ids = layer?.skippedIds ?? layer?._skippedIds;
+  return ids && typeof ids[Symbol.iterator] === "function" ? [...(ids as Iterable<number>)] : [];
+}
+
+/**
+ * Make *layer* hide exactly *positions*: autk-map's layer toggles each position
+ * it is given and keeps the others, so its skips are cleared first. The
+ * layer's own calls, since autk-map's `AutkMap.setSkippedIds` passes over a
+ * layer of points.
+ */
+function hideExactly(layer: any, positions: number[]): void {
+  if (typeof layer?.clearSkippedIds !== "function" || typeof layer?.setSkippedIds !== "function") return;
+  layer.clearSkippedIds();
+  if (positions.length > 0) layer.setSkippedIds([...new Set(positions)]);
+}
 
 /**
  * Show *tools* on *map*, or none (null): each tool layer added, loaded again
  * when what it draws changed, or removed, drawn in the map's highlight at its
  * size on the screen now; and the feature the tools draw skipped in its own
- * layer, the skip cleared once they draw none.
+ * layer, beside the features the layer hid of its own, which it hides alone
+ * again once the tools draw none.
  */
 export function showMapEditTools(map: any, tools: MapEditTools | null, geographic: boolean): void {
   if (!map || typeof map.loadCollection !== "function") return;
@@ -145,18 +176,22 @@ export function showMapEditTools(map: any, tools: MapEditTools | null, geographi
       for (const id of now.ids) map.updateRenderInfo(id, { ...(color ? { color } : {}), ...STYLE[id].info(units) });
       now.units = units.toPrecision(4);
     }
-    // The feature drawn by the tools, skipped in its layer: autk-map toggles
-    // each position it is given, so the layer's skips are cleared first.
+    // The feature drawn by the tools, skipped in its layer beside the features
+    // the layer hid of its own, taken before the tools first hid one there.
     const hidden = tools?.hidden && tools.hidden.positions.length > 0 ? tools.hidden : null;
     const positions = hidden ? [...new Set(hidden.positions)] : [];
     const hiddenKey = hidden ? `${hidden.layer}:${positions.join(",")}` : null;
     if (hiddenKey !== (was.hidden?.key ?? null)) {
-      if (was.hidden) map.clearSkippedIds?.(was.hidden.layer);
+      const kept = was.hidden && hidden && was.hidden.layer === hidden.layer ? was.hidden.own : null;
+      if (was.hidden && !kept) hideExactly(layerOf(map, was.hidden.layer), was.hidden.own);
       if (hidden && hiddenKey) {
-        map.clearSkippedIds?.(hidden.layer);
-        map.setSkippedIds?.(hidden.layer, positions);
+        const layer = layerOf(map, hidden.layer);
+        const own = kept ?? skippedBy(layer);
+        hideExactly(layer, [...own, ...positions]);
+        now.hidden = { layer: hidden.layer, key: hiddenKey, own };
+      } else {
+        now.hidden = null;
       }
-      now.hidden = hidden && hiddenKey ? { layer: hidden.layer, key: hiddenKey } : null;
     }
   } catch (error) {
     console.warn("[map edits] showing the drawing tools on the map failed:", error);

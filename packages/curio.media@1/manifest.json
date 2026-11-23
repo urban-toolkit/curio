@@ -32,12 +32,12 @@
         "tags": ["GeoPandas", "Pandas"],
         "dataTypes": ["Tables", "Geometries", "Imagery", "Video"]
       },
-      "description": "Sample frames from every video in a collection, every EVERY_SECONDS seconds. Returns one row per frame with the columns of an image row (path, thumbnail, image_url, width, height), the video's fields and position, and t_s, the frame's offset.",
+      "description": "Sample frames from every video in a collection, one every every_seconds seconds and max_frames_per_video of a video at most, its two widgets. Returns one row per frame with the columns of an image row (path, thumbnail, image_url, width, height), the video's fields and position, and t_s, the frame's offset.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
       "hasGrammar": false,
-      "hasWidgets": false,
+      "hasWidgets": true,
       "icon": null,
       "iconRef": "fa-solid:film",
       "id": "video-frames",
@@ -55,7 +55,23 @@
           "types": ["DATAFRAME", "GEODATAFRAME"]
         }
       ],
-      "source": "sources/video-frames.py"
+      "source": "sources/video-frames.py",
+      "widgets": [
+        {
+          "name": "every_seconds",
+          "type": "number",
+          "label": "Gap between frames",
+          "default": 2.0,
+          "options": {"units": "s"}
+        },
+        {
+          "name": "max_frames_per_video",
+          "type": "number",
+          "label": "Maximum frames per video",
+          "default": 300,
+          "options": {"step": 1}
+        }
+      ]
     },
     {
       "category": "computation",
@@ -63,12 +79,12 @@
         "tags": ["Pandas"],
         "dataTypes": ["Tables", "Audio"]
       },
-      "description": "Split every recording in a collection into windows of WINDOW_SECONDS seconds. Returns one row per window with its level and peak in dBFS, a playable clip, the recording's fields, and t_s, the window's offset.",
+      "description": "Split every recording in a collection into windows of window_seconds seconds, max_windows_per_recording of a recording at most, its two widgets. Returns one row per window with its level and peak in dBFS, a playable clip, the recording's fields, and t_s, the window's offset.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
       "hasGrammar": false,
-      "hasWidgets": false,
+      "hasWidgets": true,
       "icon": null,
       "iconRef": "fa-solid:wave-square",
       "id": "split-audio",
@@ -86,7 +102,23 @@
           "types": ["DATAFRAME"]
         }
       ],
-      "source": "sources/split-audio.py"
+      "source": "sources/split-audio.py",
+      "widgets": [
+        {
+          "name": "window_seconds",
+          "type": "number",
+          "label": "Window length",
+          "default": 5.0,
+          "options": {"min": 0.001, "units": "s"}
+        },
+        {
+          "name": "max_windows_per_recording",
+          "type": "number",
+          "label": "Maximum windows per recording",
+          "default": 2000,
+          "options": {"step": 1}
+        }
+      ]
     },
     {
       "category": "computation",
@@ -94,12 +126,12 @@
         "tags": ["GeoPandas", "Pandas"],
         "dataTypes": ["Tables", "Geometries", "Video"]
       },
-      "description": "Cut every video in a collection, on the top circle, into blocks of BLOCK_SECONDS seconds, or where the table on the bottom circle says: one row per block, with t_s, where it starts in seconds from its video's start, and maybe end_s and video_file_id. Returns one row per block, an MP4 at most WIDTH wide with no sound that Simple View plays, leading with block, the cut's own columns, and t_s and end_s, where the block starts and ends in the video, then the video's fields.",
+      "description": "Cut every video in a collection, on the top circle, into blocks of block_seconds seconds, or where the table on the bottom circle says: one row per block, with t_s, where it starts in seconds from its video's start, and maybe end_s and video_file_id. Returns one row per block, an MP4 at most width pixels wide with no sound that Simple View plays, leading with block, the cut's own columns, and t_s and end_s, where the block starts and ends in the video, then the video's fields. One run re-encodes max_frames frames at most. block_seconds, width and max_frames are its widgets.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
       "hasGrammar": false,
-      "hasWidgets": false,
+      "hasWidgets": true,
       "icon": null,
       "iconRef": "fa-solid:scissors",
       "id": "split-video",
@@ -121,7 +153,30 @@
           "types": ["DATAFRAME", "GEODATAFRAME"]
         }
       ],
-      "source": "sources/split-video.py"
+      "source": "sources/split-video.py",
+      "widgets": [
+        {
+          "name": "block_seconds",
+          "type": "number",
+          "label": "Block length",
+          "default": 60.0,
+          "options": {"units": "s"}
+        },
+        {
+          "name": "width",
+          "type": "number",
+          "label": "Maximum width",
+          "default": 960,
+          "options": {"min": 2, "step": 1, "units": "px"}
+        },
+        {
+          "name": "max_frames",
+          "type": "number",
+          "label": "Maximum frames per run",
+          "default": 30000,
+          "options": {"step": 1}
+        }
+      ]
     },
     {
       "category": "computation",
