@@ -76,13 +76,18 @@ def test_an_editors_solve_sends_the_sandbox_a_collection_the_owners_dataflow_lis
 def test_what_an_editors_solve_derives_goes_to_his_media_folder(
     client, db, user_and_token, tmp_curio, tmp_path, monkeypatch,
 ):
+    from pathlib import Path
+
     from utk_curio.backend.app.discovery.infrastructure import media_dirs
+    from utk_curio.sandbox.util.collections import kept_of
 
     alice, bob, _collection, sent = _bobs_solve_of_a_node_loading_alices_collection(
         client, db, user_and_token, tmp_path, monkeypatch,
     )
 
-    assert sent.get("media_dir") == str(media_dirs.media_work_root(str(bob.id))), (
+    # A run's own folder (<media>/kept/<name>) of bob's media folder.
+    derives_in = sent.get("media_dir") or ""
+    assert kept_of(derives_in) and Path(derives_in).parent.parent == media_dirs.media_work_root(str(bob.id)), (
         f"bob's Solve derives into {sent.get('media_dir')}"
     )
     alices_media = media_dirs.media_work_root(str(alice.id))

@@ -84,6 +84,24 @@ def test_nested_values_compare_with_nan_equal_to_nan():
     assert artifact_differences(_table_snapshot(a), _table_snapshot(pa.table({"x": [[1.0, NAN], [2.5]]})))
 
 
+def test_two_runs_rows_match_but_for_the_names_of_their_runs_folders():
+    """Every run derives in a folder of its own (``<media>/kept/<name>/``),
+    which a derived row's path and URLs name, so two runs of one node name
+    their frames in two folders: the rows compare with the folder's name left
+    out, and anything else in them still counts."""
+    def rows(run, frame="0.jpg"):
+        return pa.table({
+            "path": [f"/srv/.curio/users/1/media/kept/{run}/frames/d/{'b' * 16}/{frame}"],
+            "thumbnail": [f"/api/datasets/d/media/{'b' * 16}@0?variant=thumb&kept={run}"],
+        })
+
+    first, second = "k" + "1" * 32, "k" + "2" * 32
+    assert artifact_differences(_table_snapshot(rows(first)), _table_snapshot(rows(second))) == []
+    assert artifact_differences(_table_snapshot(rows(first)), _table_snapshot(rows(second, "500.jpg"))) == [
+        "the output: the values differ in the columns ['path']"
+    ]
+
+
 def test_columns_their_types_and_the_row_count_are_compared():
     base = pa.table({"x": [1.0, 2.0]})
     assert artifact_differences(_table_snapshot(base), _table_snapshot(pa.table({"z": [1.0, 2.0]})))

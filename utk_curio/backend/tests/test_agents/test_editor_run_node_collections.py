@@ -37,9 +37,12 @@ def _account(db, username: str, token: str):
 def test_an_editors_run_node_derives_into_his_media_folder_and_makes_nothing_in_the_owners(
     client, db, user_and_token, tmp_curio, alice_project, tmp_path, monkeypatch,
 ):
+    from pathlib import Path
+
     from utk_curio.backend.app.discovery.application import cache_collection
     from utk_curio.backend.app.discovery.infrastructure import media_dirs, storage
     from utk_curio.backend.app.projects import access
+    from utk_curio.sandbox.util.collections import kept_of
 
     monkeypatch.setenv(storage.ENV_ROOT, str(REPO / "discovery"))
     alice, alice_token = user_and_token
@@ -57,7 +60,9 @@ def test_an_editors_run_node_derives_into_his_media_folder_and_makes_nothing_in_
     _done, sent = _run_through_the_node_after(client, BOB_TOKEN, alice_project, monkeypatch)
 
     loading = sent[0]
-    assert loading.get("media_dir") == str(media_dirs.media_work_root(str(bob.id))), (
+    # A run's own folder (<media>/kept/<name>) of bob's media folder.
+    derives_in = loading.get("media_dir") or ""
+    assert kept_of(derives_in) and Path(derives_in).parent.parent == media_dirs.media_work_root(str(bob.id)), (
         f"bob's run from the agent's chat derives into {loading.get('media_dir')}"
     )
     assert loading.get("collections") == {collection: {

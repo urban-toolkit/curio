@@ -43,13 +43,13 @@ their files, which a ``<video>`` asks for with no sign-in
 (:func:`serving_visitor`).
 
 The frames, clips and overlays the guest's nodes derive from a collection's
-files are written in a folder of the guest's own in the account's media
-folder, named as their datasets are (:func:`media_visitor`,
-``media_dirs.derived_root``), wherever the guest is served: in their
-requests, on a run's thread, and through a signed link. One derived id names
-a file in each guest's folder, so none reads or overwrites another's. They go
-when the server starts too. A dashboard's run is the exception: each of its
-steps writes in a folder of its own, as every viewer's does.
+files are written in a folder of each run's own inside a folder of the
+guest's own in the account's media folder, named as their datasets are
+(:func:`media_visitor`, ``media_dirs.derived_root``), wherever the guest is
+served: in their requests, on a run's thread, and through a signed link. No
+guest reads or overwrites another's, and they go when the server starts too.
+A dashboard's steps write in the account's media folder instead, as every
+viewer's do: their kept outputs serve every visitor.
 
 The guest's own edits on the canvas land on the copy too: the guest's tab
 joins the room of its copy (:func:`room_for`), keyed by the copy's id, and
@@ -242,13 +242,14 @@ def served_visitor(sign_in: Optional[str] = None) -> Optional[str]:
 
 def media_visitor(user_key: Optional[str]) -> Optional[str]:
     """The visitor whose own folder, in the media folder of the store
-    *user_key*, holds the files nodes derive now (``media_dirs.derived_root``):
-    in the shared guest account's, on a Curio started with ``--deploy``, the
-    visitor the request or the run serves (:func:`served_visitor`). None for
-    any other store; without ``--deploy``, where the shared guest is the one
-    local user; and for a run that serves no visitor. A dashboard viewer's
-    step writes in a folder of its own instead, whoever it serves
-    (``media_dirs.derived_root``'s *kept*)."""
+    *user_key*, holds the folders of the runs that derive files now
+    (``media_dirs.derived_root``): in the shared guest account's, on a Curio
+    started with ``--deploy``, the visitor the request or the run serves
+    (:func:`served_visitor`). None for any other store; without
+    ``--deploy``, where the shared guest is the one local user; and for a
+    run that serves no visitor. A dashboard viewer's step's folder is in the
+    account's media folder instead, whoever it serves
+    (``exec_collections.media_dir_for``'s *viewers_step*)."""
     from utk_curio.backend import config
 
     if user_key != GUEST_KEY or config.CURIO_NO_AUTH:

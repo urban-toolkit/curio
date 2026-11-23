@@ -66,6 +66,27 @@ class TestRunThroughNode:
         assert report["order"] == ["a", "b"]  # c and unrelated never run
         assert len(exec_fn.calls) == 2
 
+    def test_each_node_of_the_slice_derives_in_a_folder_of_its_own(self, tmp_curio):
+        """Its caller resolves the folder the run derives in, a run's folder
+        in the account's media folder (``exec_collections``). Each node of
+        the slice writes what it derives in a folder of its own beside it, so
+        two nodes of one slice never write one file."""
+        from pathlib import Path
+
+        from utk_curio.backend.app.discovery.infrastructure import media_dirs
+        from utk_curio.common.kept_sessions import new_session_id
+        from utk_curio.sandbox.util.collections import kept_of
+
+        resolved = str(media_dirs.derived_root(KEY, kept=media_dirs.kept_media_name(new_session_id())))
+        exec_fn = _RecordingExec()
+        report = runner.run_through_node(KEY, PID, _chain_spec(["a", "b"]), "b", exec_fn=exec_fn, media_dir=resolved)
+
+        assert report["ok"] is True
+        folders = [payload.get("media_dir") for _endpoint, payload in exec_fn.calls]
+        assert len(folders) == 2 and folders[0] != folders[1], f"two nodes of one slice derive in one folder: {folders}"
+        assert all(kept_of(folder) for folder in folders), folders
+        assert {str(Path(folder).parent) for folder in folders} == {str(Path(resolved).parent)}, folders
+
     def test_candidate_overlays_without_mutating_the_spec(self, tmp_curio):
         spec = _chain_spec(["a", "b"])
         exec_fn = _RecordingExec()

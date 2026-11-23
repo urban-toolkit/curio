@@ -53,6 +53,7 @@ from utk_curio.backend.tests._support.progress_bars import (
     transformers_bars_on,
 )
 from utk_curio.backend.tests._support.tiny_sam3 import CLIP_RATE, CLIP_SECONDS, SIZE
+from utk_curio.backend.tests.test_packages.test_media_package import RUN, run_folder
 
 REPO = Path(__file__).resolve().parents[4]
 PACKAGE = REPO / "packages" / "model.curio.sam3@1"
@@ -607,7 +608,8 @@ def test_track_objects_follows_each_object_through_a_clip(videos, catalog_copy, 
     # named by where it starts and by what the call asked.
     assert (row["kind"], row["file_id"]) == ("video", f"{video['file_id']}@0-{tag}.mp4")
     assert (row["video_file_id"], row["name"], row["dataset_id"]) == (video["file_id"], video["name"], video["dataset_id"])
-    assert row["thumbnail"].endswith(f"/media/{row['file_id']}?variant=thumb")
+    # Its URLs name the folder of the run that wrote it.
+    assert row["thumbnail"].endswith(f"/media/{row['file_id']}?variant=thumb&kept={RUN}")
     assert (row["t_s"], row["duration_s"], row["fps"]) == (0.0, len(SAMPLED) * EVERY, 1 / EVERY)
     assert Path(row["path"]).is_file()
 
@@ -655,7 +657,7 @@ def test_track_objects_hands_on_its_videos_and_their_tracks_as_two_tables_and_wr
         out = module.track_objects(rows, model, helpers["curio_derived_file"], labels=DEFAULT_LABELS,
                                    every_seconds=EVERY)
 
-    media = tmp_path / "media"
+    media = run_folder(tmp_path)
     written = sorted(str(path.relative_to(media)) for path in media.rglob("*") if path.is_file())
     assert isinstance(out, dict) and list(out) == ["videos", "tracks"], (
         f"Track Objects returned a {type(out).__name__}, not its videos and their tracks; it wrote {written}")
@@ -890,7 +892,7 @@ def test_each_stop_comes_before_sam3_loads_and_writes_nothing(videos, tmp_path):
         "MAX_SECONDS = 300 with MAX_FRAMES = 450, and max_seconds=MAX_SECONDS with max_frames=MAX_FRAMES"
     )
     assert str(not_cached.value) == f"{relpath} is not on this machine yet; cache the collection's files first"
-    assert not (tmp_path / "media" / "videos").exists() and not (tmp_path / "media" / "tables").exists()
+    assert not (run_folder(tmp_path) / "videos").exists() and not (run_folder(tmp_path) / "tables").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -1023,7 +1025,7 @@ def test_a_part_that_needs_more_frames_than_max_frames_stops_before_sam3_loads_w
         "every 0.25 s is 4 frames; raise every_seconds to 0.4 or more, or set from_seconds and TO_SECONDS to a "
         "shorter part, such as 0 and 0.75"
     )
-    assert not (tmp_path / "media" / "videos").exists() and not (tmp_path / "media" / "tables").exists()
+    assert not (run_folder(tmp_path) / "videos").exists() and not (run_folder(tmp_path) / "tables").exists()
 
 
 def test_a_run_may_look_at_max_frames_frames_of_a_part_and_not_one_more(corner, walk, tmp_path, no_sam3):
@@ -1188,7 +1190,7 @@ def test_a_dataflow_saved_with_max_seconds_stops_with_the_lines_to_change(videos
         "MAX_SECONDS is gone: Track Objects counts the frames a run looks at. In the node's code, replace "
         "MAX_SECONDS = 300 with MAX_FRAMES = 450, and max_seconds=MAX_SECONDS with max_frames=MAX_FRAMES"
     )
-    assert not (tmp_path / "media" / "videos").exists() and not (tmp_path / "media" / "tables").exists()
+    assert not (run_folder(tmp_path) / "videos").exists() and not (run_folder(tmp_path) / "tables").exists()
 
 
 # ---------------------------------------------------------------------------

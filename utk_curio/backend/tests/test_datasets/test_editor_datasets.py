@@ -355,6 +355,7 @@ def test_an_editors_run_loads_a_collection_the_owners_dataflow_lists(
 
     from utk_curio.backend.app.discovery.application import cache_collection
     from utk_curio.backend.app.discovery.infrastructure import media_dirs
+    from utk_curio.sandbox.util.collections import kept_of
 
     alice_key, bob_key = str(flow.people.alice.id), str(flow.people.bob.id)
     collection = _a_collection(flow.people.alice, tmp_path, source_id=SERVICE if source == "service" else None)
@@ -378,7 +379,9 @@ def test_an_editors_run_loads_a_collection_the_owners_dataflow_lists(
         )
         assert readable == [str(cached)], list(rows["path"])
         assert not (media_dirs.media_work_root(bob_key) / "objects" / collection).exists()
-    assert body["media_dir"] == str(media_dirs.media_work_root(bob_key))
+    # A run's own folder of bob's media folder (<media>/kept/<name>).
+    assert Path(body["media_dir"]).parent.parent == media_dirs.media_work_root(bob_key), body["media_dir"]
+    assert kept_of(body["media_dir"]), body["media_dir"]
 
 
 def test_an_editors_own_collection_and_a_shared_one_load_beside_the_dataflows(
@@ -478,11 +481,13 @@ def test_an_editors_solve_runs_the_collection_the_owners_dataflow_lists(
 # Their files, as an editor's canvas shows them (Simple View, the details)
 # ---------------------------------------------------------------------------
 
-def _media(client, token, collection, file_id, *, variant="thumb", dataflow=None):
-    """A collection's file as the browser asks for it, through *dataflow*."""
+def _media(client, token, collection, file_id, *, variant="thumb", dataflow=None, kept=None):
+    """A collection's file as the browser asks for it, through *dataflow*;
+    *kept* names the folder of the run that derived it, as its row's URLs do."""
     through = f"&dataflowId={dataflow}" if dataflow else ""
+    run = f"&kept={kept}" if kept else ""
     return client.get(
-        f"/api/datasets/{collection}/media/{file_id}?variant={variant}{through}",
+        f"/api/datasets/{collection}/media/{file_id}?variant={variant}{through}{run}",
         headers={"Authorization": f"Bearer {token}"},
     )
 
@@ -529,12 +534,14 @@ def test_an_editors_canvas_reads_no_other_media_of_the_owners(client, flow, ship
     that holds it. Through alice's dataflow, bob reads those of the collection
     it lists, from her folder, and nothing else of her media: not a collection
     of hers the dataflow does not list, not a clip her own run derived, which
-    his runs did not. A clip he derived from it, in his own folder, he reads.
-    carol, never invited, reads none of it."""
+    his runs did not and none of her dataflow's saved outputs names. A clip
+    he derived from it, in his own run's folder, he reads. carol, never
+    invited, reads none of it."""
     import shutil
 
     from utk_curio.backend.app.discovery.application import cache_collection
     from utk_curio.backend.app.discovery.infrastructure import media_dirs
+    from utk_curio.common.kept_sessions import new_session_id
     from utk_curio.sandbox.util.collections import derived_relpath
 
     alice_key, bob_key = str(flow.people.alice.id), str(flow.people.bob.id)
@@ -546,7 +553,10 @@ def test_an_editors_canvas_reads_no_other_media_of_the_owners(client, flow, ship
     for collection in (listed, unlisted):
         shutil.copyfile(recording, cache_collection.objects_dir(alice_key, collection) / f"{row.file_id}.wav")
     clip = f"{row.file_id}@1000"
-    alices_clip = media_dirs.media_work_root(alice_key) / derived_relpath("clips", listed, row.file_id, 1000, "wav")
+    alices_run = media_dirs.kept_media_name(new_session_id())
+    alices_clip = media_dirs.derived_root(alice_key, kept=alices_run) / derived_relpath(
+        "clips", listed, row.file_id, 1000, "wav",
+    )
     alices_clip.parent.mkdir(parents=True)
     shutil.copyfile(recording, alices_clip)
     bob = flow.tokens["bob"]
@@ -554,11 +564,14 @@ def test_an_editors_canvas_reads_no_other_media_of_the_owners(client, flow, ship
     served = _media(client, bob, listed, row.file_id, variant="original", dataflow=flow.pid)
     assert served.status_code == 200 and served.mimetype == "audio/wav", served.get_data(as_text=True)[:300]
     assert _media(client, bob, unlisted, row.file_id, variant="original", dataflow=flow.pid).status_code == 404
-    assert _media(client, bob, listed, clip, variant="original", dataflow=flow.pid).status_code == 404
-    bobs_clip = media_dirs.media_work_root(bob_key) / derived_relpath("clips", listed, row.file_id, 1000, "wav")
+    assert _media(client, bob, listed, clip, variant="original", dataflow=flow.pid, kept=alices_run).status_code == 404
+    bobs_run = media_dirs.kept_media_name(new_session_id())
+    bobs_clip = media_dirs.derived_root(bob_key, kept=bobs_run) / derived_relpath(
+        "clips", listed, row.file_id, 1000, "wav",
+    )
     bobs_clip.parent.mkdir(parents=True)
     shutil.copyfile(recording, bobs_clip)
-    assert _media(client, bob, listed, clip, variant="original", dataflow=flow.pid).status_code == 200
+    assert _media(client, bob, listed, clip, variant="original", dataflow=flow.pid, kept=bobs_run).status_code == 200
     carol = flow.tokens["carol"]
     assert _media(client, carol, listed, row.file_id, variant="original", dataflow=flow.pid).status_code == 404
 

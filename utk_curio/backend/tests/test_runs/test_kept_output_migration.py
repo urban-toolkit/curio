@@ -3,11 +3,12 @@ reads the table, as ``test_run_tables_migration.py`` holds the run tables to
 theirs: the suite builds its schema with ``db.create_all()``, so a column
 forgotten in a migration would fail only on a real deployment.
 
-Three revisions build the table: ``d2e3f4a5b6c7`` created the one a dashboard
+Four revisions build the table: ``d2e3f4a5b6c7`` created the one a dashboard
 viewer's runs kept their outputs in, ``e3f4a5b6c7d8`` turns it into the one
-every kept run keeps them in, with ``made_by``, starting empty, and
+every kept run keeps them in, with ``made_by``, starting empty,
 ``a5b6c7d8e9f0`` adds ``media_folders``, the folders of the viewers' steps
-whose files an output's rows may name.
+whose files an output's rows may name, and ``b6c7d8e9f0a1`` adds
+``replaced_at``, when a later run of the same step replaced an output.
 """
 from __future__ import annotations
 
@@ -19,6 +20,7 @@ import sqlalchemy as sa
 VIEWERS = "d2e3f4a5b6c7"
 KEPT = "e3f4a5b6c7d8"
 MEDIA = "a5b6c7d8e9f0"
+REPLACED = "b6c7d8e9f0a1"
 OLD_TABLE = "dashboard_step_output"
 TABLE = "kept_step_output"
 VERSIONS = Path(__file__).resolve().parents[2] / "migrations" / "versions"
@@ -47,6 +49,7 @@ def _migrated():
     _run(VIEWERS, "upgrade", engine)
     _run(KEPT, "upgrade", engine)
     _run(MEDIA, "upgrade", engine)
+    _run(REPLACED, "upgrade", engine)
     return engine
 
 
@@ -65,6 +68,7 @@ def test_each_follows_the_head_it_was_written_on():
     assert _module(KEPT).down_revision == VIEWERS
     # The editors' table's revision was the head.
     assert _module(MEDIA).down_revision == "f4a5b6c7d8e9"
+    assert _module(REPLACED).down_revision == MEDIA
 
 
 def test_the_migrations_create_the_models_columns_types_and_nullability():
@@ -122,3 +126,23 @@ def test_the_media_folders_revision_keeps_every_entry():
     assert _columns(engine, TABLE)["media_folders"] == ("TEXT", True)
     with engine.connect() as conn:
         assert conn.execute(sa.text(f"SELECT id, media_folders FROM {TABLE}")).all() == [("e1", None)]
+
+
+def test_the_replaced_at_revision_keeps_every_entry_and_marks_none_replaced():
+    engine = sa.create_engine("sqlite://")
+    _run(VIEWERS, "upgrade", engine)
+    _run(KEPT, "upgrade", engine)
+    _run(MEDIA, "upgrade", engine)
+    with engine.begin() as conn:
+        conn.execute(sa.text(
+            f"INSERT INTO {TABLE} (id, project_id, node_id, step_key, session_id, output, output_path, "
+            "artifact_ids, size_bytes, made_by, media_folders, created_at, used_at) VALUES ('e1', 'p1', "
+            "'n1', 'k', 'kept-0123', '{}', 'a1', '[]', 0, 'owner', NULL, '2026-11-23 00:00:00', "
+            "'2026-11-23 00:00:00')"
+        ))
+
+    _run(REPLACED, "upgrade", engine)
+
+    assert _columns(engine, TABLE)["replaced_at"] == ("DATETIME", True)
+    with engine.connect() as conn:
+        assert conn.execute(sa.text(f"SELECT id, replaced_at FROM {TABLE}")).all() == [("e1", None)]

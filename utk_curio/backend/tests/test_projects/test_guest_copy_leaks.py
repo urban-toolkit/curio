@@ -167,11 +167,12 @@ def _as_a_play_posts(code: str) -> str:
     return "".join("    " + line + "\n" for line in code.split("\n"))
 
 
-def _play(client, token, project_id, node, *, inputs=()) -> dict:
+def _play(client, token, project_id, node, *, inputs=(), content=None) -> dict:
     """The visitor signed in as *token* plays *node*, saving its output as a
-    dataset as the canvas asks by default; the reply."""
+    dataset as the canvas asks by default; the reply. *content* is the code
+    it plays, :func:`_content` of *node* unless given."""
     body = {
-        "code": _as_a_play_posts(_content(node)), "nodeType": f"{CODE}@1",
+        "code": _as_a_play_posts(content or _content(node)), "nodeType": f"{CODE}@1",
         "nodeId": node, "dataflowId": project_id,
         "input": {"path": inputs[0], "dataType": "dataframe"} if inputs else "",
         "saveOutputDataset": True,

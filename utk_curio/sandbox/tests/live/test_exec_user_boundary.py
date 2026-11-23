@@ -632,7 +632,8 @@ def _collection_request(code):
                 "root": LAUNCH_DIR + "/docs/examples/data/storage",
             },
         },
-        "media_dir": LAUNCH_DIR + "/.curio/exec-scratch/users/" + USER_KEY + "/media",
+        # The run's own folder, <media>/kept/<name>, as the backend gives each run.
+        "media_dir": LAUNCH_DIR + "/.curio/exec-scratch/users/" + USER_KEY + "/media/kept/k" + "0" * 32,
     })
 
 
@@ -658,8 +659,9 @@ def test_a_folder_collections_files_are_readable_by_the_exec_user():
 
 
 def test_a_node_can_write_what_it_derives_from_a_collection():
-    """``curio_derived_file`` names a file in the user's media directory, under
-    the work tree the execution user owns, and the node can write it there."""
+    """``curio_derived_file`` names a file in the run's own folder of the
+    user's media directory, under the work tree the execution user owns, and
+    the node can write it there."""
     result = assert_ran(_collection_request("""
         import os
         tiles = curio_load_collection("%s")

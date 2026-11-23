@@ -2563,13 +2563,15 @@ def delete_project(user, project_id: str) -> None:
         raise ProjectError(
             "Example dataflows ship with Curio and cannot be deleted.", 403
         )
-    # The row's delete takes its kept outputs; what the viewers' steps derived
-    # goes from the owner's media folder with them.
-    viewers = kept.viewers_media(project_id)
+    # The row's delete takes its kept outputs; what their runs derived goes
+    # with them, each from the media folder its run derived in (an invited
+    # editor's from his), read while the row still says whose it is. Its saved
+    # outputs stay in the Data Catalog, and so do the folders they record.
+    media = kept.dataflow_media(project_id)
     storage.delete_tree(_user_dir_key(user), project_id)
     repo.delete_project_row(project_id, user.id)
     db.session.commit()
-    kept.forget_kept_media(viewers, user_key=_user_dir_key(user))
+    kept.forget_kept_media(media)
 
 
 # ---------------------------------------------------------------------------
@@ -2708,17 +2710,23 @@ def _copy_saved_outputs(
     copy's spec names it. Neither is installed again from the sandbox's
     artifacts, which may be gone, and an output with no file left stays out.
     Each project is read or written under its own spec lock, one at a time
-    (#941).
+    (#941). Into another account, the runs' folders the copied datasets
+    record (``media_records``) are linked into its media folder under the
+    same names, so the copy's rows read the files they name there
+    (``media_dirs.link_runs``).
     """
     from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
     from utk_curio.backend.app.datasets.install import copy as dataset_copy
+    from utk_curio.backend.app.datasets.install import media_records
     from utk_curio.backend.app.datasets.install.installer import (
         InstallerError,
         computed_dataset_id,
     )
+    from utk_curio.backend.app.discovery.infrastructure import media_dirs
 
     staged = []
     entries: Dict[str, dict] = {}
+    folders: set = set()
     try:
         with storage.spec_write_lock(source_key, source_id):
             spec = storage.read_spec(source_key, source_id)
@@ -2750,7 +2758,8 @@ def _copy_saved_outputs(
             while staged:
                 copy = staged.pop(0)
                 try:
-                    dataset_copy.place_staged_copy(target_key, copy)
+                    placed = dataset_copy.place_staged_copy(target_key, copy)
+                    folders |= media_records.recorded_folders(placed.dest)
                 except InstallerError as exc:
                     logger.warning("A copied output could not be put in place in %s: %s", target_id, exc)
             refs = [
@@ -2764,6 +2773,12 @@ def _copy_saved_outputs(
     finally:
         for copy in staged:
             dataset_copy.discard_staged_copy(copy)
+    if target_key != source_key and folders:
+        try:
+            media_dirs.link_runs(source_key, target_key, folders)
+        except OSError:
+            logger.warning("The files the copied outputs of %s name could not be linked into %s",
+                           source_id, target_id, exc_info=True)
     return restored
 
 

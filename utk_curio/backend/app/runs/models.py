@@ -169,13 +169,18 @@ class KeptStepOutput(db.Model):
     private_to = db.Column(db.String(64), nullable=True)
     # Whose run made it: "owner" or "viewer" (``kept.MADE_BY_*``).
     made_by = db.Column(db.String(16), nullable=False, default="viewer")
-    # The folders of the viewers' steps whose files its rows may name (JSON):
-    # its own step's, and those the outputs it read name. A folder goes once
-    # no entry names it (``kept.forget_kept_media``). Empty for one kept
-    # before the column, which names its own step's folder alone.
+    # The folders of the runs before it whose files its rows may name (JSON):
+    # those the kept outputs it read name (``kept.folders_named_by``). Its own
+    # run's folder is named after its session (``kept._media_of``). A folder
+    # goes once no entry and no saved output names it
+    # (``kept.forget_kept_media``). Empty for one that read none.
     media_folders = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=naive_utc_now)
     used_at = db.Column(db.DateTime, nullable=False, default=naive_utc_now)
+    # When a later run of the same step replaced it (``kept.keep``), or None.
+    # A replaced entry serves every read it served until the first sweep
+    # ``kept.REPLACED_HOURS`` on drops it; no reuse, reopen or replace picks it.
+    replaced_at = db.Column(db.DateTime, nullable=True)
 
     project = db.relationship(
         "Project",
