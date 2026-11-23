@@ -10,6 +10,10 @@ session, so a play or a save installs it as a run's output is installed.
 
 - two plays of Draw with other code keep a file each, and each row's URL
   reads its own;
+- two plays of the same code keep one output, the last one's, with its
+  files: the first play's session and folder go, its folder only once no
+  saved output records it; two plays of other code keep both outputs, each
+  with its own folder;
 - a saved output keeps its files when its node runs again, past its kept
   output's days and the sweep, and loses them when its Data Catalog dataset
   is deleted; so does the output a dataflow's first save records from a play
@@ -108,7 +112,8 @@ def sandbox(monkeypatch, survey):
     the media folder the backend sent, and answers the row it derived as a
     table the store holds, made in the run's session. Each row, in order. A
     run of After (``# hand on``) draws nothing and answers the first row
-    drawn, as a node that hands on the rows it reads (a filter, a join)."""
+    drawn, as a node that hands on the rows it reads (a filter, a join). The
+    sessions the backend asks it to forget are noted (``forgotten``)."""
     import pandas as pd
 
     from utk_curio.backend.app.execution import node_exec
@@ -116,7 +121,7 @@ def sandbox(monkeypatch, survey):
     from utk_curio.sandbox.util.collections import make_collection_helpers
     from utk_curio.sandbox.util.parsers import save_to_duckdb
 
-    state = SimpleNamespace(rows=[], made={})
+    state = SimpleNamespace(rows=[], made={}, forgotten=[])
 
     def run(method, path, **kwargs):
         body = json.loads(kwargs["data"])
@@ -139,6 +144,7 @@ def sandbox(monkeypatch, survey):
         named = json.loads(kwargs["data"])["sessionIds"]
         if path.endswith("/describe"):
             return _Reply({"sessions": {s: {"bytes": 10, "ids": [state.made.get(s, "")]} for s in named}})
+        state.forgotten.extend(named)
         return _Reply({"forgotten": len(named)})
 
     monkeypatch.setattr(node_exec, "sandbox_request", run)
@@ -172,6 +178,16 @@ def _reads(client, token, url, colour) -> bool:
     """Whether *url* answers the overlay drawn in *colour* to *token*."""
     read = _read(client, token, url)
     return (read.status_code, read.data == _png(COLOURS[colour])) == (200, True)
+
+
+def _kept_of(url: str):
+    return parse_qs(urlparse(url).query).get("kept", [None])[0]
+
+
+def _run_folder(row) -> Path:
+    """The run's folder that holds *row*'s file: the one its URL names."""
+    name = _kept_of(row["image_url"])
+    return next(folder for folder in Path(row["path"]).parents if folder.name == name)
 
 
 def _days_later(days: int) -> tuple:
@@ -383,6 +399,85 @@ def test_a_kept_output_that_hands_on_a_saved_outputs_rows_keeps_their_files(clie
     assert not Path(first.row["path"]).exists(), "the overlay outlived the last output that named it"
 
 
+# -- Identical runs share their files ------------------------------------------------
+
+def test_a_play_of_the_same_code_replaces_the_last_ones_kept_output_and_files(client, user_and_token, sandbox):
+    """Draw plays red twice on a saved dataflow: the same code on the same
+    input, so the same key. The second play's kept output replaces the
+    first's: one is left for the node, the sandbox forgets the first play's
+    session, its run's folder goes and its row reads nothing, and the second
+    play's row reads its own overlay. A Run All repeated with nothing changed
+    keeps one copy of its files."""
+    from utk_curio.backend.app.discovery.infrastructure import media_dirs
+    from utk_curio.backend.app.runs.models import KeptStepOutput
+
+    _, token = user_and_token
+    project_id = create_project(client, token, name="Overlays")
+    first = _play(client, sandbox, token, project_id, "red").row
+    first_session = KeptStepOutput.query.filter_by(project_id=project_id, node_id="draw").one().session_id
+    second = _play(client, sandbox, token, project_id, "red").row
+
+    entries = KeptStepOutput.query.filter_by(project_id=project_id, node_id="draw").all()
+    assert len(entries) == 1, f"two plays of the same code kept {len(entries)} outputs, not one"
+    assert media_dirs.kept_media_name(entries[0].session_id) == _kept_of(second["image_url"]), (
+        "the output left is not the last play's"
+    )
+    assert first_session in sandbox.forgotten, "the sandbox kept the replaced output's session"
+    assert not _run_folder(first).exists(), "the replaced output's run folder stayed"
+    assert _read(client, token, first["image_url"]).status_code == 404
+    assert _reads(client, token, second["image_url"], "red"), _read(client, token, second["image_url"]).status_code
+
+
+def test_a_replaced_outputs_files_stay_while_a_saved_output_records_them(client, user_and_token, sandbox):
+    """Draw's red play is saved; a second play of the same code saves
+    nothing. The first play's kept output is replaced, but its run's folder
+    stays, held by the saved output's record: the saved row and the new one
+    each read their overlay. Deleting the saved output takes its folder and
+    leaves the kept output's."""
+    from utk_curio.backend.app.runs.models import KeptStepOutput
+
+    _, token = user_and_token
+    project_id = create_project(client, token, name="Overlays")
+    saved = _play(client, sandbox, token, project_id, "red", save=True).row
+    second = _play(client, sandbox, token, project_id, "red").row
+
+    entries = KeptStepOutput.query.filter_by(project_id=project_id, node_id="draw").all()
+    assert len(entries) == 1, f"two plays of the same code kept {len(entries)} outputs, not one"
+    assert Path(saved["path"]).read_bytes() == _png(COLOURS["red"]), (
+        "the saved output's file went with the kept output it replaced"
+    )
+    assert _reads(client, token, saved["image_url"], "red"), _read(client, token, saved["image_url"]).status_code
+    assert _reads(client, token, second["image_url"], "red"), _read(client, token, second["image_url"]).status_code
+
+    _delete_dataset(client, token, project_id)
+    assert not _run_folder(saved).exists(), "a deleted saved output's run folder stayed"
+    assert _reads(client, token, second["image_url"], "red"), "the kept output's file went with the saved output"
+
+
+def test_two_plays_of_other_code_keep_both_outputs_each_with_its_folder(client, user_and_token, sandbox):
+    """Draw plays red, then blue: other code, so another key, and nothing is
+    replaced. Both kept outputs stay, each naming the run's folder its row's
+    URL names, which holds its own overlay."""
+    from utk_curio.backend.app.discovery.infrastructure import media_dirs
+    from utk_curio.backend.app.runs.models import KeptStepOutput
+
+    _, token = user_and_token
+    project_id = create_project(client, token, name="Overlays")
+    first = _play(client, sandbox, token, project_id, "red").row
+    second = _play(client, sandbox, token, project_id, "blue").row
+
+    entries = KeptStepOutput.query.filter_by(project_id=project_id, node_id="draw").all()
+    assert len({entry.step_key for entry in entries}) == len(entries) == 2, [entry.step_key for entry in entries]
+    assert {media_dirs.kept_media_name(entry.session_id) for entry in entries} == {
+        _kept_of(first["image_url"]), _kept_of(second["image_url"]),
+    }, "the kept outputs do not name the folders their rows name"
+    assert not {entry.session_id for entry in entries} & set(sandbox.forgotten), sandbox.forgotten
+    assert Path(first["path"]).read_bytes() == _png(COLOURS["red"]), "the second play wrote over the first play's file"
+    assert Path(second["path"]).read_bytes() == _png(COLOURS["blue"])
+    assert _reads(client, token, first["image_url"], "red"), _read(client, token, first["image_url"]).status_code
+    assert _reads(client, token, second["image_url"], "blue"), _read(client, token, second["image_url"]).status_code
+
+
 # -- Who reads them ----------------------------------------------------------------
 
 def test_two_folders_files_of_one_id_keep_a_thumbnail_each(client, user_and_token, survey, monkeypatch):
@@ -416,10 +511,6 @@ def test_two_folders_files_of_one_id_keep_a_thumbnail_each(client, user_and_toke
             assert _tone(thumb.data) == colour
 
     assert len(drawn) == 2, f"each folder's thumbnail was drawn again once the other's was: {drawn}"
-
-
-def _kept_of(url: str):
-    return parse_qs(urlparse(url).query).get("kept", [None])[0]
 
 
 def test_an_invited_editor_reads_the_files_the_owners_saved_output_names_through_her_dataflow(

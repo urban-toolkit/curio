@@ -51,6 +51,7 @@ from utk_curio.backend.tests.test_discovery.conftest import (  # noqa: F401  (fi
 from utk_curio.backend.tests.test_projects.test_guest_copy_leaks import (  # noqa: F401  (fixtures)
     VISITOR_A,
     VISITOR_B,
+    _content,
     _copy_of,
     _digests,
     _in_the_dataflow,
@@ -441,11 +442,12 @@ def _written(sent: dict, collection: str, clip: str, frame: bytes) -> dict:
 
 
 def _derives_in_a_play(client, sandbox, token: str, example: str, collection: str, clip: str,
-                       frame: bytes) -> dict:
+                       frame: bytes, *, content=None) -> dict:
     """The visitor signed in as *token* plays the example's node a, whose
     code writes *frame* where its run's ``curio_derived_file`` says
-    (:func:`_written`); the row it wrote."""
-    _play(client, token, example, "a")
+    (:func:`_written`); the row it wrote. *content* is the code it plays,
+    node a's own unless given."""
+    _play(client, token, example, "a", content=content)
     return _written(sandbox["runs"]["a"], collection, clip, frame)
 
 
@@ -590,16 +592,18 @@ def test_two_plays_of_one_hosted_guest_keep_a_frame_each_that_another_guest_read
     client, example, example_storage, sandbox, monkeypatch,
 ):
     """A's node derives the frame of one video at one time twice, red on its
-    first play and blue on its second, so one id names both. Each play's
-    frame is as that play wrote it, and A reads each through its row's URL.
-    B reads neither, and both go when the server starts."""
+    first play and blue on its second, which plays other code (two plays of
+    the same code keep one copy, ``kept.keep``), so one id names both. Each
+    play's frame is as that play wrote it, and A reads each through its
+    row's URL. B reads neither, and both go when the server starts."""
     from utk_curio.backend.app.projects import visitor_copies
 
     workers_finish_first(monkeypatch)
     collection, clip = _a_video_every_guest_sees(client, monkeypatch, example_storage)[:2]
     red, blue = _two_frames()
     first = _derives_in_a_play(client, sandbox, VISITOR_A, example, collection, clip, red)
-    second = _derives_in_a_play(client, sandbox, VISITOR_A, example, collection, clip, blue)
+    second = _derives_in_a_play(client, sandbox, VISITOR_A, example, collection, clip, blue,
+                                content=_content("a") + "\n# blue this time")
     assert second["file_id"] == first["file_id"], (first, second)
 
     with open(first["path"], "rb") as handle:

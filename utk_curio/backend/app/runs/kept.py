@@ -9,7 +9,10 @@ dataflow's routes, and the runs of an editor the owner invited, whose outputs
 are his: kept for his account alone (:func:`account_private`), read under any
 of his sign-ins and by no one else. Each output is kept for :data:`KEPT_DAYS`
 after it was made, under a key of what made it (:func:`step_key`); past that
-time it goes, and the next run that needs it makes it again. Each dataflow
+time it goes, and the next run that needs it makes it again. An output kept
+replaces what earlier runs kept of the same node under the same key, by the
+same maker for the same reader (:func:`keep`): a Run All repeated with
+nothing changed keeps one copy of what it made, files and all. Each dataflow
 keeps at most :data:`MAX_KEPT_BYTES` of what its viewers made, the files
 their steps derived counted in; past it the least recently used go. What the
 owner's and the editors' runs made (``made_by``) is bounded by its days alone:
@@ -575,7 +578,13 @@ def keep(
     runs before it whose files its rows may name, which stay while it does
     (:func:`forget_kept_media`), as its own run's folder does. *media_bytes*,
     the bytes of the files its run derived, count in its size, with its
-    session's."""
+    session's.
+
+    It replaces what earlier runs kept of *node_id* on *project_id* under
+    *key*, by *made_by* for the same reader (:func:`_replaced`), which go as
+    the sweep's do (:func:`_drop`): identical runs keep one copy of what they
+    made, the last one's. A folder of theirs that another kept output or a
+    saved output's record names stays."""
     try:
         described = describe_session(session_id)
     except Exception:  # noqa: BLE001 - the output is kept with what is known of it
@@ -588,15 +597,66 @@ def keep(
     now = naive_utc_now()
 
     def _apply():
-        db.session.add(KeptStepOutput(
+        entry = KeptStepOutput(
             project_id=project_id, node_id=node_id, step_key=key, session_id=session_id,
             output=json.dumps(output), output_path=path, artifact_ids=json.dumps(ids),
             size_bytes=size, private_to=private_to, made_by=made_by,
             media_folders=folders, created_at=now, used_at=now,
-        ))
+        )
+        db.session.add(entry)
+        db.session.flush()
+        return entry.id
+
+    kept_id = commit_with_retry(_apply)
+    try:
+        _drop(_replaced(kept_id, project_id, node_id, key, made_by, private_to))
+    except Exception:  # noqa: BLE001 - the output is kept; the older ones go with their days
+        log.warning("could not drop the kept outputs that node %s's new output on %s replaces", node_id, project_id)
+        try:
+            db.session.rollback()
+        except Exception:  # noqa: BLE001
+            # No database to roll back: the sweep takes them in time.
+            pass
+    return ids
+
+
+def _replaced(kept_id: str, project_id: str, node_id: str, key: str, made_by: str,
+              private_to: Optional[str]) -> list:
+    """The outputs the one kept as *kept_id* replaces: those kept before it
+    of *node_id* on *project_id* under *key*, by *made_by* for the same
+    reader (*private_to*), whose runs made what its run made again."""
+    reader = (
+        KeptStepOutput.private_to.is_(None) if private_to is None
+        else KeptStepOutput.private_to == private_to
+    )
+    return (
+        KeptStepOutput.query
+        .filter_by(project_id=project_id, node_id=node_id, step_key=key, made_by=made_by)
+        .filter(reader, KeptStepOutput.id != kept_id)
+        .all()
+    )
+
+
+def _drop(entries) -> int:
+    """Delete the kept outputs *entries*: the sandbox forgets the sessions
+    that made their artifacts, and the runs' folders only they named go,
+    with the files the runs derived (:func:`forget_kept_media`). How many
+    went."""
+    entries = list(entries)
+    if not entries:
+        return 0
+    sessions = [entry.session_id for entry in entries]
+    media = _entries_media(entries)
+    ids = [entry.id for entry in entries]
+
+    def _apply():
+        db.session.query(KeptStepOutput).filter(
+            KeptStepOutput.id.in_(ids)).delete(synchronize_session=False)
 
     commit_with_retry(_apply)
-    return ids
+    forget_sessions(sessions)
+    forget_kept_media(media)
+    return len(ids)
 
 
 #: A run's folder that nothing names goes once nothing has been written in it
@@ -907,20 +967,7 @@ def prune(now=None) -> int:
             if entry.id not in going:
                 going[entry.id] = entry
                 total -= entry.size_bytes
-    if not going:
-        return 0
-    sessions = [entry.session_id for entry in going.values()]
-    media = _entries_media(going.values())
-    ids = list(going)
-
-    def _apply():
-        db.session.query(KeptStepOutput).filter(
-            KeptStepOutput.id.in_(ids)).delete(synchronize_session=False)
-
-    commit_with_retry(_apply)
-    forget_sessions(sessions)
-    forget_kept_media(media)
-    return len(ids)
+    return _drop(going.values())
 
 
 def prune_quietly() -> None:

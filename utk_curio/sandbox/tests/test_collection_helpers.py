@@ -53,8 +53,9 @@ class TestTheHelpers(unittest.TestCase):
         return make_collection_helpers(lambda _id: str(self.index), collections, media_dir)
 
     @property
-    def run(self) -> Path:
-        """The run's own folder in a media folder of the test's."""
+    def run_folder(self) -> Path:
+        """The run's own folder in a media folder of the test's. Not named
+        ``run``: that is ``unittest.TestCase.run``, which runs the test."""
         return self.tmp / "media" / "kept" / RUN
 
     def test_a_folder_collection_resolves_every_row_under_its_root(self):
@@ -113,7 +114,7 @@ class TestTheHelpers(unittest.TestCase):
             self.helpers({})["curio_load_collection"]("missing")
 
     def test_a_derived_file_is_named_and_its_folder_made(self):
-        media = self.run
+        media = self.run_folder
         row = self.helpers({}, str(media))["curio_derived_file"]("c1", "b" * 16, 2000)
         self.assertEqual(row["file_id"], f"{'b' * 16}@2000")
         self.assertEqual(Path(row["path"]), media / "frames" / "c1" / ("b" * 16) / "2000.jpg")
@@ -138,7 +139,7 @@ class TestTheHelpers(unittest.TestCase):
     def test_a_tag_tells_two_derived_files_of_one_file_and_time_apart(self):
         """An overlay names the model that drew it (#621), so two models'
         overlays of one photo are two files."""
-        media = self.run
+        media = self.run_folder
         derive = self.helpers({}, str(media))["curio_derived_file"]
         row = derive("c1", "b" * 16, 0, "png", kind="image", tag="0a1b2c3d4e5f")
         self.assertEqual(row["file_id"], f"{'b' * 16}@0-0a1b2c3d4e5f")
@@ -161,7 +162,7 @@ class TestTheHelpers(unittest.TestCase):
         """An overlay MP4 a node writes from a video, as Track Objects will:
         its row is a video's, which Simple View plays from its ids, and its id
         is not the frame's at the same time and tag."""
-        media = self.run
+        media = self.run_folder
         derive = self.helpers({}, str(media))["curio_derived_file"]
         row = derive("c1", "b" * 16, 0, "mp4", tag="sam3")
         self.assertEqual(Path(row["path"]), media / "videos" / "c1" / ("b" * 16) / "0-sam3.mp4")
@@ -181,7 +182,7 @@ class TestTheHelpers(unittest.TestCase):
         """What a node finds in a video, such as Track Objects' tracks, is a
         table the node returns, which goes on its edge: no file is derived
         for it, the refusal says to return it, and no folder is made."""
-        media = self.run
+        media = self.run_folder
         derive = self.helpers({}, str(media))["curio_derived_file"]
         with self.assertRaisesRegex(ValueError, "not 'parquet': return a table from the node as its output"):
             derive("c1", "b" * 16, 0, "parquet", tag="sam3")
@@ -193,7 +194,7 @@ class TestTheHelpers(unittest.TestCase):
         video's row by its ids, and a derived row put over its file's row
         (``{**video, **overlay}``) leaves none of the file's own addresses
         behind. One assertion over every type, so each counts in this test."""
-        derive = self.helpers({}, str(self.run))["curio_derived_file"]
+        derive = self.helpers({}, str(self.run_folder))["curio_derived_file"]
         columns = sorted(("file_id", "dataset_id", "kind", "path", "thumbnail", "image_url", "audio_url"))
         made = {
             (kind, ext): derive("c1", "b" * 16, 0, ext, kind=kind, tag="m1")
@@ -213,7 +214,7 @@ class TestTheHelpers(unittest.TestCase):
     def test_an_overlay_of_a_sequences_frame_goes_where_a_photos_does(self):
         """Image Segmentation names any image's overlay with kind image; a
         frames collection's file is kind frame, which the media route reads."""
-        derive = self.helpers({}, str(self.run))["curio_derived_file"]
+        derive = self.helpers({}, str(self.run_folder))["curio_derived_file"]
         as_image = derive("c1", "d" * 16, 0, "png", kind="image", tag="m1")
         as_frame = derive("c1", "d" * 16, 0, "png", kind="frame", tag="m1")
         self.assertEqual((as_frame["path"], as_frame["file_id"]), (as_image["path"], as_image["file_id"]))
@@ -225,7 +226,7 @@ class TestTheHelpers(unittest.TestCase):
         links a collection's row of that kind has, in that kind's folder, and
         its id names its extension. One assertion over every case, so each
         counts in this test."""
-        media = self.run
+        media = self.run_folder
         derive = self.helpers({}, str(media))["curio_derived_file"]
         cases = {
             "a jpg from a photo": ("a", "image", "jpg"),
@@ -278,7 +279,7 @@ class TestTheHelpers(unittest.TestCase):
         output, and writes any other file it returns with curio_output_file,
         as the refusal says. Nothing is made. One assertion over every case,
         so each counts in this test."""
-        media = self.run
+        media = self.run_folder
         derive = self.helpers({}, str(media))["curio_derived_file"]
         cases = {
             "a table found in a video": ("b", "video", "csv"),
@@ -308,7 +309,7 @@ class TestTheHelpers(unittest.TestCase):
         named or that same one, has an id with no extension, and a video's
         video and the overlay of its frame have ids ending in theirs. One
         assertion over every pair, so each counts in this test."""
-        media = self.run
+        media = self.run_folder
         derive = self.helpers({}, str(media))["curio_derived_file"]
         letters = {"video": "b", "audio": "c", "image": "a", "frame": "f"}
         pairs = (("video", None), ("video", "jpg"), ("video", "mp4"), ("video", "png"), ("audio", None),
@@ -340,7 +341,7 @@ class TestTheHelpers(unittest.TestCase):
         row has, or a time no id holds would be written and never served: its
         row's links would fail. One assertion over every case, so each counts
         in this test."""
-        media = self.run
+        media = self.run_folder
         derive = self.helpers({}, str(media))["curio_derived_file"]
         cases = {
             "a format of no family": lambda: derive("c1", "b" * 16, 0, "txt"),
