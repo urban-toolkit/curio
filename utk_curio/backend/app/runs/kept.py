@@ -632,19 +632,30 @@ def _named_folders(query) -> set:
     return named
 
 
-def folders_named_by(project_id: str, names) -> set:
+def folders_named_by(project_id: str, names, saved=None) -> set:
     """The runs' folders that the rows of the outputs *names*, kept on
     *project_id*, may name: what the rows of a step that reads them may name
-    too, since a step hands on rows it read (a filter, a join). A name no
-    kept output holds, a saved output's, names none."""
+    too, since a step hands on rows it read (a filter, a join). A saved
+    output among them (*saved*, ``{name: {"path"}}`` as a run's saved inputs
+    hold them, ``node_exec.resolve_saved_inputs``) names those its data
+    file's record names (``media_records``), kept output or not."""
+    from utk_curio.backend.app.datasets.install import media_records
+
+    found: set = set()
+    for entry in (saved or {}).values():
+        path = entry.get("path") if isinstance(entry, dict) else None
+        if path:
+            found |= media_records.folders_of_data_file(path)
     names = [str(name) for name in names or () if name]
     if not names:
-        return set()
+        return found
     holding = db.or_(
         KeptStepOutput.output_path.in_(names),
         *[KeptStepOutput.artifact_ids.contains(json.dumps(name)) for name in names],
     )
-    return _named_folders(KeptStepOutput.query.filter(KeptStepOutput.project_id == project_id).filter(holding))
+    return found | _named_folders(
+        KeptStepOutput.query.filter(KeptStepOutput.project_id == project_id).filter(holding)
+    )
 
 
 def _account_of(private_to: Optional[str]) -> Optional[str]:

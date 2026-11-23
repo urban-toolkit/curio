@@ -16,6 +16,8 @@ session, so a play or a save installs it as a run's output is installed.
   of the canvas before that save;
 - a play's files go with its kept output, and an invited editor's from his
   own media folder, with his kept output and with the dataflow;
+- a kept output that hands on a saved output's rows keeps their files once
+  the saved output goes, until it goes too;
 - two folders' files of one id keep a thumbnail each;
 - an invited editor reads the files the owner's saved output names through
   her dataflow, by the media route and by the player's signed link, and an
@@ -104,7 +106,9 @@ def sandbox(monkeypatch, survey):
     """The sandbox as Draw's runs meet it: a run draws the survey's first
     photo in the colour its code names, where ``curio_derived_file`` says in
     the media folder the backend sent, and answers the row it derived as a
-    table the store holds, made in the run's session. Each row, in order."""
+    table the store holds, made in the run's session. Each row, in order. A
+    run of After (``# hand on``) draws nothing and answers the first row
+    drawn, as a node that hands on the rows it reads (a filter, a join)."""
     import pandas as pd
 
     from utk_curio.backend.app.execution import node_exec
@@ -116,6 +120,11 @@ def sandbox(monkeypatch, survey):
 
     def run(method, path, **kwargs):
         body = json.loads(kwargs["data"])
+        if "# hand on" in body["code"]:
+            handed = save_to_duckdb(pd.DataFrame([{"colour": "handed on", **state.rows[0]}]),
+                                    node_id="after", session_id=body["session_id"])
+            state.made[body["session_id"]] = handed
+            return _Reply({"stdout": [], "stderr": "", "output": {"path": handed, "dataType": "dataframe"}})
         colour = body["code"].split("# colour ", 1)[1].split("\n", 1)[0].strip()
         derive = make_collection_helpers(None, {}, body.get("media_dir"))["curio_derived_file"]
         row = derive(SURVEY, survey, 0, "png", kind="image")
@@ -175,7 +184,7 @@ def _days_later(days: int) -> tuple:
 def _drawn_dataflow(client, sandbox, token, name="Overlays"):
     """A dataflow made by its first save, of Draw's output from a play of the
     canvas before it was saved, as the canvas saves one: its id, and that
-    play's row."""
+    play (its row and its output's artifact)."""
     first = _play(client, sandbox, token, None, "red")
     resp = client.post("/api/projects", data=json.dumps({
         "name": name,
@@ -185,7 +194,7 @@ def _drawn_dataflow(client, sandbox, token, name="Overlays"):
     assert resp.status_code == 201, resp.get_data(as_text=True)
     body = resp.get_json()
     assert [output["node_id"] for output in body["outputs"]] == ["draw"], body
-    return body["id"], first.row
+    return body["id"], first
 
 
 def _delete_dataset(client, token, project_id):
@@ -279,7 +288,8 @@ def test_the_first_save_keeps_the_files_of_a_play_made_before_it(client, user_an
     from utk_curio.backend.app.runs import kept
 
     _, token = user_and_token
-    project_id, saved = _drawn_dataflow(client, sandbox, token)
+    project_id, first = _drawn_dataflow(client, sandbox, token)
+    saved = first.row
     _play(client, sandbox, token, project_id, "blue")
 
     assert Path(saved["path"]).read_bytes() == _png(COLOURS["red"]), "a later play wrote over a saved output's file"
@@ -335,6 +345,42 @@ def test_an_editors_files_go_from_his_media_folder_with_the_dataflow(client, peo
     assert resp.status_code in (200, 204), resp.get_data(as_text=True)
 
     assert not drawn.exists(), "bob's overlay outlived the dataflow"
+
+
+def _hand_on(client, token, project_id, artifact):
+    """A Play of After on the dataflow *project_id*, which hands on the rows
+    of its input, *artifact*, as the canvas posts it."""
+    resp = client.post("/processPythonCode", data=json.dumps({
+        "code": "    # node after\n    # hand on\n    return input_0\n",
+        "nodeType": CODE, "nodeId": "after", "dataflowId": project_id,
+        "input": {"path": artifact, "dataType": "dataframe"}, "saveOutputDataset": False,
+    }), headers=auth_headers(token))
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert resp.get_json()["output"].get("path"), resp.get_json()
+
+
+def test_a_kept_output_that_hands_on_a_saved_outputs_rows_keeps_their_files(client, user_and_token, sandbox):
+    """The first save records Draw's red overlay, from a play of the canvas
+    before it, which kept no output. A play of After hands that saved
+    output's rows on and keeps its output, which names the folder they name:
+    the overlay stays when the saved output is deleted from the Data Catalog,
+    and goes with After's kept output."""
+    from utk_curio.backend.app.runs import kept
+    from utk_curio.backend.app.runs.models import KeptStepOutput
+
+    _, token = user_and_token
+    project_id, first = _drawn_dataflow(client, sandbox, token)
+    _hand_on(client, token, project_id, first.artifact)
+    after = KeptStepOutput.query.filter_by(project_id=project_id, node_id="after").one()
+
+    _delete_dataset(client, token, project_id)
+    assert Path(first.row["path"]).read_bytes() == _png(COLOURS["red"]), (
+        "deleting the saved output took the files a kept output that handed its rows on names"
+    )
+    assert _reads(client, token, first.row["image_url"], "red"), _read(client, token, first.row["image_url"]).status_code
+
+    assert kept.prune(now=after.created_at + timedelta(days=kept.KEPT_DAYS + 1)) == 1
+    assert not Path(first.row["path"]).exists(), "the overlay outlived the last output that named it"
 
 
 # -- Who reads them ----------------------------------------------------------------
@@ -406,7 +452,8 @@ def test_save_a_copy_into_another_account_brings_the_files_its_outputs_name(clie
     """bob's dataflow saved Draw's red overlay. alice saves a copy of it into
     her account: the copy's row reads the overlay in her account, and goes on
     reading it once bob deletes his saved output."""
-    project_id, row = _drawn_dataflow(client, sandbox, people.tokens["bob"], name="Bob's overlays")
+    project_id, first = _drawn_dataflow(client, sandbox, people.tokens["bob"], name="Bob's overlays")
+    row = first.row
     shared = client.get(f"/api/projects/{project_id}/shared")
     assert shared.status_code == 200, shared.get_data(as_text=True)
     name = "Bob's overlays (copy)"

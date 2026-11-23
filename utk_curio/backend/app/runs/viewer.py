@@ -631,7 +631,7 @@ def _run_events(
             read = node_exec.input_names(node_exec.parse_input_ref(call.input)) if call.input else []
             ids = keep(
                 kept_on, step.node_id, key, session_id, output, private,
-                media_folders=folders_named_by(kept_on, read),
+                media_folders=folders_named_by(kept_on, read, saved=node_exec.resolve_saved_inputs(read, project_id)),
                 media_bytes=media_dirs.folder_bytes(media_dirs.derived_root(user_key, kept=kept_media)),
             )
             return {**reply, "artifactIds": ids}

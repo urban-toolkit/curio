@@ -762,15 +762,15 @@ def _forget_run_folder(run: NodeRun, user_key: str | None, media_dir: str | None
 
 def _keep_run_output(user, run: NodeRun, kept_run: _KeptRun, output, *,
                      language: str, used_keys: bool, dataset_paths: dict | None,
-                     names=(), media_dir: str | None = None) -> None:
+                     names=(), saved=None, media_dir: str | None = None) -> None:
     """Keep the output of a kept run (:func:`_kept_run`) on the dataflow it
     keeps on, under the key a viewer's run of the same step computes
     (``runs/viewer.py``), or forget its session when it made none. An owner's
     is private when her keys made it, or anything it read; an invited
     editor's is his account's alone (``kept.account_private``). It names its
     run's own folder, *media_dir*, whose files count in its size, and the
-    folders the kept outputs it read name (*names*, ``kept.folders_named_by``),
-    since its rows may hand on theirs."""
+    folders the outputs it read name (*names*, the saved ones among them
+    *saved*, ``kept.folders_named_by``), since its rows may hand on theirs."""
     from utk_curio.backend.app.discovery.infrastructure import media_dirs
     from utk_curio.backend.app.projects.services import _user_dir_key
     from utk_curio.backend.app.runs import kept
@@ -793,7 +793,7 @@ def _keep_run_output(user, run: NodeRun, kept_run: _KeptRun, output, *,
         kept.keep(
             kept_on, run.node_id, key, kept_run.session_id, output,
             private_to=private_to, made_by=kept_run.made_by,
-            media_folders=kept.folders_named_by(kept_on, names),
+            media_folders=kept.folders_named_by(kept_on, names, saved=saved),
             media_bytes=media_dirs.folder_bytes(media_dir),
         )
     except Exception as e:  # noqa: BLE001 - the run's reply goes out either way
@@ -1109,7 +1109,7 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         _keep_run_output(
             user, run, kept_run, output, language=language,
             used_keys=bool(exec_secrets), dataset_paths=dataset_paths,
-            names=access.names, media_dir=media_dir,
+            names=access.names, saved=saved_inputs, media_dir=media_dir,
         )
 
     t3 = time.perf_counter()

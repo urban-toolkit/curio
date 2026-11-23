@@ -78,48 +78,59 @@ def _holds_text(kind) -> bool:
     return False
 
 
-def _folders_in_parquet(data_path: Path) -> set[str]:
-    """The runs' folders the rows of a parquet file name: those the media
-    URLs of its text columns name (the JSON its object columns hold,
-    decoded), and of its nested columns that hold text. Only the values that
-    hold a media URL are read in Python."""
+def _folders_in_column(column, *, encoded: bool) -> set[str]:
+    """The runs' folders the media URLs in one batch of one column name: a
+    text column's values, the JSON they hold when *encoded*, or a nested
+    column's values. Only the values that hold a media URL are read in
+    Python."""
     import pyarrow as pa
     import pyarrow.compute as pc
-    import pyarrow.parquet as pq
 
     from utk_curio.sandbox.util.collections import media_ref
 
-    wanted = [field.name for field in pq.read_schema(data_path) if _holds_text(field.type)]
-    if not wanted:
-        return set()
-    table = pq.read_table(data_path, columns=wanted)
-    encoded = _encoded_columns(data_path)
+    if pa.types.is_dictionary(column.type):
+        column = column.cast(column.type.value_type)
+    if not (pa.types.is_string(column.type) or pa.types.is_large_string(column.type)):
+        return _folders_in(column.to_pylist())
+    # JSON text holds a URL anywhere, a list's or a dict's; a URL column's
+    # value is the URL.
+    holds = pc.match_substring(column, _MEDIA_URL_START) if encoded else pc.starts_with(column, _MEDIA_URL_START)
     found: set[str] = set()
-    for name in wanted:
-        column = table.column(name)
-        if pa.types.is_dictionary(column.type):
-            column = column.cast(column.type.value_type)
-        if not (pa.types.is_string(column.type) or pa.types.is_large_string(column.type)):
-            found |= _folders_in(column.to_pylist())
+    for value in pc.unique(pc.filter(column, holds)).to_pylist():
+        if not isinstance(value, str):
             continue
-        if name in encoded:
-            # JSON text: a URL anywhere in it, a list's or a dict's.
-            values = pc.filter(column, pc.match_substring(column, _MEDIA_URL_START))
-        else:
-            values = pc.filter(column, pc.starts_with(column, _MEDIA_URL_START))
-        for value in pc.unique(values).to_pylist():
-            if not isinstance(value, str):
-                continue
-            if name in encoded:
-                try:
-                    found |= _folders_in(json.loads(value))
-                except ValueError:
-                    found |= _folders_in(value)
-                continue
-            ref = media_ref(value)
-            if ref is not None and ref[2]:
-                found.add(ref[2])
+        if encoded:
+            try:
+                found |= _folders_in(json.loads(value))
+            except ValueError:
+                found |= _folders_in(value)
+            continue
+        ref = media_ref(value)
+        if ref is not None and ref[2]:
+            found.add(ref[2])
     return found
+
+
+def _folders_in_parquet(data_path: Path) -> set[str]:
+    """The runs' folders the rows of a parquet file name: those the media
+    URLs of its text columns name (the JSON its object columns hold,
+    decoded), and of its nested columns that hold text, read a batch at a
+    time."""
+    import pyarrow.parquet as pq
+
+    parquet = pq.ParquetFile(data_path)
+    try:
+        wanted = [field.name for field in parquet.schema_arrow if _holds_text(field.type)]
+        if not wanted:
+            return set()
+        encoded = _encoded_columns(data_path)
+        found: set[str] = set()
+        for batch in parquet.iter_batches(columns=wanted):
+            for name, column in zip(batch.schema.names, batch.columns):
+                found |= _folders_in_column(column, encoded=name in encoded)
+        return found
+    finally:
+        parquet.close()
 
 
 def folders_in_file(data_path) -> set[str]:
@@ -155,23 +166,47 @@ def write_record(data_path) -> set[str]:
     return folders
 
 
+def _read_record(record: Path) -> set[str]:
+    """The runs' folders one record names; none when there is no record."""
+    from utk_curio.sandbox.util.collections import KEPT_NAME_RE
+
+    if not record.is_file():
+        return set()
+    try:
+        named = json.loads(record.read_text(encoding="utf-8")).get("folders")
+    except (OSError, ValueError, AttributeError):
+        logger.warning("Could not read the record %s", record)
+        return set()
+    if not isinstance(named, list):
+        return set()
+    return {name for name in named if isinstance(name, str) and KEPT_NAME_RE.match(name)}
+
+
 def recorded_folders(folder) -> set[str]:
     """The runs' folders the records in the dataset folder *folder* name,
     every data file's and every bundle part's."""
-    from utk_curio.sandbox.util.collections import KEPT_NAME_RE
-
     found: set[str] = set()
     root = Path(folder)
     if not root.is_dir():
         return found
     for record in root.rglob(f"*{MEDIA_SIDECAR_SUFFIX}"):
-        try:
-            named = json.loads(record.read_text(encoding="utf-8")).get("folders")
-        except (OSError, ValueError, AttributeError):
-            logger.warning("Could not read the record %s", record)
-            continue
-        if isinstance(named, list):
-            found |= {name for name in named if isinstance(name, str) and KEPT_NAME_RE.match(name)}
+        found |= _read_record(record)
+    return found
+
+
+def folders_of_data_file(data_path) -> set[str]:
+    """The runs' folders a saved output's data file *data_path* records, the
+    file a run reads it from (``node_exec.resolve_saved_inputs``): its own
+    record, and for a bundle (``bundle.json``) its parts' records."""
+    from utk_curio.sandbox.util.catalog_helpers import listed_bundle_parts
+
+    path = Path(data_path)
+    files = [path]
+    if path.name == "bundle.json":
+        files += [file for _part, file in listed_bundle_parts(path)]
+    found: set[str] = set()
+    for file in files:
+        found |= _read_record(record_path(file))
     return found
 
 
