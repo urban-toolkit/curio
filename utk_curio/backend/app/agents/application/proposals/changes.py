@@ -287,6 +287,19 @@ def settings_basis(node: dict, change: dict) -> str:
     return hashlib.sha256(json.dumps(touched, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
+def hold_declared_widgets(node: dict, declared: list | None) -> None:
+    """Give the saved *node* each of *declared*, widgets its template
+    declares that it holds none of (a node with neither code nor a spec,
+    saved before its template declared them), at the template's default,
+    before a change sets their values: as its Widgets tab gives the node one
+    when a person sets it there."""
+    if not declared:
+        return
+    metadata = node.get("metadata") if isinstance(node.get("metadata"), dict) else {}
+    metadata["widgets"] = widget_grammar.with_declared(normalize_widgets(metadata.get("widgets")), declared)
+    node["metadata"] = metadata
+
+
 def write_settings(node: dict, change: dict) -> None:
     """Write the settings *change* gives into the saved *node*: each setting
     as the node stores it once picked, and each widget's value."""

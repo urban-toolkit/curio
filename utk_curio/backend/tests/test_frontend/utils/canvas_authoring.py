@@ -30,11 +30,11 @@ from .screenshots import park_pointer
 # Everything above builds a canvas by *loading* a dataflow (a Trill JSON through
 # the File menu, or a spec seeded into the DB). These helpers cover the other
 # half: what a user does by hand. They are deliberately DOM/event driven rather
-# than store driven, because the two are not equivalent -
-# ``window.__curio_reactFlow.setNodes`` writes only React Flow's zustand store,
-# and ReactFlow's ``useStoreUpdater`` pushes the provider's node array straight
-# back over it on the next render, so a node (or a code edit) injected that way
-# silently disappears.
+# than store driven, because the two are not equivalent:
+# ``window.__curio_reactFlow.setNodes`` replaces the canvas's whole node list
+# with what its updater makes of React Flow's own copy, which can be a commit
+# behind the canvas, so a node the canvas has just taken from the dataflow's doc
+# is dropped, and its removal written into the doc (``test_frontend/README.md``).
 
 CANVAS_DROP_TARGET = ".curio-canvas-drop-target"
 
