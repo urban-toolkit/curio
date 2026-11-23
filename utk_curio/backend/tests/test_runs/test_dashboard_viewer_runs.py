@@ -1793,6 +1793,28 @@ class TestWhatAViewersRunDerives:
         assert not Path(viewers[0]["path"]).exists(), "a step that kept nothing left its overlay behind"
         assert Path(owners["path"]).read_bytes() == _png(OWNERS)
 
+    def test_a_viewers_kept_output_counts_the_files_its_step_derived(
+        self, client, user_and_token, sandbox, saved, survey,
+    ):
+        """What a viewer's step derives counts toward the dashboard's budget
+        of its viewers' outputs (``MAX_KEPT_BYTES``), beside the table it
+        returned: the kept output's size is its session's bytes and its
+        folder's."""
+        from pathlib import Path
+
+        from utk_curio.backend.app.runs.models import KeptStepOutput
+
+        _user, token = user_and_token
+        pid = _create(client, token)
+        viewers = self._viewers_grid_draws(sandbox, survey[0])
+        _month(client, pid)
+
+        entry = KeptStepOutput.query.filter_by(project_id=pid, node_id="grid").one()
+        derived = Path(viewers[0]["path"]).stat().st_size
+        assert entry.size_bytes == 100 + derived, (
+            f"the viewer's kept output counts {entry.size_bytes} bytes: its table is 100 and its overlay {derived}"
+        )
+
     def test_a_viewer_with_no_account_sees_the_overlay_its_run_drew(
         self, client, user_and_token, sandbox, saved, survey, monkeypatch,
     ):

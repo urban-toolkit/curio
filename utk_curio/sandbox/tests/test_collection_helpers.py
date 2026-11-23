@@ -113,6 +113,17 @@ class TestTheHelpers(unittest.TestCase):
         self.assertTrue(clip["path"].endswith(os.path.join("clips", "c1", "c" * 16, "5000.wav")))
         self.assertIn("audio_url", clip)
 
+    def test_a_media_folder_that_is_no_runs_folder_is_refused(self):
+        """A run writes what it derives in a folder of its own,
+        ``<media>/kept/<name>/``, which the backend gives every run: a media
+        folder of any other shape, an account's own or a hosted guest's, gets
+        nothing written in it, and the node is told why."""
+        for media in (self.tmp / "media", self.tmp / "media" / "visitors" / ("v" + "0" * 32)):
+            derive = self.helpers({}, str(media))["curio_derived_file"]
+            with self.assertRaisesRegex(RuntimeError, "no folder of its own"):
+                derive("c1", "b" * 16, 2000)
+            self.assertFalse(media.exists(), f"a derived file's folder was made in {media}, where no run writes")
+
     def test_a_tag_tells_two_derived_files_of_one_file_and_time_apart(self):
         """An overlay names the model that drew it (#621), so two models'
         overlays of one photo are two files."""

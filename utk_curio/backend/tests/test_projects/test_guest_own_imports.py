@@ -574,6 +574,35 @@ def test_a_hosted_guest_deriving_the_same_frame_leaves_anothers_as_their_node_wr
     assert (played.status_code, played.data == blue) == (200, True), played.status_code
 
 
+def test_two_plays_of_one_hosted_guest_keep_a_frame_each_that_another_guest_reads_neither(
+    client, example, example_storage, sandbox, monkeypatch,
+):
+    """A's node derives the frame of one video at one time twice, red on its
+    first play and blue on its second, so one id names both. Each play's
+    frame is as that play wrote it, and A reads each through its row's URL.
+    B reads neither, and both go when the server starts."""
+    from utk_curio.backend.app.projects import visitor_copies
+
+    workers_finish_first(monkeypatch)
+    collection, clip = _a_video_every_guest_sees(client, monkeypatch, example_storage)[:2]
+    red, blue = _two_frames()
+    first = _derives_in_a_play(client, sandbox, VISITOR_A, example, collection, clip, red)
+    second = _derives_in_a_play(client, sandbox, VISITOR_A, example, collection, clip, blue)
+    assert second["file_id"] == first["file_id"], (first, second)
+
+    with open(first["path"], "rb") as handle:
+        kept = handle.read()
+    assert kept == red, "A's second play wrote over the frame A's first play made"
+    for row, frame in ((first, red), (second, blue)):
+        mine = client.get(row["image_url"], headers=auth_headers(VISITOR_A))
+        assert (mine.status_code, mine.data == frame) == (200, True), (row["image_url"], mine.status_code)
+        theirs = client.get(row["image_url"], headers=auth_headers(VISITOR_B))
+        assert theirs.status_code == 404, (row["image_url"], theirs.status_code)
+
+    visitor_copies.drop_all()
+    assert [os.path.exists(row["path"]) for row in (first, second)] == [False, False]
+
+
 def test_without_deploy_what_the_local_guests_nodes_derive_is_the_accounts(
     client, example, example_storage, sandbox, monkeypatch,
 ):
