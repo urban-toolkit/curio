@@ -78,3 +78,26 @@ def test_sidecar_suffixes_track_parquet_decode_writer():
     from utk_curio.sandbox.util.parsers import PARQUET_DECODE_SIDECAR_SUFFIX
 
     assert PARQUET_DECODE_SIDECAR_SUFFIX in SIDECAR_SUFFIXES
+
+
+def test_sidecar_suffixes_track_the_media_record_writer():
+    """The media-record entry must equal what the record's writer names
+    beside a saved output's data file (``media_records.record_path``)."""
+    from pathlib import Path
+
+    from utk_curio.backend.app.datasets.domain.constants import SIDECAR_SUFFIXES
+    from utk_curio.backend.app.datasets.install.media_records import MEDIA_SIDECAR_SUFFIX, record_path
+
+    written = record_path(Path("data") / "rows.parquet").name
+    assert written == "rows.parquet" + MEDIA_SIDECAR_SUFFIX
+    assert MEDIA_SIDECAR_SUFFIX in SIDECAR_SUFFIXES
+
+
+def test_media_record_is_skipped(tmp_path, monkeypatch):
+    (tmp_path / "rows.parquet.media.json").write_text('{"folders": []}')
+    repo = _workspace_repo(tmp_path, monkeypatch)
+
+    items = repo.list_items()
+
+    assert items == []
+    assert not (tmp_path / "rows.parquet.media.json.meta.json").exists()

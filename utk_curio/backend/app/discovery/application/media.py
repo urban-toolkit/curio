@@ -115,6 +115,10 @@ class Located:
     #: Why a file of a bucket read in place is not readable: the bucket's
     #: mount is down, or the file is not in the bucket. None otherwise.
     problem: str | None = None
+    #: For a file a run derived: the store whose media folder holds the
+    #: run's folder, and that folder's name (:func:`_locate_derived`).
+    store: str | None = None
+    kept: str | None = None
 
 
 def locate(service, dataset_id: str, file_id: str, *, kept: str | None = None) -> Located:
@@ -124,10 +128,9 @@ def locate(service, dataset_id: str, file_id: str, *, kept: str | None = None) -
     derived from one of the collection's files, of any kind: an image, a
     video or a recording, such as a video's frame, a recording's window or an
     image's overlay (its tag names the model that drew it), written where
-    ``curio_derived_file`` put it, in this account's media folder, a hosted
-    guest's in their own folder in it, a dashboard viewer's step's in the
-    step's own folder, which its row's URL names as *kept*
-    (:func:`_locate_derived`). The id of a file of any extension but the one
+    ``curio_derived_file`` put it, in the folder of the run that derived it,
+    which its row's URL names as *kept* (:func:`_locate_derived`). The id of
+    a file of any extension but the one
     its source's kind derives by default ends in it:
     ``<file_id>@<t_ms>-<tag>.mp4`` is a video a node made from a video, and
     ``<file_id>@0.png`` a picture a node drew of a raster tile, which derives
@@ -182,16 +185,12 @@ def _locate_derived(
     derives by default (``derived_type``), and only under the id
     ``curio_derived_file`` gives it.
 
-    It is read where the reader's runs write it (``media_dirs.derived_root``):
-    a hosted guest's in their own folder, else in the account's, where only a
-    run that serves no visitor writes. Never in another visitor's folder: one
-    id names a file in each visitor's.
-
-    *kept*, which the URL of a row a dashboard viewer's step derived names,
-    is that step's own folder, and the file is read there alone: one its kept
-    output took with it is not found, never read as the owner's file of the
-    same id."""
-    from utk_curio.backend.app.projects import visitor_copies
+    It is read from the folder of the run that wrote it, which the row's URL
+    names as *kept* (``media_dirs.derived_root``), and from no other: a URL
+    that names no run's folder names no derived file, and a file its run's
+    folder took with it is not found, never read as another run's of the
+    same id. That folder is looked for where the reader's runs write
+    (:func:`_run_folder_candidates`)."""
     from utk_curio.sandbox.util.collections import derived_id, derived_relpath, derived_type
 
     source = rows.get(source_id)
@@ -203,26 +202,72 @@ def _locate_derived(
         raise ResourceNotFound(f"{file_id!r} names no file a node derives from a {source.kind}") from None
     if derived_id(source_id, t_ms, tag, suffix) != file_id:
         raise ResourceNotFound(f"{file_id!r} names no file a node derives from a {source.kind}")
+    if kept is None:
+        raise ResourceNotFound(f"{file_id!r} names no run's folder; run the node that makes it again")
     relpath = derived_relpath(folder, dataset_id, source_id, t_ms, ext, tag)
-    if kept is not None:
-        try:
-            roots = [media_dirs.derived_root(service.user_key, kept=kept)]
-        except ValueError:
-            raise ResourceNotFound(f"{kept!r} is not the folder of a dashboard viewer's step") from None
-    else:
-        visitor = visitor_copies.media_visitor(service.user_key)
-        roots = [media_dirs.derived_root(service.user_key, visitor)]
-        if visitor:
-            roots.append(media_dirs.derived_root(service.user_key))
-    path = next((root / relpath for root in roots if (root / relpath).is_file()), None)
-    if path is None:
+    found = next(
+        ((store, root / relpath) for store, root in _run_folder_candidates(service, kept)
+         if (root / relpath).is_file()),
+        None,
+    )
+    if found is None:
         raise ResourceNotFound("this file has not been made; run the node that makes it again")
+    store, path = found
     stat = path.stat()
     row = IndexRow(
         file_id=file_id, relpath=f"{source.relpath}@{file_id.split('@', 1)[1]}", ext=ext, kind=kind,
         bytes=stat.st_size, mtime=str(stat.st_mtime_ns),
     )
-    return Located(dataset_id=dataset_id, row=row, local=path, provider=None)
+    return Located(dataset_id=dataset_id, row=row, local=path, provider=None, store=store, kept=kept)
+
+
+def _run_folder_candidates(service, kept: str) -> list[tuple[str, Path]]:
+    """``(store, folder)``: where the run's folder *kept* may be for the
+    reader of *service*, in the order it is looked for. A hosted guest's in
+    their own folder, then the account's, where an example's dashboard's
+    steps derive for every visitor; never another visitor's. Read through a
+    dataflow (``service.dataflow_id``) by an editor its owner invited, the
+    owner's too, when one of that dataflow's saved outputs records the folder
+    (:func:`_owners_store_through`): the files the owner's saved results
+    name, which his canvas shows."""
+    from utk_curio.backend.app.projects import visitor_copies
+
+    try:
+        visitor = visitor_copies.media_visitor(service.user_key)
+        folders = [(service.user_key, media_dirs.derived_root(service.user_key, kept=kept))]
+        if visitor:
+            folders.insert(0, (service.user_key, media_dirs.derived_root(service.user_key, visitor, kept=kept)))
+    except ValueError:
+        raise ResourceNotFound(f"{kept!r} is not the name of a run's folder") from None
+    owner = _owners_store_through(service, kept)
+    if owner is not None:
+        folders.append((owner, media_dirs.derived_root(owner, kept=kept)))
+    return folders
+
+
+def _owners_store_through(service, kept: str) -> str | None:
+    """The key of the store of the owner of the dataflow *service* reads
+    through (``service.dataflow_id``), when its reader is an editor she
+    invited and one of that dataflow's saved outputs records the run's
+    folder *kept* (``media_records.dataflow_folders``, found by the
+    dataflow's part of their ids). None for the owner, whose folders are her
+    own, for a watcher or anyone else, and for a folder none of that
+    dataflow's saved outputs records."""
+    if not service.dataflow_id or service.user is None:
+        return None
+    from utk_curio.backend.app.datasets.install import media_records
+    from utk_curio.backend.app.projects import access
+    from utk_curio.backend.app.projects.models import Project
+    from utk_curio.backend.app.projects.services import _owner_user_dir_key
+    from utk_curio.backend.extensions import db
+
+    project = db.session.get(Project, service.dataflow_id)
+    if project is None or access.agents_role(service.user, project) not in access.EDIT_ROLES:
+        return None
+    owner = _owner_user_dir_key(project)
+    if owner == service.user_key or kept not in media_records.dataflow_folders(owner, project.id):
+        return None
+    return owner
 
 
 # ── what is served ─────────────────────────────────────────────────────────
@@ -244,14 +289,20 @@ def original(found: Located) -> tuple[Path, str]:
 
 def thumbnail(service, found: Located, *, variant: str = "thumb") -> Path:
     """A cached JPEG for the file, drawn on first request, keyed by the
-    file's size and time. A file a node derived is keyed by where it is too:
-    its id names a file in each hosted guest's own folder
-    (:func:`_locate_derived`), and each guest's is drawn from their own."""
+    file's size and time. A file a run derived is keyed by where it is too,
+    and cached in a folder named after its run's, in the media cache of the
+    store whose media folder holds that run's (:func:`_locate_derived`): one
+    id names a file in each run's folder, and two runs' thumbnails of it
+    never take each other's place. They go with the run's folder
+    (``media_dirs.forget_kept``)."""
     from utk_curio.sandbox.util.collections import DERIVED_ID_RE
 
     where = f":{found.local}" if DERIVED_ID_RE.match(found.row.file_id) else ""
     stamp = hashlib.sha1(f"{found.row.bytes}:{found.row.mtime}{where}".encode()).hexdigest()[:10]
-    cache = media_dirs.media_cache_dir(service.user_key, found.dataset_id)
+    cache = media_dirs.media_cache_dir(found.store or service.user_key, found.dataset_id)
+    if found.kept:
+        cache = cache / found.kept
+        cache.mkdir(exist_ok=True)
     target = cache / f"{found.row.file_id}-{variant}-{stamp}.jpg"
     if target.is_file():
         return target
@@ -532,10 +583,9 @@ def sign(
     found through a dataflow's collections, is the dataflow its use reads
     through again, *visitor*, for a hosted guest, the visitor it is read
     as again (``visitor_copies.visitor_of``, the middle of the names of the
-    datasets they add), and *kept*, for a file a dashboard viewer's step
-    derived, that step's own folder, which its row's URL names
-    (:func:`_locate_derived`). Whoever holds a link can read what it says, so
-    it never says the sign-in."""
+    datasets they add), and *kept*, for a file a run derived, that run's
+    folder, which its row's URL names (:func:`_locate_derived`). Whoever
+    holds a link can read what it says, so it never says the sign-in."""
     claims = {"u": user_id, "k": user_key, "d": dataset_id, "f": file_id}
     if dataflow_id:
         claims["df"] = dataflow_id

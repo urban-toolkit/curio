@@ -21,11 +21,12 @@ sorted by (``FAMILIES``), such as a video's frame, a video made from a video
 of a raster tile. A table a node finds in a file is the node's output, never
 a derived file. A ``tag`` tells two derived files of one file and time apart:
 an overlay's names the model that drew it. The backend serves the file back
-under the same id (``DERIVED_ID_RE``). A dashboard viewer's step writes in a
-folder of its own (``KEPT_MEDIA``), which the URLs of the rows it derives name
-(``?kept=<name>``), so a row is read from where its run wrote it. Both paths,
-in process and isolated, build these from one function, so they cannot
-disagree.
+under the same id (``DERIVED_ID_RE``). Every run writes in a folder of its own
+(``KEPT_MEDIA``), which the URLs of the rows it derives name
+(``?kept=<name>``), so a row is read from where its run wrote it, and no run
+writes another's file; a media directory that is no run's folder is refused.
+Both paths, in process and isolated, build these from one function, so they
+cannot disagree.
 """
 
 from __future__ import annotations
@@ -86,29 +87,29 @@ DERIVED_DEFAULTS = {
     "frame": ("png", "image"),
 }
 
-#: The folder in the media directory of the files a node derives, by their
+#: The folder in a run's own folder of the files a node derives, by their
 #: row's kind, whatever kind of file they come from: ``forget_media`` empties
 #: each of a collection's.
 DERIVED_FOLDERS = {"frame": "frames", "image": "overlays", "video": "videos", "audio": "clips"}
 
-#: In an account's media folder, the folder of each dashboard viewer's step's
-#: own, ``<media>/kept/<name>/``, which the backend makes the step's media
-#: directory (``media_dirs.derived_root``): what a viewer's run derives is
-#: written there, never where the owner's runs write theirs under the same
-#: ids. The rows such a step derives name the folder in their URLs
+#: In an account's media folder, and in a hosted guest's folder in it, the
+#: folder of each run's own, ``<media>/kept/<name>/``, which the backend makes
+#: the run's media directory (``media_dirs.derived_root``): what a run derives
+#: is written there and nowhere else, so no two runs write one file, whoever
+#: made them. The rows a run derives name the folder in their URLs
 #: (``?kept=<name>``), so a row is read from where its run wrote it, whoever
 #: reads it and however many steps it passes through.
 KEPT_MEDIA = "kept"
 
-#: The name of such a folder: a digest of its step's kept session
+#: The name of such a folder: a digest of its run's session
 #: (``media_dirs.kept_media_name``), never the session itself.
 KEPT_NAME_RE = re.compile(r"^k[0-9a-f]{32}$")
 
 
 def kept_of(media_dir):
-    """The name of the folder of a dashboard viewer's step that *media_dir*
-    is (``<media>/kept/<name>``, ``KEPT_MEDIA``), or None for any other media
-    directory: an account's own, or a hosted guest's folder in it."""
+    """The name of the run's folder that *media_dir* is (``<media>/kept/<name>``,
+    ``KEPT_MEDIA``), or None for any other media directory: an account's own,
+    or a hosted guest's folder in it."""
     if not media_dir:
         return None
     parent, name = os.path.split(os.path.normpath(str(media_dir)))
@@ -119,8 +120,8 @@ def kept_of(media_dir):
 
 def media_url(dataset_id, file_id, variant="thumb", kept=None):
     """The media route's URL of one file, ``variant`` its ``thumb``,
-    ``poster`` or ``original``; *kept* names the folder of the dashboard
-    viewer's step that derived it (``KEPT_MEDIA``)."""
+    ``poster`` or ``original``; *kept* names the folder of the run that
+    derived it (``KEPT_MEDIA``)."""
     url = f"/api/datasets/{dataset_id}/media/{file_id}?variant={variant}"
     return f"{url}&kept={kept}" if kept else url
 
@@ -131,8 +132,8 @@ _MEDIA_URL_RE = re.compile(r"^/api/datasets/([A-Za-z0-9][A-Za-z0-9._@-]{0,199})/
 
 def media_ref(text):
     """``(dataset_id, file_id, kept)`` of the file *text* names, a URL
-    :func:`media_url` writes, *kept* None for a file no dashboard viewer's
-    step derived; None for any other text."""
+    :func:`media_url` writes, *kept* the folder of the run that derived it,
+    None for a collection's own file; None for any other text."""
     if not isinstance(text, str) or not text.startswith("/api/datasets/"):
         return None
     found = _MEDIA_URL_RE.match(text)
@@ -173,8 +174,8 @@ def media_urls(dataset_id, file_id, kind, kept=None):
     file itself, or a video's or a raster's thumbnail); a recording's file,
     for a player. None of them for a kind the media route draws nothing of:
     a ``file``, which node code reads from its ``path``. A collection's rows
-    and a derived file's row get them here; *kept* is the
-    folder a dashboard viewer's step derived the file in (``KEPT_MEDIA``)."""
+    and a derived file's row get them here; *kept* is the folder of the run
+    that derived the file (``KEPT_MEDIA``)."""
     if kind not in DRAWN:
         return {"thumbnail": None, "image_url": None, "audio_url": None}
     thumbnail = media_url(dataset_id, file_id, kept=kept)
@@ -308,9 +309,9 @@ def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir
     isolated, whose files the parent keeps, and the run's own folder in
     process (``util/output_files.py``); without one, the media directory's
     ``outputs``. *output_names*, a list, gets each name ``curio_output_file``
-    gives, which an isolated child reports to its parent. A *media_dir* that
-    is a dashboard viewer's step's own folder (``KEPT_MEDIA``) is named in
-    the URLs of every row ``curio_derived_file`` gives.
+    gives, which an isolated child reports to its parent. *media_dir* is
+    the run's own folder (``KEPT_MEDIA``), which the URLs of every row
+    ``curio_derived_file`` gives name, and the one place it writes.
     """
     known = dict(collections or {})
     kept = kept_of(media_dir)
@@ -357,10 +358,11 @@ def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir
 
         Returns the row the media route serves it under, with the columns a
         collection's row of its kind has: ``file_id``, ``dataset_id``,
-        ``kind``, ``path``, ``thumbnail``, ``image_url`` and ``audio_url``. A
-        dashboard viewer's step's URLs name its own folder (``kept``), where
-        it writes. The directory exists when this returns; the node writes the
-        bytes to ``path``.
+        ``kind``, ``path``, ``thumbnail``, ``image_url`` and ``audio_url``.
+        Its URLs name the run's own folder (``kept``), where it writes, and
+        nowhere else: a media directory that is no run's folder is refused.
+        The directory exists when this returns; the node writes the bytes to
+        ``path``.
         """
         dataset_id, file_id = str(dataset_id), str(file_id)
         if not _ID_RE.match(dataset_id) or not _FILE_ID_RE.match(file_id):
@@ -374,6 +376,11 @@ def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir
             raise RuntimeError(
                 "This node cannot write derived files here - run it on a collection "
                 "loaded with curio_load_collection()."
+            )
+        if kept is None:
+            raise RuntimeError(
+                "This run has no folder of its own to write derived files in, so nothing is written "
+                "here: run the node again."
             )
         path = os.path.join(media_dir, derived_relpath(folder, dataset_id, file_id, t_ms, ext, tag))
         os.makedirs(os.path.dirname(path), exist_ok=True)

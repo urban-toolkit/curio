@@ -1628,11 +1628,17 @@ class CatalogMutations:
         #    VERIFY: ``rmtree(ignore_errors=True)`` can leave a locked/mmapped
         #    file behind (common on Windows) while reporting nothing, which
         #    used to surface as a hardcoded success and a reappearing row (#173).
+        #    A saved output's records of the runs' folders its rows name are
+        #    read first: the folders go with it once nothing else names them.
+        from utk_curio.backend.app.datasets.install import media_records
+
         deleted_any = False
         failed_dirs: list[str] = []
+        recorded: set[str] = set()
         for dataset_root in list_user_datasets(user_key):
             base = dataset_root.name.split("@")[0]
             if base == dataset_id or dataset_root.name == dataset_id:
+                recorded |= media_records.recorded_folders(dataset_root)
                 shutil.rmtree(dataset_root, ignore_errors=True)
                 if dataset_root.exists():
                     # One retry for transient locks, then report honestly.
@@ -1676,6 +1682,15 @@ class CatalogMutations:
                         "Could not forget the result of node %s in dataflow %s",
                         node_id, dataflow_id, exc_info=True,
                     )
+            # The runs' folders it recorded, once no kept output and no other
+            # saved output of the account names them: a play of a canvas not
+            # saved yet kept no output, so its saved output alone named them.
+            from utk_curio.backend.app.runs import kept
+
+            try:
+                kept.forget_unnamed_media(user_key, recorded)
+            except Exception:  # noqa: BLE001 - the dataset itself is gone
+                logger.warning("Could not remove the runs' folders %s recorded", dataset_id, exc_info=True)
 
         if not deleted_any and not failed_dirs and not removed_from:
             raise DatasetCatalogError(

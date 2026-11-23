@@ -15,9 +15,10 @@ file is read as that visitor's (``visitor_copies.serving_visitor``).
 
 ``?dataflowId=`` reads the collection through that dataflow
 (``DiscoveryService.collection``): its owner and an editor she invited read
-the files of a collection it lists, from her store. ``?kept=`` is the folder
-of the dashboard viewer's step that derived the file, which the URL of its row
-names (``collections.KEPT_MEDIA``), and a link to it says the same.
+the files of a collection it lists, from her store, and the files her saved
+outputs name that her runs derived. ``?kept=`` is the folder of the run that
+derived the file, which the URL of its row names (``collections.KEPT_MEDIA``),
+and a link to it says the same.
 """
 
 from __future__ import annotations
@@ -55,7 +56,7 @@ def _dataflow_id() -> str | None:
 
 
 def _kept() -> str | None:
-    """The folder of the dashboard viewer's step a read names, ``?kept=``."""
+    """The folder of the run a read names, ``?kept=``."""
     return request.args.get("kept") or None
 
 
@@ -96,7 +97,7 @@ def signed_media(token: str):
     """One file, to whoever holds a link minted by its owner in the last ten
     minutes, found as the link's account finds it: a hosted guest's as the
     visitor the link names, whatever sign-in the request sends, and one a
-    dashboard viewer's step derived in the folder the link names.
+    run derived in the folder the link names.
     ``?variant=`` asks for its ``thumb`` or ``poster``, as the media route
     serves them; the file itself, ``original``, with none."""
     from utk_curio.backend.app.discovery.service import DiscoveryService, _user_by_id

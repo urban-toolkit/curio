@@ -24,11 +24,12 @@ made it (``runs/kept.py``: ``step_key``, ``keep``), so a visitor who opens
 the page or picks values someone ran before gets the outputs at once, and a
 request for a run already going joins it. The files a step derives from a
 collection's files (an overlay, a video's frame) are kept with its output, in
-a folder of the step's own in the owner's media folder
-(``media_dirs.derived_root``), whose name the URLs of its rows carry: a
-viewer's run never writes where the owner's runs write theirs under the same
-ids. A step that reads an earlier step's output keeps naming that step's
-folder (``kept.folders_named_by``), since its rows may hand on the files there.
+a folder of the step's own in the owner's media folder, as every run's are
+(``media_dirs.derived_root``), whose name the URLs of its rows carry, and
+whoever the step serves: its kept output serves every visitor. Their bytes
+count in the output's size, toward the dashboard's budget. A step that reads
+an earlier step's output keeps naming that step's folder
+(``kept.folders_named_by``), since its rows may hand on the files there.
 Kept outputs go after their time or past their budget, with their artifacts,
 and a folder goes once no kept output names it, by the sweep ``kept.py``
 describes; a run sweeps at its end, and at the first start after a restart.
@@ -631,6 +632,7 @@ def _run_events(
             ids = keep(
                 kept_on, step.node_id, key, session_id, output, private,
                 media_folders=folders_named_by(kept_on, read),
+                media_bytes=media_dirs.folder_bytes(media_dirs.derived_root(user_key, kept=kept_media)),
             )
             return {**reply, "artifactIds": ids}
         forget_sessions([session_id])

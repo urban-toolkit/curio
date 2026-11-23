@@ -356,6 +356,12 @@ def run_through_node(
     the target printed, where its record keeps only the tail. It stays out of
     ``nodes``, which a run streams to the page.
 
+    *media_dir* is the run's folder its caller resolved
+    (``exec_collections``): each node of the slice derives in a folder of its
+    own beside it (``media_dirs.run_folder_beside``), which the next node and
+    a later attempt read by the rows' paths and the sweep removes once
+    nothing has been written in it for the days a kept output lives.
+
     ``acting_user`` is the account's ``User`` row, captured in the request by
     a caller that runs this on a thread of its own: the models its nodes load
     are resolved from that account's store (else from *exec_user_key*'s, or
@@ -462,6 +468,7 @@ def run_through_node(
     # For an editor the owner invited: the packages and models the dataflow
     # uses, read from the owner's store as the editor's Play reads them.
     acting_key, owners = _acting_store(user_key, project_id, acting_user)
+    from utk_curio.backend.app.discovery.infrastructure import media_dirs
     from utk_curio.backend.app.execution.node_exec import library_keys_of
 
     for index, node in enumerate(ordered):
@@ -554,7 +561,10 @@ def run_through_node(
             # resolution /processPythonCode sends (discovery.application.exec_collections).
             payload["collections"] = dict(collections)
         if media_dir:
-            payload["media_dir"] = media_dir
+            # Each node a run's folder of its own, beside the one its caller
+            # resolved, in the same account's or hosted guest's media folder:
+            # no two nodes of the slice write one file.
+            payload["media_dir"] = media_dirs.run_folder_beside(media_dir)
         download_problem = None
         if is_py and dataset_problems:
             # A dataset the node reads whose file failed to download on its

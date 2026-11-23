@@ -58,8 +58,8 @@ class NodeRun:
     # dashboard viewer's step on that guest's dashboard runs (runs/viewer.py).
     kept_on: str | None = None
     # A dashboard viewer's step's own media folder (media_dirs.kept_media_name
-    # of its kept session): the files it derives go there, never where the
-    # owner's runs write theirs (runs/viewer.py).
+    # of its kept session), in the account's media folder whoever it serves
+    # (runs/viewer.py). Any other run is given a folder of its own by _execute.
     kept_media: str | None = None
 
     @classmethod
@@ -747,13 +747,31 @@ def _forget_kept_run(kept_run: _KeptRun | None) -> None:
         kept.forget_sessions([kept_run.session_id])
 
 
+def _forget_run_folder(run: NodeRun, user_key: str | None, media_dir: str | None) -> None:
+    """Remove the run's own folder, *media_dir*, with what it derived, when
+    the run failed or made no output: no row names its files. A dashboard
+    viewer's step's folder is its step's to remove (``runs/viewer.py``)."""
+    from utk_curio.sandbox.util.collections import kept_of
+
+    name = kept_of(media_dir)
+    if run.kept_media is None and user_key and name:
+        from utk_curio.backend.app.discovery.infrastructure import media_dirs
+
+        media_dirs.forget_kept(user_key, [name])
+
+
 def _keep_run_output(user, run: NodeRun, kept_run: _KeptRun, output, *,
-                     language: str, used_keys: bool, dataset_paths: dict | None) -> None:
+                     language: str, used_keys: bool, dataset_paths: dict | None,
+                     names=(), media_dir: str | None = None) -> None:
     """Keep the output of a kept run (:func:`_kept_run`) on the dataflow it
     keeps on, under the key a viewer's run of the same step computes
     (``runs/viewer.py``), or forget its session when it made none. An owner's
     is private when her keys made it, or anything it read; an invited
-    editor's is his account's alone (``kept.account_private``)."""
+    editor's is his account's alone (``kept.account_private``). It names its
+    run's own folder, *media_dir*, whose files count in its size, and the
+    folders the kept outputs it read name (*names*, ``kept.folders_named_by``),
+    since its rows may hand on theirs."""
+    from utk_curio.backend.app.discovery.infrastructure import media_dirs
     from utk_curio.backend.app.projects.services import _user_dir_key
     from utk_curio.backend.app.runs import kept
 
@@ -764,6 +782,7 @@ def _keep_run_output(user, run: NodeRun, kept_run: _KeptRun, output, *,
         private_to = kept.account_private(user.id)
     else:
         private_to = kept.OWNER_ONLY if (kept_run.private or used_keys) else None
+    kept_on = kept_run.kept_on or run.dataflow_id
     try:
         key = kept.step_key(
             packages=kept.packages_fingerprint(_user_dir_key(user)),
@@ -772,8 +791,10 @@ def _keep_run_output(user, run: NodeRun, kept_run: _KeptRun, output, *,
             datasets=kept.datasets_read(run.code, run.dataflow_id, user, paths=dataset_paths),
         )
         kept.keep(
-            kept_run.kept_on or run.dataflow_id, run.node_id, key, kept_run.session_id, output,
+            kept_on, run.node_id, key, kept_run.session_id, output,
             private_to=private_to, made_by=kept_run.made_by,
+            media_folders=kept.folders_named_by(kept_on, names),
+            media_bytes=media_dirs.folder_bytes(media_dir),
         )
     except Exception as e:  # noqa: BLE001 - the run's reply goes out either way
         print(f"[node_exec] could not keep the output of node {run.node_id}: "
@@ -945,6 +966,13 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
             'stdout': [], 'stderr': FOREIGN_WRAPPER_MESSAGE, 'input': input_ref,
             'output': {'path': '', 'dataType': 'str'},
         }, 200
+    # The run's own folder for what it derives (media_dirs.derived_root): a
+    # viewer's step's, named by its step; a kept run's, after its kept
+    # session; any other run's, after a session made for it alone.
+    from utk_curio.backend.app.discovery.infrastructure.media_dirs import kept_media_name
+    from utk_curio.common.kept_sessions import new_session_id
+
+    kept_media = run.kept_media or kept_media_name(kept_run.session_id if kept_run is not None else new_session_id())
 
     body = {
         "code": run.code,
@@ -965,6 +993,8 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
     dataset_paths = None
     exec_secrets = None
     owners = None
+    user_key = None
+    media_dir = None
     if language == "python":
         from utk_curio.backend.app.datasets.infrastructure import left_out_files
 
@@ -992,10 +1022,11 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         # the in-process path ignores it entirely.
         user_key = exec_user_key(user)
         # The dataflow's collections, as its datasets above: for its owner and
-        # an editor she invited, those it lists, from her store. A dashboard
-        # viewer's step derives into a folder of its own.
+        # an editor she invited, those it lists, from her store. The run
+        # derives into its own folder, a viewer's step's in the account's.
         collections, media_dir = resolve_exec_collections(
-            run.code, user_key, user=user, dataflow_id=run.dataflow_id, kept=run.kept_media,
+            run.code, user_key, user=user, dataflow_id=run.dataflow_id, kept=kept_media,
+            viewers_step=run.kept_media is not None,
         )
         exec_secrets = resolve_secrets(run.code, user)
         owners = owners_packages_for(user, run.dataflow_id)
@@ -1029,12 +1060,16 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
     # the timeout does not count: the sandbox keeps the connection busy until
     # the node runs (#889).
     with _monitor_counters.in_flight():
-        response = sandbox_request(
-            'post', endpoint,
-            label=label, timeout=SANDBOX_EXEC_TIMEOUT,
-            data=json.dumps(body),
-            headers={"Content-Type": "application/json"},
-        )
+        try:
+            response = sandbox_request(
+                'post', endpoint,
+                label=label, timeout=SANDBOX_EXEC_TIMEOUT,
+                data=json.dumps(body),
+                headers={"Content-Type": "application/json"},
+            )
+        except BaseException:
+            _forget_run_folder(run, user_key, media_dir)
+            raise
     t2 = time.perf_counter()
 
     try:
@@ -1044,6 +1079,7 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
               f"status={response.status_code} "
               f"body={response.text[:500]!r}", flush=True)
         _forget_kept_run(kept_run)
+        _forget_run_folder(run, user_key, media_dir)
         return {
             'stdout': '',
             'stderr': f'Sandbox error: {e}',
@@ -1055,6 +1091,7 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         print(f"[{tag}] sandbox {endpoint} failed: "
               f"{response_json['error']}: {response_json.get('message')}", flush=True)
         _forget_kept_run(kept_run)
+        _forget_run_folder(run, user_key, media_dir)
         return {
             'stdout': '',
             'stderr': f"Sandbox error: {response_json['error']}: {response_json.get('message')}",
@@ -1065,10 +1102,14 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
     stdout = response_json['stdout']
     stderr = response_json['stderr']
     output = response_json['output']
+    if not (isinstance(output, dict) and output.get("path")):
+        # No output: no row names what the run derived.
+        _forget_run_folder(run, user_key, media_dir)
     if kept_run is not None:
         _keep_run_output(
             user, run, kept_run, output, language=language,
             used_keys=bool(exec_secrets), dataset_paths=dataset_paths,
+            names=access.names, media_dir=media_dir,
         )
 
     t3 = time.perf_counter()

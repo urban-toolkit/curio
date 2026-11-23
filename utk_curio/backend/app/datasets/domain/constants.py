@@ -139,8 +139,9 @@ def account_folder_origin(dir_name: object) -> str | None:
     return None
 
 # Sidecar files written next to dataset files: the row/feature counts cache from
-# ``file_meta`` (``<file>.meta.json``) and the parquet object-column decode map
-# from ``parsers`` (``<file>.decode.json``). Both end in ``.json``, so a naive
+# ``file_meta`` (``<file>.meta.json``), the parquet object-column decode map
+# from ``parsers`` (``<file>.decode.json``) and a saved output's record of the
+# runs' folders its rows name (``<file>.media.json``). All end in ``.json``, so a naive
 # suffix scan would catalog them as standalone JSON datasets — directory scans
 # must skip any filename ending in one of these.
 #
@@ -149,9 +150,12 @@ def account_folder_origin(dir_name: object) -> str | None:
 # reopen the unbounded ``.meta.json.meta.json…`` regrowth #145 fixed). The decode
 # suffix mirrors ``sandbox.util.parsers.PARQUET_DECODE_SIDECAR_SUFFIX`` — kept as
 # a literal here to avoid importing the heavy sandbox ``parsers`` module into
-# this lightweight constants leaf; a test asserts the two stay in lockstep.
+# this lightweight constants leaf; a test asserts the two stay in lockstep. The
+# media suffix mirrors ``install.media_records.MEDIA_SIDECAR_SUFFIX`` the same
+# way, held by the same test.
 _DECODE_SIDECAR_SUFFIX = ".decode.json"
-SIDECAR_SUFFIXES = (META_SIDECAR_SUFFIX, _DECODE_SIDECAR_SUFFIX)
+_MEDIA_SIDECAR_SUFFIX = ".media.json"
+SIDECAR_SUFFIXES = (META_SIDECAR_SUFFIX, _DECODE_SIDECAR_SUFFIX, _MEDIA_SIDECAR_SUFFIX)
 
 # Curio sandbox ``detect_kind`` strings → catalog ``DatasetFormat`` values.
 # Single source of truth for the kind→format mapping (do not duplicate per
