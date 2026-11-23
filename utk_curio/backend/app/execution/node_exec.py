@@ -1052,12 +1052,12 @@ def _reused(user, run: NodeRun, access: _InputAccess, *, language: str, owners=N
             kept_run.kept_on or run.dataflow_id, key, kept.reader_of(kept_run.made_by, getattr(user, "id", None)),
             made_by=kept_run.made_by, node_id=run.node_id,
         )
+        if reply is None:
+            return None
+        return answer_from_kept(user, run, reply, language=language, visitor=access.visitor)
     except Exception as e:  # noqa: BLE001 - such a request runs its node
-        print(f"[node_exec] no kept output looked up for node {run.node_id}: {e.__class__.__name__}", flush=True)
+        print(f"[node_exec] reused no kept output of node {run.node_id}: {e.__class__.__name__}", flush=True)
         return None
-    if reply is None:
-        return None
-    return answer_from_kept(user, run, reply, language=language, visitor=access.visitor)
 
 
 def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict, int]:

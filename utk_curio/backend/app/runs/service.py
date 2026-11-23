@@ -456,12 +456,12 @@ def _run_thread(
             reply = kept.kept_reply(
                 project_id, key, kept.reader_of(maker, user_id), made_by=maker, node_id=step.node_id,
             )
+            if reply is None:
+                return None
+            return node_exec.answer_from_kept(user, node_run, reply, language=call.engine)
         except Exception:  # noqa: BLE001 - the step then runs
-            log.warning("run %s looked up no kept output of %s", run_id, step.node_id, exc_info=True)
+            log.warning("run %s reused no kept output of %s", run_id, step.node_id, exc_info=True)
             return None
-        if reply is None:
-            return None
-        return node_exec.answer_from_kept(user, node_run, reply, language=call.engine)
 
     def execute(step, code, input_ref):
         jobs.hold_point()
