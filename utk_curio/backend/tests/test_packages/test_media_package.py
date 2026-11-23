@@ -127,9 +127,21 @@ def _chips_back(text: str, chips: list) -> str:
     return re.sub(r"_chip_(\d+)_", lambda match: chips[int(match.group(1))], text)
 
 
+#: The name of the folder of the run these nodes run in: every run derives in
+#: a folder of its own, ``<media>/kept/<name>/`` (``media_dirs.derived_root``).
+RUN = "k" + "0" * 32
+
+
+def run_folder(tmp_path: Path) -> Path:
+    """The run's own folder in the media folder under *tmp_path*, where
+    ``curio_derived_file`` writes for the helpers :func:`collection_rows` makes."""
+    return tmp_path / "media" / "kept" / RUN
+
+
 def collection_rows(manifest, resource_id: str, tmp_path: Path):
     """``(rows, helpers)``: what ``curio_load_collection`` returns for a resource of
-    *manifest*, and the helpers a node runs with."""
+    *manifest*, and the helpers a node runs with, in a run's own folder
+    (:func:`run_folder`)."""
     from utk_curio.backend.app.discovery.application import index_collection, scan
     from utk_curio.backend.app.discovery.infrastructure.storage import storage_root
     from utk_curio.backend.app.discovery.providers import build_storage
@@ -147,7 +159,7 @@ def collection_rows(manifest, resource_id: str, tmp_path: Path):
     helpers = make_collection_helpers(
         lambda _id: str(index_path),
         {f"imported.x{resource_id}": {"root": str(storage_root(manifest))}},
-        str(tmp_path / "media"),
+        str(run_folder(tmp_path)),
         output_dir=str(tmp_path / "outputs"),
     )
     return helpers["curio_load_collection"](f"imported.x{resource_id}"), helpers

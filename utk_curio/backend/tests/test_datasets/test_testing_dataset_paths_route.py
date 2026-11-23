@@ -104,18 +104,26 @@ class TestResolvesTheCommittedCatalog:
         self, client, user_and_token, monkeypatch
     ):
         """A stack with ``CURIO_NO_AUTH`` runs every node as the shared guest,
-        so the files a node derives land in the guest's folder; the harness's
-        run has to write them there too, or the two outputs name different
-        paths."""
+        so the files a node derives land in a run's folder of the guest's
+        media folder; the harness's run has to write in the guest's too, or
+        it reads the collection as another account. Each resolution is a run
+        of its own, with a folder of its own (``media_dirs.derived_root``):
+        the media folder holding it is the account's."""
         from utk_curio.backend import config
+
+        def account_of(media_dir: str) -> Path:
+            """The media folder a run's folder (``<media>/kept/<name>``) is in."""
+            return Path(media_dir).parent.parent
 
         user, _token = user_and_token
         code = 'media = curio_load_collection("data.curio.storage-orthos")'
         signed_in = _post(client, {"code": code, "username": user.username}).get_json()["mediaDir"]
         guest = _post(client, {"code": code}).get_json()["mediaDir"]
-        assert signed_in != guest
+        assert account_of(signed_in) != account_of(guest)
         monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
-        assert _post(client, {"code": code, "username": user.username}).get_json()["mediaDir"] == guest
+        assert account_of(_post(client, {"code": code, "username": user.username}).get_json()["mediaDir"]) == (
+            account_of(guest)
+        )
 
     def test_code_without_a_call_costs_nothing(self, client):
         resp = _post(client, {"code": "return 1 + 1"})

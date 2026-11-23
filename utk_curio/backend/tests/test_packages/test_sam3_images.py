@@ -38,6 +38,7 @@ from utk_curio.backend.tests._support.progress_bars import (
     stderr_of_a_run,
     transformers_bars_on,
 )
+from utk_curio.backend.tests.test_packages.test_media_package import RUN, run_folder
 from utk_curio.backend.tests.test_packages.test_sam3_package import (
     EVERY,
     HOLED,
@@ -188,10 +189,11 @@ def _frames(modules, videos):
 
 
 def _overlay(url: str, tmp_path: Path) -> Path:
-    """The overlay file a row's ``overlay_url`` serves, in the media folder."""
+    """The overlay file a row's ``overlay_url`` serves, in the run's own
+    folder of the media folder (``run_folder``)."""
     served = url.split("/media/", 1)[1].split("?", 1)[0]
     file_id, stem = served.split("@", 1)
-    (found,) = [path for path in (tmp_path / "media" / "overlays").rglob(f"{stem.split('.')[0]}.png")
+    (found,) = [path for path in (run_folder(tmp_path) / "overlays").rglob(f"{stem.split('.')[0]}.png")
                 if path.parent.name == file_id]
     return found
 
@@ -322,7 +324,10 @@ def test_segment_images_finds_each_label_in_each_frame_sample_video_frames_sampl
         else:
             assert pd.isna(row["dominant_class"])
         video, t_ms = row["file_id"].split("@")
-        assert row["overlay_url"].endswith(f"/media/{video}@{t_ms}-{tag}.png?variant=original"), row["overlay_url"]
+        # Its URL names the folder of the run that drew it.
+        assert row["overlay_url"].endswith(f"/media/{video}@{t_ms}-{tag}.png?variant=original&kept={RUN}"), (
+            row["overlay_url"]
+        )
         with Image.open(_overlay(row["overlay_url"], tmp_path)) as overlay:
             assert (overlay.format, overlay.size) == ("PNG", (96, 64))
 

@@ -443,15 +443,17 @@ def test_a_hosted_guests_dashboard_links_name_the_visitor_who_asks(client, dashb
     """The links a dashboard's page reads a tile's files through name the
     hosted guest who asks for them, as their own links do (``v``,
     ``visitor_copies.visitor_of``), never by the sign-in, and read a file as
-    that visitor reads it: a photo's overlay A drew on their own canvas is
-    A's own, in A's folder, and B, and a visitor who sends no sign-in, read
-    the example's, which its saved run drew."""
+    that visitor reads it: the run's folder a row names is looked for in the
+    visitor's own folder first, then the account's. A's own folder holds an
+    overlay of the photo under that name, which A reads; B, and a visitor
+    who sends no sign-in, read the example's, which its saved run drew."""
     from pathlib import Path
 
     from utk_curio.backend.app.discovery.application import media
     from utk_curio.backend.app.discovery.infrastructure import media_dirs
     from utk_curio.backend.app.discovery.infrastructure import storage as discovery_storage
     from utk_curio.backend.app.projects import services, visitor_copies
+    from utk_curio.common.kept_sessions import new_session_id
     from utk_curio.sandbox.util.collections import make_collection_helpers
 
     survey = "data.curio.storage-survey"
@@ -468,11 +470,12 @@ def test_a_hosted_guests_dashboard_links_name_the_visitor_who_asks(client, dashb
         Path(row["path"]).write_bytes(_png(colour))
         return row
 
-    shipped = draw(media_dirs.derived_root(GUEST_KEY), (30, 30, 200))
-    draw(media_dirs.derived_root(GUEST_KEY, visitor_copies.visitor_of(VISITOR_A)), (200, 30, 30))
+    run = media_dirs.kept_media_name(new_session_id())
+    shipped = draw(media_dirs.derived_root(GUEST_KEY, kept=run), (30, 30, 200))
+    draw(media_dirs.derived_root(GUEST_KEY, visitor_copies.visitor_of(VISITOR_A), kept=run), (200, 30, 30))
     rows = {"dataType": "dataframe", "data": {key: [shipped[key]] for key in ("dataset_id", "file_id", "kind", "image_url")}}
     monkeypatch.setattr(services, "_dashboard_envelope_reader", lambda _saved_path_of: lambda filename: rows)
-    asked = json.dumps({"fileName": saved, "files": [{"datasetId": survey, "fileId": shipped["file_id"], "kept": None}]})
+    asked = json.dumps({"fileName": saved, "files": [{"datasetId": survey, "fileId": shipped["file_id"], "kept": run}]})
 
     def linked(token) -> tuple:
         """What the visitor signed in as *token* is linked to: the visitor

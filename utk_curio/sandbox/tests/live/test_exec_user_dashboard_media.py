@@ -1,15 +1,22 @@
-"""A dashboard viewer's step that derives a file, as the deploy runs it.
+"""What a run derives, in a folder of its own, as the deploy runs it.
 
 The stack the exec-user job boots is the deploy's shape: fork isolation with
 the curio-exec account, and sign-in on (``docker-compose.ci-exec-user.yml``).
 An account's Python node, Draw, pinned with its own Shade, draws an overlay of
 the committed street survey's first photo, as Image Segmentation does
 (``curio_derived_file``), and the Simple View it feeds is pinned too. The
-owner's play draws it red, in the account's media folder. A dashboard viewer
-with no account picks green, and the run's step, which runs as curio-exec,
-draws its overlay in a folder of the step's own (``media/kept/<name>/``),
-which its row names. The viewer reads the green overlay through the link the
-dashboard gives for that row, and the owner's red one is as it was.
+owner's play draws it red, in a folder of the play's own in the account's
+media folder. A dashboard viewer with no account picks green, and the run's
+step, which runs as curio-exec, draws its overlay in a folder of the step's
+own (``media/kept/<name>/``), which its row names. The viewer reads the green
+overlay through the link the dashboard gives for that row, and the owner's
+red one is as it was.
+
+A hosted guest's two plays of a node of an example, red then green, run as
+curio-exec too, and each draws the photo's overlay, of one id, in a folder of
+the play's own inside the guest's own folder
+(``media/visitors/<visitor>/kept/<name>/``), which its row names: both are as
+their plays drew them, and the guest reads each.
 
 Everything goes over HTTP to the stack's backend, as a browser's requests do:
 nothing here imports from the project, and the job installs only pytest.
@@ -195,3 +202,66 @@ def test_a_viewers_step_as_curio_exec_derives_in_its_own_folder_and_the_owners_f
     status, theirs = _call("GET", owners["image_url"], headers={"Authorization": f"Bearer {token}"})
     assert status == 200, theirs[:200]
     assert _sha256(theirs) == owners["sha256"] != row["sha256"], "the viewer's run wrote over the owner's overlay"
+
+
+#: A hosted guest's node: Draw's overlay in the shade it names, its row
+#: printed as one line of JSON, so the play's reply says what it wrote.
+GUEST_DRAW_CODE = '''import hashlib
+import io
+import json
+import os
+
+from PIL import Image
+
+shade = "%s"
+photos = curio_load_collection("data.curio.storage-survey")
+photo = photos[photos["kind"] == "image"].iloc[0]
+derived = curio_derived_file(photo["dataset_id"], photo["file_id"], 0, "png", kind="image", tag="seg")
+buffer = io.BytesIO()
+Image.new("RGB", (8, 8), {"red": (200, 30, 30), "green": (30, 200, 30)}[shade]).save(buffer, "PNG")
+with open(derived["path"], "wb") as handle:
+    handle.write(buffer.getvalue())
+row = {"shade": shade, "sha256": hashlib.sha256(buffer.getvalue()).hexdigest(), "uid": os.getuid(), **derived}
+print("ROW " + json.dumps(row))
+return row
+'''
+
+
+def _the_row_printed(reply: dict) -> dict:
+    """The row a play of :data:`GUEST_DRAW_CODE` printed, from its reply."""
+    printed = reply.get("stdout")
+    text = "".join(printed) if isinstance(printed, list) else str(printed or "")
+    lines = [line for line in text.splitlines() if line.startswith("ROW ")]
+    assert len(lines) == 1, f"the play printed no row: {str(reply)[:1500]}"
+    return json.loads(lines[0][len("ROW "):])
+
+
+def test_a_hosted_guests_two_plays_as_curio_exec_derive_each_in_a_folder_of_its_own():
+    body = _json("POST", "/api/auth/signin/guest", {})
+    assert body.get("token"), body
+    guest = {"Authorization": f"Bearer {body['token']}"}
+    gallery = _json("GET", "/api/projects", headers=guest)
+    examples = [entry["id"] for entry in gallery if isinstance(entry, dict) and entry.get("id")]
+    assert examples, f"the hosted guests' gallery lists no example: {str(gallery)[:500]}"
+
+    rows = []
+    for shade in ("red", "green"):
+        reply = _json("POST", "/processPythonCode", {
+            "code": _as_played(GUEST_DRAW_CODE % shade), "nodeType": CODE,
+            "nodeId": "derived-files-per-run", "dataflowId": examples[0], "input": None,
+        }, guest)
+        assert reply.get("output", {}).get("path"), f"the guest's play made nothing: {str(reply)[:1500]}"
+        rows.append(_the_row_printed(reply))
+
+    red, green = rows
+    folders = [urllib.parse.parse_qs(urllib.parse.urlsplit(row["image_url"]).query).get("kept", [None])[0]
+               for row in rows]
+    assert all(folders) and folders[0] != folders[1], f"the two plays name no folders of their own: {folders}"
+    assert red["file_id"] == green["file_id"], rows
+    for row, folder in zip(rows, folders):
+        assert "/media/visitors/" in row["path"] and f"/kept/{folder}/" in row["path"], (
+            f"a guest's play wrote outside a folder of its own in the guest's: {row['path']}")
+    assert red["uid"] != 0 and red["uid"] == green["uid"], f"the plays did not run as the execution account: {rows}"
+    for row in rows:
+        status, drawn = _call("GET", row["image_url"], headers=guest)
+        assert status == 200 and _sha256(drawn) == row["sha256"], (row["shade"], status, drawn[:200])

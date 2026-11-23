@@ -302,8 +302,10 @@ class TestItLandsAsAModelPackage:
         sample = "data.curio.mapillary-sample"
         index = repo / "datasets" / f"{sample}@1" / "data" / "index.parquet"
         storage = repo / "docs" / "examples" / "data" / "storage"
+        # The node derives in its run's own folder, <media>/kept/<name>/.
         helpers = make_collection_helpers(
-            lambda _id: str(index), {sample: {"kind": "images", "root": str(storage)}}, str(tmp_path / "media")
+            lambda _id: str(index), {sample: {"kind": "images", "root": str(storage)}},
+            str(tmp_path / "media" / "kept" / ("k" + "0" * 32)),
         )
         photos = helpers["curio_load_collection"](sample).head(2)
         package = self._package_folder(user, model["dirName"])

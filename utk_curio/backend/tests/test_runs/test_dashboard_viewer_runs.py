@@ -1689,13 +1689,16 @@ class TestWhatAViewersRunDerives:
 
     @staticmethod
     def _owners_overlay(user, photo):
-        """The overlay the owner's own run of Grid drew, where an owner's run writes."""
+        """The overlay the owner's own run of Grid drew, in that run's folder
+        of the owner's media folder, as every run writes."""
         from pathlib import Path
 
         from utk_curio.backend.app.discovery.infrastructure import media_dirs
+        from utk_curio.common.kept_sessions import new_session_id
         from utk_curio.sandbox.util.collections import make_collection_helpers
 
-        derive = make_collection_helpers(None, {}, str(media_dirs.media_work_root(str(user.id))))["curio_derived_file"]
+        owners_run = media_dirs.derived_root(str(user.id), kept=media_dirs.kept_media_name(new_session_id()))
+        derive = make_collection_helpers(None, {}, str(owners_run))["curio_derived_file"]
         row = derive(SURVEY, photo, 0, "png", kind="image", tag="seg")
         Path(row["path"]).write_bytes(_png(OWNERS))
         return row
@@ -1911,8 +1914,8 @@ class TestWhatAViewersRunDerives:
         """A step's folder no kept output names: one a backend that stopped
         between the step's write and its keep leaves, or one whose dataflow's
         row was dropped with its spec file gone (``list_projects``). The sweep
-        takes it once nothing has been written in it for an hour, and never a
-        folder a kept output names."""
+        takes it once nothing has been written in it for 7 days
+        (``KEPT_MEDIA_GRACE_SECONDS``), and never a folder a kept output names."""
         import time
         from pathlib import Path
 
@@ -1953,5 +1956,6 @@ class TestWhatAViewersRunDerives:
         name = media_dirs.kept_media_name(new_session_id())
         assert KEPT_NAME_RE.match(name)
         assert kept_of(str(media_dirs.derived_root(str(user.id), kept=name))) == name
-        assert kept_of(str(media_dirs.derived_root(str(user.id)))) is None
-        assert kept_of(str(media_dirs.derived_root(str(user.id), "v" + "0" * 32))) is None
+        media = media_dirs.media_work_root(str(user.id))
+        assert kept_of(str(media)) is None
+        assert kept_of(str(media / media_dirs.VISITORS / ("v" + "0" * 32))) is None

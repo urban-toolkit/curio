@@ -96,10 +96,27 @@ def collection(client, auth, resource_id, source=EXAMPLE):
     return dataset, pd.read_parquet(dataset["path"]).set_index("name")
 
 
-def media(client, headers, dataset_id, file_id, variant="thumb", **extra):
-    return client.get(
-        f"/api/datasets/{dataset_id}/media/{file_id}?variant={variant}", headers={**headers, **extra}
-    )
+def media(client, headers, dataset_id, file_id, variant="thumb", *, kept=None, **extra):
+    """A file as the browser asks for it; *kept* names the folder of the run
+    that derived it, as a derived row's URLs do."""
+    query = f"variant={variant}" + (f"&kept={kept}" if kept else "")
+    return client.get(f"/api/datasets/{dataset_id}/media/{file_id}?{query}", headers={**headers, **extra})
+
+
+def a_runs_folder(user) -> str:
+    """A run's own folder in *user*'s media folder, as the backend gives each
+    run (``media_dirs.derived_root``): where its ``curio_derived_file`` writes."""
+    from utk_curio.backend.app.discovery.infrastructure import media_dirs
+    from utk_curio.common.kept_sessions import new_session_id
+
+    return str(media_dirs.derived_root(str(user.id), kept=media_dirs.kept_media_name(new_session_id())))
+
+
+def kept_of(row):
+    """The run's folder a derived row's URLs name (``?kept=``)."""
+    from urllib.parse import parse_qs, urlparse
+
+    return parse_qs(urlparse(row["thumbnail"]).query).get("kept", [None])[0]
 
 
 def file_id_of(index, name: str) -> str:
@@ -299,22 +316,19 @@ class TestDerivedFiles:
     def test_a_frame_a_node_wrote_is_served_by_its_id(self, client, auth, app, shipped_root, user_and_token):
         from PIL import Image
 
-        from utk_curio.backend.app.discovery.infrastructure import media_dirs
         from utk_curio.sandbox.util.collections import make_collection_helpers
 
         user, _token = user_and_token
         dataset, index = collection(client, auth, "survey")
         video_id = file_id_of(index, "clip_01.mp4")
-        derive = make_collection_helpers(None, {}, str(media_dirs.media_work_root(str(user.id))))[
-            "curio_derived_file"
-        ]
+        derive = make_collection_helpers(None, {}, a_runs_folder(user))["curio_derived_file"]
         row = derive(dataset["id"], video_id, 500)
         Image.new("RGB", (64, 48), (200, 30, 30)).save(row["path"], "JPEG")
         thumb = client.get(row["thumbnail"], headers=auth)
         assert thumb.status_code == 200 and thumb.mimetype == "image/jpeg"
         original = client.get(row["image_url"], headers=auth)
         assert original.status_code == 200 and original.mimetype == "image/jpeg"
-        assert media(client, auth, dataset["id"], f"{video_id}@999").status_code == 404
+        assert media(client, auth, dataset["id"], f"{video_id}@999", kept=kept_of(row)).status_code == 404
 
     def test_an_overlay_a_node_wrote_is_served_to_its_owner_only(
         self, client, auth, app, shipped_root, user_and_token, db
@@ -323,16 +337,13 @@ class TestDerivedFiles:
         to the account whose node wrote it, as the old overlay route was."""
         from PIL import Image
 
-        from utk_curio.backend.app.discovery.infrastructure import media_dirs
         from utk_curio.backend.app.users.models import User, UserSession
         from utk_curio.sandbox.util.collections import make_collection_helpers
 
         user, _token = user_and_token
         dataset, index = collection(client, auth, "survey")
         photo = file_id_of(index, "IMG_0001.jpg")
-        derive = make_collection_helpers(None, {}, str(media_dirs.media_work_root(str(user.id))))[
-            "curio_derived_file"
-        ]
+        derive = make_collection_helpers(None, {}, a_runs_folder(user))["curio_derived_file"]
         row = derive(dataset["id"], photo, 0, "png", kind="image")
         Image.new("RGB", (64, 48), (30, 200, 30)).save(row["path"], "PNG")
         overlay = client.get(row["image_url"], headers=auth)
@@ -345,7 +356,7 @@ class TestDerivedFiles:
         db.session.commit()
         assert client.get(row["image_url"], headers={"Authorization": "Bearer bob-overlay-token"}).status_code == 404
         # One never written is not found either.
-        assert media(client, auth, dataset["id"], f"{photo}@500").status_code == 404
+        assert media(client, auth, dataset["id"], f"{photo}@500", kept=kept_of(row)).status_code == 404
 
     def test_two_models_on_one_photo_keep_an_overlay_each(
         self, client, auth, app, shipped_root, user_and_token, segment,
@@ -359,7 +370,6 @@ class TestDerivedFiles:
         import numpy as np
 
         from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
-        from utk_curio.backend.app.discovery.infrastructure import media_dirs
         from utk_curio.backend.app.discovery.infrastructure.storage import storage_root
         from utk_curio.backend.tests.test_discovery.conftest import SHIPPED_ROOT
         from utk_curio.sandbox.util.collections import make_collection_helpers
@@ -370,7 +380,7 @@ class TestDerivedFiles:
         helpers = make_collection_helpers(
             lambda _id: dataset["path"],
             {dataset["id"]: {"kind": "images", "root": str(root)}},
-            str(media_dirs.media_work_root(str(user.id))),
+            a_runs_folder(user),
         )
         rows = helpers["curio_load_collection"](dataset["id"])
         photo = rows[rows["name"] == "IMG_0001.jpg"].head(1)
@@ -409,7 +419,6 @@ class TestDerivedFiles:
         node's row at 0 s plays the clip that node wrote, after the other
         node ran too."""
         from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
-        from utk_curio.backend.app.discovery.infrastructure import media_dirs
         from utk_curio.backend.app.discovery.infrastructure.storage import storage_root
         from utk_curio.backend.tests.test_discovery.conftest import SHIPPED_ROOT
         from utk_curio.sandbox.util.collections import make_collection_helpers
@@ -420,16 +429,18 @@ class TestDerivedFiles:
         helpers = make_collection_helpers(
             lambda _id: dataset["path"],
             {dataset["id"]: {"kind": "audio", "root": str(root)}},
-            str(media_dirs.media_work_root(str(user.id))),
+            a_runs_folder(user),
         )
         rows = helpers["curio_load_collection"](dataset["id"])
         recording = rows[(rows["sensor"] == "sensor_01") & (rows["name"] == "20240501_060000.wav")]
         assert len(recording) == 1
 
         def played(row):
-            """What the player plays for *row*: its link, asked for as Simple View asks."""
+            """What the player plays for *row*: its link, asked for as Simple View
+            asks, naming the run's folder the row's URLs name."""
             link = client.post(
-                f"/api/datasets/{dataset['id']}/media/{quote(row['file_id'], safe='')}/link", headers=auth
+                f"/api/datasets/{dataset['id']}/media/{quote(row['file_id'], safe='')}/link",
+                query_string={"kept": kept_of(row)}, headers=auth,
             )
             assert link.status_code == 200, link.get_data(as_text=True)[:300]
             clip = client.get(link.get_json()["url"])
@@ -449,18 +460,20 @@ class TestDerivedFiles:
         frame: an id that names no extension names no file of a tile, even
         where a photo's own file would be, and the same file is served by its
         own id, which names its extension."""
-        from PIL import Image
+        from pathlib import Path
 
-        from utk_curio.backend.app.discovery.infrastructure import media_dirs
+        from PIL import Image
 
         user, _token = user_and_token
         dataset, index = collection(client, auth, "orthos")
         tile = index["file_id"].iloc[0]
-        assert media(client, auth, dataset["id"], f"{tile}@0").status_code == 404
-        there = media_dirs.media_work_dir(str(user.id), "overlays", dataset["id"], tile) / "0.png"
+        run = Path(a_runs_folder(user))
+        assert media(client, auth, dataset["id"], f"{tile}@0", kept=run.name).status_code == 404
+        there = run / "overlays" / dataset["id"] / tile / "0.png"
+        there.parent.mkdir(parents=True)
         Image.new("RGB", (64, 48), (30, 200, 30)).save(there, "PNG")
-        assert media(client, auth, dataset["id"], f"{tile}@0", "original").status_code == 404
-        drawn = media(client, auth, dataset["id"], f"{tile}@0.png", "original")
+        assert media(client, auth, dataset["id"], f"{tile}@0", "original", kept=run.name).status_code == 404
+        drawn = media(client, auth, dataset["id"], f"{tile}@0.png", "original", kept=run.name)
         assert (drawn.status_code, drawn.mimetype) == (200, "image/png"), drawn.get_data(as_text=True)[:300]
 
     def test_a_video_a_node_made_from_a_video_plays_and_seeks(self, client, auth, app, shipped_root, user_and_token):
@@ -468,32 +481,31 @@ class TestDerivedFiles:
         MP4. Simple View plays its row as it plays the video's: it asks for a
         signed link, then fetches the file a range at a time, and its card
         shows the video's poster."""
-        from utk_curio.backend.app.discovery.infrastructure import media_dirs
         from utk_curio.sandbox.util.collections import make_collection_helpers
 
         user, _token = user_and_token
         dataset, index = collection(client, auth, "survey")
         video_id = file_id_of(index, "clip_01.mp4")
-        derive = make_collection_helpers(None, {}, str(media_dirs.media_work_root(str(user.id))))[
-            "curio_derived_file"
-        ]
+        derive = make_collection_helpers(None, {}, a_runs_folder(user))["curio_derived_file"]
         row = derive(dataset["id"], video_id, 0, "mp4", tag="overlay")
+        run = kept_of(row)
         body = _a_video(row["path"])
-        whole = media(client, auth, dataset["id"], row["file_id"], "original")
+        whole = media(client, auth, dataset["id"], row["file_id"], "original", kept=run)
         assert whole.status_code == 200, whole.get_data(as_text=True)[:300]
         assert whole.mimetype == "video/mp4" and whole.data == body
-        part = media(client, auth, dataset["id"], row["file_id"], "original", Range="bytes=0-99")
+        part = media(client, auth, dataset["id"], row["file_id"], "original", kept=run, Range="bytes=0-99")
         assert part.status_code == 206 and part.data == body[:100]
         assert (part.headers.get("Accept-Ranges"), part.headers.get("Content-Range")) == (
             "bytes", f"bytes 0-99/{len(body)}"
         )
-        poster = media(client, auth, dataset["id"], row["file_id"], "poster")
+        poster = media(client, auth, dataset["id"], row["file_id"], "poster", kept=run)
         for picture in (client.get(row["thumbnail"], headers=auth), poster):
             assert picture.status_code == 200 and picture.mimetype == "image/jpeg", picture.get_data()[:300]
         assert (row["kind"], row["dataset_id"]) == ("video", dataset["id"])
         assert row["file_id"] == f"{video_id}@0-overlay.mp4"
 
-        link = client.post(f"/api/datasets/{dataset['id']}/media/{row['file_id']}/link", headers=auth)
+        link = client.post(f"/api/datasets/{dataset['id']}/media/{row['file_id']}/link",
+                           query_string={"kept": run}, headers=auth)
         assert link.status_code == 200, link.get_data(as_text=True)[:300]
         seek = client.get(link.get_json()["url"], headers={"Range": f"bytes={len(body) - 50}-"})
         assert seek.status_code == 206 and seek.data == body[-50:]
@@ -504,7 +516,7 @@ class TestDerivedFiles:
         # with an extension.
         for missing in (f"{video_id}@0-other.mp4", f"{video_id}@500-overlay.mp4", f"{video_id}@0-overlay",
                         f"{video_id}@0-overlay.jpg"):
-            assert media(client, auth, dataset["id"], missing, "original").status_code == 404, missing
+            assert media(client, auth, dataset["id"], missing, "original", kept=run).status_code == 404, missing
 
     def test_a_table_a_node_found_in_a_video_is_no_derived_file_and_never_served(
         self, client, auth, app, shipped_root, user_and_token
@@ -514,15 +526,16 @@ class TestDerivedFiles:
         refuses to name a file for it, saying to return it, and the media
         route serves no file under a table's id, even one where such an id
         would put it."""
+        from pathlib import Path
+
         import pandas as pd
 
-        from utk_curio.backend.app.discovery.infrastructure import media_dirs
         from utk_curio.sandbox.util.collections import make_collection_helpers
 
         user, _token = user_and_token
         dataset, index = collection(client, auth, "survey")
         video_id = file_id_of(index, "clip_01.mp4")
-        root = media_dirs.media_work_root(str(user.id))
+        root = Path(a_runs_folder(user))
         derive = make_collection_helpers(None, {}, str(root))["curio_derived_file"]
         with pytest.raises(ValueError, match="not 'parquet': return a table from the node as its output"):
             derive(dataset["id"], video_id, 0, "parquet", tag="overlay")
@@ -530,7 +543,9 @@ class TestDerivedFiles:
         there = root / "tables" / dataset["id"] / video_id / "0-overlay.parquet"
         there.parent.mkdir(parents=True)
         pd.DataFrame({"label": ["car"], "frames_seen": [12]}).to_parquet(there)
-        assert media(client, auth, dataset["id"], f"{video_id}@0-overlay.parquet", "original").status_code == 404
+        assert media(
+            client, auth, dataset["id"], f"{video_id}@0-overlay.parquet", "original", kept=root.name,
+        ).status_code == 404
 
     def test_an_overlay_of_a_sequences_frame_is_served(self, client, auth, app, shipped_root, user_and_token):
         """A frames collection's file (dashcam) is an image, as a photo is:
@@ -538,15 +553,12 @@ class TestDerivedFiles:
         serves it. It answered 404: no frame had derived files."""
         from PIL import Image
 
-        from utk_curio.backend.app.discovery.infrastructure import media_dirs
         from utk_curio.sandbox.util.collections import make_collection_helpers
 
         user, _token = user_and_token
         dataset, index = collection(client, auth, "dashcam")
         frame = file_id_of(index, "trip01_000001.jpg")
-        derive = make_collection_helpers(None, {}, str(media_dirs.media_work_root(str(user.id))))[
-            "curio_derived_file"
-        ]
+        derive = make_collection_helpers(None, {}, a_runs_folder(user))["curio_derived_file"]
         row = derive(dataset["id"], frame, 0, "png", kind="image", tag="0a1b2c3d4e5f")
         Image.new("RGB", (64, 48), (30, 30, 200)).save(row["path"], "PNG")
         overlay = client.get(row["image_url"], headers=auth)
@@ -564,15 +576,12 @@ class TestDerivedFiles:
         import pandas as pd
         from PIL import Image
 
-        from utk_curio.backend.app.discovery.infrastructure import media_dirs
         from utk_curio.sandbox.util.collections import make_collection_helpers
 
         user, _token = user_and_token
         dataset, index = collection(client, auth, "survey")
         video_id = file_id_of(index, "clip_01.mp4")
-        derive = make_collection_helpers(None, {}, str(media_dirs.media_work_root(str(user.id))))[
-            "curio_derived_file"
-        ]
+        derive = make_collection_helpers(None, {}, a_runs_folder(user))["curio_derived_file"]
         sampled = derive(dataset["id"], video_id, 500)
         Image.new("RGB", (64, 48), (200, 30, 30)).save(sampled["path"], "JPEG")
         frames = pd.DataFrame([{
@@ -607,16 +616,13 @@ class TestDerivedFiles:
         written in its place is refused: what is served is decided by bytes."""
         from pathlib import Path
 
-        from utk_curio.backend.app.discovery.infrastructure import media_dirs
         from utk_curio.sandbox.util.collections import make_collection_helpers
 
         user, _token = user_and_token
         dataset, index = collection(client, auth, resource_id)
         source = file_id_of(index, name)
         assert index.loc[[name], "kind"].iloc[0] == kind
-        derive = make_collection_helpers(None, {}, str(media_dirs.media_work_root(str(user.id))))[
-            "curio_derived_file"
-        ]
+        derive = make_collection_helpers(None, {}, a_runs_folder(user))["curio_derived_file"]
         row = derive(dataset["id"], source, 0, ext, kind=kind, tag="made")
         write(row["path"])
         assert (row["file_id"], row["kind"], row["dataset_id"]) == (f"{source}@0-made.{ext}", row_kind, dataset["id"])
@@ -626,16 +632,17 @@ class TestDerivedFiles:
             res = client.get(url, headers=auth)
             served_as = mimetype if "variant=original" in url else "image/jpeg"
             assert (res.status_code, res.mimetype) == (200, served_as), (column, res.get_data()[:300])
-        itself = media(client, auth, dataset["id"], row["file_id"], "original")
+        itself = media(client, auth, dataset["id"], row["file_id"], "original", kept=kept_of(row))
         assert (itself.status_code, itself.mimetype) == (200, mimetype), itself.get_data()[:300]
         assert itself.data == Path(row["path"]).read_bytes()
-        link = client.post(f"/api/datasets/{dataset['id']}/media/{quote(row['file_id'], safe='')}/link", headers=auth)
+        link = client.post(f"/api/datasets/{dataset['id']}/media/{quote(row['file_id'], safe='')}/link",
+                           query_string={"kept": kept_of(row)}, headers=auth)
         assert link.status_code == 200, link.get_data(as_text=True)[:300]
         part = client.get(link.get_json()["url"], headers={"Range": "bytes=0-9"})
         assert (part.status_code, part.data) == (206, itself.data[:10])
 
         Path(row["path"]).write_text("<html><script>alert(1)</script></html>", encoding="utf-8")
-        assert media(client, auth, dataset["id"], row["file_id"], "original").status_code == 415
+        assert media(client, auth, dataset["id"], row["file_id"], "original", kept=kept_of(row)).status_code == 415
 
     def test_a_derived_file_that_holds_a_page_is_never_served(self, client, auth, app, shipped_root, user_and_token):
         """What is served is decided by a file's first bytes, a derived file's
@@ -643,40 +650,41 @@ class TestDerivedFiles:
         itself, as a thumbnail and as a link."""
         from pathlib import Path
 
-        from utk_curio.backend.app.discovery.infrastructure import media_dirs
         from utk_curio.sandbox.util.collections import make_collection_helpers
 
         user, _token = user_and_token
         dataset, index = collection(client, auth, "survey")
         photo = file_id_of(index, "IMG_0001.jpg")
-        derive = make_collection_helpers(None, {}, str(media_dirs.media_work_root(str(user.id))))[
-            "curio_derived_file"
-        ]
+        derive = make_collection_helpers(None, {}, a_runs_folder(user))["curio_derived_file"]
         row = derive(dataset["id"], photo, 0, "png", kind="image", tag="page")
         Path(row["path"]).write_text("<html><script>alert(1)</script></html>", encoding="utf-8")
-        assert media(client, auth, dataset["id"], row["file_id"], "original").status_code == 415
+        assert media(client, auth, dataset["id"], row["file_id"], "original", kept=kept_of(row)).status_code == 415
         assert client.get(row["thumbnail"], headers=auth).status_code == 415
-        assert client.post(f"/api/datasets/{dataset['id']}/media/{row['file_id']}/link", headers=auth).status_code == 415
+        assert client.post(f"/api/datasets/{dataset['id']}/media/{row['file_id']}/link",
+                           query_string={"kept": kept_of(row)}, headers=auth).status_code == 415
 
     def test_deleting_a_collection_removes_what_nodes_derived_in_every_folder(
         self, client, auth, app, shipped_root, user_and_token
     ):
-        """A derived file goes in the folder of its row's kind, whatever it is
-        derived from: frames, overlays, videos or clips. Deleting the
-        collection removes its files in each of them, of any extension: a
-        video's frame, a photo's JPEG among the overlays, a video's WebM among
-        the videos and its sound among the clips."""
+        """A derived file goes in the folder of its row's kind in its run's
+        folder, whatever it is derived from: frames, overlays, videos or
+        clips. Deleting the collection removes its files in each of them, of
+        any extension: a video's frame, a photo's JPEG among the overlays, a
+        video's WebM among the videos and its sound among the clips."""
+        from pathlib import Path
+
         from utk_curio.backend.app.discovery.infrastructure import media_dirs
 
         user, _token = user_and_token
         dataset, index = collection(client, auth, "survey")
         photo, video = file_id_of(index, "IMG_0001.jpg"), file_id_of(index, "clip_01.mp4")
         root = media_dirs.media_work_root(str(user.id))
+        run = Path(a_runs_folder(user))
         made = [
-            root / "frames" / dataset["id"] / video / "0.jpg",
-            root / "overlays" / dataset["id"] / photo / "0-gray.jpg",
-            root / "videos" / dataset["id"] / video / "0-vp8.webm",
-            root / "clips" / dataset["id"] / video / "0-sound.wav",
+            run / "frames" / dataset["id"] / video / "0.jpg",
+            run / "overlays" / dataset["id"] / photo / "0-gray.jpg",
+            run / "videos" / dataset["id"] / video / "0-vp8.webm",
+            run / "clips" / dataset["id"] / video / "0-sound.wav",
         ]
         for path in made:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -722,9 +730,13 @@ class TestExecutionResolution:
         with app.test_request_context():
             collections, media_dir = resolve_exec_collections(code, str(user.id), user=user)
             paths = resolve_dataset_paths(code, None, user)
+        from utk_curio.sandbox.util.collections import kept_of as run_folder_of
+
         root = storage_root(load_source_manifest(SHIPPED_ROOT / EXAMPLE))
         assert collections == {dataset["id"]: {"kind": "audio", "root": str(root)}}
-        assert media_dir and media_dir.endswith(os.path.join(str(user.id), "media"))
+        # The run's own folder (<media>/kept/<name>), in the account's media folder.
+        assert media_dir and os.path.dirname(os.path.dirname(media_dir)).endswith(os.path.join(str(user.id), "media"))
+        assert run_folder_of(media_dir), media_dir
         assert paths[dataset["id"]] == dataset["path"]
 
     def test_a_collection_call_counts_as_using_the_dataset(self):
