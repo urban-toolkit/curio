@@ -111,6 +111,8 @@ def step_payload(step: DataflowRunStep, current: Optional[dict] = None) -> dict:
         "skipReason": step.skip_reason,
         "missingModule": json.loads(step.missing_module) if step.missing_module else None,
         "installWarnings": json.loads(step.install_warnings) if step.install_warnings else [],
+        # When the output the step reused was made, for a step that ran nothing.
+        "reusedMadeAt": _iso(step.reused_made_at),
     }
     if current is not None:
         payload["codeCurrent"] = bool(step.code_sha256) and current.get(step.node_id) == step.code_sha256
@@ -269,6 +271,7 @@ def replay_from_steps(run: DataflowRun) -> Iterator[tuple[str, dict]]:
             ("stdoutTail", step.stdout_tail), ("stderrTail", step.stderr_tail),
             ("skipReason", step.skip_reason), ("durationMs", step.duration_ms),
             ("installWarnings", json.loads(step.install_warnings) if step.install_warnings else None),
+            ("reusedMadeAt", _iso(step.reused_made_at)),
         ):
             if value is not None:
                 payload[key] = value
@@ -416,8 +419,9 @@ def _run_thread(
         should_save_output_on_run,
     )
     from utk_curio.backend.app.projects.schemas import OutputRef
-    from utk_curio.backend.app.projects.services import record_node_outputs
+    from utk_curio.backend.app.projects.services import _user_dir_key, record_node_outputs
     from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
+    from utk_curio.backend.app.runs import kept
     from utk_curio.backend.app.users.models import User
     from utk_curio.common.autk_data_compiler import compile_data_spec
 
@@ -427,6 +431,37 @@ def _run_thread(
     packages = TemplateGrammars.for_account(user_key)
     sources = saved_source_node_ids(spec, packages)
     cancelled = jobs.cancel_flag(run_id)
+    # The nodes the run was asked for (a Play's node, an automatic run's)
+    # always run. Every other step asks what a dashboard viewer's step asks
+    # (``viewer._run_events``): whether the runs of its maker, the owner or the
+    # editor who started it, kept an output of its node under its key.
+    asked = {node_id for node_id in (plan.target_node_id, *plan.target_node_ids) if node_id}
+    maker = kept.MADE_BY_OWNER if records_outputs else kept.MADE_BY_EDITOR
+    reuse_packages: dict = {}
+
+    def reused(user, step, code, input_ref, node_run):
+        """The step's answer from what its maker's runs kept under its key,
+        built as a dashboard viewer's step builds it, or None when it runs."""
+        if step.node_id in asked:
+            return None
+        try:
+            if "key" not in reuse_packages:
+                runner = _user_dir_key(user)
+                reuse_packages["key"] = kept.packages_key(user_key or runner, runner)
+            call = kept.step_call(plan, step, code, input_ref)
+            key = kept.call_key(
+                call, packages=reuse_packages["key"], node_type=step.node_type,
+                datasets=kept.datasets_read(call.code, project_id, user),
+            )
+            reply = kept.kept_reply(
+                project_id, key, kept.reader_of(maker, user_id), made_by=maker, node_id=step.node_id,
+            )
+        except Exception:  # noqa: BLE001 - the step then runs
+            log.warning("run %s looked up no kept output of %s", run_id, step.node_id, exc_info=True)
+            return None
+        if reply is None:
+            return None
+        return node_exec.answer_from_kept(user, node_run, reply, language=call.engine)
 
     def execute(step, code, input_ref):
         jobs.hold_point()
@@ -447,25 +482,28 @@ def _run_thread(
                 node_name=step.label,
                 save_output_dataset=False,
             )
-            reply, _status = node_exec.execute_js_node(user, token, node_run)
-            return reply
-        node_run = node_exec.NodeRun(
-            code=code,
-            node_type=step.node_type,
-            node_id=step.node_id,
-            input=input_ref,
-            dataflow_id=project_id,
-            node_name=step.label,
-            save_output_dataset=should_save_output_on_run(
-                step.node, default_save, step.node_id in sources,
-            ),
-            # Which input_k each value of the input is, as Play sends it.
-            input_slots=tuple(plan.spec.input_slots(step.node_id)) or None,
-        )
-        run_node = (
-            node_exec.execute_js_node if step.engine == "javascript"
-            else node_exec.execute_python_node
-        )
+            run_node = node_exec.execute_js_node
+        else:
+            node_run = node_exec.NodeRun(
+                code=code,
+                node_type=step.node_type,
+                node_id=step.node_id,
+                input=input_ref,
+                dataflow_id=project_id,
+                node_name=step.label,
+                save_output_dataset=should_save_output_on_run(
+                    step.node, default_save, step.node_id in sources,
+                ),
+                # Which input_k each value of the input is, as Play sends it.
+                input_slots=tuple(plan.spec.input_slots(step.node_id)) or None,
+            )
+            run_node = (
+                node_exec.execute_js_node if step.engine == "javascript"
+                else node_exec.execute_python_node
+            )
+        answer = reused(user, step, code, input_ref, node_run)
+        if answer is not None:
+            return answer
         reply, _status = run_node(user, token, node_run)
         return reply
 
@@ -540,10 +578,26 @@ def _run_thread(
         jobs.drop_cancel_flag(run_id)
 
 
+def _moment(text) -> Optional[datetime]:
+    """An ISO time, as :func:`_iso` writes one, as the naive UTC time the
+    run tables hold; None for anything else."""
+    if not isinstance(text, str) or not text:
+        return None
+    try:
+        moment = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if moment.tzinfo is not None:
+        moment = moment.astimezone(timezone.utc).replace(tzinfo=None)
+    return moment
+
+
 def _record_step(run_id, step, payload, runtime_journal) -> None:
     output = payload.get("output") or {}
     reply = payload.get("reply") or {}
     installed = reply.get("installedDataset") if isinstance(reply.get("installedDataset"), dict) else {}
+    # A step that answered with what its maker's runs kept ran nothing.
+    reused = reply.get("reused") if isinstance(reply.get("reused"), dict) else {}
     fields = {
         "status": payload["status"],
         "finished_at": _at(payload.get("finishedAt")) or datetime.now(timezone.utc),
@@ -562,6 +616,7 @@ def _record_step(run_id, step, payload, runtime_journal) -> None:
             stdout_tail=payload.get("stdoutTail"),
             stderr_tail=payload.get("stderrTail"),
             missing_module=json.dumps(reply["missingModule"]) if reply.get("missingModule") else None,
+            reused_made_at=_moment(reused.get("madeAt")),
         )
     elif step.role == "missing":
         # What the run says of it: no installed package provides its type.

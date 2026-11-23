@@ -95,8 +95,8 @@ from utk_curio.backend.app.runs.kept import (
     folders_named_by,
     forget_sessions,
     keep,
-    kept_output,
-    packages_fingerprint,
+    kept_reply,
+    packages_key,
     prune_quietly,
     readable_output,
     step_call,
@@ -587,7 +587,7 @@ def _run_events(
     from utk_curio.backend.app.users.models import User
 
     kept_on = kept_on or project_id
-    packages = packages_fingerprint(user_key)
+    packages = packages_key(user_key)
 
     def execute(step, code, input_ref):
         jobs.hold_point()
@@ -600,10 +600,11 @@ def _run_events(
             datasets=datasets_read(call.code, project_id, owner),
         )
         private = private_to if step.node_id in tainted else None
-        kept = kept_output(kept_on, key, private)
-        if kept is not None:
-            output, ids = kept
-            return {"stdout": [], "stderr": "", "output": output, "artifactIds": ids}
+        # A step whose key holds an output answers with it and runs nothing,
+        # as a Run All's step of the owner's does (``service._run_thread``).
+        reused = kept_reply(kept_on, key, private)
+        if reused is not None:
+            return reused
         session_id = new_session_id()
         # What the step derives (an overlay, a frame) is its own, in a folder
         # of its session's that goes with its kept output, never where the

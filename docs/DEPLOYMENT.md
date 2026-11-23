@@ -741,7 +741,8 @@ the tab over the last 24 hours in 5-minute steps, the last 7 days hour by hour
   average and 95th percentile time. The measures:
   - **Python node runs** and **JavaScript node runs**: a node's code run by
     Play or by a run on the server, from the backend's call to its reply;
-    failed when its output names no file.
+    failed when its output names no file. A node that shows the result its
+    last run kept, without running, is no node run.
   - **Run All runs**: a dataflow's run on the server (Run All, a run up to a
     node, an automatic run, a dashboard viewer's run), from its start to its
     end; failed when it ends failed or stops on an error. A cancelled run did

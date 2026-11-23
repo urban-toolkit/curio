@@ -61,6 +61,11 @@ class NodeRun:
     # of its kept session), in the account's media folder whoever it serves
     # (runs/viewer.py). Any other run is given a folder of its own by _execute.
     kept_media: str | None = None
+    # A request of the browser's Run All (``reuseKept``): a kept run whose key
+    # holds an output its maker's runs kept of its node answers with it and
+    # runs nothing, as a dashboard viewer's step does (:func:`_reused`). A
+    # Play's request never says so, and always runs.
+    reuse_kept: bool = False
 
     @classmethod
     def from_request_json(cls, body: dict) -> "NodeRun":
@@ -76,6 +81,7 @@ class NodeRun:
             node_name=body.get('nodeName') or None,
             save_output_dataset=bool(save_output_dataset),
             input_slots=parse_input_slots(body.get('inputSlots')),
+            reuse_kept=body.get('reuseKept') is True,
         )
 
 
@@ -760,19 +766,39 @@ def _forget_run_folder(run: NodeRun, user_key: str | None, media_dir: str | None
         media_dirs.forget_kept(user_key, [name])
 
 
+def _step_key_of(user, run: NodeRun, *, language: str, owners=None, dataset_paths: dict | None = None) -> str:
+    """The key *run*'s output is kept under, built as a dashboard viewer's
+    step builds it (``runs/viewer.py``, ``kept.call_key``): the call it makes
+    (its code, its engine, its input and its wired circles); the packages of
+    the dataflow's owner, with the runner's own for an editor she invited
+    (``kept.packages_key``, *owners* :func:`owners_packages_for`); and the
+    datasets its code reads, from *dataset_paths* when its run resolved them.
+    The one key a kept run keeps under (:func:`_keep_run_output`) and a
+    request that may reuse looks up (:func:`_reused`)."""
+    from utk_curio.backend.app.projects.services import _user_dir_key
+    from utk_curio.backend.app.runs import kept
+
+    runner = _user_dir_key(user)
+    owner = owners.store_key if owners is not None else runner
+    call = kept.StepCall(code=run.code, engine=language, input=run.input, slots=run.input_slots)
+    return kept.call_key(
+        call, packages=kept.packages_key(owner, runner), node_type=run.node_type,
+        datasets=kept.datasets_read(run.code, run.dataflow_id, user, paths=dataset_paths),
+    )
+
+
 def _keep_run_output(user, run: NodeRun, kept_run: _KeptRun, output, *,
                      language: str, used_keys: bool, dataset_paths: dict | None,
-                     names=(), saved=None, media_dir: str | None = None) -> None:
+                     names=(), saved=None, media_dir: str | None = None, owners=None) -> None:
     """Keep the output of a kept run (:func:`_kept_run`) on the dataflow it
     keeps on, under the key a viewer's run of the same step computes
-    (``runs/viewer.py``), or forget its session when it made none. An owner's
-    is private when her keys made it, or anything it read; an invited
+    (:func:`_step_key_of`), or forget its session when it made none. An
+    owner's is private when her keys made it, or anything it read; an invited
     editor's is his account's alone (``kept.account_private``). It names its
     run's own folder, *media_dir*, whose files count in its size, and the
     folders the outputs it read name (*names*, the saved ones among them
     *saved*, ``kept.folders_named_by``), since its rows may hand on theirs."""
     from utk_curio.backend.app.discovery.infrastructure import media_dirs
-    from utk_curio.backend.app.projects.services import _user_dir_key
     from utk_curio.backend.app.runs import kept
 
     if not (isinstance(output, dict) and output.get("path")):
@@ -784,12 +810,7 @@ def _keep_run_output(user, run: NodeRun, kept_run: _KeptRun, output, *,
         private_to = kept.OWNER_ONLY if (kept_run.private or used_keys) else None
     kept_on = kept_run.kept_on or run.dataflow_id
     try:
-        key = kept.step_key(
-            packages=kept.packages_fingerprint(_user_dir_key(user)),
-            node_type=run.node_type, engine=language, code=run.code,
-            input_ref=kept.input_identity(run.input), input_slots=run.input_slots,
-            datasets=kept.datasets_read(run.code, run.dataflow_id, user, paths=dataset_paths),
-        )
+        key = _step_key_of(user, run, language=language, owners=owners, dataset_paths=dataset_paths)
         kept.keep(
             kept_on, run.node_id, key, kept_run.session_id, output,
             private_to=private_to, made_by=kept_run.made_by,
@@ -948,6 +969,97 @@ def input_value(user, session_token: str | None, run: NodeRun, slot: int):
     return read_artifact_value(name, session_id=session, saved_path=entry.get("path"))
 
 
+def _install_output(user, run: NodeRun, visitor: _Visitor | None, output, *, tag: str):
+    """``(installed dataset, diagnostic)`` of *output*, *run*'s: installed in
+    the account's Data Catalog when the run saves its output (not the public
+    Data Catalog), as a computed dataset of the dataflow its writes are of
+    (:func:`_writes_dataflow_id`); a hosted guest's skipped, since the guests'
+    Data Catalog is every hosted guest's. A run that reuses a kept output
+    installs it the same way (:func:`answer_from_kept`)."""
+    from utk_curio.backend.app.datasets.application.auto_install import (
+        auto_install_node_output,
+        skipped_diagnostic,
+    )
+
+    installed_dataset = None
+    dataset_diagnostic = None
+    if visitor is not None and run.save_output_dataset and isinstance(output, dict):
+        dataset_diagnostic = skipped_diagnostic(
+            node_id=run.node_id, sandbox_output=output, reason=VISITOR_OUTPUT_REASON,
+        )
+    elif run.save_output_dataset and isinstance(output, dict) and run.node_id:
+        dataset_diagnostic = auto_install_node_output(
+            user=user,
+            node_id=run.node_id,
+            sandbox_output=output,
+            dataflow_id=_writes_dataflow_id(user, run),
+            node_name=run.node_name,
+            node_type=run.node_type,
+        )
+        if dataset_diagnostic.get("status") == "installed":
+            installed_dataset = dataset_diagnostic.get("dataset")
+            print(
+                f"[{tag}] auto-installed dataset "
+                f"{installed_dataset.get('id')} for node {run.node_id}",
+                flush=True,
+            )
+        else:
+            print(
+                f"[{tag}] node {run.node_id} produced no computed dataset: "
+                f"{dataset_diagnostic.get('status')} - {dataset_diagnostic.get('reason')}",
+                flush=True,
+            )
+    return installed_dataset, dataset_diagnostic
+
+
+def answer_from_kept(user, run: NodeRun, reply: dict, *, language: str,
+                     visitor: _Visitor | None = None) -> dict | None:
+    """*reply*, of an output its maker's runs kept (``kept.kept_reply``), as
+    the reply of *run* when it reuses that output and runs nothing, as a
+    dashboard viewer's step answers: what a run's reply holds besides, its
+    input as the run reads it, and the Data Catalog install a run that saves
+    makes (:func:`_install_output`). It counts no node run and writes no
+    runtime journal entry: the node did not run. None when *run* must run
+    all the same: a JavaScript run that saves, whose kept output its run did
+    not save (``kept.serves_its_save``). A step of a run on the server answers
+    through it too (``runs/service.py``)."""
+    from utk_curio.backend.app.runs import kept
+
+    output = reply.get("output") if isinstance(reply.get("output"), dict) else {}
+    if not kept.serves_its_save(output, engine=language, saves=run.save_output_dataset):
+        return None
+    installed, diagnostic = _install_output(user, run, visitor, output, tag=_LABELS[language].lstrip("/"))
+    answer = {**reply, "input": parse_input_ref(run.input), "installedDataset": installed,
+              "datasetDiagnostic": diagnostic}
+    if language == "python":
+        answer["missingModule"] = None
+    return answer
+
+
+def _reused(user, run: NodeRun, access: _InputAccess, *, language: str, owners=None) -> dict | None:
+    """The reply of a request of a Run All (``NodeRun.reuse_kept``), a kept
+    run (:func:`_kept_run`), whose key (:func:`_step_key_of`) holds an output
+    the runs of its maker kept of its node on the dataflow it keeps on,
+    looked up as a dashboard viewer's step looks one up (``kept.kept_reply``),
+    with what its maker may read (``kept.reader_of``); None when it must run.
+    A lookup that fails runs the node."""
+    from utk_curio.backend.app.runs import kept
+
+    kept_run = access.kept_run
+    try:
+        key = _step_key_of(user, run, language=language, owners=owners)
+        reply = kept.kept_reply(
+            kept_run.kept_on or run.dataflow_id, key, kept.reader_of(kept_run.made_by, getattr(user, "id", None)),
+            made_by=kept_run.made_by, node_id=run.node_id,
+        )
+    except Exception as e:  # noqa: BLE001 - such a request runs its node
+        print(f"[node_exec] no kept output looked up for node {run.node_id}: {e.__class__.__name__}", flush=True)
+        return None
+    if reply is None:
+        return None
+    return answer_from_kept(user, run, reply, language=language, visitor=access.visitor)
+
+
 def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict, int]:
     t0 = time.perf_counter()
     label = _LABELS[language]
@@ -966,6 +1078,15 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
             'stdout': [], 'stderr': FOREIGN_WRAPPER_MESSAGE, 'input': input_ref,
             'output': {'path': '', 'dataType': 'str'},
         }, 200
+    # What a run of an editor the owner invited reads from her store: her
+    # packages, which its key holds with his (:func:`_step_key_of`).
+    owners = owners_packages_for(user, run.dataflow_id)
+    # A request of a Run All whose key holds what its maker's runs kept runs
+    # nothing, as a dashboard viewer's step (:func:`_reused`).
+    if run.reuse_kept and kept_run is not None:
+        reused = _reused(user, run, access, language=language, owners=owners)
+        if reused is not None:
+            return reused, 200
     # The run's own folder for what it derives (media_dirs.derived_root): a
     # viewer's step's, named by its step; a kept run's, after its kept
     # session; any other run's, after a session made for it alone.
@@ -992,7 +1113,6 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         body["saved_paths"] = saved_inputs
     dataset_paths = None
     exec_secrets = None
-    owners = None
     user_key = None
     media_dir = None
     if language == "python":
@@ -1029,7 +1149,6 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
             viewers_step=run.kept_media is not None,
         )
         exec_secrets = resolve_secrets(run.code, user)
-        owners = owners_packages_for(user, run.dataflow_id)
         package_modules = resolve_package_modules(run.node_type, user_key, run.dataflow_id, owners=owners)
         body.update({
             "dataset_paths": dataset_paths,
@@ -1109,7 +1228,7 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         _keep_run_output(
             user, run, kept_run, output, language=language,
             used_keys=bool(exec_secrets), dataset_paths=dataset_paths,
-            names=access.names, saved=saved_inputs, media_dir=media_dir,
+            names=access.names, saved=saved_inputs, media_dir=media_dir, owners=owners,
         )
 
     t3 = time.perf_counter()
@@ -1122,44 +1241,7 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         flush=True,
     )
 
-    # Auto-install into the user store (not the public Data Catalog).
-    from utk_curio.backend.app.datasets.application.auto_install import (
-        auto_install_node_output,
-        skipped_diagnostic,
-    )
-
-    # The dataflow the run's writes are of: none for another account's
-    # (:func:`_writes_dataflow_id`).
-    own_dataflow_id = _writes_dataflow_id(user, run)
-    installed_dataset = None
-    dataset_diagnostic = None
-    if visitor is not None and run.save_output_dataset and isinstance(output, dict):
-        # The guests' Data Catalog is every hosted guest's.
-        dataset_diagnostic = skipped_diagnostic(
-            node_id=run.node_id, sandbox_output=output, reason=VISITOR_OUTPUT_REASON,
-        )
-    elif run.save_output_dataset and isinstance(output, dict) and run.node_id:
-        dataset_diagnostic = auto_install_node_output(
-            user=user,
-            node_id=run.node_id,
-            sandbox_output=output,
-            dataflow_id=own_dataflow_id,
-            node_name=run.node_name,
-            node_type=run.node_type,
-        )
-        if dataset_diagnostic.get("status") == "installed":
-            installed_dataset = dataset_diagnostic.get("dataset")
-            print(
-                f"[{tag}] auto-installed dataset "
-                f"{installed_dataset.get('id')} for node {run.node_id}",
-                flush=True,
-            )
-        else:
-            print(
-                f"[{tag}] node {run.node_id} produced no computed dataset: "
-                f"{dataset_diagnostic.get('status')} - {dataset_diagnostic.get('reason')}",
-                flush=True,
-            )
+    installed_dataset, dataset_diagnostic = _install_output(user, run, visitor, output, tag=tag)
 
     record_runtime_outcome(
         user,

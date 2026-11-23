@@ -14,8 +14,18 @@ replaces what earlier runs kept of the same node under the same key, by the
 same maker for the same reader (:func:`keep`), which still serve every read
 they served for :data:`REPLACED_HOURS` and go at the first sweep after: a
 step run again with the same code on the same input artifacts keeps one copy
-of what it made, files and all. A step whose inputs ran again reads new
-artifacts, so its key is new and its output kept beside the last one's. Each dataflow
+of what it made, files and all.
+
+A step whose key holds an output it may read answers with it and runs
+nothing (:func:`kept_reply`): a dashboard viewer's step, whoever made the
+output, and a step of the owner's or an editor's runs that its run was not
+asked for (a Run All's, and the nodes above a Play's node), with what its
+maker's own runs kept of its node (:func:`kept_output`'s ``made_by`` and
+``node_id``, :func:`reader_of`). A reused output keeps its artifact names, so
+the step below it keys the same and is reused too: a Run All repeated with
+nothing changed runs nothing and keeps nothing new. A step whose inputs ran
+again reads new artifacts, so its key is new and its output kept beside the
+last one's. Each dataflow
 keeps at most :data:`MAX_KEPT_BYTES` of what its viewers made, the files
 their steps derived counted in; past it the least recently used go. What the
 owner's and the editors' runs made (``made_by``) is bounded by its days alone:
@@ -136,6 +146,18 @@ def packages_fingerprint(user_key: str) -> str:
                 found.update(path.read_bytes())
                 break
     return found.hexdigest()
+
+
+def packages_key(owner_key: str, runner_key: Optional[str] = None) -> str:
+    """The packages a step's key holds: the dataflow owner's store
+    (:func:`packages_fingerprint`), as a dashboard viewer's step keys it,
+    and, for a run of an editor she invited (*runner_key* another store), his
+    store too: his run reads her packages for her dataflow's nodes and his
+    own for his own nodes, so a change to either makes what it kept stale."""
+    owners = packages_fingerprint(owner_key)
+    if not runner_key or runner_key == owner_key:
+        return owners
+    return hashlib.sha256(canonical([owners, packages_fingerprint(runner_key)]).encode("utf-8")).hexdigest()
 
 
 def _file_identity(path: str) -> list:
@@ -549,18 +571,23 @@ def readable_by_account(user_id, names) -> set:
     return sandbox_artifacts.readable(reads, sessions=sign_ins)
 
 
-def kept_output(project_id: str, key: str, private_to: Optional[str] = None) -> Optional[tuple[dict, list]]:
-    """The output kept under *key* that this run may read, a shared one or
-    one private to *private_to*, with its artifact ids. Touches it, so it is
-    the last to go."""
+def _kept_entry(project_id: str, key: str, private_to: Optional[str] = None, *,
+                made_by: Optional[str] = None, node_id: Optional[str] = None) -> Optional[KeptStepOutput]:
+    """The newest output kept under *key* that this run may read, a shared one
+    or one private to *private_to*, live and not replaced, or None; with
+    *made_by*, only one that maker's runs kept, and with *node_id* only one of
+    that node. Touches it, so it is the last to go."""
     now = naive_utc_now()
     readable = KeptStepOutput.private_to.is_(None)
     if private_to is not None:
         readable = db.or_(readable, KeptStepOutput.private_to == private_to)
+    query = KeptStepOutput.query.filter_by(project_id=project_id, step_key=key)
+    if made_by is not None:
+        query = query.filter(KeptStepOutput.made_by == made_by)
+    if node_id is not None:
+        query = query.filter(KeptStepOutput.node_id == node_id)
     entry = (
-        KeptStepOutput.query
-        .filter_by(project_id=project_id, step_key=key)
-        .filter(readable, _not_replaced())
+        query.filter(readable, _not_replaced())
         .filter(_alive(now))
         .order_by(KeptStepOutput.created_at.desc())
         .first()
@@ -573,7 +600,57 @@ def kept_output(project_id: str, key: str, private_to: Optional[str] = None) -> 
         db.session.query(KeptStepOutput).filter_by(id=entry_id).update({"used_at": now})
 
     commit_with_retry(_touch)
+    return entry
+
+
+def kept_output(project_id: str, key: str, private_to: Optional[str] = None, *,
+                made_by: Optional[str] = None, node_id: Optional[str] = None) -> Optional[tuple[dict, list]]:
+    """The output kept under *key* that this run may read, a shared one or
+    one private to *private_to*, with its artifact ids (:func:`_kept_entry`).
+    A dashboard viewer's step names neither *made_by* nor *node_id*, so it
+    reads whoever made the output; a step of the owner's or an editor's runs
+    names its maker and its node (:func:`reader_of`)."""
+    entry = _kept_entry(project_id, key, private_to, made_by=made_by, node_id=node_id)
+    if entry is None:
+        return None
     return json.loads(entry.output), json.loads(entry.artifact_ids or "[]")
+
+
+def kept_reply(project_id: str, key: str, private_to: Optional[str] = None, *,
+               made_by: Optional[str] = None, node_id: Optional[str] = None) -> Optional[dict]:
+    """The reply of a step whose key holds an output it may read
+    (:func:`kept_output`), which runs nothing: no logs, the kept output, its
+    artifact ids, and when it was made (``reused``). A dashboard viewer's
+    step answers with it, and so does a step of the owner's or an editor's
+    runs that its run was not asked for (``runs/service.py``,
+    ``execution/node_exec.py``). None when no such output is kept."""
+    from utk_curio.backend.app.runs.service import _iso
+
+    entry = _kept_entry(project_id, key, private_to, made_by=made_by, node_id=node_id)
+    if entry is None:
+        return None
+    return {
+        "stdout": [], "stderr": "",
+        "output": json.loads(entry.output), "artifactIds": json.loads(entry.artifact_ids or "[]"),
+        "reused": {"madeAt": _iso(entry.created_at)},
+    }
+
+
+def reader_of(made_by: str, user_id) -> Optional[str]:
+    """The ``private_to`` a run of *made_by* reads its own kept outputs
+    with: the owner's, shared or hers alone (:data:`OWNER_ONLY`); an invited
+    editor's, his account's (:func:`account_private`)."""
+    if made_by == MADE_BY_EDITOR:
+        return account_private(user_id)
+    return OWNER_ONLY
+
+
+def serves_its_save(output: dict, *, engine: str, saves: bool) -> bool:
+    """Whether a kept *output* may answer a run of *engine* that saves its
+    output when *saves*: a JavaScript node's saved table is an artifact of
+    its own that its run makes only when it saves (``output.dataset``), so a
+    run that saves takes only an output whose run saved it too."""
+    return not (saves and engine == "javascript" and not (output or {}).get("dataset"))
 
 
 def keep(
@@ -595,7 +672,8 @@ def keep(
     first sweep :data:`REPLACED_HOURS` on drops them (:func:`prune`).
     Identical runs keep one copy of what they made, the last one's; a folder
     of theirs that another kept output or a saved output's record names
-    stays when they go."""
+    stays when they go. A step that reuses a kept output keeps nothing
+    (:func:`kept_reply`), so only a run that ran replaces one."""
     try:
         described = describe_session(session_id)
     except Exception:  # noqa: BLE001 - the output is kept with what is known of it

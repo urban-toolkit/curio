@@ -6,7 +6,8 @@ output the owner's runs kept (``runs/kept.py``) under the key the saved
 dataflow gives its step: its code as a run sends it, its input as the nodes
 above it are restored, the owner's packages and the datasets its code reads.
 An editor sees the newest his own runs kept, keyed as they keep them: with
-his packages and the datasets as his runs read them. A node with no such
+the owner's packages and his own (``kept.packages_key``) and the datasets as
+his runs read them. A node with no such
 output shows its saved output, as before; past the kept outputs' days, or
 after Curio changes version, every node does.
 
@@ -104,7 +105,8 @@ def last_results(
         except Exception:  # noqa: BLE001 - a node whose code does not resolve or compile is not keyed
             sent.pop(node_id, None)
     datasets = _datasets_by_node(codes, project_id, keyer)
-    packages = kept.packages_fingerprint(keyer_key)
+    # An editor's runs key with the owner's packages and his own, as they run.
+    packages = kept.packages_key(user_key, keyer_key)
     saved_by_node = {ref.node_id: ref for ref in saved}
     outputs: dict = {}
     shown: dict = {}
