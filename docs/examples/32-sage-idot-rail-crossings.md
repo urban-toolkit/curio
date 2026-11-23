@@ -284,7 +284,7 @@ return occupancy
 
 ## Frames
 
-**Half hour of the frames** picks the half hour: the one **Frames from** names, or the busiest. **Draw the frames** draws up to six of its snapshots with PIL, with the zones in yellow and the chosen model's boxes colored by class, each as a picture derived from its snapshot, whose tag names the model, classes and confidence it was drawn with. Each card's caption gives the snapshot's Chicago time and every model's count of boxes on it, of the chosen classes at the chosen confidence. A Simple View shows the cards.
+**Half hour of the frames** picks the half hour: the one **Frames from** names, or the busiest. **Draw the frames** draws up to six of its snapshots with PIL, with the zones in yellow and the chosen model's boxes colored by class, each as a picture derived from its snapshot, kept in the folder of the node's run. Each card's caption gives the snapshot's Chicago time and every model's count of boxes on it, of the chosen classes at the chosen confidence. A Simple View shows the cards.
 
 ## The ground
 
