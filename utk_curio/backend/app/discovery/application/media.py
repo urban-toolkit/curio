@@ -190,7 +190,11 @@ def _locate_derived(
     that names no run's folder names no derived file, and a file its run's
     folder took with it is not found, never read as another run's of the
     same id. That folder is looked for where the reader's runs write
-    (:func:`_run_folder_candidates`)."""
+    (:func:`_run_folder_candidates`), and, when none holds the file and the
+    read goes through a dataflow, in its owner's store for an editor she
+    invited, when one of that dataflow's saved outputs records the folder
+    (:func:`_owners_store_through`): the files her saved results name,
+    which his canvas shows."""
     from utk_curio.sandbox.util.collections import derived_id, derived_relpath, derived_type
 
     source = rows.get(source_id)
@@ -210,6 +214,11 @@ def _locate_derived(
          if (root / relpath).is_file()),
         None,
     )
+    if found is None and service.dataflow_id and service.user is not None:
+        # Asked only on a miss: the canvas names its dataflow on every read.
+        owner = _owners_store_through(service, kept)
+        if owner is not None and (media_dirs.derived_root(owner, kept=kept) / relpath).is_file():
+            found = (owner, media_dirs.derived_root(owner, kept=kept) / relpath)
     if found is None:
         raise ResourceNotFound("this file has not been made; run the node that makes it again")
     store, path = found
@@ -222,14 +231,12 @@ def _locate_derived(
 
 
 def _run_folder_candidates(service, kept: str) -> list[tuple[str, Path]]:
-    """``(store, folder)``: where the run's folder *kept* may be for the
-    reader of *service*, in the order it is looked for. A hosted guest's in
-    their own folder, then the account's, where an example's dashboard's
-    steps derive for every visitor; never another visitor's. Read through a
-    dataflow (``service.dataflow_id``) by an editor its owner invited, the
-    owner's too, when one of that dataflow's saved outputs records the folder
-    (:func:`_owners_store_through`): the files the owner's saved results
-    name, which his canvas shows."""
+    """``(store, folder)``: where the run's folder *kept* may be in the
+    reader's own media folder, in the order it is looked for: a hosted
+    guest's in their own folder, then the account's, where an example's
+    dashboard's steps derive for every visitor; never another visitor's.
+    Read through a dataflow by an editor its owner invited, the owner's is
+    looked in after these (:func:`_owners_store_through`)."""
     from utk_curio.backend.app.projects import visitor_copies
 
     try:
@@ -239,9 +246,6 @@ def _run_folder_candidates(service, kept: str) -> list[tuple[str, Path]]:
             folders.insert(0, (service.user_key, media_dirs.derived_root(service.user_key, visitor, kept=kept)))
     except ValueError:
         raise ResourceNotFound(f"{kept!r} is not the name of a run's folder") from None
-    owner = _owners_store_through(service, kept)
-    if owner is not None:
-        folders.append((owner, media_dirs.derived_root(owner, kept=kept)))
     return folders
 
 
