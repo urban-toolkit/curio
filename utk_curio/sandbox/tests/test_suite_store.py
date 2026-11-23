@@ -15,8 +15,6 @@ DuckDB's "Could not set lock on file".
 import os
 from pathlib import Path
 
-import pytest
-
 from utk_curio.sandbox.util import db, parsers
 
 from .conftest import SUITE_STORE_SET, suite_store
@@ -45,10 +43,18 @@ def test_both_readers_of_the_store_folder_agree():
 
 
 def test_this_process_has_the_store_the_suite_gives_it():
-    """Under ``-n``, each worker's store, not the controller's it inherited."""
+    """Under ``-n``, each worker's store, not the controller's it inherited.
+
+    When the caller gave the store, the conftest set no store of its own, so
+    the caller's stays.
+    """
     if os.environ.get("CURIO_SHARED_DATA") != os.environ.get(SUITE_STORE_SET):
-        pytest.skip("the caller gave the suite its store")
-    assert Path(db.get_db_path()).parent == Path(suite_store())
+        assert SUITE_STORE_SET not in os.environ, (
+            f"the conftest set the store {os.environ[SUITE_STORE_SET]}, but this "
+            f"process has {os.environ.get('CURIO_SHARED_DATA')}"
+        )
+    else:
+        assert Path(db.get_db_path()).parent == Path(suite_store())
 
 
 def test_each_xdist_worker_gets_a_store_of_its_own():
