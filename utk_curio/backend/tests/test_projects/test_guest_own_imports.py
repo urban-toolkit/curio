@@ -51,6 +51,7 @@ from utk_curio.backend.tests.test_discovery.conftest import (  # noqa: F401  (fi
 from utk_curio.backend.tests.test_projects.test_guest_copy_leaks import (  # noqa: F401  (fixtures)
     VISITOR_A,
     VISITOR_B,
+    _content,
     _copy_of,
     _digests,
     _in_the_dataflow,
@@ -277,11 +278,13 @@ def _a_video(client, token: str, source: str) -> tuple[str, str, bytes]:
     return dataset["id"], row["file_id"], video.read_bytes()
 
 
-def _link(client, token: str, collection: str, file_id: str, *, dataflow: str | None = None) -> str:
+def _link(client, token: str, collection: str, file_id: str, *, dataflow: str | None = None,
+          kept: str | None = None) -> str:
     """The signed link Simple View's player asks for to play *file_id* of
     *collection*, as the visitor signed in as *token*, through the dataflow
-    its canvas shows, *dataflow* (``?dataflowId=``)."""
-    query = {"dataflowId": dataflow} if dataflow else {}
+    its canvas shows, *dataflow* (``?dataflowId=``); *kept* is the folder of
+    the run that derived it, which its row's URLs name."""
+    query = {**({"dataflowId": dataflow} if dataflow else {}), **({"kept": kept} if kept else {})}
     resp = client.post(f"/api/datasets/{collection}/media/{file_id}/link", query_string=query,
                        headers=auth_headers(token))
     assert resp.status_code == 200, resp.get_data(as_text=True)
@@ -439,11 +442,12 @@ def _written(sent: dict, collection: str, clip: str, frame: bytes) -> dict:
 
 
 def _derives_in_a_play(client, sandbox, token: str, example: str, collection: str, clip: str,
-                       frame: bytes) -> dict:
+                       frame: bytes, *, content=None) -> dict:
     """The visitor signed in as *token* plays the example's node a, whose
     code writes *frame* where its run's ``curio_derived_file`` says
-    (:func:`_written`); the row it wrote."""
-    _play(client, token, example, "a")
+    (:func:`_written`); the row it wrote. *content* is the code it plays,
+    node a's own unless given."""
+    _play(client, token, example, "a", content=content)
     return _written(sandbox["runs"]["a"], collection, clip, frame)
 
 
@@ -478,11 +482,19 @@ def _derives_in_a_job(app, token: str, example: str, collection: str, clip: str,
     return _written(handed, collection, clip, frame)
 
 
-def _original(client, token: str, collection: str, file_id: str):
+def _original(client, token: str, collection: str, file_id: str, *, kept: str | None = None):
     """*file_id* of *collection*, the file itself, as the visitor signed in
-    as *token* reads it."""
-    return client.get(f"/api/datasets/{collection}/media/{file_id}", query_string={"variant": "original"},
+    as *token* reads it; *kept* is the folder of the run that derived it."""
+    query = {"variant": "original", **({"kept": kept} if kept else {})}
+    return client.get(f"/api/datasets/{collection}/media/{file_id}", query_string=query,
                       headers=auth_headers(token))
+
+
+def _run_of(row: dict) -> str | None:
+    """The folder of the run that derived *row*, which its URLs name."""
+    from urllib.parse import parse_qs, urlparse
+
+    return parse_qs(urlparse(row["thumbnail"]).query).get("kept", [None])[0]
 
 
 @pytest.mark.parametrize("ran", ["play", "job"])
@@ -492,7 +504,8 @@ def test_a_frame_a_hosted_guests_node_derives_is_theirs_alone(
     """A's node derives a frame from the video of a collection every guest
     reads, on a play or in an agent's job. A reads it by its id. B reads the
     video, but not the frame, its thumbnail or a link to it, though its id is
-    the video's and a time anyone can name. It goes when the server starts."""
+    the video's and a time anyone can name, and B names the folder of A's
+    run, as A's row does. It goes when the server starts."""
     from utk_curio.backend.app.projects import visitor_copies
 
     workers_finish_first(monkeypatch)
@@ -502,21 +515,22 @@ def test_a_frame_a_hosted_guests_node_derives_is_theirs_alone(
         row = _derives_in_a_play(client, sandbox, VISITOR_A, example, collection, clip, frame)
     else:
         row = _derives_in_a_job(app, VISITOR_A, example, collection, clip, frame)
+    run = _run_of(row)
 
-    mine = _original(client, VISITOR_A, collection, row["file_id"])
+    mine = _original(client, VISITOR_A, collection, row["file_id"], kept=run)
     assert (mine.status_code, mine.data == frame) == (200, True), mine.status_code
     seen = _original(client, VISITOR_B, collection, clip)
     assert (seen.status_code, seen.data == video) == (200, True), seen.status_code
     for variant in ("original", "thumb"):
         theirs = client.get(f"/api/datasets/{collection}/media/{row['file_id']}",
-                            query_string={"variant": variant}, headers=auth_headers(VISITOR_B))
+                            query_string={"variant": variant, "kept": run}, headers=auth_headers(VISITOR_B))
         assert theirs.status_code == 404, (variant, theirs.status_code)
-    link = client.post(f"/api/datasets/{collection}/media/{row['file_id']}/link",
+    link = client.post(f"/api/datasets/{collection}/media/{row['file_id']}/link", query_string={"kept": run},
                        headers=auth_headers(VISITOR_B))
     assert link.status_code == 404, link.get_data(as_text=True)
 
     visitor_copies.drop_all()
-    gone = _original(client, VISITOR_A, collection, row["file_id"])
+    gone = _original(client, VISITOR_A, collection, row["file_id"], kept=run)
     assert gone.status_code == 404, gone.status_code
 
 
@@ -550,7 +564,7 @@ def test_a_hosted_guest_deriving_the_same_frame_leaves_anothers_as_their_node_wr
     collection, clip = _a_video_every_guest_sees(client, monkeypatch, example_storage)[:2]
     red, blue = _two_frames()
     mine = _derives_in_a_play(client, sandbox, VISITOR_A, example, collection, clip, red)
-    a_link = _link(client, VISITOR_A, collection, mine["file_id"])
+    a_link = _link(client, VISITOR_A, collection, mine["file_id"], kept=_run_of(mine))
     theirs = _derives_in_a_play(client, sandbox, VISITOR_B, example, collection, clip, blue)
     assert theirs["file_id"] == mine["file_id"], (mine, theirs)
 
@@ -560,27 +574,61 @@ def test_a_hosted_guest_deriving_the_same_frame_leaves_anothers_as_their_node_wr
     made = time.time_ns()
     for row in (mine, theirs):
         os.utime(row["path"], ns=(made, made))
-    for token, frame, tone in ((VISITOR_A, red, "red"), (VISITOR_B, blue, "blue")):
-        read = _original(client, token, collection, mine["file_id"])
+    for token, row, frame, tone in ((VISITOR_A, mine, red, "red"), (VISITOR_B, theirs, blue, "blue")):
+        read = _original(client, token, collection, row["file_id"], kept=_run_of(row))
         assert (read.status_code, read.data == frame) == (200, True), (token, read.status_code)
-        thumb = client.get(f"/api/datasets/{collection}/media/{mine['file_id']}", headers=auth_headers(token))
+        thumb = client.get(row["thumbnail"], headers=auth_headers(token))
         drawn = _tone(thumb.data) if thumb.status_code == 200 else thumb.status_code
         assert drawn == tone, (token, drawn)
     for sent in ({}, auth_headers(VISITOR_B)):
         played = client.get(a_link, headers=sent)
         assert (played.status_code, played.data == red) == (200, True), (sent, played.status_code)
-    b_link = _link(client, VISITOR_B, collection, mine["file_id"])
+    b_link = _link(client, VISITOR_B, collection, theirs["file_id"], kept=_run_of(theirs))
     played = client.get(b_link)
     assert (played.status_code, played.data == blue) == (200, True), played.status_code
+
+
+def test_two_plays_of_one_hosted_guest_keep_a_frame_each_that_another_guest_reads_neither(
+    client, example, example_storage, sandbox, monkeypatch,
+):
+    """A's node derives the frame of one video at one time twice, red on its
+    first play and blue on its second, which plays other code (two plays of
+    the same code keep one copy, ``kept.keep``), so one id names both. Each
+    play's frame is as that play wrote it, and A reads each through its
+    row's URL. B reads neither, and both go when the server starts."""
+    from utk_curio.backend.app.projects import visitor_copies
+
+    workers_finish_first(monkeypatch)
+    collection, clip = _a_video_every_guest_sees(client, monkeypatch, example_storage)[:2]
+    red, blue = _two_frames()
+    first = _derives_in_a_play(client, sandbox, VISITOR_A, example, collection, clip, red)
+    second = _derives_in_a_play(client, sandbox, VISITOR_A, example, collection, clip, blue,
+                                content=_content("a") + "\n# blue this time")
+    assert second["file_id"] == first["file_id"], (first, second)
+
+    with open(first["path"], "rb") as handle:
+        kept = handle.read()
+    assert kept == red, "A's second play wrote over the frame A's first play made"
+    for row, frame in ((first, red), (second, blue)):
+        mine = client.get(row["image_url"], headers=auth_headers(VISITOR_A))
+        assert (mine.status_code, mine.data == frame) == (200, True), (row["image_url"], mine.status_code)
+        theirs = client.get(row["image_url"], headers=auth_headers(VISITOR_B))
+        assert theirs.status_code == 404, (row["image_url"], theirs.status_code)
+
+    visitor_copies.drop_all()
+    assert [os.path.exists(row["path"]) for row in (first, second)] == [False, False]
 
 
 def test_without_deploy_what_the_local_guests_nodes_derive_is_the_accounts(
     client, example, example_storage, sandbox, monkeypatch,
 ):
     """Without ``--deploy`` the shared guest is the one local user: what its
-    nodes derive is written in the account's media folder, as an account's
-    is, whatever sign-in plays them, and read by any."""
+    nodes derive is written in a run's folder of the account's media folder,
+    as an account's is, whatever sign-in plays them, and read by any."""
+    from pathlib import Path
+
     from utk_curio.backend.app.discovery.infrastructure import media_dirs
+    from utk_curio.sandbox.util.collections import kept_of
 
     workers_finish_first(monkeypatch)
     monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
@@ -589,6 +637,6 @@ def test_without_deploy_what_the_local_guests_nodes_derive_is_the_accounts(
     row = _derives_in_a_play(client, sandbox, VISITOR_A, example, collection, clip, frame)
 
     sent = sandbox["runs"]["a"]["media_dir"]
-    assert sent == str(media_dirs.media_work_root(GUEST_KEY)), sent
-    read = _original(client, VISITOR_B, collection, row["file_id"])
+    assert kept_of(sent) and Path(sent).parent.parent == media_dirs.media_work_root(GUEST_KEY), sent
+    read = _original(client, VISITOR_B, collection, row["file_id"], kept=_run_of(row))
     assert (read.status_code, read.data == frame) == (200, True), read.status_code

@@ -96,9 +96,10 @@ class Run:
                     os.symlink(copy, objects / f"{row.file_id}.{row.ext}")
         self.media = folder / "media"
         self.media.mkdir()
+        # The example's nodes derive in their run's own folder, <media>/kept/<name>/.
         self.helpers = make_collection_helpers(
             lambda dataset_id: str(self.catalog[dataset_id][0] / self.catalog[dataset_id][1]["dataFile"]),
-            collections, str(self.media),
+            collections, str(self.media / "kept" / ("k" + "0" * 32)),
         )
         self.results: dict[str, object] = {}
         self.printed: dict[str, str] = {}

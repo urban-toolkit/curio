@@ -584,7 +584,9 @@ def install_computed_file_for_node(
     used otherwise. Exactly one must be supplied. A saved frame is the store's
     own file, linked: the store keeps its decode in the artifact's row, so
     *decode_sidecar* is the text the data file's ``.decode.json`` holds. Left
-    out, it is the one beside *source_path*, if that file has one.
+    out, it is the one beside *source_path*, if that file has one. The runs'
+    folders the output's rows name are recorded beside the data file as its
+    ``.media.json`` (``media_records``), so their files stay while it does.
 
     A *dataflow_id* is required: persisting without one would mint the legacy
     un-namespaced ``computed.<node>`` id, which permanently duplicates the
@@ -649,6 +651,7 @@ def install_computed_file_for_node(
     if source_path is None and file_bytes is None:
         raise InstallerError("install_computed_file_for_node requires file_bytes or source_path")
 
+    from utk_curio.backend.app.datasets.install import media_records
     from utk_curio.sandbox.util.catalog_helpers import files_read_beside
 
     # A new output goes in beside the one the folder holds, the manifest then
@@ -662,6 +665,8 @@ def install_computed_file_for_node(
         else:
             write_whole(data_path, lambda partial: partial.write_bytes(file_bytes))
         write_decode_sidecar(data_path, decode_sidecar)
+        # Read with its decode sidecar, which names its columns of JSON.
+        media_records.write_record(data_path)
 
         replace_manifest(manifest_obj, dest)
         try:

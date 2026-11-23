@@ -254,6 +254,7 @@ def _play_body(node_id, project_id, **extra):
 
 def test_a_python_node_on_a_thread_runs_as_play_does(app, client, user_and_token, monkeypatch):
     from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
+    from utk_curio.backend.app.discovery.infrastructure import media_dirs
     from utk_curio.backend.app.execution import node_exec, runtime_journal
     from utk_curio.backend.app.monitor import counters
     from utk_curio.backend.app.projects.services import _user_dir_key
@@ -285,12 +286,18 @@ def test_a_python_node_on_a_thread_runs_as_play_does(app, client, user_and_token
     assert reply["installedDataset"]["id"] == computed_dataset_id("thread-node", project_id)
 
     # One sandbox request each, identical as the same account, but for the
-    # kept session each run of its owner's saved dataflow gets of its own.
+    # kept session each run of its owner's saved dataflow gets of its own,
+    # and the run's own folder, named after that session, it derives in.
     (route_path, route_sent), (thread_path, thread_sent) = sent
     assert route_path == thread_path == "/exec"
-    assert {**thread_sent, "session_id": None} == {**route_sent, "session_id": None}
+    own = {"session_id": None, "media_dir": None}
+    assert {**thread_sent, **own} == {**route_sent, **own}
     assert is_kept_session(thread_sent["session_id"]) and is_kept_session(route_sent["session_id"])
     assert thread_sent["session_id"] != route_sent["session_id"]
+    for request in (route_sent, thread_sent):
+        assert request["media_dir"] == str(media_dirs.derived_root(
+            user_key, kept=media_dirs.kept_media_name(request["session_id"]),
+        )), request["media_dir"]
     assert thread_sent["imports_session"] == token
     assert thread_sent["user_key"] == user_key
 

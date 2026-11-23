@@ -168,6 +168,12 @@ _ROW_COLUMNS = {
 #: path. Such a path is compared with the folder's id left out.
 _RUN_FOLDER_ID = re.compile(r"(?<=/outputs/)[0-9]{1,20}_[0-9a-f]{8}(?=/)")
 _PATH_KINDS = ("str", "raster")
+#: A run's own folder of the files it derives: each run writes a frame, a
+#: clip or an overlay in ``<media>/kept/<name>/`` (``media_dirs.derived_root``),
+#: whose name a derived row's ``path`` holds and its URLs name
+#: (``&kept=<name>``), so two runs of one node name the same file in two
+#: folders. Such a text is compared with the folder's name left out.
+_RUN_MEDIA_FOLDER = re.compile(r"(?<=/kept/)k[0-9a-f]{32}(?=/)|(?<=[?&]kept=)k[0-9a-f]{32}(?![0-9a-f])")
 #: The Arrow route's headers that say what a table is. X-Curio-Filename is
 #: left out: it names the artifact, so it differs between any two.
 _TABLE_HEADERS = (
@@ -320,10 +326,26 @@ def snapshot_artifact(artifact_id: str) -> dict:
     return {"kind": kind, "envelope": load_artifact_as_dict(artifact_id)}
 
 
+def _without_run_folders(value):
+    """*value* with the name of every run's folder its texts name left out
+    (``_RUN_MEDIA_FOLDER``), through nested lists and dicts."""
+    if isinstance(value, str):
+        return _RUN_MEDIA_FOLDER.sub("<run>", value)
+    if isinstance(value, dict):
+        return {key: _without_run_folders(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_without_run_folders(item) for item in value]
+    return value
+
+
 def _same_value(a, b) -> bool:
-    """Equal, with NaN equal to NaN, through nested lists and dicts."""
+    """Equal, with NaN equal to NaN, through nested lists and dicts, and two
+    texts equal but for the name of the run's folder they name
+    (``_RUN_MEDIA_FOLDER``)."""
     if isinstance(a, float) and isinstance(b, float):
         return a == b or (math.isnan(a) and math.isnan(b))
+    if isinstance(a, str) and isinstance(b, str):
+        return a == b or _RUN_MEDIA_FOLDER.sub("<run>", a) == _RUN_MEDIA_FOLDER.sub("<run>", b)
     if isinstance(a, dict) and isinstance(b, dict):
         return a.keys() == b.keys() and all(_same_value(a[key], b[key]) for key in a)
     if isinstance(a, (list, tuple)) and isinstance(b, (list, tuple)):
@@ -428,7 +450,7 @@ def artifact_differences(actual: dict, expected: dict, where: str = "the output"
     if "envelope" in actual or "envelope" in expected:
         if "envelope" not in actual or "envelope" not in expected:
             return [f"{where}: one run's {kind} was read as stored, the other's as JSON"]
-        a, e = actual["envelope"], expected["envelope"]
+        a, e = _without_run_folders(actual["envelope"]), _without_run_folders(expected["envelope"])
         if a == e:
             return []
         keys = sorted(k for k in set(a) | set(e) if a.get(k) != e.get(k))

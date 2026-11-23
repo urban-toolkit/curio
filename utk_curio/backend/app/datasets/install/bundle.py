@@ -480,12 +480,14 @@ def install_computed_bundle_for_node(
     if same_output and held is not None and _holds_bundle(dest, bundle_spec):
         return keep_installed_output(user_key, dest, manifest_obj)
 
+    from utk_curio.backend.app.datasets.install import media_records
     from utk_curio.sandbox.util.catalog_helpers import files_read_beside, listed_bundle_parts
 
     # As a single output (``installer.install_computed_file_for_node``): the
     # new bundle goes in beside the one the folder holds, its parts in a
-    # folder of their own, then its bundle.json and the manifest name it, and
-    # only then do the old output's files go.
+    # folder of their own, each with its record of the runs' folders its rows
+    # name, then its bundle.json and the manifest name it, and only then do
+    # the old output's files go.
     with output_install_lock(dest):
         parts_dir = dest / "data" / "parts" / parts_folder
         for part, filename in part_files:
@@ -519,6 +521,7 @@ def install_computed_bundle_for_node(
                     indent=2,
                 )
                 write_whole(dest_file, lambda f: f.write_text(placeholder, encoding="utf-8"))
+            media_records.write_record(dest_file)
 
         bundle_path = dest / "data" / "bundle.json"
         bundle_text = json.dumps(bundle_spec, indent=2)

@@ -250,6 +250,17 @@ repository in the Discovery Catalog. The manifest format is in
   and the frames, videos, clips, tables and mosaics nodes derive are in the
   account's work directory, which other accounts' node code can read: the
   execution account is shared (see the [security checklist](#security-checklist)).
+  The frames, videos, clips and overlays a run derives are in a folder of the
+  run's own, `media/kept/<name>/`, which goes with the run's kept output after
+  7 days, or, when a saved output names it, once that output is deleted from
+  the Data Catalog: size the disk for a week of runs. Curio writes no
+  `frames`, `overlays`, `videos` or `clips` folder at the top of an account's
+  media folder, and no row names a file in one. From the stack's folder, this
+  removes them:
+
+  ```bash
+  sudo rm -rf .curio/users/*/media/{frames,overlays,videos,clips} .curio/exec-scratch/users/*/media/{frames,overlays,videos,clips}
+  ```
 - **Libraries.** Probing and thumbnails use `av` (PyAV) and `rasterio`, which
   are dependencies of `curio.builtin@1`. Curio installs them when it starts,
   and so does `python curio.py setup`.

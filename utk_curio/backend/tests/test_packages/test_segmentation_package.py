@@ -87,14 +87,21 @@ def segmentation(tmp_path):
         yield importlib.import_module(MODULE)
 
 
+#: The name of the folder of the run these nodes run in: every run derives in
+#: a folder of its own, ``<media>/kept/<name>/`` (``media_dirs.derived_root``).
+RUN = "k" + "0" * 32
+
+
 @pytest.fixture()
 def photos(tmp_path):
-    """Two of the committed photos, as a node's curio_load_collection gives them."""
+    """Two of the committed photos, as a node's curio_load_collection gives
+    them, with the helpers of a run whose own folder is ``media/kept/<RUN>``."""
     from utk_curio.sandbox.util.collections import make_collection_helpers
 
     index = REPO / "datasets" / f"{SAMPLE}@1" / "data" / "index.parquet"
     helpers = make_collection_helpers(
-        lambda _id: str(index), {SAMPLE: {"kind": "images", "root": str(STORAGE)}}, str(tmp_path / "media")
+        lambda _id: str(index), {SAMPLE: {"kind": "images", "root": str(STORAGE)}},
+        str(tmp_path / "media" / "kept" / RUN),
     )
     frame = helpers["curio_load_collection"](SAMPLE).head(2)
     return frame, helpers
@@ -510,7 +517,7 @@ def test_each_photo_gets_an_overlay_served_by_id(segmentation, photos):
     frame, helpers = photos
     out = segmentation.segment_images(frame, _loaded(DDRNET), helpers["curio_derived_file"], classes=STREET)
     for url, file_id in zip(out["overlay_url"], frame["file_id"]):
-        assert url.startswith(f"/api/datasets/{SAMPLE}/media/{file_id}@0?variant=original"), url
+        assert url == f"/api/datasets/{SAMPLE}/media/{file_id}@0?variant=original&kept={RUN}"
 
 
 def test_a_frame_sampled_from_a_video_gets_its_overlay_beside_the_video(segmentation, photos, tmp_path):
@@ -527,9 +534,10 @@ def test_a_frame_sampled_from_a_video_gets_its_overlay_beside_the_video(segmenta
         shutil.copyfile(frame["path"].iloc[0], sampled["path"])
         rows.append({"dataset_id": SAMPLE, "file_id": sampled["file_id"], "kind": "frame", "path": sampled["path"]})
     out = segmentation.segment_images(pd.DataFrame(rows), _loaded(DDRNET), derive, classes=STREET)
-    url = out["overlay_url"].iloc[0]
-    assert url.startswith(f"/api/datasets/{SAMPLE}/media/{video}@2000.png?variant=original"), url
-    assert (tmp_path / "media" / "overlays" / SAMPLE / video / "2000.png").is_file()
+    assert out["overlay_url"].iloc[0] == (
+        f"/api/datasets/{SAMPLE}/media/{video}@2000.png?variant=original&kept={RUN}"
+    )
+    assert (tmp_path / "media" / "kept" / RUN / "overlays" / SAMPLE / video / "2000.png").is_file()
     assert pd.isna(out["overlay_url"].iloc[1])
     assert out["segment_error"].isna().all() and out["dominant_class"].isin(STREET).all()
 

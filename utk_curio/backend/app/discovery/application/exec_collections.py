@@ -15,7 +15,7 @@ from utk_curio.backend.app.datasets.domain.code_refs import (
 
 def resolve_exec_collections(
     code: str, user_key: str | None, *, user=None, dataflow_id: str | None = None,
-    kept: str | None = None,
+    kept: str | None = None, viewers_step: bool = False,
 ) -> tuple[dict, str | None]:
     """Where the files of each collection *code* reads are, for this execution.
 
@@ -23,8 +23,9 @@ def resolve_exec_collections(
     collection's files are read in place under ``root``, and so are those of
     a bucket this deployment mounts (with ``tail``, or ``unavailable`` while
     its mount is down: :func:`resolve_collections`); another bucket
-    collection's cached copies sit in ``objects``. ``media_dir`` is where a node may write
-    the frames or clips it derives. *user* is the account's ``User`` row, which
+    collection's cached copies sit in ``objects``. ``media_dir`` is the run's
+    own folder, where a node may write the frames or clips it derives
+    (:func:`media_dir_for`). *user* is the account's ``User`` row, which
     the Data Catalog needs to find the collection. Fail-open like dataset
     paths: the injected ``curio_load_collection`` raises a clear error for anything
     missing.
@@ -36,13 +37,14 @@ def resolve_exec_collections(
     them (``DiscoveryService.collection_store``). Anyone else reads what a run
     that names no dataflow reads.
 
-    *kept* names the folder of a dashboard viewer's step
-    (``media_dirs.kept_media_name``), which is its ``media_dir``.
+    *kept* names the run's folder (``media_dirs.kept_media_name``), a fresh
+    one when it is not given; *viewers_step* says the run is a dashboard
+    viewer's step (:func:`media_dir_for`).
     """
     if not user_key:
         return {}, None
     try:
-        media_dir = media_dir_for(user_key, kept=kept)
+        media_dir = media_dir_for(user_key, kept=kept, viewers_step=viewers_step)
         ids = collection_ids_in_code(code, limit=MAX_DATASET_IDS)
         if not ids:
             return {}, media_dir
@@ -52,24 +54,28 @@ def resolve_exec_collections(
         return {}, None
 
 
-def media_dir_for(user_key: str | None, *, kept: str | None = None) -> str | None:
-    """Where a node run under *user_key* writes the frames, clips and
-    overlays it derives; None with no key. Every node gets it, not only one
-    that loads a collection: a node downstream of a Data Loading node writes
-    the frames or the mosaic, and never names the collection itself. A
-    hosted guest's run writes in the folder of the visitor it serves, in
+def media_dir_for(user_key: str | None, *, kept: str | None = None, viewers_step: bool = False) -> str | None:
+    """The run's own folder, where a node run under *user_key* writes the
+    frames, clips and overlays it derives (``media_dirs.derived_root``),
+    named *kept* (``media_dirs.kept_media_name``), or afresh, after a session
+    made for this run alone, when no name is given: never after the sign-in,
+    since the URLs of the rows it derives name the folder. None with no key.
+    Every node gets one, not only one that loads a collection: a node
+    downstream of a Data Loading node writes the frames or the mosaic, and
+    never names the collection itself. A run that serves a hosted guest, in
     their request or on a thread of its own (``visitor_copies.media_visitor``),
-    which the media route reads for that visitor alone. A dashboard viewer's
-    step writes in its own folder, *kept*, whoever it serves, and never where
-    the owner's runs write (``media_dirs.derived_root``)."""
+    has its folder in that guest's own, which the media route reads for that
+    guest alone. A dashboard viewer's step (*viewers_step*) has its folder in
+    the account's, whoever it serves: its kept output serves every visitor."""
     if not user_key:
         return None
     from utk_curio.backend.app.discovery.infrastructure import media_dirs
     from utk_curio.backend.app.projects import visitor_copies
+    from utk_curio.common.kept_sessions import new_session_id
 
-    if kept is not None:
-        return str(media_dirs.derived_root(user_key, kept=kept))
-    return str(media_dirs.derived_root(user_key, visitor_copies.media_visitor(user_key)))
+    name = kept if kept is not None else media_dirs.kept_media_name(new_session_id())
+    visitor = None if viewers_step else visitor_copies.media_visitor(user_key)
+    return str(media_dirs.derived_root(user_key, visitor, kept=name))
 
 
 def resolve_collections(

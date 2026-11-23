@@ -517,6 +517,8 @@ class TestAddingACollection:
         import pandas as pd
 
         from utk_curio.backend.app.discovery.infrastructure import media_dirs
+        from utk_curio.common.kept_sessions import new_session_id
+        from utk_curio.sandbox.util.collections import KEPT_MEDIA
 
         user, _token = user_and_token
         user_key = str(user.id)
@@ -528,9 +530,10 @@ class TestAddingACollection:
         assert thumb.status_code == 200
         cache = media_dirs.media_cache_dir(user_key, dataset["id"])
         # A frame and a video made from a video, each where
-        # curio_derived_file keeps it.
+        # curio_derived_file keeps it, in a run's own folder.
+        run = media_dirs.kept_media_name(new_session_id())
         made = {"frames": "0.jpg", "videos": "0-sam3.mp4"}
-        derived = {folder: media_dirs.media_work_dir(user_key, folder, dataset["id"]) for folder in made}
+        derived = {folder: media_dirs.media_work_dir(user_key, KEPT_MEDIA, run, folder, dataset["id"]) for folder in made}
         for folder, name in made.items():
             (derived[folder] / name).write_bytes(b"x")
         assert any(cache.iterdir())
