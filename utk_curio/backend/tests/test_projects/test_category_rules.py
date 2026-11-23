@@ -5,12 +5,14 @@ A package, a template, a model or a dataset declares its own tags and data
 types in its manifest (``dataflowCategories``). The table holds the rest: what
 a dataflow's code shows (the modules it imports, the files it names), what the
 core fields of the manifests it uses show (the grammar a template draws with, a
-model's type, a dataset's format, a collection's kind), and the order the
-names are listed in. So it names no package, model, dataset or source.
+dataset's format, a collection's kind, each a vocabulary a schema defines), and
+the order the names are listed in. So it names no package, model, model type,
+dataset or source, and every collection kind has its row.
 
 Each row gives exactly what ``derive`` gives a dataflow with that one signal,
-beside what the manifest behind that signal declares, and a dataflow with
-every signal lists every name in the table's order.
+beside what the manifest behind that signal declares, a model package gives
+what it declares alone, and a dataflow with every signal lists every name in
+the table's order.
 
 The table is read inside each test, so a missing table fails these tests and
 nothing else.
@@ -30,10 +32,9 @@ REPO = Path(__file__).resolve().parents[4]
 PACKAGES = REPO / "packages"
 DATASETS = REPO / "datasets"
 DISCOVERY = REPO / "discovery"
-SCHEMA = REPO / "docs" / "schemas" / "node-package.v4.json"
 
 #: The table's sections.
-SECTIONS = {"code", "grammars", "modelTypes", "datasetFormats", "collectionKinds", "displayOrder"}
+SECTIONS = {"code", "grammars", "datasetFormats", "collectionKinds", "displayOrder"}
 #: What a row of ``code`` looks for in a dataflow's code.
 CODE_SIGNALS = {"imports", "fileExtensions", "dataUris"}
 #: What a row gives.
@@ -75,7 +76,7 @@ def _rows(rules: dict) -> list[dict]:
     for row in rules["grammars"].values():
         rows.append(row)
         rows += list(row.get("specKeys", {}).values())
-    for section in ("modelTypes", "datasetFormats", "collectionKinds"):
+    for section in ("datasetFormats", "collectionKinds"):
         rows += list(rules[section].values())
     return rows
 
@@ -118,14 +119,29 @@ def _builtin_template_drawing_with(grammar: str) -> str:
     return f"{manifest['id']}/{ids[0]}"
 
 
-def _model_node_types(model_type: str) -> list[str]:
-    """The node types of every shipped model package whose model is a *model_type*."""
-    found = []
-    for path in sorted(PACKAGES.glob("*/manifest.json")):
+def _shipped_model_packages() -> list[dict]:
+    """The manifest of every model package Curio ships."""
+    manifests = [json.loads(path.read_text(encoding="utf-8")) for path in sorted(PACKAGES.glob("*/manifest.json"))]
+    return [raw for raw in manifests if raw.get("kind") == "model"]
+
+
+def _shipped_declared_names() -> dict[str, set[str]]:
+    """Every name a shipped package, one of its templates or a shipped dataset
+    declares in ``dataflowCategories``, by the table's section."""
+    names: dict[str, set[str]] = {section: set() for section in GIVES}
+    for path in sorted(PACKAGES.glob("*/manifest.json")) + sorted(DATASETS.glob("*/manifest.json")):
         raw = json.loads(path.read_text(encoding="utf-8"))
-        if raw.get("kind") == "model" and (raw.get("model") or {}).get("type") == model_type:
-            found += [f"{raw['id']}/{template['id']}" for template in raw["templates"]]
-    return found
+        templates = [t for t in raw.get("templates") or [] if isinstance(t, dict)]
+        for declared in [raw.get("dataflowCategories") or {}, *(t.get("dataflowCategories") or {} for t in templates)]:
+            for section in GIVES:
+                names[section] |= set(declared.get(section, []))
+    return names
+
+
+def _kinds_without_a_row(rules: dict, kinds) -> list[str]:
+    """The collection kinds among *kinds* the table gives no row, but
+    ``files``, whose files are of any type."""
+    return sorted(kind for kind in kinds if kind != "files" and kind not in rules["collectionKinds"])
 
 
 def _declared(node_type: str) -> dict:
@@ -192,19 +208,35 @@ def test_the_table_has_its_sections_and_each_row_gives_names_a_manifest_could_de
         assert clean_dataflow_categories(given, where="category_rules.json") == given
 
 
-def test_the_display_order_lists_every_name_the_rows_give_and_no_other():
+def test_the_display_order_lists_every_name_the_rows_give_and_only_names_something_gives():
+    """Every name a row gives is listed once; a listed name no row gives is
+    one a shipped manifest declares, as Computer vision is DDRNet23-Slim's
+    and SAM 3's: the table names no model type."""
     rules = _rules()
     order = rules["displayOrder"]
     assert set(order) == set(GIVES)
+    declared = _shipped_declared_names()
     for section in GIVES:
         names = order[section]
         assert len(set(names)) == len(names), names
-        assert set(names) == {name for row in _rows(rules) for name in row.get(section, [])}
+        given = {name for row in _rows(rules) for name in row.get(section, [])}
+        assert given <= set(names), (section, sorted(given - set(names)))
+        assert set(names) <= given | declared[section], (section, sorted(set(names) - given - declared[section]))
 
 
-def test_the_model_types_are_the_schemas():
-    enum = json.loads(SCHEMA.read_text(encoding="utf-8"))["$defs"]["model"]["properties"]["type"]["enum"]
-    assert set(_rules()["modelTypes"]) <= set(enum)
+def test_every_collection_kind_but_files_has_a_row():
+    """Each kind of collection the Discovery source schema reads
+    (``COLLECTION_KINDS``) files a dataflow that reads one under its data
+    types; a ``files`` resource's files are of any type, so it gives none. A
+    kind added to the schema without its row fails here."""
+    from utk_curio.backend.app.discovery.domain.manifest import COLLECTION_KINDS
+
+    rules = _rules()
+    assert _kinds_without_a_row(rules, COLLECTION_KINDS) == []
+    assert set(rules["collectionKinds"]) == set(COLLECTION_KINDS) - {"files"}
+    # The check finds a kind a table leaves out.
+    planted = {**rules, "collectionKinds": {k: v for k, v in rules["collectionKinds"].items() if k != "videos"}}
+    assert _kinds_without_a_row(planted, COLLECTION_KINDS) == ["videos"]
 
 
 # ---------------------------------------------------------------------------
@@ -258,20 +290,19 @@ def test_a_spec_key_gives_its_names_under_its_own_grammar_only():
                 assert _sorted(_derive([_node(spec, node_type)])) == _given(row), (grammar, other, key)
 
 
-def test_each_model_type_gives_what_its_row_says():
-    """A model package can declare more in its manifest, as SAM 3 declares
-    PyTorch, which its package's module runs. The row's names never come from
-    that declaration, so they still come from the row alone."""
-    model_types = _rules()["modelTypes"]
-    assert model_types
-    for model_type, row in model_types.items():
-        node_types = _model_node_types(model_type)
-        assert node_types, f"Curio ships no {model_type} model"
-        for node_type in node_types:
-            declared = _declared(node_type)
-            for gives in GIVES:
-                assert not set(declared[gives]) & set(row.get(gives, [])), (node_type, gives)
-            assert _sorted(_derive([_node("", node_type)])) == _given(row, declared), node_type
+def test_a_shipped_model_package_gives_what_it_declares_alone():
+    """A node of a shipped model package gives what its package and its
+    template declare, and a ``curio_load_model`` call naming it what its
+    package declares: the table gives a model's type nothing, a segmentation
+    model's included."""
+    models = _shipped_model_packages()
+    assert {raw["model"]["type"] for raw in models} >= {"semantic-segmentation", "concept-segmentation"}
+    for raw in models:
+        for template in raw["templates"]:
+            node_type = f"{raw['id']}/{template['id']}"
+            assert _sorted(_derive([_node("", node_type)])) == _given(_declared(node_type)), node_type
+        loads = f'model = curio_load_model("{raw["id"]}")\n'
+        assert _sorted(_derive([_node(loads)])) == _given(raw.get("dataflowCategories") or {}), raw["id"]
 
 
 def test_each_dataset_format_and_collection_kind_gives_what_its_row_says():
@@ -299,8 +330,18 @@ def test_a_dataflow_with_every_signal_lists_every_name_in_the_display_order():
     for grammar, row in rules["grammars"].items():
         spec = json.dumps({key: {} for key in row.get("specKeys", {})})
         nodes.append(_node(spec, _builtin_template_drawing_with(grammar), node_id=grammar))
-    for model_type in rules["modelTypes"]:
-        nodes.append(_node("", _model_node_types(model_type)[0], node_id=model_type))
+    # A listed name no row gives comes from a model package that declares it,
+    # one whose names are all listed.
+    given = {section: {name for row in _rows(rules) for name in row.get(section, [])} for section in GIVES}
+    listed = {section: set(rules["displayOrder"][section]) for section in GIVES}
+    declaring = []
+    for raw in _shipped_model_packages():
+        node_type = f"{raw['id']}/{raw['templates'][0]['id']}"
+        declared = _declared(node_type)
+        if any(set(declared[s]) - given[s] for s in GIVES) and all(set(declared[s]) <= listed[s] for s in GIVES):
+            declaring.append(_node("", node_type, node_id=raw["id"]))
+    assert declaring
+    nodes += declaring
     out = _derive(nodes, lambda dataset_id: datasets.get(dataset_id, (None, None)))
     assert out == {
         "tags": rules["displayOrder"]["tags"],

@@ -1,7 +1,7 @@
 import { currentCode } from "../codeOnlyUsage";
 import type { ModelBlockPayload, PackagePayload } from "./types";
 import { hasRewritableModelCall, modelIdsInCode, rewriteFirstModelCall } from "./modelCode";
-import { MODEL_TYPE_LABEL } from "./modelPackages";
+import { modelTypeWords } from "./modelPackages";
 import {
   beginPackageCardDrag,
   endPackageCardDrag,
@@ -194,7 +194,7 @@ export function nodeModelType(
 }
 
 function modelTypeText(type: string): string {
-  const label = (MODEL_TYPE_LABEL as Record<string, string>)[type] ?? type;
+  const label = modelTypeWords(type);
   return label.charAt(0).toLowerCase() + label.slice(1);
 }
 

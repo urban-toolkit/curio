@@ -27,7 +27,7 @@ from utk_curio.backend.app.packages.domain.dataflow_categories import (
     clean_dataflow_categories,
 )
 from utk_curio.backend.app.packages.domain.model_block import (
-    CONCEPT_SEGMENTATION,
+    CELL_RUNTIME,
     KINDS,
     MODELS_DIR,
     ModelBlock,
@@ -686,16 +686,19 @@ def _parse_kind_and_model(raw: dict, *, where: str) -> tuple[str, ModelBlock | N
 
 
 def _refuse_templates_curio_writes(templates, model: ModelBlock | None, *, where: str) -> None:
-    """A ``concept-segmentation`` model's node is its package's own code:
-    Curio writes no cell for that type, so each template names its
-    ``source``."""
-    if model is None or model.type != CONCEPT_SEGMENTATION:
+    """A template that names no ``source`` opens with the cell Curio writes,
+    an onnxruntime session on the model's ``.onnx`` file
+    (``default_cells.run_skeleton``), whatever the model's type. A model on
+    another runtime cannot open in it, so each of its templates names its
+    ``source``: its node is the code its package ships."""
+    if model is None or model.runtime == CELL_RUNTIME:
         return
     for template in templates:
         if not template.source:
             raise ManifestError(
-                f"{where}.templates[{template.template_id!r}]: a {CONCEPT_SEGMENTATION} model's node runs the "
-                "code its package ships, so the template names its source (sources/<file>.py)"
+                f"{where}.templates[{template.template_id!r}]: a {model.runtime} model's node runs the code its "
+                "package ships: Curio's cell opens an .onnx file, so the template names its source "
+                "(sources/<file>.py)"
             )
 
 

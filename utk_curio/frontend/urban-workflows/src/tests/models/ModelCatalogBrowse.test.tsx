@@ -353,6 +353,65 @@ describe("a concept segmentation model whose weights its fetch names", () => {
   });
 });
 
+describe("a model of a type no package Curio ships runs", () => {
+  beforeEach(() => {
+    const depth = fetchedModelPackage();
+    mockApi.catalog.mockResolvedValue({
+      packages: [ddrnetPackage(), deepUmbraPackage(), fetchedModelPackage({ model: { ...depth.model, type: "depth-estimation" } })],
+      families: [],
+      catalogCollisions: [],
+    });
+  });
+
+  test("its card and the rail name its type in words, and the rail narrows the grid to it", async () => {
+    renderPage();
+    const depth = await gridCard("model.test.prompted@1");
+    expect(depth).toHaveTextContent("Depth estimation");
+    expect(railRow(/Depth estimation/)).toHaveTextContent("1");
+    fireEvent.click(railRow(/Depth estimation/));
+    await waitFor(() => expect(card("model.curio.ddrnet23-slim@1")).toBeNull());
+    expect(card("model.scout.deep-umbra@1")).toBeNull();
+    expect(card("model.test.prompted@1")).not.toBeNull();
+  });
+
+  test("the rail lists the types present by count, then by name, whatever order the listing gives", async () => {
+    const fetched = fetchedModelPackage();
+    const depth = (id: string) =>
+      fetchedModelPackage({ packageId: id, dirName: `${id}@1`, name: id, model: { ...fetched.model, type: "depth-estimation" } });
+    mockApi.catalog.mockResolvedValue({
+      packages: [ddrnetPackage(), deepUmbraPackage(), fetched, depth("model.test.depth-a"), depth("model.test.depth-b")],
+      families: [],
+      catalogCollisions: [],
+    });
+    mockApi.listInstalled.mockResolvedValue({ packages: [] });
+    renderPage();
+    await gridCard("model.test.depth-b@1");
+    const rail = screen.getByRole("complementary", { name: "Filter models" });
+    const rows = Array.from(rail.querySelectorAll<HTMLElement>('button[data-curio-rail-section="type"]'));
+    expect(rows.map((row) => row.getAttribute("data-curio-rail-value"))).toEqual([
+      "depth-estimation",
+      "concept-segmentation",
+      "image-to-image",
+      "semantic-segmentation",
+    ]);
+    expect(rows.map((row) => row.textContent)).toEqual([
+      "Depth estimation2",
+      "Concept segmentation1",
+      "Image to image1",
+      "Semantic segmentation1",
+    ]);
+  });
+
+  test("its details name its type in words", async () => {
+    renderPage();
+    const depth = await gridCard("model.test.prompted@1");
+    fireEvent.click(within(depth).getByRole("button", { name: "View details" }));
+    const modal = await screen.findByRole("dialog", { name: "Model details" });
+    const type = within(modal).getByText("Type", { selector: "dt" }).nextElementSibling as HTMLElement;
+    expect(type).toHaveTextContent("Depth estimation");
+  });
+});
+
 describe("the Model Catalog page, while it loads", () => {
   test("says it is loading models, never that no model matches", () => {
     mockApi.catalog.mockImplementation(() => new Promise(() => undefined));

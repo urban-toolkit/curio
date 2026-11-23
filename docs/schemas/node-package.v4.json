@@ -14,10 +14,10 @@
   "else": { "not": { "anyOf": [{ "required": ["model"] }, { "required": ["downloadOnFirstUse"] }] } },
   "allOf": [
     {
-      "description": "A concept-segmentation model's node runs the code its package ships: Curio writes no cell for it, so each template names its source.",
+      "description": "A template that names no source opens with Curio's cell, an onnxruntime session on the model's .onnx file, whatever the model's type: a model on another runtime runs the code its package ships, so each of its templates names its source.",
       "if": {
         "required": ["model"],
-        "properties": { "model": { "required": ["type"], "properties": { "type": { "const": "concept-segmentation" } } } }
+        "properties": { "model": { "required": ["runtime"], "properties": { "runtime": { "not": { "const": "onnx" } } } } }
       },
       "then": { "properties": { "templates": { "items": { "required": ["source"] } } } }
     }
@@ -191,8 +191,10 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["semantic-segmentation", "image-to-image", "node-regression", "concept-segmentation"],
-          "description": "'semantic-segmentation': one label per pixel. 'image-to-image': images in, an image out. 'node-regression': a graph in (node features and edges), values for each node out. 'concept-segmentation': labels that are text prompts, and every thing each prompt names found. The node that runs an image-to-image or node-regression model opens its ONNX file (model.path) in an onnxruntime session and feeds it itself, and the node that runs a concept-segmentation model loads its checkpoint itself (model.path)."
+          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+          "maxLength": 64,
+          "examples": ["semantic-segmentation", "image-to-image", "node-regression", "concept-segmentation"],
+          "description": "What the model does, a lowercase name: a model dropped on a node swaps its model only when both are of one type. Curio's own packages run 'semantic-segmentation' (one label per pixel), 'image-to-image' (images in, an image out), 'node-regression' (a graph in, values for each node out) and 'concept-segmentation' (labels that are text prompts, every thing each prompt names found); any other name is read alike. The code that runs a model says what it needs of its input and labels."
         },
         "runtime": {
           "type": "string",
@@ -209,7 +211,7 @@
           "type": "array",
           "maxItems": 1024,
           "items": { "type": "string", "minLength": 1, "maxLength": 80 },
-          "description": "The class of each output channel, or a concept-segmentation model's text prompts. An onnx segmentation model names them; a Transformers checkpoint may leave them to its config.json."
+          "description": "The class of each output channel, or a model's text prompts. A Transformers checkpoint may leave them to its config.json; a model with no classes names none."
         },
         "fetch": { "$ref": "#/$defs/modelFetch" },
         "sizeBytes": { "type": "integer", "minimum": 0, "description": "The size of the weights in bytes." },
@@ -262,7 +264,7 @@
     },
     "modelInput": {
       "type": "object",
-      "description": "An ONNX image model's input: width x height in NCHW (or NHWC, for an image-to-image model), as uint8 pixels or as float32 scaled by 'scale' and then normalized by 'mean' and 'std'.",
+      "description": "An image model's input: width x height in NCHW or NHWC, as uint8 pixels or as float32 scaled by 'scale' and then normalized by 'mean' and 'std'.",
       "required": ["width", "height"],
       "additionalProperties": false,
       "properties": {

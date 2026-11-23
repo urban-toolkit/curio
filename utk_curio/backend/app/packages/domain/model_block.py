@@ -4,24 +4,26 @@ A package of kind ``model`` is a node package whose manifest carries this
 block (``docs/schemas/node-package.v4.json``, ``$defs.model``). The package's
 own ``license`` is its code's; the block's ``license`` is the weights':
 
-- ``type``: ``semantic-segmentation``, one label per pixel; ``image-to-image``,
-  images in and an image out; ``node-regression``, a graph in (node features
-  and edges) and values for each node out; or ``concept-segmentation``, whose
-  labels are text prompts and which finds every thing each prompt names. The
-  node that runs an ``image-to-image`` or ``node-regression`` model opens it
-  (``CurioModel.path``) and feeds it itself, and the node that runs a
-  ``concept-segmentation`` model, always its package's own code, loads it
-  from its folder itself;
+- ``type``: what the model does, a lowercase name (:data:`TYPE_RE`), which a
+  node of it and a model dropped on that node share. Curio's own packages run
+  ``semantic-segmentation`` (one label per pixel), ``image-to-image`` (images
+  in, an image out), ``node-regression`` (a graph in, values for each node
+  out) and ``concept-segmentation`` (labels that are text prompts, every
+  thing each prompt names found); any other name is read alike. Nothing here
+  keys on a type: the code that runs a model says what it needs of the
+  fields below, as the Segmentation package does;
 - ``runtime``: ``onnx`` (one ``.onnx`` file, with any external data beside it)
-  or ``transformers`` (a checkpoint folder ``from_pretrained`` reads);
+  or ``transformers`` (a checkpoint folder ``from_pretrained`` reads). A
+  template that names no ``source`` opens with Curio's cell, an onnxruntime
+  session on the ``.onnx`` file (``default_cells.py``), so a template of a
+  model on another runtime names its source (``manifest.py``);
 - ``entry``: the ``.onnx`` file, or the checkpoint folder, under ``models/``;
-- ``input``: an ONNX image model's input, ``width`` x ``height`` in ``NCHW``
-  (or ``NHWC``, for an ``image-to-image`` model), as ``uint8`` pixels or as
-  ``float32`` scaled by ``scale`` and then normalized by ``mean`` and ``std``;
-  a ``node-regression`` model reads a graph of any size and has none;
+- ``input``: an image model's input, ``width`` x ``height`` in ``NCHW`` or
+  ``NHWC``, as ``uint8`` pixels or as ``float32`` scaled by ``scale`` and then
+  normalized by ``mean`` and ``std``; a model that reads no image has none;
 - ``labels``: the class of each output channel (a Transformers checkpoint may
-  leave them to its ``config.json``), or a ``concept-segmentation`` model's
-  prompts; an ``image-to-image`` or ``node-regression`` model has none;
+  leave them to its ``config.json``), or a model's text prompts; a model with
+  no classes has none;
 - ``fetch``: where the weights come from when the package ships without them
   (``model_fetch.py``): files on Hugging Face at a pinned commit, which its
   operator downloads into the entry folder;
@@ -34,6 +36,7 @@ The Model Catalog shows these fields for each model package.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any
@@ -51,13 +54,15 @@ from utk_curio.backend.app.packages.domain.model_fetch import (
 KINDS = ("node", "model")
 
 RUNTIMES = ("onnx", "transformers")
-#: The type whose labels are text prompts. Its node is its package's own
-#: code: Curio writes no cell for it (``manifest.py`` refuses a template of
-#: it that ships no ``source``).
-CONCEPT_SEGMENTATION = "concept-segmentation"
-TYPES = ("semantic-segmentation", "image-to-image", "node-regression", CONCEPT_SEGMENTATION)
-#: The types whose ONNX models read an image of the block's ``input`` size.
-IMAGE_TYPES = ("semantic-segmentation", "image-to-image")
+#: The runtime of the cell Curio writes for a template with no ``source``,
+#: an onnxruntime session on the model's ``.onnx`` file
+#: (``default_cells.run_skeleton``): a template of a model on any other
+#: runtime names its source (``manifest.py``).
+CELL_RUNTIME = "onnx"
+#: A model's type: lowercase letters and digits in words joined by single
+#: hyphens, starting with a letter, as the schema's ``model.type`` reads it.
+TYPE_RE = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
+MAX_TYPE_LENGTH = 64
 INPUT_DTYPES = ("uint8", "float32")
 INPUT_LAYOUTS = ("NCHW", "NHWC")
 
@@ -192,22 +197,18 @@ def parse_model_block(raw: object) -> ModelBlock:
     """A checked :class:`ModelBlock` from *raw*, a manifest's ``model`` object."""
     if not isinstance(raw, dict):
         raise ModelBlockError("must be an object")
-    model_type = _text(raw, "type")
-    if model_type not in TYPES:
-        raise ModelBlockError(f"type must be one of {list(TYPES)}")
+    model_type = raw.get("type")
+    if not isinstance(model_type, str) or len(model_type) > MAX_TYPE_LENGTH or not TYPE_RE.match(model_type):
+        raise ModelBlockError(
+            "type must be a lowercase name of letters and digits in words joined by single hyphens, "
+            f"starting with a letter, up to {MAX_TYPE_LENGTH} characters, such as semantic-segmentation"
+        )
     runtime = _text(raw, "runtime")
     if runtime not in RUNTIMES:
         raise ModelBlockError(f"runtime must be one of {list(RUNTIMES)}")
     entry = _entry(raw.get("entry"), runtime)
     labels = _labels(raw.get("labels"))
-    if runtime == "onnx" and model_type == "semantic-segmentation" and not labels:
-        raise ModelBlockError("an onnx segmentation model names its labels, one per output channel")
-    if runtime == "onnx" and model_type in IMAGE_TYPES:
-        model_input = _input(raw.get("input"))
-    else:
-        model_input = _input(raw["input"]) if raw.get("input") is not None else None
-    if model_input is not None and model_input.layout != "NCHW" and model_type != "image-to-image":
-        raise ModelBlockError("input.layout must be NCHW for this type")
+    model_input = _input(raw["input"]) if raw.get("input") is not None else None
     license_text = raw.get("license")
     if not isinstance(license_text, str) or not license_text.strip():
         raise ModelBlockError("license must be the weights' license, a non-empty string")

@@ -5,6 +5,10 @@
     "major": 1
   },
   "createdAt": "2026-10-01T00:00:00Z",
+  "dataflowCategories": {
+    "tags": ["Computer vision"],
+    "dataTypes": ["Imagery"]
+  },
   "dependencies": {
     "js": {},
     "packages": {"curio.segmentation@1": "*"},

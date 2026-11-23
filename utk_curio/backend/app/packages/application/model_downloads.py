@@ -8,8 +8,10 @@ import makes one: the files under ``models/``, and a manifest with the model's
 :func:`model_node` reads: the template as its manifest holds it, its source
 with each ``curio_load_model`` call naming the downloaded model, and the
 packages its package names in ``dependencies.packages``, which the node's
-code imports. A segmentation model so gets DDRNet23-Slim's Image Segmentation,
-whose code calls the Segmentation package's ``segment_images``. It is
+code imports. The model takes that package's model type, and declares what
+that package declares in ``dataflowCategories``. A segmentation model so gets
+DDRNet23-Slim's Image Segmentation, whose code calls the Segmentation
+package's ``segment_images``, its type and its Computer vision. It is
 installed through the store's archive install, weights and all, so it is
 checked, hashed and capped as every package is; the packages it names come
 from the shared catalog, and its libraries install by the packages' own path
@@ -67,6 +69,12 @@ class ModelNode:
     packages: dict = field(default_factory=dict)
     #: Its package in the shared catalog, ``<packageId>@<major>``.
     package: str = ""
+    #: Its package's model's type, which a downloaded model takes: the type a
+    #: model dropped on its node must share.
+    model_type: str = ""
+    #: What its package declares in ``dataflowCategories``, which a
+    #: downloaded model's package declares too, as the manifest writes it.
+    dataflow_categories: dict = field(default_factory=dict)
 
     def code_for(self, model_id: str) -> str:
         """The node's code with every ``curio_load_model`` call naming *model_id*."""
@@ -77,9 +85,11 @@ def model_node(node_type: object) -> ModelNode:
     """The node a Discovery source's manifest names for the models it adds
     (``provider.options.node``): the template *node_type* names in the shared
     catalog, ``<packageId>/<templateId>`` at the highest major the catalog
-    holds, or ``@<major>`` for one, with its source and its package's
-    ``dependencies.packages``. A ``PackageServiceError`` names what is
-    missing: no node named, no such template, or one without a ``source``."""
+    holds, or ``@<major>`` for one, with its source, its package's
+    ``dependencies.packages``, its package's model's type and what its package
+    declares in ``dataflowCategories``. A ``PackageServiceError`` names what
+    is missing: no node named, no such package, a package with no model, no
+    such template, or one without a ``source``."""
     text = str(node_type or "").strip()
     if not is_package_node_type(text):
         raise PackageServiceError(
@@ -95,10 +105,15 @@ def model_node(node_type: object) -> ModelNode:
     dir_name = dir_name_from_node_type(text, {package_id: majors})
     try:
         folder = root / str(dir_name)
-        load_package_manifest(folder)
+        parsed = load_package_manifest(folder)
         raw = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
     except (OSError, ValueError, ManifestError) as exc:
         raise PackageServiceError(f"the catalog has no package {package_id} for the node {text} its source names", 422) from exc
+    if parsed.model is None:
+        raise PackageServiceError(
+            f"the node {text} its source names is a node package's: a model takes its type from the model "
+            f"package whose node it gets, and {folder.name} has no model", 422,
+        )
     template = next((t for t in raw.get("templates") or [] if isinstance(t, dict) and t.get("id") == template_id), None)
     source = template.get("source") if template is not None else None
     if not isinstance(source, str):
@@ -107,12 +122,15 @@ def model_node(node_type: object) -> ModelNode:
     if folder.resolve() not in path.parents or not path.is_file():
         raise PackageServiceError(f"the source {source} of the node {text} is not in its package", 422)
     deps = raw.get("dependencies") if isinstance(raw.get("dependencies"), dict) else {}
+    declared = raw.get("dataflowCategories")
     return ModelNode(
         template=json.loads(json.dumps(template)),
         code=path.read_text(encoding="utf-8"),
         model_id=package_id,
         packages=dict(deps.get("packages") or {}),
         package=folder.name,
+        model_type=parsed.model.type,
+        dataflow_categories=json.loads(json.dumps(declared)) if isinstance(declared, dict) else {},
     )
 
 
