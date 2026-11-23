@@ -187,6 +187,7 @@ function NodeEditor({
     const [activeTab, setActiveTab] = useState<string>(
         () => resolveInitialEditorTab({
             code, grammar, widgets: widgetsTab, widgetsFirst: widgetsFirst(defaultValue, data.widgets),
+            output: outputId != undefined || contentComponent != undefined,
         })
     );
     // Whether the node's first tab is settled: at once for a node that
@@ -920,13 +921,18 @@ function NodeEditor({
                                                 data-tile-column="true"
                                                 style={{ display: "flex", flexDirection: "column", height: "100%" }}
                                             >
-                                                <WidgetValueControls
-                                                    widgets={controlWidgets}
-                                                    dashboard
-                                                    disabled={disableWidgets}
-                                                    onCommit={commitValue}
-                                                    aboveOutput
-                                                />
+                                                {/* A node whose every control is its own
+                                                    (Simple View's Time column) has no
+                                                    widget rows to draw here. */}
+                                                {controlWidgets.length > 0 ? (
+                                                    <WidgetValueControls
+                                                        widgets={controlWidgets}
+                                                        dashboard
+                                                        disabled={disableWidgets}
+                                                        onCommit={commitValue}
+                                                        aboveOutput
+                                                    />
+                                                ) : null}
                                                 {ownControls}
                                                 {outputMount}
                                             </div>

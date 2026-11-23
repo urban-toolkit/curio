@@ -724,7 +724,8 @@ def _mint_node_settings_write(
     View's image column and the values of its widgets, a Spatial Join's
     operation and output among them, each judged by its node's own rule on a
     node whose template keeps it, worded for the card as the node words it,
-    then landed as the agent's change (``apply.land_settings``)."""
+    then landed as the agent's change (``apply.land_settings``). A Simple
+    View's Time column is its template's widget on a view saved before it."""
     params = req.get("params") or {}
     taken = ("nodeId", *_SETTING_PARAMS)
     unknown = sorted(str(key) for key in set(params) - set(taken))
@@ -756,8 +757,14 @@ def _mint_node_settings_write(
     if change:
         behavior = packages_services.template_behavior(user_key, project_id, node.get("type"))
         problems += node_settings.template_problems(change, behavior, label, lambda key: f"params.{key}")
-    # Each value by its widget's rule, as the Widgets tab takes it.
-    widgets = normalize_widgets(metadata.get("widgets"))
+    # Each value by its widget's rule, as the Widgets tab takes it. A node
+    # with neither code nor a spec, a Simple View, is set through its
+    # template's widgets, which its body reads: one saved before its template
+    # declared one shows the template's, which the change gives it.
+    held = normalize_widgets(metadata.get("widgets"))
+    widgets = held
+    if entry and entry.get("contentKind") not in widget_grammar.PLACES_WIDGETS:
+        widgets = widget_grammar.with_declared(held, _declared_widgets(user_key, project_id, entry))
     values, widget_problems = widget_grammar.parse_values(params.get("widgets"), widgets, "params.widgets", label)
     problems += widget_problems
     if problems:
@@ -784,6 +791,12 @@ def _mint_node_settings_write(
         "settingLines": lines,
         "summary": summary,
     }
+    # The template's widgets the change sets that the node holds none of yet:
+    # the node takes each as it lands (``apply.land_settings``).
+    held_names = {widget["name"] for widget in held}
+    adds = [widget for widget in widgets if widget["name"] not in held_names and widget["name"] in (values or {})]
+    if adds:
+        landing["addsWidgets"] = adds
     return agents_changes.land(user_key, project_id, loop_ctx, spec, landing, part)
 
 
@@ -792,13 +805,22 @@ def _node_create_widgets(entry: dict, raw: object, template_widgets: list) -> tu
     with the ones the request declares set over them, or why they are
     refused: one its template declares keeps the template's type, choices and
     bounds and is judged as the node will hold it, as a planned node's is
-    (``widget_grammar.parse_widgets``), and a widget is placed by a node's
-    code or spec, so only such a node takes one."""
+    (``widget_grammar.parse_widgets``). A widget of another name is placed by
+    a node's code or spec, so a node with neither, a Simple View, takes only
+    its template's (``widget_grammar.PLACES_WIDGETS``)."""
     widgets, problems = widget_grammar.parse_widgets(raw, "params.widgets", template_widgets)
     if problems:
         return [], problems
-    if raw and entry.get("contentKind") not in ("code", "grammar"):
-        return [], [agent_text.message("mint.widgets-not-placeable", label=entry.get('label') or entry.get('id'))]
+    if raw and entry.get("contentKind") not in widget_grammar.PLACES_WIDGETS:
+        label = entry.get('label') or entry.get('id')
+        if not template_widgets:
+            return [], [agent_text.message("mint.widgets-not-placeable", label=label)]
+        others = widget_grammar.undeclared(widgets, template_widgets)
+        if others:
+            return [], [agent_text.message(
+                "mint.widgets-not-declared", label=label,
+                widgets=", ".join(w["name"] for w in template_widgets), others=", ".join(others),
+            )]
     return widgets, []
 
 
@@ -830,9 +852,11 @@ def _node_create_starter(user_key: str, project_id: str, entry: dict) -> dict | 
     return packages_services.content_starters(user_key, project_id, [entry["id"]]).get(entry["id"])
 
 
-def _node_create_declared_widgets(user_key: str, project_id: str, entry: dict) -> list:
-    """The widgets a created node's template declares, which a node of it
-    starts with, as a planned node of it does (``plans._declared_widgets``)."""
+def _declared_widgets(user_key: str, project_id: str, entry: dict) -> list:
+    """The widgets *entry*'s template declares (a roster row): a created node
+    of it starts with them, as a planned node of it does
+    (``plans._declared_widgets``), and a node of it with neither code nor a
+    spec is set through them."""
     from utk_curio.backend.app.packages import service as packages_services
 
     return packages_services.declared_widgets(user_key, project_id, [entry["id"]]).get(entry["id"]) or []
@@ -893,7 +917,7 @@ def _mint_node_create(
     # so the change card shows what lands: a starter's, which it places, or
     # the ones any other template declares, which a node of it starts with on
     # the canvas and the roster names (Data Loading's Data).
-    template_widgets = starter["widgets"] if starter is not None else _node_create_declared_widgets(
+    template_widgets = starter["widgets"] if starter is not None else _declared_widgets(
         user_key, project_id, entry,
     )
     # Read before the gate: a chart's or a map's document is checked with the

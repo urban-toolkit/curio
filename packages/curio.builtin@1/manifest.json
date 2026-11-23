@@ -315,12 +315,12 @@
       "bidirectional": true,
       "category": "vis_simple",
       "description": "Displays incoming data: a table for DataFrames and GeoDataFrames, or a card per row when the frame carries an image column, showing the image beside that row's values. Other values pass through.",
-      "editor": "none",
+      "editor": "widgets",
       "engine": "python",
       "hasCode": false,
       "hasGrammar": false,
       "hasProvenance": true,
-      "hasWidgets": false,
+      "hasWidgets": true,
       "iconRef": "fa-solid:table",
       "id": "vis-simple",
       "inputPorts": [
@@ -351,7 +351,16 @@
           ]
         }
       ],
-      "paletteOrder": 8
+      "paletteOrder": 8,
+      "widgets": [
+        {
+          "name": "time_column",
+          "type": "text",
+          "label": "Time column",
+          "default": "t_s"
+        }
+      ],
+      "opensOnControls": true
     },
     {
       "badge": "AUTK",

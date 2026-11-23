@@ -238,6 +238,9 @@ def land_settings(user_key: str, project_id: str, loop_ctx: dict, spec: dict, pr
     node_id = proposal["nodeId"]
     settings = proposal.get("settings") or {}
     node = _node_in(spec, node_id)
+    # A widget its template declares that the node holds none of yet comes
+    # first, at its default, so the change's Undo puts that value back.
+    agents_changes.hold_declared_widgets(node, proposal.get("addsWidgets"))
     undo_steps = agents_changes.settings_undone(node, settings)
     agents_changes.write_settings(node, settings)
     change = agents_changes.new_change(

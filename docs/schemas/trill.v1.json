@@ -260,7 +260,7 @@
         },
         "content": {
           "type": "string",
-          "description": "The node's payload: Python or JavaScript source, or a grammar document (Vega-Lite, Autark), depending on the template's 'engine' and 'editor'. A curio.builtin/note node holds its text here, in simple markdown. Absent on the other presentation-only templates - across the committed examples, 'editor: none' in the manifest and an absent-or-empty content correspond exactly."
+          "description": "The node's payload: Python or JavaScript source, or a grammar document (Vega-Lite, Autark), depending on the template's 'engine' and 'editor'. A curio.builtin/note node holds its text here, in simple markdown. Absent on a node whose template has neither code nor a grammar ('hasCode' and 'hasGrammar' false) and is no note, such as a Data Pool or a Simple View, which show their input: across the committed examples, such a template and an absent-or-empty content correspond exactly."
         },
         "in": { "$ref": "#/$defs/portType" },
         "out": { "$ref": "#/$defs/portType" },

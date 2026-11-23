@@ -75,6 +75,7 @@ import {
 import { isBound } from "../collab/boundTexts";
 import { editorsOf, noteRemoval, remoteDrags, removerOf, setDrag, type DragState } from "../collab/presence";
 import type { SelectionEchoOptions } from "../../utils/selectionEcho";
+import { widgetsChangeOutput } from "../../utils/nodeSettingsWriters";
 import type { IOutput, IPropagation } from "./flowTypes";
 
 type Fields = Record<string, any>;
@@ -131,7 +132,9 @@ export const METADATA_FIELD_DATA: Record<string, readonly string[]> = {
     selections: ["selections"],
 };
 
-/** The fields whose change leaves a node out of date. */
+/** The fields whose change leaves a node out of date: its widgets only when
+ *  its code or spec reads them (`widgetsChangeOutput`), not a Simple View's
+ *  Time column, which its body alone reads. */
 const STALE_WHEN_CHANGED = new Set(["content", "widgets", "selections", "datasetRefs", "modelRefs", "datasetSource"]);
 
 /** What a node's Trill is taken from that the canvas changes in place, with
@@ -627,7 +630,8 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
                 }
             }
             if (Object.keys(data).length > 0 || position || restamp) patches.set(id, { data, position, restamp });
-            const stale = [...trill].filter((name) => STALE_WHEN_CHANGED.has(name));
+            const stale = [...trill].filter((name) =>
+                STALE_WHEN_CHANGED.has(name) && (name !== "widgets" || widgetsChangeOutput(now.type)));
             if (stale.length > 0 && !(stale.length === 1 && stale[0] === CONTENT && editorHasIt)) {
                 current.markNodeStale(id);
             }

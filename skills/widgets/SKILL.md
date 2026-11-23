@@ -24,4 +24,4 @@ A value several nodes read is a widget on one {{template.label:curio.builtin/pyt
 
 A new node of a template that declares widgets starts with them: in a plan or a node.create, give one its name, its type and its value, and it keeps the template's default, choices, minimum, maximum and step, which the value must fit. A duplicate's values may set them too.
 
-A node already on the canvas takes new widget values through node.settings.write: its "widgets" maps each widget's name to the new value, which must fit the widget's type and options as a value typed in the Widgets tab must. The node's code stays as it was. Only the user adds a widget to a node already on the canvas, in its Widgets tab.
+A node already on the canvas takes new widget values through node.settings.write: its "widgets" maps each widget's name to the new value, which must fit the widget's type and options as a value typed in the Widgets tab must. The node's code stays as it was. Only the user adds a widget to a node already on the canvas, in its Widgets tab; a {{template.label:curio.builtin/vis-simple}} lacking "time_column" takes it with the value.
