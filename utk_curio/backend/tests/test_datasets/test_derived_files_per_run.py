@@ -406,8 +406,8 @@ def test_a_play_of_the_same_code_replaces_the_last_ones_kept_output_and_files(cl
     input, so the same key. The second play's kept output replaces the
     first's: one is left for the node, the sandbox forgets the first play's
     session, its run's folder goes and its row reads nothing, and the second
-    play's row reads its own overlay. A Run All repeated with nothing changed
-    keeps one copy of its files."""
+    play's row reads its own overlay. A node played again with nothing
+    changed keeps one copy of its files."""
     from utk_curio.backend.app.discovery.infrastructure import media_dirs
     from utk_curio.backend.app.runs.models import KeptStepOutput
 

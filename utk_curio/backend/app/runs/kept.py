@@ -11,8 +11,10 @@ of his sign-ins and by no one else. Each output is kept for :data:`KEPT_DAYS`
 after it was made, under a key of what made it (:func:`step_key`); past that
 time it goes, and the next run that needs it makes it again. An output kept
 replaces what earlier runs kept of the same node under the same key, by the
-same maker for the same reader (:func:`keep`): a Run All repeated with
-nothing changed keeps one copy of what it made, files and all. Each dataflow
+same maker for the same reader (:func:`keep`): a step run again with the
+same code on the same input artifacts keeps one copy of what it made, files
+and all. A step whose inputs ran again reads new artifacts, so its key is
+new and its output kept beside the last one's. Each dataflow
 keeps at most :data:`MAX_KEPT_BYTES` of what its viewers made, the files
 their steps derived counted in; past it the least recently used go. What the
 owner's and the editors' runs made (``made_by``) is bounded by its days alone:
