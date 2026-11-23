@@ -19,8 +19,8 @@ recording, of any extension of the families a collection's own files are
 sorted by (``FAMILIES``), such as a video's frame, a video made from a video
 (an overlay of it, say), a recording's window, a photo's overlay or a picture
 of a raster tile. A table a node finds in a file is the node's output, never
-a derived file. A ``tag`` tells two derived files of one file and time apart:
-an overlay's names the model that drew it. The backend serves the file back
+a derived file. A ``tag`` tells apart two files one run derives from one file
+at one time. The backend serves the file back
 under the same id (``DERIVED_ID_RE``). Every run writes in a folder of its own
 (``KEPT_MEDIA``), which the URLs of the rows it derives name
 (``?kept=<name>``), so a row is read from where its run wrote it, and no run
@@ -353,8 +353,8 @@ def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir
         overlay (``png``); a raster or a ``files`` row names *ext*. A table is
         no derived file but the node's output, which it returns, and any other
         file it returns is written with ``curio_output_file``. *tag*, up to 32
-        lowercase letters and digits, tells two derived files of one file and
-        time apart, as the model that drew an overlay does.
+        lowercase letters and digits, tells apart two files the run derives
+        from one file at one time, such as two pictures of one frame.
 
         Returns the row the media route serves it under, with the columns a
         collection's row of its kind has: ``file_id``, ``dataset_id``,

@@ -57,7 +57,7 @@ Gives where to write an image, a video or a recording derived from one file of a
 - `t_ms`: the time in the file it is taken at, in milliseconds; 0 for a photo.
 - `ext`: the extension of what it derives, an image (`jpg`, `jpeg`, `png`, `webp`, `gif`, `bmp`, `tif` or `tiff`), a video (`mp4`, `mov`, `m4v`, `webm`, `mkv` or `avi`) or a recording (`wav`, `flac`, `mp3`, `ogg`, `opus`, `m4a`, `aiff` or `aif`), with an `mp4` written as H.264 in `yuv420p`, which a browser plays; None derives the file's kind's own: a video's frame (`jpg`), a recording's clip (`wav`), an image's or a frame's overlay (`png`). Any other adds `.<ext>` to `file_id`. A table is no derived file: the node returns it, and writes any other file it returns with `curio_output_file`.
 - `kind`: the kind of the file it comes from, as its row holds it: `"video"`, `"audio"`, `"image"`, `"frame"`, `"raster"` or `"file"`; a raster's or a file's `ext` is named.
-- `tag`: 1 to 32 lowercase letters and digits that tell two derived files of one file and time apart, such as the model that drew an overlay.
+- `tag`: 1 to 32 lowercase letters and digits that tell apart two files one run derives from one file at one time.
 
 ### curio_output_file(name)
 

@@ -19,7 +19,6 @@ without them fails here.
 from __future__ import annotations
 
 import ast
-import hashlib
 import json
 import os
 import platform
@@ -246,7 +245,7 @@ def test_the_module_offers_segment_images_and_imports_nothing_of_curios():
         if not (isinstance(node, ast.ImportFrom) and node.module == "__future__")
     })
     libraries = [name for name in top if name in DECLARED_AS]
-    assert set(top) - set(libraries) <= {"colorsys", "hashlib", "os", "re"}, top
+    assert set(top) - set(libraries) <= {"colorsys", "os", "re"}, top
     declared = set(load_package_manifest(PACKAGE).python_deps)
     assert {DECLARED_AS[name] for name in libraries} <= declared, (libraries, declared)
     functions = PackageModules(PACKAGE, load_package_manifest(PACKAGE)).functions(MODULE)
@@ -512,13 +511,13 @@ def test_no_classes_report_every_class_as_none_does(segmentation, photos):
 
 
 def test_each_photo_gets_an_overlay_served_by_id(segmentation, photos):
-    """The id names the photo and the model (#621): the first twelve hex digits
-    of the SHA-1 of the model's id."""
+    """The id names the photo and nothing of the model: a node runs one model,
+    and each run writes in a folder of its own, so two nodes' models never
+    write one file (#621)."""
     frame, helpers = photos
     out = segmentation.segment_images(frame, _loaded(DDRNET), helpers["curio_derived_file"], classes=STREET)
-    model = hashlib.sha1(DDRNET.name.encode("utf-8")).hexdigest()[:12]
     for url, file_id in zip(out["overlay_url"], frame["file_id"]):
-        assert url == f"/api/datasets/{SAMPLE}/media/{file_id}@0-{model}?variant=original&kept={RUN}"
+        assert url == f"/api/datasets/{SAMPLE}/media/{file_id}@0?variant=original&kept={RUN}"
 
 
 def test_a_frame_sampled_from_a_video_gets_its_overlay_beside_the_video(segmentation, photos, tmp_path):
@@ -535,11 +534,10 @@ def test_a_frame_sampled_from_a_video_gets_its_overlay_beside_the_video(segmenta
         shutil.copyfile(frame["path"].iloc[0], sampled["path"])
         rows.append({"dataset_id": SAMPLE, "file_id": sampled["file_id"], "kind": "frame", "path": sampled["path"]})
     out = segmentation.segment_images(pd.DataFrame(rows), _loaded(DDRNET), derive, classes=STREET)
-    model = hashlib.sha1(DDRNET.name.encode("utf-8")).hexdigest()[:12]
     assert out["overlay_url"].iloc[0] == (
-        f"/api/datasets/{SAMPLE}/media/{video}@2000-{model}.png?variant=original&kept={RUN}"
+        f"/api/datasets/{SAMPLE}/media/{video}@2000.png?variant=original&kept={RUN}"
     )
-    assert (tmp_path / "media" / "kept" / RUN / "overlays" / SAMPLE / video / f"2000-{model}.png").is_file()
+    assert (tmp_path / "media" / "kept" / RUN / "overlays" / SAMPLE / video / "2000.png").is_file()
     assert pd.isna(out["overlay_url"].iloc[1])
     assert out["segment_error"].isna().all() and out["dominant_class"].isin(STREET).all()
 

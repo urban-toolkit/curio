@@ -361,10 +361,12 @@ class TestDerivedFiles:
     def test_two_models_on_one_photo_keep_an_overlay_each(
         self, client, auth, app, shipped_root, user_and_token, segment,
     ):
-        """#621: example 10 segments one sample with two models. An overlay was
-        named by its photo alone, so the second model's overlay replaced the
-        first's and both rows pointed at one file. Each model's overlay is a
-        file of its own, served back as the one that model drew."""
+        """#621: two Image Segmentation nodes segment one photo with two
+        models. An overlay was named by its photo alone in one folder, so the
+        second model's overlay replaced the first's and both rows pointed at
+        one file. Each node's run writes in a folder of its own, which its
+        rows' URLs name, so each model's overlay is a file of its own, served
+        back as the one that model drew."""
         from types import SimpleNamespace
 
         import numpy as np
@@ -377,14 +379,18 @@ class TestDerivedFiles:
         user, _token = user_and_token
         dataset, _index = collection(client, auth, "survey")
         root = storage_root(load_source_manifest(SHIPPED_ROOT / EXAMPLE))
-        helpers = make_collection_helpers(
-            lambda _id: dataset["path"],
-            {dataset["id"]: {"kind": "images", "root": str(root)}},
-            a_runs_folder(user),
-        )
+
+        def a_run():
+            """The helpers of one node's run, deriving in a folder of its own."""
+            return make_collection_helpers(
+                lambda _id: dataset["path"],
+                {dataset["id"]: {"kind": "images", "root": str(root)}},
+                a_runs_folder(user),
+            )
+
+        helpers = a_run()
         rows = helpers["curio_load_collection"](dataset["id"])
         photo = rows[rows["name"] == "IMG_0001.jpg"].head(1)
-        derive = helpers["curio_derived_file"]
 
         def a_model(model_id, label):
             """A model that labels every pixel *label*, as curio_load_model gives
@@ -402,9 +408,11 @@ class TestDerivedFiles:
             assert res.status_code == 200 and res.mimetype == "image/png", res.get_data()[:300]
             return res.data
 
-        road_url = segment(photo, a_model("model.test.road@1", "road"), derive)["overlay_url"].iloc[0]
+        road = segment(photo, a_model("model.test.road@1", "road"), helpers["curio_derived_file"])
+        road_url = road["overlay_url"].iloc[0]
         by_road = served(road_url)
-        sky_url = segment(photo, a_model("model.test.sky@1", "sky"), derive)["overlay_url"].iloc[0]
+        sky = segment(photo, a_model("model.test.sky@1", "sky"), a_run()["curio_derived_file"])
+        sky_url = sky["overlay_url"].iloc[0]
         by_sky = served(sky_url)
         assert road_url != sky_url, f"both models' overlays are {road_url}"
         assert by_road != by_sky
@@ -414,10 +422,11 @@ class TestDerivedFiles:
         self, client, auth, app, shipped_root, user_and_token, split_audio,
     ):
         """Split Audio on one recording with windows of 0.25 s and of 0.5 s:
-        both have a window at 0 s. Simple View plays a window's row as it
-        plays a recording, through a signed link to the row's id, and each
-        node's row at 0 s plays the clip that node wrote, after the other
-        node ran too."""
+        both have a window at 0 s, named by where it starts. Each node's run
+        writes in a folder of its own, which its rows' URLs name. Simple View
+        plays a window's row as it plays a recording, through a signed link
+        to the row's id in the folder its URL names, and each node's row at
+        0 s plays the clip that node wrote, after the other node ran too."""
         from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
         from utk_curio.backend.app.discovery.infrastructure.storage import storage_root
         from utk_curio.backend.tests.test_discovery.conftest import SHIPPED_ROOT
@@ -426,11 +435,16 @@ class TestDerivedFiles:
         user, _token = user_and_token
         dataset, _index = collection(client, auth, "noise")
         root = storage_root(load_source_manifest(SHIPPED_ROOT / EXAMPLE))
-        helpers = make_collection_helpers(
-            lambda _id: dataset["path"],
-            {dataset["id"]: {"kind": "audio", "root": str(root)}},
-            a_runs_folder(user),
-        )
+
+        def a_run():
+            """The helpers of one node's run, deriving in a folder of its own."""
+            return make_collection_helpers(
+                lambda _id: dataset["path"],
+                {dataset["id"]: {"kind": "audio", "root": str(root)}},
+                a_runs_folder(user),
+            )
+
+        helpers = a_run()
         rows = helpers["curio_load_collection"](dataset["id"])
         recording = rows[(rows["sensor"] == "sensor_01") & (rows["name"] == "20240501_060000.wav")]
         assert len(recording) == 1
@@ -449,11 +463,11 @@ class TestDerivedFiles:
 
         shorter = split_audio(recording, helpers["curio_derived_file"], window_seconds=0.25).iloc[0]
         by_shorter = played(shorter)
-        longer = split_audio(recording, helpers["curio_derived_file"], window_seconds=0.5).iloc[0]
+        longer = split_audio(recording, a_run()["curio_derived_file"], window_seconds=0.5).iloc[0]
         assert (shorter["t_s"], longer["t_s"]) == (0.0, 0.0)
         assert played(shorter) == by_shorter, "the 0.5 s node's clip replaced the 0.25 s node's"
         assert played(longer) != by_shorter
-        assert shorter["file_id"] != longer["file_id"]
+        assert shorter["file_id"] == longer["file_id"] and shorter["audio_url"] != longer["audio_url"]
 
     def test_a_raster_tile_derives_no_file_of_its_own(self, client, auth, app, shipped_root, user_and_token):
         """A raster tile has no file it derives by default, as a video has its
@@ -569,7 +583,8 @@ class TestDerivedFiles:
     ):
         """Image Segmentation on Sample Video Frames' rows, whose ids name a
         video and a time (``<videoId>@<t_ms>``): the node stopped with "not a
-        collection file". The frame's overlay is the video's, and served."""
+        collection file". The frame's overlay is the video's, named by the
+        video and the frame's time alone, and served."""
         from types import SimpleNamespace
 
         import numpy as np
@@ -598,7 +613,7 @@ class TestDerivedFiles:
         url = segment(frames, model, derive)["overlay_url"].iloc[0]
         overlay = client.get(url, headers=auth)
         assert overlay.status_code == 200 and overlay.mimetype == "image/png", overlay.get_data(as_text=True)[:300]
-        assert url.startswith(f"/api/datasets/{dataset['id']}/media/{video_id}@500-")
+        assert url.startswith(f"/api/datasets/{dataset['id']}/media/{video_id}@500.png?variant=original"), url
 
     @pytest.mark.parametrize("resource_id, name, kind, ext, write, row_kind, mimetype", [
         ("survey", "IMG_0001.jpg", "image", "jpg", _a_jpeg, "image", "image/jpeg"),

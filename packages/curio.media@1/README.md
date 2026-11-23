@@ -101,13 +101,11 @@ with `read_video_frames`.
 
 ## Files
 
-A frame, a window or a block is a file the node writes beside the collection's
-other derived files, served back to Simple View by its id. A window's clip is
-named after its recording and where the window starts and ends, so two Split
-Audio nodes whose windows differ in length keep clips of their own. A block's
-file is named after its video, where it starts and ends and its width, so
-cutting a video again into the same blocks writes the same files. The media
-files themselves are never written. A bucket collection's files are read in place
+A frame, a window or a block is a file the node's run writes in a folder of the
+run's own, served back to Simple View by its id. A window's clip is named after
+its recording and where the window starts, and a block's file after its video
+and where the block starts, so two Split Audio or Split Video nodes with other
+settings keep files of their own. The media files themselves are never written. A bucket collection's files are read in place
 where the deployment mounts the bucket; elsewhere they must be cached first
 (**Cache files**, in the collection's details in the Data Catalog), and a node
 that meets an uncached file says so.

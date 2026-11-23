@@ -199,5 +199,5 @@ The streets of the extract, with the fixes on top, colored by their time in the 
 ## Good to know
 
 - **A run looks at 450 frames of a video at most, its Maximum frames per video.** A smaller **Gap between frames** takes more frames of the walk, and past 450 the node stops before SAM 3 loads and says which part fits; **Track from** and `TO_SECONDS` pick a part.
-- **Each setting keeps an overlay of its own.** A run that asks other labels, frames, forgetting, part or width than an earlier one writes an overlay of its own; one that asks the same writes the earlier run's again.
+- **Each run keeps an overlay of its own.** Every run of Track Objects writes its overlay in a folder of its own, so a later run, with the same settings or others, never changes an earlier run's overlay.
 - **The labels are words.** SAM 3 takes any short noun phrase; the Model Catalog lists the 35 the package suggests.

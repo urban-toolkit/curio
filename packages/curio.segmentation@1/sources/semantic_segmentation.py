@@ -26,7 +26,6 @@ found them.
 from __future__ import annotations
 
 import colorsys
-import hashlib
 import os
 import re
 
@@ -57,13 +56,6 @@ CLASS_COLOURS = {
 #: ``-<tag>`` and ``.<ext>`` when it has them: a frame a node sampled from a
 #: video is named so after its video and its time.
 _DERIVED_ID_RE = re.compile(r"^([0-9a-f]{16})@([0-9]{1,12})(?:-([0-9a-z]{1,32}))?(?:\.([0-9a-z]{1,8}))?$")
-
-
-def model_tag(model) -> str:
-    """What an overlay's name holds of the model that drew it: the first twelve
-    hex digits of the SHA-1 of its id. Two models' overlays of one photo are
-    then two files, each served under its own URL (#621)."""
-    return hashlib.sha1(str(getattr(model, "id", "") or "").encode("utf-8")).hexdigest()[:12]
 
 
 def palette(labels):
@@ -249,9 +241,12 @@ def segment_images(images, model, derived_file, *, classes=None, overlays=True):
     share of all the image's pixels, in percent), ``overlay_url`` and
     ``segment_error``. With *overlays*, each image's overlay, the image
     tinted by class, is a PNG written where *derived_file*
-    (``curio_derived_file``) says, under a name that holds the image and the
-    model; a frame a node sampled from a video gets its video's overlay at
-    the frame's time, and *derived_file* None writes none. A row whose image
+    (``curio_derived_file``) says, in the folder of the node's run, under a
+    name that holds the image alone: a node runs one model, so a node that
+    calls this twice on the same images writes the second model's overlays
+    over the first's; a frame a node sampled from a video gets its video's
+    overlay at the frame's time, and *derived_file* None writes none. A row
+    whose image
     is not on this machine, or cannot be read, gets no shares and says why
     in ``segment_error``; a class the model does not name stops the node.
     """
@@ -279,7 +274,6 @@ def segment_images(images, model, derived_file, *, classes=None, overlays=True):
         )
     index = {name: labels.index(name) for name in wanted}
     colours = np.asarray(palette(labels), dtype=np.uint8)
-    tag = model_tag(model)
     if "path" not in getattr(images, "columns", ()):
         raise ValueError("segment_images reads rows with a path, as curio_load_collection gives them")
 
@@ -322,7 +316,7 @@ def segment_images(images, model, derived_file, *, classes=None, overlays=True):
         if source is not None:
             file_id, t_ms, kind = source
             mask = Image.fromarray(colours[ids.astype(np.int64)]).resize(image.size, Image.NEAREST)
-            derived = derived_file(row["dataset_id"], file_id, t_ms, "png", kind=kind, tag=tag)
+            derived = derived_file(row["dataset_id"], file_id, t_ms, "png", kind=kind)
             Image.blend(image, mask, OVERLAY_ALPHA).save(derived["path"])
             url = derived.get("image_url")
         overlay_urls.append(url)

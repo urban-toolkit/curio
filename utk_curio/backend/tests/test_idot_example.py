@@ -25,6 +25,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import textwrap
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -383,8 +384,10 @@ def test_frames_draw_the_half_hours_snapshots_with_every_models_count(run):
     for picture in pictures:
         with Image.open(picture) as drawn:
             assert drawn.size == (960, 720)
-    # The pictures' tag names the settings they were drawn with.
-    assert all("@0-frames" in url for url in frames["thumbnail"])
+    # Each picture is named by its snapshot alone: the run writes in a folder
+    # of its own, so another run with other settings never meets it.
+    assert all(re.search(r"/media/[0-9a-f]{16}@0\?variant=thumb", url) for url in frames["thumbnail"]), frames
+    assert {Path(picture).stem for picture in pictures} == {"0"}
 
 
 def test_agreement_finds_each_models_own_boxes(run):

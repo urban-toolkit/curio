@@ -20,8 +20,6 @@ a moment, each other object keeps its own mask and score.
 import colorsys
 import contextlib
 import datetime
-import hashlib
-import json
 import math
 import sys
 from dataclasses import dataclass
@@ -48,8 +46,6 @@ PER_FILE = frozenset({
 VIDEO_COLUMNS = ["video_file_id", "video"]
 #: The columns of the tracks, one row per object, after its video's.
 TRACK_COLUMNS = ["object_id", "label", "start_s", "end_s", "frames", "largest_share", "mean_score"]
-#: How the tag of the overlay a video gets begins (``_tag``).
-TAG = "sam3"
 #: The overlay's time base: each of its frames plays at its own time in the
 #: video, to the millisecond.
 MILLISECOND = Fraction(1, 1000)
@@ -108,10 +104,10 @@ def track_objects(media, model, derived_file, *, labels, every_seconds=0.5, forg
     label, spaces written as ``_``. ``tracks`` has one row per object of every
     video, with ``video_file_id``, ``video``, ``object_id``, ``label``,
     ``start_s`` and ``end_s`` (in seconds from the video's start), ``frames``,
-    ``largest_share`` and ``mean_score``. A call that asks other labels,
-    frames, forgetting, part or width of a video than an earlier call keeps an
-    overlay of its own; one that asks the same writes the earlier call's
-    overlay again.
+    ``largest_share`` and ``mean_score``. A video's overlay is named after the
+    video and where its part starts, in the folder of the node's run: each run
+    writes in a folder of its own, so runs that ask other labels, frames,
+    forgetting, part or width of a video keep overlays of their own.
     """
     if max_seconds is not None:
         raise ValueError(
@@ -666,23 +662,12 @@ def _keep(output, *, memory, alone=False):
                 output[key] = value.clone()
 
 
-def _tag(labels, every_seconds, forget_seconds, end, width):
-    """The tag of a video's overlay: ``TAG``, then the first twelve hex digits
-    of the SHA-256 of what it depends on besides where the part starts, which
-    its name holds: the labels, the gap between frames, how long an object
-    unseen is followed, where the part ends and the width."""
-    asked = [list(labels), float(every_seconds), None if forget_seconds is None else float(forget_seconds),
-             float(end), int(width)]
-    return TAG + hashlib.sha256(json.dumps(asked, separators=(",", ":")).encode("utf-8")).hexdigest()[:12]
-
-
 def _track(run, video, end):
     """Run SAM 3 through one video: ``(row, tracks)``, its overlay's row and
     the table of the objects it followed through it."""
     frames, times = _looked_at(run, video, end)
     start_ms = round(run.from_seconds * 1000)
-    tag = _tag(run.labels, run.every_seconds, run.forget_seconds, end, run.width)
-    overlay = run.derived_file(video["dataset_id"], video["file_id"], start_ms, "mp4", tag=tag)
+    overlay = run.derived_file(video["dataset_id"], video["file_id"], start_ms, "mp4")
     width, height = frames[0].size
     # Each frame of the overlay plays at its own time in the video, from the
     # first, in milliseconds, so the overlay plays in real time whatever
