@@ -26,4 +26,15 @@ describe('resolveInitialEditorTab', () => {
     expect(resolveInitialEditorTab({ code: false, grammar: false, widgets: true })).toBe('widgets');
     expect(resolveInitialEditorTab({ code: false, grammar: false, widgets: false })).toBe('output');
   });
+
+  test('a node with neither code nor a spec opens on what it shows, its widgets a tab away', () => {
+    // Simple View's shape: hasCode:false, hasGrammar:false, hasWidgets:true, and its cards.
+    expect(resolveInitialEditorTab({ code: false, grammar: false, widgets: true, output: true })).toBe('output');
+    // Code or a spec still come first, and a template that opens on its controls still does.
+    expect(resolveInitialEditorTab({ code: true, grammar: false, widgets: true, output: true })).toBe('code');
+    expect(resolveInitialEditorTab({ code: false, grammar: true, widgets: true, output: true })).toBe('grammar');
+    expect(
+      resolveInitialEditorTab({ code: true, grammar: false, widgets: true, widgetsFirst: true, output: true }),
+    ).toBe('widgets');
+  });
 });

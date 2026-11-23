@@ -52,6 +52,13 @@ OPTION_KEYS = ("choices", "pickedBy", "display", "min", "max", "step", "units")
 #: How a choice widget is drawn.
 CHOICE_DISPLAYS = ("dropdown", "radio")
 
+#: What a node's content is (the roster's ``contentKind``) when its code or
+#: spec places a widget's reference. A node of any other kind, such as a
+#: Simple View, holds only the widgets its template declares, which its body
+#: reads: a plan and a node.create set them by name, and a node saved before
+#: its template declared one is set through the template's (:func:`with_declared`).
+PLACES_WIDGETS = ("code", "grammar")
+
 #: Bounds on what one declaration may carry: abuse backstops, not product rules.
 MAX_WIDGETS = 16
 _TEXT_MAX_CHARS = 80
@@ -278,6 +285,24 @@ def set_over(declared: list[dict], written: list[dict]) -> list[dict]:
     by_name = {w["name"]: w for w in written}
     merged = [_merged(w, by_name[w["name"]]) if w["name"] in by_name else dict(w) for w in declared]
     return normalize_widgets(merged + [dict(w) for w in written if w["name"] not in names])
+
+
+def undeclared(widgets: list[dict], declared: list[dict]) -> list[str]:
+    """The names of *widgets*, the ones an agent writes on a node whose
+    content places none (:data:`PLACES_WIDGETS`), that *declared*, its
+    template's widgets, has none of: only a node's code or spec places a
+    widget of another name."""
+    names = {w.get("name") for w in declared}
+    return [w["name"] for w in widgets if w.get("name") not in names]
+
+
+def with_declared(held: list[dict], declared: list[dict]) -> list[dict]:
+    """*held*, the widgets of a node whose content places none
+    (:data:`PLACES_WIDGETS`), then each of *declared*, its template's, that
+    it holds none of: a node saved before its template declared one shows the
+    template's in its Widgets tab, and a value set there gives it that one."""
+    names = {w["name"] for w in held}
+    return [*held, *(dict(w) for w in declared if w["name"] not in names)]
 
 
 def _keeps_problem(written: dict, template: dict, here: str) -> str | None:

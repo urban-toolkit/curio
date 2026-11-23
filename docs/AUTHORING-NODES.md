@@ -164,7 +164,8 @@ To have the node's **Widgets** tab show only its controls, add
 control for each widget, as on a dashboard tile, with no tags, **Edit**,
 **Delete**, **Add widget** or selections. The node opens there while its code
 reads one of its widgets, and the code stays on the **Code** tab. A node whose
-code reads none of its widgets opens on its code.
+code reads none of its widgets opens on its code. A node with neither code nor
+a spec opens on what its behavior shows, as Simple View opens on its cards.
 
 When the starter is the node's whole content and only its widgets change from
 one use to the next, add `"starterIsContent": true` beside `source`. A node the

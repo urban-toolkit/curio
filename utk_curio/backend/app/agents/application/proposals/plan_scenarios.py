@@ -4,8 +4,9 @@ The grammar (``domain/widget_grammar.py``, ``domain/plan_scenarios.py``) checks
 what a plan says on its own and expands its duplicates into copies. This is
 what needs the saved dataflow:
 
-* at mint: a node that holds widgets is one whose code or spec places them,
-  and each widget its template declares is judged as the node will hold it,
+* at mint: a node holds the widgets its code or spec places, or, with
+  neither (a Simple View), only those its template declares, which its body
+  reads; each widget its template declares is judged as the node will hold it,
   keeping the template's type, choices and bounds
   (``widget_grammar.template_problems``); a duplicate's values are judged
   against the widgets the node it copies will hold, its template's among
@@ -34,10 +35,6 @@ from utk_curio.backend.app.projects.scenarios import next_scenario_color, normal
 from utk_curio.backend.app.scenario_catalog.domain.duplicate import lineage_of
 from utk_curio.backend.app.agents.domain import agent_text
 
-#: What a node's content is, for the templates whose code or spec places a
-#: widget's reference (the roster's ``contentKind``).
-_PLACES_WIDGETS = ("code", "grammar")
-
 
 def existing_scenarios(spec: dict) -> list[dict]:
     """The dataflow's scenarios, as a save keeps them."""
@@ -61,13 +58,22 @@ def mint_errors(plan: dict, available: dict, existing_nodes: dict, scenarios: li
         if not node.get("widgets"):
             continue
         entry = available.get(node["nodeType"]) or {}
-        if entry.get("contentKind") not in _PLACES_WIDGETS:
-            errors.append(
-                agent_text.message(
-                    "plan.widgets-not-placeable", ref=repr(node['ref']), label=entry.get('label') or node['nodeType'],
-                )
-            )
-        elif not node.get("copyOf"):
+        label = entry.get('label') or node['nodeType']
+        if entry.get("contentKind") not in widget_grammar.PLACES_WIDGETS:
+            # A node with neither code nor a spec holds only the widgets its
+            # template declares, which its body reads (a Simple View's Time column).
+            declared_here = template_of(node["ref"])
+            others = widget_grammar.undeclared(node["widgets"], declared_here)
+            if not declared_here:
+                errors.append(agent_text.message("plan.widgets-not-placeable", ref=repr(node['ref']), label=label))
+                continue
+            if others:
+                errors.append(agent_text.message(
+                    "plan.widgets-not-declared", ref=repr(node['ref']), label=label,
+                    widgets=", ".join(w["name"] for w in declared_here), others=", ".join(others),
+                ))
+                continue
+        if not node.get("copyOf"):
             # A copy holds its original's widgets, judged here once, and the
             # values its duplicate sets, judged below.
             errors.extend(widget_grammar.template_problems(

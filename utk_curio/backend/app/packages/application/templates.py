@@ -225,10 +225,13 @@ def _template_entry(package_id: str, template) -> dict:
         # behavior — the dev/89 post-it profile) holds authorable CONTENT
         # (the note text its behavior renders) even though it has no code
         # editor; without this, reuse-first note creation was impossible by
-        # construction (node.create refused every note template).
+        # construction (node.create refused every note template). A behavior
+        # whose editor is its widgets alone (Simple View, set through its Time
+        # column) is made the same way: node.create gives it its template's
+        # widgets.
         "authorable": bool(
             template.has_code or template.has_grammar
-            or (template.behavior and template.editor == "none")
+            or (template.behavior and template.editor in ("none", "widgets"))
         ),
         # dev/105 S1 (additive): a PRESENTATION template renders content
         # without code — the note profile. The roster tells a note-composing

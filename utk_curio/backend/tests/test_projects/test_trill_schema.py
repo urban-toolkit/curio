@@ -1276,30 +1276,44 @@ class TestNodeTypesResolve:
             f"{unresolved}"
         )
 
-    def test_content_presence_follows_the_templates_editor(self):
-        """'editor: none' in the manifest is why some nodes carry no content.
+    def test_content_presence_follows_the_templates_content_kind(self):
+        """What a template's node carries as content is its content kind, the
+        backend's one reading of the manifest (``templates.template_content_kind``):
+        code, a grammar's document or a note's text, or none for a template
+        with neither code nor a grammar that shows its input, a Data Pool or a
+        Simple View.
 
         Asserted rather than assumed, so the trill schema does not have to guess
         which templates may omit content.
         """
+        from pathlib import Path
+
+        from utk_curio.backend.app.packages.application.templates import template_content_kind
         from utk_curio.backend.app.packages.domain.spec_packages import unversioned_node_type
+        from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+
+        kinds = {}
+        for path in sorted(glob.glob(os.path.join(PACKAGES_DIR, "*", "manifest.json"))):
+            manifest = load_package_manifest(Path(path).parent)
+            for template in manifest.templates:
+                kinds[f"{manifest.package_id}/{template.template_id}"] = template_content_kind(template)
+        assert kinds.keys() == TEMPLATES.keys()
 
         wrong = []
         for path in CORPUS:
             for node in _spec(path)["dataflow"].get("nodes", []):
-                template = TEMPLATES.get(unversioned_node_type(node.get("type", "")))
-                if template is None:
+                kind = kinds.get(unversioned_node_type(node.get("type", "")))
+                if kind is None:
                     continue
                 has_content = bool(node.get("content"))
-                presentation_only = template.get("editor") == "none"
-                if has_content == presentation_only:
+                if has_content != (kind != "none"):
                     wrong.append(
                         f"{os.path.basename(path)}:{node['id']} "
-                        f"(editor={template.get('editor')}, content={'yes' if has_content else 'no'})"
+                        f"(content kind={kind}, content={'yes' if has_content else 'no'})"
                     )
         assert not wrong, (
-            "content presence should be the inverse of the template's "
-            f"'editor: none': {wrong}"
+            "content presence should follow the template's content kind, absent "
+            f"only for 'none': {wrong}"
         )
 
     def test_interaction_edges_touch_a_bidirectional_template(self):

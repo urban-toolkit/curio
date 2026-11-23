@@ -10,11 +10,23 @@ from __future__ import annotations
 
 import json
 
+from utk_curio import shipped
 from utk_curio.backend.tests._support.agent_routes import _auth
 from utk_curio.backend.tests.test_agents import test_routes_proposals as routes
+from utk_curio.backend.tests.test_agents.test_source_grounding_routes import _tool_results
 
 CA = "curio.builtin/python-computation"
 POOL = "curio.builtin/data-pool"
+VIEW = "curio.builtin/vis-simple"
+
+#: Simple View as the built-in package ships it: a template with neither code
+#: nor a spec, whose one widget, Time column, its own body reads.
+SIMPLE_VIEW = next(
+    template
+    for template in json.loads((shipped.path("packages") / "curio.builtin@1" / "manifest.json").read_text(encoding="utf-8"))["templates"]
+    if template["id"] == "vis-simple"
+)
+TIME_COLUMN = {"name": "time_column", "type": "text", "label": "Time column", "default": "t_s"}
 
 #: The test builtin package of the plan route tests.
 TEMPLATES = [
@@ -64,12 +76,13 @@ def _reply(plan: dict) -> str:
     return "Here is the plan.\n```curio.v1\n" + json.dumps({"dataflowPlan": plan}) + "\n```"
 
 
-def _land(client, user, token, project_id, monkeypatch, plan=None, *, replies=None, before_run=None):
+def _land(client, user, token, project_id, monkeypatch, plan=None, *, replies=None, before_run=None,
+          templates=TEMPLATES):
     """The plan the turn landed (its change card, with ``canvas``), or None."""
     helper = routes.TestDataflowPlanMint()
     att_id, calls = helper._setup(
         client, user, token, project_id, monkeypatch,
-        replies=replies or [_reply(plan or _plan())], templates=TEMPLATES,
+        replies=replies or [_reply(plan or _plan())], templates=templates,
     )
     if before_run is not None:
         before_run()
@@ -393,3 +406,83 @@ class TestNodeCreateWidgets:
         r = helper._run(client, token, alice_project, att_id)
         assert all(p["type"] not in ("proposal", "change") for p in r.get_json()["content"])
         assert "params.widgets[0] ('f'): A slider needs a minimum and a maximum." in calls[1][-1]["content"]
+
+
+class TestAViewsTimeColumnInAPlanOrANodeCreate:
+    """Simple View has neither code nor a spec: its one widget, Time column,
+    is its template's, which its own body reads. A plan and a node.create set
+    it by name, as they set a chart's widgets, and refuse a widget of another
+    name, which only a node's code or spec places, naming the ones it holds."""
+
+    TEMPLATES = [*TEMPLATES, SIMPLE_VIEW]
+
+    @staticmethod
+    def _plan(widgets) -> dict:
+        return {
+            "goal": "play the walk beside the objects it shows",
+            "nodes": [
+                {"ref": "objects", "nodeType": CA, "title": "Objects", "intent": "one row per object, first seen at start_s"},
+                {"ref": "walk", "nodeType": VIEW, "title": "Walk", "intent": "play the walk", "widgets": widgets},
+            ],
+            "edges": [{"from": "objects", "to": "walk"}],
+        }
+
+    def _create(self, client, user, token, project_id, monkeypatch, widgets):
+        """A node.create of a Simple View with *widgets*: what the model was
+        told of it, and the turn's body."""
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        helper = routes.TestNodeCreate()
+        reply = helper._create_tail_json(nodeType=VIEW, title="Walk", widgets=widgets)
+        att_id, calls = helper._setup(client, user=user, token=token, project_id=project_id,
+                                      monkeypatch=monkeypatch, replies=[reply, "Added it."])
+        helper._write_builtin_package(_user_dir_key(user), templates=self.TEMPLATES)
+        body = helper._run(client, token, project_id, att_id).get_json()
+        return _tool_results(calls[-1], "node.create"), body
+
+    def test_a_plan_sets_it_by_name(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        _, card, calls = _land(
+            client, user, token, alice_project, monkeypatch,
+            replies=[_reply(self._plan([{"name": "time_column", "type": "text", "value": "start_s"}])), "Done."],
+            templates=self.TEMPLATES,
+        )
+        assert card is not None, calls[-1][-1]["content"]
+        walk = next(n for n in _spec(user, alice_project)["dataflow"]["nodes"] if n.get("type", "").startswith(VIEW))
+        assert walk["metadata"]["widgets"] == [{**TIME_COLUMN, "value": "start_s"}]
+
+    def test_a_plan_refuses_a_widget_its_template_does_not_declare(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        user, token = user_and_token
+        _, card, calls = _land(
+            client, user, token, alice_project, monkeypatch,
+            replies=[_reply(self._plan([dict(FACTOR)])), _reply(self._plan([]))],
+            templates=self.TEMPLATES,
+        )
+        assert (
+            "plan node 'walk' (Simple View) holds only its template's widgets (time_column), which it reads "
+            "itself; any other widget (height_factor) is placed in a node's code or spec"
+        ) in calls[1][-1]["content"]
+        assert card is not None, "the fixed plan did not land"
+
+    def test_a_node_create_sets_it_by_name(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        said, body = self._create(client, user, token, alice_project, monkeypatch,
+                                  [{"name": "time_column", "type": "text", "value": "start_s"}])
+        assert said and said[0].startswith("[tool result] node.create: applied"), said
+        created = routes.TestNodeCreate()._created(body)
+        assert created["metadata"]["widgets"] == [{**TIME_COLUMN, "value": "start_s"}]
+        stored = next(n for n in routes.TestNodeCreate()._spec_nodes(user, alice_project) if n["id"] == created["id"])
+        assert stored["metadata"]["widgets"] == [{**TIME_COLUMN, "value": "start_s"}]
+
+    def test_a_node_create_refuses_a_widget_its_template_does_not_declare(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        user, token = user_and_token
+        said, body = self._create(client, user, token, alice_project, monkeypatch, [dict(FACTOR)])
+        assert all(p["type"] not in ("proposal", "change") for p in body["content"])
+        assert said and (
+            "params.widgets: a Simple View node holds only its template's widgets (time_column), which it reads "
+            "itself; any other widget (height_factor) is placed in a node's code or spec"
+        ) in said[0], said

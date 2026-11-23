@@ -311,6 +311,32 @@ def test_spatial_join_is_a_python_code_node_that_opens_on_its_two_widgets(builti
     )
 
 
+def test_simple_view_is_set_through_its_time_column(builtin_package_dir: Path):
+    """Simple View draws its input and has no code: its editor is its Widgets
+    tab, which shows only its controls, one field, Time column, the column its
+    player's range names in the views linked to it, t_s until set
+    (``src/utils/playerSelection.ts``)."""
+    manifest = load_package_manifest(builtin_package_dir)
+    view = next(t for t in manifest.templates if t.template_id == "vis-simple")
+    assert (view.editor, view.has_code, view.has_grammar, view.has_widgets) == ("widgets", False, False, True)
+    assert view.behavior == "simple-vis"
+    assert view.widgets == [{"name": "time_column", "type": "text", "label": "Time column", "default": "t_s"}]
+    assert view.opens_on_controls is True
+
+
+def test_simple_view_is_a_template_node_create_makes(builtin_package_dir: Path):
+    """An agent's node.create makes a Simple View: the roster lists it among
+    the templates it can make, a view of its input, not a note."""
+    from utk_curio.backend.app.packages.application import templates
+
+    manifest = load_package_manifest(builtin_package_dir)
+    view = next(t for t in manifest.templates if t.template_id == "vis-simple")
+    entry = templates._template_entry("curio.builtin", view)
+    assert entry["authorable"] is True
+    assert entry["presentation"] is False
+    assert templates.template_content_kind(view) == "none"
+
+
 def test_every_catalog_package_validates_against_schema():
     """Every manifest in ``packages/`` must satisfy ``docs/schemas/node-package.v4.json``."""
     import json

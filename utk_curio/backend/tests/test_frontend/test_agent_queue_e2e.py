@@ -10,9 +10,11 @@ palette's tiles one at a time in plan order, each ghost at its drop point under
 reduced motion, each node landing as its drop ends; then the connections land,
 with no motion, and the agent leaves. When Ben removes Sum while the plan
 lands, the plan stops before its connections, and the change's card in Ana's
-chat says what was left undone. Two agents asked at once, the Dataflow Builder
-and a Node Builder adding two nodes, each drag their own nodes in their own
-order, side by side.
+chat says what was left undone. His removal takes Sum alone, even when he
+selects Sum at the commit in which his canvas takes the agent's first node,
+before React Flow's own copy of the canvas holds it. Two agents asked at once,
+the Dataflow Builder and a Node Builder adding two nodes, each drag their own
+nodes in their own order, side by side.
 
 What Ben's tab shows is recorded in the page as it happens, and read once the
 replies are back: a frame would race the agents.
@@ -135,8 +137,49 @@ _RECORD_JS = """() => {
 _CARRYING_JS = """() => Array.from(window.__curio_awareness.getStates().values())
     .some((state) => state && state.user && state.user.agent && state.carrying)"""
 
-_SELECT_ONLY_JS = """(id) => window.__curio_reactFlow.setNodes(
-    (nodes) => nodes.map((node) => ({ ...node, selected: node.id === id })))"""
+#: Select the node *id* alone, as a person does from the keyboard: the node
+#: focused, then Enter, which React Flow's own selection takes by the node's
+#: id, leaving every other node of the canvas as it is. Never
+#: ``window.__curio_reactFlow.setNodes``, which replaces the canvas's whole
+#: list with React Flow's own copy of it (``test_frontend/README.md``). Enter
+#: is pressed and let go: React Flow's key handlers count a key held until its
+#: keyup, and with Enter held, Delete alone would match none of them.
+_SELECT_ONLY_JS = """(id) => {
+    const node = document.querySelector(`.react-flow__node[data-id="${id}"]`);
+    if (!node) throw new Error(`no node ${id} is drawn`);
+    node.focus({preventScroll: true});
+    for (const type of ['keydown', 'keyup']) {
+        node.dispatchEvent(new KeyboardEvent(type, {key: 'Enter', code: 'Enter', bubbles: true, cancelable: true}));
+    }
+}"""
+
+#: Ben's selection, made at the commit in which his canvas takes a node the
+#: dataflow's doc gained, before React Flow's own copy of the canvas holds it.
+#: The canvas writes each commit into the doc from a layout effect, as a
+#: transaction whose origin is ``canvas`` (``useDataflowDoc``), and React Flow
+#: takes the canvas's nodes in an effect after it. A busy page can give a
+#: person's selection that moment; this gives it every time. It selects once,
+#: with ``window.__curio_selectOnly`` (``_SELECT_ONLY_JS``), and keeps the
+#: nodes React Flow's copy lacked then, or the selection's error.
+_SELECT_AT_THE_LANDING_JS = """(nodeId) => {
+    const doc = window.__curio_awareness.doc;
+    const forced = {fresh: null, error: null};
+    window.__curio_forced = forced;
+    const onTransaction = (transaction) => {
+        if (transaction.origin !== 'canvas') return;
+        const inReactFlow = new Set(window.__curio_reactFlow.getNodes().map((node) => node.id));
+        const fresh = Array.from(doc.getMap('nodes').keys()).filter((id) => !inReactFlow.has(id));
+        if (fresh.length === 0) return;
+        doc.off('afterTransaction', onTransaction);
+        forced.fresh = fresh;
+        try {
+            window.__curio_selectOnly(nodeId);
+        } catch (error) {
+            forced.error = String((error && error.stack) || error);
+        }
+    };
+    doc.on('afterTransaction', onTransaction);
+}"""
 
 
 class _Room:
@@ -228,13 +271,18 @@ def _ready(room: _Room):
 
 def _delete_with_the_key(page, node_id: str) -> None:
     """Select *node_id* alone and press Delete, as a person removes a node."""
-    page.evaluate("() => document.activeElement && document.activeElement.blur && document.activeElement.blur()")
     page.evaluate(_SELECT_ONLY_JS, node_id)
+    _press_delete(page, node_id)
+
+
+def _press_delete(page, node_id: str) -> None:
+    """Press Delete on *node_id* once it is the canvas's selection, as a person
+    removes a node."""
     page.wait_for_function(
         """(id) => !!window.__curio_reactFlow.getNodes().find((n) => n.id === id && n.selected)""",
         arg=node_id, timeout=10000,
     )
-    page.keyboard.press("Delete")
+    node_locator(page, node_id).press("Delete")
 
 
 def _recorded(page) -> list:
@@ -384,6 +432,52 @@ def test_a_node_removed_under_a_queued_action_stops_the_queue_with_a_chat_line(r
     panel = owner.get_by_role("dialog", name=re.compile(r"^Chat with Dataflow Builder"))
     expect(panel).to_be_visible(timeout=20000)
     expect(panel.get_by_role("group", name=re.compile(r"^Change: ")).first).to_contain_text(line, timeout=20000)
+
+
+def test_removing_a_node_as_the_agents_node_lands_on_the_canvas_removes_that_node_alone(room):
+    """Ben selects Sum at the commit in which his canvas takes the agent's
+    first node, before React Flow's own copy of the canvas holds it, then
+    presses Delete: Sum goes alone, and the plan stops before its connections,
+    as when he removes Sum at any other moment."""
+    planner, _owner, editor = _ready(room)
+    editor.evaluate("() => document.activeElement && document.activeElement.blur && document.activeElement.blur()")
+    editor.evaluate("() => { window.__curio_selectOnly = " + _SELECT_ONLY_JS + "; }")
+    editor.evaluate(_SELECT_AT_THE_LANDING_JS, SINK)
+    script_agent_replies(room.backend, _plan_reply(), attachment=planner, dataflow=room.project_id)
+    replies: dict = {}
+    asking = threading.Thread(
+        target=lambda: replies.update(plan=room.ask(planner, "Plan the parks' analysis.")), daemon=True,
+    )
+    asking.start()
+    try:
+        editor.wait_for_function("() => window.__curio_forced.fresh !== null", timeout=60000)
+    except Exception as exc:  # noqa: BLE001 - said in the test's words
+        raise AssertionError(
+            "the forcing missed: Ben's canvas never took a node React Flow's copy of it lacked"
+        ) from exc
+    forced = editor.evaluate("() => window.__curio_forced")
+    assert forced["error"] is None, f"Ben's selection of Sum as the agent's node landed failed: {forced['error']}"
+    assert len(forced["fresh"]) == 1, f"Ben's canvas took more than the agent's first node at once: {forced}"
+    [landed] = forced["fresh"]
+    _press_delete(editor, SINK)
+    asking.join(150)
+    assert not asking.is_alive() and "plan" in replies, "the Dataflow Builder's turn never answered"
+
+    saved = room.saved()
+    assert SINK not in {node["id"] for node in saved["nodes"]}, "Ben's removal of Sum never reached the server"
+    [card] = [part for part in replies["plan"]["content"] if part.get("type") == "change"]
+    line = f"Left undone: 3 connections, since '{SINK_GOAL}' was removed"
+    assert card["status"] == "applied" and line in card["lines"], card
+    # The agent's node Ben's canvas was taking stays, in the dataflow and on his canvas.
+    assert landed in {node["id"] for node in saved["nodes"]}, (
+        f"Ben's removal of Sum took the agent's node {landed} too: {saved['nodes']}"
+    )
+    assert sorted(node.get("goal", "").split(" ")[0] for node in saved["nodes"]) == sorted(TITLES), saved["nodes"]
+    assert saved["edges"] == [], f"a connection of the stopped plan landed: {saved['edges']}"
+    try:
+        node_locator(editor, landed).wait_for(state="attached", timeout=15000)
+    except Exception as exc:  # noqa: BLE001 - said in the test's words
+        raise AssertionError(f"Ben's canvas no longer shows the agent's node {landed}") from exc
 
 
 def test_two_agents_queues_play_side_by_side_without_mixing(room):
