@@ -557,11 +557,12 @@ A code node whose code, inputs, packages and the datasets it reads are those of
 a result you ran it to in the last 7 days, on the same version of Curio, shows
 that result again with **Run All**, without running: its output panel says when
 the result was made. **Play** always runs the node. Play a node whose code reads
-what can change by itself, such as a web API, the clock, random numbers or a
-file by its URL, to run it again; the nodes below it run again with the next
-**Run All**. A node that uses a module only a node above it imports fails when
-that node's result is shown again in a new sign-in: import the module in the
-node itself.
+what can change by itself, such as a web API, the clock, random numbers, a file
+by its URL or a file by a path that is no dataset, to run it again; the nodes
+below it run again with the next **Run All**. What a node writes elsewhere, such
+as an export, is written again only when the node runs. A node that uses a
+module only a node above it imports fails when that node's result is shown again
+in a new sign-in: import the module in the node itself.
 
 On your own dataflow, and on one whose owner invited you to edit it, a run is
 made on the server, so it goes on when you close the tab. A dataflow you never

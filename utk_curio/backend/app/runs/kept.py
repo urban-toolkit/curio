@@ -184,10 +184,15 @@ def datasets_read(code: str, project_id: str, owner, *, paths: Optional[dict] = 
     dataset under the same id changes its identity. *paths*, when the run
     already resolved them (``node_exec.resolve_dataset_paths``), saves
     resolving them again."""
+    from utk_curio.backend.app.datasets.infrastructure import left_out_files
     from utk_curio.backend.app.execution import node_exec
 
     if paths is None:
-        paths = node_exec.resolve_dataset_paths(code, project_id, owner) or {}
+        # A file a pip install leaves out downloads as it resolves, before
+        # the step's lookup knows whether it runs: the node that shows its
+        # progress is told when that is over (``left_out_files.downloading``).
+        with left_out_files.downloading():
+            paths = node_exec.resolve_dataset_paths(code, project_id, owner) or {}
     return {dataset_id: _file_identity(str(path)) for dataset_id, path in sorted(paths.items())}
 
 
