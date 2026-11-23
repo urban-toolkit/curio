@@ -18,6 +18,7 @@ import { faUpload } from "@fortawesome/free-solid-svg-icons";
 
 jest.mock("reactflow", () => ({
     useReactFlow: () => ({ getNodes: () => [], setNodes: jest.fn(), setCenter: jest.fn() }),
+    useStoreApi: () => ({ getState: () => ({ getNodes: () => [], addSelectedNodes: jest.fn() }) }),
 }));
 jest.mock("../../providers/ToastProvider", () => ({
     useToastContext: () => ({ showToast: jest.fn() }),

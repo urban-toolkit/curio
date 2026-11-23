@@ -1,7 +1,7 @@
 import React, { memo, useCallback } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faBrain } from "@fortawesome/free-solid-svg-icons";
-import { useReactFlow } from "reactflow";
+import { useReactFlow, useStoreApi } from "reactflow";
 
 import {
   endModelCardDrag,
@@ -36,6 +36,7 @@ export const ModelPaletteRow = memo(function ModelPaletteRow({
   onOpenDetails: (model: PackagePayload) => void;
 }) {
   const reactFlow = useReactFlow();
+  const flowStore = useStoreApi();
   const { reveal } = useNotebookViewContext();
   const { showToast } = useToastContext();
   const modelId = model.packageId;
@@ -46,11 +47,11 @@ export const ModelPaletteRow = memo(function ModelPaletteRow({
       e.preventDefault();
       const isLinked = (n: { id: string; data: any }) =>
         nodeLinkedModelIds(n.data).includes(modelId);
-      if (focusLinkedNodes(reactFlow, isLinked, reveal) === 0) {
+      if (focusLinkedNodes(reactFlow, flowStore, isLinked, reveal) === 0) {
         showToast("No nodes on the canvas use this model", "info");
       }
     },
-    [modelId, reactFlow, showToast, reveal],
+    [modelId, reactFlow, flowStore, showToast, reveal],
   );
   if (!isModelPackage(model)) return null;
 

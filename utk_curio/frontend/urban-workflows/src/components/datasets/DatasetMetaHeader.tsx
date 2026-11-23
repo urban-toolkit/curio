@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faDatabase, faHourglassHalf } from "@fortawesome/free-solid-svg-icons";
-import { useReactFlow } from "reactflow";
+import { useReactFlow, useStoreApi } from "reactflow";
 import {
   DatasetNodeSource,
   DATASET_FORMAT_LABEL,
@@ -49,6 +49,7 @@ export function DatasetMetaHeader({
 }: DatasetMetaHeaderProps) {
   const { setDatasetRevealId, installedComputedByProducer } = useDatasetPalette();
   const reactFlow = useReactFlow();
+  const flowStore = useStoreApi();
   const { reveal } = useNotebookViewContext();
   const isProducer = variant === "producer";
   const { requests, viewer } = useHeldEditorRequests();
@@ -81,9 +82,9 @@ export function DatasetMetaHeader({
     const isLinked = (n: { id: string; data: any }) =>
       isNodeLinkedToAnyDataset(n.data, [source.datasetId]) ||
       installedComputedByProducer.get(n.id)?.id === source.datasetId;
-    focusLinkedNodes(reactFlow, isLinked, reveal);
+    focusLinkedNodes(reactFlow, flowStore, isLinked, reveal);
     setDatasetRevealId(source.datasetId);
-  }, [source.datasetId, setDatasetRevealId, installedComputedByProducer, reactFlow, suggestionActive, reveal]);
+  }, [source.datasetId, setDatasetRevealId, installedComputedByProducer, reactFlow, flowStore, suggestionActive, reveal]);
 
   const badgeClick = useHeaderIconDragClick(revealInPalette);
 

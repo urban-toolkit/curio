@@ -1,9 +1,10 @@
 import React, { memo, useCallback } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { useReactFlow } from "reactflow";
+import { useStoreApi } from "reactflow";
 import { NODE_CATEGORY_SHORT_LABEL } from "../../../../constants/nodeCategoryShortLabels";
 import { NodeDescriptor } from "../../../../registry/types";
 import { getFlowNodeCanonicalType } from "../../../../utils/flowNodeCanonicalType";
+import { selectOnly } from "../../../../utils/focusDatasetNodes";
 import { paletteItemAttrs } from "../toolsPaletteDismiss";
 import packageStyles from "./ToolsMenuPackagePalette.module.css";
 
@@ -12,20 +13,19 @@ export const PackageTemplateRow = memo(function PackageTemplateRow({
 }: {
     desc: NodeDescriptor;
 }) {
-    const { setNodes } = useReactFlow();
+    const flowStore = useStoreApi();
 
+    // The canvas's nodes of this kind become its selection, by their ids.
     const selectOnCanvas = useCallback(
         (e: React.MouseEvent) => {
             e.stopPropagation();
             e.preventDefault();
-            setNodes((nds) =>
-                nds.map((n) => ({
-                    ...n,
-                    selected: getFlowNodeCanonicalType(n) === desc.id,
-                })),
-            );
+            const ofThisKind = flowStore.getState().getNodes()
+                .filter((n) => getFlowNodeCanonicalType(n) === desc.id)
+                .map((n) => n.id);
+            selectOnly(flowStore, ofThisKind);
         },
-        [desc.id, setNodes],
+        [desc.id, flowStore],
     );
 
     return (
