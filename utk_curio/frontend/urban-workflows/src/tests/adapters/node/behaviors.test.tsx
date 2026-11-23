@@ -217,6 +217,7 @@ const BEHAVIOR_RESULT_KEYS: (keyof NodeBehaviorResult)[] = [
   'contentComponent',
   'viewRows',
   'controlsComponent',
+  'ownWidgets',
   'setOutputCallbackOverride',
   'outputOverride',
   'outputIdOverride',

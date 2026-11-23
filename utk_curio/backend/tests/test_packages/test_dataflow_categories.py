@@ -50,8 +50,11 @@ SHIPPED = {
     ("curio.rasterization@1", "raster-calculator"): {"dataTypes": ["Rasters"]},
     ("curio.rasterization@1", "rasterize-buildings"): {"dataTypes": ["Rasters"]},
     ("curio.weather@1", "utci-compute"): {"dataTypes": ["Rasters"]},
-    # SAM 3 runs torch in its package's module, which no import in node code shows.
-    ("model.curio.sam3@1", None): {"tags": ["PyTorch"]},
+    # The segmentation models: what their type gave from the category table
+    # until the table named no model type. SAM 3 runs torch in its package's
+    # module, which no import in node code shows.
+    ("model.curio.ddrnet23-slim@1", None): {"tags": ["Computer vision"], "dataTypes": ["Imagery"]},
+    ("model.curio.sam3@1", None): {"tags": ["PyTorch", "Computer vision"], "dataTypes": ["Imagery"]},
     ("model.scout.deep-umbra@1", None): {"tags": ["SCOUT"]},
     ("model.scout.weather-gnn@1", None): {"tags": ["SCOUT"]},
 }

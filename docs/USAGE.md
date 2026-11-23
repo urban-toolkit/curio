@@ -1355,7 +1355,7 @@ Removing an interaction edge, or a node at either end, removes the highlight it 
 
 A point selection over fields (`"select": {"type": "point", "fields": ["unit_id"]}`) sends the values of the points picked, such as `{"unit_id": 103}`, and the receiving chart marks every row that holds them, in whatever order it holds its rows. A point selection without fields matches rows by position, so both charts must read the same rows in the same order. An interval selection matches by column name, so the receiving chart needs the columns the interval names.
 
-A Simple View's player is a selection too, an interval on `t_s`, the time in seconds. Draw an interaction edge from the Simple View to a chart or a map: while a video or a recording plays in one of its cards, the view at the other end marks the rows whose `t_s` lies between the file's start and where the player stands, such as a walk's points up to where the walker is. The marks follow the player as it plays and when you seek, and stay where it stands when you pause. They go when another card plays, when the Simple View's rows change or another of its tabs opens, or when the edge or either node is removed. `t_s` is the time in the video as Sample Video Frames and Split Audio write it; a table that holds clock times gets its `t_s` in a Python node before it is linked. A file cut from a longer one, such as Track Objects' overlay, Split Audio's clip or Split Video's block, holds where it starts in its own `t_s`, and its player's range is then in the longer file's time.
+A Simple View's player is a selection too, an interval on its **Time column**, the time in seconds. Draw an interaction edge from the Simple View to a chart or a map: while a video or a recording plays in one of its cards, the view at the other end marks the rows whose value in that column lies between the file's start and where the player stands, such as a walk's points up to where the walker is. The marks follow the player as it plays and when you seek, and stay where it stands when you pause. They go when another card plays, when the Simple View's rows change or another tab of its frames opens, or when the edge or either node is removed. Time column, on the Simple View's Widgets tab, names the column the linked rows keep their seconds in: `t_s`, the time in the video as Sample Video Frames and Split Audio write it, until you set another. A table that holds clock times gets a column of seconds in a Python node before it is linked. A file cut from a longer one, such as Track Objects' overlay, Split Audio's clip or Split Video's block, holds where it starts in its own `t_s`, and its player's range is then in the longer file's time.
 
 When several selections reach a Data Pool, the two selects at the top of the pool decide which rows it marks. **Conflict inside visualization** combines the selections of one chart, and **Conflict between visualizations** combines the latest selection of each linked chart:
 
@@ -2400,10 +2400,10 @@ A dataflow file opened with **File → Load dataflow** is a new dataflow: saving
 your dataflows under its own name, and the dataflow that was open stays as it was.
 
 Tags and data types come from the dataflow and from what it uses: the libraries its code
-imports and the files it names, the grammar each node draws with, the type of each model
-it runs (a segmentation model gives Computer vision and Imagery), the format of each
-dataset (a GeoTIFF gives Rasters), and the tags and data types its packages, models and
-datasets declare in their manifests' `dataflowCategories` (SCOUT's give SCOUT). A package
+imports and the files it names, the grammar each node draws with, the format of each
+dataset (a GeoTIFF gives Rasters) and the kind of each collection, and the tags and data
+types its packages, models and datasets declare in their manifests' `dataflowCategories`
+(SCOUT's give SCOUT, a segmentation model Computer vision and Imagery). A package, model
 or dataset of your own can declare them too ([Authoring nodes](AUTHORING-NODES.md#tags-and-data-types),
 [Data Catalog](DATA-CATALOG.md#7-the-manifest)), and a new name adds an entry to the
 rail. They follow the dataflow's changes within a few seconds, in every tab that has it

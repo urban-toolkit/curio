@@ -2,7 +2,7 @@
   "sha256": {
     "LICENSE": "8616f6d26e7bb5a90328988b634529ac69cb3807ac0e2796870282c8ba769e48",
     "README.md": "ff6014fbcfaded88d7f47273b1cffa75479e763459476156dcc8c4441b33fbac",
-    "manifest.json": "9ce56eace7cb15f0c4d11903fac94afb49fad1ea50a158019289030d1a5ab879",
+    "manifest.json": "acf21194ff391fa17715855cee0fa79b19f9bba2be75de1e3a1ba1020c5ef9e5",
     "models/ddrnet23_slim.data": "38add9668036fed6d244e266ffb8e454adefce48ef39e57e0b868d91846bd173",
     "models/ddrnet23_slim.onnx": "6a8f9937496acdd738171b84b2b8cc7cc0dbdacb5259bc2b934383706a82195a",
     "sources/image-segmentation.py": "a70107120c156c8256fe0d491a27a73f3d79e12cf3397397b6c2c9d916a4e69c"

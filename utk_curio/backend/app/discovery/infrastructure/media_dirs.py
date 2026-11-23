@@ -90,15 +90,16 @@ def room_files(user_key: str) -> tuple[Path, Path]:
 
 def forget_media(user_key: str, dataset_id: str) -> None:
     """Remove what Curio made from one dataset's files: its thumbnails, its
-    cached bucket files, and the files nodes derived from it, in the media
-    folder, in each visitor's own folder in it and in each dashboard viewer's
-    step's (:func:`derived_root`).
+    cached bucket files, and the files nodes derived from it, in the folder of
+    each derived row's kind (``DERIVED_FOLDERS``), in the media folder, in
+    each visitor's own folder in it and in each dashboard viewer's step's
+    (:func:`derived_root`).
 
     Never the files themselves, which are the source's.
     """
     import shutil
 
-    from utk_curio.sandbox.util.collections import DERIVED, KEPT_MEDIA
+    from utk_curio.sandbox.util.collections import DERIVED_FOLDERS, KEPT_MEDIA
 
     segment = _dataset_segment(dataset_id)
     key = user_key_segment(user_key)
@@ -108,7 +109,7 @@ def forget_media(user_key: str, dataset_id: str) -> None:
     for group in (VISITORS, KEPT_MEDIA):
         if (root / group).is_dir():
             roots += [folder for folder in (root / group).iterdir() if folder.is_dir()]
-    derived = sorted({folder for types in DERIVED.values() for folder, _kind in types.values()})
+    derived = sorted(set(DERIVED_FOLDERS.values()))
     folders += [where / folder / segment for where in roots for folder in derived]
     for folder in folders:
         shutil.rmtree(folder, ignore_errors=True)

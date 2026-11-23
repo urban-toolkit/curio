@@ -53,6 +53,10 @@ JOIN_CODE = (
     "from spatial_join import spatial_join\n\n"
     "return spatial_join(input_0, input_1, operation=[!! operation !!], output=[!! output !!])\n"
 )
+#: Simple View's one widget, as the built-in package declares it: the column
+#: its player's range names in the views linked to it. The view below was
+#: saved before its template declared it, so it holds none.
+TIME_COLUMN = {"name": "time_column", "type": "text", "label": "Time column", "default": "t_s"}
 
 
 def _nodes() -> list[dict]:
@@ -323,6 +327,25 @@ class TestAChangeLandsInTheNodeAndOnItsCard:
         assert "simpleVis" not in (_saved(user, project)["view"].get("metadata") or {})
         assert landed[0]["canvas"]["settings"] == {"simpleVis": {}}
 
+    def test_a_views_time_column_on_a_view_saved_before_it(self, client, user_and_token, tmp_curio, monkeypatch):
+        """A Simple View saved before its template declared its Time column
+        holds no widget, and its Widgets tab shows the template's: the change
+        gives the view that widget with its value, as a value a person sets
+        there does, and leaves its image column as it was."""
+        user, token = user_and_token
+        project, _att, change, said, landed = _change(
+            client, user, token, monkeypatch, target="view", widgets={"time_column": "walked_s"},
+        )
+        assert change is not None, said
+        assert said[0].startswith(f"[tool result] {TOOL}: applied"), said
+        assert change["summary"] == "Changed the settings of the Simple View node · Overlays"
+        assert change["settingLines"] == ["Time column: walked_s"]
+        metadata = _saved(user, project)["view"]["metadata"]
+        assert metadata["widgets"] == [{**TIME_COLUMN, "value": "walked_s"}]
+        assert metadata["simpleVis"] == {"imageColumn": "image_url"}
+        # A canvas no doc binds takes it through the view's own field.
+        assert landed[0]["canvas"]["settings"] == {"widgets": {"time_column": "walked_s"}}
+
     def test_a_joins_operation_widget_keeps_its_output(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
         project, _att, change, [said], landed = _change(
@@ -435,6 +458,21 @@ class TestAWrongChangeIsRefusedToTheModel:
             refused
         )
 
+    def test_a_widget_a_view_has_not_names_its_time_column(self, client, user_and_token, tmp_curio, monkeypatch):
+        """The view saved before its template declared its Time column holds
+        it all the same: its Widgets tab shows the template's."""
+        user, token = user_and_token
+        refused = self._refused(client, user, token, monkeypatch, target="view", widgets={"combine": "max"})
+        assert (
+            "params.widgets.combine: the Simple View node has no widget named 'combine'; it has time_column"
+        ) in refused, refused
+
+    def test_a_views_time_column_it_already_reads(self, client, user_and_token, tmp_curio, monkeypatch):
+        """A view that holds no Time column reads t_s, its template's default."""
+        user, token = user_and_token
+        refused = self._refused(client, user, token, monkeypatch, target="view", widgets={"time_column": "t_s"})
+        assert "params changes nothing: the Simple View node already has Time column: t_s" in refused, refused
+
     def test_a_value_outside_its_widgets_options_or_range_in_the_widgets_words(
         self, client, user_and_token, tmp_curio, monkeypatch,
     ):
@@ -527,6 +565,22 @@ class TestUndoPutsTheOldValuesBack:
         assert _undo(client, token, project, att, change).status_code == 200
         widgets = {w["name"]: w for w in _saved(user, project)["chart"]["metadata"]["widgets"]}
         assert widgets["combine"].get("value", widgets["combine"]["default"]) == "mean"
+
+    def test_undo_puts_a_views_time_column_back_to_what_it_read(self, client, user_and_token, tmp_curio, monkeypatch):
+        """The view held no Time column before the change and read t_s: its
+        Undo puts t_s back, in the widget the change gave it."""
+        user, token = user_and_token
+        project, att, change, said, _ = _change(
+            client, user, token, monkeypatch, target="view", widgets={"time_column": "walked_s"},
+        )
+        assert change is not None, said
+        response = _undo(client, token, project, att, change)
+        assert response.status_code == 200, response.get_json()
+        widgets = _saved(user, project)["view"]["metadata"]["widgets"]
+        assert [(w["name"], w.get("value", w["default"])) for w in widgets] == [("time_column", "t_s")]
+        assert [(step["kind"], step["nodeId"], step["settings"]) for step in response.get_json()["canvas"]] == [
+            ("node-settings-applied", "view", {"widgets": {"time_column": "t_s"}}),
+        ]
 
     def test_a_setting_someone_changed_after_is_kept_and_the_undo_refused(
         self, client, user_and_token, tmp_curio, monkeypatch,

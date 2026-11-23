@@ -739,6 +739,23 @@ def test_a_manifest_naming_other_labels_is_refused(segmentation, tmp_path, photo
         segmentation.segment_images(frame, _loaded(model), None)
 
 
+@pytest.mark.parametrize("model_input, labels, field", [
+    pytest.param(None, [f"c{i}" for i in range(150)], "model.input gives none", id="no-input"),
+    pytest.param({"width": 64, "height": 64, "dtype": "float32", "layout": "NHWC"}, [f"c{i}" for i in range(150)],
+                 "model.input.layout is NHWC", id="nhwc"),
+    pytest.param({"width": 64, "height": 64, "dtype": "float32"}, [], "model.labels lists none", id="no-labels"),
+])
+def test_an_onnx_model_it_cannot_feed_or_name_is_refused_by_its_field(
+        segmentation, tmp_path, photos, model_input, labels, field):
+    """Curio reads every model type alike, so the module says what it needs
+    of an onnx model before it opens it: the size to feed it images at, NCHW,
+    the layout it feeds, and the labels that name its output channels."""
+    frame, helpers = photos
+    model = _onnx_model(tmp_path, labels, model_input)
+    with pytest.raises(ValueError, match=field):
+        segmentation.segment_images(frame, _loaded(model), helpers["curio_derived_file"])
+
+
 def test_a_transformers_model_without_its_libraries_says_what_to_install(segmentation, tmp_path, photos, monkeypatch):
     import builtins
 

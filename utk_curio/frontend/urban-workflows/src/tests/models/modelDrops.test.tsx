@@ -316,6 +316,26 @@ describe("a model dropped on a node", () => {
     );
   });
 
+  test("of a type no package Curio ships runs swaps only a model of that type, naming the types in words", () => {
+    const depthModel = (packageId: string, name: string) =>
+      createModelDragPayload(
+        fetchedModelPackage({
+          packageId,
+          dirName: `${packageId}@1`,
+          name,
+          model: { ...fetchedModelPackage().model, type: "depth-estimation" },
+        }),
+      );
+
+    expect(modelSwapRefusal("depth-estimation", depthModel("model.test.depth-two", "Second depth"))).toBeNull();
+    expect(modelSwapRefusal("depth-estimation", createModelDragPayload(importedModelPackage()))).toBe(
+      "This node runs depth estimation models, and SegFormer B0 (ADE20K) is a semantic segmentation model.",
+    );
+    expect(modelSwapRefusal(nodeModelType(segmentationNode, typeOf), depthModel("model.test.depth", "Depth"))).toBe(
+      "This node runs semantic segmentation models, and Depth is a depth estimation model.",
+    );
+  });
+
   test("whose node's type is not known is refused, saying so", () => {
     const deepUmbra = createModelDragPayload(deepUmbraPackage());
     const refusal = "This node's model type is unknown, so it does not take Deep Umbra (accumulated shadows).";

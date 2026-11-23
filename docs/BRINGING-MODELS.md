@@ -55,7 +55,8 @@ Pick the path that fits your model:
 | A Hugging Face segmentation model | Add it from the Discovery Catalog's **Hugging Face models**, with no export; it gets the **Image Segmentation** node ([DISCOVERY-CATALOG.md](DISCOVERY-CATALOG.md#adding-a-model)). |
 | A scikit-learn model, or plain Python | A node package: put the code in its `sources/` and call it from the node's code ([AUTHORING-NODES.md](AUTHORING-NODES.md)). |
 
-A model package declares one of four types of model:
+A model package names its model's type, any lowercase name such as
+`depth-estimation`. Curio's own packages run four:
 
 | Type | In | Out | Example |
 |---|---|---|---|
@@ -68,10 +69,11 @@ A segmentation model runs in an **Image Segmentation** node, whose code calls
 the Segmentation package's `segment_images` and needs no code of yours: drop
 your model on one, or copy DDRNet23-Slim's node, its `source` and its
 `dependencies.packages`, into your package
-([MODEL-CATALOG.md](MODEL-CATALOG.md#3-using-a-model-in-a-dataflow)). An
-image-to-image or node-regression model is run by the node you write for it,
-which prepares the model's inputs itself. That is the case this guide covers.
-A concept-segmentation model is always run by the node you write for it.
+([MODEL-CATALOG.md](MODEL-CATALOG.md#3-using-a-model-in-a-dataflow)). Its
+manifest gives the model's input size and a label per class. A model of any
+other type is run by the node you write for it, which prepares the model's
+inputs itself. That is the case this guide covers. A model dropped on a node
+swaps its model only when both are of one type.
 
 ---
 
@@ -245,25 +247,28 @@ The manifest is a node package's ([NODE-CATALOG.md](NODE-CATALOG.md)), with:
 - `templates`: one template, the node that runs the model. Dragging the model's
   card onto the canvas drops it. Its `source` is the node's code; a template
   with no `source` opens with an onnxruntime session on the model and a
-  `session.run` skeleton naming its inputs, whatever the model's type, and a
-  `concept-segmentation` model's template must have one. Its `widgets` are
-  what the user sets ([section 6](#6-widgets-what-the-user-sets)).
+  `session.run` skeleton naming its inputs, whatever the model's type, so a
+  `transformers` model's template must have one. Its `widgets` are what the
+  user sets ([section 6](#6-widgets-what-the-user-sets)).
 - `dependencies.packages`: the packages whose modules the node's code
   imports, such as `"curio.segmentation@1": "*"` for a segmentation model's
   node. Adding the model adds them.
+- `dataflowCategories`: the tags and data types a dataflow that uses the
+  model is filed under on the **Projects** page, such as
+  `{"tags": ["Computer vision"], "dataTypes": ["Imagery"]}` for a segmentation
+  model ([NODE-CATALOG.md](NODE-CATALOG.md#6-the-manifest)).
 
 The `model` block describes the weights:
 
-- `type`: `semantic-segmentation`, `image-to-image`, `node-regression` or
-  `concept-segmentation`.
+- `type`: what the model does, a lowercase name of words joined by hyphens,
+  such as `image-to-image` or `depth-estimation`.
 - `runtime`: `onnx`, for an exported model.
 - `entry`: the `.onnx` file, under `models/`.
-- `input`: for an `onnx` image model, what the model was made for: `width` and
-  `height`, `dtype`, `layout` (`NCHW`, or `NHWC` for an `image-to-image`
-  model), `scale`, and an optional `mean` and `std`. A `node-regression` model
-  has none.
+- `input`: for an image model, what the model was made for: `width` and
+  `height`, `dtype`, `layout` (`NCHW` or `NHWC`), `scale`, and an optional
+  `mean` and `std`. A model that reads no image has none.
 - `labels`: the classes of a segmentation model, in the order it numbers them;
-  none for the other types.
+  none for a model with no classes.
 - `license` and `licenseFile`: the weights' license, and the file in the
   package that holds its text when it is not a standard license.
 - `publisher`, `homepage` and `sizeBytes`: who published the weights, where

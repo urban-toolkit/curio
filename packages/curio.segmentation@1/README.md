@@ -28,7 +28,10 @@ labels every pixel of each image with a model `curio_load_model` loaded, the
 way its manifest says to run it: an `onnx` graph on onnxruntime, a
 `transformers` checkpoint with its own image processor and torch, both on
 the CPU, on as many threads as `OMP_NUM_THREADS` names, else on one per
-core. The model's package declares that runtime.
+core. The model's package declares that runtime. An `onnx` model's manifest
+gives the size its images are fed at (`model.input`, in `NCHW`) and a label
+per output channel (`model.labels`): one that gives no input size, gives
+`NHWC`, or names no labels stops the node, naming the field.
 
 - `images`: a collection's rows, each with a `path`, as Data Loading gives
   them with `curio_load_collection(...)`.

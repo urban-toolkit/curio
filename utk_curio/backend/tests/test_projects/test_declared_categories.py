@@ -274,23 +274,22 @@ def test_a_model_loaded_in_code_brings_what_its_package_declares(tmp_path):
     assert _derive([_node(PYTHON_NODE, "return None")], lookup) == NOTHING
 
 
-@pytest.mark.parametrize("model_type, expected", [
-    ("semantic-segmentation", {"tags": ["Computer vision"], "data_type": ["Imagery"]}),
-    ("image-to-image", NOTHING),
-    ("node-regression", NOTHING),
+@pytest.mark.parametrize("model_type", [
+    "semantic-segmentation", "image-to-image", "node-regression", "concept-segmentation", "depth-estimation",
 ])
-def test_a_models_type_gives_what_the_table_says_for_it(tmp_path, model_type, expected):
+def test_a_models_type_gives_nothing_of_its_own(tmp_path, model_type):
     """Whether a node of the model's package runs it or a Python node loads
-    it, as with a model downloaded from the Discovery Catalog into the
-    account's store (its package id ``imported.x<hex>``), which declares
-    nothing."""
+    it, a model package that declares nothing, as a package id
+    ``imported.x<hex>`` in the account's store, gives nothing, whatever its
+    type: the category table names no model type, and what a dataflow is
+    filed under comes from the package's ``dataflowCategories``."""
     store = tmp_path / "packages"
     _package(store, "imported.x5e9c", model_type=model_type, templates=["segment"])
     lookup = _lookup(packages=[store])
 
-    assert _derive([_node("imported.x5e9c/segment@1")], lookup) == expected
+    assert _derive([_node("imported.x5e9c/segment@1")], lookup) == NOTHING
     loads = 'model = curio_load_model("imported.x5e9c")\nreturn model'
-    assert _derive([_node(PYTHON_NODE, loads)], lookup) == expected
+    assert _derive([_node(PYTHON_NODE, loads)], lookup) == NOTHING
 
 
 def test_a_scout_named_package_model_or_dataset_that_declares_nothing_is_not_scout(tmp_path):
@@ -369,13 +368,14 @@ def test_a_node_type_with_no_package_in_it_matches_nothing(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_a_declared_name_follows_the_tables_names_alphabetically(tmp_path):
-    """The table's names come first, in its order, so Computer vision still
-    precedes SCOUT; Hydrology and any other declared name follow, sorted
-    ignoring case."""
+    """The table's names come first, in its order, so Computer vision, which
+    a segmentation model declares, still precedes SCOUT; Hydrology and any
+    other declared name follow, sorted ignoring case."""
     store = tmp_path / "packages"
     _package(store, "acme.hydro", declares={"tags": ["Rainfall", "hydrology"], "dataTypes": ["Point clouds"]})
     _package(store, "acme.survey", declares={"tags": ["SCOUT"]}, templates=["walk"])
-    _package(store, "model.acme.segments", model_type="semantic-segmentation", templates=["segment"])
+    _package(store, "model.acme.segments", declares={"tags": ["Computer vision"], "dataTypes": ["Imagery"]},
+             model_type="semantic-segmentation", templates=["segment"])
     nodes = [
         _node("acme.survey/walk@1", "import pandas as pd\n", "a"),
         _node("acme.hydro/gauge@1", node_id="b"),

@@ -11,11 +11,16 @@
  * change (`applyNodeSettings`), is made the way a pick in the node makes it,
  * as `nodeCodeWriters` does for a node whose code is its state.
  *
+ * A widget whose control a node's body draws itself (`ownWidgets`, such as
+ * Simple View's Time column) can have a setter of its own, which a change of
+ * that widget's value goes through before the node's widgets setter.
+ *
  * A setting no setter takes goes into the node's data, as a load of its
  * metadata puts it there. A settings change files no entry in the node's
  * Provenance drawer: an entry holds code, so putting one back could not put
  * back a setting.
  */
+import { tryGetNodeDescriptor } from "../registry/nodeRegistry";
 import { normalizeWidgets, type WidgetDef, type WidgetValue } from "./widgets/widgetModel";
 
 /**
@@ -40,6 +45,54 @@ const KEYS: readonly NodeSettingKey[] = ["dataPool", "simpleVis", "widgets"];
 
 type AnyWriter = (setting: any) => void;
 const writers = new Map<string, Partial<Record<NodeSettingKey, AnyWriter>>>();
+
+/** Sets one widget's value as the node's own control for it sets one. */
+export type NodeWidgetWriter = (value: unknown) => void;
+const widgetWriters = new Map<string, Map<string, NodeWidgetWriter>>();
+
+/** Registers *writer* for the widget *name* of *nodeId*, one whose control
+ * the node's body draws itself; the function it returns takes it off again. */
+export function registerNodeWidgetWriter(nodeId: string, name: string, writer: NodeWidgetWriter): () => void {
+  const held = widgetWriters.get(nodeId) ?? new Map<string, NodeWidgetWriter>();
+  held.set(name, writer);
+  widgetWriters.set(nodeId, held);
+  return () => {
+    const now = widgetWriters.get(nodeId);
+    if (!now || now.get(name) !== writer) return;
+    now.delete(name);
+    if (now.size === 0) widgetWriters.delete(nodeId);
+  };
+}
+
+/**
+ * Whether a new value of a widget of a node of *nodeType* can change what the
+ * node makes: a template with code or a spec places its widgets there. A
+ * template with neither, Simple View, reads its widgets in its body alone (its
+ * Time column names the column its player's range is on), so a new value
+ * leaves the node current and runs nothing, and a node of it that holds none of
+ * them yet, one saved before its template declared it, takes its template's.
+ * An unknown template's widgets count as read by its code.
+ */
+export function widgetsChangeOutput(nodeType: unknown): boolean {
+  const descriptor = typeof nodeType === "string" ? tryGetNodeDescriptor(nodeType) : undefined;
+  return !descriptor || Boolean(descriptor.hasCode || descriptor.hasGrammar);
+}
+
+/** *widgets*, a node's, with each one *values* names given that value, as
+ * the Widgets tab sets a value, then each of *declared*, its template's
+ * widgets, that the node holds none of and *values* names, with that value:
+ * a node saved before its template declared one takes the template's. */
+export function withDeclaredWidgetValues(
+  widgets: WidgetDef[],
+  values: Record<string, unknown>,
+  declared: readonly WidgetDef[],
+): WidgetDef[] {
+  const held = new Set(widgets.map((widget) => widget.name));
+  const added = declared
+    .filter((widget) => !held.has(widget.name) && Object.prototype.hasOwnProperty.call(values, widget.name))
+    .map((widget) => ({ ...widget, value: values[widget.name] as WidgetValue }));
+  return [...withWidgetValues(widgets, values), ...added];
+}
 
 /** Registers *writer* for the setting *key* of *nodeId*; the function it
  * returns takes it off again. */
@@ -77,7 +130,8 @@ export function withWidgetValues(widgets: WidgetDef[], values: Record<string, un
 /** *data*, a node's data, with *settings* in it as a load of the node's
  * metadata puts them there: each key a setting gives over the ones the node
  * holds, a Simple View's column gone for every image column, and each widget
- * the change names given its value. */
+ * the change names given its value, its template's on a node whose widgets
+ * change no output that holds none of it yet (`widgetsChangeOutput`). */
 export function withNodeSettings(data: Record<string, any>, settings: NodeSettings): Record<string, any> {
   const next: Record<string, any> = { ...data };
   if (settings.dataPool) next.dataPool = { ...(data.dataPool ?? {}), ...settings.dataPool };
@@ -87,7 +141,10 @@ export function withNodeSettings(data: Record<string, any>, settings: NodeSettin
     else delete simpleVis.imageColumn;
     next.simpleVis = simpleVis;
   }
-  if (settings.widgets) next.widgets = withWidgetValues(normalizeWidgets(data.widgets), settings.widgets);
+  if (settings.widgets) {
+    const declared = widgetsChangeOutput(data.nodeType) ? [] : tryGetNodeDescriptor(data.nodeType)?.widgets ?? [];
+    next.widgets = withDeclaredWidgetValues(normalizeWidgets(data.widgets), settings.widgets, declared);
+  }
   return next;
 }
 
@@ -102,18 +159,39 @@ export interface NodeSettingsCanvas {
   requestAutoRun?: (nodeIds: readonly string[]) => void;
 }
 
+/** The values of *values* no setter of *nodeId*'s own widgets takes, once
+ * each one a setter takes is set through it (`registerNodeWidgetWriter`);
+ * undefined when every one was. */
+function writeOwnWidgets(nodeId: string, values: Record<string, unknown>): Record<string, unknown> | undefined {
+  const own = widgetWriters.get(nodeId);
+  if (!own) return values;
+  const others: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries(values)) {
+    const writer = own.get(name);
+    if (writer) writer(value);
+    else others[name] = value;
+  }
+  return Object.keys(others).length > 0 ? others : undefined;
+}
+
 /**
  * Makes the change *settings* on node *nodeId*: each setting through the
- * setter the node registered for it, as a pick in the node makes it, and the
+ * setter the node registered for it, as a pick in the node makes it, a value
+ * of a widget its body draws itself through that widget's own setter, and the
  * rest into the node's data through *canvas*'s `updateDataNode`. A widget's
  * new value made there still does what the Widgets tab's does: the node is
- * out of date, the dataflow Unsaved, and an automatic run takes the node.
+ * out of date, the dataflow Unsaved, and an automatic run takes the node,
+ * unless its widgets change no output (`widgetsChangeOutput`).
  */
 export function writeNodeSettings(canvas: NodeSettingsCanvas, nodeId: string, settings: NodeSettings): void {
   const rest: NodeSettings = {};
   for (const key of KEYS) {
-    const setting = settings[key];
+    let setting = settings[key];
     if (setting === undefined) continue;
+    if (key === "widgets") {
+      setting = writeOwnWidgets(nodeId, setting as Record<string, unknown>);
+      if (setting === undefined) continue;
+    }
     const writer = writers.get(nodeId)?.[key];
     if (writer) writer(setting);
     else (rest as Record<string, unknown>)[key] = setting;
@@ -123,7 +201,7 @@ export function writeNodeSettings(canvas: NodeSettingsCanvas, nodeId: string, se
   const node = nodes.find((n) => n.id === nodeId);
   if (!node) return;
   canvas.updateDataNode(nodeId, withNodeSettings(node.data ?? {}, rest));
-  if (!rest.widgets) return;
+  if (!rest.widgets || !widgetsChangeOutput(node.data?.nodeType)) return;
   canvas.markNodeStale?.(nodeId);
   canvas.markDirty?.();
   canvas.requestAutoRun?.([nodeId]);
