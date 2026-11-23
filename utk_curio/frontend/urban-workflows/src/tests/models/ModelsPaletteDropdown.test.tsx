@@ -68,6 +68,7 @@ jest.mock("reactflow", () => ({
     setNodes: jest.fn(),
     fitView: jest.fn(),
   }),
+  useStoreApi: () => ({ getState: () => ({ getNodes: () => mockNodes, addSelectedNodes: jest.fn() }) }),
 }));
 jest.mock("../../utils/fitViewWithMenuOffset", () => ({ fitViewWithMenuOffset: jest.fn() }));
 

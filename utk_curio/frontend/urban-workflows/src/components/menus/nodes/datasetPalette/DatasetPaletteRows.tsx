@@ -24,7 +24,7 @@ import { paletteItemAttrs } from "../toolsPaletteDismiss";
 import rowStyles from "./DatasetPaletteRows.module.css";
 
 import { DatasetConnectionBadge } from "../../../datasets/catalog/DatasetConnectionBadge";
-import { useReactFlow } from "reactflow";
+import { useReactFlow, useStoreApi } from "reactflow";
 import { isNodeLinkedToAnyDataset } from "../../../../services/datasetCatalog";
 import { focusLinkedNodes } from "../../../../utils/focusDatasetNodes";
 import { useNotebookViewContext } from "../../../../providers/flow/notebookViewContext";
@@ -61,6 +61,7 @@ export const DatasetRow = memo(function DatasetRow({
     rowStyles[`chip_${dataset.format}` as keyof typeof rowStyles] ?? rowStyles.formatChip;
 
   const reactFlow = useReactFlow();
+  const flowStore = useStoreApi();
   const { reveal } = useNotebookViewContext();
   const { showToast } = useToastContext();
   const { openDatasetDetails } = useDatasetDetails();
@@ -76,11 +77,11 @@ export const DatasetRow = memo(function DatasetRow({
       //  - producer: the node that generated this computed dataset.
       const isLinked = (n: { id: string; data: any }) =>
         isNodeLinkedToAnyDataset(n.data, [dataset.id]) || n.id === dataset.producerNodeId;
-      if (focusLinkedNodes(reactFlow, isLinked, reveal) === 0) {
+      if (focusLinkedNodes(reactFlow, flowStore, isLinked, reveal) === 0) {
         showToast("No nodes on the canvas use this dataset", "info");
       }
     },
-    [dataset.id, dataset.producerNodeId, reactFlow, showToast, reveal],
+    [dataset.id, dataset.producerNodeId, reactFlow, flowStore, showToast, reveal],
   );
 
   return (
@@ -165,6 +166,7 @@ export const DatasetGroupRow = memo(function DatasetGroupRow({
   const dragPayload = useMemo(() => createOsmGroupDragPayload(group), [group]);
 
   const reactFlow = useReactFlow();
+  const flowStore = useStoreApi();
   const { reveal } = useNotebookViewContext();
   const { showToast } = useToastContext();
 
@@ -182,11 +184,11 @@ export const DatasetGroupRow = memo(function DatasetGroupRow({
       );
       const isLinked = (n: { id: string; data: any }) =>
         isNodeLinkedToAnyDataset(n.data, linkIds) || producerIds.has(n.id);
-      if (focusLinkedNodes(reactFlow, isLinked, reveal) === 0) {
+      if (focusLinkedNodes(reactFlow, flowStore, isLinked, reveal) === 0) {
         showToast("No nodes on the canvas use this dataset", "info");
       }
     },
-    [group.groupId, group.members, reactFlow, showToast, reveal],
+    [group.groupId, group.members, reactFlow, flowStore, showToast, reveal],
   );
 
   return (

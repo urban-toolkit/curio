@@ -5,6 +5,7 @@ import "@testing-library/jest-dom";
 
 jest.mock("reactflow", () => ({
   useReactFlow: () => ({ getNodes: () => [], setNodes: jest.fn(), setCenter: jest.fn() }),
+  useStoreApi: () => ({ getState: () => ({ getNodes: () => [], addSelectedNodes: jest.fn() }) }),
 }));
 jest.mock("../../providers/ToastProvider", () => ({
   useToastContext: () => ({ showToast: jest.fn() }),
@@ -170,7 +171,8 @@ describe("DatasetGroupRow", () => {
     await userEvent.click(screen.getByText("chicago_loop"));
     expect(focusLinkedNodesMock).toHaveBeenCalledTimes(1);
 
-    const predicate = focusLinkedNodesMock.mock.calls[0][1] as (n: any) => boolean;
+    // focusLinkedNodes(reactFlow, flowStore, isLinked, reveal)
+    const predicate = focusLinkedNodesMock.mock.calls[0][2] as (n: any) => boolean;
     // Full-group node (datasetSource = group id) — highlighted.
     expect(predicate({ id: "n1", data: { datasetSource: { datasetId: "osm.x1" } } })).toBe(true);
     // Individual-layer node (references a member) — highlighted.
