@@ -49,10 +49,10 @@ export function NodeSaveAsModal({
   nodeId: string;
   onClose: () => void;
 }) {
-  const { setNodes } = useReactFlow();
+  const { getNode } = useReactFlow();
   const { getStarters } = useStarterContext();
   const { showToast } = useToastContext();
-  const { ensureProjectId } = useFlowContext();
+  const { ensureProjectId, updateDataNode } = useFlowContext();
   const hostedGuest = useHostedGuest();
   const [busy, setBusy] = useState(false);
   const [busyKind, setBusyKind] = useState<"save" | "export" | null>(null);
@@ -202,10 +202,15 @@ export function NodeSaveAsModal({
       // source built-in. Match by label — Save-As preserves it. Also re-seed
       // `data.code` / `data.defaultCode` with the body we just persisted, so the
       // editor remount picks them up instead of clobbering them with the old
-      // source descriptor's starter (or an empty initial state).
+      // source descriptor's starter (or an empty initial state). The node is
+      // changed by its id through the canvas's own state, with its data as it
+      // is now: never React Flow's setNodes, which would make React Flow's
+      // copy of the nodes, a commit behind the canvas, the canvas's whole list
+      // (`selectOnly` in utils/focusDatasetNodes.ts).
       const matchNorm = normalizeTemplateLabel(nodeLabel);
       const newKind = result.package.templates.find((k) => normalizeTemplateLabel(k.label) === matchNorm);
-      if (newKind) {
+      const now = newKind ? getNode(nodeId) : undefined;
+      if (newKind && now) {
         // A node that loads a model was saved as a model package of its own,
         // a copy of that model: the node runs the copy, named by the new id,
         // as the package's node does.
@@ -213,22 +218,13 @@ export function NodeSaveAsModal({
         const savedBody = copied
           ? renameModelCalls(runtimeCodeFromRfNode(canvasNode), copied, result.package.packageId)
           : runtimeCodeFromRfNode(canvasNode);
-        setNodes((nodes) =>
-          nodes.map((n) =>
-            String(n.id) === nodeId
-              ? {
-                  ...n,
-                  data: {
-                    ...n.data,
-                    nodeType: newKind.id,
-                    code: savedBody,
-                    defaultCode: savedBody,
-                    ...(copied ? { modelRefs: [{ id: result.package.packageId, name: result.package.name }] } : {}),
-                  },
-                }
-              : n,
-          ),
-        );
+        updateDataNode(nodeId, {
+          ...now.data,
+          nodeType: newKind.id,
+          code: savedBody,
+          defaultCode: savedBody,
+          ...(copied ? { modelRefs: [{ id: result.package.packageId, name: result.package.name }] } : {}),
+        });
       }
       // ONE verdict for one save. The dependency notice already says the save
       // happened ("Saved <node>, but ..."), so pairing it with a green
@@ -251,7 +247,7 @@ export function NodeSaveAsModal({
       setBusy(false);
       setBusyKind(null);
     }
-  }, [buildDraft, busy, canvasNode, ensureProjectId, hostedGuest, nodeId, nodeLabel, onClose, setNodes, showToast, targetKey]);
+  }, [buildDraft, busy, canvasNode, ensureProjectId, getNode, hostedGuest, nodeId, nodeLabel, onClose, showToast, targetKey, updateDataNode]);
 
   // Export the same draft as a .curio.zip without installing it. Shares the
   // `busy` flag with Save so the two can never run concurrently, and leaves
