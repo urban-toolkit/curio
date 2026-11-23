@@ -3,7 +3,7 @@ import React from "react";
 import { formatBytes } from "../../datasets/catalog/datasetDetailHelpers";
 import {
   MODEL_RUNTIME_LABEL,
-  MODEL_TYPE_LABEL,
+  modelTypeWords,
   packageCardNodes,
   type ModelBlockPayload,
   type PackagePayload,
@@ -47,7 +47,7 @@ export function modelRuntimeLabel(pkg: ModelPackage): string {
 }
 
 export function modelTypeLabel(pkg: ModelPackage): string {
-  return MODEL_TYPE_LABEL[pkg.model.type] ?? pkg.model.type;
+  return modelTypeWords(pkg.model.type);
 }
 
 /** The node a drop of the model makes, its package's own: when there are

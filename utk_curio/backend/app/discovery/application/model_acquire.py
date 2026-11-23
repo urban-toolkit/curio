@@ -10,8 +10,10 @@ its labels from ``config.json``, an ONNX graph's input from
 ``preprocessor_config.json``, the weights' license from the model card. Its
 node is the one the source's manifest names (``provider.options.node``), read
 from the shared catalog (``packages.service.model_node``), its code naming the
-model; the packages install it (``packages.service.install_downloaded_model``),
-the packages that node's package names, and the libraries.
+model; its type, and what a dataflow that uses it is filed under
+(``dataflowCategories``), are that node's package's. The packages install it
+(``packages.service.install_downloaded_model``), the packages that node's
+package names, and the libraries.
 """
 
 from __future__ import annotations
@@ -49,9 +51,6 @@ RUNTIME_DEPS = {
 #: Where a Transformers checkpoint's files go under the package's ``models/``:
 #: a model block's entry is a path under ``models/``, never the folder itself.
 CHECKPOINT_DIR = "checkpoint"
-
-#: The type of every model the Hugging Face source adds.
-MODEL_TYPE = "semantic-segmentation"
 
 #: ImageNet's, which a preprocessor config that names none means.
 _IMAGENET_MEAN = [0.485, 0.456, 0.406]
@@ -231,7 +230,8 @@ class ModelAcquire:
         """The model package's manifest for *plan*'s files in *weights*: a new
         ``imported.x<hex>`` id, or *held*'s id and date for a refresh, and
         *node* (``packages.service.ModelNode``) its node, with the packages
-        that node's package names."""
+        that node's package names, its model's type and what it declares in
+        ``dataflowCategories``."""
         from utk_curio.backend.app.common.record_clock import utc_now
 
         def read(name: str) -> dict[str, Any]:
@@ -244,7 +244,7 @@ class ModelAcquire:
         labels = labels_of(read("config.json"))
         publisher = plan.repo.split("/", 1)[0]
         block: dict[str, Any] = {
-            "type": MODEL_TYPE,
+            "type": node.model_type,
             "runtime": plan.runtime,
             "labels": labels,
             "license": plan.license or "See the model's page on Hugging Face",
@@ -269,7 +269,7 @@ class ModelAcquire:
             if plan.architecture:
                 block["discoverySource"]["architecture"] = plan.architecture
         now = utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
-        return {
+        package: dict[str, Any] = {
             "id": str(held["id"]) if held is not None else f"imported.x{uuid.uuid4().hex[:12]}",
             "kind": "model",
             "name": plan.repo,
@@ -286,3 +286,6 @@ class ModelAcquire:
             "model": block,
             "templates": [dict(node.template)],
         }
+        if node.dataflow_categories:
+            package["dataflowCategories"] = dict(node.dataflow_categories)
+        return package
