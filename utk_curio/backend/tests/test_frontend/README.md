@@ -316,9 +316,14 @@ Five things here are easy to get wrong:
   `formatOnType: true` mean typed Python does not round-trip. `setValue` fires the
   same `onChange` -> `floatCode` -> `data.code` chain a keystroke does, so it is
   the user path, not a back door.
-- **Never `__curio_reactFlow.setNodes`.** That writes only React Flow's zustand
-  store, and `useStoreUpdater` pushes the provider's node array straight back over
-  it on the next render, so an injected node or code edit silently disappears.
+- **Never `__curio_reactFlow.setNodes`.** The canvas hands React Flow its nodes
+  as props, so the call replaces the canvas's whole node list with what its
+  updater makes of React Flow's own copy, which React Flow takes from the canvas
+  in an effect after each commit. A node the canvas took from the dataflow's doc
+  in that commit is dropped, and the canvas then writes its removal into the doc,
+  for every tab. Select a node as a person does: a click on its header strip
+  (`test_canvas_delete_key_e2e.py`), or the node focused and Enter
+  (`_SELECT_ONLY_JS` in `test_agent_queue_e2e.py`).
 
 Node-header icons need `activate_header_icon` rather than `click()`: they activate
 on `pointerdown` + `pointerup` and swallow the native click (so press-and-drag
