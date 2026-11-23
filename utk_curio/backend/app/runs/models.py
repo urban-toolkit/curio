@@ -177,6 +177,10 @@ class KeptStepOutput(db.Model):
     media_folders = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=naive_utc_now)
     used_at = db.Column(db.DateTime, nullable=False, default=naive_utc_now)
+    # When a later run of the same step replaced it (``kept.keep``), or None.
+    # A replaced entry serves every read it served until the first sweep
+    # ``kept.REPLACED_HOURS`` on drops it; no reuse, reopen or replace picks it.
+    replaced_at = db.Column(db.DateTime, nullable=True)
 
     project = db.relationship(
         "Project",

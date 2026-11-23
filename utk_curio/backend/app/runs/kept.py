@@ -11,10 +11,11 @@ of his sign-ins and by no one else. Each output is kept for :data:`KEPT_DAYS`
 after it was made, under a key of what made it (:func:`step_key`); past that
 time it goes, and the next run that needs it makes it again. An output kept
 replaces what earlier runs kept of the same node under the same key, by the
-same maker for the same reader (:func:`keep`): a step run again with the
-same code on the same input artifacts keeps one copy of what it made, files
-and all. A step whose inputs ran again reads new artifacts, so its key is
-new and its output kept beside the last one's. Each dataflow
+same maker for the same reader (:func:`keep`), which still serve every read
+they served for :data:`REPLACED_HOURS` and go at the first sweep after: a
+step run again with the same code on the same input artifacts keeps one copy
+of what it made, files and all. A step whose inputs ran again reads new
+artifacts, so its key is new and its output kept beside the last one's. Each dataflow
 keeps at most :data:`MAX_KEPT_BYTES` of what its viewers made, the files
 their steps derived counted in; past it the least recently used go. What the
 owner's and the editors' runs made (``made_by``) is bounded by its days alone:
@@ -68,6 +69,10 @@ KEPT_DAYS = 7
 PRUNE_INTERVAL_HOURS = 6
 #: How long an output built on what one tab's browser sent serves that tab.
 TAB_OWN_HOURS = 1
+#: How long an output a later run of its step replaced (:func:`keep`) still
+#: serves the pages and runs that read it, a canvas or a dashboard open on it
+#: or a run whose next step reads it; the first sweep after that drops it.
+REPLACED_HOURS = 1
 #: The most one dataflow keeps of what one maker made; past it the least
 #: recently used go.
 MAX_KEPT_BYTES = 2 * 1024 ** 3
@@ -374,7 +379,7 @@ def editor_outputs_by_key(project_id: str, user_id) -> dict:
         _editors(user_id).filter(
             KeptStepOutput.project_id == project_id, KeptStepOutput.made_by == MADE_BY_EDITOR,
         )
-        .filter(_alive(naive_utc_now()))
+        .filter(_alive(naive_utc_now()), _not_replaced())
         .order_by(KeptStepOutput.created_at.desc())
         .all()
     ):
@@ -384,12 +389,13 @@ def editor_outputs_by_key(project_id: str, user_id) -> dict:
 
 def owner_outputs_by_key(project_id: str) -> dict:
     """``{step key: entry}``: the newest live output the owner's runs of
-    *project_id* kept under each key. Read only: nothing is touched, since an
-    owner's outputs are bounded by their days alone."""
+    *project_id* kept under each key, none a later run replaced. Read only:
+    nothing is touched, since an owner's outputs are bounded by their days
+    alone."""
     newest: dict = {}
     for entry in (
         KeptStepOutput.query.filter_by(project_id=project_id, made_by=MADE_BY_OWNER)
-        .filter(_alive(naive_utc_now()))
+        .filter(_alive(naive_utc_now()), _not_replaced())
         .order_by(KeptStepOutput.created_at.desc())
         .all()
     ):
@@ -554,7 +560,7 @@ def kept_output(project_id: str, key: str, private_to: Optional[str] = None) -> 
     entry = (
         KeptStepOutput.query
         .filter_by(project_id=project_id, step_key=key)
-        .filter(readable)
+        .filter(readable, _not_replaced())
         .filter(_alive(now))
         .order_by(KeptStepOutput.created_at.desc())
         .first()
@@ -583,10 +589,13 @@ def keep(
     session's.
 
     It replaces what earlier runs kept of *node_id* on *project_id* under
-    *key*, by *made_by* for the same reader (:func:`_replaced`), which go as
-    the sweep's do (:func:`_drop`): identical runs keep one copy of what they
-    made, the last one's. A folder of theirs that another kept output or a
-    saved output's record names stays."""
+    *key*, by *made_by* for the same reader (:func:`_replaced`): it marks
+    them replaced (:func:`_mark_replaced`), and they serve every read they
+    served, so a page, a canvas or a run still on one finds it, until the
+    first sweep :data:`REPLACED_HOURS` on drops them (:func:`prune`).
+    Identical runs keep one copy of what they made, the last one's; a folder
+    of theirs that another kept output or a saved output's record names
+    stays when they go."""
     try:
         described = describe_session(session_id)
     except Exception:  # noqa: BLE001 - the output is kept with what is known of it
@@ -611,22 +620,29 @@ def keep(
 
     kept_id = commit_with_retry(_apply)
     try:
-        _drop(_replaced(kept_id, project_id, node_id, key, made_by, private_to))
+        _mark_replaced(_replaced(kept_id, project_id, node_id, key, made_by, private_to), now)
     except Exception:  # noqa: BLE001 - the output is kept; the older ones go with their days
-        log.warning("could not drop the kept outputs that node %s's new output on %s replaces", node_id, project_id)
+        log.warning("could not mark the kept outputs that node %s's new output on %s replaces", node_id, project_id)
         try:
             db.session.rollback()
         except Exception:  # noqa: BLE001
-            # No database to roll back: the sweep takes them in time.
+            # No database to roll back: the older ones go with their days.
             pass
     return ids
+
+
+def _not_replaced():
+    """The kept outputs no later run of their step replaced (:func:`keep`):
+    the ones a reuse, a reopen or a replace may pick."""
+    return KeptStepOutput.replaced_at.is_(None)
 
 
 def _replaced(kept_id: str, project_id: str, node_id: str, key: str, made_by: str,
               private_to: Optional[str]) -> list:
     """The outputs the one kept as *kept_id* replaces: those kept before it
     of *node_id* on *project_id* under *key*, by *made_by* for the same
-    reader (*private_to*), whose runs made what its run made again."""
+    reader (*private_to*), whose runs made what its run made again, and that
+    no run replaced yet."""
     reader = (
         KeptStepOutput.private_to.is_(None) if private_to is None
         else KeptStepOutput.private_to == private_to
@@ -634,9 +650,27 @@ def _replaced(kept_id: str, project_id: str, node_id: str, key: str, made_by: st
     return (
         KeptStepOutput.query
         .filter_by(project_id=project_id, node_id=node_id, step_key=key, made_by=made_by)
-        .filter(reader, KeptStepOutput.id != kept_id)
+        .filter(reader, KeptStepOutput.id != kept_id, _not_replaced())
         .all()
     )
+
+
+def _mark_replaced(entries, when) -> int:
+    """Mark *entries* replaced at *when* (``replaced_at``): each serves every
+    read it served, by its names, under its session and from its folder, but
+    no reuse, reopen or later replace picks it, and the first sweep
+    :data:`REPLACED_HOURS` on drops it (:func:`prune`). How many."""
+    ids = [entry.id for entry in entries]
+    if not ids:
+        return 0
+
+    def _apply():
+        db.session.query(KeptStepOutput).filter(KeptStepOutput.id.in_(ids)).update(
+            {"replaced_at": when}, synchronize_session=False,
+        )
+
+    commit_with_retry(_apply)
+    return len(ids)
 
 
 def _drop(entries) -> int:
@@ -936,13 +970,17 @@ def readable_output(project_id: str, file_name: str, token: Optional[str]) -> Ke
 
 def prune(now=None) -> int:
     """Drop the kept outputs past their time (:data:`KEPT_DAYS`, or
-    :data:`TAB_OWN_HOURS` for a tab's own), and, on a dataflow whose outputs
-    from one maker pass :data:`MAX_KEPT_BYTES`, that maker's least recently
-    used until they are under. Their artifacts go with them, and so do the
-    files their runs derived (:func:`forget_kept_media`). Returns how many
-    went."""
+    :data:`TAB_OWN_HOURS` for a tab's own), those a later run of their step
+    replaced :data:`REPLACED_HOURS` or more ago (:func:`keep`), and, on a
+    dataflow whose outputs from one maker pass :data:`MAX_KEPT_BYTES`, that
+    maker's least recently used until they are under. Their artifacts go with
+    them, and so do the files their runs derived (:func:`forget_kept_media`).
+    Returns how many went."""
     now = now or naive_utc_now()
-    expired = KeptStepOutput.query.filter(db.not_(_alive(now))).all()
+    expired = KeptStepOutput.query.filter(db.or_(
+        db.not_(_alive(now)),
+        KeptStepOutput.replaced_at <= now - timedelta(hours=REPLACED_HOURS),
+    )).all()
     going = {entry.id: entry for entry in expired}
     totals = (
         db.session.query(

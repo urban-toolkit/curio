@@ -11,9 +11,10 @@ session, so a play or a save installs it as a run's output is installed.
 - two plays of Draw with other code keep a file each, and each row's URL
   reads its own;
 - two plays of the same code keep one output, the last one's, with its
-  files: the first play's session and folder go, its folder only once no
-  saved output records it; two plays of other code keep both outputs, each
-  with its own folder;
+  files: the first play's output still reads for an hour, then the sweep
+  takes its session and its folder, the folder only once no saved output
+  records it; two plays of other code keep both outputs, each with its own
+  folder;
 - a saved output keeps its files when its node runs again, past its kept
   output's days and the sweep, and loses them when its Data Catalog dataset
   is deleted; so does the output a dataflow's first save records from a play
@@ -195,6 +196,14 @@ def _days_later(days: int) -> tuple:
     from utk_curio.backend.app.runs.models import naive_utc_now
 
     return naive_utc_now() + timedelta(days=days), time.time() + days * 24 * 3600
+
+
+def _an_hour_on():
+    """prune's now an hour and a minute from now: past the hour a replaced
+    output still serves the pages and runs that read it."""
+    from utk_curio.backend.app.runs.models import naive_utc_now
+
+    return naive_utc_now() + timedelta(hours=1, minutes=1)
 
 
 def _drawn_dataflow(client, sandbox, token, name="Overlays"):
@@ -404,11 +413,12 @@ def test_a_kept_output_that_hands_on_a_saved_outputs_rows_keeps_their_files(clie
 def test_a_play_of_the_same_code_replaces_the_last_ones_kept_output_and_files(client, user_and_token, sandbox):
     """Draw plays red twice on a saved dataflow: the same code on the same
     input, so the same key. The second play's kept output replaces the
-    first's: one is left for the node, the sandbox forgets the first play's
-    session, its run's folder goes and its row reads nothing, and the second
-    play's row reads its own overlay. A node played again with nothing
-    changed keeps one copy of its files."""
+    first's, which the sweep an hour on takes: one is left for the node, the
+    sandbox forgets the first play's session, its run's folder goes and its
+    row reads nothing, and the second play's row reads its own overlay. A
+    node played again with nothing changed keeps one copy of its files."""
     from utk_curio.backend.app.discovery.infrastructure import media_dirs
+    from utk_curio.backend.app.runs import kept
     from utk_curio.backend.app.runs.models import KeptStepOutput
 
     _, token = user_and_token
@@ -416,6 +426,7 @@ def test_a_play_of_the_same_code_replaces_the_last_ones_kept_output_and_files(cl
     first = _play(client, sandbox, token, project_id, "red").row
     first_session = KeptStepOutput.query.filter_by(project_id=project_id, node_id="draw").one().session_id
     second = _play(client, sandbox, token, project_id, "red").row
+    kept.prune(now=_an_hour_on())
 
     entries = KeptStepOutput.query.filter_by(project_id=project_id, node_id="draw").all()
     assert len(entries) == 1, f"two plays of the same code kept {len(entries)} outputs, not one"
@@ -428,18 +439,60 @@ def test_a_play_of_the_same_code_replaces_the_last_ones_kept_output_and_files(cl
     assert _reads(client, token, second["image_url"], "red"), _read(client, token, second["image_url"]).status_code
 
 
+def test_a_replaced_output_reads_until_the_sweep_an_hour_on_takes_it(client, user_and_token, sandbox):
+    """Draw plays red twice on a saved dataflow. The second play's request
+    replaces the first play's kept output, but forgets no session and
+    removes no folder: right after it, the first play's output still reads
+    under its session and its overlay through its row's URL, while a reuse
+    and a reopen pick the second's, and a sweep within the hour keeps it. The
+    sweep an hour on takes its row, its session and its folder."""
+    from utk_curio.backend.app.runs import kept
+    from utk_curio.backend.app.runs.models import KeptStepOutput, naive_utc_now
+
+    user, token = user_and_token
+    project_id = create_project(client, token, name="Overlays")
+    first = _play(client, sandbox, token, project_id, "red").row
+    made = KeptStepOutput.query.filter_by(project_id=project_id, node_id="draw").one()
+    first_session, first_name, key = made.session_id, made.output_path, made.step_key
+    second = _play(client, sandbox, token, project_id, "red").row
+    later = KeptStepOutput.query.filter(
+        KeptStepOutput.project_id == project_id, KeptStepOutput.session_id != first_session,
+    ).one()
+
+    assert sandbox.forgotten == [], f"the second play's request had the sandbox forget {sandbox.forgotten}"
+    assert Path(first["path"]).is_file(), "the second play's request removed the first play's overlay"
+    assert kept.owner_session(user.id, first_name) == first_session, "the replaced output no longer reads"
+    assert _reads(client, token, first["image_url"], "red"), _read(client, token, first["image_url"]).status_code
+    assert kept.kept_output(project_id, key)[1] == json.loads(later.artifact_ids), "a reuse picked the replaced output"
+    assert kept.owner_outputs_by_key(project_id)[key].session_id == later.session_id, (
+        "a reopen picked the replaced output"
+    )
+    assert kept.prune(now=naive_utc_now() + timedelta(minutes=59)) == 0, "a sweep within the hour took it"
+
+    assert kept.prune(now=_an_hour_on()) == 1, "the sweep an hour on kept the replaced output"
+    assert KeptStepOutput.query.filter_by(session_id=first_session).count() == 0
+    assert first_session in sandbox.forgotten, "the sweep kept the replaced output's session"
+    assert not _run_folder(first).exists(), "the sweep kept the replaced output's folder"
+    assert _read(client, token, first["image_url"]).status_code == 404
+    assert _reads(client, token, second["image_url"], "red"), _read(client, token, second["image_url"]).status_code
+
+
 def test_a_replaced_outputs_files_stay_while_a_saved_output_records_them(client, user_and_token, sandbox):
     """Draw's red play is saved; a second play of the same code saves
-    nothing. The first play's kept output is replaced, but its run's folder
-    stays, held by the saved output's record: the saved row and the new one
-    each read their overlay. Deleting the saved output takes its folder and
-    leaves the kept output's."""
+    nothing. The first play's kept output is replaced, and the sweep an hour
+    on takes it, but its run's folder stays, held by the saved output's
+    record: the saved row and the new one each read their overlay. Deleting
+    the saved output takes its folder, and, as deleting a node's saved output
+    drops every output kept for the node (``kept.forget_node``), the second
+    play's kept output and its folder too."""
+    from utk_curio.backend.app.runs import kept
     from utk_curio.backend.app.runs.models import KeptStepOutput
 
     _, token = user_and_token
     project_id = create_project(client, token, name="Overlays")
     saved = _play(client, sandbox, token, project_id, "red", save=True).row
     second = _play(client, sandbox, token, project_id, "red").row
+    kept.prune(now=_an_hour_on())
 
     entries = KeptStepOutput.query.filter_by(project_id=project_id, node_id="draw").all()
     assert len(entries) == 1, f"two plays of the same code kept {len(entries)} outputs, not one"
@@ -451,7 +504,11 @@ def test_a_replaced_outputs_files_stay_while_a_saved_output_records_them(client,
 
     _delete_dataset(client, token, project_id)
     assert not _run_folder(saved).exists(), "a deleted saved output's run folder stayed"
-    assert _reads(client, token, second["image_url"], "red"), "the kept output's file went with the saved output"
+    assert KeptStepOutput.query.filter_by(project_id=project_id, node_id="draw").count() == 0, (
+        "deleting the node's saved output left an output kept for the node"
+    )
+    assert not _run_folder(second).exists(), "the node's kept output's run folder outlived its saved output's delete"
+    assert _read(client, token, second["image_url"]).status_code == 404
 
 
 def test_two_plays_of_other_code_keep_both_outputs_each_with_its_folder(client, user_and_token, sandbox):
