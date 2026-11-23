@@ -75,7 +75,7 @@ def test_transformers_sam3_is_as_it_was_once_track_objects_ends(
     rows, helpers = _collection(tmp_path)
     namespace = {**helpers, "curio_load_model": _loaded(catalog, tiny_weights)}
     body = "\n".join(
-        "    " + line for line in _node_source(LABELS=["pole", "person"], EVERY_SECONDS=1.0).splitlines())
+        "    " + line for line in _node_source(labels=["pole", "person"], every_seconds=1.0).splitlines())
 
     with _staged(tmp_path) as module:
         transformers_module = sys.modules[module.TransformersSam3VideoModel.__module__]

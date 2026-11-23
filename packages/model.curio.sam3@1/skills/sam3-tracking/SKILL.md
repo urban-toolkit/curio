@@ -23,21 +23,25 @@ SAM 3 is a model of the Model Catalog that finds every object a short phrase nam
 ### Which node
 
 - Objects named in words, followed through a collection's videos, are a Track Objects node, wired from the Data Loading node that loads the collection (`curio_load_collection(...)`). Rows that are not videos are left out.
-- Its code holds its settings and one call of `track_objects`, from the package's module `sam3_tracking`. Change what it does through the settings, and keep the call, which hands it `curio_load_model("model.curio.sam3")`, a literal id Curio reads, and `curio_derived_file`.
+- Its code is one call of `track_objects`, from the package's module `sam3_tracking`, which reads the node's widgets by their chips, and two settings its code sets. Change what it does through its widgets: a new node of the template starts with them, and a plan or a node.create gives one its name, its type and its value; on a node already on the canvas, node.settings.write's widgets set them by name. Keep the call, which hands it `curio_load_model("model.curio.sam3")`, a literal id Curio reads, and `curio_derived_file`.
 - Objects named in words, found in a collection's images or in a video's frames, with how much of each image they cover, are a Segment Images node (below), wired from the Data Loading node of the images, or from a Sample Video Frames node for a video's frames.
 - An Image Segmentation node does not run SAM 3: Segmentation's `segment_images` refuses a concept segmentation model, and a model dropped on a node swaps only for one of the node's type.
 - A table of the objects is Track Objects' own `tracks`, which a Python Computation node wired from it reads by its key (below); a chart of them is a Vega-Lite node on that node's table.
 
 ### Its settings
 
-The constants at the top of its code, each passed to `track_objects` as the argument of its name in lowercase:
+Its widgets, each passed to `track_objects` as the argument of its name:
 
-- `LABELS`: the phrases to look for, a list of short noun phrases. Any phrase works; the 35 labels of the model are the prompts its package names, such as sidewalk, crosswalk, curb ramp, tactile paving, pole, bollard, trash bin, traffic cone, construction barrier, pothole, person, car and bicycle.
-- `EVERY_SECONDS`, 0.5 by default: the gap between two frames SAM 3 looks at. A longer gap runs faster and can miss what passes quickly.
+- `labels`, a text list: the phrases to look for, short noun phrases. Any phrase works; the 35 labels of the model are the prompts its package names, such as sidewalk, crosswalk, curb ramp, tactile paving, pole, bollard, trash bin, traffic cone, construction barrier, pothole, person, car and bicycle.
+- `every_seconds`, a number, 0.5 by default: the gap between two frames SAM 3 looks at, in seconds. A longer gap runs faster and can miss what passes quickly.
+- `from_seconds`, a number, 0 by default: where the part of each video to track starts, in seconds from its start.
+- `max_frames`, a number, 450 by default: the most frames of a video one run looks at. A part of W seconds needs W / `every_seconds` frames, rounded up, so a 15 minute video fits whole at a frame every 2 s. Keep it, and fit more of a video with a larger `every_seconds`, or track it in parts with `from_seconds` and `TO_SECONDS`.
+- `width`, a number, 960 by default: the widest frames are read and drawn at, in pixels.
+
+Two settings may be None, which no widget holds, so they are constants at the top of its code, each passed as the argument of its name in lowercase; change one in the node's code:
+
 - `FORGET_SECONDS`, 10 by default: SAM 3 lets go of an object it has not seen for that long. The object's track ends where it was last seen, and if it comes back it is a new object, with a new id and a track of its own, counted again in `<label>_objects`. Raise it when an object hidden for longer, such as behind a parked truck, should keep one id; each frame then takes longer, since SAM 3 follows every object it saw in that time. None follows every object to the part's end.
-- `FROM_SECONDS` and `TO_SECONDS`, 0 and None by default (None is the video's end): the part of each video to track, in seconds from its start.
-- `MAX_FRAMES`, 450 by default: the most frames of a video one run looks at. A part of W seconds needs W / `EVERY_SECONDS` frames, rounded up, so a 15 minute video fits whole at a frame every 2 s. Keep it, and fit more of a video with a larger `EVERY_SECONDS`, or track it in parts with `FROM_SECONDS` and `TO_SECONDS`.
-- `WIDTH`, 960 by default: the widest frames are read and drawn at.
+- `TO_SECONDS`, None by default (the video's end): where the part of each video to track ends, in seconds from its start.
 
 ### What it returns
 
@@ -49,7 +53,7 @@ Two tables, as one dict: a node wired from Track Objects reads each by its key, 
 - `video_file_id` and `name`: the video tracked;
 - `t_s`: where the overlay starts in the video, so a time in the video is `t_s` plus the time in the overlay;
 - `duration_s`, `fps`, `width` and `height`: the overlay's;
-- `<label>_objects`: how many objects of each label of `LABELS` it followed, a space written as `_`, such as `traffic_cone_objects`.
+- `<label>_objects`: how many objects of each label of `labels` it followed, a space written as `_`, such as `traffic_cone_objects`.
 
 `tracks` has one row per object of every video: `video_file_id`, `video`, `object_id` (the id drawn on the overlay), `label`, `start_s` and `end_s` (the first and the last time it was seen, in seconds from the video's start), `frames` (how many of the frames looked at it was seen in), `largest_share` (the largest share of a frame its mask covered, 0 to 1) and `mean_score`.
 
@@ -64,28 +68,30 @@ A swimlane of that table, one bar per object, is a Vega-Lite `bar` with `start_s
 ### When it stops
 
 - *Curio could not download ... of the weights of model.curio.sam3*, or *The weights of model 'model.curio.sam3' are not on this Curio*: the first run downloads the weights, and that download failed for the reason the message gives. Whoever runs this Curio can fetch them once, with `python scripts/fetch_model_weights.py model.curio.sam3`. No change to the dataflow helps: say so, and change no node.
-- *`<file>`: Track Objects looks at 450 frames of a video at most in one run, and ... is ... frames; raise EVERY_SECONDS to ... or more, or set FROM_SECONDS and TO_SECONDS to a shorter part, such as ...*: keep `MAX_FRAMES` and do one of the two: set `EVERY_SECONDS` to the gap the message names or a larger one, or set `FROM_SECONDS` and `TO_SECONDS` to a part that fits, such as the one it names, or 0 and 60 for the first minute.
+- *`<file>`: Track Objects looks at 450 frames of a video at most in one run, and ... is ... frames; raise every_seconds to ... or more, or set from_seconds and TO_SECONDS to a shorter part, such as ...*: keep `max_frames` and do one of the two: set `every_seconds` to the gap the message names or a larger one, or set `from_seconds` and `TO_SECONDS` to a part that fits, such as the one it names, or 0 and 60 for the first minute.
 - *`<file>` does not say how long it is*: set `TO_SECONDS` to where to stop.
 - *`<file>` is not on this machine yet; cache the collection's files first*: the collection's videos are in a bucket and not cached yet.
-- *LABELS is empty*: name at least one thing to look for.
+- *labels is empty*: name at least one thing to look for.
 
 ## Segment Images
 
-Its code holds its settings and one call of `find_in_images`, from the package's module `sam3_images`, which hands it `curio_load_model("model.curio.sam3")` and `curio_derived_file`. It reads the images' `path`, so wire it from rows that have one: a collection's images, or Sample Video Frames' frames. It cleans what SAM 3 finds as Track Objects does: of two objects of one label whose masks overlap, it keeps the one SAM 3 scores higher, and it fills the small holes and removes the small specks of each mask.
+Its code is one call of `find_in_images`, from the package's module `sam3_images`, which reads the node's widgets by their chips and hands it `curio_load_model("model.curio.sam3")` and `curio_derived_file`. Change what it does through its widgets, as Track Objects' (above). It reads the images' `path`, so wire it from rows that have one: a collection's images, or Sample Video Frames' frames. It cleans what SAM 3 finds as Track Objects does: of two objects of one label whose masks overlap, it keeps the one SAM 3 scores higher, and it fills the small holes and removes the small specks of each mask.
 
 ### Its settings
 
-- `LABELS`: the phrases to look for. Its code starts with the model's 35 labels, in their seven groups; any short noun phrase works, and fewer labels run faster.
-- `THRESHOLD`, 0.5 by default: the score SAM 3 needs to keep an object. Lower it to find more, and less surely.
-- `WIDTH`, 960 by default: the widest an image is read and its overlay drawn.
-- `MAX_IMAGES`, 300 by default: the most images one run looks at, as many as Sample Video Frames samples from one video by default.
+Its widgets, each passed to `find_in_images` as the argument of its name:
+
+- `labels`, a text list: the phrases to look for. It starts with the model's 35 labels, in their seven groups; any short noun phrase works, and fewer labels run faster.
+- `threshold`, a slider from 0 to 1, 0.5 by default: the score SAM 3 needs to keep an object. Lower it to find more, and less surely.
+- `width`, a number, 960 by default: the widest an image is read and its overlay drawn, in pixels.
+- `max_images`, a number, 300 by default: the most images one run looks at, as many as Sample Video Frames samples from one video by default.
 
 ### What it returns
 
 The input's rows, each with the results first, the columns Image Segmentation gives:
 
 - `dominant_class` and `dominant_pct`: the label whose objects cover the most of the image, and that share in percent; where SAM 3 found nothing, `dominant_class` is missing (NaN, so test it with `.isna()`) and `dominant_pct` is 0;
-- for each label of `LABELS`, `<label>_pct`, the share of the image its objects cover together, in percent, the label spelled as written (`curb ramp_pct`), and `<label>_objects`, how many objects of it SAM 3 found, a space written as `_` (`curb_ramp_objects`);
+- for each label of `labels`, `<label>_pct`, the share of the image its objects cover together, in percent, the label spelled as written (`curb ramp_pct`), and `<label>_objects`, how many objects of it SAM 3 found, a space written as `_` (`curb_ramp_objects`);
 - `overlay_url`: the image with each object's mask, box and label drawn, which Simple View shows beside the image;
 - `segment_error`: why a row has no results, such as an image not on this machine; missing otherwise, so `input_0[input_0["segment_error"].isna()]` keeps the rows SAM 3 looked at.
 
@@ -102,7 +108,7 @@ return pd.DataFrame({"label": labels, "mean_pct": shares.to_numpy()})
 ### When it stops
 
 - The weights' messages are Track Objects' (above).
-- *Segment Images looks at N images in one run (MAX_IMAGES), and its input has M*: sample fewer frames upstream (a larger `EVERY_SECONDS` in Sample Video Frames), keep fewer rows, or raise `MAX_IMAGES`.
-- *LABELS names ... more than once*, or *LABELS would give two results one column*: name each label once, and rename one that would be read as another's column, such as `dominant`.
+- *Segment Images looks at N images in one run (max_images), and its input has M*: sample fewer frames upstream (a larger `every_seconds` in Sample Video Frames), keep fewer rows, or raise `max_images`.
+- *labels names ... more than once*, or *labels would give two results one column*: name each label once, and rename one that would be read as another's column, such as `dominant`.
 - *Segment Images reads rows with a path*: wire it from a collection's rows or Sample Video Frames' frames.
 - A row whose `segment_error` says *the image is not on this machine* or *the image could not be read* gets no results; the other rows do.

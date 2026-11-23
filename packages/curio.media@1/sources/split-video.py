@@ -10,19 +10,16 @@ leads with `block`, the cut's own columns (a street's name, say), `t_s` and
 `end_s`, where the block starts and ends in the video, so a player linked by
 time reads the video's time; then it keeps the video's own columns.
 
-Settings:
-- BLOCK_SECONDS: the length of one block, when nothing is wired to the bottom circle.
-- WIDTH: the widest a block is drawn.
-- MAX_FRAMES: the most frames one run re-encodes.
+The Widgets tab sets the length of one block, in seconds, when nothing is
+wired to the bottom circle; the widest a block is drawn, in pixels; and the
+most frames one run re-encodes.
 """
 
 from media_collections import split_video
 
-BLOCK_SECONDS = 60.0
-WIDTH = 960
-MAX_FRAMES = 30000
-
 return split_video(
     input_0, curio_derived_file, input_1,
-    block_seconds=BLOCK_SECONDS, width=WIDTH, max_frames=MAX_FRAMES,
+    block_seconds=float([!! block_seconds !!]),
+    width=int([!! width !!]),
+    max_frames=int([!! max_frames !!]),
 )

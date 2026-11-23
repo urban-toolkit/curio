@@ -65,12 +65,33 @@
         "type": "curio.media/video-frames",
         "x": 645,
         "y": 430,
-        "content": "\"\"\"Sample Video Frames.\n\nInput: a collection's rows, as Data Loading's `curio_load_collection(...)` returns\nthem. Every video row becomes one row per sampled frame, and each frame is a\nJPEG written beside the collection's other derived files. A frame row has the\ncolumns of an image row (`path`, `thumbnail`, `image_url`, `width`, `height`),\nso Simple View shows the frames and any node that reads images reads them. It\nalso keeps the video's own columns: its fields, its position, and its time,\nmoved forward by the frame's offset. `t_s` is the frame's time in the video,\nand `frame` its number there.\n\nSettings:\n- EVERY_SECONDS: the gap between two sampled frames.\n- MAX_FRAMES_PER_VIDEO: frames kept from one video at most.\n\"\"\"\n\nfrom media_collections import sample_video_frames\n\nEVERY_SECONDS = 0.25\nMAX_FRAMES_PER_VIDEO = 300\n\nreturn sample_video_frames(\n    input_0, curio_derived_file,\n    every_seconds=EVERY_SECONDS, max_frames_per_video=MAX_FRAMES_PER_VIDEO,\n)\n",
+        "content": "\"\"\"Sample Video Frames.\n\nInput: a collection's rows, as Data Loading's `curio_load_collection(...)` returns\nthem. Every video row becomes one row per sampled frame, and each frame is a\nJPEG written beside the collection's other derived files. A frame row has the\ncolumns of an image row (`path`, `thumbnail`, `image_url`, `width`, `height`),\nso Simple View shows the frames and any node that reads images reads them. It\nalso keeps the video's own columns: its fields, its position, and its time,\nmoved forward by the frame's offset. `t_s` is the frame's time in the video,\nand `frame` its number there.\n\nThe Widgets tab sets the gap between two sampled frames, in seconds, and the\nmost frames kept from one video.\n\"\"\"\n\nfrom media_collections import sample_video_frames\n\nreturn sample_video_frames(\n    input_0, curio_derived_file,\n    every_seconds=float([!! every_seconds !!]),\n    max_frames_per_video=int([!! max_frames_per_video !!]),\n)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Sample a frame every quarter second from the video.",
         "metadata": {
-          "keywords": []
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "every_seconds",
+              "type": "number",
+              "label": "Gap between frames",
+              "default": 2.0,
+              "options": {
+                "units": "s"
+              },
+              "value": 0.25
+            },
+            {
+              "name": "max_frames_per_video",
+              "type": "number",
+              "label": "Maximum frames per video",
+              "default": 300,
+              "options": {
+                "step": 1
+              }
+            }
+          ]
         }
       },
       {

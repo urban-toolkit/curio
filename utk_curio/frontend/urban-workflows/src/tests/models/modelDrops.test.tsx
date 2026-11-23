@@ -58,17 +58,20 @@ function fakeDataTransfer() {
 
 /** A segmentation model's node's code: DDRNet23-Slim's source
  *  (`sources/image-segmentation.py`) and a downloaded model's copy of it, a
- *  call of the Segmentation package's `segment_images`. */
+ *  call of the Segmentation package's `segment_images`, which reads the
+ *  node's classes widget. */
 function segmentationCell(modelId: string): string {
   return (
     "from semantic_segmentation import segment_images\n" +
     "\n" +
     `model = curio_load_model("${modelId}")\n` +
-    "classes = None  # every class the model names\n" +
     "\n" +
-    "return segment_images(input_0, model, curio_derived_file, classes=classes)\n"
+    "return segment_images(input_0, model, curio_derived_file, classes=[!! classes !!])\n"
   );
 }
+
+/** The widgets DDRNet23-Slim's Image Segmentation template declares. */
+const SEGMENTATION_WIDGETS = [{ name: "classes", type: "text-list", label: "Classes", default: [] }];
 
 afterEach(() => endModelCardDrag?.());
 
@@ -126,14 +129,37 @@ describe("the node a model card's drop makes", () => {
     );
   });
 
+  test("opens with the widgets its template declares, which its code reads, as a palette drop's node does", () => {
+    const cell = segmentationCell("model.curio.ddrnet23-slim");
+    const options = packageCardNodeOptions(ddrnetNode(), cell, SEGMENTATION_WIDGETS);
+    expect(options).toEqual({
+      code: cell,
+      modelRefs: [{ id: "model.curio.ddrnet23-slim", name: "DDRNet23-Slim (street scenes)" }],
+      widgets: SEGMENTATION_WIDGETS,
+    });
+    // The node's own widgets, not the template's.
+    expect(options.widgets?.[0]).not.toBe(SEGMENTATION_WIDGETS[0]);
+    // So is a template's code that names no model.
+    expect(packageCardNodeOptions(ddrnetNode(), "return input_0\n", SEGMENTATION_WIDGETS)).toEqual({
+      code: "return input_0\n",
+      modelRefs: [{ id: "model.curio.ddrnet23-slim", name: "DDRNet23-Slim (street scenes)" }],
+      widgets: SEGMENTATION_WIDGETS,
+    });
+  });
+
   test("is bound to its model before its template's code has arrived", () => {
     expect(packageCardNodeOptions(ddrnetNode(), undefined)).toEqual({
+      modelRefs: [{ id: "model.curio.ddrnet23-slim", name: "DDRNet23-Slim (street scenes)" }],
+    });
+    // Its widgets come with its code, once that arrives (usePackageNodeBehavior).
+    expect(packageCardNodeOptions(ddrnetNode(), undefined, SEGMENTATION_WIDGETS)).toEqual({
       modelRefs: [{ id: "model.curio.ddrnet23-slim", name: "DDRNet23-Slim (street scenes)" }],
     });
   });
 
   test("of a node package opens with its template's code as a palette drop does", () => {
     expect(packageCardNodeOptions({ nodeType: "pkg/node@1", label: "Node" }, "return 1")).toEqual({});
+    expect(packageCardNodeOptions({ nodeType: "pkg/node@1", label: "Node" }, "return 1", SEGMENTATION_WIDGETS)).toEqual({});
   });
 });
 

@@ -45,12 +45,16 @@ import pytest
 from utk_curio.backend.app.agents.application.turns import examples as worked_examples
 from utk_curio.backend.app.agents.domain import agent_text, builtin, skills
 from utk_curio.backend.app.agents.evaluation.fixtures import EXAMPLES_ROOT, example_paths
+from utk_curio.backend.app.execution.code_references import node_run_code
 
 VEGA = "curio.builtin/vis-vega"
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SEGMENTATION = "/image-segmentation"
 JSON_BLOCK = re.compile(r"```json[^\n]*\n(.*?)```", re.S)
-CLASSES = re.compile(r"^classes\s*=\s*(\[[^\]]*\])", re.M)
+#: The classes an Image Segmentation node's code asks for, in its call
+#: (``classes=[...]``, its classes widget's value as a run writes it in) or in
+#: a constant it sets (``classes = [...]``).
+CLASSES = re.compile(r"(?<![\w.])classes\s*=\s*(\[[^\]]*\])")
 
 
 def _is_vega_lite(spec) -> bool:
@@ -278,12 +282,22 @@ class TestTheStackedDatasetIsNamedByItsChip:
         assert len(chipped) >= 34, chipped
 
 
+def _classes_asked(node: dict) -> set:
+    """The classes an Image Segmentation node asks for, read as a run reads
+    them: from its code with its own widgets written in (``node_run_code``),
+    where its call hands ``segment_images`` its classes widget's value, or a
+    constant its code sets. Empty when it reports every class its model has:
+    an empty list, its widget's default, or no list at all, as None was."""
+    match = CLASSES.search(node_run_code(node))
+    return set(ast.literal_eval(match.group(1))) if match else set()
+
+
 def _segmentation_routes():
     """(example, chart id, classes, spec) for each chart under a class list.
 
     A chart counts when every Image Segmentation node upstream of it names its
-    classes in a literal ``classes = [...]``; a node that reports every class
-    its model has gives the chart nothing to check against.
+    classes (``_classes_asked``); a node that reports every class its model
+    has gives the chart nothing to check against.
     """
     for path in example_paths():
         flow = _flow(path)
@@ -302,13 +316,10 @@ def _segmentation_routes():
                     seen.add(current)
                     stack.extend(parents.get(current, ()))
             segmenters = [nodes[i] for i in seen if nodes[i]["type"].endswith(SEGMENTATION)]
-            found = [CLASSES.search(n.get("content") or "") for n in segmenters]
-            if not segmenters or not all(found):
+            asked = [_classes_asked(n) for n in segmenters]
+            if not segmenters or not all(asked):
                 continue
-            classes = set()
-            for match in found:
-                classes.update(ast.literal_eval(match.group(1)))
-            yield path.name, node["id"], classes, json.loads(node["content"])
+            yield path.name, node["id"], set().union(*asked), json.loads(node["content"])
 
 
 ROUTES = list(_segmentation_routes())

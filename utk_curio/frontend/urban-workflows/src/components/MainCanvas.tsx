@@ -581,10 +581,12 @@ export function MainCanvas() {
     // makes its node at once and asks her to add the package
     // (useAskForPackage): the node waits for her review.
     const createPackageNode = useCallback((node: PackageCardNode, position: XYPosition): string | undefined => {
-        const starter = node.model
-            ? packageStarterCode(tryGetNodeDescriptor(node.nodeType as NodeType), getStarters)
-            : undefined;
-        const created = createCodeNode(node.nodeType as NodeType, { position, ...packageCardNodeOptions(node, starter) });
+        const descriptor = tryGetNodeDescriptor(node.nodeType as NodeType);
+        const starter = node.model ? packageStarterCode(descriptor, getStarters) : undefined;
+        const created = createCodeNode(node.nodeType as NodeType, {
+            position,
+            ...packageCardNodeOptions(node, starter, descriptor?.widgets),
+        });
         revealCreated(created);
         const article = /^[aeiou]/i.test(node.label) ? "an" : "a";
         showToast(

@@ -40,14 +40,25 @@ UTCI from raster + weather's code, for one:
 ```python
 from weather_utci import utci_grid
 
-TIMESTAMP = 12
-UPSCALE_FACTOR = 1.0
-
 return utci_grid(
     [!! input_0 !!], [!! input_1 !!],
-    timestamp=TIMESTAMP, upscale_factor=UPSCALE_FACTOR,
+    timestamp=int([!! timestamp !!]),
+    upscale_factor=float([!! upscale_factor !!]),
 )
 ```
+
+## Settings
+
+Each computation node's settings are its widgets, which you set in its
+Widgets tab, pin to a dashboard or vary in a scenario; its code reads each by
+its chip:
+
+| Node | Widget | Default | What it sets |
+|---|---|---|---|
+| UTCI from raster + weather | **Hour** (`timestamp`) | 12, from 0 to 23 | The hour, the weather table's `it`, whose weather is used |
+| UTCI from raster + weather | **Upscale factor** (`upscale_factor`) | 1 | How many times its width and height the raster is read at |
+| Reproject census to EPSG:3395 | **Source CRS** (`source_crs`) | 32632 | The EPSG code of the CRS the census polygons are in |
+| Reproject census to EPSG:3395 | **Target CRS** (`target_crs`) | 3395 | The EPSG code of the CRS the views draw them in |
 
 ## Demo wiring
 

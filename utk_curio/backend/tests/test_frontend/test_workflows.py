@@ -596,12 +596,19 @@ def _niteroi_summers_of(cells: list[dict]):
 
 
 def _code_settings(spec, node_id: str) -> dict:
-    """The settings a node's code tab sets at its top, by name."""
-    code = next(node.content for node in spec.nodes if node.id == node_id)
+    """A node's settings, by name: its widgets' values, which a run writes in
+    for their chips, and the constants its code tab sets at its top."""
+    from utk_curio.backend.app.execution.code_references import REFERENCE_RE, effective_value
+
+    node = next(node for node in spec.nodes if node.id == node_id)
+    code = REFERENCE_RE.sub("None", node.content)
     body = ast.parse("def node(input_0):\n" + "\n".join("    " + line for line in code.splitlines())).body[0].body
     return {
-        statement.targets[0].id: ast.literal_eval(statement.value)
-        for statement in body if isinstance(statement, ast.Assign) and isinstance(statement.targets[0], ast.Name)
+        **{widget["name"]: effective_value(widget) for widget in node.widgets},
+        **{
+            statement.targets[0].id: ast.literal_eval(statement.value)
+            for statement in body if isinstance(statement, ast.Assign) and isinstance(statement.targets[0], ast.Name)
+        },
     }
 
 
@@ -1874,7 +1881,7 @@ class TestWorkflowCanvas:
 
         Track Objects gives two tables: ``videos``, the walk as its overlay,
         one video that starts at ``t_s`` 0 and shows a frame every
-        ``EVERY_SECONDS``, which Simple View plays through the media route in
+        ``every_seconds``, which Simple View plays through the media route in
         its first tab; and ``tracks``, one row per object. Objects gives one
         row per object of those tracks, read by their key, which keep the
         module's invariants, and ``t_s``, its first sighting. The player's
@@ -1893,10 +1900,10 @@ class TestWorkflowCanvas:
         page = self.page
         self._execute_all_playable_nodes()
         settings = _code_settings(self.spec, WALK_TRACKING)
-        labels, every = settings["LABELS"], settings["EVERY_SECONDS"]
+        labels, every = settings["labels"], settings["every_seconds"]
 
         # The overlay: the walk as one video that starts where the walk does,
-        # a frame every EVERY_SECONDS.
+        # a frame every every_seconds.
         (overlay,) = _stored_rows(page, WALK_TRACKING, "videos")
         assert (overlay["kind"], overlay["t_s"]) == ("video", 0.0), overlay
         frames = round(overlay["duration_s"] / every)
@@ -2176,7 +2183,7 @@ class TestWorkflowCanvas:
             assert abs(block["t_s"] - cut["t_s"]) < 1 / block["fps"], (cut, block)
             assert all(_same_cell(block[key], cut[key]) for key in ("street", "from", "to")), (cut, block)
         # Each block's share of frames showing a label, of the frames it holds.
-        labels = _code_settings(self.spec, FRAME_SEGMENTS)["LABELS"]
+        labels = _code_settings(self.spec, FRAME_SEGMENTS)["labels"]
         shares = _stored_rows(page, BLOCK_SHARES)
         assert len(shares) == len(blocks) * len(labels), shares
         for block in blocks:

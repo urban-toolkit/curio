@@ -38,27 +38,19 @@ return walk
 
 ## Track the objects
 
-`Track Objects` is the node of SAM 3's model package, `model.curio.sam3@1`, which this dataflow declares. Its code holds its settings: the eight labels it ships with and "wheelchair ramp", a frame every 2.5 s, and an object let go once SAM 3 has not seen it for 10 s. At a frame every 2.5 s the walk is 346 frames, under `MAX_FRAMES`.
+`Track Objects` is the node of SAM 3's model package, `model.curio.sam3@1`, which this dataflow declares. Its Widgets tab holds its settings: **Labels**, the eight it ships with and "wheelchair ramp", and **Gap between frames**, 2.5 s. Its code lets an object go once SAM 3 has not seen it for 10 s. At a frame every 2.5 s the walk is 346 frames, under **Maximum frames per video**, 450.
 
 ```python
 from sam3_tracking import track_objects
 
-# What to look for, in plain words: SAM 3 takes any short noun phrase.
-LABELS = [
-    "curb ramp", "curb cut", "tactile paving", "bollard", "pole",
-    "construction barrier", "traffic cone", "person", "wheelchair ramp",
-]
-EVERY_SECONDS = 2.5  # the gap between two frames SAM 3 looks at
 FORGET_SECONDS = 10  # SAM 3 lets go of an object unseen this long; None keeps every object
-FROM_SECONDS = 0  # the part of each video to track, in seconds from its start
-TO_SECONDS = None  # None is the video's end
-MAX_FRAMES = 450  # the most frames of a video one run looks at
-WIDTH = 960  # the widest frames are read and drawn at
+TO_SECONDS = None  # where the part of each video ends; None is the video's end
 
 return track_objects(
     input_0, curio_load_model("model.curio.sam3"), curio_derived_file,
-    labels=LABELS, every_seconds=EVERY_SECONDS, forget_seconds=FORGET_SECONDS,
-    from_seconds=FROM_SECONDS, to_seconds=TO_SECONDS, max_frames=MAX_FRAMES, width=WIDTH,
+    labels=[!! labels !!], every_seconds=float([!! every_seconds !!]), forget_seconds=FORGET_SECONDS,
+    from_seconds=float([!! from_seconds !!]), to_seconds=TO_SECONDS,
+    max_frames=int([!! max_frames !!]), width=int([!! width !!]),
 )
 ```
 
@@ -84,7 +76,7 @@ return objects
 
 ## The swimlane
 
-A lane for each label SAM 3 found an object of, and one bar per object, from `start_s`, when SAM 3 first saw it, to `end_s`, when it last did. A label it finds nothing of has no lane, so the swimlane can have fewer lanes than `LABELS` names. A bar takes its label's color once the player has played past its first sighting, and is gray before.
+A lane for each label SAM 3 found an object of, and one bar per object, from `start_s`, when SAM 3 first saw it, to `end_s`, when it last did. A label it finds nothing of has no lane, so the swimlane can have fewer lanes than **Labels** names. A bar takes its label's color once the player has played past its first sighting, and is gray before.
 
 ```json
 {
@@ -206,6 +198,6 @@ The streets of the extract, with the fixes on top, colored by their time in the 
 
 ## Good to know
 
-- **A run looks at `MAX_FRAMES` frames at most.** A smaller `EVERY_SECONDS` takes more frames of the walk, and past 450 the node stops before SAM 3 loads and says which part fits; `FROM_SECONDS` and `TO_SECONDS` pick a part.
+- **A run looks at 450 frames of a video at most, its Maximum frames per video.** A smaller **Gap between frames** takes more frames of the walk, and past 450 the node stops before SAM 3 loads and says which part fits; **Track from** and `TO_SECONDS` pick a part.
 - **Each setting keeps an overlay of its own.** A run that asks other labels, frames, forgetting, part or width than an earlier one writes an overlay of its own; one that asks the same writes the earlier run's again.
 - **The labels are words.** SAM 3 takes any short noun phrase; the Model Catalog lists the 35 the package suggests.

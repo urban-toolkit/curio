@@ -48,7 +48,7 @@ return photos
 
 ## Step 2: Label every pixel (`Image Segmentation`)
 
-The node comes from DDRNet23-Slim's model package. Its code names a model in the Model Catalog and the classes to report, and calls `segment_images`, the function of the Segmentation package's module `semantic_segmentation`, which the header above the code lists under **Functions**:
+The node comes from DDRNet23-Slim's model package. Its code names a model in the Model Catalog and calls `segment_images`, the function of the Segmentation package's module `semantic_segmentation`, which the header above the code lists under **Functions**. Its Widgets tab's **Classes** holds the classes to report: `vegetation`, `terrain`, `sky`, `road`, `sidewalk` and `building`.
 
 ```python
 """Label every pixel of each image with a Model Catalog model.
@@ -58,7 +58,7 @@ node gives them for street-level images from the Data or Discovery Catalog.
 To use another model, drag it from the Model Catalog onto this node.
 
 ``classes`` are the model's labels to report; each becomes a
-``<class>_pct`` column, its share of the image's pixels in percent. ``None``
+``<class>_pct`` column, its share of the image's pixels in percent. Empty, it
 reports every label.
 ``dominant_class`` and ``dominant_pct`` name the one of them covering most,
 and ``overlay_url`` shows the image tinted by class.
@@ -67,9 +67,8 @@ and ``overlay_url`` shows the image tinted by class.
 from semantic_segmentation import segment_images
 
 model = curio_load_model("model.curio.ddrnet23-slim")
-classes = ["vegetation", "terrain", "sky", "road", "sidewalk", "building"]
 
-return segment_images(input_0, model, curio_derived_file, classes=classes)
+return segment_images(input_0, model, curio_derived_file, classes=[!! classes !!])
 ```
 
 `curio_derived_file` says where each photo's overlay goes. Each row comes back with the results first: `dominant_class` and `dominant_pct`, then `vegetation_pct`, `terrain_pct` and the other classes asked for, each as a share of all the photo's pixels, then `overlay_url` and `segment_error` (empty unless the photo could not be read). Every input column follows, so the photo keeps its place and its credit.
@@ -212,7 +211,7 @@ A second `Vega-Lite` off the same join counts photos per neighborhood, each bar 
 
 ## Step 6: A second model from Hugging Face
 
-The second Image Segmentation node runs on the same photos and reports every class its model names:
+The second Image Segmentation node runs on the same photos, its **Classes** empty, so it reports every class its model names:
 
 ```python
 """The same photos, with a model from Hugging Face.
@@ -225,9 +224,8 @@ this node. Until then it runs DDRNet23-Slim, the model that ships with Curio.
 from semantic_segmentation import segment_images
 
 model = curio_load_model("model.curio.ddrnet23-slim")
-classes = None  # every class the model names
 
-return segment_images(input_0, model, curio_derived_file, classes=classes)
+return segment_images(input_0, model, curio_derived_file, classes=[!! classes !!])
 ```
 
 To give it a model of its own:

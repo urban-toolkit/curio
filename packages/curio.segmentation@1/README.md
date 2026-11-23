@@ -19,9 +19,8 @@ that uses one and starting Curio with `--with-examples`.
 from semantic_segmentation import segment_images
 
 model = curio_load_model("model.curio.ddrnet23-slim")
-classes = None  # every class the model names
 
-return segment_images(input_0, model, curio_derived_file, classes=classes)
+return segment_images(input_0, model, curio_derived_file, classes=[!! classes !!])
 ```
 
 `segment_images(images, model, derived_file, *, classes=None, overlays=True)`
@@ -37,7 +36,8 @@ per output channel (`model.labels`): one that gives no input size, gives
 - `images`: a collection's rows, each with a `path`, as Data Loading gives
   them with `curio_load_collection(...)`.
 - `classes`: the model's labels to report, such as
-  `["vegetation", "sky", "road"]`; `None` reports every label it names. A
+  `["vegetation", "sky", "road"]`; `None` or an empty list reports every
+  label it names, as Image Segmentation's empty **Classes** widget does. A
   label it does not name stops the node, with the labels it has.
 - `derived_file`: where each overlay goes, `curio_derived_file`; `None`
   writes none, and so does `overlays=False`.

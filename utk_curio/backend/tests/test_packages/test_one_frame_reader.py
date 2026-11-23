@@ -291,7 +291,7 @@ def _outcome(call):
 # Frame for frame
 # ---------------------------------------------------------------------------
 
-#: Sample Video Frames' settings on each clip: EVERY_SECONDS and MAX_FRAMES_PER_VIDEO.
+#: Sample Video Frames' settings on each clip: ``every_seconds`` and ``max_frames_per_video``.
 SAMPLED = [
     ("survey.mp4", 0.5, 300), ("walks.mp4", 0.5, 300), ("raw.mjpeg", 0.5, 300), ("walk.mp4", 0.5, 300),
     ("walk.mp4", 2.0, 300), ("whole.mp4", 2.0, 450), ("whole.mp4", 2.0, 300), ("corner.mp4", 0.1, 3),
@@ -343,7 +343,7 @@ CUT = [
 
 def test_split_video_re_encodes_the_frames_main_re_encoded(clips, tmp_path):
     """Split Video reads every frame from its first block's start, in yuv420p
-    at most WIDTH wide, as main's ``_cut`` read them: the same frames at the
+    at most ``width`` wide, as main's ``_cut`` read them: the same frames at the
     same times, with the same pixels."""
     differ = []
     with _media(tmp_path) as media:
@@ -359,7 +359,7 @@ def test_split_video_re_encodes_the_frames_main_re_encoded(clips, tmp_path):
     assert not differ, f"Split Video now reads other frames than main: {differ}"
 
 
-#: Track Objects' parts: the clip, FROM_SECONDS, where the part ends, EVERY_SECONDS and WIDTH.
+#: Track Objects' parts: the clip, ``from_seconds``, where the part ends, ``every_seconds`` and ``width``.
 LOOKED_AT = [
     ("corner.mp4", 0, 2.0, 0.5, 960), ("corner.mp4", 0, 1.0, 0.5, 960), ("corner.mp4", 1.0, 1.0, 0.5, 960),
     ("corner.mp4", 0, 2.0, 0.1, 960), ("corner.mp4", 0, 2.0, 1.0, 960), ("walk.mp4", 30, 31.75, 0.5, 960),
@@ -376,7 +376,7 @@ LOOKED_AT = [
 def test_track_objects_looks_at_the_frames_main_looked_at_and_counts_them_as_main_did(clips, tmp_path):
     """Each part gives SAM 3 the frames main gave it, frame for frame, at the
     same times and with the same pixels, or the same refusal when the part
-    holds no frame; and the count Track Objects' MAX_FRAMES refusal reads of
+    holds no frame; and the count Track Objects' ``max_frames`` refusal reads of
     a part is main's. A raw H.264 stream, whose frames carry no time, gives
     SAM 3 the frames at the times main's Sample Video Frames read them at."""
     from utk_curio.backend.tests.test_packages.test_sam3_package import _staged

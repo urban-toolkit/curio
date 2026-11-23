@@ -290,7 +290,7 @@ def split_audio(media, derived_file, *, window_seconds=5.0, max_windows_per_reco
     if (isinstance(window_seconds, bool) or not isinstance(window_seconds, (int, float))
             or not window_seconds >= SHORTEST_WINDOW_SECONDS):
         raise ValueError(
-            "WINDOW_SECONDS is the length of a window, in seconds: "
+            "window_seconds is the length of a window, in seconds: "
             f"a number of {SHORTEST_WINDOW_SECONDS} or more"
         )
     recordings = media[media["kind"] == "audio"]
@@ -425,9 +425,9 @@ def split_video(media, derived_file, cuts=None, *, block_seconds=60.0, width=960
     writes the same files again.
     """
     if isinstance(block_seconds, bool) or not isinstance(block_seconds, (int, float)) or not block_seconds > 0:
-        raise ValueError("BLOCK_SECONDS is the length of a block, in seconds: a number above 0")
+        raise ValueError("block_seconds is the length of a block, in seconds: a number above 0")
     if isinstance(width, bool) or not isinstance(width, int) or width < 2:
-        raise ValueError("WIDTH is the widest a block is drawn, in pixels: a whole number of 2 or more")
+        raise ValueError("width is the widest a block is drawn, in pixels: a whole number of 2 or more")
     table = _cut_table(cuts)
     plans = []
     for _, video in media[media["kind"] == "video"].iterrows():
@@ -453,8 +453,8 @@ def split_video(media, derived_file, cuts=None, *, block_seconds=60.0, width=960
     if needed > max_frames:
         raise ValueError(
             f"These blocks hold about {needed} frames, and Split Video re-encodes at most {max_frames} "
-            "in one run (MAX_FRAMES): cut a part of each video, with t_s and end_s on the bottom circle, "
-            "or raise MAX_FRAMES"
+            "in one run (max_frames): cut a part of each video, with t_s and end_s on the bottom circle, "
+            "or raise max_frames"
         )
     # What a video whose blocks could not be counted before may still take.
     left = [max_frames - needed]
@@ -643,8 +643,8 @@ def _cut(video, blocks, derived_file, width, rate, left, max_frames):
                     block.discard()
                     raise ValueError(
                         f"{video['relpath']}: its blocks hold more than the {max_frames} frames Split Video "
-                        "re-encodes in one run (MAX_FRAMES): cut a part of it, with t_s and end_s on the "
-                        "bottom circle, or raise MAX_FRAMES"
+                        "re-encodes in one run (max_frames): cut a part of it, with t_s and end_s on the "
+                        "bottom circle, or raise max_frames"
                     )
                 left[0] -= 1
             block.add(frame, at)
