@@ -54,27 +54,42 @@ def _encoded_columns(data_path: Path) -> set[str]:
     return {str(name) for name in named} if isinstance(named, list) else set()
 
 
+#: What every media URL starts with (``collections.media_url``): a value
+#: without it names no file, and is not parsed.
+_MEDIA_URL_START = "/api/datasets/"
+
+
+def _holds_text(kind) -> bool:
+    """Whether a column of the Arrow type *kind* holds text anywhere: a
+    string, or a list, struct, map or dictionary of them. A binary column, a
+    feature's geometry among them, and a column of numbers hold no URL."""
+    import pyarrow as pa
+
+    if pa.types.is_string(kind) or pa.types.is_large_string(kind):
+        return True
+    if pa.types.is_dictionary(kind):
+        return _holds_text(kind.value_type)
+    if pa.types.is_map(kind):
+        return _holds_text(kind.key_type) or _holds_text(kind.item_type)
+    if pa.types.is_list(kind) or pa.types.is_large_list(kind) or pa.types.is_fixed_size_list(kind):
+        return _holds_text(kind.value_type)
+    if pa.types.is_struct(kind):
+        return any(_holds_text(kind.field(i).type) for i in range(kind.num_fields))
+    return False
+
+
 def _folders_in_parquet(data_path: Path) -> set[str]:
-    """The runs' folders the rows of a parquet file name: each text column's
-    values (the JSON its object columns hold, decoded), and every nested
-    column's. A binary column, a feature's geometry among them, holds no URL
-    and is not read."""
+    """The runs' folders the rows of a parquet file name: those the media
+    URLs of its text columns name (the JSON its object columns hold,
+    decoded), and of its nested columns that hold text. Only the values that
+    hold a media URL are read in Python."""
     import pyarrow as pa
     import pyarrow.compute as pc
     import pyarrow.parquet as pq
 
     from utk_curio.sandbox.util.collections import media_ref
 
-    def text(kind) -> bool:
-        if pa.types.is_dictionary(kind):
-            kind = kind.value_type
-        return pa.types.is_string(kind) or pa.types.is_large_string(kind)
-
-    schema = pq.read_schema(data_path)
-    wanted = [
-        field.name for field in schema
-        if text(field.type) or pa.types.is_nested(field.type)
-    ]
+    wanted = [field.name for field in pq.read_schema(data_path) if _holds_text(field.type)]
     if not wanted:
         return set()
     table = pq.read_table(data_path, columns=wanted)
@@ -82,12 +97,17 @@ def _folders_in_parquet(data_path: Path) -> set[str]:
     found: set[str] = set()
     for name in wanted:
         column = table.column(name)
-        if not text(column.type):
-            found |= _folders_in(column.to_pylist())
-            continue
         if pa.types.is_dictionary(column.type):
             column = column.cast(column.type.value_type)
-        for value in pc.unique(column).to_pylist():
+        if not (pa.types.is_string(column.type) or pa.types.is_large_string(column.type)):
+            found |= _folders_in(column.to_pylist())
+            continue
+        if name in encoded:
+            # JSON text: a URL anywhere in it, a list's or a dict's.
+            values = pc.filter(column, pc.match_substring(column, _MEDIA_URL_START))
+        else:
+            values = pc.filter(column, pc.starts_with(column, _MEDIA_URL_START))
+        for value in pc.unique(values).to_pylist():
             if not isinstance(value, str):
                 continue
             if name in encoded:
