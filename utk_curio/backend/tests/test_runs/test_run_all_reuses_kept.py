@@ -309,10 +309,12 @@ def _folders() -> set:
     return {str(folder) for _account, folder in media_dirs.run_folders()}
 
 
-def _open(client, token, project_id) -> dict:
+def _open(client, token, project_id, *, shared=False) -> dict:
     """``{node: output}`` the canvas of *token* opens *project_id* with
-    (``?results=last``)."""
-    resp = client.get(f"/api/projects/{project_id}", query_string={"results": "last"}, headers=auth_headers(token))
+    (``?results=last``): the owner's, or with *shared* an invited editor's,
+    which opens the owner's dataflow through its shared route."""
+    path = f"/api/projects/{project_id}/shared" if shared else f"/api/projects/{project_id}"
+    resp = client.get(path, query_string={"results": "last"}, headers=auth_headers(token))
     assert resp.status_code == 200, resp.get_data(as_text=True)
     return {output["node_id"]: output["filename"] for output in resp.get_json()["outputs"]}
 
@@ -474,11 +476,13 @@ def test_an_editors_key_holds_the_owners_packages(client, people, sandbox):
     _run(client, bob, project_id)
     second = _run(client, bob, project_id)
     assert sandbox.sent() == list(CHAIN), "bob's second Run All ran again what his first kept"
-    assert _open(client, bob, project_id) == _outputs(second)
+    assert _open(client, bob, project_id, shared=True) == _outputs(second)
 
     _install_a_package(people.alice)
 
-    assert _open(client, bob, project_id) == {}, "bob's reopen shows results kept before alice's packages changed"
+    assert _open(client, bob, project_id, shared=True) == {}, (
+        "bob's reopen shows results kept before alice's packages changed"
+    )
     _run(client, bob, project_id)
     assert sandbox.sent() == [*CHAIN, *CHAIN], "bob's Run All after alice's install reused what her old packages made"
 

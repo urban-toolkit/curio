@@ -96,7 +96,7 @@ from utk_curio.backend.app.runs.kept import (
     forget_sessions,
     keep,
     kept_reply,
-    packages_key,
+    packages_fingerprint,
     prune_quietly,
     readable_output,
     step_call,
@@ -587,7 +587,7 @@ def _run_events(
     from utk_curio.backend.app.users.models import User
 
     kept_on = kept_on or project_id
-    packages = packages_key(user_key)
+    packages = packages_fingerprint(user_key)
 
     def execute(step, code, input_ref):
         jobs.hold_point()

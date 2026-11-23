@@ -435,14 +435,13 @@ def _run_thread(
     # always run. Every other step asks what a dashboard viewer's step asks
     # (``viewer._run_events``): whether the runs of its maker, the owner or the
     # editor who started it, kept an output of its node under its key.
-    asked = {node_id for node_id in (plan.target_node_id, *plan.target_node_ids) if node_id}
     maker = kept.MADE_BY_OWNER if records_outputs else kept.MADE_BY_EDITOR
     reuse_packages: dict = {}
 
     def reused(user, step, code, input_ref, node_run):
         """The step's answer from what its maker's runs kept under its key,
         built as a dashboard viewer's step builds it, or None when it runs."""
-        if step.node_id in asked:
+        if step.node_id in (plan.target_node_id, *plan.target_node_ids):
             return None
         try:
             if "key" not in reuse_packages:

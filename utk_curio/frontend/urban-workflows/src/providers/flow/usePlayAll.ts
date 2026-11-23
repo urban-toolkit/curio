@@ -1,7 +1,7 @@
 // Run All and run up to a node: the level-by-level runner, its stall
 // watchdog, and the signal a node sends when its run ends. FlowProvider holds
 // the run's state (playAllStateRef, isRunActive) and passes it in.
-import React, { useCallback, useRef } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import type { Edge, Node, ReactFlowInstance } from "reactflow";
 import type { useToastContext } from "../ToastProvider";
 import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft";
@@ -62,6 +62,9 @@ export function usePlayAll({
     emittedForInputRef: React.MutableRefObject<Map<string, unknown>>;
 }) {
     const playAllStallTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // A canvas that goes takes its run's marks with it: no later request of
+    // a node it marked may reuse what was kept.
+    useEffect(() => () => unmarkReusable(), []);
 
     const clearPlayAllStallTimer = () => {
         if (playAllStallTimerRef.current) {
@@ -239,6 +242,8 @@ export function usePlayAll({
         if (cyclic.length > 0) {
             showToast(`${cyclic.length} node(s) skipped due to cycles in the graph`, "warning");
         }
+        // A run marks only its own nodes: none of a run that ended unseen.
+        unmarkReusable();
         playAllStateRef.current = newRunState(levels, allEdges);
         setIsRunActive(true);
         triggerLevel(0);
@@ -308,6 +313,8 @@ export function usePlayAll({
         const levels = computeTopologicalLevels(subgraphNodes, subgraphEdges);
         if (!levels.length) return false;
 
+        // A run marks only its own nodes: none of a run that ended unseen.
+        unmarkReusable();
         playAllStateRef.current = { ...newRunState(levels, subgraphEdges, mustRun), ...hooks };
         setIsRunActive(true);
         triggerLevel(0);

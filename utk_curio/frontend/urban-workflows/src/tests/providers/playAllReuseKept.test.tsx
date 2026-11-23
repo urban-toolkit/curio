@@ -112,9 +112,9 @@ async function flush() {
   });
 }
 
-/** A -> B, seeded and ready to run. */
-async function seedChain() {
-  render(
+/** A -> B, seeded and ready to run; what takes the canvas off the page. */
+async function seedChain(): Promise<() => void> {
+  const { unmount } = render(
     <ReactFlowProvider>
       <FlowProvider>
         <Bridge />
@@ -132,6 +132,7 @@ async function seedChain() {
     ]);
   });
   await flush();
+  return unmount;
 }
 
 /** The bodies the backend was sent, in order. */
@@ -209,6 +210,21 @@ describe("a Run All's requests may reuse what was kept; the nodes a run is asked
     await flush();
     await act(async () => { api.cancelRun(); });
     await flush();
+    expect(await requestOf('A')).not.toHaveProperty('reuseKept');
+  });
+
+  test('a Play on a canvas opened after one left mid-run is not answered from what was kept', async () => {
+    const leave = await seedChain();
+    await act(async () => { api.playAllNodes(); });
+    await flush();
+    expect(await requestOf('A')).toMatchObject({ reuseKept: true });
+    // The canvas goes while A runs: its run never ends nor is cancelled.
+    await act(async () => { leave(); });
+
+    await seedChain();
+    await act(async () => { api.playNodesUpTo('A'); });
+    await flush();
+
     expect(await requestOf('A')).not.toHaveProperty('reuseKept');
   });
 });
