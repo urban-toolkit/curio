@@ -1772,11 +1772,21 @@ def _execute_web_search(params: dict) -> tuple[str, str]:
             template.replace("{q}", quote(query.strip())),
             trusted_host=egress.trusted_host_of(template),
         )
-        payload = json.loads(result.body)
     except egress.EgressRefused as exc:
         return "error", f"{agent_text.message("tools.egress-refused")}: {exc}"
     except Exception as exc:
         return "error", agent_text.message("tools.search-provider-failed", exc=exc)
+    # A provider that limits a caller can answer with no results at all, such as
+    # an empty 202 or a page of HTML: say so with its status, never as a JSON error.
+    body = (result.body or "").strip()
+    if not body:
+        return "error", agent_text.message("tools.search-provider-empty", status=result.status)
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        return "error", agent_text.message("tools.search-provider-not-json", status=result.status)
+    if result.status != 200:
+        return "error", agent_text.message("tools.search-provider-error", status=result.status)
     rows_raw = _search_rows_of(payload)
     rows = []
     for row in (rows_raw or [])[:_WEB_SEARCH_MAX_ROWS]:
