@@ -189,6 +189,7 @@ def test_an_interrupt_in_the_wait_loop_shuts_the_servers_down(monkeypatch):
     monkeypatch.setenv("CURIO_DEV", "0")
     monkeypatch.setattr(logs, "verbosity", logs.verbosity)
     monkeypatch.setattr(lifecycle, "processes", [])
+    monkeypatch.setattr(lifecycle, "exit_status", 0)
     monkeypatch.setattr(lifecycle, "shutdown_flag", flag)
     monkeypatch.setattr(launcher, "shutdown_flag", flag)
     monkeypatch.setattr(launcher, "signal", SimpleNamespace(

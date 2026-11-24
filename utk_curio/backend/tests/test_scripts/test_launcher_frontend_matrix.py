@@ -18,10 +18,11 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 
 import pytest
 
-from utk_curio.cli import frontend_build, services
+from utk_curio.cli import frontend_build, lifecycle, services
 from utk_curio.cli.frontend_build import NODE_MAJOR
 
 #: The Autark data compiler a build writes beside the page
@@ -225,7 +226,12 @@ def test_check_install_build_also_refuses_an_old_node(frontend, monkeypatch):
     )
     ran = []
     monkeypatch.setattr(frontend_build.subprocess, "run", lambda cmd, **kw: ran.append(cmd))
+    # The real clean_shutdown stops the launcher: what it changes is put back.
+    monkeypatch.setattr(lifecycle, "processes", [])
+    monkeypatch.setattr(lifecycle, "shutdown_flag", threading.Event())
+    monkeypatch.setattr(lifecycle, "exit_status", 0)
 
-    with pytest.raises(SystemExit):
+    with pytest.raises(SystemExit) as exit_info:
         frontend_build.check_install_build(str(frontend))
+    assert exit_info.value.code == 1
     assert ran == []

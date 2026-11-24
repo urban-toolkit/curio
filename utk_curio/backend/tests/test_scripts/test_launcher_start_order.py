@@ -70,6 +70,7 @@ def _start(monkeypatch, *, must_build, deploy=True, failing_check=None, server="
     monkeypatch.setattr("sys.argv", ["curio.py", "start", server, *(["--deploy"] if deploy else [])])
     monkeypatch.setattr(logs, "verbosity", logs.verbosity)
     monkeypatch.setattr(lifecycle, "processes", [])
+    monkeypatch.setattr(lifecycle, "exit_status", 0)
     monkeypatch.setattr(lifecycle, "shutdown_flag", flag)
     monkeypatch.setattr(launcher, "shutdown_flag", flag)
     monkeypatch.setattr(launcher, "signal", SimpleNamespace(

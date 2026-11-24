@@ -74,11 +74,11 @@ def start_frontend(host="localhost", port=8080, force_rebuild=False, no_server=F
             )
             threading.Thread(target=stream_output, args=(process, "Frontend", COLOR_FRONTEND), daemon=True).start()
 
-            # Check if process exited unexpectedly
+            # Check if process exited unexpectedly. Its output, stderr
+            # included (stderr=STDOUT), reaches the log through the thread above.
             if process.poll() is not None:
                 log_error(f"[Frontend] Error: Server exited with code {process.returncode}")
-                log_error(f"[Frontend] Error Output:\n{process.stderr.read()}")
-                clean_shutdown()
+                clean_shutdown(1)
 
         else:
             if not _frontend_is_built():
@@ -90,7 +90,7 @@ def start_frontend(host="localhost", port=8080, force_rebuild=False, no_server=F
                     "'python curio.py --force-rebuild', or run with --dev to "
                     "compile through the webpack dev server."
                 )
-                clean_shutdown()
+                clean_shutdown(1)
                 return None
 
             env = without_backend_only(os.environ)
@@ -126,16 +126,9 @@ def start_frontend(host="localhost", port=8080, force_rebuild=False, no_server=F
                 0,
             )
 
-    except subprocess.CalledProcessError as e:
-        log_error(f"[Frontend] Exit Code: {e.returncode}")
-        log_error(f"[Frontend] Output:\n{e.output}")
-        log_error(f"[Frontend] Error Output:\n{e.stderr}")
-    except subprocess.TimeoutExpired:
-        log_error(f"[Frontend] Error: Server took too long to start.")
-        clean_shutdown()
     except Exception as e:
         log_error(f"[Frontend] Unexpected Error: {str(e)}")
-        clean_shutdown()
+        clean_shutdown(1)
 
     log_info(f"[Frontend] Frontend server started successfully on {host}:{port}.", COLOR_FRONTEND, 0)
     os.chdir(original_dir)
@@ -208,10 +201,10 @@ def prepare_backend_database():
             log_error(e.stdout.strip())
         if e.stderr.strip():
             log_error(e.stderr.strip())
-        clean_shutdown()
+        clean_shutdown(1)
     except Exception as e:
         log_error(f"[Backend] Failed to initialize the database: {e}")
-        clean_shutdown()
+        clean_shutdown(1)
     
 
 def _kill_port(port: int) -> None:
