@@ -171,6 +171,45 @@ def test_a_model_whose_grader_does_not_answer_its_probe_runs_nothing(tmp_path, m
             in (out / "summary.md").read_text(encoding="utf-8"))
 
 
+def test_a_grader_that_answered_its_probe_grades_though_its_own_grader_did_not(tmp_path, monkeypatch):
+    # Run 45340279194 (11-24): Haiku 5.5 failed its probe, so Qwen, whose answers
+    # Haiku grades, did not run. Qwen had answered its own probe, yet DeepSeek,
+    # listed after Qwen and graded by it, did not run either.
+    monkeypatch.setenv(node.ENV_BASE_URL, BASE_URL)
+    monkeypatch.setenv(node.ENV_API_KEY, KEY)
+    monkeypatch.setenv(node.ENV_MODELS, '["gemma4", "openai/Qwen/Qwen3.8-27B", "claude-haiku-5-5", '
+                                        '"deepseek-ai/DeepSeek-V4.1-Flash-1017"]')
+    monkeypatch.setenv(node.ENV_GRADER, '["openai/Qwen/Qwen3.8-27B", "claude-haiku-5-5"]')
+    monkeypatch.delenv(node.ENV_JOBS, raising=False)
+
+    def probe(model, base_url, api_key, scrub):
+        if model == "claude-haiku-5-5":
+            return {"ok": False, "error": "BadRequestError 400: usage limits reached", "attempts": 2}
+        return {"ok": True, "seconds": 1.0}
+
+    started = {}
+
+    class Runner:
+        def __init__(self, command, **kwargs):
+            env = kwargs["env"]
+            started[env["CURIO_EVAL_MODEL"]] = env[node.ENV_GRADER]
+            self.stdout = io.StringIO("")
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(node, "probe", probe)
+    monkeypatch.setattr(node.subprocess, "Popen", Runner)
+    code, out = _run(tmp_path, _scope(tmp_path, {"measure": "smoke", "measures": {"nodes": {}}}))
+    assert code == 1
+    # Each model whose grader answered its probe runs, graded by it, wherever it is listed.
+    assert started == {"gemma4": "openai/Qwen/Qwen3.8-27B",
+                       "deepseek-ai/DeepSeek-V4.1-Flash-1017": "openai/Qwen/Qwen3.8-27B"}
+    summary = (out / "summary.md").read_text(encoding="utf-8")
+    assert "its grader, claude-haiku-5-5, did not answer its probe" in summary
+    assert "its grader, openai/Qwen/Qwen3.8-27B, did not answer its probe" not in summary
+
+
 def test_a_runner_s_lines_reach_the_log_scrubbed(capsys):
     from utk_curio.backend.app.agents.evaluation import skill_evals
     from utk_curio.backend.app.agents.evaluation.report import scrub
