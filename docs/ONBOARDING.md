@@ -84,23 +84,23 @@ In Curio, these stages are automated using `curio.py`, which manages building, s
 However, you can also **build and serve each component manually** if needed:
 
 - **Frontend**:
-  - Build manually using the appropriate `npm run build` in `frontend/urban-workflows`.
+  - Build manually with `npm run build` in `utk_curio/frontend/urban-workflows`.
   - Serve using:
-    - `npm run start` (development with Webpack Dev Server)
-    - or `python -m http.server 8080 --directory dist` (serving built files).
+    - `npm run start` in the same folder (development, with the Webpack Dev Server)
+    - or `python curio.py start frontend` (the built files in `dist/`, served by Curio's page server, which also answers a page's own routes, such as `/dataflow/<id>`, with `index.html`. When `dist/` is missing or out of date, it builds it first).
 
 - **Backend**:
-  - Run using `python -m backend.server`.
-  - Initializes the database if necessary before serving requests.
+  - Apply the database migrations first with `python curio.py --force-db-init`. The backend does not apply them itself.
+  - Run using `python -m utk_curio.backend.server`.
 
 - **Sandbox**:
-  - Run using `python -m sandbox.server`
+  - Run using `python -m utk_curio.sandbox.server`.
   - Useful for isolated environment testing.
 
 
 These functions handle environment setup, server startup, and process management.
 
-> **Note:** You need to **start these servers in the appropriate folder** (check `utk_curio/frontend/urban-workflows`, `utk_curio/backend`, `utk_curio/sandbox` folders) to ensure relative imports and environment paths work correctly.
+> **Note:** Run the `npm` commands in `utk_curio/frontend/urban-workflows`. Run the `python` commands in the folder where you cloned the repository, so that Python finds the `utk_curio` package.
 
 > **Note:** There are several ways to install and use Curio (pip, Docker, manual installation). Check the [USAGE.md](USAGE.md) document for more details.
 
@@ -236,7 +236,7 @@ cd path/to/your/cloned/repo
 python curio.py start
 ```
 
-If you installed the project using pip (e.g., pip install curio), it will install the entry point automatically, allowing you to run the following from any folder without needing to be in the project directory:
+If you installed the project using pip (`pip install utk-curio`), it will install the entry point automatically, allowing you to run the following from any folder without needing to be in the project directory:
 
 ```bash
 curio start
@@ -244,7 +244,7 @@ curio start
 
 ### Why are there two different instances of `curio` when I use pip versus cloning?
 
-When you install `curio` with pip, it places the `curio` executable in your Python environment’s Scripts (Windows) or bin (macOS/Linux) folder, making it accessible system-wide from any folder.
+When you install `utk-curio` with pip, it places the `curio` executable in your Python environment’s Scripts (Windows) or bin (macOS/Linux) folder, making it accessible system-wide from any folder.
 
 When you clone the repository directly, `curio` (or `curio.py`) remains in the folder where you cloned it, and you must run it from that folder unless you set up a manual path or install it using pip.
 
