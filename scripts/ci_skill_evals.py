@@ -13,9 +13,10 @@
   code. It reads the models from ``CURIO_EVAL_MODELS`` (a JSON list) and the
   endpoint from ``CURIO_EVAL_BASE_URL`` and ``CURIO_EVAL_API_KEY``.
   1. Each model is probed with one short request, and one that does not
-     answer is not run. So is ``CURIO_EVAL_GRADER_MODEL``, the benchmark's
-     one grader for every model, when it names one: if it does not answer,
-     no model runs.
+     answer is not run. So is each model's grader, the first model of
+     ``CURIO_EVAL_GRADER_MODEL`` that is not the model itself: a model whose
+     grader does not answer its probe is not run, and a grader that answered
+     grades even when its own answers have no grader.
   2. Each model that answered runs ``agent_eval.py skills --scope``, side by
      side, into ``results/<model>/``. Each runs ``CURIO_EVAL_JOBS`` workers,
      a number or a JSON object of a number per model, 4 when unset.
@@ -263,8 +264,11 @@ def cmd_run(args) -> int:
     for model, answer in probes.items():
         _say(f"probe {model}: " + (f"answered in {answer['seconds']} s" if answer["ok"]
                                    else f"FAILED, {answer['error']}"))
+    # The probes as they came back: a grader that answered grades, even when
+    # it is not run itself because its own grader did not answer.
+    answered = {model: answer["ok"] for model, answer in probes.items()}
     for model, grader in grader_of.items():
-        if grader and not probes[grader]["ok"] and probes[model]["ok"]:
+        if grader and not answered[grader] and probes[model]["ok"]:
             # Every grade of its answers would fail: it does not run.
             probes[model] = {"ok": False, "error": f"its grader, {grader}, did not answer its probe"}
 
