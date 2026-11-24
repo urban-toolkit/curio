@@ -379,6 +379,20 @@ def test_the_collection_an_adding_account_gets_lists_only_the_photos_the_rows_na
     assert index["file_id"].tolist() == [alice.photo]
 
 
+def test_an_accounts_own_add_of_the_resource_gets_every_file_beside_the_carried_part(client, people, draw):
+    """bob holds alice's collection as her published rows carried it, with
+    the one photo they name. His own add of the same resource from the
+    Discovery Catalog is a collection of its own, with every file: the
+    carried one is a part of the resource, which no add takes for the
+    whole. It guards what this PR adds: main carries no collection."""
+    alice = _published_by_alice(client, people, draw)
+    _added_by_bob(client, people, alice.published)
+
+    collection_id, _photo, index = _photos(client, people.tokens["bob"])
+    assert collection_id != alice.collection, "bob's own add answered with the carried part of the resource"
+    assert sorted(index["file_id"]) == sorted(alice.index["file_id"])
+
+
 def test_the_copys_delete_takes_its_files_once_the_publisher_unpublishes(client, people, draw):
     """While alice's dataset is published, bob's copy is a copy of the shared
     catalog's, which the Data Catalog never offers to delete. Once she

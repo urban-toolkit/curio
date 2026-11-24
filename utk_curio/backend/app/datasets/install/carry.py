@@ -217,6 +217,21 @@ def _rows_of(index: Path, wanted: set[str]):
     return _only(table, wanted)
 
 
+def _write_carried_manifest(source: Path, target: Path) -> None:
+    """The collection manifest *source* written to *target* as a part of its
+    resource (``discoverySource.narrowed``), as a narrowed add's is: it lists
+    only the files the rows name, so the account's own add of the resource
+    from the Discovery Catalog never takes it for the whole resource
+    (``user_store.find_by_discovery_resource``)."""
+    import json
+
+    manifest = json.loads(source.read_text(encoding="utf-8"))
+    discovered = manifest.get("discoverySource")
+    if isinstance(discovered, dict):
+        manifest["discoverySource"] = {**discovered, "narrowed": True}
+    target.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+
 def _carry_collection(source: Path, target: Path, wanted: set[str]) -> bool:
     """The collection in the store folder *source*, with only its rows of the
     files *wanted*, put in the store folder *target*: copied there under a
@@ -245,7 +260,7 @@ def _carry_collection(source: Path, target: Path, wanted: set[str]) -> bool:
     staging = target.with_name(f".{target.name}.{uuid.uuid4().hex[:8]}.partial")
     try:
         staging.mkdir()
-        shutil.copy2(source / "manifest.json", staging / "manifest.json")
+        _write_carried_manifest(source / "manifest.json", staging / "manifest.json")
         _write_over(staging / manifest.data_file, rows)
         os.replace(staging, target)
     finally:
