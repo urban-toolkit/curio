@@ -255,13 +255,13 @@ python curio.py start --force-rebuild
 
 This will delete and reinstall frontend dependencies and rerun the frontend build process.
 
-To force the re-initialization of the backend database:
+To apply the backend database migrations without starting a server:
 
 ```bash
-python curio.py start --force-db-init
+python curio.py --force-db-init
 ```
 
-This will re-initialize the backend database and apply all migrations.
+This applies the migrations that the database does not have yet, then exits. It does not delete the database or its data. It first stops the process that listens on the backend port (5002, or `--backend-port`), so stop a running Curio before you use it. Every `python curio.py start` that starts the backend also applies the migrations, so `start --force-db-init` does no more than a plain `start`.
 
 If you want to manually perform `npm install`, you should then:
 
