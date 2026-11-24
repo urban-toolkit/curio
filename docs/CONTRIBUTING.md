@@ -215,6 +215,8 @@ After forking:
 
    Open a PR on GitHub with a detailed description and link to relevant issues. **When you create a PR, make sure you create a PR selecting the branch of the upstream repository you'd like to merge changes into (usually urban-toolkit/curio main).**
 
+   On a pull request from a fork, CI does not run the test suites. Code from a fork never runs on the self-hosted runners: in `.github/workflows/docker-compose.yml`, `pick-runners` skips a fork's PR, and so do the jobs that need it (`unit`, `jest`, `e2e-desktop`, `test-gpu` and the others). Run the test suites that your change touches on your machine (see [Running Tests](#running-tests)), and put the results in the PR description.
+
 ## Running Tests
 
 Before submitting a pull request, run the relevant test suites to confirm your changes don't introduce regressions.
@@ -349,7 +351,7 @@ cd utk_curio/frontend/urban-workflows
 npm test -- --watchAll=false
 ```
 
-Tests live under `src/tests/` and mirror the structure of `src/components/`. See [utk_curio/frontend/urban-workflows/src/tests/README.md](../utk_curio/frontend/urban-workflows/src/tests/README.md) for guidelines on writing and organizing tests.
+Tests live under `src/tests/`. Some of its folders have the name of the `src/` folder whose code they test (`components/`, `hook/`, `providers/`, `services/`, ...), and others hold the tests of one feature (`agents/`, `catalog/`, `packages/`, ...). See [utk_curio/frontend/urban-workflows/src/tests/README.md](../utk_curio/frontend/urban-workflows/src/tests/README.md) for guidelines on writing and organizing tests.
 
 The project uses **Node 26**. Jest needs a Node that can `require()` an ES module (transitive dep `html-encoding-sniffer@6` does), and older Node fails every suite with `ERR_REQUIRE_ESM`. Install it into the `curio` conda env with `conda install -c conda-forge nodejs=26` and run `conda activate curio` before `npm test`, or use a system install of Node 26 (`.nvmrc` and `.node-version` pin it for nvm/fnm/asdf). A checkout whose `node_modules` was installed under an older Node reinstalls itself on the next `curio.py start` -- the launcher stamps the installing major into `node_modules/.curio-node-major` and wipes the tree when it changes, so there is no folder to delete by hand.
 
@@ -606,7 +608,7 @@ Use the following template when creating a new issue:
 
 ## Need Help
 
-* Post in the GitHub Discussions or Issues tab
+* Open an issue in the GitHub Issues tab
 
 ## Final Notes
 
