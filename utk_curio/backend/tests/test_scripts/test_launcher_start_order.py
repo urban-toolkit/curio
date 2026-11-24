@@ -76,6 +76,7 @@ def _start(monkeypatch, *, must_build, deploy=True, failing_check=None, server="
     monkeypatch.setattr(lifecycle, "processes", [])
     monkeypatch.setattr(lifecycle, "exit_status", 0)
     monkeypatch.setattr(lifecycle, "shutdown_flag", flag)
+    monkeypatch.setattr(lifecycle, "servers_stopped", threading.Event())
     monkeypatch.setattr(launcher, "signal", SimpleNamespace(
         SIGINT=signal.SIGINT, SIGTERM=signal.SIGTERM, signal=lambda *args: None,
     ))

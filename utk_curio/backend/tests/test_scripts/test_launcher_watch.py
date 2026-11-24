@@ -11,6 +11,11 @@ Docker's restart policy never learned that a server had stopped.
 
 ``stream_output`` stopped reading a server at the first look that saw it had
 exited, so the lines it wrote last, often why it stopped, could miss the log.
+
+The backend group stops every server on its own thread, a daemon one, one
+server after the other, and the launcher's wait exited as soon as it saw that
+stop begin. Its exit ended the thread, so the servers the thread had not
+stopped yet outlived the launcher.
 """
 from __future__ import annotations
 
@@ -54,20 +59,19 @@ def _interrupted(seconds):
     raise KeyboardInterrupt
 
 
-def _start(monkeypatch, *, server, deploy, exits):
-    """Run ``curio.py start <server>`` with its servers faked, *exits* among
-    them already exited with code 3, and the wait ended as Ctrl-C ends it at
-    its first sleep. The servers by name, and the code main() exited with."""
-    servers = {name: _Server(name) for name in ("backend", "sandbox", "frontend")}
-    servers[exits].code = 3
+def _launcher_starting_nothing(monkeypatch, *argv):
+    """Ready ``main()`` to run as ``curio.py <argv>``, with what would set up,
+    install, build or start something faked. The launcher's stop flag, a
+    fresh one."""
     flag = threading.Event()
 
     # What main() changes outside itself, each put back after the test.
-    monkeypatch.setattr("sys.argv", ["curio.py", "start", server, *(["--deploy"] if deploy else [])])
+    monkeypatch.setattr("sys.argv", ["curio.py", *argv])
     monkeypatch.setattr(logs, "verbosity", logs.verbosity)
     monkeypatch.setattr(lifecycle, "processes", [])
     monkeypatch.setattr(lifecycle, "exit_status", 0)
     monkeypatch.setattr(lifecycle, "shutdown_flag", flag)
+    monkeypatch.setattr(lifecycle, "servers_stopped", threading.Event())
     monkeypatch.setattr(launcher, "signal", SimpleNamespace(
         SIGINT=signal.SIGINT, SIGTERM=signal.SIGTERM, signal=lambda *args: None,
     ))
@@ -80,12 +84,23 @@ def _start(monkeypatch, *, server, deploy, exits):
     monkeypatch.setattr(frontend_build, "_frontend_tree_is_stale", lambda: False)
     monkeypatch.setattr(launcher, "_skip_dep_install", lambda: True)
     monkeypatch.setattr(launcher, "seed_duckdb_extensions", lambda: None)
-    monkeypatch.setattr(launcher, "start_backend", lambda host, port: servers["backend"])
-    monkeypatch.setattr(launcher, "start_sandbox", lambda host, port: servers["sandbox"])
-    monkeypatch.setattr(launcher, "start_frontend", lambda host, port, **kwargs: servers["frontend"])
     monkeypatch.setattr(launcher, "threading", SimpleNamespace(
         Thread=lambda **kwargs: SimpleNamespace(start=lambda: None),
     ))
+    return flag
+
+
+def _start(monkeypatch, *, server, deploy, exits):
+    """Run ``curio.py start <server>`` with its servers faked, *exits* among
+    them already exited with code 3, and the wait ended as Ctrl-C ends it at
+    its first sleep. The servers by name, and the code main() exited with."""
+    servers = {name: _Server(name) for name in ("backend", "sandbox", "frontend")}
+    servers[exits].code = 3
+
+    _launcher_starting_nothing(monkeypatch, "start", server, *(["--deploy"] if deploy else []))
+    monkeypatch.setattr(launcher, "start_backend", lambda host, port: servers["backend"])
+    monkeypatch.setattr(launcher, "start_sandbox", lambda host, port: servers["sandbox"])
+    monkeypatch.setattr(launcher, "start_frontend", lambda host, port, **kwargs: servers["frontend"])
     # The wait's first sleep is where Ctrl-C lands.
     monkeypatch.setattr(lifecycle, "time", SimpleNamespace(sleep=_interrupted))
 
@@ -151,3 +166,75 @@ def test_what_an_exited_server_wrote_last_is_in_the_log_before_every_server_stop
     assert "every server stopped with 1" in said, said
     before_the_stop = said[:said.index("every server stopped with 1")]
     assert "[Sandbox] why it stopped" in before_the_stop, said
+
+
+#: A server that stops 1.5 s after SIGTERM, later than the launcher's wait
+#: looks again, once it said it is ready for SIGTERM.
+_SLOW_TO_STOP = (
+    "import signal, sys, time\n"
+    "def stop(signum, frame):\n"
+    "    time.sleep(1.5)\n"
+    "    sys.exit(0)\n"
+    "signal.signal(signal.SIGTERM, stop)\n"
+    "print('ready', flush=True)\n"
+    "while True:\n"
+    "    time.sleep(0.1)\n"
+)
+
+
+def _the_groups_thread(watch, started):
+    """*watch* of *started*, ended as ``clean_shutdown`` ends a thread other
+    than the main one: by SystemExit, once it stopped every server."""
+    try:
+        watch(started)
+    except SystemExit:
+        pass  # the end of the backend group's thread
+
+
+def test_a_start_the_backend_group_stops_exits_once_every_server_stopped(monkeypatch):
+    """``start backend --backend-processes 2``, whose Backend 1 exited with 3.
+    The group's own watch, on its thread, stops every server one after the
+    other, each 1.5 s after its SIGTERM. The launcher exits 1, and only once
+    none of them runs."""
+    flag = _launcher_starting_nothing(monkeypatch, "start", "backend", "--backend-processes", "2")
+    monkeypatch.setattr(backend_group, "shutdown_flag", flag)
+    monkeypatch.setattr(backend_group, "refuse_without_nginx", lambda processes: None)
+    for name in ("start_backend", "start_sandbox", "start_frontend"):
+        monkeypatch.setattr(launcher, name, lambda *args, **kwargs: pytest.fail("a server started outside the group"))
+    servers = []
+    threads = []
+
+    def start_backend_group(host, port, processes):
+        for name in ("Backend 0", "Backend 1", "nginx"):
+            if name == "Backend 1":
+                server = subprocess.Popen([sys.executable, "-c", "import sys; sys.exit(3)"])
+                assert server.wait(timeout=60) == 3
+            else:
+                server = subprocess.Popen([sys.executable, "-c", _SLOW_TO_STOP], stdout=subprocess.PIPE, text=True)
+                assert server.stdout.readline().strip() == "ready"
+            servers.append((name, backend_group._kept(server)))
+        threads.append(threading.Thread(target=_the_groups_thread, args=(backend_group.watch, list(servers)),
+                                        name="backend-group", daemon=True))
+        threads[0].start()
+
+    monkeypatch.setattr(backend_group, "start_backend_group", start_backend_group)
+
+    try:
+        with pytest.raises(SystemExit) as exited:
+            launcher.main()
+        still_running = [name for name, server in servers if server.poll() is None]
+    finally:
+        for _, server in servers:
+            if server.poll() is None:
+                server.kill()
+            server.wait(timeout=60)
+            if server.stdout:
+                server.stdout.close()
+        for thread in threads:
+            thread.join(timeout=60)
+
+    assert exited.value.code == 1
+    assert still_running == [], (
+        f"the launcher exited before the backend group's thread stopped {', '.join(still_running)}, "
+        "which outlived it"
+    )

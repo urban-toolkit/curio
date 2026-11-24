@@ -688,9 +688,12 @@ def main():
             # Until the launcher stops. A server that exits by itself stops
             # every server, with an error, as one of the backend group does.
             lifecycle.watch(servers)
+            # Stopped on the backend group's thread: not before that thread
+            # stopped every server.
+            lifecycle.wait_for_the_stop()
         except KeyboardInterrupt:
             clean_shutdown()
-        # Stopped from another thread: with an error when a server exited by itself.
+        # With an error when a server exited by itself.
         sys.exit(lifecycle.exit_status)
     else:
         parser.print_help()
