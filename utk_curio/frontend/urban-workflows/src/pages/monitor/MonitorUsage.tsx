@@ -86,7 +86,7 @@ const MeasureChart: React.FC<{
     );
   }
   return (
-    <div className={styles.card}>
+    <div className={`${styles.card} ${styles.spaced}`}>
       <h3 className={styles.subHeading}>{title}</h3>
       {chart}
     </div>
@@ -129,7 +129,7 @@ const SessionsChart: React.FC<{ view: MonitorUsageView | null; shown: WindowOpti
     );
   }
   return (
-    <div className={styles.card}>
+    <div className={`${styles.card} ${styles.spaced}`}>
       <h3 className={styles.subHeading}>Sessions seen</h3>
       {chart}
     </div>
@@ -213,6 +213,7 @@ const MeasureTable: React.FC<{ payload: MonitorUsagePayload | null; view: Monito
  * days in hourly steps (first) or 90 days in daily steps, for every chart and
  * table of the tab, the LLM performance section's included; the tiles always
  * give the last 24 hours. Each chart of 24 hours or 7 days marks the deploys.
+ * Every chart takes the tab's full width, one under another.
  */
 export const MonitorUsage: React.FC<{ usage: MonitorUsagePayload | null; llm: MonitorLlmPayload | null }> = ({
   usage,
@@ -265,26 +266,24 @@ export const MonitorUsage: React.FC<{ usage: MonitorUsagePayload | null; llm: Mo
           <WorkTile label="Run All runs, 24 hours" stats={day?.runs} />
           <WorkTile label="Requests, 24 hours" stats={day?.requests} />
         </div>
-        <div className={styles.split}>
-          <SessionsChart view={view} shown={shown} marks={marks} />
-          <MeasureChart title="Count" field="count" valueTitle="count" view={view} shown={shown} marks={marks} />
-          <MeasureChart
-            title="Average time"
-            field="averageMs"
-            valueTitle="average time"
-            view={view}
-            shown={shown}
-            marks={marks}
-          />
-          <MeasureChart
-            title="95th percentile time"
-            field="p95Ms"
-            valueTitle="95th percentile time"
-            view={view}
-            shown={shown}
-            marks={marks}
-          />
-        </div>
+        <SessionsChart view={view} shown={shown} marks={marks} />
+        <MeasureChart title="Count" field="count" valueTitle="count" view={view} shown={shown} marks={marks} />
+        <MeasureChart
+          title="Average time"
+          field="averageMs"
+          valueTitle="average time"
+          view={view}
+          shown={shown}
+          marks={marks}
+        />
+        <MeasureChart
+          title="95th percentile time"
+          field="p95Ms"
+          valueTitle="95th percentile time"
+          view={view}
+          shown={shown}
+          marks={marks}
+        />
         <MeasureTable payload={usage} view={view} />
       </section>
 
