@@ -218,6 +218,15 @@ def _copy(from_key: str, to_key: str, dir_name: str) -> Path | None:
         if staging.exists():
             shutil.rmtree(staging, ignore_errors=True)
     index_repo.safe_upsert_from_dir(to_key, target)
+    # What its rows need beyond the table: the files his nodes derived and the
+    # collections they came from (``datasets/install/carry.py``).
+    from utk_curio.backend.app.datasets.install import carry
+
+    try:
+        carry.into_account(carry.Account(from_key), to_key, [target])
+    except OSError:
+        logger.warning("What the rows of %s name could not be brought into the owner's account", dir_name,
+                       exc_info=True)
     return target
 
 

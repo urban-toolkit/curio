@@ -365,6 +365,8 @@ NetCDF variables stored a file each, as a WRF run writes `RAIN.nc` and `T2.nc`, 
 
 For a bundle, **Publish** copies the whole `data/` tree, not just the index.
 
+A dataset whose rows show a collection's files, such as a node's frames and overlays, brings them to an account that adds it: the files the node derived, and the collection itself, listing only the files the rows name. Its Simple View, player and dashboards show them, and its nodes read them. The collection's files stay in their source and are read with that account's own access, so a source that needs a key shows them only to an account that holds one.
+
 **Unpublish** removes the shared listing only. Copies already added to dataflows keep working, and the confirmation says so.
 
 **Delete** removes a dataset from your account: it deletes the stored copy and strips its references from every one of your dataflows. It is offered on computed datasets and on your own imports, never on a dataset from the shared catalog. Deleting a node's saved output deletes that node's result in its dataflow too: the node opens with no result until it runs again. Deleting a collection deletes its index, thumbnails and cached files, never the files in its source.

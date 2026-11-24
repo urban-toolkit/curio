@@ -715,6 +715,11 @@ class CatalogMutations:
             raise DatasetCatalogError(
                 "Cannot publish a dataset whose data file is not available on disk"
             )
+        # Publishing again replaces what the entry held: a node's output is a
+        # new file each run, so the last publish's file, its sidecars and a
+        # bundle's parts would otherwise stay, and every later add copy them.
+        shutil.rmtree(dest / "data", ignore_errors=True)
+        (dest / "data").mkdir(parents=True, exist_ok=True)
         if str(item.get("format")) == "bundle":
             # A bundle's data file is data/bundle.json plus a data/parts/* subtree.
             # Copy the whole data/ dir so the published entry's parts resolve;
@@ -787,6 +792,17 @@ class CatalogMutations:
             dataflow_categories=self._declared_dataflow_categories(item),
         )
         write_manifest(manifest_obj, dest)
+
+        # ── What its rows need beyond the table ──────────────────────────────
+        # The files its nodes derived and the collections they came from, kept
+        # beside the accounts' folders while it is published, so an account
+        # that adds it reads them (``install/carry.py``).
+        from utk_curio.backend.app.datasets.install import carry
+
+        try:
+            carry.publish(self._paths._user_key() if self.user is not None else None, dest)
+        except OSError:
+            logger.warning("What the rows of %s name could not be kept for it", dir_name, exc_info=True)
 
         item["dirName"] = dir_name
         item["updatedAt"] = iso_from_timestamp()
@@ -1089,7 +1105,38 @@ class CatalogMutations:
         installed_item = deepcopy(item)
         installed_item["origin"] = ref["origin"]
         installed_item["installed"] = True
+        self._list_collections_named(dataflow_id, item["id"])
         return installed_item
+
+    def _list_collections_named(self, dataflow_id: str, dataset_id: str) -> None:
+        """List in the dataflow *dataflow_id* each collection the rows of this
+        account's dataset *dataset_id* name that the account holds and the
+        shared catalog does not (``install/carry.py``), as an Add to project
+        lists one: an editor of the dataflow finds a collection only through
+        its listing (``DiscoveryService.collection``), so he reads the files
+        the rows name as the account does. Best-effort: the dataset is listed
+        whatever becomes of its collections."""
+        from utk_curio.backend.app.datasets.install import carry
+
+        user_key = self._paths._user_key()
+        folder = carry.held(user_key, dataset_id)
+        if folder is None:
+            return
+        try:
+            named = [cid for cid in carry.collections_named(folder)
+                     if cid != dataset_id and carry.held(user_key, cid) is not None]
+            listed = {ref.get("datasetId") for ref in self.installed.list_refs(dataflow_id)} if named else set()
+        except (OSError, ValueError):
+            logger.warning("Could not read which collections the rows of %s name", dataset_id, exc_info=True)
+            return
+        for collection_id in named:
+            if collection_id in listed:
+                continue
+            try:
+                self.install_dataset(dataflow_id, collection_id)
+            except Exception:  # noqa: BLE001 - the dataset is listed; its editors read its collection's files later
+                logger.warning("Could not list %s, which the rows of %s name, in %s",
+                               collection_id, dataset_id, dataflow_id, exc_info=True)
 
     # ------------------------------------------------------------------
     # Account-level defaults ("Add to all projects")
@@ -1137,6 +1184,19 @@ class CatalogMutations:
                     project.id, exc,
                 )
                 results.append({"id": project.id, "ok": False, "error": str(exc)})
+
+        # A dataflow made later lists the collections its rows name too, as
+        # each existing one now does (:meth:`_list_collections_named`).
+        from utk_curio.backend.app.datasets.install import carry
+
+        folder = carry.held(user_key, dataset_id)
+        if folder is not None:
+            try:
+                for collection_id in carry.collections_named(folder):
+                    if collection_id != dataset_id and carry.held(user_key, collection_id) is not None:
+                        dataset_defaults.add_to_dataset_defaults(user_key, collection_id)
+            except (OSError, ValueError):
+                logger.warning("Could not read which collections the rows of %s name", dataset_id, exc_info=True)
 
         return {
             "datasets": sorted(dataset_defaults.load_dataset_defaults(user_key)),
@@ -1546,8 +1606,12 @@ class CatalogMutations:
             except Exception:  # noqa: BLE001
                 pass
 
-        # Remove the catalog directory tree.
+        # Remove the catalog directory tree, and what publishing kept for it
+        # beside the accounts' folders; copies already added keep their own.
         shutil.rmtree(catalog_dir, ignore_errors=True)
+        from utk_curio.backend.app.datasets.install import carry
+
+        carry.unpublish(catalog_dir.name)
 
         # Revert the spec.trill.json ref back to 'imported' origin so the dataset
         # keeps working from the user's store.  Keep dirName so the manifest (and

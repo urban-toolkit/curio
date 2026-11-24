@@ -2720,23 +2720,23 @@ def _copy_saved_outputs(
     copy's spec names it. Neither is installed again from the sandbox's
     artifacts, which may be gone, and an output with no file left stays out.
     Each project is read or written under its own spec lock, one at a time
-    (#941). Into another account, the runs' folders the copied datasets
-    record (``media_records``) are linked into its media folder under the
-    same names, so the copy's rows read the files they name there
-    (``media_dirs.link_runs``).
+    (#941). Into another account, what the copied datasets' rows need beyond
+    their tables comes too (``datasets/install/carry.py``): the runs' folders
+    they name, linked into its media folder under the same names, the
+    collections they name under their own ids, and each row's ``path``
+    pointed at its copy of the file.
     """
     from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
+    from utk_curio.backend.app.datasets.install import carry
     from utk_curio.backend.app.datasets.install import copy as dataset_copy
-    from utk_curio.backend.app.datasets.install import media_records
     from utk_curio.backend.app.datasets.install.installer import (
         InstallerError,
         computed_dataset_id,
     )
-    from utk_curio.backend.app.discovery.infrastructure import media_dirs
 
     staged = []
     entries: Dict[str, dict] = {}
-    folders: set = set()
+    placed_folders: list = []
     try:
         with storage.spec_write_lock(source_key, source_id):
             spec = storage.read_spec(source_key, source_id)
@@ -2769,7 +2769,7 @@ def _copy_saved_outputs(
                 copy = staged.pop(0)
                 try:
                     placed = dataset_copy.place_staged_copy(target_key, copy)
-                    folders |= media_records.recorded_folders(placed.dest)
+                    placed_folders.append(placed.dest)
                 except InstallerError as exc:
                     logger.warning("A copied output could not be put in place in %s: %s", target_id, exc)
             refs = [
@@ -2783,11 +2783,11 @@ def _copy_saved_outputs(
     finally:
         for copy in staged:
             dataset_copy.discard_staged_copy(copy)
-    if target_key != source_key and folders:
+    if target_key != source_key and placed_folders:
         try:
-            media_dirs.link_runs(source_key, target_key, folders)
+            carry.into_account(carry.Account(source_key), target_key, placed_folders)
         except OSError:
-            logger.warning("The files the copied outputs of %s name could not be linked into %s",
+            logger.warning("What the copied outputs of %s name could not be brought into %s",
                            source_id, target_id, exc_info=True)
     return restored
 

@@ -252,11 +252,12 @@ def _run_folder_candidates(service, kept: str) -> list[tuple[str, Path]]:
 def _owners_store_through(service, kept: str) -> str | None:
     """The key of the store of the owner of the dataflow *service* reads
     through (``service.dataflow_id``), when its reader is an editor she
-    invited and one of that dataflow's saved outputs records the run's
-    folder *kept* (``media_records.dataflow_folders``, found by the
-    dataflow's part of their ids). None for the owner, whose folders are her
-    own, for a watcher or anyone else, and for a folder none of that
-    dataflow's saved outputs records."""
+    invited and the run's folder *kept* is recorded by one of that
+    dataflow's saved outputs (``media_records.dataflow_folders``, found by
+    the dataflow's part of their ids) or by another dataset it lists from
+    her store, such as her copy of a published dataset (:func:`_listed_folders`).
+    None for the owner, whose folders are her own, for a watcher or anyone
+    else, and for a folder none of those records."""
     if not service.dataflow_id or service.user is None:
         return None
     from utk_curio.backend.app.datasets.install import media_records
@@ -269,9 +270,26 @@ def _owners_store_through(service, kept: str) -> str | None:
     if project is None or access.agents_role(service.user, project) not in access.EDIT_ROLES:
         return None
     owner = _owner_user_dir_key(project)
-    if owner == service.user_key or kept not in media_records.dataflow_folders(owner, project.id):
+    if owner == service.user_key:
         return None
-    return owner
+    if kept in media_records.dataflow_folders(owner, project.id) or kept in _listed_folders(service, project.id):
+        return owner
+    return None
+
+
+def _listed_folders(service, dataflow_id: str) -> set[str]:
+    """The runs' folders the records of the datasets the dataflow
+    *dataflow_id* lists from its owner's store name, as its editor reads
+    them (``DatasetCatalogService.listed_from_the_owners_store``)."""
+    from utk_curio.backend.app.datasets.install import media_records
+    from utk_curio.backend.app.datasets.service import DatasetCatalogService
+
+    found: set[str] = set()
+    for item in DatasetCatalogService(service.user).listed_from_the_owners_store(dataflow_id).values():
+        path = item.get("path")
+        if path:
+            found |= media_records.folders_of_data_file(path)
+    return found
 
 
 # ── what is served ─────────────────────────────────────────────────────────
