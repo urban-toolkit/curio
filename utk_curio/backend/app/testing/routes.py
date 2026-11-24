@@ -166,6 +166,9 @@ _RESETTABLE_TABLES: tuple[str, ...] = (
     "exec_cache_entry",
     "dataflow_run_step",
     "dataflow_run",
+    # A Run All reuses what was kept under a step's key: a dataflow a later
+    # test makes anew under the same id must find none of an earlier test's.
+    "kept_step_output",
     "project_editor",
     "project",
     "auth_attempt",

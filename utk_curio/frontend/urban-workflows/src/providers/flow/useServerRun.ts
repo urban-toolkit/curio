@@ -82,6 +82,7 @@ interface FollowedRun {
 type PlayNodes = (
     nodeIds: string[],
     hooks?: Pick<PlayAllState, "onNodeDone" | "onFinish">,
+    mustRun?: readonly string[],
 ) => boolean;
 
 export function useServerRun({
@@ -269,6 +270,9 @@ export function useServerRun({
     ): boolean => {
         const walk = browserWalk(steps, reactFlow.getEdges(), played?.nodeId ?? targets);
         if (!walk.length) return false;
+        // The nodes the run was asked for run in the tab too; the others may
+        // reuse what was kept, as their steps on the server did.
+        const asked = played ? [played.nodeId] : (targets ?? []);
         return playNodes(walk, {
             onNodeDone: (nodeId, outcome) => {
                 // A kind whose play draws nothing of its own (a Data Export)
@@ -284,7 +288,7 @@ export function useServerRun({
                     ? { status: "error", message: outcome.skipReason ?? outcome.message ?? String(shown ?? "") }
                     : { status: "ok" });
             },
-        });
+        }, asked);
     };
 
     // The tab can end a run as its last step lands, a moment before the server

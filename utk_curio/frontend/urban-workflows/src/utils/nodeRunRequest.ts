@@ -25,6 +25,25 @@ function countOpenRun(nodeId: string, change: 1 | -1): void {
     else openRuns.delete(nodeId);
 }
 
+// The nodes of the run going on that may reuse what their maker's runs kept:
+// every node of a Run All, and the nodes above a Play's node that the play
+// runs (usePlayAll). Their requests say `reuseKept`, so the backend answers a
+// node whose key holds a kept output with it and runs nothing, as a dashboard
+// visitor's step is answered. The nodes a run is asked for are never marked:
+// a Play's node always runs.
+const reusable = new Set<string>();
+
+/** Let the nodes *nodeIds*, which the run going on starts now, reuse what was kept. */
+export function markReusable(nodeIds: Iterable<string>): void {
+    for (const nodeId of nodeIds) reusable.add(nodeId);
+}
+
+/** The node's part in the run is over, or with no node the run is: its next requests run. */
+export function unmarkReusable(nodeId?: string): void {
+    if (nodeId === undefined) reusable.clear();
+    else reusable.delete(nodeId);
+}
+
 async function readReply(response: Response): Promise<any> {
     let json: any = null;
     try {
@@ -138,9 +157,10 @@ export function runNodeOnBackend(
         stopAsking();
     };
     countOpenRun(nodeId, 1);
+    const sent = reusable.has(nodeId) ? { ...body, reuseKept: true } : body;
     fetch(url, {
         method: "POST",
-        body: JSON.stringify(progressId ? { ...body, progressId } : body),
+        body: JSON.stringify(progressId ? { ...sent, progressId } : sent),
         headers: requestHeaders(getToken(), { "Content-type": "application/json; charset=UTF-8" }),
     })
         .then(readReply)

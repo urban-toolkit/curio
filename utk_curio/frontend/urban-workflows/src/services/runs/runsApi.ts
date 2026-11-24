@@ -43,6 +43,12 @@ export interface RunStep {
   installWarnings?: DatasetInstallWarning[];
   /** Read by `getRun`: whether the node still holds the code this step ran. */
   codeCurrent?: boolean;
+  /**
+   * When the output this step reused was made: its key held what its maker's
+   * runs kept, so it ran nothing, as a dashboard visitor's step. Null for a
+   * step that ran.
+   */
+  reusedMadeAt?: string | null;
 }
 
 export interface Run {
@@ -100,6 +106,8 @@ export type RunEvent =
       reply?: Record<string, unknown>;
       /** The outputs the run could not install, as a save's `dataset_install_warnings`. */
       installWarnings?: DatasetInstallWarning[];
+      /** When the output a step that reused one was made, in a run rebuilt from its record. */
+      reusedMadeAt?: string;
       startedAt?: number;
       finishedAt?: number;
       durationMs?: number;
