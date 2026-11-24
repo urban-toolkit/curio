@@ -1081,6 +1081,42 @@ class TestWebTools:
         # It names the actual fault, the missing placeholder.
         assert "CURIO_SEARCH_URL" in text and "{q}" in text
 
+    def _search_answered(self, monkeypatch, status, body, content_type="application/json"):
+        from utk_curio.backend.app.agents.infrastructure import egress
+        from utk_curio.backend.app.agents.infrastructure.egress import EgressResult
+
+        monkeypatch.delenv("CURIO_SEARCH_URL", raising=False)
+        monkeypatch.setattr(egress, "fetch", lambda url, **kw: EgressResult(
+            url=url, final_url=url, status=status, content_type=content_type, body=body))
+        return tools.execute_read_tool(
+            "web.search", user_key="42", project_id="none", target=None,
+            params={"q": "green roofs Chicago temperature"},
+        )
+
+    def test_a_provider_that_answers_with_no_results_is_named_with_its_status(self, monkeypatch):
+        """Skill test run 45341666171 (11-24): from 08:11 to 08:14 and 10:13 to 10:25 UTC
+        every search on the default provider failed, and the agents were told only
+        "the search provider failed: Expecting value: line 1 column 1 (char 0)". An
+        answer that is not search results names its status and what came instead,
+        and says what to do."""
+        status, text = self._search_answered(monkeypatch, 202, "")
+        assert status == "error"
+        assert "Expecting value" not in text
+        assert "202" in text and "an empty answer" in text
+        assert "search again later" in text and "web.fetch" in text
+
+    def test_a_provider_page_that_is_not_json_is_named_too(self, monkeypatch):
+        status, text = self._search_answered(
+            monkeypatch, 200, "<html><body>Too many requests</body></html>", content_type="text/html")
+        assert status == "error"
+        assert "Expecting value" not in text
+        assert "200" in text and "a page that is not JSON" in text
+
+    def test_an_error_status_with_json_is_not_read_as_results(self, monkeypatch):
+        status, text = self._search_answered(monkeypatch, 429, '{"error": "rate limited"}')
+        assert status == "error"
+        assert "429" in text and "web.fetch" in text
+
 
 class TestPackageTools:
     """dev/84: packages.catalog / packages.resolve — thin wrappers over the
