@@ -243,7 +243,7 @@
     },
     {
       "category": "computation",
-      "description": "Project the (Geo)DataFrame down to just the gt_65 column \u2014 used to feed a boxplot view that summarises the older-adult-population distribution independently of UTCI.",
+      "description": "Project the (Geo)DataFrame down to just the gt_65 column, used to feed a boxplot view that summarises the older-adult-population distribution independently of UTCI.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,

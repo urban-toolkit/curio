@@ -4,10 +4,10 @@ Nodes for weather data ingestion and thermal-comfort analysis: ERA5 meteorologic
 loading, UTCI computation via `pythermalcomfort`, raster I/O via `rasterio`, raster
 zonal statistics via `rasterstats`, and census/polygon reprojection.
 
-This package backs the [Heterogeneous data + linked views](../../docs/examples/09-heterogeneous-data-linked-views.md)
-example (Milan urban heat exposure). It is auto-seeded when Curio starts with
-`--with-examples`, because that seeded workflow needs its Python
-dependencies.
+Its seven nodes make every step of the [Heterogeneous data + linked views](../../docs/examples/09-heterogeneous-data-linked-views.md)
+example (Milan urban heat exposure) before its views. It is auto-seeded when
+Curio starts with `--with-examples`, because that seeded workflow uses its
+nodes and their Python dependencies.
 
 ## Kinds
 
@@ -62,15 +62,17 @@ its chip:
 
 ## Demo wiring
 
+As example 09 wires them, the circle each input arrives on in brackets:
+
 ```
-[ Milan MRT Loader ]      ──raster──┬──► [ UTCI from raster + weather ] ──json──┐
-[ ERA5 Milan Weather ]    ──df─────┘                                            │
-                                                                                ▼
-[ Milan Census Polygons ] ──gdf─────────────────────────────────────► [ UTCI Zonal Mean ]
-                                                                                │
-                                                          ┌─────────────────────┤
-                                                          ▼                     ▼
-                                        [ Reproject to EPSG:3395 ]   [ Project gt_65 column ]
+[ Milan MRT Loader ] ──raster─► input_0 [ UTCI from raster + weather ]
+[ ERA5 Milan Weather ] ──df───► input_1 [ UTCI from raster + weather ]
+
+[ Milan MRT Loader ] ──raster─────────────────► input_0 [ UTCI Zonal Mean ]
+[ UTCI from raster + weather ] ──(grid, shape)─► input_1 [ UTCI Zonal Mean ]
+[ Milan Census Polygons ] ──gdf───────────────► input_2 [ UTCI Zonal Mean ]
+
+[ UTCI Zonal Mean ] ──gdf─► [ Reproject census to EPSG:3395 ] ──gdf─► [ Project gt_65 column ]
 ```
 
 Multi-input nodes read their input circles in order (`[!! input_0 !!]`,
