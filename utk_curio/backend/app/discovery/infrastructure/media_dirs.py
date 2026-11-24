@@ -298,7 +298,8 @@ def run_folder_beside(media_dir: str | None) -> str | None:
 def _link_or_copy(source, target):
     """*target* as a second name of *source*'s file, or a copy of it where
     the two cannot share one (another filesystem): a run writes its files
-    once, so a link is safe."""
+    once, so a link is safe. A copy into another account links a run's files
+    with it (``datasets/install/carry.py``)."""
     import shutil
 
     try:
@@ -306,30 +307,6 @@ def _link_or_copy(source, target):
     except OSError:
         shutil.copy2(source, target)
     return target
-
-
-def link_runs(source_key: str, target_key: str, names) -> list[str]:
-    """Put the account *source_key*'s runs' folders *names* in the account
-    *target_key*'s media folder under the same names, their files linked, not
-    copied (:func:`_link_or_copy`), and the folders handed to the execution
-    user (:func:`grant_to_child`): Save a copy into another account brings
-    the files its saved outputs name (``projects/services``). A folder the
-    source no longer holds, or the target already does, is left out. The
-    names it put in place."""
-    import shutil
-
-    from utk_curio.sandbox.util.collections import KEPT_NAME_RE
-
-    placed = []
-    for name in sorted({name for name in names or () if isinstance(name, str) and KEPT_NAME_RE.match(name)}):
-        source, target = derived_root(source_key, kept=name), derived_root(target_key, kept=name)
-        if not source.is_dir() or target.exists():
-            continue
-        shutil.copytree(source, target, copy_function=_link_or_copy, symlinks=False)
-        for folder in [target, *(path for path in target.rglob("*") if path.is_dir())]:
-            grant_to_child(folder, up_to=media_work_root(target_key).parent)
-        placed.append(name)
-    return placed
 
 
 def last_written(folder: Path) -> float:

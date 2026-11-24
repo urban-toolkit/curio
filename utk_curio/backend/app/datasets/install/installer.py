@@ -182,6 +182,14 @@ def install_dataset_from_catalog(
         except OSError as exc:
             shutil.rmtree(dest, ignore_errors=True)
             raise InstallerError(f"Failed to copy dataset files: {exc}") from exc
+    # What its rows need beyond the table, which publishing kept for it: the
+    # files its nodes derived and the collections they came from (``carry``).
+    from utk_curio.backend.app.datasets.install import carry
+
+    try:
+        carry.from_catalog(dir_name, user_key, dest)
+    except (OSError, ValueError):
+        logger.warning("What the rows of %s name could not be brought with it", dir_name, exc_info=True)
 
     return _index(
         user_key,

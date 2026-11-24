@@ -35,11 +35,12 @@ def record_path(data_path) -> Path:
     return data_path.with_name(data_path.name + MEDIA_SIDECAR_SUFFIX)
 
 
-def _folders_in(value) -> set[str]:
-    """The runs' folders the media URLs anywhere in *value* name."""
+def _refs_in(value) -> set[tuple]:
+    """``(collection, file id, run's folder or None)`` of each media URL
+    anywhere in *value*."""
     from utk_curio.sandbox.util.collections import media_refs
 
-    return {kept for _dataset, _file, kept in media_refs(value) if kept}
+    return {tuple(ref) for ref in media_refs(value)}
 
 
 def _encoded_columns(data_path: Path) -> set[str]:
@@ -78,8 +79,8 @@ def _holds_text(kind) -> bool:
     return False
 
 
-def _folders_in_column(column, *, encoded: bool) -> set[str]:
-    """The runs' folders the media URLs in one batch of one column name: a
+def _refs_in_column(column, *, encoded: bool) -> set[tuple]:
+    """The media URLs one batch of one column holds (:func:`_refs_in`): a
     text column's values, the JSON they hold when *encoded*, or a nested
     column's values. Only the values that hold a media URL are read in
     Python."""
@@ -91,31 +92,30 @@ def _folders_in_column(column, *, encoded: bool) -> set[str]:
     if pa.types.is_dictionary(column.type):
         column = column.cast(column.type.value_type)
     if not (pa.types.is_string(column.type) or pa.types.is_large_string(column.type)):
-        return _folders_in(column.to_pylist())
+        return _refs_in(column.to_pylist())
     # JSON text holds a URL anywhere, a list's or a dict's; a URL column's
     # value is the URL.
     holds = pc.match_substring(column, _MEDIA_URL_START) if encoded else pc.starts_with(column, _MEDIA_URL_START)
-    found: set[str] = set()
+    found: set[tuple] = set()
     for value in pc.unique(pc.filter(column, holds)).to_pylist():
         if not isinstance(value, str):
             continue
         if encoded:
             try:
-                found |= _folders_in(json.loads(value))
+                found |= _refs_in(json.loads(value))
             except ValueError:
-                found |= _folders_in(value)
+                found |= _refs_in(value)
             continue
         ref = media_ref(value)
-        if ref is not None and ref[2]:
-            found.add(ref[2])
+        if ref is not None:
+            found.add(tuple(ref))
     return found
 
 
-def _folders_in_parquet(data_path: Path) -> set[str]:
-    """The runs' folders the rows of a parquet file name: those the media
-    URLs of its text columns name (the JSON its object columns hold,
-    decoded), and of its nested columns that hold text, read a batch at a
-    time."""
+def _refs_in_parquet(data_path: Path) -> set[tuple]:
+    """The media URLs the rows of a parquet file hold: its text columns'
+    (the JSON its object columns hold, decoded), and its nested columns' that
+    hold text, read a batch at a time."""
     import pyarrow.parquet as pq
 
     parquet = pq.ParquetFile(data_path)
@@ -124,30 +124,37 @@ def _folders_in_parquet(data_path: Path) -> set[str]:
         if not wanted:
             return set()
         encoded = _encoded_columns(data_path)
-        found: set[str] = set()
+        found: set[tuple] = set()
         for batch in parquet.iter_batches(columns=wanted):
             for name, column in zip(batch.schema.names, batch.columns):
-                found |= _folders_in_column(column, encoded=name in encoded)
+                found |= _refs_in_column(column, encoded=name in encoded)
         return found
     finally:
         parquet.close()
 
 
-def folders_in_file(data_path) -> set[str]:
-    """The runs' folders the rows of the data file *data_path* name: a
-    parquet file's (:func:`_folders_in_parquet`), or a JSON file's, read
-    whole. Any other file names none. A file that cannot be read names none,
-    and says so in the log."""
+def refs_in_file(data_path) -> set[tuple]:
+    """``(collection, file id, run's folder or None)`` of each media URL the
+    rows of the data file *data_path* hold: a parquet file's
+    (:func:`_refs_in_parquet`), or a JSON file's, read whole. Any other file
+    holds none. A file that cannot be read holds none, and says so in the
+    log."""
     path = Path(data_path)
     suffix = path.suffix.lower()
     try:
         if suffix == ".parquet":
-            return _folders_in_parquet(path)
+            return _refs_in_parquet(path)
         if suffix == ".json":
-            return _folders_in(json.loads(path.read_text(encoding="utf-8")))
-    except Exception:  # noqa: BLE001 - an output Curio cannot read names no folder
-        logger.warning("Could not read which runs' folders the rows of %s name", path, exc_info=True)
+            return _refs_in(json.loads(path.read_text(encoding="utf-8")))
+    except Exception:  # noqa: BLE001 - an output Curio cannot read names no file
+        logger.warning("Could not read which files the rows of %s name", path, exc_info=True)
     return set()
+
+
+def folders_in_file(data_path) -> set[str]:
+    """The runs' folders the rows of the data file *data_path* name
+    (:func:`refs_in_file`)."""
+    return {kept for _dataset, _file, kept in refs_in_file(data_path) if kept}
 
 
 def write_record(data_path) -> set[str]:
@@ -210,9 +217,9 @@ def folders_of_data_file(data_path) -> set[str]:
     return found
 
 
-def _computed_folders(user_key: str, prefix: str) -> set[str]:
-    """The folders the records of the computed datasets of the store
-    *user_key* whose folder names start with *prefix* name."""
+def _recorded_in_store(user_key: str, prefix: str) -> set[str]:
+    """The folders the records of the datasets of the store *user_key* whose
+    folder names start with *prefix* name."""
     from utk_curio.backend.app.datasets.infrastructure.storage import list_user_datasets
 
     found: set[str] = set()
@@ -227,10 +234,12 @@ def _computed_folders(user_key: str, prefix: str) -> set[str]:
 
 
 def account_folders(user_key: str) -> set[str]:
-    """The runs' folders the saved outputs of the account *user_key* name:
-    the records of every computed dataset of its store, a copy of another
-    dataflow's included. None for a key that names no account's store."""
-    return _computed_folders(user_key, "computed.")
+    """The runs' folders the datasets of the account *user_key* name: the
+    records of every dataset of its store, its saved outputs and its copies
+    of another account's (an added published dataset, Save a copy, an Apply
+    of an editor's, ``carry``). None for a key that names no account's
+    store."""
+    return _recorded_in_store(user_key, "")
 
 
 def dataflow_folders(user_key: str, dataflow_id: str) -> set[str]:
@@ -240,4 +249,4 @@ def dataflow_folders(user_key: str, dataflow_id: str) -> set[str]:
     id alone."""
     from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
 
-    return _computed_folders(user_key, f"computed.{sanitize_node_id_segment(str(dataflow_id))}.")
+    return _recorded_in_store(user_key, f"computed.{sanitize_node_id_segment(str(dataflow_id))}.")

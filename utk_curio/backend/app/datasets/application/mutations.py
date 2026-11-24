@@ -788,6 +788,17 @@ class CatalogMutations:
         )
         write_manifest(manifest_obj, dest)
 
+        # ── What its rows need beyond the table ──────────────────────────────
+        # The files its nodes derived and the collections they came from, kept
+        # beside the accounts' folders while it is published, so an account
+        # that adds it reads them (``install/carry.py``).
+        from utk_curio.backend.app.datasets.install import carry
+
+        try:
+            carry.publish(self._paths._user_key(), dest)
+        except OSError:
+            logger.warning("What the rows of %s name could not be kept for it", dir_name, exc_info=True)
+
         item["dirName"] = dir_name
         item["updatedAt"] = iso_from_timestamp()
         if publish_is_computed:
@@ -1546,8 +1557,12 @@ class CatalogMutations:
             except Exception:  # noqa: BLE001
                 pass
 
-        # Remove the catalog directory tree.
+        # Remove the catalog directory tree, and what publishing kept for it
+        # beside the accounts' folders; copies already added keep their own.
         shutil.rmtree(catalog_dir, ignore_errors=True)
+        from utk_curio.backend.app.datasets.install import carry
+
+        carry.unpublish(catalog_dir.name)
 
         # Revert the spec.trill.json ref back to 'imported' origin so the dataset
         # keeps working from the user's store.  Keep dirName so the manifest (and
