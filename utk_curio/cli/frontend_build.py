@@ -70,8 +70,8 @@ def _require_supported_node():
     bugs in Curio. No Node at all is a different case: nothing to be wrong, and
     a Python-only session still works.
 
-    Exits non-zero rather than through clean_shutdown, whose 0 would tell a
-    script that the stack came up. Nothing is running yet to shut down.
+    Exits 1 itself rather than through clean_shutdown: nothing is running
+    yet to shut down.
     """
     if shutil.which("node") is None:
         return
@@ -131,23 +131,23 @@ def check_install_build(dir, force_rebuild=False):
     
     if shutil.which("npm") is None:
         log_error(f"[Frontend] npm not found in PATH. Install Node.js {NODE_MAJOR} from https://nodejs.org, or via conda ('conda install -c conda-forge nodejs={NODE_MAJOR}'), and make sure 'npm' is available in your terminal, then retry.")
-        clean_shutdown()
+        clean_shutdown(1)
         return
 
     if shutil.which("node") is None:
         log_error(f"[Frontend] node not found in PATH. Install Node.js {NODE_MAJOR} from https://nodejs.org, or via conda ('conda install -c conda-forge nodejs={NODE_MAJOR}'), and make sure 'node' is available in your terminal, then retry.")
-        clean_shutdown()
+        clean_shutdown(1)
         return
     node_version_raw, node_major = _read_node_version()
     if node_version_raw is None:
-        clean_shutdown()
+        clean_shutdown(1)
         return
     if node_major < NODE_MAJOR:
         log_error(
             f"[Frontend] Node.js {node_version_raw} detected; requires Node.js {NODE_MAJOR} or newer. "
             f"Upgrade with 'conda install -c conda-forge nodejs={NODE_MAJOR}' or from https://nodejs.org, then retry."
         )
-        clean_shutdown()
+        clean_shutdown(1)
         return
 
     # A tree from another Node major is reinstalled (see NODE_STAMP), and only
@@ -179,10 +179,10 @@ def check_install_build(dir, force_rebuild=False):
                        env=without_backend_only(os.environ))
     except subprocess.CalledProcessError as e:
         log_error(f"[Frontend] 'npm install' failed (exit code {e.returncode}). Check the output above for details.")
-        clean_shutdown()
+        clean_shutdown(1)
     except Exception as e:
         log_error(f"[Frontend] Failed to run 'npm install': {e}")
-        clean_shutdown()
+        clean_shutdown(1)
     else:
         _write_node_stamp(abs_dir, node_major)
 
@@ -203,10 +203,10 @@ def check_install_build(dir, force_rebuild=False):
                            env=without_backend_only(os.environ))
         except subprocess.CalledProcessError as e:
             log_error(f"[Frontend] 'npm run build' failed (exit code {e.returncode}). Check the output above for details.")
-            clean_shutdown()
+            clean_shutdown(1)
         except Exception as e:
             log_error(f"[Frontend] Failed to run 'npm run build': {e}")
-            clean_shutdown()
+            clean_shutdown(1)
         else:
             # Written after a successful build only, so a failed one does not
             # leave a stamp claiming the bundle matches.

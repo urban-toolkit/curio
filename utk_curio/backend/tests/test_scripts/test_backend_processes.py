@@ -258,8 +258,8 @@ def test_the_migration_runs_when_no_flask_command_is_on_path(monkeypatch, tmp_pa
     errors = []
     monkeypatch.setattr(services, "log_error", errors.append)
 
-    def _shutdown():
-        raise AssertionError(f"the migration failed: {errors}")
+    def _shutdown(status=0):
+        raise AssertionError(f"the migration failed ({status}): {errors}")
 
     monkeypatch.setattr(services, "clean_shutdown", _shutdown)
     services.prepare_backend_database()

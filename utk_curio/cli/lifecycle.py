@@ -45,9 +45,10 @@ def signal_handler(sig, frame):
 
 def clean_shutdown(status=0):
     """Stop every server and exit with *status*: 0 when asked to stop, an
-    error when a server stopped by itself. Called on another thread than the
-    main one, it ends that thread, and the main one exits with *status* once
-    it sees the servers stopped (``main.py``)."""
+    error when a server stopped by itself or a start failed, so that a script
+    never reads a failed start as one that came up. Called on another thread
+    than the main one, it ends that thread, and the main one exits with
+    *status* once it sees the servers stopped (``main.py``)."""
     global exit_status
     if status:
         exit_status = status
