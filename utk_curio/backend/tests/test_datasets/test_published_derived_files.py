@@ -20,6 +20,8 @@ the colour its code names and returns the row it derived, as
 - a node of bob's reading a row's ``path`` opens his copy of the file;
 - the collection bob gets lists only the photos the published rows name;
 - carol, invited to edit bob's dataflow, reads its files through it;
+- a hosted guest's add reads them too, and they stay when the server starts,
+  as every guest's add of a shared catalog dataset does;
 - Save a copy into another account points each row's ``path`` at the copy's
   file, and leaves the source account's dataset as it was;
 - alice's Apply of bob's request for his own computed dataset shows her its
@@ -48,6 +50,8 @@ SURVEY = "data.curio.storage-survey"
 EXAMPLE = "source.curio.example-storage@1"
 COLOURS = {"red": (200, 30, 30), "blue": (30, 30, 200)}
 TOKENS = {"bob": "bob-token-for-published-files", "carol": "carol-token-for-published-files"}
+#: Two hosted guests' sign-ins to the shared guest account.
+GUESTS = ("hosted-guest-for-published-files-a", "hosted-guest-for-published-files-b")
 REPO = Path(__file__).resolve().parents[4]
 
 
@@ -452,6 +456,63 @@ def test_an_editor_of_the_adding_accounts_dataflow_reads_its_files_through_it(cl
     )
     shown = _read(client, people.tokens["carol"], photo)
     assert shown.status_code == 200, f"carol reads no photo of bob's copy's collection: {shown.status_code}"
+
+
+def test_a_hosted_guests_add_reads_its_files_and_keeps_them_when_the_server_starts(
+    client, db, people, draw, monkeypatch,
+):
+    """A hosted guest adds alice's published overlay to an example of the
+    shared guest account, and their canvas reads the overlay and the photo of
+    her collection. A guest's add of a shared catalog dataset is the
+    account's, which every guest reads, and stays when the server starts,
+    which drops only what a guest uploaded or downloaded
+    (``user_store.drop_uploads``). So its files are the account's too, not in
+    the guest's own folder, which the start clears: after the start and a
+    week's sweep, another guest reads them."""
+    from datetime import timedelta
+
+    from utk_curio.backend import config
+    from utk_curio.backend.app.common.user_storage import GUEST_KEY
+    from utk_curio.backend.app.datasets.infrastructure.storage import list_user_datasets
+    from utk_curio.backend.app.projects import visitor_copies
+    from utk_curio.backend.app.runs import kept
+    from utk_curio.backend.app.runs.models import naive_utc_now
+    from utk_curio.backend.app.users.models import User, UserSession
+
+    alice = _published_by_alice(client, people, draw)
+    guest = User(username=config.CURIO_SHARED_GUEST_USERNAME, name="Guest", email="guest@test.com", is_guest=True)
+    db.session.add(guest)
+    db.session.flush()
+    db.session.add_all([UserSession(user_id=guest.id, token=token) for token in GUESTS])
+    db.session.commit()
+    # The example is saved as the local guest saves one; the guests come with
+    # sign-in on, as on a Curio started with ``--deploy``
+    # (``test_guest_copy_leaks.example``).
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
+    example = create_project(client, GUESTS[0], name="Example")
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
+    adder, another = GUESTS
+    opened = client.get(f"/api/projects/{example}", query_string={"results": "last"}, headers=auth_headers(adder))
+    assert opened.status_code == 200, opened.get_data(as_text=True)
+    _add(client, adder, example, alice.published)
+    photo = f"/api/datasets/{alice.collection}/media/{alice.photo}?variant=thumb"
+
+    assert _reads(client, adder, alice.row["image_url"], "red"), (
+        f"the guest's add reads no overlay: {_read(client, adder, alice.row['image_url']).status_code}"
+    )
+    shown = _read(client, adder, photo)
+    assert shown.status_code == 200, f"the guest's add reads no photo of alice's collection: {shown.status_code}"
+
+    visitor_copies.drop_all()
+    kept.prune(now=naive_utc_now() + timedelta(days=8))
+    kept.sweep_kept_media(now=time.time() + 8 * 24 * 3600)
+    held = [path.name for path in list_user_datasets(GUEST_KEY) if path.name.split("@", 1)[0] == alice.published]
+    assert held, "the start dropped the guest's add of a shared catalog dataset"
+    assert _reads(client, another, alice.row["image_url"], "red"), (
+        f"the add's overlay went with the start: {_read(client, another, alice.row['image_url']).status_code}"
+    )
+    shown = _read(client, another, photo)
+    assert shown.status_code == 200, f"the add's photo went with the start: {shown.status_code}"
 
 
 # -- Every copy into another account ------------------------------------------
