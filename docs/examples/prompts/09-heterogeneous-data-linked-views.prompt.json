@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/09-heterogeneous-data-linked-views.json",
-    "sha256": "a34f324baaaf3e107c03bb8dce65dea76f98d65f97b57d2c9db9c930a65c40bf",
+    "sha256": "5235959b714bfcd069e145cd84b8a7181088ff378890656e9813ec00de27dbbd",
     "walkthrough": "docs/examples/09-heterogeneous-data-linked-views.md"
   },
-  "prompt": "I want to see where Milan's heat exposure overlaps with its older residents. Three datasets in the Data Catalog hold the inputs: the mean radiant temperature raster, the hourly ERA5 weather table, and the census polygons carrying the over-65 share. Load the raster and the weather table, bundle them together as one input, and compute the universal thermal climate index on the raster grid in a Python step. Then load the census polygons, bundle them with the index result, and compute zonal statistics so each polygon carries its mean index value. Reproject and filter the result, and show it two ways linked to each other: a thematic 3D map with Autark and a Vega-Lite scatter of the index against the older-adult share. The thermal comfort and zonal statistics libraries are not part of the Curio framework, so whatever provides them has to be installed.",
+  "prompt": "I want to see where Milan's heat exposure overlaps with its older residents. Three datasets in the Data Catalog hold the inputs: the mean radiant temperature raster, the hourly ERA5 weather table, and the census polygons carrying the over-65 share. Load the raster and the weather table, bundle them together as one input, and compute the universal thermal climate index on the raster grid at noon. Then load the census polygons, bundle them with the index result, and compute zonal statistics so each polygon carries its mean index value. Reproject and filter the result, and show it two ways linked to each other: a thematic 3D map with Autark and a Vega-Lite scatter of the index against the older-adult share, beside a box plot of the older-adult share alone. The steps that load these three datasets, compute the index and its zonal statistics, reproject the polygons and keep the older-adult column are not part of the standard node set, so whatever provides them needs installing first.",
   "context": null,
   "required": {
     "datasets": [
@@ -29,55 +29,6 @@
         "hasContent": true
       },
       {
-        "ref": "loader2",
-        "type": "curio.builtin/data-loading",
-        "role": "loader",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "loader1",
-        "type": "curio.builtin/data-loading",
-        "role": "loader",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "loader3",
-        "type": "curio.builtin/data-loading",
-        "role": "loader",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis4",
-        "type": "curio.builtin/python-computation",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis3",
-        "type": "curio.builtin/python-computation",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis1",
-        "type": "curio.builtin/python-computation",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis2",
-        "type": "curio.builtin/python-computation",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
         "ref": "visualization2",
         "type": "curio.builtin/vis-vega",
         "role": "visualization",
@@ -90,45 +41,77 @@
         "role": "visualization",
         "executable": false,
         "hasContent": true
+      },
+      {
+        "ref": "loader1",
+        "type": "curio.weather/census-load",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis1",
+        "type": "curio.weather/census-reproject",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.weather/gt65-projection",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader2",
+        "type": "curio.weather/mrt-load",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis3",
+        "type": "curio.weather/utci-compute",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis4",
+        "type": "curio.weather/utci-zonal",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader3",
+        "type": "curio.weather/weather-load",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
       }
     ],
     "edges": [
       {
-        "from": "loader2",
-        "to": "analysis4",
-        "kind": "data",
-        "slot": 1
+        "from": "visualization2",
+        "to": "visualization1",
+        "kind": "interaction"
       },
       {
         "from": "loader1",
-        "to": "analysis3",
+        "to": "analysis4",
         "kind": "data",
         "slot": 2
       },
       {
-        "from": "loader3",
-        "to": "analysis4",
-        "kind": "data"
-      },
-      {
-        "from": "loader3",
-        "to": "analysis3",
-        "kind": "data"
-      },
-      {
-        "from": "analysis4",
-        "to": "analysis3",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "analysis3",
-        "to": "analysis1",
+        "from": "analysis1",
+        "to": "visualization1",
         "kind": "data"
       },
       {
         "from": "analysis1",
-        "to": "visualization1",
+        "to": "visualization2",
         "kind": "data"
       },
       {
@@ -137,19 +120,36 @@
         "kind": "data"
       },
       {
-        "from": "analysis1",
+        "from": "analysis2",
         "to": "visualization3",
         "kind": "data"
       },
       {
-        "from": "analysis2",
-        "to": "visualization2",
+        "from": "loader2",
+        "to": "analysis3",
         "kind": "data"
       },
       {
-        "from": "visualization3",
-        "to": "visualization1",
-        "kind": "interaction"
+        "from": "loader2",
+        "to": "analysis4",
+        "kind": "data"
+      },
+      {
+        "from": "analysis3",
+        "to": "analysis4",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis4",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "loader3",
+        "to": "analysis3",
+        "kind": "data",
+        "slot": 1
       }
     ],
     "sources": {
@@ -164,22 +164,24 @@
   },
   "intents": [
     {
-      "ref": "loader1",
+      "ref": "loader2",
       "mustMention": [
         "radiant",
         "raster",
         "temperature"
-      ]
-    },
-    {
-      "ref": "loader2",
-      "mustMention": [
-        "weather",
-        "era5"
-      ]
+      ],
+      "outputKind": "raster"
     },
     {
       "ref": "loader3",
+      "mustMention": [
+        "weather",
+        "era5"
+      ],
+      "outputKind": "dataframe"
+    },
+    {
+      "ref": "loader1",
       "mustMention": [
         "census",
         "polygon"
@@ -199,7 +201,16 @@
       "mustMention": [
         "zonal",
         "statistic"
-      ]
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "analysis1",
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "analysis2",
+      "outputKind": "dataframe"
     }
   ],
   "execution": {
@@ -214,7 +225,7 @@
     "tier": "T2",
     "needs": [
       "interaction-edge",
-      "package-enlist:dependencies"
+      "package-enlist:templates"
     ],
     "skip": []
   },
@@ -250,5 +261,5 @@
     ],
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids."
   },
-  "notes": "The python-library resolution route: every node is a builtin template, but the libraries live in a package manifest."
+  "notes": "The template resolution route: every step but the views is a node of the Weather package, whose loaders, index, zonal mean, reprojection and gt_65 column the plan cannot name until the package is enlisted."
 }
