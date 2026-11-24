@@ -18,6 +18,23 @@ function replyHasOutput(reply: any): boolean {
 }
 
 /**
+ * When the result a run reused was made (`reused.madeAt`), for a node whose
+ * key held what its maker's last run kept, so it ran nothing, as a dashboard
+ * visitor's step does; null for a result its run made.
+ */
+function reusedMadeAt(reply: any): string | null {
+    const madeAt = reply?.reused?.madeAt;
+    return typeof madeAt === "string" && madeAt ? madeAt : null;
+}
+
+/** What a node whose run reused a kept result shows in place of its logs. */
+export function reusedLine(madeAt: string): string {
+    const when = new Date(madeAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+    return `Reused the result of ${when}: same code, inputs and datasets, so the node did not run. ` +
+        "Play the node to run it again.";
+}
+
+/**
  * The node's outcome from a run's reply, and the artifact it passes downstream
  * (``null`` when the run produced none, which is a failure).
  */
@@ -43,8 +60,10 @@ export function executionResultOutput(result: any): { shown: NodeOutput; artifac
         : "";
 
     if (hasOutput) {
-        let outputContent = stdoutBlock;
-        if (result.stderr) {
+        const reused = reusedMadeAt(result);
+        // A reused result printed nothing this time: say what it is instead.
+        let outputContent = reused ? reusedLine(reused) : stdoutBlock;
+        if (!reused && result.stderr) {
             outputContent += (outputContent ? "\n" : "") + "stderr:\n" + result.stderr;
         }
         outputContent += (outputContent ? "\n" : "") + "Saved to file: " + result.output.path;
@@ -79,6 +98,8 @@ export function recordExecProvenance(
     },
 ): void {
     const { reply } = run;
+    // A reused result is no run: the run that made it was recorded then.
+    if (reusedMadeAt(reply)) return;
     // The reply names what the run read, and what it returned, by one
     // `dataType` each (backend/app/execution/node_exec.py).
     const typesInput = run.input != "" ? reply.input?.dataType : undefined;

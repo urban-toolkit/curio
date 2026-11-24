@@ -76,17 +76,23 @@ export function showRunning(
   return true;
 }
 
-/** The reply a step stands for when the run kept only its tails: an engine-made failure, or a record. */
+/**
+ * The reply a step stands for when the run kept only its tails: an
+ * engine-made failure, or a record. A step that reused what its maker's runs
+ * kept says when that was made (`reused`), as its live reply did.
+ */
 export function replyFromTails(step: {
   output?: { path?: string; dataType?: string } | null;
   stdoutTail?: string | null;
   stderrTail?: string | null;
+  reusedMadeAt?: string | null;
 }): any {
   const path = step.output?.path ?? "";
   return {
     stdout: step.stdoutTail ? [step.stdoutTail] : [],
     stderr: step.stderrTail ?? "",
     output: { path, dataType: step.output?.dataType ?? "str" },
+    ...(step.reusedMadeAt ? { reused: { madeAt: step.reusedMadeAt } } : {}),
   };
 }
 
@@ -97,6 +103,7 @@ export function replyFromRecord(step: RunStep): any {
       output: step.outputPath ? { path: step.outputPath, dataType: step.outputType ?? undefined } : null,
       stdoutTail: step.stdoutTail,
       stderrTail: step.stderrTail,
+      reusedMadeAt: step.reusedMadeAt,
     }),
     missingModule: step.missingModule ?? null,
   };

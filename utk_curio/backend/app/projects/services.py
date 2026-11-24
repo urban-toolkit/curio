@@ -828,17 +828,22 @@ def _merge_outputs(
     manifest: Optional[dict],
     *,
     keep_unsent: Callable[[str], bool],
+    produced_at: Optional[str] = None,
 ) -> tuple[List[OutputRef], List[OutputRef], Dict[str, Optional[str]]]:
     """Merge *incoming* output refs into the manifest's, node by node.
 
     For a node in both, the newer output wins by ``produced_at``, so a tab that
     never saw a run on the server cannot put back the older output it holds.
-    Returns the merged refs, the incoming refs that won (the only ones to
-    install, so an older output never overwrites a newer installed copy), and
-    each node's ``produced_at``. The manifest's output for a node *incoming*
-    does not name stays when *keep_unsent* says so for that node: every one
-    when a run records one node, and those :func:`_kept_when_unsent` keeps when
-    a save names the outputs its canvas holds.
+    An incoming output is as old as its artifact (:func:`_produced_at`) unless
+    *produced_at* says when it became its node's: a step of a run on the server
+    that reused what its node's last run kept, whose artifact is older than an
+    output recorded since. Returns the merged refs, the incoming refs that won
+    (the only ones to install, so an older output never overwrites a newer
+    installed copy), and each node's ``produced_at``. The manifest's output for
+    a node *incoming* does not name stays when *keep_unsent* says so for that
+    node: every one when a run records one node, and those
+    :func:`_kept_when_unsent` keeps when a save names the outputs its canvas
+    holds.
     """
     existing = _manifest_entries(manifest)
     merged: List[OutputRef] = []
@@ -851,7 +856,7 @@ def _merge_outputs(
         if prior is not None and prior["filename"] == ref.filename:
             stamp = prior.get("produced_at")
         else:
-            stamp = _produced_at(ref.filename)
+            stamp = produced_at or _produced_at(ref.filename)
         if prior is not None and prior["filename"] != ref.filename and _is_newer(
             prior.get("produced_at"), stamp
         ):
@@ -1529,7 +1534,7 @@ def update_project(
 
 def record_node_outputs(
     user, project_id: str, outputs: List[OutputRef], warnings: Optional[list] = None,
-    *, sign_in: Optional[str] = None, canvas: bool = False,
+    *, sign_in: Optional[str] = None, canvas: bool = False, reused_at: Optional[str] = None,
 ) -> List[OutputRef]:
     """Record outputs, without a save: those a run on the server produced,
     node by node, or those a canvas holds (*canvas*), which its tab sends after
@@ -1537,9 +1542,13 @@ def record_node_outputs(
 
     Each output is installed in the account's Data Catalog and replaces its
     node's entry in the manifest. A newer output already on record for a node
-    is kept. After a run's record every other node's entry stays; after a
-    canvas's, one stays while its node is in the dataflow and its output is one
-    the dataflow records (:func:`_kept_when_unsent`). Nothing else is written:
+    is kept. *reused_at*, which only a run on the server passes, for a step
+    that reused what its node's last run kept, is when that output became its
+    node's again: its artifact is older than an output recorded since, which
+    it replaces all the same (:func:`_merge_outputs`). After a run's record
+    every other node's entry stays; after a canvas's, one stays while its node
+    is in the dataflow and its output is one the dataflow records
+    (:func:`_kept_when_unsent`). Nothing else is written:
     not the dataflow, and not the project's revision. *sign_in*: the caller's,
     for outputs a request names, so one another account's run made is not
     installed (:func:`_readable_sent_outputs`). Returns the refs the manifest
@@ -1559,6 +1568,7 @@ def record_node_outputs(
         output_refs, refs_to_install, produced_at = _merge_outputs(
             list(outputs), manifest,
             keep_unsent=_kept_when_unsent(spec, spec, ukey) if canvas else (lambda _node_id: True),
+            produced_at=reused_at,
         )
         _auto_install_computed_outputs(
             ukey, refs_to_install, spec, install_warnings,

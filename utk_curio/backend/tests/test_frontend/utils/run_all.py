@@ -335,15 +335,30 @@ def wait_for_server_part_to_end(page, token: str, project_id: str, *,
 # Which nodes went to the sandbox
 # ---------------------------------------------------------------------------
 
+def _reached_the_sandbox(request) -> bool:
+    """Whether the node run *request* posted reached the sandbox: its reply
+    reused nothing (a request of a Run All may be answered with what the
+    node's last run kept, ``reused``). A request with no reply to read counts
+    as sent."""
+    try:
+        response = request.response()
+        reply = response.json() if response is not None else {}
+    except Exception:  # noqa: BLE001 - a reply that cannot be read counts as a run
+        return True
+    return not (isinstance(reply, dict) and reply.get("reused"))
+
+
 class SandboxRuns:
     """The Python nodes sent to the sandbox from the moment this is made.
 
     A run goes to the server for a signed-in owner and stays in the page
     otherwise (``FlowProvider``'s ``runsOnServer``), so this reads both: each
-    ``/processPythonCode`` post the page makes, and each step a new run on the
-    server executed (role ``run``, ended ``ok`` or ``error``). Without a
-    *token* and *project_id* only the page is read. After :meth:`stop`,
-    ``server_steps`` holds every step of those runs, as the runs API gives it.
+    ``/processPythonCode`` post the page makes whose reply reused nothing,
+    and each step a new run on the server executed (role ``run``, ended
+    ``ok`` or ``error``, with no ``reusedMadeAt``: a step that reused what
+    its node's last run kept sent the sandbox nothing). Without a *token* and
+    *project_id* only the page is read. After :meth:`stop`, ``server_steps``
+    holds every step of those runs, as the runs API gives it.
     """
 
     def __init__(self, page, token: str | None = None, project_id: str | None = None):
@@ -351,7 +366,7 @@ class SandboxRuns:
         self._backend = backend_url_of(page)
         self._token = token
         self._project_id = project_id
-        self._from_page: list[str] = []
+        self._from_page: list[tuple[str, object]] = []
         self.server_steps: list[dict] = []
         self._earlier_runs = {run["id"] for run in self._runs()}
         page.on("request", self._record)
@@ -363,7 +378,7 @@ class SandboxRuns:
             body = json.loads(request.post_data or "{}")
         except ValueError:
             body = {}
-        self._from_page.append(str(body.get("nodeId")))
+        self._from_page.append((str(body.get("nodeId")), request))
 
     def _runs(self) -> list[dict]:
         if not (self._token and self._project_id):
@@ -384,8 +399,9 @@ class SandboxRuns:
         """Stop reading the page; the node ids sent, the page's first, then each new run's, oldest run first."""
         self._page.remove_listener("request", self._record)
         self.server_steps = self.new_steps()
+        on_page = [node for node, request in self._from_page if _reached_the_sandbox(request)]
         on_server = [
             step["nodeId"] for step in self.server_steps
-            if step["role"] == "run" and step["status"] in ("ok", "error")
+            if step["role"] == "run" and step["status"] in ("ok", "error") and not step.get("reusedMadeAt")
         ]
-        return self._from_page + on_server
+        return on_page + on_server
