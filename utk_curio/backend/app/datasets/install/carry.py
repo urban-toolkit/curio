@@ -328,22 +328,23 @@ def into_account(source, target_key: str, folders: Iterable[Path]) -> None:
             point_paths_at(file, target_key)
 
 
-def publish(publisher_key: str, entry: Path) -> None:
+def publish(publisher_key: str | None, entry: Path) -> None:
     """Keep for the published dataset *entry*, a folder of the shared
     catalog, what its rows need beyond its table, in its companion
     (:func:`companion`): every data file's record of the runs' folders its
     rows name (``media_records.write_record``), those folders linked from the
     media folder of the account *publisher_key*, and each collection the rows
     name that the shared catalog does not hold, with only the files they name.
-    It replaces what an earlier publish of it kept."""
+    With no publisher, an entry no account's runs made, only the records. It
+    replaces what an earlier publish of it kept."""
     from utk_curio.backend.app.datasets.install import media_records
     from utk_curio.sandbox.util.collections import KEPT_MEDIA
 
     data_files = _data_files(entry)
     for file in data_files:
         media_records.write_record(file)
-    needs = _needs(data_files)
-    source = Account(publisher_key)
+    needs = _needs(data_files) if publisher_key else _Needs()
+    source = Account(publisher_key) if publisher_key else None
     target = companion(entry.name)
     staging = target.with_name(f".{target.name}.{uuid.uuid4().hex[:8]}.partial")
     try:

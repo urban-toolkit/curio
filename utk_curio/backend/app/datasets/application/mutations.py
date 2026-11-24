@@ -800,7 +800,7 @@ class CatalogMutations:
         from utk_curio.backend.app.datasets.install import carry
 
         try:
-            carry.publish(self._paths._user_key(), dest)
+            carry.publish(self._paths._user_key() if self.user is not None else None, dest)
         except OSError:
             logger.warning("What the rows of %s name could not be kept for it", dir_name, exc_info=True)
 
