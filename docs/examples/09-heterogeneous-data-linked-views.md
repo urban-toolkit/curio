@@ -94,6 +94,18 @@ The raster goes into this node's first input circle and the meteo table into its
 The output is the UTCI grid as a list of rows plus its `[width, height]` shape, as a tuple, so the zonal mean can place the grid on the raster.
 
 ```python
+"""UTCI from raster + weather.
+
+Input: the mean radiant temperature raster on input_0, as Milan MRT Loader
+returns it, and the hourly weather table on input_1, as ERA5 Milan Weather
+returns it. Returns `(grid, shape)`: the Universal Thermal Climate Index of
+each cell, as a list of rows, and the grid's `[width, height]`, which UTCI
+Zonal Mean takes with the raster.
+
+The Widgets tab sets the hour, the weather table's `it`, whose weather is
+used, and how many times its width and height the raster is read at.
+"""
+
 from weather_utci import utci_grid
 
 return utci_grid(
@@ -108,6 +120,14 @@ return utci_grid(
 The node's three input circles take the original raster (for its CRS / transform), the UTCI tuple from Step 4, and the census polygons from Step 3, read as `[!! input_0 !!]`, `[!! input_1 !!]` and `[!! input_2 !!]`. Its code calls `utci_zonal_mean`, of the module `weather_census`, which runs `rasterstats.zonal_stats` over the grid and gives each polygon its geometry, its `mean` UTCI and its `gt_65`. A pixel with no value counts toward no mean.
 
 ```python
+"""UTCI Zonal Mean.
+
+Input, in order: the mean radiant temperature raster on input_0, which places
+the grid; UTCI from raster + weather's `(grid, shape)` on input_1; the census
+polygons on input_2, with their `gt_65`. Returns the polygons' geometry, `mean`,
+the mean UTCI over each polygon, and `gt_65`.
+"""
+
 from weather_census import utci_zonal_mean
 
 return utci_zonal_mean([!! input_0 !!], [!! input_1 !!], [!! input_2 !!])
@@ -118,6 +138,15 @@ return utci_zonal_mean([!! input_0 !!], [!! input_1 !!], [!! input_2 !!])
 The node's Widgets tab sets **Source CRS**, here 32632, the UTM zone the census polygons are in, and **Target CRS**, here 3395, the CRS the views draw them in. Its call, `reproject_census`, reprojects the polygons, drops those whose mean UTCI is not above 0, and names the table `census` for the rest of the dataflow.
 
 ```python
+"""Reproject census to EPSG:3395.
+
+Input: UTCI Zonal Mean's polygons. Returns them in the target CRS, those whose
+mean UTCI is not above 0 left out, named `census` for the views.
+
+The Widgets tab sets the CRS the census polygons are in and the CRS the views
+draw them in, each as its EPSG code.
+"""
+
 from weather_census import reproject_census
 
 return reproject_census(
@@ -179,6 +208,12 @@ A Vega-Lite scatter of `gt_65` vs `mean` UTCI. Its interval selection colors the
 The **Project gt_65 column** node keeps only `gt_65`, with `gt65_column`, and a Vega-Lite boxplot reads from it. This view summarises the distribution of older-adult counts independent of UTCI.
 
 ```python
+"""Project gt_65 column.
+
+Input: the census polygons, as Reproject census to EPSG:3395 returns them.
+Returns their `gt_65` column alone, for a chart of the residents over 65.
+"""
+
 from weather_census import gt65_column
 
 return gt65_column(input_0)
