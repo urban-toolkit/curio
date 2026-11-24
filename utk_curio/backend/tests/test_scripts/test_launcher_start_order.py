@@ -22,11 +22,15 @@ from utk_curio.cli import frontend_build, lifecycle, logs
 
 
 class _Server:
-    """A started server, as clean_shutdown and a failed check handle it."""
+    """A started server, running, as the launcher's watch, clean_shutdown and
+    a failed check handle it."""
 
     def __init__(self, name):
         self.args = [name]
         self.calls = []
+
+    def poll(self):
+        return None
 
     def terminate(self):
         self.calls.append("terminate")
@@ -72,7 +76,6 @@ def _start(monkeypatch, *, must_build, deploy=True, failing_check=None, server="
     monkeypatch.setattr(lifecycle, "processes", [])
     monkeypatch.setattr(lifecycle, "exit_status", 0)
     monkeypatch.setattr(lifecycle, "shutdown_flag", flag)
-    monkeypatch.setattr(launcher, "shutdown_flag", flag)
     monkeypatch.setattr(launcher, "signal", SimpleNamespace(
         SIGINT=signal.SIGINT, SIGTERM=signal.SIGTERM, signal=lambda *args: None,
     ))
@@ -94,8 +97,8 @@ def _start(monkeypatch, *, must_build, deploy=True, failing_check=None, server="
     monkeypatch.setattr(launcher, "threading", SimpleNamespace(
         Thread=lambda **kwargs: SimpleNamespace(start=lambda: None),
     ))
-    # The wait loop's first sleep ends the start through clean_shutdown.
-    monkeypatch.setattr(launcher, "time", SimpleNamespace(sleep=_interrupted))
+    # The wait's first sleep ends the start through clean_shutdown.
+    monkeypatch.setattr(lifecycle, "time", SimpleNamespace(sleep=_interrupted))
 
     with pytest.raises(SystemExit) as exited:
         launcher.main()

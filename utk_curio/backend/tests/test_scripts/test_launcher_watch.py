@@ -68,7 +68,6 @@ def _start(monkeypatch, *, server, deploy, exits):
     monkeypatch.setattr(lifecycle, "processes", [])
     monkeypatch.setattr(lifecycle, "exit_status", 0)
     monkeypatch.setattr(lifecycle, "shutdown_flag", flag)
-    monkeypatch.setattr(launcher, "shutdown_flag", flag)
     monkeypatch.setattr(launcher, "signal", SimpleNamespace(
         SIGINT=signal.SIGINT, SIGTERM=signal.SIGTERM, signal=lambda *args: None,
     ))
@@ -87,9 +86,8 @@ def _start(monkeypatch, *, server, deploy, exits):
     monkeypatch.setattr(launcher, "threading", SimpleNamespace(
         Thread=lambda **kwargs: SimpleNamespace(start=lambda: None),
     ))
-    # The wait's sleep, wherever the launcher keeps it, is where Ctrl-C lands.
-    for module in (launcher, lifecycle):
-        monkeypatch.setattr(module, "time", SimpleNamespace(sleep=_interrupted), raising=False)
+    # The wait's first sleep is where Ctrl-C lands.
+    monkeypatch.setattr(lifecycle, "time", SimpleNamespace(sleep=_interrupted))
 
     with pytest.raises(SystemExit) as exited:
         launcher.main()

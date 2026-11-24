@@ -159,11 +159,15 @@ def test_a_client_connected_to_the_port_is_left_alone(held_port):
 
 
 class _Server:
-    """A started server, as clean_shutdown handles it."""
+    """A started server, running, as the launcher's watch and clean_shutdown
+    handle it."""
 
     def __init__(self, name):
         self.args = [name]
         self.calls = []
+
+    def poll(self):
+        return None
 
     def terminate(self):
         self.calls.append("terminate")
@@ -191,7 +195,6 @@ def test_an_interrupt_in_the_wait_loop_shuts_the_servers_down(monkeypatch):
     monkeypatch.setattr(lifecycle, "processes", [])
     monkeypatch.setattr(lifecycle, "exit_status", 0)
     monkeypatch.setattr(lifecycle, "shutdown_flag", flag)
-    monkeypatch.setattr(launcher, "shutdown_flag", flag)
     monkeypatch.setattr(launcher, "signal", SimpleNamespace(
         SIGINT=signal.SIGINT, SIGTERM=signal.SIGTERM, signal=lambda *args: None,
     ))
@@ -209,8 +212,8 @@ def test_an_interrupt_in_the_wait_loop_shuts_the_servers_down(monkeypatch):
     monkeypatch.setattr(launcher, "threading", SimpleNamespace(
         Thread=lambda **kwargs: SimpleNamespace(start=lambda: None),
     ))
-    # The wait loop's first sleep is where the interrupt lands.
-    monkeypatch.setattr(launcher, "time", SimpleNamespace(sleep=_interrupted))
+    # The wait's first sleep is where the interrupt lands.
+    monkeypatch.setattr(lifecycle, "time", SimpleNamespace(sleep=_interrupted))
 
     with pytest.raises(SystemExit) as exited:
         launcher.main()
