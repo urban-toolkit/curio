@@ -20,7 +20,9 @@ browser's Run All asks it too, saying ``reuseKept``.
 - an editor's first Run All reuses none of the owner's outputs, and his second
   reuses his first one's;
 - a reused output is saved as a run's is: a Save turned on since the first
-  run, or a node played with other code in between and set back;
+  run, or a node played with other code in between and set back, whose
+  reused output the dataflow saves again over the newer one, through the
+  real record on outputs the store holds;
 - an editor's key holds the owner's packages: once she installs one, his
   reopen shows none of his results and his next Run All runs every node;
 - a reused step counts no node run and adds no runtime journal entry;
@@ -103,6 +105,9 @@ class Sandbox:
         self.made: dict = {}
         self.forgotten: list = []
         self.other: list = []
+        #: Whether a run writes its output to the store, as a real run does
+        #: (the ``stored`` fixture), rather than only naming one.
+        self.real = False
 
     def sent(self) -> list[str]:
         """The nodes sent to the sandbox to run, in order."""
@@ -123,7 +128,15 @@ class Sandbox:
             (folder / f"{node}.png").write_bytes(b"\x89PNG derived")
         with self.lock:
             self.runs.append((path, node))
-            made = f"art-{node}-{len(self.runs)}"
+            if self.real:
+                import pandas as pd
+
+                from utk_curio.backend.tests.test_datasets.computed_test_helpers import store_sandbox_artifact
+
+                # Named by the clock, as every run's output is (``{ms}_{random}``).
+                made = store_sandbox_artifact(pd.DataFrame({"node": [node], "turn": [len(self.runs)]}), node_id=node)
+            else:
+                made = f"art-{node}-{len(self.runs)}"
             self.made[body["session_id"]] = made
             self.bodies[node] = body
         data_type = "list" if path == "/execJs" and not found else "dataframe"
@@ -153,6 +166,19 @@ def sandbox(monkeypatch):
     monkeypatch.setattr(kept, "sandbox_request", fake.sessions)
     yield fake
     jobs.REGISTRY.reset()
+
+
+@pytest.fixture()
+def stored(sandbox, tmp_curio, monkeypatch):
+    """The fake sandbox with its runs' outputs written to the store, so a run
+    installs and records them as a real run does. Asked for before the app."""
+    from utk_curio.sandbox.util.db import release_connection
+
+    release_connection()
+    monkeypatch.setenv("CURIO_SHARED_DATA", str(tmp_curio / ".curio" / "data"))
+    sandbox.real = True
+    yield sandbox
+    release_connection()
 
 
 @pytest.fixture()
@@ -442,6 +468,50 @@ def test_a_node_played_with_other_code_then_set_back_saves_the_output_its_first_
     assert _outputs(back) == first
     drawn = [artifact for node, artifact in saved.recorded if node == "draw"]
     assert drawn[-1] == first["draw"], f"the dataflow saved {drawn[-1]!r}, not the output draw shows"
+
+
+def _edit_code(user, project_id, node_id, content):
+    """*node_id*'s code set to *content* as a canvas edits it, in the
+    dataflow's doc, with no save: its saved output stays on record."""
+    from utk_curio.backend.app.collaboration import dataflow_docs
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    ukey = _user_dir_key(user)
+    spec = dataflow_docs.live(ukey, project_id)
+    for node in spec["dataflow"]["nodes"]:
+        if node["id"] == node_id:
+            node["content"] = content
+    dataflow_docs.write(ukey, project_id, spec, dataflow_docs.person(ukey, "edit"))
+
+
+def _saved(client, token, project_id) -> dict:
+    """``{node: output}`` the dataflow's saved outputs, as a load without its
+    last results gives them."""
+    resp = client.get(f"/api/projects/{project_id}", headers=auth_headers(token))
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    return {output["node_id"]: output["filename"] for output in resp.get_json()["outputs"]}
+
+
+def test_a_reused_output_is_the_dataflows_saved_output_again_after_a_newer_one(stored, client, user_and_token):
+    """Through the real record, on outputs the store holds: a played with
+    other code saves the newer output; set back, a Run All reuses the first
+    run's, and the dataflow saves that one again, though its artifact is the
+    older (``record_node_outputs``'s ``reused_at``)."""
+    user, token = user_and_token
+    project_id = _create(client, token, [_node("a", "return 1", saveOutputDataset=True)])
+    first = _outputs(_run(client, token, project_id))["a"]
+    assert _saved(client, token, project_id) == {"a": first}
+    _edit_code(user, project_id, "a", "# node a\n# in blue\nreturn 1")
+    played = _outputs(_run(client, token, project_id, target="a"))["a"]
+    assert played != first and _saved(client, token, project_id) == {"a": played}
+    _edit_code(user, project_id, "a", "# node a\nreturn 1")
+
+    back = _run(client, token, project_id)
+
+    assert _outputs(back)["a"] == first and _reused(back)["a"], back
+    assert _saved(client, token, project_id) == {"a": first}, (
+        "the dataflow kept the played output as saved, not the reused one its node shows"
+    )
 
 
 # ---------------------------------------------------------------------------

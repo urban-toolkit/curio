@@ -540,6 +540,10 @@ def _run_thread(
                     step.node, default_save, sources, packages,
                 ):
                     warnings: list = []
+                    # A step that reused its node's kept output makes it the
+                    # node's output now: it replaces one recorded since, from a
+                    # newer artifact (the node played with other code).
+                    reused = isinstance((payload.get("reply") or {}).get("reused"), dict)
                     try:
                         record_node_outputs(db.session.get(User, user_id), project_id, [OutputRef(
                             node_id=step.node_id,
@@ -547,7 +551,7 @@ def _run_thread(
                             data_type=output.get("dataType"),
                             # The name its play installed the output under.
                             node_name=step.label,
-                        )], warnings=warnings)
+                        )], warnings=warnings, **({"reused_at": _now_stamp()} if reused else {}))
                     except Exception:  # noqa: BLE001 - the run goes on; the output is just not recorded
                         log.exception("run %s could not record the output of %s", run_id, step.node_id)
                     if warnings:
@@ -575,6 +579,11 @@ def _run_thread(
         raise
     finally:
         jobs.drop_cancel_flag(run_id)
+
+
+def _now_stamp() -> str:
+    """Now, as a dataflow's manifest dates an output (``produced_at``)."""
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
 
 def _moment(text) -> Optional[datetime]:
