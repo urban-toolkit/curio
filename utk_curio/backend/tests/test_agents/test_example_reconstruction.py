@@ -201,9 +201,9 @@ class TestReachability:
             "10-street-vision-cv-analysis", "15-vega-lite-spec-forms-and-catalogs", "25-spatial-join-operations",
             # Its Settings node's widgets, and its Spatial Join's.
             "32-sage-idot-rail-crossings",
-            # The settings of Media's and SAM 3's nodes.
-            "21-storage-photos-and-videos", "22-storage-audio-recordings", "31-sideseeing-objects-along-a-walk",
-            "33-sideseeing-frames-segments-blocks",
+            # The settings of Media's, SAM 3's and Weather's nodes.
+            "09-heterogeneous-data-linked-views", "21-storage-photos-and-videos", "22-storage-audio-recordings",
+            "31-sideseeing-objects-along-a-walk", "33-sideseeing-frames-segments-blocks",
         }
         for fixture in with_widgets:
             example = _example(fixture)
@@ -623,20 +623,15 @@ class TestResolutionModePackageTemplates:
         assert "model.curio.ddrnet23-slim/image-segmentation" in built
         assert "package.draft.apply" not in driver.applied
 
-
-class TestResolutionModePackageDependencies:
-    """Mode 2, route two -- the different one. Example 09 declares
-    ``curio.weather@1`` while every one of its nodes is a builtin template: the
-    package is there for the python libraries its manifest owns. So nothing is
-    refused at mint; the miss can only appear when code runs, and the fix is
-    the same reviewed enlist. A missing library is never a reason to author a
-    package."""
-
-    def test_the_dependency_package_declares_libraries_no_node_type_needs(self):
-        import json as _json
+    def test_example_09s_steps_are_the_weather_packages_templates(self):
+        """Example 09 declares ``curio.weather@1`` for its templates: its
+        loaders, its index, its zonal mean, its reprojection and its gt_65
+        column are the Weather package's nodes, so its fixture takes this
+        route, not the libraries' one. The package's manifest still owns the
+        libraries its modules import."""
         from pathlib import Path
 
-        manifest = _json.loads(
+        manifest = json.loads(
             (
                 Path(__file__).resolve().parents[4] / "packages/curio.weather@1/manifest.json"
             ).read_text(encoding="utf-8")
@@ -648,11 +643,179 @@ class TestResolutionModePackageDependencies:
             FIXTURE_ROOT / "09-heterogeneous-data-linked-views.prompt.json"
         )
         assert fixture.required["packages"] == ["curio.weather@1"]
+        assert "package-enlist:templates" in fixture.needs
+        assert "package-enlist:dependencies" not in fixture.needs
+        assert sorted(
+            node["type"] for node in fixture.expected["nodes"]
+            if not node["type"].startswith("curio.builtin/")
+        ) == [
+            "curio.weather/census-load", "curio.weather/census-reproject",
+            "curio.weather/gt65-projection", "curio.weather/mrt-load",
+            "curio.weather/utci-compute", "curio.weather/utci-zonal",
+            "curio.weather/weather-load",
+        ]
+
+
+#: The second route's dataflow: its two nodes are builtin templates, and its
+#: Python node imports ``pythermalcomfort``, which the Weather package's
+#: manifest owns and the built-in package's does not. No shipped dataflow
+#: takes this route since example 09's steps became the Weather package's
+#: nodes, so this one does.
+LIBRARY_ROUTE = {
+    "dataflow": {
+        "name": "Thermal comfort at noon",
+        "nodes": [
+            {
+                "id": "noon-weather",
+                "type": "curio.builtin/data-loading",
+                "x": 0,
+                "y": 0,
+                "content": 'return curio_load_data("data.utk.milan-era5-weather")\n',
+                "out": "DEFAULT",
+                "in": "DEFAULT",
+                "goal": "",
+                "metadata": {"keywords": []},
+            },
+            {
+                "id": "noon-comfort",
+                "type": "curio.builtin/python-computation",
+                "x": 645,
+                "y": 0,
+                "content": (
+                    "from pythermalcomfort import models\n"
+                    "\n"
+                    'noon = input_0[input_0["it"] == 12]\n'
+                    "result = models.utci(\n"
+                    '    tdb=float(noon["Td"].values[0]), tr=60.0, v=float(noon["Wind"].values[0]),\n'
+                    '    rh=float(noon["RH"].values[0]), units="SI", limit_inputs=False,\n'
+                    ")\n"
+                    'return float(getattr(result, "utci", result))\n'
+                ),
+                "out": "DEFAULT",
+                "in": "DEFAULT",
+                "goal": "",
+                "metadata": {"keywords": []},
+            },
+        ],
+        "edges": [
+            {"id": "e-noon-weather-noon-comfort", "source": "noon-weather", "target": "noon-comfort"},
+        ],
+        "packages": ["curio.weather@1"],
+        "datasets": [
+            {
+                "datasetId": "data.utk.milan-era5-weather",
+                "dirName": "data.utk.milan-era5-weather@1",
+                "origin": "imported",
+                "producerNodeId": None,
+                "consumerNodeIds": [],
+                "installedAt": "2026-08-27T00:00:00Z",
+            },
+        ],
+    }
+}
+
+
+def _library_route_fixture():
+    """``(fixture, example)``: the second route's fixture, built from
+    :data:`LIBRARY_ROUTE` as a shipped one is, its expected graph and its
+    required dependencies computed from the dataflow, and valid against the
+    fixture schema."""
+    import hashlib
+    from pathlib import Path
+
+    from utk_curio.backend.app.agents.evaluation.dependencies import (
+        declared_dependencies,
+        referenced_sources,
+    )
+    from utk_curio.backend.app.agents.evaluation.fixtures import Fixture, validate_fixture_dict
+
+    example = json.loads(json.dumps(LIBRARY_ROUTE))
+    graph = canonical_graph_from_spec(
+        example, templates=TEMPLATES, sources=referenced_sources(example, templates=TEMPLATES)
+    )
+    data = {
+        "fixtureId": "library-route",
+        "version": 1,
+        "source": {
+            "path": "docs/examples/library-route.json",
+            "sha256": hashlib.sha256(json.dumps(example).encode("utf-8")).hexdigest(),
+            "walkthrough": None,
+        },
+        "prompt": (
+            "Load Milan's hourly ERA5 weather table from the Data Catalog, and compute the "
+            "universal thermal climate index at noon, under a mean radiant temperature of 60 "
+            "degrees, in a Python step. The thermal comfort library is not part of the Curio "
+            "framework, so whatever provides it has to be installed."
+        ),
+        "context": None,
+        "required": declared_dependencies(example).as_required_dict(),
+        "expected": graph.as_expected_dict(),
+        "intents": [{"ref": "analysis1", "mustMention": ["thermal", "comfort"]}],
+        "execution": {"mode": "sandbox", "browserOnlyKinds": [], "notes": None},
+        "capability": {"tier": "T1", "needs": ["package-enlist:dependencies"], "skip": []},
+        "thresholds": {"pass": 0.9, "templates": 1.0, "topology": 0.9, "dependencies": 1.0},
+        "split": "validation",
+        "review": {"status": "pending-owner-review", "draftedBy": "this test", "reviewedBy": None, "reviewedAt": None},
+    }
+    validate_fixture_dict(data, where="the library route's fixture")
+    return Fixture(path=Path("library-route.prompt.json"), data=data), example
+
+
+class TestResolutionModePackageDependencies:
+    """Mode 2, route two -- the different one. A dataflow declares a package
+    while every one of its nodes is a builtin template: the package is there
+    for the python libraries its manifest owns. So nothing is refused at mint;
+    the miss can only appear when code runs, and the fix is the same reviewed
+    enlist. A missing library is never a reason to author a package. No
+    shipped fixture takes this route, so :data:`LIBRARY_ROUTE` does."""
+
+    def test_the_dependency_package_declares_libraries_no_node_type_needs(self):
+        """The route's dataflow declares the Weather package and names none of
+        its node types: the package is declared but no node implies it, and
+        its manifest, not the built-in package's, owns the library the Python
+        node imports."""
+        from pathlib import Path
+
+        from utk_curio.backend.app.agents.evaluation.dependencies import declared_dependencies
+
+        packages = Path(__file__).resolve().parents[4] / "packages"
+        weather = json.loads((packages / "curio.weather@1/manifest.json").read_text(encoding="utf-8"))
+        builtin = json.loads((packages / "curio.builtin@1/manifest.json").read_text(encoding="utf-8"))
+        assert set(weather["dependencies"]["python"]) >= {"pythermalcomfort", "rasterstats"}
+        assert "pythermalcomfort" not in builtin["dependencies"]["python"]
+        fixture, example = _library_route_fixture()
+        assert "from pythermalcomfort import models" in example["dataflow"]["nodes"][1]["content"]
+        assert fixture.required["packages"] == ["curio.weather@1"]
         assert "package-enlist:dependencies" in fixture.needs
+        dependencies = declared_dependencies(example)
+        assert dependencies.implied_packages == ("curio.builtin@1",), dependencies
         assert all(
             node["type"].startswith("curio.builtin/")
             for node in fixture.expected["nodes"]
         ), "if a weather TEMPLATE appeared here this would be the other route"
+
+    def test_a_dataflow_that_needs_a_package_for_its_libraries_alone_is_reachable(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """What ``test_reachable_or_named_gap`` proves for each shipped
+        fixture, for the route's dataflow: an oracle answer, through the real
+        plan mint, apply and Solve, with the declared package enlisted as a
+        provisioned fixture's is, scores a perfect pass, and the package stays
+        in the dataflow's lockfile."""
+        from utk_curio.backend.app.packages.domain.spec_packages import project_packages
+
+        fixture, example = _library_route_fixture()
+        driver = _driver(client, user_and_token, monkeypatch)
+        result = oracle_attempt(fixture, driver, templates=TEMPLATES, example=example)
+        assert not result.unrepresentable, result.unrepresentable
+        score = result.score
+        assert score.total == pytest.approx(1.0), (
+            f"the library route: an oracle answer scored {score.total:.3f} "
+            f"{score.categories} -- {json.dumps(result.scored.as_dict())[:900]}"
+        )
+        assert score.categories == ("pass",), result.scored.as_dict()
+        assert result.scored.comparison.exact
+        assert "curio.weather@1" in set(project_packages(result.spec) or ())
 
     def test_the_reviewed_enlist_installs_the_libraries_and_reports_failures(
         self, client, user_and_token, tmp_curio, monkeypatch

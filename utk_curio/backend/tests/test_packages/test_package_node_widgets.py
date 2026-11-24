@@ -97,6 +97,14 @@ CONSTANTS = {
 #: hold now, as their values or their defaults. Example 10's second node held
 #: ``classes = None``.
 EXAMPLE_VALUES = {
+    # Example 09's UTCI and reprojection: its Python nodes' constants, which
+    # are the two templates' defaults.
+    ("09-heterogeneous-data-linked-views.json", "ea821796-827b-47ac-8104-4bfb4dc5eb63"): {
+        "timestamp": 12, "upscale_factor": 1.0,
+    },
+    ("09-heterogeneous-data-linked-views.json", "3cc268ee-ec4b-4921-ac69-6d0bb3691cb4"): {
+        "source_crs": 32632, "target_crs": 3395,
+    },
     ("10-street-vision-cv-analysis.json", "4067fb98-3ed5-497a-97a5-41a98ce1085b"): {
         "classes": ["vegetation", "terrain", "sky", "road", "sidewalk", "building"],
     },
