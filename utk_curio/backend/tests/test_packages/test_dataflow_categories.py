@@ -50,6 +50,11 @@ SHIPPED = {
     ("curio.rasterization@1", "raster-calculator"): {"dataTypes": ["Rasters"]},
     ("curio.rasterization@1", "rasterize-buildings"): {"dataTypes": ["Rasters"]},
     ("curio.weather@1", "utci-compute"): {"dataTypes": ["Rasters"]},
+    # Weather's loaders: what the imports in their code gave before it became
+    # one read of the Data Catalog, which example 09's placement holds.
+    ("curio.weather@1", "mrt-load"): {"dataTypes": ["Rasters"]},
+    ("curio.weather@1", "weather-load"): {"tags": ["Pandas"], "dataTypes": ["Tables"]},
+    ("curio.weather@1", "census-load"): {"tags": ["GeoPandas"], "dataTypes": ["Geometries"]},
     # The segmentation models: what their type gave from the category table
     # until the table named no model type. SAM 3 runs torch in its package's
     # module, which no import in node code shows.
