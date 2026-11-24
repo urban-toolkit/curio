@@ -39,10 +39,23 @@ which a model seen thinking gets on top of the cap (``providers``), so the
 line names the cap the round's request carried (``ChatTurn.output_limit``).
 A round whose server refused that room was asked without it, and the record
 says ``thinkingRoomRefused``.
+
+A model may write a call as text in its own call syntax (OpenAI's harmony
+format, whose ``<|start|>``, ``<|message|>`` and ``<|call|>`` no answer holds),
+and its server then sends that text as the reply: muse-glimmer does when its
+last round offers it no call (``tool_choice`` none). Such a call is no text of
+the turn's. Both rounds leave it out from its header to the reply's end
+(:func:`_without_call_markup`), a stream shows no piece of it
+(:func:`_stream_without_call_markup`), and nothing runs it. At the cap it is
+dropped as a request the cap leaves is
+(:meth:`AttachmentTurn._dropped_at_the_cap`); below the cap it is corrected
+as a request block the parser could not take is.
 """
 
 from __future__ import annotations
 
+import dataclasses
+import re
 import threading
 import time
 import uuid
@@ -52,6 +65,7 @@ from utk_curio.backend.app.agents.application.tool_rounds import ParamRefusal
 from utk_curio.backend.app.agents.application.tool_rounds import _RunConversation
 from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.domain import content
+from utk_curio.backend.app.agents.domain import tool_names
 from utk_curio.backend.app.agents.infrastructure import provider_config
 from utk_curio.backend.app.agents.infrastructure.providers import ChatTurn
 from utk_curio.backend.app.agents.infrastructure.providers import NativeToolsRefused
@@ -83,6 +97,108 @@ def _before_an_open_block(text: str) -> str:
     if at == -1 or "\n```" in text[at + len(content.TAIL_FENCE):]:
         return text
     return text[:at].rstrip()
+
+
+#: The tokens of a model's own call syntax, OpenAI's harmony format, which no
+#: answer holds. muse-glimmer's call written as text at the round cap holds
+#: them, 118 of its 486 replies in the 11-24 skill evaluation:
+#: ``<|start|>assistant to=node__read<|message|><atem:function_calls>...``, or
+#: the same from ``to=`` on.
+_CALL_TOKENS = ("<|start|>", "<|message|>", "<|call|>")
+#: A call's header right before its ``<|message|>``: whom it is to, its native
+#: name, after the role or alone.
+_CALL_HEADER = r"(?:assistant[ \t]{1,8})?to=[\w.\-]{1,64}[ \t]{0,8}"
+_CALL_HEADER_BEFORE_MESSAGE = re.compile(r"(?<!\w)" + _CALL_HEADER + r"\Z")
+#: The native name a call's header gives.
+_CALL_TO = re.compile(r"(?<!\w)to=([\w.\-]{1,64})")
+
+
+def _prefixes(word: str) -> str:
+    """A pattern of every prefix of *word* from its first character on."""
+    pattern = ""
+    for char in reversed(word):
+        pattern = re.escape(char) + (f"(?:{pattern})?" if pattern else "")
+    return pattern
+
+
+#: The end of a text that may still become the start of a call's markup: a
+#: token begun, or a header that may yet reach its ``<|message|>``.
+_MAY_BEGIN_A_CALL = re.compile(
+    "(?:" + "|".join(_prefixes(token) for token in _CALL_TOKENS) + r")\Z"
+    + r"|(?<!\w)(?:" + "|".join((
+        _prefixes("assistant"),
+        r"assistant[ \t]{1,8}",
+        r"(?:assistant[ \t]{1,8})?" + _prefixes("to="),
+        _CALL_HEADER + "(?:" + _prefixes("<|message|>") + ")?",
+    )) + r")\Z"
+)
+#: The longest text that may still become the start of a call's markup.
+_CALL_START_MAX = len("assistant") + 8 + len("to=") + 64 + 8 + len("<|message|>")
+
+
+def _call_markup_at(text: str, start: int = 0) -> int | None:
+    """Where a call *text* writes in a model's own call syntax begins, at
+    *start* or after: at its first token, or at the header right before it
+    when that token is its ``<|message|>``. None when *text* holds no token."""
+    found = [at for at in (text.find(token, start) for token in _CALL_TOKENS) if at != -1]
+    if not found:
+        return None
+    at = min(found)
+    if text.startswith("<|message|>", at):
+        header = _CALL_HEADER_BEFORE_MESSAGE.search(text, max(start, at - _CALL_START_MAX), at)
+        if header is not None:
+            return header.start()
+    return at
+
+
+def _without_call_markup(text: str) -> tuple[str, str | None]:
+    """*text* before a call it writes in a model's own call syntax, and the
+    call, from its start to the end of *text*: the call's markup. *text* and
+    None when it writes none."""
+    at = _call_markup_at(text)
+    if at is None:
+        return text, None
+    return text[:at].rstrip(), text[at:]
+
+
+def _called_tool(markup: str) -> str | None:
+    """The tool id the header of the call *markup* names, its native name's
+    ``__`` read as ``.`` (``tool_names.tool_id_of``), or None."""
+    end = markup.find("<|message|>")
+    named = _CALL_TO.search(markup, 0, end if end != -1 else len(markup))
+    return tool_names.tool_id_of(named.group(1)) if named is not None else None
+
+
+def _stream_without_call_markup(events, markup: list):
+    """*events*, a streamed round's, with a call the model writes in its own
+    call syntax left out: from the call's start (:func:`_call_markup_at`), its
+    text goes to *markup*, never released, and only the text before it passes
+    on. Text that may still begin a call is held back until it cannot, or the
+    round ends; every other event passes as it comes."""
+    pending = ""  # the text received and not passed on yet
+    last = ""  # the last character passed on: a header may not begin after a word's
+    for event in events:
+        if not isinstance(event, str):
+            yield event
+            continue
+        if markup:
+            markup.append(event)
+            continue
+        pending += event
+        text = last + pending
+        at = _call_markup_at(text, len(last))
+        if at is not None:
+            if at > len(last):
+                yield pending[: at - len(last)]
+            markup.append(pending[at - len(last):])
+            continue
+        held = _MAY_BEGIN_A_CALL.search(text, max(len(last), len(text) - _CALL_START_MAX))
+        upto = (held.start() if held is not None else len(text)) - len(last)
+        if upto > 0:
+            yield pending[:upto]
+            last, pending = pending[upto - 1], pending[upto:]
+    if pending and not markup:
+        yield pending
 
 
 class Stop:
@@ -263,11 +379,7 @@ class AttachmentTurn:
                     yield from self._tool_round(req, result, native_calls, last_try=True)
                     yield from self._emit_landed()
                     break
-                # dev/73: a mutate request cut off at the cap is a visible
-                # outcome — never a silent drop under confident prose.
-                if req["type"] == "toolRequest" and req.get("tool") in agents_tool_rounds.MUTATE_PROPOSAL_TOOLS:
-                    self.minted.append(agents_tool_rounds._round_cap_cutoff_card(req["tool"]))
-                self._plan_not_made()
+                self._dropped_at_the_cap(req.get("tool") if req["type"] == "toolRequest" else None)
                 break  # dangling read request at the cap: dropped, text kept
             if req["type"] == "delegateRequest":
                 yield from self._delegate_round(req, result, native_calls)
@@ -275,6 +387,20 @@ class AttachmentTurn:
                 continue
             yield from self._tool_round(req, result, native_calls)
             yield from self._emit_landed()
+
+    def _dropped_at_the_cap(self, tool: str | None) -> None:
+        """A request the round at the cap asked for is dropped, not run, and
+        its text stays: *tool* is the tool it asked for, None for a
+        delegation. A mutate request cut off is a visible outcome, never a
+        silent drop under confident prose (dev/73), a plan whose try the
+        request took could not be made (:meth:`_plan_not_made`), and a reply
+        left with no text says that the agent used its tool rounds before it
+        could answer (``turn.tool-rounds-used``)."""
+        if tool in agents_tool_rounds.MUTATE_PROPOSAL_TOOLS:
+            self.minted.append(agents_tool_rounds._round_cap_cutoff_card(tool))
+        self._plan_not_made()
+        if not self.folded:
+            self.folded.append(agent_text.message("turn.tool-rounds-used"))
 
     def _cut(self, result: dict) -> None:
         """End the turn on a round whose model stopped at the output cap: its
@@ -336,8 +462,13 @@ class AttachmentTurn:
 
     def _reply_without_request(self, result: dict):
         """Plan handling (dev/52 mint; dev/54 correction rounds), then the
-        toolRequest twin (#245). Returns CONTINUE for a correction round,
-        BREAK when the reply is final, or the recovered request."""
+        toolRequest twin (#245), then a call the model wrote as text in its
+        own call syntax (``callMarkup``), when neither found a request: below
+        the cap a request the parser could not take, which a correction round
+        asks for again, and at the cap a request dropped
+        (:meth:`_dropped_at_the_cap`), never run from its text. Returns
+        CONTINUE for a correction round, BREAK when the reply is final, or the
+        recovered request."""
         kind, payload, visible_override = agents_tool_rounds._handle_plan_reply(
             self.user_key, self.project_id, self.loop_ctx, result["reply"], result["parts"],
             self.minted, self.rounds_used,
@@ -362,6 +493,12 @@ class AttachmentTurn:
             kind, payload, visible_override, req = agents_tool_rounds._handle_tool_reply(
                 self.loop_ctx, result["reply"], result["parts"], self.rounds_used
             )
+            if (kind == "none" and "callMarkup" in result
+                    and self.rounds_used < agents_tool_rounds.MAX_TOOL_ROUNDS
+                    and (self.loop_ctx.get("granted") or self.loop_ctx.get("delegable"))):
+                kind, payload = "correct", [
+                    agent_text.message("tool-round.call-as-text"), agent_text.message("tool-round.tool-fence"),
+                ]
             if kind == "correct":
                 self.rounds_used += 1
                 yield from self._emit("tool_revision", {"attempt": self.rounds_used, "errors": len(payload)})
@@ -390,6 +527,9 @@ class AttachmentTurn:
         self.final_parts = payload
         if request_capped:
             self._plan_not_made()
+        elif (kind == "none" and "callMarkup" in result
+              and self.rounds_used >= agents_tool_rounds.MAX_TOOL_ROUNDS):
+            self._dropped_at_the_cap(_called_tool(result["callMarkup"]))
         return BREAK
 
     def _plan_not_made(self) -> None:
@@ -431,10 +571,17 @@ class AttachmentTurn:
             **self.conversation.offer(self.rounds_used, self.plan_corrected),
         ))
         self._answered()
-        reply = turn.text
+        # A call written as text is no text of the turn's: the round's reply
+        # is what came before it, as a stream's is (_streaming_round).
+        reply, markup = _without_call_markup(turn.text)
+        if markup is not None:
+            turn = dataclasses.replace(turn, text=reply)
         visible, parts = content.extract_content(reply)
         self._check_candidates(parts)
-        return {"reply": reply, "visible": visible, "parts": parts, "turn": turn}
+        result = {"reply": reply, "visible": visible, "parts": parts, "turn": turn}
+        if markup is not None:
+            result["callMarkup"] = markup
+        return result
 
     def _check_candidates(self, parts: list) -> None:
         """dev/67-4: no unverified laundering. A candidates card the reply
@@ -472,7 +619,11 @@ class AttachmentTurn:
         *shown* the text its deltas showed, and nothing more is read. The
         turn carries the stop reason the stream ended with; a tail held in a
         round the output cap cut is half written, so it is neither held for a
-        correction nor released (:meth:`_cut`)."""
+        correction nor released (:meth:`_cut`). A call the model writes as
+        text in its own call syntax reaches none of this: the deltas come
+        through :func:`_stream_without_call_markup`, which keeps it as
+        ``callMarkup`` and never releases it, and the round's reply is what
+        came before it, as a blocking round's is."""
         marker = content.TAIL_FENCE
         granted = self.loop_ctx.get("granted", [])
         hold_plan_tail = "dataflow.plan.write" in granted
@@ -480,6 +631,7 @@ class AttachmentTurn:
         chunks: list[str] = []
         shown: list[str] = []  # what the round's deltas showed
         calls: list = []
+        markup: list[str] = []  # a call written as text, from its start on
         buf = ""  # pass-mode text not yet emitted
         withheld: str | None = None  # not None → holding a candidate tail
         finish: dict = {}  # how the stream ended, once it has
@@ -493,7 +645,7 @@ class AttachmentTurn:
             **self.conversation.offer(self.rounds_used, self.plan_corrected),
         )
         try:
-            for delta in deltas:
+            for delta in _stream_without_call_markup(deltas, markup):
                 if self._stopping():
                     return {"stopped": True, "shown": "".join(shown)}
                 if isinstance(delta, ToolCall):
@@ -532,13 +684,15 @@ class AttachmentTurn:
             close_stream = getattr(deltas, "close", None)
             if close_stream is not None:
                 close_stream()
-        reply = "".join(chunks)
+        reply, called = _without_call_markup("".join(chunks) + "".join(markup))
         visible, parts = content.extract_content(reply)
         self._check_candidates(parts)
         turn = ChatTurn(text=reply, tool_calls=tuple(calls), stop_reason=str(finish.get("reason") or ""),
                         thinking=bool(finish.get("thinking")), output_limit=int(finish.get("limit") or 0),
                         thinking_room_refused=bool(finish.get("thinking_room_refused")))
         result = {"reply": reply, "visible": visible, "parts": parts, "turn": turn}
+        if called is not None:
+            result["callMarkup"] = called
         # A tail the output cap cut is half written: neither held nor shown.
         if withheld is not None and not parts and not turn.cut_at_output_cap:
             if hold_plan_tail and (

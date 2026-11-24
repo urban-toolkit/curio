@@ -69,6 +69,10 @@ there is no tool named {name}
 invalid call, not run. Fix exactly these problems and call it again:
 {listed}{final_note}
 
+## tool-round.call-as-text
+
+the call was written into the reply as text, in the model's own call syntax, which runs nothing and is never shown
+
 ## tools.result-truncated
 
 …[truncated: result exceeded the tool output bound]
@@ -1515,6 +1519,10 @@ the worked example {key} is not available in this project; call examples.read wi
 ## turn.cut-while-thinking
 
 *Cut off: the model spent its whole output limit of {limit} tokens thinking, before it wrote this reply.*
+
+## turn.tool-rounds-used
+
+*The agent used its tool rounds before it could answer. Ask again to continue.*
 
 ## turn.reply-cut-short
 
