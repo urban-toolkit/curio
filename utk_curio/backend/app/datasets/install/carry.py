@@ -70,9 +70,7 @@ class Account:
         return media_dirs.derived_root(self.key, kept=name)
 
     def collection(self, dataset_id: str) -> Path | None:
-        from utk_curio.backend.app.datasets.infrastructure.storage import user_datasets_dir
-
-        return _held(user_datasets_dir(self.key), dataset_id)
+        return held(self.key, dataset_id)
 
 
 @dataclass(frozen=True)
@@ -106,6 +104,23 @@ def _held(store: Path, dataset_id: str) -> Path | None:
         return None
     folders = sorted(path for path in store.glob(f"{dataset_id}@*") if (path / "manifest.json").is_file())
     return folders[-1] if folders else None
+
+
+def held(user_key: str, dataset_id: str) -> Path | None:
+    """The folder of the dataset *dataset_id* in the store of the account
+    *user_key*; None when it holds none."""
+    from utk_curio.backend.app.datasets.infrastructure.storage import user_datasets_dir
+
+    return _held(user_datasets_dir(user_key), dataset_id)
+
+
+def collections_named(folder: Path) -> list[str]:
+    """The ids of the collections the rows of the dataset folder *folder*
+    name that the shared catalog does not hold: those a copy into another
+    account carries (:func:`into_account`), and a dataflow that lists the
+    dataset lists with it, so its editors read their files
+    (``mutations.install_dataset``)."""
+    return sorted(dataset_id for dataset_id in _needs(_data_files(folder)).files if not _shared(dataset_id))
 
 
 def _shared(dataset_id: str) -> bool:

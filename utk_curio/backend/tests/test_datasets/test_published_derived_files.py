@@ -14,9 +14,12 @@ the colour its code names and returns the row it derived, as
 - bob's copy goes on reading them after alice runs Draw again, unpublishes it
   and deletes her dataset, and one added after alice's own files went reads
   them too;
-- the sweep keeps bob's copy's files while the copy records them;
+- the sweep keeps bob's copy's files while the copy records them, and once
+  alice unpublishes, bob's delete of his copy takes them;
+- publishing again leaves only the new output in the shared catalog;
 - a node of bob's reading a row's ``path`` opens his copy of the file;
 - the collection bob gets lists only the photos the published rows name;
+- carol, invited to edit bob's dataflow, reads its files through it;
 - Save a copy into another account points each row's ``path`` at the copy's
   file, and leaves the source account's dataset as it was;
 - alice's Apply of bob's request for his own computed dataset shows her its
@@ -98,7 +101,7 @@ def people(db, user_and_token, tmp_path, monkeypatch):
     alice, alice_token = user_and_token
     return SimpleNamespace(
         alice=alice, bob=_account(db, "bob"), carol=_account(db, "carol"),
-        tokens={"alice": alice_token, **TOKENS},
+        tokens={"alice": alice_token, **TOKENS}, catalog=catalog,
     )
 
 
@@ -248,9 +251,10 @@ def _published_by_alice(client, people, draw) -> SimpleNamespace:
 
 
 def _added_by_bob(client, people, published: str) -> dict:
-    """bob adds the published dataset to a dataflow of his: the copy."""
+    """bob adds the published dataset to a dataflow of his: the copy, and
+    the dataflow's id as ``project``."""
     project_id = create_project(client, people.tokens["bob"], name="Bob's street")
-    return _add(client, people.tokens["bob"], project_id, published)
+    return {**_add(client, people.tokens["bob"], project_id, published), "project": project_id}
 
 
 # -- An account that adds a published dataset reads what its rows name ----------
@@ -373,6 +377,67 @@ def test_the_collection_an_adding_account_gets_lists_only_the_photos_the_rows_na
     assert manifest.get("format") == "collection", f"bob holds no collection {alice.collection}"
     index = pd.read_parquet(folder / manifest["dataFile"])
     assert index["file_id"].tolist() == [alice.photo]
+
+
+def test_the_copys_delete_takes_its_files_once_the_publisher_unpublishes(client, people, draw):
+    """While alice's dataset is published, bob's copy is a copy of the shared
+    catalog's, which the Data Catalog never offers to delete. Once she
+    unpublishes it, bob's delete takes his copy, and its files go once no
+    kept output names them."""
+    from datetime import timedelta
+
+    from utk_curio.backend.app.runs import kept
+    from utk_curio.backend.app.runs.models import naive_utc_now
+
+    alice = _published_by_alice(client, people, draw)
+    copy = _added_by_bob(client, people, alice.published)
+    assert _reads(client, people.tokens["bob"], alice.row["image_url"], "red"), "bob's copy reads no overlay"
+    resp = client.delete(f"/api/datasets/publish/{alice.published}", headers=auth_headers(people.tokens["alice"]))
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+
+    resp = client.delete(f"/api/datasets/{copy['id']}", headers=auth_headers(people.tokens["bob"]))
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    kept.prune(now=naive_utc_now() + timedelta(days=8))
+    kept.sweep_kept_media(now=time.time() + 8 * 24 * 3600)
+    assert _read(client, people.tokens["bob"], alice.row["image_url"]).status_code == 404, (
+        "bob's overlay outlived his deleted copy"
+    )
+
+
+def test_publishing_again_leaves_only_the_new_output_in_the_shared_catalog(client, people, draw):
+    """alice publishes her red overlay, draws Draw blue and publishes again:
+    the shared catalog holds the blue output alone, not the red one's file
+    and records beside it, and bob, adding it after, reads the blue overlay."""
+    alice = _published_by_alice(client, people, draw)
+    blue = _draw(client, draw, people.tokens["alice"], alice.project, "blue")
+    assert _publish(client, people.tokens["alice"], alice.project) == alice.published
+
+    entry = people.catalog / f"{alice.published}@1"
+    data_file = Path(json.loads((entry / "manifest.json").read_text(encoding="utf-8"))["dataFile"]).name
+    left = sorted(path.name for path in (entry / "data").iterdir() if not path.name.startswith(data_file))
+    assert left == [], f"publishing again left the earlier output's files in the shared catalog: {left}"
+    _added_by_bob(client, people, alice.published)
+    assert _reads(client, people.tokens["bob"], blue["image_url"], "blue"), "bob's later copy reads no blue overlay"
+
+
+def test_an_editor_of_the_adding_accounts_dataflow_reads_its_files_through_it(client, people, draw):
+    """bob adds alice's published overlay to his dataflow and invites carol
+    to edit it. Her canvas reads the overlay and the collection's photo
+    through his dataflow, as his does."""
+    from utk_curio.backend.app.projects import access
+
+    alice = _published_by_alice(client, people, draw)
+    copy = _added_by_bob(client, people, alice.published)
+    access.add_editor(people.bob, copy["project"], "carol")
+    through = f"&dataflowId={copy['project']}"
+    photo = f"/api/datasets/{alice.collection}/media/{alice.photo}?variant=thumb{through}"
+
+    assert _reads(client, people.tokens["carol"], f"{alice.row['image_url']}{through}", "red"), (
+        "carol reads no overlay of bob's copy: "
+        f"{_read(client, people.tokens['carol'], alice.row['image_url'] + through).status_code}"
+    )
+    shown = _read(client, people.tokens["carol"], photo)
+    assert shown.status_code == 200, f"carol reads no photo of bob's copy's collection: {shown.status_code}"
 
 
 # -- Every copy into another account ------------------------------------------
