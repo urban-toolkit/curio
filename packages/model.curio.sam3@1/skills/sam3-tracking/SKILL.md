@@ -4,11 +4,12 @@ description: >-
   Use this skill when a dataflow uses SAM 3 (model.curio.sam3@1) and a task writes, wires or fixes
   its Track Objects node, which follows objects named in words, such as curb ramp or traffic cone,
   through a collection's videos, or its Segment Images node, which finds them in a collection's
-  images or in the frames Sample Video Frames samples, or reads what either returns: two tables,
-  each video's overlay with its counts and every object's track, or each image's counts and shares
-  per label and its overlay.
-  It gives each node's settings, its output's columns, how a later node reads them, and what each of
-  its stops means.
+  images or in the frames Sample Video Frames samples, or changes one of either node's settings,
+  such as the labels it looks for, how often it looks at a frame or which part of a video it tracks,
+  or reads what either returns: two tables, each video's overlay with its counts and every object's
+  track, or each image's counts and shares per label and its overlay.
+  It gives each node's settings and which one a request changes, such as fewer frames, its output's
+  columns, how a later node reads them, and what each of its stops means.
 license: MIT
 compatibility: Written for Curio's agents, on a dataflow that uses Curio's SAM 3 model package, model.curio.sam3@1.
 metadata:
