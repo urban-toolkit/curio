@@ -145,6 +145,18 @@ web search is not configured for this deployment: CURIO_SEARCH_URL (--agent-sear
 
 the search provider failed: {exc}
 
+## tools.search-provider-empty
+
+the search provider answered HTTP {status} with an empty answer, not search results: search again later, or read a page you know with web.fetch
+
+## tools.search-provider-not-json
+
+the search provider answered HTTP {status} with a page that is not JSON, not search results: search again later, or read a page you know with web.fetch
+
+## tools.search-provider-error
+
+the search provider answered HTTP {status}, not search results: search again later, or read a page you know with web.fetch
+
 ## tools.no-node-id
 
 no nodeId given and this agent is not attached to a node
