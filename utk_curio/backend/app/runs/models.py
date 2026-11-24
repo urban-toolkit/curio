@@ -127,6 +127,10 @@ class DataflowRunStep(db.Model):
     # The outputs the run could not install in the Data Catalog, as a save's
     # ``dataset_install_warnings`` lists them (JSON).
     install_warnings = db.Column(db.Text, nullable=True)
+    # When the output this step reused was made, for a step that answered
+    # with what its maker's runs kept under its key and ran nothing
+    # (``kept.kept_reply``); null for a step that ran.
+    reused_made_at = db.Column(db.DateTime, nullable=True)
 
     __table_args__ = (
         db.UniqueConstraint("run_id", "node_id", name="uq_dataflow_run_step_node"),

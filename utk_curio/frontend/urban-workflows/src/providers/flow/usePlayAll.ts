@@ -1,12 +1,12 @@
 // Run All and run up to a node: the level-by-level runner, its stall
 // watchdog, and the signal a node sends when its run ends. FlowProvider holds
 // the run's state (playAllStateRef, isRunActive) and passes it in.
-import React, { useCallback, useRef } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import type { Edge, Node, ReactFlowInstance } from "reactflow";
 import type { useToastContext } from "../ToastProvider";
 import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft";
 import { upstreamErroredMessage } from "../../utils/nodeEmptyState";
-import { nodeRunIsOpen } from "../../utils/nodeRunRequest";
+import { markReusable, nodeRunIsOpen, unmarkReusable } from "../../utils/nodeRunRequest";
 import type { NodeExecOutcome } from "./flowTypes";
 import { computeTopologicalLevels, directedEdgesOf, nodesToRunUpTo } from "./runLevels";
 
@@ -20,6 +20,12 @@ export interface PlayAllState {
     failed: Set<string>;
     /** Nodes this run did not run, because a node feeding them failed or was not run. */
     skipped: Set<string>;
+    /**
+     * The nodes the run was asked for, which always run: a Play's node, a
+     * run of several's. Every other node's request may reuse what its
+     * maker's runs kept (`reuseKept`), as a dashboard visitor's step does.
+     */
+    mustRun: Set<string>;
     /**
      * Told how each node ended: run, failed (with the node's own *message*
      * when it gave one), or not run because of the node above it.
@@ -56,6 +62,9 @@ export function usePlayAll({
     emittedForInputRef: React.MutableRefObject<Map<string, unknown>>;
 }) {
     const playAllStallTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // A canvas that goes takes its run's marks with it: no later request of
+    // a node it marked may reuse what was kept.
+    useEffect(() => () => unmarkReusable(), []);
 
     const clearPlayAllStallTimer = () => {
         if (playAllStallTimerRef.current) {
@@ -71,6 +80,7 @@ export function usePlayAll({
         const onFinish = playAllStateRef.current?.onFinish;
         clearPlayAllStallTimer();
         playAllStateRef.current = null;
+        unmarkReusable();
         setIsRunActive(false);
         flushInstallSyncRef.current();
         onFinish?.();
@@ -83,6 +93,7 @@ export function usePlayAll({
     function cancelRun() {
         clearPlayAllStallTimer();
         playAllStateRef.current = null;
+        unmarkReusable();
         setIsRunActive(false);
     }
 
@@ -112,7 +123,10 @@ export function usePlayAll({
                     "warning",
                 );
             }
-            stuck.forEach((id) => state.pending.delete(id));
+            stuck.forEach((id) => {
+                state.pending.delete(id);
+                unmarkReusable(id);
+            });
             if (state.pending.size > 0) {
                 armPlayAllStallTimer();
                 return;
@@ -152,6 +166,9 @@ export function usePlayAll({
         }
         const toRun = levelNodeIds.filter(id => !skipped.has(id));
         state.pending = new Set(toRun);
+        // Each node's request may reuse what was kept, but a node the run was
+        // asked for, which runs.
+        markReusable(toRun.filter(id => !state.mustRun.has(id)));
         for (const [id, reason] of skipped) {
             state.skipped.add(id);
             // Errored, so the nodes it feeds read "upstream-errored" by the rule
@@ -191,6 +208,7 @@ export function usePlayAll({
         // straggler/duplicate from an earlier level) — they must not drain the
         // pending set or reset the watchdog.
         if (!state.pending.delete(nodeId)) return;
+        unmarkReusable(nodeId);
         // The signal that completes a node says whether it failed; a later one
         // for the same node is ignored above. Carried here rather than read from
         // the node's exec status, which may not have committed yet (#603).
@@ -224,12 +242,14 @@ export function usePlayAll({
         if (cyclic.length > 0) {
             showToast(`${cyclic.length} node(s) skipped due to cycles in the graph`, "warning");
         }
+        // A run marks only its own nodes: none of a run that ended unseen.
+        unmarkReusable();
         playAllStateRef.current = newRunState(levels, allEdges);
         setIsRunActive(true);
         triggerLevel(0);
     }
 
-    function newRunState(levels: string[][], edges: Edge[]): PlayAllState {
+    function newRunState(levels: string[][], edges: Edge[], mustRun: readonly string[] = []): PlayAllState {
         return {
             levels,
             currentLevel: 0,
@@ -237,6 +257,7 @@ export function usePlayAll({
             edges: directedEdgesOf(edges).map(e => ({ source: e.source, target: e.target })),
             failed: new Set(),
             skipped: new Set(),
+            mustRun: new Set(mustRun),
         };
     }
 
@@ -260,17 +281,21 @@ export function usePlayAll({
         const { willRun } = nodesToRunUpTo(
             target, currentNodes, currentEdges, emittedForInputRef.current,
         );
-        playNodes([...willRun]);
+        // The played node runs; the nodes above it the play runs may reuse.
+        playNodes([...willRun], {}, typeof target === "string" ? [target] : [...target]);
     }
 
     /**
      * Run the given nodes in the order Run All would, each level once the one
      * above it has reported. The browser half of a run on the server goes
-     * through here, with *hooks* reporting each node to that run.
+     * through here, with *hooks* reporting each node to that run. The nodes
+     * of *mustRun*, those the run was asked for, always run; the others'
+     * requests may reuse what their maker's runs kept.
      */
     function playNodes(
         nodeIds: string[],
         hooks: Pick<PlayAllState, "onNodeDone" | "onFinish"> = {},
+        mustRun: readonly string[] = [],
     ): boolean {
         if (playAllStateRef.current != null) {
             showToast(
@@ -288,7 +313,9 @@ export function usePlayAll({
         const levels = computeTopologicalLevels(subgraphNodes, subgraphEdges);
         if (!levels.length) return false;
 
-        playAllStateRef.current = { ...newRunState(levels, subgraphEdges), ...hooks };
+        // A run marks only its own nodes: none of a run that ended unseen.
+        unmarkReusable();
+        playAllStateRef.current = { ...newRunState(levels, subgraphEdges, mustRun), ...hooks };
         setIsRunActive(true);
         triggerLevel(0);
         return true;
