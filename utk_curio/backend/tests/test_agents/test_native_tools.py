@@ -782,6 +782,17 @@ CHANGE_AS_TEXT = (
     "</atem:invoke>\n"
     "</atem:function_calls>"
 )
+#: A plan written the same way, on the plan's last try, which offers its call.
+PLAN_AS_TEXT = (
+    "<|start|>assistant to=dataflow__plan__write<|message|><atem:function_calls>\n"
+    '<atem:invoke name="dataflow__plan__write">\n'
+    '<atem:parameter name="goal">count twice</atem:parameter>\n'
+    '<atem:parameter name="nodes">[{"ref": "a", "nodeType": "curio.builtin/python-computation", '
+    '"title": "Count", "intent": "count the rows again"}]</atem:parameter>\n'
+    '<atem:parameter name="edges">[{"from": "n1", "to": "a"}]</atem:parameter>\n'
+    "</atem:invoke>\n"
+    "</atem:function_calls>"
+)
 #: An answer that holds code, XML, HTML and a ``<`` but no call, ending in
 #: text that could have begun one: it is left as it is.
 ANSWER = (
@@ -883,6 +894,27 @@ class TestACallWrittenAsText:
         assert routes_proposals._changes(body) == []
         user, _ = user_and_token
         assert _saved_nodes(user, project)["n1"]["content"] == "return 1"
+
+    def test_a_plan_written_as_text_on_its_last_try_is_never_run_and_its_card_says_why(
+            self, client, headers, project):
+        """The plan's last try offers its call, and a plan written as text
+        there is no try: nothing runs it, and the plan's card says why the
+        plan could not be made, as for any other request on that try."""
+        tries = TestAPlansTries()
+        resp, offered, calls = tries._native(
+            client, headers, project, [RECOUNT_BROKEN] * tool_rounds.MAX_TOOL_ROUNDS, then=[PLAN_AS_TEXT],
+        )
+        assert [o["toolChoice"] for o in offered] == ["auto"] * tries.LAST, resp.get_data(as_text=True)
+        body = resp.get_json()
+        assert body["reply"] == _message("turn.tool-rounds-used"), body["reply"]
+        cards = {p["title"]: p for p in body["content"] if p["type"] == "card"}
+        assert sorted(cards) == ["Plan could not be made", "Request cut off"], body["content"]
+        assert GHOST in cards["Plan could not be made"]["lines"][0], cards
+        assert "dataflow.plan.write" in cards["Request cut off"]["lines"][0], cards
+        assert routes_proposals._changes(body) == []
+        assert len(calls) == tries.LAST, "a round followed the plan's last try"
+        execution = _last_turn(client, headers, project, tries.att)["execution"]
+        assert [c["tool"] for c in execution["toolCalls"]] == ["dataflow.plan.write"] * tool_rounds.MAX_TOOL_ROUNDS
 
     @pytest.mark.parametrize("path", ["run", "run/stream"])
     def test_an_answer_holding_code_xml_and_angle_brackets_is_left_as_it_is(
