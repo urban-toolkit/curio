@@ -17,6 +17,7 @@ from utk_curio.cli.dependencies import (
     _skip_dep_install,
     install_framework_requirements,
     install_manifest_dependencies,
+    require_supported_python,
     seed_duckdb_extensions,
 )
 from utk_curio.cli.environment import set_environment_variables, set_state_dir
@@ -546,6 +547,9 @@ def main():
     set_state_dir(args.state_dir)
     setup_logging(args.server)
     logs.verbosity = int(args.verbose)
+    # Before anything is installed or started, on setup, start and the
+    # --force-* steps alike.
+    require_supported_python()
 
     set_environment_variables(
         backend_host=args.backend_host,
