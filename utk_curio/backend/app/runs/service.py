@@ -438,7 +438,7 @@ def _run_thread(
     maker = kept.MADE_BY_OWNER if records_outputs else kept.MADE_BY_EDITOR
     reuse_packages: dict = {}
 
-    def reused(user, step, code, input_ref, node_run):
+    def kept_answer(user, step, code, input_ref, node_run):
         """The step's answer from what its maker's runs kept under its key,
         built as a dashboard viewer's step builds it, or None when it runs."""
         if step.node_id in (plan.target_node_id, *plan.target_node_ids):
@@ -500,7 +500,7 @@ def _run_thread(
                 node_exec.execute_js_node if step.engine == "javascript"
                 else node_exec.execute_python_node
             )
-        answer = reused(user, step, code, input_ref, node_run)
+        answer = kept_answer(user, step, code, input_ref, node_run)
         if answer is not None:
             return answer
         reply, _status = run_node(user, token, node_run)
@@ -543,7 +543,7 @@ def _run_thread(
                     # A step that reused its node's kept output makes it the
                     # node's output now: it replaces one recorded since, from a
                     # newer artifact (the node played with other code).
-                    reused = isinstance((payload.get("reply") or {}).get("reused"), dict)
+                    was_reused = isinstance((payload.get("reply") or {}).get("reused"), dict)
                     try:
                         record_node_outputs(db.session.get(User, user_id), project_id, [OutputRef(
                             node_id=step.node_id,
@@ -551,7 +551,7 @@ def _run_thread(
                             data_type=output.get("dataType"),
                             # The name its play installed the output under.
                             node_name=step.label,
-                        )], warnings=warnings, **({"reused_at": _now_stamp()} if reused else {}))
+                        )], warnings=warnings, **({"reused_at": _now_stamp()} if was_reused else {}))
                     except Exception:  # noqa: BLE001 - the run goes on; the output is just not recorded
                         log.exception("run %s could not record the output of %s", run_id, step.node_id)
                     if warnings:
