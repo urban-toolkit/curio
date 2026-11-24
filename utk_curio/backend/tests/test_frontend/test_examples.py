@@ -46,8 +46,13 @@ EXAMPLE_INVARIANTS = [
      {"curio.builtin/autk-grammar": 4}, True),
     ("08-autark-spatial-join-regression.json", 6, 6,
      {"curio.builtin/autk-grammar": 4, "curio.builtin/js-computation": 1}, True),
+    # The Weather package's three loaders and four steps, then the views.
     ("09-heterogeneous-data-linked-views.json", 10, 11,
-     {"curio.builtin/autk-grammar": 1, "curio.builtin/vis-vega": 2}, True),
+     {"curio.weather/mrt-load": 1, "curio.weather/weather-load": 1,
+      "curio.weather/census-load": 1, "curio.weather/utci-compute": 1,
+      "curio.weather/utci-zonal": 1, "curio.weather/census-reproject": 1,
+      "curio.weather/gt65-projection": 1, "curio.builtin/autk-grammar": 1,
+      "curio.builtin/vis-vega": 2}, True),
     ("10-street-vision-cv-analysis.json", 12, 12,
      {
          "curio.builtin/data-loading": 2,

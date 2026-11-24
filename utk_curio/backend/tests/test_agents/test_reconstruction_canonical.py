@@ -485,16 +485,18 @@ class TestTheShippedCorpus:
         }
 
     def test_these_are_the_examples_whose_templates_need_a_package(self):
-        """Example 09 declares ``curio.weather@1`` for its python LIBRARIES
-        while using only builtin templates -- a different resolution route
-        from examples 06, 10, 18, 21, 22, 24, 31 and 33 and the chicago-loop-shadow-towers,
-        chicago-rain-wind-routing, lower-manhattan-park-shade,
-        quad-cities-flood-vulnerability and scenario-comparison-charts test
-        dataflows, whose templates themselves live in a package
-        (``curio.media@1``, ``curio.rasterization@1``, ``curio.vega-lite@1``,
-        and the model packages ``model.curio.ddrnet23-slim@1``,
-        ``model.curio.sam3@1``, ``model.scout.deep-umbra@1`` and
-        ``model.scout.weather-gnn@1``). Example 31's package node is SAM 3's
+        """Examples 06, 09, 10, 18, 21, 22, 24, 31 and 33 and the
+        chicago-loop-shadow-towers, chicago-rain-wind-routing,
+        lower-manhattan-park-shade, quad-cities-flood-vulnerability and
+        scenario-comparison-charts test dataflows, whose templates themselves
+        live in a package (``curio.media@1``, ``curio.rasterization@1``,
+        ``curio.vega-lite@1``, ``curio.weather@1``, and the model packages
+        ``model.curio.ddrnet23-slim@1``, ``model.curio.sam3@1``,
+        ``model.scout.deep-umbra@1`` and ``model.scout.weather-gnn@1``).
+        Example 09's seven steps before its views are the Weather package's
+        nodes, which also bring the python libraries the package's manifest
+        owns.
+        Example 31's package node is SAM 3's
         Track Objects, and example 33's are Media's Sample Video Frames and
         Split Video and SAM 3's Segment Images.
         quad-cities-flood-vulnerability's raster nodes are its Raster
@@ -519,6 +521,7 @@ class TestTheShippedCorpus:
                 needs_package_templates[path.stem] = foreign
         assert list(needs_package_templates) == [
             "06-back-bay-road-sunlight",
+            "09-heterogeneous-data-linked-views",
             "10-street-vision-cv-analysis",
             "18-storage-orthorectified-imagery",
             "21-storage-photos-and-videos",
@@ -531,6 +534,15 @@ class TestTheShippedCorpus:
             "lower-manhattan-park-shade",
             "quad-cities-flood-vulnerability",
             "scenario-comparison-charts",
+        ]
+        assert needs_package_templates["09-heterogeneous-data-linked-views"] == [
+            "curio.weather/census-load",
+            "curio.weather/census-reproject",
+            "curio.weather/gt65-projection",
+            "curio.weather/mrt-load",
+            "curio.weather/utci-compute",
+            "curio.weather/utci-zonal",
+            "curio.weather/weather-load",
         ]
         assert needs_package_templates["31-sideseeing-objects-along-a-walk"] == [
             "model.curio.sam3/track-objects",

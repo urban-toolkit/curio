@@ -1,6 +1,6 @@
 # Example: Heterogeneous data + cross-grammar linked views
 
-This example combines three different data sources, a high-resolution thermal raster, a tabular meteorological feed, and a sociodemographic GeoDataFrame, into a single pipeline that derives the Universal Thermal Climate Index (UTCI) per Milan census tract, and then renders the result as an `autk-grammar` map and a Vega-Lite scatter linked by an interaction edge, beside a Vega-Lite boxplot. The use case is heat exposure of older adults in Milan; the framework story is that nodes with several inputs join heterogeneous data, and that two views link whichever grammar draws them.
+This example combines three different data sources, a high-resolution thermal raster, a tabular meteorological feed, and a sociodemographic GeoDataFrame, into a single pipeline that derives the Universal Thermal Climate Index (UTCI) per Milan census tract, and then renders the result as an `autk-grammar` map and a Vega-Lite scatter linked by an interaction edge, beside a Vega-Lite boxplot. Every step before the views is a node of the Weather Analysis package, `curio.weather`. The use case is heat exposure of older adults in Milan; the framework story is that nodes with several inputs join heterogeneous data, and that two views link whichever grammar draws them.
 
 > [!NOTE]
 > **WebGPU required**
@@ -8,27 +8,27 @@ This example combines three different data sources, a high-resolution thermal ra
 
 > [!NOTE]
 > **Python dependencies**
-> The code nodes import `rasterio`, `pythermalcomfort`, and `rasterstats`, which are provided by the `curio.weather` package, installed automatically when Curio starts with `--with-examples`, or on demand from the catalog drawer ("Weather Analysis"). Opening the seeded example project also triggers an automatic check that warns about and installs any of these that are missing in your own workspace.
+> The Weather nodes' modules import `rasterio`, `pythermalcomfort`, and `rasterstats`, which the `curio.weather` package declares. Curio installs them when it starts with `--with-examples`, or when you add the package from the Node Catalog drawer ("Weather Analysis"). Opening the seeded example project also checks for any of them missing in your own workspace, and installs them.
 
 ## Pipeline overview
 
 ```mermaid
 flowchart LR
-  R[`Data Loading`<br/>Tmrt raster]
-  W[`Data Loading`<br/>meteo CSV]
-  S[`Data Loading`<br/>census polygons]
+  R[`Milan MRT Loader`<br/>Tmrt raster]
+  W[`ERA5 Milan Weather`<br/>meteo CSV]
+  S[`Milan Census Polygons`<br/>census polygons]
 
-  R -->|input_0| U[`Python Computation`<br/>UTCI]
+  R -->|input_0| U[`UTCI from raster + weather`]
   W -->|input_1| U
 
-  R -->|input_0| Z[`Python Computation`<br/>zonal stats]
+  R -->|input_0| Z[`UTCI Zonal Mean`]
   U -->|input_1| Z
   S -->|input_2| Z
-  Z --> T[`Python Computation`<br/>reproject + filter]
+  Z --> T[`Reproject census to EPSG:3395`]
 
   T --> M[autk-grammar<br/>thematic map + picking]
   T --> SC[`Vega-Lite`<br/>linked scatter]
-  T --> BX[`Python Computation`<br/>gt_65 only] --> BV[`Vega-Lite`<br/>boxplot]
+  T --> BX[`Project gt_65 column`] --> BV[`Vega-Lite`<br/>boxplot]
 
   M <-. Interaction .-> SC
 ```
@@ -36,7 +36,7 @@ flowchart LR
 ## Data
 
 This example reads its inputs from the [Data Catalog](../DATA-CATALOG.md). Each loader node
-addresses a dataset by id via `curio_data_path("<id>")`, so the dataflow runs unchanged from a checkout, a Docker deployment or a `pip` install.
+reads its dataset by id with `curio_load_data("<id>")`, so the dataflow runs unchanged from a checkout, a Docker deployment or a `pip` install.
 
 | Dataset | Id | Format | Size |
 |---|---|---|---|
@@ -51,157 +51,109 @@ All three ship in the committed catalog under `datasets/` and are already added 
 The raster is the 2022 mean radiant temperature field for Milan (July 22, noon), pre-downsampled by a
 factor of 4 per dimension and float16-quantized so the file fits in the repo; UTCI precision (about
 0.06 °C in this range) is unaffected. The weather CSV is hourly ERA5 reanalysis (Td, Wind, RH) for the
-same day, re-saved comma-delimited during the move into the catalog (the original export was
-semicolon-delimited, which the catalog's generated loader cannot express). The census polygons are
-trimmed to the `gt_65` (population over 65) column.
+same day, saved comma-delimited. The census polygons are trimmed to the `gt_65` (population over 65)
+column.
 
 Original sources: Milan thermal raster from the [Curio team's bundled tutorial Drive](https://drive.google.com/drive/folders/1-cncKF-omB0av98WzKApKtyJTrgvfa0P?usp=sharing); census polygons from ISTAT.
 
-## Step 1: Load the mean radiant temperature raster (`Data Loading`)
+## The Weather nodes
 
-Read the GeoTIFF directly with `rasterio` and hand the dataset object downstream.
+The dataflow names the `curio.weather` package, so its nodes are in the Node Catalog drawer and in the left Tools panel. Each loader's code is one read of the Data Catalog. Each computing node's code is a call of one function of the package's modules, which the header above the code lists under **Functions**, and its Widgets tab holds its settings. The [package's README](../../packages/curio.weather@1/README.md) lists the functions and the widgets.
+
+## Step 1: Load the mean radiant temperature raster (`Milan MRT Loader`)
+
+The loader hands the GeoTIFF downstream as an open `rasterio` dataset.
 
 ```python
-import rasterio
-src = curio_load_data("data.utk.milan-mrt")
-return src
+return curio_load_data("data.utk.milan-mrt")
 ```
 
-## Step 2: Load the meteorological CSV (`Data Loading`)
+## Step 2: Load the meteorological CSV (`ERA5 Milan Weather`)
 
-The hourly ERA5 file gives air temperature (Td), wind speed (Wind), and relative humidity (RH) per hour `it`. The downstream UTCI step picks the row matching the raster's noon timestamp.
+The hourly ERA5 file gives air temperature (Td), wind speed (Wind), and relative humidity (RH) per hour `it`. The UTCI step reads the row of the hour its **Hour** widget names.
 
 ```python
-import pandas as pd
-sensor = curio_load_data("data.utk.milan-era5-weather")
-return sensor
+return curio_load_data("data.utk.milan-era5-weather")
 ```
 
-## Step 3: Load census polygons (`Data Loading`)
+## Step 3: Load census polygons (`Milan Census Polygons`)
 
-A separate branch loads the sociodemographic GeoJSON that carries the `gt_65` column (the count of residents older than 65 per polygon).
+A separate branch loads the sociodemographic GeoJSON that carries the `gt_65` column (the count of residents older than 65 per polygon), as a GeoDataFrame.
 
 ```python
-import geopandas as gpd
-gdf = curio_load_data("data.utk.milan-census-gt65")
-return gdf
+return curio_load_data("data.utk.milan-census-gt65")
 ```
 
-## Step 4: Compute UTCI on the raster grid (`Python Computation`)
+## Step 4: Compute UTCI on the raster grid (`UTCI from raster + weather`)
 
-The raster goes into this node's first input circle and the meteo table into its second; the code reads them as `[!! input_0 !!]` and `[!! input_1 !!]` (see [Several inputs](../USAGE.md#several-inputs)). Read the noon weather row and call `pythermalcomfort.models.utci` to produce a UTCI value per pixel. Two non-obvious details in this node:
+The raster goes into this node's first input circle and the meteo table into its second; the code reads them as `[!! input_0 !!]` and `[!! input_1 !!]` (see [Several inputs](../USAGE.md#several-inputs)). Its Widgets tab sets **Hour**, here 12, noon, the hour of the weather table it reads, and **Upscale factor**, here 1, so the raster is read at its own size. Its code calls `utci_grid`, the function of the package's module `weather_utci`, which computes `pythermalcomfort.models.utci` for each pixel:
 
-- `data.filled(np.nan)` collapses the rasterio MaskedArray to a plain float array with NaN for nodata, regardless of the raster's nodata sentinel.
-- `limit_inputs=False` keeps UTCI valid when `tr − tdb > 30` (common at noon in Milan, where MRT is regularly 60 to 70 °C while air temperature stays around 30 °C). With the default `limit_inputs=True`, those pixels would silently come back as NaN and the map would render half-empty.
+- a pixel where the raster has no value is NaN in the grid, whatever the raster's nodata value is;
+- `limit_inputs=False` keeps UTCI valid when `tr - tdb > 30`, which is common at noon in Milan, where MRT is regularly 60 to 70 °C while air temperature stays around 30 °C. With the default `limit_inputs=True`, those pixels would come back as NaN and the map would render half-empty.
 
-The output is the UTCI grid as a list-of-lists plus its `[width, height]` shape, packaged as a tuple so the downstream zonal-stats node can rebuild the array.
+The output is the UTCI grid as a list of rows plus its `[width, height]` shape, as a tuple, so the zonal mean can place the grid on the raster.
 
 ```python
-# Step 4 - Compute UTCI
+"""UTCI from raster + weather.
 
-import numpy as np
-from pythermalcomfort import models
-from rasterio.warp import Resampling
+Input: the mean radiant temperature raster on input_0, as Milan MRT Loader
+returns it, and the hourly weather table on input_1, as ERA5 Milan Weather
+returns it. Returns `(grid, shape)`: the Universal Thermal Climate Index of
+each cell, as a list of rows, and the grid's `[width, height]`, which UTCI
+Zonal Mean takes with the raster.
 
-src = [!! input_0 !!]
-sensor = [!! input_1 !!]
+The Widgets tab sets the hour, the weather table's `it`, whose weather is
+used, and how many times its width and height the raster is read at.
+"""
 
-timestamp = 12
+from weather_utci import utci_grid
 
-# Bundled raster is already at the working resolution; no further downsample needed.
-upscale_factor = 1.0
-dataset = src
-data = dataset.read(
-    out_shape=(
-        dataset.count,
-        int(dataset.height * upscale_factor),
-        int(dataset.width * upscale_factor),
-    ),
-    resampling=Resampling.nearest,
-    masked=True,
+return utci_grid(
+    [!! input_0 !!], [!! input_1 !!],
+    timestamp=int([!! timestamp !!]),
+    upscale_factor=float([!! upscale_factor !!]),
 )
-data = data.astype(float).filled(np.nan)
-
-sensor_filtered = sensor[sensor["it"] == timestamp]
-tdb = float(sensor_filtered["Td"].values[0])
-v = float(sensor_filtered["Wind"].values[0])
-rh = float(sensor_filtered["RH"].values[0])
-
-# `limit_inputs=False` keeps UTCI valid for tr - tdb > 30 (common at noon in Milan).
-utci_result = models.utci(tdb=tdb, tr=data[0], v=v, rh=rh, units="SI", limit_inputs=False)
-utci_grid = np.asarray(getattr(utci_result, "utci", utci_result), dtype=float)
-
-if utci_grid.ndim == 3 and utci_grid.shape[0] == 1:
-    utci_grid = utci_grid[0]
-if utci_grid.ndim != 2:
-    raise ValueError(f"UTCI must be 2D, got shape={utci_grid.shape}, ndim={utci_grid.ndim}")
-
-utci_list = utci_grid.tolist()
-utci_shape = [utci_grid.shape[1], utci_grid.shape[0]]
-
-return (utci_list, utci_shape)
 ```
 
-## Step 5: Spatially join UTCI into census polygons (`Python Computation`)
+## Step 5: Spatially join UTCI into census polygons (`UTCI Zonal Mean`)
 
-The node's three input circles take the original raster (for its CRS / transform), the UTCI tuple from Step 4, and the census polygons from Step 3, read as `[!! input_0 !!]`, `[!! input_1 !!]` and `[!! input_2 !!]`. Run `rasterstats.zonal_stats` to compute per-polygon UTCI statistics and attach the mean to each polygon.
+The node's three input circles take the original raster (for its CRS / transform), the UTCI tuple from Step 4, and the census polygons from Step 3, read as `[!! input_0 !!]`, `[!! input_1 !!]` and `[!! input_2 !!]`. Its code calls `utci_zonal_mean`, of the module `weather_census`, which runs `rasterstats.zonal_stats` over the grid and gives each polygon its geometry, its `mean` UTCI and its `gt_65`. A pixel with no value counts toward no mean.
 
 ```python
-# Step 5 - Zonal Statistics
+"""UTCI Zonal Mean.
 
-from rasterstats import zonal_stats
-import numpy as np
+Input, in order: the mean radiant temperature raster on input_0, which places
+the grid; UTCI from raster + weather's `(grid, shape)` on input_1; the census
+polygons on input_2, with their `gt_65`. Returns the polygons' geometry, `mean`,
+the mean UTCI over each polygon, and `gt_65`.
+"""
 
-dataset = [!! input_0 !!]
-utci_list = [!! input_1 !!][0]
-utci_shape = [!! input_1 !!][1]
-gdf = [!! input_2 !!]
+from weather_census import utci_zonal_mean
 
-utci = np.asarray(utci_list, dtype=float)
-shape = utci_shape
-
-if utci.ndim != 2:
-    raise ValueError(f"Expected 2D UTCI array, got shape={utci.shape}, ndim={utci.ndim}")
-
-transform = dataset.transform * dataset.transform.scale(
-    (dataset.width / shape[0]),
-    (dataset.height / shape[1]),
-)
-
-# Avoid nodata warning and make nodata explicit
-nodata_value = -999.0
-utci_for_stats = np.where(np.isnan(utci), nodata_value, utci)
-
-joined = zonal_stats(
-    gdf,
-    utci_for_stats,
-    stats=["min", "max", "mean", "median"],
-    affine=transform,
-    nodata=nodata_value,
-)
-
-gdf["mean"] = [d["mean"] for d in joined]
-result = gdf.loc[:, [gdf.geometry.name, "mean", "gt_65"]]
-
-
-return result
+return utci_zonal_mean([!! input_0 !!], [!! input_1 !!], [!! input_2 !!])
 ```
 
-## Step 6: Reproject and filter (`Python Computation`)
+## Step 6: Reproject and filter (`Reproject census to EPSG:3395`)
 
-Drop polygons with non-positive UTCI and reproject to EPSG:3395 so the `autk-grammar` map downstream sees the CRS its tile pipeline expects. The `metadata.name` keeps the table referenceable as `census` throughout the rest of the dataflow.
-
-Note the assignment goes through ``__dict__['metadata']`` instead of plain attribute syntax: pandas emits a `UserWarning` when setting an unknown attribute on a sliced DataFrame, and curio's sandbox treats any non-empty stderr as a node failure during e2e. Curio reads `.metadata` back through `getattr`, so both write paths work, but only the dict path stays warning-free.
+The node's Widgets tab sets **Source CRS**, here 32632, the UTM zone the census polygons are in, and **Target CRS**, here 3395, the CRS the views draw them in. Its call, `reproject_census`, reprojects the polygons, drops those whose mean UTCI is not above 0, and names the table `census` for the rest of the dataflow.
 
 ```python
-import geopandas as gpd
+"""Reproject census to EPSG:3395.
 
-gdf = input_0
-filtered_gdf = gdf.set_crs(32632)
-filtered_gdf = filtered_gdf.to_crs(3395)
-filtered_gdf = filtered_gdf[filtered_gdf['mean'] > 0]
-filtered_gdf.__dict__['metadata'] = {'name': 'census'}
-return filtered_gdf
+Input: UTCI Zonal Mean's polygons. Returns them in the target CRS, those whose
+mean UTCI is not above 0 left out, named `census` for the views.
+
+The Widgets tab sets the CRS the census polygons are in and the CRS the views
+draw them in, each as its EPSG code.
+"""
+
+from weather_census import reproject_census
+
+return reproject_census(
+    input_0,
+    source_crs=int([!! source_crs !!]),
+    target_crs=int([!! target_crs !!]),
+)
 ```
 
 ## Step 7: Thematic map of UTCI (`autk-grammar`)
@@ -251,13 +203,20 @@ A Vega-Lite scatter of `gt_65` vs `mean` UTCI. Its interval selection colors the
 }
 ```
 
-## Step 9: Boxplot of older-adult population (`Vega-Lite`)
+## Step 9: Boxplot of older-adult population (`Project gt_65 column`, `Vega-Lite`)
 
-Add a `Python Computation` node that drops everything but `gt_65`, then a Vega-Lite boxplot reading from it. This view summarises the distribution of older-adult counts independent of UTCI.
+The **Project gt_65 column** node keeps only `gt_65`, with `gt65_column`, and a Vega-Lite boxplot reads from it. This view summarises the distribution of older-adult counts independent of UTCI.
 
 ```python
-gdf = input_0
-return gdf.loc[:, ["gt_65"]]
+"""Project gt_65 column.
+
+Input: the census polygons, as Reproject census to EPSG:3395 returns them.
+Returns their `gt_65` column alone, for a chart of the residents over 65.
+"""
+
+from weather_census import gt65_column
+
+return gt65_column(input_0)
 ```
 
 ```json

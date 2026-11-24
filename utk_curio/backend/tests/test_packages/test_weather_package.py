@@ -17,6 +17,9 @@ the modules: the old starters, run on these inputs with pythermalcomfort
 3.9.8, rasterstats 0.21.0 and geopandas 1.1.3, gave them, and the new code
 gave the same results, warnings and errors, to the last bit.
 
+Example 09, Heterogeneous data + linked views, is made of the package's
+nodes, and its steps give, at its settings, the values its Python nodes gave.
+
 The libraries are imported inside the tests, so a checkout without one fails
 its tests alone.
 """
@@ -563,3 +566,117 @@ def test_the_three_nodes_wired_together(package_modules, mrt):
     assert out["gt_65"].tolist() == [120, 85]
     assert out.crs.to_epsg() == 3395
     assert out.__dict__["metadata"] == {"name": "census"}
+
+
+# ---------------------------------------------------------------------------
+# Example 09, made of the package's nodes
+# ---------------------------------------------------------------------------
+
+EXAMPLE_09 = REPO / "docs" / "examples" / "09-heterogeneous-data-linked-views.json"
+#: Example 09's nodes that do the package's steps, by id, and the template of
+#: each: its three loaders, then the index, its mean over the census polygons,
+#: the polygons reprojected for the views, and their gt_65 column.
+EXAMPLE_09_STEPS = {
+    "c80722e7-8960-4308-8f1d-90b121acf126": "mrt-load",
+    "48a522cd-b1d7-4947-98c2-fb50e07f1d82": "weather-load",
+    "4b7c2234-d107-4531-b890-5c582efbe444": "census-load",
+    "ea821796-827b-47ac-8104-4bfb4dc5eb63": "utci-compute",
+    "cdb373b6-1b35-47db-bfd7-fe4ae1e9efdc": "utci-zonal",
+    "3cc268ee-ec4b-4921-ac69-6d0bb3691cb4": "census-reproject",
+    "35bd75ce-005e-40e1-9172-7caef9ccf046": "gt65-projection",
+}
+#: What computes the index and its zonal mean: the libraries, and their calls.
+BY_HAND = {"pythermalcomfort", "rasterstats", "utci", "zonal_stats"}
+
+
+def _example_09_nodes() -> dict:
+    """Example 09's nodes, by id, as the shipped file holds them."""
+    spec = json.loads(EXAMPLE_09.read_text(encoding="utf-8"))
+    return {node["id"]: node for node in spec["dataflow"]["nodes"]}
+
+
+def _example_09_step(node_id: str, value, slots):
+    """The output of example 09's node *node_id* for *value* on the circles
+    *slots*: its code as the shipped file holds it, its widgets at the values
+    the file gives them, run as the sandbox runs it. The package's modules
+    must be staged (``package_modules``)."""
+    from utk_curio.backend.app.execution.code_references import resolve_references
+    from utk_curio.sandbox.util.input_names import call_as_node
+
+    node = _example_09_nodes()[node_id]
+    code, problems = resolve_references(
+        node["content"], (node.get("metadata") or {}).get("widgets") or [], "python",
+        inputs=[{"slot": slot} for slot in slots],
+    )
+    assert problems == [], (node_id, problems)
+    body = "\n".join("    " + line for line in code.splitlines())
+    return call_as_node(body, {}, value, slots)
+
+
+def test_example_09_does_the_packages_steps_with_the_packages_nodes():
+    """Each of example 09's steps that a template of the package does is that
+    template's node, so the dataflow shows the package's nodes: each holds its
+    template's code, the call of a function of the package's modules (or, for
+    a loader, its one read of the Data Catalog), and its template's widgets,
+    which hold its settings."""
+    nodes = _example_09_nodes()
+    assert {node_id: nodes[node_id]["type"] for node_id in EXAMPLE_09_STEPS} == {
+        node_id: f"{PACKAGE_ID}/{template}" for node_id, template in EXAMPLE_09_STEPS.items()
+    }
+    for node_id, template in EXAMPLE_09_STEPS.items():
+        node = nodes[node_id]
+        assert node["content"] == _template_source(template), (node_id, node["content"][:200])
+        widgets = (node.get("metadata") or {}).get("widgets") or []
+        assert [{key: value for key, value in widget.items() if key != "value"} for widget in widgets] == (
+            _widgets(template)
+        ), (node_id, widgets)
+
+
+def test_no_node_of_example_09_computes_the_index_or_its_zonal_mean_in_its_own_code():
+    """The Universal Thermal Climate Index and its mean over the census
+    polygons are computed in the package's modules, once: no Python node of
+    example 09 imports ``pythermalcomfort`` or ``rasterstats`` in its own
+    code, or calls their ``utci`` or ``zonal_stats``."""
+    from utk_curio.backend.app.execution.code_references import REFERENCE_RE
+    from utk_curio.backend.app.execution.workflow_spec import PY_CODE_TYPES, normalize_type
+
+    by_hand = {}
+    for node_id, node in _example_09_nodes().items():
+        if normalize_type(node["type"]) not in PY_CODE_TYPES:
+            continue
+        code = REFERENCE_RE.sub("None", node["content"])
+        tree = ast.parse("def node():\n" + "\n".join("    " + line for line in code.splitlines()))
+        names = {alias.name.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.Import) for alias in n.names}
+        names |= {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
+        names |= {
+            n.func.attr if isinstance(n.func, ast.Attribute) else getattr(n.func, "id", "")
+            for n in ast.walk(tree) if isinstance(n, ast.Call)
+        }
+        if names & BY_HAND:
+            by_hand[node_id] = sorted(names & BY_HAND)
+    assert by_hand == {}, by_hand
+
+
+def test_example_09s_steps_give_what_its_python_nodes_gave(package_modules, mrt):
+    """Example 09's own nodes, wired as the example wires them, at the
+    settings the example gives them, on the inputs built here: the index at
+    noon, its mean over each census polygon, the two polygons with a mean in
+    EPSG:3395 named ``census``, and their ``gt_65`` alone. These are the
+    values its Python nodes gave before they became the package's nodes, at
+    hour 12, the raster read at its own size, from EPSG:32632 to EPSG:3395."""
+    steps = {template: node_id for node_id, template in EXAMPLE_09_STEPS.items()}
+    grid, shape = _example_09_step(steps["utci-compute"], [mrt, _weather()], [0, 1])
+    assert shape == [4, 3]
+    assert _same(grid, UTCI_AT_NOON), grid
+    merged = _example_09_step(steps["utci-zonal"], [mrt, (grid, shape), _census()], [0, 1, 2])
+    assert list(merged.columns) == ["geometry", "mean", "gt_65"]
+    assert _same([merged["mean"].tolist()], [MEANS_AT_NOON]), merged["mean"].tolist()
+    out = _example_09_step(steps["census-reproject"], merged, [0])
+    assert list(out.index) == [0, 1]
+    assert out.crs.to_epsg() == 3395
+    assert out["mean"].tolist() == pytest.approx(MEANS_AT_NOON[:2], abs=1e-6)
+    assert out.geometry.geom_equals_exact(_census().geometry.iloc[:2].to_crs(3395), tolerance=1e-6).all()
+    assert out.__dict__["metadata"] == {"name": "census"}
+    older = _example_09_step(steps["gt65-projection"], out, [0])
+    assert list(older.columns) == ["gt_65"]
+    assert older["gt_65"].tolist() == [120, 85]

@@ -4,10 +4,10 @@
     "nodes": [
       {
         "id": "c80722e7-8960-4308-8f1d-90b121acf126",
-        "type": "curio.builtin/data-loading",
+        "type": "curio.weather/mrt-load",
         "x": 0,
         "y": 0,
-        "content": "import rasterio\nsrc = curio_load_data(\"data.utk.milan-mrt\")\n\nreturn src",
+        "content": "return curio_load_data(\"data.utk.milan-mrt\")\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -17,10 +17,10 @@
       },
       {
         "id": "48a522cd-b1d7-4947-98c2-fb50e07f1d82",
-        "type": "curio.builtin/data-loading",
+        "type": "curio.weather/weather-load",
         "x": 0,
         "y": 430,
-        "content": "import pandas as pd\nsensor = curio_load_data(\"data.utk.milan-era5-weather\")\nreturn sensor",
+        "content": "return curio_load_data(\"data.utk.milan-era5-weather\")\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -30,23 +30,42 @@
       },
       {
         "id": "ea821796-827b-47ac-8104-4bfb4dc5eb63",
-        "type": "curio.builtin/python-computation",
+        "type": "curio.weather/utci-compute",
         "x": 645,
         "y": 430,
-        "content": "# Step 4 - Compute UTCI\r\n\r\nimport numpy as np\r\nfrom pythermalcomfort import models\r\nfrom rasterio.warp import Resampling\r\n\r\nsrc = [!! input_0 !!]\r\nsensor = [!! input_1 !!]\r\n\r\ntimestamp = 12\r\n\r\n# Bundled raster is already at the working resolution; no further downsample needed.\r\nupscale_factor = 1.0\r\ndataset = src\r\ndata = dataset.read(\r\n    out_shape=(\r\n        dataset.count,\r\n        int(dataset.height * upscale_factor),\r\n        int(dataset.width * upscale_factor),\r\n    ),\r\n    resampling=Resampling.nearest,\r\n    masked=True,\r\n)\r\ndata = data.astype(float).filled(np.nan)\r\n\r\nsensor_filtered = sensor[sensor[\"it\"] == timestamp]\r\ntdb = float(sensor_filtered[\"Td\"].values[0])\r\nv = float(sensor_filtered[\"Wind\"].values[0])\r\nrh = float(sensor_filtered[\"RH\"].values[0])\r\n\r\n# `limit_inputs=False` keeps UTCI valid for tr - tdb > 30 (common at noon in Milan).\r\nutci_result = models.utci(tdb=tdb, tr=data[0], v=v, rh=rh, units=\"SI\", limit_inputs=False)\r\nutci_grid = np.asarray(getattr(utci_result, \"utci\", utci_result), dtype=float)\r\n\r\nif utci_grid.ndim == 3 and utci_grid.shape[0] == 1:\r\n    utci_grid = utci_grid[0]\r\nif utci_grid.ndim != 2:\r\n    raise ValueError(f\"UTCI must be 2D, got shape={utci_grid.shape}, ndim={utci_grid.ndim}\")\r\n\r\nutci_list = utci_grid.tolist()\r\nutci_shape = [utci_grid.shape[1], utci_grid.shape[0]]\r\n\r\nreturn (utci_list, utci_shape)\r\n",
+        "content": "\"\"\"UTCI from raster + weather.\n\nInput: the mean radiant temperature raster on input_0, as Milan MRT Loader\nreturns it, and the hourly weather table on input_1, as ERA5 Milan Weather\nreturns it. Returns `(grid, shape)`: the Universal Thermal Climate Index of\neach cell, as a list of rows, and the grid's `[width, height]`, which UTCI\nZonal Mean takes with the raster.\n\nThe Widgets tab sets the hour, the weather table's `it`, whose weather is\nused, and how many times its width and height the raster is read at.\n\"\"\"\n\nfrom weather_utci import utci_grid\n\nreturn utci_grid(\n    [!! input_0 !!], [!! input_1 !!],\n    timestamp=int([!! timestamp !!]),\n    upscale_factor=float([!! upscale_factor !!]),\n)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
         "metadata": {
-          "keywords": []
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "timestamp",
+              "type": "slider",
+              "label": "Hour",
+              "default": 12,
+              "options": {
+                "min": 0,
+                "max": 23,
+                "step": 1
+              }
+            },
+            {
+              "name": "upscale_factor",
+              "type": "number",
+              "label": "Upscale factor",
+              "default": 1.0
+            }
+          ]
         }
       },
       {
         "id": "4b7c2234-d107-4531-b890-5c582efbe444",
-        "type": "curio.builtin/data-loading",
+        "type": "curio.weather/census-load",
         "x": 0,
         "y": 860,
-        "content": "import geopandas as gpd\ngdf = curio_load_data(\"data.utk.milan-census-gt65\")\nreturn gdf",
+        "content": "return curio_load_data(\"data.utk.milan-census-gt65\")\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -56,10 +75,10 @@
       },
       {
         "id": "cdb373b6-1b35-47db-bfd7-fe4ae1e9efdc",
-        "type": "curio.builtin/python-computation",
+        "type": "curio.weather/utci-zonal",
         "x": 1290,
         "y": 430,
-        "content": "# Step 5 - Zonal Statistics\r\n\r\nfrom rasterstats import zonal_stats\r\nimport numpy as np\r\n\r\ndataset = [!! input_0 !!]\r\nutci_list = [!! input_1 !!][0]\r\nutci_shape = [!! input_1 !!][1]\r\ngdf = [!! input_2 !!]\r\n\r\nutci = np.asarray(utci_list, dtype=float)\r\nshape = utci_shape\r\n\r\nif utci.ndim != 2:\r\n    raise ValueError(f\"Expected 2D UTCI array, got shape={utci.shape}, ndim={utci.ndim}\")\r\n\r\ntransform = dataset.transform * dataset.transform.scale(\r\n    (dataset.width / shape[0]),\r\n    (dataset.height / shape[1]),\r\n)\r\n\r\n# Avoid nodata warning and make nodata explicit\r\nnodata_value = -999.0\r\nutci_for_stats = np.where(np.isnan(utci), nodata_value, utci)\r\n\r\njoined = zonal_stats(\r\n    gdf,\r\n    utci_for_stats,\r\n    stats=[\"min\", \"max\", \"mean\", \"median\"],\r\n    affine=transform,\r\n    nodata=nodata_value,\r\n)\r\n\r\ngdf[\"mean\"] = [d[\"mean\"] for d in joined]\r\nresult = gdf.loc[:, [gdf.geometry.name, \"mean\", \"gt_65\"]]\r\n\r\n\r\nreturn result",
+        "content": "\"\"\"UTCI Zonal Mean.\n\nInput, in order: the mean radiant temperature raster on input_0, which places\nthe grid; UTCI from raster + weather's `(grid, shape)` on input_1; the census\npolygons on input_2, with their `gt_65`. Returns the polygons' geometry, `mean`,\nthe mean UTCI over each polygon, and `gt_65`.\n\"\"\"\n\nfrom weather_census import utci_zonal_mean\n\nreturn utci_zonal_mean([!! input_0 !!], [!! input_1 !!], [!! input_2 !!])\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -69,23 +88,43 @@
       },
       {
         "id": "3cc268ee-ec4b-4921-ac69-6d0bb3691cb4",
-        "type": "curio.builtin/python-computation",
+        "type": "curio.weather/census-reproject",
         "x": 1935,
         "y": 430,
-        "content": "import geopandas as gpd\n\ngdf = input_0\n\nfiltered_gdf = gdf.set_crs(32632)\nfiltered_gdf = filtered_gdf.to_crs(3395)\n\nfiltered_gdf = filtered_gdf[filtered_gdf['mean']>0]\n\n# Use __dict__ to bypass pandas' \"new attribute\" UserWarning on sliced\n# DataFrames; curio reads .metadata back via getattr (parsers.py).\nfiltered_gdf.__dict__['metadata'] = {\n   'name': 'census'\n}\n\nreturn filtered_gdf",
+        "content": "\"\"\"Reproject census to EPSG:3395.\n\nInput: UTCI Zonal Mean's polygons. Returns them in the target CRS, those whose\nmean UTCI is not above 0 left out, named `census` for the views.\n\nThe Widgets tab sets the CRS the census polygons are in and the CRS the views\ndraw them in, each as its EPSG code.\n\"\"\"\n\nfrom weather_census import reproject_census\n\nreturn reproject_census(\n    input_0,\n    source_crs=int([!! source_crs !!]),\n    target_crs=int([!! target_crs !!]),\n)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
         "metadata": {
-          "keywords": []
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "source_crs",
+              "type": "number",
+              "label": "Source CRS",
+              "default": 32632,
+              "options": {
+                "step": 1
+              }
+            },
+            {
+              "name": "target_crs",
+              "type": "number",
+              "label": "Target CRS",
+              "default": 3395,
+              "options": {
+                "step": 1
+              }
+            }
+          ]
         }
       },
       {
         "id": "35bd75ce-005e-40e1-9172-7caef9ccf046",
-        "type": "curio.builtin/python-computation",
+        "type": "curio.weather/gt65-projection",
         "x": 2580,
         "y": 0,
-        "content": "gdf = input_0\nreturn gdf.loc[:, [\"gt_65\"]]",
+        "content": "\"\"\"Project gt_65 column.\n\nInput: the census polygons, as Reproject census to EPSG:3395 returns them.\nReturns their `gt_65` column alone, for a chart of the residents over 65.\n\"\"\"\n\nfrom weather_census import gt65_column\n\nreturn gt65_column(input_0)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
