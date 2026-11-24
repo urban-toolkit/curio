@@ -29,6 +29,7 @@ def launcher_state(monkeypatch):
     """What ``clean_shutdown`` changes, each put back after the test."""
     monkeypatch.setattr(lifecycle, "processes", [])
     monkeypatch.setattr(lifecycle, "shutdown_flag", threading.Event())
+    monkeypatch.setattr(lifecycle, "servers_stopped", threading.Event())
     monkeypatch.setattr(lifecycle, "exit_status", 0)
 
 

@@ -14,6 +14,8 @@ shell_required = platform.system() == "Windows"
 
 
 shutdown_flag = threading.Event()
+#: Set once :func:`clean_shutdown` stopped every server.
+servers_stopped = threading.Event()
 processes = []
 #: What the launcher exits with once every server stopped: 0, or the status
 #: of the stop a server's exit asked for (:func:`clean_shutdown`).
@@ -21,6 +23,9 @@ exit_status = 0
 #: Once a server exited, how long :func:`watch` waits for
 #: :func:`stream_output` to have logged what it wrote before it exited.
 OUTPUT_WAIT_S = 5.0
+#: How long :func:`clean_shutdown` gives a server to stop after SIGTERM,
+#: before it kills it.
+STOP_WAIT_S = 5
 
 
 def stream_output(process, name, color):
@@ -94,7 +99,8 @@ def clean_shutdown(status=0):
     error when a server stopped by itself or a start failed, so that a script
     never reads a failed start as one that came up. Called on another thread
     than the main one, it ends that thread, and the main one exits with
-    *status* once it sees the servers stopped (``main.py``)."""
+    *status* once that thread stopped every server
+    (:func:`wait_for_the_stop`)."""
     global exit_status
     if status:
         exit_status = status
@@ -105,10 +111,19 @@ def clean_shutdown(status=0):
         log_always(f"Terminating {process.args[0]}...")
         process.terminate()
         try:
-            process.wait(timeout=5)
+            process.wait(timeout=STOP_WAIT_S)
         except subprocess.TimeoutExpired:
             log_always(f"Force killing {process.args[0]}...")
             process.kill()
 
     log_always("All servers have been shut down.")
+    servers_stopped.set()
     sys.exit(exit_status)
+
+
+def wait_for_the_stop() -> None:
+    """Wait until :func:`clean_shutdown`, begun on another thread, the
+    backend group's, has stopped every server, for at most the time that
+    takes. The launcher's exit ends that thread, so a server it had not
+    stopped yet would outlive the launcher."""
+    servers_stopped.wait(timeout=STOP_WAIT_S * (len(processes) + 1))

@@ -71,6 +71,7 @@ def _launcher_starting_nothing(monkeypatch, *argv):
     monkeypatch.setattr(lifecycle, "processes", [])
     monkeypatch.setattr(lifecycle, "exit_status", 0)
     monkeypatch.setattr(lifecycle, "shutdown_flag", flag)
+    monkeypatch.setattr(lifecycle, "servers_stopped", threading.Event())
     monkeypatch.setattr(launcher, "signal", SimpleNamespace(
         SIGINT=signal.SIGINT, SIGTERM=signal.SIGTERM, signal=lambda *args: None,
     ))
@@ -197,8 +198,6 @@ def test_a_start_the_backend_group_stops_exits_once_every_server_stopped(monkeyp
     none of them runs."""
     flag = _launcher_starting_nothing(monkeypatch, "start", "backend", "--backend-processes", "2")
     monkeypatch.setattr(backend_group, "shutdown_flag", flag)
-    # What the stop sets once it stopped every server, a fresh one.
-    monkeypatch.setattr(lifecycle, "servers_stopped", threading.Event(), raising=False)
     monkeypatch.setattr(backend_group, "refuse_without_nginx", lambda processes: None)
     for name in ("start_backend", "start_sandbox", "start_frontend"):
         monkeypatch.setattr(launcher, name, lambda *args, **kwargs: pytest.fail("a server started outside the group"))
