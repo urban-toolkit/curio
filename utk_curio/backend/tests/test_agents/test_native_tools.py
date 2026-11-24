@@ -757,6 +757,181 @@ class TestStreaming:
         assert [o["toolChoice"] for o in _offered()] == ["auto"] * tool_rounds.MAX_TOOL_ROUNDS + ["none"]
 
 
+#: muse-glimmer's whole last reply in 83 of its turns in the 11-24 skill
+#: evaluation (run 45341666171): its last round offered no call, so it wrote its
+#: next call as text, in its own call syntax, and the chat showed that as the
+#: reply. This one asks for node.read.
+CALL_AS_TEXT = (
+    "<|start|>assistant to=node__read<|message|><atem:function_calls>\n"
+    '<atem:invoke name="node__read">\n'
+    '<atem:parameter name="nodeId">n1</atem:parameter>\n'
+    "</atem:invoke>\n"
+    "</atem:function_calls>"
+)
+#: The same call from its header's ``to=`` on, as its other 35 such replies
+#: wrote it, every one with nothing before it.
+CALL_FROM_ITS_HEADER = CALL_AS_TEXT[len("<|start|>assistant"):]
+#: Text before such a call, which none of those replies had: it stays the reply.
+PROSE = "The node returns 1, so its output is one row."
+#: A change written the same way.
+CHANGE_AS_TEXT = (
+    "<|start|>assistant to=node__content__write<|message|><atem:function_calls>\n"
+    '<atem:invoke name="node__content__write">\n'
+    '<atem:parameter name="nodeId">n1</atem:parameter>\n'
+    '<atem:parameter name="content">return 2</atem:parameter>\n'
+    "</atem:invoke>\n"
+    "</atem:function_calls>"
+)
+#: An answer that holds code, XML, HTML and a ``<`` but no call, ending in
+#: text that could have begun one: it is left as it is.
+ANSWER = (
+    "The node keeps the rows where `a < b`:\n\n"
+    "```python\nrows = df[df.a < df.b]  # see <b>bold</b>\n```\n\n"
+    'Its output reads as <rows count="2"><row id="1"/></rows>, as <svg width="10"><rect/></svg> '
+    'and as <function_calls><invoke name="node__read"/></function_calls>. '
+    "In Elm `f <| g x` pipes, the crs to=EPSG:4326 stays, and as assistant to the team I write to=all"
+)
+
+
+def _message(message_id: str) -> str | None:
+    """The message *message_id* of messages.md; None when the page has no
+    such message, so a checkout without it fails at an assertion."""
+    try:
+        return agent_text.message(message_id)
+    except agent_text.AgentTextError:
+        return None
+
+
+@pytest.fixture()
+def one_character_deltas(monkeypatch):
+    """A streamed turn's text one character a delta, as a model's server
+    streams a reply token by token. The scripted provider sends a reply
+    whole, in one delta, which no hold ever has to wait on."""
+    whole = providers.stream_chat_turn
+
+    def _one_character_at_a_time(*args, **kwargs):
+        for event in whole(*args, **kwargs):
+            if isinstance(event, str):
+                yield from event
+            else:
+                yield event
+
+    monkeypatch.setattr(providers, "stream_chat_turn", _one_character_at_a_time)
+
+
+class TestACallWrittenAsText:
+    """A run on native tools offers no call in its last round
+    (``tool_choice`` none). muse-glimmer then wrote its next call as text, in
+    its own call syntax (OpenAI's harmony format), and the chat showed that
+    markup as the reply: 118 of its 486 replies in the 11-24 skill evaluation,
+    and 122 of 480 on 11-17. Such a call is dropped as a request at the cap
+    is, and never run: the reply keeps the text before it, a change gets the
+    cutoff card, and a reply left with no text says the agent used its tool
+    rounds before it could answer. No delta streams a piece of it, and the
+    saved turn, which later turns read, holds none of it. Below the cap it is
+    asked for again, as a request block the parser could not take is. An
+    answer that holds code, XML or a ``<`` is left as it is."""
+
+    def _ended(self, client, headers, project, att, path) -> tuple[dict, str | None]:
+        """How the turn asked through *path* ended, the blocking answer's body
+        or the stream's done, and the text its deltas streamed (None when it
+        streamed none)."""
+        if path == "run":
+            return _run(client, headers, project, att), None
+        events = _stream(client, headers, project, att)
+        kind, done = events[-1]
+        assert kind == "done", events[-1]
+        return done, "".join(data["text"] for kind, data in events if kind == "delta")
+
+    @pytest.mark.parametrize("path", ["run", "run/stream"])
+    def test_a_last_reply_that_is_only_a_call_written_as_text_says_the_rounds_ran_out(
+            self, client, headers, project, path):
+        att = _attach(client, headers, project, CHAT)
+        testing_provider.push_replies(
+            *[{"toolCalls": [_call("dataflow.read")]}] * tool_rounds.MAX_TOOL_ROUNDS, CALL_AS_TEXT,
+        )
+        ended, _ = self._ended(client, headers, project, att, path)
+        assert [o["toolChoice"] for o in _offered()] == ["auto"] * tool_rounds.MAX_TOOL_ROUNDS + ["none"]
+        assert ended["reply"] == _message("turn.tool-rounds-used"), ended["reply"]
+        assert not [p for p in ended["content"] if p["type"] == "card"], "a read cut off at the cap gets no card"
+        saved = _last_turn(client, headers, project, att)
+        assert saved["text"] == ended["reply"]
+        assert [c["tool"] for c in saved["execution"]["toolCalls"]] == ["dataflow.read"] * tool_rounds.MAX_TOOL_ROUNDS
+
+    @pytest.mark.parametrize("path", ["run", "run/stream"])
+    def test_the_text_before_a_call_written_as_text_is_the_reply(self, client, headers, project, path):
+        att = _attach(client, headers, project, CHAT)
+        testing_provider.push_replies(
+            *[{"toolCalls": [_call("dataflow.read")]}] * tool_rounds.MAX_TOOL_ROUNDS,
+            f"{PROSE}\n{CALL_FROM_ITS_HEADER}",
+        )
+        ended, _ = self._ended(client, headers, project, att, path)
+        assert ended["reply"] == PROSE, ended["reply"]
+        assert _last_turn(client, headers, project, att)["text"] == PROSE
+
+    def test_a_change_written_as_text_at_the_cap_is_cut_off_with_its_card(
+            self, client, user_and_token, headers, project):
+        att = _attach(client, headers, project, NB)
+        testing_provider.push_replies(
+            *[{"toolCalls": [_call("dataflow.read")]}] * tool_rounds.MAX_TOOL_ROUNDS, CHANGE_AS_TEXT,
+        )
+        body = _run(client, headers, project, att)
+        cards = [p for p in body["content"] if p["type"] == "card"]
+        assert [card["title"] for card in cards] == ["Request cut off"], body["content"]
+        assert "node.content.write" in cards[0]["lines"][0], cards[0]
+        assert body["reply"] == _message("turn.tool-rounds-used"), body["reply"]
+        assert routes_proposals._changes(body) == []
+        user, _ = user_and_token
+        assert _saved_nodes(user, project)["n1"]["content"] == "return 1"
+
+    @pytest.mark.parametrize("path", ["run", "run/stream"])
+    def test_an_answer_holding_code_xml_and_angle_brackets_is_left_as_it_is(
+            self, client, headers, project, one_character_deltas, path):
+        att = _attach(client, headers, project, CHAT)
+        testing_provider.push_replies(
+            *[{"toolCalls": [_call("dataflow.read")]}] * tool_rounds.MAX_TOOL_ROUNDS, ANSWER,
+        )
+        ended, streamed = self._ended(client, headers, project, att, path)
+        assert ended["reply"] == ANSWER, ended["reply"]
+        assert streamed in (None, ANSWER), streamed
+        assert not [p for p in ended["content"] if p["type"] == "card"]
+        assert _last_turn(client, headers, project, att)["text"] == ANSWER
+
+    @pytest.mark.parametrize("last, shown", [(CALL_AS_TEXT, ""), (f"{PROSE}\n{CALL_FROM_ITS_HEADER}", PROSE)],
+                             ids=["only-the-call", "after-text"])
+    def test_no_delta_streams_a_piece_of_a_call_written_as_text(
+            self, client, headers, project, one_character_deltas, last, shown):
+        att = _attach(client, headers, project, CHAT)
+        testing_provider.push_replies(
+            *[{"toolCalls": [_call("dataflow.read")]}] * tool_rounds.MAX_TOOL_ROUNDS, last,
+        )
+        ended, streamed = self._ended(client, headers, project, att, "run/stream")
+        for piece in ("<|", "to=", "node__read", "atem:"):
+            assert piece not in streamed, f"{piece!r} streamed: {streamed!r}"
+        assert streamed.strip() == shown, streamed
+        assert ended["reply"] == (shown or _message("turn.tool-rounds-used")), ended["reply"]
+
+    def test_a_call_written_as_text_below_the_cap_is_asked_for_again(
+            self, client, headers, project, one_character_deltas):
+        att = _attach(client, headers, project, CHAT)
+        testing_provider.push_replies(
+            CALL_AS_TEXT, {"toolCalls": [_call("node.read", {"nodeId": "n1"})]}, "It returns 1.",
+        )
+        events = _stream(client, headers, project, att)
+        kind, done = events[-1]
+        assert (kind, done.get("reply")) == ("done", "It returns 1."), events[-1]
+        streamed = "".join(data["text"] for kind, data in events if kind == "delta")
+        assert "<|" not in streamed and "atem:" not in streamed, streamed
+        assert ("tool_revision", {"attempt": 1, "errors": 2}) in events
+        calls = _run_calls()
+        assert len(calls) == 3, calls
+        called_as_text = _message("tool-round.call-as-text")
+        assert called_as_text is not None and called_as_text in calls[1][-1]["content"], calls[1][-1]
+        assert "<|" not in json.dumps(calls[1]) and "<|" not in json.dumps(calls[2])
+        execution = _last_turn(client, headers, project, att)["execution"]
+        assert [c["tool"] for c in execution["toolCalls"]] == ["node.read"]
+
+
 #: A number widget a Python node declares, with its default and its options.
 SCALE = {"name": "scale", "type": "number", "label": "Scale", "default": 1,
          "options": {"min": 0.5, "max": 4, "step": 0.5}}
