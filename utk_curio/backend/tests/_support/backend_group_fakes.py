@@ -136,9 +136,12 @@ def boot(monkeypatch, *, processes: int = 2, host: str = "127.0.0.1", port: int 
     monkeypatch.setattr(backend_group, "threading", quiet)
     monkeypatch.setattr(backend_group, "_answers", answered)
     monkeypatch.setattr(backend_group, "clean_shutdown", lambda status=0: booted.stopped.append(status))
-    # A start of its own: no flag an earlier test set, and no faked process
-    # in the launcher's real list.
-    monkeypatch.setattr(backend_group, "shutdown_flag", threading.Event())
+    # A start of its own: no flag an earlier test set, the group's and the
+    # launcher's watch's the same, and no faked process in the launcher's
+    # real list.
+    flag = threading.Event()
+    monkeypatch.setattr(backend_group, "shutdown_flag", flag)
+    monkeypatch.setattr(lifecycle, "shutdown_flag", flag)
     monkeypatch.setattr(lifecycle, "processes", [])
     booted.started = backend_group.boot(host, port, processes, nginx=NGINX)
     return booted
