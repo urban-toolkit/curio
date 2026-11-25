@@ -43,13 +43,19 @@ describe("a plan row's head", () => {
     }
   });
 
-  test("every class the row names is one its stylesheet draws", () => {
+  test("every class the row names is drawn by a rule of its own", () => {
     // identity-obj-proxy answers any name here, while in the app a class the
     // stylesheet lacks is undefined: the row's Run had no rule, and drew as
-    // the browser's own button beside the card's Solve.
+    // the browser's own button beside the card's Solve. A class named only
+    // inside another selector (`.planNodeHead > .run`) is defined, yet draws
+    // nothing of its own, so it does not count.
     const named = [...new Set([...ROW.matchAll(/\bstyles\.([A-Za-z_]\w*)/g)].map((m) => m[1]))];
     expect(named).toEqual(expect.arrayContaining(["planNodeHead", "apply", "run"]));
-    const drawn = CARD.replace(/\/\*[\s\S]*?\*\//g, "");
-    expect(named.filter((name) => !new RegExp(`\\.${name}(?![\\w-])`).test(drawn))).toEqual([]);
+    const selectors = [...CARD.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{[^{}]*\}/g)].flatMap((rule) =>
+      rule[1].split(",").map((selector) => selector.trim()),
+    );
+    const ownRule = (name: string) =>
+      selectors.some((selector) => selector === `.${name}` || selector.startsWith(`.${name}:`));
+    expect(named.filter((name) => !ownRule(name))).toEqual([]);
   });
 });
