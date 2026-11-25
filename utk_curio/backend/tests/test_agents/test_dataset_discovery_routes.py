@@ -328,7 +328,8 @@ class TestDiscoveryIsInitiated:
         h.solve()
         assert len(missions) == 1 and "compare community areas" in missions[0].lower(), missions
         task = [t.get("text") or "" for t in h.session_turns(h.finder_attachment_id()) if t.get("role") == "user"]
-        assert [text for text in missions + task if "—" in text or "–" in text] == []
+        long_dashes = (chr(0x2014), chr(0x2013))  # the em dash and the en dash
+        assert [text for text in missions + task if any(dash in text for dash in long_dashes)] == []
 
     def test_clearing_the_finders_chat_while_its_candidates_wait_asks_for_them_again(
         self, client, user_and_token, tmp_curio, monkeypatch
