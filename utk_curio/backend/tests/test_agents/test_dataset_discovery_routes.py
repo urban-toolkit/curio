@@ -217,6 +217,54 @@ class TestDiscoveryIsInitiated:
         ]
         assert len(parts) == 1
 
+    def test_the_mission_the_finder_is_handed_holds_no_long_dash(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The mission the Dataset Finder is handed joins the node's goal and
+        the dataflow's goal with plain punctuation, and so does the task its
+        chat shows. On main the two were joined with an em dash."""
+        from utk_curio.backend.app.collaboration import dataflow_docs
+
+        def with_a_goal(h):
+            spec = dataflow_docs.live(h.ukey, h.pid)
+            spec["dataflow"]["task"] = "Compare community areas"
+            dataflow_docs.write(h.ukey, h.pid, spec, dataflow_docs.person(h.ukey, "edit"))
+
+        missions: list = []
+        initiate = dr.initiate
+        monkeypatch.setattr(dr, "initiate", lambda *a, **k: (missions.append(k.get("mission") or ""), initiate(*a, **k))[1])
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch, prepare=with_a_goal)
+        h.solve()
+        assert len(missions) == 1 and "compare community areas" in missions[0].lower(), missions
+        task = [t.get("text") or "" for t in h.session_turns(h.finder_attachment_id()) if t.get("role") == "user"]
+        assert [text for text in missions + task if "—" in text or "–" in text] == []
+
+    def test_clearing_the_finders_chat_while_its_candidates_wait_asks_for_them_again(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """Clearing the Dataset Finder's chat takes its candidates card away,
+        so nothing is left to pick from: the node is unresolved again, and the
+        next Solve asks the Finder for candidates again. On main the node kept
+        waiting for a pick with no card left to answer, and no Solve asked the
+        Finder again."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        h.solve()
+        finder = h.finder_attachment_id()
+        assert dr.source_record(h.spec(), h.load)["status"] == dr.STATE_CANDIDATES_PENDING
+        r = client.delete(f"/api/agents/projects/{h.pid}/attachments/{finder}/session", headers=_auth(token))
+        assert r.status_code == 200, r.get_data(as_text=True)
+        assert dr.node_source_state(h.spec(), h.load)["state"] == dr.STATE_UNRESOLVED
+        again = h.solve()
+        assert len(h.discover_calls) == 2
+        assert again["results"][h.load]["status"] == "pending"
+        parts = [
+            p for t in h.session_turns(finder)
+            for p in (t.get("content") or []) if p.get("type") == "datasetCandidates"
+        ]
+        assert len(parts) == 1
+
     def test_a_goal_that_names_a_path_skips_discovery_and_records_why(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
