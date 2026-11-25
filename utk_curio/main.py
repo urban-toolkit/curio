@@ -22,7 +22,7 @@ from utk_curio.cli.dependencies import (
 from utk_curio.cli.environment import set_environment_variables, set_state_dir
 from utk_curio.cli.frontend_build import _frontend_must_build, _require_supported_node
 from utk_curio.cli.lifecycle import clean_shutdown, signal_handler
-from utk_curio.cli.logs import COLOR_FRONTEND, log_always, log_info, print_output_queue, setup_logging
+from utk_curio.cli.logs import COLOR_BACKEND, COLOR_FRONTEND, log_always, log_info, print_output_queue, setup_logging
 from utk_curio.cli.services import start_backend, start_frontend, start_sandbox
 from utk_curio.cli.test_runner import run_tests
 from utk_curio.common.open_files import raise_limit as raise_open_files_limit
@@ -72,8 +72,8 @@ def main():
         {command_prefix} start sandbox               # Start only the sandbox (localhost:2000)
         {command_prefix} test                        # Run the test suite ('test --help' for suites)
         {command_prefix} --verbose                   # Verbosity level (e.g., 0=silent, 1=normal, 2=debug)
-        {command_prefix} --force-rebuild             # Re-build the frontend (if dev mode)
-        {command_prefix} --force-db-init             # Re-initialize the backend database (if dev mode)
+        {command_prefix} --force-rebuild             # Rebuild the frontend, then exit
+        {command_prefix} --force-db-init             # Apply the backend database's pending migrations, then exit
     """
     )
     
@@ -514,7 +514,7 @@ def main():
     )
     parser.add_argument(
         "--force-db-init", action="store_true",
-        help="Force re-initialization of the backend database"
+        help="With no command: apply the backend database's pending migrations, then exit"
     )
 
     # Display help if no arguments are given
@@ -616,7 +616,7 @@ def main():
             log_info("Rebuilding frontend...", COLOR_FRONTEND, 0)
             start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=True, no_server=True)
         if args.force_db_init:
-            log_info("Re-initializing backend database...", COLOR_FRONTEND, 0)
+            log_info("Applying the backend database's pending migrations...", COLOR_BACKEND, 0)
             start_backend(args.backend_host, args.backend_port, no_server=True)
         sys.exit(0)
 
