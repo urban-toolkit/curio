@@ -2540,7 +2540,10 @@ Click an agent to open its chat panel, on the window's right under the top bar.
 Down its left side, the agents rail lists every agent on the dataflow, the open
 one marked and one at work with a dot: click one to open its chat, and hover it
 to see what it is attached to. An agent attached to three nodes or more is one
-entry, which lists its nodes. The header names the agent and what it is
+entry, which lists its nodes. The rail and the header name each agent by its
+conversation, as *Node Builder: Heat colors* once the conversation has a title,
+which Curio gives it from your first message; two of one agent on one place
+that would read the same are numbered. The header also says what the agent is
 attached to: *on the canvas*, *on* a node, or *from* one node *to* another for a
 connection. Its **More** menu renames the conversation, clears it, and says how
 many tokens it used. You can also edit the initial intent the agent starts
@@ -2577,9 +2580,11 @@ removes, then its nodes, dragged in from their tiles one after another, then its
 connections. When someone removes a node the plan connects while it lands, the
 plan stops there, and its card says what was left undone. Its plan line, under
 the Goal, then says where the plan stands, how many nodes wait for you, and
-holds one action: **Solve**, **Stop** while a Solve runs, **Resume** when a
-build paused, or **Run workflow** once the plan is ready. A key to add or a
-source to confirm stays under the line. Its arrow opens the plan's nodes, each
+holds one action: **Solve**, **Stop** while a Solve or a build runs, **Resume**
+when a build paused, or **Run workflow** once the plan is ready; while a build
+runs, nothing offers **Solve**. It also says when the part its arrow opens
+holds failures or how the last Solve ended. A key to add or a source to
+confirm stays under the line. Its arrow opens the plan's nodes, each
 with its own **Solve**, and **Build & validate plan**, which fills the plan's
 nodes in order: each node's code is run in the sandbox, and code that passes
 lands, with its **Undo**, before the next node; the first failure pauses the
