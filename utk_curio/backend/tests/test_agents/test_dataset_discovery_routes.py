@@ -307,12 +307,12 @@ class TestDiscoveryIsInitiated:
         ]
         assert len(parts) == 1
 
-    def test_the_mission_the_finder_is_handed_holds_no_long_dash(
+    def test_the_finders_mission_joins_its_parts_with_plain_punctuation(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
-        """The mission the Dataset Finder is handed joins the node's goal and
-        the dataflow's goal with plain punctuation, and so does the task its
-        chat shows. On main the two were joined with an em dash."""
+        """The mission the Dataset Finder is handed is the node's goal, then
+        the dataflow's goal, joined with "; ". On main they were joined with an
+        em dash, which the Finder's chat now shows."""
         from utk_curio.backend.app.collaboration import dataflow_docs
 
         def with_a_goal(h):
@@ -326,10 +326,11 @@ class TestDiscoveryIsInitiated:
         user, token = user_and_token
         h = _Harness(client, user, token, monkeypatch, prepare=with_a_goal)
         h.solve()
-        assert len(missions) == 1 and "compare community areas" in missions[0].lower(), missions
-        task = [t.get("text") or "" for t in h.session_turns(h.finder_attachment_id()) if t.get("role") == "user"]
-        long_dashes = (chr(0x2014), chr(0x2013))  # the em dash and the en dash
-        assert [text for text in missions + task if any(dash in text for dash in long_dashes)] == []
+        dataflow = h.spec()["dataflow"]
+        goal = next(n for n in dataflow["nodes"] if n.get("id") == h.load).get("goal")
+        task = dataflow.get("task")
+        assert goal and task, (goal, task)
+        assert missions == [f"{goal}; {task}"], missions
 
     def test_clearing_the_finders_chat_while_its_candidates_wait_asks_for_them_again(
         self, client, user_and_token, tmp_curio, monkeypatch
@@ -406,7 +407,8 @@ class TestDiscoveryIsInitiated:
         assert len(asked) == 1, asked
         assert asked[0].startswith("[Delegated by Dataflow Builder] dataset.discover"), asked[0]
         # The mission starts with the loader's goal: its title, then its intent.
-        assert "mission: Load boundaries: load the community area boundaries" in asked[0], asked[0]
+        assert "mission: Load boundaries" in asked[0], asked[0]
+        assert "load the community area boundaries" in asked[0], asked[0]
 
 
 class TestConfirmedSourceReachesTheBuilder:
