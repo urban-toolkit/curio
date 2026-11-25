@@ -16,6 +16,7 @@ from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.repositories import project_agents
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
+from utk_curio.backend.app.agents.application import dataset_resolution as agents_dataset_resolution
 from utk_curio.backend.app.agents.application import delegation as agents_delegation
 from utk_curio.backend.app.agents.application import lifecycle as agents_lifecycle
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
@@ -33,6 +34,16 @@ def _node_build_delegate(user_key: str, m) -> str | None:
     if m is None or content.NODE_BUILD_CAPABILITY in m.capability_ids:
         return None
     return agents_delegation.delegate_name(user_key, m, content.NODE_BUILD_CAPABILITY)
+
+
+def _solves_nodes(user_key: str, spec: dict, m) -> bool:
+    """Whether the agent *m* can Solve a node of this dataflow: the check a
+    node's Solve makes before it refuses (``node_solve.solve_node_stream``),
+    that some agent installed here writes node content for it."""
+    if m is None:
+        return False
+    installed = set(project_agents.project_agents(spec))
+    return agents_delegation.resolve_among(user_key, installed, m, "node.content.generate").outcome == "ok"
 
 
 def _attachment_card(spec: dict, record: dict, user_key: str) -> dict:
@@ -82,6 +93,17 @@ def _attachment_card(spec: dict, record: dict, user_key: str) -> dict:
         # dev/115: the running background job this process holds for the
         # attachment (Solve batch / per-node Solve), or null.
         "liveJob": agents_store._live_job_payload(user_key, record),
+        # The nodes whose source this agent waits for the user to pick: a
+        # Dataset Finder's own node, and the nodes whose candidates its chat
+        # asked for. Empty when it waits for none.
+        "waitsForYou": agents_dataset_resolution.waiting_on_user(spec).get(record.get("attachmentId"), []),
+        # A Dataset Finder's record of its node's source, or null.
+        "sourceRecord": (
+            record.get(agents_dataset_resolution.RECORD_KEY)
+            if isinstance(record.get(agents_dataset_resolution.RECORD_KEY), dict) else None
+        ),
+        # Whether a node's Solve from this agent's chat goes ahead.
+        "solvesNodes": _solves_nodes(user_key, spec, m),
     }
 
 
@@ -253,16 +275,25 @@ def _settled_in(asked: dict, settled: set) -> bool:
 
 
 def clear_attachment_session(user_key: str, project_id: str, attachment_id: str) -> dict:
-    """Clear the transcript (keeps the attachment and its session id)."""
+    """Clear the transcript (keeps the attachment and its session id).
+
+    The candidates a chat held go with it: a chat that asked for them no
+    longer waits for their pick, and a Dataset Finder's chat whose candidates
+    still awaited one leaves its node unresolved, so the next Solve asks the
+    Finder again."""
     spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
     session_id = record.get("sessionId")
     if isinstance(session_id, str):
         sessions.clear_turns(user_key, project_id, session_id, attachment_id)
+    changed = bool(agents_dataset_resolution.forget_asker(spec, attachment_id))
+    changed = agents_dataset_resolution.forget_candidates(spec, attachment_id) or changed
     # An auto-generated title describes the conversation that was just cleared
     # — drop it so the next first message regenerates one. A manual title is
     # the user's deliberate name for the instance and is kept (memo dev/25).
     if record.get("title") and not record.get("titleEdited"):
         attachments.set_title(spec, attachment_id, None, edited=False)
+        changed = True
+    if changed:
         dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._person(user_key, "attachment"))
     return {"attachmentId": attachment_id, "sessionId": session_id, "turns": []}

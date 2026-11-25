@@ -161,8 +161,12 @@ def _pending_detail(record: dict, status: str) -> str:
     return "candidates awaiting your selection"
 
 
-def mark_candidates_pending(spec: dict, attachment_id: str, *, count: int) -> dict | None:
-    """Record that candidates were minted for this node's Dataset Finder."""
+def mark_candidates_pending(spec: dict, attachment_id: str, *, count: int,
+                            asked_by: str | None = None) -> dict | None:
+    """Record that candidates were minted for this node's Dataset Finder, and
+    the attachment whose chat asked for them (*asked_by*: the agent whose
+    Solve or Build & validate reached the node), which waits for the pick too
+    (:func:`waiting_on_user`)."""
 
     record = attachments.get_attachment(spec, attachment_id)
     if record is None:
@@ -171,9 +175,63 @@ def mark_candidates_pending(spec: dict, attachment_id: str, *, count: int) -> di
         "status": STATE_CANDIDATES_PENDING,
         "candidates": int(count),
         "proposedAt": _now(),
+        **({"askedBy": asked_by} if asked_by else {}),
     }
     record["revision"] = int(record.get("revision", 1)) + 1
     return record[RECORD_KEY]
+
+
+def waiting_on_user(spec: dict | None) -> dict[str, list[str]]:
+    """Who waits for the user to pick a node's source, by attachment id: the
+    ids of the nodes it waits on. A node's Dataset Finder waits while its
+    candidates await a pick, and so does the attachment whose chat asked for
+    them (``askedBy``) while it is on the dataflow. A pick, a skip, the
+    node's removal or its Finder taken off ends both waits; the asker's chat
+    cleared ends its own (:func:`forget_asker`)."""
+    records = attachments.list_attachments(spec or {})
+    present = {record.get("attachmentId") for record in records}
+    waits: dict[str, list[str]] = {}
+    for record in records:
+        state = record.get(RECORD_KEY)
+        target = record.get("target") or {}
+        node_id = target.get("targetId")
+        if not isinstance(state, dict) or state.get("status") != STATE_CANDIDATES_PENDING:
+            continue
+        if target.get("kind") != "node" or not node_id:
+            continue
+        for waiter in (record.get("attachmentId"), state.get("askedBy")):
+            if waiter in present and node_id not in waits.setdefault(waiter, []):
+                waits[waiter].append(node_id)
+    return waits
+
+
+def forget_asker(spec: dict, attachment_id: str) -> list[str]:
+    """The chat of *attachment_id* was cleared, so it holds no candidates it
+    asked for: it no longer waits for their pick. Each node's Dataset Finder
+    still does. Returns the Finder attachments whose record changed."""
+    changed: list[str] = []
+    for record in attachments.list_attachments(spec):
+        state = record.get(RECORD_KEY)
+        if isinstance(state, dict) and attachment_id and state.get("askedBy") == attachment_id:
+            state.pop("askedBy")
+            record["revision"] = int(record.get("revision", 1)) + 1
+            changed.append(record.get("attachmentId"))
+    return changed
+
+
+def forget_candidates(spec: dict, attachment_id: str) -> bool:
+    """The Dataset Finder chat of *attachment_id* was cleared while its
+    candidates awaited a pick: the card went with it, so nothing is left to
+    pick from. The record goes, the node is unresolved again, and the next
+    Solve or Build & validate asks its Finder for candidates again. A pick
+    or a skip is kept. Returns whether the record went."""
+    record = attachments.get_attachment(spec, attachment_id)
+    state = (record or {}).get(RECORD_KEY)
+    if not isinstance(state, dict) or state.get("status") != STATE_CANDIDATES_PENDING:
+        return False
+    record.pop(RECORD_KEY)
+    record["revision"] = int(record.get("revision", 1)) + 1
+    return True
 
 
 def mark_skipped(spec: dict, attachment_id: str, *, literal: str) -> dict | None:
@@ -418,10 +476,14 @@ def record_selection(spec: dict, attachment_id: str, rows: list[dict]) -> dict |
         status = STATE_AWAITING_INSTALL
     else:
         status = STATE_RESOLVED
+    # The chat that asked for the candidates is kept with the pick.
+    previous = record.get(RECORD_KEY)
+    asked_by = previous.get("askedBy") if isinstance(previous, dict) else None
     record[RECORD_KEY] = {
         "status": status,
         "picks": rows,
         "recordedAt": _now(),
+        **({"askedBy": asked_by} if asked_by else {}),
     }
     record["revision"] = int(record.get("revision", 1)) + 1
     return record[RECORD_KEY]
@@ -592,6 +654,8 @@ def initiate(
         parent_execution_id=parent_execution_id,
         parent_coord=parent_coord,
         attachment_id=parent_attachment_id,
+        # The Finder's chat names the agent that asked, as its manifest does.
+        parent_name=getattr(parent_manifest, "name", None),
         node_id=node_id,
         asker=asker,
     )
@@ -609,7 +673,7 @@ def initiate(
     with projects_storage.spec_write_lock(user_key, project_id):
         fresh = dataflow_docs.live(user_key, project_id)
         if fresh is not None:
-            mark_candidates_pending(fresh, attachment_id, count=total)
+            mark_candidates_pending(fresh, attachment_id, count=total, asked_by=parent_attachment_id)
             dataflow_docs.write(user_key, project_id, fresh, actor)
     return {"status": "awaiting", "attachmentId": attachment_id,
             "candidates": total,
