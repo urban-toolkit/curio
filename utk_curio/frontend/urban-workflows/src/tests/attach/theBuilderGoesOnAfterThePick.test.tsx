@@ -79,6 +79,13 @@ const Harness: React.FC = () => {
       >
         pick
       </button>
+      <button
+        onClick={() =>
+          void ctx.recordDatasetSelection("att-df", [{ lane: "external", key: URL }], "d2").catch(() => undefined)
+        }
+      >
+        pick-on-d2
+      </button>
       <button onClick={() => ctx.openChat("dfb")}>open-builder</button>
       <button onClick={() => void ctx.reload()}>reload</button>
       <div data-testid="builder-turns">{(ctx.transcripts["dfb"] ?? []).map((t) => t.text).join("|")}</div>
@@ -186,5 +193,57 @@ describe("the open chat is read again when the listing says it waits on a node w
     await waitFor(() => expect(api.listAttachments).toHaveBeenCalledTimes(3));
     await settle();
     expect(api.getSession).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads it again for the card of newer candidates, though it holds the card of an older search", async () => {
+    const older = { ...PICK_TURN, content: [{ ...PICK_TURN.content[0], discoveryId: "d1" }] };
+    api.getSession.mockImplementation(async (_pid: string, attachmentId: string) => ({
+      attachmentId, sessionId: attachmentId === "dfb" ? "s1" : "s2", turns: attachmentId === "dfb" ? [older] : [],
+    }));
+    renderProvider();
+    await waitFor(() => expect(api.listAttachments).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByText("open-builder"));
+    await waitFor(() => expect(screen.getByTestId("builder-turns")).toHaveTextContent("needs a source"));
+    const readsOfTheBuilder = () => api.getSession.mock.calls.filter(([, id]) => id === "dfb").length;
+    const before = readsOfTheBuilder();
+    // Another tab's Build & validate asked the loader's Finder again: its
+    // record names the newer candidates, whose card the Builder's chat holds on
+    // the server.
+    api.listAttachments.mockResolvedValue({
+      attachments: [
+        { ...BUILDER, waitsForYou: ["n1"] },
+        {
+          ...FINDER,
+          waitsForYou: ["n1"],
+          sourceRecord: { status: "candidates-pending", candidates: 1, discoveryId: "d2", askedBy: "dfb", askers: ["dfb"] },
+        },
+      ],
+    });
+    fireEvent.click(screen.getByText("reload"));
+    await waitFor(() => expect(readsOfTheBuilder()).toBe(before + 1));
+  });
+});
+
+describe("a pick goes on as the user was going, and names its card", () => {
+  it("goes on with one Step when a Step paused on the loader", async () => {
+    api.recordDatasetSelection.mockResolvedValue(
+      answer({ status: "plan-waiting", attachmentId: "dfb", nodeId: "n1", ref: "load", continueWith: "step", running: null }),
+    );
+    renderProvider();
+    await waitFor(() => expect(api.listAttachments).toHaveBeenCalled());
+    fireEvent.click(screen.getByText("pick"));
+    await waitFor(() => expect(api.simulate).toHaveBeenCalledWith("p1", "dfb", "step", expect.any(Function)));
+    expect(api.simulate).toHaveBeenCalledTimes(1);
+    expect(api.validateNode).not.toHaveBeenCalled();
+  });
+
+  it("sends the id of the card the pick was made on", async () => {
+    api.recordDatasetSelection.mockResolvedValue(answer({ status: "delegating", attachmentId: "nb1", nodeId: "n1" }));
+    renderProvider();
+    await waitFor(() => expect(api.listAttachments).toHaveBeenCalled());
+    fireEvent.click(screen.getByText("pick-on-d2"));
+    await waitFor(() =>
+      expect(api.recordDatasetSelection).toHaveBeenCalledWith("p1", "att-df", [{ lane: "external", key: URL }], "d2"),
+    );
   });
 });

@@ -385,6 +385,51 @@ describe("AgentDatasetCandidatesCard: the source recorded for its node", () => {
   });
 });
 
+// The Recorded line says what the server said comes next of the pick (the
+// record's `next`), in every chat and tab, so it promises no build nobody
+// starts, and keeps in view what the user must do.
+describe("AgentDatasetCandidatesCard: the Recorded line says what happens next", () => {
+  const ROADS = { name: "Roads", sourceType: "catalog" as const, datasetId: "imported.def@1", installed: true };
+
+  it("a download no plan waits on says to Solve the node once it lands", () => {
+    render(
+      <AgentDatasetCandidatesCard
+        part={PART}
+        onRecordSelection={jest.fn()}
+        record={{
+          status: "awaiting-install",
+          picks: [{ ...ROADS, installed: false, acquiring: { jobId: "j1" } }],
+          next: "It is downloading into the Data Catalog: Solve the node once it lands.",
+        }}
+        waitsForPick={false}
+      />,
+    );
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("Recorded: Roads. It is downloading into the Data Catalog: Solve the node once it lands.");
+    expect(status).not.toHaveTextContent("the loader is built from it once it lands");
+  });
+
+  it("a pick no builder takes says so, and promises no build", () => {
+    render(
+      <AgentDatasetCandidatesCard
+        part={PART}
+        onRecordSelection={jest.fn()}
+        record={{
+          status: "resolved",
+          picks: [ROADS],
+          next: "No builder is attached to this node: Solve the node, or attach a Node Builder to it.",
+        }}
+        waitsForPick={false}
+      />,
+    );
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent(
+      "Recorded: Roads. No builder is attached to this node: Solve the node, or attach a Node Builder to it.",
+    );
+    expect(status).not.toHaveTextContent("The loader is built from this source");
+  });
+});
+
 describe("AgentDatasetCandidatesCard — a row Curio downloads", () => {
   const DISCOVERY: AgentDatasetCandidatesPart = {
     type: "datasetCandidates",

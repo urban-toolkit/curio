@@ -1041,3 +1041,50 @@ describe("AgentBuilderStrip names each node's own finder", () => {
     expect(screen.getByRole("group", { name: "My Orchestrator" })).not.toHaveTextContent(/Dataset Finder/);
   });
 });
+
+// A plan row's Solve that runs on the server (the listing's `validating`), the
+// one a pick goes on with among them, is work on the plan's node: no build
+// starts over it.
+describe("AgentBuilderStrip while a row's Solve runs on the plan", () => {
+  it("Build & validate and Step wait for it, saying why", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={{ ...withLandedPlan({ a: "created", b: "created" }), validating: { ref: "a", nodeId: "na" } }}
+        onSolve={jest.fn()}
+        onSimulate={jest.fn()}
+      />,
+    );
+    openMore();
+    const build = screen.getByRole("button", { name: "Build & validate plan" });
+    expect(build).toBeDisabled();
+    expect(build).toHaveAttribute("data-tooltip", "A node of this plan is being solved: wait for its Solve to end");
+    expect(screen.getByRole("button", { name: "Step" })).toBeDisabled();
+  });
+});
+
+// A pause this line's build ended on says so until the plan goes on: a pick's
+// own continuation builds the plan from the provider, not from this line, and
+// the line no longer says the plan is paused once it does.
+describe("AgentBuilderStrip: a pause's line goes once the plan goes on", () => {
+  it("the Paused line goes once a build of the plan runs again, started elsewhere", async () => {
+    const onSimulate = jest.fn().mockResolvedValue({
+      status: "paused",
+      reason: { message: "a needs a source: pick one on its card in this chat" },
+    });
+    const props = {
+      attachment: withLandedPlan({ a: "created", b: "created" }),
+      onSolve: jest.fn(),
+      onSimulate,
+      onCancelSimulate: jest.fn(),
+    } as React.ComponentProps<typeof AgentBuilderStrip>;
+    const { rerender } = render(<AgentBuilderStrip {...props} />);
+    openMore();
+    fireEvent.click(screen.getByRole("button", { name: "Build & validate plan" }));
+    expect(await screen.findByText("Paused: a needs a source: pick one on its card in this chat")).toBeInTheDocument();
+    // The pick's continuation: a build of the plan from the provider.
+    rerender(<AgentBuilderStrip {...props} simulating="auto" />);
+    // It ends with every node built.
+    rerender(<AgentBuilderStrip {...props} attachment={withLandedPlan({ a: "approved", b: "approved" })} simulating={null} />);
+    expect(screen.queryByText(/^Paused:/)).toBeNull();
+  });
+});

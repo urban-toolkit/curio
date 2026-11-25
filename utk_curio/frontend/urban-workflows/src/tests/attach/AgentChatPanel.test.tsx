@@ -3087,3 +3087,283 @@ describe("AgentChatPanel: Solve this node points at the card in its own chat", (
     }
   });
 });
+
+// A card of a node's candidates follows its Finder's record, as the listing
+// has it: it is live only while that record asks for its pick, it says
+// Recorded only where the pick was made, and it is closed, saying why, once its
+// candidates were replaced, its Finder or its node is gone, or no pick is
+// needed.
+describe("AgentChatPanel: a candidates card follows its Finder's record", () => {
+  const BUILDER: AgentAttachment = {
+    ...attachment,
+    attachmentId: "dfb",
+    coord: "agent.curio.dataflow-builder@1",
+    name: "Dataflow Builder",
+    category: "canvas",
+    capabilities: DATAFLOW_BUILDER_CAPABILITIES,
+    waitsForYou: ["n1"],
+  };
+  const AREAS = { name: "Chicago areas", sourceType: "portal" as const, url: "https://data.example.org/areas.geojson" };
+  const BLOCKS = { name: "Chicago blocks", sourceType: "portal" as const, url: "https://data.example.org/blocks.geojson" };
+  /** The Builder's turn that holds the card of one search of the loader's
+   * Finder, *discoveryId*. */
+  const asked = (discoveryId: string, row = AREAS): AgentSessionTurn => ({
+    role: "agent" as const,
+    text: "**Load boundaries** needs a source. Its Dataset Finder found 1 candidate: pick one with Use this source.",
+    content: [{
+      type: "sourcePick" as const, finderAttachmentId: "att-df", nodeId: "n1", nodeLabel: "Load boundaries",
+      discoveryId, lanes: { external: [row], catalog: [] },
+    }],
+  });
+  /** The Finder's own turn that holds the card of its search *discoveryId*. */
+  const found = (discoveryId: string, row = AREAS): AgentSessionTurn => ({
+    role: "agent" as const,
+    text: "1 dataset candidate for this node.",
+    content: [{ type: "datasetCandidates" as const, discoveryId, lanes: { external: [row], catalog: [] } }],
+  });
+  const finder = (sourceRecord: AgentAttachment["sourceRecord"], waitsForYou: string[] = []): AgentAttachment => ({
+    ...attachment,
+    attachmentId: "att-df",
+    coord: "agent.curio.dataset-finder@1",
+    name: "Dataset Finder",
+    category: "data",
+    capabilities: DATASET_FINDER_CAPABILITIES,
+    target: { kind: "node" as const, targetId: "n1" },
+    waitsForYou,
+    sourceRecord,
+    solvesNodes: false,
+  });
+  const PENDING_D2 = { status: "candidates-pending", candidates: 1, discoveryId: "d2", askedBy: "dfb", askers: ["dfb"] };
+  const cards = () => screen.getAllByRole("group", { name: "Sources for Load boundaries" });
+
+  it("a card of candidates a newer search replaced is closed, and shows the newest", () => {
+    const scrolled: Element[] = [];
+    const scrollIntoView = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this);
+    };
+    try {
+      renderPanel({
+        attachment: BUILDER,
+        turns: [asked("d1"), asked("d2", BLOCKS)],
+        attachments: [BUILDER, finder(PENDING_D2, ["n1"])],
+        onRecordSourcePick: jest.fn(),
+      });
+      const [older, newer] = cards();
+      expect(within(older).queryByRole("button", { name: "Use this source" })).toBeNull();
+      expect(within(older).queryAllByRole("checkbox")).toHaveLength(0);
+      expect(within(older).getByRole("status")).toHaveTextContent("Closed: newer candidates replaced these.");
+      expect(within(newer).getByRole("button", { name: "Use this source" })).toBeInTheDocument();
+      scrolled.length = 0;
+      fireEvent.click(within(older).getByRole("button", { name: "Show the newest" }));
+      expect(scrolled).toEqual([newer]);
+    } finally {
+      Element.prototype.scrollIntoView = scrollIntoView;
+    }
+  });
+
+  it("a card whose Finder was taken off its node is closed and says so", () => {
+    renderPanel({
+      attachment: BUILDER,
+      turns: [asked("d1")],
+      attachments: [BUILDER],
+      onRecordSourcePick: jest.fn(),
+      nodeOnCanvas: () => true,
+    });
+    const [card] = cards();
+    expect(within(card).queryByRole("button", { name: "Use this source" })).toBeNull();
+    expect(within(card).getByRole("status")).toHaveTextContent("Closed: its Dataset Finder was taken off Load boundaries.");
+  });
+
+  it("a card whose node is gone is closed and says so", () => {
+    renderPanel({
+      attachment: BUILDER,
+      turns: [asked("d1")],
+      attachments: [BUILDER],
+      onRecordSourcePick: jest.fn(),
+      nodeOnCanvas: () => false,
+    });
+    const [card] = cards();
+    expect(within(card).queryByRole("button", { name: "Use this source" })).toBeNull();
+    expect(within(card).getByRole("status")).toHaveTextContent("Closed: Load boundaries is no longer on the canvas.");
+  });
+
+  it("says Recorded only on the card the pick was made on", () => {
+    const picked = finder({
+      status: "resolved",
+      picks: [{ ...BLOCKS, provider: "City of Chicago" }],
+      discoveryId: "d2",
+      pickedFrom: "d2",
+      askedBy: "dfb",
+      askers: ["dfb"],
+      next: "The Dataflow Builder goes on with its plan and builds the loader from this source.",
+    });
+    renderPanel({
+      attachment: { ...BUILDER, waitsForYou: [] },
+      turns: [asked("d1"), asked("d2", BLOCKS)],
+      attachments: [{ ...BUILDER, waitsForYou: [] }, picked],
+      onRecordSourcePick: jest.fn(),
+    });
+    const [older, newer] = cards();
+    expect(within(older).getByRole("status")).not.toHaveTextContent("Recorded");
+    expect(within(older).getByRole("status")).toHaveTextContent("Closed: newer candidates replaced these.");
+    expect(within(newer).getByRole("status")).toHaveTextContent(
+      "Recorded: Chicago blocks (City of Chicago). The Dataflow Builder goes on with its plan and builds the loader from this source.",
+    );
+  });
+
+  it("is closed once no pick is needed: a skip, whose source is grounded already", () => {
+    const skipped = finder({ status: "not-needed", skippedBecause: "/data/areas.csv", recordedAt: "2026-11-25T10:00:00+00:00" });
+    renderPanel({
+      attachment: { ...BUILDER, waitsForYou: [] },
+      turns: [asked("d1")],
+      attachments: [{ ...BUILDER, waitsForYou: [] }, skipped],
+      onRecordSourcePick: jest.fn(),
+    });
+    const [card] = cards();
+    expect(within(card).queryByRole("button", { name: "Use this source" })).toBeNull();
+    expect(within(card).getByRole("status")).toHaveTextContent("no pick is needed");
+  });
+
+  it("records its pick with the card it was made on", async () => {
+    const onRecordSourcePick = jest
+      .fn()
+      .mockResolvedValue({ attachmentId: "att-df", nodeId: "n1", status: "resolved", picks: [] });
+    renderPanel({
+      attachment: BUILDER,
+      turns: [asked("d2")],
+      attachments: [BUILDER, finder(PENDING_D2, ["n1"])],
+      onRecordSourcePick,
+    });
+    const [card] = cards();
+    fireEvent.click(within(card).getByRole("checkbox", { name: "Select Chicago areas" }));
+    await act(async () => {
+      fireEvent.click(within(card).getByRole("button", { name: "Use this source" }));
+    });
+    expect(onRecordSourcePick).toHaveBeenCalledWith("att-df", [{ lane: "external", key: AREAS.url }], "d2");
+  });
+
+  it("in the Finder's own chat, its newest card stays open after a pick on an older one", () => {
+    const own = finder({ status: "resolved", picks: [{ ...AREAS }], discoveryId: "d2", pickedFrom: "d1" });
+    renderPanel({
+      attachment: own,
+      targetName: "Load boundaries",
+      turns: [found("d1"), found("d2", BLOCKS)],
+      onRecordDatasetSelection: jest.fn(),
+    });
+    const [older, newer] = cards();
+    expect(within(newer).getByRole("button", { name: "Use this source" })).toBeInTheDocument();
+    expect(within(older).getByRole("status")).toHaveTextContent("Recorded: Chicago areas.");
+  });
+
+  it("the Finder's own card names every chat that holds the same card", () => {
+    renderPanel({
+      attachment: finder({ ...PENDING_D2, askers: ["dfb", "nb1"] }, ["n1"]),
+      targetName: "Load boundaries",
+      turns: [found("d2")],
+      onRecordDatasetSelection: jest.fn(),
+      agentNameOf: (id: string) => ({ dfb: "Dataflow Builder", nb1: "Node Builder" } as Record<string, string>)[id] ?? null,
+    });
+    const [own] = cards();
+    expect(own).toHaveTextContent(
+      "The same card is in the Dataflow Builder's and the Node Builder's chats. A pick in any shows in all.",
+    );
+  });
+});
+
+// A plan row's Solve that runs on the server, the one a pick goes on with
+// among them, is work on its node: the listing names it (`validating`), its row
+// shows it running, and no other row's Solve starts over it.
+describe("AgentChatPanel: a row's Solve the server runs shows on the plan card", () => {
+  const RUNNING: AgentAttachment = {
+    ...attachment,
+    attachmentId: "dfb",
+    coord: "agent.curio.dataflow-builder@1",
+    name: "Dataflow Builder",
+    category: "canvas",
+    capabilities: DATAFLOW_BUILDER_CAPABILITIES,
+    planProposal: {
+      proposalId: "pp1", tool: "dataflow.plan.write", nodeId: "", summary: "Plan · 2 nodes", status: "applied",
+      appliedRefs: ["load", "stats"],
+    },
+    builderSession: {
+      phase: "applied", planProposalId: "pp1",
+      nodeStates: { load: "created", stats: "created" }, nodeIds: { load: "n1", stats: "n2" },
+    },
+    validating: { ref: "load", nodeId: "n1" },
+  };
+  const PLANNED: AgentSessionTurn = {
+    role: "agent" as const,
+    text: "I planned the loader and its statistics.",
+    content: [{
+      type: "change" as const,
+      changeId: "c-plan",
+      tool: "dataflow.plan.write",
+      kind: "plan",
+      planId: "pp1",
+      summary: "Plan · 2 nodes",
+      status: "applied",
+      lines: [],
+      plan: {
+        goal: "load the boundaries",
+        nodes: [
+          { ref: "load", nodeType: "curio.builtin/data-loading", title: "Load boundaries", intent: "load them" },
+          { ref: "stats", nodeType: "curio.builtin/python-computation", title: "Stats", intent: "count them" },
+        ],
+        edgeCount: 0,
+        edges: [],
+      },
+    }],
+  };
+
+  it("its row reads Solving and waits, and the other rows' Solve waits for it, saying why", () => {
+    renderPanel({ attachment: RUNNING, turns: [PLANNED], onSolvePlanNode: jest.fn() });
+    const solving = screen.getByRole("button", { name: "Solve node Load boundaries" });
+    expect(solving).toBeDisabled();
+    expect(solving).toHaveTextContent("Solving…");
+    const other = screen.getByRole("button", { name: "Solve node Stats" });
+    expect(other).toBeDisabled();
+    expect(other).toHaveAttribute("data-tooltip", "A node of this plan is being solved: wait for its Solve to end");
+  });
+});
+
+// Solve this node that ends waiting for the node's source says what the source
+// waits on: a pick, a download into the Data Catalog, or an install. Only a
+// pick is asked for.
+describe("AgentChatPanel: Solve this node says what the node's source waits on", () => {
+  const NODE_BUILDER: AgentAttachment = {
+    ...attachment,
+    attachmentId: "nb1",
+    coord: "agent.curio.node-builder@1",
+    name: "Node Builder",
+    target: { kind: "node" as const, targetId: "n1" },
+    solvesNodes: true,
+  };
+
+  it.each([
+    ["download", "Awaiting its source: it is downloading into the Data Catalog. Solve this node again once it lands."],
+    [
+      "install",
+      "Awaiting its source: the dataset picked for it is not installed yet. Install it from the Data Catalog, then Solve this node again.",
+    ],
+  ])("a source waiting for its %s says so, and asks for no pick", async (wait, said) => {
+    renderPanel({
+      attachment: NODE_BUILDER,
+      targetName: "Load boundaries",
+      onSolveNode: jest.fn().mockResolvedValue({
+        verdict: "awaiting-source",
+        rounds: 0,
+        sourceWait: wait,
+        remedy: { kind: "dataset-selection", attachmentId: "att-df", nodeId: "n1" },
+      }),
+      onOpenAgentChat: jest.fn(),
+      agentNameOf: (id: string) => (id === "att-df" ? "Dataset Finder" : null),
+    });
+    const row = screen.getByRole("group", { name: "Solve this node" });
+    fireEvent.click(within(row).getByRole("button", { name: "Solve this node" }));
+    await waitFor(() => expect(within(row).getByRole("status")).toHaveTextContent(said));
+    expect(within(row).getByRole("status")).not.toHaveTextContent(/pick one|Use this source|confirm/);
+    expect(within(row).queryByRole("button", { name: /^Open Dataset Finder/ })).toBeNull();
+    expect(within(row).queryByRole("button", { name: "Show its sources" })).toBeNull();
+  });
+});

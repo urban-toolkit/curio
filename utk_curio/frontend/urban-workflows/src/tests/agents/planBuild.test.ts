@@ -54,3 +54,20 @@ describe("buildRunningOver", () => {
     expect(buildRunningOver("n9", attachments, { dfb2: "auto" }, NOW_S)).toBe(true);
   });
 });
+
+// The server says whether a build runs (the listing's `buildRunning`): the
+// browser's clock is never held against the server's, which a build left by a
+// process that is gone would beat for up to the stale bound.
+describe("a build runs while the server says so", () => {
+  it("one the listing says runs holds the plan, whatever the browser's clock says of its start", () => {
+    const running: AgentAttachment = { ...builder({ simulateMode: "auto", simulatingSince: 1 }), buildRunning: "auto" };
+    expect(buildRunningOn(running)).toBe("auto");
+    expect(buildRunningOver("n1", [running], {})).toBe(true);
+  });
+
+  it("one the listing does not say runs holds nothing, however recent its start", () => {
+    const left = builder({ simulateMode: "auto", simulatingSince: Date.now() / 1000 });
+    expect(buildRunningOn(left)).toBeNull();
+    expect(buildRunningOver("n1", [left], {})).toBe(false);
+  });
+});

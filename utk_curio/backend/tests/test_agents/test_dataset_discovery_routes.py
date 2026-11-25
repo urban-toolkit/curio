@@ -19,6 +19,7 @@ import contextlib
 import json
 import logging
 import threading
+import time
 from collections import Counter
 
 import pytest
@@ -31,11 +32,13 @@ from utk_curio.backend.app.agents.application import spec_reads
 from utk_curio.backend.app.agents.application.solve import budgets
 from utk_curio.backend.app.agents.application.turns import titles as services_mod
 from utk_curio.backend.app.agents.domain.manifest import AgentManifestError
+from utk_curio.backend.app.agents.infrastructure import agent_jobs
 from utk_curio.backend.app.agents.infrastructure import providers
 from utk_curio.backend.app.agents.repositories import project_agents
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.repositories import storage as agents_storage
 from utk_curio.backend.app.collaboration import dataflow_docs
+from utk_curio.backend.app.common import shared_budgets
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.tests._support.agent_routes import _auth
@@ -1500,3 +1503,382 @@ class TestWhichAgentsSolveANode:
             coord for coord in project_agents.project_agents(h.spec())
             if coord.startswith("agent.curio.node-builder@")
         ], "the listing installed an agent"
+
+
+def _source_picks(h, attachment_id) -> list[dict]:
+    """The candidates cards the chat of *attachment_id* holds for a node's
+    Dataset Finder (``sourcePick`` parts), in order."""
+    return [
+        part for turn in h.session_turns(attachment_id) for part in (turn.get("content") or [])
+        if part.get("type") == "sourcePick"
+    ]
+
+
+def _pick_on(h, finder, card_id, picks):
+    """The user's *picks* on the candidates card *card_id*, posted as the card
+    posts them: on the route of the node's Dataset Finder *finder*, naming the
+    card they were made on."""
+    return h.client.post(
+        f"/api/agents/projects/{h.pid}/attachments/{finder}/dataset-selection",
+        json={"picks": picks, "discoveryId": card_id}, headers=_auth(h.token),
+    )
+
+
+def _builder_session(h) -> dict:
+    """The plan's ledger and its build, as the Dataflow Builder's record holds
+    them."""
+    return dict((attachments.get_attachment(h.spec(), h.att) or {}).get("builderSession") or {})
+
+
+def _left_on_the_plan(h, *, drop=(), **fields) -> None:
+    """Write *fields* into the plan's record of the Dataflow Builder, and take
+    *drop* off it, as a backend process that is gone left them there, under
+    the dataflow's spec lock."""
+    with projects_storage.spec_write_lock(h.ukey, h.pid):
+        spec = dataflow_docs.live(h.ukey, h.pid)
+        record = attachments.get_attachment(spec, h.att)
+        session = dict(record.get("builderSession") or {})
+        for key in drop:
+            session.pop(key, None)
+        session.update(fields)
+        record["builderSession"] = session
+        dataflow_docs.write(h.ukey, h.pid, spec, dataflow_docs.person(h.ukey, "edit"))
+
+
+def _answered(response) -> tuple[int, str]:
+    """A request's status, and its error when it was refused. A stream that
+    was answered (200) is not read: what it would run is not the test's."""
+    status = response.status_code
+    error = "" if status == 200 else str((response.get_json(silent=True) or {}).get("error") or "")
+    response.close()
+    return status, error
+
+
+class _NoJob:
+    """A Solve this node job that was not started."""
+
+    job_id = "not-started"
+    kind = "solve-node"
+
+
+def _no_solve_job(monkeypatch) -> list:
+    """Start no Solve this node job: a request that passes its checks answers
+    an empty stream. Returns the kinds of the jobs asked for."""
+    started: list = []
+    monkeypatch.setattr(agent_jobs, "start_job", lambda **kw: started.append(kw.get("kind")) or _NoJob())
+    monkeypatch.setattr(agent_jobs, "subscribe", lambda job: iter(()))
+    return started
+
+
+def _solve_this_node(h, attachment_id) -> dict:
+    """Solve this node on the loader, from the chat of *attachment_id*, to its
+    end: its done payload."""
+    r = h.client.post(
+        f"/api/agents/projects/{h.pid}/attachments/{attachment_id}/solve-node",
+        json={"nodeId": h.load}, headers=_auth(h.token),
+    )
+    assert r.status_code == 200, r.get_data(as_text=True)
+    return _sse_events(r)[-1][1]
+
+
+class TestACardFollowsItsFindersRecord:
+    """Every candidates card a node's Dataset Finder mints carries an id of
+    its own (``discoveryId``), the same in the Finder's chat and in the chat
+    that asked, and the Finder's record names the card whose pick it asks
+    for. A pick names the card it was made on: a pick on a card the record
+    no longer asks about is refused, so it is never read against another
+    card's rows and starts no build beside the plan. Review of #1635, B1."""
+
+    def test_a_pick_on_a_card_newer_candidates_replaced_is_refused(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The loader's Dataset Finder is asked twice: a row's Solve asks it,
+        its chat is cleared, and the row's Solve asks it again. The Dataflow
+        Builder's chat holds both cards, each with its own id, and the
+        Finder's record names the newer. A pick on the older card is refused,
+        and one on the newer is recorded with the card it came from. On
+        04d7e8c03f the cards carried no id, and the pick on the older card was
+        recorded, read against the newer card's rows."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        h.validate("load")
+        finder = h.finder_attachment_id()
+        r = client.delete(f"/api/agents/projects/{h.pid}/attachments/{finder}/session", headers=_auth(token))
+        assert r.status_code == 200, r.get_data(as_text=True)
+        h.validate("load")
+        assert len(h.discover_calls) == 2
+        cards = _source_picks(h, h.att)
+        assert len(cards) == 2, [t.get("text") for t in h.session_turns(h.att)]
+        older, newer = (card.get("discoveryId") for card in cards)
+        stale = _pick_on(h, finder, older, [{"lane": "external", "key": URL}])
+        assert stale.status_code == 409, (stale.status_code, stale.get_json())
+        assert "newer candidates replaced these" in stale.get_json()["error"], stale.get_json()
+        assert older and newer and older != newer, (older, newer)
+        record = dr.source_record(h.spec(), h.load) or {}
+        assert record.get("discoveryId") == newer, record
+        fresh = _pick_on(h, finder, newer, [{"lane": "external", "key": URL}])
+        assert fresh.status_code == 200, fresh.get_data(as_text=True)
+        assert (dr.source_record(h.spec(), h.load) or {}).get("pickedFrom") == newer
+
+    def test_a_pick_on_a_card_whose_finders_chat_was_cleared_is_refused(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """A row's Solve asks the loader's Dataset Finder, and its card comes
+        to the Dataflow Builder's chat. The Finder's chat is cleared, which
+        takes its card and its record away: the Builder's card asks for
+        nothing any more. A pick on it, of a dataset the Data Catalog holds,
+        is refused, and no Node Builder starts on the loader. On 04d7e8c03f
+        the pick went through the Data Catalog fallback of resolve_picks, was
+        recorded with no card to check it against and nobody who asked, and
+        started the loader's Node Builder beside the plan."""
+        from utk_curio.backend.tests.test_agents import test_routes_turns as routes_turns
+
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        h.validate("load")
+        cards = _source_picks(h, h.att)
+        assert len(cards) == 1, [t.get("text") for t in h.session_turns(h.att)]
+        finder = h.finder_attachment_id()
+        r = client.delete(f"/api/agents/projects/{h.pid}/attachments/{finder}/session", headers=_auth(token))
+        assert r.status_code == 200, r.get_data(as_text=True)
+        # A dataset comes into the Data Catalog: the fallback that lets a
+        # dataset just imported from a card be picked finds it.
+        dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="areas.csv")
+        started: list = []
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.application.solve.node_solve.solve_node_stream",
+            lambda *a, **k: started.append(k.get("node_id")),
+        )
+        r = _pick_on(h, finder, cards[0].get("discoveryId"), [{"lane": "catalog", "key": dataset_id}])
+        assert r.status_code == 409, (r.status_code, r.get_json(), started)
+        assert "no longer" in r.get_json()["error"], r.get_json()
+        assert started == [], "the pick started the loader's Node Builder beside the plan"
+
+
+class TestABuildNoProcessRuns:
+    """A Build & validate is a stream its backend process drives. One that a
+    process left behind, when it stopped or a restart ended it, runs no more:
+    the server takes it for gone by the start its record names
+    (``simulateBootId``), and says so in the listing (``buildRunning``). It
+    holds no Build & validate and no Solve, Stop clears one no driver holds,
+    and a pick is never told that it builds the loader. Review of #1635, B2."""
+
+    @pytest.fixture(autouse=True)
+    def _six_actions(self, monkeypatch):
+        monkeypatch.setattr(budgets, "SIMULATE_MAX_ACTIONS", 6)
+
+    def test_a_build_an_earlier_start_left_holds_nothing(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The plan's record still names a build that a start which is gone
+        began a minute ago. The listing says no build runs, and Build &
+        validate runs. On 04d7e8c03f the listing gave no verdict, so a tab
+        took the build for running by its own clock, and Build & validate was
+        refused for 15 minutes: a simulation is already running."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        _left_on_the_plan(
+            h, simulatingSince=time.time() - 60, simulateMode="auto",
+            simulateExecutionId="a-build-of-an-earlier-start", simulateBootId="an-earlier-start",
+        )
+        listed = h.cards()[h.att].get("buildRunning", "not said")
+        r = client.post(
+            f"/api/agents/projects/{h.pid}/attachments/{h.att}/simulate",
+            json={"mode": "auto"}, headers=_auth(token),
+        )
+        refused = r.get_json(silent=True) if r.status_code != 200 else None
+        assert (r.status_code, listed) == (200, None), (refused, listed)
+        done = _sse_events(r)[-1][1]
+        assert (done.get("status"), (done.get("reason") or {}).get("kind")) == ("paused", "awaiting-source"), done
+
+    def test_stop_clears_a_build_no_driver_holds(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The plan's record names a build of this start that no driver
+        holds: the stream that drove it is gone. Its Stop clears it at once,
+        the listing says no build runs, and Build & validate runs. On
+        04d7e8c03f the Stop only asked a driver that was not there to stop:
+        the build stayed in the record, and Build & validate was refused until
+        it went stale."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        _left_on_the_plan(
+            h, simulatingSince=time.time() - 60, simulateMode="auto",
+            simulateExecutionId="a-build-no-driver-holds", simulateBootId=shared_budgets.BOOT_ID,
+        )
+        # A build of this start, which the server takes for one that runs. A
+        # listing that gives no verdict reads that way too.
+        assert h.cards()[h.att].get("buildRunning", "auto") == "auto"
+        r = client.post(f"/api/agents/projects/{h.pid}/attachments/{h.att}/simulate/cancel", headers=_auth(token))
+        assert r.status_code == 200, r.get_data(as_text=True)
+        session = _builder_session(h)
+        assert not session.get("simulatingSince") and not session.get("simulateExecutionId"), session
+        assert h.cards()[h.att].get("buildRunning") is None
+        done = h.simulate("auto")[-1][1]
+        assert done.get("status") == "paused", done
+
+    def test_a_pick_while_a_dead_build_holds_the_plan_goes_on_by_itself(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """Build & validate paused on the loader, and its Resume began a build
+        that an earlier start left behind. The user's pick is answered as no
+        build runs: the Dataflow Builder goes on with Build & validate, and
+        the answer never says a build running now builds the loader. On
+        04d7e8c03f the answer said the Build & validate running now built it,
+        with nothing more to start, and nothing built it."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        done = h.simulate("auto")[-1][1]
+        assert done.get("status") == "paused", done
+        # The Resume's start, as a start that is gone left it: no pause, and
+        # its build in flight.
+        _left_on_the_plan(
+            h, drop=("pauseReason",), simulatingSince=time.time() - 60, simulateMode="auto",
+            simulateExecutionId="a-resume-of-an-earlier-start", simulateBootId="an-earlier-start",
+        )
+        delegated = h.select(URL).get("delegated") or {}
+        assert (delegated.get("status"), delegated.get("running"), delegated.get("continueWith")) == (
+            "plan-waiting", None, "build",
+        ), delegated
+        assert "running now" not in delegated.get("reason", ""), delegated
+
+
+class TestARowsSolveIsWorkOnItsNode:
+    """A plan row's Solve, among them the one a pick starts by itself, is
+    work on its node: while it runs, no Solve this node of that node and no
+    Build & validate of its plan starts, and the listing names it
+    (``validating``), so every tab shows its row running. While a build runs
+    on the plan, no row's Solve and no Solve this node of its nodes starts.
+    The server refuses each with 409 and says why. Review of #1635, B4."""
+
+    def test_while_a_rows_solve_runs_its_node_takes_no_other_solve_and_its_plan_no_build(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """While the loader's row Solve asks its Dataset Finder, the loader's
+        Node Builder is asked to Solve this node, and the Dataflow Builder to
+        Build & validate its plan. Both are refused with 409, and the listing
+        names the row's Solve. On 04d7e8c03f both started over it (each
+        answered 200), and the listing named nothing."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        node_builder = h.node_builder_attachment_id()
+        started = _no_solve_job(monkeypatch)
+
+        def _meanwhile():
+            solve = h.client.post(
+                f"/api/agents/projects/{h.pid}/attachments/{node_builder}/solve-node",
+                json={"nodeId": h.load}, headers=_auth(h.token),
+            )
+            build = h.client.post(
+                f"/api/agents/projects/{h.pid}/attachments/{h.att}/simulate",
+                json={"mode": "auto"}, headers=_auth(h.token),
+            )
+            return {"solve": _answered(solve), "build": _answered(build),
+                    "listed": h.cards()[h.att].get("validating", "not said")}
+
+        meanwhile = _during_the_discovery_of(h, monkeypatch, h.load, _meanwhile)
+        done = h.validate("load")[-1][1]
+        assert done.get("verdict") == "awaiting-source", done
+        solve = meanwhile.get("solve") or (None, "")
+        assert solve[0] == 409 and "this node is being solved" in solve[1], (solve, started)
+        build = meanwhile.get("build") or (None, "")
+        assert build[0] == 409 and "a node of this plan is being solved" in build[1], build
+        assert meanwhile.get("listed") == {"ref": "load", "nodeId": h.load}, meanwhile
+        assert started == [], started
+
+    def test_while_the_plan_is_built_no_rows_solve_and_no_solve_this_node_starts(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """A Build & validate of this start runs on the plan, between two of
+        its validations. A row's Solve of the loader and Solve this node from
+        the loader's Node Builder are both refused with 409: the plan is being
+        built. On 04d7e8c03f the server refused neither (each answered 200):
+        only a tab held them back."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        node_builder = h.node_builder_attachment_id()
+        started = _no_solve_job(monkeypatch)
+        _left_on_the_plan(
+            h, simulatingSince=time.time(), simulateMode="auto",
+            simulateExecutionId="a-build-of-this-start", simulateBootId=shared_budgets.BOOT_ID,
+        )
+        row = _answered(client.post(
+            f"/api/agents/projects/{h.pid}/attachments/{h.att}/validate-node",
+            json={"ref": "load"}, headers=_auth(token),
+        ))
+        solve = _answered(client.post(
+            f"/api/agents/projects/{h.pid}/attachments/{node_builder}/solve-node",
+            json={"nodeId": h.load}, headers=_auth(token),
+        ))
+        assert row[0] == 409 and "the plan is being built" in row[1], row
+        assert solve[0] == 409 and "the plan is being built" in solve[1], (solve, started)
+        assert started == [], started
+
+
+class TestAPickGoesOnAsTheUserWasGoing:
+    """After the user's pick, the plan goes on as the user was going: one
+    Step after a Step, Build & validate after Build & validate, and the
+    row's Solve after a row's Solve. Review of #1635, B5."""
+
+    @pytest.fixture(autouse=True)
+    def _six_actions(self, monkeypatch):
+        monkeypatch.setattr(budgets, "SIMULATE_MAX_ACTIONS", 6)
+
+    def test_after_a_step_paused_on_the_loader_the_pick_goes_on_with_one_step(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The user steps through the plan: a Step finds the loader waiting
+        for its source and pauses there, since nothing else can go on. The
+        pick's answer goes on with one Step. On 04d7e8c03f it went on with
+        Build & validate (continueWith build), which built the rest of the
+        plan by itself while the user was stepping."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        done = h.simulate("step")[-1][1]
+        assert (done.get("status"), [n.get("ref") for n in (done.get("reason") or {}).get("nodes") or []]) == (
+            "paused", ["load"],
+        ), done
+        delegated = h.select(URL).get("delegated") or {}
+        assert (delegated.get("status"), delegated.get("running"), delegated.get("continueWith")) == (
+            "plan-waiting", None, "step",
+        ), delegated
+        assert "by one Step" in delegated.get("reason", ""), delegated
+
+
+class TestTheChatThatAsksLaterGetsTheCardToo:
+    """A loader's candidates already wait for a pick when another agent's
+    Solve or Build & validate reaches the loader: that agent's chat gets the
+    same card, with the same id, and waits for the pick too. Review of
+    #1635, B6."""
+
+    @pytest.fixture(autouse=True)
+    def _six_actions(self, monkeypatch):
+        monkeypatch.setattr(budgets, "SIMULATE_MAX_ACTIONS", 6)
+
+    def test_build_and_validate_on_a_loader_solve_this_node_asked_about_puts_the_card_in_its_chat(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """Solve this node, from the loader's Node Builder, asks the loader's
+        Dataset Finder first. Then the Dataflow Builder's Build & validate
+        pauses on the loader. The Builder's chat holds the card, with the id
+        the Finder's record names, and the listing says the Builder waits for
+        the pick, as the Node Builder still does. No second discovery runs. On
+        04d7e8c03f the Builder's chat held no card and the listing said the
+        Builder waited for nothing, while its plan paused on the loader."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        node_builder = h.node_builder_attachment_id()
+        first = _solve_this_node(h, node_builder)
+        assert first.get("verdict") == "awaiting-source", first
+        done = h.simulate("auto")[-1][1]
+        assert (done.get("status"), (done.get("reason") or {}).get("kind")) == ("paused", "awaiting-source"), done
+        cards = _source_picks(h, h.att)
+        assert len(cards) == 1, [t.get("text") for t in h.session_turns(h.att)]
+        record = dr.source_record(h.spec(), h.load) or {}
+        assert cards[0].get("discoveryId") and cards[0]["discoveryId"] == record.get("discoveryId"), (
+            cards[0], record,
+        )
+        assert (cards[0].get("nodeId"), cards[0].get("finderAttachmentId")) == (h.load, h.finder_attachment_id())
+        listed = h.cards()
+        assert (listed[h.att]["waitsForYou"], listed[node_builder]["waitsForYou"]) == ([h.load], [h.load]), listed
+        assert len(h.discover_calls) == 1
