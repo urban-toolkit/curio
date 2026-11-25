@@ -25,7 +25,7 @@ import { usePackageInstallReview } from "./usePackageInstallReview";
 // dev/84: genuine cross-feature reuse: agent package proposals apply through
 // the SAME install review the Nodes Catalog drawer uses, never a duplicate.
 import { InstallPermissionsModal } from "../../packages/publishing/InstallPermissionsDialog";
-import { modalStackDepth } from "../../ModalShell";
+import { escapeAnswered, modalStackDepth } from "../../ModalShell";
 import styles from "./AgentChatPanel.module.css";
 import { PlanningTemplates } from "./builderStrip/PlanningTemplates";
 import { AgentRail } from "./chat/AgentRail";
@@ -381,6 +381,10 @@ export const AgentChatPanel: React.FC<{
     // would restart the fallback timer against a panel nobody can see.
     if (!presented) return;
     const onKey = (e: KeyboardEvent) => {
+      // A layer over the chat answered this Escape as it closed: a menu of
+      // the chat's own, or a dialog. In a browser its close is committed
+      // before this listener runs, so the stack below no longer counts it.
+      if (escapeAnswered(e)) return;
       // An open modal owns Escape. API Settings and agent import are raised
       // over this panel, and this listener is on window in the bubble phase,
       // so the modal cannot stop it firing. It has to stand down itself, or

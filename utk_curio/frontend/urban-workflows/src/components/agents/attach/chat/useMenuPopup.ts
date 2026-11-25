@@ -3,12 +3,14 @@
  * group's list of nodes. Open, it holds a layer of the modal stack, so the
  * chat's own Escape stands down; Escape or a press anywhere else closes it,
  * Escape handing the focus back to its button, as the top bar's menus do.
- * It takes the focus as it opens, on its current item if it has one, and the
- * arrow keys walk its items.
+ * The Escape that closes it is answered (`answerEscape`): in a browser the
+ * menu's close is committed before the chat's own listener runs, which then
+ * finds no layer open and would close the chat too. It takes the focus as it
+ * opens, on its current item if it has one, and the arrow keys walk its items.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { holdModalStack } from "../../../ModalShell";
+import { answerEscape, escapeAnswered, holdModalStack } from "../../../ModalShell";
 
 const ITEMS = '[role="menuitem"]:not([aria-disabled="true"])';
 
@@ -48,7 +50,8 @@ export function useMenuPopup<K = true>(): MenuPopup<K> {
       setOpen(null);
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (event.key !== "Escape" || escapeAnswered(event)) return;
+      answerEscape(event);
       setOpen(null);
       anchorRef.current?.focus();
     };
