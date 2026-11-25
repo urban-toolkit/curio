@@ -1167,10 +1167,10 @@ class TestWebReadsSpendNoRound:
     ``tool_rounds.FREE_WEB_READS`` a turn, the egress budget's own number, so
     every web read a turn may make is free while it works, and the turn's
     record counts them (``freeWebReads``). A web read that failed spends a
-    round, as before: a search its provider answered with no results, or not
-    with 200, a page that answered other than 200, the egress policy's
-    refusal, a timeout, a provider it could not reach, so a dead provider
-    cannot keep a turn going. A search with no query is a parameter refusal,
+    round, as before: a search its provider answered with an empty answer
+    (the 202s of 11-25) or not with 200, a page read that answered other than
+    200, the egress policy's refusal, a timeout, a provider it could not
+    reach, so a dead provider cannot keep a turn going. A search with no query is a parameter refusal,
     free as any other up to MAX_REFUSED_ROUNDS a turn. Native calls and fenced
     blocks count alike, streamed or not."""
 

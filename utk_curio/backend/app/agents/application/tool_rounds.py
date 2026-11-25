@@ -338,9 +338,10 @@ MAX_REFUSED_ROUNDS = 2
 # make, which its instructions state): every web read a turn may make is free
 # while it works, and the turn's rounds are left for what the reads were for,
 # such as one note per finding. A web read that failed (a search its provider
-# answered with no results or not with 200, a page that answered other than
-# 200, the egress policy's refusal, a timeout, a provider it could not reach)
-# spends a round as before, so a dead provider cannot keep a turn going, and
+# answered with an empty answer, a page that is not JSON or not with 200, a
+# page read that answered other than 200, the egress policy's refusal, a
+# timeout, a provider it could not reach) spends a round as before, so a dead
+# provider cannot keep a turn going, and
 # one refused for its params is a parameter refusal (MAX_REFUSED_ROUNDS).
 FREE_WEB_READS = 4
 
@@ -350,11 +351,11 @@ _WEB_READS = ("web.search", "web.fetch")
 
 def _web_read_worked(tool_id: str, status: str, text: object) -> bool:
     """Whether *tool_id*'s call was a web read that worked: a search its
-    provider answered with 200 and results (any other answer is an ``error``,
-    ``tools._execute_web_search``), or a page that answered 200 (its result is
-    ``ok`` whatever the page answered, and holds the answer's ``status``,
-    ``tools._execute_web_fetch``). A result the tool-result cap cut reads as
-    not worked."""
+    provider answered with 200 and JSON, its rows or none (any other answer
+    is an ``error``, ``tools._execute_web_search``), or a page that answered
+    200 (its result is ``ok`` whatever the page answered, and holds the
+    answer's ``status``, ``tools._execute_web_fetch``). A result the
+    tool-result cap cut reads as not worked."""
     if tool_id not in _WEB_READS or status != "ok":
         return False
     if tool_id == "web.search":
