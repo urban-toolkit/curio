@@ -120,6 +120,13 @@ def _loader_code(backend: str, token: str, project_id: str, loader: str) -> str:
     return next((node.get("content") or "") for node in nodes if node["id"] == loader)
 
 
+def _loader_goal(backend: str, token: str, project_id: str, loader: str) -> str:
+    """The loader's goal as the plan saved it, its title and its intent: a
+    validation's turns name the node by it, cut at 60 characters."""
+    nodes = api_json(f"{backend}/api/projects/{project_id}", token)["spec"]["dataflow"]["nodes"]
+    return next(str(node.get("goal") or "") for node in nodes if node["id"] == loader)
+
+
 def test_the_builders_chat_holds_the_loaders_candidates_and_its_pick_builds_the_loader(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
@@ -206,9 +213,14 @@ def test_the_builders_chat_holds_the_loaders_candidates_and_its_pick_builds_the_
     # waits until the plan line has no Stop, so no build clock ticks in it.
     expect(panel.get_by_role("button", name=re.compile(r"^(Stop|Stopping…)$"))).to_have_count(0, timeout=60000)
     # The build's own turn reaches the chat when the tab reads it again as the
-    # build ends, so the frame waits for it too.
-    solved = re.compile(rf"Solved '{re.escape(LOADER_TITLE)}': PASS after \d+ rounds?")
+    # build ends, so the frame waits for it too. It names the loader by its
+    # goal cut at 60 characters, as every validation's turn does.
+    goal = _loader_goal(current_server, token, project_id, loader)
+    assert goal.startswith(LOADER_TITLE), goal
+    solved = re.compile(rf"Solved '{re.escape(goal[:60])}': PASS after \d+ rounds?")
     expect(panel.get_by_text(solved).last).to_be_visible(timeout=60000)
+    # The plan went on and was built: the line says no more that it paused.
+    expect(panel.get_by_text(re.compile(r"^Paused:"))).to_have_count(0)
     dismiss_toasts(page)
     save_workflow_test_screenshot(page, SCREENSHOT_STEM, test_name="recorded", clip_selector=CHAT_PANEL_SELECTOR)
 
