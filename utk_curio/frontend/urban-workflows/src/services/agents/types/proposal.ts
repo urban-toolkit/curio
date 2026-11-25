@@ -99,8 +99,16 @@ export interface AgentBuilderSession {
   nodeIds?: Record<string, string>;
   /** dev/67-9: the ref the driver is working on, while running. */
   currentRef?: string;
-  /** dev/67-9: why the sequence paused — a plain reason with a next action. */
-  pauseReason?: { kind: string; ref?: string; message: string };
+  /** dev/67-9: why the sequence paused: a plain reason with a next action.
+   * `awaiting-source`: no node can go on but loaders that wait for the user to
+   * pick their source; `nodes` names each by its plan ref, its node and its
+   * Dataset Finder's attachment, whose chat holds the candidates. */
+  pauseReason?: {
+    kind: string;
+    ref?: string;
+    message: string;
+    nodes?: Array<{ ref: string; nodeId: string | null; attachmentId: string | null }>;
+  };
   /** ref → the change its validated code landed as, and the attachment
    * whose chat holds it (dev/72: the node's own agent). */
   nodeChanges?: Record<string, { changeId: string; attachmentId?: string | null }>;

@@ -65,13 +65,20 @@ export interface PlanNodeReviewState {
   scenarioStates?: Record<string, string>;
 }
 
-/** dev/71: what a row's lifecycle state means for its action cluster. */
+/** dev/71: what a row's lifecycle state means for its action cluster. A row
+ * whose loader waits for the user to pick its source in its Dataset Finder's
+ * chat needs a source, and keeps its Solve. */
 export const ROW_STATE_CHIP: Record<string, string> = {
   solving: "Validating",
   validated: "Validated ✓",
   approved: "Solved ✓",
   failed: "Failed: Solve retries",
+  "awaiting-source": "Needs a source",
 };
+
+/** The states whose row offers Solve: a node not built yet, one whose code
+ * failed its check, and a loader waiting for its source. */
+export const ROW_STATES_WITH_SOLVE = ["created", "failed", "awaiting-source"];
 
 export const OUTCOME_LABEL: Record<string, string> = {
   applied: "Applied",
