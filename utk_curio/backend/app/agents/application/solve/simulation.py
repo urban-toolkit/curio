@@ -27,9 +27,14 @@ from utk_curio.backend.app.agents.application.solve import run_node as agents_ru
 from utk_curio.backend.app.agents.application.solve import session as agents_session
 from utk_curio.backend.app.agents.application.solve import validate as agents_validate
 from utk_curio.backend.app.collaboration import dataflow_docs
+from utk_curio.backend.app.projects import storage as projects_storage
 
 
 _SIMULATE_CANCEL_EVENTS: dict[str, object] = {}
+
+#: The fields a running Build & validate keeps on the plan's record, which it
+#: clears when it ends.
+_IN_FLIGHT = ("simulatingSince", "simulateExecutionId", "simulateMode", "simulateCancelRequested", "currentRef")
 
 
 def _ordered_plan_refs(plan: dict) -> list[str]:
@@ -67,10 +72,10 @@ def _next_simulation_action(plan: dict, proposal: dict, session: dict, waiting=(
 
     Per ref, in topological order: created/failed → validate (a failed ref
     validates again on resume: the pause happened when it FIRST failed);
-    awaiting-source → validate, which asks no one while its source still
-    waits for the user; validated → approve (its code landed when it passed;
-    approving records it); approved → next ref. A ref of *waiting*, which
-    the run found waiting for the user to pick its source, is passed over
+    waiting for its source (``validate.SOURCE_WAITS``) → validate, which asks
+    no one while its source still waits; validated → approve (its code landed
+    when it passed; approving records it); approved → next ref. A ref of
+    *waiting*, which the run found waiting for its source, is passed over
     with every node that reads from it: every other node goes on. The plan's
     nodes and connections landed with it, so nothing is created or connected
     here."""
@@ -80,7 +85,7 @@ def _next_simulation_action(plan: dict, proposal: dict, session: dict, waiting=(
         if ref in held:
             continue
         state = node_states.get(ref, "created")
-        if state in ("created", "failed", agents_validate.AWAITING_SOURCE):
+        if state in ("created", "failed", *agents_validate.SOURCE_WAITS):
             return {"action": "validate", "ref": ref}
         if state == "validated":
             return {"action": "approve", "ref": ref}
@@ -93,42 +98,140 @@ def _names(labels: list[str]) -> str:
     return labels[0] if len(labels) == 1 else ", ".join(labels[:-1]) + " and " + labels[-1]
 
 
+def _waits_said(wait: str, labels: list[str], finder_name: str) -> str:
+    """How a pause says that the loaders *labels* wait for their source, for
+    *wait* (a state of ``validate.SOURCE_WAITS``): the user's pick in each
+    one's Dataset Finder's chat, named *finder_name*, a download into the Data
+    Catalog, or the install of the dataset picked."""
+    one = len(labels) == 1
+    names = labels[0] if one else _names(labels)
+    if wait == agents_validate.AWAITING_DOWNLOAD:
+        return (f"{names} waits for its source to download into the Data Catalog" if one
+                else f"{names} wait for their sources to download into the Data Catalog")
+    if wait == agents_validate.AWAITING_INSTALL:
+        return (f"{names} waits for the install of the dataset picked for it" if one
+                else f"{names} wait for the install of the datasets picked for them")
+    return (f"{names} needs a source: its {finder_name}'s chat asks you for it" if one
+            else f"{names} need a source: each one's {finder_name} chat asks you for it")
+
+
 def awaiting_source_reason(user_key: str, spec: dict, session: dict, plan: dict, refs) -> dict:
-    """Why Build & validate paused: every node of *refs* waits for the user
-    to pick its source in its Dataset Finder's chat, and no other node can go
-    on. Each is named by its ref, its node and its Finder's attachment, and
-    the message names them; the strip ends it with how to go on."""
+    """Why Build & validate paused: every node of *refs* waits for its source,
+    and no other node can go on. Each waits for what the plan's ledger says
+    (``validate.SOURCE_WAITS``): the user's pick in its Dataset Finder's
+    chat, a download into the Data Catalog, or an install. Each is named by
+    its ref, its node and its Finder's attachment, and the message names
+    them by what they wait for; the strip ends it with how to go on."""
     node_ids = session.get("nodeIds") or {}
-    nodes, labels, finders = [], [], []
+    states = session.get("nodeStates") or {}
+    nodes, finders = [], []
+    waiting: dict[str, list[str]] = {}
     for ref in refs:
         node_id = node_ids.get(ref)
         finder = agents_dataset_resolution.finder_attachment(spec, node_id, user_key=user_key) if node_id else None
         nodes.append({"ref": ref, "nodeId": node_id, "attachmentId": (finder or {}).get("attachmentId")})
-        labels.append(agents_plans._plan_endpoint_label(ref, plan, {}))
+        wait = states.get(ref) if states.get(ref) in agents_validate.SOURCE_WAITS else agents_validate.AWAITING_SOURCE
+        waiting.setdefault(wait, []).append(agents_plans._plan_endpoint_label(ref, plan, {}))
         finders.append(agents_spec_reads._agent_name(user_key, str((finder or {}).get("coord") or "")))
     finder_name = (
         next((name for name in finders if name), None)
         or agents_spec_reads._shipped_name_declaring(agents_dataset_resolution.DISCOVER)
         or agents_dataset_resolution.DISCOVER
     )
-    message = (
-        f"{labels[0]} needs a source: its {finder_name}'s chat asks you for it" if len(labels) == 1
-        else f"{_names(labels)} need a source: each one's {finder_name} chat asks you for it"
+    message = "; ".join(
+        _waits_said(wait, waiting[wait], finder_name)
+        for wait in agents_validate.SOURCE_WAITS if wait in waiting
     )
     return {"kind": agents_validate.AWAITING_SOURCE, "nodes": nodes, "message": message}
+
+
+def _in_flight(session: dict) -> str | None:
+    """The mode of the Build & validate running on *session*'s plan, or None
+    when none runs: one whose start is older than the stale bound is gone."""
+    since = float(session.get("simulatingSince") or 0)
+    if not since or _time.time() - since >= agents_budgets.SIMULATE_STALE_SECONDS:
+        return None
+    return str(session.get("simulateMode") or "auto")
+
+
+def _pause_follows(user_key: str, spec: dict, record: dict, session: dict) -> None:
+    """A pause for loaders' sources names those of its loaders that still wait,
+    each as it waits now, and ends when none does."""
+    reason = session.get("pauseReason")
+    if not (isinstance(reason, dict) and reason.get("kind") == agents_validate.AWAITING_SOURCE):
+        return
+    states = session.get("nodeStates") or {}
+    left = [
+        entry.get("ref") for entry in reason.get("nodes") or []
+        if isinstance(entry, dict) and states.get(entry.get("ref")) in agents_validate.SOURCE_WAITS
+    ]
+    if not left:
+        session.pop("pauseReason", None)
+        return
+    proposal = agents_store._plan_proposal_any(spec, record.get("attachmentId"), session.get("planProposalId"))
+    session["pauseReason"] = awaiting_source_reason(user_key, spec, session, (proposal or {}).get("plan") or {}, left)
+
+
+def follow_the_sources(user_key: str, spec: dict) -> list[dict]:
+    """Each landed plan's waits follow its loaders' sources, in *spec*, the
+    dataflow a writer holds under its spec lock after it changed a Dataset
+    Finder's record. A plan node that waits for its source
+    (``validate.SOURCE_WAITS``) waits for what its Finder's record says now:
+    the user's pick, a download or an install (``validate.plan_wait_state``).
+    One whose source waits for nothing more is placed again (``created``),
+    and the next pass builds it, or the running one: the pick resolved it,
+    its download landed, its install was applied, or the record went with a
+    cleared chat or a Finder taken off, and the next pass asks a Finder
+    again. A pause for sources names those still waiting, each as it waits,
+    and ends when none does.
+
+    Returns one entry per plan node that moved: its plan's agent
+    (``attachmentId``, ``coord``), its ``ref``, ``nodeId`` and new
+    ``state``, whether a pause still stands (``paused``) and the mode of a
+    Build & validate running on it (``running``, else None)."""
+    moved: list[dict] = []
+    for record in attachments.list_attachments(spec):
+        session = record.get("builderSession")
+        states = session.get("nodeStates") if isinstance(session, dict) else None
+        if not isinstance(states, dict):
+            continue
+        node_ids = session.get("nodeIds") or {}
+        refs = []
+        for ref, state in states.items():
+            if state not in agents_validate.SOURCE_WAITS:
+                continue
+            now = agents_validate.plan_wait_state(spec, node_ids.get(ref), user_key)
+            if now != state:
+                states[ref] = now
+                refs.append(ref)
+        if not refs:
+            continue
+        _pause_follows(user_key, spec, record, session)
+        moved += [{
+            "attachmentId": record.get("attachmentId"),
+            "coord": str(record.get("coord") or ""),
+            "ref": ref,
+            "nodeId": node_ids.get(ref),
+            "state": states[ref],
+            "paused": bool(session.get("pauseReason")),
+            "running": _in_flight(session),
+        } for ref in refs]
+    return moved
 
 
 def request_simulate_cancel(user_key: str, project_id: str, attachment_id: str) -> dict:
     """Cancel a running simulation (dev/67-9): both dev/63 signals — the
     durable session flag plus the in-process event; the run stops at the next
     action boundary with everything already done persisted."""
-    spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
-    record = agents_spec_reads._record_or_404(spec, attachment_id)
-    session = record.get("builderSession") or {}
-    if not session.get("simulatingSince"):
-        raise AgentServiceError("no simulation is running for this attachment", 409)
-    session["simulateCancelRequested"] = True
-    dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._person(user_key, "simulate"))
+    with projects_storage.spec_write_lock(user_key, project_id):
+        spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
+        record = agents_spec_reads._record_or_404(spec, attachment_id)
+        session = record.get("builderSession") or {}
+        if not session.get("simulatingSince"):
+            raise AgentServiceError("no simulation is running for this attachment", 409)
+        session["simulateCancelRequested"] = True
+        record["builderSession"] = session
+        dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._person(user_key, "simulate"))
     event = _SIMULATE_CANCEL_EVENTS.get(str(session.get("simulateExecutionId") or ""))
     if event is not None:
         event.set()  # type: ignore[attr-defined]
@@ -149,10 +252,12 @@ def simulate_stream(
     ``step`` performs exactly the NEXT action and returns; ``auto`` chains
     the same actions, validate then approve, per node in topological order,
     PAUSING at the first failure with the reason (nothing downstream of a
-    failure is written). A loader that waits for the user to pick its source
-    is passed over with every node that reads from it, so each loader's
-    Dataset Finder is asked in one pass, and the run pauses once, naming every
-    such loader, when no other node can go on. Code that passes its check
+    failure is written). A loader that waits for its source (the user's pick,
+    a download or an install) is passed over with every node that reads from
+    it, so each loader's Dataset Finder is asked in one pass, and the run
+    pauses once, naming every such loader, when no other node can go on. A
+    source that comes while the run goes on places its loader again, and the
+    run builds it (:func:`follow_the_sources`). Code that passes its check
     lands as the agent's change when it is validated. Every transition
     persists to ``builderSession`` BEFORE it is emitted, so a reload resumes
     exactly; resume = calling this endpoint again.
@@ -181,12 +286,7 @@ def simulate_stream(
         agents_session._delegate_capabilities((proposal.get("plan") or {}).get("nodes") or []),
     )
     simulate_execution_id = uuid.uuid4().hex
-    session["simulatingSince"] = now
-    session["simulateExecutionId"] = simulate_execution_id
-    session.pop("simulateCancelRequested", None)
-    session.pop("pauseReason", None)
-    record["builderSession"] = session
-    dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._agent_actor(user_key, spec, attachment_id, "simulate"))
+    _start_the_run(user_key, project_id, attachment_id, simulate_execution_id, mode, now)
     stop = threading.Event()
     _SIMULATE_CANCEL_EVENTS[simulate_execution_id] = stop
     return _simulate_events(
@@ -194,6 +294,28 @@ def simulate_stream(
         simulate_execution_id, mode, stop, exec_fn,
         coord=record.get("coord", ""), room_asker=agents_room.asker(),
     )
+
+
+def _start_the_run(user_key: str, project_id: str, attachment_id: str, simulate_execution_id: str,
+                   mode: str, now: float) -> None:
+    """Mark the run in flight, with its mode, and drop the pause it resumes
+    from, on the plan's record as the dataflow holds it now, under its spec
+    lock: a pick that moved the plan's ledger since the run's checks read it
+    keeps its move. A run already in flight refuses this one (409)."""
+    with projects_storage.spec_write_lock(user_key, project_id):
+        spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
+        record = agents_spec_reads._record_or_404(spec, attachment_id)
+        session = record.get("builderSession") or {}
+        since = float(session.get("simulatingSince") or 0)
+        if since and now - since < agents_budgets.SIMULATE_STALE_SECONDS:
+            raise AgentServiceError("a simulation is already running for this attachment", 409)
+        session["simulatingSince"] = now
+        session["simulateExecutionId"] = simulate_execution_id
+        session["simulateMode"] = mode
+        session.pop("simulateCancelRequested", None)
+        session.pop("pauseReason", None)
+        record["builderSession"] = session
+        dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._agent_actor(user_key, spec, attachment_id, "simulate"))
 
 
 def _simulate_events(
@@ -241,8 +363,9 @@ class SimulationDriver:
         # The plan's agent at work in the room (its coord) and who asked it.
         self.coord: str | None = coord
         self.room_asker: agents_room.Asker | None = room_asker
-        # The refs this run found waiting for the user to pick their source,
-        # in the order it found them: passed over with what reads from them.
+        # The refs this run found waiting for their source, in the order it
+        # found them, while they still wait: passed over with what reads from
+        # them.
         self.waiting: list[str] = []
 
     # ── state ────────────────────────────────────────────────────────────────
@@ -255,6 +378,12 @@ class SimulationDriver:
         proposal = agents_store._plan_proposal_any(spec, self.attachment_id, self.plan_proposal_id)
         return spec, record, session, proposal
 
+    def _locked(self):
+        """The dataflow's spec lock, which every write of the plan's record
+        holds from its read to its write, as every writer of a node's source
+        does: a pick that lands meanwhile is never written over."""
+        return projects_storage.spec_write_lock(self.user_key, self.project_id)
+
     def _write(self, spec) -> None:
         """Write *spec*, a fresh state this driver changed, as the attachment's agent."""
         dataflow_docs.write(
@@ -263,18 +392,29 @@ class SimulationDriver:
         )
 
     def _write_session(self, mutate) -> dict:
-        spec, record, session, _ = self._fresh()
-        mutate(session)
-        record["builderSession"] = session
-        self._write(spec)
+        with self._locked():
+            spec, record, session, _ = self._fresh()
+            mutate(session)
+            record["builderSession"] = session
+            self._write(spec)
         return session
 
+    def _still_waiting(self, session: dict) -> list[str]:
+        """The refs of :attr:`waiting` whose source still waits, as *session*,
+        the plan's record read fresh, says: a source picked, landed or
+        installed since places its node again, and this run builds it."""
+        states = session.get("nodeStates") or {}
+        return [ref for ref in self.waiting if states.get(ref) in agents_validate.SOURCE_WAITS]
+
     def _pause(self, reason: dict) -> dict:
-        """Persist a pause reason and answer the paused done payload."""
+        """Persist a pause reason, ending the run in the same write, and answer
+        the paused done payload: a pick that lands after it sees no run in
+        flight."""
 
         def _mutate(session):
             session["pauseReason"] = reason
-            session.pop("currentRef", None)
+            for key in _IN_FLIGHT:
+                session.pop(key, None)
 
         session = self._write_session(_mutate)
         return {"status": "paused", "mode": self.mode, "reason": session["pauseReason"]}
@@ -300,13 +440,40 @@ class SimulationDriver:
     def _completed(self) -> dict:
         return {"status": "completed", "mode": self.mode}
 
-    def _waits_for_sources(self) -> dict:
+    def _waits_for_sources(self) -> dict | None:
         """Pause once, naming every node this run found waiting for its
-        source, when no other node can go on."""
-        spec, _, session, proposal = self._fresh()
-        return self._pause(awaiting_source_reason(
-            self.user_key, spec, session, (proposal or {}).get("plan") or {}, self.waiting,
-        ))
+        source, when no other node can go on: decided and written under the
+        spec lock, on the record as it is now. When a source came for one of
+        them since, the run goes on with it instead, and this answers None."""
+        with self._locked():
+            spec, record, session, proposal = self._fresh()
+            still = self._still_waiting(session)
+            if still != self.waiting:
+                self.waiting = still
+                return None
+            session["pauseReason"] = awaiting_source_reason(
+                self.user_key, spec, session, (proposal or {}).get("plan") or {}, still,
+            )
+            for key in _IN_FLIGHT:
+                session.pop(key, None)
+            record["builderSession"] = session
+            self._write(spec)
+        return {"status": "paused", "mode": self.mode, "reason": session["pauseReason"]}
+
+    def _free_recheck(self, spec: dict, session: dict, ref: str) -> bool:
+        """Whether validating *ref* again is a free check: it waits for its
+        source, and its Dataset Finder's record still holds what it waits on
+        (candidates awaiting a pick, or a pick awaiting its download or
+        install), so the check asks no one and changes nothing. A node whose
+        record went asks a Finder anew, and one whose record resolved is
+        built: either is an action."""
+        if (session.get("nodeStates") or {}).get(ref) not in agents_validate.SOURCE_WAITS:
+            return False
+        node_id = (session.get("nodeIds") or {}).get(ref)
+        record = agents_dataset_resolution.source_record(spec, node_id, user_key=self.user_key) if node_id else None
+        return (record or {}).get("status") in (
+            agents_dataset_resolution.STATE_CANDIDATES_PENDING, agents_dataset_resolution.STATE_AWAITING_INSTALL,
+        )
 
     # ── the loop ─────────────────────────────────────────────────────────────
     def events(self):
@@ -321,9 +488,11 @@ class SimulationDriver:
 
     def _actions(self):
         """The actions, one at a time, until completion, a pause, a
-        cancellation or the cap; returns the done payload. A node found still
-        waiting for its source, which it already did when the run reached it,
-        is passed over: that is no step's action."""
+        cancellation or the cap; returns the done payload. Each pass reads the
+        plan's record fresh: a node whose source came since this run found it
+        waiting is placed again, and this run builds it. A free check of a
+        node still waiting for its source is no step's action
+        (:meth:`_free_recheck`)."""
         done: dict = self._completed()
         try:
             yield "simulate_started", {
@@ -333,24 +502,28 @@ class SimulationDriver:
                 if self._cancelled():
                     done = {"status": "cancelled", "mode": self.mode}
                     break
-                spec, record, session, proposal = self._fresh()
+                spec, _, session, proposal = self._fresh()
                 if proposal is None:
                     done = self._completed()
                     break
                 plan = proposal.get("plan") or {}
+                self.waiting = self._still_waiting(session)
                 action = _next_simulation_action(plan, proposal, session, self.waiting)
                 if action is None:
-                    done = self._waits_for_sources() if self.waiting else self._completed()
+                    paused = self._waits_for_sources() if self.waiting else self._completed()
+                    if paused is None:
+                        continue  # a source came meanwhile: its node goes on
+                    done = paused
                     break
                 ref = action.get("ref")
-                was_waiting = (session.get("nodeStates") or {}).get(ref) == agents_validate.AWAITING_SOURCE
+                free = self._free_recheck(spec, session, ref)
                 yield "stage", {**action, "label": agents_plans._plan_endpoint_label(ref, plan, {}) if ref else None}
                 self._set_current(ref)
                 stopped = yield from self._perform(action, ref)
                 if stopped is not None:
                     done = stopped
                     break
-                if self.mode == "step" and not (was_waiting and ref in self.waiting):
+                if self.mode == "step" and not (free and ref in self.waiting):
                     done = self._stepped()
                     break
             else:
@@ -369,28 +542,34 @@ class SimulationDriver:
             return (yield from self._approve(ref))
         return None
 
+    def _next_action(self) -> dict | None:
+        """The next action, read fresh, past the nodes that still wait."""
+        _, _, session, proposal = self._fresh()
+        if proposal is None:  # dev/71: content work continues on the
+            return None       # completed structure
+        self.waiting = self._still_waiting(session)
+        return _next_simulation_action(proposal.get("plan") or {}, proposal, session, self.waiting)
+
     def _stepped(self) -> dict:
-        spec4, _, session4, proposal4 = self._fresh()
-        next_action = (
-            _next_simulation_action(
-                (proposal4 or {}).get("plan") or {}, proposal4 or {}, session4, self.waiting
-            )
-            if proposal4 is not None  # dev/71: content work continues
-            else None                  # on the completed structure
-        )
+        next_action = self._next_action()
         if next_action is None and self.waiting:
             # Nothing can go on but nodes that wait for their source.
-            return self._waits_for_sources()
+            paused = self._waits_for_sources()
+            if paused is not None:
+                return paused
+            next_action = self._next_action()  # a source came meanwhile
         return {"status": "stepped", "mode": self.mode, "nextAction": next_action}
 
     def _clear_in_flight(self) -> None:
         _SIMULATE_CANCEL_EVENTS.pop(self.simulate_execution_id, None)
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(Exception), self._locked():
             spec, record, session, _ = self._fresh()
-            session.pop("simulatingSince", None)
-            session.pop("simulateExecutionId", None)
-            session.pop("simulateCancelRequested", None)
-            session.pop("currentRef", None)
+            if session.get("simulateExecutionId") not in (None, self.simulate_execution_id):
+                # This run's pause ended it, and a Resume started the next
+                # run since: the fields in flight are that run's.
+                return
+            for key in _IN_FLIGHT:
+                session.pop(key, None)
             record["builderSession"] = session
             self._write(spec)
 
@@ -425,9 +604,10 @@ class SimulationDriver:
             **({"changeId": change_id} if change_id else {}),
         }
         if verdict == agents_validate.AWAITING_SOURCE:
-            # The node waits for the user to pick its source in its Dataset
-            # Finder's chat: the run goes on with every node that does not
-            # read from it, and pauses, naming it, when none can.
+            # The node waits for its source: the run goes on with every node
+            # that does not read from it, and pauses, naming it, when none
+            # can. A source that came while it was checked places it again,
+            # and the next pass builds it.
             if ref not in self.waiting:
                 self.waiting.append(ref)
             return None
@@ -448,20 +628,17 @@ class SimulationDriver:
     def _approve(self, ref):
         """Approve one validated node: its code landed when it passed, so
         approving records it, on its change (DEC-054: an approval is
-        recorded, never silent) and in the plan's ledger."""
-        _, _, session, _ = self._fresh()
-        entry = (session.get("nodeChanges") or {}).get(ref) or {}
-        change_attachment = entry.get("attachmentId") or self.attachment_id
-        spec, _, _, _ = self._fresh()
-        home = attachments.get_attachment(spec, change_attachment)
-        for change in (home or {}).get("changes") or []:
-            if isinstance(change, dict) and change.get("changeId") == entry.get("changeId"):
-                change["approvedBy"] = "simulation-auto"
-        record = attachments.get_attachment(spec, self.attachment_id)
-        if record is not None:
-            ledger = record.get("builderSession") or {}
+        recorded, never silent) and in the plan's ledger. Both are written on
+        the records as the dataflow holds them, under its spec lock."""
+        with self._locked():
+            spec, record, ledger, _ = self._fresh()
+            entry = (ledger.get("nodeChanges") or {}).get(ref) or {}
+            home = attachments.get_attachment(spec, entry.get("attachmentId") or self.attachment_id)
+            for change in (home or {}).get("changes") or []:
+                if isinstance(change, dict) and change.get("changeId") == entry.get("changeId"):
+                    change["approvedBy"] = "simulation-auto"
             ledger.setdefault("nodeStates", {})[ref] = "approved"
             record["builderSession"] = ledger
-        self._write(spec)
+            self._write(spec)
         yield "action_result", {"action": "approve", "ref": ref, "outcome": "approved"}
         return None
