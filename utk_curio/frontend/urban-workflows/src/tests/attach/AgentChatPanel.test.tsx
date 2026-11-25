@@ -658,7 +658,9 @@ describe("AgentChatPanel's More menu", () => {
         { role: "agent", text: "a1", execution: { executionId: "e1", usage: { inputTokens: 1100, outputTokens: 300 }, status: "ok", durationMs: 10 } },
       ],
     });
-    const more = screen.getByRole("button", { name: "More: rename, clear, tokens used" });
+    // Named by what it does, which the tokens never change ("keeps its name
+    // while the conversation's tokens arrive", below).
+    const more = screen.getByRole("button", { name: "More: rename, clear" });
     expect(more).toHaveAttribute("aria-haspopup", "menu");
     expect(more).toHaveAttribute("data-tooltip", "More");
     const menu = openMore();

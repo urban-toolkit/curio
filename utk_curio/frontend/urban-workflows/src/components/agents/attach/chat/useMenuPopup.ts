@@ -12,7 +12,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { answerEscape, escapeAnswered, holdModalStack } from "../../../ModalShell";
 
-const ITEMS = '[role="menuitem"]:not([aria-disabled="true"])';
+/** Its items. One that only says something, as Tokens used does, is disabled
+ *  but still takes the focus and the arrows' walk, so the keyboard reads it. */
+const ITEMS = '[role="menuitem"]';
 
 export interface MenuPopup<K> {
   /** What is open, or null: one menu, or one of a few (a rail's groups). */

@@ -328,7 +328,8 @@ export const AgentChatPanel: React.FC<{
   // The conversation's tokens, More's Tokens used: persisted Actuals plus the
   // in-flight run's interim sums (dev/37: provider-reported only, never an
   // estimate), and how many replies reported theirs. None while history
-  // hydrates or while nothing was ever reported.
+  // hydrates or while nothing was ever reported. While a reply runs, the count
+  // can still grow, and pulses as the counter by the composer did.
   const chatTokens = useMemo(() => {
     const live = runInFlight ? runStatus?.liveUsage : null;
     const totals = sessionTokenTotals(turns, live);
@@ -337,7 +338,7 @@ export const AgentChatPanel: React.FC<{
     const output = totals.outputTokens ?? 0;
     if (input + output <= 0) return null;
     const replies = turns.filter((t) => t.execution?.usage).length + (live ? 1 : 0);
-    return { input, output, replies };
+    return { input, output, replies, live: runInFlight };
   }, [turns, runInFlight, runStatus?.liveUsage, loadingHistory]);
   // A running turn never holds the composer back: a message sent meanwhile is
   // asked at once and waits its turn on the server. When the provider wires a

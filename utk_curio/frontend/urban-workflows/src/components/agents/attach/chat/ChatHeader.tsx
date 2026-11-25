@@ -20,6 +20,8 @@ export interface ChatTokens {
   output: number;
   /** The replies that reported theirs. */
   replies: number;
+  /** A reply runs, which can still add to them: the count pulses. */
+  live: boolean;
 }
 
 /**
@@ -44,7 +46,11 @@ export const ChatHeader: React.FC<{
   onClose: () => void;
 }> = ({ category, title, targetLabel, targetTooltip, titleError, onRename, onClear, tokens, onClose }) => {
   const menu = useMenuPopup();
-  const offers = [onRename ? "rename" : null, onClear ? "clear" : null, tokens ? "tokens used" : null].filter(Boolean);
+  // More is named by what it does, which no reply's tokens change: its name
+  // holds still while they arrive. Tokens used alone names it when it holds
+  // nothing else.
+  const actions = [onRename ? "rename" : null, onClear ? "clear" : null].filter(Boolean);
+  const named = `More: ${actions.length ? actions.join(", ") : "tokens used"}`;
   const choose = (action: () => void) => {
     menu.close();
     action();
@@ -64,7 +70,7 @@ export const ChatHeader: React.FC<{
       </span>
       {titleError ? <span className={styles.titleError}>{titleError}</span> : null}
       <span className={styles.headerSpacer} />
-      {offers.length > 0 ? (
+      {actions.length > 0 || tokens ? (
         <span className={styles.menuWrap}>
           <button
             ref={(el) => {
@@ -72,7 +78,7 @@ export const ChatHeader: React.FC<{
             }}
             type="button"
             className={clsx(styles.headerBtn, menu.open !== null && styles.headerBtnOpen)}
-            aria-label={`More: ${offers.join(", ")}`}
+            aria-label={named}
             aria-haspopup="menu"
             aria-expanded={menu.open !== null}
             data-tooltip="More"
@@ -108,13 +114,18 @@ export const ChatHeader: React.FC<{
               {tokens ? (
                 <>
                   {onRename || onClear ? <div role="separator" className={styles.menuSep} /> : null}
+                  {/* Read, not chosen: disabled, yet the focus and the arrows
+                      reach it, so the keyboard reads it too. */}
                   <div
                     role="menuitem"
                     aria-disabled="true"
+                    tabIndex={-1}
                     className={styles.menuTokens}
                     aria-label={`Session token usage: ${formatTokenCount(total)} tokens, ${tokens.input.toLocaleString()} in and ${tokens.output.toLocaleString()} out, as the provider reported`}
                   >
-                    <span className={styles.menuTokensTotal}>Tokens used: {formatTokenCount(total)}</span>
+                    <span className={clsx(styles.menuTokensTotal, tokens.live && styles.menuTokensLive)}>
+                      Tokens used: {formatTokenCount(total)}
+                    </span>
                     <span className={styles.menuTokensSub}>
                       {formatTokenCount(tokens.input)} in, {formatTokenCount(tokens.output)} out, over{" "}
                       {tokens.replies} {tokens.replies === 1 ? "reply" : "replies"}
