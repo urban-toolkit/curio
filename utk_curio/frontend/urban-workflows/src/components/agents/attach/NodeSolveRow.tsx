@@ -5,11 +5,20 @@ import { AddKeyAction } from "../../connectionKeys/AddKeyAction";
 import { OpenDatasetFinderAction } from "./OpenDatasetFinderAction";
 import { stoppedByPhrase } from "../content/AgentSolveAttemptsCard";
 
+/** What Solve this node does, on its tooltip. */
+export const SOLVE_NODE_HINT =
+  "Runs this node's code in the sandbox, fixes errors, and re-runs: only code that passed lands.";
+
+/** What a running Solve this node does once the panel closes, on its tooltip. */
+export const SOLVE_NODE_RUNNING_HINT = "Solve keeps running if you close this panel.";
+
 /**
- * dev/115 (DEC-073, Amendment A2): the per-node Solve row — rendered in a
- * node-attached agent's chat. The user's explicit ask is what runs the node's
- * code in the sandbox, fixes what fails, and re-runs it; the result lands as
- * an already-executed content review (or is written into an empty node).
+ * dev/115 (DEC-073, Amendment A2): Solve this node, one line under the Goal
+ * line of a node-attached agent's chat: the button, then its narration while
+ * it runs or how it ended, and the fix an outcome comes with. What it does is
+ * the button's tooltip. The user's explicit ask is what runs the node's code
+ * in the sandbox, fixes what fails, and re-runs it; the result lands as an
+ * already-executed content review (or is written into an empty node).
  * Detached on the server: closing the panel does not stop it.
  */
 export const NodeSolveRow: React.FC<{
@@ -75,35 +84,32 @@ export const NodeSolveRow: React.FC<{
     : notice;
 
   return (
-    <div className={styles.strip} role="group" aria-label="Solve this node">
-      <div className={styles.actions}>
-        <button
-          type="button"
-          className={styles.solve}
-          disabled={running}
-          data-tooltip="Runs the node's current code in the sandbox, fixes errors, re-runs, and lands only code that passed"
-          onClick={() => void solve()}
-        >
-          {running ? "Solving…" : "Solve this node"}
-        </button>
-        <span className={styles.hint}>
-          {running
-            ? "Solve keeps running if you close this panel."
-            : "Runs the code in the sandbox, fixes errors, and re-runs: only code that passed lands."}
+    <div className={styles.solveLine} role="group" aria-label="Solve this node">
+      <button
+        type="button"
+        className={styles.solve}
+        disabled={running}
+        data-tooltip={running ? SOLVE_NODE_RUNNING_HINT : SOLVE_NODE_HINT}
+        onClick={() => void solve()}
+      >
+        {running ? "Solving…" : "Solve this node"}
+      </button>
+      {error ? (
+        <span className={`${styles.solveStatus} ${styles.error}`} data-tooltip={error}>{error}</span>
+      ) : running ? (
+        <span className={styles.solveStatus} aria-live="polite" data-tooltip={activity ?? undefined}>
+          {activity ?? SOLVE_NODE_RUNNING_HINT}
         </span>
-      </div>
-      {running && activity ? (
-        <div className={styles.hint} aria-live="polite">{activity}</div>
+      ) : shownNotice ? (
+        <span className={styles.solveStatus} role="status" data-tooltip={shownNotice}>{shownNotice}</span>
       ) : null}
-      {shownNotice ? <div className={styles.hint} role="status">{shownNotice}</div> : null}
       {remedy ? (
-        <div className={styles.actions}>
+        <>
           <AddKeyAction remedy={remedy} />
           {/* dev/126: a data-loading node whose source is with the user. */}
           <OpenDatasetFinderAction remedy={remedy} onOpenChat={onOpenChat} agentName={finder} />
-        </div>
+        </>
       ) : null}
-      {error ? <div className={styles.error}>{error}</div> : null}
     </div>
   );
 };
