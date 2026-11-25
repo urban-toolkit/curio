@@ -22,6 +22,19 @@
     color: var(--curio-text-primary);
 }
 
+/* The review inside a ModalShell, whose box is the card: the same room inside
+   it, scrolling within the shell's height, and a title clear of its close X. */
+.inShell {
+    padding: 24px;
+    overflow-y: auto;
+    font-family: var(--curio-font-family);
+    color: var(--curio-text-primary);
+}
+
+.inShell .title {
+    padding-right: 28px;
+}
+
 .title {
     margin: 0 0 4px;
     font-size: 1.125rem;
