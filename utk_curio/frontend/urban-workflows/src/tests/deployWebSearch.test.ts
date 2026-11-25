@@ -6,10 +6,11 @@
  * URL. The service's key is made once, owner-only, in the checkout's
  * .secrets/searxng.env, before the first docker compose command reads it, and
  * no line prints it; its image is pulled while the old stack still serves.
- * Once the stack is up, each job fails unless Curio has the URL and, from
- * Curio's container, the URL answers with JSON that holds a results list, in
- * no more than the 256 KiB web.search reads (scripts/searxng/check.py); no
- * results only warns. The Full stack build's bucket-mounts job asks the same
+ * Once the stack is up, each job fails unless /monitor says Curio has the URL
+ * and names the URL's host and port as the provider web.search asks, and,
+ * from Curio's container, the URL answers with JSON that holds a results
+ * list, in no more than the 256 KiB web.search reads
+ * (scripts/searxng/check.py); no results only warns. The Full stack build's bucket-mounts job asks the same
  * URL through the same check. The files are read as text, as
  * deployBucketMounts.test.ts reads them.
  */
@@ -150,32 +151,48 @@ describe("The deploy's web search", () => {
         }
     });
 
-    test("once the stack is up, each job fails unless Curio has the URL and it answers from Curio's container with JSON", () => {
+    test("once the stack is up, each job fails unless /monitor names the URL's host and port and the URL answers from Curio's container with JSON", () => {
         expect(exists(CHECK)).toBe(true);
         const script = read(CHECK);
         expect(script).toContain('line = f"results: {len(results)}, {_size(len(body))}"');
         expect(script).toContain("return 0 if ok else 1");
+        const routes = read("utk_curio/backend/app/monitor/routes.py");
         // What /monitor's searchToolConfigured reads: the variable --agent-search-url sets.
-        expect(read("utk_curio/backend/app/monitor/routes.py")).toContain(
+        expect(routes).toContain(
             '"searchToolConfigured": bool(os.environ.get("CURIO_SEARCH_URL", "").strip()),',
         );
+        // And what its searchProvider reads: the host and port web.search asks.
+        expect(routes).toContain('"searchProvider": agents_service.search_provider(),');
+        // The host and port each job derives from the URL, as its shell does
+        // (${search_url#*://}, then ${search_host%%/*}), are the URL's.
+        const afterScheme = SEARCH_URL.slice(SEARCH_URL.indexOf("://") + 3);
+        const host = afterScheme.split("/")[0];
+        expect(host).toBe(new URL(SEARCH_URL.replace("{q}", "query")).host);
+        expect(host).toBe("searxng:8080");
         for (const [, project, job] of STACKS) {
             const wait = checks(job);
             const at = job.indexOf(wait);
             expect(once(job, `docker compose -p ${project} up -d --force-recreate --remove-orphans`)).toBeLessThan(at);
             expect(once(job, 'echo "=== waiting for health ==="')).toBeLessThan(at);
             expect(at).toBeLessThan(once(job, 'echo "=== docker ps (post-deploy) ==="'));
+            expect(wait).toMatch(
+                /^ +echo "=== web search ==="\n(?: +#[^\n]*\n)* +search_host="\$\{search_url#\*:\/\/\}"\n +search_host="\$\{search_host%%\/\*\}"\n +deadline=/m,
+            );
             expect(wait).toContain(`docker compose -p ${project} exec -T curio \\\n`);
-            expect(wait).toContain('["deployment"]["searchToolConfigured"]');
+            expect(wait).toContain('["deployment"]; print(d["searchToolConfigured"], d.get("searchProvider"))');
             expect(wait).toContain(`python ${CHECK} "$search_url" 2>&1 < /dev/null)" \\\n`);
-            expect(wait).toContain('&& [ "$search_flag" = "True" ]; then\n');
+            expect(wait).toContain('&& [ "$search_monitor" = "True $search_host" ]; then\n');
             // No results anywhere in what the check printed: a Compose warning can come first.
             expect(wait).toMatch(/^ +\*"results: 0,"\*\)\n +echo "::warning::[^\n]*"\n/m);
             expect(wait).toMatch(/if \[ "\$SECONDS" -ge "\$deadline" \]; then\n +echo "::error::[^\n]*"\n/);
+            // The error names what /monitor read, and what it had to read.
+            expect(wait).toMatch(/\n +echo "::error::[^\n]*\$\{search_monitor:-nothing\}, not True \$search_host,[^\n]*"\n/);
             expect(wait).toContain(`docker compose -p ${project} logs --no-color --tail=100 searxng || true\n`);
             expect(wait.match(/^ +exit 1$/gm)).toHaveLength(1);
             expect(wait).toMatch(/^ +sleep 5\n +done$/m);
         }
+        // Dev and stable check alike: one text but for the Compose project.
+        expect(checks(STACKS[0][2]).split("-p curio-dev ").join("-p curio ")).toBe(checks(STACKS[1][2]));
     });
 
     test("every docker compose exec of the checks reads /dev/null, so none takes the rest of the script", () => {
