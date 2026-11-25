@@ -319,6 +319,12 @@ export const AgentBuilderStrip: React.FC<{
         phase, unresolved, everyUnresolvedNeedsUser, userBlockedCount: userBlocked.length,
       });
   const solveRunning = solving || phase === "solving" || liveJob?.kind === "solve-batch";
+  // A batch's Stop reads Stopping… until that batch ends, however it ends: one
+  // this line did not start (another tab's, or one a chat opened again found
+  // running) has no Solve of this line's whose end would put it back.
+  useEffect(() => {
+    if (!solveRunning) setCancelling(false);
+  }, [solveRunning]);
   const runDisabledReason =
     unresolved > 0 ? `${unresolved} node${unresolved === 1 ? "" : "s"} unsolved` : null;
 
