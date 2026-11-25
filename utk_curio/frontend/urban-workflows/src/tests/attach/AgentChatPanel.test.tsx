@@ -492,11 +492,14 @@ describe("AgentChatPanel's agents rail", () => {
     };
     const { rail } = renderRail(RAIL_ATTACHMENTS[0], { workingOf: (a) => working[a.attachmentId] ?? null });
     const entry = within(rail).getByRole("button", { name: "Dataset Finder on Load heat, at work" });
-    expect(entry.querySelector('[role="img"]')).toHaveAttribute("aria-label", "Dataset Finder (asked by Ana)");
-    expect(within(rail).getByRole("button", { name: "Dataset Finder on Load buildings" }).querySelector('[role="img"]')).toBeNull();
+    // The running dot is the entry's one image: the glyph's icon beside it is
+    // hidden from the accessibility tree, though it carries role="img" too.
+    const images = (el: HTMLElement) => within(el).queryAllByRole("img").map((dot) => dot.getAttribute("aria-label"));
+    expect(images(entry)).toEqual(["Dataset Finder (asked by Ana)"]);
+    expect(images(within(rail).getByRole("button", { name: "Dataset Finder on Load buildings" }))).toEqual([]);
     // A group shows it when any of its nodes is at work, and its list says which.
     const group = within(rail).getByRole("button", { name: "Node Builder on 3 nodes, one at work" });
-    expect(group.querySelector('[role="img"]')).toHaveAttribute("aria-label", "Node Builder (asked by Ana), editing Heat map");
+    expect(images(group)).toEqual(["Node Builder (asked by Ana), editing Heat map"]);
     fireEvent.click(group);
     const list = screen.getByRole("menu", { name: "Node Builder on" });
     expect(within(list).getByRole("menuitem", { name: /^Heat map/ })).toHaveTextContent("Heat mapat work");
