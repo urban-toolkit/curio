@@ -457,7 +457,9 @@ def _source_resolver(
             parent_coord=coord,
             parent_execution_id=execution_id,
             parent_attachment_id=attachment_id,
-            mission=" — ".join(
+            # The node's goal, then the dataflow's, in plain punctuation: the
+            # Finder's chat shows its mission.
+            mission="; ".join(
                 t for t in [str(node.get("goal") or ""), *[str(x or "") for x in extra_texts]]
                 if t
             )[:2000],
