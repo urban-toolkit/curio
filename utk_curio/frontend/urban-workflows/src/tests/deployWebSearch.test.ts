@@ -10,9 +10,9 @@
  * and names the URL's host and port as the provider web.search asks, and,
  * from Curio's container, the URL answers with JSON that holds a results
  * list, in no more than the 256 KiB web.search reads
- * (scripts/searxng/check.py); no results only warns. The Full stack build's bucket-mounts job asks the same
- * URL through the same check. The files are read as text, as
- * deployBucketMounts.test.ts reads them.
+ * (scripts/searxng/check.py); no results only warns. The Full stack build's
+ * bucket-mounts job asks the same URL through the same check. The files are
+ * read as text, as deployBucketMounts.test.ts reads them.
  */
 import * as fs from "fs";
 import * as path from "path";
