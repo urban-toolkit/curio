@@ -537,11 +537,13 @@ describe("AgentChatPanel's agents rail", () => {
     ]);
     twins.unmount();
 
-    // A titled conversation is named as the dock's badge names it.
+    // A titled conversation is named as the dock's badge names it, on its
+    // tooltip and in its name; its label is its agent's name, as every entry's.
     const titled = renderRail(RAIL_ATTACHMENTS[0], { attachments: [RAIL_ATTACHMENTS[0], finder("f1", "Parks"), finder("f2")] });
     const parks = within(titled.rail).getByRole("button", { name: "Dataset Finder: Parks on the canvas" });
     expect(parks).toHaveAttribute("data-tooltip", "Dataset Finder: Parks on the canvas");
-    expect(within(parks).getByText("Dataset Finder: Parks")).toBeInTheDocument();
+    expect(within(parks).getByText("Dataset Finder")).toBeInTheDocument();
+    expect(parks).not.toHaveTextContent("Parks");
     expect(within(titled.rail).getByRole("button", { name: "Dataset Finder on the canvas" })).toBeInTheDocument();
     titled.unmount();
 
@@ -565,6 +567,43 @@ describe("AgentChatPanel's agents rail", () => {
       "Load heat: Heat colors",
     ]);
     expect(rows[3]).toHaveAttribute("data-tooltip", "Node Builder: Heat colors on Load heat");
+  });
+
+  // The boards label each entry with its agent's name, over what it is
+  // attached to in smaller type; the conversation's title is on its tooltip.
+  // How the label wraps is agentRailLabels.test.ts's.
+  it("labels each entry with its agent's name over what it is attached to, its conversation's title on its tooltip and in its name", () => {
+    const builder: AgentAttachment = { ...RAIL_ATTACHMENTS[0], title: "Heat islands" };
+    const finder: AgentAttachment = { ...RAIL_ATTACHMENTS[1], title: "Parks by the river" };
+    const { rail } = renderRail(builder, { attachments: [builder, finder] });
+
+    const open = within(rail).getByRole("button", { name: "Dataflow Builder: Heat islands on the canvas" });
+    expect(open).toHaveAttribute("aria-current", "true");
+    expect(open).toHaveAttribute("data-tooltip", "Dataflow Builder: Heat islands on the canvas");
+    expect(open).toHaveTextContent(/^Dataflow Builder$/);
+
+    const entry = within(rail).getByRole("button", { name: "Dataset Finder: Parks by the river on Load buildings" });
+    expect(entry).toHaveAttribute("data-tooltip", "Dataset Finder: Parks by the river on Load buildings");
+    expect(within(entry).getByText("Dataset Finder")).toBeInTheDocument();
+    expect(within(entry).getByText("Load buildings")).toBeInTheDocument();
+    expect(entry).not.toHaveTextContent("Parks by the river");
+  });
+
+  it("labels twins with their agent's name and number, which their tooltips and names keep", () => {
+    const finder = (attachmentId: string): AgentAttachment => ({
+      ...attachment,
+      attachmentId,
+      coord: "agent.curio.dataset-finder@1",
+      name: "Dataset Finder",
+      category: "data",
+      title: "Parks",
+    });
+    const { rail } = renderRail(RAIL_ATTACHMENTS[0], { attachments: [RAIL_ATTACHMENTS[0], finder("f1"), finder("f2")] });
+    const twins = within(rail).getAllByRole("button").slice(1);
+    const named = ["Dataset Finder: Parks (1) on the canvas", "Dataset Finder: Parks (2) on the canvas"];
+    expect(twins.map((entry) => entry.getAttribute("aria-label"))).toEqual(named);
+    expect(twins.map((entry) => entry.getAttribute("data-tooltip"))).toEqual(named);
+    expect(twins.map((entry) => entry.textContent)).toEqual(["Dataset Finder (1)", "Dataset Finder (2)"]);
   });
 
   it("a group's list goes with its group, and lets go of its layer", () => {
