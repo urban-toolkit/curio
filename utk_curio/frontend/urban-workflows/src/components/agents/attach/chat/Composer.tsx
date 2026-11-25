@@ -22,7 +22,11 @@ import styles from "../AgentChatPanel.module.css";
  *
  * While a turn runs, Stop takes Send's place, as long as nothing is typed: a
  * message typed meanwhile brings Send back, and is asked at once to wait its
- * turn. The box names the agent it messages, "Message Dataflow Builder". */
+ * turn. Stop is a button of its own, and the press that sent never lands on
+ * it: a click on Send hands the focus back to the box, so a held Enter goes
+ * there, and the second click of a double click, which lands where Send was,
+ * stops nothing. The box names the agent it messages, "Message Dataflow
+ * Builder". */
 export const Composer: React.FC<{
   /** The agent's name, as its manifest gives it. */
   agentName: string;
@@ -178,26 +182,38 @@ export const Composer: React.FC<{
         onMouseUp={syncCaret}
         onKeyDown={onKeyDown}
       />
+      {/* Two buttons, each keyed: React never relabels the Send just pressed
+          as Stop. */}
       {onStop && !value.trim() ? (
         <button
+          key="stop"
           type="button"
           className={styles.stop}
           aria-label={stopping ? "Stopping…" : "Stop"}
           data-tooltip={stopping ? "Stopping the reply" : "Stop the reply"}
           data-agent-turn-stop=""
           disabled={stopping}
-          onClick={onStop}
+          onClick={(e) => {
+            // The second click of a double click on Send lands here.
+            if (e.detail > 1) return;
+            onStop();
+          }}
         >
           <FontAwesomeIcon icon={faStop} />
         </button>
       ) : (
         <button
+          key="send"
           type="button"
           className={styles.send}
           aria-label="Send"
           data-tooltip="Send"
           disabled={busy || !value.trim()}
-          onClick={onSend}
+          onClick={() => {
+            onSend();
+            // Back in the box, where a held Enter sends nothing more.
+            textareaRef.current?.focus();
+          }}
         >
           {busy ? "…" : <FontAwesomeIcon icon={faArrowUp} />}
         </button>
