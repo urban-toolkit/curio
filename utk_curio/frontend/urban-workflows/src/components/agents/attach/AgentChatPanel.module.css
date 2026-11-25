@@ -5,14 +5,15 @@
    right-aligned user
    bubbles, avatar-prefixed agent rows, soft chips, 16px gutters. */
 
-/* Full-height right drawer flush with the viewport top (portal to <body>):
-   the dark header sits at the top-bar level, like the concept and the roster
-   drawer. Above the main top menu (z 100–200), below the roster drawer's
-   backdrop (z 1200). */
+/* A right-hand drawer under the top bar (portal to <body>), as Define
+   scenario opens: the bar stays whole above it. The agents rail down its left
+   side, the chat in the column beside it. Above the canvas and its dock, under
+   the catalog drawers and the dialogs on ModalShell's overlay layer, which
+   the chat's own questions use. */
 .panel {
   position: fixed;
   right: 0;
-  top: 0;
+  top: var(--curio-top-bar-height);
   bottom: 0;
   /* Catalog-drawer sizing parity (memo dev/46): the Agent Catalog panel's
      exact dimensions, in the same scale family as the Nodes/Datasets
@@ -21,7 +22,7 @@
   max-width: 92vw;
   z-index: 1100;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   background: var(--curio-card-bg, var(--curio-card-bg));
   border-left: 1px solid var(--curio-border, var(--curio-border));
   box-shadow: -8px 0 24px rgba(0, 0, 0, 0.18);
@@ -48,70 +49,63 @@
   }
 }
 
-/* ── header (DEC-042, dev/21): ONE dark top header for the opened agent view —
-   the ‹ › cycling arrows, agent identity, session details, and Close. No Pin,
-   and no static "Agent Catalog" bar (that chrome is roster-drawer-only). ── */
-.header {
+/* The chat beside the rail: header, Goal line, plan line, conversation and
+   composer, top to bottom. */
+.column {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  /* Flush with the viewport top; the extra top padding optically aligns the
-     identity row with the adjacent main top bar. */
-  padding: 14px 12px 12px;
-  background: var(--curio-top-bar-bg, var(--curio-top-bar-bg));
-  color: var(--curio-text-on-dark, var(--curio-text-on-dark));
 }
 
-.headerRow {
+/* ── header (DEC-042, dev/21): ONE dark row for the opened agent view: the
+   agent's glyph, the conversation's title, what it is attached to, More and
+   Close. Under the top bar, it needs no padding to line up with it. No Pin,
+   and no static "Agent Catalog" bar (that chrome is roster-drawer-only). ── */
+.header {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
+  padding: 10px 8px 10px 12px;
+  background: var(--curio-top-bar-bg, var(--curio-top-bar-bg));
+  color: var(--curio-text-on-dark, var(--curio-text-on-dark));
 }
 
 .headerSpacer {
   flex: 1;
 }
 
-.cycleBtn {
+/* The agent's glyph on its category's tile, as on the rail. */
+.headerGlyph {
   flex: none;
   width: 24px;
   height: 24px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  color: var(--curio-text-muted);
   font-size: 12px;
-  cursor: pointer;
 }
 
-.cycleBtn:hover:not(:disabled),
-.cycleBtn:focus-visible {
-  background: var(--curio-top-bar-bg-hover);
-  color: var(--curio-text-on-dark);
+/* What the agent is attached to, after the title; it gives way first. */
+.headerTarget {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--curio-text-on-dark-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.cycleBtn:disabled {
-  color: var(--curio-text-secondary);
-  cursor: default;
-}
-
-.headerBot {
-  flex: none;
-  font-size: 16px;
-  color: var(--curio-role-running-fg); /* overridden by a category tint class */
-  display: flex;
-  align-items: center;
-}
-
-.position {
-  flex: none;
-  font-size: 11px;
-  color: var(--curio-text-meta);
-}
+/* An agent's glyph tile, in its category's tint: the header's and the rail's. */
+.chip_node     { background: var(--curio-category-agent-node-bg);     color: var(--curio-category-agent-node-fg); }
+.chip_canvas   { background: var(--curio-category-agent-canvas-bg);   color: var(--curio-category-agent-canvas-fg); }
+.chip_data     { background: var(--curio-category-agent-data-bg);     color: var(--curio-category-agent-data-fg); }
+.chip_evaluate { background: var(--curio-category-agent-evaluate-bg); color: var(--curio-category-agent-evaluate-fg); }
+.chip_package  { background: var(--curio-category-agent-package-bg);  color: var(--curio-category-agent-package-fg); }
 
 /* Category tints — same palette as AgentAvatarBadge (icon color, white chip). */
 .tint_node     { color: var(--curio-category-agent-node-fg); }
@@ -121,8 +115,9 @@
 .tint_package  { color: var(--curio-category-agent-package-fg); }
 
 .title {
-  font-size: 13px;
-  font-weight: 600;
+  flex: 0 1 auto;
+  font-size: 14px;
+  font-weight: 500;
   color: var(--curio-text-on-dark, var(--curio-text-on-dark));
   white-space: nowrap;
   overflow: hidden;
@@ -131,14 +126,14 @@
 }
 
 /* ── click-to-rename conversation title (memo dev/25): the affordance is the
-   title itself — hover underline, no edit button or icon. ── */
+   title itself (hover underline), and More's Rename conversation. ── */
 .titleButton {
   border: none;
   background: none;
   padding: 0;
   font: inherit;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
   text-align: left;
   cursor: pointer;
 }
@@ -168,8 +163,8 @@
   border: none;
   border-radius: 6px;
   padding: 1px 6px;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
   font-family: inherit;
   background: var(--curio-top-bar-bg-hover);
   color: var(--curio-text-on-dark, var(--curio-text-on-dark));
@@ -180,23 +175,15 @@
   outline-offset: 1px;
 }
 
-/* Rename failure: soft status tone on the dark header, subtitle row. */
+/* Rename failure: soft status tone on the dark header, after the target. */
 .titleError {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   font-size: 11px;
   color: var(--curio-danger);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.subtitle {
-  font-size: 11px;
-  color: var(--curio-text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
 }
 
 .headerBtn {
@@ -215,9 +202,94 @@
 }
 
 .headerBtn:hover,
-.headerBtn:focus-visible {
+.headerBtn:focus-visible,
+.headerBtnOpen {
   background: var(--curio-top-bar-bg-hover);
   color: var(--curio-text-on-dark, var(--curio-text-on-dark));
+}
+
+/* ── More: Rename conversation, Clear conversation, Tokens used, hanging
+   from its button over the chat. ── */
+.menuWrap {
+  position: relative;
+  flex: none;
+  display: flex;
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 5;
+  width: 244px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: 10px;
+  background: var(--curio-card-bg);
+  box-shadow: var(--curio-shadow-modal);
+  color: var(--curio-text-primary);
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--curio-text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.menuItem:hover,
+.menuItem:focus-visible {
+  background: var(--curio-surface-muted);
+}
+
+.menuItemDanger {
+  color: var(--curio-danger-text);
+}
+
+.menuIcon {
+  flex: none;
+  width: 14px;
+  font-size: 12px;
+}
+
+.menuSep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--curio-border);
+}
+
+/* What the conversation used: read, not chosen. */
+.menuTokens {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--curio-text-primary);
+}
+
+.menuTokensTotal {
+  font-weight: 500;
+}
+
+.menuTokensSub {
+  font-size: 11px;
+  color: var(--curio-text-secondary);
 }
 
 /* ── the dataflow's goal (GoalLine), the line under the header of every
@@ -446,16 +518,6 @@
 }
 
 /* ── transcript: grouped surface with bubbles / agent rows ── */
-/* Positioning context for the Jump-to-latest overlay (memo dev/75): the pill
-   anchors to this box, not the scroller, so it doesn't scroll with content. */
-.messagesWrap {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
 .messages {
   flex: 1;
   /* A flex child won't shrink below its content without this, so the
@@ -473,6 +535,41 @@
    fallback — no visible ring for that non-interactive focus. */
 .messages:focus {
   outline: none;
+}
+
+/* Jump to latest (memo dev/75), while the conversation is scrolled up: in a
+   row of its own between the conversation and the composer, on the
+   conversation's surface, so it covers no message. */
+.jumpRow {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  padding: 6px 16px;
+  background: var(--curio-surface-muted);
+}
+
+/* The Dataflow Builder's empty conversation: how to start, and the planning
+   templates. */
+.emptyChat {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px 4px;
+}
+
+.emptyChatText {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--curio-text-primary);
+}
+
+.emptyChatSub {
+  font-size: 12px;
+  color: var(--curio-text-secondary);
 }
 
 .msgUser {
@@ -743,6 +840,27 @@
   cursor: not-allowed;
 }
 
+/* Stop, in Send's place while a turn runs and nothing is typed. */
+.stop {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: var(--curio-top-bar-bg);
+  color: var(--curio-text-on-dark);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.stop:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ── structured content (memo dev/39) ──────────────────────────────────── */
 
 /* Markdown from the safe renderer: keep the bubble rhythm tight. */
@@ -808,51 +926,4 @@
 /* The chips row visually joins the footer beneath it. */
 .suggestedRow + .footer {
   border-top: none;
-}
-
-/* ── counter strip (memo dev/80, amended): the session's accumulated token
-   total, right-aligned by the composer (per-reply statuses live on the
-   messages). Fixed height so appearing/updating causes no layout shift. */
-.statusStrip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 24px;
-  padding: 3px 16px;
-  background: var(--curio-card-bg, var(--curio-card-bg));
-  border-top: 1px solid var(--curio-border);
-}
-
-.statusStripSpacer {
-  flex: 1;
-}
-
-/* The strip joins whatever sits directly beneath/above it into one block. */
-.suggestedRow + .statusStrip,
-.statusStrip + .footer {
-  border-top: none;
-}
-
-/* ⚙ Attachment settings cog (memo dev/42) — a quiet labeled control at the
-   top of the content area, beneath the DEC-042 header. */
-.attachmentSettingsBtn {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--curio-border);
-  background: var(--curio-surface-muted);
-  border-radius: 8px;
-  padding: 5px 12px;
-  font-size: 0.76rem;
-  color: var(--curio-text-secondary);
-  cursor: pointer;
-  min-height: 28px;
-}
-
-.attachmentSettingsBtn:hover,
-.attachmentSettingsBtn:focus-visible {
-  background: var(--curio-surface-muted);
-  border-color: var(--curio-border-strong);
-  color: var(--curio-text-primary);
 }

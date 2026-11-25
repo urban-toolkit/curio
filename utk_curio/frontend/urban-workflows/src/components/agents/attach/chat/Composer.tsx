@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faArrowUp } from "@fortawesome/free-solid-svg-icons";
+import { faArrowUp, faStop } from "@fortawesome/free-solid-svg-icons";
 
 import {
   skillsMatching,
@@ -18,7 +18,11 @@ import styles from "../AgentChatPanel.module.css";
  * skills the chat's next run lists, read each time the list opens: typing
  * narrows it, the arrows move through it, Enter or Tab or a click puts
  * `/<name>` in the message, and Escape closes it without closing the chat.
- * Sent, `/<name>` hands that skill to the run with the message. */
+ * Sent, `/<name>` hands that skill to the run with the message.
+ *
+ * While a turn runs, Stop takes Send's place, as long as nothing is typed: a
+ * message typed meanwhile brings Send back, and is asked at once to wait its
+ * turn. */
 export const Composer: React.FC<{
   value: string;
   onChange: (value: string) => void;
@@ -26,7 +30,11 @@ export const Composer: React.FC<{
   busy: boolean;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   loadSkills?: () => Promise<RunSkill[]>;
-}> = ({ value, onChange, onSend, busy, textareaRef, loadSkills }) => {
+  /** Stop the running turn; omitted, Send stays whatever runs. */
+  onStop?: () => void;
+  /** Stop was asked for: the turn stops at its next step. */
+  stopping?: boolean;
+}> = ({ value, onChange, onSend, busy, textareaRef, loadSkills, onStop, stopping = false }) => {
   const listId = useId();
   const [caret, setCaret] = useState(value.length);
   const [skills, setSkills] = useState<RunSkill[] | null>(null);
@@ -168,16 +176,30 @@ export const Composer: React.FC<{
         onMouseUp={syncCaret}
         onKeyDown={onKeyDown}
       />
-      <button
-        type="button"
-        className={styles.send}
-        aria-label="Send"
-        data-tooltip="Send"
-        disabled={busy || !value.trim()}
-        onClick={onSend}
-      >
-        {busy ? "…" : <FontAwesomeIcon icon={faArrowUp} />}
-      </button>
+      {onStop && !value.trim() ? (
+        <button
+          type="button"
+          className={styles.stop}
+          aria-label={stopping ? "Stopping…" : "Stop"}
+          data-tooltip={stopping ? "Stopping the reply" : "Stop the reply"}
+          data-agent-turn-stop=""
+          disabled={stopping}
+          onClick={onStop}
+        >
+          <FontAwesomeIcon icon={faStop} />
+        </button>
+      ) : (
+        <button
+          type="button"
+          className={styles.send}
+          aria-label="Send"
+          data-tooltip="Send"
+          disabled={busy || !value.trim()}
+          onClick={onSend}
+        >
+          {busy ? "…" : <FontAwesomeIcon icon={faArrowUp} />}
+        </button>
+      )}
     </div>
   );
 };

@@ -16,17 +16,19 @@ import {
 } from "../../../services/agents";
 import { agentCategoryKey } from "../../menus/nodes/agentsPalette/agentCategoryStyle";
 import { AgentBuilderStrip } from "./AgentBuilderStrip";
+import { workingText } from "./AgentAvatarBadge";
 import { NodeSolveRow } from "./NodeSolveRow";
 import { TranscriptJumpButton } from "./TranscriptJumpButton";
 import { useTranscriptAutoScroll } from "./useTranscriptAutoScroll";
 import { useAutoGrowTextarea } from "./useAutoGrowTextarea";
 import { usePackageInstallReview } from "./usePackageInstallReview";
-// dev/84: genuine cross-feature reuse — agent package proposals apply through
+// dev/84: genuine cross-feature reuse: agent package proposals apply through
 // the SAME install review the Nodes Catalog drawer uses, never a duplicate.
-import { InstallPermissionsDialog } from "../../packages/publishing/InstallPermissionsDialog";
-import { AgentSessionTokenCounter } from "./AgentSessionTokenCounter";
+import { InstallPermissionsModal } from "../../packages/publishing/InstallPermissionsDialog";
 import { modalStackDepth } from "../../ModalShell";
 import styles from "./AgentChatPanel.module.css";
+import { PlanningTemplates } from "./builderStrip/PlanningTemplates";
+import { AgentRail } from "./chat/AgentRail";
 import { AgentTurn } from "./chat/AgentTurn";
 import { ChatHeader } from "./chat/ChatHeader";
 import { ClearConversationDialog } from "./chat/ClearConversationDialog";
@@ -42,7 +44,7 @@ import { WaitingAskRow } from "./chat/WaitingAskRow";
 import {
   canvasUnchangedFor,
   suggestedPromptsOf,
-  targetLabelFor,
+  targetPhraseFor,
   targetTooltipFor,
   turnMetaFor,
 } from "./chat/chatPanelDerived";
@@ -50,16 +52,19 @@ import type { WaitingAsk } from "../../../providers/agents/turnAsks";
 
 /**
  * Chat panel for one attached agent, styled to the approved concept screens
- * (docs/08 anatomy + the docs/03 chat-feedback visual system).
+ * (docs/08 anatomy + the docs/03 chat-feedback visual system). It opens under
+ * the top bar, on the window's right.
  *
- * Per DEC-042 (dev/21) the opened agent view has ONE dark top header carrying
- * the master agent identity, the ‹ › agent-cycling arrows (walking all
- * attachments in the dataflow), the name of what it is attached to (its ids
- * are on that line's tooltip, see below), and Close — no Pin, and no
+ * Down its left side, the agents rail: every agent on the dataflow, the open
+ * one marked, and a click opens another's chat. Beside it, per DEC-042
+ * (dev/21), ONE dark header row: the agent's glyph, the conversation's title,
+ * what it is attached to (its ids on that line's tooltip), More (Rename
+ * conversation, Clear conversation, Tokens used) and Close; no Pin, and no
  * static "Agent Catalog" bar (that chrome is exclusive to the Agents Roster
- * drawer). Below the header: the dataflow's goal (`GoalLine`), the same in
- * every agent's chat, then the intent-as-first-message transcript and pill
- * input.
+ * drawer). Under the header: the dataflow's goal (`GoalLine`), the same in
+ * every agent's chat; the plan line of an agent that solves a dataflow, or
+ * Solve this node in a node agent's; then the intent-as-first-message
+ * transcript and the pill composer.
  *
  * Presentational: the transcript and intent live in AgentAttachmentsProvider
  * (server-persisted session, memo dev/20), so closing/reopening restores the
@@ -75,19 +80,24 @@ export const AgentChatPanel: React.FC<{
    * owner's review in place of its Apply and Dismiss. */
   installsWaitForOwner?: boolean;
   /**
-   * Display name of what this agent is attached to, for the header.
+   * Display name of what this agent is attached to, for the header: a node's
+   * name, or "from A to B" for a connection.
    *
    * Resolved by the caller, which can see the canvas; omit it and the header
    * falls back to naming the target kind and id (#228).
    */
   targetName?: string | null;
-  /** 1-based position among all attached agents (for the `idx / total` label). */
-  index?: number;
-  /** Total attached agents in the dataflow. */
-  total?: number;
-  /** Cycle to the previous/next attachment; omitted → that arrow is disabled. */
-  onPrev?: () => void;
-  onNext?: () => void;
+  /** Every agent on the dataflow, in the attachments' order, for the rail;
+   *  a click on one opens its chat through `onOpenAgentChat`. Omitted → no
+   *  rail. */
+  attachments?: AgentAttachment[];
+  /** What each of *attachments* is attached to, named as `targetName` is;
+   *  omitted, only the open agent's target is named. */
+  targetNameOf?: (attachment: AgentAttachment) => string | null;
+  /** What each agent at work is doing, for its running dot on the rail: in
+   *  the dataflow's room, or solving in the background. Omitted → a running
+   *  job alone. */
+  workingOf?: (attachment: AgentAttachment) => string | null;
   /**
    * At its resting transform (#295). False mounts the panel off-screen so the
    * slide has somewhere to come from, and flips back to false for the exit
@@ -119,9 +129,6 @@ export const AgentChatPanel: React.FC<{
   onStopTurn?: () => Promise<void>;
   /** Withdraw a waiting ask the viewer asked. Omitted → no Withdraw. */
   onWithdrawAsk?: (askId: string) => Promise<void>;
-  /** Opens the shared settings modal at the Attached-instance scope (memo
-   * dev/42) — the labeled cog beneath the header (the docs/08 anatomy slot;
-   * never in the DEC-042 header itself). Omitted → no cog. */
   /** An install's review actions (memo dev/41); omitted → its cards render inert. */
   onApplyProposal?: (proposalId: string) => Promise<unknown>;
   onDismissProposal?: (proposalId: string) => Promise<void>;
@@ -135,7 +142,7 @@ export const AgentChatPanel: React.FC<{
   onSimulate?: (mode: "step" | "auto") => Promise<unknown>;
   onCancelSimulate?: () => Promise<void>;
   simulationActivity?: string;
-  /** dev/52 Solve (an agent that declares dataflow.orchestrate); omitted → no strip. */
+  /** dev/52 Solve (an agent that declares dataflow.orchestrate); omitted → no plan line. */
   onSolve?: (nodeIds?: string[]) => Promise<unknown>;
   /** dev/63: the live batch's per-node status overlay (nodeId → status). */
   solveProgress?: Record<string, string>;
@@ -161,8 +168,9 @@ export const AgentChatPanel: React.FC<{
   onSolveNode?: () => Promise<unknown>;
   /** dev/115: the running per-node Solve's narration. */
   solveNodeActivity?: string | null;
-  /** dev/72: opens ANOTHER attachment's chat — the delegation entries' and
-   * plan-row chips' icon-links route through this. Omitted → entries inert. */
+  /** dev/72: opens ANOTHER attachment's chat: the rail's entries, and the
+   * delegation entries' and plan-row chips' icon-links route through this.
+   * Omitted → entries inert, and no rail. */
   onOpenAgentChat?: (attachmentId: string) => void;
   /** dev/126: record the confirmed dataset selection for this attachment's
    * node (an agent that declares dataset.select, on a node only). */
@@ -200,10 +208,9 @@ export const AgentChatPanel: React.FC<{
   viewerAccount = null,
   installsWaitForOwner = false,
   targetName = null,
-  index = 1,
-  total = 1,
-  onPrev,
-  onNext,
+  attachments,
+  targetNameOf,
+  workingOf,
   presented = true,
   onExitComplete,
   loadingHistory = false,
@@ -253,8 +260,10 @@ export const AgentChatPanel: React.FC<{
   // asks first when there is unsaved work, like every other way out of it.
   const navigate = useNavigate();
   const { projectDirty, whenChangesKept } = useFlowContext();
+  // Its question is asked over the panel: ModalShell's default layer is under it.
   const { leave, dialog: leaveDialog } = useLeaveGuard(Boolean(projectDirty), LEAVE_DATAFLOW, {
     settle: whenChangesKept,
+    layer: "overlay",
   });
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -312,13 +321,20 @@ export const AgentChatPanel: React.FC<{
   // until then (tool rounds, the blocking fallback) a standalone pending row
   // at the transcript tail carries the live indicator.
   const streamingTurnVisible = runInFlight && turns[turns.length - 1]?.role === "agent";
-  // Cumulative session tokens (the strip by the composer): persisted Actuals
-  // plus the in-flight run's interim sums (dev/37: provider-reported only,
-  // never an estimate).
-  const sessionTokens = useMemo(
-    () => sessionTokenTotals(turns, runInFlight ? runStatus?.liveUsage : null),
-    [turns, runInFlight, runStatus?.liveUsage],
-  );
+  // The conversation's tokens, More's Tokens used: persisted Actuals plus the
+  // in-flight run's interim sums (dev/37: provider-reported only, never an
+  // estimate), and how many replies reported theirs. None while history
+  // hydrates or while nothing was ever reported.
+  const chatTokens = useMemo(() => {
+    const live = runInFlight ? runStatus?.liveUsage : null;
+    const totals = sessionTokenTotals(turns, live);
+    if (!totals || loadingHistory) return null;
+    const input = totals.inputTokens ?? 0;
+    const output = totals.outputTokens ?? 0;
+    if (input + output <= 0) return null;
+    const replies = turns.filter((t) => t.execution?.usage).length + (live ? 1 : 0);
+    return { input, output, replies };
+  }, [turns, runInFlight, runStatus?.liveUsage, loadingHistory]);
   // A running turn never holds the composer back: a message sent meanwhile is
   // asked at once and waits its turn on the server. When the provider wires a
   // status (null = wired, idle) it follows each attachment's asks, so the
@@ -407,6 +423,9 @@ export const AgentChatPanel: React.FC<{
   };
 
   const displayName = attachmentDisplayName({ name: attachment.name, title: title.displayedTitle ?? null });
+  // What the agent is attached to: the header's words, Clear's question.
+  const target = targetPhraseFor(attachment, targetName);
+  const orchestrates = declaresCapability(attachment, ORCHESTRATE_CAPABILITY);
   const turnActions = {
     onComposePrompt: composePrompt,
     onInternalLink: (to: string) => leave(() => navigate(to)),
@@ -433,135 +452,170 @@ export const AgentChatPanel: React.FC<{
       aria-label={`Chat with ${displayName}`}
       aria-hidden={!presented}
     >
-      <ChatHeader
-        tint={tint}
-        title={
-          <ConversationTitle agentName={attachment.name} displayName={displayName} editable={Boolean(onSaveTitle)} title={title} />
-        }
-        index={index}
-        total={total}
-        onPrev={onPrev}
-        onNext={onNext}
-        onClear={onClearConversation ? () => setConfirmingClear(true) : undefined}
-        onClose={onClose}
-        targetLabel={targetLabelFor(attachment, targetName)}
-        targetTooltip={targetTooltipFor(attachment)}
-        titleError={title.error}
-      />
-      {onSaveGoal ? <GoalLine goal={goal ?? ""} state={goalLine} /> : null}
-
-      {/* The dev/52 builder strip: an agent that declares dataflow.orchestrate,
-          one that plans a dataflow and solves it. */}
-      {onSolveNode && attachment.target.kind === "node" ? (
-        <NodeSolveRow
-          onSolveNode={onSolveNode}
-          onOpenChat={onOpenAgentChat}
-          agentNameOf={agentNameOf}
-          activity={solveNodeActivity}
-          live={attachment.liveJob?.status === "running" && attachment.liveJob.kind === "solve-node"}
+      {attachments && onOpenAgentChat ? (
+        <AgentRail
+          attachments={attachments}
+          selectedId={attachment.attachmentId}
+          onOpen={onOpenAgentChat}
+          targetNameOf={
+            targetNameOf ?? ((a) => (a.attachmentId === attachment.attachmentId ? targetName : null))
+          }
+          workingOf={workingOf ?? ((a) => workingText(a))}
         />
       ) : null}
-      {onSolve && declaresCapability(attachment, ORCHESTRATE_CAPABILITY) ? (
-        <AgentBuilderStrip
-          attachment={attachment}
-          onSolve={onSolve}
-          solveProgress={solveProgress}
-          solveErrors={solveErrors}
-          solveRemedies={solveRemedies}
-          onOpenChat={onOpenAgentChat}
-          agentNameOf={agentNameOf}
-          solveWaiting={solveWaiting}
-          solveEndedBy={solveEndedBy}
-          solvePass={solvePass}
-          onSolveNode={onSolveOneNode}
-          solveWave={solveWave}
-          solveNotices={solveNotices}
-          onCancelSolve={onCancelSolve}
-          onComposePrompt={composePrompt}
-          onApplyProposal={onApplyProposal}
-          onDismissProposal={onDismissProposal}
-          onSimulate={onSimulate}
-          onCancelSimulate={onCancelSimulate}
-          simulationActivity={simulationActivity}
+      <div className={styles.column}>
+        <ChatHeader
+          category={attachment.category}
+          title={
+            <ConversationTitle agentName={attachment.name} displayName={displayName} editable={Boolean(onSaveTitle)} title={title} />
+          }
+          targetLabel={target.header}
+          targetTooltip={targetTooltipFor(attachment)}
+          titleError={title.error}
+          onRename={onSaveTitle ? title.start : undefined}
+          onClear={onClearConversation ? () => setConfirmingClear(true) : undefined}
+          tokens={chatTokens}
+          onClose={onClose}
         />
-      ) : null}
+        {onSaveGoal ? <GoalLine goal={goal ?? ""} state={goalLine} /> : null}
 
-      {/* position:relative wrapper so the Jump-to-latest pill overlays the
-          scroll area without shifting layout (absolute inside the scroller
-          would scroll away with the content). */}
-      <div className={styles.messagesWrap}>
-      <div className={styles.messages} ref={messagesRef} tabIndex={-1}>
-        <IntentMessage intent={attachment.intent} onSaveIntent={onSaveIntent} />
-        {historyError ? (
-          <div className={`${styles.systemLine} ${styles.systemError}`}>
-            {historyError}
-            {onRetryHistory ? (
-              <button type="button" className={styles.retry} onClick={onRetryHistory}>
-                Retry
-              </button>
-            ) : null}
-          </div>
+        {/* Solve this node, in a node agent's chat; the dev/52 plan line, in
+            the chat of an agent that declares dataflow.orchestrate, one that
+            plans a dataflow and solves it. */}
+        {onSolveNode && attachment.target.kind === "node" ? (
+          <NodeSolveRow
+            onSolveNode={onSolveNode}
+            onOpenChat={onOpenAgentChat}
+            agentNameOf={agentNameOf}
+            activity={solveNodeActivity}
+            live={attachment.liveJob?.status === "running" && attachment.liveJob.kind === "solve-node"}
+          />
         ) : null}
-        {loadingHistory ? (
-          <div className={styles.systemLine}>Loading conversation…</div>
-        ) : turns.length === 0 && !historyError ? (
-          <div className={styles.systemLine}>Ask this agent something to get started.</div>
-        ) : (
-          turns.map((t, i) =>
-            t.role === "user" ? (
-              writtenBySomeoneElse(t.by, viewerAccount) ? (
-                // A message someone else wrote names its writer above it.
-                <div key={i} className={styles.userTurn} data-curio-writer={t.by?.name}>
-                  <div className={styles.msgWriter}>{t.by?.name}</div>
-                  <div className={styles.msgUser}>{t.text}</div>
-                </div>
-              ) : (
-                <div key={i} className={styles.msgUser}>
-                  {t.text}
-                </div>
-              )
+        {orchestrates && onSolve ? (
+          <AgentBuilderStrip
+            attachment={attachment}
+            onSolve={onSolve}
+            solveProgress={solveProgress}
+            solveErrors={solveErrors}
+            solveRemedies={solveRemedies}
+            onOpenChat={onOpenAgentChat}
+            agentNameOf={agentNameOf}
+            solveWaiting={solveWaiting}
+            solveEndedBy={solveEndedBy}
+            solvePass={solvePass}
+            onSolveNode={onSolveOneNode}
+            solveWave={solveWave}
+            solveNotices={solveNotices}
+            onCancelSolve={onCancelSolve}
+            onApplyProposal={onApplyProposal}
+            onDismissProposal={onDismissProposal}
+            onSimulate={onSimulate}
+            onCancelSimulate={onCancelSimulate}
+            simulationActivity={simulationActivity}
+          />
+        ) : null}
+
+        <div className={styles.messages} ref={messagesRef} tabIndex={-1}>
+          <IntentMessage intent={attachment.intent} onSaveIntent={onSaveIntent} />
+          {historyError ? (
+            <div className={`${styles.systemLine} ${styles.systemError}`}>
+              {historyError}
+              {onRetryHistory ? (
+                <button type="button" className={styles.retry} onClick={onRetryHistory}>
+                  Retry
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          {loadingHistory ? (
+            <div className={styles.systemLine}>Loading conversation…</div>
+          ) : turns.length === 0 && !historyError ? (
+            orchestrates && onSolve ? (
+              // The planning templates, while the conversation is empty.
+              <div className={styles.emptyChat}>
+                <p className={styles.emptyChatText}>
+                  Ask for a dataflow, or start from one of these:
+                  <span className={styles.emptyChatSub}>
+                    They fill the message box; nothing is sent until you press Send.
+                  </span>
+                </p>
+                <PlanningTemplates onComposePrompt={composePrompt} />
+              </div>
             ) : (
-              <AgentTurn
-                key={i}
-                turn={t}
-                attachment={attachment}
-                tint={tint}
-                meta={turnMetaFor(t, i, metaCtx)}
-                actions={turnActions}
-                canvasUnchanged={canvasUnchangedFor(attachment, turns, i)}
-              />
-            ),
-          )
-        )}
-        {toolActivity.map((line, i) => (
-          <div key={`tool-${i}`} className={styles.systemLine}>
-            {line}
+              <div className={styles.systemLine}>Ask this agent something to get started.</div>
+            )
+          ) : (
+            turns.map((t, i) =>
+              t.role === "user" ? (
+                writtenBySomeoneElse(t.by, viewerAccount) ? (
+                  // A message someone else wrote names its writer above it.
+                  <div key={i} className={styles.userTurn} data-curio-writer={t.by?.name}>
+                    <div className={styles.msgWriter}>{t.by?.name}</div>
+                    <div className={styles.msgUser}>{t.text}</div>
+                  </div>
+                ) : (
+                  <div key={i} className={styles.msgUser}>
+                    {t.text}
+                  </div>
+                )
+              ) : (
+                <AgentTurn
+                  key={i}
+                  turn={t}
+                  attachment={attachment}
+                  tint={tint}
+                  meta={turnMetaFor(t, i, metaCtx)}
+                  actions={turnActions}
+                  canvasUnchanged={canvasUnchangedFor(attachment, turns, i)}
+                />
+              ),
+            )
+          )}
+          {toolActivity.map((line, i) => (
+            <div key={`tool-${i}`} className={styles.systemLine}>
+              {line}
+            </div>
+          ))}
+          {runInFlight && !streamingTurnVisible && runStatus ? (
+            <PendingReplyRow tint={tint} startedAt={runStatus.startedAt} />
+          ) : null}
+          {waitingAsks.map((ask) => (
+            <WaitingAskRow key={ask.askId} ask={ask} viewerAccount={viewerAccount} onWithdraw={onWithdrawAsk} />
+          ))}
+        </div>
+
+        {/* Jump to latest, in a row of its own above the composer: it covers
+            no message. */}
+        {!atBottom ? (
+          <div className={styles.jumpRow}>
+            <TranscriptJumpButton visible onJump={jumpToLatest} count={unreadCount} focusFallbackRef={messagesRef} />
           </div>
-        ))}
-        {runInFlight && !streamingTurnVisible && runStatus ? (
-          <PendingReplyRow tint={tint} startedAt={runStatus.startedAt} />
         ) : null}
-        {runInFlight && onStopTurn ? (
-          <div className={styles.systemLine}>
-            <button type="button" className={styles.retry} onClick={stop} disabled={stopping} data-agent-turn-stop="">
-              {stopping ? "Stopping…" : "Stop"}
-            </button>
-          </div>
+
+        {suggested && suggested.alternatives.length > 0 ? (
+          <SuggestedPromptsRow alternatives={suggested.alternatives} onPick={setInput} />
         ) : null}
-        {waitingAsks.map((ask) => (
-          <WaitingAskRow key={ask.askId} ask={ask} viewerAccount={viewerAccount} onWithdraw={onWithdrawAsk} />
-        ))}
+
+        <Composer
+          value={input}
+          onChange={setInput}
+          onSend={() => void send()}
+          busy={sendBusy}
+          textareaRef={composerRef}
+          loadSkills={loadSkills}
+          // While a turn runs, Stop takes Send's place: anyone who works with
+          // the dataflow's agents may stop it.
+          onStop={runInFlight && onStopTurn ? stop : undefined}
+          stopping={stopping}
+        />
       </div>
-      <TranscriptJumpButton
-        visible={!atBottom}
-        onJump={jumpToLatest}
-        count={unreadCount}
-        focusFallbackRef={messagesRef}
-      />
-      {/* dev/84: the reviewed package install — the dialog's Install button
-          is what fires the proposal apply; Cancel keeps it pending. */}
+      {/* dev/84: the reviewed package install, over the page through
+          ModalShell: the panel's transform would make a fixed box inside it
+          as small as the panel. Its Install button fires the proposal's
+          apply; Cancel, Escape or the backdrop keep it pending. */}
       {packageReview.candidate ? (
-        <InstallPermissionsDialog
+        <InstallPermissionsModal
+          layer="overlay"
           pkg={packageReview.candidate.pkg}
           conflicts={packageReview.candidate.conflicts}
           busy={packageReview.busy}
@@ -571,6 +625,7 @@ export const AgentChatPanel: React.FC<{
       ) : null}
       {confirmingClear ? (
         <ClearConversationDialog
+          target={target.object}
           onConfirm={() => {
             setConfirmingClear(false);
             void onClearConversation?.();
@@ -578,32 +633,6 @@ export const AgentChatPanel: React.FC<{
           onCancel={() => setConfirmingClear(false)}
         />
       ) : null}
-      </div>
-
-      {suggested && suggested.alternatives.length > 0 ? (
-        <SuggestedPromptsRow alternatives={suggested.alternatives} onPick={setInput} />
-      ) : null}
-
-      {/* Cumulative counter strip (memo dev/80, amended): the per-reply
-          status lives on each agent message; this strip — outside the
-          scroller, directly above the composer — carries only the session's
-          accumulated token total, right-aligned near the input. Hidden while
-          history hydrates and while nothing was ever reported. */}
-      {!loadingHistory && sessionTokens ? (
-        <div className={styles.statusStrip}>
-          <span className={styles.statusStripSpacer} />
-          <AgentSessionTokenCounter totals={sessionTokens} live={runInFlight} />
-        </div>
-      ) : null}
-
-      <Composer
-        value={input}
-        onChange={setInput}
-        onSend={() => void send()}
-        busy={sendBusy}
-        textareaRef={composerRef}
-        loadSkills={loadSkills}
-      />
       {leaveDialog}
     </div>
   );
