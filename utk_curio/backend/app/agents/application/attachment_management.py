@@ -344,9 +344,10 @@ def clear_attachment_session(user_key: str, project_id: str, attachment_id: str)
         if agents_dataset_resolution.forget_candidates(fresh, attachment_id):
             agents_simulation.follow_the_sources(user_key, fresh)
             changed = True
-        # An auto-generated title describes the conversation that was just cleared
-        # — drop it so the next first message regenerates one. A manual title is
-        # the user's deliberate name for the instance and is kept (memo dev/25).
+        # An auto-generated title describes the conversation that was just
+        # cleared: drop it so the next first message regenerates one. A manual
+        # title is the user's deliberate name for the instance and is kept
+        # (memo dev/25).
         if fresh_record.get("title") and not fresh_record.get("titleEdited"):
             attachments.set_title(fresh, attachment_id, None, edited=False)
             changed = True

@@ -301,8 +301,9 @@ def _apply_dataset_install(
         spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
         proposal = attachments.find_proposal(spec, attachment_id, proposal_id) or proposal
         proposal["status"] = "applied"
-        # dev/126: a node that was waiting for exactly this dataset is resolved by
-        # this install — the reviewed lane is what "awaiting-install" waited for.
+        # dev/126: a node that was waiting for exactly this dataset is resolved
+        # by this install: the reviewed lane is what "awaiting-install" waited
+        # for.
         resolved_nodes = agents_dataset_resolution.mark_dataset_installed(spec, dataset_id)
         if resolved_nodes:
             # A plan that waited for that install goes on with the node.
