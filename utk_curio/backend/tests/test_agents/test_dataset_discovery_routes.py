@@ -405,7 +405,8 @@ class TestDiscoveryIsInitiated:
         asked = [t.get("text") or "" for t in h.session_turns(h.finder_attachment_id()) if t.get("role") == "user"]
         assert len(asked) == 1, asked
         assert asked[0].startswith("[Delegated by Dataflow Builder] dataset.discover"), asked[0]
-        assert "mission: load the community area boundaries" in asked[0], asked[0]
+        # The mission starts with the loader's goal: its title, then its intent.
+        assert "mission: Load boundaries: load the community area boundaries" in asked[0], asked[0]
 
 
 class TestConfirmedSourceReachesTheBuilder:
