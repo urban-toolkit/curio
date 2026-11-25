@@ -105,6 +105,8 @@ export interface AgentBuilderSession {
   currentRef?: string;
   /** The mode of the Build & validate running now, while one runs. */
   simulateMode?: "step" | "auto";
+  /** When the Build & validate running now started, in epoch seconds. */
+  simulatingSince?: number;
   /** dev/67-9: why the sequence paused: a plain reason with a next action.
    * `awaiting-source`: no node can go on but loaders that wait for their
    * source, each as its `nodeStates` entry says; `nodes` names each by its

@@ -19,6 +19,7 @@ export * from "./useAgentAttachments";
 export * from "./agentRunStatus";
 export * from "./agentRunContext";
 export * from "./attachmentDisplayName";
+export * from "./planBuild";
 export * from "./builderTemplates";
 export * from "./agentListUtils";
 export * from "./agentCapabilities";

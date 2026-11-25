@@ -136,7 +136,7 @@ export interface AgentDatasetSelection {
    * a portal row waits for the download and the Import button. */
   delegated?: {
     /** `plan-waiting`: a plan's Build & validate or its row's Solve waits for
-     * this node; `attachmentId` is the plan's agent, whose chat goes on. */
+     * this node; `attachmentId` is the plan's agent, which goes on with it. */
     status:
       | "delegating"
       | "session-running"
@@ -153,7 +153,20 @@ export interface AgentDatasetSelection {
     executionId?: string;
     sources?: string[];
     jobIds?: string[];
+    /** `plan-waiting`: the node's ref in the plan. */
+    ref?: string | null;
+    /** `plan-waiting`: the Build & validate running on the plan now, which
+     * builds the node itself; null when none runs. */
+    running?: "step" | "auto" | null;
+    /** `plan-waiting`: how the plan's agent goes on, from the tab that picked:
+     * its Build & validate (`build`), when it paused on the node, or the plan
+     * row's Solve (`node`) that left the node waiting; null while a build
+     * runs. */
+    continueWith?: "build" | "node" | null;
   };
+  /** The chat that asked for the candidates, which says the source is
+   * recorded too. */
+  askedBy?: string;
   /** The Discovery Catalog downloads the confirmation started, one per acquirable row. */
   acquisitions?: {
     name?: string;

@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faChevronDown, faChevronUp } from "@fortawesome/free-solid-svg-icons";
+import { BUILD_RUNNING_HINT, buildRunningOn } from "../../../services/agents/planBuild";
 import type { AgentAttachment, AgentRemedy, AgentSolveWave } from "../../../services/agents";
 import { LlmConfigAction, remedyOf } from "../../llmConfigs/LlmConfigAction";
 import { useFlowContext } from "../../../providers/FlowProvider";
@@ -31,7 +32,7 @@ export const SHOW_PLAN_MORE = "Show the plan's nodes and actions";
 export const HIDE_PLAN_MORE = "Hide the plan's nodes and actions";
 
 /** Why no Solve is offered while a build of the plan runs. */
-export const BUILD_RUNNING_HINT = "The plan is being built: Stop the build to Solve";
+export { BUILD_RUNNING_HINT };
 
 /**
  * The plan line of an agent that declares dataflow.orchestrate (dev/52 DR-5),
@@ -106,8 +107,9 @@ export const AgentBuilderStrip: React.FC<{
   simulationActivity?: string;
   /** The build the chat runs for this agent, step or auto, which outlives
    *  this line: drawn again (the chat opened again, or the rail back on this
-   *  agent), the line still shows it and its Stop. Omitted, only a build this
-   *  line started. */
+   *  agent), the line still shows it and its Stop. A build another tab runs,
+   *  which the listing names, holds the line the same way
+   *  (`buildRunningOn`). */
   simulating?: "step" | "auto" | null;
 }> = ({
   attachment,
@@ -142,8 +144,9 @@ export const AgentBuilderStrip: React.FC<{
   const [cancelling, setCancelling] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [simBusy, setSimBusy] = useState<"step" | "auto" | null>(null);
-  // A build this line started, or one the chat still runs for this agent.
-  const building = simBusy ?? simulating;
+  // A build this line started, one the chat still runs for this agent, or one
+  // another tab runs, which the listing names.
+  const building = simBusy ?? buildRunningOn(attachment, simulating);
   // Its Stop was asked for: the build stops after its current step.
   const [buildStopping, setBuildStopping] = useState(false);
   useEffect(() => {
@@ -309,15 +312,18 @@ export const AgentBuilderStrip: React.FC<{
     }
   };
 
+  // The nodes that wait for the user's pick of their source: those the
+  // running Solve says, and those the listing says this agent waits on (the
+  // candidates its chat holds, as Build & validate paused on them).
   const userBlocked = (solveWaiting ?? []).filter((w) => w.kind === "dataset-selection");
-  const userBlockedIds = new Set(userBlocked.map((w) => w.nodeId));
+  const userBlockedIds = new Set([...userBlocked.map((w) => w.nodeId), ...(attachment.waitsForYou ?? [])]);
   const everyUnresolvedNeedsUser =
     unresolved > 0 && pending.concat(failed).every((id) => userBlockedIds.has(id));
   // While a build runs no Solve is offered: it would run over the same nodes.
   const solveDisabledReason = building
     ? BUILD_RUNNING_HINT
     : solveDisabledReasonFor({
-        phase, unresolved, everyUnresolvedNeedsUser, userBlockedCount: userBlocked.length,
+        phase, unresolved, everyUnresolvedNeedsUser, userBlockedCount: userBlockedIds.size,
       });
   const solveRunning = solving || phase === "solving" || liveJob?.kind === "solve-batch";
   // A batch's Stop reads Stopping… until that batch ends, however it ends: one
@@ -421,9 +427,9 @@ export const AgentBuilderStrip: React.FC<{
         >
           {sign ? sign.text : null}
         </span>
-        {userBlocked.length > 0 ? (
+        {userBlockedIds.size > 0 ? (
           <span className={styles.lineNeedsYou}>
-            {userBlocked.length} need{userBlocked.length === 1 ? "s" : ""} you
+            {userBlockedIds.size} need{userBlockedIds.size === 1 ? "s" : ""} you
           </span>
         ) : null}
         {mainPart ? batchActions([mainPart], true) : null}
@@ -500,7 +506,7 @@ export const AgentBuilderStrip: React.FC<{
           ) : null}
           {solveRunning && (solvePass ?? 0) > 0 ? (
             <div className={styles.hint} aria-live="polite">
-              {passLineText(solvePass as number, unresolved, userBlocked.length)}
+              {passLineText(solvePass as number, unresolved, userBlockedIds.size)}
             </div>
           ) : null}
           {!solveRunning && solveEndedBy ? (

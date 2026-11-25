@@ -114,10 +114,12 @@ export function canvasUnchangedFor(attachment: AgentAttachment, turns: AgentSess
 }
 
 /** A landed plan's card gets the plan's per-node state: the attachment's
- * plan (`planProposal`) and builder session, while they are this plan's. */
+ * plan (`planProposal`) and builder session, while they are this plan's, and
+ * whether a build runs on it (*buildRunning*), which holds every row's Solve. */
 export function planNodeStateFor(
   attachment: AgentAttachment,
   part: AgentChangePart,
+  buildRunning = false,
 ): PlanNodeReviewState | undefined {
   const plan = part.planId && attachment.planProposal?.proposalId === part.planId ? attachment.planProposal : null;
   return plan
@@ -126,6 +128,7 @@ export function planNodeStateFor(
         nodeStates: attachment.builderSession?.nodeStates ?? {}, // dev/71: the lifecycle ledger
         nodeChanges: attachment.builderSession?.nodeChanges ?? {}, // dev/72: where each node's change lives
         scenarioStates: plan.scenarioStates ?? {}, // #662: which scenarios are saved
+        buildRunning,
       }
     : undefined;
 }
