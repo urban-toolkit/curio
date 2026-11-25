@@ -16,8 +16,10 @@ from __future__ import annotations
 import json
 
 import pytest
+import requests
 
 from utk_curio.backend.app.agents.infrastructure import chat_capabilities
+from utk_curio.backend.app.agents.infrastructure.egress import EgressRefused, EgressResult
 from utk_curio.backend.app.agents.domain import agent_text, builtin, content
 from utk_curio.backend.app.agents.repositories import model_catalog
 from utk_curio.backend.app.agents.application import tool_rounds
@@ -1076,6 +1078,370 @@ class TestACallWrittenAsText:
         assert _offered() == [NOTHING_OFFERED] * (tool_rounds.MAX_TOOL_ROUNDS + 1)
         assert body["reply"] == _message("turn.tool-rounds-used"), body["reply"]
         assert ASKED_AGAIN not in _last_turn(client, headers, project, att)["execution"]["pins"]
+
+
+def _ask(client, headers, project, att, path) -> tuple[str, dict, str | None]:
+    """The turn asked through *path*, whatever it ended with: its last
+    event's kind and data, the blocking answer a ``done`` when it answered 200
+    and an ``error`` otherwise, and the text its deltas streamed (None for the
+    blocking answer)."""
+    if path == "run":
+        resp = client.post(f"/api/agents/projects/{project}/attachments/{att}/run",
+                           json={"message": "go"}, headers=headers)
+        return ("done" if resp.status_code == 200 else "error"), resp.get_json(silent=True) or {}, None
+    events = _stream(client, headers, project, att)
+    kind, data = events[-1]
+    streamed = "".join(d["text"] for k, d in events if k == "delta")
+    return kind, data if isinstance(data, dict) else {"error": data}, streamed
+
+
+#: The Researcher, whose chat searches the web and reads pages.
+RESEARCHER = "agent.curio.researcher@1"
+#: Where web.search asks in these tests: a SearXNG that no request reaches,
+#: since egress.fetch is the test's own (``web``).
+SEARCH_URL = "https://search.example.test/search?q={q}&format=json"
+#: What a search answers.
+SEARCH_RESULTS = {"results": [{"title": "Chicago Region Trees Initiative", "url": "https://chicagorti.org",
+                               "content": "Chicago has about 3.6 million trees."}]}
+#: The two pages research-notes case 3 names.
+PAGES = ("https://chicagorti.org", "https://en.wikipedia.org/wiki/Urban_forest")
+#: A read of the dataflow, which spends a tool round.
+READ = {"toolCalls": [_call("dataflow.read")]}
+
+
+def _search(q: str = "Chicago tree canopy") -> dict:
+    return {"toolCalls": [_call("web.search", {"q": q})]}
+
+
+def _fetch(url: str = PAGES[0]) -> dict:
+    return {"toolCalls": [_call("web.fetch", {"url": url})]}
+
+
+def _answered(status: int, body: str, content_type: str = "application/json") -> EgressResult:
+    """What a fetch of the test's web answers: *status* and *body*."""
+    return EgressResult(url=PAGES[0], final_url=PAGES[0], status=status, content_type=content_type, body=body)
+
+
+class _Web:
+    """The web as ``egress.fetch`` reaches it in a test, with no socket: each
+    fetch takes the next answer queued, a result or an exception it raises,
+    and with none queued a search answers its rows and a page answers 200."""
+
+    def __init__(self):
+        self.answers: list = []
+        self.asked: list[str] = []
+
+    def fetch(self, url, **kwargs):
+        self.asked.append(url)
+        if self.answers:
+            answer = self.answers.pop(0)
+            if isinstance(answer, BaseException):
+                raise answer
+            return answer
+        if url.startswith(SEARCH_URL.split("?")[0]):
+            return EgressResult(url=url, final_url=url, status=200, content_type="application/json",
+                                body=json.dumps(SEARCH_RESULTS))
+        return EgressResult(url=url, final_url=url, status=200, content_type="text/html",
+                            body="<html><body>Chicago has about 3.6 million trees.</body></html>")
+
+
+@pytest.fixture()
+def web(monkeypatch):
+    """The test's web: web.search asks :data:`SEARCH_URL`, and every fetch
+    is answered by a :class:`_Web`."""
+    from utk_curio.backend.app.agents.infrastructure import egress
+
+    monkeypatch.setenv("CURIO_SEARCH_URL", SEARCH_URL)
+    fake = _Web()
+    monkeypatch.setattr(egress, "fetch", fake.fetch)
+    return fake
+
+
+class TestWebReadsSpendNoRound:
+    """A turn has MAX_TOOL_ROUNDS tool rounds (``tool_rounds``). In the
+    SearXNG proving run 45671908088 (DeepSeek, the Researcher), research-notes
+    case 3 called web.search, web.fetch and web.fetch, each of which worked,
+    and the cap then left it no round to write its notes: 12 of research-notes'
+    18 runs, and 15 of fact-checking's 18, reached the cap on their third web
+    read. A web.search or web.fetch that worked spends no round, up to
+    ``tool_rounds.FREE_WEB_READS`` a turn, the egress budget's own number, so
+    every web read a turn may make is free while it works, and the turn's
+    record counts them (``freeWebReads``). A web read that failed spends a
+    round, as before: a search its provider answered with no results, or not
+    with 200, a page that answered other than 200, the egress policy's
+    refusal, a timeout, a provider it could not reach, so a dead provider
+    cannot keep a turn going. A search with no query is a parameter refusal,
+    free as any other up to MAX_REFUSED_ROUNDS a turn. Native calls and fenced
+    blocks count alike, streamed or not."""
+
+    @pytest.mark.parametrize("path", ["run", "run/stream"])
+    def test_a_search_and_two_page_reads_that_work_spend_no_round(self, client, headers, project, web, path):
+        att = _attach(client, headers, project, RESEARCHER)
+        testing_provider.push_replies(
+            _search(), _fetch(PAGES[0]), _fetch(PAGES[1]), *[READ] * tool_rounds.MAX_TOOL_ROUNDS, "Done.")
+        kind, ended, _ = _ask(client, headers, project, att, path)
+        choices = [o["toolChoice"] for o in _offered()]
+        # The call after the three web reads still offers a call: they spent no round.
+        assert choices == ["auto"] * (3 + tool_rounds.MAX_TOOL_ROUNDS) + ["none"], choices
+        assert (kind, ended.get("reply")) == ("done", "Done."), ended
+        execution = _last_turn(client, headers, project, att)["execution"]
+        assert [(c["tool"], c["status"]) for c in execution["toolCalls"]] == [
+            ("web.search", "ok"), ("web.fetch", "ok"), ("web.fetch", "ok"),
+            *[("dataflow.read", "ok")] * tool_rounds.MAX_TOOL_ROUNDS], execution["toolCalls"]
+        assert execution.get("freeWebReads") == 3, execution
+        assert "refusedRounds" not in execution
+        final = agent_text.message("tool-round.final-round")
+        results = _native_results()
+        assert [final in r for r in results] == [False] * (2 + tool_rounds.MAX_TOOL_ROUNDS) + [True], results
+        assert len(web.asked) == 3, web.asked
+
+    @pytest.mark.parametrize("path", ["run", "run/stream"])
+    def test_fenced_web_reads_that_work_spend_no_round_either(self, client, headers, project, web, path):
+        testing_provider.script_chat_capabilities(tools=False)
+        att = _attach(client, headers, project, RESEARCHER)
+        testing_provider.push_replies(
+            _block("web.search", {"q": "Chicago tree canopy"}), _block("web.fetch", {"url": PAGES[0]}),
+            _block("web.fetch", {"url": PAGES[1]}),
+            *[_block("dataflow.read", {})] * tool_rounds.MAX_TOOL_ROUNDS, "Done.")
+        kind, ended, _ = _ask(client, headers, project, att, path)
+        calls = _run_calls()
+        # Each request a call: the three web reads, the three rounds, and the answer.
+        assert len(calls) == 3 + tool_rounds.MAX_TOOL_ROUNDS + 1, (len(calls), ended)
+        assert (kind, ended.get("reply")) == ("done", "Done."), ended
+        execution = _last_turn(client, headers, project, att)["execution"]
+        assert [c["tool"] for c in execution["toolCalls"]] == [
+            "web.search", "web.fetch", "web.fetch", *["dataflow.read"] * tool_rounds.MAX_TOOL_ROUNDS]
+        assert execution.get("freeWebReads") == 3, execution
+        assert execution["pins"]["toolProtocol"] == "fenced"
+
+    @pytest.mark.parametrize("call, answer, status", [
+        (_search(), _answered(202, ""), "error"),
+        (_search(), _answered(503, '{"error": "unavailable"}'), "error"),
+        (_search(), requests.exceptions.ConnectionError("connection refused"), "error"),
+        (_fetch("http://127.0.0.1/data.json"), EgressRefused("host '127.0.0.1' is not a public address"), "error"),
+        (_fetch(PAGES[0]), requests.exceptions.ReadTimeout("read timed out"), "error"),
+        (_fetch(PAGES[0]), _answered(404, "<html>Not Found</html>", "text/html"), "ok"),
+    ], ids=["search-202-empty", "search-503", "search-unreachable", "fetch-egress-refused", "fetch-timeout",
+            "page-404"])
+    def test_a_web_read_that_fails_spends_a_round(self, client, headers, project, web, call, answer, status):
+        att = _attach(client, headers, project, RESEARCHER)
+        web.answers.append(answer)
+        testing_provider.push_replies(
+            call, _fetch(PAGES[0]), _fetch(PAGES[1]), *[READ] * (tool_rounds.MAX_TOOL_ROUNDS - 1), "Done.")
+        kind, ended, _ = _ask(client, headers, project, att, "run")
+        choices = [o["toolChoice"] for o in _offered()]
+        # The failed read spent the first round, and the two that worked none.
+        assert choices == ["auto"] * (2 + tool_rounds.MAX_TOOL_ROUNDS) + ["none"], choices
+        assert (kind, ended.get("reply")) == ("done", "Done."), ended
+        execution = _last_turn(client, headers, project, att)["execution"]
+        assert execution["toolCalls"][0]["status"] == status, execution["toolCalls"][0]
+        assert execution.get("freeWebReads") == 2, execution
+
+    def test_a_search_with_no_query_is_a_parameter_refusal(self, client, headers, project, web):
+        att = _attach(client, headers, project, RESEARCHER)
+        testing_provider.push_replies(
+            {"toolCalls": [_call("web.search", {})]}, _search(), _fetch(PAGES[0]), _fetch(PAGES[1]),
+            *[READ] * tool_rounds.MAX_TOOL_ROUNDS, "Done.")
+        kind, ended, _ = _ask(client, headers, project, att, "run")
+        choices = [o["toolChoice"] for o in _offered()]
+        assert choices == ["auto"] * (4 + tool_rounds.MAX_TOOL_ROUNDS) + ["none"], choices
+        assert (kind, ended.get("reply")) == ("done", "Done."), ended
+        execution = _last_turn(client, headers, project, att)["execution"]
+        first = execution["toolCalls"][0]
+        assert (first["tool"], first["status"]) == ("web.search", "refused"), first
+        assert (execution.get("refusedRounds"), execution.get("freeWebReads")) == (1, 3), execution
+        assert _native_results()[0] == "refused: " + agent_text.message("tools.query-required")
+        assert len(web.asked) == 3, "the search with no query asked its provider"
+
+    def test_every_web_read_the_egress_budget_allows_is_free_and_one_past_it_spends_a_round(
+            self, client, headers, project, web):
+        from utk_curio.backend.app.common import egress_policy
+
+        free = getattr(tool_rounds, "FREE_WEB_READS", None)
+        assert free == egress_policy.MAX_CALLS_PER_RUN, (free, egress_policy.MAX_CALLS_PER_RUN)
+        att = _attach(client, headers, project, RESEARCHER)
+        testing_provider.push_replies(
+            _search(), *[_fetch(f"https://example.org/page-{i}") for i in range(free)],
+            *[READ] * (tool_rounds.MAX_TOOL_ROUNDS - 1), "Done.")
+        kind, ended, _ = _ask(client, headers, project, att, "run")
+        choices = [o["toolChoice"] for o in _offered()]
+        # The web call past the budget is refused, and spends the first round.
+        assert choices == ["auto"] * (free + tool_rounds.MAX_TOOL_ROUNDS) + ["none"], choices
+        assert (kind, ended.get("reply")) == ("done", "Done."), ended
+        execution = _last_turn(client, headers, project, att)["execution"]
+        assert [c["status"] for c in execution["toolCalls"][:free + 1]] == ["ok"] * free + ["error"]
+        assert execution.get("freeWebReads") == free, execution
+        spent = agent_text.message("tool-round.egress-spent", calls=egress_policy.MAX_CALLS_PER_RUN)
+        assert spent in _native_results()[free], _native_results()[free]
+        assert len(web.asked) == free
+
+    def test_a_web_read_past_the_free_ones_spends_a_round(self, client, headers, project, web, monkeypatch):
+        monkeypatch.setattr(tool_rounds, "FREE_WEB_READS", 2, raising=False)
+        att = _attach(client, headers, project, RESEARCHER)
+        testing_provider.push_replies(
+            _search(), _fetch(PAGES[0]), _fetch(PAGES[1]), *[READ] * (tool_rounds.MAX_TOOL_ROUNDS - 1), "Done.")
+        kind, ended, _ = _ask(client, headers, project, att, "run")
+        choices = [o["toolChoice"] for o in _offered()]
+        # Two reads are free; the third worked too, and spent the first round.
+        assert choices == ["auto"] * (2 + tool_rounds.MAX_TOOL_ROUNDS) + ["none"], choices
+        assert (kind, ended.get("reply")) == ("done", "Done."), ended
+        execution = _last_turn(client, headers, project, att)["execution"]
+        assert [c["status"] for c in execution["toolCalls"]] == ["ok"] * (2 + tool_rounds.MAX_TOOL_ROUNDS)
+        assert execution.get("freeWebReads") == 2, execution
+
+
+#: Why a last round's call was asked again when its reply held no text, as
+#: ``askedAgainWithoutTools`` says before how it went: no call either, or a
+#: call the cap drops.
+EMPTY_REPLY = "empty reply"
+EMPTY_REPLY_WITH_A_CALL = "empty reply with a call"
+
+
+@pytest.fixture()
+def server_calls_whatever_is_offered(monkeypatch):
+    """The scripted model's server sends the calls a reply makes even when
+    the call offered the tools with no call (``tool_choice`` none), as a
+    server that ignores ``tool_choice`` does."""
+    scripted = testing_provider._scripted_turn
+    monkeypatch.setattr(testing_provider, "_scripted_turn",
+                        lambda reply, tools, tool_choice: scripted(reply, tools, "auto"))
+
+
+class TestAnEmptyLastReply:
+    """At the cap the last round offers the tools with no call (``tool_choice``
+    none), and its reply is the turn's answer. That reply often held no text,
+    and the chat showed an empty message: DeepSeek, Curio's default model on
+    dev and stable, in 28 of 486 replies on 11-24 (run 45341666171), 26 of 486
+    on 11-25 (45523145703) and 8 of 36 in the SearXNG proving run
+    (45671908088), nearly every one two newlines, its thinking apart from
+    them; gemma4 in 19 of 486 on 11-24, each with no text at all. Such a reply
+    is asked once more, with the same messages and no tools, as a call written
+    as text is (:class:`TestACallWrittenAsText`), once a turn whichever made
+    it: a reply with no text and no call, or with no text beside a call the
+    cap drops (a request block, or a call a server sends though the round
+    offered none). The reply asked again answers; when it holds no text
+    either, or its call fails, the reply says the agent used its tool rounds
+    before it could answer. ``askedAgainWithoutTools`` says why and how it
+    went. A last reply in prose is the answer as before, a plan's last try,
+    which offers its call, and the fenced protocol, which offers no tools, are
+    never asked again: there an empty last reply ends with the line."""
+
+    @pytest.mark.parametrize("empty", ["", "\n\n"], ids=["no-text", "two-newlines"])
+    @pytest.mark.parametrize("path", ["run", "run/stream"])
+    def test_an_empty_last_reply_is_asked_again_with_no_tools_and_that_reply_answers(
+            self, client, headers, project, path, empty):
+        att = _attach(client, headers, project, CHAT)
+        testing_provider.push_replies(*[READ] * tool_rounds.MAX_TOOL_ROUNDS, empty, PROSE)
+        kind, ended, streamed = _ask(client, headers, project, att, path)
+        offered = _offered()
+        assert [o["toolChoice"] for o in offered] == CHOICES_ASKED_AGAIN, offered
+        assert offered[-2]["tools"] == offered[0]["tools"] and offered[-1] == NOTHING_OFFERED, offered[-2:]
+        calls = _run_calls()
+        # The same call once more: never the empty reply, and no new text.
+        assert calls[-1] == calls[-2], calls[-1][-1]
+        assert (kind, ended.get("reply")) == ("done", PROSE), ended
+        assert streamed is None or streamed.strip() == PROSE, streamed
+        saved = _last_turn(client, headers, project, att)
+        assert saved["text"] == PROSE
+        assert saved["execution"]["pins"].get(ASKED_AGAIN) == f"{EMPTY_REPLY}, answered", saved["execution"]["pins"]
+
+    @pytest.mark.parametrize("path", ["run", "run/stream"])
+    def test_an_empty_reply_asked_again_and_empty_again_says_the_rounds_ran_out(self, client, headers, project, path):
+        att = _attach(client, headers, project, CHAT)
+        testing_provider.push_replies(*[READ] * tool_rounds.MAX_TOOL_ROUNDS, "\n\n", "")
+        kind, ended, _ = _ask(client, headers, project, att, path)
+        assert [o["toolChoice"] for o in _offered()] == CHOICES_ASKED_AGAIN
+        assert (kind, ended.get("reply")) == ("done", _message("turn.tool-rounds-used")), ended
+        assert not [p for p in ended.get("content") or [] if p["type"] == "card"], ended["content"]
+        saved = _last_turn(client, headers, project, att)
+        assert saved["text"] == ended["reply"]
+        assert saved["execution"]["pins"].get(ASKED_AGAIN) == f"{EMPTY_REPLY}, empty again", saved["execution"]["pins"]
+
+    @pytest.mark.parametrize("path", ["run", "run/stream"])
+    def test_an_empty_reply_whose_call_asked_again_fails_ends_with_the_line(self, client, headers, project, path):
+        att = _attach(client, headers, project, CHAT)
+        testing_provider.push_replies(
+            *[READ] * tool_rounds.MAX_TOOL_ROUNDS, "\n\n",
+            {"error": "the conversation holds tool calls but the request offers no tools", "status": 400},
+        )
+        kind, ended, _ = _ask(client, headers, project, att, path)
+        assert [o["toolChoice"] for o in _offered()] == CHOICES_ASKED_AGAIN
+        assert (kind, ended.get("reply")) == ("done", _message("turn.tool-rounds-used")), ended
+        saved = _last_turn(client, headers, project, att)
+        assert saved["execution"]["status"] == "ok", saved["execution"]
+        assert saved["execution"]["pins"].get(ASKED_AGAIN) == f"{EMPTY_REPLY}, failed: 400", saved["execution"]["pins"]
+
+    def test_a_request_block_at_the_cap_with_no_text_is_asked_again_and_never_run(self, client, headers, project):
+        att = _attach(client, headers, project, CHAT)
+        testing_provider.push_replies(
+            *[READ] * tool_rounds.MAX_TOOL_ROUNDS, "\n\n" + _block("node.read", {"nodeId": "n1"}), PROSE)
+        kind, ended, _ = _ask(client, headers, project, att, "run")
+        assert [o["toolChoice"] for o in _offered()] == CHOICES_ASKED_AGAIN
+        assert (kind, ended.get("reply")) == ("done", PROSE), ended
+        execution = _last_turn(client, headers, project, att)["execution"]
+        assert [c["tool"] for c in execution["toolCalls"]] == ["dataflow.read"] * tool_rounds.MAX_TOOL_ROUNDS
+        assert execution["pins"].get(ASKED_AGAIN) == f"{EMPTY_REPLY_WITH_A_CALL}, answered", execution["pins"]
+
+    @pytest.mark.parametrize("path", ["run", "run/stream"])
+    def test_a_call_the_server_sends_at_the_cap_with_no_text_is_asked_again_and_never_run(
+            self, client, headers, project, server_calls_whatever_is_offered, path):
+        att = _attach(client, headers, project, CHAT)
+        testing_provider.push_replies(
+            *[READ] * tool_rounds.MAX_TOOL_ROUNDS,
+            {"text": "\n\n", "toolCalls": [_call("node.read", {"nodeId": "n1"})]}, PROSE)
+        kind, ended, _ = _ask(client, headers, project, att, path)
+        assert [o["toolChoice"] for o in _offered()] == CHOICES_ASKED_AGAIN
+        assert (kind, ended.get("reply")) == ("done", PROSE), ended
+        execution = _last_turn(client, headers, project, att)["execution"]
+        assert [c["tool"] for c in execution["toolCalls"]] == ["dataflow.read"] * tool_rounds.MAX_TOOL_ROUNDS
+        assert execution["pins"].get(ASKED_AGAIN) == f"{EMPTY_REPLY_WITH_A_CALL}, answered", execution["pins"]
+
+    def test_prose_beside_a_call_the_server_sends_at_the_cap_is_the_answer_and_nothing_is_asked_again(
+            self, client, headers, project, server_calls_whatever_is_offered):
+        att = _attach(client, headers, project, CHAT)
+        testing_provider.push_replies(
+            *[READ] * tool_rounds.MAX_TOOL_ROUNDS, {"text": PROSE, "toolCalls": [_call("node.read", {"nodeId": "n1"})]})
+        kind, ended, _ = _ask(client, headers, project, att, "run")
+        assert [o["toolChoice"] for o in _offered()] == ["auto"] * tool_rounds.MAX_TOOL_ROUNDS + ["none"]
+        assert (kind, ended.get("reply")) == ("done", PROSE), ended
+        assert ASKED_AGAIN not in _last_turn(client, headers, project, att)["execution"]["pins"]
+
+    @pytest.mark.parametrize("last, again, pinned", [
+        (CALL_AS_TEXT, "\n\n", "answered"),
+        ("\n\n", CALL_AS_TEXT, f"{EMPTY_REPLY}, empty again"),
+    ], ids=["call-as-text-then-empty", "empty-then-call-as-text"])
+    def test_one_call_a_turn_is_asked_again_whichever_reply_left_no_answer(
+            self, client, headers, project, last, again, pinned):
+        att = _attach(client, headers, project, CHAT)
+        testing_provider.push_replies(*[READ] * tool_rounds.MAX_TOOL_ROUNDS, last, again, PROSE)
+        kind, ended, _ = _ask(client, headers, project, att, "run")
+        assert [o["toolChoice"] for o in _offered()] == CHOICES_ASKED_AGAIN
+        assert (kind, ended.get("reply")) == ("done", _message("turn.tool-rounds-used")), ended
+        assert testing_provider.pending() == 1, "a call was asked a third time"
+        assert _last_turn(client, headers, project, att)["execution"]["pins"].get(ASKED_AGAIN) == pinned
+
+    def test_a_fenced_run_whose_last_reply_is_empty_ends_with_the_line(self, client, headers, project):
+        testing_provider.script_chat_capabilities(tools=False)
+        att = _attach(client, headers, project, CHAT)
+        testing_provider.push_replies(*[_block("dataflow.read", {})] * tool_rounds.MAX_TOOL_ROUNDS, "\n\n", PROSE)
+        kind, ended, _ = _ask(client, headers, project, att, "run")
+        assert _offered() == [NOTHING_OFFERED] * (tool_rounds.MAX_TOOL_ROUNDS + 1)
+        assert (kind, ended.get("reply")) == ("done", _message("turn.tool-rounds-used")), ended
+        assert ASKED_AGAIN not in _last_turn(client, headers, project, att)["execution"]["pins"]
+
+    def test_an_empty_reply_on_a_plans_last_try_says_the_plan_could_not_be_made(self, client, headers, project):
+        """The plan's last try offers its call, so it is never asked again:
+        an empty reply there ends with the plan's card and the line."""
+        tries = TestAPlansTries()
+        resp, offered, calls = tries._native(
+            client, headers, project, [RECOUNT_BROKEN] * tool_rounds.MAX_TOOL_ROUNDS, then=["\n\n", PROSE],
+        )
+        assert [o["toolChoice"] for o in offered] == ["auto"] * tries.LAST, resp.get_data(as_text=True)
+        body = resp.get_json()
+        assert body["reply"] == _message("turn.tool-rounds-used"), body["reply"]
+        (card,) = [p for p in body["content"] if p["type"] == "card"]
+        assert card["title"] == "Plan could not be made" and GHOST in card["lines"][0], card
+        assert len(calls) == tries.LAST, "a round followed the plan's last try"
 
 
 #: A number widget a Python node declares, with its default and its options.
