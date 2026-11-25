@@ -26,8 +26,10 @@ export const INTENT_CLAMP_CHARS = 280;
 
 /** The meta line under one agent turn: the streaming reply shows the live
  * running indicator; finalized replies show their persisted execution
- * record; the newest reply falls back to the live run record when an old
- * server sent no execution fields — so a final message never renders bare. */
+ * record; the newest reply to a message falls back to the live run record
+ * when an old server sent no execution fields, so a final message never
+ * renders bare. A turn the runtime wrote after the reply (a source's
+ * candidates, a Recorded line) answers no message: it shows none. */
 export function turnMetaFor(
   t: AgentSessionTurn,
   i: number,
@@ -51,7 +53,7 @@ export function turnMetaFor(
       return { ...derived, durationMs: runStatus.durationMs };
     return derived;
   }
-  if (isLast && t.role === "agent" && !t.error && runStatus?.phase === "done")
+  if (isLast && t.role === "agent" && !t.error && turns[i - 1]?.role === "user" && runStatus?.phase === "done")
     return {
       kind: "done",
       durationMs: runStatus.durationMs,

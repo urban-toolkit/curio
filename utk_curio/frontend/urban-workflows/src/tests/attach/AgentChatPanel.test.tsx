@@ -2002,6 +2002,26 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Finished in 12s · 1.4k tokens");
   });
 
+  it("a turn the runtime wrote after the reply (a source's candidates) takes no run record of its own", () => {
+    renderPanel({
+      runStatus: {
+        phase: "done",
+        startedAt: Date.now() - 12000,
+        durationMs: 12000,
+        usage: { inputTokens: 400, outputTokens: 1032 },
+      },
+      turns: [
+        { role: "user", text: "q1" },
+        doneTurn("a1", [400, 1032], 12000),
+        { role: "agent", text: "Load pedestrians needs a source." },
+      ],
+    });
+    // One line, the reply's: the runtime's turn is not the reply again.
+    const statuses = screen.getAllByRole("status");
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0]).toHaveTextContent("Finished in 12s · 1.4k tokens");
+  });
+
   it("a failed reply shows the failed state with elapsed-at-failure from the run record", () => {
     renderPanel({
       runStatus: { phase: "error", startedAt: Date.now() - 8000, durationMs: 8000 },
