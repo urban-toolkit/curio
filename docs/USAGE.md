@@ -2537,13 +2537,14 @@ the dock at the top of the canvas.
 ### Working with an agent
 
 Click an agent to open its chat panel, on the window's right under the top bar.
-Down its left side, the agents rail lists every agent on the dataflow, the open
-one marked and one at work with a dot: click one to open its chat, and hover it
-to see what it is attached to. An agent attached to three nodes or more is one
-entry, which lists its nodes. The rail and the header name each agent by its
-conversation, as *Node Builder: Heat colors* once the conversation has a title,
-which Curio gives it from your first message; two of one agent on one place
-that would read the same are numbered. The header also says what the agent is
+Down its left side, the agents rail lists every agent on the dataflow by name,
+with what it is attached to under it, the open one marked and one at work with a
+dot: click one to open its chat, and hover it to see its conversation and what
+it is attached to. An agent attached to three nodes or more is one entry, which
+lists its nodes. The header names the conversation, as *Node Builder: Heat
+colors* once it has a title, which Curio gives it from your first message; on
+the rail, two of one agent on one place whose conversations read the same are
+numbered. The header also says what the agent is
 attached to: *on the canvas*, *on* a node, or *from* one node *to* another for a
 connection. Its **More** menu renames the conversation, clears it, and says how
 many tokens it used. You can also edit the initial intent the agent starts
