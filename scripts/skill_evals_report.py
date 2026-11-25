@@ -3,9 +3,10 @@
 ``scripts/ci_skill_evals.py run`` writes one folder per model, the
 ``agent_eval.py skills`` run folder of that model (``results/<model>/skills-*/``),
 and then calls this. It reads each folder's ``run.json`` (the model, the
-commit and each skill's measure), its ``summary.json`` (each skill's pass rates
-and trigger rates, as the runner counted them) and every run's own record and
-transcript, and shows, per model and skill:
+commit, each skill's measure and the web search its runs asked, which the
+page and the summary name under their heading), its ``summary.json`` (each
+skill's pass rates and trigger rates, as the runner counted them) and every
+run's own record and transcript, and shows, per model and skill:
 
 - the pass rate with the skill and without it, the difference, and the change
   since main's last run (``--previous``, its per-model summaries);
@@ -308,7 +309,7 @@ def summary_of(run: ModelRun) -> dict:
     """*run*'s numbers, as the next runs compare with them (``--previous``)."""
     return {
         "model": run.model, "run": run.meta.get("run"), "commit": run.meta.get("commit"),
-        "finished": run.meta.get("finished"),
+        "finished": run.meta.get("finished"), "search": run.meta.get("search"),
         "skills": {row.skill: {
             "with_skill": row.with_rate, "without_skill": row.without_rate, "whole": row.whole,
             "should_trigger": (row.triggers or {}).get("should_trigger_rate"),
@@ -542,12 +543,23 @@ def _probe(run: ModelRun) -> str:
     return f"failed: {run.probe.get('error') or 'no answer'}"
 
 
+def searched(models: list[ModelRun]) -> str | None:
+    """The web search the runs asked, as each model's ``run.json`` names it
+    (``skill_eval_runner._search``), each search once; None when no record
+    names one."""
+    found = dict.fromkeys(str(run.meta["search"]) for run in models if run.meta.get("search"))
+    return "; ".join(found) or None
+
+
 def markdown(models: list[ModelRun], problems: list[str], *, scope: dict, page_url: str | None) -> str:
     """The job summary: the verdict, then per model its totals and its skills."""
     lines = ["## Skill evaluations", ""]
     lines.append(f"What this run measured: **{scope.get('measure', '?')}**. " + " ".join(
         f"{line}." for line in (scope.get("why") or [])[:6]))
     lines.append("")
+    search = searched(models)
+    if search:
+        lines += [f"Web search: **{search}**.", ""]
     if page_url:
         lines += [f"[Open {PAGE}]({page_url}): every model, skill and failed assertion.", ""]
     if problems:
@@ -669,6 +681,10 @@ def page(models: list[ModelRun], problems: list[str], *, scope: dict, run_url: s
              f"<p>What this run measured: <b>{escape(str(scope.get('measure', '?')))}</b>.</p><ul>"]
     parts += [f"<li>{escape(line)}</li>" for line in scope.get("why") or []]
     parts.append("</ul>")
+    search = searched(models)
+    if search:
+        parts.append(f"<p>Web search: <b>{escape(search)}</b>. The numbers of a skill whose agents search the "
+                     "web compare only with runs of the same search.</p>")
     if problems:
         parts.append('<h2 class="bad">Failed</h2><ul>')
         parts += [f'<li class="bad">{escape(problem)}</li>' for problem in problems]
