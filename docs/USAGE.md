@@ -2602,7 +2602,8 @@ Operators who would rather not send queries to a third party can point
 `--agent-search-url` at their own provider, or elsewhere entirely. The keyless
 API can stop answering for a while when one server searches often, and the
 agent is then told the status it answered with; a Curio many people use points
-`--agent-search-url` at a provider with a key, or at its own SearXNG.
+`--agent-search-url` at a provider with a key, or at its own SearXNG
+([Web search](DEPLOYMENT.md#web-search)).
 
 For the full guide, covering the roster, the storage layers, attaching, the
 provider, publishing, and writing your own, see [docs/AGENT-CATALOG.md](AGENT-CATALOG.md).
