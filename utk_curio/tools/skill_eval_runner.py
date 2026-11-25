@@ -22,13 +22,16 @@ writes, under ``--out``, one folder per run of the tool:
 
 The endpoint is read from ``CURIO_EVAL_BASE_URL``, ``CURIO_EVAL_API_KEY`` and
 ``CURIO_EVAL_MODEL``, and handed to the workers in their environment, never
-on a command line. Nothing written holds the key, the base URL or its host:
-the workers scrub every file and log line, and the runner reads every file
-again at the end and fails if one does. ``--pilot`` runs one skill and says
-how long the whole run would take. ``--resume`` goes on with a run's folder,
-running only what has no record yet. ``--scope`` runs each skill a scope
-names as its measure says (``skill_evals.Measure``): the skill-evals CI job
-runs this so, on each model of ``CURIO_EVAL_MODELS``
+on a command line. The workers inherit this process's environment but
+:data:`_NOT_INHERITED`, so their web.search asks ``CURIO_SEARCH_URL`` as a
+Curio started with ``--agent-search-url`` does, and ``run.json`` names that
+search (``search``, :func:`_search`). Nothing written holds the key, the base
+URL or its host: the workers scrub every file and log line, and the runner
+reads every file again at the end and fails if one does. ``--pilot`` runs
+one skill and says how long the whole run would take. ``--resume`` goes on
+with a run's folder, running only what has no record yet. ``--scope`` runs
+each skill a scope names as its measure says (``skill_evals.Measure``): the
+skill-evals CI job runs this so, on each model of ``CURIO_EVAL_MODELS``
 (``scripts/ci_skill_evals.py``).
 """
 
@@ -48,6 +51,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from utk_curio import shipped
 from utk_curio.backend.app.agents.domain import skills as skill_format
@@ -64,6 +68,12 @@ _NOT_INHERITED = ("CURIO_TESTING", "CURIO_DEV", "CURIO_NO_AUTH", "CURIO_STATE_DI
 RECORD = "run.json"
 #: The variable naming one grader for every model (``skill_eval_worker.ENV_GRADER``).
 GRADER_VARIABLE = "CURIO_EVAL_GRADER_MODEL"
+#: The URL the workers' web.search asks (``tools._execute_web_search``), which
+#: ``--agent-search-url`` sets on a Curio, and the words that name that search
+#: in a run's record, which the Skill evaluations workflow sets to its SearXNG
+#: and the image it runs.
+SEARCH_URL_VARIABLE = "CURIO_SEARCH_URL"
+SEARCH_NAME_VARIABLE = "CURIO_EVAL_SEARCH"
 
 
 def add_parser(sub) -> None:
@@ -117,6 +127,21 @@ def _commit() -> str | None:
     except (OSError, subprocess.SubprocessError):
         return None
     return done.stdout.strip() or None
+
+
+def _search() -> str:
+    """The web search the runs' web.search asks, as ``run.json`` names it: the
+    host and port of ``CURIO_SEARCH_URL``, after the words ``CURIO_EVAL_SEARCH``
+    gives it, or Curio's default host when the URL is unset. Never the rest of
+    the URL, where a provider's key can ride."""
+    from utk_curio.backend.app.agents.application.tools import DEFAULT_SEARCH_URL
+
+    url = os.environ.get(SEARCH_URL_VARIABLE) or ""
+    host = urlsplit((url or DEFAULT_SEARCH_URL).strip()).netloc.rpartition("@")[2]
+    if not url:
+        return f"{host}, Curio's default"
+    name = os.environ.get(SEARCH_NAME_VARIABLE, "").strip()
+    return f"{name} at {host}" if name else host
 
 
 def _write(path: Path, data) -> None:
@@ -380,6 +405,8 @@ def run(args) -> int:
             # The benchmark's set this run measured, and who graded it (benchmark.py).
             "benchmarkVersion": benchmark.version(evals),
             "grader": os.environ.get(GRADER_VARIABLE, "").strip() or endpoint.model,
+            # The web search its runs ask, which the numbers of a skill whose agents search hang on.
+            "search": _search(),
         }
         if measured:
             meta["measures"] = {s.name: measured[s.name].as_dict() for s in chosen}

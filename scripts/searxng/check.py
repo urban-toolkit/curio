@@ -12,7 +12,9 @@ answer included, and it exits 1.
 The deploy runs it in Curio's container once the stack is up, on the URL it
 gives Curio's ``--agent-search-url`` (.github/workflows/deploy.yml), and the
 Full stack build's bucket-mounts job runs it in a container on the network of
-docker-compose.searxng.yml's service. Standard library only.
+docker-compose.searxng.yml's service. The Skill evaluations workflow runs it
+in main's CI image on that network, before its evaluations, which search
+there. Standard library only.
 """
 
 from __future__ import annotations

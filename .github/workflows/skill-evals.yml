@@ -21,6 +21,11 @@ name: Skill evaluations
 # skill-evals (arcade-cpu-40, which also takes CPU jobs between evaluations).
 # So runs queue for it, and each model gets CURIO_EVAL_JOBS workers (4 when
 # unset) and no more.
+#
+# The agents search the web as dev's and stable's do: through SearXNG
+# (docker-compose.searxng.yml), which the job starts beside the evaluations in
+# its own compose project and checks before the first run. The report names
+# that search and its image.
 on:
   workflow_dispatch:
     inputs:
@@ -47,11 +52,17 @@ jobs:
       actions: read
     env:
       PROJECT: curio-ci-evals
+      # The URL every run's web.search asks, as Curio's --agent-search-url
+      # sets it on dev and stable: the job's web search service, by its name
+      # on the service's network.
+      CURIO_SEARCH_URL: 'http://searxng:8080/search?q={q}&format=json'
     steps:
       # As the Full stack build's `reclaim` step: a job cancelled before its
-      # end can leave its container running, and its files root-owned. Its
-      # container carries the compose project label of PROJECT, so this finds it.
-      # It also forgets a sparse checkout an earlier job left in the workspace's
+      # end can leave its containers running, its files root-owned, and the
+      # web search's network behind. Its containers, the evaluations' and the
+      # web search's, carry the compose project label of PROJECT, so this
+      # finds them, and their volumes and networks go with them. It also
+      # forgets a sparse checkout an earlier job left in the workspace's
       # .git/config, which the checkout would apply again.
       - name: 🧹 Remove stacks an earlier job left, reclaim root-owned files
         working-directory: ${{ github.workspace }}
@@ -61,7 +72,10 @@ jobs:
           [ -n "$projects" ] || echo "no stack an earlier job left"
           for project in $projects; do
             echo "removing stack $project"
-            docker ps -aq --filter "label=com.docker.compose.project=$project" | xargs -r docker rm -f
+            label="label=com.docker.compose.project=$project"
+            docker ps -aq --filter "$label" | xargs -r docker rm -f
+            docker volume ls -q --filter "$label" | xargs -r docker volume rm
+            docker network ls -q --filter "$label" | xargs -r docker network rm
           done
           docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
           if [ -d .git ]; then
@@ -136,9 +150,58 @@ jobs:
           echo "::error::none of main's last 30 commits has a CI image"
           exit 1
 
-      # The branch's checkout over the image's own code. The secrets reach the
-      # container by name (-e NAME), from this step's environment, never on a
-      # command line.
+      # The web search the agents ask: SearXNG, the service dev and stable
+      # run beside Curio (docker-compose.searxng.yml), with this checkout's
+      # settings and the image it pins, in this job's compose project, so the
+      # first step of a later job removes what a cancelled one left. Its key is
+      # made as the deploy makes it, in this checkout's .secrets/searxng.env,
+      # which only the runner user reads and nothing prints. Then, from a
+      # container of main's image on the service's network, as the
+      # evaluations' container is below, CURIO_SEARCH_URL must answer a
+      # search with JSON that holds a results list (scripts/searxng/check.py,
+      # the deploy's own check), or the job ends here with the service's last
+      # lines. No results is only a warning, as on the deploy: the public
+      # engines SearXNG asks may refuse this runner for a while. Its output
+      # `search` names the service and its image, for the report.
+      - name: 🔎 Start the web search the agents ask
+        id: search
+        if: steps.scope.outputs.skill_evals != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -s .secrets/searxng.env ]; then
+            (
+              umask 077
+              mkdir -p .secrets
+              printf 'SEARXNG_SECRET=%s\n' "$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')" > .secrets/searxng.env.new
+              mv .secrets/searxng.env.new .secrets/searxng.env
+            )
+          fi
+          image="$(sed -n 's/^    image: //p' docker-compose.searxng.yml)"
+          echo "search=SearXNG ${image%%@*}" >> "$GITHUB_OUTPUT"
+          if ! docker compose -p "$PROJECT" -f docker-compose.searxng.yml up -d --wait --wait-timeout 120 \
+              || ! line="$(docker run --rm --label "com.docker.compose.project=$PROJECT" --network "${PROJECT}_default" \
+                             -v "$PWD:/app:ro" -w /app "$PROJECT-curio" \
+                             python scripts/searxng/check.py "$CURIO_SEARCH_URL" 2>&1)"; then
+            echo "::error::the web search service does not answer the agents' search URL: ${line:-it did not start}"
+            docker compose -p "$PROJECT" -f docker-compose.searxng.yml logs --no-color --tail=100 searxng || true
+            exit 1
+          fi
+          case "$line" in
+            *"results: 0,"*)
+              echo "::warning::the web search service answers the agents' search URL with no results: $line"
+              ;;
+            *)
+              echo "OK: SearXNG ${image%%@*} answers the agents' search URL, $line"
+              ;;
+          esac
+
+      # The branch's checkout over the image's own code, on the web search's
+      # network. The secrets reach the container by name (-e NAME), from this
+      # step's environment, never on a command line. So do the job's
+      # CURIO_SEARCH_URL, which ci_skill_evals.py and agent_eval.py skills
+      # hand on to every worker, whose web.search reads it, and
+      # CURIO_EVAL_SEARCH, the words the report names that search with.
       - name: 🧪 Run the skills' evaluations on every model
         if: steps.scope.outputs.skill_evals != ''
         timeout-minutes: 700
@@ -152,12 +215,14 @@ jobs:
           CURIO_EVAL_GRADER_MODEL: ${{ vars.CURIO_EVAL_GRADER }}
           CURIO_EVAL_COMMIT: ${{ github.sha }}
           CURIO_EVAL_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CURIO_EVAL_SEARCH: ${{ steps.search.outputs.search }}
         shell: bash
         run: |
-          docker run --rm --init --label "com.docker.compose.project=$PROJECT" \
+          docker run --rm --init --label "com.docker.compose.project=$PROJECT" --network "${PROJECT}_default" \
             -v "$PWD:/app" -w /app \
             -e CURIO_EVAL_BASE_URL -e CURIO_EVAL_API_KEY -e CURIO_EVAL_MODELS -e CURIO_EVAL_JOBS \
             -e CURIO_EVAL_GRADER_MODEL -e CURIO_EVAL_COMMIT -e CURIO_EVAL_RUN_URL \
+            -e CURIO_SEARCH_URL -e CURIO_EVAL_SEARCH \
             "$PROJECT-curio" \
             python scripts/ci_skill_evals.py run --scope skill-evals/scope.json --out skill-evals \
               --previous skill-evals/previous
@@ -200,6 +265,17 @@ jobs:
             [ -z "$PAGE_URL" ] || printf '[Open curio-skill-evals-report.html](%s): every model, skill and failed assertion.\n\n' "$PAGE_URL"
             cat skill-evals/summary.md 2>/dev/null || echo "The skill evaluations wrote no summary: see this job's log."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # The web search goes whatever happened, with its network and any
+      # container of the project still running. A job that made no key
+      # started none.
+      - name: 🧹 Stop the web search
+        if: always()
+        shell: bash
+        run: |
+          if [ -f .secrets/searxng.env ]; then
+            docker compose -p "$PROJECT" -f docker-compose.searxng.yml down -v --remove-orphans || true
+          fi
 
       - uses: ./.github/actions/stop-stack
         if: always()

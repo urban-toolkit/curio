@@ -4,6 +4,9 @@
 # docker-compose.yml and docker-compose.deploy.yml, and starts Curio with
 #   --agent-search-url "http://searxng:8080/search?q={q}&format=json"
 #
+# The Skill evaluations workflow starts it the same way, in its job's own
+# compose project, for its evaluations' agents.
+#
 # The service publishes no port: only the containers on the stack's network
 # reach it, Curio's among them. Its settings are scripts/searxng/settings.yml,
 # bound read-only. Its secret key, which SearXNG needs to start, is
