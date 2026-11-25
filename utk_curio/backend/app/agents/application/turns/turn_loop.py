@@ -54,6 +54,16 @@ after the text before the call (:meth:`AttachmentTurn._asks_again`). Otherwise
 at the cap, and when that reply writes a call as text too, the call is dropped
 as a request the cap leaves is (:meth:`AttachmentTurn._dropped_at_the_cap`);
 below the cap it is corrected as a request block the parser could not take is.
+
+A last round's reply may also hold no text at all, only blank lines, the
+model's thinking having come apart from it: DeepSeek's did in 28 of its 486
+replies of the 11-24 skill evaluation, gemma4's in 19. Blank text is no text of
+the turn's, and such a reply is asked once more the same way, the same once a
+turn, whether it held no call or one the cap drops (a request block, or a call
+a server sends though the round offered none). When the reply asked again
+holds no text either, or that call fails, the turn ends as a request the cap
+drops does: with the line that says the agent used its tool rounds before it
+could answer, when it has no other text.
 """
 
 from __future__ import annotations
@@ -91,9 +101,18 @@ CONTINUE = "continue"
 BREAK = "break"
 
 #: The pin of a turn whose last round's call was asked once more with no tools
-#: (:meth:`AttachmentTurn._asks_again`): ``answered``, or ``failed: <status>``
-#: when that call raised, its HTTP status or else its error's class.
+#: (:meth:`AttachmentTurn._asks_again`). After a reply that wrote a call as
+#: text: ``answered``, or ``failed: <status>`` when that call raised, its HTTP
+#: status or else its error's class. After a reply that held no text, why
+#: (:data:`EMPTY_REPLY`, :data:`EMPTY_REPLY_WITH_A_CALL`), a comma, then how it
+#: went: ``answered`` when the reply asked again holds text, ``empty again``
+#: when it holds none either, or ``failed: <status>``.
 ASKED_AGAIN = "askedAgainWithoutTools"
+#: Why a last round's call was asked again when its reply held no text: it
+#: held no call either, or only a call the cap drops (a request block, or a
+#: call a server sends though the round offered none).
+EMPTY_REPLY = "empty reply"
+EMPTY_REPLY_WITH_A_CALL = "empty reply with a call"
 
 
 def _before_an_open_block(text: str) -> str:
@@ -287,9 +306,11 @@ class AttachmentTurn:
         self.conversation = _RunConversation(messages, self.loop_ctx)
         # The tools the turn's latest call offered (_RunConversation.offer).
         self.offered: dict = {}
-        # The last round's reply that wrote a call as text, while its call is
-        # asked once more with no tools (_asks_again).
+        # The last round's reply that left no answer, a call written as text
+        # or no text at all, while its call is asked once more with no tools
+        # (_asks_again), and why when it held no text (asked_again_for).
         self.asking_again: dict | None = None
+        self.asked_again_for: str | None = None
         self.rounds_used = 0
         # The last round corrected a plan, so the next call is the plan's next
         # try, which a run on native tools is offered at the cap too
@@ -386,7 +407,7 @@ class AttachmentTurn:
                 if outcome == BREAK:
                     break
                 req = outcome  # a RECOVERED request (#245) takes the shared path below
-            if result["visible"]:
+            if result["visible"].strip():
                 self.folded.append(result["visible"])
             if self.rounds_used >= agents_tool_rounds.MAX_TOOL_ROUNDS:
                 if agents_tool_rounds._is_plan_request(self.loop_ctx, req):
@@ -396,7 +417,10 @@ class AttachmentTurn:
                     yield from self._tool_round(req, result, native_calls, last_try=True)
                     yield from self._emit_landed()
                     break
-                self._dropped_at_the_cap(req.get("tool") if req["type"] == "toolRequest" else None)
+                tool = req.get("tool") if req["type"] == "toolRequest" else None
+                if not result["visible"].strip() and self._asks_again(result, tool, EMPTY_REPLY_WITH_A_CALL):
+                    continue  # a reply that held only the call: its call once more, with no tools
+                self._dropped_at_the_cap(tool)
                 break  # dangling read request at the cap: dropped, text kept
             if req["type"] == "delegateRequest":
                 yield from self._delegate_round(req, result, native_calls)
@@ -408,7 +432,8 @@ class AttachmentTurn:
     def _dropped_at_the_cap(self, tool: str | None) -> None:
         """A request the round at the cap asked for is dropped, not run, and
         its text stays: *tool* is the tool it asked for, None for a
-        delegation. A mutate request cut off gets its card (:meth:`_cut_off`),
+        delegation or a reply with nothing to show, which ends the same way.
+        A mutate request cut off gets its card (:meth:`_cut_off`),
         a plan whose try the request took could not be made
         (:meth:`_plan_not_made`), and a reply left with no text says that the
         agent used its tool rounds before it could answer
@@ -494,8 +519,12 @@ class AttachmentTurn:
         asks for again; in a last round that offered no call, a call asked
         once more with no tools (:meth:`_asks_again`); and otherwise at the
         cap a request dropped (:meth:`_dropped_at_the_cap`), never run from
-        its text. Returns CONTINUE for a correction round or a call asked
-        again, BREAK when the reply is final, or the recovered request."""
+        its text. A reply with nothing to show, no text and no part, is asked
+        once more too in a last round that offered no call, and otherwise at
+        the cap ends as a dropped request does, with the line that says the
+        rounds ran out when the turn has no text. Returns CONTINUE for a
+        correction round or a call asked again, BREAK when the reply is final,
+        or the recovered request."""
         kind, payload, visible_override = agents_tool_rounds._handle_plan_reply(
             self.user_key, self.project_id, self.loop_ctx, result["reply"], result["parts"],
             self.minted, self.rounds_used,
@@ -534,7 +563,11 @@ class AttachmentTurn:
                     agents_tool_rounds._tool_correction_message(payload, native=True),
                 )
                 return CONTINUE
-            if kind == "none" and "callMarkup" in result and self._asks_again(result):
+            if kind == "none" and "callMarkup" in result:
+                if self._asks_again(result, _called_tool(result["callMarkup"])):
+                    return CONTINUE
+            elif (kind == "none" and not payload and not result["visible"].strip()
+                  and self._asks_again(result, None, EMPTY_REPLY)):
                 return CONTINUE
             request_capped = kind == "cap"
             # A held request tail is NOT released at the cap: see
@@ -551,34 +584,39 @@ class AttachmentTurn:
                 result["visible"] = visible_override
             return req
         effective_visible = visible_override if visible_override is not None else result["visible"]
-        if effective_visible:
+        if effective_visible.strip():
             self.folded.append(effective_visible)
         self.final_parts = payload
         if request_capped:
             self._plan_not_made()
-        elif (kind == "none" and "callMarkup" in result
-              and self.rounds_used >= agents_tool_rounds.MAX_TOOL_ROUNDS):
-            self._dropped_at_the_cap(_called_tool(result["callMarkup"]))
+        elif kind == "none" and self.rounds_used >= agents_tool_rounds.MAX_TOOL_ROUNDS:
+            if "callMarkup" in result:
+                self._dropped_at_the_cap(_called_tool(result["callMarkup"]))
+            elif not payload and not effective_visible.strip():
+                self._dropped_at_the_cap(None)  # nothing to show: as a request the cap drops
         return BREAK
 
-    def _asks_again(self, result: dict) -> bool:
+    def _asks_again(self, result: dict, tool: str | None, why: str | None = None) -> bool:
         """Whether the call of the round *result* answers is asked once more,
-        with no tools at all, its reply having written a call as text where
-        that round offered the tools with no call (``tool_choice`` none): once
-        a turn, and never on a plan's last try or the fenced protocol, whose
-        calls are offered otherwise. The conversation is left as it was, so
-        that call's messages are the round's own, and the reply that answers
-        it is the turn's answer, after the text before the call, which stays
-        the turn's. The call written as text is still never run, and a
+        with no tools at all, its reply having left no answer where that round
+        offered the tools with no call (``tool_choice`` none): a call written
+        as text (*why* None), or no text at all, with no call
+        (:data:`EMPTY_REPLY`) or beside one the cap drops
+        (:data:`EMPTY_REPLY_WITH_A_CALL`). Once a turn, whichever it was, and
+        never on a plan's last try or the fenced protocol, whose calls are
+        offered otherwise. The conversation is left as it was, so that call's
+        messages are the round's own, and the reply that answers it is the
+        turn's answer, after the text before the call, which stays the
+        turn's. The call the reply made, *tool*, is still never run, and a
         change's gets its card (:meth:`_cut_off`). The reply is kept
         (``asking_again``) for the turn to end on, as it did before that call
         was asked, should it fail (:meth:`_provider_round`)."""
         if self.offered.get("tool_choice") != "none" or ASKED_AGAIN in self.pins:
             return False
-        if result["visible"]:
+        if result["visible"].strip():
             self.folded.append(result["visible"])
-        self._cut_off(_called_tool(result["callMarkup"]))
-        self.asking_again = result
+        self._cut_off(tool)
+        self.asking_again, self.asked_again_for = result, why
         return True
 
     def _plan_not_made(self) -> None:
@@ -606,12 +644,13 @@ class AttachmentTurn:
     def _provider_round(self):
         """One call of the model, offered the tools the conversation gives it
         (:attr:`offered`). The call asked once more after a last round whose
-        reply wrote a call as text (:meth:`_asks_again`) is offered none, and
-        the turn's record says how it went (:data:`ASKED_AGAIN`). Should it
-        fail, the round's result is that reply again, its text the turn's
+        reply left no answer (:meth:`_asks_again`) is offered none, and the
+        turn's record says why and how it went (:data:`ASKED_AGAIN`). Should
+        it fail, the round's result is that reply again, its text the turn's
         already, which the turn ends on as it did before that call was asked
         (:meth:`_dropped_at_the_cap`)."""
         again, self.asking_again = self.asking_again, None
+        why, self.asked_again_for = self.asked_again_for, None
         self.offered = self.conversation.offer(self.rounds_used, self.plan_corrected, asked_again=again is not None)
         try:
             if self.streaming:
@@ -623,11 +662,18 @@ class AttachmentTurn:
             if again is None:
                 raise
             agents_policy._add_usage(self.usage_total, self.usage_sink)
-            self.pins[ASKED_AGAIN] = f"failed: {agents_providers._status_code_of(exc) or type(exc).__name__}"
+            self._pin_asked_again(why, f"failed: {agents_providers._status_code_of(exc) or type(exc).__name__}")
             return {**again, "visible": ""}
         if again is not None:
-            self.pins[ASKED_AGAIN] = "answered"
+            # A stopped round's text is what it showed.
+            text = str(result.get("visible", result.get("shown")) or "")
+            self._pin_asked_again(why, "answered" if why is None or text.strip() else "empty again")
         return result
+
+    def _pin_asked_again(self, why: str | None, outcome: str) -> None:
+        """How the call asked once more went (:data:`ASKED_AGAIN`), after why
+        it was asked when its reply held no text."""
+        self.pins[ASKED_AGAIN] = outcome if why is None else f"{why}, {outcome}"
 
     def _blocking_round(self) -> dict:
         turn = ChatTurn.of(agents_providers.run_chat_turn(
