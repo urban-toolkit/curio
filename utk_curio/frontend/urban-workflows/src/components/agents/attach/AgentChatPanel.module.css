@@ -89,9 +89,12 @@
   font-size: 12px;
 }
 
-/* What the agent is attached to, after the title; it gives way first. */
+/* What the agent is attached to, after the title: its words whole beside it,
+   up to 45% of the row, and cut short only past that. The title gives way
+   first. */
 .headerTarget {
-  flex: 0 1 auto;
+  flex: none;
+  max-width: 45%;
   min-width: 0;
   font-size: 12px;
   color: var(--curio-text-on-dark-muted);
@@ -114,6 +117,8 @@
 .tint_evaluate { color: var(--curio-category-agent-evaluate-fg); }
 .tint_package  { color: var(--curio-category-agent-package-fg); }
 
+/* The conversation's title: the header's first to give way, cut short on one
+   line. */
 .title {
   flex: 0 1 auto;
   font-size: 14px;
