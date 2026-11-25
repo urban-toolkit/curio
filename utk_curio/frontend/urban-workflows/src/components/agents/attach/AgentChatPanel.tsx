@@ -346,15 +346,16 @@ export const AgentChatPanel: React.FC<{
   // panel-local `sending` flag never leaks into another chat as agents are
   // cycled. Unwired (tests, previews): the local flag governs.
   const sendBusy = runStatus === undefined ? sending : false;
-  // Stop asked for the running turn: it stops at its next step.
-  const [stopping, setStopping] = useState(false);
-  useEffect(() => {
-    if (!runInFlight) setStopping(false);
-  }, [runInFlight]);
+  // Stop asked for the running turn: it stops at its next step. Kept for that
+  // turn alone, by its chat and its start: the rail's next chat in this panel
+  // never shows it, and back on this chat while the turn runs, it still does.
+  const runKey = runInFlight && runStatus ? `${attachment.attachmentId}@${runStatus.startedAt}` : null;
+  const [stopAskedFor, setStopAskedFor] = useState<string | null>(null);
+  const stopping = runKey !== null && stopAskedFor === runKey;
   const stop = () => {
-    if (!onStopTurn || stopping) return;
-    setStopping(true);
-    onStopTurn().catch(() => setStopping(false));
+    if (!onStopTurn || !runKey || stopping) return;
+    setStopAskedFor(runKey);
+    onStopTurn().catch(() => setStopAskedFor((asked) => (asked === runKey ? null : asked)));
   };
 
   const suggested = useMemo(() => suggestedPromptsOf(turns), [turns]);
@@ -491,8 +492,12 @@ export const AgentChatPanel: React.FC<{
         {/* Solve this node, in a node agent's chat; the dev/52 plan line, in
             the chat of an agent that declares dataflow.orchestrate, one that
             plans a dataflow and solves it. */}
+        {/* Each keyed to its chat: the rail swaps the agent in this one
+            panel, and what one chat's Solve or build started is not the
+            next chat's. */}
         {onSolveNode && attachment.target.kind === "node" ? (
           <NodeSolveRow
+            key={attachment.attachmentId}
             onSolveNode={onSolveNode}
             onOpenChat={onOpenAgentChat}
             agentNameOf={agentNameOf}
@@ -502,6 +507,7 @@ export const AgentChatPanel: React.FC<{
         ) : null}
         {orchestrates && onSolve ? (
           <AgentBuilderStrip
+            key={attachment.attachmentId}
             attachment={attachment}
             onSolve={onSolve}
             solveProgress={solveProgress}
