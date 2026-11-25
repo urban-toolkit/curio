@@ -1,0 +1,12 @@
+# SearXNG's settings for the web search service of docker-compose.searxng.yml,
+# bound read-only at /etc/searxng/settings.yml: SearXNG's own defaults, with
+# answers in JSON for Curio's agents, the limiter off (it needs a Valkey
+# database) and no public instance's features, since only the containers on
+# the stack's network reach it. The secret key is SEARXNG_SECRET, from the
+# service's environment.
+use_default_settings: true
+server:
+  limiter: false
+  public_instance: false
+search:
+  formats: [html, json]

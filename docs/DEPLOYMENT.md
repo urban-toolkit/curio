@@ -13,6 +13,7 @@ Assumed setup: a Linux server with the hostname already pointing at it, Docker E
   - [Model weights a package fetches](#model-weights-a-package-fetches)
   - [Packages every guest has](#packages-every-guest-has)
   - [Bucket mounts](#bucket-mounts)
+  - [Web search](#web-search)
 - [2. Configure Caddy](#2-configure-caddy)
 - [3. Build and run](#3-build-and-run)
   - [The GPU](#the-gpu)
@@ -469,6 +470,57 @@ account reads it in Curio's container, and the service reaches Curio's proxy,
 its one way out to the buckets. While Curio tests the service after a start,
 the line says *on, self-test running*.
 
+### Web search
+
+Curio's agents search the web through the URL that `--agent-search-url`
+names, with `{q}` where the query goes. `docker-compose.searxng.yml` runs
+[SearXNG](https://docs.searxng.org), a metasearch engine, beside Curio, in a
+container of its own, `searxng`, that publishes no port: only the containers
+on the stack's network reach it. Its settings are
+`scripts/searxng/settings.yml`, SearXNG's defaults with answers in JSON.
+
+To start a stack with it:
+
+1. Make its secret key, in a file only you read, in the checkout's `.secrets/`,
+   which git and Docker leave out. Every `docker compose` command reads it.
+
+   ```bash
+   cd /srv/curio
+   (umask 077 && mkdir -p .secrets && printf 'SEARXNG_SECRET=%s\n' "$(openssl rand -hex 32)" > .secrets/searxng.env)
+   ```
+
+2. Add the overlay to `COMPOSE_FILE`, after `docker-compose.deploy.yml` and
+   before `docker-compose.site.yml`, and keep it there for every later
+   command, [Updating](#updating)'s too:
+
+   ```bash
+   export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml:docker-compose.searxng.yml:docker-compose.site.yml
+   ```
+
+3. Add the service's URL to Curio's `command` in `docker-compose.site.yml`:
+
+   ```yaml
+       command: ["--backend-url", "https://lab-name.your-uni.edu/curio/api", "--base-path", "/curio", "--exec-memory-mb", "24576", "--agent-search-url", "http://searxng:8080/search?q={q}&format=json"]
+   ```
+
+4. Recreate the stack: `docker compose up -d --force-recreate`.
+
+It works when `docker compose ps` shows `searxng` as `(healthy)` and this
+prints `results:` with a count:
+
+```bash
+docker compose exec -T curio python scripts/searxng/check.py 'http://searxng:8080/search?q={q}&format=json'
+```
+
+SearXNG asks public search engines from the server's address. An engine that
+refuses it for a while answers nothing, and the others answer meanwhile; with
+`results: 0` the line names the engines that did not answer.
+
+To search elsewhere, give `--agent-search-url` another provider's URL
+template, with `{q}` where the query goes and any key in the URL, that answers
+in JSON. Without `--agent-search-url`, agents search DuckDuckGo's keyless
+Instant Answer API.
+
 ## 2. Configure Caddy
 
 Caddy terminates HTTPS and forwards traffic into the Docker container. The two `handle_path` blocks below split incoming requests by URL prefix: anything under `/curio/api/` goes to the backend on port 5002, everything else under `/curio/` goes to the frontend on port 8080. The `handle_path` directive strips the prefix before forwarding, so your backend code sees normal paths like `/live` and `/upload`.
@@ -671,6 +723,8 @@ Both stacks start with `--guest-packages model.curio.sam3@1`, so every guest run
 
 Each stack runs its own [bucket mount service](#bucket-mounts) when the deployed release has it, mounting in `/srv/curio-bucket-mounts/dev` or `/srv/curio-bucket-mounts/stable`. Before a deploy stops the running stack, it checks the host: `/dev/fuse`, a shared mount at `/srv`, and the AppArmor profile, loaded and with `/etc/apparmor.d/curio-bucket-mounts` the same as the checkout's `scripts/bucket-mounts/curio-bucket-mounts.apparmor`. A failed check fails the deploy with the command to run. Once the new stack is up, the deploy fails unless `bucket-mounts` is healthy and **Bucket mounts** says *on, self-test passed*.
 
+Each stack runs its own [web search service](#web-search) when the deployed release has it, with a key the deploy makes once in the checkout's `.secrets/searxng.env`, and starts Curio with `--agent-search-url` naming it. Once the new stack is up, the deploy fails unless Curio has the URL and the URL answers from Curio's container with JSON; an answer with no results is a warning.
+
 Before a deploy stops the running stack, it also checks that Docker Engine is 28 or newer, and once the new stack is up, it fails unless `/version` says `"memory_limit": "cgroup"`.
 
 Both stacks start with `--backend-processes 16` when the deployed release has the flag, so each serves on 16 backend processes behind nginx ([Build and run](#3-build-and-run)). Once the new stack is up, the deploy fails unless all 16 answer `/api/monitor`.
@@ -843,6 +897,7 @@ flooding it cannot push real errors out of the log.
 | `/monitor` shows **Bucket mounts** *unavailable* | Curio's test of the mount service failed, for the reason the line gives. Recent errors holds the details, and `docker compose logs bucket-mounts` the service's side. |
 | **Bucket mounts** says the mount service *could not reach Curio's proxy on port 3128*, or adding a bucket's files says it *cannot reach* it | The service's container does not reach port 3128 of Curio's container, where Curio's proxy listens on the backend's `--backend-host`. Keep both containers on the overlay's `bucket-mounts` network, and the backend on `--backend-host 0.0.0.0`, as `docker-compose.deploy.yml` starts it. |
 | Adding a bucket's files says *Curio's bucket mount proxy refused the requests to the bucket* | Curio's proxy refused the bucket's host, for the reason that follows: an address that is not public, a host that takes no connection, or 64 tunnels open at once. The bucket is tried again a minute later. |
+| A `docker compose` command stops on `env file .../.secrets/searxng.env not found` | The [web search](#web-search) overlay is in `COMPOSE_FILE` and the checkout has no key for it: make it (step 1). |
 | Nodes fail and you cannot see why | Open `/monitor`. The error log there holds the last failures with their tracebacks, and survives longer than `.curio/messages.log`, which is truncated on every launch. |
 | `/monitor` says the sandbox is unreachable | The sandbox process is down or not answering within 3s. The rest of the page stays current; check `docker compose logs curio`. |
 

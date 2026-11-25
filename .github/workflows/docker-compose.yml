@@ -23,6 +23,8 @@ on:
       # The bucket mount service, which the bucket-mounts job starts.
       - 'docker-compose.bucket-mounts.yml'
       - 'docker-compose.ci-bucket-mounts.yml'
+      # The web search service, which the bucket-mounts job starts too.
+      - 'docker-compose.searxng.yml'
       # Every workflow, this one among them: Jest reads them all
       # (ciSparseCheckout.test.ts), and the deploy and CI tests pin lines of
       # deploy.yml, bump-version.yml, skill-evals.yml and weekly-flake-hunt.yml.
@@ -81,6 +83,8 @@ on:
       # The bucket mount service, which the bucket-mounts job starts.
       - 'docker-compose.bucket-mounts.yml'
       - 'docker-compose.ci-bucket-mounts.yml'
+      # The web search service, which the bucket-mounts job starts too.
+      - 'docker-compose.searxng.yml'
       # Every workflow, this one among them: Jest reads them all
       # (ciSparseCheckout.test.ts), and the deploy and CI tests pin lines of
       # deploy.yml, bump-version.yml, skill-evals.yml and weekly-flake-hunt.yml.
@@ -2120,6 +2124,9 @@ jobs:
   # dead in the stand-in, and its next start must clear that mount before the
   # self-test passes again (scripts/bucket-mounts/ci_check.py).
   #
+  # Then the deploy's other service, the web search of
+  # docker-compose.searxng.yml, in a project of its own.
+  #
   # On ubuntu-latest only: the job loads the service's AppArmor profile into
   # the runner's kernel (sudo apparmor_parser), which only a VM runner may do;
   # arcade's runners are containers that share arcade's kernel. It needs no CI
@@ -2179,6 +2186,33 @@ jobs:
           check gone
           check selftest
 
+      # The web search service with this checkout's settings and the image it
+      # pins: from a container on the service's network, as Curio's container
+      # is on a deployed stack's, the URL the deploy gives Curio answers a
+      # search with HTTP 200 and JSON that holds a results list
+      # (scripts/searxng/check.py, the deploy's own check). The public engines
+      # SearXNG asks may answer nothing, so no results passes. Its key is made
+      # as the deploy makes it, and printed nowhere.
+      - name: 🔎 Web search answers Curio's search URL with JSON
+        if: ${{ !cancelled() }}
+        env:
+          COMPOSE_FILE: docker-compose.searxng.yml
+          COMPOSE_PROJECT_NAME: curio-ci-searxng
+        run: |
+          set -euo pipefail
+          (
+            umask 077
+            mkdir -p .secrets
+            printf 'SEARXNG_SECRET=%s\n' "$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')" > .secrets/searxng.env
+          )
+          if ! docker compose up -d --wait --wait-timeout 120 \
+              || ! docker run --rm --network curio-ci-searxng_default -v "$PWD/scripts/searxng:/check:ro" python:3.12-alpine \
+                     python /check/check.py 'http://searxng:8080/search?q={q}&format=json'; then
+            docker compose ps -a || true
+            docker compose logs --no-color --timestamps || true
+            exit 1
+          fi
+
       - name: 📋 The stack's logs, and the kernel's AppArmor and FUSE lines
         if: failure()
         run: |
@@ -2187,9 +2221,11 @@ jobs:
           sudo dmesg | grep -i -E 'apparmor|fuse' | tail -n 50 || true
           findmnt -R "$GITHUB_WORKSPACE/bucket-mounts" || true
 
-      - name: 🧹 Stop the stack
+      - name: 🧹 Stop the stacks
         if: always()
-        run: docker compose down -v --remove-orphans || true
+        run: |
+          docker compose down -v --remove-orphans || true
+          docker compose -p curio-ci-searxng -f docker-compose.searxng.yml down -v --remove-orphans || true
 
   # Curio on a machine the size of a laptop. ubuntu-latest is 4 cores and 16 GB
   # -- the machine #408 was reported on -- where utk has 377 GiB, and memory
