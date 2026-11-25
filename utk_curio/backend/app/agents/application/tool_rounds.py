@@ -291,8 +291,9 @@ def _handle_tool_reply(
 
 
 # How many tool executions one run may make (memo dev/41): total provider
-# calls per run ≤ MAX_TOOL_ROUNDS + 1. A runtime constant until someone needs
-# to tune it.
+# calls per run ≤ MAX_TOOL_ROUNDS + 1, and one more when the last round's
+# reply wrote a call as text, which turn_loop asks once more with no tools. A
+# runtime constant until someone needs to tune it.
 # dev/73: 3, the Node Builder's documented modify flow (read the node →
 # delegate generation → write the node) is a three-round sequence; 2 forced
 # models that follow their instructions to answer in prose instead of writing.
@@ -613,13 +614,16 @@ class _RunConversation:
     def messages(self) -> list:
         return self._native if self.native_tools else self._fenced
 
-    def offer(self, rounds_used: int, plan_try: bool = False) -> dict:
+    def offer(self, rounds_used: int, plan_try: bool = False, *, asked_again: bool = False) -> dict:
         """The next call's tool keywords. None on the fenced protocol, so its
         call is exactly what it was before native tools; on the last round the
         model may not call one, unless the round before corrected a plan
         (*plan_try*): that round asked for the plan again, and a native plan
-        is a call, as a fenced reply may still hold a plan block then."""
-        if not self.native_tools:
+        is a call, as a fenced reply may still hold a plan block then. The
+        last round's call asked once more, its reply having written a call as
+        text anyway (*asked_again*, ``turn_loop``), offers none at all: no
+        tools and no ``tool_choice``."""
+        if not self.native_tools or asked_again:
             return {}
         last = rounds_used >= MAX_TOOL_ROUNDS and not plan_try
         return {
