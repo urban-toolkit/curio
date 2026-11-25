@@ -2606,6 +2606,14 @@ A row marked **Downloadable** is one Curio fetches itself (see [Agent tools](#ag
 
 The download steps are the portal's: when a page title is all the portal gave, the step says the portal describes the click path. Curio does not script a click-through portal's download.
 
+Build & validate and a plan row's Solve wait for a loader's source too:
+
+- **The pause.** A loader whose source waits for the user is recorded as `awaiting-source` in the plan's ledger, and its row reads **Needs a source** and keeps its Solve. Build & validate goes on past it to every node that does not read from it, so each loader's Dataset Finder is asked in the same pass, and Step does the same. The run pauses once, when no other node can go on: its `pauseReason` (kind `awaiting-source`) names every waiting loader by its plan ref, its node and its Finder's attachment, and its message names them.
+- **A Resume while the candidates wait** asks no model and adds no turn to any chat: a node whose source still waits is not handed to its Node Builder, and its `[Delegated by ...] Solve` turn is written only when it is.
+- **A pick on a node a plan waits for** builds nothing beside the plan. The node's row goes back to placed, the pause stops naming it (and ends when it named that node alone), and the pick's answer, `plan-waiting`, says to continue in the chat of the agent whose plan it is, where Build & validate plan (Resume, while the pause names other loaders) or the row's Solve builds the loader from that source. A pick on a node no plan waits for starts the node's builder as above, and a portal download's pick keeps the node waiting for its import.
+
+The task a Dataset Finder's chat opens with names the agent that asked, as its manifest names it, and the mission the candidates are for: the node's goal, then the dataflow's. The Finder's record keeps that chat (`askedBy`). The agents' listing says which agents wait for the user's pick (`waitsForYou`, the nodes each waits on): the node's Finder and the chat that asked. A pick, a skip, the node's removal or the Finder taken off ends both waits, and clearing the asking chat ends its own. Clearing the Finder's own chat while its candidates wait leaves the node unresolved, so the next Solve or Build & validate asks the Finder again. The listing also carries each Finder's record (`sourceRecord`) and whether a node's Solve from an agent's chat goes ahead (`solvesNodes`), from the check that Solve makes before it refuses: a Dataset Finder's chat cannot Solve its node.
+
 A dataset imported or installed while a Solve session runs is picked up by it: the session watches the moved selection record, and the dataset's sandbox path is resolved for the running job. The Dataflow Builder therefore plans first and never blocks a plan on dataset identity: a data-loading node is planned with an intent naming the data it needs, and its source is resolved at the node.
 
 ### What Solve checks
