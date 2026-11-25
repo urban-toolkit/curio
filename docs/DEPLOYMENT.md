@@ -860,7 +860,7 @@ the page, and its node runs, memory and errors are left out.
 `/version`. On a deployment, anyone who can reach the URL can read them.
 
 The statistics are aggregates: no route reports a username, an email address,
-an IP address, or a per-user row. The LLM performance section names this
+a visitor's IP address, or a per-user row. The LLM performance section names this
 Curio's own models that answered, and the deploy marks the versions of Curio.
 A model name that looks like a URL, a host, an email address, an IP address or
 a key, or that has spaces, shows as `other`. `/api/monitor` names the search
