@@ -179,8 +179,12 @@
   white-space: nowrap;
 }
 
+/* "at work", on the running role's own tint. */
 .flyoutNote {
   flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
   font-size: 11px;
   color: var(--curio-role-running-fg);
+  background: var(--curio-role-running-bg);
 }
