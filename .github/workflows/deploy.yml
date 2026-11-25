@@ -574,19 +574,30 @@ jobs:
             done
           fi
           # Web search, when this stack runs it: /monitor says Curio has the
-          # search URL (searchToolConfigured) and names the URL's host and
-          # port as the provider web.search asks (searchProvider), and from
-          # Curio's container the URL answers a search with HTTP 200 and JSON
-          # that holds a results list, in no more than the 256 KiB web.search
-          # reads (scripts/searxng/check.py). No results is only a warning:
-          # the public engines SearXNG asks may refuse this server for a
-          # while. No results is matched anywhere in what the check printed,
-          # which can start with a Compose warning. `< /dev/null` as above.
+          # search URL (searchToolConfigured) and, where this release's
+          # /monitor writes it, names the URL's host and port as the provider
+          # web.search asks (searchProvider), and from Curio's container the
+          # URL answers a search with HTTP 200 and JSON that holds a results
+          # list, in no more than the 256 KiB web.search reads
+          # (scripts/searxng/check.py). No results is only a warning: the
+          # public engines SearXNG asks may refuse this server for a while.
+          # No results is matched anywhere in what the check printed, which
+          # can start with a Compose warning. `< /dev/null` as above.
           if [ -n "$search_args" ]; then
             echo "=== web search ==="
-            # The search URL's host and port, which searchProvider must name.
+            # The search URL's host and port, which /monitor's searchProvider
+            # must name where this release's /monitor writes the field. A
+            # /monitor without it reads None there, and the check requires
+            # only that Curio has the URL.
             search_host="${search_url#*://}"
             search_host="${search_host%%/*}"
+            if grep -q -e '"searchProvider":' utk_curio/backend/app/monitor/routes.py; then
+              search_expected="True $search_host"
+              search_ok="Curio's agents search $search_host"
+            else
+              search_expected="True None"
+              search_ok="Curio has its search URL (this release's /monitor names no search provider)"
+            fi
             deadline=$((SECONDS + 120))
             while true; do
               search_monitor="$(docker compose -p curio-dev exec -T curio \
@@ -594,19 +605,19 @@ jobs:
                                   2>/dev/null < /dev/null || true)"
               if search_line="$(docker compose -p curio-dev exec -T curio \
                                   python scripts/searxng/check.py "$search_url" 2>&1 < /dev/null)" \
-                  && [ "$search_monitor" = "True $search_host" ]; then
+                  && [ "$search_monitor" = "$search_expected" ]; then
                 case "$search_line" in
                   *"results: 0,"*)
                     echo "::warning::the web search service answers Curio's search URL with no results: $search_line"
                     ;;
                   *)
-                    echo "OK: Curio's agents search $search_host, and the web search service answers Curio's search URL, $search_line"
+                    echo "OK: $search_ok, and the web search service answers Curio's search URL, $search_line"
                     ;;
                 esac
                 break
               fi
               if [ "$SECONDS" -ge "$deadline" ]; then
-                echo "::error::web search is not working: /monitor's searchToolConfigured and searchProvider read ${search_monitor:-nothing}, not True $search_host, and Curio's search URL answers ${search_line:-nothing}"
+                echo "::error::web search is not working: /monitor's searchToolConfigured and searchProvider read ${search_monitor:-nothing}, not $search_expected, and Curio's search URL answers ${search_line:-nothing}"
                 docker compose -p curio-dev logs --no-color --tail=100 searxng || true
                 exit 1
               fi
@@ -1038,9 +1049,19 @@ jobs:
           # it.
           if [ -n "$search_args" ]; then
             echo "=== web search ==="
-            # The search URL's host and port, which searchProvider must name.
+            # The search URL's host and port, which /monitor's searchProvider
+            # must name where this release's /monitor writes the field. A
+            # /monitor without it reads None there, and the check requires
+            # only that Curio has the URL.
             search_host="${search_url#*://}"
             search_host="${search_host%%/*}"
+            if grep -q -e '"searchProvider":' utk_curio/backend/app/monitor/routes.py; then
+              search_expected="True $search_host"
+              search_ok="Curio's agents search $search_host"
+            else
+              search_expected="True None"
+              search_ok="Curio has its search URL (this release's /monitor names no search provider)"
+            fi
             deadline=$((SECONDS + 120))
             while true; do
               search_monitor="$(docker compose -p curio exec -T curio \
@@ -1048,19 +1069,19 @@ jobs:
                                   2>/dev/null < /dev/null || true)"
               if search_line="$(docker compose -p curio exec -T curio \
                                   python scripts/searxng/check.py "$search_url" 2>&1 < /dev/null)" \
-                  && [ "$search_monitor" = "True $search_host" ]; then
+                  && [ "$search_monitor" = "$search_expected" ]; then
                 case "$search_line" in
                   *"results: 0,"*)
                     echo "::warning::the web search service answers Curio's search URL with no results: $search_line"
                     ;;
                   *)
-                    echo "OK: Curio's agents search $search_host, and the web search service answers Curio's search URL, $search_line"
+                    echo "OK: $search_ok, and the web search service answers Curio's search URL, $search_line"
                     ;;
                 esac
                 break
               fi
               if [ "$SECONDS" -ge "$deadline" ]; then
-                echo "::error::web search is not working: /monitor's searchToolConfigured and searchProvider read ${search_monitor:-nothing}, not True $search_host, and Curio's search URL answers ${search_line:-nothing}"
+                echo "::error::web search is not working: /monitor's searchToolConfigured and searchProvider read ${search_monitor:-nothing}, not $search_expected, and Curio's search URL answers ${search_line:-nothing}"
                 docker compose -p curio logs --no-color --tail=100 searxng || true
                 exit 1
               fi
