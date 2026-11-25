@@ -18,6 +18,7 @@ from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
+from utk_curio.backend.app.agents.application import dataset_resolution as agents_dataset_resolution
 from utk_curio.backend.app.agents.application import in_the_room as agents_room
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
@@ -31,6 +32,34 @@ from utk_curio.backend.app.agents.application.turns import delegates as agents_d
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 from utk_curio.backend.app.collaboration import dataflow_docs
+from utk_curio.backend.app.projects import storage as projects_storage
+
+#: A plan node's state while it waits for the user to pick its source in its
+#: Dataset Finder's chat, as the verdict of its validation names it: its row
+#: needs a source, and Build & validate goes on past it.
+AWAITING_SOURCE = "awaiting-source"
+#: A plan node's state while the source picked for it downloads into the
+#: Data Catalog, and while the dataset picked for it waits for its install.
+AWAITING_DOWNLOAD = "awaiting-download"
+AWAITING_INSTALL = "awaiting-install"
+#: The states of a plan node that waits for its source: Build & validate goes
+#: on past it, and its row keeps its Solve.
+SOURCE_WAITS = (AWAITING_SOURCE, AWAITING_DOWNLOAD, AWAITING_INSTALL)
+
+
+def plan_wait_state(spec: dict, node_id: str | None, user_key: str) -> str:
+    """The state a plan node whose source waited is in now, as its Dataset
+    Finder's record in *spec* says (``dataset_resolution.source_wait``): it
+    waits for the user, for a download or for an install, or, when its
+    source waits for nothing more, it is placed again (``created``): the pick
+    resolved it, the download landed, the install was applied, or the record
+    went and the next validation asks the Finder again."""
+    record = agents_dataset_resolution.source_record(spec, node_id, user_key=user_key) if node_id else None
+    return {
+        agents_dataset_resolution.WAITS_FOR_PICK: AWAITING_SOURCE,
+        agents_dataset_resolution.WAITS_FOR_DOWNLOAD: AWAITING_DOWNLOAD,
+        agents_dataset_resolution.WAITS_FOR_INSTALL: AWAITING_INSTALL,
+    }.get(agents_dataset_resolution.source_wait(record), "created")
 
 
 def validate_node_stream(
@@ -96,15 +125,17 @@ def validate_node_stream(
     # dev/72: the node's content agent is the Solve trace's home: the content
     # change and the consolidated trace live with the agent responsible for
     # THIS node (best-effort created; fallback: parent-only).
-    home, _created = agents_delegates._delegation_home(
+    home, created = agents_delegates._delegation_home(
         spec, resolution.coord, "node.content.generate", {},
         node_id=node_id, create=True, user_key=user_key, project_id=project_id,
     )
     home_attachment_id = (home or {}).get("attachmentId")
     home_session_id = (home or {}).get("sessionId")
-    session["validatingSince"] = now
-    record["builderSession"] = session
-    dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._agent_actor(user_key, spec, attachment_id, "validate"))
+    if created:
+        # The home this validation attached is written alone: the plan's
+        # record, as this read holds it, is left as the dataflow holds it.
+        dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._agent_actor(user_key, spec, attachment_id, "validate"))
+    _mark_validating(user_key, project_id, attachment_id, now)
     return _validate_events(
         user_key, project_id, attachment_id, config, spec, node, ref,
         resolution, coord, session_id, exec_fn,
@@ -114,6 +145,23 @@ def validate_node_stream(
         acting_user=agents_spec_reads._acting_user(),
         room_asker=agents_room.asker(),
     )
+
+
+def _mark_validating(user_key: str, project_id: str, attachment_id: str, now: float) -> None:
+    """Set the in-flight guard on the plan's record as the dataflow holds it
+    now, under its spec lock, as every writer of a node's source does: a pick
+    that moved the plan's ledger since this validation read it keeps its
+    move. A validation already running refuses this one (409)."""
+    with projects_storage.spec_write_lock(user_key, project_id):
+        spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
+        record = agents_spec_reads._record_or_404(spec, attachment_id)
+        session = record.get("builderSession") or {}
+        since = float(session.get("validatingSince") or 0)
+        if since and now - since < agents_budgets.VALIDATE_STALE_SECONDS:
+            raise AgentServiceError("a validation is already running for this attachment", 409)
+        session["validatingSince"] = now
+        record["builderSession"] = session
+        dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._agent_actor(user_key, spec, attachment_id, "validate"))
 
 
 def _validate_events(
@@ -143,14 +191,10 @@ def _validate_events(
     node_id = node.get("id")
     execution_id = uuid.uuid4().hex
     label = (node.get("goal") or node_id)[:60]
-    _announce_delegated_solve(
-        user_key, project_id, home_attachment_id, home_session_id, label,
-        parent_name=agents_spec_reads._agent_name(user_key, coord) or coord,
-    )
     try:
         with agents_room.at_work(user_key, project_id, attachment_id, spec=spec, coord=coord, who=room_asker):
             yield "validation_started", {"nodeId": node_id, "executionId": execution_id}
-            outcome = yield from agents_rounds._verified_content_rounds(
+            rounds = agents_rounds._verified_content_rounds(
                 user_key, project_id,
                 spec=spec, node=node, resolution=resolution, config=config,
                 parent_execution_id=execution_id, parent_coord=coord,
@@ -179,6 +223,10 @@ def _validate_events(
                     asker=acting_user,
                 ),
             )
+            outcome = yield from _handed_to_the_builder(rounds, lambda: _announce_delegated_solve(
+                user_key, project_id, home_attachment_id, home_session_id, label,
+                parent_name=agents_spec_reads._agent_name(user_key, coord) or coord,
+            ))
             rounds_used = outcome["rounds"]
             candidate = outcome["candidate"]
             rounds_trace = outcome["roundsTrace"]
@@ -210,6 +258,27 @@ def _validate_events(
     finally:
         # Disconnect-safe: the in-flight guard never wedges the attachment.
         _clear_validating_guard(user_key, project_id, attachment_id)
+
+
+def _handed_to_the_builder(rounds, announce):
+    """The content loop's events, with *announce* called as the first of them
+    comes: the first round's, just before the node's builder is asked. A node
+    whose source still waits for the user is never handed to its builder: the
+    loop ends with no event, and no chat gains a turn. Returns the loop's
+    outcome; a stream closed early closes the loop, as ``yield from`` does."""
+    announced = False
+    try:
+        while True:
+            try:
+                event = next(rounds)
+            except StopIteration as stop:
+                return stop.value
+            if not announced:
+                announced = True
+                announce()
+            yield event
+    finally:
+        rounds.close()
 
 
 def _announce_delegated_solve(user_key, project_id, home_attachment_id, home_session_id, label,
@@ -385,27 +454,40 @@ def _say_it_failed(user_key, project_id, attachment_id, session_id, home_attachm
 
 
 def _settle_node_state(user_key, project_id, attachment_id, ref, verdict: str) -> dict:
-    """The per-node ledger: validated / failed; infrastructure untouched. Returns the builder session."""
-    fresh = agents_spec_reads._live_spec_or_404(user_key, project_id)
-    fresh_record = agents_spec_reads._record_or_404(fresh, attachment_id)
-    fresh_session = fresh_record.get("builderSession") or {}
-    if ref and isinstance(fresh_session.get("nodeStates"), dict):
-        if verdict in ("pass", "not-executable"):
-            # dev/118: a browser-rendered kind proceeds like a pass in the
-            # plan's ledger (Simulation Mode auto-approves it); the
-            # change's validation block carries the honest label.
-            fresh_session["nodeStates"][ref] = "validated"
-        elif verdict == "fail":
-            fresh_session["nodeStates"][ref] = "failed"
-    fresh_session.pop("validatingSince", None)
-    fresh_record["builderSession"] = fresh_session
-    dataflow_docs.write(user_key, project_id, fresh, agents_spec_reads._agent_actor(user_key, fresh, attachment_id, "validate"))
+    """The per-node ledger: validated / failed / waiting for its source;
+    infrastructure untouched. Written on the plan's record as the dataflow
+    holds it now, under its spec lock, so a pick that landed meanwhile keeps
+    its move. Returns the builder session."""
+    with projects_storage.spec_write_lock(user_key, project_id):
+        fresh = agents_spec_reads._live_spec_or_404(user_key, project_id)
+        fresh_record = agents_spec_reads._record_or_404(fresh, attachment_id)
+        fresh_session = fresh_record.get("builderSession") or {}
+        if ref and isinstance(fresh_session.get("nodeStates"), dict):
+            if verdict in ("pass", "not-executable"):
+                # dev/118: a browser-rendered kind proceeds like a pass in the
+                # plan's ledger (Simulation Mode auto-approves it); the
+                # change's validation block carries the honest label.
+                fresh_session["nodeStates"][ref] = "validated"
+            elif verdict == "fail":
+                fresh_session["nodeStates"][ref] = "failed"
+            elif verdict == AWAITING_SOURCE:
+                # The node waits for its source, for what its Dataset Finder's
+                # record says now: its row says so, and Build & validate goes
+                # on past it with every node that does not read from it. A
+                # source picked while it was checked places it again, so the
+                # run builds it.
+                node_id = (fresh_session.get("nodeIds") or {}).get(ref)
+                fresh_session["nodeStates"][ref] = plan_wait_state(fresh, node_id, user_key)
+        fresh_session.pop("validatingSince", None)
+        fresh_record["builderSession"] = fresh_session
+        dataflow_docs.write(user_key, project_id, fresh, agents_spec_reads._agent_actor(user_key, fresh, attachment_id, "validate"))
     return fresh_session
 
 
 def _clear_validating_guard(user_key, project_id, attachment_id) -> None:
-    """Disconnect-safe: the in-flight guard never wedges the attachment."""
-    with contextlib.suppress(Exception):
+    """Disconnect-safe: the in-flight guard never wedges the attachment.
+    Cleared on the record as the dataflow holds it now, under its spec lock."""
+    with contextlib.suppress(Exception), projects_storage.spec_write_lock(user_key, project_id):
         cleanup_spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
         cleanup_record = agents_spec_reads._record_or_404(cleanup_spec, attachment_id)
         cleanup_session = cleanup_record.get("builderSession") or {}

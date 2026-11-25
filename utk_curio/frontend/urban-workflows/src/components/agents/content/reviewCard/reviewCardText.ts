@@ -65,13 +65,23 @@ export interface PlanNodeReviewState {
   scenarioStates?: Record<string, string>;
 }
 
-/** dev/71: what a row's lifecycle state means for its action cluster. */
+/** dev/71: what a row's lifecycle state means for its action cluster. A row
+ * whose loader waits for its source says what for: the user's pick in its
+ * Dataset Finder's chat, the download of the source picked, or the install
+ * of the dataset picked. It keeps its Solve. */
 export const ROW_STATE_CHIP: Record<string, string> = {
   solving: "Validating",
   validated: "Validated ✓",
   approved: "Solved ✓",
   failed: "Failed: Solve retries",
+  "awaiting-source": "Needs a source",
+  "awaiting-download": "Downloading its source",
+  "awaiting-install": "Needs its dataset installed",
 };
+
+/** The states whose row offers Solve: a node not built yet, one whose code
+ * failed its check, and a loader waiting for its source. */
+export const ROW_STATES_WITH_SOLVE = ["created", "failed", "awaiting-source", "awaiting-download", "awaiting-install"];
 
 export const OUTCOME_LABEL: Record<string, string> = {
   applied: "Applied",
