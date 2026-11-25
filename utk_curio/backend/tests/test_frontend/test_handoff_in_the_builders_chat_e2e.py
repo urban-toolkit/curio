@@ -205,6 +205,10 @@ def test_the_builders_chat_holds_the_loaders_candidates_and_its_pick_builds_the_
     # The server approves the loader before the tab's build ends: the frame
     # waits until the plan line has no Stop, so no build clock ticks in it.
     expect(panel.get_by_role("button", name=re.compile(r"^(Stop|Stopping…)$"))).to_have_count(0, timeout=60000)
+    # The build's own turn reaches the chat when the tab reads it again as the
+    # build ends, so the frame waits for it too.
+    solved = re.compile(rf"Solved '{re.escape(LOADER_TITLE)}': PASS after \d+ rounds?")
+    expect(panel.get_by_text(solved).last).to_be_visible(timeout=60000)
     dismiss_toasts(page)
     save_workflow_test_screenshot(page, SCREENSHOT_STEM, test_name="recorded", clip_selector=CHAT_PANEL_SELECTOR)
 
