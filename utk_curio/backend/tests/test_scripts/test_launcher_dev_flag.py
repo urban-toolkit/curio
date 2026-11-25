@@ -14,11 +14,13 @@ from __future__ import annotations
 
 import json
 import os
+import signal
+from types import SimpleNamespace
 
 import pytest
 
 import utk_curio.main as main
-from utk_curio.cli import frontend_build
+from utk_curio.cli import frontend_build, logs
 from utk_curio.cli.frontend_build import NODE_MAJOR
 
 
@@ -64,6 +66,68 @@ def test_flags_exist_regardless_of_dev_mode(flag, monkeypatch, capsys):
     with pytest.raises(SystemExit):
         main.main()
     assert flag in capsys.readouterr().out
+
+
+def _keep_main_to_itself(monkeypatch):
+    """What main() changes outside itself, put back after the test: its
+    signal handlers, CURIO_DEV, the verbosity, the state folder, the
+    launcher's log and the environment it hands the servers."""
+    monkeypatch.setattr(main, "signal", SimpleNamespace(
+        SIGINT=signal.SIGINT, SIGTERM=signal.SIGTERM, signal=lambda *args: None,
+    ))
+    monkeypatch.setenv("CURIO_DEV", "0")
+    monkeypatch.setattr(logs, "verbosity", logs.verbosity)
+    monkeypatch.setattr(main, "set_state_dir", lambda state_dir: None)
+    monkeypatch.setattr(main, "setup_logging", lambda server: None)
+    monkeypatch.setattr(main, "set_environment_variables", lambda **kwargs: None)
+
+
+def _help_lines(flag, monkeypatch, capsys):
+    """The lines of ``curio.py --help`` that name *flag*, the usage's left
+    out: its own help and its line among the examples."""
+    _keep_main_to_itself(monkeypatch)
+    monkeypatch.setattr("sys.argv", ["curio.py", "--help"])
+    with pytest.raises(SystemExit):
+        main.main()
+    lines = [
+        line for line in capsys.readouterr().out.splitlines()
+        if flag in line and f"[{flag}]" not in line
+    ]
+    assert len(lines) == 2, lines
+    return lines
+
+
+def test_force_db_init_says_it_applies_the_migrations(monkeypatch, capsys):
+    """With no command, --force-db-init applies the migrations the database
+    lacks and exits (``start_backend(no_server=True)``). It deletes nothing,
+    so neither its help nor its example calls it a re-initialization."""
+    for line in _help_lines("--force-db-init", monkeypatch, capsys):
+        assert "migrations" in line, line
+        assert "re-initializ" not in line.lower(), line
+
+
+@pytest.mark.parametrize("flag", ["--force-rebuild", "--force-db-init"])
+def test_no_force_flag_asks_for_dev_mode(flag, monkeypatch, capsys):
+    """Neither force flag depends on --dev (the comment above main()'s branch
+    with no command), so no line of --help ties one to dev mode."""
+    for line in _help_lines(flag, monkeypatch, capsys):
+        assert "dev mode" not in line.lower(), line
+
+
+def test_force_db_init_logs_that_it_applies_the_migrations(monkeypatch):
+    logged, started = [], []
+    _keep_main_to_itself(monkeypatch)
+    monkeypatch.setattr("sys.argv", ["curio.py", "--force-db-init"])
+    monkeypatch.setattr(main, "log_info", lambda message, *args, **kwargs: logged.append(message))
+    monkeypatch.setattr(main, "start_backend", lambda *args, **kwargs: started.append(kwargs))
+
+    with pytest.raises(SystemExit) as exited:
+        main.main()
+
+    assert exited.value.code == 0
+    assert started == [{"no_server": True}]
+    assert any("migrations" in message for message in logged), logged
+    assert not any("re-initializ" in message.lower() for message in logged), logged
 
 
 @pytest.fixture
