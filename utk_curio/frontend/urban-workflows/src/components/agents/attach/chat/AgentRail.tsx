@@ -37,6 +37,16 @@ export function railEntriesOf(attachments: AgentAttachment[]): RailEntry[] {
   return entries;
 }
 
+/** The room a group's list keeps above and below it, inside the panel. */
+const LIST_GAP = 8;
+
+/** Where a group's list starts in the panel: beside its entry, *entryTop*
+ *  down, moved up as far as it takes to end inside the panel's *room*, never
+ *  above its top. */
+export function listTopWithin(entryTop: number, listHeight: number, room: number): number {
+  return Math.max(LIST_GAP, Math.min(entryTop, room - listHeight - LIST_GAP));
+}
+
 /** "6 nodes", "3 connections", or "3 places" for a mix. */
 function placesOf(members: AgentAttachment[]): string {
   const kinds = new Set(members.map((m) => m.target.kind));
@@ -119,7 +129,7 @@ export const AgentRail: React.FC<{
   const nameOf = (attachment: AgentAttachment): RailName =>
     names.get(attachment.attachmentId) ?? railNamesOf([attachment], targetNameOf).get(attachment.attachmentId)!;
   const popup = useMenuPopup<string>();
-  const railRef = useRef<HTMLElement | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
   // The open group's list sits beside its entry, over the conversation.
   const [flyoutTop, setFlyoutTop] = useState(0);
   const openEntry = entries.find((entry) => entry.key === popup.open) ?? null;
@@ -133,16 +143,20 @@ export const AgentRail: React.FC<{
     if (listGone) close();
   }, [listGone, close]);
 
+  // Beside its entry, moved up as far as it takes to end inside the panel.
+  // Read on the screen, so the rail's own scroll counts once.
   useLayoutEffect(() => {
     const anchor = popup.anchorRef.current;
-    const rail = railRef.current;
-    if (popup.open === null || !anchor || !rail) return;
-    setFlyoutTop(anchor.offsetTop - rail.scrollTop);
-  }, [popup.open, popup.anchorRef]);
+    const wrap = wrapRef.current;
+    if (popup.open === null || !anchor || !wrap) return;
+    const panel = wrap.getBoundingClientRect();
+    const listHeight = popup.menuRef.current?.getBoundingClientRect().height ?? 0;
+    setFlyoutTop(listTopWithin(anchor.getBoundingClientRect().top - panel.top, listHeight, panel.height));
+  }, [popup.open, popup.anchorRef, popup.menuRef]);
 
   return (
-    <div className={styles.railWrap}>
-      <nav ref={railRef} className={styles.rail} aria-label="Agents on this dataflow">
+    <div ref={wrapRef} className={styles.railWrap}>
+      <nav className={styles.rail} aria-label="Agents on this dataflow">
         {entries.map((entry) => {
           const first = entry.members[0];
           const open = entry.members.find((m) => m.attachmentId === selectedId) ?? null;
@@ -173,10 +187,11 @@ export const AgentRail: React.FC<{
           // node is named as its row in the list.
           const places = placesOf(entry.members);
           const openName = open ? nameOf(open) : null;
+          const atWork = entry.members.filter((member) => workingOf(member)).length;
           const label = [
             `${first.name} on ${places}`,
             openName ? `open ${openName.rowHeader}` : null,
-            working ? "one at work" : null,
+            atWork ? `${atWork === 1 ? "one" : atWork} at work` : null,
           ].filter(Boolean).join(", ");
           return (
             <button
@@ -230,7 +245,9 @@ export const AgentRail: React.FC<{
                 data-tooltip={`${name} ${phrase.header}`}
                 data-curio-rail-entry={member.attachmentId}
                 onClick={() => {
-                  popup.close();
+                  // The focus goes back to the group's entry, as Escape hands
+                  // it, rather than to the page with the list.
+                  popup.close(true);
                   onOpen(member.attachmentId);
                 }}
               >

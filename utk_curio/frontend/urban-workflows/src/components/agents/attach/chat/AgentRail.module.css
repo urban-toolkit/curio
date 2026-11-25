@@ -109,13 +109,14 @@
   text-align: center;
 }
 
-/* A group's nodes: each row opens that node's chat. */
+/* A group's nodes: each row opens that node's chat. Never taller than the
+   panel, less a gap above and below; the rail places it inside the panel. */
 .flyout {
   position: absolute;
   left: calc(100% - 4px);
   z-index: 6;
   width: 236px;
-  max-height: 320px;
+  max-height: min(320px, calc(100% - 16px));
   overflow-y: auto;
   padding: 6px;
   box-sizing: border-box;
