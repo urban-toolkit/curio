@@ -597,7 +597,9 @@ def initiate(
     asker=None,
 ) -> dict:
     """Run ONE ``dataset.discover`` delegation for *node* and leave its
-    candidates awaiting the user in that node's own Dataset Finder chat.
+    candidates awaiting the user in that node's own Dataset Finder chat, and
+    in the chat of *parent_attachment_id*, which asked for them
+    (:func:`_mirror_candidates_turn`).
 
     *asker* is the person the run is for, which a Solve's thread names (its
     ``acting_user``) where no request does: the delegated run holds the
@@ -710,6 +712,10 @@ def initiate(
                 "detail": model_text[:300]}
     total = sum(len(rows) for rows in (part.get("lanes") or {}).values())
     _append_candidates_turn(user_key, project_id, attachment_id, part, total)
+    if parent_attachment_id and parent_attachment_id != attachment_id:
+        _mirror_candidates_turn(
+            user_key, project_id, parent_attachment_id, attachment_id, node, part, total, finder_name=finder_name,
+        )
     with projects_storage.spec_write_lock(user_key, project_id):
         fresh = dataflow_docs.live(user_key, project_id)
         if fresh is not None:
@@ -746,3 +752,58 @@ def _append_candidates_turn(
     except Exception:  # noqa: BLE001
         log.warning("Could not append the candidates turn for attachment %s",
                     attachment_id, exc_info=True)
+
+
+def node_label(user_key: str, project_id: str, node: dict | None) -> str:
+    """The name the node's header shows (``node_names.saved_node_label``): its
+    title, else its template's label, read only when it has no title."""
+    from utk_curio.backend.app.execution import node_names
+
+    node = node if isinstance(node, dict) else {}
+    title = node_names.saved_node_title(node)
+    if title:
+        return title
+    return node_names.saved_node_label(node, node_names.template_labels(user_key, project_id)) or str(
+        node.get("id") or ""
+    )
+
+
+def _mirror_candidates_turn(
+    user_key: str, project_id: str, asker_id: str, finder_id: str, node: dict, part: dict, total: int,
+    *, finder_name: str,
+) -> None:
+    """The same candidates in the chat that asked for them (*asker_id*, the
+    agent whose Solve or Build & validate reached the node): one line that
+    names the node and its Dataset Finder, which the asking agent's next runs
+    read in their context, and the card, a ``sourcePick`` part. The card is
+    no text, so no run reads it (``sessions.context_messages``), and its pick
+    posts on the route of the Finder (*finder_id*), which records it. Read
+    outside the spec lock: a node with no title is named by its template's
+    label, from the package store."""
+    from utk_curio.backend.app.projects import storage as projects_storage
+
+    try:
+        spec = projects_storage.read_spec(user_key, project_id)
+        session_id = (attachments.get_attachment(spec or {}, asker_id) or {}).get("sessionId")
+        if not isinstance(session_id, str):
+            return
+        node_id = str(node.get("id") or "")
+        label = node_label(user_key, project_id, node)[:120]
+        sessions.append_turns(
+            user_key, project_id, session_id, asker_id,
+            [sessions.make_turn(
+                "agent",
+                f"**{label}** needs a source. Its {finder_name} found {total} "
+                f"candidate{'' if total == 1 else 's'}: pick one with Use this source.",
+                content=[{
+                    "type": "sourcePick",
+                    "finderAttachmentId": finder_id,
+                    "nodeId": node_id,
+                    "nodeLabel": label,
+                    "lanes": part.get("lanes") or {},
+                }],
+            )],
+        )
+    except Exception:  # noqa: BLE001 - the Finder's own chat holds the card either way
+        log.warning("Could not put the candidates of node %s in the chat of %s",
+                    node.get("id"), asker_id, exc_info=True)
