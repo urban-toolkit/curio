@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import styles from "./AgentBuilderStrip.module.css";
 import type { AgentRemedy } from "../../../services/agents";
 import { AddKeyAction } from "../../connectionKeys/AddKeyAction";
@@ -38,6 +38,20 @@ export const NodeSolveRow: React.FC<{
   const [awaitingSource, setAwaitingSource] = useState(false);
   const [remedy, setRemedy] = useState<AgentRemedy | null>(null);
   const running = busy || live;
+
+  // A Solve of this node that starts elsewhere (the plan's row for it, another
+  // tab) makes the last outcome stale: it goes as that Solve starts, and the
+  // running Solve's narration shows.
+  const wasLive = useRef(live);
+  useEffect(() => {
+    const started = live && !wasLive.current;
+    wasLive.current = live;
+    if (!started || busy) return;
+    setError(null);
+    setNotice(null);
+    setAwaitingSource(false);
+    setRemedy(null);
+  }, [live, busy]);
 
   const solve = async () => {
     if (running) return;
@@ -94,12 +108,13 @@ export const NodeSolveRow: React.FC<{
       >
         {running ? "Solving…" : "Solve this node"}
       </button>
-      {error ? (
-        <span className={`${styles.solveStatus} ${styles.error}`} data-tooltip={error}>{error}</span>
-      ) : running ? (
+      {/* A running Solve's narration wins over how the last one ended. */}
+      {running ? (
         <span className={styles.solveStatus} aria-live="polite" data-tooltip={activity ?? undefined}>
           {activity ?? SOLVE_NODE_RUNNING_HINT}
         </span>
+      ) : error ? (
+        <span className={`${styles.solveStatus} ${styles.error}`} data-tooltip={error}>{error}</span>
       ) : shownNotice ? (
         <span className={styles.solveStatus} role="status" data-tooltip={shownNotice}>{shownNotice}</span>
       ) : null}
