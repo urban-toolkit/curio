@@ -3,10 +3,11 @@
 
     python scripts/searxng/check.py <URL with {q}> [query]
 
-It prints one line. ``results: N`` when the URL answers HTTP 200 with JSON
-that holds a ``results`` list, followed, when the list is empty, by the
-engines SearXNG says did not answer; it then exits 0. ``failed: <why>``
-otherwise, and it exits 1.
+It prints one line. ``results: N, <size>`` when the URL answers HTTP 200 with
+JSON that holds a ``results`` list, in no more than the 256 KiB web.search
+reads of an answer, followed, when the list is empty, by the engines SearXNG
+says did not answer; it then exits 0. ``failed: <why>`` otherwise, a longer
+answer included, and it exits 1.
 
 The deploy runs it in Curio's container once the stack is up, on the URL it
 gives Curio's ``--agent-search-url`` (.github/workflows/deploy.yml), and the
@@ -25,6 +26,15 @@ import urllib.request
 
 QUERY = "urban visual analytics"
 TIMEOUT_S = 30
+#: The most of an answer web.search reads, ``egress.MAX_BODY_BYTES`` in
+#: utk_curio/backend/app/agents/infrastructure/egress.py, which a test keeps
+#: this equal to: a longer answer reaches the agents cut short, so not as JSON.
+MAX_BODY_BYTES = 256 * 1024
+
+
+def _size(length: int) -> str:
+    """*length* bytes as the line gives them: in bytes under 1 KiB, else in whole KiB."""
+    return f"{length} bytes" if length < 1024 else f"{length // 1024} KiB"
 
 
 def check(template: str, query: str = QUERY) -> tuple[bool, str]:
@@ -34,13 +44,20 @@ def check(template: str, query: str = QUERY) -> tuple[bool, str]:
     url = template.replace("{q}", urllib.parse.quote(query.strip()))
     try:
         with urllib.request.urlopen(url, timeout=TIMEOUT_S) as response:
-            status, body = response.status, response.read()
+            # One byte past the bound, as web.search reads, tells an answer
+            # of exactly the bound from a longer one.
+            status, body = response.status, response.read(MAX_BODY_BYTES + 1)
     except urllib.error.HTTPError as error:
         return False, f"failed: HTTP {error.code} from {url}"
     except (OSError, ValueError, http.client.HTTPException) as error:
         return False, f"failed: {url}: {error}"
     if status != 200:
         return False, f"failed: HTTP {status} from {url}"
+    if len(body) > MAX_BODY_BYTES:
+        return False, (
+            f"failed: HTTP 200 from {url}, an answer over {MAX_BODY_BYTES // 1024} KiB,"
+            " the most web.search reads"
+        )
     try:
         payload = json.loads(body)
     except ValueError:
@@ -48,7 +65,7 @@ def check(template: str, query: str = QUERY) -> tuple[bool, str]:
     results = payload.get("results") if isinstance(payload, dict) else None
     if not isinstance(results, list):
         return False, f"failed: HTTP 200 from {url}, JSON with no results list"
-    line = f"results: {len(results)}"
+    line = f"results: {len(results)}, {_size(len(body))}"
     if not results:
         # SearXNG lists each engine that did not answer as [engine, why].
         silent = []

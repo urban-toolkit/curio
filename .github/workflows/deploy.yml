@@ -576,9 +576,11 @@ jobs:
           # Web search, when this stack runs it: Curio has the search URL
           # (/monitor's searchToolConfigured), and from Curio's container the
           # URL answers a search with HTTP 200 and JSON that holds a results
-          # list (scripts/searxng/check.py). No results is only a warning: the
+          # list, in no more than the 256 KiB web.search reads
+          # (scripts/searxng/check.py). No results is only a warning: the
           # public engines SearXNG asks may refuse this server for a while.
-          # `< /dev/null` as above.
+          # No results is matched anywhere in what the check printed, which
+          # can start with a Compose warning. `< /dev/null` as above.
           if [ -n "$search_args" ]; then
             echo "=== web search ==="
             deadline=$((SECONDS + 120))
@@ -590,7 +592,7 @@ jobs:
                                   python scripts/searxng/check.py "$search_url" 2>&1 < /dev/null)" \
                   && [ "$search_flag" = "True" ]; then
                 case "$search_line" in
-                  "results: 0"*)
+                  *"results: 0,"*)
                     echo "::warning::the web search service answers Curio's search URL with no results: $search_line"
                     ;;
                   *)
@@ -1041,7 +1043,7 @@ jobs:
                                   python scripts/searxng/check.py "$search_url" 2>&1 < /dev/null)" \
                   && [ "$search_flag" = "True" ]; then
                 case "$search_line" in
-                  "results: 0"*)
+                  *"results: 0,"*)
                     echo "::warning::the web search service answers Curio's search URL with no results: $search_line"
                     ;;
                   *)

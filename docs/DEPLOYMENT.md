@@ -506,7 +506,7 @@ To start a stack with it:
 4. Recreate the stack: `docker compose up -d --force-recreate`.
 
 It works when `docker compose ps` shows `searxng` as `(healthy)` and this
-prints `results:` with a count:
+prints `results:` with a count and the answer's size:
 
 ```bash
 docker compose exec -T curio python scripts/searxng/check.py 'http://searxng:8080/search?q={q}&format=json'
@@ -518,8 +518,8 @@ refuses it for a while answers nothing, and the others answer meanwhile; with
 
 To search elsewhere, give `--agent-search-url` another provider's URL
 template, with `{q}` where the query goes and any key in the URL, that answers
-in JSON. Without `--agent-search-url`, agents search DuckDuckGo's keyless
-Instant Answer API.
+in JSON of at most 256 KiB. Without `--agent-search-url`, agents search
+DuckDuckGo's keyless Instant Answer API.
 
 ## 2. Configure Caddy
 

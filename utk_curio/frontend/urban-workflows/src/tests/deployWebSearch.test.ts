@@ -7,10 +7,11 @@
  * .secrets/searxng.env, before the first docker compose command reads it, and
  * no line prints it; its image is pulled while the old stack still serves.
  * Once the stack is up, each job fails unless Curio has the URL and, from
- * Curio's container, the URL answers with JSON that holds a results list
- * (scripts/searxng/check.py); no results only warns. The Full stack build's
- * bucket-mounts job asks the same URL through the same check. The files are
- * read as text, as deployBucketMounts.test.ts reads them.
+ * Curio's container, the URL answers with JSON that holds a results list, in
+ * no more than the 256 KiB web.search reads (scripts/searxng/check.py); no
+ * results only warns. The Full stack build's bucket-mounts job asks the same
+ * URL through the same check. The files are read as text, as
+ * deployBucketMounts.test.ts reads them.
  */
 import * as fs from "fs";
 import * as path from "path";
@@ -152,7 +153,7 @@ describe("The deploy's web search", () => {
     test("once the stack is up, each job fails unless Curio has the URL and it answers from Curio's container with JSON", () => {
         expect(exists(CHECK)).toBe(true);
         const script = read(CHECK);
-        expect(script).toContain('line = f"results: {len(results)}"');
+        expect(script).toContain('line = f"results: {len(results)}, {_size(len(body))}"');
         expect(script).toContain("return 0 if ok else 1");
         // What /monitor's searchToolConfigured reads: the variable --agent-search-url sets.
         expect(read("utk_curio/backend/app/monitor/routes.py")).toContain(
@@ -168,7 +169,8 @@ describe("The deploy's web search", () => {
             expect(wait).toContain('["deployment"]["searchToolConfigured"]');
             expect(wait).toContain(`python ${CHECK} "$search_url" 2>&1 < /dev/null)" \\\n`);
             expect(wait).toContain('&& [ "$search_flag" = "True" ]; then\n');
-            expect(wait).toMatch(/"results: 0"\*\)\n +echo "::warning::[^\n]*"\n/);
+            // No results anywhere in what the check printed: a Compose warning can come first.
+            expect(wait).toMatch(/^ +\*"results: 0,"\*\)\n +echo "::warning::[^\n]*"\n/m);
             expect(wait).toMatch(/if \[ "\$SECONDS" -ge "\$deadline" \]; then\n +echo "::error::[^\n]*"\n/);
             expect(wait).toContain(`docker compose -p ${project} logs --no-color --tail=100 searxng || true\n`);
             expect(wait.match(/^ +exit 1$/gm)).toHaveLength(1);

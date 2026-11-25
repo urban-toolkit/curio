@@ -2189,10 +2189,11 @@ jobs:
       # The web search service with this checkout's settings and the image it
       # pins: from a container on the service's network, as Curio's container
       # is on a deployed stack's, the URL the deploy gives Curio answers a
-      # search with HTTP 200 and JSON that holds a results list
-      # (scripts/searxng/check.py, the deploy's own check). The public engines
-      # SearXNG asks may answer nothing, so no results passes. Its key is made
-      # as the deploy makes it, and printed nowhere.
+      # search with HTTP 200 and JSON that holds a results list, in no more
+      # than the 256 KiB web.search reads (scripts/searxng/check.py, the
+      # deploy's own check, which prints the count and the answer's size).
+      # The public engines SearXNG asks may answer nothing, so no results
+      # passes. Its key is made as the deploy makes it, and printed nowhere.
       - name: 🔎 Web search answers Curio's search URL with JSON
         if: ${{ !cancelled() }}
         env:
