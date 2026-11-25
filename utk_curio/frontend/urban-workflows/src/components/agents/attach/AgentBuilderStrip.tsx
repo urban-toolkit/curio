@@ -41,8 +41,9 @@ export const BUILD_RUNNING_HINT = "The plan is being built: Stop the build to So
  * The line says the phase in words, its counts and who it waits for, and
  * holds one main action: Solve (or Retry), Stop while a batch or a build runs,
  * Resume when a build paused, Run workflow once the plan is ready. While a
- * build runs no Solve is offered, the plan's or a node's: a build is a stream
- * over the plan, not an agent job, and a Solve would run over the same nodes.
+ * build runs neither the line nor its more part offers a Solve, the plan's or
+ * a node's: a build is a stream over the plan, not an agent job, and a Solve
+ * would run over the same nodes.
  * Its more part, closed until asked for, holds the plan's nodes with their own
  * Solve, Build & validate plan, Step, the other batch actions and the hints,
  * at most a third of the panel's height, scrolling. What comes with a fix

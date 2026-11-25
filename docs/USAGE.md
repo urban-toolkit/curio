@@ -2582,9 +2582,10 @@ plan stops there, and its card says what was left undone. Its plan line, under
 the Goal, then says where the plan stands, how many nodes wait for you, and
 holds one action: **Solve**, **Stop** while a Solve or a build runs, **Resume**
 when a build paused, or **Run workflow** once the plan is ready; while a build
-runs, nothing offers **Solve**. It also says when the part its arrow opens
-holds failures or how the last Solve ended. A key to add or a source to
-confirm stays under the line. Its arrow opens the plan's nodes, each
+runs, neither the line nor the part its arrow opens offers **Solve**. The line
+also says when that part holds failures, or how the last Solve ended when it
+left work undone. A key to add or a source to confirm stays under the line.
+Its arrow opens the plan's nodes, each
 with its own **Solve**, and **Build & validate plan**, which fills the plan's
 nodes in order: each node's code is run in the sandbox, and code that passes
 lands, with its **Undo**, before the next node; the first failure pauses the
