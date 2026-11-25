@@ -7,9 +7,11 @@ a page that only appears in one posture is a page nobody remembers exists.
 
 Read ``errors.py``'s module docstring before changing what the errors route
 returns. It is deliberately exempt from the anonymity rule the other five GETs
-are tested against. The LLM route's model names, this Curio's own, and the
-versions of Curio the usage and open-files routes mark their deploys with are
-the only free text those five carry (``llm_performance.py``, ``usage.py``).
+are tested against. The LLM route's model names, this Curio's own, the
+versions of Curio the usage and open-files routes mark their deploys with, and
+the host and port of the search provider the agents ask, on ``/api/monitor``,
+are the only free text those five carry (``llm_performance.py``, ``usage.py``,
+``agents/application/tools.py``'s ``search_provider``).
 
 In a start of several backend processes nginx sends these routes to the home
 process, and they answer for the whole backend. ``/api/monitor`` (its node
@@ -145,16 +147,21 @@ def _deployment_llm_configured() -> bool:
 
 
 def _deployment(sandbox) -> dict:
-    """Configuration facts. Booleans and closed vocabularies only.
+    """Configuration facts. Booleans and closed vocabularies only, but for
+    the search provider's host and port.
 
     Every setting that has a value a person chose (the exec account name, the
     LLM base URL, model and key) is reported as "configured: true/false". The
     question an operator has is whether it is set, and the value itself would
     be the leak. The models of this Curio's own endpoint that answered
     requests are named on the LLM route instead (``llm_performance.py``).
+    The search provider is the exception: which provider the agents' search
+    asks is the question there, so ``searchProvider`` names the host and port
+    of its URL, and nothing else of it, where a provider's key can be.
     """
     from utk_curio import __version__
     from utk_curio.backend import config
+    from utk_curio.backend.app.agents import service as agents_service
     from utk_curio.backend.app.discovery import service as discovery_service
     from utk_curio.backend.app.packages.routes import common as packages_routes_common
 
@@ -180,6 +187,9 @@ def _deployment(sandbox) -> dict:
         # Whether the operator named a search provider (--agent-search-url);
         # web.search reads the same variable and has a keyless default.
         "searchToolConfigured": bool(os.environ.get("CURIO_SEARCH_URL", "").strip()),
+        # The host and port web.search asks, that URL's or its default's:
+        # searxng:8080 on the hosted stacks, api.duckduckgo.com unset.
+        "searchProvider": agents_service.search_provider(),
         # The bucket mount service's self-test (--bucket-mounts-dir): none,
         # pending, passed or unavailable, and why it is unavailable, in words
         # from a closed list. What went wrong, with its paths, is in the errors.

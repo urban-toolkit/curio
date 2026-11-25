@@ -505,11 +505,18 @@ To start a stack with it:
 
 4. Recreate the stack: `docker compose up -d --force-recreate`.
 
-It works when `docker compose ps` shows `searxng` as `(healthy)` and this
+It works when `docker compose ps` shows `searxng` as `(healthy)`, this
 prints `results:` with a count and the answer's size:
 
 ```bash
 docker compose exec -T curio python scripts/searxng/check.py 'http://searxng:8080/search?q={q}&format=json'
+```
+
+and this prints `searxng:8080`, the host and port Curio's agents search,
+which `/api/monitor` names as `searchProvider`:
+
+```bash
+docker compose exec -T curio python -c 'import json, urllib.request; print(json.load(urllib.request.urlopen("http://127.0.0.1:5002/api/monitor"))["deployment"]["searchProvider"])'
 ```
 
 SearXNG asks public search engines from the server's address. An engine that
@@ -519,7 +526,8 @@ refuses it for a while answers nothing, and the others answer meanwhile; with
 To search elsewhere, give `--agent-search-url` another provider's URL
 template, with `{q}` where the query goes and any key in the URL, that answers
 in JSON of at most 256 KiB. Without `--agent-search-url`, agents search
-DuckDuckGo's keyless Instant Answer API.
+DuckDuckGo's keyless Instant Answer API, and `searchProvider` reads
+`api.duckduckgo.com`.
 
 ## 2. Configure Caddy
 
@@ -723,7 +731,7 @@ Both stacks start with `--guest-packages model.curio.sam3@1`, so every guest run
 
 Each stack runs its own [bucket mount service](#bucket-mounts) when the deployed release has it, mounting in `/srv/curio-bucket-mounts/dev` or `/srv/curio-bucket-mounts/stable`. Before a deploy stops the running stack, it checks the host: `/dev/fuse`, a shared mount at `/srv`, and the AppArmor profile, loaded and with `/etc/apparmor.d/curio-bucket-mounts` the same as the checkout's `scripts/bucket-mounts/curio-bucket-mounts.apparmor`. A failed check fails the deploy with the command to run. Once the new stack is up, the deploy fails unless `bucket-mounts` is healthy and **Bucket mounts** says *on, self-test passed*.
 
-Each stack runs its own [web search service](#web-search) when the deployed release has it, with a key the deploy makes once in the checkout's `.secrets/searxng.env`, and starts Curio with `--agent-search-url` naming it. Once the new stack is up, the deploy fails unless Curio has the URL and the URL answers from Curio's container with JSON; an answer with no results is a warning.
+Each stack runs its own [web search service](#web-search) when the deployed release has it, with a key the deploy makes once in the checkout's `.secrets/searxng.env`, and starts Curio with `--agent-search-url` naming it. Once the new stack is up, the deploy fails unless `/api/monitor` names `searxng:8080` as the search provider Curio's agents ask and the URL answers from Curio's container with JSON; an answer with no results is a warning.
 
 Before a deploy stops the running stack, it also checks that Docker Engine is 28 or newer, and once the new stack is up, it fails unless `/version` says `"memory_limit": "cgroup"`.
 
@@ -855,7 +863,10 @@ The statistics are aggregates: no route reports a username, an email address,
 an IP address, or a per-user row. The LLM performance section names this
 Curio's own models that answered, and the deploy marks the versions of Curio.
 A model name that looks like a URL, a host, an email address, an IP address or
-a key, or that has spaces, shows as `other`.
+a key, or that has spaces, shows as `other`. `/api/monitor` names the search
+provider Curio's agents ask (`searchProvider`) by the host and port of
+`--agent-search-url`'s URL, an IP address when the URL names one, and never by
+the rest of the URL, which can hold a key.
 
 **The error log is the exception.** `GET /api/monitor/errors` returns raw,
 unredacted failures. Those

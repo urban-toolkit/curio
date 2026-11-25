@@ -53,6 +53,7 @@ const monitorPayload = {
     execUserConfigured: true, authEnabled: true, projectsEnabled: true,
     guestLoginAllowed: true, factoryPublishAllowed: true, saveNodeOutputDefault: false,
     llmProviderConfigured: true, searchToolConfigured: false,
+    searchProvider: "api.duckduckgo.com",
     bucketMounts: "none", bucketMountsProblem: null, env: "prod",
     platform: "Linux-7.0-x86_64", pythonVersion: "3.12.1",
   },
