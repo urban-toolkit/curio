@@ -33,6 +33,10 @@ from utk_curio.backend.tests.test_agents.test_attachments_follow_the_doc import 
 from utk_curio.backend.tests.test_agents.test_turn_jobs import _tab
 
 NB = "agent.curio.node-builder@1"
+DF = "agent.curio.dataset-finder@1"
+DL = "curio.builtin/data-loading"
+#: The row a loader's Dataset Finder proposed, which a pick names by its url.
+ROW = {"name": "Parks", "sourceType": "portal", "url": "https://data.example.org/parks.geojson", "format": "geojson"}
 ALICE = "alice-token-room-agents"
 BOB = "bob-token-room-agents"
 CAROL = "carol-token-room-agents"
@@ -138,6 +142,65 @@ def test_a_new_title_for_an_agents_chat_is_told_to_the_owners_and_the_editors_ta
     _retitle(flow, BOB, "Sums")
 
     _the_editors_are_told_once(flow, tabs)
+
+
+def _a_loader_and_its_dataset_finder(flow, monkeypatch) -> SimpleNamespace:
+    """A dataflow of alice's whose loader's Dataset Finder holds the
+    candidates card discovery leaves in its chat, and which bob edits."""
+    from utk_curio.backend.app.agents.repositories import sessions
+    from utk_curio.backend.app.projects import access
+    from utk_curio.backend.app.projects.services import _user_dir_key
+    from utk_curio.backend.tests.test_agents.test_routes_proposals import TestNodeCreate
+    from utk_curio.backend.tests.test_agents.test_verified_rounds import TEMPLATES
+
+    ukey = _user_dir_key(flow.alice)
+    TestNodeCreate()._write_builtin_package(ukey, templates=TEMPLATES)
+    created = flow.client.post("/api/projects", headers=_auth(ALICE), json={
+        "name": "parks", "outputs": [],
+        "spec": {"dataflow": {"nodes": [
+            {"id": "load", "type": DL, "title": "Load", "goal": "Load the parks", "content": "", "x": 0, "y": 0},
+        ], "edges": [], "packages": []}},
+    })
+    assert created.status_code == 201, created.get_data(as_text=True)
+    project = created.get_json()["id"]
+    flow.client.post(f"/api/agents/projects/{project}/install", json={"coord": DF}, headers=_auth(ALICE))
+    attached = flow.client.post(
+        f"/api/agents/projects/{project}/attachments",
+        json={"coord": DF, "target": {"kind": "node", "targetId": "load"}}, headers=_auth(ALICE),
+    )
+    assert attached.status_code == 201, attached.get_data(as_text=True)
+    finder = attached.get_json()
+    sessions.append_turns(ukey, project, finder["sessionId"], finder["attachmentId"], [sessions.make_turn(
+        "agent", "1 dataset candidate(s) for this node.",
+        content=[{"type": "datasetCandidates", "lanes": {"external": [dict(ROW)], "catalog": []}}],
+    )])
+    access.add_editor(flow.alice, project, "bob")
+    monkeypatch.setattr(
+        "utk_curio.backend.app.agents.application.verify.verify_external_source",
+        lambda url, **k: {"status": "verified", "detail": "200 OK"},
+    )
+    return SimpleNamespace(app=flow.app, project=project, finder=finder["attachmentId"])
+
+
+def test_a_recorded_dataset_selection_is_told_to_the_owners_and_the_editors_tabs(flow, monkeypatch):
+    """bob picks the loader's source on its Dataset Finder's card. The pick is
+    kept on that agent's attachment, so the tabs list the agents again, with
+    who waits for a pick. The dataflow's writer already tells them on main:
+    this guards the word the plan's handoff relies on."""
+    room = _a_loader_and_its_dataset_finder(flow, monkeypatch)
+    tabs = {name: _tab(room, token) for name, token in (("alice", ALICE), ("bob", BOB), ("carol", CAROL))}
+    try:
+        r = flow.client.post(
+            f"/api/agents/projects/{room.project}/attachments/{room.finder}/dataset-selection",
+            json={"picks": [{"lane": "external", "key": ROW["url"]}]}, headers=_auth(BOB),
+        )
+        assert r.status_code == 200, r.get_data(as_text=True)
+        assert r.get_json()["status"] == "resolved", r.get_json()
+
+        _the_editors_are_told_once(room, tabs)
+    finally:
+        for socket in tabs.values():
+            socket.disconnect(namespace=NAMESPACE)
 
 
 def test_the_agent_of_a_node_removed_through_the_doc_is_told_once_the_listing_takes_it_off(flow, tabs):

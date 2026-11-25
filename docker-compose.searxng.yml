@@ -1,0 +1,48 @@
+# Web search for Curio's agents: SearXNG, a metasearch engine, in a container
+# of its own beside Curio, which the agents' web.search asks (DEPLOYMENT.md,
+# "Web search"). A deployment adds this file to COMPOSE_FILE after
+# docker-compose.yml and docker-compose.deploy.yml, and starts Curio with
+#   --agent-search-url "http://searxng:8080/search?q={q}&format=json"
+#
+# The Skill evaluations workflow starts it the same way, in its job's own
+# compose project, for its evaluations' agents.
+#
+# The service publishes no port: only the containers on the stack's network
+# reach it, Curio's among them. Its settings are scripts/searxng/settings.yml,
+# bound read-only. Its secret key, which SearXNG needs to start, is
+# SEARXNG_SECRET in .secrets/searxng.env, a file in the checkout that only its
+# owner reads and that neither git nor the image holds.
+services:
+  searxng:
+    image: searxng/searxng:2026.11.11-626105eec@sha256:606fc8852a53f0be4ac05116950ff480f6f56b8ef7d77b366868cc76478036e5
+    init: true
+    restart: unless-stopped
+    # The image's own account, searxng, with no capability, on a read-only
+    # root. Its caches are SQLite files in /tmp. The image's two folders are
+    # tmpfs of that account's, so a start leaves no volume behind.
+    user: "977:977"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /etc/searxng:uid=977,gid=977,mode=0755
+      - /var/cache/searxng:uid=977,gid=977,mode=0755
+    env_file:
+      - ./.secrets/searxng.env
+    environment:
+      # Curio and the healthcheck reach it over IPv4.
+      GRANIAN_HOST: 0.0.0.0
+    volumes:
+      - type: bind
+        source: ./scripts/searxng/settings.yml
+        target: /etc/searxng/settings.yml
+        read_only: true
+    healthcheck:
+      test: ["CMD", "wget", "--no-hsts", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

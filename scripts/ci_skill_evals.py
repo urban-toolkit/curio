@@ -29,7 +29,10 @@
 
 The key and the base URL go to the runners in their environment only. No
 output names either, and every line a runner prints is scrubbed of both
-before it reaches the log.
+before it reaches the log. Each runner gets this process's environment but
+the models and the jobs, so ``CURIO_SEARCH_URL``, the URL its workers'
+web.search asks, and ``CURIO_EVAL_SEARCH``, the words its ``run.json`` names
+that search with, reach it as the workflow hands them to the container.
 """
 
 from __future__ import annotations

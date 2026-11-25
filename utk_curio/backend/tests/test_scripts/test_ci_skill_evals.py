@@ -19,6 +19,9 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[4]
 KEY = "sk-test-0123456789abcdef"
 BASE_URL = "https://models.example.invalid:8443/v1/"
+#: The URL the workflow's evaluations search at, its SearXNG's, and the words the report names it with.
+SEARCH_URL = "http://searxng:8080/search?q={q}&format=json"
+NAMED = "SearXNG searxng/searxng:2026.11.11-626105eec"
 
 
 def _load(name: str):
@@ -208,6 +211,36 @@ def test_a_grader_that_answered_its_probe_grades_though_its_own_grader_did_not(t
     summary = (out / "summary.md").read_text(encoding="utf-8")
     assert "its grader, claude-haiku-5-5, did not answer its probe" in summary
     assert "its grader, openai/Qwen/Qwen3.8-27B, did not answer its probe" not in summary
+
+
+def test_every_runner_gets_the_search_url_its_agents_web_search_asks(tmp_path, monkeypatch):
+    """The workflow hands the evaluations' container its SearXNG's URL by
+    name (``CURIO_SEARCH_URL``) and the words the report names that search
+    with (``CURIO_EVAL_SEARCH``): each model's runner gets both, as it gets
+    every variable but the models and the jobs, and hands them on to its
+    workers, whose web.search reads the URL."""
+    monkeypatch.setenv(node.ENV_BASE_URL, BASE_URL)
+    monkeypatch.setenv(node.ENV_API_KEY, KEY)
+    monkeypatch.setenv(node.ENV_MODELS, '["gemma4", "deepseek-ai/DeepSeek-V4.1-Flash-1017"]')
+    monkeypatch.delenv(node.ENV_GRADER, raising=False)
+    monkeypatch.delenv(node.ENV_JOBS, raising=False)
+    monkeypatch.setenv("CURIO_SEARCH_URL", SEARCH_URL)
+    monkeypatch.setenv("CURIO_EVAL_SEARCH", NAMED)
+    monkeypatch.setattr(node, "probe", lambda model, base_url, api_key, scrub: {"ok": True, "seconds": 1.0})
+    started = {}
+
+    class Runner:
+        def __init__(self, command, **kwargs):
+            env = kwargs["env"]
+            started[env["CURIO_EVAL_MODEL"]] = (env.get("CURIO_SEARCH_URL"), env.get("CURIO_EVAL_SEARCH"))
+            self.stdout = io.StringIO("")
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(node.subprocess, "Popen", Runner)
+    _run(tmp_path, _scope(tmp_path, {"measure": "changed", "measures": {"research-notes": {}}}))
+    assert started == {"gemma4": (SEARCH_URL, NAMED), "deepseek-ai/DeepSeek-V4.1-Flash-1017": (SEARCH_URL, NAMED)}
 
 
 def test_a_runner_s_lines_reach_the_log_scrubbed(capsys):

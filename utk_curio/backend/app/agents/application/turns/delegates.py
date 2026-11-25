@@ -223,9 +223,10 @@ def _delegation_home(
 
 def _delegation_task_text(capability: str, inputs: dict) -> str:
     """A one-line task summary for the delegated agent's chat — the key
-    intent, never the raw inputs dump."""
+    intent, never the raw inputs dump. A Dataset Finder's task says the
+    mission its candidates are for."""
     parts = [capability]
-    for key in ("intent", "question", "url", "endpoint", "nodeType"):
+    for key in ("intent", "mission", "question", "url", "endpoint", "nodeType"):
         value = (inputs or {}).get(key)
         if isinstance(value, str) and value.strip():
             parts.append(f"{key}: {value.strip()[:160]}")

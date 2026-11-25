@@ -2553,7 +2553,9 @@ it as it runs. One message of a chat runs at a time: one you send while another
 runs waits its turn (*Waiting its turn*), and **Withdraw** takes it back before
 it starts. **Stop** stops the message that runs at its next step, keeping what
 it said and changed so far. A reply that reaches the output limit (4,096
-tokens) stops there and ends with a line that says it was cut off.
+tokens) stops there and ends with a line that says it was cut off. When the
+agent uses its three tool rounds before it writes an answer, the reply says so:
+ask again to continue.
 
 Type `/` at the start of a message to list the agent's
 [skills](SKILL-CATALOG.md#3-using-a-skill). Pick one with the arrow keys and Enter, or a
@@ -2581,9 +2583,12 @@ A plan can also declare the widgets each node's code reads, and save
 [scenarios](#scenarios), including a copy of one with a widget value changed;
 see [Widgets and scenarios](AGENT-CATALOG.md#widgets-and-scenarios).
 
-The goal box in the dock is shared with your agents: several of them, the
-Dataflow Builder most of all, are written around knowing what the dataflow is
-for. It is saved with the project.
+Every agent's chat shows the dataflow's **Goal** under its header. Write what
+the dataflow is for there, with **Add what this dataflow is for** or the edit
+button: Enter or **Save** keeps it, Escape or **Cancel** leaves it as it was.
+The agents on the dataflow read it, and several of them, the Dataflow Builder
+most of all, are written around knowing what the dataflow is for. It is saved
+with the dataflow, and every agent's chat shows the same goal.
 
 ### What an agent may reach
 
@@ -2597,7 +2602,8 @@ Operators who would rather not send queries to a third party can point
 `--agent-search-url` at their own provider, or elsewhere entirely. The keyless
 API can stop answering for a while when one server searches often, and the
 agent is then told the status it answered with; a Curio many people use points
-`--agent-search-url` at a provider with a key, or at its own SearXNG.
+`--agent-search-url` at a provider with a key, or at its own SearXNG
+([Web search](DEPLOYMENT.md#web-search)).
 
 For the full guide, covering the roster, the storage layers, attaching, the
 provider, publishing, and writing your own, see [docs/AGENT-CATALOG.md](AGENT-CATALOG.md).

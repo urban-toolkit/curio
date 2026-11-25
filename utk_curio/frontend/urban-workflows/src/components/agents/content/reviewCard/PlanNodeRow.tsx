@@ -3,7 +3,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faRobot } from "@fortawesome/free-solid-svg-icons";
 
 import styles from "../AgentReviewCard.module.css";
-import { ROW_STATE_CHIP } from "./reviewCardText";
+import { ROW_STATE_CHIP, ROW_STATES_WITH_SOLVE } from "./reviewCardText";
 
 /** One node of a landed plan (dev/71's lifecycle): its goal, its dependencies
  * by name, and Solve then Run, as its code is written and checked. */
@@ -82,7 +82,7 @@ export const PlanNodeRow: React.FC<{
             ) : (
               <span className={styles.planNodeCreated}>Placed ✓</span>
             )}
-            {onSolve && (state === "created" || state === "failed") ? (
+            {onSolve && ROW_STATES_WITH_SOLVE.includes(state) ? (
               <button
                 type="button"
                 className={styles.apply}

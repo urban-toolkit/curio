@@ -95,6 +95,19 @@ export interface AgentDatasetCandidatesPart {
   lanes: { external: AgentDatasetCandidateRow[]; catalog: AgentDatasetCandidateRow[] };
 }
 
+/** A node's Dataset Finder candidates in the chat that asked for them (the
+ * Dataflow Builder's, while it builds its plan): the node they are for, and
+ * the Finder whose dataset-selection route records the pick. */
+export interface AgentSourcePickPart {
+  type: "sourcePick";
+  /** The node's Dataset Finder: a pick posts to its route. */
+  finderAttachmentId: string;
+  nodeId: string;
+  nodeLabel: string;
+  /** The candidates, as the Finder's own card holds them. */
+  lanes: AgentDatasetCandidatesPart["lanes"];
+}
+
 /** dev/72: a delegated task's compact entry on the PARENT's turn — the icon
  * notch links to the delegated agent's chat where the full trace lives.
  * Runtime-emitted only (like changes); attachmentId null = no home. */
@@ -118,6 +131,7 @@ export type AgentContentPart =
   | AgentProposalPart
   | AgentChangePart
   | AgentDatasetCandidatesPart
+  | AgentSourcePickPart
   | AgentDataflowPlanPart
   | AgentDelegationPart
   | AgentSolveAttemptsPart

@@ -426,12 +426,6 @@ def boot(host: str, port: int, processes: int, *, nginx: str):
 def watch(started) -> None:
     """Stop every server, and the launcher with an error, as soon as one of
     *started*, ``[(name, process)]``, exits while the launcher is not
-    stopping."""
-    while not shutdown_flag.is_set():
-        for name, process in started:
-            code = process.poll()
-            if code is not None:
-                if not shutdown_flag.is_set():
-                    _stop(f"{name} exited with code {code}")
-                return
-        time.sleep(1)
+    stopping: the launcher's watch (``lifecycle.watch``), which says so as
+    the backend group's."""
+    lifecycle.watch(started, _stop)

@@ -229,6 +229,7 @@ def test_check_install_build_also_refuses_an_old_node(frontend, monkeypatch):
     # The real clean_shutdown stops the launcher: what it changes is put back.
     monkeypatch.setattr(lifecycle, "processes", [])
     monkeypatch.setattr(lifecycle, "shutdown_flag", threading.Event())
+    monkeypatch.setattr(lifecycle, "servers_stopped", threading.Event())
     monkeypatch.setattr(lifecycle, "exit_status", 0)
 
     with pytest.raises(SystemExit) as exit_info:

@@ -32,10 +32,12 @@ import { ChatHeader } from "./chat/ChatHeader";
 import { ClearConversationDialog } from "./chat/ClearConversationDialog";
 import { Composer } from "./chat/Composer";
 import { ConversationTitle } from "./chat/ConversationTitle";
+import { GoalLine } from "./chat/GoalLine";
 import { IntentMessage } from "./chat/IntentMessage";
 import { PendingReplyRow } from "./chat/PendingReplyRow";
 import { SuggestedPromptsRow } from "./chat/SuggestedPromptsRow";
 import { useConversationTitle } from "./chat/useConversationTitle";
+import { useGoalLine } from "./chat/useGoalLine";
 import { WaitingAskRow } from "./chat/WaitingAskRow";
 import {
   canvasUnchangedFor,
@@ -55,8 +57,9 @@ import type { WaitingAsk } from "../../../providers/agents/turnAsks";
  * attachments in the dataflow), the name of what it is attached to (its ids
  * are on that line's tooltip, see below), and Close — no Pin, and no
  * static "Agent Catalog" bar (that chrome is exclusive to the Agents Roster
- * drawer). Below the header: the
- * intent-as-first-message transcript and pill input, unchanged.
+ * drawer). Below the header: the dataflow's goal (`GoalLine`), the same in
+ * every agent's chat, then the intent-as-first-message transcript and pill
+ * input.
  *
  * Presentational: the transcript and intent live in AgentAttachmentsProvider
  * (server-persisted session, memo dev/20), so closing/reopening restores the
@@ -182,6 +185,11 @@ export const AgentChatPanel: React.FC<{
   /** Persist a manual conversation title (memo dev/25). Omitted → the header
    * title is a plain, non-editable label. */
   onSaveTitle?: (title: string) => Promise<void>;
+  /** The dataflow's goal (the spec's `task`), on the line under the header. */
+  goal?: string;
+  /** Keep an edited goal: the dataflow's, so every agent's chat shows it.
+   * Omitted → no Goal line. */
+  onSaveGoal?: (goal: string) => void;
   onClearConversation?: () => Promise<void>;
   /** The skills this chat's next run lists, which `/` in the composer offers;
    * read each time that list opens. Omitted → `/` is a plain character. */
@@ -236,6 +244,8 @@ export const AgentChatPanel: React.FC<{
   agentNameOf,
   onSaveIntent,
   onSaveTitle,
+  goal,
+  onSaveGoal,
   onClearConversation,
   loadSkills,
 }) => {
@@ -252,6 +262,8 @@ export const AgentChatPanel: React.FC<{
   const [confirmingClear, setConfirmingClear] = useState(false);
   // Inline click-to-edit conversation title (memo dev/25).
   const title = useConversationTitle(attachment, onSaveTitle);
+  // The dataflow's goal, edited on its line under the header.
+  const goalLine = useGoalLine(goal, onSaveGoal);
   // Follow-at-bottom auto-scroll (memo dev/75): new turns and streamed chunks
   // keep the view pinned only while the user is already at the bottom;
   // scrolling up detaches follow until they return or jump to latest. Opening
@@ -345,7 +357,8 @@ export const AgentChatPanel: React.FC<{
   const tint = styles[`tint_${agentCategoryKey(attachment.category)}` as keyof typeof styles];
 
   // Escape dismisses the chat (close only — the attachment is untouched);
-  // while renaming, Escape cancels the edit instead (handled on the input).
+  // while renaming or editing the goal, Escape cancels that edit instead
+  // (handled on its input).
   useEffect(() => {
     // A no-op while the panel is sliding out (#295): it is still mounted, so
     // the listener is still attached, and closing something already closing
@@ -357,11 +370,11 @@ export const AgentChatPanel: React.FC<{
       // so the modal cannot stop it firing. It has to stand down itself, or
       // dismissing the dialog closed the chat behind it as well.
       if (modalStackDepth() > 0) return;
-      if (e.key === "Escape" && !title.editing) onClose();
+      if (e.key === "Escape" && !title.editing && !goalLine.editing) onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, title.editing, presented]);
+  }, [onClose, title.editing, goalLine.editing, presented]);
 
   // The exit settles on the PANEL's own transform and nothing else. This panel
   // is full of inner transitions (bubbles, chips, the run status line), and
@@ -435,6 +448,7 @@ export const AgentChatPanel: React.FC<{
         targetTooltip={targetTooltipFor(attachment)}
         titleError={title.error}
       />
+      {onSaveGoal ? <GoalLine goal={goal ?? ""} state={goalLine} /> : null}
 
       {/* The dev/52 builder strip: an agent that declares dataflow.orchestrate,
           one that plans a dataflow and solves it. */}

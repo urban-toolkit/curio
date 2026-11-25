@@ -23,6 +23,7 @@ const READ_FROM_THE_CHECKOUT: Array<[string, string]> = [
     ["docker-compose.deploy.yml", "test-gpu's check of the production deploy configuration"],
     ["docker-compose.bucket-mounts.yml", "the bucket-mounts job and bucketMountsOverlay.test.ts"],
     ["docker-compose.ci-bucket-mounts.yml", "the bucket-mounts job"],
+    ["docker-compose.searxng.yml", "the bucket-mounts job, searxngOverlay.test.ts and deployWebSearch.test.ts"],
 ];
 
 describe(`the paths filters of ${WORKFLOW}`, () => {

@@ -237,7 +237,7 @@ describe("who is here, in the canvas's dock", () => {
 
   test("the canvas agents keep their chips, then come the people, and the Activity button ends the row", () => {
     joins({ user: BEN });
-    dock({ attachments: [att("a1", "explainer")], showGoal: true, goal: "", onGoalChange: jest.fn() });
+    dock({ attachments: [att("a1", "explainer")] });
 
     const row = screen.getByRole("toolbar", { name: "Canvas agents" });
     const named = within(row)
@@ -245,7 +245,17 @@ describe("who is here, in the canvas's dock", () => {
       .map((button) => button.getAttribute("aria-label"))
       .filter((name) => !name?.startsWith("Detach"));
     expect(named).toEqual(["Open chat with explainer", "Ben Editor (editor)", "Activity"]);
-    expect(within(row).getByLabelText("Dataflow goal")).toBeInTheDocument();
+  });
+
+  test("the dock holds no goal: it is the Goal line of every agent's chat", () => {
+    // Among the agents' chips, the goal read as a chat box (#227).
+    joins({ user: BEN });
+    dock({ attachments: [att("a1", "explainer")] });
+
+    const row = screen.getByRole("toolbar", { name: "Canvas agents" });
+    expect(within(row).queryByLabelText("Dataflow goal")).toBeNull();
+    expect(within(row).queryByRole("textbox")).toBeNull();
+    expect(within(row).queryByText("Goal")).toBeNull();
   });
 
   test("with canvas agents and nobody else, the row is the agents' alone: no people, no Activity", () => {

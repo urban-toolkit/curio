@@ -1,5 +1,6 @@
 import React from "react";
 import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 
 // The dev/52 builder strip imports useFlowContext; mocking the provider keeps
@@ -18,6 +19,7 @@ jest.mock("../../services/packages/packagesApi", () => ({
 import { packagesApi } from "../../services/packages/packagesApi";
 
 import { AgentChatPanel } from "../../components/agents/attach/AgentChatPanel";
+import { GOAL_EMPTY, GOAL_PLACEHOLDER, GOAL_TOOLTIP } from "../../components/agents/attach/chat/GoalLine";
 import type { AgentAttachment, AgentSessionTurn } from "../../services/agents";
 
 const attachment: AgentAttachment = {
@@ -446,6 +448,135 @@ describe("AgentChatPanel conversation title (memo dev/25)", () => {
     expect(
       screen.getByRole("button", { name: "Rename conversation title" }),
     ).toHaveTextContent("My Explainer: Dataset Import Help");
+  });
+});
+
+/**
+ * The dataflow's goal (the spec's `task`), the line under the header of every
+ * agent's chat. In the canvas's dock, among the agents' chips, it read as a
+ * chat box (#227): nothing typed in it is sent, and no agent answers it.
+ */
+describe("AgentChatPanel: the dataflow's goal, under the header", () => {
+  const goalLine = () => document.querySelector<HTMLElement>("[data-curio-chat-goal]");
+  const nodeAgent: AgentAttachment = {
+    ...attachment,
+    attachmentId: "a2",
+    name: "Node Builder",
+    target: { kind: "node" as const, targetId: "n1" },
+  };
+
+  it("is a line under the header, named by a standing label whose tooltip says who reads it", () => {
+    renderPanel({ goal: "Find heat islands in Chicago", onSaveGoal: jest.fn() });
+    const line = goalLine();
+    expect(line).not.toBeNull();
+    expect(GOAL_TOOLTIP).toBe("The dataflow's goal. The agents on this dataflow read it.");
+    expect(within(line!).getByText("Goal")).toHaveAttribute("data-tooltip", GOAL_TOOLTIP);
+    expect(within(line!).getByText("Find heat islands in Chicago")).toBeInTheDocument();
+    // Beside the header, not inside it: the header's own frame clips to it.
+    const header = document.querySelector<HTMLElement>("[data-curio-chat-header]")!;
+    expect(header.contains(line)).toBe(false);
+    // eslint-disable-next-line no-bitwise
+    expect(header.compareDocumentPosition(line!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Above the conversation.
+    const conversation = screen.getByText("Ask this agent something to get started.");
+    // eslint-disable-next-line no-bitwise
+    expect(line!.compareDocumentPosition(conversation) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("is in a node agent's chat too, and in none whose caller keeps no goal", () => {
+    const first = renderPanel({ attachment: nodeAgent, goal: "Find heat islands", onSaveGoal: jest.fn() });
+    expect(within(goalLine()!).getByText("Find heat islands")).toBeInTheDocument();
+    first.unmount();
+    renderPanel({ goal: "Find heat islands" });
+    expect(goalLine()).toBeNull();
+  });
+
+  it("offers to add a goal while there is none, and its field says what it is for", () => {
+    renderPanel({ goal: "", onSaveGoal: jest.fn() });
+    fireEvent.click(screen.getByRole("button", { name: GOAL_EMPTY }));
+    const field = screen.getByRole("textbox", { name: "Dataflow goal" });
+    expect(field).toHaveValue("");
+    expect(field).toHaveAttribute("placeholder", GOAL_PLACEHOLDER);
+    expect(field).toHaveFocus();
+    // The label stays, so the field keeps its name once a goal is typed.
+    expect(within(goalLine()!).getByText("Goal")).toBeInTheDocument();
+  });
+
+  it("Edit opens the goal in the field, selected", () => {
+    renderPanel({ goal: "Find heat islands", onSaveGoal: jest.fn() });
+    const edit = screen.getByRole("button", { name: "Edit the goal" });
+    expect(edit).toHaveAttribute("data-tooltip", "Edit the goal");
+    fireEvent.click(edit);
+    const field = screen.getByRole("textbox", { name: "Dataflow goal" }) as HTMLInputElement;
+    expect(field).toHaveValue("Find heat islands");
+    expect(field).toHaveFocus();
+    expect([field.selectionStart, field.selectionEnd]).toEqual([0, "Find heat islands".length]);
+  });
+
+  it("Enter keeps the trimmed goal, once; typing alone keeps nothing", () => {
+    const onSaveGoal = jest.fn();
+    renderPanel({ goal: "", onSaveGoal });
+    fireEvent.click(screen.getByRole("button", { name: GOAL_EMPTY }));
+    const field = screen.getByRole("textbox", { name: "Dataflow goal" });
+    fireEvent.change(field, { target: { value: "  Map tree canopy  " } });
+    expect(onSaveGoal).not.toHaveBeenCalled();
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(onSaveGoal).toHaveBeenCalledTimes(1);
+    expect(onSaveGoal).toHaveBeenCalledWith("Map tree canopy");
+    expect(screen.queryByRole("textbox", { name: "Dataflow goal" })).toBeNull();
+  });
+
+  it("Save keeps the draft, an emptied one clears the goal, and an unchanged one keeps nothing", async () => {
+    const user = userEvent.setup();
+    const onSaveGoal = jest.fn();
+    renderPanel({ goal: "Find heat islands", onSaveGoal });
+    await user.click(screen.getByRole("button", { name: "Edit the goal" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSaveGoal).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Edit the goal" }));
+    await user.clear(screen.getByRole("textbox", { name: "Dataflow goal" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSaveGoal).toHaveBeenCalledTimes(1);
+    expect(onSaveGoal).toHaveBeenCalledWith("");
+  });
+
+  it("Cancel and Escape leave the goal as it was, and Escape leaves the chat open", async () => {
+    const user = userEvent.setup();
+    const onSaveGoal = jest.fn();
+    const onClose = jest.fn();
+    renderPanel({ goal: "Find heat islands", onSaveGoal, onClose });
+    // A click on Cancel takes the focus out of the field first: that keeps
+    // nothing either.
+    await user.click(screen.getByRole("button", { name: "Edit the goal" }));
+    await user.type(screen.getByRole("textbox", { name: "Dataflow goal" }), " by exposure");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onSaveGoal).not.toHaveBeenCalled();
+    expect(within(goalLine()!).getByText("Find heat islands")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Edit the goal" }));
+    await user.type(screen.getByRole("textbox", { name: "Dataflow goal" }), " by exposure");
+    await user.keyboard("{Escape}");
+    expect(onSaveGoal).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByRole("textbox", { name: "Dataflow goal" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Edit the goal" })).toHaveFocus();
+    // With nothing being edited, Escape closes the chat.
+    await user.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("is the dataflow's goal, not one agent's: a field left open stays open when the chat changes agents", () => {
+    const onSaveGoal = jest.fn();
+    const { rerender, props } = renderPanel({ goal: "Find heat islands", onSaveGoal });
+    fireEvent.click(screen.getByRole("button", { name: "Edit the goal" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Dataflow goal" }), {
+      target: { value: "Rank heat islands" },
+    });
+    rerender(<AgentChatPanel {...props} attachment={nodeAgent} />);
+    const field = screen.getByRole("textbox", { name: "Dataflow goal" });
+    expect(field).toHaveValue("Rank heat islands");
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(onSaveGoal).toHaveBeenCalledWith("Rank heat islands");
   });
 });
 

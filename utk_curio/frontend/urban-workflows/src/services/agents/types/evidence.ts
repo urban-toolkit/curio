@@ -109,6 +109,22 @@ export interface AgentDatasetPick {
   key: string;
 }
 
+/** A node's source as its Dataset Finder records it: candidates awaiting a
+ * pick, the pick, or why discovery was skipped, and the chat that asked for
+ * the candidates. */
+export interface AgentDatasetSourceRecord {
+  status: "candidates-pending" | "resolved" | "awaiting-install" | "not-needed" | string;
+  /** How many candidates the Finder's card holds. */
+  candidates?: number;
+  proposedAt?: string;
+  picks?: AgentDatasetCandidateRow[];
+  recordedAt?: string;
+  /** The literal that already grounds the node, when discovery was skipped. */
+  skippedBecause?: string;
+  /** The attachment whose chat asked for the candidates. */
+  askedBy?: string;
+}
+
 /** dev/126: the recorded selection for a node. */
 export interface AgentDatasetSelection {
   attachmentId: string;
@@ -119,9 +135,12 @@ export interface AgentDatasetSelection {
    * is handed to the node's own builder automatically (no prompt to compose);
    * a portal row waits for the download and the Import button. */
   delegated?: {
+    /** `plan-waiting`: a plan's Build & validate or its row's Solve waits for
+     * this node; `attachmentId` is the plan's agent, whose chat goes on. */
     status:
       | "delegating"
       | "session-running"
+      | "plan-waiting"
       | "manual-download"
       | "no-builder"
       | "skipped"

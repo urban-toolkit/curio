@@ -122,6 +122,9 @@ from utk_curio.backend.app.agents.application.tool_rounds import (
     MUTATE_PROPOSAL_TOOLS,
     ParamRefusal,
 )
+from utk_curio.backend.app.agents.application.tools import (
+    search_provider,
+)
 from utk_curio.backend.app.agents.application.turns.attachment_turn import (
     run_attachment,
     stream_attachment,
@@ -224,6 +227,7 @@ __all__ = [
     "MAX_TOOL_ROUNDS",
     "MUTATE_PROPOSAL_TOOLS",
     "ParamRefusal",
+    "search_provider",
     "run_attachment",
     "stream_attachment",
     "ask_turn",

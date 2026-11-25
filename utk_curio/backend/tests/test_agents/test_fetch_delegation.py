@@ -13,17 +13,23 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from utk_curio.backend.app.agents.infrastructure import agent_jobs
+from utk_curio.backend.app.agents.application import attachments
 from utk_curio.backend.app.agents.application import dataset_resolution as dr
 from utk_curio.backend.app.agents.application.proposals import acquire
+from utk_curio.backend.app.agents.application.proposals import store
 from utk_curio.backend.app.agents.application import spec_reads
+from utk_curio.backend.app.agents.application.solve import budgets
 from utk_curio.backend.app.agents.application.turns import grounding
 from utk_curio.backend.app.agents.application.turns import roster as packages_roster
 from utk_curio.backend.app.agents.application.turns import titles
+from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.infrastructure import providers
 from utk_curio.backend.tests._support.agent_routes import _auth
 from utk_curio.backend.tests.test_agents import test_routes_turns as routes_turns
-from utk_curio.backend.tests.test_agents.test_dataset_discovery_routes import _Harness
+from utk_curio.backend.tests.test_agents.test_dataset_discovery_routes import URL, _Harness
 
 DATA_OBSERVATION = {
     "status": "verified", "httpStatus": 200, "contentType": "application/geo+json",
@@ -575,3 +581,168 @@ class TestSettlingAcquisitions:
         }], status=dr.STATE_RESOLVED)
         pick = dr.confirmed_source(spec, "n1")["picks"][0]
         assert pick["sourceId"] == CHICAGO and pick["acquirable"] is True
+
+
+#: A loader's first attempts, a file nothing grounds: the gate refuses them,
+#: and its Dataset Finder is asked for candidates.
+INVENTED = 'import pandas as pd\nreturn pd.read_csv("invented.csv")'
+
+
+def _plan_session(h) -> dict:
+    """The plan's ledger and pause, as the Dataflow Builder's record holds them."""
+    return dict((attachments.get_attachment(h.spec(), h.att) or {}).get("builderSession") or {})
+
+
+class TestAPlanWaitsAsItsSourceDoes:
+    """A loader that a plan's Build & validate found waiting for its source
+    waits as its Dataset Finder's record says: for the user's pick, for its
+    download into the Data Catalog, or for the install of the dataset picked.
+    Its row and the pause say which. The record's resolution puts the row
+    back wherever the record resolves: a download that lands, an install
+    applied, a pick while a Solve session runs. A portal row's pick keeps the
+    plan waiting for its import, which the Finder's chat asks the user for.
+    On main the row needed a source and the pause said the Finder's chat
+    asked for it whatever the record said, and only a pick that resolved the
+    node at once and started no session's build put the row back."""
+
+    @pytest.fixture(autouse=True)
+    def _six_actions(self, monkeypatch):
+        monkeypatch.setattr(budgets, "SIMULATE_MAX_ACTIONS", 6)
+
+    def test_a_pick_that_downloads_says_so_and_its_landing_puts_the_row_back(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="wards.csv")
+        fake = _FakeDiscovery(started={"jobId": "job-1", "status": "queued"}, job={"status": "running"})
+        roster = packages_roster._LazyRoster
+        monkeypatch.setattr(packages_roster, "_LazyRoster", lambda: roster(dict(ROSTER)))
+        monkeypatch.setattr(acquire, "_discovery_service", lambda: fake)
+        monkeypatch.setattr(acquire, "_DISCOVERY_APPLY_WAIT_S", 0)
+        loader = f'import pandas as pd\nreturn pd.read_csv(curio_data_path("{dataset_id}"))'
+        h = _Harness(client, user, token, monkeypatch, discover_replies=[DISCOVERY_CANDIDATES],
+                     dl_replies=[INVENTED] * 3 + [loader])
+        h.simulate("auto")
+        picked = h.select(URL)
+        assert picked["status"] == dr.STATE_AWAITING_INSTALL, picked
+        assert (picked.get("delegated") or {}).get("status") == "acquiring", picked
+        session = _plan_session(h)
+        assert session["nodeStates"]["load"] == "awaiting-download", session
+        reason = session.get("pauseReason") or {}
+        assert [n.get("ref") for n in reason.get("nodes") or []] == ["load"], reason
+        assert "download" in reason["message"] and "asks you" not in reason["message"], reason
+        # Nothing waits for the user's pick.
+        assert h.cards()[h.finder_attachment_id()]["waitsForYou"] == []
+        # The download lands, and a Solve's entry reads what the account holds.
+        from utk_curio.backend.app.datasets.repositories import user_store
+
+        monkeypatch.setattr(
+            user_store.UserDatasetRepository, "discovery_resource_index",
+            lambda self: {(CHICAGO, "cauq-8yn6"): dataset_id},
+        )
+        with monkeypatch.context() as patched:
+            patched.setattr(spec_reads, "_acting_user", lambda: user)
+            acquire._settle_discovery_acquisitions(h.ukey, h.pid)
+        assert dr.source_record(h.spec(), h.load)["status"] == dr.STATE_RESOLVED
+        session = _plan_session(h)
+        assert session["nodeStates"]["load"] == "created", session
+        assert "pauseReason" not in session, session
+        # The next Build & validate builds the loader from the dataset, once.
+        tried = len(h.dl_calls)
+        done = h.simulate("auto")[-1][1]
+        assert done.get("status") == "completed", done
+        assert len(h.dl_calls) == tried + 1
+        assert f'curio_data_path("{dataset_id}")' in h.node_content(h.load)
+
+    def test_a_pick_waiting_for_its_install_says_so_and_the_install_puts_the_row_back(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="wards.csv")
+        candidates = json.dumps({"datasetCandidates": {"lanes": {"external": [], "catalog": [
+            {"name": "Community areas", "sourceType": "catalog", "datasetId": dataset_id},
+        ]}}})
+        h = _Harness(client, user, token, monkeypatch, discover_replies=[candidates])
+        h.simulate("auto")
+        finder = h.finder_attachment_id()
+        r = _select(h, finder, [{"lane": "catalog", "key": dataset_id}])
+        assert r.status_code == 200, r.get_data(as_text=True)
+        assert r.get_json()["status"] == dr.STATE_AWAITING_INSTALL, r.get_json()
+        session = _plan_session(h)
+        assert session["nodeStates"]["load"] == "awaiting-install", session
+        message = (session.get("pauseReason") or {}).get("message") or ""
+        assert "install" in message and "asks you" not in message, session
+        # The Dataset Finder's install of that dataset is applied.
+        spec = spec_reads._live_spec_or_404(h.ukey, h.pid)
+        record = attachments.get_attachment(spec, finder)
+        part = content.make_proposal_part(
+            proposal_id="finder-install", tool="dataset.install", summary="Add the areas",
+            preview=dataset_id, pins={"datasetId": dataset_id},
+        )
+        store._store_proposal(
+            h.ukey, h.pid, spec, {"attachment_id": finder, "session_id": record["sessionId"]},
+            {"proposalId": "finder-install", "tool": "dataset.install", "datasetId": dataset_id,
+             "summary": "Add the areas", "status": "pending"},
+            part,
+        )
+        applied = client.post(
+            f"/api/agents/projects/{h.pid}/attachments/{finder}/proposals/finder-install/apply",
+            headers=_auth(token),
+        )
+        assert applied.status_code == 200, applied.get_data(as_text=True)
+        assert dr.source_record(h.spec(), h.load)["status"] == dr.STATE_RESOLVED
+        session = _plan_session(h)
+        assert session["nodeStates"]["load"] == "created", session
+        assert "pauseReason" not in session, session
+
+    def test_a_portal_pick_keeps_the_plan_waiting_for_its_import(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """A portal row's file is not here until the user downloads it and
+        imports it from the card: the plan keeps waiting, and the listing says
+        the Finder and the chat that asked wait for the user. On main the
+        listing said nobody waited, while the pause said the Finder's chat
+        asked for it. The imported dataset's pick puts the row back."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        h.simulate("auto")
+        finder = h.finder_attachment_id()
+        monkeypatch.setattr(
+            'utk_curio.backend.app.agents.application.verify.verify_external_source',
+            lambda url, **k: dict(PORTAL_OBSERVATION),
+        )
+        body = _select(h, finder, [{"lane": "external", "key": URL}]).get_json()
+        assert body["delegated"]["status"] == "manual-download", body
+        session = _plan_session(h)
+        assert session["nodeStates"]["load"] == "awaiting-source", session
+        assert [n.get("ref") for n in (session.get("pauseReason") or {}).get("nodes") or []] == ["load"]
+        cards = h.cards()
+        assert {a: cards[a]["waitsForYou"] for a in (finder, h.att)} == {finder: [h.load], h.att: [h.load]}
+        dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="wards.csv")
+        body = _select(h, finder, [{"lane": "catalog", "key": dataset_id}]).get_json()
+        assert body["delegated"]["status"] == "plan-waiting", body
+        session = _plan_session(h)
+        assert session["nodeStates"]["load"] == "created", session
+        assert "pauseReason" not in session, session
+
+    def test_a_pick_while_a_solve_session_runs_puts_the_row_back(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The running Solve session builds the node from its pick, so the
+        plan waits for it no more. On main the session's answer came before
+        the plan's release: the row still needed a source, and the pause
+        still named it."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        h.simulate("auto")
+        finder = h.finder_attachment_id()
+        monkeypatch.setattr(
+            'utk_curio.backend.app.agents.application.verify.verify_external_source',
+            lambda url, **k: dict(API_OBSERVATION),
+        )
+        monkeypatch.setattr(agent_jobs, "live_job", lambda user_key, attachment_id: _FakeJob())
+        body = _select(h, finder, [{"lane": "external", "key": URL}]).get_json()
+        assert body["delegated"]["status"] == "session-running", body
+        session = _plan_session(h)
+        assert session["nodeStates"]["load"] == "created", session
+        assert "pauseReason" not in session, session
