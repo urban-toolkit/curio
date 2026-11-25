@@ -58,8 +58,12 @@ function placesOf(members: AgentAttachment[]): string {
 interface RailName {
   /** Its conversation's name, as its dock badge says it ("Node Builder:
    *  Heat colors" once titled), and its number among the instances of the
-   *  agent on one place that would read the same ("Dataset Finder (2)"). */
+   *  agent on one place that would read the same ("Dataset Finder (2)"):
+   *  its entry's tooltip and accessible name. */
   name: string;
+  /** Its entry's label: the agent's name, and that number ("Dataset Finder
+   *  (2)"). */
+  label: string;
   /** What it is attached to. */
   phrase: TargetPhrase;
   /** Its row in its group's list: the place, the title and the number. */
@@ -91,6 +95,7 @@ function railNamesOf(
     const after = `${a.title ? `: ${a.title}` : ""}${number}`;
     names.set(a.attachmentId, {
       name: `${attachmentDisplayName(a)}${number}`,
+      label: `${a.name}${number}`,
       phrase,
       row: `${phrase.short ?? phrase.object}${after}`,
       rowHeader: `${phrase.header}${after}`,
@@ -101,15 +106,16 @@ function railNamesOf(
 
 /**
  * The agents on this dataflow, down the chat panel's left side, in the
- * attachments' order: each one's glyph in its category's tint, its name, and
- * what it is attached to. Each is named as its dock badge names it, with its
- * conversation's title once it has one, and numbered when two instances of
- * one agent on one place would read the same. The open chat's entry is
- * marked (`aria-current`); an
- * agent at work shows its running dot, from its job and from the room, as its
- * badge does; hovering an entry names what it is attached to. An agent
- * attached three times or more (six Node Builders) is one entry, which opens
- * the list of its nodes; each row opens that node's chat.
+ * attachments' order: each one's glyph in its category's tint, its agent's
+ * name, and under it what it is attached to. Hovering an entry names its
+ * conversation, as its dock badge does, with the conversation's title once it
+ * has one, and what it is attached to; that is its accessible name too. Two
+ * instances of one agent on one place that would read the same are numbered,
+ * on the label as in the name. The open chat's entry is marked
+ * (`aria-current`); an agent at work shows its running dot, from its job and
+ * from the room, as its badge does. An agent attached three times or more
+ * (six Node Builders) is one entry, which opens the list of its nodes; each
+ * row opens that node's chat.
  */
 export const AgentRail: React.FC<{
   attachments: AgentAttachment[];
@@ -162,7 +168,7 @@ export const AgentRail: React.FC<{
           const open = entry.members.find((m) => m.attachmentId === selectedId) ?? null;
           const working = entry.members.map(workingOf).find(Boolean) ?? null;
           if (entry.members.length === 1) {
-            const { name, phrase } = nameOf(first);
+            const { name, label, phrase } = nameOf(first);
             const named = `${name} ${phrase.header}`;
             return (
               <button
@@ -178,7 +184,7 @@ export const AgentRail: React.FC<{
                 <span className={clsx(styles.glyph, agentChipClass(first.category))}>
                   <AgentGlyph category={first.category} working={working} />
                 </span>
-                <span className={styles.name}>{name}</span>
+                <span className={styles.name}>{label}</span>
                 {phrase.short ? <span className={styles.sub}>{phrase.short}</span> : null}
               </button>
             );

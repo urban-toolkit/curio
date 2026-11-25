@@ -77,15 +77,24 @@
   font-size: 15px;
 }
 
-.name,
+/* The agent's name, wrapped onto at most two lines within the rail's width,
+   and cut only past them; a word longer than the entry breaks inside it. */
+.name {
+  max-width: 100%;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+/* What it is attached to: one line in smaller type, cut short. */
 .sub {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.sub {
   font-size: 9.5px;
   font-weight: 400;
   color: var(--curio-text-secondary);
