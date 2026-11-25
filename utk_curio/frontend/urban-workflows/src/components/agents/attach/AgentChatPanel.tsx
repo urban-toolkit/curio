@@ -597,6 +597,7 @@ export const AgentChatPanel: React.FC<{
         ) : null}
 
         <Composer
+          agentName={attachment.name}
           value={input}
           onChange={setInput}
           onSend={() => void send()}

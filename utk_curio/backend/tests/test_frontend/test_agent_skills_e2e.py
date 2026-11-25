@@ -212,7 +212,7 @@ def test_a_skill_added_to_an_agent_reaches_its_chat(page, frontend_server, curre
     project_id, _attachment_id, _base = _open_dataflow_with_agent(
         session, spec, project_name="Skills reach the chat", replies=(VISIBLE_PROSE,))
     panel = _open_chat(page, spec)
-    box = panel.get_by_role("textbox", name="Message this agent")
+    box = panel.get_by_role("textbox", name=re.compile(r"^Message "))
 
     # `/` lists the skills its next run lists: its own, and the one added.
     offered = [*spec.skills, ADDED]

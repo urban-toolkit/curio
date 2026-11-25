@@ -200,7 +200,7 @@ class TestTheDataflowBuilderBuildsTwoScenarios:
         page.wait_for_function("() => !!window.__curio_reactFlow", timeout=30000)
         dismiss_toasts(page)
         panel = _open_chat(page)
-        panel.get_by_role("textbox", name="Message this agent").fill(
+        panel.get_by_role("textbox", name=re.compile(r"^Message ")).fill(
             "Compare the shadows of these buildings at their real heights and twice as tall."
         )
         panel.get_by_role("button", name="Send", exact=True).click()

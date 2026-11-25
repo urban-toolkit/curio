@@ -22,8 +22,10 @@ import styles from "../AgentChatPanel.module.css";
  *
  * While a turn runs, Stop takes Send's place, as long as nothing is typed: a
  * message typed meanwhile brings Send back, and is asked at once to wait its
- * turn. */
+ * turn. The box names the agent it messages, "Message Dataflow Builder". */
 export const Composer: React.FC<{
+  /** The agent's name, as its manifest gives it. */
+  agentName: string;
   value: string;
   onChange: (value: string) => void;
   onSend: () => void;
@@ -34,7 +36,7 @@ export const Composer: React.FC<{
   onStop?: () => void;
   /** Stop was asked for: the turn stops at its next step. */
   stopping?: boolean;
-}> = ({ value, onChange, onSend, busy, textareaRef, loadSkills, onStop, stopping = false }) => {
+}> = ({ agentName, value, onChange, onSend, busy, textareaRef, loadSkills, onStop, stopping = false }) => {
   const listId = useId();
   const [caret, setCaret] = useState(value.length);
   const [skills, setSkills] = useState<RunSkill[] | null>(null);
@@ -161,8 +163,8 @@ export const Composer: React.FC<{
         className={styles.input}
         value={value}
         rows={1}
-        aria-label="Message this agent"
-        placeholder="Message this agent…"
+        aria-label={`Message ${agentName}`}
+        placeholder={`Message ${agentName}…`}
         aria-autocomplete={loadSkills ? "list" : undefined}
         aria-expanded={loadSkills ? open : undefined}
         aria-controls={open ? listId : undefined}

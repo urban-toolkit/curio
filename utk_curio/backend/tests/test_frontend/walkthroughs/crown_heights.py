@@ -393,7 +393,7 @@ def _open_chat(ctx: Ctx, agent):
 def _send(ctx: Ctx, panel, message: str, *, shown: int | None = None) -> None:
     """Type *message* and send it. With *shown*, the clip shows its first
     *shown* characters typed and cuts to the whole of it."""
-    field = panel.get_by_role("textbox", name="Message this agent")
+    field = panel.get_by_role("textbox", name=re.compile(r"^Message "))
     if shown is None:
         ctx.narrator.type_into(field, message)
     else:

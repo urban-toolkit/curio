@@ -270,7 +270,7 @@ def _open_chat(page, spec):
 
 
 def _send(panel, message: str):
-    panel.get_by_role("textbox", name="Message this agent").fill(message)
+    panel.get_by_role("textbox", name=re.compile(r"^Message ")).fill(message)
     panel.get_by_role("button", name="Send", exact=True).click()
 
 

@@ -168,7 +168,7 @@ describe("AgentChatPanel", () => {
   it("sends the trimmed message through onSend", async () => {
     const onSend = jest.fn().mockResolvedValue(undefined);
     renderPanel({ onSend });
-    fireEvent.change(screen.getByPlaceholderText(/message this agent/i), {
+    fireEvent.change(screen.getByPlaceholderText(/^Message /), {
       target: { value: "  explain this  " },
     });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -184,7 +184,7 @@ describe("AgentChatPanel", () => {
   it("Enter sends the message with interior newlines preserved", async () => {
     const onSend = jest.fn().mockResolvedValue(undefined);
     renderPanel({ onSend });
-    const composer = screen.getByPlaceholderText(/message this agent/i);
+    const composer = screen.getByPlaceholderText(/^Message /);
     // jsdom's paste-equivalent: the value lands with its \n intact.
     fireEvent.change(composer, { target: { value: "line1\n\nline3\n" } });
     fireEvent.keyDown(composer, { key: "Enter" });
@@ -195,7 +195,7 @@ describe("AgentChatPanel", () => {
   it("Shift+Enter does not send", () => {
     const onSend = jest.fn().mockResolvedValue(undefined);
     renderPanel({ onSend });
-    const composer = screen.getByPlaceholderText(/message this agent/i);
+    const composer = screen.getByPlaceholderText(/^Message /);
     fireEvent.change(composer, { target: { value: "draft" } });
     fireEvent.keyDown(composer, { key: "Enter", shiftKey: true });
     expect(onSend).not.toHaveBeenCalled();
@@ -205,7 +205,7 @@ describe("AgentChatPanel", () => {
   it("Enter during an IME composition does not send", () => {
     const onSend = jest.fn().mockResolvedValue(undefined);
     renderPanel({ onSend });
-    const composer = screen.getByPlaceholderText(/message this agent/i);
+    const composer = screen.getByPlaceholderText(/^Message /);
     fireEvent.change(composer, { target: { value: "変換中" } });
     fireEvent.keyDown(composer, { key: "Enter", isComposing: true });
     expect(onSend).not.toHaveBeenCalled();
@@ -214,7 +214,7 @@ describe("AgentChatPanel", () => {
   it("whitespace/newline-only input never sends", () => {
     const onSend = jest.fn().mockResolvedValue(undefined);
     renderPanel({ onSend });
-    const composer = screen.getByPlaceholderText(/message this agent/i);
+    const composer = screen.getByPlaceholderText(/^Message /);
     fireEvent.change(composer, { target: { value: " \n \n " } });
     fireEvent.keyDown(composer, { key: "Enter" });
     expect(onSend).not.toHaveBeenCalled();
@@ -244,6 +244,12 @@ describe("AgentChatPanel", () => {
   it("Send is disabled on empty input", () => {
     renderPanel();
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+  });
+
+  it("the composer names the agent it messages, by the agent's own name", () => {
+    renderPanel({ attachment: { ...attachment, title: "Dataset Import Help" } });
+    const box = screen.getByRole("textbox", { name: "Message My Explainer" });
+    expect(box).toHaveAttribute("placeholder", "Message My Explainer…");
   });
 
   it("the close button closes without detaching", () => {
@@ -876,7 +882,7 @@ describe("AgentChatPanel structured content (memo dev/39)", () => {
 
   it("a user-typed draft is never overwritten by a prefill", () => {
     const { rerender, props } = renderPanel({ turns: [{ role: "user", text: "q" }] });
-    fireEvent.change(screen.getByPlaceholderText(/message this agent/i), {
+    fireEvent.change(screen.getByPlaceholderText(/^Message /), {
       target: { value: "my own words" },
     });
     rerender(<AgentChatPanel {...props} turns={promptsTurns} />);
@@ -1413,7 +1419,7 @@ describe("AgentChatPanel follow-at-bottom auto-scroll (memo dev/75)", () => {
     userScroll(transcript, 100);
     const pill = screen.getByRole("button", { name: /jump to latest/i });
     expect(transcript.contains(pill)).toBe(false);
-    const composer = screen.getByPlaceholderText(/message this agent/i);
+    const composer = screen.getByPlaceholderText(/^Message /);
     // eslint-disable-next-line no-bitwise
     expect(transcript.compareDocumentPosition(pill) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // eslint-disable-next-line no-bitwise
@@ -1437,7 +1443,7 @@ describe("AgentChatPanel follow-at-bottom auto-scroll (memo dev/75)", () => {
     const onSend = jest.fn().mockResolvedValue(undefined);
     const { transcript } = renderWithTranscript({ onSend });
     userScroll(transcript, 100);
-    fireEvent.change(screen.getByPlaceholderText(/message this agent/i), {
+    fireEvent.change(screen.getByPlaceholderText(/^Message /), {
       target: { value: "follow up" },
     });
     await act(async () => {
@@ -1584,7 +1590,7 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
   it("while a turn runs, Send stays ready: the message is asked and waits its turn", async () => {
     const onSend = jest.fn().mockResolvedValue(undefined);
     renderPanel({ runStatus: runningStatus(), onSend });
-    fireEvent.change(screen.getByPlaceholderText(/message this agent/i), {
+    fireEvent.change(screen.getByPlaceholderText(/^Message /), {
       target: { value: "queued question" },
     });
     const send = screen.getByRole("button", { name: "Send" });
@@ -1592,7 +1598,7 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
     expect(send).not.toHaveTextContent("…");
     fireEvent.click(send);
     expect(onSend).toHaveBeenCalledWith("queued question");
-    await waitFor(() => expect(screen.getByPlaceholderText(/message this agent/i)).toHaveValue(""));
+    await waitFor(() => expect(screen.getByPlaceholderText(/^Message /)).toHaveValue(""));
   });
 
   it("while a turn runs, Stop asks for it to stop, once, and goes with the turn", async () => {
@@ -1624,7 +1630,7 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
 
   it("while a turn runs, a message typed brings Send back, and clearing it brings Stop back", () => {
     renderPanel({ runStatus: runningStatus(), turns: [{ role: "user", text: "q1" }], onStopTurn: jest.fn() });
-    const composer = screen.getByPlaceholderText(/message this agent/i);
+    const composer = screen.getByPlaceholderText(/^Message /);
     fireEvent.change(composer, { target: { value: "and then?" } });
     expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
     expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
@@ -1687,7 +1693,7 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
     // per-attachment status (null = idle) must win.
     const onSend = jest.fn().mockReturnValue(new Promise(() => undefined));
     const { rerender, props } = renderPanel({ onSend, runStatus: runningStatus() });
-    fireEvent.change(screen.getByPlaceholderText(/message this agent/i), {
+    fireEvent.change(screen.getByPlaceholderText(/^Message /), {
       target: { value: "first" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -1699,7 +1705,7 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
         runStatus={null}
       />,
     );
-    fireEvent.change(screen.getByPlaceholderText(/message this agent/i), {
+    fireEvent.change(screen.getByPlaceholderText(/^Message /), {
       target: { value: "second chat draft" },
     });
     const send = screen.getByRole("button", { name: "Send" });
@@ -1872,7 +1878,7 @@ describe("AgentChatPanel — dev/114 candidates in the Node Builder chat", () =>
       turns: candidatesTurns,
     });
     fireEvent.click(screen.getByRole("checkbox", { name: "Select NOAA Climate Data API" }));
-    expect(screen.getByPlaceholderText(/message this agent/i)).toHaveValue(
+    expect(screen.getByPlaceholderText(/^Message /)).toHaveValue(
       "Build the data-loading node — fetch from: NOAA Climate Data API (https://api.noaa.gov).",
     );
   });
@@ -1889,7 +1895,7 @@ describe("AgentChatPanel — dev/114 candidates in the Node Builder chat", () =>
       turns: candidatesTurns,
     });
     fireEvent.click(screen.getByRole("checkbox", { name: "Select NOAA Climate Data API" }));
-    expect(screen.getByPlaceholderText(/message this agent/i)).toHaveValue(
+    expect(screen.getByPlaceholderText(/^Message /)).toHaveValue(
       "Confirm my selection — hand off to Node Builder: NOAA Climate Data API.",
     );
   });
@@ -2250,7 +2256,7 @@ describe("AgentChatPanel offers each feature by what the agent declares", () => 
     );
     expect(BUILDER_TEMPLATES).toHaveLength(6);
     fireEvent.click(within(templates).getByRole("button", { name: "Load and Clean" }));
-    expect(screen.getByPlaceholderText(/message this agent/i)).toHaveValue(BUILDER_TEMPLATES[0].seed);
+    expect(screen.getByPlaceholderText(/^Message /)).toHaveValue(BUILDER_TEMPLATES[0].seed);
     // Nothing is sent until Send.
     expect(onSend).not.toHaveBeenCalled();
   });
@@ -2301,7 +2307,7 @@ describe("AgentChatPanel offers each feature by what the agent declares", () => 
       turns: [candidates],
     });
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Chicago areas" }));
-    expect(screen.getByPlaceholderText(/message this agent/i)).toHaveValue(
+    expect(screen.getByPlaceholderText(/^Message /)).toHaveValue(
       "Build the data-loading node — fetch from: Chicago areas (https://data.example.org/areas.geojson).",
     );
   });
@@ -2465,7 +2471,7 @@ describe("AgentChatPanel names the agent a label opens or hands work to", () => 
       ],
     });
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Chicago areas" }));
-    expect(screen.getByPlaceholderText(/message this agent/i)).toHaveValue(
+    expect(screen.getByPlaceholderText(/^Message /)).toHaveValue(
       "Confirm my selection \u2014 hand off to My Builder: Chicago areas.",
     );
   });

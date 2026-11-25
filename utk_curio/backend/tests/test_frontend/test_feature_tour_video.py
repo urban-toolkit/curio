@@ -1519,7 +1519,7 @@ def scene_agent_run(ctx: Ctx) -> None:
         tour.focus(intent.first, hold=1400)
     tour.hush()
 
-    composer = panel.get_by_label("Message this agent")
+    composer = panel.get_by_label(re.compile(r"^Message "))
     tour.type_into(composer, "What does this node compute, and why?", delay=38)
     tour.hush()
 

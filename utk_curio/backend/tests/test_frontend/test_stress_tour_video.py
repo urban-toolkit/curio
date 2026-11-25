@@ -2309,7 +2309,7 @@ def chapter_agents(run: StressRun) -> None:
         badge = page.get_by_role("button", name=re.compile("^Open chat with"))
         assert badge.count(), "no attached-agent avatar to open a chat from"
         tour.click(badge.first)
-        expect(page.get_by_label("Message this agent")).to_be_visible(timeout=20000)
+        expect(page.get_by_label(re.compile(r"^Message "))).to_be_visible(timeout=20000)
         run.snap("agent-chat-panel")
 
     with run.step("Rename the conversation"):
@@ -2341,7 +2341,7 @@ def chapter_agents(run: StressRun) -> None:
     roster = run.state.get("attached_agents", installed)
     for index in range(len(roster)):
         header = page.locator("[role=dialog]").filter(
-            has=page.get_by_label("Message this agent")
+            has=page.get_by_label(re.compile(r"^Message "))
         )
         name = ""
         try:
@@ -2352,7 +2352,7 @@ def chapter_agents(run: StressRun) -> None:
             pass
         with run.step(f"Live turn {index + 1}/{len(roster)}: {name or 'agent'}",
                       may_fail=True, allow=("HTTP 4\\d\\d", "HTTP 5\\d\\d", "toast")):
-            composer = page.get_by_label("Message this agent")
+            composer = page.get_by_label(re.compile(r"^Message "))
             composer.fill(
                 "In one sentence: what would you do with this dataflow?"
             )
