@@ -2553,7 +2553,9 @@ it as it runs. One message of a chat runs at a time: one you send while another
 runs waits its turn (*Waiting its turn*), and **Withdraw** takes it back before
 it starts. **Stop** stops the message that runs at its next step, keeping what
 it said and changed so far. A reply that reaches the output limit (4,096
-tokens) stops there and ends with a line that says it was cut off.
+tokens) stops there and ends with a line that says it was cut off. When the
+agent uses its three tool rounds before it writes an answer, the reply says so:
+ask again to continue.
 
 Type `/` at the start of a message to list the agent's
 [skills](SKILL-CATALOG.md#3-using-a-skill). Pick one with the arrow keys and Enter, or a
