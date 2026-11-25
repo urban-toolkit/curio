@@ -18,7 +18,8 @@
 - [ ] Sandbox
 
 # Testing
- - [ ] Executed `python curio.py test` and it passed all tests.
+ - [ ] I ran the test suites that my change touches, and they passed (see Running Tests in `docs/CONTRIBUTING.md`). `python curio.py test` first deletes `.curio/`, `node_modules/`, `dist/` and `build/` in the checkout.
+ - [ ] If this PR comes from a fork (CI does not run the test suites on one), the description gives the results of my local runs.
 
 # Screenshots (if relevant)
 

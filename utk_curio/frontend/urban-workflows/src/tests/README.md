@@ -17,17 +17,21 @@ npm test -- --coverage
 
 ## Project Structure
 
-Tests are organized in a separate `tests/` directory that mirrors the source code structure:
+Tests are in a separate `tests/` directory. Some of its folders have the name of the `src/` folder whose code they test. Others hold the tests of one feature (`agents/`, `catalog/`, `packages/`, ...):
 
 ```
 src/
 ├── tests/
-│   ├── components/    # Component tests
-│   ├── providers/     # Context provider tests (TODO)
-│   ├── services/      # Service/API tests (TODO)
-│   ├── hooks/         # Custom hook tests (TODO)
-│   └── utils/         # Utility function tests (TODO)
+│   ├── _support/      # Helpers that tests share (Jest does not run them as tests)
+│   ├── adapters/      # Tests of src/adapters/
+│   ├── components/    # Tests of src/components/
+│   ├── hook/          # Tests of src/hook/
+│   ├── providers/     # Tests of src/providers/
+│   ├── services/      # Tests of src/services/
+│   ├── utils/         # Tests of src/utils/
+│   └── ...            # Other src/ folders, and the feature folders
 ├── components/        # Source components
+├── hook/              # Source hooks
 ├── providers/         # Source providers
 └── setupTests.ts      # Test configuration
 ```
@@ -67,7 +71,7 @@ Since tests are in a separate directory, use relative imports:
 
 ```typescript
 import { Component } from '../../components/Component';
-import { useCustomHook } from '../../hooks/useCustomHook';
+import { useCustomHook } from '../../hook/useCustomHook';
 ```
 
 ## Testing Guidelines
@@ -89,7 +93,7 @@ Mock external dependencies and modules as needed:
 
 ```typescript
 // Mock a custom hook
-jest.mock('../../hooks/useAuth', () => ({
+jest.mock('../../hook/useAuth', () => ({
   useAuth: () => ({
     user: { id: '123', name: 'Test User' },
     isAuthenticated: true,
@@ -135,7 +139,7 @@ one at once.
 
 ```bash
 # Run tests matching a pattern
-npm test -- --testPathPattern=Button
+npm test -- --testPathPatterns=Button
 
 # Run tests with a specific name
 npm test -- --testNamePattern="renders correctly"
