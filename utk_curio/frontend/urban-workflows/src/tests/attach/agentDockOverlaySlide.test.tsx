@@ -43,6 +43,7 @@ const mockFlowState = {
   edges: [],
 };
 jest.mock("reactflow", () => ({
+  ...jest.requireActual("reactflow"),
   useReactFlow: () => ({ getNodes: () => [], getEdges: () => [] }),
   useStore: (selector: (state: unknown) => unknown) => selector(mockFlowState),
 }));
