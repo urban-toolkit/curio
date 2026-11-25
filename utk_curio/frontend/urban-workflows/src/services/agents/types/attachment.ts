@@ -58,9 +58,10 @@ export interface AgentAttachment {
    * Null when none runs; the dock's running indicator and the chat panel's
    * re-attach derive from it. */
   liveJob?: AgentLiveJob | null;
-  /** The nodes whose source this agent waits for the user to pick: a Dataset
-   * Finder's own node, and the nodes whose candidates its chat asked for.
-   * Empty when it waits for none. */
+  /** The nodes whose source this agent waits for the user to pick, or, for a
+   * portal row picked, to download and import: a Dataset Finder's own node,
+   * and the nodes whose candidates its chat asked for. Empty when it waits
+   * for none. */
   waitsForYou?: string[];
   /** A Dataset Finder's record of its node's source; null for other agents. */
   sourceRecord?: AgentDatasetSourceRecord | null;
