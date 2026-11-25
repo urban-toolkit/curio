@@ -1040,7 +1040,23 @@ class TestWebTools:
         )
         assert status == "error" and "egress policy" in text
         status, text = self._fetch({})
-        assert status == "error" and "params.url" in text
+        assert status == "refused" and "params.url" in text
+
+    @pytest.mark.parametrize("tool, params, missing", [
+        ("web.fetch", {}, "params.url"), ("web.fetch", {"url": "  "}, "params.url"),
+        ("web.search", {}, "params.q"), ("web.search", {"q": ""}, "params.q"),
+    ])
+    def test_a_web_read_its_params_cannot_make_is_refused_and_reaches_no_one(
+            self, monkeypatch, tool, params, missing):
+        """A read with no URL or no query is refused for its params, as a
+        parameter refusal is (``tool_rounds.ParamRefusal``), and asks nothing."""
+        from utk_curio.backend.app.agents.infrastructure import egress
+
+        asked = []
+        monkeypatch.setattr(egress, "fetch", lambda url, **kw: asked.append(url))
+        status, text = tools.execute_read_tool(tool, user_key="42", project_id="none", target=None, params=params)
+        assert (status, missing in text) == ("refused", True), (status, text)
+        assert asked == []
 
     def test_web_search_falls_back_to_the_default_provider(self, monkeypatch):
         """Unset is no longer unconfigured: search works out of the box."""

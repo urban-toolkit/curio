@@ -79,6 +79,7 @@ def _execution_record(
     refused_rounds: int = 0,
     retry_of: str | None = None,
     skills_loaded: list | None = None,
+    free_web_reads: int = 0,
 ) -> dict:
     """Assemble the per-run execution record persisted on the agent turn.
 
@@ -107,6 +108,10 @@ def _execution_record(
         # — auditable beside toolCalls[].status so a run that leaned on the
         # free corrections is legible after the fact.
         record["refusedRounds"] = refused_rounds
+    if free_web_reads:
+        # The web reads that worked and spent no round
+        # (``tool_rounds.FREE_WEB_READS``), beside the free refusals.
+        record["freeWebReads"] = free_web_reads
     if retry_of:
         # dev/115 (DEC-021): a retry after an interruption is a NEW execution
         # linked to the one that expired — nothing was replayed.

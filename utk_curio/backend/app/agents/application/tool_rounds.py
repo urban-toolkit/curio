@@ -290,15 +290,26 @@ def _handle_tool_reply(
     return "cap", list(parts) + [card], visible_override, None
 
 
-# How many tool executions one run may make (memo dev/41): total provider
-# calls per run ≤ MAX_TOOL_ROUNDS + 1, and one more when the last round's
-# reply wrote a call as text, which turn_loop asks once more with no tools. A
-# runtime constant until someone needs to tune it.
+# How many tool executions one run may make that spend a round (memo dev/41).
+# A runtime constant until someone needs to tune it.
 # dev/73: 3, the Node Builder's documented modify flow (read the node →
 # delegate generation → write the node) is a three-round sequence; 2 forced
 # models that follow their instructions to answer in prose instead of writing.
 # A plan's last try, in the call after the last round, is judged too, as a
 # plan block in the reply after the last round is (``_is_plan_request``).
+#
+# The calls of the model one turn's loop makes: one before each round, one
+# before each execution that spends none (``skill_runs.FREE_READS`` skill
+# reads, MAX_REFUSED_ROUNDS parameter refusals and FREE_WEB_READS web reads
+# that worked, a turn), the last round's call, that call once more when its
+# reply left no answer (a call written as text, or no text at all:
+# ``turn_loop.AttachmentTurn._asks_again``, once a turn), and the same call
+# again on the fenced protocol when the endpoint refuses the native tools
+# (``NativeToolsRefused``, once). So at most MAX_TOOL_ROUNDS +
+# skill_runs.FREE_READS + MAX_REFUSED_ROUNDS + FREE_WEB_READS + 3 calls, 16
+# today. The conversation's title, a delegate's own run and a request the
+# provider layer sends again (``providers._asked_with_room``,
+# ``_ask_for_stream``) are not among them.
 MAX_TOOL_ROUNDS = 3
 
 
@@ -312,6 +323,48 @@ MAX_TOOL_ROUNDS = 3
 # the reuse ladder's last rung (AUTHOR) was unreachable no matter what the
 # model decided next.
 MAX_REFUSED_ROUNDS = 2
+
+
+# A web read that worked (``_web_read_worked``) does not spend a
+# MAX_TOOL_ROUNDS round either, up to this many a turn, as a skill read does
+# not (``skill_runs.FREE_READS``). The owner's call, 11-25: "tasks that search
+# and read pages should get more than 3 tool rounds". In the SearXNG proving
+# run 45671908088 (DeepSeek, the Researcher), research-notes case 3 called
+# web.search, web.fetch and web.fetch, each of which worked, and then had no
+# round left to write its notes; 12 of research-notes' 18 runs and 15 of
+# fact-checking's 18 reached the cap on their third web read, so three reads
+# is where the cap stopped them, not what they needed. Four is the egress
+# budget's own number (``egress.MAX_CALLS_PER_RUN``, the web calls a run may
+# make, which its instructions state): every web read a turn may make is free
+# while it works, and the turn's rounds are left for what the reads were for,
+# such as one note per finding. A web read that failed (a search its provider
+# answered with an empty answer, a page that is not JSON or not with 200, a
+# page read that answered other than 200, the egress policy's refusal, a
+# timeout, a provider it could not reach) spends a round as before, so a dead
+# provider cannot keep a turn going, and
+# one refused for its params is a parameter refusal (MAX_REFUSED_ROUNDS),
+# which gives back its web call (``_execute_tool_request``).
+FREE_WEB_READS = 4
+
+#: The web reads (FREE_WEB_READS).
+_WEB_READS = ("web.search", "web.fetch")
+
+
+def _web_read_worked(tool_id: str, status: str, text: object) -> bool:
+    """Whether *tool_id*'s call was a web read that worked: a search its
+    provider answered with 200 and JSON, its rows or none (any other answer
+    is an ``error``, ``tools._execute_web_search``), or a page that answered
+    200 (its result is ``ok`` whatever the page answered, and holds the
+    answer's ``status``, ``tools._execute_web_fetch``). A result the
+    tool-result cap cut reads as not worked."""
+    if tool_id not in _WEB_READS or status != "ok":
+        return False
+    if tool_id == "web.search":
+        return True
+    try:
+        return _json.loads(str(text)).get("status") == 200
+    except (ValueError, AttributeError):
+        return False
 
 
 class ParamRefusal(str):
@@ -430,6 +483,13 @@ def _execute_tool_request(
                 target=loop_ctx.get("target"),
                 params=req.get("params") or {},
             )
+            if status == "refused" and tool_id in _WEB_READS:
+                # A web read with no URL or no query, which the model can
+                # give, is a parameter refusal, as a skill's name is. It
+                # made no request, so it gives back the web call charged
+                # above, and the reads after it keep the whole budget.
+                text = ParamRefusal(text)
+                loop_ctx["egressCalls"] -= _egress_cost(tool_id, req.get("params") or {})
     record = {
         "tool": tool_id,
         "status": status,

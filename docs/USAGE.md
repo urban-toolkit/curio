@@ -2566,7 +2566,8 @@ place: it stops the message at its next step, keeping what it said and changed
 so far. A reply that reaches the output limit (4,096
 tokens) stops there and ends with a line that says it was cut off. When the
 agent uses its three tool rounds before it writes an answer, the reply says so:
-ask again to continue.
+ask again to continue. A web search or a page read that works uses none of
+them, for up to four a reply.
 
 Type `/` at the start of a message to list the agent's
 [skills](SKILL-CATALOG.md#3-using-a-skill). Pick one with the arrow keys and Enter, or a
