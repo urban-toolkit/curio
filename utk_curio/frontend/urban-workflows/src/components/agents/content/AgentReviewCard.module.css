@@ -218,6 +218,24 @@
   white-space: nowrap;
 }
 
+/* A row's Run, beside its Solve: the builder strip's Run, on the card's own
+   ground. */
+.run {
+  border: 1px solid var(--curio-success-bg);
+  border-radius: 8px;
+  padding: 5px 15px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--curio-success-text);
+  background: var(--curio-card-bg);
+  cursor: pointer;
+}
+
+.run:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .planNodeCreated {
   color: var(--curio-success-text);
   font-size: 0.78rem;
