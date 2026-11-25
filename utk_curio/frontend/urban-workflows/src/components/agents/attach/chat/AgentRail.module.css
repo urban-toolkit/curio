@@ -1,0 +1,200 @@
+/* The agents on the dataflow, down the chat panel's left side (AgentRail). */
+
+/* Positions a group's list beside its entry, over the conversation. */
+.railWrap {
+  position: relative;
+  flex: none;
+  display: flex;
+}
+
+.rail {
+  composes: thinScrollbar from "../../../../styles/scrollbars.module.css";
+  width: 78px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 6px;
+  overflow-y: auto;
+  background: var(--curio-page-bg);
+  border-right: 1px solid var(--curio-border);
+}
+
+/* One agent: its glyph, its name, and what it is attached to. */
+.entry {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 2px 7px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  font-size: 10.5px;
+  line-height: 1.2;
+  color: var(--curio-text-secondary);
+  text-align: center;
+  cursor: pointer;
+}
+
+.entry:hover,
+.entry:focus-visible {
+  background: var(--curio-surface-muted);
+  color: var(--curio-text-primary);
+}
+
+/* The open chat's agent. */
+.entryOpen {
+  background: var(--curio-card-bg);
+  border-color: var(--curio-border-strong);
+  color: var(--curio-text-primary);
+  font-weight: 600;
+  box-shadow: var(--curio-shadow-card);
+}
+
+.entryOpen:hover,
+.entryOpen:focus-visible {
+  background: var(--curio-card-bg);
+}
+
+/* A group whose list is open. */
+.entryExpanded {
+  background: var(--curio-surface-muted);
+}
+
+/* The glyph's tile, in the category's tint; it anchors the running dot and a
+   group's count. */
+.glyph {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+}
+
+/* The agent's name, wrapped onto at most two lines within the rail's width,
+   and cut only past them; a word longer than the entry breaks inside it. */
+.name {
+  max-width: 100%;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+/* What it is attached to: one line in smaller type, cut short. */
+.sub {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9.5px;
+  font-weight: 400;
+  color: var(--curio-text-secondary);
+}
+
+/* How many attachments a group holds. */
+.count {
+  position: absolute;
+  bottom: -4px;
+  right: -7px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  background: var(--curio-top-bar-bg);
+  color: var(--curio-text-on-dark);
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+}
+
+/* A group's nodes: each row opens that node's chat. Never taller than the
+   panel, less a gap above and below; the rail places it inside the panel. */
+.flyout {
+  position: absolute;
+  left: calc(100% - 4px);
+  z-index: 6;
+  width: 236px;
+  max-height: min(320px, calc(100% - 16px));
+  overflow-y: auto;
+  padding: 6px;
+  box-sizing: border-box;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: 10px;
+  background: var(--curio-card-bg);
+  box-shadow: var(--curio-shadow-modal);
+}
+
+.flyoutHead {
+  padding: 6px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--curio-text-secondary);
+}
+
+.flyoutItem {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--curio-text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.flyoutItem:hover,
+.flyoutItem:focus-visible {
+  background: var(--curio-surface-muted);
+}
+
+.flyoutItemOpen {
+  font-weight: 600;
+}
+
+.flyoutDot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--curio-border-strong);
+}
+
+.flyoutDotWorking {
+  background: var(--curio-role-running-fg);
+}
+
+.flyoutName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* "at work", on the running role's own tint. */
+.flyoutNote {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--curio-role-running-fg);
+  background: var(--curio-role-running-bg);
+}

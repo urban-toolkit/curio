@@ -245,7 +245,7 @@ def test_solve_writes_a_planned_chart_and_map_whose_inputs_have_run(
     opener.click()
     panel = page.get_by_role("dialog", name=re.compile(rf"^Chat with {re.escape(DFB_NAME)}"))
     expect(panel).to_be_visible(timeout=20000)
-    panel.get_by_role("textbox", name="Message this agent").fill("Chart and map these points.")
+    panel.get_by_role("textbox", name=re.compile(r"^Message ")).fill("Chart and map these points.")
     panel.get_by_role("button", name="Send", exact=True).click()
     card = panel.get_by_role("group", name=re.compile(r"^Change: Plan")).first
     expect(card).to_be_visible(timeout=90000)

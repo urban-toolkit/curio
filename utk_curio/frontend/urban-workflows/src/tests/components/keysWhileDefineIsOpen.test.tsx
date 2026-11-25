@@ -167,7 +167,7 @@ test.each([
 
 test("an Escape typed into the agents' chat closes the chat, and Define stays open with its pick", () => {
   render(tree("chat"));
-  fireEvent.keyDown(screen.getByPlaceholderText(/message this agent/i), { key: "Escape" });
+  fireEvent.keyDown(screen.getByPlaceholderText(/^Message /), { key: "Escape" });
   expect(closeChat).toHaveBeenCalledTimes(1);
   expect(setDefine).not.toHaveBeenCalled();
   expect(definePanel()).toBeInTheDocument();

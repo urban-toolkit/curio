@@ -14,6 +14,20 @@ export function agentTint(category: string | null | undefined): string {
 }
 
 /**
+ * What an agent at work is doing, for its running dot, or null while it is not
+ * at work: *atWork*, its chip's words while it is in the dataflow's room, else
+ * its Solve running in the background (dev/115; opening the chat re-attaches).
+ * Its badge, its chip in the dock and its entry in the chat's rail all ask
+ * this.
+ */
+export function workingText(attachment: AgentAttachment, atWork: string | null = null): string | null {
+  return atWork
+    ?? (attachment.liveJob?.status === "running"
+      ? `${attachmentDisplayName(attachment)} is solving in the background`
+      : null);
+}
+
+/**
  * What an agent's chip holds: its category's glyph, not the generic robot
  * (several agents can be attached to one canvas, and on the canvas the badge
  * is all there is to tell them apart), and while it works the running dot,
@@ -51,10 +65,8 @@ export const AgentAvatarBadge: React.FC<{
   // multiple instances of the same template stay distinguishable.
   const displayName = attachmentDisplayName(attachment);
   // dev/115 (docs/11:178): the dock's running dot, while this agent's Solve
-  // runs in the background (opening the chat re-attaches), or while the agent
-  // is at work in the room.
-  const working = atWork
-    ?? (attachment.liveJob?.status === "running" ? `${displayName} is solving in the background` : null);
+  // runs in the background, or while the agent is at work in the room.
+  const working = workingText(attachment, atWork);
   return (
     <div
       className={`${styles.badge} ${active ? styles.badgeActive : ""}`}

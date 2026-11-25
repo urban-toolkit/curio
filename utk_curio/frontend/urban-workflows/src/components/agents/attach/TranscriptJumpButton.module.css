@@ -1,13 +1,7 @@
 /* "Jump to latest" pill (memo dev/75): dark-pill accent matching the chat
-   chrome (user bubbles / top bar use the same token). Absolute overlay — the
-   parent wraps the scroll container in a position:relative box, so appearing
-   never shifts layout. */
+   chrome (user bubbles / top bar use the same token). The chat draws it in a
+   row of its own above the composer, so it covers no message. */
 .jump {
-  position: absolute;
-  bottom: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 5;
   display: inline-flex;
   align-items: center;
   gap: 6px;

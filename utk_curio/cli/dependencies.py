@@ -26,6 +26,31 @@ from utk_curio.cli.logs import (
 )
 
 
+#: The one Python Curio runs on: ``requires-python`` in ``pyproject.toml``.
+PYTHON_VERSION = (3, 12)
+
+
+def require_supported_python():
+    """Refuse to set up or start Curio on another Python than
+    :data:`PYTHON_VERSION`.
+
+    ``pip install utk-curio`` refuses it already, but a clone does not: on
+    3.11 every library installs, and the start then fails in its database
+    migration with a ``SyntaxError`` in the backend's code, which reads as a
+    bug in Curio. Exits 1 before anything is installed or started.
+    """
+    running = tuple(sys.version_info[:2])
+    if running == PYTHON_VERSION:
+        return
+    supported = "%d.%d" % PYTHON_VERSION
+    log_error(
+        f"Python {running[0]}.{running[1]} detected; Curio requires Python {supported}. "
+        f"Make an environment with it, for example 'conda create -n curio python={supported}' "
+        f"or 'uv venv --seed -p {supported}', then retry."
+    )
+    sys.exit(1)
+
+
 def seed_duckdb_extensions():
     """Put Curio's copy of DuckDB's spatial extension where duckdb-wasm looks.
 
@@ -241,8 +266,22 @@ def _run_pip(cmd: list[str], failure_label: str) -> None:
             log_info(f"[pip] {line.rstrip()}", COLOR_BACKEND, 2)
     rc = process.wait()
     if rc != 0:
-        log_error(f"{failure_label} (exit {rc}). Re-run with --verbose 2 to see pip's output.")
+        if _has_no_pip(cmd[0]):
+            log_error(
+                f"{failure_label}: {cmd[0]} has no pip, which Curio installs its libraries "
+                f"with. A venv that 'uv venv' makes has none. Add pip with "
+                f"'{cmd[0]} -m ensurepip', or make the venv with 'uv venv --seed', then retry."
+            )
+        else:
+            log_error(f"{failure_label} (exit {rc}). Re-run with --verbose 2 to see pip's output.")
         sys.exit(1)
+
+
+def _has_no_pip(python: str) -> bool:
+    """*python* cannot import pip. Asked only once a pip run failed."""
+    return subprocess.run(
+        [python, "-c", "import pip"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    ).returncode != 0
 
 
 def install_framework_requirements() -> None:

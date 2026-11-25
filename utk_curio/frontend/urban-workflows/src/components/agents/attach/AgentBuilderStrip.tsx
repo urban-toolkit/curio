@@ -1,35 +1,56 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useId, useState } from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faChevronDown, faChevronUp } from "@fortawesome/free-solid-svg-icons";
 import type { AgentAttachment, AgentRemedy, AgentSolveWave } from "../../../services/agents";
 import { LlmConfigAction, remedyOf } from "../../llmConfigs/LlmConfigAction";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { nodeLabel } from "../../scenarios/scenarioLabels";
+import { AgentRunStatusLine } from "./AgentRunStatusLine";
 import styles from "./AgentBuilderStrip.module.css";
-import { BatchActions } from "./builderStrip/BatchActions";
+import { BatchActions, type BatchPart } from "./builderStrip/BatchActions";
 import { MissingSpecialistReview } from "./builderStrip/MissingSpecialistReview";
 import { NodeRunPills } from "./builderStrip/NodeRunPills";
-import { PhaseChips } from "./builderStrip/PhaseChips";
 import { PlanBuildActions } from "./builderStrip/PlanBuildActions";
-import { PlanningTemplates } from "./builderStrip/PlanningTemplates";
-import { SolveFeedback } from "./builderStrip/SolveFeedback";
+import { SolveFeedback, SolveRemedies } from "./builderStrip/SolveFeedback";
 import {
   batchDetailFor,
   distinctLines,
   inPlanOrder,
+  mainActionOf,
   passLineText,
   planLeftToBuild,
+  planLineWords,
   remediesByHost,
   selectionRemediesOf,
   sessionEndingText,
   solveDisabledReasonFor,
 } from "./builderStrip/builderStripDerived";
 
+/** The more part's toggle, by what a click on it does. */
+export const SHOW_PLAN_MORE = "Show the plan's nodes and actions";
+export const HIDE_PLAN_MORE = "Hide the plan's nodes and actions";
+
+/** Why no Solve is offered while a build of the plan runs. */
+export const BUILD_RUNNING_HINT = "The plan is being built: Stop the build to Solve";
+
 /**
- * The dev/52 DR-5 phase-aware builder strip, rendered only for an agent that
- * declares dataflow.orchestrate, inside the existing chat drawer (no new surface).
- * Everything derives from the server-owned `builderSession` (DR-2): phase
- * chips, per-node solve progress, Solve/Retry, and Run workflow via the
- * existing `playAllNodes`. Disabled states explain themselves; templates
- * seed the goal prompt through the caller's prefill rule.
+ * The plan line of an agent that declares dataflow.orchestrate (dev/52 DR-5),
+ * under the chat's Goal line. Everything derives from the server-owned
+ * `builderSession` (DR-2).
+ *
+ * The line says the phase in words, its counts and who it waits for, and
+ * holds one main action: Solve (or Retry), Stop while a batch or a build runs,
+ * Resume when a build paused, Run workflow once the plan is ready. While a
+ * build runs neither the line nor its more part offers a Solve, the plan's or
+ * a node's: a build is a stream over the plan, not an agent job, and a Solve
+ * would run over the same nodes.
+ * Its more part, closed until asked for, holds the plan's nodes with their own
+ * Solve, Build & validate plan, Step, the other batch actions and the hints,
+ * at most a third of the panel's height, scrolling. What comes with a fix
+ * stays in view under the line: a missing key's Add key, a missing
+ * specialist's Add to project, the nodes awaiting a source, an action's error
+ * with its Open API Settings. Before any plan there is no line: the planning
+ * templates are in the empty conversation.
  */
 export const AgentBuilderStrip: React.FC<{
   attachment: AgentAttachment;
@@ -71,11 +92,10 @@ export const AgentBuilderStrip: React.FC<{
   /** dev/118: per-node notices that are not errors — ONE line per distinct text. */
   solveNotices?: Record<string, string>;
   /** dev/63: cancel the running solve — in-flight children finish; the rest
-   * revert to pending. Omitted → no Cancel control. */
+   * revert to pending. Omitted → no Stop control. */
   onCancelSolve?: () => Promise<void>;
-  onComposePrompt: (prompt: string) => void;
   /** The dev/41 review actions of an install this agent needs (a missing
-   * specialist, dev/106), surfaced here where the phase indicator points.
+   * specialist, dev/106), surfaced under the line, where its Retry is.
    * Omitted → the transcript card is the only review surface. */
   onApplyProposal?: (proposalId: string) => Promise<unknown>;
   onDismissProposal?: (proposalId: string) => Promise<void>;
@@ -84,6 +104,11 @@ export const AgentBuilderStrip: React.FC<{
   onCancelSimulate?: () => Promise<void>;
   /** dev/67-9: the running simulation's narration line. */
   simulationActivity?: string;
+  /** The build the chat runs for this agent, step or auto, which outlives
+   *  this line: drawn again (the chat opened again, or the rail back on this
+   *  agent), the line still shows it and its Stop. Omitted, only a build this
+   *  line started. */
+  simulating?: "step" | "auto" | null;
 }> = ({
   attachment,
   onSolve,
@@ -99,12 +124,12 @@ export const AgentBuilderStrip: React.FC<{
   solveWave,
   solveNotices,
   onCancelSolve,
-  onComposePrompt,
   onApplyProposal,
   onDismissProposal,
   onSimulate,
   onCancelSimulate,
   simulationActivity,
+  simulating = null,
 }) => {
   const { playAllNodes, isRunActive: browserRunActive, serverRunActive, nodes } = useFlowContext();
   const isRunActive = browserRunActive || serverRunActive;
@@ -117,12 +142,23 @@ export const AgentBuilderStrip: React.FC<{
   const [cancelling, setCancelling] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [simBusy, setSimBusy] = useState<"step" | "auto" | null>(null);
+  // A build this line started, or one the chat still runs for this agent.
+  const building = simBusy ?? simulating;
+  // Its Stop was asked for: the build stops after its current step.
+  const [buildStopping, setBuildStopping] = useState(false);
+  useEffect(() => {
+    if (!building) setBuildStopping(false);
+  }, [building]);
   const [nodeSolving, setNodeSolving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // The refusal's remedy, when it has one (no LLM configuration answers a
   // delegate this run relies on).
   const [errorRemedy, setErrorRemedy] = useState<AgentRemedy | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // The more part opens only when asked for, and stays as it was across the
+  // session's updates.
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreId = useId();
 
   const session = attachment.builderSession ?? { phase: "idle" as const };
   const phase = session.phase ?? "idle";
@@ -148,9 +184,9 @@ export const AgentBuilderStrip: React.FC<{
   const activeBatchLabel =
     solving || phase === "solving" || liveJob?.kind === "solve-batch"
       ? "Solving"
-      : simBusy === "auto"
+      : building === "auto"
         ? "Building"
-        : simBusy === "step"
+        : building === "step"
           ? "Stepping"
           : null;
   // Elapsed is strip-local observation time: builderSession persists no batch
@@ -209,7 +245,7 @@ export const AgentBuilderStrip: React.FC<{
       : null;
 
   const simulate = async (mode: "step" | "auto") => {
-    if (!onSimulate || simBusy) return;
+    if (!onSimulate || building) return;
     setSimBusy(mode);
     setError(null);
     setErrorRemedy(null);
@@ -226,6 +262,18 @@ export const AgentBuilderStrip: React.FC<{
       setError(e instanceof Error ? e.message : "The simulation failed");
     } finally {
       setSimBusy(null);
+    }
+  };
+
+  // The build's Stop, the line's action while it runs: it stops after its
+  // current step, and what it built stays.
+  const stopBuild = async () => {
+    if (!onCancelSimulate || buildStopping) return;
+    setBuildStopping(true);
+    try {
+      await onCancelSimulate();
+    } catch {
+      setBuildStopping(false);
     }
   };
 
@@ -265,48 +313,156 @@ export const AgentBuilderStrip: React.FC<{
   const userBlockedIds = new Set(userBlocked.map((w) => w.nodeId));
   const everyUnresolvedNeedsUser =
     unresolved > 0 && pending.concat(failed).every((id) => userBlockedIds.has(id));
-  const solveDisabledReason = solveDisabledReasonFor({
-    phase, unresolved, everyUnresolvedNeedsUser, userBlockedCount: userBlocked.length,
-  });
+  // While a build runs no Solve is offered: it would run over the same nodes.
+  const solveDisabledReason = building
+    ? BUILD_RUNNING_HINT
+    : solveDisabledReasonFor({
+        phase, unresolved, everyUnresolvedNeedsUser, userBlockedCount: userBlocked.length,
+      });
   const solveRunning = solving || phase === "solving" || liveJob?.kind === "solve-batch";
+  // A batch's Stop reads Stopping… until that batch ends, however it ends: one
+  // this line did not start (another tab's, or one a chat opened again found
+  // running) has no Solve of this line's whose end would put it back.
+  useEffect(() => {
+    if (!solveRunning) setCancelling(false);
+  }, [solveRunning]);
   const runDisabledReason =
     unresolved > 0 ? `${unresolved} node${unresolved === 1 ? "" : "s"} unsolved` : null;
 
+  const paused = !building && Boolean(pauseReason);
+  const main = mainActionOf({
+    solveRunning,
+    canStopSolve: Boolean(onCancelSolve),
+    building: Boolean(building),
+    canStopBuild: Boolean(onCancelSimulate),
+    paused: paused && Boolean(landedPlan && onSimulate),
+    phase,
+  });
+  const words = planLineWords({ phase, paused, nodes: entries.length, unresolved });
+  const keyRemedies = remediesByHost(solveRemedies);
+  // Before any plan there is nothing to solve, build or run, and nothing the
+  // line could say: the templates are in the empty conversation.
+  const shown =
+    phase !== "idle" ||
+    entries.length > 0 ||
+    landedPlan !== null ||
+    installReview !== null ||
+    solveRunning ||
+    building !== null ||
+    Boolean(error || notice) ||
+    keyRemedies.length > 0 ||
+    selectionRemedies.length > 0;
+  if (!shown) return null;
+
+  // The batch's controls: the line holds the one that is its main action, the
+  // more part the others.
+  const mainPart: BatchPart | null =
+    main === "solve" ? "solve" : main === "stop-solve" ? "stop" : main === "run" ? "run" : null;
+  const batchActions = (parts: readonly BatchPart[], inline: boolean) => (
+    <BatchActions
+      phase={phase}
+      solveRunning={solveRunning}
+      solveDisabledReason={solveDisabledReason}
+      unresolved={unresolved}
+      failedCount={failed.length}
+      pendingCount={pending.length}
+      cancelling={cancelling}
+      runDisabledReason={runDisabledReason}
+      isRunActive={isRunActive}
+      onSolve={() => void solve(failed.length && !pending.length ? failed : undefined)}
+      onCancel={onCancelSolve ? () => void cancel() : undefined}
+      onRun={() => playAllNodes()}
+      parts={parts}
+      inline={inline}
+    />
+  );
+  const otherParts = (["solve", "stop", "run"] as const).filter((part) => part !== mainPart);
+
+  // What the closed more part holds that the line does not say: the plan's
+  // failures, their reasons on the tooltip, or how the last session ended
+  // when it left work undone (a finished one reads Ready). Open, the more
+  // part says it itself.
+  const reasons = distinctLines(solveErrors);
+  const ending =
+    !solveRunning && solveEndedBy && solveEndedBy !== "complete" ? sessionEndingText(solveEndedBy, unresolved) : "";
+  const sign = moreOpen
+    ? null
+    : failed.length > 0
+      ? { text: `${failed.length} failed: see more`, tooltip: reasons.join("\n") || undefined, failures: true }
+      : ending
+        ? { text: ending, tooltip: ending, failures: false }
+        : null;
+
   return (
-    <div className={styles.strip} role="group" aria-label={attachment.name}>
-      <PhaseChips
-        phase={phase}
-        activeBatchLabel={activeBatchLabel}
-        batchStartedAt={batchStartedAt}
-        batchDetail={batchDetailFor(entries, solveWave)}
-      />
-      {phase === "idle" ? <PlanningTemplates onComposePrompt={onComposePrompt} /> : null}
-      {entries.length > 0 ? (
-        <NodeRunPills
-          entries={entries}
-          userBlockedIds={userBlockedIds}
-          solveWaiting={solveWaiting}
-          solveRunning={solveRunning}
-          nodeSolving={nodeSolving}
-          onSolveNode={onSolveNode ? (nodeId) => void solveOne(nodeId) : undefined}
-          agentNameOf={agentNameOf}
-          nodeNameOf={nodeNameOf}
-        />
-      ) : null}
-      {solveRunning && (solvePass ?? 0) > 0 ? (
-        <div className={styles.hint} aria-live="polite">
-          {passLineText(solvePass as number, unresolved, userBlocked.length)}
-        </div>
-      ) : null}
-      {!solveRunning && solveEndedBy ? (
-        <div className={styles.hint} role="status">
-          {sessionEndingText(solveEndedBy, unresolved)}
-        </div>
-      ) : null}
-      <SolveFeedback
-        reasons={distinctLines(solveErrors)}
-        notices={distinctLines(solveNotices)}
-        remedies={remediesByHost(solveRemedies)}
+    <div className={styles.plan} role="group" aria-label={attachment.name}>
+      <div className={styles.line}>
+        <span className={styles.lineWords}>
+          {activeBatchLabel && batchStartedAt !== null ? (
+            <AgentRunStatusLine
+              display={{ kind: "running", startedAt: batchStartedAt }}
+              runningLabel={activeBatchLabel}
+              runningDetail={batchDetailFor(entries, solveWave)}
+              srLabel="Solve batch running"
+            />
+          ) : (
+            <>
+              <span className={styles.linePhase}>{words.phase}</span>
+              {words.counts ? ` · ${words.counts}` : null}
+            </>
+          )}
+        </span>
+        {/* A polite live region that stays mounted, empty while there is
+            nothing to say, so what comes into it is announced. */}
+        <span
+          className={`${styles.lineSign}${sign?.failures ? ` ${styles.lineSignFailed}` : ""}`}
+          aria-live="polite"
+          data-curio-plan-sign=""
+          data-tooltip={sign?.tooltip}
+        >
+          {sign ? sign.text : null}
+        </span>
+        {userBlocked.length > 0 ? (
+          <span className={styles.lineNeedsYou}>
+            {userBlocked.length} need{userBlocked.length === 1 ? "s" : ""} you
+          </span>
+        ) : null}
+        {mainPart ? batchActions([mainPart], true) : null}
+        {main === "stop-build" ? (
+          <button
+            type="button"
+            className={styles.run}
+            disabled={buildStopping}
+            data-tooltip="Stops the build after its current step. Everything already built stays."
+            onClick={() => void stopBuild()}
+          >
+            {buildStopping ? "Stopping…" : "Stop"}
+          </button>
+        ) : null}
+        {main === "resume" ? (
+          <button
+            type="button"
+            className={styles.solve}
+            data-tooltip={pauseReason ? `Paused: ${pauseReason.message}` : undefined}
+            onClick={() => void simulate("auto")}
+          >
+            Resume
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className={styles.moreToggle}
+          aria-expanded={moreOpen}
+          aria-controls={moreOpen ? moreId : undefined}
+          aria-label={moreOpen ? HIDE_PLAN_MORE : SHOW_PLAN_MORE}
+          data-tooltip={moreOpen ? HIDE_PLAN_MORE : SHOW_PLAN_MORE}
+          onClick={() => setMoreOpen((open) => !open)}
+        >
+          <FontAwesomeIcon icon={moreOpen ? faChevronUp : faChevronDown} />
+        </button>
+      </div>
+      {/* What comes with a fix stays in view, whatever the more part shows. */}
+      <SolveRemedies
+        remedies={keyRemedies}
         selectionRemedies={selectionRemedies}
         onOpenChat={onOpenChat}
         agentNameOf={agentNameOf}
@@ -321,50 +477,67 @@ export const AgentBuilderStrip: React.FC<{
           onDismiss={onDismissProposal ? () => void review(onDismissProposal, installReview.proposalId) : undefined}
         />
       ) : null}
-      {landedPlan && onSimulate ? (
-        <PlanBuildActions
-          plan={landedPlan}
-          paused={Boolean(pauseReason)}
-          simBusy={simBusy}
-          onSimulate={(mode) => void simulate(mode)}
-          onCancelSimulate={onCancelSimulate ? () => void onCancelSimulate() : undefined}
-        />
-      ) : null}
-      <BatchActions
-        phase={phase}
-        solveRunning={solveRunning}
-        solveDisabledReason={solveDisabledReason}
-        unresolved={unresolved}
-        failedCount={failed.length}
-        pendingCount={pending.length}
-        cancelling={cancelling}
-        runDisabledReason={runDisabledReason}
-        isRunActive={isRunActive}
-        onSolve={() => void solve(failed.length && !pending.length ? failed : undefined)}
-        onCancel={onCancelSolve ? () => void cancel() : undefined}
-        onRun={() => playAllNodes()}
-      />
-      {solveDisabledReason && phase !== "ready" ? <div className={styles.hint}>{solveDisabledReason}</div> : null}
-      {solveRunning ? (
-        // dev/115 (DEC-021 slice): the batch is a background job.
-        <div className={styles.hint}>Solve keeps running if you close this panel.</div>
-      ) : null}
-      {phase === "interrupted" ? (
-        <div className={styles.hint} role="status">
-          Solve was interrupted: the server stopped while it was running. Finished nodes kept
-          their content; nothing was replayed. Retry continues from what is still pending.
-        </div>
-      ) : null}
-      {simulationActivity ? (
-        <div className={styles.hint} aria-live="polite">{simulationActivity}</div>
-      ) : null}
-      {!simBusy && pauseReason ? (
-        <div className={styles.hint}>Paused: {pauseReason.message} (Resume continues from here.)</div>
-      ) : null}
       {notice ? <div className={styles.hint}>{notice}</div> : null}
       {error ? (
         <div className={styles.error}>
           {error} <LlmConfigAction remedy={errorRemedy} />
+        </div>
+      ) : null}
+      {moreOpen ? (
+        <div id={moreId} className={styles.more}>
+          {entries.length > 0 ? (
+            <NodeRunPills
+              entries={entries}
+              userBlockedIds={userBlockedIds}
+              solveWaiting={solveWaiting}
+              // A node's own Solve waits for a batch, and for a build too.
+              solveRunning={solveRunning || building !== null}
+              nodeSolving={nodeSolving}
+              onSolveNode={onSolveNode ? (nodeId) => void solveOne(nodeId) : undefined}
+              agentNameOf={agentNameOf}
+              nodeNameOf={nodeNameOf}
+            />
+          ) : null}
+          {solveRunning && (solvePass ?? 0) > 0 ? (
+            <div className={styles.hint} aria-live="polite">
+              {passLineText(solvePass as number, unresolved, userBlocked.length)}
+            </div>
+          ) : null}
+          {!solveRunning && solveEndedBy ? (
+            <div className={styles.hint} role="status">
+              {sessionEndingText(solveEndedBy, unresolved)}
+            </div>
+          ) : null}
+          <SolveFeedback reasons={reasons} notices={distinctLines(solveNotices)} />
+          {landedPlan && onSimulate ? (
+            <PlanBuildActions
+              plan={landedPlan}
+              paused={Boolean(pauseReason)}
+              simBusy={building}
+              // A paused build's Resume is the line's own action, and so is a
+              // running build's Stop.
+              withBuild={main !== "resume"}
+              onSimulate={(mode) => void simulate(mode)}
+            />
+          ) : null}
+          {batchActions(otherParts, false)}
+          {solveDisabledReason && phase !== "ready" ? <div className={styles.hint}>{solveDisabledReason}</div> : null}
+          {solveRunning ? (
+            // dev/115 (DEC-021 slice): the batch is a background job.
+            <div className={styles.hint}>Solve keeps running if you close this panel.</div>
+          ) : null}
+          {phase === "interrupted" ? (
+            <div className={styles.hint} role="status">
+              Solve was interrupted: the server stopped while it was running. Finished nodes kept
+              their content; nothing was replayed. Retry continues from what is still pending.
+            </div>
+          ) : null}
+          {simulationActivity ? (
+            <div className={styles.hint} aria-live="polite">{simulationActivity}</div>
+          ) : null}
+          {paused && pauseReason ? (
+            <div className={styles.hint}>Paused: {pauseReason.message} (Resume continues from here.)</div>
+          ) : null}
         </div>
       ) : null}
     </div>

@@ -40,3 +40,31 @@ describe("builder strip button rows", () => {
     expect(body).toMatch(/min-width:\s*0;/);
   });
 });
+
+describe("the plan line", () => {
+  test("its words give way, cut short on one line, before its action and its toggle", () => {
+    const words = ruleBody(".lineWords");
+    expect(words).toMatch(/\n\s*flex:\s*1;/);
+    for (const declaration of ["min-width: 0;", "overflow: hidden;", "text-overflow: ellipsis;", "white-space: nowrap;"]) {
+      expect(words).toContain(declaration);
+    }
+    expect(ruleBody(".moreToggle")).toMatch(/\n\s*flex:\s*none;/);
+    expect(ruleBody(".lineNeedsYou")).toMatch(/\n\s*flex:\s*none;/);
+  });
+
+  test("its more part is at most a third of the panel, which starts under the top bar, and scrolls past that", () => {
+    const more = ruleBody(".more");
+    expect(more).toMatch(/max-height:\s*calc\(\(100vh - var\(--curio-top-bar-height\)\) \/ 3\);/);
+    expect(more).toMatch(/overflow-y:\s*auto;/);
+    // The line keeps its own height: the conversation gives way, and keeps at
+    // least what the more part leaves.
+    expect(ruleBody(".plan")).toMatch(/\n\s*flex:\s*none;/);
+  });
+
+  test("Solve this node's outcome takes what its button leaves, at most two lines", () => {
+    const status = ruleBody(".solveStatus");
+    expect(status).toMatch(/flex:\s*1 1 0;/);
+    expect(status).toMatch(/min-width:\s*0;/);
+    expect(status).toMatch(/-webkit-line-clamp:\s*2;/);
+  });
+});

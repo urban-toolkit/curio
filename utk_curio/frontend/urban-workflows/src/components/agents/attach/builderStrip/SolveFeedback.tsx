@@ -6,13 +6,35 @@ import { useHostedGuest } from "../../../apiSettings/useHostedGuest";
 import { OpenDatasetFinderAction } from "../OpenDatasetFinderAction";
 import styles from "../AgentBuilderStrip.module.css";
 
-/** What the live batch said about its nodes, de-duplicated: the failure
- * reasons (dev/106), the notices that are not errors (dev/118), the missing
- * connection keys by host (dev/116; none for a hosted guest, who cannot save
- * one) and the nodes awaiting a dataset selection (dev/126). */
+/** What the live batch said about its nodes, de-duplicated, in the plan
+ * line's more part: the failure reasons (dev/106) and the notices that are
+ * not errors (dev/118). */
 export const SolveFeedback: React.FC<{
   reasons: string[];
   notices: string[];
+}> = ({ reasons, notices }) => (
+  <>
+    {reasons.length ? (
+      <div className={styles.error} aria-live="polite">
+        {reasons.map((r) => (
+          <div key={r}>{r}</div>
+        ))}
+      </div>
+    ) : null}
+    {notices.length ? (
+      <div className={styles.hint} role="note" aria-label="Solve notices">
+        {notices.map((n) => (
+          <div key={n}>{n}</div>
+        ))}
+      </div>
+    ) : null}
+  </>
+);
+
+/** The fixes the live batch offers, kept in view under the plan line: the
+ * missing connection keys by host (dev/116; none for a hosted guest, who
+ * cannot save one) and the nodes awaiting a dataset selection (dev/126). */
+export const SolveRemedies: React.FC<{
   remedies: AgentRemedy[];
   selectionRemedies: Array<[string, AgentRemedy]>;
   onOpenChat?: (attachmentId: string) => void;
@@ -20,24 +42,10 @@ export const SolveFeedback: React.FC<{
   agentNameOf?: (attachmentId: string) => string | null;
   /** The name a node's header shows, as its pill says it. */
   nodeNameOf?: (nodeId: string) => string;
-}> = ({ reasons, notices, remedies, selectionRemedies, onOpenChat, agentNameOf, nodeNameOf }) => {
+}> = ({ remedies, selectionRemedies, onOpenChat, agentNameOf, nodeNameOf }) => {
   const hostedGuest = useHostedGuest();
   return (
     <>
-      {reasons.length ? (
-        <div className={styles.error} aria-live="polite">
-          {reasons.map((r) => (
-            <div key={r}>{r}</div>
-          ))}
-        </div>
-      ) : null}
-      {notices.length ? (
-        <div className={styles.hint} role="note" aria-label="Solve notices">
-          {notices.map((n) => (
-            <div key={n}>{n}</div>
-          ))}
-        </div>
-      ) : null}
       {remedies.length && !hostedGuest ? (
         <div className={styles.actions} role="group" aria-label="Missing connection keys">
           {remedies.map((r) => (

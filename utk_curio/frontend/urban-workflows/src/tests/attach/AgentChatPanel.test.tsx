@@ -20,7 +20,8 @@ import { packagesApi } from "../../services/packages/packagesApi";
 
 import { AgentChatPanel } from "../../components/agents/attach/AgentChatPanel";
 import { GOAL_EMPTY, GOAL_PLACEHOLDER, GOAL_TOOLTIP } from "../../components/agents/attach/chat/GoalLine";
-import type { AgentAttachment, AgentSessionTurn } from "../../services/agents";
+import { modalStackDepth } from "../../components/ModalShell";
+import { BUILDER_TEMPLATES, type AgentAttachment, type AgentSessionTurn } from "../../services/agents";
 
 const attachment: AgentAttachment = {
   attachmentId: "a1",
@@ -90,11 +91,31 @@ describe("an agent's link to a Curio page", () => {
   });
 });
 
+/** The header, one row: the glyph, the title, what the agent is attached to,
+ *  More and Close. */
+const chatHeader = () => document.querySelector<HTMLElement>('[data-curio-chat-header="true"]')!;
+/** The header's words for what the agent is attached to. */
+const chatTarget = () => document.querySelector<HTMLElement>("[data-curio-chat-target]")!;
+/** Opens the header's More menu. */
+const openMore = () => {
+  fireEvent.click(screen.getByRole("button", { name: /^More/ }));
+  return screen.getByRole("menu", { name: "Chat menu" });
+};
+
 describe("AgentChatPanel", () => {
-  it("renders the concept header: name and target", () => {
-    renderPanel();
-    expect(screen.getByText("My Explainer")).toBeInTheDocument();
-    expect(screen.getByText(/attached to canvas/i)).toBeInTheDocument();
+  it("renders the concept header on one row: name, target, More and Close", () => {
+    renderPanel({ onClearConversation: jest.fn() });
+    const header = chatHeader();
+    expect(within(header).getByText("My Explainer")).toBeInTheDocument();
+    expect(chatTarget()).toHaveTextContent(/^on the canvas$/);
+    expect(header.contains(chatTarget())).toBe(true);
+    expect(within(header).getByRole("button", { name: /^More/ })).toBeInTheDocument();
+    expect(within(header).getByRole("button", { name: "Close chat" })).toBeInTheDocument();
+    // One row: no second line under it, and no arrows or "n / m" counter.
+    expect(screen.queryByText(/attached to/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Previous agent" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Next agent" })).toBeNull();
+    expect(screen.queryByText(/^\d+ \/ \d+$/)).toBeNull();
   });
 
   // #228: the header used to read "Attached to node 6bea6863-…" beside a
@@ -108,8 +129,21 @@ describe("AgentChatPanel", () => {
       },
       targetName: "Data Loading",
     });
-    expect(screen.getByText(/attached to data loading/i)).toBeInTheDocument();
+    expect(chatTarget()).toHaveTextContent(/^on Data Loading$/);
     expect(screen.queryByText(/6bea6863/)).toBeNull();
+  });
+
+  it("names a connection by the two nodes it joins", () => {
+    renderPanel({
+      attachment: {
+        ...attachment,
+        target: { kind: "connection" as const, targetId: "reactflow__edge-7f3a2b1c" },
+      },
+      targetName: "from Load buildings to Join blocks",
+    });
+    expect(chatTarget()).toHaveTextContent(/^from Load buildings to Join blocks$/);
+    expect(chatHeader()).not.toHaveTextContent("reactflow__edge-7f3a2b1c");
+    expect(chatTarget()).toHaveAttribute("data-tooltip", expect.stringContaining("connection reactflow__edge-7f3a2b1c"));
   });
 
   it("falls back to the target kind and id when the node cannot be named", () => {
@@ -120,13 +154,13 @@ describe("AgentChatPanel", () => {
       },
       targetName: null,
     });
-    expect(screen.getByText(/attached to node 6bea6863/i)).toBeInTheDocument();
+    expect(chatTarget()).toHaveTextContent(/^on node 6bea6863$/);
   });
 
   it("keeps the session id available as a tooltip, not as header text", () => {
     renderPanel();
     expect(screen.queryByText(/session s1234567/)).toBeNull();
-    expect(screen.getByText(/attached to canvas/i)).toHaveAttribute(
+    expect(chatTarget()).toHaveAttribute(
       "data-tooltip",
       expect.stringContaining("session s1234567890") as unknown as string,
     );
@@ -135,7 +169,7 @@ describe("AgentChatPanel", () => {
   it("sends the trimmed message through onSend", async () => {
     const onSend = jest.fn().mockResolvedValue(undefined);
     renderPanel({ onSend });
-    fireEvent.change(screen.getByPlaceholderText(/message this agent/i), {
+    fireEvent.change(screen.getByPlaceholderText(/^Message /), {
       target: { value: "  explain this  " },
     });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -151,7 +185,7 @@ describe("AgentChatPanel", () => {
   it("Enter sends the message with interior newlines preserved", async () => {
     const onSend = jest.fn().mockResolvedValue(undefined);
     renderPanel({ onSend });
-    const composer = screen.getByPlaceholderText(/message this agent/i);
+    const composer = screen.getByPlaceholderText(/^Message /);
     // jsdom's paste-equivalent: the value lands with its \n intact.
     fireEvent.change(composer, { target: { value: "line1\n\nline3\n" } });
     fireEvent.keyDown(composer, { key: "Enter" });
@@ -162,7 +196,7 @@ describe("AgentChatPanel", () => {
   it("Shift+Enter does not send", () => {
     const onSend = jest.fn().mockResolvedValue(undefined);
     renderPanel({ onSend });
-    const composer = screen.getByPlaceholderText(/message this agent/i);
+    const composer = screen.getByPlaceholderText(/^Message /);
     fireEvent.change(composer, { target: { value: "draft" } });
     fireEvent.keyDown(composer, { key: "Enter", shiftKey: true });
     expect(onSend).not.toHaveBeenCalled();
@@ -172,7 +206,7 @@ describe("AgentChatPanel", () => {
   it("Enter during an IME composition does not send", () => {
     const onSend = jest.fn().mockResolvedValue(undefined);
     renderPanel({ onSend });
-    const composer = screen.getByPlaceholderText(/message this agent/i);
+    const composer = screen.getByPlaceholderText(/^Message /);
     fireEvent.change(composer, { target: { value: "変換中" } });
     fireEvent.keyDown(composer, { key: "Enter", isComposing: true });
     expect(onSend).not.toHaveBeenCalled();
@@ -181,7 +215,7 @@ describe("AgentChatPanel", () => {
   it("whitespace/newline-only input never sends", () => {
     const onSend = jest.fn().mockResolvedValue(undefined);
     renderPanel({ onSend });
-    const composer = screen.getByPlaceholderText(/message this agent/i);
+    const composer = screen.getByPlaceholderText(/^Message /);
     fireEvent.change(composer, { target: { value: " \n \n " } });
     fireEvent.keyDown(composer, { key: "Enter" });
     expect(onSend).not.toHaveBeenCalled();
@@ -211,6 +245,12 @@ describe("AgentChatPanel", () => {
   it("Send is disabled on empty input", () => {
     renderPanel();
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+  });
+
+  it("the composer names the agent it messages, by the agent's own name", () => {
+    renderPanel({ attachment: { ...attachment, title: "Dataset Import Help" } });
+    const box = screen.getByRole("textbox", { name: "Message My Explainer" });
+    expect(box).toHaveAttribute("placeholder", "Message My Explainer…");
   });
 
   it("the close button closes without detaching", () => {
@@ -277,11 +317,13 @@ describe("AgentChatPanel", () => {
   // This used to spy on `window.confirm`. The panel raises the app's own
   // ConfirmDialog now (#197), so the assertion is that a dialog appears and
   // that confirming it is what runs the clear - not that the browser was asked.
-  it("clear conversation asks in the app's own dialog", async () => {
+  it("clear conversation asks in the app's own dialog, from More", async () => {
     const onClearConversation = jest.fn().mockResolvedValue(undefined);
     const confirmSpy = jest.spyOn(window, "confirm");
     renderPanel({ onClearConversation });
-    fireEvent.click(screen.getByRole("button", { name: "Clear conversation" }));
+    fireEvent.click(within(openMore()).getByRole("menuitem", { name: "Clear conversation…" }));
+    // Choosing it closes the menu.
+    expect(screen.queryByRole("menu", { name: "Chat menu" })).toBeNull();
 
     const modal = await waitFor(() => {
       const el = document.querySelector('[data-curio-modal-shell="true"]');
@@ -298,7 +340,7 @@ describe("AgentChatPanel", () => {
   it("cancelling the clear leaves the transcript alone", async () => {
     const onClearConversation = jest.fn().mockResolvedValue(undefined);
     renderPanel({ onClearConversation });
-    fireEvent.click(screen.getByRole("button", { name: "Clear conversation" }));
+    fireEvent.click(within(openMore()).getByRole("menuitem", { name: "Clear conversation…" }));
     const modal = await waitFor(() => {
       const el = document.querySelector('[data-curio-modal-shell="true"]');
       if (!el) throw new Error("no confirmation dialog is open");
@@ -311,21 +353,439 @@ describe("AgentChatPanel", () => {
     expect(onClearConversation).not.toHaveBeenCalled();
   });
 
-  it("header cycling (DEC-042): shows idx/total and walks prev/next", () => {
-    const onPrev = jest.fn();
-    const onNext = jest.fn();
-    renderPanel({ index: 2, total: 4, onPrev, onNext });
-    expect(screen.getByText("2 / 4")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Previous agent" }));
-    fireEvent.click(screen.getByRole("button", { name: "Next agent" }));
-    expect(onPrev).toHaveBeenCalledTimes(1);
-    expect(onNext).toHaveBeenCalledTimes(1);
+  it.each([
+    ["a canvas agent", attachment, null, "the canvas"],
+    ["a node agent", { ...attachment, target: { kind: "node" as const, targetId: "n1" } }, "Data Loading", "Data Loading"],
+    [
+      "a connection agent",
+      { ...attachment, target: { kind: "connection" as const, targetId: "e1" } },
+      "from Load buildings to Join blocks",
+      "the connection from Load buildings to Join blocks",
+    ],
+  ])("the clear question names what %s stays attached to", async (_who, agent, targetName, words) => {
+    renderPanel({ attachment: agent, targetName, onClearConversation: jest.fn() });
+    fireEvent.click(within(openMore()).getByRole("menuitem", { name: "Clear conversation…" }));
+    const dialog = await screen.findByRole("dialog", { name: "Clear this conversation?" });
+    expect(dialog).toHaveTextContent(`The transcript goes; the agent stays attached to ${words}.`);
+  });
+});
+
+/** Three agents on one dataflow, a Node Builder on three nodes among them. */
+const builderOn = (attachmentId: string, targetId: string): AgentAttachment => ({
+  ...attachment,
+  attachmentId,
+  coord: "agent.curio.node-builder@1",
+  name: "Node Builder",
+  target: { kind: "node" as const, targetId },
+});
+const RAIL_ATTACHMENTS: AgentAttachment[] = [
+  { ...attachment, attachmentId: "dfb", coord: "agent.curio.dataflow-builder@1", name: "Dataflow Builder", category: "canvas" },
+  { ...attachment, attachmentId: "df1", coord: "agent.curio.dataset-finder@1", name: "Dataset Finder", category: "data", target: { kind: "node" as const, targetId: "load" } },
+  builderOn("nb1", "load"),
+  { ...attachment, attachmentId: "df2", coord: "agent.curio.dataset-finder@1", name: "Dataset Finder", category: "data", target: { kind: "node" as const, targetId: "heat" } },
+  builderOn("nb2", "heat"),
+  builderOn("nb3", "map"),
+];
+const NODE_NAMES: Record<string, string> = { load: "Load buildings", heat: "Load heat", map: "Heat map" };
+const railTargetNameOf = (a: AgentAttachment) =>
+  a.target.kind === "node" ? NODE_NAMES[a.target.targetId ?? ""] ?? null : null;
+
+function renderRail(open: AgentAttachment, overrides: Partial<React.ComponentProps<typeof AgentChatPanel>> = {}) {
+  const onOpenAgentChat = jest.fn();
+  const utils = renderPanel({
+    attachment: open,
+    attachments: RAIL_ATTACHMENTS,
+    targetNameOf: railTargetNameOf,
+    targetName: railTargetNameOf(open),
+    onOpenAgentChat,
+    ...overrides,
+  });
+  return { ...utils, onOpenAgentChat, rail: screen.getByRole("navigation", { name: "Agents on this dataflow" }) };
+}
+
+describe("AgentChatPanel's agents rail", () => {
+  it("lists every agent in the attachments' order, an agent on three nodes or more as one entry", () => {
+    const { rail } = renderRail(RAIL_ATTACHMENTS[0]);
+    const entries = within(rail).getAllByRole("button");
+    expect(entries.map((entry) => entry.getAttribute("aria-label"))).toEqual([
+      "Dataflow Builder on the canvas",
+      "Dataset Finder on Load buildings",
+      "Node Builder on 3 nodes",
+      "Dataset Finder on Load heat",
+    ]);
+    // Hovering an entry names what it is attached to.
+    expect(entries[1]).toHaveAttribute("data-tooltip", "Dataset Finder on Load buildings");
+    expect(within(entries[1]).getByText("Load buildings")).toBeInTheDocument();
+    // The group shows how many it holds.
+    expect(entries[2]).toHaveTextContent("3");
+    expect(entries[2]).toHaveAttribute("aria-haspopup", "menu");
   });
 
-  it("cycling arrows are disabled at the ends (no wrap)", () => {
-    renderPanel({ index: 1, total: 3, onNext: jest.fn() });
-    expect(screen.getByRole("button", { name: "Previous agent" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Next agent" })).toBeEnabled();
+  it("marks the open chat's entry, and only it", () => {
+    const { rail } = renderRail(RAIL_ATTACHMENTS[3]);
+    const current = within(rail).getAllByRole("button").filter((entry) => entry.getAttribute("aria-current") === "true");
+    expect(current.map((entry) => entry.getAttribute("aria-label"))).toEqual(["Dataset Finder on Load heat"]);
+  });
+
+  it("opens each agent's chat from its entry", () => {
+    const { rail, onOpenAgentChat } = renderRail(RAIL_ATTACHMENTS[0]);
+    fireEvent.click(within(rail).getByRole("button", { name: "Dataset Finder on Load buildings" }));
+    expect(onOpenAgentChat).toHaveBeenCalledWith("df1");
+    fireEvent.click(within(rail).getByRole("button", { name: "Dataset Finder on Load heat" }));
+    expect(onOpenAgentChat).toHaveBeenLastCalledWith("df2");
+  });
+
+  it("a group opens the list of its nodes, each opening that node's chat", () => {
+    const { rail, onOpenAgentChat } = renderRail(RAIL_ATTACHMENTS[0]);
+    const group = within(rail).getByRole("button", { name: "Node Builder on 3 nodes" });
+    expect(group).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(group);
+    expect(group).toHaveAttribute("aria-expanded", "true");
+    const list = screen.getByRole("menu", { name: "Node Builder on" });
+    expect(within(list).getAllByRole("menuitem").map((row) => row.textContent)).toEqual([
+      "Load buildings",
+      "Load heat",
+      "Heat map",
+    ]);
+    expect(within(list).getByRole("menuitem", { name: "Load heat" })).toHaveAttribute(
+      "data-tooltip",
+      "Node Builder on Load heat",
+    );
+    fireEvent.click(within(list).getByRole("menuitem", { name: "Heat map" }));
+    expect(onOpenAgentChat).toHaveBeenCalledWith("nb3");
+    expect(screen.queryByRole("menu", { name: "Node Builder on" })).toBeNull();
+  });
+
+  it("marks a group open on one of its nodes, and names that node", () => {
+    const { rail } = renderRail(RAIL_ATTACHMENTS[4]);
+    const group = within(rail).getByRole("button", { name: /^Node Builder on 3 nodes/ });
+    expect(group).toHaveAttribute("aria-current", "true");
+    expect(group).toHaveAccessibleName("Node Builder on 3 nodes, open on Load heat");
+    expect(within(group).getByText("Load heat")).toBeInTheDocument();
+    fireEvent.click(group);
+    expect(within(screen.getByRole("menu", { name: "Node Builder on" })).getByRole("menuitem", { name: "Load heat" }))
+      .toHaveAttribute("aria-current", "true");
+  });
+
+  it("keeps an agent attached twice as two entries", () => {
+    const { rail } = renderRail(RAIL_ATTACHMENTS[0], { attachments: RAIL_ATTACHMENTS.slice(0, 5) });
+    expect(within(rail).getAllByRole("button", { name: /^Node Builder on Load/ })).toHaveLength(2);
+    expect(within(rail).queryByRole("button", { name: /^Node Builder on \d+ nodes/ })).toBeNull();
+  });
+
+  it("Escape closes a group's list, not the chat", () => {
+    const onClose = jest.fn();
+    const { rail } = renderRail(RAIL_ATTACHMENTS[0], { onClose });
+    fireEvent.click(within(rail).getByRole("button", { name: "Node Builder on 3 nodes" }));
+    expect(screen.getByRole("menu", { name: "Node Builder on" })).toBeInTheDocument();
+    fireEvent.keyDown(document.activeElement ?? window, { key: "Escape" });
+    expect(screen.queryByRole("menu", { name: "Node Builder on" })).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows an agent at work with its running dot, named on its entry", () => {
+    const working: Record<string, string> = {
+      df2: "Dataset Finder (asked by Ana)",
+      nb3: "Node Builder (asked by Ana), editing Heat map",
+    };
+    const { rail } = renderRail(RAIL_ATTACHMENTS[0], { workingOf: (a) => working[a.attachmentId] ?? null });
+    const entry = within(rail).getByRole("button", { name: "Dataset Finder on Load heat, at work" });
+    // The running dot is the entry's one image: the glyph's icon beside it is
+    // hidden from the accessibility tree, though it carries role="img" too.
+    const images = (el: HTMLElement) => within(el).queryAllByRole("img").map((dot) => dot.getAttribute("aria-label"));
+    expect(images(entry)).toEqual(["Dataset Finder (asked by Ana)"]);
+    expect(images(within(rail).getByRole("button", { name: "Dataset Finder on Load buildings" }))).toEqual([]);
+    // A group shows it when any of its nodes is at work, and its list says which.
+    const group = within(rail).getByRole("button", { name: "Node Builder on 3 nodes, one at work" });
+    expect(images(group)).toEqual(["Node Builder (asked by Ana), editing Heat map"]);
+    fireEvent.click(group);
+    const list = screen.getByRole("menu", { name: "Node Builder on" });
+    expect(within(list).getByRole("menuitem", { name: /^Heat map/ })).toHaveTextContent("Heat mapat work");
+    expect(within(list).getByRole("menuitem", { name: "Load heat" })).not.toHaveTextContent("at work");
+  });
+
+  it("without a caller's own rule, an agent solving in the background is at work", () => {
+    const solving = { ...RAIL_ATTACHMENTS[1], liveJob: { executionId: "e1", kind: "solve-node", status: "running" as const, startedAt: 1 } };
+    const { rail } = renderRail(RAIL_ATTACHMENTS[0], { attachments: [RAIL_ATTACHMENTS[0], solving] });
+    expect(within(rail).getByRole("button", { name: "Dataset Finder on Load buildings, at work" })).toBeInTheDocument();
+  });
+
+  it("no rail without the dataflow's agents", () => {
+    renderPanel();
+    expect(screen.queryByRole("navigation", { name: "Agents on this dataflow" })).toBeNull();
+  });
+
+  it("tells two instances of one agent apart: by the conversation's title, and on one place by number", () => {
+    const finder = (attachmentId: string, title: string | null = null): AgentAttachment => ({
+      ...attachment,
+      attachmentId,
+      coord: "agent.curio.dataset-finder@1",
+      name: "Dataset Finder",
+      category: "data",
+      title,
+    });
+    // Two untitled Dataset Finders on the canvas.
+    const twins = renderRail(RAIL_ATTACHMENTS[0], { attachments: [RAIL_ATTACHMENTS[0], finder("f1"), finder("f2")] });
+    const names = within(twins.rail).getAllByRole("button").map((entry) => entry.getAttribute("aria-label"));
+    expect(new Set(names).size).toBe(names.length);
+    expect(names).toEqual([
+      "Dataflow Builder on the canvas",
+      "Dataset Finder (1) on the canvas",
+      "Dataset Finder (2) on the canvas",
+    ]);
+    twins.unmount();
+
+    // A titled conversation is named as the dock's badge names it, on its
+    // tooltip and in its name; its label is its agent's name, as every entry's.
+    const titled = renderRail(RAIL_ATTACHMENTS[0], { attachments: [RAIL_ATTACHMENTS[0], finder("f1", "Parks"), finder("f2")] });
+    const parks = within(titled.rail).getByRole("button", { name: "Dataset Finder: Parks on the canvas" });
+    expect(parks).toHaveAttribute("data-tooltip", "Dataset Finder: Parks on the canvas");
+    expect(within(parks).getByText("Dataset Finder")).toBeInTheDocument();
+    expect(parks).not.toHaveTextContent("Parks");
+    expect(within(titled.rail).getByRole("button", { name: "Dataset Finder on the canvas" })).toBeInTheDocument();
+    titled.unmount();
+
+    // In a group's list: two untitled on one node, and one titled.
+    const group = [
+      RAIL_ATTACHMENTS[0],
+      builderOn("nb1", "load"),
+      builderOn("nb2", "heat"),
+      builderOn("nb3", "heat"),
+      { ...builderOn("nb4", "heat"), title: "Heat colors" },
+    ];
+    const { rail } = renderRail(group[3], { attachments: group });
+    const entry = within(rail).getByRole("button", { name: /^Node Builder on 4 nodes/ });
+    expect(entry).toHaveAccessibleName("Node Builder on 4 nodes, open on Load heat (2)");
+    fireEvent.click(entry);
+    const rows = within(screen.getByRole("menu", { name: "Node Builder on" })).getAllByRole("menuitem");
+    expect(rows.map((row) => row.textContent)).toEqual([
+      "Load buildings",
+      "Load heat (1)",
+      "Load heat (2)",
+      "Load heat: Heat colors",
+    ]);
+    expect(rows[3]).toHaveAttribute("data-tooltip", "Node Builder: Heat colors on Load heat");
+  });
+
+  // The boards label each entry with its agent's name, over what it is
+  // attached to in smaller type; the conversation's title is on its tooltip.
+  // How the label wraps is agentRailLabels.test.ts's.
+  it("labels each entry with its agent's name over what it is attached to, its conversation's title on its tooltip and in its name", () => {
+    const builder: AgentAttachment = { ...RAIL_ATTACHMENTS[0], title: "Heat islands" };
+    const finder: AgentAttachment = { ...RAIL_ATTACHMENTS[1], title: "Parks by the river" };
+    const { rail } = renderRail(builder, { attachments: [builder, finder] });
+
+    const open = within(rail).getByRole("button", { name: "Dataflow Builder: Heat islands on the canvas" });
+    expect(open).toHaveAttribute("aria-current", "true");
+    expect(open).toHaveAttribute("data-tooltip", "Dataflow Builder: Heat islands on the canvas");
+    expect(open).toHaveTextContent(/^Dataflow Builder$/);
+
+    const entry = within(rail).getByRole("button", { name: "Dataset Finder: Parks by the river on Load buildings" });
+    expect(entry).toHaveAttribute("data-tooltip", "Dataset Finder: Parks by the river on Load buildings");
+    expect(within(entry).getByText("Dataset Finder")).toBeInTheDocument();
+    expect(within(entry).getByText("Load buildings")).toBeInTheDocument();
+    expect(entry).not.toHaveTextContent("Parks by the river");
+  });
+
+  it("labels twins with their agent's name and number, which their tooltips and names keep", () => {
+    const finder = (attachmentId: string): AgentAttachment => ({
+      ...attachment,
+      attachmentId,
+      coord: "agent.curio.dataset-finder@1",
+      name: "Dataset Finder",
+      category: "data",
+      title: "Parks",
+    });
+    const { rail } = renderRail(RAIL_ATTACHMENTS[0], { attachments: [RAIL_ATTACHMENTS[0], finder("f1"), finder("f2")] });
+    const twins = within(rail).getAllByRole("button").slice(1);
+    const named = ["Dataset Finder: Parks (1) on the canvas", "Dataset Finder: Parks (2) on the canvas"];
+    expect(twins.map((entry) => entry.getAttribute("aria-label"))).toEqual(named);
+    expect(twins.map((entry) => entry.getAttribute("data-tooltip"))).toEqual(named);
+    expect(twins.map((entry) => entry.textContent)).toEqual(["Dataset Finder (1)", "Dataset Finder (2)"]);
+  });
+
+  it("a group's list goes with its group, and lets go of its layer", () => {
+    const onClose = jest.fn();
+    const { rail, rerender, props } = renderRail(RAIL_ATTACHMENTS[0], { onClose });
+    fireEvent.click(within(rail).getByRole("button", { name: "Node Builder on 3 nodes" }));
+    expect(screen.getByRole("menu", { name: "Node Builder on" })).toBeInTheDocument();
+
+    // One of its Node Builders is detached: two are left, each an entry of its own.
+    rerender(<AgentChatPanel {...props} attachments={RAIL_ATTACHMENTS.filter((a) => a.attachmentId !== "nb3")} />);
+    expect(screen.queryByRole("menu", { name: "Node Builder on" })).toBeNull();
+    expect(modalStackDepth()).toBe(0);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    // Attached again, the group comes back with its list closed.
+    rerender(<AgentChatPanel {...props} attachments={RAIL_ATTACHMENTS} />);
+    expect(screen.queryByRole("menu", { name: "Node Builder on" })).toBeNull();
+  });
+
+  it("counts the nodes of a group at work", () => {
+    const working: Record<string, string> = {
+      nb2: "Node Builder (asked by Ana), editing Load heat",
+      nb3: "Node Builder (asked by Ana), editing Heat map",
+    };
+    const { rail } = renderRail(RAIL_ATTACHMENTS[0], { workingOf: (a) => working[a.attachmentId] ?? null });
+    expect(within(rail).getByRole("button", { name: /^Node Builder on 3 nodes/ })).toHaveAccessibleName(
+      "Node Builder on 3 nodes, 2 at work",
+    );
+  });
+
+  it("choosing a node from a group's list leaves the focus on the group, not on the page", async () => {
+    const user = userEvent.setup();
+    const { rail, onOpenAgentChat } = renderRail(RAIL_ATTACHMENTS[0]);
+    const group = within(rail).getByRole("button", { name: "Node Builder on 3 nodes" });
+    await user.click(group);
+    await user.click(within(screen.getByRole("menu", { name: "Node Builder on" })).getByRole("menuitem", { name: "Load heat" }));
+    expect(onOpenAgentChat).toHaveBeenCalledWith("nb2");
+    expect(screen.queryByRole("menu", { name: "Node Builder on" })).toBeNull();
+    expect(document.activeElement).not.toBe(document.body);
+    expect(group).toHaveFocus();
+  });
+
+  it("keeps a group's list inside the panel when its entry is low on the rail", () => {
+    const { rail } = renderRail(RAIL_ATTACHMENTS[0]);
+    const wrap = rail.parentElement as HTMLElement;
+    const group = within(rail).getByRole("button", { name: "Node Builder on 3 nodes" });
+    // jsdom lays nothing out, so the geometry is given: the panel's rail is
+    // 600px tall from y 100, the group's entry is 560px down it, and its list
+    // is 200px tall.
+    const box = (top: number, height: number) =>
+      ({ x: 0, y: top, left: 0, top, right: 78, bottom: top + height, width: 78, height, toJSON: () => ({}) }) as DOMRect;
+    const isList = (el: Element) => el.getAttribute("role") === "menu";
+    const spies = [
+      jest.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+        if (this === wrap || this === rail) return box(100, 600);
+        if (this === group) return box(660, 56);
+        return isList(this) ? box(0, 200) : box(0, 0);
+      }),
+      jest.spyOn(HTMLElement.prototype, "offsetTop", "get").mockImplementation(function (this: HTMLElement) {
+        return this === group ? 560 : 0;
+      }),
+      jest.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) {
+        if (this === wrap || this === rail) return 600;
+        if (this === group) return 56;
+        return isList(this) ? 200 : 0;
+      }),
+      jest.spyOn(Element.prototype, "clientHeight", "get").mockImplementation(function (this: Element) {
+        return this === wrap || this === rail ? 600 : 0;
+      }),
+    ];
+    try {
+      fireEvent.click(group);
+      const list = screen.getByRole("menu", { name: "Node Builder on" });
+      const top = parseFloat(list.style.top);
+      expect(top).toBeGreaterThanOrEqual(0);
+      expect(top + 200).toBeLessThanOrEqual(600);
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
+});
+
+describe("AgentChatPanel's More menu", () => {
+  it("holds Rename conversation, Clear conversation and Tokens used", () => {
+    renderPanel({
+      onSaveTitle: jest.fn(),
+      onClearConversation: jest.fn(),
+      turns: [
+        { role: "user", text: "q1" },
+        { role: "agent", text: "a1", execution: { executionId: "e1", usage: { inputTokens: 1100, outputTokens: 300 }, status: "ok", durationMs: 10 } },
+      ],
+    });
+    // Named by what it does, which the tokens never change ("keeps its name
+    // while the conversation's tokens arrive", below).
+    const more = screen.getByRole("button", { name: "More: rename, clear" });
+    expect(more).toHaveAttribute("aria-haspopup", "menu");
+    expect(more).toHaveAttribute("data-tooltip", "More");
+    const menu = openMore();
+    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+      "Rename conversation",
+      "Clear conversation…",
+      "Tokens used: 1.4k1.1k in, 300 out, over 1 reply",
+    ]);
+  });
+
+  it("Rename conversation opens the title for editing", () => {
+    const onSaveTitle = jest.fn().mockResolvedValue(undefined);
+    renderPanel({ attachment: { ...attachment, title: "Dataset Import Help" }, onSaveTitle });
+    fireEvent.click(within(openMore()).getByRole("menuitem", { name: "Rename conversation" }));
+    const input = screen.getByRole("textbox", { name: "Conversation title" });
+    expect(input).toHaveValue("Dataset Import Help");
+    expect(input).toHaveFocus();
+    fireEvent.change(input, { target: { value: "Renamed" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onSaveTitle).toHaveBeenCalledWith("Renamed");
+  });
+
+  it("Escape closes the menu, not the chat; a press elsewhere closes it too", () => {
+    const onClose = jest.fn();
+    renderPanel({ onClose, onClearConversation: jest.fn() });
+    openMore();
+    fireEvent.keyDown(document.activeElement ?? window, { key: "Escape" });
+    expect(screen.queryByRole("menu", { name: "Chat menu" })).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    openMore();
+    fireEvent.pointerDown(screen.getByRole("textbox", { name: /^Message/ }));
+    expect(screen.queryByRole("menu", { name: "Chat menu" })).toBeNull();
+  });
+
+  it("is not there when it would hold nothing", () => {
+    renderPanel();
+    expect(screen.queryByRole("button", { name: /^More/ })).toBeNull();
+  });
+
+  const used: AgentSessionTurn[] = [
+    { role: "user", text: "q1" },
+    { role: "agent", text: "a1", execution: { executionId: "e1", usage: { inputTokens: 1100, outputTokens: 300 }, status: "ok", durationMs: 10 } },
+  ];
+
+  it("Tokens used is reached from the keyboard, and a menu of tokens alone opens on it", () => {
+    const first = renderPanel({ onSaveTitle: jest.fn(), onClearConversation: jest.fn(), turns: used });
+    const menu = openMore();
+    expect(within(menu).getByRole("menuitem", { name: "Rename conversation" })).toHaveFocus();
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "End" });
+    expect(screen.getByLabelText(/session token usage/i)).toHaveFocus();
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowDown" });
+    expect(within(menu).getByRole("menuitem", { name: "Rename conversation" })).toHaveFocus();
+    first.unmount();
+
+    renderPanel({ turns: used });
+    openMore();
+    expect(screen.getByLabelText(/session token usage/i)).toHaveFocus();
+  });
+
+  it("keeps its name while the conversation's tokens arrive", () => {
+    const { rerender, props } = renderPanel({ onSaveTitle: jest.fn(), onClearConversation: jest.fn() });
+    const more = screen.getByRole("button", { name: /^More/ });
+    expect(more).toHaveAccessibleName("More: rename, clear");
+    rerender(
+      <AgentChatPanel
+        {...props}
+        turns={[{ role: "user", text: "q1" }]}
+        runStatus={{ phase: "running", startedAt: Date.now(), liveUsage: { inputTokens: 900, outputTokens: 100 } }}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /^More/ })).toBe(more);
+    expect(more).toHaveAccessibleName("More: rename, clear");
+    fireEvent.click(more);
+    expect(screen.getByLabelText(/session token usage/i)).toHaveTextContent("Tokens used: 1.0k");
+  });
+
+  it("Tokens used pulses while the running reply can still add to it, and holds still once it ended", () => {
+    const { rerender, props } = renderPanel({
+      onSaveTitle: jest.fn(),
+      turns: [{ role: "user", text: "q1" }],
+      runStatus: { phase: "running", startedAt: Date.now(), liveUsage: { inputTokens: 900, outputTokens: 100 } },
+    });
+    openMore();
+    expect(screen.getByText(/^Tokens used:/)).toHaveClass("menuTokensLive");
+    rerender(<AgentChatPanel {...props} turns={used} runStatus={{ phase: "done", startedAt: Date.now(), durationMs: 10 }} />);
+    expect(screen.getByText(/^Tokens used:/)).not.toHaveClass("menuTokensLive");
   });
 });
 
@@ -646,7 +1106,7 @@ describe("AgentChatPanel structured content (memo dev/39)", () => {
 
   it("a user-typed draft is never overwritten by a prefill", () => {
     const { rerender, props } = renderPanel({ turns: [{ role: "user", text: "q" }] });
-    fireEvent.change(screen.getByPlaceholderText(/message this agent/i), {
+    fireEvent.change(screen.getByPlaceholderText(/^Message /), {
       target: { value: "my own words" },
     });
     rerender(<AgentChatPanel {...props} turns={promptsTurns} />);
@@ -1178,6 +1638,21 @@ describe("AgentChatPanel follow-at-bottom auto-scroll (memo dev/75)", () => {
     ).toBeInTheDocument();
   });
 
+  it("the pill sits in a row of its own above the composer, outside the conversation", () => {
+    const { transcript } = renderWithTranscript();
+    userScroll(transcript, 100);
+    const pill = screen.getByRole("button", { name: /jump to latest/i });
+    expect(transcript.contains(pill)).toBe(false);
+    const composer = screen.getByPlaceholderText(/^Message /);
+    // eslint-disable-next-line no-bitwise
+    expect(transcript.compareDocumentPosition(pill) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // eslint-disable-next-line no-bitwise
+    expect(pill.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Its row is a sibling of the conversation, so it takes room of its own.
+    expect(pill.parentElement!.className).toBe("jumpRow");
+    expect(pill.parentElement!.parentElement).toBe(transcript.parentElement);
+  });
+
   it("scrolling back to the bottom manually also hides the pill", () => {
     const { transcript } = renderWithTranscript();
     userScroll(transcript, 100);
@@ -1192,7 +1667,7 @@ describe("AgentChatPanel follow-at-bottom auto-scroll (memo dev/75)", () => {
     const onSend = jest.fn().mockResolvedValue(undefined);
     const { transcript } = renderWithTranscript({ onSend });
     userScroll(transcript, 100);
-    fireEvent.change(screen.getByPlaceholderText(/message this agent/i), {
+    fireEvent.change(screen.getByPlaceholderText(/^Message /), {
       target: { value: "follow up" },
     });
     await act(async () => {
@@ -1330,13 +1805,16 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
         doneTurn("a2", [100, 100]),
       ],
     });
-    expect(screen.getByLabelText(/session token usage/i)).toHaveTextContent("1.6k tokens");
+    // More's Tokens used: no strip above the composer any more.
+    openMore();
+    expect(screen.getByLabelText(/session token usage/i)).toHaveTextContent("Tokens used: 1.6k");
+    expect(screen.getByLabelText(/session token usage/i)).toHaveTextContent("over 2 replies");
   });
 
   it("while a turn runs, Send stays ready: the message is asked and waits its turn", async () => {
     const onSend = jest.fn().mockResolvedValue(undefined);
     renderPanel({ runStatus: runningStatus(), onSend });
-    fireEvent.change(screen.getByPlaceholderText(/message this agent/i), {
+    fireEvent.change(screen.getByPlaceholderText(/^Message /), {
       target: { value: "queued question" },
     });
     const send = screen.getByRole("button", { name: "Send" });
@@ -1344,7 +1822,7 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
     expect(send).not.toHaveTextContent("…");
     fireEvent.click(send);
     expect(onSend).toHaveBeenCalledWith("queued question");
-    await waitFor(() => expect(screen.getByPlaceholderText(/message this agent/i)).toHaveValue(""));
+    await waitFor(() => expect(screen.getByPlaceholderText(/^Message /)).toHaveValue(""));
   });
 
   it("while a turn runs, Stop asks for it to stop, once, and goes with the turn", async () => {
@@ -1355,6 +1833,12 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
     });
     const stop = screen.queryByRole("button", { name: "Stop" });
     expect(stop).toBeInTheDocument();
+    // In the composer, in Send's place: the transcript holds no Stop of its own.
+    expect(stop).toHaveAttribute("data-agent-turn-stop");
+    expect(stop).toHaveAttribute("data-tooltip", "Stop the reply");
+    expect((document.querySelector(".messages") as HTMLElement).contains(stop)).toBe(false);
+    expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+    expect(document.querySelectorAll("[data-agent-turn-stop]")).toHaveLength(1);
     fireEvent.click(stop as HTMLElement);
     expect(onStopTurn).toHaveBeenCalledTimes(1);
     const stopping = screen.getByRole("button", { name: "Stopping…" });
@@ -1364,6 +1848,48 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
     await act(async () => finish());
     rerender(<AgentChatPanel {...props} runStatus={{ phase: "done", startedAt: Date.now(), durationMs: 10 }} />);
     expect(screen.queryByRole("button", { name: /^Stop/ })).not.toBeInTheDocument();
+    // Send is back in its place.
+    expect(screen.getByRole("button", { name: "Send" })).toBeInTheDocument();
+  });
+
+  it("while a turn runs, a message typed brings Send back, and clearing it brings Stop back", () => {
+    renderPanel({ runStatus: runningStatus(), turns: [{ role: "user", text: "q1" }], onStopTurn: jest.fn() });
+    const composer = screen.getByPlaceholderText(/^Message /);
+    fireEvent.change(composer, { target: { value: "and then?" } });
+    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+    fireEvent.change(composer, { target: { value: "" } });
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+  });
+
+  it("the press that sends never lands on Stop, which takes Send's place as a button of its own", async () => {
+    const user = userEvent.setup();
+    const onSend = jest.fn().mockResolvedValue(undefined);
+    const onStopTurn = jest.fn().mockResolvedValue(undefined);
+    renderPanel({ runStatus: runningStatus(), turns: [{ role: "user", text: "q1" }], onSend, onStopTurn });
+    const box = screen.getByRole("textbox", { name: /^Message / });
+    await user.type(box, "and then?");
+    const send = screen.getByRole("button", { name: "Send" });
+    await user.click(send);
+    expect(onSend).toHaveBeenCalledWith("and then?");
+
+    // Not the Send that was pressed, relabelled: a button of its own.
+    const stop = screen.getByRole("button", { name: "Stop" });
+    expect(stop).not.toBe(send);
+    expect(send).not.toBeInTheDocument();
+    // The focus is back in the message box, so a held Enter sends nothing
+    // more and stops nothing.
+    expect(box).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(onStopTurn).not.toHaveBeenCalled();
+    // A double click's second click lands where Send was, on Stop: it stops
+    // nothing. A click of its own does.
+    fireEvent.click(stop, { detail: 2 });
+    expect(onStopTurn).not.toHaveBeenCalled();
+    fireEvent.click(stop, { detail: 1 });
+    expect(onStopTurn).toHaveBeenCalledTimes(1);
   });
 
   it("a stopped reply says who stopped it and after how long", () => {
@@ -1420,7 +1946,7 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
     // per-attachment status (null = idle) must win.
     const onSend = jest.fn().mockReturnValue(new Promise(() => undefined));
     const { rerender, props } = renderPanel({ onSend, runStatus: runningStatus() });
-    fireEvent.change(screen.getByPlaceholderText(/message this agent/i), {
+    fireEvent.change(screen.getByPlaceholderText(/^Message /), {
       target: { value: "first" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -1432,7 +1958,7 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
         runStatus={null}
       />,
     );
-    fireEvent.change(screen.getByPlaceholderText(/message this agent/i), {
+    fireEvent.change(screen.getByPlaceholderText(/^Message /), {
       target: { value: "second chat draft" },
     });
     const send = screen.getByRole("button", { name: "Send" });
@@ -1549,13 +2075,16 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
         { role: "user", text: "q2" },
       ],
     });
-    expect(screen.getByLabelText(/session token usage/i)).toHaveTextContent("2.0k tokens");
+    openMore();
+    expect(screen.getByLabelText(/session token usage/i)).toHaveTextContent("Tokens used: 2.0k");
   });
 
   it("a pristine chat renders no status and no counter", () => {
-    renderPanel();
+    renderPanel({ onClearConversation: jest.fn() });
     expect(screen.queryByRole("status")).toBeNull();
+    const menu = openMore();
     expect(screen.queryByLabelText(/session token usage/i)).toBeNull();
+    expect(within(menu).queryByText(/Tokens used/)).toBeNull();
   });
 
   it("pre-dev/37 history (no execution record) renders no fabricated status", () => {
@@ -1602,7 +2131,7 @@ describe("AgentChatPanel — dev/114 candidates in the Node Builder chat", () =>
       turns: candidatesTurns,
     });
     fireEvent.click(screen.getByRole("checkbox", { name: "Select NOAA Climate Data API" }));
-    expect(screen.getByPlaceholderText(/message this agent/i)).toHaveValue(
+    expect(screen.getByPlaceholderText(/^Message /)).toHaveValue(
       "Build the data-loading node — fetch from: NOAA Climate Data API (https://api.noaa.gov).",
     );
   });
@@ -1619,7 +2148,7 @@ describe("AgentChatPanel — dev/114 candidates in the Node Builder chat", () =>
       turns: candidatesTurns,
     });
     fireEvent.click(screen.getByRole("checkbox", { name: "Select NOAA Climate Data API" }));
-    expect(screen.getByPlaceholderText(/message this agent/i)).toHaveValue(
+    expect(screen.getByPlaceholderText(/^Message /)).toHaveValue(
       "Confirm my selection — hand off to Node Builder: NOAA Climate Data API.",
     );
   });
@@ -1633,12 +2162,15 @@ describe("AgentChatPanel — dev/115 the per-node Solve row", () => {
     target: { kind: "node" as const, targetId: "n1" },
   };
 
-  it("offers Solve this node for a node-attached agent and reports the outcome", async () => {
+  it("offers Solve this node for a node-attached agent, its hint on its tooltip, and reports the outcome", async () => {
     const onSolveNode = jest.fn().mockResolvedValue({ verdict: "pass", rounds: 2, proposalId: "p9" });
     renderPanel({ attachment: nodeAttachment, targetName: "Data Loading", onSolveNode });
     const row = screen.getByRole("group", { name: "Solve this node" });
-    expect(row).toHaveTextContent(/only code that passed lands/);
-    fireEvent.click(within(row).getByRole("button", { name: "Solve this node" }));
+    const button = within(row).getByRole("button", { name: "Solve this node" });
+    // One line: what it does is the button's tooltip, not a line of its own.
+    expect(button).toHaveAttribute("data-tooltip", expect.stringMatching(/only code that passed lands/));
+    expect(row).not.toHaveTextContent(/only code that passed lands/);
+    fireEvent.click(button);
     expect(onSolveNode).toHaveBeenCalledTimes(1);
     await waitFor(() =>
       expect(within(row).getByRole("status")).toHaveTextContent(/corrected code ran successfully/),
@@ -1652,9 +2184,20 @@ describe("AgentChatPanel — dev/115 the per-node Solve row", () => {
       solveNodeActivity: "Round 2 — generating a fix…",
     });
     const row = screen.getByRole("group", { name: "Solve this node" });
-    expect(within(row).getByRole("button", { name: "Solving…" })).toBeDisabled();
-    expect(row).toHaveTextContent("Solve keeps running if you close this panel.");
+    const solving = within(row).getByRole("button", { name: "Solving…" });
+    expect(solving).toBeDisabled();
+    expect(solving).toHaveAttribute("data-tooltip", "Solve keeps running if you close this panel.");
     expect(row).toHaveTextContent("Round 2 — generating a fix…");
+  });
+
+  it("a live per-node job with no narration yet says it keeps running", () => {
+    renderPanel({
+      attachment: { ...nodeAttachment, liveJob: { executionId: "e2", kind: "solve-node", status: "running", startedAt: 1 } },
+      onSolveNode: jest.fn(),
+    });
+    expect(screen.getByRole("group", { name: "Solve this node" })).toHaveTextContent(
+      "Solve keeps running if you close this panel.",
+    );
   });
 
   it("no row for canvas attachments or without the callback", () => {
@@ -1662,6 +2205,77 @@ describe("AgentChatPanel — dev/115 the per-node Solve row", () => {
     expect(screen.queryByRole("group", { name: "Solve this node" })).toBeNull();
     renderPanel({ onSolveNode: jest.fn() }); // canvas target
     expect(screen.queryByRole("group", { name: "Solve this node" })).toBeNull();
+  });
+
+  it("a Solve of the node that starts elsewhere shows its narration, not the last error, which it clears", async () => {
+    const onSolveNode = jest.fn().mockRejectedValue(new Error("the sandbox refused the run"));
+    const { rerender, props } = renderPanel({ attachment: nodeAttachment, onSolveNode });
+    const row = screen.getByRole("group", { name: "Solve this node" });
+    fireEvent.click(within(row).getByRole("button", { name: "Solve this node" }));
+    expect(await within(row).findByText("the sandbox refused the run")).toBeInTheDocument();
+
+    // The plan's row for this node, or another tab, starts a Solve of it.
+    const running = { ...nodeAttachment, liveJob: { executionId: "e3", kind: "solve-node", status: "running" as const, startedAt: 1 } };
+    rerender(<AgentChatPanel {...props} attachment={running} solveNodeActivity="Round 1: generating the code…" />);
+    expect(within(row).getByRole("button", { name: "Solving…" })).toBeDisabled();
+    expect(row).toHaveTextContent("Round 1: generating the code…");
+    expect(row).not.toHaveTextContent("the sandbox refused the run");
+
+    // It ends: the error it replaced does not come back.
+    rerender(<AgentChatPanel {...props} attachment={nodeAttachment} solveNodeActivity={null} />);
+    expect(within(row).getByRole("button", { name: "Solve this node" })).toBeEnabled();
+    expect(row).not.toHaveTextContent("the sandbox refused the run");
+  });
+});
+
+describe("AgentChatPanel keeps what each chat started to itself as the rail switches agents", () => {
+  // The rail opens another agent's chat in the same panel, which does not
+  // slide out and in again: what one chat started must not show in the next.
+  const onNode = (attachmentId: string, targetId: string): AgentAttachment => ({
+    ...attachment,
+    attachmentId,
+    sessionId: `s-${attachmentId}`,
+    coord: "agent.curio.node-builder@1",
+    name: "Node Builder",
+    target: { kind: "node" as const, targetId },
+  });
+
+  it("Solve this node, running or ended on one node's chat, is not shown on another's", async () => {
+    let finish: (outcome: unknown) => void = () => undefined;
+    const onSolveNode = jest.fn(() => new Promise((resolve) => { finish = resolve; }));
+    const { rerender, props } = renderPanel({ attachment: onNode("a", "n-a"), onSolveNode });
+    fireEvent.click(screen.getByRole("button", { name: "Solve this node" }));
+    expect(screen.getByRole("button", { name: "Solving…" })).toBeDisabled();
+
+    rerender(<AgentChatPanel {...props} attachment={onNode("b", "n-b")} />);
+    const row = screen.getByRole("group", { name: "Solve this node" });
+    expect(within(row).getByRole("button", { name: "Solve this node" })).toBeEnabled();
+    expect(row).not.toHaveTextContent("Solve keeps running if you close this panel.");
+
+    // The first node's Solve ends while the second's chat is open.
+    await act(async () => finish({ verdict: "pass", unchanged: true }));
+    expect(row).not.toHaveTextContent(/Verified/);
+    expect(within(row).queryByRole("status")).toBeNull();
+  });
+
+  it("Stop asked of one chat's turn is not shown on another's, and is still asked on coming back", () => {
+    const first = { phase: "running" as const, startedAt: 1000 };
+    const onStopTurn = jest.fn(() => new Promise<void>(() => undefined));
+    const { rerender, props } = renderPanel({
+      attachment: onNode("a", "n-a"), runStatus: first, turns: [{ role: "user", text: "q1" }], onStopTurn,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    expect(screen.getByRole("button", { name: "Stopping…" })).toBeDisabled();
+
+    // Another chat, whose own turn runs.
+    rerender(<AgentChatPanel {...props} attachment={onNode("b", "n-b")} runStatus={{ phase: "running", startedAt: 2000 }} />);
+    expect(screen.queryByRole("button", { name: "Stopping…" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Stop" })).toBeEnabled();
+
+    // Back on the first, whose turn was asked to stop and still runs.
+    rerender(<AgentChatPanel {...props} attachment={onNode("a", "n-a")} runStatus={first} />);
+    expect(screen.getByRole("button", { name: "Stopping…" })).toBeDisabled();
+    expect(onStopTurn).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -1905,7 +2519,45 @@ describe("AgentChatPanel offers each feature by what the agent declares", () => 
     ],
   };
 
-  it("an agent that declares dataflow.orchestrate gets the Solve strip, under its own name", () => {
+  it("an agent that declares dataflow.orchestrate gets the plan line, under its own name", () => {
+    renderPanel({
+      attachment: {
+        ...attachment,
+        coord: "agent.test.my-orchestrator@1",
+        name: "My Orchestrator",
+        category: "canvas",
+        capabilities: DATAFLOW_BUILDER_CAPABILITIES,
+        builderSession: { phase: "applied", nodeRuns: { n1: "pending" } },
+      },
+      onSolve: jest.fn(),
+    });
+    const line = screen.getByRole("group", { name: "My Orchestrator" });
+    expect(within(line).getByRole("button", { name: "Solve" })).toBeInTheDocument();
+    // Under the Goal line's place and above the conversation.
+    const header = chatHeader();
+    // eslint-disable-next-line no-bitwise
+    expect(header.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // eslint-disable-next-line no-bitwise
+    expect(line.compareDocumentPosition(document.querySelector(".messages")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("an agent that does not declare it gets no plan line", () => {
+    renderPanel({
+      attachment: {
+        ...attachment,
+        coord: "agent.test.my-builder@2",
+        name: "My Builder",
+        capabilities: NODE_BUILDER_CAPABILITIES,
+        builderSession: { phase: "applied", nodeRuns: { n1: "pending" } },
+      },
+      onSolve: jest.fn(),
+    });
+    expect(screen.queryByRole("group", { name: "My Builder" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Solve" })).toBeNull();
+  });
+
+  it("an orchestrating agent's empty conversation offers the six planning templates, which seed the message box", () => {
+    const onSend = jest.fn().mockResolvedValue(undefined);
     renderPanel({
       attachment: {
         ...attachment,
@@ -1916,22 +2568,58 @@ describe("AgentChatPanel offers each feature by what the agent declares", () => 
         builderSession: { phase: "idle" },
       },
       onSolve: jest.fn(),
+      onSend,
     });
-    expect(screen.getByRole("group", { name: "My Orchestrator" })).toBeInTheDocument();
+    // No plan yet: no plan line, and the templates in the conversation.
+    expect(screen.queryByRole("group", { name: "My Orchestrator" })).toBeNull();
+    const templates = screen.getByRole("group", { name: "Planning templates" });
+    expect((document.querySelector(".messages") as HTMLElement).contains(templates)).toBe(true);
+    expect(screen.getByText("Ask for a dataflow, or start from one of these:")).toBeInTheDocument();
+    expect(within(templates).getAllByRole("button").map((b) => b.textContent)).toEqual(
+      BUILDER_TEMPLATES.map((t) => t.label),
+    );
+    expect(BUILDER_TEMPLATES).toHaveLength(6);
+    fireEvent.click(within(templates).getByRole("button", { name: "Load and Clean" }));
+    expect(screen.getByPlaceholderText(/^Message /)).toHaveValue(BUILDER_TEMPLATES[0].seed);
+    // Nothing is sent until Send.
+    expect(onSend).not.toHaveBeenCalled();
   });
 
-  it("an agent that does not declare it gets no Solve strip", () => {
+  it("the templates leave once the conversation has a message, and other agents never show them", () => {
+    const orchestrator = {
+      ...attachment,
+      coord: "agent.test.my-orchestrator@1",
+      name: "My Orchestrator",
+      category: "canvas",
+      capabilities: DATAFLOW_BUILDER_CAPABILITIES,
+      builderSession: { phase: "idle" as const },
+    };
+    const first = renderPanel({ attachment: orchestrator, onSolve: jest.fn(), turns: [{ role: "user", text: "Map the parks" }] });
+    expect(screen.queryByRole("group", { name: "Planning templates" })).toBeNull();
+    first.unmount();
+    renderPanel({ onSolve: jest.fn() });
+    expect(screen.queryByRole("group", { name: "Planning templates" })).toBeNull();
+    expect(screen.getByText("Ask this agent something to get started.")).toBeInTheDocument();
+  });
+
+  it("the templates are for a dataflow with no plan yet: a chat cleared after its plan landed offers none", () => {
     renderPanel({
       attachment: {
         ...attachment,
-        coord: "agent.test.my-builder@2",
-        name: "My Builder",
-        capabilities: NODE_BUILDER_CAPABILITIES,
-        builderSession: { phase: "idle" },
+        coord: "agent.test.my-orchestrator@1",
+        name: "My Orchestrator",
+        category: "canvas",
+        capabilities: DATAFLOW_BUILDER_CAPABILITIES,
+        builderSession: { phase: "applied", appliedPlanId: "p1", nodeRuns: { n1: "pending", n2: "solved" } },
       },
       onSolve: jest.fn(),
+      // Clear conversation emptied the transcript; the plan and its line stay.
+      turns: [],
     });
-    expect(screen.queryByRole("group", { name: "My Builder" })).toBeNull();
+    expect(screen.getByRole("group", { name: "My Orchestrator" })).toHaveTextContent("Planned · 2 nodes, 1 to solve");
+    expect(screen.queryByRole("group", { name: "Planning templates" })).toBeNull();
+    expect(screen.queryByText("Ask for a dataflow, or start from one of these:")).toBeNull();
+    expect(screen.getByText("Ask this agent something to get started.")).toBeInTheDocument();
   });
 
   it("an agent that declares node.build says when its reply changed nothing", () => {
@@ -1963,7 +2651,7 @@ describe("AgentChatPanel offers each feature by what the agent declares", () => 
       turns: [candidates],
     });
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Chicago areas" }));
-    expect(screen.getByPlaceholderText(/message this agent/i)).toHaveValue(
+    expect(screen.getByPlaceholderText(/^Message /)).toHaveValue(
       "Build the data-loading node — fetch from: Chicago areas (https://data.example.org/areas.geojson).",
     );
   });
@@ -2127,7 +2815,7 @@ describe("AgentChatPanel names the agent a label opens or hands work to", () => 
       ],
     });
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Chicago areas" }));
-    expect(screen.getByPlaceholderText(/message this agent/i)).toHaveValue(
+    expect(screen.getByPlaceholderText(/^Message /)).toHaveValue(
       "Confirm my selection \u2014 hand off to My Builder: Chicago areas.",
     );
   });
