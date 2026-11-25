@@ -57,10 +57,13 @@ below the cap it is corrected as a request block the parser could not take is.
 
 A last round's reply may also hold no text at all, only blank lines, the
 model's thinking having come apart from it: DeepSeek's did in 28 of its 486
-replies of the 11-24 skill evaluation, gemma4's in 19. Blank text is no text of
-the turn's, and such a reply is asked once more the same way, the same once a
-turn, whether it held no call or one the cap drops (a request block, or a call
-a server sends though the round offered none). When the reply asked again
+replies of the 11-24 skill evaluation, gemma4's in 19. A reply that holds only
+blank lines, or only blank lines before a call the turn can read, adds no text
+to the turn's, and such a last reply is asked once more the same way, the same
+once a turn, whether it held no call or a readable one the cap drops (a request
+block, or a call a server sends though the round offered none). A call the turn
+cannot read, sent though the round offered none, still ends it as before
+(:meth:`AttachmentTurn._native_call_request`). When the reply asked again
 holds no text either, or that call fails, the turn ends as a request the cap
 drops does: with the line that says the agent used its tool rounds before it
 could answer, when it has no other text.
