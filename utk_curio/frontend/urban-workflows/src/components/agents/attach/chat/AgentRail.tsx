@@ -1,10 +1,10 @@
 import React, { useLayoutEffect, useRef, useState } from "react";
 import clsx from "clsx";
 
-import type { AgentAttachment } from "../../../../services/agents";
+import { attachmentDisplayName, type AgentAttachment } from "../../../../services/agents";
 import { AgentGlyph } from "../AgentAvatarBadge";
 import { agentChipClass } from "./ChatHeader";
-import { targetPhraseFor } from "./chatPanelDerived";
+import { targetPhraseFor, type TargetPhrase } from "./chatPanelDerived";
 import { useMenuPopup } from "./useMenuPopup";
 import styles from "./AgentRail.module.css";
 
@@ -44,10 +44,58 @@ function placesOf(members: AgentAttachment[]): string {
   return `${members.length} ${noun}${members.length === 1 ? "" : "s"}`;
 }
 
+/** How the rail names one attachment. */
+interface RailName {
+  /** Its conversation's name, as its dock badge says it ("Node Builder:
+   *  Heat colors" once titled), and its number among the instances of the
+   *  agent on one place that would read the same ("Dataset Finder (2)"). */
+  name: string;
+  /** What it is attached to. */
+  phrase: TargetPhrase;
+  /** Its row in its group's list: the place, the title and the number. */
+  row: string;
+  /** The same after "open", as its group's entry names its open node: "on
+   *  Load heat (2)", "from A to B". */
+  rowHeader: string;
+}
+
+/** Each attachment's name on the rail, by attachment id. Two instances of one
+ *  agent on one place are told apart by their conversations' titles, and by
+ *  number, in the attachments' order, when those read the same too. */
+function railNamesOf(
+  attachments: AgentAttachment[],
+  targetNameOf: (attachment: AgentAttachment) => string | null,
+): Map<string, RailName> {
+  const read = attachments.map((a) => {
+    const phrase = targetPhraseFor(a, targetNameOf(a));
+    return { a, phrase, label: `${attachmentDisplayName(a)} ${phrase.header}` };
+  });
+  const alike = new Map<string, number>();
+  for (const { label } of read) alike.set(label, (alike.get(label) ?? 0) + 1);
+  const seen = new Map<string, number>();
+  const names = new Map<string, RailName>();
+  for (const { a, phrase, label } of read) {
+    const nth = (seen.get(label) ?? 0) + 1;
+    seen.set(label, nth);
+    const number = (alike.get(label) ?? 0) > 1 ? ` (${nth})` : "";
+    const after = `${a.title ? `: ${a.title}` : ""}${number}`;
+    names.set(a.attachmentId, {
+      name: `${attachmentDisplayName(a)}${number}`,
+      phrase,
+      row: `${phrase.short ?? phrase.object}${after}`,
+      rowHeader: `${phrase.header}${after}`,
+    });
+  }
+  return names;
+}
+
 /**
  * The agents on this dataflow, down the chat panel's left side, in the
  * attachments' order: each one's glyph in its category's tint, its name, and
- * what it is attached to. The open chat's entry is marked (`aria-current`); an
+ * what it is attached to. Each is named as its dock badge names it, with its
+ * conversation's title once it has one, and numbered when two instances of
+ * one agent on one place would read the same. The open chat's entry is
+ * marked (`aria-current`); an
  * agent at work shows its running dot, from its job and from the room, as its
  * badge does; hovering an entry names what it is attached to. An agent
  * attached three times or more (six Node Builders) is one entry, which opens
@@ -67,6 +115,9 @@ export const AgentRail: React.FC<{
   workingOf: (attachment: AgentAttachment) => string | null;
 }> = ({ attachments, selectedId, onOpen, targetNameOf, workingOf }) => {
   const entries = railEntriesOf(attachments);
+  const names = railNamesOf(attachments, targetNameOf);
+  const nameOf = (attachment: AgentAttachment): RailName =>
+    names.get(attachment.attachmentId) ?? railNamesOf([attachment], targetNameOf).get(attachment.attachmentId)!;
   const popup = useMenuPopup<string>();
   const railRef = useRef<HTMLElement | null>(null);
   // The open group's list sits beside its entry, over the conversation.
@@ -88,8 +139,8 @@ export const AgentRail: React.FC<{
           const open = entry.members.find((m) => m.attachmentId === selectedId) ?? null;
           const working = entry.members.map(workingOf).find(Boolean) ?? null;
           if (entry.members.length === 1) {
-            const phrase = targetPhraseFor(first, targetNameOf(first));
-            const named = `${first.name} ${phrase.header}`;
+            const { name, phrase } = nameOf(first);
+            const named = `${name} ${phrase.header}`;
             return (
               <button
                 key={entry.key}
@@ -104,16 +155,18 @@ export const AgentRail: React.FC<{
                 <span className={clsx(styles.glyph, agentChipClass(first.category))}>
                   <AgentGlyph category={first.category} working={working} />
                 </span>
-                <span className={styles.name}>{first.name}</span>
+                <span className={styles.name}>{name}</span>
                 {phrase.short ? <span className={styles.sub}>{phrase.short}</span> : null}
               </button>
             );
           }
+          // A group is the agent's: its name is the agent's, and the open
+          // node is named as its row in the list.
           const places = placesOf(entry.members);
-          const openPhrase = open ? targetPhraseFor(open, targetNameOf(open)) : null;
+          const openName = open ? nameOf(open) : null;
           const label = [
             `${first.name} on ${places}`,
-            openPhrase ? `open ${openPhrase.header}` : null,
+            openName ? `open ${openName.rowHeader}` : null,
             working ? "one at work" : null,
           ].filter(Boolean).join(", ");
           return (
@@ -137,7 +190,7 @@ export const AgentRail: React.FC<{
                 <span className={styles.count} aria-hidden="true">{entry.members.length}</span>
               </span>
               <span className={styles.name}>{first.name}</span>
-              <span className={styles.sub}>{openPhrase?.short ?? places}</span>
+              <span className={styles.sub}>{openName?.row ?? places}</span>
             </button>
           );
         })}
@@ -155,7 +208,7 @@ export const AgentRail: React.FC<{
             {openEntry.members[0].name} on
           </div>
           {openEntry.members.map((member) => {
-            const phrase = targetPhraseFor(member, targetNameOf(member));
+            const { name, phrase, row } = nameOf(member);
             const working = workingOf(member);
             const current = member.attachmentId === selectedId;
             return (
@@ -165,7 +218,7 @@ export const AgentRail: React.FC<{
                 role="menuitem"
                 className={clsx(styles.flyoutItem, current && styles.flyoutItemOpen)}
                 aria-current={current ? "true" : undefined}
-                data-tooltip={`${member.name} ${phrase.header}`}
+                data-tooltip={`${name} ${phrase.header}`}
                 data-curio-rail-entry={member.attachmentId}
                 onClick={() => {
                   popup.close();
@@ -173,7 +226,7 @@ export const AgentRail: React.FC<{
                 }}
               >
                 <span className={clsx(styles.flyoutDot, working && styles.flyoutDotWorking)} aria-hidden="true" />
-                <span className={styles.flyoutName}>{phrase.short ?? phrase.object}</span>
+                <span className={styles.flyoutName}>{row}</span>
                 {working ? <span className={styles.flyoutNote}>at work</span> : null}
               </button>
             );
