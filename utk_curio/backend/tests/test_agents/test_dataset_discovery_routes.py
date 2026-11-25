@@ -217,6 +217,31 @@ class TestDiscoveryIsInitiated:
         ]
         assert len(parts) == 1
 
+    def test_the_finders_mission_joins_its_parts_with_plain_punctuation(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The mission the Dataset Finder is handed is the node's goal, then
+        the dataflow's goal, joined with "; ". On main they were joined with an
+        em dash, which the Finder's chat now shows."""
+        from utk_curio.backend.app.collaboration import dataflow_docs
+
+        def with_a_goal(h):
+            spec = dataflow_docs.live(h.ukey, h.pid)
+            spec["dataflow"]["task"] = "Compare community areas"
+            dataflow_docs.write(h.ukey, h.pid, spec, dataflow_docs.person(h.ukey, "edit"))
+
+        missions: list = []
+        initiate = dr.initiate
+        monkeypatch.setattr(dr, "initiate", lambda *a, **k: (missions.append(k.get("mission") or ""), initiate(*a, **k))[1])
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch, prepare=with_a_goal)
+        h.solve()
+        dataflow = h.spec()["dataflow"]
+        goal = next(n for n in dataflow["nodes"] if n.get("id") == h.load).get("goal")
+        task = dataflow.get("task")
+        assert goal and task, (goal, task)
+        assert missions == [f"{goal}; {task}"], missions
+
     def test_a_goal_that_names_a_path_skips_discovery_and_records_why(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
