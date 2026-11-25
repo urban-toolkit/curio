@@ -42,6 +42,7 @@ from utk_curio.backend.app.agents.application.turns import delegates
 from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application import spec_reads
 from utk_curio.backend.app.agents.application import tools
+from utk_curio.backend.app.agents.application import verify
 from utk_curio.backend.app.agents.domain import node_context
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.domain import agent_text
@@ -181,25 +182,62 @@ def mark_candidates_pending(spec: dict, attachment_id: str, *, count: int,
     return record[RECORD_KEY]
 
 
+#: What a node's source waits for, as its Dataset Finder's record says
+#: (:func:`source_wait`): the user, a download into the Data Catalog, or the
+#: install of the dataset picked.
+WAITS_FOR_PICK = "pick"
+WAITS_FOR_DOWNLOAD = "download"
+WAITS_FOR_INSTALL = "install"
+
+
+def _portal_download(pick: dict) -> bool:
+    """A pick whose file is on a portal: the user downloads it and imports it
+    from the card, and Curio does not download it."""
+    return (pick.get("lane") == "external" and pick.get("access") == verify.ACCESS_MANUAL
+            and not pick.get("acquirable"))
+
+
+def source_wait(record: dict | None) -> str | None:
+    """What a node's source waits for, by its Dataset Finder's *record*: the
+    user (``pick``) while its candidates await a pick, or while every pick
+    is a portal download, which the user downloads and imports from the card
+    and then picks; a download into the Data Catalog (``download``); or the
+    install of the dataset picked (``install``). None when it waits for
+    nothing: the pick resolved the node, discovery was skipped, or there is
+    no record."""
+    if not isinstance(record, dict):
+        return None
+    status = record.get("status")
+    picks = [pick for pick in record.get("picks") or [] if isinstance(pick, dict)]
+    if status == STATE_CANDIDATES_PENDING:
+        return WAITS_FOR_PICK
+    if status == STATE_AWAITING_INSTALL:
+        return WAITS_FOR_DOWNLOAD if any(pick.get("acquiring") for pick in picks) else WAITS_FOR_INSTALL
+    if status == STATE_RESOLVED and picks and all(_portal_download(pick) for pick in picks):
+        return WAITS_FOR_PICK
+    return None
+
+
 def waiting_on_user(spec: dict | None) -> dict[str, list[str]]:
     """Who waits for the user to pick a node's source, by attachment id: the
     ids of the nodes it waits on. A node's Dataset Finder waits while its
-    candidates await a pick, and so does the attachment whose chat asked for
-    them (``askedBy``) while it is on the dataflow. A pick, a skip, the
-    node's removal or its Finder taken off ends both waits; the asker's chat
-    cleared ends its own (:func:`forget_asker`)."""
+    source waits for the user (:func:`source_wait`): its candidates await a
+    pick, or the portal file picked awaits its import. So does the attachment
+    whose chat asked for them (``askedBy``) while it is on the dataflow. A
+    pick that resolves the node, a skip, the node's removal or its Finder
+    taken off ends both waits; the asker's chat cleared ends its own
+    (:func:`forget_asker`)."""
     records = attachments.list_attachments(spec or {})
     present = {record.get("attachmentId") for record in records}
     waits: dict[str, list[str]] = {}
     for record in records:
-        state = record.get(RECORD_KEY)
         target = record.get("target") or {}
         node_id = target.get("targetId")
-        if not isinstance(state, dict) or state.get("status") != STATE_CANDIDATES_PENDING:
+        if source_wait(record.get(RECORD_KEY)) != WAITS_FOR_PICK:
             continue
         if target.get("kind") != "node" or not node_id:
             continue
-        for waiter in (record.get("attachmentId"), state.get("askedBy")):
+        for waiter in (record.get("attachmentId"), record[RECORD_KEY].get("askedBy")):
             if waiter in present and node_id not in waits.setdefault(waiter, []):
                 waits[waiter].append(node_id)
     return waits
@@ -221,13 +259,15 @@ def forget_asker(spec: dict, attachment_id: str) -> list[str]:
 
 def forget_candidates(spec: dict, attachment_id: str) -> bool:
     """The Dataset Finder chat of *attachment_id* was cleared while its
-    candidates awaited a pick: the card went with it, so nothing is left to
-    pick from. The record goes, the node is unresolved again, and the next
-    Solve or Build & validate asks its Finder for candidates again. A pick
-    or a skip is kept. Returns whether the record went."""
+    source waited for the user (:func:`source_wait`): the card went with it,
+    so nothing is left to pick or import from. The record goes, the node is
+    unresolved again, and the next Solve or Build & validate asks its Finder
+    for candidates again. A pick that resolved the node, one that waits for
+    its download or install, and a skip are kept. Returns whether the record
+    went."""
     record = attachments.get_attachment(spec, attachment_id)
     state = (record or {}).get(RECORD_KEY)
-    if not isinstance(state, dict) or state.get("status") != STATE_CANDIDATES_PENDING:
+    if source_wait(state) != WAITS_FOR_PICK:
         return False
     record.pop(RECORD_KEY)
     record["revision"] = int(record.get("revision", 1)) + 1
