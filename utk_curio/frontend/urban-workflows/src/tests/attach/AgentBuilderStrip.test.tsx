@@ -855,6 +855,59 @@ describe("AgentBuilderStrip while a build runs", () => {
     expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^(Solve|Retry)\b/ })).toBeNull();
   });
+
+  it("a build another tab runs, which the listing names, holds the line the same way", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={withLandedPlan({ a: "created", b: "created" }, { simulateMode: "auto", simulatingSince: Date.now() / 1000 })}
+        onSolve={jest.fn()}
+        onSimulate={jest.fn()}
+        onCancelSimulate={jest.fn()}
+      />,
+    );
+    expect(screen.getByText(/Building… · \d+:\d\d/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^(Solve|Retry)\b/ })).toBeNull();
+  });
+
+  it("a build the listing names whose start is older than a build may run holds nothing", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={withLandedPlan(
+          { a: "created", b: "created" },
+          { simulateMode: "auto", simulatingSince: Date.now() / 1000 - 16 * 60 },
+        )}
+        onSolve={jest.fn()}
+        onSimulate={jest.fn()}
+        onCancelSimulate={jest.fn()}
+      />,
+    );
+    expect(screen.queryByText(/Building…/)).toBeNull();
+    expect(screen.getByRole("button", { name: /^Solve$/ })).toBeEnabled();
+  });
+});
+
+// The listing says which nodes the plan's agent waits on for the user: those
+// whose candidates its chat holds, as Build & validate paused on them.
+describe("AgentBuilderStrip counts who waits for you from the listing", () => {
+  it("the line says how many need you, and the more part marks them", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={{
+          ...withLandedPlan(
+            { a: "awaiting-source", b: "created" },
+            { pauseReason: { kind: "awaiting-source", message: "a needs a source", nodes: [{ ref: "a", nodeId: "na", attachmentId: "att-a" }] } },
+          ),
+          waitsForYou: ["na"],
+        }}
+        onSolve={jest.fn()}
+        onSimulate={jest.fn()}
+      />,
+    );
+    expect(screen.getByRole("group", { name: "Dataflow Builder" })).toHaveTextContent("1 needs you");
+    openMore();
+    expect(screen.getAllByText("needs you")).toHaveLength(1);
+  });
 });
 
 describe("AgentBuilderStrip's batch Stop", () => {

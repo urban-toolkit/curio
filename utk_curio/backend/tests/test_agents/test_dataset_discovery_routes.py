@@ -33,6 +33,7 @@ from utk_curio.backend.app.agents.application.turns import titles as services_mo
 from utk_curio.backend.app.agents.domain.manifest import AgentManifestError
 from utk_curio.backend.app.agents.infrastructure import providers
 from utk_curio.backend.app.agents.repositories import project_agents
+from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.repositories import storage as agents_storage
 from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.projects import storage as projects_storage
@@ -575,6 +576,48 @@ class TestDiscoveryIsInitiated:
         assert "mission: Load boundaries" in asked[0], asked[0]
         assert "load the community area boundaries" in asked[0], asked[0]
 
+    def test_the_candidates_reach_the_chat_that_asked(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The candidates the Dataset Finder found reach the chat whose Solve
+        or Build & validate asked for them, here the Dataflow Builder's, by its
+        plan row's Solve: one line that names the node and its Finder, and the
+        card, whose pick posts on the Finder's own route. The line is in the
+        Builder's model context, so the Builder knows candidates wait; the card
+        is not. The Finder's chat still holds its one card, and the loader's
+        Node Builder, which asked nothing, holds none. On main the candidates
+        reached the Finder's chat alone."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        h.validate("load")
+        finder = h.finder_attachment_id()
+        cards = [
+            p for t in h.session_turns(finder) for p in (t.get("content") or [])
+            if p.get("type") == "datasetCandidates"
+        ]
+        assert len(cards) == 1, cards
+        builder_turns = h.session_turns(h.att)
+        asked = [
+            (t, p) for t in builder_turns for p in (t.get("content") or [])
+            if p.get("type") == "sourcePick"
+        ]
+        assert len(asked) == 1, [t.get("text") for t in builder_turns]
+        turn, part = asked[0]
+        assert (part["finderAttachmentId"], part["nodeId"], part["nodeLabel"]) == (
+            finder, h.load, "Load boundaries",
+        ), part
+        assert part["lanes"] == cards[0]["lanes"]
+        assert "Load boundaries" in turn["text"] and "Dataset Finder" in turn["text"], turn["text"]
+        assert "Use this source" in turn["text"], turn["text"]
+        # The line reaches the Builder's model; the card does not.
+        context = "\n".join(m["content"] for m in sessions.context_messages(builder_turns))
+        assert turn["text"] in context, context
+        assert URL not in context and "sourcePick" not in context, context
+        assert not [
+            p for t in h.session_turns(h.node_builder_attachment_id()) for p in (t.get("content") or [])
+            if p.get("type") in ("sourcePick", "datasetCandidates")
+        ], "the loader's Node Builder asked for no candidates"
+
 
 class TestConfirmedSourceReachesTheBuilder:
     def test_a_recorded_selection_resolves_the_node_and_is_handed_over(
@@ -1061,6 +1104,8 @@ class TestBuildAndValidateWaitsForTheSource:
         delegated = (picked.get("body") or {}).get("delegated") or {}
         assert delegated.get("status") == "plan-waiting", picked
         assert "Build & validate, running now, builds the loader" in delegated.get("reason", ""), delegated
+        # The running pass builds it: nothing more is to start after the pick.
+        assert (delegated.get("running"), delegated.get("continueWith")) == ("auto", None), delegated
         assert [(p["action"], p["ref"]) for kind, p in events if kind == "action_result"] == [
             ("validate", "parks"), ("validate", "schools"), ("validate", "parks"), ("approve", "parks"),
         ], done
@@ -1153,6 +1198,63 @@ class TestBuildAndValidateWaitsForTheSource:
             "stepped", {"action": "validate", "ref": "schools"},
         ), second
         assert len(h.discover_calls) == 2
+
+
+class TestTheChatThatAskedGoesOn:
+    """After the user's pick, the chat that asked for the candidates says the
+    source is recorded too, and the plan that waited for the loader goes on
+    from that chat by itself: the pick's answer says how. Build & validate
+    paused on the loader goes on with Build & validate, a plan row's Solve
+    that left it waiting goes on with that row's Solve, and a Build & validate
+    running now builds it with nothing more to start. On main the Source
+    recorded turn was in the Finder's chat alone, and the answer told the user
+    to continue in the Dataflow Builder's chat."""
+
+    @pytest.fixture(autouse=True)
+    def _six_actions(self, monkeypatch):
+        monkeypatch.setattr(budgets, "SIMULATE_MAX_ACTIONS", 6)
+
+    def test_a_pick_says_the_source_is_recorded_in_both_chats(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        h.validate("load")
+        h.select(URL)
+        finder_said = [t.get("text") or "" for t in h.session_turns(h.finder_attachment_id())]
+        assert finder_said[-1].startswith("Source recorded for this node: Chicago community areas."), finder_said[-1]
+        builder_turns = h.session_turns(h.att)
+        recorded = [t for t in builder_turns if (t.get("text") or "").startswith("Source recorded for Load boundaries")]
+        assert len(recorded) == 1, [t.get("text") for t in builder_turns]
+        assert "Chicago community areas" in recorded[0]["text"], recorded[0]["text"]
+        card = next(p for p in recorded[0].get("content") or [] if p.get("type") == "card")
+        assert card["title"] == "Dataset selection recorded", card
+        assert any("Chicago community areas" in line for line in card["lines"]), card
+
+    def test_a_pick_for_a_loader_build_and_validate_paused_on_goes_on_with_build_and_validate(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        h.simulate("auto")
+        delegated = h.select(URL).get("delegated") or {}
+        assert (delegated.get("status"), delegated.get("continueWith"), delegated.get("ref"), delegated.get("running")) == (
+            "plan-waiting", "build", "load", None,
+        ), delegated
+        assert "continue in" not in delegated["reason"], delegated
+        assert "Dataflow Builder goes on with its plan" in delegated["reason"], delegated
+
+    def test_a_pick_for_a_loader_a_rows_solve_left_waiting_goes_on_with_that_rows_solve(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        h.validate("load")
+        delegated = h.select(URL).get("delegated") or {}
+        assert (delegated.get("status"), delegated.get("continueWith"), delegated.get("ref"), delegated.get("running")) == (
+            "plan-waiting", "node", "load", None,
+        ), delegated
+        assert "continue in" not in delegated["reason"], delegated
 
 
 class TestAPickIsNeverLost:

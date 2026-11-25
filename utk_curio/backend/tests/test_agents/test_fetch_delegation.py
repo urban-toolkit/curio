@@ -29,7 +29,7 @@ from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.infrastructure import providers
 from utk_curio.backend.tests._support.agent_routes import _auth
 from utk_curio.backend.tests.test_agents import test_routes_turns as routes_turns
-from utk_curio.backend.tests.test_agents.test_dataset_discovery_routes import URL, _Harness
+from utk_curio.backend.tests.test_agents.test_dataset_discovery_routes import URL, _Harness, _sse_events
 
 DATA_OBSERVATION = {
     "status": "verified", "httpStatus": 200, "contentType": "application/geo+json",
@@ -653,6 +653,78 @@ class TestAPlanWaitsAsItsSourceDoes:
         assert done.get("status") == "completed", done
         assert len(h.dl_calls) == tried + 1
         assert f'curio_data_path("{dataset_id}")' in h.node_content(h.load)
+
+    def _downloading(self, client, user, token, monkeypatch):
+        """A plan whose loader Build & validate left waiting for its source,
+        whose candidates are a row Curio downloads, and the dataset that
+        download lands as. Returns ``(harness, dataset_id)``."""
+        dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="wards.csv")
+        fake = _FakeDiscovery(started={"jobId": "job-1", "status": "queued"}, job={"status": "running"})
+        roster = packages_roster._LazyRoster
+        monkeypatch.setattr(packages_roster, "_LazyRoster", lambda: roster(dict(ROSTER)))
+        monkeypatch.setattr(acquire, "_discovery_service", lambda: fake)
+        monkeypatch.setattr(acquire, "_DISCOVERY_APPLY_WAIT_S", 0)
+        loader = f'import pandas as pd\nreturn pd.read_csv(curio_data_path("{dataset_id}"))'
+        h = _Harness(client, user, token, monkeypatch, discover_replies=[DISCOVERY_CANDIDATES],
+                     dl_replies=[INVENTED] * 3 + [loader])
+        h.simulate("auto")
+        return h, dataset_id
+
+    def test_a_download_picked_for_a_waiting_loader_points_at_the_builders_build(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The loader waits in a plan, so the plan builds it once its download
+        lands: the pick's answer and the Source recorded turn, in the Finder's
+        chat and in the Dataflow Builder's, say the Dataflow Builder's Build &
+        validate builds it, and never ask for a Solve of the node. On main they
+        said "Solve the node once it lands", and that Solve built the loader
+        outside its plan."""
+        user, token = user_and_token
+        h, _dataset_id = self._downloading(client, user, token, monkeypatch)
+        picked = h.select(URL)
+        delegated = picked.get("delegated") or {}
+        assert delegated.get("status") == "acquiring", picked
+        for said in (delegated.get("reason") or "", *[
+            (h.session_turns(chat)[-1].get("text") or "") for chat in (h.finder_attachment_id(), h.att)
+        ]):
+            assert "Solve the node" not in said, said
+            assert "Dataflow Builder's Build & validate builds the loader" in said, said
+
+    def test_a_loader_solve_this_node_built_after_its_download_is_not_built_again(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """Once the download lands, Solve this node, from the loader's own Node
+        Builder, builds the loader outside the plan that waited for it. Its
+        code passed its check, so it counts as built in that plan: the row
+        reads Validated, and the next Build & validate records it and builds
+        nothing again. On main the row went back to Placed, and the next Build
+        & validate built the loader a second time."""
+        user, token = user_and_token
+        h, dataset_id = self._downloading(client, user, token, monkeypatch)
+        h.select(URL)
+        from utk_curio.backend.app.datasets.repositories import user_store
+
+        monkeypatch.setattr(
+            user_store.UserDatasetRepository, "discovery_resource_index",
+            lambda self: {(CHICAGO, "cauq-8yn6"): dataset_id},
+        )
+        r = client.post(
+            f"/api/agents/projects/{h.pid}/attachments/{h.node_builder_attachment_id()}/solve-node",
+            json={"nodeId": h.load}, headers=_auth(token),
+        )
+        assert r.status_code == 200, r.get_data(as_text=True)
+        done = _sse_events(r)[-1][1]
+        assert done.get("verdict") == "pass", done
+        assert f'curio_data_path("{dataset_id}")' in h.node_content(h.load)
+        built, row = len(h.dl_calls), _plan_session(h)["nodeStates"]["load"]
+        done = h.simulate("auto")[-1][1]
+        assert len(h.dl_calls) == built, (
+            f"Build & validate built the loader again: {len(h.dl_calls) - built} more call(s) "
+            f"for its code, after Solve this node left its row {row!r}"
+        )
+        assert row == "validated", row
+        assert done.get("status") == "completed", done
+        assert done["builderSession"]["nodeStates"]["load"] == "approved", done["builderSession"]
 
     def test_a_pick_waiting_for_its_install_says_so_and_the_install_puts_the_row_back(
         self, client, user_and_token, tmp_curio, monkeypatch

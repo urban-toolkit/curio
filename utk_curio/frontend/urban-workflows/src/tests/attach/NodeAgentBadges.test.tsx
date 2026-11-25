@@ -99,6 +99,22 @@ describe("NodeAgentBadges", () => {
     expect(detach).toHaveBeenCalledWith("a-here");
   });
 
+  it("a node's agent that waits for you to pick its source has the dot, named", () => {
+    mockCtx.mockReturnValue(
+      ctx({
+        attachments: [
+          attachment({ attachmentId: "a-builder", name: "Node Builder" }),
+          attachment({ attachmentId: "a-finder", name: "Dataset Finder", category: "data", waitsForYou: ["n1"] }),
+        ],
+      }),
+    );
+    render(<NodeAgentBadges nodeId="n1" />);
+    const group = screen.getByRole("group", { name: "Attached agents, one waits for you" });
+    expect(screen.getByRole("button", { name: "Open chat with Dataset Finder, waits for you" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open chat with Node Builder" })).toBeInTheDocument();
+    expect(group.querySelectorAll('[role="img"][aria-label="Waits for you"]')).toHaveLength(1);
+  });
+
   it("renders nothing when no agent targets this node", () => {
     mockCtx.mockReturnValue(
       ctx({ attachments: [attachment({ target: { kind: "canvas" } })] }),

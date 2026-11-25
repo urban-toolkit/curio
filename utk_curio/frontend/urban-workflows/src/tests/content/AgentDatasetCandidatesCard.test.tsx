@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, fireEvent, act } from "@testing-library/react";
+import { render, screen, fireEvent, act, within } from "@testing-library/react";
 
 import {
   AgentDatasetCandidatesCard,
@@ -317,12 +317,71 @@ describe("AgentDatasetCandidatesCard — dev/132 the portal download and its Imp
     fireEvent.click(screen.getByLabelText("Select NOAA Climate Data API"));
     await act(async () => {
       fireEvent.click(
-        screen.getByRole("button", { name: /Confirm source for this node/ }),
+        screen.getByRole("button", { name: /Use this source/ }),
       );
     });
     expect(
       screen.getByText(/picks this node up on its next pass/),
     ).toBeInTheDocument();
+  });
+});
+
+// The card in the Dataset Finder's chat, and the same card in the chat that
+// asked for it: the source its Finder recorded, as the listing has it.
+describe("AgentDatasetCandidatesCard: the source recorded for its node", () => {
+  const ROADS = { name: "Roads", sourceType: "catalog" as const, datasetId: "imported.def@1", installed: true };
+
+  it("names the node it finds a source for, and its pick button reads Use this source", () => {
+    render(<AgentDatasetCandidatesCard part={PART} nodeLabel="Load buildings" onRecordSelection={jest.fn()} />);
+    const card = screen.getByRole("group", { name: "Sources for Load buildings" });
+    expect(card).toHaveTextContent("Sources for Load buildings");
+    expect(within(card).getByRole("button", { name: "Use this source" })).toBeDisabled();
+  });
+
+  it("says Recorded with what was picked, in place of its rows and Use this source", () => {
+    render(
+      <AgentDatasetCandidatesCard
+        part={PART}
+        nodeLabel="Load buildings"
+        onRecordSelection={jest.fn()}
+        record={{ status: "resolved", picks: [{ ...ROADS, provider: "City of Chicago" }] }}
+        waitsForPick={false}
+      />,
+    );
+    const card = screen.getByRole("group", { name: "Sources for Load buildings" });
+    expect(within(card).getByRole("status")).toHaveTextContent(
+      "Recorded: Roads (City of Chicago). The loader is built from this source.",
+    );
+    expect(within(card).queryByRole("button", { name: "Use this source" })).toBeNull();
+    expect(within(card).queryAllByRole("checkbox")).toHaveLength(0);
+  });
+
+  it("says a picked source that downloads is on its way", () => {
+    render(
+      <AgentDatasetCandidatesCard
+        part={PART}
+        onRecordSelection={jest.fn()}
+        record={{ status: "awaiting-install", picks: [{ ...ROADS, installed: false, acquiring: { jobId: "j1" } }] }}
+        waitsForPick={false}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Recorded: Roads. It is downloading into the Data Catalog; the loader is built from it once it lands.",
+    );
+  });
+
+  it("keeps its rows while the node still waits for the user's pick", () => {
+    render(
+      <AgentDatasetCandidatesCard
+        part={PART}
+        onRecordSelection={jest.fn()}
+        record={{ status: "candidates-pending", candidates: 3 }}
+        waitsForPick
+      />,
+    );
+    expect(screen.getAllByRole("checkbox")).toHaveLength(3);
+    expect(screen.getByRole("button", { name: "Use this source" })).toBeInTheDocument();
+    expect(screen.queryByText(/^Recorded:/)).toBeNull();
   });
 });
 
@@ -377,7 +436,7 @@ describe("AgentDatasetCandidatesCard — a row Curio downloads", () => {
     render(<AgentDatasetCandidatesCard part={DISCOVERY} onRecordSelection={onRecordSelection} />);
     fireEvent.click(screen.getByLabelText("Select Chicago wards"));
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /Confirm source for this node/ }));
+      fireEvent.click(screen.getByRole("button", { name: /Use this source/ }));
     });
     expect(onRecordSelection).toHaveBeenCalledWith([
       { lane: "external", key: "source.cityofchicago.data-portal@1/sp34-6z76" },
