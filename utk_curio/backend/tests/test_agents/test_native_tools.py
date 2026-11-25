@@ -1413,10 +1413,13 @@ class TestAnEmptyLastReply:
     def test_one_call_a_turn_is_asked_again_whichever_reply_left_no_answer(
             self, client, headers, project, last, again, pinned):
         att = _attach(client, headers, project, CHAT)
-        testing_provider.push_replies(*[READ] * tool_rounds.MAX_TOOL_ROUNDS, last, again, PROSE)
+        # The attachment's own replies: the conversation's title, asked after
+        # the turn, takes none of them.
+        testing_provider.push_replies(*[READ] * tool_rounds.MAX_TOOL_ROUNDS, last, again, PROSE, attachment=att)
         kind, ended, _ = _ask(client, headers, project, att, "run")
         assert [o["toolChoice"] for o in _offered()] == CHOICES_ASKED_AGAIN
         assert (kind, ended.get("reply")) == ("done", _message("turn.tool-rounds-used")), ended
+        assert len(_run_calls()) == len(CHOICES_ASKED_AGAIN), "a call was asked a third time"
         assert testing_provider.pending() == 1, "a call was asked a third time"
         assert _last_turn(client, headers, project, att)["execution"]["pins"].get(ASKED_AGAIN) == pinned
 
