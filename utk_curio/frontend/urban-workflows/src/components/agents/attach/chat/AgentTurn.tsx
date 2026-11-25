@@ -19,6 +19,7 @@ import {
   type AgentProposalPart,
   type AgentSessionTurn,
   type AgentSolveAttemptsPart,
+  type AgentSourcePickPart,
   type RunStatusDisplay,
 } from "../../../../services/agents";
 import { AgentChangeCard } from "../../content/AgentChangeCard";
@@ -44,6 +45,17 @@ export interface AgentTurnActions {
   /** The name of the agent another attachment binds, from the live list. */
   agentNameOf?: (attachmentId: string) => string | null;
   onRecordDatasetSelection?: (picks: AgentDatasetPick[]) => Promise<AgentDatasetSelection>;
+  /** Record a pick on a node's candidates card in the chat that asked for
+   * them: on the route of the node's Dataset Finder, *finderAttachmentId*. */
+  onRecordSourcePick?: (finderAttachmentId: string, picks: AgentDatasetPick[]) => Promise<AgentDatasetSelection>;
+  /** Another attachment of the dataflow, from the live list: a candidates
+   * card in the chat that asked reads its node's Finder's record from it. */
+  attachmentOf?: (attachmentId: string) => AgentAttachment | null;
+  /** What this chat's agent is attached to, by the name its header shows: a
+   * node's Dataset Finder names its card for its node. */
+  targetName?: string | null;
+  /** A build runs on this agent's plan: no plan row's Solve starts. */
+  buildRunning?: boolean;
   onImportDataset?: (
     file: File,
     discoverySource?: import("../../../../services/datasetCatalog/datasetCatalogTypes").DatasetDiscoverySourceInput,
@@ -85,6 +97,12 @@ export const AgentTurn: React.FC<{
   // An install on an invited editor's chat is the owner's to review.
   const waitsForOwner = (part: AgentProposalPart) =>
     Boolean(actions.installsWaitForOwner) && installsIntoAccount(part.tool);
+  // A node's own Dataset Finder: the chat that asked for its candidates holds
+  // the same card, while that agent is on the dataflow.
+  const ownNode = attachment.target.targetId ?? null;
+  const askedBy = isFinderOnNode ? attachment.sourceRecord?.askedBy : undefined;
+  const mirroredIn =
+    askedBy && askedBy !== attachment.attachmentId ? actions.agentNameOf?.(askedBy) ?? null : null;
   return (
     <div className={styles.agentRow}>
       <span className={`${styles.agentRowAvatar} ${tint}`} aria-hidden="true">
@@ -121,10 +139,53 @@ export const AgentTurn: React.FC<{
                   actions.onRecordDatasetSelection && isFinderOnNode ? actions.onRecordDatasetSelection : undefined
                 }
                 // dev/132: and the Import button under a portal row's download
-                // steps — the same catalog import as the drawer footer.
+                // steps: the same catalog import as the drawer footer.
                 onImportDataset={actions.onImportDataset && isFinderOnNode ? actions.onImportDataset : undefined}
+                // The Finder's card is named for its node, says Recorded once
+                // its record holds the pick, and names the chat that asked,
+                // which holds the same card.
+                {...(isFinderOnNode
+                  ? {
+                      nodeLabel: actions.targetName ?? null,
+                      nodeId: ownNode,
+                      record: attachment.sourceRecord ?? null,
+                      waitsForPick: Boolean(ownNode && (attachment.waitsForYou ?? []).includes(ownNode)),
+                      mirroredIn,
+                    }
+                  : {})}
               />
             ))}
+          {(t.content ?? [])
+            .filter((p): p is AgentSourcePickPart => p.type === "sourcePick")
+            .map((part, j) => {
+              // A node's candidates in the chat that asked for them: the pick
+              // records on the node's Dataset Finder, whose record, from the
+              // live list, says Recorded in this chat as in its own.
+              const finder = actions.attachmentOf?.(part.finderAttachmentId) ?? null;
+              const finderName = finder ? actions.agentNameOf?.(part.finderAttachmentId) ?? finder.name : null;
+              return (
+                <AgentDatasetCandidatesCard
+                  key={`pick-${part.nodeId}-${j}`}
+                  part={{ type: "datasetCandidates", lanes: part.lanes }}
+                  tintClassName={tint}
+                  nodeLabel={part.nodeLabel}
+                  nodeId={part.nodeId}
+                  onRecordSelection={
+                    actions.onRecordSourcePick
+                      ? (picks) => actions.onRecordSourcePick!(part.finderAttachmentId, picks)
+                      : undefined
+                  }
+                  onImportDataset={actions.onRecordSourcePick ? actions.onImportDataset : undefined}
+                  record={finder?.sourceRecord ?? null}
+                  waitsForPick={finder ? (finder.waitsForYou ?? []).includes(part.nodeId) : true}
+                  finderChat={
+                    finder && finderName && actions.onOpenAgentChat
+                      ? { name: finderName, onOpen: () => actions.onOpenAgentChat!(part.finderAttachmentId) }
+                      : null
+                  }
+                />
+              );
+            })}
           {(t.content ?? [])
             .filter((p): p is AgentSolveAttemptsPart => p.type === "solveAttempts")
             .map((part, j) => (
@@ -155,7 +216,7 @@ export const AgentTurn: React.FC<{
                 part={part}
                 tintClassName={tint}
                 onUndo={actions.onUndoChange}
-                planNodeState={planNodeStateFor(attachment, part)}
+                planNodeState={planNodeStateFor(attachment, part, Boolean(actions.buildRunning))}
                 onSolvePlanNode={actions.onSolvePlanNode}
                 onRunPlanNode={actions.onRunPlanNode}
                 onOpenAgentChat={actions.onOpenAgentChat}

@@ -170,8 +170,9 @@
   color: var(--curio-warning-text);
 }
 
-/* dev/126: the node-attached Dataset Finder's confirm control. Same shape as
-   dev/116's remedy button, so a card action reads like every other one. */
+/* dev/126: the pick of a node's source, Use this source: the card's main
+   action, in the look of the plan line's own (`.solve`), beside the way to
+   the node's Dataset Finder's chat. */
 .confirmRow {
   display: flex;
   flex-wrap: wrap;
@@ -186,18 +187,53 @@
   border-radius: 8px;
   padding: 4px 12px;
   cursor: pointer;
-  border: 1px solid var(--curio-border-strong);
-  background: var(--curio-card-bg);
-  color: var(--curio-text-primary);
-}
-
-.confirm:hover:not(:disabled) {
-  border-color: var(--curio-text-secondary);
+  border: 1px solid transparent;
+  background: var(--curio-top-bar-bg);
+  color: var(--curio-text-on-dark);
 }
 
 .confirm:disabled {
   cursor: default;
   opacity: 0.55;
+}
+
+/* The way to the Finder's chat, at the row's end. */
+.finderLink {
+  margin-left: auto;
+}
+
+/* The source the node's Dataset Finder recorded, in place of the rows. */
+.done {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--curio-success-bg);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--curio-text-primary);
+}
+
+.doneIcon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.66rem;
+  background: var(--curio-card-bg);
+  color: var(--curio-success-text);
+}
+
+/* The other chat that holds the same card. */
+.mirrored {
+  padding: 0 10px 4px;
+  font-size: 0.72rem;
+  color: var(--curio-text-meta);
 }
 
 .recorded,

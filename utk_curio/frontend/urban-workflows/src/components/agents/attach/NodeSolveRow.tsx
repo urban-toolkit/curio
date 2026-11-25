@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import styles from "./AgentBuilderStrip.module.css";
 import type { AgentRemedy } from "../../../services/agents";
 import { AddKeyAction } from "../../connectionKeys/AddKeyAction";
+import actionStyles from "../../connectionKeys/AddKeyAction.module.css";
 import { OpenDatasetFinderAction } from "./OpenDatasetFinderAction";
 import { stoppedByPhrase } from "../content/AgentSolveAttemptsCard";
 
@@ -19,7 +20,11 @@ export const SOLVE_NODE_RUNNING_HINT = "Solve keeps running if you close this pa
  * the button's tooltip. The user's explicit ask is what runs the node's code
  * in the sandbox, fixes what fails, and re-runs it; the result lands as an
  * already-executed content review (or is written into an empty node).
- * Detached on the server: closing the panel does not stop it.
+ * Detached on the server: closing the panel does not stop it. While a build
+ * runs on the node's plan it waits (*blocker* says why): it would build the
+ * node beside the build. A Solve that ends waiting for the node's source,
+ * whose candidates this chat holds because its Solve asked for them, points
+ * at that card (*onShowCard*).
  */
 export const NodeSolveRow: React.FC<{
   onSolveNode: () => Promise<unknown>;
@@ -31,7 +36,12 @@ export const NodeSolveRow: React.FC<{
   onOpenChat?: (attachmentId: string) => void;
   /** The name of the agent an attachment of this dataflow binds, from the live list. */
   agentNameOf?: (attachmentId: string) => string | null;
-}> = ({ onSolveNode, activity = null, live = false, onOpenChat, agentNameOf }) => {
+  /** Why the Solve may not start now: a build runs on the node's plan. */
+  blocker?: string | null;
+  /** Brings the card of the node's candidates in this chat into view; null
+   * when this chat holds none. */
+  onShowCard?: (() => void) | null;
+}> = ({ onSolveNode, activity = null, live = false, onOpenChat, agentNameOf, blocker = null, onShowCard = null }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -54,7 +64,7 @@ export const NodeSolveRow: React.FC<{
   }, [live, busy]);
 
   const solve = async () => {
-    if (running) return;
+    if (running || blocker) return;
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -92,9 +102,13 @@ export const NodeSolveRow: React.FC<{
     remedy?.kind === "dataset-selection" && remedy.attachmentId
       ? agentNameOf?.(remedy.attachmentId) ?? null
       : null;
+  // The candidates are on a card in this chat: the row points at it.
+  const showCard = awaitingSource && onShowCard ? onShowCard : null;
   const shownNotice = awaitingSource
-    ? `Awaiting a source: ${finder ? `this node's ${finder} has` : "this node has"} candidates for you to ` +
-      "confirm. Nothing was generated or written."
+    ? showCard
+      ? "Awaiting a source: pick one on its card below with Use this source. Nothing was generated or written."
+      : `Awaiting a source: ${finder ? `this node's ${finder} has` : "this node has"} candidates for you to ` +
+        "confirm. Nothing was generated or written."
     : notice;
 
   return (
@@ -102,8 +116,8 @@ export const NodeSolveRow: React.FC<{
       <button
         type="button"
         className={styles.solve}
-        disabled={running}
-        data-tooltip={running ? SOLVE_NODE_RUNNING_HINT : SOLVE_NODE_HINT}
+        disabled={running || Boolean(blocker)}
+        data-tooltip={running ? SOLVE_NODE_RUNNING_HINT : blocker ?? SOLVE_NODE_HINT}
         onClick={() => void solve()}
       >
         {running ? "Solving…" : "Solve this node"}
@@ -118,7 +132,11 @@ export const NodeSolveRow: React.FC<{
       ) : shownNotice ? (
         <span className={styles.solveStatus} role="status" data-tooltip={shownNotice}>{shownNotice}</span>
       ) : null}
-      {remedy ? (
+      {showCard ? (
+        <button type="button" className={actionStyles.button} onClick={showCard}>
+          Show its sources
+        </button>
+      ) : remedy ? (
         <>
           <AddKeyAction remedy={remedy} />
           {/* dev/126: a data-loading node whose source is with the user. */}

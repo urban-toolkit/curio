@@ -14,6 +14,7 @@ import {
   type AgentRunStatus,
   type RunSkill,
 } from "../../../services/agents";
+import { buildRunningOn, holdsSourceCardFor } from "../../../services/agents/planBuild";
 import { agentCategoryKey } from "../../menus/nodes/agentsPalette/agentCategoryStyle";
 import { AgentBuilderStrip } from "./AgentBuilderStrip";
 import { workingText } from "./AgentAvatarBadge";
@@ -165,10 +166,14 @@ export const AgentChatPanel: React.FC<{
   solveNotices?: Record<string, string>;
   /** dev/63: cancel the running solve. */
   onCancelSolve?: () => Promise<void>;
-  /** dev/115 (Amendment A2): the per-node Solve — offered when this agent is
-   * attached to a node; runs the node's current code in the sandbox, fixes
-   * errors, re-runs, and lands an executed review. Omitted → no row. */
+  /** dev/115 (Amendment A2): the per-node Solve: offered when this agent is
+   * attached to a node and solves nodes (`solvesNodes`, the server's own
+   * answer); runs the node's current code in the sandbox, fixes errors,
+   * re-runs, and lands an executed review. Omitted → no row. */
   onSolveNode?: () => Promise<unknown>;
+  /** Why the per-node Solve may not start now: a build runs on the node's
+   * plan. */
+  solveNodeBlocker?: string | null;
   /** dev/115: the running per-node Solve's narration. */
   solveNodeActivity?: string | null;
   /** dev/72: opens ANOTHER attachment's chat: the rail's entries, and the
@@ -178,6 +183,12 @@ export const AgentChatPanel: React.FC<{
   /** dev/126: record the confirmed dataset selection for this attachment's
    * node (an agent that declares dataset.select, on a node only). */
   onRecordDatasetSelection?: (
+    picks: import("../../../services/agents").AgentDatasetPick[],
+  ) => Promise<import("../../../services/agents").AgentDatasetSelection>;
+  /** Record a pick on a node's candidates card in this chat, which asked for
+   * them: on the route of the node's Dataset Finder. */
+  onRecordSourcePick?: (
+    finderAttachmentId: string,
     picks: import("../../../services/agents").AgentDatasetPick[],
   ) => Promise<import("../../../services/agents").AgentDatasetSelection>;
   /** dev/132: the shared catalog import, for a candidate row the runtime
@@ -237,6 +248,7 @@ export const AgentChatPanel: React.FC<{
   simulating = null,
   onSolve,
   onSolveNode,
+  solveNodeBlocker = null,
   solveNodeActivity = null,
   solveProgress,
   solveErrors,
@@ -250,6 +262,7 @@ export const AgentChatPanel: React.FC<{
   onCancelSolve,
   onOpenAgentChat,
   onRecordDatasetSelection,
+  onRecordSourcePick,
   onImportDataset,
   delegateExists,
   agentNameOf,
@@ -443,6 +456,13 @@ export const AgentChatPanel: React.FC<{
     delegateExists,
     agentNameOf,
     onRecordDatasetSelection,
+    onRecordSourcePick,
+    // A node's candidates card in this chat reads the node's Finder's record
+    // from the live list.
+    attachmentOf: (attachmentId: string) => attachments?.find((a) => a.attachmentId === attachmentId) ?? null,
+    targetName,
+    // No plan row's Solve starts while a build runs on this agent's plan.
+    buildRunning: buildRunningOn(attachment, simulating) !== null,
     onImportDataset,
     onApplyProposal,
     beginPackageReview: packageReview.beginReview,
@@ -452,6 +472,18 @@ export const AgentChatPanel: React.FC<{
     onRunPlanNode,
     installsWaitForOwner,
   };
+  // The node this agent is on, and whether this chat holds the card of its
+  // candidates, which its Solve asked for.
+  const ownNode = attachment.target.kind === "node" ? attachment.target.targetId ?? null : null;
+  const showSourceCard =
+    ownNode && holdsSourceCardFor(turns, ownNode)
+      ? () => {
+          const cards = Array.from(
+            messagesRef.current?.querySelectorAll<HTMLElement>("[data-curio-source-pick]") ?? [],
+          ).filter((card) => card.getAttribute("data-curio-source-pick") === ownNode);
+          cards[cards.length - 1]?.scrollIntoView({ block: "nearest" });
+        }
+      : null;
 
   return (
     <div
@@ -489,13 +521,14 @@ export const AgentChatPanel: React.FC<{
         />
         {onSaveGoal ? <GoalLine goal={goal ?? ""} state={goalLine} /> : null}
 
-        {/* Solve this node, in a node agent's chat; the dev/52 plan line, in
-            the chat of an agent that declares dataflow.orchestrate, one that
-            plans a dataflow and solves it. */}
+        {/* Solve this node, in the chat of a node agent the server lets
+            Solve its node (`solvesNodes`); the dev/52 plan line, in the chat
+            of an agent that declares dataflow.orchestrate, one that plans a
+            dataflow and solves it. */}
         {/* Each keyed to its chat: the rail swaps the agent in this one
             panel, and what one chat's Solve or build started is not the
             next chat's. */}
-        {onSolveNode && attachment.target.kind === "node" ? (
+        {onSolveNode && attachment.target.kind === "node" && attachment.solvesNodes === true ? (
           <NodeSolveRow
             key={attachment.attachmentId}
             onSolveNode={onSolveNode}
@@ -503,6 +536,8 @@ export const AgentChatPanel: React.FC<{
             agentNameOf={agentNameOf}
             activity={solveNodeActivity}
             live={attachment.liveJob?.status === "running" && attachment.liveJob.kind === "solve-node"}
+            blocker={solveNodeBlocker}
+            onShowCard={showSourceCard}
           />
         ) : null}
         {orchestrates && onSolve ? (

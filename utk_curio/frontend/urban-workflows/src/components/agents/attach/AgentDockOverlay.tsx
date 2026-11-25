@@ -12,6 +12,7 @@ import type { AgentAttachment } from "../../../services/agents";
 import { useAgentAttachmentsContext } from "../../../providers/agents";
 import { usePeopleHere } from "../../../providers/collab/usePeopleHere";
 import { composeAgentRunContext, skillsApi } from "../../../services/agents";
+import { BUILD_RUNNING_HINT, buildRunningOver } from "../../../services/agents/planBuild";
 import { useAgentCanvasMutations } from "./useAgentCanvasMutations";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { useUserContext } from "../../../providers/userContext";
@@ -260,6 +261,14 @@ export const AgentDockOverlay: React.FC = () => {
                   : undefined
               }
               solveNodeActivity={ctx.solveNodeActivity[shown.attachmentId] ?? null}
+              // No Solve of a node starts while a build runs on its plan.
+              solveNodeBlocker={
+                shown.target.kind === "node" &&
+                shown.target.targetId &&
+                buildRunningOver(shown.target.targetId, ctx.attachments, ctx.simulating)
+                  ? BUILD_RUNNING_HINT
+                  : null
+              }
               onDismissProposal={(proposalId) =>
                 ctx.dismissProposal(shown.attachmentId, proposalId)
               }
@@ -269,6 +278,11 @@ export const AgentDockOverlay: React.FC = () => {
               onOpenAgentChat={ctx.openChat}
               onRecordDatasetSelection={(picks) =>
                 ctx.recordDatasetSelection(shown.attachmentId, picks)
+              }
+              // A node's candidates in the chat that asked for them: the pick
+              // records on the node's Dataset Finder.
+              onRecordSourcePick={(finderAttachmentId, picks) =>
+                ctx.recordDatasetSelection(finderAttachmentId, picks)
               }
               // dev/132: the portal-download row's Import button.
               onImportDataset={ctx.importDataset}

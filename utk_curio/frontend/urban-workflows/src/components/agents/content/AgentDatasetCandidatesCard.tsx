@@ -1,9 +1,12 @@
 import React, { useState } from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faCheck } from "@fortawesome/free-solid-svg-icons";
 import type {
   AgentDatasetCandidateRow,
   AgentDatasetCandidatesPart,
   AgentDatasetPick,
   AgentDatasetSelection,
+  AgentDatasetSourceRecord,
 } from "../../../services/agents";
 import { useDatasetDetails } from "../../datasets/catalog/datasetDetailsContext";
 import { sanitizeAgentUrl } from "../../../services/agents";
@@ -103,6 +106,24 @@ export function pickKey(
   return undefined;
 }
 
+/** What the card says once its node's Dataset Finder recorded the pick: what
+ * was picked, and what comes of it. Exported for tests. */
+export function recordedLine(record: AgentDatasetSourceRecord): string {
+  const picks = record.picks ?? [];
+  const names = picks
+    .map((pick) => {
+      const name = pick.name || pick.datasetId || pick.url || "";
+      return pick.provider ? `${name} (${pick.provider})` : name;
+    })
+    .join(", ");
+  const next = picks.some((pick) => pick.acquiring)
+    ? "It is downloading into the Data Catalog; the loader is built from it once it lands."
+    : record.status === "awaiting-install"
+      ? "Once it is installed in the dataflow, the loader is built from it."
+      : "The loader is built from this source.";
+  return `Recorded: ${names}. ${next}`;
+}
+
 /** The portal page an external row may link to: only a URL the runtime
  *  vouched for (a source it can download from, or one its probe verified),
  *  and only over http(s). Anything else stays plain text (REQ-SEC-002). */
@@ -125,6 +146,12 @@ export function verifiedPortalUrl(row: AgentDatasetCandidateRow): string | null 
  * row's "View on the portal". Every text field arrives bounded +
  * scheme-allowlisted from the server and renders as plain text here
  * (REQ-SEC-002).
+ *
+ * The card of a node's candidates, in its Dataset Finder's chat and in the
+ * chat that asked for them, is named for the node, and its Use this source
+ * records the pick on the Finder. Once the Finder's record holds a pick the
+ * user has nothing left to do for, it says Recorded in place of its rows, in
+ * every chat that holds it.
  */
 export const AgentDatasetCandidatesCard: React.FC<{
   part: AgentDatasetCandidatesPart;
@@ -145,6 +172,22 @@ export const AgentDatasetCandidatesCard: React.FC<{
    * the download. Resolves to the imported dataset's id, or null when the
    * import failed (the hook has already shown its own toast). */
   onImportDataset?: (file: File, discoverySource?: DatasetDiscoverySourceInput) => Promise<string | null>;
+  /** The node these are candidates for, by the name its header shows: the
+   * card is named for it. */
+  nodeLabel?: string | null;
+  /** The node's id, which whatever points at the card finds it by. */
+  nodeId?: string | null;
+  /** The node's source as its Dataset Finder records it (the listing's
+   * `sourceRecord`): once it holds a pick the user has nothing left to do for
+   * (*waitsForPick* false), the card says Recorded in place of its rows. */
+  record?: AgentDatasetSourceRecord | null;
+  /** Whether the node still waits for the user's pick: its Finder's
+   * `waitsForYou` names it. */
+  waitsForPick?: boolean;
+  /** The chat of the node's Dataset Finder, for a card in another chat. */
+  finderChat?: { name: string; onOpen: () => void } | null;
+  /** The agent whose chat asked for these candidates and holds the same card. */
+  mirroredIn?: string | null;
 }> = ({
   part,
   tintClassName,
@@ -153,6 +196,12 @@ export const AgentDatasetCandidatesCard: React.FC<{
   handoffName,
   onRecordSelection,
   onImportDataset,
+  nodeLabel = null,
+  nodeId = null,
+  record = null,
+  waitsForPick = false,
+  finderChat = null,
+  mirroredIn = null,
 }) => {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const { openDatasetDetails } = useDatasetDetails();
@@ -282,24 +331,24 @@ export const AgentDatasetCandidatesCard: React.FC<{
 
   const recordedNote = (selection: AgentDatasetSelection): string => {
     // dev/132: when the runtime handed the fetch to the node's own builder,
-    // say THAT — the user has nothing left to compose or press.
+    // say THAT: the user has nothing left to compose or press.
     const delegated = selection.delegated;
     if (delegated?.status === "delegating") {
-      return "Source recorded — this node's builder is writing the loader for it now.";
+      return "Source recorded: this node's builder is writing the loader for it now.";
     }
     if (delegated?.status === "session-running") {
-      return "Source recorded — the running Solve session picks this node up on its next pass.";
+      return "Source recorded: the running Solve session picks this node up on its next pass.";
     }
     if (delegated?.reason) {
-      return `Source recorded — ${delegated.reason}.`;
+      return `Source recorded: ${delegated.reason}.`;
     }
     if (selection.status === "resolved") {
-      return "Source recorded for this node — Solve it to build the loader from this source.";
+      return "Source recorded for this node: Solve it to build the loader from this source.";
     }
     if (selection.status === "awaiting-install") {
-      return "Source recorded — install the dataset from the Data Catalog, then Solve the node.";
+      return "Source recorded: install the dataset from the Data Catalog, then Solve the node.";
     }
-    return "Nothing selectable was confirmed — the runtime could not reach it. Pick another row.";
+    return "Nothing selectable was confirmed: the runtime could not reach it. Pick another row.";
   };
 
   const toggle = (lane: "external" | "catalog", index: number) => {
@@ -434,15 +483,32 @@ export const AgentDatasetCandidatesCard: React.FC<{
   const lanes = (["external", "catalog"] as const).filter(
     (lane) => (part.lanes[lane] ?? []).length > 0,
   );
+  // The card's own name: the node its candidates are for, when it knows it.
+  const title = nodeLabel ? `Sources for ${nodeLabel}` : "Dataset candidates";
+  // The node's Finder recorded a pick the user has nothing left to do for.
+  const done =
+    Boolean(onRecordSelection) &&
+    (record?.picks ?? []).length > 0 &&
+    record?.status !== "candidates-pending" &&
+    !waitsForPick;
 
   return (
-    <div className={styles.card} role="group" aria-label="Dataset candidates">
+    <div className={styles.card} role="group" aria-label={title} data-curio-source-pick={nodeId ?? undefined}>
       <div className={`${styles.header} ${tintClassName ?? ""}`}>
         <span className={styles.accentDot} aria-hidden="true" />
-        <span>Dataset candidates</span>
-        <span className={styles.kind}>select &amp; confirm in chat</span>
+        <span>{title}</span>
+        {/* Without a pick of its own, a selection composes a message. */}
+        {onRecordSelection ? null : <span className={styles.kind}>select &amp; confirm in chat</span>}
       </div>
-      {lanes.map((lane) => (
+      {done && record ? (
+        <div className={styles.done} role="status">
+          <span className={styles.doneIcon} aria-hidden="true">
+            <FontAwesomeIcon icon={faCheck} />
+          </span>
+          <span>{recordedLine(record)}</span>
+        </div>
+      ) : null}
+      {done ? null : lanes.map((lane) => (
         <div key={lane} role="group" aria-label={LANE_LABEL[lane]} className={styles.lane}>
           <div className={styles.laneLabel}>{LANE_LABEL[lane]}</div>
           <ul className={styles.rows}>
@@ -450,23 +516,33 @@ export const AgentDatasetCandidatesCard: React.FC<{
           </ul>
         </div>
       ))}
-      {onRecordSelection ? (
+      {onRecordSelection && !done ? (
         <div className={styles.confirmRow}>
           <button
             type="button"
             className={styles.confirm}
             disabled={recording || picksFor(selected).length === 0}
-            data-tooltip="Records this source for the node. Solve then builds the loader from exactly this source; nothing else is accepted."
+            data-tooltip="Records this source for the node: its loader is built from exactly this source, and from nothing else."
             onClick={() => void confirm()}
           >
-            {recording ? "Recording…" : "Confirm source for this node"}
+            {recording ? "Recording…" : "Use this source"}
           </button>
+          {finderChat ? (
+            <button type="button" className={`${styles.rowLink} ${styles.finderLink}`} onClick={finderChat.onOpen}>
+              Its {finderChat.name}&apos;s chat
+            </button>
+          ) : null}
           {recorded ? (
             <span className={styles.recorded} role="status">{recordedNote(recorded)}</span>
           ) : null}
           {recordError ? (
             <span className={styles.recordError} role="alert">{recordError}</span>
           ) : null}
+        </div>
+      ) : null}
+      {mirroredIn && !done ? (
+        <div className={styles.mirrored}>
+          The same card is in the {mirroredIn}&apos;s chat. A pick in either shows in both.
         </div>
       ) : null}
       {!onRecordSelection && (downloaded || recordError) ? (
