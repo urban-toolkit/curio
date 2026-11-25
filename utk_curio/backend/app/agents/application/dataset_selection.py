@@ -22,11 +22,9 @@ from utk_curio.backend.app.agents.application import editors as agents_editors
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
 from utk_curio.backend.app.agents.application.proposals import mint as agents_mint
-from utk_curio.backend.app.agents.application.proposals import store as agents_store
 from utk_curio.backend.app.agents.application.solve import budgets as agents_budgets
 from utk_curio.backend.app.agents.application.solve import node_solve as agents_node_solve
 from utk_curio.backend.app.agents.application.solve import simulation as agents_simulation
-from utk_curio.backend.app.agents.application.solve import validate as agents_validate
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 from utk_curio.backend.app.agents.infrastructure import agent_jobs as agents_agent_jobs
@@ -126,12 +124,18 @@ def record_dataset_selection(
     # A row Curio can download is downloaded now, by the Discovery Catalog, and
     # recorded as the catalog pick it becomes.
     acquisitions = agents_acquire._acquire_confirmed_picks(rows)
+    node_id = str(target.get("targetId") or "")
     with projects_storage.spec_write_lock(user_key, project_id):
         fresh = agents_spec_reads._live_spec_or_404(user_key, project_id)
         state = agents_dataset_resolution.record_selection(fresh, attachment_id, rows)
         if state is None:
             raise AgentServiceError(f"attachment {attachment_id!r} not found", 404)
+        # A plan that waits for the node waits as the record now says: for
+        # the download or the install of the pick, or no more, and then it
+        # goes on from its agent's chat (or its running Build & validate).
+        moved = agents_simulation.follow_the_sources(user_key, fresh)
         dataflow_docs.write(user_key, project_id, fresh, agents_spec_reads._person(user_key, "dataset"))
+    released = next((m for m in moved if m["nodeId"] == node_id and m["state"] == "created"), None)
     payload = {
         "attachmentId": attachment_id,
         "nodeId": target.get("targetId"),
@@ -145,7 +149,7 @@ def record_dataset_selection(
     if acquisitions:
         payload["acquisitions"] = acquisitions
     delegated = _delegate_confirmed_fetch(
-        user_key, project_id, str(target.get("targetId") or ""), rows, state, guest=guest,
+        user_key, project_id, node_id, rows, state, guest=guest, released=released,
     ) or agents_acquire._acquisition_outcome(acquisitions)
     if delegated is not None:
         payload["delegated"] = delegated
@@ -224,6 +228,7 @@ def _delegate_confirmed_fetch(
     state: dict,
     *,
     guest: bool = False,
+    released: dict | None = None,
 ) -> dict | None:
     """dev/132 (R1): start the node's own builder on the confirmed source.
 
@@ -240,10 +245,11 @@ def _delegate_confirmed_fetch(
     ``session-running`` when dev/131's session will pick the node up on its
     next pass (its record just moved, which is exactly its trigger),
     ``plan-waiting`` when a plan's Build & validate or its row's Solve
-    stopped at the node to wait for its source (the plan goes on from its
-    agent's chat, so nothing builds here), ``manual-download`` when the file
-    is still on a portal, or a reason, never raising: a selection is recorded
-    whether or not a build can start.
+    stopped at the node to wait for its source, which the pick ended
+    (*released*, from ``simulation.follow_the_sources``: the plan goes on from
+    its agent's chat, so nothing builds here), ``manual-download`` when the
+    file is still on a portal, or a reason, never raising: a selection is
+    recorded whether or not a build can start.
 
     The build runs on the BUILDER's LLM configuration, resolved once it is
     picked: the selection was posted to the Dataset Finder, whose choice in API
@@ -274,9 +280,8 @@ def _delegate_confirmed_fetch(
         }
     # A plan that stopped at this node to wait for its source goes on from its
     # agent's chat: started here too, the loader would be built twice.
-    waiting = _release_plan_wait(user_key, project_id, node_id)
-    if waiting is not None:
-        return _plan_waiting(user_key, node_id, waiting)
+    if released is not None:
+        return _plan_waiting(user_key, node_id, released)
     if not fetchable:
         return None
     try:
@@ -341,70 +346,24 @@ def _a_session_runs(user_key: str, project_id: str) -> bool:
     return False
 
 
-def _release_plan_wait(user_key: str, project_id: str, node_id: str) -> dict | None:
-    """The plan whose Build & validate, or whose row's Solve, stopped at
-    *node_id* to wait for its source goes on from its agent's chat.
-
-    The node's entry is ``created`` again, so its row reads as placed, and a
-    pause that named it names it no more: it ends when it named this node
-    alone. The next Build & validate, or the row's Solve, builds the loader
-    from the source just picked. Returns the attachment of the agent whose
-    plan it is, its coord and whether a pause still stands, or None when no
-    plan waits for the node."""
-    released: dict | None = None
-    with projects_storage.spec_write_lock(user_key, project_id):
-        spec = dataflow_docs.live(user_key, project_id)
-        if spec is None:
-            return None
-        for record in attachments.list_attachments(spec):
-            session = record.get("builderSession")
-            states = session.get("nodeStates") if isinstance(session, dict) else None
-            if not isinstance(states, dict):
-                continue
-            refs = [
-                ref for ref, waiting_node in (session.get("nodeIds") or {}).items()
-                if waiting_node == node_id and states.get(ref) == agents_validate.AWAITING_SOURCE
-            ]
-            if not refs:
-                continue
-            for ref in refs:
-                states[ref] = "created"
-            reason = session.get("pauseReason")
-            if isinstance(reason, dict) and reason.get("kind") == agents_validate.AWAITING_SOURCE:
-                left = [
-                    entry.get("ref") for entry in reason.get("nodes") or []
-                    if isinstance(entry, dict) and entry.get("ref") and entry.get("ref") not in refs
-                ]
-                if left:
-                    proposal = agents_store._plan_proposal_any(
-                        spec, record.get("attachmentId"), session.get("planProposalId"),
-                    )
-                    session["pauseReason"] = agents_simulation.awaiting_source_reason(
-                        user_key, spec, session, (proposal or {}).get("plan") or {}, left,
-                    )
-                else:
-                    session.pop("pauseReason", None)
-            if released is None:
-                released = {
-                    "attachmentId": record.get("attachmentId"),
-                    "coord": str(record.get("coord") or ""),
-                    "paused": bool(session.get("pauseReason")),
-                }
-        if released is not None:
-            dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._person(user_key, "dataset"))
-    return released
-
-
-def _plan_waiting(user_key: str, node_id: str, waiting: dict) -> dict:
-    """What the pick's card says when a plan waits for the node: go on in the
-    chat of the agent whose plan it is, with the button its plan shows."""
-    coord = waiting["coord"]
+def _plan_waiting(user_key: str, node_id: str, released: dict) -> dict:
+    """What the pick's card says when it ended a plan's wait for the node
+    (*released*, an entry of ``simulation.follow_the_sources``): the plan's
+    Build & validate running now builds the loader, or the user goes on in
+    the chat of the agent whose plan it is, with the button its plan shows."""
+    coord = released["coord"]
     name = agents_spec_reads._agent_name(user_key, coord) or coord.split("@", 1)[0]
-    button = "Resume" if waiting["paused"] else "Build & validate plan"
+    if released.get("running") == "auto":
+        reason = f"the {name}'s Build & validate, running now, builds the loader from this source"
+    elif released.get("running") == "step":
+        reason = (f"continue in the {name}'s chat once its Step ends, where Step or the row's Solve "
+                  "builds the loader from this source")
+    else:
+        button = "Resume" if released.get("paused") else "Build & validate plan"
+        reason = f"continue in the {name}'s chat, where {button} or the row's Solve builds the loader from this source"
     return {
         "status": PLAN_WAITING,
-        "attachmentId": waiting["attachmentId"],
+        "attachmentId": released["attachmentId"],
         "nodeId": node_id,
-        "reason": f"continue in the {name}'s chat, where {button} or the row's Solve "
-                  "builds the loader from this source",
+        "reason": reason,
     }
