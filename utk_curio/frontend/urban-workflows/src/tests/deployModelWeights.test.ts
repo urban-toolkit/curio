@@ -25,7 +25,7 @@ describe("The deploy's fetched model weights", () => {
             ),
         ).toHaveLength(2);
         expect(
-            workflow.match(/printf ' {4}volumes: \[%s\]\\n' "\$curio_volumes" >> docker-compose\.site\.yml/g),
+            workflow.match(/printf ' {4}volumes: \[%s\]\\n' "\$curio_volumes" >> "\$site"/g),
         ).toHaveLength(2);
         expect(workflow).not.toMatch(/model-weights:ro/);
         // Before the top-level secrets the site file may end with.
@@ -50,8 +50,9 @@ describe("The deploy's fetched model weights", () => {
     });
 
     test("the deploy overlay mounts a folder of the checkout there, for the server to write", () => {
-        const overlay = read("docker-compose.deploy.yml");
-        expect(overlay).toMatch(/^ {6}- \.\/model-weights:\/model-weights$/m);
+        const overlay = read("docker/docker-compose.deploy.yml");
+        // From docker/, where Compose resolves the overlay's paths: the checkout's model-weights/.
+        expect(overlay).toMatch(/^ {6}- \.\.\/model-weights:\/model-weights$/m);
         expect(overlay).not.toMatch(/model-weights:ro/);
     });
 
@@ -59,7 +60,7 @@ describe("The deploy's fetched model weights", () => {
         const gitignore = read(".gitignore");
         expect(gitignore).toMatch(/^\/packages\/\*\/models\/\*\/$/m);
         expect(gitignore).toMatch(/^\/model-weights\/$/m);
-        const dockerignore = read(".dockerignore");
+        const dockerignore = read("docker/Dockerfile.dockerignore");
         expect(dockerignore).toMatch(/^packages\/\*\/models\/\*\/\*\*$/m);
         expect(dockerignore).toMatch(/^model-weights$/m);
     });

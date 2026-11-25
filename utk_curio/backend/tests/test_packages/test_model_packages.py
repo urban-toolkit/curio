@@ -868,4 +868,4 @@ def test_the_wheel_leaves_local_relief_out(monkeypatch):
 def test_the_image_copies_local_relief():
     from utk_curio.backend.tests.test_discovery.test_shipped_sources import _packaging_file
 
-    assert "COPY docs/bring-your-own-model/ docs/bring-your-own-model/" in _packaging_file("Dockerfile")
+    assert "COPY docs/bring-your-own-model/ docs/bring-your-own-model/" in _packaging_file("docker/Dockerfile")

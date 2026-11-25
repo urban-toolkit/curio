@@ -177,14 +177,14 @@ jobs:
               mv .secrets/searxng.env.new .secrets/searxng.env
             )
           fi
-          image="$(sed -n 's/^    image: //p' docker-compose.searxng.yml)"
+          image="$(sed -n 's/^    image: //p' docker/docker-compose.searxng.yml)"
           echo "search=SearXNG ${image%%@*}" >> "$GITHUB_OUTPUT"
-          if ! docker compose -p "$PROJECT" -f docker-compose.searxng.yml up -d --wait --wait-timeout 120 \
+          if ! docker compose -p "$PROJECT" -f docker/docker-compose.searxng.yml up -d --wait --wait-timeout 120 \
               || ! line="$(docker run --rm --label "com.docker.compose.project=$PROJECT" --network "${PROJECT}_default" \
                              -v "$PWD:/app:ro" -w /app "$PROJECT-curio" \
                              python scripts/searxng/check.py "$CURIO_SEARCH_URL" 2>&1)"; then
             echo "::error::the web search service does not answer the agents' search URL: ${line:-it did not start}"
-            docker compose -p "$PROJECT" -f docker-compose.searxng.yml logs --no-color --tail=100 searxng || true
+            docker compose -p "$PROJECT" -f docker/docker-compose.searxng.yml logs --no-color --tail=100 searxng || true
             exit 1
           fi
           case "$line" in
@@ -274,7 +274,7 @@ jobs:
         shell: bash
         run: |
           if [ -f .secrets/searxng.env ]; then
-            docker compose -p "$PROJECT" -f docker-compose.searxng.yml down -v --remove-orphans || true
+            docker compose -p "$PROJECT" -f docker/docker-compose.searxng.yml down -v --remove-orphans || true
           fi
 
       - uses: ./.github/actions/stop-stack

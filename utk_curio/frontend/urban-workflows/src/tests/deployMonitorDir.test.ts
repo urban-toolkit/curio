@@ -51,7 +51,7 @@ describe("The deploy's monitor folder", () => {
     test("each stack's command line passes it, after setting it, before the bucket mounts", () => {
         for (const [, job] of STACKS) {
             const command = job.match(/printf ' {4}command: \[[^\n]*/)?.[0] ?? "";
-            expect(command).toMatch(/ "\$monitor_args" "\$mounts_args" "\$processes_args" >> docker-compose\.site\.yml$/);
+            expect(command).toMatch(/ "\$monitor_args" "\$mounts_args" "\$processes_args" >> "\$site"$/);
             expect(command.match(/%s/g)).toHaveLength((command.match(/ "\$[a-z]+_args"/g) ?? []).length);
             expect(job.indexOf(`grep -q -e '"--monitor-dir"'`)).toBeLessThan(job.search(/printf ' {4}command: \[/));
         }
@@ -74,7 +74,7 @@ describe("The deploy's monitor folder", () => {
             // the list is written.
             const at = job.indexOf(bind?.[0] ?? "");
             expect(job.indexOf("curio_volumes='")).toBeLessThan(at);
-            expect(at).toBeLessThan(once(job, `printf '    volumes: [%s]\\n' "$curio_volumes" >> docker-compose.site.yml`));
+            expect(at).toBeLessThan(once(job, `printf '    volumes: [%s]\\n' "$curio_volumes" >> "$site"`));
         }
         // The two stacks keep apart, and Docker makes each folder, root's.
         expect(text).not.toMatch(/mkdir[^\n]*curio-monitor/);

@@ -27,7 +27,7 @@ Assumed setup: a Linux server with the hostname already pointing at it, Docker E
 
 ## 1. Configure the stack
 
-This step lays down the source tree and `/srv/curio/docker-compose.site.yml`, the file that holds this site's settings.
+This step lays down the source tree and `/srv/curio/docker/docker-compose.site.yml`, the file that holds this site's settings.
 
 Clone and create the data directories:
 
@@ -37,7 +37,7 @@ cd /srv/curio
 mkdir -p instance .curio datasets
 ```
 
-Create `/srv/curio/docker-compose.site.yml` with Curio's arguments for this site: the address the browser reaches the backend at, the path the app is served under, and the memory each node may use. The address and the path must match the Caddy paths in step 2. `--exec-memory-mb 24576` gives a node room to run PyTorch models on the GPU. The `ports` line publishes the backend and the frontend on loopback only, so they are reached through Caddy (`!override` needs Docker Compose 2.24.4 or newer).
+Create `/srv/curio/docker/docker-compose.site.yml`, beside the repository's compose files, with Curio's arguments for this site: the address the browser reaches the backend at, the path the app is served under, and the memory each node may use. The address and the path must match the Caddy paths in step 2. `--exec-memory-mb 24576` gives a node room to run PyTorch models on the GPU. The `ports` line publishes the backend and the frontend on loopback only, so they are reached through Caddy (`!override` needs Docker Compose 2.24.4 or newer). Compose reads a relative path in any of these files from `docker/`, so `../` is the checkout.
 
 ```yaml
 services:
@@ -422,7 +422,7 @@ To start a stack with the service:
    command, [Updating](#updating)'s too:
 
    ```bash
-   export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml:docker-compose.bucket-mounts.yml:docker-compose.site.yml
+   export COMPOSE_FILE=docker/docker-compose.yml:docker/docker-compose.deploy.yml:docker/docker-compose.bucket-mounts.yml:docker/docker-compose.site.yml
    ```
 
 2. In `docker-compose.site.yml`, beside its other lines, bind a host folder
@@ -494,7 +494,7 @@ To start a stack with it:
    command, [Updating](#updating)'s too:
 
    ```bash
-   export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml:docker-compose.searxng.yml:docker-compose.site.yml
+   export COMPOSE_FILE=docker/docker-compose.yml:docker/docker-compose.deploy.yml:docker/docker-compose.searxng.yml:docker/docker-compose.site.yml
    ```
 
 3. Add the service's URL to Curio's `command` in `docker-compose.site.yml`:
@@ -586,7 +586,7 @@ The build also installs the sandbox's Node.js packages (autk-db, from the tarbal
 > Curio the way a local dev instance starts: the image's default command has no
 > `--deploy`, so [`cli/environment.py`](../utk_curio/cli/environment.py) sets `CURIO_NO_AUTH=1` and
 > **anyone who can reach the URL gets straight in with no login**. The
-> [`docker-compose.deploy.yml`](../docker-compose.deploy.yml) overlay is what adds
+> [`docker-compose.deploy.yml`](../docker/docker-compose.deploy.yml) overlay is what adds
 > `--deploy` (auth + projects on), `--no-allow-publish` (locks the author-only
 > catalog mutators), and `restart: unless-stopped`, and `docker-compose.site.yml`
 > adds the site's own arguments. Exporting `COMPOSE_FILE` once
@@ -596,7 +596,7 @@ The overlay also lets the container arrange the cgroups below its own (`cgroup: 
 
 ```bash
 cd /srv/curio
-export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml:docker-compose.site.yml
+export COMPOSE_FILE=docker/docker-compose.yml:docker/docker-compose.deploy.yml:docker/docker-compose.site.yml
 docker compose build
 docker compose up -d
 ```
@@ -652,7 +652,7 @@ Pull the new code, then rebuild and recreate:
 
 ```bash
 cd /srv/curio
-export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml:docker-compose.site.yml
+export COMPOSE_FILE=docker/docker-compose.yml:docker/docker-compose.deploy.yml:docker/docker-compose.site.yml
 git pull
 docker compose build --no-cache
 docker compose up -d --force-recreate
@@ -682,7 +682,7 @@ A second checkout running on different ports under a different path lets you tes
 | Published ports | 5002 / 8080 | 5012 / 8090 |
 | Public URL | `lab-name.your-uni.edu/curio/` | `lab-name.your-uni.edu/curio-dev/` |
 
-Clone into `/srv/curio-dev` and write its `docker-compose.site.yml`, which also moves the stack to host ports of its own:
+Clone into `/srv/curio-dev` and write its `docker/docker-compose.site.yml`, which also moves the stack to host ports of its own:
 
 ```yaml
 services:
@@ -695,7 +695,7 @@ Add two more `handle_path` blocks to the same Caddy site (`/curio-dev/api/*` →
 
 ```bash
 cd /srv/curio-dev
-export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml:docker-compose.site.yml
+export COMPOSE_FILE=docker/docker-compose.yml:docker/docker-compose.deploy.yml:docker/docker-compose.site.yml
 docker compose -p curio-dev build
 docker compose -p curio-dev up -d --force-recreate
 ```

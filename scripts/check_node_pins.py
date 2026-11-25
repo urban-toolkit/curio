@@ -45,10 +45,10 @@ def disagreements(root: Path = REPO_ROOT) -> list[str]:
                 f"expected '^{NODE_MAJOR}'"
             )
 
-    dockerfile = (root / "Dockerfile").read_text(encoding="utf-8")
+    dockerfile = (root / "docker" / "Dockerfile").read_text(encoding="utf-8")
     for needle in (f"setup_{NODE_MAJOR}.x", f"node:{NODE_MAJOR}-"):
         if needle not in dockerfile:
-            found.append(f"Dockerfile never mentions {needle}")
+            found.append(f"docker/Dockerfile never mentions {needle}")
 
     return found
 

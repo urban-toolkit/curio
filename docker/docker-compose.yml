@@ -1,8 +1,11 @@
+# Compose resolves the relative paths of the compose files in docker/ from
+# docker/, so the checkout is `..`. A project started without -p is curio.
+name: curio
 services:
   curio:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
     tty: true
     stdin_open: true
     environment:
@@ -15,6 +18,6 @@ services:
       - "8080:8080"
     volumes:
       # packages/ is not mounted: a catalog publish would rewrite the host checkout.
-      - ./datasets:/app/datasets # published datasets
-      - ./.curio:/app/.curio # sandbox data, read by Playwright on the host
-      - ./instance:/app/instance # SQLite database: users, projects, sessions
+      - ../datasets:/app/datasets # published datasets
+      - ../.curio:/app/.curio # sandbox data, read by Playwright on the host
+      - ../instance:/app/instance # SQLite database: users, projects, sessions

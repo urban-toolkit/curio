@@ -535,7 +535,7 @@ class TestItShips:
         from utk_curio import shipped
         from utk_curio.backend.tests.test_discovery.test_shipped_sources import _packaging_file
 
-        dockerfile, manifest_in = _packaging_file("Dockerfile"), _packaging_file("MANIFEST.in")
+        dockerfile, manifest_in = _packaging_file("docker/Dockerfile"), _packaging_file("MANIFEST.in")
         assert "COPY packages/ packages/" in dockerfile and "COPY models/" not in dockerfile
         assert "recursive-include packages *" in manifest_in and "recursive-include models" not in manifest_in
         assert "ddrnet23_slim" not in manifest_in  # its weights are not left out of the wheel

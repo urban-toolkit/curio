@@ -57,12 +57,12 @@ import { read, REPO_ROOT } from "./_support/workflowPaths";
 
 const WORKFLOW = ".github/workflows/docker-compose.yml";
 const CI_OVERLAYS = [
-    "docker-compose.ci.yml",
-    "docker-compose.ci-isolated.yml",
-    "docker-compose.ci-exec-user.yml",
-    "docker-compose.ci-stress.yml",
+    "docker/docker-compose.ci.yml",
+    "docker/docker-compose.ci-isolated.yml",
+    "docker/docker-compose.ci-exec-user.yml",
+    "docker/docker-compose.ci-stress.yml",
 ];
-const DEPLOY_FILES = ["docker-compose.yml", "docker-compose.deploy.yml", ".github/workflows/deploy.yml"];
+const DEPLOY_FILES = ["docker/docker-compose.yml", "docker/docker-compose.deploy.yml", ".github/workflows/deploy.yml"];
 
 /** The workflow's jobs, keyed by name, as the text under `jobs:`. */
 function jobs(): Map<string, string> {
@@ -89,7 +89,7 @@ describe("CI's image and the deploy's", () => {
     });
 
     test("the Dockerfile builds the deploy's image unless asked", () => {
-        expect(read("Dockerfile")).toMatch(/^ARG CURIO_CI_SETUP=0$/m);
+        expect(read("docker/Dockerfile")).toMatch(/^ARG CURIO_CI_SETUP=0$/m);
     });
 
     test("build-image builds the CI image, with torch's CPU build", () => {
@@ -97,10 +97,10 @@ describe("CI's image and the deploy's", () => {
     });
 
     test("the Dockerfile builds torch for CUDA unless asked", () => {
-        expect(read("Dockerfile")).toMatch(/^ARG CURIO_TORCH=cuda$/m);
+        expect(read("docker/Dockerfile")).toMatch(/^ARG CURIO_TORCH=cuda$/m);
     });
 
-    test.each([...CI_OVERLAYS, "docker-compose.ci-shards.yml", ...DEPLOY_FILES])(
+    test.each([...CI_OVERLAYS, "docker/docker-compose.ci-shards.yml", ...DEPLOY_FILES])(
         "%s keeps torch's CUDA build",
         (file) => {
             expect(read(file)).not.toContain("CURIO_TORCH");

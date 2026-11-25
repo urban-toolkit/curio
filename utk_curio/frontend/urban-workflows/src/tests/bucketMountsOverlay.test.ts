@@ -10,10 +10,11 @@
  * deployMediaCacheFile.test.ts reads deploy.yml.
  */
 import * as fs from "fs";
+import * as path from "path";
 import { REPO_ROOT, read } from "./_support/workflowPaths";
 import { block, codeLines, environment, scalars, services, value, volumes } from "./_support/composeFile";
 
-const OVERLAY = "docker-compose.bucket-mounts.yml";
+const OVERLAY = "docker/docker-compose.bucket-mounts.yml";
 const MODULE = "utk_curio/backend/app/discovery/infrastructure/bucket_mounts.py";
 const SERVICE_SCRIPT = "scripts/bucket-mounts/service.sh";
 
@@ -39,7 +40,10 @@ describe("the bucket mount service's overlay", () => {
     });
 
     test("only its bucket-mounts service holds /dev/fuse, SYS_ADMIN or an AppArmor profile, in any compose file", () => {
-        const files = fs.readdirSync(REPO_ROOT).filter((name) => /^docker-compose.*\.ya?ml$/.test(name));
+        const files = fs
+            .readdirSync(path.join(REPO_ROOT, "docker"))
+            .filter((name) => /^docker-compose.*\.ya?ml$/.test(name))
+            .map((name) => `docker/${name}`);
         expect(files).toContain(OVERLAY);
         expect(files.length).toBeGreaterThan(5);
         const privileged: string[] = [];
@@ -75,23 +79,24 @@ describe("the bucket mount service's overlay", () => {
         expect(value(service, "image")).toMatch(/^rclone\/rclone:\d+\.\d+\.\d+@sha256:[0-9a-f]{64}$/);
     });
 
+    // Compose resolves the overlay's paths from docker/: `..` is the checkout.
     test("Curio's container binds the mounts folder read-only and rslave, the service rshared", () => {
         expect(volumes(service)).toContainEqual({
             type: "bind",
-            source: "./bucket-mounts",
+            source: "../bucket-mounts",
             target: pythonConstant("SERVICE_MOUNTS"),
             "bind.propagation": "rshared",
             "bind.create_host_path": "true",
         });
         expect(volumes(curio)).toContainEqual({
             type: "bind",
-            source: "./bucket-mounts",
+            source: "../bucket-mounts",
             target: "/bucket-mounts",
             read_only: "true",
             "bind.propagation": "rslave",
             "bind.create_host_path": "true",
         });
-        expect(volumes(curio).filter((volume) => volume.source === "./bucket-mounts")).toHaveLength(1);
+        expect(volumes(curio).filter((volume) => volume.source === "../bucket-mounts")).toHaveLength(1);
     });
 
     test("both containers share the control volume, where the service's socket is", () => {
@@ -113,7 +118,7 @@ describe("the bucket mount service's overlay", () => {
         expect(value(service, "entrypoint")).toBe('["/bin/sh", "/opt/curio-bucket-mounts/service.sh"]');
         expect(volumes(service)).toContainEqual({
             type: "bind",
-            source: "./scripts/bucket-mounts",
+            source: "../scripts/bucket-mounts",
             target: "/opt/curio-bucket-mounts",
             read_only: "true",
         });

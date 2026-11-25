@@ -11,9 +11,15 @@ on:
     paths:
       - 'utk_curio/**'
       - 'docs/**'
-      - 'Dockerfile'
-      - 'docker-compose.yml'
-      - 'docker-compose.deploy.yml'
+      # The image the deploy builds, and every compose file it starts a stack
+      # with (deploy.yml's COMPOSE_FILE); the CI-only overlays stay out, since
+      # each dev deploy starts curio-dev empty.
+      - 'docker/Dockerfile'
+      - 'docker/Dockerfile.dockerignore'
+      - 'docker/docker-compose.yml'
+      - 'docker/docker-compose.deploy.yml'
+      - 'docker/docker-compose.searxng.yml'
+      - 'docker/docker-compose.bucket-mounts.yml'
       - '.github/workflows/deploy.yml'
       - '.github/workflows/bump-version.yml'
       # Baked into the image (see Dockerfile runtime_base COPYs). Without

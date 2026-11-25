@@ -28,7 +28,7 @@ describe("The deploy's limit on one cached file", () => {
         // folder, and its backend processes, after the mounts.
         for (const command of [dev, stable]) {
             expect(command).toMatch(
-                /"24576"%s%s%s%s%s%s%s%s%s\]\\n' "\$llm_args" "\$search_args" "\$weights_args" "\$cache_args" "\$download_args" "\$guest_args" "\$monitor_args" "\$mounts_args" "\$processes_args" >> docker-compose\.site\.yml$/,
+                /"24576"%s%s%s%s%s%s%s%s%s\]\\n' "\$llm_args" "\$search_args" "\$weights_args" "\$cache_args" "\$download_args" "\$guest_args" "\$monitor_args" "\$mounts_args" "\$processes_args" >> "\$site"$/,
             );
         }
     });

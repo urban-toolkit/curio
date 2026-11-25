@@ -64,7 +64,7 @@ export function startsARun(file: string, patterns: string[]): boolean {
 
 /** The sources of every COPY and ADD in the Dockerfile that copies from the build context. */
 export function copiedIntoTheImage(): string[] {
-    const instructions = read("Dockerfile").replace(/\\\r?\n/g, " ").split("\n");
+    const instructions = read("docker/Dockerfile").replace(/\\\r?\n/g, " ").split("\n");
     const sources: string[] = [];
     for (const line of instructions) {
         const match = /^\s*(?:COPY|ADD)\s+(.+)$/i.exec(line);

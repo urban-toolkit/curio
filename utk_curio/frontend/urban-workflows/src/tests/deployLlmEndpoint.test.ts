@@ -47,12 +47,13 @@ describe("The deploy's LLM endpoint", () => {
     test("each stack mounts the file and names only its path, for a release that reads it", () => {
         expect(text.match(/grep -q -e '"--llm-endpoint-file"' utk_curio\/main\.py/g)).toHaveLength(2);
         expect(text.match(/llm_args=', "--llm-endpoint-file", "\/run\/secrets\/curio_llm_endpoint"'/g)).toHaveLength(2);
-        expect(text.match(/file: \.\/\.secrets\/llm-endpoint/g)).toHaveLength(2);
+        // The checkout's file, the one the job sent, by its absolute path.
+        expect(text.match(/file: %s\/\.secrets\/llm-endpoint\\n' "\$PWD"/g)).toHaveLength(2);
         expect(text).not.toMatch(/--llm-(models|model|provider|base-url)\b/);
     });
 
     test("the file is in neither git nor the image", () => {
         expect(read(".gitignore")).toMatch(/^\/\.secrets\/$/m);
-        expect(read(".dockerignore")).toMatch(/^\/\.secrets\/$/m);
+        expect(read("docker/Dockerfile.dockerignore")).toMatch(/^\/\.secrets\/$/m);
     });
 });

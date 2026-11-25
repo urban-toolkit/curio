@@ -38,7 +38,8 @@ package's entry folder, or under the folder ``curio.py start
 - Integrity, ``scripts/regen_integrity.py`` among it, leaves them out.
 - Export, Publish and Save as package node refuse the package, saying why.
 - No shipped package keeps a folder under ``models/`` but a fetched entry,
-  which ``.gitignore``, ``.dockerignore`` and ``MANIFEST.in`` leave out.
+  which ``.gitignore``, ``docker/Dockerfile.dockerignore`` and ``MANIFEST.in``
+  leave out.
 
 The package is made in each test's own folder, never in ``packages/``. No test
 opens a socket: ``FakeHuggingFace`` stands in for Hugging Face
@@ -1492,8 +1493,9 @@ def test_save_as_package_node_refuses_a_node_that_loads_it(catalog):
 # ---------------------------------------------------------------------------
 
 def test_no_shipped_package_keeps_a_folder_under_models_but_a_fetched_entry():
-    """``.gitignore``, ``.dockerignore`` and ``MANIFEST.in`` leave out every
-    folder directly under a package's ``models/``, the entry a fetch fills.
+    """``.gitignore``, ``docker/Dockerfile.dockerignore`` and ``MANIFEST.in``
+    leave out every folder directly under a package's ``models/``, the entry a
+    fetch fills.
     So weights that ship in git are files there, never a folder."""
     from utk_curio import shipped
 

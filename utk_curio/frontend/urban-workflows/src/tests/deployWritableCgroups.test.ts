@@ -11,7 +11,7 @@
 import { read } from "./_support/workflowPaths";
 
 test("the deploy overlay asks for a private cgroup namespace and writable cgroups", () => {
-    const overlay = read("docker-compose.deploy.yml");
+    const overlay = read("docker/docker-compose.deploy.yml");
     expect(overlay).toMatch(/^ {4}cgroup: private$/m);
     expect(overlay).toMatch(/^ {4}security_opt:\n {6}- writable-cgroups=true$/m);
 });
@@ -26,7 +26,7 @@ describe("Each deploy job", () => {
 
     test.each([0, 1])("job %s checks Docker Engine 28 before it stops the running stack, when its overlay asks for writable cgroups", (index) => {
         const job = jobs[index];
-        const asks = job.indexOf("if grep -q -e 'writable-cgroups=true' docker-compose.deploy.yml; then");
+        const asks = job.indexOf(`if grep -q -e 'writable-cgroups=true' "$compose_dir/docker-compose.deploy.yml"; then`);
         const engine = job.indexOf("engine_version=\"$(docker version --format '{{.Server.Version}}')\"");
         const stop = job.indexOf('echo "=== stopping the old stack ==="');
         expect(asks).toBeGreaterThan(-1);
