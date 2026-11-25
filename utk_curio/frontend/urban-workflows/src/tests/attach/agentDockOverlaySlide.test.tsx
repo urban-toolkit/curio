@@ -104,6 +104,7 @@ function ctx(attachments: any[], selectedId: string | null) {
     solveProgress: {},
     solveErrors: {},
     simulationActivity: {},
+    simulating: {},
     hydratingId: null,
     hydrateSession: jest.fn(),
     sendMessage: jest.fn(),

@@ -8,19 +8,24 @@
  */
 import type { AgentBuilderSession, AgentProposalSummary, AgentRemedy, AgentSolveWave } from "../../../../services/agents";
 
-/** The plan line's one main action. */
-export type PlanMainAction = "solve" | "stop-solve" | "resume" | "run";
+/** The plan line's one main action, or none while a build nobody can stop
+ *  runs. */
+export type PlanMainAction = "solve" | "stop-solve" | "stop-build" | "resume" | "run" | null;
 
-/** Which action the plan line holds: Stop while a batch runs and can be
- *  stopped, Resume when a build paused, Run workflow once the plan is ready,
- *  else Solve (or its Retry, or Solving… while a batch nobody can stop runs). */
+/** Which action the plan line holds: Stop while a batch or a build runs and
+ *  can be stopped, Resume when a build paused, Run workflow once the plan is
+ *  ready, else Solve (or its Retry, or Solving… while a batch nobody can stop
+ *  runs). A running build offers no Solve: it would run over the same nodes. */
 export function mainActionOf(opts: {
   solveRunning: boolean;
   canStopSolve: boolean;
+  building: boolean;
+  canStopBuild: boolean;
   paused: boolean;
   phase: string;
 }): PlanMainAction {
   if (opts.solveRunning) return opts.canStopSolve ? "stop-solve" : "solve";
+  if (opts.building) return opts.canStopBuild ? "stop-build" : null;
   if (opts.paused) return "resume";
   return opts.phase === "ready" ? "run" : "solve";
 }

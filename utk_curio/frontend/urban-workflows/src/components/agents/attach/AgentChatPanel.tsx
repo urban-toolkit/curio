@@ -142,6 +142,9 @@ export const AgentChatPanel: React.FC<{
   onSimulate?: (mode: "step" | "auto") => Promise<unknown>;
   onCancelSimulate?: () => Promise<void>;
   simulationActivity?: string;
+  /** The build the chat runs for this agent, step or auto: the plan line
+   *  shows it and its Stop, however often it is drawn again. */
+  simulating?: "step" | "auto" | null;
   /** dev/52 Solve (an agent that declares dataflow.orchestrate); omitted → no plan line. */
   onSolve?: (nodeIds?: string[]) => Promise<unknown>;
   /** dev/63: the live batch's per-node status overlay (nodeId → status). */
@@ -231,6 +234,7 @@ export const AgentChatPanel: React.FC<{
   onSimulate,
   onCancelSimulate,
   simulationActivity,
+  simulating = null,
   onSolve,
   onSolveNode,
   solveNodeActivity = null,
@@ -516,6 +520,7 @@ export const AgentChatPanel: React.FC<{
             onSimulate={onSimulate}
             onCancelSimulate={onCancelSimulate}
             simulationActivity={simulationActivity}
+            simulating={simulating}
           />
         ) : null}
 

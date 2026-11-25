@@ -241,6 +241,7 @@ export const AgentDockOverlay: React.FC = () => {
               onSimulate={(mode) => ctx.runSimulation(shown.attachmentId, mode)}
               onCancelSimulate={() => ctx.cancelSimulation(shown.attachmentId)}
               simulationActivity={ctx.simulationActivity[shown.attachmentId]}
+              simulating={ctx.simulating[shown.attachmentId] ?? null}
               onSolve={(nodeIds) => ctx.solveAttachment(shown.attachmentId, nodeIds)}
               solveProgress={ctx.solveProgress[shown.attachmentId]}
               solveErrors={ctx.solveErrors[shown.attachmentId]}

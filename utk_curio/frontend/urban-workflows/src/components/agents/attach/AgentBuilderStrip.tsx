@@ -30,6 +30,9 @@ import {
 export const SHOW_PLAN_MORE = "Show the plan's nodes and actions";
 export const HIDE_PLAN_MORE = "Hide the plan's nodes and actions";
 
+/** Why no Solve is offered while a build of the plan runs. */
+export const BUILD_RUNNING_HINT = "The plan is being built: Stop the build to Solve";
+
 /**
  * The plan line of an agent that declares dataflow.orchestrate (dev/52 DR-5),
  * under the chat's Goal line. Everything derives from the server-owned
@@ -37,9 +40,11 @@ export const HIDE_PLAN_MORE = "Hide the plan's nodes and actions";
  *
  * The line says the phase in words, its counts and who it waits for, and
  * holds one main action: Solve (or Retry), Stop while a batch or a build runs,
- * Resume when a build paused, Run workflow once the plan is ready. Its more
- * part, closed until asked for, holds the plan's nodes with their own Solve,
- * Build & validate plan, Step, Cancel, the other batch actions and the hints,
+ * Resume when a build paused, Run workflow once the plan is ready. While a
+ * build runs no Solve is offered, the plan's or a node's: a build is a stream
+ * over the plan, not an agent job, and a Solve would run over the same nodes.
+ * Its more part, closed until asked for, holds the plan's nodes with their own
+ * Solve, Build & validate plan, Step, the other batch actions and the hints,
  * at most a third of the panel's height, scrolling. What comes with a fix
  * stays in view under the line: a missing key's Add key, a missing
  * specialist's Add to project, the nodes awaiting a source, an action's error
@@ -98,6 +103,11 @@ export const AgentBuilderStrip: React.FC<{
   onCancelSimulate?: () => Promise<void>;
   /** dev/67-9: the running simulation's narration line. */
   simulationActivity?: string;
+  /** The build the chat runs for this agent, step or auto, which outlives
+   *  this line: drawn again (the chat opened again, or the rail back on this
+   *  agent), the line still shows it and its Stop. Omitted, only a build this
+   *  line started. */
+  simulating?: "step" | "auto" | null;
 }> = ({
   attachment,
   onSolve,
@@ -118,6 +128,7 @@ export const AgentBuilderStrip: React.FC<{
   onSimulate,
   onCancelSimulate,
   simulationActivity,
+  simulating = null,
 }) => {
   const { playAllNodes, isRunActive: browserRunActive, serverRunActive, nodes } = useFlowContext();
   const isRunActive = browserRunActive || serverRunActive;
@@ -130,6 +141,13 @@ export const AgentBuilderStrip: React.FC<{
   const [cancelling, setCancelling] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [simBusy, setSimBusy] = useState<"step" | "auto" | null>(null);
+  // A build this line started, or one the chat still runs for this agent.
+  const building = simBusy ?? simulating;
+  // Its Stop was asked for: the build stops after its current step.
+  const [buildStopping, setBuildStopping] = useState(false);
+  useEffect(() => {
+    if (!building) setBuildStopping(false);
+  }, [building]);
   const [nodeSolving, setNodeSolving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // The refusal's remedy, when it has one (no LLM configuration answers a
@@ -165,9 +183,9 @@ export const AgentBuilderStrip: React.FC<{
   const activeBatchLabel =
     solving || phase === "solving" || liveJob?.kind === "solve-batch"
       ? "Solving"
-      : simBusy === "auto"
+      : building === "auto"
         ? "Building"
-        : simBusy === "step"
+        : building === "step"
           ? "Stepping"
           : null;
   // Elapsed is strip-local observation time: builderSession persists no batch
@@ -226,7 +244,7 @@ export const AgentBuilderStrip: React.FC<{
       : null;
 
   const simulate = async (mode: "step" | "auto") => {
-    if (!onSimulate || simBusy) return;
+    if (!onSimulate || building) return;
     setSimBusy(mode);
     setError(null);
     setErrorRemedy(null);
@@ -243,6 +261,18 @@ export const AgentBuilderStrip: React.FC<{
       setError(e instanceof Error ? e.message : "The simulation failed");
     } finally {
       setSimBusy(null);
+    }
+  };
+
+  // The build's Stop, the line's action while it runs: it stops after its
+  // current step, and what it built stays.
+  const stopBuild = async () => {
+    if (!onCancelSimulate || buildStopping) return;
+    setBuildStopping(true);
+    try {
+      await onCancelSimulate();
+    } catch {
+      setBuildStopping(false);
     }
   };
 
@@ -282,17 +312,22 @@ export const AgentBuilderStrip: React.FC<{
   const userBlockedIds = new Set(userBlocked.map((w) => w.nodeId));
   const everyUnresolvedNeedsUser =
     unresolved > 0 && pending.concat(failed).every((id) => userBlockedIds.has(id));
-  const solveDisabledReason = solveDisabledReasonFor({
-    phase, unresolved, everyUnresolvedNeedsUser, userBlockedCount: userBlocked.length,
-  });
+  // While a build runs no Solve is offered: it would run over the same nodes.
+  const solveDisabledReason = building
+    ? BUILD_RUNNING_HINT
+    : solveDisabledReasonFor({
+        phase, unresolved, everyUnresolvedNeedsUser, userBlockedCount: userBlocked.length,
+      });
   const solveRunning = solving || phase === "solving" || liveJob?.kind === "solve-batch";
   const runDisabledReason =
     unresolved > 0 ? `${unresolved} node${unresolved === 1 ? "" : "s"} unsolved` : null;
 
-  const paused = !simBusy && Boolean(pauseReason);
+  const paused = !building && Boolean(pauseReason);
   const main = mainActionOf({
     solveRunning,
     canStopSolve: Boolean(onCancelSolve),
+    building: Boolean(building),
+    canStopBuild: Boolean(onCancelSimulate),
     paused: paused && Boolean(landedPlan && onSimulate),
     phase,
   });
@@ -306,7 +341,7 @@ export const AgentBuilderStrip: React.FC<{
     landedPlan !== null ||
     installReview !== null ||
     solveRunning ||
-    simBusy !== null ||
+    building !== null ||
     Boolean(error || notice) ||
     keyRemedies.length > 0 ||
     selectionRemedies.length > 0;
@@ -360,6 +395,17 @@ export const AgentBuilderStrip: React.FC<{
           </span>
         ) : null}
         {mainPart ? batchActions([mainPart], true) : null}
+        {main === "stop-build" ? (
+          <button
+            type="button"
+            className={styles.run}
+            disabled={buildStopping}
+            data-tooltip="Stops the build after its current step. Everything already built stays."
+            onClick={() => void stopBuild()}
+          >
+            {buildStopping ? "Stopping…" : "Stop"}
+          </button>
+        ) : null}
         {main === "resume" ? (
           <button
             type="button"
@@ -412,7 +458,8 @@ export const AgentBuilderStrip: React.FC<{
               entries={entries}
               userBlockedIds={userBlockedIds}
               solveWaiting={solveWaiting}
-              solveRunning={solveRunning}
+              // A node's own Solve waits for a batch, and for a build too.
+              solveRunning={solveRunning || building !== null}
               nodeSolving={nodeSolving}
               onSolveNode={onSolveNode ? (nodeId) => void solveOne(nodeId) : undefined}
               agentNameOf={agentNameOf}
@@ -434,11 +481,11 @@ export const AgentBuilderStrip: React.FC<{
             <PlanBuildActions
               plan={landedPlan}
               paused={Boolean(pauseReason)}
-              simBusy={simBusy}
-              // A paused build's Resume is the line's own action.
+              simBusy={building}
+              // A paused build's Resume is the line's own action, and so is a
+              // running build's Stop.
               withBuild={main !== "resume"}
               onSimulate={(mode) => void simulate(mode)}
-              onCancelSimulate={onCancelSimulate ? () => void onCancelSimulate() : undefined}
             />
           ) : null}
           {batchActions(otherParts, false)}
