@@ -98,17 +98,21 @@ def _acquire_confirmed_picks(rows: list[dict]) -> list[dict]:
     return summaries
 
 
-def _acquisition_outcome(acquisitions: list[dict]) -> dict | None:
+def _acquisition_outcome(acquisitions: list[dict], *, plan_builds_it: str | None = None) -> dict | None:
     """What the confirmation says when no builder was started: a download still
-    running, or one that failed."""
+    running, or one that failed. A download for a loader a plan waits on is
+    built from by that plan once it lands: *plan_builds_it* names the plan's
+    agent, whose Build & validate builds it."""
     running = [a for a in acquisitions if a.get("status") == "acquiring"]
     failed = [a for a in acquisitions if a.get("status") == "failed"]
     if running:
         names = ", ".join(str(a.get("name") or a.get("resourceId")) for a in running)
+        then = (f"the {plan_builds_it}'s Build & validate builds the loader once it lands" if plan_builds_it
+                else "Solve the node once it lands")
         return {
             "status": "acquiring",
             "jobIds": [a["jobId"] for a in running],
-            "reason": f"{names} is downloading into your Data Catalog; Solve the node once it lands",
+            "reason": f"{names} is downloading into your Data Catalog; {then}",
         }
     if failed:
         first = failed[0]

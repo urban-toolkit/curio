@@ -37,7 +37,8 @@ log = logging.getLogger(__name__)
 SELECT = "dataset.select"
 
 #: What a selection's delegation says when a plan waits for the node: the
-#: plan's agent goes on with it from its own chat, and nothing builds beside.
+#: plan's agent goes on with it (:func:`_plan_waiting`), and nothing builds
+#: beside.
 PLAN_WAITING = "plan-waiting"
 
 
@@ -131,38 +132,56 @@ def record_dataset_selection(
         if state is None:
             raise AgentServiceError(f"attachment {attachment_id!r} not found", 404)
         # A plan that waits for the node waits as the record now says: for
-        # the download or the install of the pick, or no more, and then it
-        # goes on from its agent's chat (or its running Build & validate).
+        # the download or the install of the pick, or no more, and then its
+        # agent goes on with it (or its running Build & validate builds it).
         moved = agents_simulation.follow_the_sources(user_key, fresh)
+        waiting_plan = agents_simulation.plan_waiting_on(fresh, node_id)
         dataflow_docs.write(user_key, project_id, fresh, agents_spec_reads._person(user_key, "dataset"))
     released = next((m for m in moved if m["nodeId"] == node_id and m["state"] == "created"), None)
+    # The agent whose plan still waits for the node, for its download or its
+    # install: its Build & validate builds the loader once the source is here.
+    plan_agent = _plan_agent_name(user_key, waiting_plan["coord"]) if waiting_plan else None
     payload = {
         "attachmentId": attachment_id,
         "nodeId": target.get("targetId"),
         "status": state["status"],
         "picks": rows,
     }
+    if state.get("askedBy"):
+        # The chat that asked for the candidates, which says the source is
+        # recorded too.
+        payload["askedBy"] = state["askedBy"]
     # dev/132 (R1): a confirmed row code can FETCH is handed to the node's own
-    # builder automatically — the owner asked for the delegation, not for a
+    # builder automatically: the owner asked for the delegation, not for a
     # prompt they must compose. A manual row is not delegated: its file does
     # not exist yet, and its card teaches the download and offers Import.
     if acquisitions:
         payload["acquisitions"] = acquisitions
     delegated = _delegate_confirmed_fetch(
         user_key, project_id, node_id, rows, state, guest=guest, released=released,
-    ) or agents_acquire._acquisition_outcome(acquisitions)
+    ) or agents_acquire._acquisition_outcome(acquisitions, plan_builds_it=plan_agent)
     if delegated is not None:
         payload["delegated"] = delegated
-    if isinstance(session_id, str):
-        _say_the_source_is_recorded(user_key, project_id, session_id, attachment_id, rows, state, delegated)
+    _say_the_source_is_recorded(
+        user_key, project_id, fresh, attachment_id, rows, state, delegated, node_id=node_id, plan_agent=plan_agent,
+    )
     return payload
 
 
-def _say_the_source_is_recorded(user_key: str, project_id: str, session_id: str, attachment_id: str,
-                                rows: list[dict], state: dict, delegated: dict | None) -> None:
+def _plan_agent_name(user_key: str, coord: str) -> str:
+    """The plan's agent, as its manifest names it."""
+    return agents_spec_reads._agent_name(user_key, coord) or coord.split("@", 1)[0]
+
+
+def _say_the_source_is_recorded(user_key: str, project_id: str, spec: dict, attachment_id: str,
+                                rows: list[dict], state: dict, delegated: dict | None, *,
+                                node_id: str, plan_agent: str | None = None) -> None:
     """The Finder's chat says what was recorded and what comes next, once the
-    selection's delegation is decided: where a plan waits for the node, its
-    agent's chat goes on with it."""
+    selection's delegation is decided, and so does the chat that asked for
+    the candidates (the record's ``askedBy``), naming the node: where a plan
+    waits for the node, its agent goes on with it, or its Build & validate
+    builds the loader once the source picked is here (*plan_agent*). *spec*
+    is the dataflow the selection wrote."""
     try:
         names = ", ".join(str(r.get("name") or r.get("datasetId") or r.get("url")) for r in rows)
         lines = [
@@ -174,30 +193,45 @@ def _say_the_source_is_recorded(user_key: str, project_id: str, session_id: str,
             for r in rows[:8]
         ]
         plan_reason = str((delegated or {}).get("reason") or "") if (delegated or {}).get("status") == PLAN_WAITING else ""
-        sessions.append_turns(
-            user_key, project_id, session_id, attachment_id,
-            [sessions.make_turn(
-                "agent",
-                f"Source recorded for this node: {names}."
-                + (f" {plan_reason[:1].upper()}{plan_reason[1:]}." if plan_reason else
-                   " It is downloading into the Data Catalog; Solve the node "
-                   "once it lands."
-                   if any(r.get("acquiring") for r in rows) else
-                   " The dataset must be installed from the Data Catalog before "
-                   "Solve can load it."
-                   if state["status"] == agents_dataset_resolution.STATE_AWAITING_INSTALL else
-                   " Solve the node to build its loader from this source."
-                   if state["status"] == agents_dataset_resolution.STATE_RESOLVED else
-                   " Nothing selectable was confirmed: the runtime could not reach it."),
-                content=[{
-                    "type": "card",
-                    "kind": "result" if state["status"] != agents_dataset_resolution.STATE_CANDIDATES_PENDING
-                    else "error",
-                    "title": "Dataset selection recorded",
-                    "lines": lines,
-                }],
-            )],
+        builds_it = f"the {plan_agent}'s Build & validate builds the loader" if plan_agent else ""
+        after = (
+            f" {plan_reason[:1].upper()}{plan_reason[1:]}." if plan_reason else
+            (f" It is downloading into the Data Catalog; {builds_it} once it lands." if builds_it else
+             " It is downloading into the Data Catalog; Solve the node once it lands.")
+            if any(r.get("acquiring") for r in rows) else
+            (f" The dataset must be installed from the Data Catalog; then {builds_it} from it." if builds_it else
+             " The dataset must be installed from the Data Catalog before Solve can load it.")
+            if state["status"] == agents_dataset_resolution.STATE_AWAITING_INSTALL else
+            " Solve the node to build its loader from this source."
+            if state["status"] == agents_dataset_resolution.STATE_RESOLVED else
+            " Nothing selectable was confirmed: the runtime could not reach it."
         )
+        card = {
+            "type": "card",
+            "kind": "result" if state["status"] != agents_dataset_resolution.STATE_CANDIDATES_PENDING
+            else "error",
+            "title": "Dataset selection recorded",
+            "lines": lines,
+        }
+        finder_session = (attachments.get_attachment(spec, attachment_id) or {}).get("sessionId")
+        if isinstance(finder_session, str):
+            sessions.append_turns(
+                user_key, project_id, finder_session, attachment_id,
+                [sessions.make_turn("agent", f"Source recorded for this node: {names}.{after}", content=[card])],
+            )
+        asker = state.get("askedBy")
+        asker_session = (attachments.get_attachment(spec, asker) or {}).get("sessionId") if asker else None
+        if asker != attachment_id and isinstance(asker_session, str):
+            node = next(
+                (n for n in (spec.get("dataflow") or {}).get("nodes") or []
+                 if isinstance(n, dict) and n.get("id") == node_id),
+                {"id": node_id},
+            )
+            label = agents_dataset_resolution.node_label(user_key, project_id, node)
+            sessions.append_turns(
+                user_key, project_id, asker_session, asker,
+                [sessions.make_turn("agent", f"Source recorded for {label}: {names}.{after}", content=[card])],
+            )
     except Exception:  # noqa: BLE001
         log.warning("Could not log the dataset selection for %s", attachment_id,
                     exc_info=True)
@@ -246,8 +280,8 @@ def _delegate_confirmed_fetch(
     next pass (its record just moved, which is exactly its trigger),
     ``plan-waiting`` when a plan's Build & validate or its row's Solve
     stopped at the node to wait for its source, which the pick ended
-    (*released*, from ``simulation.follow_the_sources``: the plan goes on from
-    its agent's chat, so nothing builds here), ``manual-download`` when the
+    (*released*, from ``simulation.follow_the_sources``: the plan's agent goes
+    on with it, so nothing builds here), ``manual-download`` when the
     file is still on a portal, or a reason, never raising: a selection is
     recorded whether or not a build can start.
 
@@ -278,8 +312,8 @@ def _delegate_confirmed_fetch(
             "status": "session-running",
             "reason": "the running Solve session picks this node up on its next pass",
         }
-    # A plan that stopped at this node to wait for its source goes on from its
-    # agent's chat: started here too, the loader would be built twice.
+    # A plan that stopped at this node to wait for its source goes on with it
+    # itself: started here too, the loader would be built twice.
     if released is not None:
         return _plan_waiting(user_key, node_id, released)
     if not fetchable:
@@ -347,23 +381,28 @@ def _a_session_runs(user_key: str, project_id: str) -> bool:
 
 
 def _plan_waiting(user_key: str, node_id: str, released: dict) -> dict:
-    """What the pick's card says when it ended a plan's wait for the node
-    (*released*, an entry of ``simulation.follow_the_sources``): the plan's
-    Build & validate running now builds the loader, or the user goes on in
-    the chat of the agent whose plan it is, with the button its plan shows."""
-    coord = released["coord"]
-    name = agents_spec_reads._agent_name(user_key, coord) or coord.split("@", 1)[0]
-    if released.get("running") == "auto":
+    """What the pick's answer says when it ended a plan's wait for the node
+    (*released*, an entry of ``simulation.follow_the_sources``), and how the
+    plan goes on. A Build & validate running now builds the loader, and a
+    running Step's next Step does: nothing more is to start
+    (``continueWith`` None, ``running`` names the run). Otherwise the plan's
+    agent goes on by itself, from the tab that picked: with Build & validate
+    (``build``) when Build & validate paused on the loader, else with the
+    plan row's Solve (``node``) that left it waiting, for its ``ref``."""
+    name = _plan_agent_name(user_key, released["coord"])
+    running = released.get("running")
+    if running == "auto":
         reason = f"the {name}'s Build & validate, running now, builds the loader from this source"
-    elif released.get("running") == "step":
-        reason = (f"continue in the {name}'s chat once its Step ends, where Step or the row's Solve "
-                  "builds the loader from this source")
+    elif running == "step":
+        reason = f"the {name}'s next Step builds the loader from this source"
     else:
-        button = "Resume" if released.get("paused") else "Build & validate plan"
-        reason = f"continue in the {name}'s chat, where {button} or the row's Solve builds the loader from this source"
+        reason = f"the {name} goes on with its plan and builds the loader from this source"
     return {
         "status": PLAN_WAITING,
         "attachmentId": released["attachmentId"],
         "nodeId": node_id,
+        "ref": released.get("ref"),
+        "running": running,
+        "continueWith": None if running else ("build" if released.get("pausedOn") else "node"),
         "reason": reason,
     }

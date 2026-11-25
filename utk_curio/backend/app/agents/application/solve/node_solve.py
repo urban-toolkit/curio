@@ -19,12 +19,14 @@ from utk_curio.backend.app.agents.infrastructure import agent_jobs
 from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
+from utk_curio.backend.app.agents.application import dataset_resolution as agents_dataset_resolution
 from utk_curio.backend.app.agents.application import in_the_room as agents_room
 from utk_curio.backend.app.agents.application import lifecycle as agents_lifecycle
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
 from utk_curio.backend.app.agents.application.solve import rounds as agents_rounds
 from utk_curio.backend.app.agents.application.solve import session as agents_session
+from utk_curio.backend.app.agents.application.solve import simulation as agents_simulation
 from utk_curio.backend.app.agents.application.turns import delegates as agents_delegates
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import policy as agents_policy
@@ -223,6 +225,15 @@ def _solved_node(
         user_key, project_id, attachment_id, session_id, spec, node, label, had_content,
         grounding_base, outcome, done, asker=acting_user, room_asker=room_asker, peer=peer,
     )
+    if _built(done):
+        # Built outside a plan that holds the node: the plan counts it as
+        # built, so its Build & validate never builds it again.
+        agents_simulation.built_outside_the_plan(
+            user_key, project_id, node_id,
+            change=({"changeId": done["changeId"], "attachmentId": done.get("changeAttachmentId") or attachment_id}
+                    if done.get("changeId") else None),
+            actor=agents_spec_reads._agent_actor(user_key, spec, attachment_id, "solve", acting_user),
+        )
     card = {
         "type": "card", "kind": card_kind,
         "title": f"Solve · {verdict.upper()} after {rounds} round{'s' if rounds != 1 else ''}",
@@ -243,6 +254,15 @@ def _solved_node(
         _append_solve_turn(user_key, project_id, attachment_id, session_id, coord, config, execution_id,
                            started, text, card_kind, card, parts, outcome, verdict)
     return done
+
+
+def _built(done: dict) -> bool:
+    """Whether the per-node Solve left code in the node that passed its check,
+    or a document that validated: the node's current code, kept, or what the
+    Solve wrote into it, directly or as the agent's change."""
+    return done.get("verdict") in ("pass", "not-executable") and bool(
+        done.get("unchanged") or done.get("written") or done.get("changeId")
+    )
 
 
 def _not_executable_outcome(node: dict, label: str, kind: str) -> dict:
@@ -532,7 +552,8 @@ def _conclude(user_key, project_id, attachment_id, session_id, spec, node, label
         card_kind = "result"
     elif verdict == "awaiting-source":
         # dev/126: the source is with the user. Nothing was generated or
-        # written; the node's own agent that finds datasets holds the candidates.
+        # written; the node's own agent that finds datasets holds the
+        # candidates, and so does this chat when its Solve asked for them.
         evidence = outcome.get("evidence") or {}
         remedy_payload = evidence.get("remedy")
         if isinstance(remedy_payload, dict):
@@ -543,10 +564,17 @@ def _conclude(user_key, project_id, attachment_id, session_id, spec, node, label
             )
             or agents_spec_reads._shipped_name_declaring("dataset.discover")
         )
+        record = agents_dataset_resolution.source_record(
+            dataflow_docs.read(user_key, project_id), node_id, user_key=user_key,
+        ) or {}
+        where = (
+            "Its candidates are on the card above: pick one with Use this source, and the loader is built from it."
+            if record.get("askedBy") == attachment_id else
+            f"Open {finder} on this node and pick one with Use this source; the loader is built from it."
+        )
         text = (
             f"Awaiting a source for {label!r}: {evidence.get('detail') or 'a dataset must be selected'}. "
-            f"Open {finder} on this node, select the source and confirm, then Solve "
-            "again. Nothing was generated or written."
+            f"{where} Nothing was generated or written."
         )
         card_kind = "result"
     elif (outcome.get("evidence") or {}).get("upstreamEmpty"):

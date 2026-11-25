@@ -187,8 +187,10 @@ def follow_the_sources(user_key: str, spec: dict) -> list[dict]:
 
     Returns one entry per plan node that moved: its plan's agent
     (``attachmentId``, ``coord``), its ``ref``, ``nodeId`` and new
-    ``state``, whether a pause still stands (``paused``) and the mode of a
-    Build & validate running on it (``running``, else None)."""
+    ``state``, whether the pause it waited in named it (``pausedOn``: Build &
+    validate paused on it, rather than a row's Solve leaving it waiting),
+    whether a pause still stands (``paused``) and the mode of a Build &
+    validate running on it (``running``, else None)."""
     moved: list[dict] = []
     for record in attachments.list_attachments(spec):
         session = record.get("builderSession")
@@ -206,6 +208,7 @@ def follow_the_sources(user_key: str, spec: dict) -> list[dict]:
                 refs.append(ref)
         if not refs:
             continue
+        paused_on = _paused_on(session)
         _pause_follows(user_key, spec, record, session)
         moved += [{
             "attachmentId": record.get("attachmentId"),
@@ -213,9 +216,78 @@ def follow_the_sources(user_key: str, spec: dict) -> list[dict]:
             "ref": ref,
             "nodeId": node_ids.get(ref),
             "state": states[ref],
+            "pausedOn": ref in paused_on,
             "paused": bool(session.get("pauseReason")),
             "running": _in_flight(session),
         } for ref in refs]
+    return moved
+
+
+def plan_waiting_on(spec: dict, node_id: str) -> dict | None:
+    """The landed plan whose node *node_id* waits for its source
+    (``validate.SOURCE_WAITS``), as *spec* holds its ledger: its agent's
+    ``attachmentId`` and ``coord``, and the node's ``ref`` and ``state``; None
+    when no plan waits for it."""
+    for record in attachments.list_attachments(spec):
+        session = record.get("builderSession")
+        states = session.get("nodeStates") if isinstance(session, dict) else None
+        if not isinstance(states, dict):
+            continue
+        for ref, waited in (session.get("nodeIds") or {}).items():
+            if waited == node_id and states.get(ref) in agents_validate.SOURCE_WAITS:
+                return {"attachmentId": record.get("attachmentId"), "coord": str(record.get("coord") or ""),
+                        "ref": ref, "state": states[ref]}
+    return None
+
+
+def _paused_on(session: dict) -> set[str]:
+    """The refs a pause of *session* for loaders' sources names."""
+    reason = session.get("pauseReason")
+    if not (isinstance(reason, dict) and reason.get("kind") == agents_validate.AWAITING_SOURCE):
+        return set()
+    return {entry.get("ref") for entry in reason.get("nodes") or [] if isinstance(entry, dict)}
+
+
+def _not_built(state: str) -> bool:
+    """Whether a plan node in *state* is one its plan has not built yet."""
+    return state in ("created", "failed", *agents_validate.SOURCE_WAITS)
+
+
+def built_outside_the_plan(user_key: str, project_id: str, node_id: str, *, change: dict | None = None,
+                           actor=None) -> list[dict]:
+    """A node whose code Solve this node wrote and checked counts as built in
+    each landed plan that holds it and has not built it yet: its row is
+    validated, with the change its code landed as (*change*, ``{changeId,
+    attachmentId}``) when it landed as one, so Build & validate approves it
+    and never builds it again. A pause for sources that named it names it no
+    more, and ends when it named no other. Written under the spec lock, on the
+    dataflow as it is now, by *actor*. Returns ``{attachmentId, ref}`` for
+    each plan row that moved."""
+    moved: list[dict] = []
+    with projects_storage.spec_write_lock(user_key, project_id):
+        spec = dataflow_docs.live(user_key, project_id)
+        if spec is None:
+            return moved
+        for record in attachments.list_attachments(spec):
+            session = record.get("builderSession")
+            states = session.get("nodeStates") if isinstance(session, dict) else None
+            if not isinstance(states, dict):
+                continue
+            refs = [
+                ref for ref, built in (session.get("nodeIds") or {}).items()
+                if built == node_id and _not_built(states.get(ref, "created"))
+            ]
+            if not refs:
+                continue
+            for ref in refs:
+                states[ref] = "validated"
+                if change and change.get("changeId"):
+                    session.setdefault("nodeChanges", {})[ref] = dict(change)
+            _pause_follows(user_key, spec, record, session)
+            record["builderSession"] = session
+            moved += [{"attachmentId": record.get("attachmentId"), "ref": ref} for ref in refs]
+        if moved:
+            dataflow_docs.write(user_key, project_id, spec, actor or dataflow_docs.by_curio(user_key, "solve"))
     return moved
 
 
