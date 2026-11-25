@@ -2361,10 +2361,8 @@ def chapter_agents(run: StressRun) -> None:
             _wait_for_reply(page, timeout=180000, before=before)
             turns += 1
         with run.step(f"Next agent ({index + 1})", may_fail=True):
-            nxt = page.get_by_role("button", name="Next agent")
-            if not nxt.count():
+            if not _open_next_on_the_rail(page):
                 break
-            nxt.first.click()
             page.wait_for_timeout(1500)
     log(f"[stress] completed {turns} live agent turns")
     run.snap("agent-chat-after-turns")
@@ -2423,6 +2421,43 @@ def _first_coord(installed: list[str], fragment: str) -> str:
 
 def _chat_panel(page):
     return page.locator('[role=dialog][aria-label^="Chat with"]').first
+
+
+def _current_index(items) -> int | None:
+    """Where the entry marked open is among *items*, or None."""
+    for i in range(items.count()):
+        if items.nth(i).get_attribute("aria-current") == "true":
+            return i
+    return None
+
+
+def _open_next_on_the_rail(page) -> bool:
+    """Open the chat after the open one on the chat's agents rail: the open
+    group's next node, else the next entry (a group's first node). False when
+    the open chat is the rail's last."""
+    rail = page.get_by_role("navigation", name="Agents on this dataflow")
+    entries = rail.get_by_role("button")
+    current = _current_index(entries)
+    if current is None:
+        return False
+    nodes = page.get_by_role("menu", name=re.compile(r" on$"))
+    entry = entries.nth(current)
+    if entry.get_attribute("aria-haspopup") == "menu":
+        entry.click()
+        members = nodes.get_by_role("menuitem")
+        at = _current_index(members)
+        if at is not None and at + 1 < members.count():
+            members.nth(at + 1).click()
+            return True
+        # The group's last node was open: its list closes, and the next entry opens.
+        page.keyboard.press("Escape")
+    if current + 1 >= entries.count():
+        return False
+    following = entries.nth(current + 1)
+    following.click()
+    if following.get_attribute("aria-haspopup") == "menu":
+        nodes.get_by_role("menuitem").first.click()
+    return True
 
 
 def _chat_text_length(page) -> int:

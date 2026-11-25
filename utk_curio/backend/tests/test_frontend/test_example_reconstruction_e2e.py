@@ -50,6 +50,7 @@ from .utils import (
     dismiss_toasts,
     install_session_cookie,
     leave_agent_badge,
+    open_plan_more,
     open_tools_palette,
     read_node_code,
     require_project_page,
@@ -449,10 +450,11 @@ class TestSolveProgressAndReconnection:
             f"the server refused Solve: HTTP {answer.status} {answer.text()[:300]}"
         )
 
-        # The run is reported while it runs: the strip's per-node progress list
-        # is the surface a person watches. The list is on screen from the moment
-        # the plan is applied, with every node pending, so it is no sign that
-        # Solve started; the answer above is.
+        # The run is reported while it runs: the plan line's per-node progress
+        # list, in its more part, is the surface a person watches. The list is
+        # there from the moment the plan is applied, with every node pending,
+        # so it is no sign that Solve started; the answer above is.
+        open_plan_more(panel)
         progress = panel.get_by_label("Plan node progress")
         expect(progress).to_be_visible(timeout=30000)
         hold = page.evaluate("() => window.__curioSolveHold")
@@ -468,7 +470,9 @@ class TestSolveProgressAndReconnection:
         dismiss_toasts(page)
         panel = _open_chat(page)
         # The per-node list survives the run's end, so it is the proof either
-        # way; a text match would also hit the agent's own description.
+        # way; a text match would also hit the agent's own description. The
+        # more part opens closed after the reload.
+        open_plan_more(panel, timeout=60000)
         expect(panel.get_by_label("Plan node progress")).to_be_visible(timeout=60000)
 
         # Whatever the run's outcome, what landed must be on disk and on the

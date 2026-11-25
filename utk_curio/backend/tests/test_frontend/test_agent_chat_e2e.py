@@ -549,10 +549,11 @@ class TestNodeAttachedChatHeader:
         node_id = _mint_node_id(self.SPEC)
         panel = _open_chat(page, self.SPEC)
 
-        subtitle = panel.get_by_text(re.compile(r"^Attached to "))
-        expect(subtitle).to_be_visible(timeout=20000)
-        header = subtitle.inner_text().strip()
-        label = header[len("Attached to "):].strip()
+        # The header's one row says what the agent is on: "on <node>".
+        target = panel.locator('[data-curio-chat-header="true"] [data-curio-chat-target]')
+        expect(target).to_have_text(re.compile(r"^on \S"), timeout=20000)
+        header = target.inner_text().strip()
+        label = header[len("on "):].strip()
 
         # The id itself, not just a uuid shape: this fixture mints readable
         # node ids ("agent-e2e-code"), so a regex over 36-char uuids would pass
@@ -570,7 +571,7 @@ class TestNodeAttachedChatHeader:
         expect(node).to_contain_text(label, timeout=20000)
 
         # Diagnostic, not gone: support still has to be able to recover both.
-        tooltip = subtitle.get_attribute("data-tooltip") or ""
+        tooltip = target.get_attribute("data-tooltip") or ""
         assert node_id in tooltip, f"the node id left the tooltip too: {tooltip!r}"
         assert "session " in tooltip, f"the session id left the tooltip: {tooltip!r}"
 

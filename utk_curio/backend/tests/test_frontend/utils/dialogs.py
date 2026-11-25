@@ -1,11 +1,18 @@
 """In-app dialogs: accept a catalog's confirmation, wait for a slide drawer to
-close, and take focus off the agent badge once its chat closes.
+close, take focus off the agent badge once its chat closes, and open the agent
+chat's plan line.
 """
 
 from playwright.sync_api import (
+    Locator,
     Page,
     expect,
 )
+
+#: The plan line's toggle, by what a click on it does (AgentBuilderStrip.tsx's
+#: SHOW_PLAN_MORE and HIDE_PLAN_MORE).
+SHOW_PLAN_MORE = "Show the plan's nodes and actions"
+HIDE_PLAN_MORE = "Hide the plan's nodes and actions"
 
 
 def accept_confirm_dialog(
@@ -70,3 +77,25 @@ def leave_agent_badge(page: Page) -> None:
         "() => !document.querySelector('[aria-label^=\"Open chat with\"]:focus')",
         timeout=5000,
     )
+
+
+def open_plan_more(panel: Locator, *, timeout: float = 20000, wait: bool = True) -> None:
+    """Open the more part of the Dataflow Builder's plan line in *panel*: the
+    plan's nodes ("Plan node progress"), Build & validate plan, Step and the
+    hints.
+
+    It is closed until asked for, after a reload too. The toggle is clicked
+    only while it offers to show them, so a part already open stays open.
+    With ``wait`` False (a failure's diagnostics) it opens the part if the
+    toggle is there and asserts nothing.
+    """
+    show = panel.get_by_role("button", name=SHOW_PLAN_MORE, exact=True)
+    hide = panel.get_by_role("button", name=HIDE_PLAN_MORE, exact=True)
+    if not wait:
+        if show.count():
+            show.first.click()
+        return
+    expect(show.or_(hide)).to_be_visible(timeout=timeout)
+    if show.count():
+        show.click()
+    expect(hide).to_be_visible(timeout=timeout)

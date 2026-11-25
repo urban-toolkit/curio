@@ -27,7 +27,8 @@ AGENT_CHAT_NODE_NAME = "Crash counts by hour"
          "node's own header renders, so the chat and the canvas say the same "
          "thing - including after a rename, because the overlay reads it off "
          "the React Flow store rather than a snapshot. Both ids moved to the "
-         "subtitle's tooltip, where support can still recover them.",
+         "tooltip of the header's \"on <node>\", where support can still "
+         "recover them.",
     tests=["src/tests/attach/AgentChatPanel.test.tsx",
            "test_frontend/test_agent_chat_e2e.py"],
     example=AGENT_CHAT_EXAMPLE,
@@ -114,10 +115,11 @@ def agent_chat_names_its_node(ctx: Ctx) -> None:
     panel = page.get_by_role("dialog", name=re.compile(f"^Chat with {re.escape(NODE_ONLY_AGENT_NAME)}"))
     expect(panel).to_be_visible(timeout=20000)
 
-    subtitle = panel.get_by_text(re.compile(r"^Attached to "))
-    expect(subtitle).to_have_text(f"Attached to {AGENT_CHAT_NODE_NAME}")
+    # The header's one row: the title, then what the agent is on.
+    target = panel.locator('[data-curio-chat-header="true"] [data-curio-chat-target]')
+    expect(target).to_have_text(f"on {AGENT_CHAT_NODE_NAME}")
     # Both ids are still recoverable, just not in the reading line.
-    tooltip = subtitle.get_attribute("data-tooltip") or ""
+    tooltip = target.get_attribute("data-tooltip") or ""
     assert node_id in tooltip, f"the node id left the tooltip too: {tooltip!r}"
     assert "session " in tooltip, f"the session id left the tooltip: {tooltip!r}"
 

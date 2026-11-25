@@ -59,7 +59,7 @@ from .capture_waits import (  # noqa: F401
     _wait_for_no_node_running,
 )
 from .images import _compare_images  # noqa: F401
-from .dialogs import accept_confirm_dialog, leave_agent_badge, wait_for_drawer_closed  # noqa: F401
+from .dialogs import accept_confirm_dialog, leave_agent_badge, open_plan_more, wait_for_drawer_closed  # noqa: F401
 from .scenario_drawer import (  # noqa: F401
     SCENARIO_DRAWER,
     close_scenario_details,
