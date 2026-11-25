@@ -105,8 +105,10 @@ log = logging.getLogger(__name__)
 
 #: The tool a chat run loads a skill or one of its files with.
 TOOL = tools.SKILL_TOOL
-#: How many ``skill.read`` calls a turn makes before each further one spends
-#: one of its tool rounds (``tool_rounds.MAX_TOOL_ROUNDS``).
+#: How many ``skill.read`` calls a turn may make that spend none of its tool
+#: rounds (``tool_rounds.MAX_TOOL_ROUNDS``); each further one spends a round.
+#: A free read still costs a call of the model, the one its result goes to,
+#: which the bound on a turn's calls counts (above ``tool_rounds.MAX_TOOL_ROUNDS``).
 FREE_READS = 4
 #: The keys of a skill's ``metadata`` that name what it serves, each a list of
 #: names with a space between each: node behaviors, features of a dataflow,

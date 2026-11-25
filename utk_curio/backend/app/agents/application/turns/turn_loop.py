@@ -11,9 +11,10 @@ it is written, and a blocking one (:meth:`_blocking_round`) for an ask whose
 answer waits for the whole turn, whose reply arrives with its ``done``.
 
 What a turn does: admission before dispatch (dev/40), the native-tools
-fallback to the fenced protocol, the round cap and free parameter refusals
-(dev/105 D2), the plan and tool correction rounds (dev/54, #245), delegate
-rounds with what the runtime makes of their success: code written, drafts,
+fallback to the fenced protocol, the round cap and the executions that spend
+no round, each up to its number a turn (skill reads, web reads that worked,
+parameter refusals, dev/105 D2), the plan and tool correction rounds (dev/54,
+#245), delegate rounds with what the runtime makes of their success: code written, drafts,
 candidates, notes (dev/73/90/95/114), each change that lands as a ``change``
 event, settlement and the persisted exchange, the title, and
 review_required/content/done.
@@ -299,6 +300,7 @@ class AttachmentTurn:
         self.plan_errors: list[str] = []
         self.refusals_used = 0  # dev/105 D2: free parameter corrections taken
         self.skill_reads = 0  # skill.read calls, free up to skill_runs.FREE_READS a turn
+        self.web_reads = 0  # web reads that worked, free up to tool_rounds.FREE_WEB_READS a turn
         self.started = time.monotonic()
 
     def _emit(self, name: str, payload):
@@ -324,8 +326,10 @@ class AttachmentTurn:
     def rounds(self):
         """The bounded tool loop (memos dev/41/48): parse → execute granted
         read tool / mint proposal / run depth-1 delegate → re-prompt, at most
-        MAX_TOOL_ROUNDS request executions per run (one shared budget), and a
-        plan's last try at the cap, as a plan block has one (dev/54). Each
+        MAX_TOOL_ROUNDS request executions per run that spend a round (one
+        shared budget; skill reads, web reads that worked and parameter
+        refusals spend none, each up to its number a turn, :meth:`_tool_round`),
+        and a plan's last try at the cap, as a plan block has one (dev/54). Each
         streamed round streams its own deltas; a toolRequest tail becomes tool
         events and a delegateRequest tail becomes delegate events, never text.
         A stop ends the loop before its next round, or in a round as the
@@ -960,8 +964,16 @@ class AttachmentTurn:
             if plan_refused:
                 self.final_parts = [agents_tool_rounds._plan_cap_card([text])]
             return
+        # Each execution that spends no round, up to its number a turn, by its
+        # tool, then its outcome, then its result's kind. They exclude each
+        # other: a web read that worked is never a refusal (its status is ok),
+        # and one refused for its params, or that failed, never worked, so it
+        # falls to the refusal or to a round.
         if req["tool"] == agents_skill_runs.TOOL and self.skill_reads < agents_skill_runs.FREE_READS:
             self.skill_reads += 1  # loading a skill is no round, up to FREE_READS a turn
+        elif (agents_tool_rounds._web_read_worked(req["tool"], status, text)
+              and self.web_reads < agents_tool_rounds.FREE_WEB_READS):
+            self.web_reads += 1  # a web read that worked is no round, up to FREE_WEB_READS a turn
         elif isinstance(text, ParamRefusal) and self.refusals_used < agents_tool_rounds.MAX_REFUSED_ROUNDS:
             self.refusals_used += 1  # dev/105 D2: a free correction, not a round
         else:
@@ -1020,6 +1032,7 @@ class AttachmentTurn:
             self.execution_id, self.pins, self.usage_total, self.started, status, self.tool_calls,
             delegations=self.delegations,
             refused_rounds=self.refusals_used,
+            free_web_reads=self.web_reads,
             skills_loaded=self._skills_loaded(),
         )
         stopped = {"by": self.stop.by} if self.stopped and self.stop is not None else None

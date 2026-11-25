@@ -1715,12 +1715,14 @@ _WEB_SEARCH_MAX_ROWS = 8
 
 
 def _execute_web_fetch(params: dict) -> tuple[str, str]:
-    """dev/67-4 (DEC-053): one policy-gated fetch, framed as bounded data."""
+    """dev/67-4 (DEC-053): one policy-gated fetch, framed as bounded data,
+    whatever the page answered: its ``status`` says that. A call with no URL
+    is ``refused`` for its params, and fetches nothing."""
     from utk_curio.backend.app.agents.infrastructure import egress
 
     url = params.get("url")
     if not isinstance(url, str) or not url.strip():
-        return "error", agent_text.message("tools.url-required")
+        return "refused", agent_text.message("tools.url-required")
     try:
         result = egress.fetch(url.strip())
     except egress.EgressRefused as exc:
@@ -1752,14 +1754,16 @@ def _execute_web_search(params: dict) -> tuple[str, str]:
     DuckDuckGo's ``RelatedTopics`` is handled too, since that is the default.
     Results flow through the egress policy either way; the provider host is
     trusted because configuration (or this module's default) named it, never
-    because a model asked for it."""
+    because a model asked for it. A call with no query is ``refused`` for its
+    params, and asks nothing; ``ok`` is a provider's answer of 200 with JSON,
+    and any other answer an ``error``."""
     from urllib.parse import quote
 
     from utk_curio.backend.app.agents.infrastructure import egress
 
     query = params.get("q")
     if not isinstance(query, str) or not query.strip():
-        return "error", agent_text.message("tools.query-required")
+        return "refused", agent_text.message("tools.query-required")
     template = search_url()
     if "{q}" not in template:
         return "error", agent_text.message("tools.search-not-configured", q="{q}")
