@@ -98,6 +98,7 @@ const monitorPayload = {
     guestLoginAllowed: true,
     factoryPublishAllowed: true, saveNodeOutputDefault: false,
     llmProviderConfigured: true, searchToolConfigured: false,
+    searchProvider: "api.duckduckgo.com",
     bucketMounts: "passed", bucketMountsProblem: null, env: "prod",
     platform: "macOS-27.0-arm64", pythonVersion: "3.12.1",
   },

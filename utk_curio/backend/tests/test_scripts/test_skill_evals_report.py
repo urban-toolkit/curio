@@ -219,6 +219,35 @@ def test_the_page_the_summary_and_the_numbers_later_runs_compare_with(tmp_path):
     assert not (tmp_path / report.SUMMARIES / f"{GEMMA}.json").exists()
 
 
+def test_the_page_the_summary_and_the_numbers_name_the_web_search_the_runs_asked(tmp_path):
+    """Each model's ``run.json`` names the web search its runs' web.search
+    asked (``skill_eval_runner``): the page and the summary name it under
+    their heading, before any table, and each model's numbers keep it. So a
+    skill whose agents search the web, research-notes and fact-checking among
+    them, is read against runs of the same search. A run whose record names
+    no search names none."""
+    floors, prices, previous = _config(tmp_path)
+    folder = _results(tmp_path)
+    search = "SearXNG searxng/searxng:2026.11.11-626105eec at searxng:8080"
+    meta = json.loads((folder / "run.json").read_text(encoding="utf-8"))
+    _write(folder / "run.json", {**meta, "search": search})
+    build = {"scope": {"measure": "changed", "why": ["research-notes changed"]},
+             "probes": {HAIKU: {"ok": True, "seconds": 1.0}}, "previous": previous, "floors": floors,
+             "prices": prices}
+    report.build(tmp_path, [HAIKU], **build)
+    page = (tmp_path / report.PAGE).read_text(encoding="utf-8")
+    summary = (tmp_path / report.SUMMARY).read_text(encoding="utf-8")
+    assert f"Web search: <b>{search}</b>" in page
+    assert f"Web search: **{search}**" in summary
+    assert page.index("Web search:") < page.index("<table") and summary.index("Web search:") < summary.index("| Model")
+    numbers = json.loads((tmp_path / report.SUMMARIES / f"{HAIKU}.json").read_text(encoding="utf-8"))
+    assert numbers.get("search") == search
+    _write(folder / "run.json", meta)
+    report.build(tmp_path, [HAIKU], **build)
+    for name in (report.PAGE, report.SUMMARY):
+        assert "Web search:" not in (tmp_path / name).read_text(encoding="utf-8"), name
+
+
 def test_the_benchmark_s_leaderboard_and_main_s_last_run(tmp_path):
     """The page and the summary hold the benchmark of each model's run: its
     leaderboard, each skill's success per model, and the run against main's

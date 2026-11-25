@@ -614,6 +614,30 @@ describe("AgentChangeCard: dev/71 a landed plan's rows: Solve then Run", () => {
     expect(screen.getByRole("button", { name: "Solve node Load" })).toBeEnabled();
   });
 
+  it("a row awaiting its source says Needs a source and keeps Solve", async () => {
+    const onSolve = jest.fn().mockResolvedValue(undefined);
+    renderRows({ appliedRefs: ["a", "b"], nodeStates: { a: "awaiting-source", b: "created" } }, { onSolve });
+    expect(screen.getByText("Needs a source")).toBeInTheDocument();
+    const solveA = screen.getByRole("button", { name: "Solve node Load" });
+    expect(solveA).toBeEnabled();
+    fireEvent.click(solveA);
+    await waitFor(() => expect(onSolve).toHaveBeenCalledWith("a", expect.any(Function)));
+    // The node it feeds waits for it, which is named.
+    const solveB = screen.getByRole("button", { name: "Solve node Analyze" });
+    expect(solveB).toBeDisabled();
+    expect(solveB).toHaveAttribute("data-tooltip", "needs 'Load' solved first");
+  });
+
+  it.each([
+    ["awaiting-download", "Downloading its source"],
+    ["awaiting-install", "Needs its dataset installed"],
+  ])("a row whose source is %s says so, not that it needs a source, and keeps Solve", (state, chip) => {
+    renderRows({ appliedRefs: ["a", "b"], nodeStates: { a: state, b: "created" } });
+    expect(screen.getByText(chip)).toBeInTheDocument();
+    expect(screen.queryByText("Needs a source")).toBeNull();
+    expect(screen.getByRole("button", { name: "Solve node Load" })).toBeEnabled();
+  });
+
   it("Run appears on validated and approved rows and targets the ref", async () => {
     const onRun = jest.fn().mockResolvedValue(undefined);
     renderRows({ appliedRefs: ["a", "b"], nodeStates: { a: "validated", b: "approved" } }, { onRun });

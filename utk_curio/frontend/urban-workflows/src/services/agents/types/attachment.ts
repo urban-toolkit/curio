@@ -4,6 +4,7 @@
  * Split out of `api/agentsApi.ts` (memo dev/142, F1); every shape keeps its name.
  */
 
+import type { AgentDatasetSourceRecord } from "./evidence";
 import type { AgentBuilderSession, AgentProposalSummary } from "./proposal";
 
 /** A private agent instance attached to a node/canvas/connection. */
@@ -57,6 +58,17 @@ export interface AgentAttachment {
    * Null when none runs; the dock's running indicator and the chat panel's
    * re-attach derive from it. */
   liveJob?: AgentLiveJob | null;
+  /** The nodes whose source this agent waits for the user to pick, or, for a
+   * portal row picked, to download and import: a Dataset Finder's own node,
+   * and the nodes whose candidates its chat asked for. Empty when it waits
+   * for none. */
+  waitsForYou?: string[];
+  /** A Dataset Finder's record of its node's source; null for other agents. */
+  sourceRecord?: AgentDatasetSourceRecord | null;
+  /** Whether a node's Solve from this agent's chat goes ahead: the server's
+   * own check, that an agent installed in the dataflow writes node content
+   * for it. */
+  solvesNodes?: boolean;
 }
 
 /** dev/115: the liveness projection of a detached agent job — no event bodies. */

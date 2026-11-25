@@ -17,6 +17,7 @@ from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.application import dataset_resolution as agents_dataset_resolution
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.proposals import store as agents_store
+from utk_curio.backend.app.agents.application.solve import simulation as agents_simulation
 from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.agents.domain import agent_text
@@ -123,7 +124,9 @@ def _settle_discovery_acquisitions(user_key: str, project_id: str) -> None:
 
     Called at a Solve's entry, while the request's user can read the datasets
     domain (a detached job cannot). Reads the spec first, so a project with no
-    download in flight costs one read.
+    download in flight costs one read. A plan that waited for such a node's
+    download goes on with it (``simulation.follow_the_sources``): a running
+    Build & validate builds it, or the next one does.
     """
 
     spec = projects_storage.read_spec(user_key, project_id)
@@ -145,6 +148,7 @@ def _settle_discovery_acquisitions(user_key: str, project_id: str) -> None:
     with projects_storage.spec_write_lock(user_key, project_id):
         fresh = dataflow_docs.live(user_key, project_id)
         if fresh is not None and agents_dataset_resolution.settle_acquisitions(fresh, held):
+            agents_simulation.follow_the_sources(user_key, fresh)
             dataflow_docs.write(user_key, project_id, fresh, dataflow_docs.by_curio(user_key, "dataset"))
 
 

@@ -7,7 +7,7 @@ import re
 
 from playwright.sync_api import expect
 
-from ..utils import require_owner_view, wait_for_projects_page
+from ..utils import require_owner_view, wait_for_changes_kept, wait_for_projects_page
 from .framework import Ctx, walkthrough
 
 
@@ -299,20 +299,106 @@ def data_export_is_one_button(ctx: Ctx) -> None:
     ctx.say("One button", "It names the file once a run wrote it.")
 
 
+#: The Goal line under the header of every agent's chat.
+CHAT_GOAL = "[data-curio-chat-goal]"
+#: What the line offers while the dataflow has no goal.
+GOAL_EMPTY = "Add what this dataflow is for"
+LONG_GOAL = "Find heat islands in Chicago and rank them by population exposure"
+#: A window narrow enough that the chat panel is 92% of it, below its 560px.
+NARROW_WINDOW = 520
+
+
+def _write_goal(line, goal: str) -> None:
+    """Write *goal* on the Goal line as a person does: its button, the field,
+    then Enter, which keeps it and closes the field."""
+    line.get_by_role("button", name=re.compile(rf"^(Edit the goal|{GOAL_EMPTY})$")).click()
+    field = line.get_by_label("Dataflow goal")
+    expect(field).to_be_focused()
+    field.fill(goal)
+    field.press("Enter")
+    expect(field).to_have_count(0)
+
+
+def _goal_line_reads_whole(line, width: int) -> None:
+    """The Goal line's claims (#227/#355) in a window *width* pixels wide,
+    measured, since a tolerance on pixels can let a crop through."""
+    where = f"in a {width}px window"
+
+    # 1. With no goal, the line offers to add one, in words read whole. 1px of
+    #    slack for sub-pixel rounding.
+    _write_goal(line, "")
+    add = line.get_by_role("button", name=GOAL_EMPTY)
+    expect(add).to_be_visible()
+    offer = add.evaluate(
+        "el => ({ scroll: el.scrollWidth, client: el.clientWidth,"
+        " right: el.getBoundingClientRect().right,"
+        " lineRight: el.parentElement.getBoundingClientRect().right })"
+    )
+    assert offer["scroll"] <= offer["client"] + 1 and offer["right"] <= offer["lineRight"] + 1, (
+        f"'{GOAL_EMPTY}' is cropped {where}: {offer}"
+    )
+
+    # 2. The field's placeholder fits. Measured as text: a placeholder is not
+    #    content, so the field's own scrollWidth never grows past it and cannot
+    #    show the crop (#355).
+    add.click()
+    field = line.get_by_label("Dataflow goal")
+    expect(field).to_be_focused()
+    empty = field.evaluate(
+        "el => { const cs = getComputedStyle(el);"
+        " const pen = document.createElement('canvas').getContext('2d');"
+        " pen.font = cs.font;"
+        " return { text: pen.measureText(el.placeholder).width,"
+        " box: el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) }; }"
+    )
+    assert empty["text"] <= empty["box"] + 1, (
+        f"the goal field's placeholder is cropped {where}: its text is "
+        f"{empty['text']:.0f}px in a {empty['box']:.0f}px box (#227/#355)"
+    )
+    # Escape ends the edit, keeps nothing, and leaves the chat open.
+    field.press("Escape")
+    expect(field).to_have_count(0)
+    expect(line.get_by_role("button", name=GOAL_EMPTY)).to_be_visible()
+
+    # 3. A long goal is cut short with an ellipsis rather than mid-word, is
+    #    still wide enough to read, and leaves its Edit button on the line.
+    _write_goal(line, LONG_GOAL)
+    shown = line.get_by_text(LONG_GOAL, exact=True).evaluate(
+        "el => ({ client: el.clientWidth, scroll: el.scrollWidth,"
+        " overflow: getComputedStyle(el).textOverflow })"
+    )
+    assert shown["overflow"] == "ellipsis", (
+        f"a goal longer than the line is cut mid-word {where} "
+        f"(text-overflow: {shown['overflow']})"
+    )
+    assert shown["client"] >= 120, (
+        f"the goal is squeezed to {shown['client']}px {where}, too narrow to read"
+    )
+    edit = line.get_by_role("button", name="Edit the goal")
+    expect(edit).to_be_visible()
+    boxes = edit.evaluate(
+        "el => ({ right: el.getBoundingClientRect().right,"
+        " lineRight: el.parentElement.getBoundingClientRect().right })"
+    )
+    assert boxes["right"] <= boxes["lineRight"] + 0.5, (
+        f"the Edit button is pushed off the Goal line {where}: {boxes}"
+    )
+
+
 @walkthrough(
     slug="dataflow-goal-is-readable",
     refs=[227],
     title="The dataflow goal is readable, and says what it is",
-    premise="Read the field that appears when an agent is attached.",
+    premise="Open an agent's chat and read the Goal line under its header.",
     note="Reported as a cropped placeholder plus 'which agent answers a "
-         "question typed here'. The second rests on a misreading: nothing is "
-         "sent from this field. It is a persisted property of the dataflow, "
-         "handed to every agent that reads it - and it looked like a chat box "
-         "because it sat among the agent chips with no label except a "
-         "placeholder too long to fit.",
-    tests=["src/tests/attach/AgentDock.test.tsx",
-           "src/tests/styles/agentDockGoalGeometry.test.ts"],
-    clip_selector='[role="toolbar"][aria-label="Canvas agents"]',
+         "question typed here'. Nothing is sent from the goal: it is a "
+         "persisted property of the dataflow, handed to every agent that "
+         "reads it. In the canvas's dock, among the agent chips, it looked "
+         "like a chat box, so it is a labelled line under the header of "
+         "every agent's chat, with its own Edit button.",
+    tests=["src/tests/attach/AgentChatPanel.test.tsx",
+           "src/tests/styles/chatGoalLineGeometry.test.ts"],
+    clip_selector=CHAT_GOAL,
     fit_reactflow=False,
     # The baseline harness waits for ``.react-flow__node`` before handing over
     # (test_walkthrough_baselines), so a scene cannot open on an empty canvas
@@ -325,13 +411,12 @@ def data_export_is_one_button(ctx: Ctx) -> None:
 def dataflow_goal_is_readable(ctx: Ctx) -> None:
     page = ctx.page
 
-    # The dock renders the goal field only once something is ATTACHED
-    # (``showGoal={ctx.attachments.length > 0}``), and attaching is not the same
-    # as adding an agent to the project: the catalog's "Add to project" writes
-    # the agent lockfile, while an attachment binds one to the canvas. So this
-    # is a precondition of the scene rather than part of its claim, and it goes
-    # over HTTP -- the drag that would do it in the UI belongs to a different
-    # journey.
+    # The goal is a line of every agent's chat, so the scene needs an agent
+    # ATTACHED, and attaching is not the same as adding an agent to the
+    # project: the catalog's "Add to project" writes the agent lockfile, while
+    # an attachment binds one to the canvas. So this is a precondition of the
+    # scene rather than part of its claim, and it goes over HTTP -- the drag
+    # that would do it in the UI belongs to a different journey.
     token = page.evaluate(
         "() => (document.cookie.match(/(?:^|; )session_token=([^;]*)/) || [])[1] || ''"
     )
@@ -343,16 +428,12 @@ def dataflow_goal_is_readable(ctx: Ctx) -> None:
 
     installed = page.request.post(f"{base}/install", headers=headers, data={"coord": coord})
     assert installed.ok, f"install failed: {installed.status} {installed.text()[:200]}"
-
-    def attach_one() -> None:
-        attached = page.request.post(
-            f"{base}/attachments",
-            headers=headers,
-            data={"coord": coord, "target": {"kind": "canvas"}},
-        )
-        assert attached.ok, f"attach failed: {attached.status} {attached.text()[:200]}"
-
-    attach_one()
+    attached = page.request.post(
+        f"{base}/attachments",
+        headers=headers,
+        data={"coord": coord, "target": {"kind": "canvas"}},
+    )
+    assert attached.ok, f"attach failed: {attached.status} {attached.text()[:200]}"
 
     # The dock is rendered from the attachment list the page fetches, so reload
     # rather than wait for a push that may never come.
@@ -360,98 +441,63 @@ def dataflow_goal_is_readable(ctx: Ctx) -> None:
     require_owner_view(page)
     ctx.beat(800)
 
-    ctx.say("The dataflow goal", "Its placeholder used to be cut off mid-sentence.")
-    goal = page.get_by_label("Dataflow goal")
-    expect(goal).to_be_visible(timeout=30000)
-    # A standing label, so the field keeps its name once a value is typed -
-    # which is exactly when the placeholder used to stop carrying it.
-    expect(page.get_by_text("Goal", exact=True)).to_be_visible()
+    ctx.say("The dataflow goal", "The line under the header of every agent's chat.")
+    chip = page.locator(
+        '[role="toolbar"][aria-label="Canvas agents"] button[aria-label^="Open chat"]'
+    ).first
+    expect(chip).to_be_visible(timeout=30000)
+    ctx.click(chip)
+    line = page.locator(CHAT_GOAL)
+    expect(line).to_be_visible(timeout=30000)
+    # A standing label, so the line keeps its name once a goal is written.
+    expect(line.get_by_text("Goal", exact=True)).to_be_visible()
+    add = line.get_by_role("button", name=GOAL_EMPTY)
+    expect(add).to_be_visible()
     ctx.capture("goal-empty")
 
-    # ``type_into`` is on the Narrator, not on Ctx (which passes through only
-    # say / click / focus / beat).
-    goal.fill("Find heat islands in Chicago")
-    # Blur so the field scrolls back to the start: the caret sits at the end
-    # after a fill, which hides the beginning of the very value this scene is
-    # about.
-    goal.blur()
-    ctx.beat(500)
+    ctx.click(add)
+    field = line.get_by_label("Dataflow goal")
+    expect(field).to_be_focused()
+    field.fill("Find heat islands in Chicago")
+    field.press("Enter")
+    expect(line.get_by_text("Find heat islands in Chicago", exact=True)).to_be_visible()
+    # Nothing was sent: the conversation is as empty as it was.
+    expect(page.get_by_text("Ask this agent something to get started.")).to_be_visible()
+    # Enter hands the focus back to the Edit button, with its keyboard focus
+    # ring; the frames show the line at rest.
+    edit = line.get_by_role("button", name="Edit the goal")
+    expect(edit).to_be_focused()
+    edit.blur()
+    ctx.beat(300)
     ctx.capture("goal-filled")
 
-    # The measurement, rather than the pixels (#355): scrollWidth vs
-    # clientWidth is the same claim stated so a CSS regression cannot slip
-    # through a tolerance.
-    #
-    # Checked with the placeholder AND with a value, because they crop for
-    # different reasons: the placeholder is fixed-length copy, the value is
-    # whatever the user typed.
-    #
-    # Two more agents, attached AFTER both captures: the squeeze is the reported
-    # condition and one avatar does not squeeze anything, but crowding the dock
-    # before the captures would leave the baseline PNGs documenting a state this
-    # scene no longer produces. The pictures keep their subject; the assertions
-    # get the harder case.
-    attach_one()
-    attach_one()
+    # The measurement, rather than the pixels (#355), so a CSS regression
+    # cannot slip through a tolerance: in this window, and in one narrow
+    # enough that the panel is 92% of it, where the line has less room than
+    # anywhere else a chat opens. After both captures, so the pictures keep
+    # their subject. A recording keeps its window.
+    viewport = page.viewport_size or {"width": 1280, "height": 720}
+    widths = [viewport["width"]] if ctx.recording else [viewport["width"], NARROW_WINDOW]
+    for width in widths:
+        page.set_viewport_size({"width": width, "height": viewport["height"]})
+        ctx.beat(200)
+        _goal_line_reads_whole(line, width)
+    page.set_viewport_size(viewport)
+
+    # Saved with the dataflow: once the server has this tab's changes, a
+    # reload shows the goal on the line. A goal kept only in the tab came back
+    # empty, though the top bar said Saved (the dev check of 11-25).
+    wait_for_changes_kept(page)
     page.reload()
     require_owner_view(page)
-    goal = page.get_by_label("Dataflow goal")
-    expect(goal).to_be_visible(timeout=30000)
-    ctx.beat(400)
-
-    avatars = page.locator(
-        '[role="toolbar"][aria-label="Canvas agents"] button[aria-label^="Open chat"]'
-    ).count()
-    assert avatars >= 3, (
-        f"the dock shows {avatars} avatars; the goal is not being squeezed by "
-        "anything, so this measurement proves nothing"
-    )
-
-    # 1. The PLACEHOLDER must fit. It is fixed-length copy that #227 shortened
-    #    precisely so it would, and it is the only thing naming the field
-    #    before anything is typed. 1px of slack for sub-pixel rounding.
-    #    Measured as text: a placeholder is not content, so the input's own
-    #    scrollWidth never grows past it and cannot show the crop (#355).
-    goal.fill("")
-    goal.blur()
+    expect(chip).to_be_visible(timeout=30000)
+    ctx.click(chip)
+    expect(line.get_by_text(LONG_GOAL, exact=True)).to_be_visible(timeout=30000)
+    # The scene's last frame: the long goal cut short, at rest.
     ctx.beat(200)
-    empty = goal.evaluate(
-        "el => { const cs = getComputedStyle(el);"
-        " const pen = document.createElement('canvas').getContext('2d');"
-        " pen.font = cs.font;"
-        " return { text: pen.measureText(el.placeholder).width,"
-        " box: el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) }; }"
-    )
-    assert empty["text"] <= empty["box"] + 1, (
-        f"the goal placeholder is cropped with {avatars} agents attached: "
-        f"its text is {empty['text']:.0f}px in a {empty['box']:.0f}px box "
-        "(#227/#355)"
-    )
-
-    # 2. A long VALUE is allowed to overflow - a goal longer than the field is
-    #    the normal case, and the fix's own comment says so - but it must
-    #    ellipsize rather than be cut mid-word, and the field must still be
-    #    wide enough to read. Squeezed to nothing is the regression here, not
-    #    overflow itself.
-    goal.fill("Find heat islands in Chicago and rank them by population exposure")
-    goal.blur()
-    ctx.beat(200)
-    filled = goal.evaluate(
-        "el => ({ client: el.clientWidth,"
-        " overflow: getComputedStyle(el).textOverflow,"
-        " minWidth: getComputedStyle(el.parentElement).minWidth })"
-    )
-    assert filled["overflow"] == "ellipsis", (
-        "a goal longer than the field would be cut mid-word rather than "
-        f"ellipsized (text-overflow: {filled['overflow']})"
-    )
-    assert filled["client"] >= 120, (
-        f"the goal field collapsed to {filled['client']}px with {avatars} "
-        "agents attached - the placeholder cannot fit in that"
-    )
 
     ctx.say("Named, and readable end to end",
-            "Who sees it is on the tooltip, not in the width budget.")
+            "Who reads it is on the label's tooltip.")
 
 
 @walkthrough(

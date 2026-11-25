@@ -105,8 +105,10 @@ describe("The deploy's bucket mount service", () => {
     test("COMPOSE_FILE takes the overlay after the deploy's and before the site file, only with the flags", () => {
         for (const [, project, job] of STACKS) {
             const exports = [...job.matchAll(/^ *export COMPOSE_FILE=(\S+)$/gm)].map((match) => match[1]);
+            // The web search overlay comes before it (deployWebSearch.test.ts).
             expect(exports).toEqual([
                 "docker-compose.yml:docker-compose.deploy.yml",
+                "$COMPOSE_FILE:docker-compose.searxng.yml",
                 "$COMPOSE_FILE:docker-compose.bucket-mounts.yml",
                 "$COMPOSE_FILE:docker-compose.site.yml",
             ]);

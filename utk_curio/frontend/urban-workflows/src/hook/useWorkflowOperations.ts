@@ -174,11 +174,19 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     const [allMinimized, setAllMinimized] = useState<number>(0);
     const [expandStatus, setExpandStatus] = useState<'expanded' | 'minimized'>('expanded');
     const [suggestionsLeft, setSuggestionsLeft] = useState<number>(0); // Number of suggestions left
-    const [workflowGoal, setWorkflowGoal] = useState("");
+    const [workflowGoal, _setWorkflowGoal] = useState("");
     // The save paths run from callbacks that close over stale state, so they
     // read the goal through a ref, the way the name and description already do.
+    // The setter moves the ref before the state, as FlowProvider's name and
+    // description setters do: the doc's writer (useDataflowDoc) is a layout
+    // effect that reads the ref when the goal changes, and runs before any
+    // passive effect, so a ref moved by an effect gave it the goal before this
+    // one, and the new goal reached the server only with a later change.
     const workflowGoalRef = useRef("");
-    useEffect(() => { workflowGoalRef.current = workflowGoal; }, [workflowGoal]);
+    const setWorkflowGoal = useCallback((goal: string) => {
+        workflowGoalRef.current = goal;
+        _setWorkflowGoal(goal);
+    }, []);
     // The hand-set categories (``dataflow.categories``), saved with the dataflow,
     // read through a ref for the same reason as the goal. ``serverCategories`` is
     // the source and the automatic ones, which only the server computes: set from

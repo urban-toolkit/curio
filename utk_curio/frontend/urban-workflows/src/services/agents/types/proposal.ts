@@ -93,14 +93,29 @@ export interface AgentBuilderSession {
   appliedPlanId?: string;
   /** Plan-created node id → its solve status. */
   nodeRuns?: Record<string, "pending" | "solving" | "solved" | "failed" | "skipped">;
-  /** dev/67-5: plan ref → its per-node lifecycle state. */
+  /** dev/67-5: plan ref → its per-node lifecycle state. A loader waiting for
+   * its source is `awaiting-source` (the user's pick in its Dataset Finder's
+   * chat), `awaiting-download` (the source picked downloads into the Data
+   * Catalog) or `awaiting-install` (the dataset picked waits for its
+   * install). */
   nodeStates?: Record<string, string>;
   /** dev/67-5: plan ref → the created node's real id. */
   nodeIds?: Record<string, string>;
   /** dev/67-9: the ref the driver is working on, while running. */
   currentRef?: string;
-  /** dev/67-9: why the sequence paused — a plain reason with a next action. */
-  pauseReason?: { kind: string; ref?: string; message: string };
+  /** The mode of the Build & validate running now, while one runs. */
+  simulateMode?: "step" | "auto";
+  /** dev/67-9: why the sequence paused: a plain reason with a next action.
+   * `awaiting-source`: no node can go on but loaders that wait for their
+   * source, each as its `nodeStates` entry says; `nodes` names each by its
+   * plan ref, its node and its Dataset Finder's attachment, whose chat holds
+   * the candidates. */
+  pauseReason?: {
+    kind: string;
+    ref?: string;
+    message: string;
+    nodes?: Array<{ ref: string; nodeId: string | null; attachmentId: string | null }>;
+  };
   /** ref → the change its validated code landed as, and the attachment
    * whose chat holds it (dev/72: the node's own agent). */
   nodeChanges?: Record<string, { changeId: string; attachmentId?: string | null }>;

@@ -33,12 +33,14 @@ from utk_curio.backend.app.agents.application.proposals import changes as agents
 from utk_curio.backend.app.agents.application.proposals import mint as agents_mint
 from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
 from utk_curio.backend.app.agents.application.proposals import store as agents_store
+from utk_curio.backend.app.agents.application.solve import simulation as agents_simulation
 from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.domain import node_settings
 from utk_curio.backend.app.agents.infrastructure import testing_provider
 from utk_curio.backend.app.collaboration import agent_peers
 from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.collaboration import history
+from utk_curio.backend.app.projects import storage as projects_storage
 
 #: Why the Apply of a review of a change (``changes.CHANGE_TOOLS``) saved
 #: before agents changed the dataflow directly is refused: the card says the
@@ -292,15 +294,21 @@ def _apply_dataset_install(
             f"the dataset could not be installed: {exc}",
         ) from exc
     # The install wrote the spec (dataset refs); re-read so the proposal
-    # mirror update below does not clobber the new entries.
-    spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
-    proposal = attachments.find_proposal(spec, attachment_id, proposal_id) or proposal
-    proposal["status"] = "applied"
-    # dev/126: a node that was waiting for exactly this dataset is resolved by
-    # this install — the reviewed lane is what "awaiting-install" waited for.
-
-    resolved_nodes = agents_dataset_resolution.mark_dataset_installed(spec, dataset_id)
-    dataflow_docs.write(user_key, project_id, spec, _applied_by(user_key, spec, attachment_id))
+    # mirror update below does not clobber the new entries. Read and written
+    # under the spec lock: the plan's record it may change is never written
+    # over a change made meanwhile.
+    with projects_storage.spec_write_lock(user_key, project_id):
+        spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
+        proposal = attachments.find_proposal(spec, attachment_id, proposal_id) or proposal
+        proposal["status"] = "applied"
+        # dev/126: a node that was waiting for exactly this dataset is resolved
+        # by this install: the reviewed lane is what "awaiting-install" waited
+        # for.
+        resolved_nodes = agents_dataset_resolution.mark_dataset_installed(spec, dataset_id)
+        if resolved_nodes:
+            # A plan that waited for that install goes on with the node.
+            agents_simulation.follow_the_sources(user_key, spec)
+        dataflow_docs.write(user_key, project_id, spec, _applied_by(user_key, spec, attachment_id))
     name = str(item.get("title") or dataset_id)
     agents_store._log_applied_turn(
         user_key, project_id, session_id, attachment_id, proposal_id,

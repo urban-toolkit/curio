@@ -10,6 +10,8 @@ each boundary.
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 
 def naive_ago(**kwargs):
     """A stored-format timestamp N ago: UTC arithmetic, tzinfo stripped."""
@@ -91,10 +93,22 @@ class TestTheDeploymentLlm:
 class TestTheSearchProvider:
     """#450: ``searchToolConfigured`` says whether the operator named a search
     provider: ``--agent-search-url`` sets ``CURIO_SEARCH_URL``, the variable
-    ``web.search`` reads. Unset, search falls back to its keyless default."""
+    ``web.search`` reads. Unset, search falls back to its keyless default.
+
+    ``searchProvider`` names the provider ``web.search`` asks: the host of its
+    URL, with the port when the URL names one, and nothing else of the URL,
+    where a provider's key can be; None when ``web.search`` can ask no URL."""
 
     def _flag(self, client):
         return client.get("/api/monitor").get_json()["deployment"]["searchToolConfigured"]
+
+    def _provider(self, client):
+        """``searchProvider``, and the whole payload's text."""
+        response = client.get("/api/monitor")
+        assert response.status_code == 200
+        # Read with a default, so a payload without the field fails on its value.
+        provider = response.get_json()["deployment"].get("searchProvider", "no searchProvider")
+        return provider, response.get_data(as_text=True)
 
     def test_a_named_provider_is_configured(self, client, monkeypatch):
         monkeypatch.delenv("CURIO_AGENT_SEARCH_URL", raising=False)
@@ -105,6 +119,72 @@ class TestTheSearchProvider:
         monkeypatch.delenv("CURIO_SEARCH_URL", raising=False)
         monkeypatch.setenv("CURIO_AGENT_SEARCH_URL", "https://search.example.com/?q={q}")
         assert self._flag(client) is False
+
+    def test_a_searxng_url_names_the_host_and_port_web_search_asks(self, client, monkeypatch):
+        """The hosted stacks' URL: the monitor names ``searxng:8080``, and a
+        search goes to that host and port."""
+        from urllib.parse import urlsplit
+
+        from utk_curio.backend.app.agents.application import tools
+        from utk_curio.backend.app.agents.infrastructure import egress
+        from utk_curio.backend.app.agents.infrastructure.egress import EgressResult
+
+        monkeypatch.setenv("CURIO_SEARCH_URL", "http://searxng:8080/search?q={q}&format=json")
+        provider, _ = self._provider(client)
+        assert provider == "searxng:8080"
+        asked = []
+
+        def _fake_fetch(url, **kwargs):
+            asked.append(url)
+            return EgressResult(url=url, final_url=url, status=200,
+                                content_type="application/json", body='{"results": []}')
+
+        monkeypatch.setattr(egress, "fetch", _fake_fetch)
+        status, _ = tools.execute_read_tool(
+            "web.search", user_key="42", project_id="none", target=None,
+            params={"q": "cool roofs in Chicago"},
+        )
+        assert status == "ok"
+        assert [urlsplit(url).netloc for url in asked] == [provider]
+
+    def test_unset_names_duckduckgos_host(self, client, monkeypatch):
+        monkeypatch.delenv("CURIO_SEARCH_URL", raising=False)
+        monkeypatch.setenv("CURIO_AGENT_SEARCH_URL", "https://search.example.com/?q={q}")
+        provider, _ = self._provider(client)
+        assert provider == "api.duckduckgo.com"
+
+    @pytest.mark.parametrize("url, host", [
+        # A key in the query, as SerpAPI's and Google's URLs carry it.
+        ("https://api.provider.test/v1/search?api_key=zqxkey7351&q={q}", "api.provider.test"),
+        # A key in the user part and in the path, with a port.
+        ("https://zqxuser:zqxkey7351@api.provider.test:8443/zqxkey7351/search?q={q}",
+         "api.provider.test:8443"),
+    ])
+    def test_a_key_in_the_url_is_left_out(self, client, monkeypatch, url, host):
+        monkeypatch.setenv("CURIO_SEARCH_URL", url)
+        provider, raw = self._provider(client)
+        assert provider == host
+        assert "zqx" not in raw.lower(), "a part of the search URL but its host and port reached the payload"
+
+    @pytest.mark.parametrize("url, host", [
+        ("https://Search.Example.ORG/?q={q}", "search.example.org"),
+        ("http://[::1]:8888/search?q={q}&format=json", "[::1]:8888"),
+    ])
+    def test_a_host_is_named_in_lower_case_and_an_ipv6_one_in_brackets(self, client, monkeypatch, url, host):
+        monkeypatch.setenv("CURIO_SEARCH_URL", url)
+        provider, _ = self._provider(client)
+        assert provider == host
+
+    @pytest.mark.parametrize("url", [
+        # No {q}: web.search refuses to search.
+        "https://api.provider.test/v1?key=K",
+        # A port that is not a number.
+        "http://searxng:80a/search?q={q}&format=json",
+    ])
+    def test_a_url_web_search_cannot_ask_names_no_provider(self, client, monkeypatch, url):
+        monkeypatch.setenv("CURIO_SEARCH_URL", url)
+        provider, _ = self._provider(client)
+        assert provider is None
 
 
 class TestTheBucketMounts:

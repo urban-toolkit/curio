@@ -9,7 +9,6 @@ import os
 import signal
 import sys
 import threading
-import time
 
 from utk_curio.cli import backend_group, lifecycle, logs
 from utk_curio.cli.arguments import backend_url_arg, base_path_arg, get_command_prefix
@@ -21,21 +20,29 @@ from utk_curio.cli.dependencies import (
 )
 from utk_curio.cli.environment import set_environment_variables, set_state_dir
 from utk_curio.cli.frontend_build import _frontend_must_build, _require_supported_node
-from utk_curio.cli.lifecycle import clean_shutdown, shutdown_flag, signal_handler
+from utk_curio.cli.lifecycle import clean_shutdown, signal_handler
 from utk_curio.cli.logs import COLOR_FRONTEND, log_always, log_info, print_output_queue, setup_logging
 from utk_curio.cli.services import start_backend, start_frontend, start_sandbox
 from utk_curio.cli.test_runner import run_tests
 from utk_curio.common.open_files import raise_limit as raise_open_files_limit
 
 
-def _start_backends(args) -> None:
+def _kept(name, process):
+    """``(name, process)``, the server *name* kept among those the launcher
+    stops, as its wait watches it. *name* is its output's name in the log."""
+    lifecycle.processes.append(process)
+    return name, process
+
+
+def _start_backends(args) -> list:
     """One backend on the backend's host and port, or with
     --backend-processes above 1, several behind nginx there
-    (``cli/backend_group.py``)."""
+    (``cli/backend_group.py``), which watch themselves. The servers the
+    launcher's wait watches: the one backend, or none."""
     if args.backend_processes > 1:
         backend_group.start_backend_group(args.backend_host, args.backend_port, args.backend_processes)
-    else:
-        lifecycle.processes.append(start_backend(args.backend_host, args.backend_port))
+        return []
+    return [_kept("Backend", start_backend(args.backend_host, args.backend_port))]
 
 
 def main():
@@ -631,8 +638,11 @@ def main():
         frontend_first = (
             args.server == "all" and args.deploy and not _frontend_must_build(args.force_rebuild)
         )
+        # The servers this start runs itself, which its wait watches; the
+        # backend group watches its own.
+        servers = []
         if frontend_first:
-            lifecycle.processes.append(start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=args.force_rebuild, base_path=args.base_path))
+            servers.append(_kept("Frontend", start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=args.force_rebuild, base_path=args.base_path)))
         try:
             # Mirror the ``shutil.which("npm")`` check at the top of
             # ``start_frontend``: catch drifted Python envs at launch instead
@@ -658,28 +668,32 @@ def main():
             raise
 
         if args.server == "all":
-            _start_backends(args)
-            lifecycle.processes.append(start_sandbox(args.sandbox_host, args.sandbox_port))
+            servers += _start_backends(args)
+            servers.append(_kept("Sandbox", start_sandbox(args.sandbox_host, args.sandbox_port)))
             if not frontend_first:
-                lifecycle.processes.append(start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=args.force_rebuild, base_path=args.base_path))
+                servers.append(_kept("Frontend", start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=args.force_rebuild, base_path=args.base_path)))
         else:
             if args.server == "backend":
-                _start_backends(args)
+                servers += _start_backends(args)
             elif args.server == "sandbox":
-                lifecycle.processes.append(start_sandbox(args.sandbox_host, args.sandbox_port))
+                servers.append(_kept("Sandbox", start_sandbox(args.sandbox_host, args.sandbox_port)))
             elif args.server == "frontend":
-                lifecycle.processes.append(start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=args.force_rebuild, base_path=args.base_path))
+                servers.append(_kept("Frontend", start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=args.force_rebuild, base_path=args.base_path)))
 
         # Monitor the threads
         logging_thread = threading.Thread(target=print_output_queue, daemon=True)
         logging_thread.start()
 
         try:
-            while not shutdown_flag.is_set():
-                time.sleep(1)
+            # Until the launcher stops. A server that exits by itself stops
+            # every server, with an error, as one of the backend group does.
+            lifecycle.watch(servers)
+            # Stopped on the backend group's thread: not before that thread
+            # stopped every server.
+            lifecycle.wait_for_the_stop()
         except KeyboardInterrupt:
             clean_shutdown()
-        # Stopped from another thread: with an error when a server exited by itself.
+        # With an error when a server exited by itself.
         sys.exit(lifecycle.exit_status)
     else:
         parser.print_help()
