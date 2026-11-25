@@ -546,8 +546,10 @@ export const AgentChatPanel: React.FC<{
           {loadingHistory ? (
             <div className={styles.systemLine}>Loading conversation…</div>
           ) : turns.length === 0 && !historyError ? (
-            orchestrates && onSolve ? (
-              // The planning templates, while the conversation is empty.
+            orchestrates && onSolve && (attachment.builderSession?.phase ?? "idle") === "idle" ? (
+              // The planning templates, while the conversation is empty and no
+              // plan landed: Clear conversation leaves a landed plan, and its
+              // line, in place.
               <div className={styles.emptyChat}>
                 <p className={styles.emptyChatText}>
                   Ask for a dataflow, or start from one of these:
