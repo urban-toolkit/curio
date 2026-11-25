@@ -32,6 +32,11 @@ from utk_curio.backend.app.agents.application.turns import grounding as agents_g
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 from utk_curio.backend.app.collaboration import dataflow_docs
 
+#: A plan node's state while it waits for the user to pick its source in its
+#: Dataset Finder's chat, as the verdict of its validation names it: its row
+#: needs a source, and Build & validate goes on past it.
+AWAITING_SOURCE = "awaiting-source"
+
 
 def validate_node_stream(
     user_key: str,
@@ -143,14 +148,10 @@ def _validate_events(
     node_id = node.get("id")
     execution_id = uuid.uuid4().hex
     label = (node.get("goal") or node_id)[:60]
-    _announce_delegated_solve(
-        user_key, project_id, home_attachment_id, home_session_id, label,
-        parent_name=agents_spec_reads._agent_name(user_key, coord) or coord,
-    )
     try:
         with agents_room.at_work(user_key, project_id, attachment_id, spec=spec, coord=coord, who=room_asker):
             yield "validation_started", {"nodeId": node_id, "executionId": execution_id}
-            outcome = yield from agents_rounds._verified_content_rounds(
+            rounds = agents_rounds._verified_content_rounds(
                 user_key, project_id,
                 spec=spec, node=node, resolution=resolution, config=config,
                 parent_execution_id=execution_id, parent_coord=coord,
@@ -179,6 +180,10 @@ def _validate_events(
                     asker=acting_user,
                 ),
             )
+            outcome = yield from _handed_to_the_builder(rounds, lambda: _announce_delegated_solve(
+                user_key, project_id, home_attachment_id, home_session_id, label,
+                parent_name=agents_spec_reads._agent_name(user_key, coord) or coord,
+            ))
             rounds_used = outcome["rounds"]
             candidate = outcome["candidate"]
             rounds_trace = outcome["roundsTrace"]
@@ -210,6 +215,27 @@ def _validate_events(
     finally:
         # Disconnect-safe: the in-flight guard never wedges the attachment.
         _clear_validating_guard(user_key, project_id, attachment_id)
+
+
+def _handed_to_the_builder(rounds, announce):
+    """The content loop's events, with *announce* called as the first of them
+    comes: the first round's, just before the node's builder is asked. A node
+    whose source still waits for the user is never handed to its builder: the
+    loop ends with no event, and no chat gains a turn. Returns the loop's
+    outcome; a stream closed early closes the loop, as ``yield from`` does."""
+    announced = False
+    try:
+        while True:
+            try:
+                event = next(rounds)
+            except StopIteration as stop:
+                return stop.value
+            if not announced:
+                announced = True
+                announce()
+            yield event
+    finally:
+        rounds.close()
 
 
 def _announce_delegated_solve(user_key, project_id, home_attachment_id, home_session_id, label,
@@ -385,7 +411,8 @@ def _say_it_failed(user_key, project_id, attachment_id, session_id, home_attachm
 
 
 def _settle_node_state(user_key, project_id, attachment_id, ref, verdict: str) -> dict:
-    """The per-node ledger: validated / failed; infrastructure untouched. Returns the builder session."""
+    """The per-node ledger: validated / failed / awaiting its source;
+    infrastructure untouched. Returns the builder session."""
     fresh = agents_spec_reads._live_spec_or_404(user_key, project_id)
     fresh_record = agents_spec_reads._record_or_404(fresh, attachment_id)
     fresh_session = fresh_record.get("builderSession") or {}
@@ -397,6 +424,11 @@ def _settle_node_state(user_key, project_id, attachment_id, ref, verdict: str) -
             fresh_session["nodeStates"][ref] = "validated"
         elif verdict == "fail":
             fresh_session["nodeStates"][ref] = "failed"
+        elif verdict == AWAITING_SOURCE:
+            # The node waits for the user to pick its source in its Dataset
+            # Finder's chat: its row says so, and Build & validate goes on
+            # past it with every node that does not read from it.
+            fresh_session["nodeStates"][ref] = AWAITING_SOURCE
     fresh_session.pop("validatingSince", None)
     fresh_record["builderSession"] = fresh_session
     dataflow_docs.write(user_key, project_id, fresh, agents_spec_reads._agent_actor(user_key, fresh, attachment_id, "validate"))

@@ -17,6 +17,7 @@ from utk_curio.backend.app.agents.application import attachments
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
+from utk_curio.backend.app.agents.application import dataset_resolution as agents_dataset_resolution
 from utk_curio.backend.app.agents.application import in_the_room as agents_room
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
@@ -24,6 +25,7 @@ from utk_curio.backend.app.agents.application.proposals import store as agents_s
 from utk_curio.backend.app.agents.application.solve import budgets as agents_budgets
 from utk_curio.backend.app.agents.application.solve import run_node as agents_run_node
 from utk_curio.backend.app.agents.application.solve import session as agents_session
+from utk_curio.backend.app.agents.application.solve import validate as agents_validate
 from utk_curio.backend.app.collaboration import dataflow_docs
 
 
@@ -43,25 +45,77 @@ def _ordered_plan_refs(plan: dict) -> list[str]:
     ]
 
 
-def _next_simulation_action(plan: dict, proposal: dict, session: dict) -> dict | None:
+def _reading_from(plan: dict, refs) -> set[str]:
+    """*refs* and every node of *plan* that reads from one of them, through
+    the plan's connections."""
+    edges = [(e.get("from"), e.get("to")) for e in plan.get("edges") or [] if isinstance(e, dict)]
+    reached = set(refs)
+    frontier = list(reached)
+    while frontier:
+        ref = frontier.pop()
+        for start, end in edges:
+            if start == ref and end not in reached:
+                reached.add(end)
+                frontier.append(end)
+    return reached
+
+
+def _next_simulation_action(plan: dict, proposal: dict, session: dict, waiting=()) -> dict | None:
     """THE transition function (step and auto share it): the next single
     action for the persisted state, or None when every node of the landed
-    plan is approved.
+    plan that can go on is approved.
 
     Per ref, in topological order: created/failed → validate (a failed ref
     validates again on resume: the pause happened when it FIRST failed);
-    validated → approve (its code landed when it passed; approving records
-    it); approved → next ref. The plan's nodes and connections landed with
-    it, so nothing is created or connected here."""
+    awaiting-source → validate, which asks no one while its source still
+    waits for the user; validated → approve (its code landed when it passed;
+    approving records it); approved → next ref. A ref of *waiting*, which
+    the run found waiting for the user to pick its source, is passed over
+    with every node that reads from it: every other node goes on. The plan's
+    nodes and connections landed with it, so nothing is created or connected
+    here."""
     node_states = session.get("nodeStates") or {}
+    held = _reading_from(plan, waiting) if waiting else set()
     for ref in _ordered_plan_refs(plan):
+        if ref in held:
+            continue
         state = node_states.get(ref, "created")
-        if state in ("created", "failed"):
+        if state in ("created", "failed", agents_validate.AWAITING_SOURCE):
             return {"action": "validate", "ref": ref}
         if state == "validated":
             return {"action": "approve", "ref": ref}
         # "approved" → continue to the next ref.
     return None
+
+
+def _names(labels: list[str]) -> str:
+    """*labels* as a sentence names them: "A", "A and B", "A, B and C"."""
+    return labels[0] if len(labels) == 1 else ", ".join(labels[:-1]) + " and " + labels[-1]
+
+
+def awaiting_source_reason(user_key: str, spec: dict, session: dict, plan: dict, refs) -> dict:
+    """Why Build & validate paused: every node of *refs* waits for the user
+    to pick its source in its Dataset Finder's chat, and no other node can go
+    on. Each is named by its ref, its node and its Finder's attachment, and
+    the message names them; the strip ends it with how to go on."""
+    node_ids = session.get("nodeIds") or {}
+    nodes, labels, finders = [], [], []
+    for ref in refs:
+        node_id = node_ids.get(ref)
+        finder = agents_dataset_resolution.finder_attachment(spec, node_id, user_key=user_key) if node_id else None
+        nodes.append({"ref": ref, "nodeId": node_id, "attachmentId": (finder or {}).get("attachmentId")})
+        labels.append(agents_plans._plan_endpoint_label(ref, plan, {}))
+        finders.append(agents_spec_reads._agent_name(user_key, str((finder or {}).get("coord") or "")))
+    finder_name = (
+        next((name for name in finders if name), None)
+        or agents_spec_reads._shipped_name_declaring(agents_dataset_resolution.DISCOVER)
+        or agents_dataset_resolution.DISCOVER
+    )
+    message = (
+        f"{labels[0]} needs a source: its {finder_name}'s chat asks you for it" if len(labels) == 1
+        else f"{_names(labels)} need a source: each one's {finder_name} chat asks you for it"
+    )
+    return {"kind": agents_validate.AWAITING_SOURCE, "nodes": nodes, "message": message}
 
 
 def request_simulate_cancel(user_key: str, project_id: str, attachment_id: str) -> dict:
@@ -95,10 +149,13 @@ def simulate_stream(
     ``step`` performs exactly the NEXT action and returns; ``auto`` chains
     the same actions, validate then approve, per node in topological order,
     PAUSING at the first failure with the reason (nothing downstream of a
-    failure is written). Code that passes its check lands as the agent's
-    change when it is validated. Every transition persists to
-    ``builderSession`` BEFORE it is emitted, so a reload resumes exactly;
-    resume = calling this endpoint again.
+    failure is written). A loader that waits for the user to pick its source
+    is passed over with every node that reads from it, so each loader's
+    Dataset Finder is asked in one pass, and the run pauses once, naming every
+    such loader, when no other node can go on. Code that passes its check
+    lands as the agent's change when it is validated. Every transition
+    persists to ``builderSession`` BEFORE it is emitted, so a reload resumes
+    exactly; resume = calling this endpoint again.
     """
 
     if mode not in ("step", "auto"):
@@ -184,6 +241,9 @@ class SimulationDriver:
         # The plan's agent at work in the room (its coord) and who asked it.
         self.coord: str | None = coord
         self.room_asker: agents_room.Asker | None = room_asker
+        # The refs this run found waiting for the user to pick their source,
+        # in the order it found them: passed over with what reads from them.
+        self.waiting: list[str] = []
 
     # ── state ────────────────────────────────────────────────────────────────
     def _fresh(self):
@@ -240,6 +300,14 @@ class SimulationDriver:
     def _completed(self) -> dict:
         return {"status": "completed", "mode": self.mode}
 
+    def _waits_for_sources(self) -> dict:
+        """Pause once, naming every node this run found waiting for its
+        source, when no other node can go on."""
+        spec, _, session, proposal = self._fresh()
+        return self._pause(awaiting_source_reason(
+            self.user_key, spec, session, (proposal or {}).get("plan") or {}, self.waiting,
+        ))
+
     # ── the loop ─────────────────────────────────────────────────────────────
     def events(self):
         # The plan's agent is in the room while Build & validate works, and
@@ -253,7 +321,9 @@ class SimulationDriver:
 
     def _actions(self):
         """The actions, one at a time, until completion, a pause, a
-        cancellation or the cap; returns the done payload."""
+        cancellation or the cap; returns the done payload. A node found still
+        waiting for its source, which it already did when the run reached it,
+        is passed over: that is no step's action."""
         done: dict = self._completed()
         try:
             yield "simulate_started", {
@@ -268,18 +338,19 @@ class SimulationDriver:
                     done = self._completed()
                     break
                 plan = proposal.get("plan") or {}
-                action = _next_simulation_action(plan, proposal, session)
+                action = _next_simulation_action(plan, proposal, session, self.waiting)
                 if action is None:
-                    done = self._completed()
+                    done = self._waits_for_sources() if self.waiting else self._completed()
                     break
                 ref = action.get("ref")
+                was_waiting = (session.get("nodeStates") or {}).get(ref) == agents_validate.AWAITING_SOURCE
                 yield "stage", {**action, "label": agents_plans._plan_endpoint_label(ref, plan, {}) if ref else None}
                 self._set_current(ref)
                 stopped = yield from self._perform(action, ref)
                 if stopped is not None:
                     done = stopped
                     break
-                if self.mode == "step":
+                if self.mode == "step" and not (was_waiting and ref in self.waiting):
                     done = self._stepped()
                     break
             else:
@@ -302,11 +373,14 @@ class SimulationDriver:
         spec4, _, session4, proposal4 = self._fresh()
         next_action = (
             _next_simulation_action(
-                (proposal4 or {}).get("plan") or {}, proposal4 or {}, session4
+                (proposal4 or {}).get("plan") or {}, proposal4 or {}, session4, self.waiting
             )
             if proposal4 is not None  # dev/71: content work continues
             else None                  # on the completed structure
         )
+        if next_action is None and self.waiting:
+            # Nothing can go on but nodes that wait for their source.
+            return self._waits_for_sources()
         return {"status": "stepped", "mode": self.mode, "nextAction": next_action}
 
     def _clear_in_flight(self) -> None:
@@ -325,7 +399,8 @@ class SimulationDriver:
         """Validate one node (``validate.py``): code that passes its check
         lands as the agent's change, and its ``change`` event rides this
         stream. A failure pauses the run: nothing downstream is written, and
-        the attempts, each with its code, are in the node's agent chat."""
+        the attempts, each with its code, are in the node's agent chat. A
+        node that waits for its source is noted, and the run goes on."""
         validate_done: dict | None = None
         for kind, payload in agents_run_node._validate_node_inline(
             self.user_key, self.project_id, self.attachment_id, self.config, ref, self.exec_fn
@@ -349,6 +424,13 @@ class SimulationDriver:
             "action": "validate", "ref": ref, "outcome": verdict,
             **({"changeId": change_id} if change_id else {}),
         }
+        if verdict == agents_validate.AWAITING_SOURCE:
+            # The node waits for the user to pick its source in its Dataset
+            # Finder's chat: the run goes on with every node that does not
+            # read from it, and pauses, naming it, when none can.
+            if ref not in self.waiting:
+                self.waiting.append(ref)
+            return None
         if verdict == "infrastructure":
             return self._pause({
                 "kind": "infrastructure", "ref": ref,
