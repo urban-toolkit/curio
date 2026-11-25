@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import clsx from "clsx";
 
 import { attachmentDisplayName, type AgentAttachment } from "../../../../services/agents";
@@ -123,6 +123,15 @@ export const AgentRail: React.FC<{
   // The open group's list sits beside its entry, over the conversation.
   const [flyoutTop, setFlyoutTop] = useState(0);
   const openEntry = entries.find((entry) => entry.key === popup.open) ?? null;
+
+  // A group that dissolves (one of three detached) takes its list with it,
+  // and the list's layer of the modal stack: the chat's Escape is its own
+  // again. Formed again, the group comes back with its list closed.
+  const listGone = popup.open !== null && openEntry === null;
+  const { close } = popup;
+  useEffect(() => {
+    if (listGone) close();
+  }, [listGone, close]);
 
   useLayoutEffect(() => {
     const anchor = popup.anchorRef.current;
