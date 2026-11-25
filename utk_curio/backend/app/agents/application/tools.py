@@ -1824,7 +1824,8 @@ def search_url() -> str:
 
 def search_provider() -> str | None:
     """The host of the URL ``web.search`` asks, with ``:port`` when the URL
-    names one, as ``/api/monitor`` names it: nothing else of the URL, which
+    names one, as ``/api/monitor`` and each skill evaluation's ``run.json``
+    (``skill_eval_runner._search``) name it: nothing else of the URL, which
     can carry a provider's key. None when ``web.search`` can ask no URL: one
     with no ``{q}``, no host, or a port that is not a number."""
     from utk_curio.backend.app.agents.infrastructure import egress
