@@ -10,10 +10,11 @@ search through, and names that search in ``CURIO_EVAL_SEARCH``.
 Each run's ``run.json`` names the search its runs asked (``search``): the URL's
 host and port, after the words ``CURIO_EVAL_SEARCH`` gives it, or Curio's
 default host when the URL is unset, and never the rest of a URL, where a
-provider's key can ride. The report reads it there. Before the workflow's
-SearXNG, every run searched Curio's default, whose refusals research-notes and
-fact-checking measured, so their numbers compare only with runs of the same
-search.
+provider's key can ride. A URL web.search cannot ask, which ``/api/monitor``
+names no provider for, is no search. The report reads it there. Before the
+workflow's SearXNG, every run searched Curio's default, whose refusals
+research-notes and fact-checking measured, so their numbers compare only with
+runs of the same search.
 
 No worker starts here and no model is called. New names are read inside each
 test, so this module imports on a checkout without them and each test fails on
@@ -123,3 +124,25 @@ def test_with_no_search_url_a_run_records_curio_s_default_and_a_url_s_key_is_wri
     record, _, files = _recorded(tmp_path / "keyed", monkeypatch)
     assert record.get("search") == "search.provider.test:8443", record
     assert not [path for path in files if secret in path.read_text(encoding="utf-8")]
+
+
+#: A provider's key, which rides its URL.
+SEARCH_KEY = "sk-search-0123456789abcdef"
+
+
+@pytest.mark.parametrize("url", [
+    # No {q}: web.search refuses to search.
+    f"https://search.provider.test:8443/v1?api_key={SEARCH_KEY}",
+    # A port that is not a number: web.search fails as its provider failing.
+    f"http://searxng:80a/search?api_key={SEARCH_KEY}&q={{q}}&format=json",
+    # No host: no provider to ask.
+    f"/search?api_key={SEARCH_KEY}&q={{q}}&format=json",
+], ids=["no-q", "port-not-a-number", "no-host"])
+def test_a_url_web_search_cannot_ask_is_recorded_as_no_search(tmp_path, monkeypatch, endpoint, url):
+    # The name is of a search the runs never asked: web.search asks none.
+    monkeypatch.setenv("CURIO_SEARCH_URL", url)
+    monkeypatch.setenv("CURIO_EVAL_SEARCH", NAMED)
+    record, summary, files = _recorded(tmp_path, monkeypatch)
+    assert record.get("search") == "none, web.search cannot ask CURIO_SEARCH_URL", record
+    assert summary.get("search") == record.get("search")
+    assert not [path for path in files if SEARCH_KEY in path.read_text(encoding="utf-8")]
