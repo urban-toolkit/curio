@@ -342,7 +342,8 @@ MAX_REFUSED_ROUNDS = 2
 # page read that answered other than 200, the egress policy's refusal, a
 # timeout, a provider it could not reach) spends a round as before, so a dead
 # provider cannot keep a turn going, and
-# one refused for its params is a parameter refusal (MAX_REFUSED_ROUNDS).
+# one refused for its params is a parameter refusal (MAX_REFUSED_ROUNDS),
+# which gives back its web call (``_execute_tool_request``).
 FREE_WEB_READS = 4
 
 #: The web reads (FREE_WEB_READS).
@@ -484,8 +485,11 @@ def _execute_tool_request(
             )
             if status == "refused" and tool_id in _WEB_READS:
                 # A web read with no URL or no query, which the model can
-                # give, is a parameter refusal, as a skill's name is.
+                # give, is a parameter refusal, as a skill's name is. It
+                # made no request, so it gives back the web call charged
+                # above, and the reads after it keep the whole budget.
                 text = ParamRefusal(text)
+                loop_ctx["egressCalls"] -= _egress_cost(tool_id, req.get("params") or {})
     record = {
         "tool": tool_id,
         "status": status,

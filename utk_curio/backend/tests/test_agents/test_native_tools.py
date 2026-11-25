@@ -1171,7 +1171,8 @@ class TestWebReadsSpendNoRound:
     (the 202s of 11-25) or not with 200, a page read that answered other than
     200, the egress policy's refusal, a timeout, a provider it could not
     reach, so a dead provider cannot keep a turn going. A search with no query is a parameter refusal,
-    free as any other up to MAX_REFUSED_ROUNDS a turn. Native calls and fenced
+    free as any other up to MAX_REFUSED_ROUNDS a turn, and it gives back its
+    web call to the egress budget. Native calls and fenced
     blocks count alike, streamed or not."""
 
     @pytest.mark.parametrize("path", ["run", "run/stream"])
@@ -1252,6 +1253,42 @@ class TestWebReadsSpendNoRound:
         assert (execution.get("refusedRounds"), execution.get("freeWebReads")) == (1, 3), execution
         assert _native_results()[0] == "refused: " + agent_text.message("tools.query-required")
         assert len(web.asked) == 3, "the search with no query asked its provider"
+
+    @pytest.mark.parametrize("tool_id, refusal", [
+        ("web.search", "tools.query-required"),
+        ("web.fetch", "tools.url-required"),
+    ], ids=["search-with-no-query", "fetch-with-no-url"])
+    def test_a_web_read_refused_for_its_params_gives_back_its_web_call(
+            self, client, headers, project, web, tool_id, refusal):
+        """A web read refused for its params makes no request, so it gives
+        back the web call it was charged: every read the egress budget allows
+        still works after it and is free, and one more is refused. Before, a
+        search with no query kept its call and left the turn three reads."""
+        from utk_curio.backend.app.common import egress_policy
+
+        budget = egress_policy.MAX_CALLS_PER_RUN
+        pages = [f"https://example.org/page-{i}" for i in range(budget)]
+        att = _attach(client, headers, project, RESEARCHER)
+        testing_provider.push_replies(
+            {"toolCalls": [_call(tool_id, {})]}, _search(), *[_fetch(url) for url in pages],
+            *[READ] * (tool_rounds.MAX_TOOL_ROUNDS - 1), "Done.")
+        kind, ended, _ = _ask(client, headers, project, att, "run")
+        choices = [o["toolChoice"] for o in _offered()]
+        # The refusal and the budget's reads spent no round; the read past the budget spent the first.
+        assert choices == ["auto"] * (1 + budget + tool_rounds.MAX_TOOL_ROUNDS) + ["none"], choices
+        assert (kind, ended.get("reply")) == ("done", "Done."), ended
+        execution = _last_turn(client, headers, project, att)["execution"]
+        assert [(c["tool"], c["status"]) for c in execution["toolCalls"]] == [
+            (tool_id, "refused"), ("web.search", "ok"), *[("web.fetch", "ok")] * (budget - 1),
+            ("web.fetch", "error"), *[("dataflow.read", "ok")] * (tool_rounds.MAX_TOOL_ROUNDS - 1),
+        ], execution["toolCalls"]
+        assert (execution.get("refusedRounds"), execution.get("freeWebReads")) == (1, budget), execution
+        results = _native_results()
+        assert results[0] == "refused: " + agent_text.message(refusal), results[0]
+        spent = agent_text.message("tool-round.egress-spent", calls=budget)
+        assert spent in results[1 + budget], results[1 + budget]
+        # The budget's reads reached the web, and the one past it did not.
+        assert len(web.asked) == budget and pages[-1] not in web.asked, web.asked
 
     def test_every_web_read_the_egress_budget_allows_is_free_and_one_past_it_spends_a_round(
             self, client, headers, project, web):
