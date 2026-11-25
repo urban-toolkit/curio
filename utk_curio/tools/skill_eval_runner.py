@@ -51,7 +51,6 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlsplit
 
 from utk_curio import shipped
 from utk_curio.backend.app.agents.domain import skills as skill_format
@@ -131,14 +130,16 @@ def _commit() -> str | None:
 
 def _search() -> str:
     """The web search the runs' web.search asks, as ``run.json`` names it: the
-    host and port of ``CURIO_SEARCH_URL``, after the words ``CURIO_EVAL_SEARCH``
-    gives it, or Curio's default host when the URL is unset. Never the rest of
-    the URL, where a provider's key can ride."""
-    from utk_curio.backend.app.agents.application.tools import DEFAULT_SEARCH_URL
+    host and port ``/api/monitor`` names (``tools.search_provider``), after the
+    words ``CURIO_EVAL_SEARCH`` gives it, or Curio's default host when
+    ``CURIO_SEARCH_URL`` is unset; none when web.search cannot ask the URL.
+    Never the rest of the URL, where a provider's key can ride."""
+    from utk_curio.backend.app.agents.application.tools import search_provider
 
-    url = os.environ.get(SEARCH_URL_VARIABLE) or ""
-    host = urlsplit((url or DEFAULT_SEARCH_URL).strip()).netloc.rpartition("@")[2]
-    if not url:
+    host = search_provider()
+    if host is None:
+        return "none, web.search cannot ask CURIO_SEARCH_URL"
+    if not os.environ.get(SEARCH_URL_VARIABLE):
         return f"{host}, Curio's default"
     name = os.environ.get(SEARCH_NAME_VARIABLE, "").strip()
     return f"{name} at {host}" if name else host
