@@ -143,7 +143,7 @@ describe("after the user's pick, the Dataflow Builder goes on by itself", () => 
     expect(api.simulate).not.toHaveBeenCalled();
   });
 
-  it.each([
+  it.each<[string, AgentDatasetSelection["delegated"]]>([
     ["a Build & validate running now builds it", { status: "plan-waiting", attachmentId: "dfb", nodeId: "n1", ref: "load", running: "auto" }],
     ["a pick no plan waited on starts the node's own builder on the server", { status: "delegating", attachmentId: "nb1", nodeId: "n1" }],
   ])("starts nothing more when %s", async (_why, delegated) => {

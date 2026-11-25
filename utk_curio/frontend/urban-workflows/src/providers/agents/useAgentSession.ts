@@ -29,6 +29,7 @@ import type {
   AgentUsage,
 } from "../../services/agents/types";
 import type { AgentRunStatus } from "../../services/agents/agentRunStatus";
+import { holdsSourceCardFor } from "../../services/agents/planBuild";
 import { useCollab } from "../CollaborationProvider";
 import {
   AGENT_TURN_EVENT,
@@ -552,6 +553,31 @@ export function useAgentSession(
     [hydrateSession],
   );
   rereadLater.current = reread;
+
+  // The open chat is read again when the listing says its agent waits for the
+  // user's pick on a node whose card the chat does not hold: the candidates
+  // came to its chat on the server, from a Build & validate or a Solve no
+  // turn of this tab followed (another tab's, among them). Once per node while
+  // it waits, so a chat whose card never came is not read over and over.
+  const readForCards = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!selectedId) return;
+    const open = state.attachments.find((a) => a.attachmentId === selectedId);
+    const waits = open?.waitsForYou ?? [];
+    for (const key of Array.from(readForCards.current)) {
+      const [chat, nodeId] = key.split("|");
+      if (chat === selectedId && !waits.includes(nodeId)) readForCards.current.delete(key);
+    }
+    if (!open || !hydratedRef.current.has(selectedId)) return;
+    const turns = transcripts[selectedId] ?? [];
+    const findsFor = open.target.kind === "node" ? open.target.targetId ?? null : null;
+    const missing = waits.filter(
+      (nodeId) => !holdsSourceCardFor(turns, nodeId, findsFor) && !readForCards.current.has(`${selectedId}|${nodeId}`),
+    );
+    if (!missing.length) return;
+    for (const nodeId of missing) readForCards.current.add(`${selectedId}|${nodeId}`);
+    reread(selectedId);
+  }, [selectedId, state.attachments, transcripts, reread]);
 
   // Every ask's events, through the dataflow's room.
   const { onRemote, participantId } = collab;
