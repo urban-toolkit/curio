@@ -1467,17 +1467,28 @@ def scene_agent_attach(ctx: Ctx) -> None:
 
     close_tools_palette(page, "agents")
 
-    # The goal input appears in the dock as soon as anything is attached.
-    goal = page.get_by_label("Dataflow goal")
-    goal.wait_for(state="visible", timeout=20000)
+    # The goal is the Goal line under the header of every agent's chat: the
+    # Dataflow Builder's, just attached, here.
+    builder = page.get_by_role(
+        "button", name=re.compile(r"^Open chat with Dataflow Builder")
+    ).first
+    builder.wait_for(state="visible", timeout=20000)
+    tour.click(builder)
+    panel = page.get_by_role("dialog", name=re.compile(r"^Chat with "))
+    add = panel.get_by_role("button", name="Add what this dataflow is for")
+    add.wait_for(state="visible", timeout=20000)
     tour.say(
         "Tell them what the dataflow is for",
         "One sentence, shared with every agent and saved with the dataflow.",
         hold=2900,
     )
+    tour.click(add)
+    goal = panel.get_by_label("Dataflow goal")
+    goal.wait_for(state="visible", timeout=20000)
     tour.type_into(goal, DATAFLOW_GOAL, delay=32)
     goal.press("Enter")
     tour.beat(900)
+    tour.click(panel.get_by_label("Close chat"))
     tour.hush()
     ctx.state["agent_node_id"] = transform_id
 

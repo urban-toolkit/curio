@@ -159,7 +159,7 @@
         },
         "task": {
           "type": "string",
-          "description": "The dataflow's overall goal, as typed into the canvas goal field. Empty string when unset - which is the value in every committed example."
+          "description": "The dataflow's overall goal, as written on the Goal line of an agent's chat. Empty string when unset - which is the value in every committed example."
         },
         "timestamp": {
           "type": "integer",

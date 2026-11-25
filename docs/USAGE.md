@@ -2583,9 +2583,12 @@ A plan can also declare the widgets each node's code reads, and save
 [scenarios](#scenarios), including a copy of one with a widget value changed;
 see [Widgets and scenarios](AGENT-CATALOG.md#widgets-and-scenarios).
 
-The goal box in the dock is shared with your agents: several of them, the
-Dataflow Builder most of all, are written around knowing what the dataflow is
-for. It is saved with the project.
+Every agent's chat shows the dataflow's **Goal** under its header. Write what
+the dataflow is for there, with **Add what this dataflow is for** or the edit
+button: Enter or **Save** keeps it, Escape or **Cancel** leaves it as it was.
+The agents on the dataflow read it, and several of them, the Dataflow Builder
+most of all, are written around knowing what the dataflow is for. It is saved
+with the dataflow, and every agent's chat shows the same goal.
 
 ### What an agent may reach
 

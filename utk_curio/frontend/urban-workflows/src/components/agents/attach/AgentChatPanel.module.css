@@ -220,6 +220,109 @@
   color: var(--curio-text-on-dark, var(--curio-text-on-dark));
 }
 
+/* ── the dataflow's goal (GoalLine), the line under the header of every
+   agent's chat: its label, the goal on one line and its Edit button, or the
+   field with Save and Cancel. Its own height: the conversation below gives
+   way, never this line. ── */
+.goalLine {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  box-sizing: border-box;
+  padding: 6px 8px 6px 12px;
+  border-bottom: 1px solid var(--curio-border);
+  background: var(--curio-card-bg);
+  font-size: 12px;
+  color: var(--curio-text-primary);
+}
+
+/* A standing label, dotted for the tooltip that says who reads the goal. */
+.goalLabel {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--curio-text-secondary);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: help;
+}
+
+/* A goal longer than the line is the normal case: it takes the room the label
+   and the button leave, on one line, cut short with an ellipsis. The field
+   shows it whole. */
+.goalText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.goalEdit {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--curio-text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.goalEdit:hover,
+.goalEdit:focus-visible {
+  background: var(--curio-surface-muted);
+  color: var(--curio-text-primary);
+}
+
+.goalAdd {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  padding: 4px 6px;
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--curio-accent-sky-fg, var(--curio-role-running-fg));
+  cursor: pointer;
+}
+
+.goalAdd:hover,
+.goalAdd:focus-visible {
+  background: var(--curio-surface-muted);
+}
+
+/* The field fills the room Save and Cancel leave, whatever its text. */
+.goalInput {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 10px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: 6px;
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  font: inherit;
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+
+.goalInput:focus {
+  outline: 2px solid var(--curio-accent-sky-fg, var(--curio-focus-ring));
+  outline-offset: 1px;
+}
+
 /* ── initial intent, rendered as the conversation's first message ── */
 .intentMsg {
   align-self: flex-end;

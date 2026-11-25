@@ -41,11 +41,13 @@ jest.mock("reactflow", () => ({
   useReactFlow: () => ({ getNodes: () => [], getEdges: () => [] }),
   useStore: () => "Node A",
 }));
+let mockWorkflowGoal = "";
+const mockSetWorkflowGoal = jest.fn();
 jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({
     projectId: "p1",
-    workflowGoal: "",
-    setWorkflowGoal: jest.fn(),
+    workflowGoal: mockWorkflowGoal,
+    setWorkflowGoal: mockSetWorkflowGoal,
     workflowNameRef: { current: "wf" },
   }),
 }));
@@ -248,6 +250,26 @@ describe("AgentDockOverlay names the dataflow's agents for the chat", () => {
     expect(latest.agentNameOf("att-my-builder")).toBe("My Builder");
     // An attachment the dataflow no longer holds has no name to show.
     expect(latest.agentNameOf("att-detached")).toBeNull();
+  });
+});
+
+// The dataflow's goal is the Goal line of every agent's chat (#227: in the
+// dock, among the agents' chips, it read as a chat box).
+describe("AgentDockOverlay hands the chat the dataflow's goal", () => {
+  afterEach(() => {
+    mockWorkflowGoal = "";
+  });
+
+  it("gives every agent's chat the flow's goal, and keeps an edit as the flow's goal", () => {
+    mockWorkflowGoal = "Find heat islands in Chicago";
+    const nodeAgent = { ...attachment("n", "Node Builder"), target: { kind: "node", targetId: "node-1" } };
+    mockCtx.mockReturnValue(ctx([A, nodeAgent], "n"));
+    render(<AgentDockOverlay />);
+    const latest = panelProps[panelProps.length - 1];
+    expect(latest.attachment.attachmentId).toBe("n");
+    expect(latest.goal).toBe("Find heat islands in Chicago");
+    latest.onSaveGoal("Rank the blocks by exposure");
+    expect(mockSetWorkflowGoal).toHaveBeenCalledWith("Rank the blocks by exposure");
   });
 });
 
