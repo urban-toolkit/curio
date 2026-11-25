@@ -120,16 +120,14 @@ describe("a connection agent's chat header", () => {
   it("names the two nodes the connection joins, and keeps the ids on the tooltip", async () => {
     mockCtx.mockReturnValue(ctx([connectionAgent], "att-conn"));
     render(<AgentDockOverlay />, { wrapper: MemoryRouter });
-    const header = await waitFor(() => {
-      const found = document.querySelector<HTMLElement>('[data-curio-chat-header="true"]');
-      if (!found) throw new Error("the chat has no header yet");
-      return found;
-    });
-    expect(screen.getByRole("dialog", { name: /^Chat with Researcher/, hidden: true })).toBeInTheDocument();
+    // The chat slides in; it is named once it is presented.
+    const panel = await waitFor(() => screen.getByRole("dialog", { name: /^Chat with Researcher/ }));
+    const header = panel.querySelector<HTMLElement>('[data-curio-chat-header="true"]');
+    expect(header).not.toBeNull();
     expect(header).toHaveTextContent("from Load buildings to Join blocks");
     // The ids are for support, on the tooltip, not in the header's words.
     expect(header).not.toHaveTextContent(EDGE_ID);
-    const named = Array.from(header.querySelectorAll<HTMLElement>("[data-tooltip]")).find((el) =>
+    const named = Array.from(header!.querySelectorAll<HTMLElement>("[data-tooltip]")).find((el) =>
       (el.textContent ?? "").includes("from Load buildings to Join blocks"),
     );
     expect(named?.getAttribute("data-tooltip") ?? "").toContain(EDGE_ID);
