@@ -1461,7 +1461,7 @@ def _planned_nodes(nodes: list, plan: dict, proposal: dict, starters: dict, *,
             "title": plan_node["title"],
             "content": starter["content"] if starter else plan_node.get("content", ""),
             "goal": edited_goals.get(plan_node["ref"])
-            or f"{plan_node['title']} — {plan_node['intent']}",
+            or f"{plan_node['title']}: {plan_node['intent']}",
             "x": float(pos.get("x", base_x + depth * _PLAN_COLUMN_OFFSET)),
             "y": float(pos.get("y", base_y + row * _PLAN_ROW_OFFSET)),
         }
