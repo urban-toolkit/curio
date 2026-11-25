@@ -5,14 +5,25 @@ node carries its own Dataset Finder, and Solve asks that agent for candidates
 instead of letting the content builder guess a filename or decline into a dead
 end. The node then WAITS for the user's selection — pending, with the remedy
 naming the attachment to open — and a second Solve spends no model call.
+
+Build & validate and a plan row's Solve wait for the source too: the run
+pauses once at the loader and its row needs a source, until the pick puts the
+row back and the next run builds it, once. The Finder's chat says who asked and
+why, the listing says who waits for a pick, and only an agent the server lets
+Solve a node says it can.
 """
 
 from __future__ import annotations
 
 import json
 
+import pytest
+
 from utk_curio.backend.app.agents.domain import content
+from utk_curio.backend.app.agents.application import attachments
 from utk_curio.backend.app.agents.application import dataset_resolution as dr
+from utk_curio.backend.app.agents.application import spec_reads
+from utk_curio.backend.app.agents.application.solve import budgets
 from utk_curio.backend.app.agents.application.turns import titles as services_mod
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.projects.services import _user_dir_key
@@ -33,6 +44,24 @@ CANDIDATES = json.dumps({"datasetCandidates": {"lanes": {
     }],
     "catalog": [],
 }}})
+
+#: The external row the Finder proposes, which a pick names by its url.
+URL = "https://data.example.org/areas.geojson"
+
+#: The probe's answer for a URL that serves data code can fetch and that Curio
+#: does not download itself: a body read as JSON, with no content type a
+#: Discovery Catalog source takes (``verify.classify_access``,
+#: ``acquire._acquirable``). A pick of such a row starts the node's own builder.
+FETCHABLE = {"status": "verified", "detail": "200 OK", "httpStatus": 200, "sampleKeys": ["type", "features"]}
+
+
+def _sse_events(response) -> list[tuple[str, dict]]:
+    """A streamed route's events, in order, as ``(event, data)``."""
+    events = []
+    for block in response.get_data(as_text=True).strip().split("\n\n"):
+        lines = dict(line.split(": ", 1) for line in block.splitlines() if ": " in line)
+        events.append((lines["event"], json.loads(lines["data"])))
+    return events
 
 
 class _Harness:
@@ -60,6 +89,8 @@ class _Harness:
         ).get_json()["attachmentId"]
         self.discover_calls: list = []
         self.dl_calls: list = []
+        # Every model call, whatever asked it, in order.
+        self.model_calls: list = []
         plan = {
             "goal": "compare community areas",
             "nodes": [
@@ -74,6 +105,7 @@ class _Harness:
         dl_script = list(dl_replies or ['import pandas as pd\nreturn pd.read_csv("areas.csv")'])
 
         def _fake_run(config, messages, **kwargs):
+            self.model_calls.append(messages[-1].get("content") if messages else "")
             if messages and messages[0].get("content") == services_mod.title_prompt():
                 return "Title"
             frame = messages[-1].get("content") or ""
@@ -156,6 +188,44 @@ class _Harness:
         """The node's recorded source state and the URLs of its picks."""
         record = dr.source_record(self.spec(), self.load) or {}
         return record.get("status"), [p.get("url") for p in record.get("picks") or []]
+
+    def node_builder_attachment_id(self):
+        """The loader's own Node Builder: the agent on it that writes its code."""
+        record = spec_reads._node_attachment_declaring(self.spec(), "node.content.generate", self.load)
+        return (record or {}).get("attachmentId")
+
+    def _stream(self, path, body):
+        r = self.client.post(
+            f"/api/agents/projects/{self.pid}/attachments/{self.att}/{path}",
+            json=body, headers=_auth(self.token),
+        )
+        assert r.status_code == 200, r.get_data(as_text=True)
+        return _sse_events(r)
+
+    def simulate(self, mode="auto"):
+        """Build & validate over the landed plan, as the strip's button and
+        Resume ask for it: its events, the done payload last."""
+        return self._stream("simulate", {"mode": mode})
+
+    def validate(self, ref):
+        """A plan row's Solve: its events, the done payload last."""
+        return self._stream("validate-node", {"ref": ref})
+
+    def select(self, url):
+        """The user's pick of the external row *url* on the card in the
+        loader's Dataset Finder chat, through the route the card posts to."""
+        r = self.client.post(
+            f"/api/agents/projects/{self.pid}/attachments/{self.finder_attachment_id()}/dataset-selection",
+            json={"picks": [{"lane": "external", "key": url}]}, headers=_auth(self.token),
+        )
+        assert r.status_code == 200, r.get_data(as_text=True)
+        return r.get_json()
+
+    def cards(self):
+        """The dataflow's agents as the canvas lists them, by attachment id."""
+        r = self.client.get(f"/api/agents/projects/{self.pid}/attachments", headers=_auth(self.token))
+        assert r.status_code == 200, r.get_data(as_text=True)
+        return {card["attachmentId"]: card for card in r.get_json()["attachments"]}
 
 
 class TestDiscoveryIsInitiated:
@@ -252,6 +322,21 @@ class TestDiscoveryIsInitiated:
         assert "invented.csv" in load["error"]
         assert all(a["kind"] == "ungrounded-source" for a in load["attempts"])
         assert len(h.discover_calls) >= 1
+
+    def test_the_finders_task_names_the_builder_and_its_mission(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The Dataset Finder's chat says who asked it for a source and why:
+        the task the runtime records there names the agent whose Solve asked,
+        as its manifest names it, and the mission the candidates are for. On
+        main it named the agent's id and the capability alone."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        h.solve()
+        asked = [t.get("text") or "" for t in h.session_turns(h.finder_attachment_id()) if t.get("role") == "user"]
+        assert len(asked) == 1, asked
+        assert asked[0].startswith("[Delegated by Dataflow Builder] dataset.discover"), asked[0]
+        assert "mission: load the community area boundaries" in asked[0], asked[0]
 
 
 class TestConfirmedSourceReachesTheBuilder:
@@ -499,3 +584,223 @@ class TestAttemptTrailInTheTranscript:
         )
         assert trail["stoppedBy"] == "source"
         assert trail["attempts"] and all(r.get("code") for r in trail["attempts"])
+
+
+class TestBuildAndValidateWaitsForTheSource:
+    """Build & validate and a plan row's Solve stop at a loader that waits for
+    the user to pick its source in its Dataset Finder's chat.
+
+    The run pauses there once, naming the node and its Finder, and the row
+    needs a source. A Resume while the candidates still wait asks no model.
+    The pick puts the row back and starts nothing beside the plan, and the next
+    Build & validate builds the loader from that source, once. On main the run
+    validated the loader again and again, each pass a turn in the loader's Node
+    Builder chat, until its action cap (500 in Curio, six here)."""
+
+    @pytest.fixture(autouse=True)
+    def _six_actions(self, monkeypatch):
+        monkeypatch.setattr(budgets, "SIMULATE_MAX_ACTIONS", 6)
+
+    def test_auto_pauses_once_on_a_loader_awaiting_its_source(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        events = h.simulate("auto")
+        done = events[-1][1]
+        reason = done.get("reason") or {}
+        assert (done.get("status"), reason.get("kind")) == ("paused", "awaiting-source"), done
+        assert (reason.get("ref"), reason.get("nodeId"), reason.get("attachmentId")) == (
+            "load", h.load, h.finder_attachment_id(),
+        )
+        # It names the node; the strip ends it with how to go on.
+        assert "Load boundaries" in reason["message"], reason
+        assert not reason["message"].rstrip(" .").endswith("Resume"), reason
+        # One validation of the loader, one discovery, nothing downstream.
+        assert [p["ref"] for kind, p in events if kind == "action_result"] == ["load"]
+        assert len(h.discover_calls) == 1
+        session = done["builderSession"]
+        assert session["nodeStates"] == {"load": "awaiting-source", "stats": "created"}
+        assert session["pauseReason"] == reason
+        asked = [
+            t.get("text") for t in h.session_turns(h.node_builder_attachment_id())
+            if (t.get("text") or "").startswith("[Delegated by")
+        ]
+        assert len(asked) == 1, asked
+        assert h.node_content(h.load) == h.node_content(h.stats) == ""
+
+    def test_a_rows_solve_leaves_the_row_needing_a_source(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        done = h.validate("load")[-1][1]
+        assert done.get("verdict") == "awaiting-source", done
+        assert done["builderSession"]["nodeStates"].get("load") == "awaiting-source"
+        # What the row reads once its chat lists the agents again.
+        assert h.cards()[h.att]["builderSession"]["nodeStates"].get("load") == "awaiting-source"
+
+    def test_resume_while_the_source_is_pending_pauses_again_with_no_model_call(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        first = h.simulate("auto")[-1][1]
+        assert (first.get("reason") or {}).get("kind") == "awaiting-source", first
+        calls = len(h.model_calls)
+        events = h.simulate("auto")
+        done = events[-1][1]
+        reason = done.get("reason") or {}
+        assert (done.get("status"), reason.get("kind"), reason.get("ref")) == (
+            "paused", "awaiting-source", "load",
+        ), done
+        assert h.model_calls[calls:] == []
+        assert [p["ref"] for kind, p in events if kind == "action_result"] == ["load"]
+        assert done["builderSession"]["nodeStates"]["load"] == "awaiting-source"
+        assert len(h.discover_calls) == 1
+
+    def test_the_pick_puts_the_row_back_and_resume_builds_it_from_the_source(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The picked row serves data code can fetch, so on main the pick
+        started the loader's own builder on it beside the plan, which the next
+        Build & validate then built again."""
+        user, token = user_and_token
+        invented = 'import pandas as pd\nreturn pd.read_csv("invented.csv")'
+        h = _Harness(
+            client, user, token, monkeypatch,
+            dl_replies=[invented] * 3 + [f'import pandas as pd\nreturn pd.read_json("{URL}")'],
+        )
+        monkeypatch.setattr(
+            'utk_curio.backend.app.agents.application.verify.verify_external_source',
+            lambda url, **k: dict(FETCHABLE),
+        )
+        started: list = []
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.application.solve.node_solve.solve_node_stream",
+            lambda *a, **k: started.append(k.get("node_id")),
+        )
+        h.simulate("auto")
+        assert h.recorded_urls()[0] == dr.STATE_CANDIDATES_PENDING
+        tried = len(h.dl_calls)
+        picked = h.select(URL)
+        assert picked["status"] == dr.STATE_RESOLVED, picked
+        delegated = picked.get("delegated") or {}
+        assert delegated.get("status") == "plan-waiting", picked
+        assert started == [], "the pick started the loader's builder beside the plan"
+        assert (delegated.get("attachmentId"), delegated.get("nodeId")) == (h.att, h.load)
+        assert "Dataflow Builder" in delegated["reason"], delegated
+        # The row is back, nothing pauses at it, and nothing was built.
+        session = h.cards()[h.att]["builderSession"]
+        assert session["nodeStates"]["load"] == "created"
+        assert "pauseReason" not in session
+        assert len(h.dl_calls) == tried
+        assert h.node_content(h.load) == ""
+        # The next Build & validate builds it from the source, once, and goes
+        # on with the plan.
+        done = h.simulate("auto")[-1][1]
+        assert done.get("status") == "completed", done
+        assert set(done["builderSession"]["nodeStates"].values()) == {"approved"}
+        assert len(h.dl_calls) == tried + 1
+        assert "confirmedSource" in h.dl_calls[-1] and URL in h.dl_calls[-1]
+        assert URL in h.node_content(h.load)
+        assert started == []
+
+
+class TestWhoWaitsForYou:
+    """The listing says which agents wait for the user to pick a node's
+    source: the node's Dataset Finder, whose chat holds the candidates, and
+    the agent whose chat asked for them, which the Finder's record keeps
+    (``askedBy``, on its card's ``sourceRecord``). A pick, a skip, the node's
+    removal or its Finder taken off ends both; clearing the asking chat ends
+    its own wait only."""
+
+    def test_the_listing_says_who_waits_and_the_pick_ends_it(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        h.validate("load")
+        finder, builder = h.finder_attachment_id(), h.node_builder_attachment_id()
+        cards = h.cards()
+        assert {a: cards[a].get("waitsForYou") for a in (finder, h.att, builder)} == {
+            finder: [h.load], h.att: [h.load], builder: [],
+        }
+        record = cards[finder].get("sourceRecord") or {}
+        assert (record.get("status"), record.get("askedBy")) == (dr.STATE_CANDIDATES_PENDING, h.att)
+        assert cards[h.att].get("sourceRecord") is None
+        h.select(URL)
+        cards = h.cards()
+        assert {a: cards[a].get("waitsForYou") for a in (finder, h.att, builder)} == {
+            finder: [], h.att: [], builder: [],
+        }
+        record = cards[finder]["sourceRecord"]
+        # The pick keeps who asked.
+        assert (record["status"], record.get("askedBy")) == (dr.STATE_RESOLVED, h.att)
+
+    def test_a_cleared_chat_stops_its_wait_and_the_finder_still_waits(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        h.validate("load")
+        finder = h.finder_attachment_id()
+        r = client.delete(f"/api/agents/projects/{h.pid}/attachments/{h.att}/session", headers=_auth(token))
+        assert r.status_code == 200, r.get_data(as_text=True)
+        cards = h.cards()
+        assert (cards[h.att].get("waitsForYou"), cards[finder].get("waitsForYou")) == ([], [h.load])
+        assert "askedBy" not in (cards[finder].get("sourceRecord") or {})
+
+    def test_a_finder_taken_off_the_node_ends_the_wait(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        h.validate("load")
+        finder = h.finder_attachment_id()
+        r = client.delete(f"/api/agents/projects/{h.pid}/attachments/{finder}", headers=_auth(token))
+        assert r.status_code == 200, r.get_data(as_text=True)
+        cards = h.cards()
+        assert finder not in cards
+        assert cards[h.att].get("waitsForYou") == []
+
+    def test_a_skip_or_the_nodes_removal_ends_the_wait(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        h.validate("load")
+        finder = h.finder_attachment_id()
+        assert dr.waiting_on_user(h.spec()) == {finder: [h.load], h.att: [h.load]}
+        # The node came to name its source: discovery is skipped.
+        skipped = h.spec()
+        dr.mark_skipped(skipped, finder, literal="/data/areas.csv")
+        assert dr.waiting_on_user(skipped) == {}
+        # The node is removed, and its agents with it.
+        removed = h.spec()
+        removed["dataflow"]["nodes"] = [n for n in removed["dataflow"]["nodes"] if n.get("id") != h.load]
+        attachments.prune_orphaned_attachments(removed)
+        assert dr.waiting_on_user(removed) == {}
+
+
+class TestWhichAgentsSolveANode:
+    def test_solve_this_node_from_a_finders_chat_is_refused_and_the_listing_says_so(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """Every node agent's chat shows Solve this node, but the server Solves
+        a node only from an agent that writes node content, or hands that on:
+        it refuses the Finder's. The listing says so, from the same check."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        finder, builder = h.finder_attachment_id(), h.node_builder_attachment_id()
+        assert finder and builder, "the plan gave its loader no Dataset Finder or no Node Builder"
+        r = client.post(
+            f"/api/agents/projects/{h.pid}/attachments/{finder}/solve-node",
+            json={"nodeId": h.load}, headers=_auth(token),
+        )
+        assert r.status_code == 409, r.get_data(as_text=True)
+        assert "no installed agent declares node.content.generate" in r.get_json()["error"]
+        cards = h.cards()
+        assert {a: cards[a].get("solvesNodes") for a in (finder, builder, h.att)} == {
+            finder: False, builder: True, h.att: True,
+        }
