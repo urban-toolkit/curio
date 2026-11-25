@@ -2203,13 +2203,22 @@ def chapter_agents(run: StressRun) -> None:
         expect_attach_toast(run, "the node")
 
     with run.step("Say what the dataflow is for"):
-        # The dock (and with it the goal input) only mounts once at least
-        # one agent is attached, so this cannot run before the first drag.
-        goal = page.get_by_label("Dataflow goal")
-        assert goal.count(), "the agent dock has no Dataflow goal input"
+        # The goal is the Goal line under the header of every agent's chat,
+        # so this cannot run before the first drag: the Node Builder's chat,
+        # opened from its badge under the node.
+        page.get_by_role(
+            "button", name=re.compile(r"^Open chat with Node Builder")
+        ).first.click()
+        panel = page.get_by_role("dialog", name=re.compile(r"^Chat with "))
+        add = panel.get_by_role("button", name="Add what this dataflow is for")
+        add.wait_for(state="visible", timeout=20000)
+        add.click()
+        goal = panel.get_by_label("Dataflow goal")
+        assert goal.count(), "the agent chat has no Dataflow goal field"
         tour.type_into(goal.first, DATAFLOW_GOAL, delay=18)
-        page.keyboard.press("Tab")
+        goal.first.press("Enter")
         page.wait_for_timeout(1200)
+        panel.get_by_label("Close chat").click()
 
     with run.step("Attach an agent to a connection"):
         dismiss_toasts(page)

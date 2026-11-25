@@ -1,11 +1,10 @@
 """Playwright E2E: the canvas title stops before the agents' dock.
 
-The title sits at the top left of the canvas and the dock, with the dataflow's
-goal and the canvas agents, at the top middle, on the same row. A long name was
-drawn over the dock, its Goal label and the start of the goal. Now the title is
-cut short with an ellipsis where the dock starts, as a node's title is cut in
-its header, and its tooltip gives the whole name; opened for renaming, its
-field stays clear of the dock too. A short title, and a long one with no dock
+The title sits at the top left of the canvas and the dock, with the canvas
+agents, at the top middle, on the same row. A long name was drawn over the
+dock. Now the title is cut short with an ellipsis where the dock starts, as a
+node's title is cut in its header, and its tooltip gives the whole name; opened
+for renaming, its field stays clear of the dock too. A short title, and a long one with no dock
 beside it, are shown whole as before.
 
 The dataflow's row and its spec carry the same name here, so the canvas shows
@@ -108,10 +107,10 @@ def _open(page, app_frontend, current_server, *, username: str, name: str) -> No
 
 
 def _attach_an_agent(page, current_server: str, name: str) -> None:
-    """An agent attached to the canvas, which brings the dock and its goal
-    field, over HTTP as the dataflow-goal walkthrough attaches one; then the
-    page again, whose dock is drawn from the attachments it reads, once it
-    shows the dataflow *name*."""
+    """An agent attached to the canvas, which brings the dock, over HTTP as
+    the dataflow-goal walkthrough attaches one; then the page again, whose
+    dock is drawn from the attachments it reads, once it shows the agent's
+    chip and the dataflow *name*."""
     token = page.evaluate(
         "() => (document.cookie.match(/(?:^|; )session_token=([^;]*)/) || [])[1] || ''"
     )
@@ -128,7 +127,7 @@ def _attach_an_agent(page, current_server: str, name: str) -> None:
     page.reload()
     require_owner_view(page)
     expect(page.locator(DOCK)).to_be_visible(timeout=30000)
-    expect(page.get_by_label("Dataflow goal")).to_be_visible(timeout=30000)
+    expect(page.locator(f'{DOCK} button[aria-label^="Open chat with"]')).to_be_visible(timeout=30000)
     expect(page.locator(TITLE)).to_have_text(name, timeout=30000)
 
 

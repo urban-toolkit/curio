@@ -6,12 +6,11 @@ import { DOCK_LEFT_PROPERTY } from "../../components/agents/attach/AgentDock";
  * The canvas title stops before the agents' dock on its row.
  *
  * The title sits at the top left and the dock at the top middle; a long
- * dataflow name was drawn over the dock, its Goal label and the start of the
- * goal. The title is now one line, cut short with an ellipsis where the dock
- * starts, the edge the dock publishes (AgentDock.test.tsx), as a node's title
- * is cut in its header.
+ * dataflow name was drawn over the dock. The title is now one line, cut short
+ * with an ellipsis where the dock starts, the edge the dock publishes
+ * (AgentDock.test.tsx), as a node's title is cut in its header.
  *
- * Source-read for the reason agentDockGoalGeometry.test.ts gives: Jest maps
+ * Source-read for the reason chatGoalLineGeometry.test.ts gives: Jest maps
  * CSS modules to identity-obj-proxy, and jsdom lays nothing out; and UpMenu
  * needs the whole provider stack to mount, as upMenuRename.test.ts says.
  * test_canvas_title_beside_the_dock_e2e.py measures it in a browser and
@@ -27,6 +26,10 @@ const UP_MENU = fs.readFileSync(
 );
 const NODE_TITLE_CSS = fs.readFileSync(
   path.resolve(__dirname, "../../components/packages/editing/EditableNodeHeaderLabel.module.css"),
+  "utf8",
+);
+const DOCK_CSS = fs.readFileSync(
+  path.resolve(__dirname, "../../components/agents/attach/AgentDock.module.css"),
   "utf8",
 );
 
@@ -54,6 +57,14 @@ describe("the canvas title beside the agents' dock", () => {
     expect(DOCK_LEFT_PROPERTY).toBe("--curio-canvas-dock-left");
     const maxWidth = (ruleBody(CSS, ".workflowNameStyle") ?? "").match(/\n\s*max-width:([^;]*);/);
     expect(maxWidth?.[1]).toContain(`var(${DOCK_LEFT_PROPERTY})`);
+  });
+
+  it("is beside a dock that wraps its row rather than forcing everything onto one line", () => {
+    // With nowrap the row would shrink every chip to fit however many agents
+    // and people are here, and the dock's edge would run on under the title.
+    const dock = ruleBody(DOCK_CSS, ".dock") ?? "";
+    expect(dock).toContain("flex-wrap: wrap");
+    expect(dock).toContain("max-width");
   });
 
   it("keeps the window's width with no dock on its row, the edge's default", () => {

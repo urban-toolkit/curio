@@ -159,12 +159,6 @@ export const AgentDockOverlay: React.FC = () => {
         selectedId={ctx.selectedId}
         onSelect={ctx.openChat}
         onDetach={onDetach}
-        // Offered as soon as ANY agent is attached, not just a canvas one:
-        // the agent that reads the goal most (the Node Builder) attaches to
-        // nodes and connections.
-        showGoal={ctx.attachments.length > 0}
-        goal={workflowGoal}
-        onGoalChange={setWorkflowGoal}
       />
       {/* Portal to <body>: the chat is a full-height right drawer flush with
           the viewport top — its dark header sits at the top-bar level per the
@@ -265,6 +259,10 @@ export const AgentDockOverlay: React.FC = () => {
               }
               onSaveIntent={(intent) => ctx.saveIntent(shown.attachmentId, intent)}
               onSaveTitle={(title) => ctx.saveTitle(shown.attachmentId, title)}
+              // The dataflow's goal, on the line under the header of every
+              // agent's chat, node and connection agents' included.
+              goal={workflowGoal}
+              onSaveGoal={setWorkflowGoal}
               onClearConversation={() => ctx.clearConversation(shown.attachmentId)}
               // What `/` offers: the skills this chat's next run lists.
               loadSkills={
