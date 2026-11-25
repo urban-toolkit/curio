@@ -628,6 +628,16 @@ describe("AgentChangeCard: dev/71 a landed plan's rows: Solve then Run", () => {
     expect(solveB).toHaveAttribute("data-tooltip", "needs 'Load' solved first");
   });
 
+  it.each([
+    ["awaiting-download", "Downloading its source"],
+    ["awaiting-install", "Needs its dataset installed"],
+  ])("a row whose source is %s says so, not that it needs a source, and keeps Solve", (state, chip) => {
+    renderRows({ appliedRefs: ["a", "b"], nodeStates: { a: state, b: "created" } });
+    expect(screen.getByText(chip)).toBeInTheDocument();
+    expect(screen.queryByText("Needs a source")).toBeNull();
+    expect(screen.getByRole("button", { name: "Solve node Load" })).toBeEnabled();
+  });
+
   it("Run appears on validated and approved rows and targets the ref", async () => {
     const onRun = jest.fn().mockResolvedValue(undefined);
     renderRows({ appliedRefs: ["a", "b"], nodeStates: { a: "validated", b: "approved" } }, { onRun });

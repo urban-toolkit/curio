@@ -15,16 +15,26 @@ Solve a node says it can.
 
 from __future__ import annotations
 
+import contextlib
 import json
+import logging
+import threading
+from collections import Counter
 
 import pytest
 
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.application import attachments
 from utk_curio.backend.app.agents.application import dataset_resolution as dr
+from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application import spec_reads
 from utk_curio.backend.app.agents.application.solve import budgets
 from utk_curio.backend.app.agents.application.turns import titles as services_mod
+from utk_curio.backend.app.agents.domain.manifest import AgentManifestError
+from utk_curio.backend.app.agents.infrastructure import providers
+from utk_curio.backend.app.agents.repositories import project_agents
+from utk_curio.backend.app.agents.repositories import storage as agents_storage
+from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.tests._support.agent_routes import _auth
@@ -246,6 +256,161 @@ class _Harness:
         r = self.client.get(f"/api/agents/projects/{self.pid}/attachments", headers=_auth(self.token))
         assert r.status_code == 200, r.get_data(as_text=True)
         return {card["attachmentId"]: card for card in r.get_json()["attachments"]}
+
+
+#: How long a test waits for a request it runs on another thread: far longer
+#: than any of these requests takes, so only one that hangs ends the test.
+WAIT_S = 60
+
+
+def _picks(h, url, node_id=None):
+    """The user's pick of the external row *url* on the card of the Dataset
+    Finder of *node_id* (the loader by default), as a request another tab
+    makes: run it later, and it answers ``{"status", "body"}``."""
+    finder = h.finder_attachment_id(node_id)
+
+    def _pick():
+        r = h.client.post(
+            f"/api/agents/projects/{h.pid}/attachments/{finder}/dataset-selection",
+            json={"picks": [{"lane": "external", "key": url}]}, headers=_auth(h.token),
+        )
+        return {"status": r.status_code, "body": r.get_json()}
+
+    return _pick
+
+
+def _clears(h, attachment_id):
+    """Clearing the chat of *attachment_id*, as a request another tab makes."""
+
+    def _clear():
+        r = h.client.delete(
+            f"/api/agents/projects/{h.pid}/attachments/{attachment_id}/session", headers=_auth(h.token),
+        )
+        return {"status": r.status_code, "body": r.get_json()}
+
+    return _clear
+
+
+def _start_on_a_thread(request, answer: dict, ended: threading.Event) -> threading.Thread:
+    """Run *request* on a thread of its own, as another tab's request runs:
+    its answer goes into *answer*, and *ended* is set when it ends, however it
+    ends."""
+
+    def _run():
+        try:
+            answer.update(request())
+        finally:
+            answer["ended"] = True
+            ended.set()
+
+    thread = threading.Thread(target=_run, daemon=True)
+    thread.start()
+    return thread
+
+
+def _during_the_discovery_of(h, monkeypatch, node_id, request) -> dict:
+    """Run *request* while the Dataset Finder of *node_id* is asked for
+    candidates: in the middle of a Build & validate pass, between two of its
+    writes. It runs on a thread of its own while the pass waits for it, so
+    one thread runs at a time. Returns its answer, filled once it ran."""
+    ask = providers.run_chat_turn
+    answer: dict = {}
+
+    def _asked(config, messages, **kwargs):
+        frame = (messages[-1].get("content") or "") if messages else ""
+        if not answer and "discoveryReplyContract" in frame and f'"nodeId": "{node_id}"' in frame:
+            ended = threading.Event()
+            _start_on_a_thread(request, answer, ended)
+            assert ended.wait(WAIT_S), "the request on the other thread never ended"
+        return ask(config, messages, **kwargs)
+
+    monkeypatch.setattr(providers, "run_chat_turn", _asked)
+    return answer
+
+
+class _InsideAWrite:
+    """Run *request* inside the next write of the dataflow that the test's
+    own thread makes and *when* accepts: after that writer read the dataflow
+    and before its write lands, as a request of another tab can.
+
+    One thread runs at a time. When the writer holds the dataflow's spec lock
+    there, the request runs until it asks for that lock, the write lands, and
+    the request ends once the writer lets the lock go, before the writer goes
+    on. When the writer does not hold it, the whole request ends before the
+    write lands."""
+
+    def __init__(self, monkeypatch, request, when=lambda spec: True):
+        self.request, self.when = request, when
+        self.main = threading.current_thread()
+        self.thread: threading.Thread | None = None
+        self.asked, self.ended = threading.Event(), threading.Event()
+        self.answer: dict = {}
+        self.armed = False
+        self.waits_for_the_lock = False
+        write, lock = dataflow_docs.write, projects_storage.spec_write_lock
+
+        def _write(user_key, project_id, spec, actor, **kwargs):
+            if self.armed and threading.current_thread() is self.main and self.when(spec):
+                self.armed = False
+                self._run(held=projects_storage.holds_spec_lock(user_key, project_id))
+            return write(user_key, project_id, spec, actor, **kwargs)
+
+        @contextlib.contextmanager
+        def _lock(user_key, project_id):
+            if self.thread is not None and threading.current_thread() is self.thread:
+                self.asked.set()
+            with lock(user_key, project_id):
+                yield
+            if self.waits_for_the_lock and threading.current_thread() is self.main:
+                self.waits_for_the_lock = False
+                assert self.ended.wait(WAIT_S), "the request inside the write never ended"
+
+        monkeypatch.setattr(dataflow_docs, "write", _write)
+        monkeypatch.setattr(projects_storage, "spec_write_lock", _lock)
+
+    def arm(self):
+        """Run the request inside the next write *when* accepts."""
+        self.armed = True
+
+    def _run(self, *, held: bool) -> None:
+        def _request():
+            # Known as the request's thread before it asks for any lock.
+            self.thread = threading.current_thread()
+            try:
+                return self.request()
+            finally:
+                # A request that never asks for the lock does not keep the
+                # writer waiting for its ask.
+                self.asked.set()
+
+        _start_on_a_thread(_request, self.answer, self.ended)
+        if held:
+            assert self.asked.wait(WAIT_S), "the request never asked for the spec lock"
+            self.waits_for_the_lock = True
+        else:
+            assert self.ended.wait(WAIT_S), "the request never ended"
+
+
+def _pausing_for_a_source(attachment_id):
+    """Whether a spec being written pauses the plan of *attachment_id* for a
+    loader's source."""
+
+    def _when(spec):
+        session = (attachments.get_attachment(spec, attachment_id) or {}).get("builderSession") or {}
+        return (session.get("pauseReason") or {}).get("kind") == "awaiting-source"
+
+    return _when
+
+
+def _validating(attachment_id):
+    """Whether a spec being written marks a validation of a node of the plan
+    of *attachment_id* as running."""
+
+    def _when(spec):
+        session = (attachments.get_attachment(spec, attachment_id) or {}).get("builderSession") or {}
+        return bool(session.get("validatingSince"))
+
+    return _when
 
 
 class TestDiscoveryIsInitiated:
@@ -862,6 +1027,202 @@ class TestBuildAndValidateWaitsForTheSource:
         assert [n.get("ref") for n in reason.get("nodes") or []] == ["schools"], reason
         assert "Load schools" in reason["message"] and "Load parks" not in reason["message"], reason
 
+    def test_a_pick_while_auto_runs_is_built_by_the_same_run(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The user picks the source of a loader the running pass already
+        found waiting, while the pass asks the other loader's Dataset Finder.
+        The same pass builds the picked loader from its source, then pauses
+        naming only the loader still waiting, and the pick's card says the
+        running Build & validate builds it. On main the pass held the picked
+        loader to its end and paused naming it: its row read Placed while the
+        strip said it needed a source, and the card named Build & validate
+        plan while the strip's button read Resume."""
+        user, token = user_and_token
+        invented = 'import pandas as pd\nreturn pd.read_csv("invented.csv")'
+        h = _Harness(
+            client, user, token, monkeypatch, plan=TWO_LOADERS,
+            dl_replies=[invented] * 6 + [f'import pandas as pd\nreturn pd.read_json("{URL}")'],
+        )
+        monkeypatch.setattr(
+            'utk_curio.backend.app.agents.application.verify.verify_external_source',
+            lambda url, **k: dict(FETCHABLE),
+        )
+        started: list = []
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.application.solve.node_solve.solve_node_stream",
+            lambda *a, **k: started.append(k.get("node_id")),
+        )
+        ids = h.ref_ids()
+        picked = _during_the_discovery_of(h, monkeypatch, ids["schools"], _picks(h, URL, ids["parks"]))
+        events = h.simulate("auto")
+        done = events[-1][1]
+        assert picked.get("status") == 200, picked
+        delegated = (picked.get("body") or {}).get("delegated") or {}
+        assert delegated.get("status") == "plan-waiting", picked
+        assert "Build & validate, running now, builds the loader" in delegated.get("reason", ""), delegated
+        assert [(p["action"], p["ref"]) for kind, p in events if kind == "action_result"] == [
+            ("validate", "parks"), ("validate", "schools"), ("validate", "parks"), ("approve", "parks"),
+        ], done
+        reason = done.get("reason") or {}
+        assert (done.get("status"), [n.get("ref") for n in reason.get("nodes") or []]) == (
+            "paused", ["schools"],
+        ), done
+        assert "Load schools" in reason["message"] and "Load parks" not in reason["message"], reason
+        assert done["builderSession"]["nodeStates"] == {
+            "parks": "approved", "schools": "awaiting-source", "join": "created", "count": "created",
+        }
+        assert "confirmedSource" in h.dl_calls[-1] and URL in h.dl_calls[-1]
+        assert URL in h.node_content(ids["parks"])
+        assert started == [], "the pick started the loader's builder beside the plan"
+
+    def test_a_finders_chat_cleared_while_auto_runs_is_asked_again_by_the_same_run(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The user clears the chat of a loader's Dataset Finder, whose card
+        the running pass left waiting, while the pass asks the other loader's
+        Finder. No card is left to answer, so the same pass asks that Finder
+        again, and the pause it ends on names both loaders, each with a card in
+        its Finder's chat. On main the pass held the loader to its end and
+        paused saying its Finder's chat asked for it, a chat that held no card
+        any more."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch, plan=TWO_LOADERS)
+        ids = h.ref_ids()
+        parks_finder = h.finder_attachment_id(ids["parks"])
+        cleared = _during_the_discovery_of(h, monkeypatch, ids["schools"], _clears(h, parks_finder))
+        done = h.simulate("auto")[-1][1]
+        assert cleared.get("status") == 200, cleared
+        reason = done.get("reason") or {}
+        assert (done.get("status"), sorted(n.get("ref") for n in reason.get("nodes") or [])) == (
+            "paused", ["parks", "schools"],
+        ), done
+        assert len(h.discover_calls) == 3
+        cards = [
+            p for t in h.session_turns(parks_finder)
+            for p in (t.get("content") or []) if p.get("type") == "datasetCandidates"
+        ]
+        assert len(cards) == 1, "the cleared Finder's chat holds no card to answer"
+
+    def test_clearing_a_waiting_loaders_finder_chat_ends_the_plans_wait(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """Clearing the chat of the Dataset Finder a paused plan waits on takes
+        its card away: the plan waits for it no more, its row is placed again
+        and the pause that named it ends. The next pass asks the Finder again.
+        On main the row still needed a source and the pause still said the
+        cleared chat asked for it."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        h.simulate("auto")
+        finder = h.finder_attachment_id()
+        r = client.delete(f"/api/agents/projects/{h.pid}/attachments/{finder}/session", headers=_auth(token))
+        assert r.status_code == 200, r.get_data(as_text=True)
+        cards = h.cards()
+        session = cards[h.att]["builderSession"]
+        assert session["nodeStates"]["load"] == "created", session
+        assert "pauseReason" not in session, session
+        assert (cards[h.att]["waitsForYou"], cards[finder]["waitsForYou"]) == ([], [])
+        done = h.simulate("auto")[-1][1]
+        assert [n.get("ref") for n in (done.get("reason") or {}).get("nodes") or []] == ["load"], done
+        assert len(h.discover_calls) == 2
+
+    def test_a_step_whose_recheck_asks_the_finder_again_does_nothing_else(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """Step does one action. Checking a waiting loader again is free while
+        its Dataset Finder's card still waits for a pick, so it is no action.
+        Once that Finder is taken off, no card is left: the check asks a
+        Finder for candidates anew, a model call and a new card, which is
+        Step's one action. On main it counted as free, and the same Step went
+        on to validate the other loader too."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch, plan=TWO_LOADERS)
+        ids = h.ref_ids()
+        first = h.simulate("step")[-1][1]
+        assert first.get("nextAction") == {"action": "validate", "ref": "schools"}, first
+        finder = h.finder_attachment_id(ids["parks"])
+        r = client.delete(f"/api/agents/projects/{h.pid}/attachments/{finder}", headers=_auth(token))
+        assert r.status_code == 200, r.get_data(as_text=True)
+        events = h.simulate("step")
+        second = events[-1][1]
+        assert [(p["action"], p["ref"]) for kind, p in events if kind == "action_result"] == [
+            ("validate", "parks"),
+        ], second
+        assert (second.get("status"), second.get("nextAction")) == (
+            "stepped", {"action": "validate", "ref": "schools"},
+        ), second
+        assert len(h.discover_calls) == 2
+
+
+class TestAPickIsNeverLost:
+    """A pick on a Dataset Finder's card writes the dataflow, and so does each
+    step of Build & validate, a row's Solve and a cleared chat. Each of those
+    reads the dataflow and writes it back under its spec lock, so a pick that
+    lands between that read and that write is kept. Here the pick runs on a
+    thread of its own inside that window, one thread at a time. On main those
+    writers read without the lock, and their write put back the record the
+    pick had changed: the agents' attachments are merged record by record."""
+
+    @pytest.fixture(autouse=True)
+    def _six_actions(self, monkeypatch):
+        monkeypatch.setattr(budgets, "SIMULATE_MAX_ACTIONS", 6)
+
+    def test_a_pick_that_lands_as_auto_pauses_is_kept(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        inside = _InsideAWrite(monkeypatch, _picks(h, URL), when=_pausing_for_a_source(h.att))
+        inside.arm()
+        done = h.simulate("auto")[-1][1]
+        assert (done.get("status"), (done.get("reason") or {}).get("kind")) == ("paused", "awaiting-source"), done
+        assert inside.answer.get("status") == 200, inside.answer
+        assert dr.source_record(h.spec(), h.load)["status"] == dr.STATE_RESOLVED
+        session = h.cards()[h.att]["builderSession"]
+        # The pick put the row back and ended the pause that named it alone.
+        assert session["nodeStates"]["load"] == "created", session
+        assert "pauseReason" not in session, session
+
+    def test_a_pick_that_lands_as_a_rows_solve_starts_is_kept(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch, plan=TWO_LOADERS)
+        ids = h.ref_ids()
+        h.simulate("auto")
+        inside = _InsideAWrite(monkeypatch, _picks(h, URL, ids["parks"]), when=_validating(h.att))
+        inside.arm()
+        done = h.validate("schools")[-1][1]
+        assert done.get("verdict") == "awaiting-source", done
+        assert inside.answer.get("status") == 200, inside.answer
+        delegated = (inside.answer.get("body") or {}).get("delegated") or {}
+        assert delegated.get("status") == "plan-waiting", inside.answer
+        session = h.cards()[h.att]["builderSession"]
+        assert (session["nodeStates"]["parks"], session["nodeStates"]["schools"]) == (
+            "created", "awaiting-source",
+        ), session
+        assert [n.get("ref") for n in (session.get("pauseReason") or {}).get("nodes") or []] == ["schools"], session
+
+    def test_a_pick_that_lands_as_the_asking_chat_is_cleared_is_kept(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """Clearing the chat that asked for a loader's candidates changes the
+        loader's Dataset Finder record: it asked no more. A pick an editor
+        makes on that Finder's card at the same moment is kept."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        h.validate("load")
+        inside = _InsideAWrite(monkeypatch, _picks(h, URL))
+        inside.arm()
+        r = client.delete(f"/api/agents/projects/{h.pid}/attachments/{h.att}/session", headers=_auth(token))
+        assert r.status_code == 200, r.get_data(as_text=True)
+        assert inside.answer.get("status") == 200, inside.answer
+        record = dr.source_record(h.spec(), h.load) or {}
+        assert record.get("status") == dr.STATE_RESOLVED, record
+        # And the plan's row, which waited for it, is placed again.
+        assert h.cards()[h.att]["builderSession"]["nodeStates"]["load"] == "created"
+
 
 class TestWhoWaitsForYou:
     """The listing says which agents wait for the user to pick a node's
@@ -960,3 +1321,80 @@ class TestWhichAgentsSolveANode:
         assert {a: cards[a].get("solvesNodes") for a in (finder, builder, h.att)} == {
             finder: False, builder: True, h.att: True,
         }
+
+    def test_an_installed_agent_whose_manifest_no_longer_parses_fails_no_listing(
+        self, client, user_and_token, tmp_curio, monkeypatch, caplog
+    ):
+        """An agent installed in the dataflow whose copy in the account's store
+        no longer parses makes the answer of each agent that reads it no, and
+        the reason is logged. The listing still answers. On main it answered
+        500: a Dataset Finder's answer reads every installed agent."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        broken = "agent.acme.broken@1"
+        folder = agents_storage.agent_definition_dir(h.ukey, broken)
+        folder.mkdir(parents=True)
+        (folder / "manifest.json").write_text("{ no longer json", encoding="utf-8")
+        spec = dataflow_docs.live(h.ukey, h.pid)
+        spec["dataflow"]["agents"] = [*(spec["dataflow"].get("agents") or []), broken]
+        dataflow_docs.write(h.ukey, h.pid, spec, dataflow_docs.person(h.ukey, "edit"))
+        caplog.set_level(logging.WARNING)
+        cards = h.cards()
+        finder, builder = h.finder_attachment_id(), h.node_builder_attachment_id()
+        assert (cards[finder]["solvesNodes"], cards[builder]["solvesNodes"]) == (False, True)
+        assert any(
+            isinstance((record.exc_info or (None, None))[1], AgentManifestError) for record in caplog.records
+        ), [record.getMessage() for record in caplog.records]
+
+    def test_the_listing_reads_each_agents_answer_once(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """Several cards share an agent: the listing asks whether that agent
+        Solves a node once, and who waits for the user once. On main it asked
+        both for every card, and a Dataset Finder's answer reads every agent
+        installed in the dataflow."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch, plan=TWO_LOADERS)
+        asked: Counter = Counter()
+        waits: list = []
+        resolve_among, waiting_on_user = delegation.resolve_among, dr.waiting_on_user
+
+        def _resolve_among(user_key, installed, parent, capability):
+            if capability == "node.content.generate":
+                asked[parent.dir_name] += 1
+            return resolve_among(user_key, installed, parent, capability)
+
+        def _waiting_on_user(spec):
+            waits.append(spec)
+            return waiting_on_user(spec)
+
+        monkeypatch.setattr(delegation, "resolve_among", _resolve_among)
+        monkeypatch.setattr(dr, "waiting_on_user", _waiting_on_user)
+        cards = h.cards()
+        coords = {card["coord"] for card in cards.values()}
+        assert len(cards) > len(coords), "no two cards share an agent"
+        assert dict(asked) == {coord: 1 for coord in coords}, asked
+        assert len(waits) == 1
+
+    def test_an_agent_whose_solve_installs_its_required_agents_first_says_it_solves(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """A node's Solve from an agent's chat installs the agents that agent
+        requires before it checks for one that writes node content
+        (``node_solve.py``). The listing answers as that Solve will, and
+        installs nothing itself. On main it answered from the lockfile as it
+        was: the Dataflow Builder, whose Node Builder was taken out of the
+        lockfile, said no where its Solve goes ahead."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        spec = dataflow_docs.live(h.ukey, h.pid)
+        spec["dataflow"]["agents"] = [
+            coord for coord in spec["dataflow"].get("agents") or []
+            if not coord.startswith("agent.curio.node-builder@")
+        ]
+        dataflow_docs.write(h.ukey, h.pid, spec, dataflow_docs.person(h.ukey, "edit"))
+        assert h.cards()[h.att]["solvesNodes"] is True
+        assert not [
+            coord for coord in project_agents.project_agents(h.spec())
+            if coord.startswith("agent.curio.node-builder@")
+        ], "the listing installed an agent"
