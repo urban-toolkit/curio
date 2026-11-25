@@ -34,6 +34,27 @@
   font-weight: 600;
 }
 
+/* What the closed more part holds that the line does not say: the plan's
+   failures, or how the last session ended. It gives way after the words.
+   Empty, it takes no room: the gap before it is given back. */
+.lineSign {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--curio-text-meta);
+}
+
+.lineSign:empty {
+  margin-left: -8px;
+}
+
+.lineSignFailed {
+  font-weight: 600;
+  color: var(--curio-danger-text);
+}
+
 /* Whose turn it is: the nodes waiting for the user, in the warning tone the
    rows' "needs you" has. */
 .lineNeedsYou {

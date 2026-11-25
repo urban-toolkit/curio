@@ -377,6 +377,21 @@ export const AgentBuilderStrip: React.FC<{
   );
   const otherParts = (["solve", "stop", "run"] as const).filter((part) => part !== mainPart);
 
+  // What the closed more part holds that the line does not say: the plan's
+  // failures, their reasons on the tooltip, or how the last session ended
+  // when it left work undone (a finished one reads Ready). Open, the more
+  // part says it itself.
+  const reasons = distinctLines(solveErrors);
+  const ending =
+    !solveRunning && solveEndedBy && solveEndedBy !== "complete" ? sessionEndingText(solveEndedBy, unresolved) : "";
+  const sign = moreOpen
+    ? null
+    : failed.length > 0
+      ? { text: `${failed.length} failed: see more`, tooltip: reasons.join("\n") || undefined, failures: true }
+      : ending
+        ? { text: ending, tooltip: ending, failures: false }
+        : null;
+
   return (
     <div className={styles.plan} role="group" aria-label={attachment.name}>
       <div className={styles.line}>
@@ -394,6 +409,16 @@ export const AgentBuilderStrip: React.FC<{
               {words.counts ? ` · ${words.counts}` : null}
             </>
           )}
+        </span>
+        {/* A polite live region that stays mounted, empty while there is
+            nothing to say, so what comes into it is announced. */}
+        <span
+          className={`${styles.lineSign}${sign?.failures ? ` ${styles.lineSignFailed}` : ""}`}
+          aria-live="polite"
+          data-curio-plan-sign=""
+          data-tooltip={sign?.tooltip}
+        >
+          {sign ? sign.text : null}
         </span>
         {userBlocked.length > 0 ? (
           <span className={styles.lineNeedsYou}>
@@ -482,7 +507,7 @@ export const AgentBuilderStrip: React.FC<{
               {sessionEndingText(solveEndedBy, unresolved)}
             </div>
           ) : null}
-          <SolveFeedback reasons={distinctLines(solveErrors)} notices={distinctLines(solveNotices)} />
+          <SolveFeedback reasons={reasons} notices={distinctLines(solveNotices)} />
           {landedPlan && onSimulate ? (
             <PlanBuildActions
               plan={landedPlan}
