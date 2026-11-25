@@ -202,6 +202,9 @@ def test_the_builders_chat_holds_the_loaders_candidates_and_its_pick_builds_the_
         timeout=30000)
     expect(badge).to_have_count(0, timeout=30000)
     expect(panel.get_by_text(f"Source recorded for {LOADER_TITLE}", exact=False)).to_be_visible(timeout=30000)
+    # The server approves the loader before the tab's build ends: the frame
+    # waits until the plan line has no Stop, so no build clock ticks in it.
+    expect(panel.get_by_role("button", name=re.compile(r"^(Stop|Stopping…)$"))).to_have_count(0, timeout=60000)
     dismiss_toasts(page)
     save_workflow_test_screenshot(page, SCREENSHOT_STEM, test_name="recorded", clip_selector=CHAT_PANEL_SELECTOR)
 
