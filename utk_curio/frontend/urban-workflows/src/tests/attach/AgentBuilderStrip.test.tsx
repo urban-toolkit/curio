@@ -788,6 +788,161 @@ describe("AgentBuilderStrip — dev/131 the session, and nodes that depend on yo
   });
 });
 
+// A build runs as a stream over the plan, not as an agent job: a Solve started
+// meanwhile would run over the same nodes.
+describe("AgentBuilderStrip while a build runs", () => {
+  it("the line's action is the build's Stop, drawn once, and Solve is not offered", async () => {
+    const onCancelSimulate = jest.fn().mockResolvedValue(undefined);
+    render(
+      <AgentBuilderStrip
+        attachment={withLandedPlan({ a: "created", b: "created" })}
+        onSolve={jest.fn()}
+        onCancelSolve={jest.fn()}
+        onSolveNode={jest.fn()}
+        onSimulate={() => new Promise(() => {})} // held in flight
+        onCancelSimulate={onCancelSimulate}
+      />,
+    );
+    openMore();
+    fireEvent.click(screen.getByRole("button", { name: "Build & validate plan" }));
+    fireEvent.click(screen.getByRole("button", { name: HIDE_PLAN_MORE }));
+
+    // The line, its more part closed.
+    expect(screen.queryByRole("button", { name: /^(Solve|Retry)\b/ })).toBeNull();
+    const stop = screen.getByRole("button", { name: "Stop" });
+
+    // The more part offers no Solve either, the plan's or a node's, and does
+    // not draw the build's stop again.
+    openMore();
+    const solves = screen.queryAllByRole("button", { name: /^(Solve|Retry)\b/ });
+    expect(solves.length).toBeGreaterThan(0);
+    for (const solve of solves) expect(solve).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: /^(Stop|Stopping…|Cancel)$/ })).toEqual([stop]);
+
+    fireEvent.click(stop);
+    await waitFor(() => expect(onCancelSimulate).toHaveBeenCalledTimes(1));
+  });
+
+  it("Resume's build holds the line the same way", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={withLandedPlan(
+          { a: "failed", b: "created" },
+          { pauseReason: { kind: "validation-failed", ref: "a", message: "validation failed and nothing was written" } },
+        )}
+        onSolve={jest.fn()}
+        onSimulate={() => new Promise(() => {})}
+        onCancelSimulate={jest.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^(Solve|Retry)\b/ })).toBeNull();
+  });
+
+  it("a build the chat runs for this agent holds the line it draws again, as after a switch on the rail", () => {
+    // The line is drawn anew (the panel reopened, or the rail went to another
+    // agent and back) while the build the chat started for it still runs.
+    const props = {
+      attachment: withLandedPlan({ a: "created", b: "created" }),
+      onSolve: jest.fn(),
+      onSimulate: jest.fn(),
+      onCancelSimulate: jest.fn(),
+      simulating: "auto" as const,
+    } as React.ComponentProps<typeof AgentBuilderStrip>;
+    render(<AgentBuilderStrip {...props} />);
+    expect(screen.getByText(/Building… · \d+:\d\d/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^(Solve|Retry)\b/ })).toBeNull();
+  });
+});
+
+describe("AgentBuilderStrip's batch Stop", () => {
+  it("reads Stop again for the next batch, however the last one ended", async () => {
+    const onCancelSolve = jest.fn().mockResolvedValue(undefined);
+    const running = (executionId: string): AgentAttachment => ({
+      ...attachment({ phase: "solving", appliedPlanId: "p1", nodeRuns: { a: "pending" } }),
+      liveJob: { executionId, kind: "solve-batch", status: "running", startedAt: 1 },
+    });
+    const { rerender } = render(<AgentBuilderStrip attachment={running("e1")} onSolve={jest.fn()} onCancelSolve={onCancelSolve} />);
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    await waitFor(() => expect(onCancelSolve).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: "Stopping…" })).toBeDisabled();
+
+    // The batch ends as another tab, or a panel opened again, sees it: no
+    // Solve of this line's own was waiting on it.
+    rerender(
+      <AgentBuilderStrip
+        attachment={attachment({ phase: "applied", appliedPlanId: "p1", nodeRuns: { a: "pending" } })}
+        onSolve={jest.fn()}
+        onCancelSolve={onCancelSolve}
+      />,
+    );
+    // The next batch.
+    rerender(<AgentBuilderStrip attachment={running("e2")} onSolve={jest.fn()} onCancelSolve={onCancelSolve} />);
+    expect(screen.queryByRole("button", { name: "Stopping…" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Stop" })).toBeEnabled();
+  });
+});
+
+describe("AgentBuilderStrip's line says what its closed more part holds", () => {
+  /** The line's live region: it says what the closed more part holds. */
+  const sign = () => document.querySelector<HTMLElement>("[data-curio-plan-sign]");
+
+  it("the plan's failures, how many, their reasons on its tooltip", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={attachment({ phase: "applied", nodeRuns: { a: "failed", b: "failed", c: "pending" } })}
+        onSolve={jest.fn()}
+        solveErrors={{ a: "the sandbox refused the run", b: "the sandbox refused the run" }}
+      />,
+    );
+    const line = screen.getByRole("group", { name: "Dataflow Builder" });
+    expect(line).toHaveTextContent("2 failed: see more");
+    expect(sign()).not.toBeNull();
+    expect(line.contains(sign())).toBe(true);
+    expect(sign()).toHaveTextContent("2 failed: see more");
+    expect(sign()).toHaveAttribute("data-tooltip", "the sandbox refused the run");
+  });
+
+  it("how the last session ended, when it left work undone", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={attachment({ phase: "applied", nodeRuns: { a: "pending", b: "solved" } })}
+        onSolve={jest.fn()}
+        solveEndedBy="stopped"
+      />,
+    );
+    expect(screen.getByRole("group", { name: "Dataflow Builder" })).toHaveTextContent(
+      "Stopped by you: 1 node still pending.",
+    );
+  });
+
+  it("in a live region that stays mounted as the failures come and the more part opens", () => {
+    const { rerender } = render(
+      <AgentBuilderStrip attachment={attachment({ phase: "applied", nodeRuns: { a: "pending", b: "pending" } })} onSolve={jest.fn()} />,
+    );
+    const region = sign();
+    expect(region).not.toBeNull();
+    expect(region).toHaveAttribute("aria-live", "polite");
+    expect(region).toBeEmptyDOMElement();
+
+    rerender(
+      <AgentBuilderStrip attachment={attachment({ phase: "applied", nodeRuns: { a: "failed", b: "pending" } })} onSolve={jest.fn()} />,
+    );
+    expect(sign()).toBe(region);
+    expect(region).toHaveTextContent("1 failed: see more");
+
+    // Open, the more part shows them itself.
+    openMore();
+    expect(sign()).toBe(region);
+    expect(region).toBeEmptyDOMElement();
+    fireEvent.click(screen.getByRole("button", { name: HIDE_PLAN_MORE }));
+    expect(sign()).toBe(region);
+    expect(region).toHaveTextContent("1 failed: see more");
+  });
+});
+
 
 // The strip's buttons and pills for a node awaiting a source name the agent
 // that holds its candidates as its manifest does: here a user's own copy of the
