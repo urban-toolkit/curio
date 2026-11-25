@@ -6,7 +6,7 @@
  * Dataset Finder button when several nodes await a source.
  */
 import React from "react";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { faCircle } from "@fortawesome/free-solid-svg-icons";
 
 const PYTHON = "curio.builtin/python-computation@1";
@@ -25,7 +25,7 @@ jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({ playAllNodes: jest.fn(), nodes: mockNodes }),
 }));
 
-import { AgentBuilderStrip } from "../../components/agents/attach/AgentBuilderStrip";
+import { AgentBuilderStrip, SHOW_PLAN_MORE } from "../../components/agents/attach/AgentBuilderStrip";
 import { registerNode } from "../../registry/nodeRegistry";
 import type { NodeDescriptor } from "../../registry/types";
 import type { AgentAttachment, AgentRemedy } from "../../services/agents";
@@ -72,18 +72,20 @@ const remedy = (attachmentId: string, nodeId: string): AgentRemedy => ({
 });
 
 function renderStrip(props: Partial<React.ComponentProps<typeof AgentBuilderStrip>> = {}) {
-  return render(
+  const rendered = render(
     <AgentBuilderStrip
       attachment={attachment({
         phase: "applied",
         nodeRuns: { [LOAD]: "pending", [STATS]: "pending", [GONE]: "failed" },
       })}
       onSolve={jest.fn()}
-      onComposePrompt={jest.fn()}
       onSolveNode={jest.fn()}
       {...props}
     />,
   );
+  // The pills are in the plan line's more part, closed until asked for.
+  fireEvent.click(screen.getByRole("button", { name: SHOW_PLAN_MORE }));
+  return rendered;
 }
 
 test("a pill and its Solve button name the planned node by its title", () => {

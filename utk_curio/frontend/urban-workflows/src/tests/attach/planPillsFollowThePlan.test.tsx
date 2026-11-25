@@ -9,7 +9,7 @@
  * pills' order too, whatever order the live batch's remedies come in.
  */
 import React from "react";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 
 const PYTHON = "curio.builtin/python-computation@1";
 // The plan's three nodes, in its order. Their ids sort in another order.
@@ -35,7 +35,7 @@ jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({ playAllNodes: jest.fn(), nodes: mockNodes }),
 }));
 
-import { AgentBuilderStrip } from "../../components/agents/attach/AgentBuilderStrip";
+import { AgentBuilderStrip, SHOW_PLAN_MORE } from "../../components/agents/attach/AgentBuilderStrip";
 import type { AgentAttachment, AgentRemedy } from "../../services/agents";
 
 /** The Dataflow Builder after its plan landed: the plan's refs in its order
@@ -84,7 +84,9 @@ function pillNames(): Array<string | null | undefined> {
 }
 
 function renderStrip(value: AgentAttachment, props: Partial<React.ComponentProps<typeof AgentBuilderStrip>> = {}) {
-  render(<AgentBuilderStrip attachment={value} onSolve={jest.fn()} onComposePrompt={jest.fn()} {...props} />);
+  render(<AgentBuilderStrip attachment={value} onSolve={jest.fn()} {...props} />);
+  // The pills are in the plan line's more part, closed until asked for.
+  fireEvent.click(screen.getByRole("button", { name: SHOW_PLAN_MORE }));
 }
 
 /** A node awaiting a source: its own Dataset Finder holds the candidates. */
