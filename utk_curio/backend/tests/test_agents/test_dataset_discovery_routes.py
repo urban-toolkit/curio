@@ -54,6 +54,19 @@ URL = "https://data.example.org/areas.geojson"
 #: ``acquire._acquirable``). A pick of such a row starts the node's own builder.
 FETCHABLE = {"status": "verified", "detail": "200 OK", "httpStatus": 200, "sampleKeys": ["type", "features"]}
 
+#: Two loaders, neither reading from the other, a join of both, and a count of
+#: the join.
+TWO_LOADERS = {
+    "goal": "compare parks and schools",
+    "nodes": [
+        {"ref": "parks", "nodeType": DL, "title": "Load parks", "intent": "load the city's parks"},
+        {"ref": "schools", "nodeType": DL, "title": "Load schools", "intent": "load the city's schools"},
+        {"ref": "join", "nodeType": CA, "title": "Join", "intent": "join the parks and the schools by area"},
+        {"ref": "count", "nodeType": CA, "title": "Count", "intent": "count the schools near each park"},
+    ],
+    "edges": [{"from": "parks", "to": "join"}, {"from": "schools", "to": "join"}, {"from": "join", "to": "count"}],
+}
+
 
 def _sse_events(response) -> list[tuple[str, dict]]:
     """A streamed route's events, in order, as ``(event, data)``."""
@@ -69,10 +82,11 @@ class _Harness:
 
     ``parent`` is the agent that plans and solves, the Dataflow Builder unless
     a test names another; ``prepare`` runs on the new project before it is
-    installed."""
+    installed. ``plan`` replaces the plan of one loader feeding one node: every
+    loader of it is answered from ``dl_replies``."""
 
     def __init__(self, client, user, token, monkeypatch, *, goal=None,
-                 discover_replies=None, dl_replies=None, parent=DFB, prepare=None):
+                 discover_replies=None, dl_replies=None, parent=DFB, prepare=None, plan=None):
         self.client, self.user, self.token = client, user, token
         self.ukey = _user_dir_key(user)
         routes_proposals.TestNodeCreate()._write_builtin_package(self.ukey, templates=TEMPLATES)
@@ -91,7 +105,7 @@ class _Harness:
         self.dl_calls: list = []
         # Every model call, whatever asked it, in order.
         self.model_calls: list = []
-        plan = {
+        plan = plan or {
             "goal": "compare community areas",
             "nodes": [
                 {"ref": "load", "nodeType": DL, "title": "Load boundaries",
@@ -114,9 +128,9 @@ class _Harness:
             if "discoveryReplyContract" in frame:
                 self.discover_calls.append(frame)
                 return discover_script[min(len(self.discover_calls) - 1, len(discover_script) - 1)]
-            # The loader's OWN content call: nodeContext carries its nodeId
+            # A loader's OWN content call: nodeContext carries its nodeId
             # (an upstream row would carry it under "id" instead).
-            if f'"nodeId": "{getattr(self, "load", "?")}"' in frame:
+            if any(f'"nodeId": "{node_id}"' in frame for node_id in getattr(self, "loaders", ())):
                 self.dl_calls.append(frame)
                 return dl_script[min(len(self.dl_calls) - 1, len(dl_script) - 1)]
             return "df = input_0[0]\nreturn df.describe()"
@@ -141,7 +155,8 @@ class _Harness:
         # The plan landed with the reply; its nodes are what the reply hands a
         # canvas no doc binds.
         graph = routes_proposals._landed_plan(r.get_json())["canvas"]
-        self.load = next(n["id"] for n in graph["nodes"] if str(n["type"]).startswith(DL))
+        self.loaders = [n["id"] for n in graph["nodes"] if str(n["type"]).startswith(DL)]
+        self.load = self.loaders[0]
         self.stats = next(n["id"] for n in graph["nodes"] if str(n["type"]).startswith(CA))
 
     def solve(self, node_ids=None):
@@ -154,8 +169,8 @@ class _Harness:
     def spec(self):
         return projects_storage.read_spec(self.ukey, self.pid)
 
-    def finder_attachment_id(self):
-        record = dr.finder_attachment(self.spec(), self.load)
+    def finder_attachment_id(self, node_id=None):
+        record = dr.finder_attachment(self.spec(), node_id or self.load)
         return (record or {}).get("attachmentId")
 
     def node_content(self, node_id):
@@ -189,10 +204,15 @@ class _Harness:
         record = dr.source_record(self.spec(), self.load) or {}
         return record.get("status"), [p.get("url") for p in record.get("picks") or []]
 
-    def node_builder_attachment_id(self):
-        """The loader's own Node Builder: the agent on it that writes its code."""
-        record = spec_reads._node_attachment_declaring(self.spec(), "node.content.generate", self.load)
+    def node_builder_attachment_id(self, node_id=None):
+        """A loader's own Node Builder: the agent on it that writes its code."""
+        record = spec_reads._node_attachment_declaring(self.spec(), "node.content.generate", node_id or self.load)
         return (record or {}).get("attachmentId")
+
+    def ref_ids(self):
+        """Each plan ref's node, as the plan's agent keeps them."""
+        record = attachments.get_attachment(self.spec(), self.att) or {}
+        return dict((record.get("builderSession") or {}).get("nodeIds") or {})
 
     def _stream(self, path, body):
         r = self.client.post(
@@ -211,11 +231,11 @@ class _Harness:
         """A plan row's Solve: its events, the done payload last."""
         return self._stream("validate-node", {"ref": ref})
 
-    def select(self, url):
-        """The user's pick of the external row *url* on the card in the
+    def select(self, url, node_id=None):
+        """The user's pick of the external row *url* on the card in a
         loader's Dataset Finder chat, through the route the card posts to."""
         r = self.client.post(
-            f"/api/agents/projects/{self.pid}/attachments/{self.finder_attachment_id()}/dataset-selection",
+            f"/api/agents/projects/{self.pid}/attachments/{self.finder_attachment_id(node_id)}/dataset-selection",
             json={"picks": [{"lane": "external", "key": url}]}, headers=_auth(self.token),
         )
         assert r.status_code == 200, r.get_data(as_text=True)
@@ -638,12 +658,15 @@ class TestBuildAndValidateWaitsForTheSource:
     """Build & validate and a plan row's Solve stop at a loader that waits for
     the user to pick its source in its Dataset Finder's chat.
 
-    The run pauses there once, naming the node and its Finder, and the row
-    needs a source. A Resume while the candidates still wait asks no model.
-    The pick puts the row back and starts nothing beside the plan, and the next
-    Build & validate builds the loader from that source, once. On main the run
-    validated the loader again and again, each pass a turn in the loader's Node
-    Builder chat, until its action cap (500 in Curio, six here)."""
+    The run goes on past such a loader to every node that does not read from
+    it, so each loader's Finder is asked in the same pass, and pauses once,
+    when no node can go on, naming every loader that waits; their rows need a
+    source. A Resume while the candidates still wait asks no model and adds no
+    turn to any chat. The pick puts the row back and starts nothing beside the
+    plan, and the next Build & validate builds the loader from that source,
+    once. On main the run validated the first loader again and again, each
+    pass a turn in its Node Builder chat, until its action cap (500 in Curio,
+    six here)."""
 
     @pytest.fixture(autouse=True)
     def _six_actions(self, monkeypatch):
@@ -658,9 +681,9 @@ class TestBuildAndValidateWaitsForTheSource:
         done = events[-1][1]
         reason = done.get("reason") or {}
         assert (done.get("status"), reason.get("kind")) == ("paused", "awaiting-source"), done
-        assert (reason.get("ref"), reason.get("nodeId"), reason.get("attachmentId")) == (
-            "load", h.load, h.finder_attachment_id(),
-        )
+        assert reason.get("nodes") == [
+            {"ref": "load", "nodeId": h.load, "attachmentId": h.finder_attachment_id()},
+        ], reason
         # It names the node; the strip ends it with how to go on.
         assert "Load boundaries" in reason["message"], reason
         assert not reason["message"].rstrip(" .").endswith("Resume"), reason
@@ -695,15 +718,19 @@ class TestBuildAndValidateWaitsForTheSource:
         h = _Harness(client, user, token, monkeypatch)
         first = h.simulate("auto")[-1][1]
         assert (first.get("reason") or {}).get("kind") == "awaiting-source", first
+        chats = (h.att, h.node_builder_attachment_id(), h.finder_attachment_id())
+        turns = {chat: len(h.session_turns(chat)) for chat in chats}
         calls = len(h.model_calls)
         events = h.simulate("auto")
         done = events[-1][1]
         reason = done.get("reason") or {}
-        assert (done.get("status"), reason.get("kind"), reason.get("ref")) == (
-            "paused", "awaiting-source", "load",
+        assert (done.get("status"), reason.get("kind"), [n.get("ref") for n in reason.get("nodes") or []]) == (
+            "paused", "awaiting-source", ["load"],
         ), done
         assert h.model_calls[calls:] == []
-        assert [p["ref"] for kind, p in events if kind == "action_result"] == ["load"]
+        # No chat gained a turn: the loader was not handed to its Node Builder
+        # again.
+        assert {chat: len(h.session_turns(chat)) for chat in chats} == turns
         assert done["builderSession"]["nodeStates"]["load"] == "awaiting-source"
         assert len(h.discover_calls) == 1
 
@@ -753,6 +780,83 @@ class TestBuildAndValidateWaitsForTheSource:
         assert "confirmedSource" in h.dl_calls[-1] and URL in h.dl_calls[-1]
         assert URL in h.node_content(h.load)
         assert started == []
+
+    def test_auto_goes_on_past_a_waiting_loader_and_pauses_once_for_both(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """Two loaders, neither reading from the other: the run asks each
+        one's Dataset Finder in the same pass, then pauses once, naming both,
+        while the nodes that read from them wait. On main it asked the first
+        loader again and again and never reached the second."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch, plan=TWO_LOADERS)
+        ids = h.ref_ids()
+        calls = len(h.model_calls)
+        events = h.simulate("auto")
+        done = events[-1][1]
+        reason = done.get("reason") or {}
+        assert [p["ref"] for kind, p in events if kind == "action_result"] == ["parks", "schools"], done
+        assert (done.get("status"), reason.get("kind")) == ("paused", "awaiting-source"), done
+        assert reason.get("nodes") == [
+            {"ref": ref, "nodeId": ids[ref], "attachmentId": h.finder_attachment_id(ids[ref])}
+            for ref in ("parks", "schools")
+        ], reason
+        assert "Load parks" in reason["message"] and "Load schools" in reason["message"], reason
+        assert len(h.discover_calls) == 2
+        # One pass of models: each loader's attempts and its Finder, nothing
+        # asked for the nodes that read from them.
+        assert len(h.dl_calls) == 6
+        assert len(h.model_calls) - calls == len(h.dl_calls) + len(h.discover_calls)
+        session = done["builderSession"]
+        assert session["nodeStates"] == {
+            "parks": "awaiting-source", "schools": "awaiting-source", "join": "created", "count": "created",
+        }
+        assert session["pauseReason"] == reason
+        assert [h.node_content(ids[ref]) for ref in ("parks", "schools", "join", "count")] == [""] * 4
+
+    def test_step_goes_on_past_a_waiting_loader(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """Step does one action at a time, and passes over a loader that
+        already waits for its source without asking anyone: the second step
+        asks the second loader's Finder, then pauses naming both, and a third
+        only pauses again."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch, plan=TWO_LOADERS)
+        first = h.simulate("step")[-1][1]
+        assert (first.get("status"), first.get("nextAction")) == (
+            "stepped", {"action": "validate", "ref": "schools"},
+        ), first
+        assert first["builderSession"]["nodeStates"]["parks"] == "awaiting-source"
+        events = h.simulate("step")
+        second = events[-1][1]
+        assert [p["ref"] for kind, p in events if kind == "action_result"] == ["parks", "schools"]
+        assert (second.get("status"), [n.get("ref") for n in (second.get("reason") or {}).get("nodes") or []]) == (
+            "paused", ["parks", "schools"],
+        ), second
+        assert len(h.discover_calls) == 2
+        calls = len(h.model_calls)
+        third = h.simulate("step")[-1][1]
+        assert (third.get("status"), [n.get("ref") for n in (third.get("reason") or {}).get("nodes") or []]) == (
+            "paused", ["parks", "schools"],
+        ), third
+        assert h.model_calls[calls:] == []
+
+    def test_a_pick_for_one_of_two_waiting_loaders_leaves_the_other_waiting(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch, plan=TWO_LOADERS)
+        ids = h.ref_ids()
+        h.simulate("auto")
+        picked = h.select(URL, ids["parks"])
+        delegated = picked.get("delegated") or {}
+        assert (delegated.get("status"), delegated.get("nodeId")) == ("plan-waiting", ids["parks"]), picked
+        session = h.cards()[h.att]["builderSession"]
+        assert (session["nodeStates"]["parks"], session["nodeStates"]["schools"]) == ("created", "awaiting-source")
+        reason = session.get("pauseReason") or {}
+        assert [n.get("ref") for n in reason.get("nodes") or []] == ["schools"], reason
+        assert "Load schools" in reason["message"] and "Load parks" not in reason["message"], reason
 
 
 class TestWhoWaitsForYou:
