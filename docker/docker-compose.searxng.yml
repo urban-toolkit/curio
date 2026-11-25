@@ -31,13 +31,13 @@ services:
       - /etc/searxng:uid=977,gid=977,mode=0755
       - /var/cache/searxng:uid=977,gid=977,mode=0755
     env_file:
-      - ./.secrets/searxng.env
+      - ../.secrets/searxng.env
     environment:
       # Curio and the healthcheck reach it over IPv4.
       GRANIAN_HOST: 0.0.0.0
     volumes:
       - type: bind
-        source: ./scripts/searxng/settings.yml
+        source: ../scripts/searxng/settings.yml
         target: /etc/searxng/settings.yml
         read_only: true
     healthcheck:

@@ -14,7 +14,8 @@
 #   apparmor_parser -r -W scripts/bucket-mounts/curio-bucket-mounts.apparmor
 # (installed in /etc/apparmor.d/ first, it loads again at every boot).
 #
-# Its mounts reach Curio through the host: ./bucket-mounts is bound rshared
+# Its mounts reach Curio through the host: the checkout's bucket-mounts/
+# (../bucket-mounts from docker/) is bound rshared
 # into the service and read-only rslave into Curio's container, so a mount the
 # service makes or removes there shows in both. The host folder must sit on a
 # shared mount, as systemd makes /. Docker makes it, root's, when it is
@@ -60,11 +61,11 @@ services:
       HTTPS_PROXY: http://curio:3128
     volumes:
       - type: bind
-        source: ./scripts/bucket-mounts
+        source: ../scripts/bucket-mounts
         target: /opt/curio-bucket-mounts
         read_only: true
       - type: bind
-        source: ./bucket-mounts
+        source: ../bucket-mounts
         target: /mounts
         bind:
           propagation: rshared
@@ -87,7 +88,7 @@ services:
   curio:
     volumes:
       - type: bind
-        source: ./bucket-mounts
+        source: ../bucket-mounts
         target: /bucket-mounts
         read_only: true
         bind:

@@ -21,7 +21,7 @@ import { read } from "./_support/workflowPaths";
 const WORKFLOW = ".github/workflows/skill-evals.yml";
 const DEPLOY = ".github/workflows/deploy.yml";
 const BUILD = ".github/workflows/docker-compose.yml";
-const OVERLAY = "docker-compose.searxng.yml";
+const OVERLAY = "docker/docker-compose.searxng.yml";
 const CHECK = "scripts/searxng/check.py";
 const KEY_FILE = ".secrets/searxng.env";
 /** The compose commands of the job's web search: its own project, the overlay alone. */

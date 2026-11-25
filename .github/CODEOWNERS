@@ -15,6 +15,6 @@
 /utk_curio/backend/tests/test_frontend/test_workflows.py     @fabio-miranda
 
 # Build / compose stack — prod + CI isolation depend on these.
-/docker-compose.yml                                          @fabio-miranda
-/docker-compose.deploy.yml                                   @fabio-miranda
-/Dockerfile                                                  @fabio-miranda
+/docker/docker-compose.yml                                   @fabio-miranda
+/docker/docker-compose.deploy.yml                            @fabio-miranda
+/docker/Dockerfile                                           @fabio-miranda

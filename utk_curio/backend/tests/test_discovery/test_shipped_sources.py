@@ -262,7 +262,7 @@ def test_the_image_ships_the_catalog():
     directories one at a time. A new shipped root has to be added to both, and
     forgetting either is invisible until something is built.
     """
-    assert "COPY discovery/" in _packaging_file("Dockerfile"), (
+    assert "COPY discovery/" in _packaging_file("docker/Dockerfile"), (
         "Dockerfile does not copy discovery/ - the built image would serve an "
         "empty Discovery Catalog"
     )
@@ -278,7 +278,7 @@ def test_the_wheel_ships_the_catalog():
 
 
 @pytest.mark.parametrize(
-    "compose", ["docker-compose.ci.yml", "docker-compose.ci-isolated.yml"]
+    "compose", ["docker/docker-compose.ci.yml", "docker/docker-compose.ci-isolated.yml"]
 )
 def test_the_ci_container_is_pointed_at_the_recorded_corpus(compose: str):
     """CI's container gets ``CURIO_DISCOVERY_FIXTURES``, at the path it really has.

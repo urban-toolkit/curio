@@ -10,21 +10,11 @@ on:
     # what the jobs read from the checkout.
     paths:
       - 'utk_curio/**'
-      - 'Dockerfile'
-      # Define the CI stack itself (ports, volumes, and the --deploy boot flags).
-      - 'docker-compose.yml'
-      - 'docker-compose.ci.yml'
-      - 'docker-compose.ci-isolated.yml'
-      - 'docker-compose.ci-exec-user.yml'
-      - 'docker-compose.ci-stress.yml'
-      - 'docker-compose.ci-shards.yml'
-      # test-gpu asserts the production deploy configuration.
-      - 'docker-compose.deploy.yml'
-      # The bucket mount service, which the bucket-mounts job starts.
-      - 'docker-compose.bucket-mounts.yml'
-      - 'docker-compose.ci-bucket-mounts.yml'
-      # The web search service, which the bucket-mounts job starts too.
-      - 'docker-compose.searxng.yml'
+      # The image's Dockerfile and its ignore file, and every compose file:
+      # the CI stacks (ports, volumes, and the --deploy boot flags), the
+      # production deploy configuration test-gpu asserts, and the bucket mount
+      # and web search services the bucket-mounts job starts.
+      - 'docker/**'
       # Every workflow, this one among them: Jest reads them all
       # (ciSparseCheckout.test.ts), and the deploy and CI tests pin lines of
       # deploy.yml, bump-version.yml, skill-evals.yml and weekly-flake-hunt.yml.
@@ -70,21 +60,11 @@ on:
     # The same list as push's.
     paths:
       - 'utk_curio/**'
-      - 'Dockerfile'
-      # Define the CI stack itself (ports, volumes, and the --deploy boot flags).
-      - 'docker-compose.yml'
-      - 'docker-compose.ci.yml'
-      - 'docker-compose.ci-isolated.yml'
-      - 'docker-compose.ci-exec-user.yml'
-      - 'docker-compose.ci-stress.yml'
-      - 'docker-compose.ci-shards.yml'
-      # test-gpu asserts the production deploy configuration.
-      - 'docker-compose.deploy.yml'
-      # The bucket mount service, which the bucket-mounts job starts.
-      - 'docker-compose.bucket-mounts.yml'
-      - 'docker-compose.ci-bucket-mounts.yml'
-      # The web search service, which the bucket-mounts job starts too.
-      - 'docker-compose.searxng.yml'
+      # The image's Dockerfile and its ignore file, and every compose file:
+      # the CI stacks (ports, volumes, and the --deploy boot flags), the
+      # production deploy configuration test-gpu asserts, and the bucket mount
+      # and web search services the bucket-mounts job starts.
+      - 'docker/**'
       # Every workflow, this one among them: Jest reads them all
       # (ciSparseCheckout.test.ts), and the deploy and CI tests pin lines of
       # deploy.yml, bump-version.yml, skill-evals.yml and weekly-flake-hunt.yml.
@@ -497,7 +477,7 @@ jobs:
           TREE: ${{ steps.name.outputs.tree }}
           WRITES_CACHE: ${{ github.ref == 'refs/heads/main' }}
         run: |
-          early_inputs="Dockerfile .dockerignore requirements.txt package.json package-lock.json
+          early_inputs="docker/Dockerfile docker/Dockerfile.dockerignore requirements.txt package.json package-lock.json
             scripts/ci-requirements.txt
             utk_curio/frontend/urban-workflows/package.json utk_curio/frontend/urban-workflows/package-lock.json
             utk_curio/frontend/urban-workflows/vendor"
@@ -528,6 +508,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
+          file: docker/Dockerfile
           build-args: |
             CURIO_CI_SETUP=1
             CURIO_TORCH=cpu
@@ -745,7 +726,7 @@ jobs:
       # workflow deps, library manager, project save/load, ...). Every
       # `docker compose` step below reads COMPOSE_FILE, so setting it here is
       # enough. See docker-compose.ci.yml for why this isn't the deploy overlay.
-      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml:docker-compose.ci-shards.yml
+      COMPOSE_FILE: docker/docker-compose.yml:docker/docker-compose.ci.yml:docker/docker-compose.ci-shards.yml
       # As in e2e-desktop, which says why: utk-gpu and the utk desktops keep
       # America/Chicago, where example 26's time axis chart read 0.50% from
       # the arcade GPU runners' capture.
@@ -886,7 +867,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          config=$(docker compose -f docker-compose.yml -f docker-compose.deploy.yml config)
+          config=$(docker compose -f docker/docker-compose.yml -f docker/docker-compose.deploy.yml config)
 
           # The sandbox executes arbitrary node code. Production must never
           # publish its port; only the CI overlays do, and only on loopback.
@@ -935,7 +916,7 @@ jobs:
           # exists. The image is. Without it the sandbox still refuses to serve
           # (fork + no exec user is fatal when hosted), so this is a clearer
           # error, not a second boundary.
-          if ! grep -qE '^RUN groupadd .*curio-exec' Dockerfile; then
+          if ! grep -qE '^RUN groupadd .*curio-exec' docker/Dockerfile; then
             echo "::error::the Dockerfile no longer creates the curio-exec account; --deploy would find no execution user and the sandbox would refuse to start" >&2
             exit 1
           fi
@@ -1408,7 +1389,7 @@ jobs:
           - { name: sandbox, suite: sandbox, part: "" }
     env:
       CURIO_CI_FRESH_STACK: curio-ci
-      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
+      COMPOSE_FILE: docker/docker-compose.yml:docker/docker-compose.ci.yml
       CURIO_E2E_BACKEND_URL: "http://localhost:5022"
       CURIO_E2E_HOST: localhost
       CURIO_E2E_BACKEND_PORT: "5022"
@@ -1571,7 +1552,7 @@ jobs:
         part: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
     env:
       CURIO_CI_FRESH_STACK: curio-ci
-      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
+      COMPOSE_FILE: docker/docker-compose.yml:docker/docker-compose.ci.yml
       # GitHub-hosted and arcade runners' time zone, which the baselines were
       # taken in. A utk desktop keeps America/Chicago, and the browser draws a
       # Vega-Lite time axis in local time: example 04's two such charts read
@@ -1742,7 +1723,7 @@ jobs:
       packages: read
     env:
       CURIO_CI_FRESH_STACK: curio-ci-iso
-      COMPOSE_FILE: docker-compose.yml:docker-compose.ci-isolated.yml
+      COMPOSE_FILE: docker/docker-compose.yml:docker/docker-compose.ci-isolated.yml
       # As in e2e-desktop, which says why.
       TZ: UTC
       CURIO_E2E_BACKEND_URL: "http://localhost:5032"
@@ -1914,7 +1895,7 @@ jobs:
       contents: read
       packages: read
     env:
-      COMPOSE_FILE: docker-compose.yml:docker-compose.ci-exec-user.yml
+      COMPOSE_FILE: docker/docker-compose.yml:docker/docker-compose.ci-exec-user.yml
       CURIO_E2E_BACKEND_PORT: "5042"
       CURIO_E2E_SANDBOX_PORT: "2040"
       CURIO_E2E_FRONTEND_PORT: "8120"
@@ -2144,7 +2125,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      COMPOSE_FILE: docker-compose.ci-bucket-mounts.yml:docker-compose.bucket-mounts.yml
+      COMPOSE_FILE: docker/docker-compose.ci-bucket-mounts.yml:docker/docker-compose.bucket-mounts.yml
       COMPOSE_PROJECT_NAME: curio-ci-bucket-mounts
     steps:
       - name: 📥 Checkout repository
@@ -2197,7 +2178,7 @@ jobs:
       - name: 🔎 Web search answers Curio's search URL with JSON
         if: ${{ !cancelled() }}
         env:
-          COMPOSE_FILE: docker-compose.searxng.yml
+          COMPOSE_FILE: docker/docker-compose.searxng.yml
           COMPOSE_PROJECT_NAME: curio-ci-searxng
         run: |
           set -euo pipefail
@@ -2226,7 +2207,7 @@ jobs:
         if: always()
         run: |
           docker compose down -v --remove-orphans || true
-          docker compose -p curio-ci-searxng -f docker-compose.searxng.yml down -v --remove-orphans || true
+          docker compose -p curio-ci-searxng -f docker/docker-compose.searxng.yml down -v --remove-orphans || true
 
   # Curio on a machine the size of a laptop. ubuntu-latest is 4 cores and 16 GB
   # -- the machine #408 was reported on -- where utk has 377 GiB, and memory
@@ -2251,7 +2232,7 @@ jobs:
       contents: read
       packages: read
     env:
-      COMPOSE_FILE: docker-compose.yml:docker-compose.ci-stress.yml
+      COMPOSE_FILE: docker/docker-compose.yml:docker/docker-compose.ci-stress.yml
       # The stress overlay's port triple, as test-gpu-stress uses it.
       CURIO_E2E_BACKEND_URL: "http://localhost:5072"
       CURIO_E2E_HOST: localhost
@@ -2443,7 +2424,7 @@ jobs:
       cancel-in-progress: false
 
     env:
-      COMPOSE_FILE: docker-compose.yml:docker-compose.ci-stress.yml
+      COMPOSE_FILE: docker/docker-compose.yml:docker/docker-compose.ci-stress.yml
       # A sixth port triple; see the overlay's header for the other five.
       CURIO_E2E_BACKEND_URL: "http://localhost:5072"
       CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret

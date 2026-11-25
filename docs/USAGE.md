@@ -215,7 +215,7 @@ Prerequisites: [Docker](https://docs.docker.com/get-started/get-docker/)
 After cloning the repository (see above), run the full Curio stack with:
 
 ```bash
-docker compose up
+docker compose -f docker/docker-compose.yml up
 ```
 
 This will build and start all required servers. Curio's frontend will be available at http://localhost:8080.

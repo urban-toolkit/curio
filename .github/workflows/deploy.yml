@@ -15,9 +15,9 @@ name: Deploy
 #        git clone https://github.com/<you>/curio.git /srv/curio        # stable
 #        git clone https://github.com/<you>/curio.git /srv/curio-dev   # test
 #
-#      Each job writes its checkout's docker-compose.site.yml (container
-#      name, host ports and curio.py arguments), so the two stacks do not
-#      collide: stable publishes 5002/8080, dev 5012/8090.
+#      Each job writes its checkout's docker/docker-compose.site.yml
+#      (container name, host ports and curio.py arguments), so the two stacks
+#      do not collide: stable publishes 5002/8080, dev 5012/8090.
 #
 #   6. Self-hosted GPU CI runner (for .github/workflows/docker-compose.yml,
 #      which runs ONLY on this box — the WebGPU compute examples 06/07 need
@@ -185,6 +185,15 @@ jobs:
           git checkout --detach "origin/$ref" 2>/dev/null \
             || git checkout --detach "$ref"
           echo "Deploying $ref ($(git rev-parse --short HEAD))"
+          # The compose files, and the site file this job writes beside them:
+          # in docker/, or at the root of a ref from before docker/ held them.
+          # A tracked file tells, since an older checkout keeps the untracked
+          # docker/docker-compose.site.yml.
+          compose_dir=docker
+          if [ ! -f docker/docker-compose.yml ]; then
+            compose_dir=.
+          fi
+          site=$compose_dir/docker-compose.site.yml
           # The site file replaces the published ports with `!override`, which
           # Docker Compose reads from 2.24.4 on. Checked before the running
           # stack is touched.
@@ -200,7 +209,7 @@ jobs:
           # Checked before the running stack is touched, and the new stack's
           # /version is checked once it is up.
           cgroups=""
-          if grep -q -e 'writable-cgroups=true' docker-compose.deploy.yml; then
+          if grep -q -e 'writable-cgroups=true' "$compose_dir/docker-compose.deploy.yml"; then
             cgroups=1
             engine_version="$(docker version --format '{{.Server.Version}}')"
             if [ "$(printf '%s\n' 28.0.0 "$engine_version" | sort -V | head -n1)" != 28.0.0 ]; then
@@ -301,7 +310,7 @@ jobs:
             profile_fix="sudo install -m 644 $PWD/scripts/bucket-mounts/curio-bucket-mounts.apparmor /etc/apparmor.d/curio-bucket-mounts && sudo apparmor_parser -r -W /etc/apparmor.d/curio-bucket-mounts"
             # Pulled first when missing, so a failed pull is not taken for a
             # missing profile.
-            mounts_image="$(sed -n 's/^    image: //p' docker-compose.bucket-mounts.yml)"
+            mounts_image="$(sed -n 's/^    image: //p' "$compose_dir/docker-compose.bucket-mounts.yml")"
             if ! docker image inspect "$mounts_image" > /dev/null 2>&1 && ! docker pull -q "$mounts_image" > /dev/null < /dev/null; then
               echo "::error::could not pull $mounts_image, the bucket mount service's image"
               exit 1
@@ -325,7 +334,7 @@ jobs:
           # so a failed pull leaves it serving.
           search_args=""
           search_url='http://searxng:8080/search?q={q}&format=json'
-          if [ -f docker-compose.searxng.yml ]; then
+          if [ -f "$compose_dir/docker-compose.searxng.yml" ]; then
             if [ ! -s .secrets/searxng.env ]; then
               (
                 umask 077
@@ -334,7 +343,7 @@ jobs:
                 mv .secrets/searxng.env.new .secrets/searxng.env
               )
             fi
-            search_image="$(sed -n 's/^    image: //p' docker-compose.searxng.yml)"
+            search_image="$(sed -n 's/^    image: //p' "$compose_dir/docker-compose.searxng.yml")"
             if ! docker image inspect "$search_image" > /dev/null 2>&1 && ! docker pull -q "$search_image" > /dev/null < /dev/null; then
               echo "::error::could not pull $search_image, the web search service's image"
               exit 1
@@ -355,7 +364,7 @@ jobs:
           # that never sends a request. The open-files limit is Docker's
           # default soft limit of 1024 raised: stable's backend ran out of it
           # on 11-06.
-          cat > docker-compose.site.yml <<'SITE'
+          cat > "$site" <<'SITE'
           services:
             curio:
               container_name: curio-dev
@@ -363,7 +372,7 @@ jobs:
               ulimits:
                 nofile: {soft: 65536, hard: 65536}
           SITE
-          printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s%s%s%s%s%s%s]\n' "$llm_args" "$search_args" "$weights_args" "$cache_args" "$download_args" "$guest_args" "$monitor_args" "$mounts_args" "$processes_args" >> docker-compose.site.yml
+          printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s%s%s%s%s%s%s]\n' "$llm_args" "$search_args" "$weights_args" "$cache_args" "$download_args" "$guest_args" "$monitor_args" "$mounts_args" "$processes_args" >> "$site"
           # Curio's binds: the weights folder both stacks share, which the
           # server writes as it downloads a model's weights on first use, this
           # stack's monitor folder, and this stack's bucket mounts, read-only
@@ -380,28 +389,28 @@ jobs:
             curio_volumes="${curio_volumes:+$curio_volumes, }{type: bind, source: $mounts_dir, target: /bucket-mounts, read_only: true, bind: {propagation: rslave, create_host_path: true}}"
           fi
           if [ -n "$curio_volumes" ]; then
-            printf '    volumes: [%s]\n' "$curio_volumes" >> docker-compose.site.yml
+            printf '    volumes: [%s]\n' "$curio_volumes" >> "$site"
           fi
           if [ -n "$llm_args" ]; then
-            printf '    secrets: [curio_llm_endpoint]\n' >> docker-compose.site.yml
+            printf '    secrets: [curio_llm_endpoint]\n' >> "$site"
           fi
           # The service's side of the same folder, rshared, after Curio's keys
           # and before the file's top-level secrets.
           if [ -n "$mounts_args" ]; then
-            printf '  bucket-mounts:\n    volumes: [{type: bind, source: %s, target: /mounts, bind: {propagation: rshared, create_host_path: true}}]\n' "$mounts_dir" >> docker-compose.site.yml
+            printf '  bucket-mounts:\n    volumes: [{type: bind, source: %s, target: /mounts, bind: {propagation: rshared, create_host_path: true}}]\n' "$mounts_dir" >> "$site"
           fi
           if [ -n "$llm_args" ]; then
-            printf 'secrets:\n  curio_llm_endpoint:\n    file: ./.secrets/llm-endpoint\n' >> docker-compose.site.yml
+            printf 'secrets:\n  curio_llm_endpoint:\n    file: %s/.secrets/llm-endpoint\n' "$PWD" >> "$site"
           fi
           # The services' overlays after the deploy's, and the site file last.
-          export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
+          export COMPOSE_FILE=$compose_dir/docker-compose.yml:$compose_dir/docker-compose.deploy.yml
           if [ -n "$search_args" ]; then
-            export COMPOSE_FILE=$COMPOSE_FILE:docker-compose.searxng.yml
+            export COMPOSE_FILE=$COMPOSE_FILE:$compose_dir/docker-compose.searxng.yml
           fi
           if [ -n "$mounts_args" ]; then
-            export COMPOSE_FILE=$COMPOSE_FILE:docker-compose.bucket-mounts.yml
+            export COMPOSE_FILE=$COMPOSE_FILE:$compose_dir/docker-compose.bucket-mounts.yml
           fi
-          export COMPOSE_FILE=$COMPOSE_FILE:docker-compose.site.yml
+          export COMPOSE_FILE=$COMPOSE_FILE:$site
           # Build while the old stack still serves: the site is offline only
           # from `down` until the new container boots, and a failed build
           # leaves the old stack up. The image's COPY datasets/ therefore runs
@@ -711,7 +720,15 @@ jobs:
             || git checkout --detach "$ref"
           echo "Deploying $ref ($(git rev-parse --short HEAD))"
           mkdir -p instance .curio
-          export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
+          # The compose files, and the site file this job writes beside them,
+          # where curio-dev finds them: in docker/, or at the root of a release
+          # from before docker/ held them.
+          compose_dir=docker
+          if [ ! -f docker/docker-compose.yml ]; then
+            compose_dir=.
+          fi
+          site=$compose_dir/docker-compose.site.yml
+          export COMPOSE_FILE=$compose_dir/docker-compose.yml:$compose_dir/docker-compose.deploy.yml
           set -a; [ -f .env ] && . ./.env; set +a
           # Set below for a release whose launcher has the bucket mount
           # service's flags, and read again once the stack is up.
@@ -743,7 +760,7 @@ jobs:
             # release's overlay asks for writable cgroups, as curio-dev's
             # deploy checks: Docker Engine 28 or newer, before the running
             # stack is touched.
-            if grep -q -e 'writable-cgroups=true' docker-compose.deploy.yml; then
+            if grep -q -e 'writable-cgroups=true' "$compose_dir/docker-compose.deploy.yml"; then
               cgroups=1
               engine_version="$(docker version --format '{{.Server.Version}}')"
               if [ "$(printf '%s\n' 28.0.0 "$engine_version" | sort -V | head -n1)" != 28.0.0 ]; then
@@ -818,7 +835,7 @@ jobs:
                   ;;
               esac
               profile_fix="sudo install -m 644 $PWD/scripts/bucket-mounts/curio-bucket-mounts.apparmor /etc/apparmor.d/curio-bucket-mounts && sudo apparmor_parser -r -W /etc/apparmor.d/curio-bucket-mounts"
-              mounts_image="$(sed -n 's/^    image: //p' docker-compose.bucket-mounts.yml)"
+              mounts_image="$(sed -n 's/^    image: //p' "$compose_dir/docker-compose.bucket-mounts.yml")"
               if ! docker image inspect "$mounts_image" > /dev/null 2>&1 && ! docker pull -q "$mounts_image" > /dev/null < /dev/null; then
                 echo "::error::could not pull $mounts_image, the bucket mount service's image"
                 exit 1
@@ -835,7 +852,7 @@ jobs:
             # Web search, as curio-dev runs it, with stable's own key in this
             # checkout's .secrets/searxng.env, and its image pulled while the
             # old stack still serves.
-            if [ -f docker-compose.searxng.yml ]; then
+            if [ -f "$compose_dir/docker-compose.searxng.yml" ]; then
               if [ ! -s .secrets/searxng.env ]; then
                 (
                   umask 077
@@ -844,14 +861,14 @@ jobs:
                   mv .secrets/searxng.env.new .secrets/searxng.env
                 )
               fi
-              search_image="$(sed -n 's/^    image: //p' docker-compose.searxng.yml)"
+              search_image="$(sed -n 's/^    image: //p' "$compose_dir/docker-compose.searxng.yml")"
               if ! docker image inspect "$search_image" > /dev/null 2>&1 && ! docker pull -q "$search_image" > /dev/null < /dev/null; then
                 echo "::error::could not pull $search_image, the web search service's image"
                 exit 1
               fi
               search_args=", \"--agent-search-url\", \"$search_url\""
             fi
-            cat > docker-compose.site.yml <<'SITE'
+            cat > "$site" <<'SITE'
           services:
             curio:
               container_name: ${CURIO_CONTAINER_NAME:-curio}
@@ -859,7 +876,7 @@ jobs:
               ulimits:
                 nofile: {soft: 65536, hard: 65536}
           SITE
-            printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s%s%s%s%s%s%s]\n' "$llm_args" "$search_args" "$weights_args" "$cache_args" "$download_args" "$guest_args" "$monitor_args" "$mounts_args" "$processes_args" >> docker-compose.site.yml
+            printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s%s%s%s%s%s%s]\n' "$llm_args" "$search_args" "$weights_args" "$cache_args" "$download_args" "$guest_args" "$monitor_args" "$mounts_args" "$processes_args" >> "$site"
             # Curio's binds and the service's, as curio-dev writes them.
             curio_volumes=""
             if [ -n "$weights_args" ]; then
@@ -872,24 +889,24 @@ jobs:
               curio_volumes="${curio_volumes:+$curio_volumes, }{type: bind, source: $mounts_dir, target: /bucket-mounts, read_only: true, bind: {propagation: rslave, create_host_path: true}}"
             fi
             if [ -n "$curio_volumes" ]; then
-              printf '    volumes: [%s]\n' "$curio_volumes" >> docker-compose.site.yml
+              printf '    volumes: [%s]\n' "$curio_volumes" >> "$site"
             fi
             if [ -n "$llm_args" ]; then
-              printf '    secrets: [curio_llm_endpoint]\n' >> docker-compose.site.yml
+              printf '    secrets: [curio_llm_endpoint]\n' >> "$site"
             fi
             if [ -n "$mounts_args" ]; then
-              printf '  bucket-mounts:\n    volumes: [{type: bind, source: %s, target: /mounts, bind: {propagation: rshared, create_host_path: true}}]\n' "$mounts_dir" >> docker-compose.site.yml
+              printf '  bucket-mounts:\n    volumes: [{type: bind, source: %s, target: /mounts, bind: {propagation: rshared, create_host_path: true}}]\n' "$mounts_dir" >> "$site"
             fi
             if [ -n "$llm_args" ]; then
-              printf 'secrets:\n  curio_llm_endpoint:\n    file: ./.secrets/llm-endpoint\n' >> docker-compose.site.yml
+              printf 'secrets:\n  curio_llm_endpoint:\n    file: %s/.secrets/llm-endpoint\n' "$PWD" >> "$site"
             fi
             if [ -n "$search_args" ]; then
-              export COMPOSE_FILE=$COMPOSE_FILE:docker-compose.searxng.yml
+              export COMPOSE_FILE=$COMPOSE_FILE:$compose_dir/docker-compose.searxng.yml
             fi
             if [ -n "$mounts_args" ]; then
-              export COMPOSE_FILE=$COMPOSE_FILE:docker-compose.bucket-mounts.yml
+              export COMPOSE_FILE=$COMPOSE_FILE:$compose_dir/docker-compose.bucket-mounts.yml
             fi
-            export COMPOSE_FILE=$COMPOSE_FILE:docker-compose.site.yml
+            export COMPOSE_FILE=$COMPOSE_FILE:$site
           else
             # v0.16.0 bakes its backend address into the bundle. Set after .env
             # so an older address there cannot win.

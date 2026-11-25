@@ -73,7 +73,7 @@ describe("A CI stack's library threads", () => {
     });
 
     test.each(THROUGH_THE_CI_OVERLAY)("%s hands its stack the count as OMP_NUM_THREADS", (name) => {
-        expect(jobs().get(name)).toMatch(/^ {6}COMPOSE_FILE: docker-compose\.yml:docker-compose\.ci\.yml(:|$)/m);
+        expect(jobs().get(name)).toMatch(/^ {6}COMPOSE_FILE: docker\/docker-compose\.yml:docker\/docker-compose\.ci\.yml(:|$)/m);
         const sizing = steps(name).find((step) => step.includes(SIZING));
         expect([name, sizing !== undefined]).toEqual([name, true]);
         expect(sizing).toContain('echo "OMP_NUM_THREADS=$threads" >> "$GITHUB_ENV"\n');
@@ -81,8 +81,8 @@ describe("A CI stack's library threads", () => {
 
     test("the overlays pass the count on to the stack", () => {
         // docker-compose.ci.yml passes on the job's own variable, so a job that sets none keeps its stack's default.
-        expect(read("docker-compose.ci.yml")).toMatch(/^ {6}- OMP_NUM_THREADS$/m);
-        expect(read("docker-compose.ci-isolated.yml")).toMatch(
+        expect(read("docker/docker-compose.ci.yml")).toMatch(/^ {6}- OMP_NUM_THREADS$/m);
+        expect(read("docker/docker-compose.ci-isolated.yml")).toMatch(
             /^ {6}- OMP_NUM_THREADS=\$\{CURIO_CI_LIBRARY_THREADS:\?[^}\n]+\}$/m,
         );
     });

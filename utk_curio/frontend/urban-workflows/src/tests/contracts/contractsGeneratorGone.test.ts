@@ -38,7 +38,7 @@ test("no file of the repository is, names or runs the contracts generator", () =
     "AGENTS.md",
     "packages/curio.builtin@1/README.md",
     ".github/workflows/docker-compose.yml",
-    "Dockerfile",
+    "docker/Dockerfile",
     "scripts/test.sh",
     "utk_curio/backend/app/agents/domain/contracts.py",
   ]) {

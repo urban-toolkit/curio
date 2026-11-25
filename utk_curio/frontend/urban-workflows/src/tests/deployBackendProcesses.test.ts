@@ -51,7 +51,7 @@ describe("The deploy's backend processes", () => {
 
     test("each stack's command line names them last, after setting them", () => {
         for (const [, job] of STACKS) {
-            const command = job.search(/printf ' {4}command: \[[^\n]* "\$processes_args" >> docker-compose\.site\.yml\n/);
+            const command = job.search(/printf ' {4}command: \[[^\n]* "\$processes_args" >> "\$site"\n/);
             expect(command).toBeGreaterThan(-1);
             expect(job.indexOf(`grep -q -e '"--backend-processes"'`)).toBeLessThan(command);
         }

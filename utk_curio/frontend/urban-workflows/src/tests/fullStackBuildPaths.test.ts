@@ -20,10 +20,10 @@ const EVENTS = ["push", "pull_request"];
 const READ_FROM_THE_CHECKOUT: Array<[string, string]> = [
     [".nvmrc", "setup-node in jest and preview-runner, and scripts/check_node_pins.py"],
     [".node-version", "scripts/check_node_pins.py"],
-    ["docker-compose.deploy.yml", "test-gpu's check of the production deploy configuration"],
-    ["docker-compose.bucket-mounts.yml", "the bucket-mounts job and bucketMountsOverlay.test.ts"],
-    ["docker-compose.ci-bucket-mounts.yml", "the bucket-mounts job"],
-    ["docker-compose.searxng.yml", "the bucket-mounts job, searxngOverlay.test.ts and deployWebSearch.test.ts"],
+    ["docker/docker-compose.deploy.yml", "test-gpu's check of the production deploy configuration"],
+    ["docker/docker-compose.bucket-mounts.yml", "the bucket-mounts job and bucketMountsOverlay.test.ts"],
+    ["docker/docker-compose.ci-bucket-mounts.yml", "the bucket-mounts job"],
+    ["docker/docker-compose.searxng.yml", "the bucket-mounts job, searxngOverlay.test.ts and deployWebSearch.test.ts"],
 ];
 
 describe(`the paths filters of ${WORKFLOW}`, () => {
@@ -51,6 +51,16 @@ describe(`the paths filters of ${WORKFLOW}`, () => {
     );
     test.each(readers)("on %s, a change to %s starts a build (read by %s)", (event, file) => {
         expect(startsARun(file, patterns(event))).toBe(true);
+    });
+
+    // docker/ holds the image's Dockerfile and its ignore file, which shape
+    // every job's image, and the compose files of the jobs' stacks, the deploy
+    // configuration test-gpu checks and the services the bucket-mounts job
+    // starts.
+    test.each(EVENTS)("on %s, a change to any file in docker/ starts a build", (event) => {
+        const files = fs.readdirSync(path.join(REPO_ROOT, "docker")).map((name) => `docker/${name}`);
+        expect(files).toEqual(expect.arrayContaining(["docker/Dockerfile", "docker/Dockerfile.dockerignore", "docker/docker-compose.yml"]));
+        expect(files.filter((file) => !startsARun(file, patterns(event)))).toEqual([]);
     });
 
     // launcherFlagsInGuides.test.ts reads every guide, solveStopReasonsDocs.test.ts

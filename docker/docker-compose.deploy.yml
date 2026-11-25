@@ -52,7 +52,7 @@ services:
     # /model-weights instead. The server writes it; node code only reads it
     # (DEPLOYMENT.md).
     volumes:
-      - ./model-weights:/model-weights
+      - ../model-weights:/model-weights
     environment:
       NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
       # Each node's Python runs in a confined child process instead of

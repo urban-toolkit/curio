@@ -15,7 +15,7 @@ import * as path from "path";
 import { REPO_ROOT, read } from "./_support/workflowPaths";
 import { block, codeLines, environment, scalars, services, value, volumes } from "./_support/composeFile";
 
-const OVERLAY = "docker-compose.searxng.yml";
+const OVERLAY = "docker/docker-compose.searxng.yml";
 const SETTINGS = "scripts/searxng/settings.yml";
 
 const exists = (file: string): boolean => fs.existsSync(path.join(REPO_ROOT, file));
@@ -73,16 +73,17 @@ describe("the web search service's overlay", () => {
         }
     });
 
+    // Compose resolves the overlay's paths from docker/: `..` is the checkout.
     test("it binds this checkout's settings read-only where SearXNG reads them, and nothing else", () => {
         expect(volumes(searxng())).toEqual([
-            { type: "bind", source: `./${SETTINGS}`, target: "/etc/searxng/settings.yml", read_only: "true" },
+            { type: "bind", source: `../${SETTINGS}`, target: "/etc/searxng/settings.yml", read_only: "true" },
         ]);
     });
 
     test("its key comes from .secrets/searxng.env, which neither git nor the image holds", () => {
-        expect(scalars(searxng(), "env_file")).toEqual(["./.secrets/searxng.env"]);
+        expect(scalars(searxng(), "env_file")).toEqual(["../.secrets/searxng.env"]);
         expect(read(".gitignore")).toMatch(/^\/\.secrets\/$/m);
-        expect(read(".dockerignore")).toMatch(/^\/\.secrets\/$/m);
+        expect(read("docker/Dockerfile.dockerignore")).toMatch(/^\/\.secrets\/$/m);
     });
 
     test("no file in git sets its key", () => {

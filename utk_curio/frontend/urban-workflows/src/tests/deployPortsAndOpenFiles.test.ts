@@ -20,7 +20,7 @@ const OPEN_FILES = 65536;
 /** A port Docker publishes on 127.0.0.1 alone: the host port a number or a
  * variable with a number for its default, as stable writes it. */
 const LOOPBACK = /^127\.0\.0\.1:(?:\d+|\$\{[A-Z][A-Z0-9_]*:-\d+\}):\d+(?:\/(?:tcp|udp))?$/;
-const HEREDOC = /cat > docker-compose\.site\.yml <<'SITE'\n([\s\S]*?)\n *SITE\n/g;
+const HEREDOC = /cat > "\$site" <<'SITE'\n([\s\S]*?)\n *SITE\n/g;
 
 /** What a job's docker-compose.site.yml says of its curio service. */
 interface Site {
@@ -138,9 +138,9 @@ describe("Each hosted stack's ports and open files", () => {
         const written = job.search(HEREDOC);
         const exports = [...job.matchAll(/^ *export COMPOSE_FILE=(.*)$/gm)];
         expect(written).toBeGreaterThan(-1);
-        expect(exports[0]?.[1]).toBe("docker-compose.yml:docker-compose.deploy.yml");
+        expect(exports[0]?.[1]).toBe("$compose_dir/docker-compose.yml:$compose_dir/docker-compose.deploy.yml");
         const last = exports[exports.length - 1];
-        expect(last?.[1]).toBe("$COMPOSE_FILE:docker-compose.site.yml");
+        expect(last?.[1]).toBe("$COMPOSE_FILE:$site");
         expect(last?.index ?? -1).toBeGreaterThan(written);
     });
 });

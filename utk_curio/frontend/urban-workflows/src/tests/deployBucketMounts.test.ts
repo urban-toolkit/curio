@@ -15,7 +15,9 @@ import { flowFields, services, value, volumes } from "./_support/composeFile";
 import { read } from "./_support/workflowPaths";
 
 const WORKFLOW = ".github/workflows/deploy.yml";
-const OVERLAY = "docker-compose.bucket-mounts.yml";
+const OVERLAY = "docker/docker-compose.bucket-mounts.yml";
+/** The overlay as each deploy job names it, in the folder its checkout keeps the compose files in. */
+const IN_DEPLOY = "$compose_dir/docker-compose.bucket-mounts.yml";
 const PROFILE = "scripts/bucket-mounts/curio-bucket-mounts.apparmor";
 const INSTALLED = "/etc/apparmor.d/curio-bucket-mounts";
 const MODULE = "utk_curio/backend/app/discovery/infrastructure/bucket_mounts.py";
@@ -95,7 +97,7 @@ describe("The deploy's bucket mount service", () => {
         // Each also names its backend processes, after the mounts.
         for (const [, , job] of STACKS) {
             const command = job.search(
-                /printf ' {4}command: \[[^\n]*"\$mounts_args" "\$processes_args" >> docker-compose\.site\.yml\n/,
+                /printf ' {4}command: \[[^\n]*"\$mounts_args" "\$processes_args" >> "\$site"\n/,
             );
             expect(command).toBeGreaterThan(-1);
             expect(job.indexOf(`grep -q -e '"--bucket-mounts-dir"'`)).toBeLessThan(command);
@@ -107,15 +109,15 @@ describe("The deploy's bucket mount service", () => {
             const exports = [...job.matchAll(/^ *export COMPOSE_FILE=(\S+)$/gm)].map((match) => match[1]);
             // The web search overlay comes before it (deployWebSearch.test.ts).
             expect(exports).toEqual([
-                "docker-compose.yml:docker-compose.deploy.yml",
-                "$COMPOSE_FILE:docker-compose.searxng.yml",
-                "$COMPOSE_FILE:docker-compose.bucket-mounts.yml",
-                "$COMPOSE_FILE:docker-compose.site.yml",
+                "$compose_dir/docker-compose.yml:$compose_dir/docker-compose.deploy.yml",
+                "$COMPOSE_FILE:$compose_dir/docker-compose.searxng.yml",
+                `$COMPOSE_FILE:${IN_DEPLOY}`,
+                "$COMPOSE_FILE:$site",
             ]);
             expect(job).toMatch(
-                /^( +)if \[ -n "\$mounts_args" \]; then\n\1 {2}export COMPOSE_FILE=\$COMPOSE_FILE:docker-compose\.bucket-mounts\.yml\n\1fi\n\1export COMPOSE_FILE=\$COMPOSE_FILE:docker-compose\.site\.yml$/m,
+                /^( +)if \[ -n "\$mounts_args" \]; then\n\1 {2}export COMPOSE_FILE=\$COMPOSE_FILE:\$compose_dir\/docker-compose\.bucket-mounts\.yml\n\1fi\n\1export COMPOSE_FILE=\$COMPOSE_FILE:\$site$/m,
             );
-            expect(job.indexOf("export COMPOSE_FILE=$COMPOSE_FILE:docker-compose.site.yml")).toBeLessThan(
+            expect(job.indexOf("export COMPOSE_FILE=$COMPOSE_FILE:$site")).toBeLessThan(
                 once(job, `docker compose -p ${project} build --no-cache`),
             );
         }
@@ -132,7 +134,7 @@ describe("The deploy's bucket mount service", () => {
             const curio = /^( +)if \[ -n "\$mounts_args" \]; then\n\1 {2}curio_volumes="\$\{curio_volumes:\+\$curio_volumes, \}(\{[^"\n]*\})"\n\1fi$/m.exec(job);
             expect(curio).not.toBeNull();
             expect(flowFields(curio?.[2] ?? "")).toEqual({ ...curioBind, source: "$mounts_dir" });
-            const service = /^( +)if \[ -n "\$mounts_args" \]; then\n\1 {2}printf ' {2}bucket-mounts:\\n {4}volumes: \[(\{[^\]\n]*\})\]\\n' "\$mounts_dir" >> docker-compose\.site\.yml\n\1fi$/m.exec(job);
+            const service = /^( +)if \[ -n "\$mounts_args" \]; then\n\1 {2}printf ' {2}bucket-mounts:\\n {4}volumes: \[(\{[^\]\n]*\})\]\\n' "\$mounts_dir" >> "\$site"\n\1fi$/m.exec(job);
             expect(service).not.toBeNull();
             expect(flowFields(service?.[2] ?? "")).toEqual({ ...serviceBind, source: "%s" });
         }
@@ -145,11 +147,13 @@ describe("The deploy's bucket mount service", () => {
         for (const [, , job] of STACKS) {
             const order = [
                 job.search(/printf ' {4}command: \[/),
-                once(job, `printf '    volumes: [%s]\\n' "$curio_volumes" >> docker-compose.site.yml`),
-                once(job, "printf '    secrets: [curio_llm_endpoint]\\n' >> docker-compose.site.yml"),
+                once(job, `printf '    volumes: [%s]\\n' "$curio_volumes" >> "$site"`),
+                once(job, `printf '    secrets: [curio_llm_endpoint]\\n' >> "$site"`),
                 once(job, "printf '  bucket-mounts:\\n"),
-                once(job, "printf 'secrets:\\n  curio_llm_endpoint:\\n    file: ./.secrets/llm-endpoint\\n' >> docker-compose.site.yml"),
-                once(job, "export COMPOSE_FILE=$COMPOSE_FILE:docker-compose.site.yml"),
+                // The checkout's file by its absolute path, which reads right
+                // wherever the site file sits.
+                once(job, `printf 'secrets:\\n  curio_llm_endpoint:\\n    file: %s/.secrets/llm-endpoint\\n' "$PWD" >> "$site"`),
+                once(job, "export COMPOSE_FILE=$COMPOSE_FILE:$site"),
             ];
             expect(order[0]).toBeGreaterThan(-1);
             expect([...order].sort((a, b) => a - b)).toEqual(order);
@@ -177,7 +181,7 @@ describe("The deploy's bucket mount service", () => {
             expect(checks).toContain('srv_propagation="$(findmnt -n -o PROPAGATION -T /srv || true)"');
             expect(checks).toMatch(/case "\$srv_propagation" in\n +\*shared\*\)\n +;;\n +\*\)\n +echo "::error::[^\n]*Make it shared as root: sudo mount --make-shared \$\(findmnt -n -o TARGET -T \/srv\)"\n +exit 1\n/);
             expect(checks).toContain(fix);
-            expect(checks).toContain(`mounts_image="$(sed -n 's/^    image: //p' ${OVERLAY})"`);
+            expect(checks).toContain(`mounts_image="$(sed -n 's/^    image: //p' "${IN_DEPLOY}")"`);
             expect(checks).toContain(
                 'if ! docker image inspect "$mounts_image" > /dev/null 2>&1 && ! docker pull -q "$mounts_image" > /dev/null < /dev/null; then',
             );
@@ -209,7 +213,7 @@ describe("The deploy's bucket mount service", () => {
         for (const state of ["none", "pending", "passed", "unavailable"]) {
             expect(check).toContain(`{"state": "${state}"`);
         }
-        expect(read("docker-compose.deploy.yml")).toMatch(/^ {6}- --backend-port\n {6}- "5002"$/m);
+        expect(read("docker/docker-compose.deploy.yml")).toMatch(/^ {6}- --backend-port\n {6}- "5002"$/m);
         const program =
             "python -c 'import json, urllib.request; d = json.load(urllib.request.urlopen(\"http://127.0.0.1:5002/api/monitor\", timeout=10))[\"deployment\"]; " +
             'print(d["bucketMounts"] + (": " + d["bucketMountsProblem"] if d["bucketMountsProblem"] else ""))\' \\';

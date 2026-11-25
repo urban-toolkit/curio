@@ -9,5 +9,5 @@
 import { read } from "./_support/workflowPaths";
 
 test("the deployed container runs an init that reaps what it inherits", () => {
-    expect(read("docker-compose.deploy.yml")).toMatch(/^ {4}init: true$/m);
+    expect(read("docker/docker-compose.deploy.yml")).toMatch(/^ {4}init: true$/m);
 });

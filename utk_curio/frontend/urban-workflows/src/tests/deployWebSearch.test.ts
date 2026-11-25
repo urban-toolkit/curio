@@ -22,7 +22,9 @@ import { REPO_ROOT, read } from "./_support/workflowPaths";
 
 const WORKFLOW = ".github/workflows/deploy.yml";
 const BUILD = ".github/workflows/docker-compose.yml";
-const OVERLAY = "docker-compose.searxng.yml";
+const OVERLAY = "docker/docker-compose.searxng.yml";
+/** The overlay as each deploy job names it, in the folder its checkout keeps the compose files in. */
+const IN_DEPLOY = "$compose_dir/docker-compose.searxng.yml";
 const CHECK = "scripts/searxng/check.py";
 const KEY_FILE = ".secrets/searxng.env";
 /** The URL each stack gives Curio's --agent-search-url. */
@@ -98,7 +100,7 @@ describe("The deploy's web search", () => {
                 expect.stringMatching(new RegExp(`^ +search_url='${escape(SEARCH_URL)}'$`)),
             ]);
             const unset = once(job, 'search_args=""');
-            const guard = once(job, "if [ -f docker-compose.searxng.yml ]; then");
+            const guard = once(job, `if [ -f "${IN_DEPLOY}" ]; then`);
             expect(unset).toBeLessThan(guard);
             expect(guard).toBeLessThan(once(job, args));
         }
@@ -106,7 +108,8 @@ describe("The deploy's web search", () => {
 
     test("each stack's key is made once, owner-only, before any docker compose command reads it, and nothing prints it", () => {
         expect(exists(OVERLAY)).toBe(true);
-        expect(scalars(services(OVERLAY).get("searxng") ?? [], "env_file")).toEqual([`./${KEY_FILE}`]);
+        // From docker/, where Compose resolves the overlay's paths: the checkout's key file.
+        expect(scalars(services(OVERLAY).get("searxng") ?? [], "env_file")).toEqual([`../${KEY_FILE}`]);
         const make = [
             `if [ ! -s ${KEY_FILE} ]; then`,
             "(",
@@ -123,7 +126,7 @@ describe("The deploy's web search", () => {
             expect(first).toBeGreaterThan(-1);
             expect(lines.slice(first, first + make.length)).toEqual(make);
             const made = once(job, make[0]);
-            expect(once(job, "if [ -f docker-compose.searxng.yml ]; then")).toBeLessThan(made);
+            expect(once(job, `if [ -f "${IN_DEPLOY}" ]; then`)).toBeLessThan(made);
             // Compose reads the overlay's env_file for every command, the build and `down` among them.
             expect(made).toBeLessThan(once(job, `docker compose -p ${project} build --no-cache`));
             expect(made).toBeLessThan(once(job, `docker compose -p ${project} down`));
@@ -144,7 +147,7 @@ describe("The deploy's web search", () => {
                 job,
                 'if ! docker image inspect "$search_image" > /dev/null 2>&1 && ! docker pull -q "$search_image" > /dev/null < /dev/null; then\n',
             );
-            expect(once(job, `search_image="$(sed -n 's/^    image: //p' ${OVERLAY})"`)).toBeLessThan(pull);
+            expect(once(job, `search_image="$(sed -n 's/^    image: //p' "${IN_DEPLOY}")"`)).toBeLessThan(pull);
             expect(pull).toBeLessThan(once(job, `docker compose -p ${project} down`));
             const after = job.slice(pull).split("\n").slice(1, 3).map((line) => line.trim());
             expect(after).toEqual([`echo "::error::could not pull $search_image, the web search service's image"`, "exit 1"]);
@@ -153,7 +156,7 @@ describe("The deploy's web search", () => {
 
     test("each stack's command line passes the URL, after setting it", () => {
         for (const [, , job] of STACKS) {
-            const command = job.search(/printf ' {4}command: \[[^\n]* "\$llm_args" "\$search_args" [^\n]*>> docker-compose\.site\.yml\n/);
+            const command = job.search(/printf ' {4}command: \[[^\n]* "\$llm_args" "\$search_args" [^\n]*>> "\$site"\n/);
             expect(command).toBeGreaterThan(-1);
             expect(job.indexOf('search_args=", \\"--agent-search-url\\"')).toBeLessThan(command);
         }
@@ -162,11 +165,11 @@ describe("The deploy's web search", () => {
     test("COMPOSE_FILE takes the overlay after the deploy's and before the site file, only when the stack runs it", () => {
         for (const [, project, job] of STACKS) {
             expect(job).toMatch(
-                /^( +)if \[ -n "\$search_args" \]; then\n\1 {2}export COMPOSE_FILE=\$COMPOSE_FILE:docker-compose\.searxng\.yml\n\1fi$/m,
+                /^( +)if \[ -n "\$search_args" \]; then\n\1 {2}export COMPOSE_FILE=\$COMPOSE_FILE:\$compose_dir\/docker-compose\.searxng\.yml\n\1fi$/m,
             );
-            const added = once(job, "export COMPOSE_FILE=$COMPOSE_FILE:docker-compose.searxng.yml");
-            expect(once(job, "export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml")).toBeLessThan(added);
-            expect(added).toBeLessThan(once(job, "export COMPOSE_FILE=$COMPOSE_FILE:docker-compose.site.yml"));
+            const added = once(job, `export COMPOSE_FILE=$COMPOSE_FILE:${IN_DEPLOY}`);
+            expect(once(job, "export COMPOSE_FILE=$compose_dir/docker-compose.yml:$compose_dir/docker-compose.deploy.yml")).toBeLessThan(added);
+            expect(added).toBeLessThan(once(job, "export COMPOSE_FILE=$COMPOSE_FILE:$site"));
             expect(added).toBeLessThan(once(job, `docker compose -p ${project} build --no-cache`));
         }
     });
@@ -262,13 +265,13 @@ describe("The deploy's web search", () => {
     test("the Full stack build asks the same URL through the same check, from a container on the service's network", () => {
         const build = read(BUILD);
         const job = build.slice(build.search(/^ {2}bucket-mounts:$/m), build.search(/^ {2}test-desktop-stress:$/m));
-        expect(job).toMatch(/^ {10}COMPOSE_FILE: docker-compose\.searxng\.yml$/m);
+        expect(job).toMatch(/^ {10}COMPOSE_FILE: docker\/docker-compose\.searxng\.yml$/m);
         expect(job).toMatch(/^ {10}COMPOSE_PROJECT_NAME: curio-ci-searxng$/m);
         expect(job).toContain("docker compose up -d --wait --wait-timeout 120");
         expect(job).toContain(
             `docker run --rm --network curio-ci-searxng_default -v "$PWD/scripts/searxng:/check:ro" python:3.12-alpine`,
         );
         expect(job).toContain(`python /check/check.py '${SEARCH_URL}'`);
-        expect(job).toContain("docker compose -p curio-ci-searxng -f docker-compose.searxng.yml down -v --remove-orphans || true");
+        expect(job).toContain(`docker compose -p curio-ci-searxng -f ${OVERLAY} down -v --remove-orphans || true`);
     });
 });
