@@ -7,7 +7,7 @@ import re
 
 from playwright.sync_api import expect
 
-from ..utils import require_owner_view, wait_for_projects_page
+from ..utils import require_owner_view, wait_for_changes_kept, wait_for_projects_page
 from .framework import Ctx, walkthrough
 
 
@@ -483,8 +483,17 @@ def dataflow_goal_is_readable(ctx: Ctx) -> None:
         ctx.beat(200)
         _goal_line_reads_whole(line, width)
     page.set_viewport_size(viewport)
-    # The scene's last frame, the long goal cut short, at rest too.
-    line.get_by_role("button", name="Edit the goal").blur()
+
+    # Saved with the dataflow: once the server has this tab's changes, a
+    # reload shows the goal on the line. A goal kept only in the tab came back
+    # empty, though the top bar said Saved (the dev check of 11-25).
+    wait_for_changes_kept(page)
+    page.reload()
+    require_owner_view(page)
+    expect(chip).to_be_visible(timeout=30000)
+    ctx.click(chip)
+    expect(line.get_by_text(LONG_GOAL, exact=True)).to_be_visible(timeout=30000)
+    # The scene's last frame: the long goal cut short, at rest.
     ctx.beat(200)
 
     ctx.say("Named, and readable end to end",
