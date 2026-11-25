@@ -463,6 +463,11 @@ def dataflow_goal_is_readable(ctx: Ctx) -> None:
     expect(line.get_by_text("Find heat islands in Chicago", exact=True)).to_be_visible()
     # Nothing was sent: the conversation is as empty as it was.
     expect(page.get_by_text("Ask this agent something to get started.")).to_be_visible()
+    # Enter hands the focus back to the Edit button, with its keyboard focus
+    # ring; the frames show the line at rest.
+    edit = line.get_by_role("button", name="Edit the goal")
+    expect(edit).to_be_focused()
+    edit.blur()
     ctx.beat(300)
     ctx.capture("goal-filled")
 
@@ -478,6 +483,8 @@ def dataflow_goal_is_readable(ctx: Ctx) -> None:
         ctx.beat(200)
         _goal_line_reads_whole(line, width)
     page.set_viewport_size(viewport)
+    # The scene's last frame, the long goal cut short, at rest too.
+    line.get_by_role("button", name="Edit the goal").blur()
     ctx.beat(200)
 
     ctx.say("Named, and readable end to end",
