@@ -6,12 +6,14 @@
  * URL. The service's key is made once, owner-only, in the checkout's
  * .secrets/searxng.env, before the first docker compose command reads it, and
  * no line prints it; its image is pulled while the old stack still serves.
- * Once the stack is up, each job fails unless Curio has the URL and, from
- * Curio's container, the URL answers with JSON that holds a results list, in
- * no more than the 256 KiB web.search reads (scripts/searxng/check.py); no
- * results only warns. The Full stack build's bucket-mounts job asks the same
- * URL through the same check. The files are read as text, as
- * deployBucketMounts.test.ts reads them.
+ * Once the stack is up, each job fails unless /monitor says Curio has the URL
+ * and, where the deployed checkout's /monitor writes searchProvider, names
+ * the URL's host and port as that provider, the one web.search asks, and,
+ * from Curio's container, the URL answers with JSON that holds a results
+ * list, in no more than the 256 KiB web.search reads
+ * (scripts/searxng/check.py); no results only warns. The Full stack build's
+ * bucket-mounts job asks the same URL through the same check. The files are
+ * read as text, as deployBucketMounts.test.ts reads them.
  */
 import * as fs from "fs";
 import * as path from "path";
@@ -25,6 +27,25 @@ const CHECK = "scripts/searxng/check.py";
 const KEY_FILE = ".secrets/searxng.env";
 /** The URL each stack gives Curio's --agent-search-url. */
 const SEARCH_URL = "http://searxng:8080/search?q={q}&format=json";
+/** Where /monitor writes its deployment fields, searchProvider among them. */
+const ROUTES = "utk_curio/backend/app/monitor/routes.py";
+/** routes.py's line that writes searchProvider: the host and port web.search asks. */
+const PROVIDER_LINE = '"searchProvider": agents_service.search_provider(),';
+/**
+ * What each check requires /monitor to read, by whether the deployed
+ * checkout's /monitor writes searchProvider: True and the URL's host and
+ * port, else True None, what a /monitor without the field reads (d.get).
+ * True in both, so Curio must have the URL either way. The OK line says which.
+ */
+const GUARD = [
+    `if grep -q -e '"searchProvider":' ${ROUTES}; then`,
+    'search_expected="True $search_host"',
+    `search_ok="Curio's agents search $search_host"`,
+    "else",
+    'search_expected="True None"',
+    `search_ok="Curio has its search URL (this release's /monitor names no search provider)"`,
+    "fi",
+];
 
 const text = read(WORKFLOW);
 const jobs = text.split(/^ {2}deploy-(?:dev|stable):$/m).slice(1);
@@ -150,31 +171,78 @@ describe("The deploy's web search", () => {
         }
     });
 
-    test("once the stack is up, each job fails unless Curio has the URL and it answers from Curio's container with JSON", () => {
+    test("once the stack is up, each job fails unless /monitor has the URL, naming its host and port where the checkout writes searchProvider, and the URL answers from Curio's container with JSON", () => {
         expect(exists(CHECK)).toBe(true);
         const script = read(CHECK);
         expect(script).toContain('line = f"results: {len(results)}, {_size(len(body))}"');
         expect(script).toContain("return 0 if ok else 1");
+        const routes = read(ROUTES);
         // What /monitor's searchToolConfigured reads: the variable --agent-search-url sets.
-        expect(read("utk_curio/backend/app/monitor/routes.py")).toContain(
+        expect(routes).toContain(
             '"searchToolConfigured": bool(os.environ.get("CURIO_SEARCH_URL", "").strip()),',
         );
+        // And what its searchProvider reads: the host and port web.search asks.
+        expect(routes).toContain(PROVIDER_LINE);
+        // The host and port each job derives from the URL, as its shell does
+        // (${search_url#*://}, then ${search_host%%/*}), are the URL's.
+        const afterScheme = SEARCH_URL.slice(SEARCH_URL.indexOf("://") + 3);
+        const host = afterScheme.split("/")[0];
+        expect(host).toBe(new URL(SEARCH_URL.replace("{q}", "query")).host);
+        expect(host).toBe("searxng:8080");
         for (const [, project, job] of STACKS) {
             const wait = checks(job);
             const at = job.indexOf(wait);
             expect(once(job, `docker compose -p ${project} up -d --force-recreate --remove-orphans`)).toBeLessThan(at);
             expect(once(job, 'echo "=== waiting for health ==="')).toBeLessThan(at);
             expect(at).toBeLessThan(once(job, 'echo "=== docker ps (post-deploy) ==="'));
+            expect(wait).toMatch(
+                /^ +echo "=== web search ==="\n(?: +#[^\n]*\n)* +search_host="\$\{search_url#\*:\/\/\}"\n +search_host="\$\{search_host%%\/\*\}"\n +if grep -q -e /m,
+            );
+            // Then what /monitor must read, picked by the deployed checkout, then the wait.
+            const lines = wait.split("\n").map((line) => line.trim());
+            const derived = lines.indexOf('search_host="${search_host%%/*}"');
+            expect(derived).toBeGreaterThan(-1);
+            expect(lines.slice(derived + 1, derived + 2 + GUARD.length)).toEqual([...GUARD, "deadline=$((SECONDS + 120))"]);
+            // Set there alone: nothing later in the job changes what /monitor must read.
+            expect(job.match(/\bsearch_expected=/g)).toHaveLength(2);
+            expect(job.match(/\bsearch_ok=/g)).toHaveLength(2);
             expect(wait).toContain(`docker compose -p ${project} exec -T curio \\\n`);
-            expect(wait).toContain('["deployment"]["searchToolConfigured"]');
+            expect(wait).toContain('["deployment"]; print(d["searchToolConfigured"], d.get("searchProvider"))');
+            // A /monitor without searchProvider reads None, never a KeyError that prints nothing.
+            expect(wait).not.toContain('d["searchProvider"]');
             expect(wait).toContain(`python ${CHECK} "$search_url" 2>&1 < /dev/null)" \\\n`);
-            expect(wait).toContain('&& [ "$search_flag" = "True" ]; then\n');
+            expect(wait).toContain('&& [ "$search_monitor" = "$search_expected" ]; then\n');
             // No results anywhere in what the check printed: a Compose warning can come first.
             expect(wait).toMatch(/^ +\*"results: 0,"\*\)\n +echo "::warning::[^\n]*"\n/m);
+            // The OK line says what /monitor read.
+            expect(wait).toContain(`echo "OK: $search_ok, and the web search service answers Curio's search URL, $search_line"\n`);
             expect(wait).toMatch(/if \[ "\$SECONDS" -ge "\$deadline" \]; then\n +echo "::error::[^\n]*"\n/);
+            // The error names what /monitor read, and what it had to read.
+            expect(wait).toMatch(/\n +echo "::error::[^\n]*\$\{search_monitor:-nothing\}, not \$search_expected,[^\n]*"\n/);
             expect(wait).toContain(`docker compose -p ${project} logs --no-color --tail=100 searxng || true\n`);
             expect(wait.match(/^ +exit 1$/gm)).toHaveLength(1);
             expect(wait).toMatch(/^ +sleep 5\n +done$/m);
+        }
+        // Dev and stable check alike: one text but for the Compose project.
+        expect(checks(STACKS[0][2]).split("-p curio-dev ").join("-p curio ")).toBe(checks(STACKS[1][2]));
+    });
+
+    test("each check's guard finds routes.py's line that writes searchProvider, and no other, so a deploy of this checkout names the provider", () => {
+        for (const [, , job] of STACKS) {
+            // The pattern and file the job's guard greps, read from the job.
+            const guard = /^ +if grep -q -e '([^']+)' (\S+); then$/m.exec(checks(job));
+            expect(guard).not.toBeNull();
+            const pattern = guard?.[1] ?? "";
+            const file = guard?.[2] ?? "";
+            expect(file).toBe(ROUTES);
+            // grep matches it as written: none of its characters is special
+            // in a basic regular expression.
+            expect(pattern).toMatch(/^[A-Za-z":]+$/);
+            // Only the line that writes the field, so a deploy of this
+            // checkout, or of a later one, requires True and the URL's host
+            // and port, and a field that moves or is renamed fails here.
+            const found = read(file).split("\n").filter((line) => line.includes(pattern));
+            expect(found.map((line) => line.trim())).toEqual([PROVIDER_LINE]);
         }
     });
 

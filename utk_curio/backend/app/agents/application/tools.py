@@ -1753,7 +1753,6 @@ def _execute_web_search(params: dict) -> tuple[str, str]:
     Results flow through the egress policy either way; the provider host is
     trusted because configuration (or this module's default) named it, never
     because a model asked for it."""
-    import os
     from urllib.parse import quote
 
     from utk_curio.backend.app.agents.infrastructure import egress
@@ -1761,7 +1760,7 @@ def _execute_web_search(params: dict) -> tuple[str, str]:
     query = params.get("q")
     if not isinstance(query, str) or not query.strip():
         return "error", agent_text.message("tools.query-required")
-    template = os.environ.get("CURIO_SEARCH_URL") or DEFAULT_SEARCH_URL
+    template = search_url()
     if "{q}" not in template:
         return "error", agent_text.message("tools.search-not-configured", q="{q}")
     try:
@@ -1813,6 +1812,38 @@ def _execute_web_search(params: dict) -> tuple[str, str]:
 #: Google Programmable Search) sets ``CURIO_SEARCH_URL`` or
 #: ``--agent-search-url``.
 DEFAULT_SEARCH_URL = "https://api.duckduckgo.com/?q={q}&format=json&no_html=1"
+
+
+def search_url() -> str:
+    """The URL template ``web.search`` asks: ``CURIO_SEARCH_URL``, which
+    ``--agent-search-url`` sets, else :data:`DEFAULT_SEARCH_URL`."""
+    import os
+
+    return os.environ.get("CURIO_SEARCH_URL") or DEFAULT_SEARCH_URL
+
+
+def search_provider() -> str | None:
+    """The host of the URL ``web.search`` asks, with ``:port`` when the URL
+    names one, as ``/api/monitor`` names it: nothing else of the URL, which
+    can carry a provider's key. None when ``web.search`` can ask no URL: one
+    with no ``{q}``, no host, or a port that is not a number."""
+    from utk_curio.backend.app.agents.infrastructure import egress
+
+    template = search_url()
+    if "{q}" not in template:
+        return None
+    try:
+        provider = egress.trusted_host_of(template)
+    except ValueError:
+        # urllib reads the port only when asked, and raises on one that is
+        # not a number; web.search then fails as its provider failing.
+        return None
+    if provider is None:
+        return None
+    host, port = provider
+    if ":" in host:
+        host = f"[{host}]"
+    return host if port is None else f"{host}:{port}"
 
 
 def _search_rows_of(payload) -> list | None:

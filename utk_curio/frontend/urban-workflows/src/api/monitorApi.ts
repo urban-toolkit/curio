@@ -9,9 +9,10 @@
  * session cookie happens to exist is harmless on a public route.
  *
  * The five aggregate payloads carry no identifiers by design, the LLM one
- * naming only this Curio's own models, and the usage and open-files ones only
- * the versions of Curio its deploys started; the error log deliberately does
- * name things. See `utk_curio/backend/app/monitor/errors.py`,
+ * naming only this Curio's own models, the usage and open-files ones only
+ * the versions of Curio its deploys started, and the monitor's own only the
+ * host and port of the search provider the agents ask; the error log
+ * deliberately does name things. See `utk_curio/backend/app/monitor/errors.py`,
  * `llm_performance.py` and `usage.py`.
  */
 import { apiFetch } from "../utils/authApi";
@@ -37,6 +38,12 @@ export interface MonitorDeployment {
   saveNodeOutputDefault: boolean;
   llmProviderConfigured: boolean;
   searchToolConfigured: boolean;
+  /**
+   * The host, and the port when the URL names one, of the search provider
+   * the agents' web.search asks (`searxng:8080`, `api.duckduckgo.com`), and
+   * nothing else of its URL; null when its URL cannot be asked.
+   */
+  searchProvider: string | null;
   /**
    * The bucket mount service's self-test (docker-compose.bucket-mounts.yml):
    * `none` when this deployment names no service.

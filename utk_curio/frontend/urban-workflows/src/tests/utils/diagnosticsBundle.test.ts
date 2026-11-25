@@ -43,6 +43,7 @@ function monitor(): MonitorPayload {
       saveNodeOutputDefault: false,
       llmProviderConfigured: true,
       searchToolConfigured: false,
+      searchProvider: "api.duckduckgo.com",
       bucketMounts: "none",
       bucketMountsProblem: null,
       env: "prod",

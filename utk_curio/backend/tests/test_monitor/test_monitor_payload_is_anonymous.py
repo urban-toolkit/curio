@@ -32,6 +32,8 @@ EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 ISO_Z = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 # A host name with a top-level domain, as a model name never needs one.
 HOST = re.compile(r"\b(?:[a-z0-9-]+\.)+[a-z]{2,24}\b", re.I)
+# A host, or an IPv6 address in brackets, and a port: all a search URL may give.
+HOST_AND_PORT = re.compile(r"(?:[a-z0-9_-]+(?:\.[a-z0-9_-]+)*|\[[0-9a-f:.]+\])(?::\d{1,5})?")
 
 # Every string an aggregate payload is allowed to contain, beyond a timestamp.
 # Closed vocabularies only: if a value cannot be enumerated here, it does not
@@ -122,6 +124,12 @@ def test_every_string_leaf_is_a_timestamp_or_a_known_token(client, seeded):
     # field means editing this list on purpose rather than it slipping through.
     deployment = body["deployment"]
     cpu = body["hardware"]["cpu"]
+    # The search provider the agents ask, which the operator's configuration
+    # or web.search's default names, never a person: popped by name, and held
+    # to a host and port, nothing else of its URL (test_monitor_payload_shape.py
+    # puts a key in the URL).
+    search_provider = deployment.pop("searchProvider")
+    assert search_provider is None or HOST_AND_PORT.fullmatch(search_provider), search_provider
     exempt = {
         deployment.pop("version"),
         deployment.pop("platform"),
