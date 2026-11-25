@@ -1838,7 +1838,7 @@ class TestSessionExtending:
             s.tour.click(badge)
             panel = page.get_by_role("dialog", name=re.compile(r"^Chat with "))
             expect(panel).to_be_visible(timeout=25000)
-            composer = panel.get_by_label("Message this agent")
+            composer = panel.get_by_label(re.compile(r"^Message "))
             s.tour.type_into(
                 composer, "What does this node compute, in one sentence?", delay=25
             )

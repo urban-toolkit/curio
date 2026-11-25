@@ -12,7 +12,7 @@ import { UserContext } from "../../providers/UserProvider";
 import type { UserData } from "../../utils/authApi";
 import type { AgentRemedy } from "../../services/agents";
 import { AddKeyAction } from "../../components/connectionKeys/AddKeyAction";
-import { SolveFeedback } from "../../components/agents/attach/builderStrip/SolveFeedback";
+import { SolveFeedback, SolveRemedies } from "../../components/agents/attach/builderStrip/SolveFeedback";
 import { CredentialHint } from "../../components/editing/CredentialHint";
 import { subscribeApiSettingsRequests } from "../../components/apiSettings/apiSettingsRequest";
 
@@ -83,10 +83,13 @@ describe("Add key for <host>", () => {
     expect(addKey()).toBeNull();
   });
 
-  it("is not offered to a hosted guest in the Solve strip, which shows no empty key group", () => {
+  it("is not offered to a hosted guest under the plan line, which shows no empty key group", () => {
     renderAs(
       HOSTED_GUEST,
-      <SolveFeedback reasons={["needs a key"]} notices={[]} remedies={[MISSING_KEY]} selectionRemedies={[]} />,
+      <>
+        <SolveFeedback reasons={["needs a key"]} notices={[]} />
+        <SolveRemedies remedies={[MISSING_KEY]} selectionRemedies={[]} />
+      </>,
     );
     expect(screen.getByText("needs a key")).toBeInTheDocument();
     expect(addKey()).toBeNull();
@@ -111,11 +114,8 @@ describe("Add key for <host>", () => {
   it.each([
     ["the local guest", LOCAL_GUEST],
     ["a signed-in user", SIGNED_IN_USER],
-  ])("is offered to %s in the Solve strip", (_who, value) => {
-    renderAs(
-      value,
-      <SolveFeedback reasons={[]} notices={[]} remedies={[MISSING_KEY]} selectionRemedies={[]} />,
-    );
+  ])("is offered to %s under the plan line", (_who, value) => {
+    renderAs(value, <SolveRemedies remedies={[MISSING_KEY]} selectionRemedies={[]} />);
     expect(screen.getByRole("group", { name: "Missing connection keys" })).toContainElement(addKey());
   });
 

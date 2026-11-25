@@ -49,6 +49,7 @@ from ..utils import (
     frame_nodes,
     keep_drawing,
     leave_agent_badge,
+    open_plan_more,
     node_locator,
     open_in_project_tab,
     open_scenario_details,
@@ -392,7 +393,7 @@ def _open_chat(ctx: Ctx, agent):
 def _send(ctx: Ctx, panel, message: str, *, shown: int | None = None) -> None:
     """Type *message* and send it. With *shown*, the clip shows its first
     *shown* characters typed and cuts to the whole of it."""
-    field = panel.get_by_role("textbox", name="Message this agent")
+    field = panel.get_by_role("textbox", name=re.compile(r"^Message "))
     if shown is None:
         ctx.narrator.type_into(field, message)
     else:
@@ -482,6 +483,8 @@ def _solve(ctx: Ctx, agent, panel, token: str, project_id: str, titles: list[str
         if ended and solved and not empty:
             break
         if (ended and not solved) or time.time() >= deadline:
+            # The list is in the plan line's more part, closed until asked for.
+            open_plan_more(panel, wait=False)
             progress = panel.get_by_label("Plan node progress")
             said = progress.first.inner_text() if progress.count() else "no progress list"
             when = "ended" if ended else f"was still solving after {SOLVE_S:.0f} s"

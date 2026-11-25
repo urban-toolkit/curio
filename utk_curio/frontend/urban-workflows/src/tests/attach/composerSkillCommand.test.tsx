@@ -34,6 +34,7 @@ function Harness({ loadSkills, onSend }: { loadSkills?: () => Promise<RunSkill[]
   const ref = React.useRef<HTMLTextAreaElement | null>(null);
   return (
     <Composer
+      agentName="Node Builder"
       value={value}
       onChange={setValue}
       onSend={() => onSend(value)}
@@ -44,7 +45,7 @@ function Harness({ loadSkills, onSend }: { loadSkills?: () => Promise<RunSkill[]
   );
 }
 
-const box = () => screen.getByRole("textbox", { name: "Message this agent" }) as HTMLTextAreaElement;
+const box = () => screen.getByRole("textbox", { name: "Message Node Builder" }) as HTMLTextAreaElement;
 const type = (text: string) => fireEvent.change(box(), { target: { value: text } });
 const options = () =>
   within(screen.getByRole("listbox", { name: "Skills" }))

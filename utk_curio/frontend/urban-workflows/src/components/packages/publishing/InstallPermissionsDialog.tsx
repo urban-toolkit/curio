@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useId } from "react";
 import type { PackagePayload, ResolveConflict } from "../../../services/packages";
 import { describePackagePermission } from "../../../utils/packagePermissions";
+import ModalShell from "../../ModalShell";
 import styles from "./InstallPermissionsDialog.module.css";
 
 export interface InstallPermissionsDialogProps {
@@ -26,7 +27,35 @@ export interface InstallPermissionsDialogProps {
   waitingForDataflow?: boolean;
 }
 
-export const InstallPermissionsDialog: React.FC<InstallPermissionsDialogProps> = ({
+/** The review over the page, on its own backdrop: the Node Catalog drawer's,
+ *  the /catalog/nodes page's and an editor's request's. */
+export const InstallPermissionsDialog: React.FC<InstallPermissionsDialogProps> = (props) => (
+  <div className={styles.backdrop} role="dialog" aria-modal="true">
+    <InstallPermissionsReview {...props} />
+  </div>
+);
+
+/**
+ * The same review through ModalShell, for a surface that slides on a transform
+ * (the agent chat panel): ModalShell draws it on `document.body`, where a fixed
+ * box covers the page rather than the panel, and holds the modal stack, so
+ * Escape answers the review (as Cancel) and not the surface under it. A busy
+ * review keeps Escape and the backdrop inert, as its Cancel is.
+ */
+export const InstallPermissionsModal: React.FC<
+  InstallPermissionsDialogProps & { layer?: "default" | "overlay" }
+> = ({ layer = "default", ...props }) => {
+  const titleId = useId();
+  return (
+    <ModalShell onClose={props.busy ? () => undefined : props.onCancel} titleId={titleId} layer={layer}>
+      <InstallPermissionsReview {...props} titleId={titleId} inShell />
+    </ModalShell>
+  );
+};
+
+const InstallPermissionsReview: React.FC<
+  InstallPermissionsDialogProps & { titleId?: string; inShell?: boolean }
+> = ({
   pkg,
   conflicts,
   busy,
@@ -35,6 +64,8 @@ export const InstallPermissionsDialog: React.FC<InstallPermissionsDialogProps> =
   confirmLabel = "Add to project",
   busyLabel = "Adding…",
   waitingForDataflow = false,
+  titleId,
+  inShell = false,
 }) => {
   const hasConflicts = conflicts.length > 0;
   // The packages it names in `dependencies.packages` are added with it.
@@ -43,10 +74,10 @@ export const InstallPermissionsDialog: React.FC<InstallPermissionsDialogProps> =
   const jsDeps = Object.entries(pkg.dependencies.js);
 
   return (
-    <div className={styles.backdrop} role="dialog" aria-modal="true">
-      {/* A stable hook for e2e captures: the module class is hashed. */}
-      <div className={styles.modal} data-curio-add-review="true">
-        <h2 className={styles.title}>Add &quot;{pkg.name}&quot;</h2>
+    // A stable hook for e2e captures: the module class is hashed. In a
+    // ModalShell the shell is the card, so the review draws none of its own.
+    <div className={inShell ? styles.inShell : styles.modal} data-curio-add-review="true">
+        <h2 id={titleId} className={styles.title}>Add &quot;{pkg.name}&quot;</h2>
         <p className={styles.subtitle}>
           {pkg.publisher} · v{pkg.version}
         </p>
@@ -146,7 +177,6 @@ export const InstallPermissionsDialog: React.FC<InstallPermissionsDialogProps> =
             {busy ? busyLabel : confirmLabel}
           </button>
         </div>
-      </div>
     </div>
   );
 };

@@ -182,6 +182,8 @@
   gap: 6px;
 }
 
+/* A row's head: its title and node type give way, cut short on one line; its
+   chip, its Solve and its Run keep their words whole. */
 .planNodeHead {
   display: flex;
   align-items: center;
@@ -189,17 +191,49 @@
 }
 
 .planNodeTitle {
+  flex: 0 1 auto;
+  min-width: 0;
   font-weight: 600;
   font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .planNodeType {
   color: var(--curio-text-secondary);
   font-size: 0.75rem;
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.planNodeHead > .apply,
+.planNodeHead > .run,
+.planNodeHead > .planNodeCreated,
+.planNodeHead > .planEdgeRefused {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* A row's Run, beside its Solve: the builder strip's Run, on the card's own
+   ground. */
+.run {
+  border: 1px solid var(--curio-success-bg);
+  border-radius: 8px;
+  padding: 5px 15px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--curio-success-text);
+  background: var(--curio-card-bg);
+  cursor: pointer;
+}
+
+.run:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .planNodeCreated {

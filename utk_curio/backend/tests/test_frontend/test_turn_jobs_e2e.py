@@ -18,6 +18,7 @@ attachment; Ben's second reply is held at the model until the test lets it go.
 
 from __future__ import annotations
 
+import re
 import time
 from typing import TYPE_CHECKING
 
@@ -140,7 +141,7 @@ def _open_chat(page):
 
 
 def _send(panel, message: str) -> None:
-    panel.get_by_role("textbox", name="Message this agent").fill(message)
+    panel.get_by_role("textbox", name=re.compile(r"^Message ")).fill(message)
     panel.get_by_role("button", name="Send", exact=True).click()
 
 

@@ -270,7 +270,7 @@ def _open_chat(page, spec):
 
 
 def _send(panel, message: str):
-    panel.get_by_role("textbox", name="Message this agent").fill(message)
+    panel.get_by_role("textbox", name=re.compile(r"^Message ")).fill(message)
     panel.get_by_role("button", name="Send", exact=True).click()
 
 
@@ -549,10 +549,11 @@ class TestNodeAttachedChatHeader:
         node_id = _mint_node_id(self.SPEC)
         panel = _open_chat(page, self.SPEC)
 
-        subtitle = panel.get_by_text(re.compile(r"^Attached to "))
-        expect(subtitle).to_be_visible(timeout=20000)
-        header = subtitle.inner_text().strip()
-        label = header[len("Attached to "):].strip()
+        # The header's one row says what the agent is on: "on <node>".
+        target = panel.locator('[data-curio-chat-header="true"] [data-curio-chat-target]')
+        expect(target).to_have_text(re.compile(r"^on \S"), timeout=20000)
+        header = target.inner_text().strip()
+        label = header[len("on "):].strip()
 
         # The id itself, not just a uuid shape: this fixture mints readable
         # node ids ("agent-e2e-code"), so a regex over 36-char uuids would pass
@@ -570,9 +571,54 @@ class TestNodeAttachedChatHeader:
         expect(node).to_contain_text(label, timeout=20000)
 
         # Diagnostic, not gone: support still has to be able to recover both.
-        tooltip = subtitle.get_attribute("data-tooltip") or ""
+        tooltip = target.get_attribute("data-tooltip") or ""
         assert node_id in tooltip, f"the node id left the tooltip too: {tooltip!r}"
         assert "session " in tooltip, f"the session id left the tooltip: {tooltip!r}"
+
+
+class TestEscapeOnMoreLeavesTheChatOpen:
+    """Escape on the header's More menu closes the menu, and the chat stays.
+
+    The menu listens for Escape on the document and the chat on the window, so
+    one Escape reaches both. A browser commits the menu's close before the
+    chat's listener runs, and the chat used to find nothing open over it and
+    close too. Only a real browser commits between listeners, so this is where
+    that shows; ``chatEscapeClosesOneLayer.test.tsx`` models it in Jest.
+    """
+
+    COORD = "agent.curio.dataflow-builder@1"
+
+    def test_escape_closes_more_and_the_chat_stays_open(self, agent_chat_session):
+        require_project_page()
+        require_user_auth()
+        spec = next((m for m in builtin.list_builtin_manifests() if m.dir_name == self.COORD), None)
+        assert spec is not None, f"no built-in agent {self.COORD}"
+        page = agent_chat_session["page"]
+        _open_dataflow_with_agent(
+            agent_chat_session, spec, project_name="Escape on More", replies=(),
+        )
+        panel = _open_chat(page, spec)
+
+        more = panel.locator('[data-curio-chat-header="true"]').get_by_role(
+            "button", name=re.compile(r"^More")
+        )
+        more.click()
+        menu = page.get_by_role("menu", name="Chat menu")
+        expect(menu).to_be_visible(timeout=10000)
+
+        page.keyboard.press("Escape")
+        expect(menu).to_have_count(0, timeout=10000)
+        expect(more).to_be_focused()
+        # A close of the chat would land a moment after the menu's: wait past
+        # it, and the chat is still open.
+        page.wait_for_timeout(1000)
+        chat = page.locator(CHAT_PANEL_SELECTOR)
+        expect(chat).to_have_count(1)
+        expect(chat).not_to_have_attribute("aria-hidden", "true")
+
+        # With the menu gone, the next Escape is the chat's.
+        page.keyboard.press("Escape")
+        expect(chat).to_have_count(0, timeout=10000)
 
 
 class TestNativeToolCall:

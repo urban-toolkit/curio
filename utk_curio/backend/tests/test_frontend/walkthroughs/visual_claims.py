@@ -461,8 +461,13 @@ def dataflow_goal_is_readable(ctx: Ctx) -> None:
     field.fill("Find heat islands in Chicago")
     field.press("Enter")
     expect(line.get_by_text("Find heat islands in Chicago", exact=True)).to_be_visible()
-    # Nothing was sent: the conversation is as empty as it was.
-    expect(page.get_by_text("Ask this agent something to get started.")).to_be_visible()
+    # Nothing was sent: the conversation is as empty as it was. The Dataflow
+    # Builder's empty conversation offers its planning templates, which go once
+    # the chat has a message, and the goal is in the chat once, on its line.
+    chat = page.get_by_role("dialog", name=re.compile(r"^Chat with "))
+    expect(chat.get_by_text("Ask for a dataflow, or start from one of these:")).to_be_visible()
+    expect(chat.get_by_role("group", name="Planning templates")).to_be_visible()
+    expect(chat.get_by_text("Find heat islands in Chicago", exact=True)).to_have_count(1)
     # Enter hands the focus back to the Edit button, with its keyboard focus
     # ring; the frames show the line at rest.
     edit = line.get_by_role("button", name="Edit the goal")

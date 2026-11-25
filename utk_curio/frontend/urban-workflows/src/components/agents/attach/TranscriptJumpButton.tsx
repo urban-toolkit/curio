@@ -7,9 +7,8 @@ import styles from "./TranscriptJumpButton.module.css";
  * Compact "Jump to latest" pill for chat transcripts (memo dev/75).
  *
  * Shown only while the user has scrolled away from the bottom (newer content
- * below the viewport). Renders as an absolute overlay centered above the
- * transcript's bottom edge — the parent supplies the positioning context
- * (a `position: relative` wrapper around the scroll container).
+ * below the viewport). The parent places it: the agent chat draws it centered
+ * in a row of its own between the transcript and the composer.
  */
 export const TranscriptJumpButton: React.FC<{
   visible: boolean;

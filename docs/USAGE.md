@@ -2536,9 +2536,19 @@ the dock at the top of the canvas.
 
 ### Working with an agent
 
-Click an agent to open its chat panel. From there you can rename the
-conversation, clear it, cycle through every attached agent with the ‹ › arrows,
-and edit the initial intent the agent starts from. A change an agent makes to
+Click an agent to open its chat panel, on the window's right under the top bar.
+Down its left side, the agents rail lists every agent on the dataflow by name,
+with what it is attached to under it, the open one marked and one at work with a
+dot: click one to open its chat, and hover it to see its conversation and what
+it is attached to. An agent attached to three nodes or more is one entry, which
+lists its nodes. The header names the conversation, as *Node Builder: Heat
+colors* once it has a title, which Curio gives it from your first message; on
+the rail, two of one agent on one place whose conversations read the same are
+numbered. The header also says what the agent is
+attached to: *on the canvas*, *on* a node, or *from* one node *to* another for a
+connection. Its **More** menu renames the conversation, clears it, and says how
+many tokens it used. You can also edit the initial intent the agent starts
+from. A change an agent makes to
 your dataflow (a node's code or settings, a new node, a plan) lands at once, for
 everyone on the dataflow, as your own edit does; it waits while someone else is
 working in the node it changes. A new node is dragged in from its tile in the
@@ -2551,8 +2561,9 @@ Each message runs on the server: close or reload the tab and the agent goes on,
 its reply in the chat when you come back. Everyone who edits the dataflow sees
 it as it runs. One message of a chat runs at a time: one you send while another
 runs waits its turn (*Waiting its turn*), and **Withdraw** takes it back before
-it starts. **Stop** stops the message that runs at its next step, keeping what
-it said and changed so far. A reply that reaches the output limit (4,096
+it starts. While a message runs and the box is empty, **Stop** is in **Send**'s
+place: it stops the message at its next step, keeping what it said and changed
+so far. A reply that reaches the output limit (4,096
 tokens) stops there and ends with a line that says it was cut off. When the
 agent uses its three tool rounds before it writes an answer, the reply says so:
 ask again to continue.
@@ -2568,14 +2579,23 @@ The **Dataflow Builder** is the composite agent that plans a whole dataflow. Its
 plan lands as one change you can undo: first the nodes and connections it
 removes, then its nodes, dragged in from their tiles one after another, then its
 connections. When someone removes a node the plan connects while it lands, the
-plan stops there, and its card says what was left undone. Its strip then offers **Build & validate plan**, which fills the
-plan's nodes in order: each node's code is run in the sandbox, and code that
-passes lands, with its **Undo**, before the next node; the first failure pauses
-the build with nothing written after it, and **Resume** continues from there.
-**Step** does one action at a time. The strip also has per-node progress and
-**Solve**, which fills in the planned nodes in one batch: it runs each node's
-code in the sandbox, corrects it when the run fails, and writes only code that
-ran. A plan also gives every created node a **Node Builder**, and every
+plan stops there, and its card says what was left undone. Its plan line, under
+the Goal, then says where the plan stands, how many nodes wait for you, and
+holds one action: **Solve**, **Stop** while a Solve or a build runs, **Resume**
+when a build paused, or **Run workflow** once the plan is ready; while a build
+runs, neither the line nor the part its arrow opens offers **Solve**. The line
+also says when that part holds failures, or how the last Solve ended when it
+left work undone. A key to add or a source to confirm stays under the line.
+Its arrow opens the plan's nodes, each
+with its own **Solve**, and **Build & validate plan**, which fills the plan's
+nodes in order: each node's code is run in the sandbox, and code that passes
+lands, with its **Undo**, before the next node; the first failure pauses the
+build with nothing written after it, and **Resume** continues from there.
+**Step** does one action at a time. The line's **Solve** fills in the planned
+nodes in one batch: it runs each node's code in the sandbox, corrects it when
+the run fails, and writes only code that ran. Before any plan, its empty chat
+offers planning templates, which fill the message box for you to send. A plan
+also gives every created node a **Node Builder**, and every
 data-loading node a **Dataset Finder**, which Solve asks for candidates when
 the node's source is not settled. See [Solve](AGENT-CATALOG.md#solve) in the
 Agent Catalog guide.

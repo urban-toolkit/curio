@@ -3,7 +3,9 @@ import React from "react";
 import { BUILDER_TEMPLATES } from "../../../../services/agents";
 import styles from "../AgentBuilderStrip.module.css";
 
-/** Planning templates seed the goal prompt through the caller's prefill rule. */
+/** Planning templates, in the Dataflow Builder's empty conversation: each
+ *  seeds the message box through the caller's prefill rule, and nothing is
+ *  sent until Send. */
 export const PlanningTemplates: React.FC<{ onComposePrompt: (prompt: string) => void }> = ({ onComposePrompt }) => (
   <div className={styles.templates} role="group" aria-label="Planning templates">
     {BUILDER_TEMPLATES.map((t) => (

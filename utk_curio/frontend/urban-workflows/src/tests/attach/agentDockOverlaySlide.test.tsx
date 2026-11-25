@@ -6,10 +6,10 @@
  *
  * - **The exit renders a selection that is already gone.** Detaching the open
  *   agent empties the roster, so anything read live during the slide - the
- *   attachment itself, its "n of m", the name of what it is attached to -
- *   would blank or repaint as "0 / 0" for the length of the animation.
- * - **Switching agents is a content swap, not a new panel.** The ‹ › arrows
- *   change who is in the panel; they must not slide it out and back in.
+ *   attachment itself, the rail's agents, the name of what it is attached to -
+ *   would blank or empty for the length of the animation.
+ * - **Switching agents is a content swap, not a new panel.** The rail changes
+ *   who is in the panel; it must not slide it out and back in.
  */
 import React from "react";
 import { render, screen, act } from "@testing-library/react";
@@ -23,7 +23,7 @@ jest.mock("../../components/agents/attach/AgentChatPanel", () => ({
     return (
       <div data-testid="chat-probe">
         <span data-testid="who">{props.attachment.name}</span>
-        <span data-testid="pos">{`${props.index} / ${props.total}`}</span>
+        <span data-testid="rail">{(props.attachments ?? []).map((a: any) => a.name).join(", ")}</span>
         <span data-testid="presented">{String(props.presented)}</span>
         <span data-testid="target">{String(props.targetName)}</span>
       </div>
@@ -37,9 +37,15 @@ jest.mock("../../components/agents/attach/AgentDock", () => ({
 jest.mock("../../components/agents/attach/useAgentCanvasMutations", () => ({
   useAgentCanvasMutations: () => undefined,
 }));
+// The canvas as React Flow's store holds it: one node, "Node A".
+const mockFlowState = {
+  nodeInternals: new Map([["node-a", { id: "node-a", data: { nodeType: "curio.builtin/python", title: "Node A" } }]]),
+  edges: [],
+};
 jest.mock("reactflow", () => ({
+  ...jest.requireActual("reactflow"),
   useReactFlow: () => ({ getNodes: () => [], getEdges: () => [] }),
-  useStore: () => "Node A",
+  useStore: (selector: (state: unknown) => unknown) => selector(mockFlowState),
 }));
 let mockWorkflowGoal = "";
 const mockSetWorkflowGoal = jest.fn();
@@ -98,6 +104,7 @@ function ctx(attachments: any[], selectedId: string | null) {
     solveProgress: {},
     solveErrors: {},
     simulationActivity: {},
+    simulating: {},
     hydratingId: null,
     hydrateSession: jest.fn(),
     sendMessage: jest.fn(),
@@ -140,6 +147,8 @@ async function settleFrames() {
 
 const A = attachment("a", "Alpha");
 const B = attachment("b", "Beta");
+// An agent on the store's node, whose chat names it.
+const N = { ...attachment("n", "Node Builder"), target: { kind: "node", targetId: "node-a" } };
 
 beforeEach(() => {
   panelProps.length = 0;
@@ -160,7 +169,7 @@ describe("AgentDockOverlay chat presentation", () => {
     await settleFrames();
     expect(screen.getByTestId("presented")).toHaveTextContent("true");
     expect(screen.getByTestId("who")).toHaveTextContent("Alpha");
-    expect(screen.getByTestId("pos")).toHaveTextContent("1 / 2");
+    expect(screen.getByTestId("rail")).toHaveTextContent("Alpha, Beta");
   });
 
   it("keeps the panel mounted, and showing the same agent, through the exit", async () => {
@@ -177,35 +186,42 @@ describe("AgentDockOverlay chat presentation", () => {
     expect(screen.getByTestId("who")).toHaveTextContent("Alpha");
   });
 
-  it("pins n-of-m so detaching the open agent cannot repaint it as 0 / 0", async () => {
+  it("pins the rail so detaching the open agent cannot empty it mid-slide", async () => {
     mockCtx.mockReturnValue(ctx([A], "a"));
     const { rerender } = render(<AgentDockOverlay />);
     await settleFrames();
-    expect(screen.getByTestId("pos")).toHaveTextContent("1 / 1");
+    expect(screen.getByTestId("rail")).toHaveTextContent("Alpha");
 
     // Detach: the roster empties AND the selection clears, in one update.
     mockCtx.mockReturnValue(ctx([], null));
     await act(async () => { rerender(<AgentDockOverlay />); });
 
     expect(screen.getByTestId("who")).toHaveTextContent("Alpha");
-    expect(screen.getByTestId("pos")).toHaveTextContent("1 / 1");
+    expect(screen.getByTestId("rail")).toHaveTextContent("Alpha");
+    const latest = panelProps[panelProps.length - 1];
+    expect(latest.attachments.map((a: any) => a.attachmentId)).toEqual(["a"]);
   });
 
   it("pins the attachment target name through the exit too", async () => {
-    mockCtx.mockReturnValue(ctx([A], "a"));
+    mockCtx.mockReturnValue(ctx([N], "n"));
     const { rerender } = render(<AgentDockOverlay />);
     await settleFrames();
-    const named = screen.getByTestId("target").textContent;
+    expect(screen.getByTestId("target")).toHaveTextContent("Node A");
 
     mockCtx.mockReturnValue(ctx([], null));
     await act(async () => { rerender(<AgentDockOverlay />); });
-    expect(screen.getByTestId("target")).toHaveTextContent(String(named));
+    expect(screen.getByTestId("target")).toHaveTextContent("Node A");
+    const latest = panelProps[panelProps.length - 1];
+    expect(latest.targetNameOf(N)).toBe("Node A");
   });
 
-  it("swaps content without re-sliding when cycling to another agent", async () => {
-    mockCtx.mockReturnValue(ctx([A, B], "a"));
+  it("swaps content without re-sliding when the rail opens another agent", async () => {
+    const context = ctx([A, B], "a");
+    mockCtx.mockReturnValue(context);
     const { rerender } = render(<AgentDockOverlay />);
     await settleFrames();
+    // The rail opens a chat through the provider's own openChat.
+    expect(panelProps[panelProps.length - 1].onOpenAgentChat).toBe(context.openChat);
 
     const before = panelProps.length;
     mockCtx.mockReturnValue(ctx([A, B], "b"));
@@ -213,7 +229,7 @@ describe("AgentDockOverlay chat presentation", () => {
     await settleFrames();
 
     expect(screen.getByTestId("who")).toHaveTextContent("Beta");
-    expect(screen.getByTestId("pos")).toHaveTextContent("2 / 2");
+    expect(screen.getByTestId("rail")).toHaveTextContent("Alpha, Beta");
     // The claim: the panel never left its resting transform. A single
     // `presented: false` across the swap would be a visible slide out and back
     // in for what is only a change of contents.

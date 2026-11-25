@@ -12,6 +12,8 @@ import { downloadLine } from "../../utils/downloadLine";
 export interface AgentSimulationSlice {
   runSimulation: (attachmentId: string, mode: "step" | "auto") => Promise<Record<string, unknown>>;
   simulationActivity: Record<string, string>;
+  /** The build each attachment runs, step or auto, until its stream ends. */
+  simulating: Record<string, "step" | "auto">;
   cancelSimulation: (attachmentId: string) => Promise<void>;
 }
 
@@ -22,11 +24,16 @@ export function useAgentSimulation(opts: {
   const { projectRef, refreshAfterMutation } = opts;
   // dev/67-9: the running simulation's narration line, per attachment.
   const [simulationActivity, setSimulationActivity] = useState<Record<string, string>>({});
+  // The build each attachment runs, held here rather than by the plan line
+  // that started it: a line drawn again (the chat opened again, or the rail
+  // back on the agent) still shows the build, and its Stop.
+  const [simulating, setSimulating] = useState<Record<string, "step" | "auto">>({});
 
   const runSimulation = useCallback(
     async (attachmentId: string, mode: "step" | "auto") => {
       const pid = projectRef.current;
       if (!pid) throw new Error("no project");
+      setSimulating((prev) => ({ ...prev, [attachmentId]: mode }));
       const narrate = (line: string | null) =>
         setSimulationActivity((prev) => {
           if (line === null) {
@@ -55,6 +62,10 @@ export function useAgentSimulation(opts: {
           }
         });
       } finally {
+        setSimulating((prev) => {
+          const { [attachmentId]: _ended, ...rest } = prev;
+          return rest;
+        });
         narrate(null);
         await refreshAfterMutation(attachmentId);
       }
@@ -73,7 +84,7 @@ export function useAgentSimulation(opts: {
   }, [projectRef]);
 
   return useMemo(
-    () => ({ runSimulation, simulationActivity, cancelSimulation }),
-    [runSimulation, simulationActivity, cancelSimulation],
+    () => ({ runSimulation, simulationActivity, simulating, cancelSimulation }),
+    [runSimulation, simulationActivity, simulating, cancelSimulation],
   );
 }
