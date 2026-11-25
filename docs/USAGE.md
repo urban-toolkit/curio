@@ -261,7 +261,7 @@ To apply the backend database migrations without starting a server:
 python curio.py --force-db-init
 ```
 
-This applies the migrations that the database does not have yet, then exits. It does not delete the database or its data. It first stops the process that listens on the backend port (5002, or `--backend-port`), so stop a running Curio before you use it. Every `python curio.py start` that starts the backend also applies the migrations, so `start --force-db-init` does no more than a plain `start`.
+This applies the migrations that the database does not have yet, then exits. It does not delete the database or its data. It first stops the process that listens on the backend port (5002, or `--backend-port`), so stop a running Curio before you use it. Every `python curio.py start` that starts the backend also applies the migrations.
 
 If you want to manually perform `npm install`, you should then:
 
