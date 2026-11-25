@@ -1,17 +1,72 @@
-import React, { useCallback, useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useReactFlow, useStore } from "reactflow";
 import { downloadLines } from "../../../utils/downloadLine";
 import { resolveNodeDisplayLabel } from "../../../utils/palettePackageFactoryDraft";
 import { AgentDock } from "./AgentDock";
 import { AgentChatPanel } from "./AgentChatPanel";
+import { workingText } from "./AgentAvatarBadge";
+import { personText } from "./PeopleHere";
+import { connectionName } from "./chat/chatPanelDerived";
 import type { AgentAttachment } from "../../../services/agents";
 import { useAgentAttachmentsContext } from "../../../providers/agents";
+import { usePeopleHere } from "../../../providers/collab/usePeopleHere";
 import { composeAgentRunContext, skillsApi } from "../../../services/agents";
 import { useAgentCanvasMutations } from "./useAgentCanvasMutations";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { useUserContext } from "../../../providers/userContext";
 import { useSlideDrawerPresentation } from "../../../hook/useSlideDrawerPresentation";
+
+const NO_ATTACHMENTS: AgentAttachment[] = [];
+
+/** The name a node's header shows, from the store's node; null when it is not
+ *  on the canvas. */
+function nodeNameIn(state: any, nodeId: string): string | null {
+  const node = state.nodeInternals?.get(nodeId);
+  if (!node?.data) return null;
+  try {
+    return resolveNodeDisplayLabel(node.data) || null;
+  } catch {
+    // An unregistered node type is not worth blanking a name over.
+    return null;
+  }
+}
+
+/**
+ * What each node and connection agent is attached to, as the canvas names it:
+ * a node by the name its header shows, a connection by the two nodes it joins
+ * ("from A to B"). Read off React Flow's store as one string, so renaming a
+ * node renames it in the open chat at once, and a change that renames nothing
+ * (a drag) draws nothing again (#228).
+ */
+function useTargetNames(attachments: AgentAttachment[]): Record<string, string> {
+  const wanted = JSON.stringify(
+    attachments
+      .filter((a) => a.target.kind !== "canvas" && a.target.targetId)
+      .map((a) => [a.attachmentId, a.target.kind, a.target.targetId]),
+  );
+  const named = useStore(
+    useCallback(
+      (state: any) => {
+        const names: Record<string, string> = {};
+        for (const [attachmentId, kind, targetId] of JSON.parse(wanted) as string[][]) {
+          if (kind === "node") {
+            const name = nodeNameIn(state, targetId);
+            if (name) names[attachmentId] = name;
+          } else if (kind === "connection") {
+            const edge = (state.edges ?? []).find((e: { id: string }) => e.id === targetId);
+            const from = edge ? nodeNameIn(state, edge.source) : null;
+            const to = edge ? nodeNameIn(state, edge.target) : null;
+            if (from && to) names[attachmentId] = connectionName(from, to);
+          }
+        }
+        return JSON.stringify(names);
+      },
+      [wanted],
+    ),
+  );
+  return useMemo(() => JSON.parse(named) as Record<string, string>, [named]);
+}
 
 /**
  * Canvas overlay for CANVAS-target agents: a persistent dock centered at the
@@ -36,33 +91,20 @@ export const AgentDockOverlay: React.FC = () => {
   // is reachable.
   useAgentCanvasMutations();
 
-  // The name of whatever the open chat is attached to, for its header (#228).
-  // Computed here, above the `!ctx` return, because it uses hooks; keyed on the
-  // node id alone so the selector identity is stable across renders. Reading it
-  // through the store rather than getNodes() means renaming a node updates the
-  // open chat's header live, without the overlay re-rendering on every unrelated
-  // node change the way useNodes() would.
-  const openTarget = ctx?.attachments.find(
-    (a) => a.attachmentId === ctx?.selectedId,
-  )?.target;
-  const openNodeId =
-    openTarget && openTarget.kind === "node" ? openTarget.targetId ?? null : null;
-  const selectedTargetName = useStore(
-    useCallback(
-      (s: any) => {
-        if (!openNodeId) return null;
-        const node = s.nodeInternals.get(openNodeId);
-        if (!node?.data) return null;
-        try {
-          return resolveNodeDisplayLabel(node.data);
-        } catch {
-          // An unregistered node type is not worth blanking the header over.
-          return null;
-        }
-      },
-      [openNodeId],
-    ),
-  );
+  // What each agent is attached to, for the open chat's header and its rail
+  // (#228). Computed here, above the `!ctx` return, because it uses hooks.
+  const targetNames = useTargetNames(ctx?.attachments ?? NO_ATTACHMENTS);
+  // Who is at work in the dataflow's room, for the rail's running dots, as
+  // their chips in the dock say it.
+  const here = usePeopleHere();
+  const atWork = useMemo(() => {
+    const doing = new Map<string, string>();
+    for (const person of here.people) {
+      const attachmentId = person.agent?.attachmentId;
+      if (attachmentId && !doing.has(attachmentId)) doing.set(attachmentId, personText(person, null));
+    }
+    return doing;
+  }, [here.people]);
   // The chat is a sliding right-hand surface like the three catalog drawers, so
   // it presents through the same machine (#295). Hooks run above the `!ctx`
   // return, which is why the selection is read defensively here.
@@ -78,9 +120,9 @@ export const AgentDockOverlay: React.FC = () => {
   const chatWasOpenRef = useRef(false);
   useEffect(() => {
     const isOpen = selectedId != null;
-    // Only the transitions matter. Cycling from one agent to another keeps
+    // Only the transitions matter. Moving from one agent to another keeps
     // `isOpen` true, so the panel never re-slides for a content swap - the
-    // arrows change who is in the panel, not whether there is one.
+    // rail changes who is in the panel, not whether there is one.
     if (isOpen === chatWasOpenRef.current) return;
     chatWasOpenRef.current = isOpen;
     if (isOpen) openChatPanel();
@@ -88,14 +130,13 @@ export const AgentDockOverlay: React.FC = () => {
   }, [selectedId, openChatPanel, closeChatPanel]);
 
   // What the panel showed last, so the exit slide has something to render.
-  // Index and total are pinned alongside it: detaching the open agent empties
-  // the roster, and reading them live would repaint the header as "0 / 0" for
-  // the length of the slide out.
+  // The rail's agents and their targets' names are pinned alongside it:
+  // detaching the open agent empties the roster, and reading them live would
+  // empty the rail for the length of the slide out.
   const lastShownRef = useRef<{
     attachment: AgentAttachment;
-    index: number;
-    total: number;
-    targetName: string | null;
+    attachments: AgentAttachment[];
+    targetNames: Record<string, string>;
   } | null>(null);
 
   if (!ctx) return null;
@@ -108,41 +149,22 @@ export const AgentDockOverlay: React.FC = () => {
   // reachable while that edge is on screen at a legible zoom, and it is painted
   // behind any node the edge happens to run under. The dock is the roster:
   // viewport-anchored, always reachable, and the one place that enumerates
-  // every agent not pinned to a node, which is also the order the chat header's
-  // "n of m" arrows cycle through. The two never disagree - same attachments,
-  // same AgentAvatarBadge, same `selectedId` - so clicking either lights up
-  // both.
+  // every agent not pinned to a node. The chat's rail lists every agent on the
+  // dataflow, node agents too, in the same order. The two never disagree -
+  // same attachments, same `selectedId` - so clicking either lights up both.
   const canvasAttachments = ctx.attachments.filter(
     (a) => a.target.kind === "canvas" || a.target.kind === "connection",
   );
   const selected = ctx.attachments.find((a) => a.attachmentId === ctx.selectedId) ?? null;
-  // DEC-042: the chat header's ‹ › arrows cycle through ALL attached agents in
-  // the dataflow (node + canvas targets), in list order, without wrapping.
-  const selectedIdx = selected
-    ? ctx.attachments.findIndex((a) => a.attachmentId === selected.attachmentId)
-    : -1;
-  const prev = selectedIdx > 0 ? ctx.attachments[selectedIdx - 1] : null;
-  const next =
-    selectedIdx >= 0 && selectedIdx < ctx.attachments.length - 1
-      ? ctx.attachments[selectedIdx + 1]
-      : null;
 
   if (selected) {
-    lastShownRef.current = {
-      attachment: selected,
-      index: selectedIdx + 1,
-      total: ctx.attachments.length,
-      targetName: selectedTargetName,
-    };
+    lastShownRef.current = { attachment: selected, attachments: ctx.attachments, targetNames };
   }
   // During the exit the selection is already gone, so the panel renders what it
   // last showed rather than disappearing a frame before it finishes sliding.
   const shown = selected ?? lastShownRef.current?.attachment ?? null;
-  const shownIndex = selected ? selectedIdx + 1 : lastShownRef.current?.index ?? 1;
-  const shownTotal = selected ? ctx.attachments.length : lastShownRef.current?.total ?? 1;
-  const shownTargetName = selected
-    ? selectedTargetName
-    : lastShownRef.current?.targetName ?? null;
+  const shownAttachments = selected ? ctx.attachments : lastShownRef.current?.attachments ?? NO_ATTACHMENTS;
+  const shownNames = selected ? targetNames : lastShownRef.current?.targetNames ?? {};
 
   const onDetach = (attachmentId: string) => {
     if (ctx.selectedId === attachmentId) ctx.closeChat();
@@ -160,21 +182,21 @@ export const AgentDockOverlay: React.FC = () => {
         onSelect={ctx.openChat}
         onDetach={onDetach}
       />
-      {/* Portal to <body>: the chat is a full-height right drawer flush with
-          the viewport top — its dark header sits at the top-bar level per the
-          concept — instead of being clipped under the main top menu inside the
-          canvas container. */}
+      {/* Portal to <body>: the chat is a right drawer under the top bar,
+          placed against the window rather than clipped inside the canvas
+          container. */}
       {chatMounted && shown
         ? createPortal(
             <AgentChatPanel
               attachment={shown}
               presented={chatPresented}
               onExitComplete={finishChatExit}
-              targetName={shownTargetName}
-              index={shownIndex}
-              total={shownTotal}
-              onPrev={prev ? () => ctx.openChat(prev.attachmentId) : undefined}
-              onNext={next ? () => ctx.openChat(next.attachmentId) : undefined}
+              targetName={shownNames[shown.attachmentId] ?? null}
+              // The rail: every agent on the dataflow, what each is attached
+              // to, and who is at work, in the room or in the background.
+              attachments={shownAttachments}
+              targetNameOf={(a) => shownNames[a.attachmentId] ?? null}
+              workingOf={(a) => workingText(a, atWork.get(a.attachmentId) ?? null)}
               turns={ctx.transcripts[shown.attachmentId] ?? []}
               viewerAccount={viewerAccount}
               installsWaitForOwner={ctx.installsWaitForOwner}

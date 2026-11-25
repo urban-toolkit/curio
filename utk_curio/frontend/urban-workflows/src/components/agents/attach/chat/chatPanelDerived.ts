@@ -130,16 +130,44 @@ export function planNodeStateFor(
     : undefined;
 }
 
-/** "Attached to <name>", not "Attached to node 6bea6863-…" (#228). The name
- * is resolved by the overlay, which can see the canvas; falls back to the old
- * shape when the node is gone. */
-export function targetLabelFor(attachment: AgentAttachment, targetName: string | null): string {
-  return attachment.target.kind === "canvas"
-    ? "canvas"
-    : targetName?.trim() || `${attachment.target.kind} ${attachment.target.targetId ?? ""}`.trim();
+/** What an agent is attached to, in the chat's words. */
+export interface TargetPhrase {
+  /** The header's words after the title: "on the canvas", "on Load buildings",
+   *  "from Load buildings to Join blocks". */
+  header: string;
+  /** What the agent stays attached to: "the canvas", "Load buildings", "the
+   *  connection from Load buildings to Join blocks". */
+  object: string;
+  /** The rail's line under the agent's name; none for the canvas. */
+  short: string | null;
 }
 
-/** The diagnostic ids live in the subtitle's tooltip rather than the header (#228). */
+/**
+ * The canvas, the node by the name its header shows, or the connection by the
+ * two nodes it joins, never by an id (#228). *targetName* is resolved by the
+ * overlay, which can see the canvas: a node's name, or "from A to B" for a
+ * connection. A target the canvas no longer holds is named by its kind and
+ * id; the ids are on the header's tooltip either way.
+ */
+export function targetPhraseFor(attachment: AgentAttachment, targetName: string | null | undefined): TargetPhrase {
+  const { kind, targetId } = attachment.target;
+  if (kind === "canvas") return { header: "on the canvas", object: "the canvas", short: null };
+  const name = targetName?.trim();
+  if (!name) {
+    const unnamed = `${kind} ${targetId ?? ""}`.trim();
+    return { header: `on ${unnamed}`, object: unnamed, short: unnamed };
+  }
+  return kind === "connection"
+    ? { header: name, object: `the connection ${name}`, short: name }
+    : { header: `on ${name}`, object: name, short: name };
+}
+
+/** A connection by the two nodes it joins, as the header and the rail say it. */
+export function connectionName(from: string, to: string): string {
+  return `from ${from} to ${to}`;
+}
+
+/** The diagnostic ids live in the target's tooltip rather than the header (#228). */
 export function targetTooltipFor(attachment: AgentAttachment): string {
   return attachment.target.kind === "canvas"
     ? `session ${attachment.sessionId}`
