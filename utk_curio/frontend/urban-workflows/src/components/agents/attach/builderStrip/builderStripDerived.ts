@@ -1,6 +1,6 @@
 /**
- * The builder strip's pure vocabulary and derivations (memo dev/142, F4 —
- * split out of `AgentBuilderStrip.tsx`): the phase chips and their rank, what
+ * The plan line's pure vocabulary and derivations (memo dev/142, F4, split
+ * out of `AgentBuilderStrip.tsx`): the line's words and its main action, what
  * a live pill state means in words, how a session's ending reads, whether a
  * landed plan has nodes left to build, the order its pills and its Open Dataset
  * Finder buttons read in, why Solve is disabled, and the two remedy
@@ -8,19 +8,48 @@
  */
 import type { AgentBuilderSession, AgentProposalSummary, AgentRemedy, AgentSolveWave } from "../../../../services/agents";
 
-export const PHASES: Array<{ id: string; label: string }> = [
-  { id: "idle", label: "Plan" },
-  { id: "applied", label: "Solve" },
-  { id: "ready", label: "Ready" },
-];
+/** The plan line's one main action. */
+export type PlanMainAction = "solve" | "stop-solve" | "resume" | "run";
 
-export const PHASE_RANK: Record<string, number> = {
-  idle: 0,
-  applied: 1,
-  solving: 1,
-  interrupted: 1, // dev/115: the server stopped mid-solve: Retry continues
-  ready: 2,
-};
+/** Which action the plan line holds: Stop while a batch runs and can be
+ *  stopped, Resume when a build paused, Run workflow once the plan is ready,
+ *  else Solve (or its Retry, or Solving… while a batch nobody can stop runs). */
+export function mainActionOf(opts: {
+  solveRunning: boolean;
+  canStopSolve: boolean;
+  paused: boolean;
+  phase: string;
+}): PlanMainAction {
+  if (opts.solveRunning) return opts.canStopSolve ? "stop-solve" : "solve";
+  if (opts.paused) return "resume";
+  return opts.phase === "ready" ? "run" : "solve";
+}
+
+/** The phase in words, then the plan's counts, as the line says them while no
+ *  batch runs (a running batch has its own status line): "Planned · 6 nodes,
+ *  4 to solve", "Paused · 6 nodes", "Ready · 6 nodes". */
+export function planLineWords(opts: {
+  phase: string;
+  paused: boolean;
+  nodes: number;
+  unresolved: number;
+}): { phase: string; counts: string } {
+  const { phase, paused, nodes, unresolved } = opts;
+  const word = paused
+    ? "Paused"
+    : phase === "ready"
+      ? "Ready"
+      : phase === "interrupted"
+        ? "Interrupted"
+        : phase === "idle"
+          ? "No plan yet"
+          : "Planned";
+  const counts = [
+    nodes > 0 ? plural(nodes, "node") : null,
+    unresolved > 0 && phase !== "ready" ? `${unresolved} to solve` : null,
+  ].filter(Boolean).join(", ");
+  return { phase: word, counts };
+}
 
 /** Whether *plan*, the plan the agent landed, has a node Build & validate
  * still has work on: one not approved yet in the builder session's ledger. */

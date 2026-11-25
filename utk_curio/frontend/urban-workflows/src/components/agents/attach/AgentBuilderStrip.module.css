@@ -1,81 +1,167 @@
-/* dev/52 DR-5 — the phase-aware builder strip inside the chat drawer. */
+/* dev/52 DR-5: the Dataflow Builder's plan line under the chat's Goal line,
+   its more part, and Solve this node's line in a node agent's chat. */
 
-.strip {
-  border-bottom: 1px solid var(--curio-border);
-  padding: 10px 16px;
-  background: var(--curio-surface-muted);
+.plan {
+  flex: none;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  border-bottom: 1px solid var(--curio-border);
+  background: var(--curio-card-bg);
 }
 
-.phases {
+/* The phase in words, the counts, who it waits for, one main action and the
+   more toggle, on one row. The words give way, cut short with an ellipsis. */
+.line {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  min-height: 40px;
+  box-sizing: border-box;
+  padding: 6px 8px 6px 12px;
+  font-size: 12.5px;
+  color: var(--curio-text-primary);
 }
 
-.phaseChip {
-  font-size: 0.7rem;
+.lineWords {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.linePhase {
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--curio-text-meta);
-  border: 1px solid var(--curio-border);
-  border-radius: 999px;
-  padding: 2px 10px;
-  background: var(--curio-card-bg);
 }
 
-.phaseActive {
-  color: var(--curio-role-running-fg);
-  border-color: var(--curio-role-running-bg);
-  background: var(--curio-role-running-bg);
+/* Whose turn it is: the nodes waiting for the user, in the warning tone the
+   rows' "needs you" has. */
+.lineNeedsYou {
+  flex: none;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--curio-warning-text);
 }
 
-.templates {
+.moreToggle {
+  flex: none;
+  width: 28px;
+  height: 28px;
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.templateChip {
-  font-size: 0.74rem;
-  border: 1px solid var(--curio-border-strong);
-  border-radius: 999px;
-  padding: 3px 10px;
-  background: var(--curio-card-bg);
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--curio-text-secondary);
+  font-size: 12px;
   cursor: pointer;
 }
 
-.templateChip:hover {
-  background: var(--curio-role-running-bg);
+.moreToggle:hover,
+.moreToggle:focus-visible {
+  background: var(--curio-surface-muted);
+  color: var(--curio-text-primary);
 }
 
+/* What comes with a fix, under the line, in view whatever the more part does. */
+.plan > .actions,
+.plan > .hint,
+.plan > .error {
+  padding: 0 12px 8px;
+}
+
+/* The nodes, the other actions and the hints: at most a third of the panel,
+   which starts under the top bar, and scrolling past that, so the
+   conversation is never squeezed to nothing. */
+.more {
+  composes: thinScrollbar from "../../../styles/scrollbars.module.css";
+  max-height: calc((100vh - var(--curio-top-bar-height)) / 3);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--curio-border);
+  background: var(--curio-surface-muted);
+}
+
+/* Solve this node: the button, then its narration or outcome, on one row. */
+.solveLine {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  box-sizing: border-box;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--curio-border);
+  background: var(--curio-card-bg);
+}
+
+/* Its narration or outcome takes what the button leaves, at most two lines;
+   the whole text is its tooltip. */
+.solveStatus {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--curio-text-meta);
+}
+
+/* The planning templates, in the Dataflow Builder's empty conversation. */
+.templates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.templateChip {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: 999px;
+  padding: 6px 13px;
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
+  cursor: pointer;
+}
+
+.templateChip:hover,
+.templateChip:focus-visible {
+  border-color: var(--curio-accent-sky-fg, var(--curio-role-running-fg));
+  color: var(--curio-accent-sky-fg, var(--curio-role-running-fg));
+}
+
+/* The plan's nodes, one row each: its name, its state in words, whose turn it
+   is, and its own Solve. */
 .nodeRuns {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .nodeRun {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 0.72rem;
-  border: 1px solid var(--curio-border);
-  border-radius: 6px;
-  padding: 2px 8px;
-  background: var(--curio-card-bg);
-  max-width: 100%;
+  gap: 8px;
+  font-size: 0.75rem;
+  padding: 3px 0;
+  min-width: 0;
 }
 
 /* A long name is cut with "…", as a node's header cuts it; its tooltip says
    it whole. */
 .nodeName {
+  flex: 1;
   color: var(--curio-text-primary);
   min-width: 0;
   overflow: hidden;
@@ -101,6 +187,7 @@
 .actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
 }
 
@@ -154,46 +241,46 @@
   margin-right: 4px;
 }
 
-/* dev/131: a node that depends on the USER is visualized as such — the owner's
+/* dev/131: a node that depends on the USER is visualized as such: the owner's
    "the nodes that depend on user inputs should be better visualized". */
 .nodeNeedsUser {
-    outline: 1px solid var(--curio-warning-text);
-    outline-offset: 1px;
-    border-radius: 8px;
+  padding-left: 6px;
+  border-left: 2px solid var(--curio-warning-text);
 }
 
 .needsYou {
-    font-size: 0.66rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--curio-warning-text);
-    white-space: nowrap;
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--curio-warning-text);
+  white-space: nowrap;
 }
 
 .waitingUpstream {
-    font-size: 0.66rem;
-    color: var(--curio-text-secondary);
-    white-space: nowrap;
+  font-size: 0.66rem;
+  color: var(--curio-text-secondary);
+  white-space: nowrap;
 }
 
-/* dev/131: resolve ONE node from its own pill. */
+/* dev/131: resolve ONE node from its own row. */
 .nodeSolve {
-    font-size: 0.66rem;
-    font-weight: 600;
-    border-radius: 6px;
-    padding: 1px 6px;
-    cursor: pointer;
-    border: 1px solid var(--curio-border-strong);
-    background: var(--curio-card-bg);
-    color: var(--curio-text-primary);
+  flex: none;
+  font-size: 0.66rem;
+  font-weight: 600;
+  border-radius: 6px;
+  padding: 1px 8px;
+  cursor: pointer;
+  border: 1px solid var(--curio-border-strong);
+  background: var(--curio-card-bg);
+  color: var(--curio-text-primary);
 }
 
 .nodeSolve:hover:not(:disabled) {
-    border-color: var(--curio-text-secondary);
+  border-color: var(--curio-text-secondary);
 }
 
 .nodeSolve:disabled {
-    cursor: default;
-    opacity: 0.5;
+  cursor: default;
+  opacity: 0.5;
 }
