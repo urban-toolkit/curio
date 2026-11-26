@@ -416,6 +416,10 @@ def _dataflow_grounded_literal(node: dict, ctx) -> str | None:
       with the dataflow's block (``dataflow_block.datasets_in``);
     - a dataset of the Data Catalog whose title its goal names, every word of
       the title (:func:`_named_by_title`);
+    - numbers its goal gives that the user typed in this conversation, which
+      its code may write inline when the user typed every value it writes;
+    - a saved connection key whose host its goal names, which its code may
+      fetch with;
     - a URL its goal names, which the gate probes when the code fetches it.
 
     What its words name outright (a path the user typed, a Data Catalog id, a
@@ -440,6 +444,12 @@ def _dataflow_grounded_literal(node: dict, ctx) -> str | None:
     named = _named_by_title(goal, catalog)
     if named is not None:
         return f"the Data Catalog's {named.title!r}"
+    typed = sorted(source_grounding.typed_numbers(ctx.user_messages) & source_grounding.typed_numbers([goal]))
+    if typed:
+        return "values the user typed, which its goal gives (" + ", ".join(str(n) for n in typed[:6]) + ")"
+    key = next((ref for ref in (ctx.secrets or {}).values() if ref.host and ref.host.lower() in goal.lower()), None)
+    if key is not None:
+        return f"the connection key {key.name!r} for {key.host}"
     return next(iter(sorted(source_grounding.url_literals(goal))), None)
 
 

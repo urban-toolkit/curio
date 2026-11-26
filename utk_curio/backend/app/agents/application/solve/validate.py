@@ -385,7 +385,9 @@ def _land_validated(user_key, project_id, attachment_id, session_id, home_attach
                     *, resolution=None, asker=None, room_asker=None):
     """Write the code that passed its check into its node, as the agent's
     change with its Undo, through the ``node.content.write`` mint and its
-    checks, at the NODE's agent when it exists (dev/72). Its card carries the
+    checks, at the NODE's agent when it exists (dev/72). Those checks read the
+    user's words in the chat that asked, *session_id*, as the round's did, so
+    values the user typed there land as they passed. Its card carries the
     validation block (verdict, rounds, attempts). Yields its ``change``
     event; writes the change's id, or why it did not land, into *done*.
     *asker*: the person the job took when it started, whom the change names
@@ -396,6 +398,11 @@ def _land_validated(user_key, project_id, attachment_id, session_id, home_attach
     change_session = home_session_id or session_id
     ctx = {"attachment_id": change_attachment, "session_id": change_session,
            "asker_id": getattr(asker, "id", None), "asker": asker, "room_asker": room_asker}
+    if isinstance(session_id, str):
+        # The change lands in the node's agent's chat, but the user's words are
+        # in the chat that asked for the validation, which the round's source
+        # check read: the landing's check reads the same chat.
+        ctx["asked_in_session_id"] = session_id
     status, text, part = agents_mint._mint_node_content_write(
         user_key, project_id, ctx,
         {"tool": "node.content.write", "params": {"nodeId": node_id, "content": candidate}},

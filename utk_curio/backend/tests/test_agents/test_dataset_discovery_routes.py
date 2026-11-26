@@ -1956,8 +1956,10 @@ class _Asked:
         }
 
     def of_the_loader(self) -> dict:
-        """The calls of the loader's own agents alone: a Solve of the plan
-        makes calls of its own besides theirs, two here."""
+        """The calls of the loader's own agents alone. A Solve of the plan
+        also asks the builder of the node that reads the loader, once a pass,
+        which finds its input empty (``batch.py``'s ``upstreamEmpty``): two
+        calls here, on main as with this change."""
         counts = self.counts()
         return {who: counts[who] for who in ("the loader's Node Builder", "its Dataset Finder")}
 

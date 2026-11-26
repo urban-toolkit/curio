@@ -278,3 +278,42 @@ class TestDelegationHome:
             spec, DF, "dataset.discover", {}, node_id="n1", user_key="1",
         )
         assert home["coord"] == NB  # the Dataset Finder cannot live there
+
+
+class TestWhatMayBeALoadersSource:
+    """What may be the source of a loader with a Dataset Finder of its own,
+    before its first round (``grounding._dataflow_grounded_literal``). With
+    nothing, its Finder is asked before its builder: a dataset the Data
+    Catalog only offers, such as one Curio ships, is nothing of the kind
+    until the goal names it. Step 5.3 of the agent chat plan."""
+
+    NEIGHBORHOODS = "data.cityofchicago.neighborhoods"
+
+    def _judged(self, goal: str, **context) -> str | None:
+        from utk_curio.backend.app.agents.application import source_grounding as sg
+        from utk_curio.backend.app.agents.application.turns import grounding
+
+        catalog = {self.NEIGHBORHOODS: sg.CatalogRef(self.NEIGHBORHOODS, "Chicago Neighborhoods", "geojson", "")}
+        ctx = sg.GroundingContext(catalog_ids=catalog, is_data_loading=True, code_engine="python", **context)
+        return grounding._dataflow_grounded_literal({"id": "n1", "goal": goal}, ctx)
+
+    def test_a_shipped_dataset_is_a_source_once_the_goal_names_its_title(self):
+        assert self._judged("CPL branches: load the locations of Chicago Public Library branches") is None
+        named = self._judged("Neighborhoods: load the Chicago neighborhood boundaries")
+        assert named and "Chicago Neighborhoods" in named, named
+
+    def test_numbers_the_goal_gives_that_the_user_typed_may_be_its_source(self):
+        typed = ("Table the count 12, 15 and 20.",)
+        given = self._judged("Counts: load the count 12, 15 and 20", user_messages=typed)
+        assert given and "12, 15, 20" in given, given
+        # Typed in no message of this conversation, or given by no goal: no source.
+        assert self._judged("Counts: load the count 12, 15 and 20") is None
+        assert self._judged("Counts: load the counts", user_messages=typed) is None
+
+    def test_a_saved_key_whose_host_the_goal_names_may_be_its_source(self):
+        from utk_curio.backend.app.agents.application import source_grounding as sg
+
+        keys = {"census": sg.SecretRef("census", "api.census.gov")}
+        named = self._judged("Tracts: load the tract population from api.census.gov", secrets=keys)
+        assert named and "census" in named, named
+        assert self._judged("Tracts: load the tract population", secrets=keys) is None
