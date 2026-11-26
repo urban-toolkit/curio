@@ -338,35 +338,55 @@ describe("AgentDatasetCandidatesCard: the source recorded for its node", () => {
     expect(within(card).getByRole("button", { name: "Use this source" })).toBeDisabled();
   });
 
-  it("says Recorded with what was picked, in place of its rows and Use this source", () => {
+  it("says Recorded with what was picked and what the server said comes of it, in place of its rows and Use this source", () => {
     render(
       <AgentDatasetCandidatesCard
         part={PART}
         nodeLabel="Load buildings"
         onRecordSelection={jest.fn()}
-        record={{ status: "resolved", picks: [{ ...ROADS, provider: "City of Chicago" }] }}
+        record={{
+          status: "resolved",
+          picks: [{ ...ROADS, provider: "City of Chicago" }],
+          next: "The Dataflow Builder goes on with its plan and builds the loader from this source.",
+        }}
         waitsForPick={false}
       />,
     );
     const card = screen.getByRole("group", { name: "Sources for Load buildings" });
     expect(within(card).getByRole("status")).toHaveTextContent(
-      "Recorded: Roads (City of Chicago). The loader is built from this source.",
+      "Recorded: Roads (City of Chicago). The Dataflow Builder goes on with its plan and builds the loader from this source.",
     );
     expect(within(card).queryByRole("button", { name: "Use this source" })).toBeNull();
     expect(within(card).queryAllByRole("checkbox")).toHaveLength(0);
   });
 
-  it("says a picked source that downloads is on its way", () => {
+  it("says Recorded with what was picked alone when the server said nothing of what comes next", () => {
     render(
       <AgentDatasetCandidatesCard
         part={PART}
         onRecordSelection={jest.fn()}
-        record={{ status: "awaiting-install", picks: [{ ...ROADS, installed: false, acquiring: { jobId: "j1" } }] }}
+        record={{ status: "resolved", picks: [{ ...ROADS, provider: "City of Chicago" }] }}
+        waitsForPick={false}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(/^Recorded: Roads \(City of Chicago\)\.$/);
+  });
+
+  it("says a picked source that downloads for a paused plan is on its way, and to press Resume once it lands", () => {
+    render(
+      <AgentDatasetCandidatesCard
+        part={PART}
+        onRecordSelection={jest.fn()}
+        record={{
+          status: "awaiting-install",
+          picks: [{ ...ROADS, installed: false, acquiring: { jobId: "j1" } }],
+          next: "It is downloading into the Data Catalog: once it lands, press Resume in the Dataflow Builder's chat to build the loader.",
+        }}
         waitsForPick={false}
       />,
     );
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Recorded: Roads. It is downloading into the Data Catalog; the loader is built from it once it lands.",
+      "Recorded: Roads. It is downloading into the Data Catalog: once it lands, press Resume in the Dataflow Builder's chat to build the loader.",
     );
   });
 

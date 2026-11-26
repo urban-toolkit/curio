@@ -7,9 +7,10 @@ import type {
   AgentDatasetPick,
   AgentDatasetSelection,
   AgentDatasetSourceRecord,
+  SourceCardStanding,
 } from "../../../services/agents";
 import { useDatasetDetails } from "../../datasets/catalog/datasetDetailsContext";
-import { sanitizeAgentUrl } from "../../../services/agents";
+import { sanitizeAgentUrl, sourceCardStanding } from "../../../services/agents";
 import styles from "./AgentDatasetCandidatesCard.module.css";
 import { VerificationChip } from "./verificationChip";
 import {
@@ -107,21 +108,49 @@ export function pickKey(
 }
 
 /** What the card says once its node's Dataset Finder recorded the pick: what
- * was picked, and what comes of it. Exported for tests. */
+ * was picked, then what the server said comes next of it (the record's
+ * `next`), so it promises no build nobody starts, and says the same in every
+ * chat and tab. Exported for tests. */
 export function recordedLine(record: AgentDatasetSourceRecord): string {
-  const picks = record.picks ?? [];
-  const names = picks
+  const names = (record.picks ?? [])
     .map((pick) => {
       const name = pick.name || pick.datasetId || pick.url || "";
       return pick.provider ? `${name} (${pick.provider})` : name;
     })
     .join(", ");
-  const next = picks.some((pick) => pick.acquiring)
-    ? "It is downloading into the Data Catalog; the loader is built from it once it lands."
-    : record.status === "awaiting-install"
-      ? "Once it is installed in the dataflow, the loader is built from it."
-      : "The loader is built from this source.";
-  return `Recorded: ${names}. ${next}`;
+  return record.next ? `Recorded: ${names}. ${record.next}` : `Recorded: ${names}.`;
+}
+
+/** What a closed card says: why nothing is to pick on it any more. *node* is
+ * the node's name, *record* its Finder's record. Exported for tests. */
+export function closedLine(
+  standing: Exclude<SourceCardStanding, { kind: "live" } | { kind: "recorded" }>,
+  node: string,
+  record: AgentDatasetSourceRecord | null,
+): string {
+  if (standing.kind === "superseded") return "Closed: newer candidates replaced these.";
+  switch (standing.why) {
+    case "finder-gone":
+      return `Closed: its Dataset Finder was taken off ${node}.`;
+    case "node-gone":
+      return `Closed: ${node} is no longer on the canvas.`;
+    case "skipped":
+      return record?.skippedBecause
+        ? `Closed: the source of ${node} is grounded already (${record.skippedBecause}), so no pick is needed.`
+        : `Closed: the source of ${node} is grounded already, so no pick is needed.`;
+    default:
+      return "Closed: its Dataset Finder no longer holds these candidates.";
+  }
+}
+
+/** The line that names the other chats holding the same card, *names* the
+ * agents whose chats they are. */
+function mirroredLine(names: string[]): string {
+  if (names.length === 1) {
+    return `The same card is in the ${names[0]}'s chat. A pick in either shows in both.`;
+  }
+  const chats = names.map((name) => `the ${name}'s`);
+  return `The same card is in ${chats.slice(0, -1).join(", ")} and ${chats[chats.length - 1]} chats. A pick in any shows in all.`;
 }
 
 /** The portal page an external row may link to: only a URL the runtime
@@ -149,9 +178,12 @@ export function verifiedPortalUrl(row: AgentDatasetCandidateRow): string | null 
  *
  * The card of a node's candidates, in its Dataset Finder's chat and in the
  * chat that asked for them, is named for the node, and its Use this source
- * records the pick on the Finder. Once the Finder's record holds a pick the
- * user has nothing left to do for, it says Recorded in place of its rows, in
- * every chat that holds it.
+ * records the pick on the Finder, naming the card it was made on. It follows
+ * the Finder's record (`sourceCardStanding`): its rows show only while the
+ * record asks for its pick; the card the pick was made on says Recorded, with
+ * what the server said comes next; a card a newer search replaced, or one
+ * whose Finder, node or record is gone, or whose node needs no pick, is
+ * closed and says why.
  */
 export const AgentDatasetCandidatesCard: React.FC<{
   part: AgentDatasetCandidatesPart;
@@ -178,16 +210,25 @@ export const AgentDatasetCandidatesCard: React.FC<{
   /** The node's id, which whatever points at the card finds it by. */
   nodeId?: string | null;
   /** The node's source as its Dataset Finder records it (the listing's
-   * `sourceRecord`): once it holds a pick the user has nothing left to do for
-   * (*waitsForPick* false), the card says Recorded in place of its rows. */
+   * `sourceRecord`), which the card follows. */
   record?: AgentDatasetSourceRecord | null;
   /** Whether the node still waits for the user's pick: its Finder's
    * `waitsForYou` names it. */
   waitsForPick?: boolean;
+  /** The id of the search that minted these candidates (`discoveryId`). */
+  discoveryId?: string | null;
+  /** Whether the node's Dataset Finder is still on the dataflow, and the node
+   * on the canvas. */
+  finderPresent?: boolean;
+  nodePresent?: boolean;
+  /** Brings the card the record offers now into view, for a card a newer
+   * search replaced. */
+  onShowNewest?: (() => void) | null;
   /** The chat of the node's Dataset Finder, for a card in another chat. */
   finderChat?: { name: string; onOpen: () => void } | null;
-  /** The agent whose chat asked for these candidates and holds the same card. */
-  mirroredIn?: string | null;
+  /** The agents whose chats asked for these candidates and hold the same
+   * card. */
+  mirroredIn?: string[] | null;
 }> = ({
   part,
   tintClassName,
@@ -200,6 +241,10 @@ export const AgentDatasetCandidatesCard: React.FC<{
   nodeId = null,
   record = null,
   waitsForPick = false,
+  discoveryId = null,
+  finderPresent = true,
+  nodePresent = true,
+  onShowNewest = null,
   finderChat = null,
   mirroredIn = null,
 }) => {
@@ -485,22 +530,35 @@ export const AgentDatasetCandidatesCard: React.FC<{
   );
   // The card's own name: the node its candidates are for, when it knows it.
   const title = nodeLabel ? `Sources for ${nodeLabel}` : "Dataset candidates";
-  // The node's Finder recorded a pick the user has nothing left to do for.
-  const done =
-    Boolean(onRecordSelection) &&
-    (record?.picks ?? []).length > 0 &&
-    record?.status !== "candidates-pending" &&
-    !waitsForPick;
+  // Where the card stands by its node's Finder's record: a card with no pick
+  // of its own (a selection composes a message) is always open.
+  const standing: SourceCardStanding = onRecordSelection
+    ? sourceCardStanding({ discoveryId, record, waitsForPick, finderPresent, nodePresent })
+    : { kind: "live" };
+  const live = standing.kind === "live";
+  // What the server said comes next of a pick made on this card that still
+  // asks something of the user (a portal file to import, another row to
+  // pick), in every tab, when this tab has no answer of its own to show.
+  const serverNote =
+    live && record?.next && (record.picks ?? []).length > 0 && (!discoveryId || record.pickedFrom === discoveryId)
+      ? record.next
+      : null;
 
   return (
-    <div className={styles.card} role="group" aria-label={title} data-curio-source-pick={nodeId ?? undefined}>
+    <div
+      className={styles.card}
+      role="group"
+      aria-label={title}
+      data-curio-source-pick={nodeId ?? undefined}
+      data-curio-discovery={discoveryId ?? undefined}
+    >
       <div className={`${styles.header} ${tintClassName ?? ""}`}>
         <span className={styles.accentDot} aria-hidden="true" />
         <span>{title}</span>
         {/* Without a pick of its own, a selection composes a message. */}
         {onRecordSelection ? null : <span className={styles.kind}>select &amp; confirm in chat</span>}
       </div>
-      {done && record ? (
+      {standing.kind === "recorded" && record ? (
         <div className={styles.done} role="status">
           <span className={styles.doneIcon} aria-hidden="true">
             <FontAwesomeIcon icon={faCheck} />
@@ -508,15 +566,27 @@ export const AgentDatasetCandidatesCard: React.FC<{
           <span>{recordedLine(record)}</span>
         </div>
       ) : null}
-      {done ? null : lanes.map((lane) => (
-        <div key={lane} role="group" aria-label={LANE_LABEL[lane]} className={styles.lane}>
-          <div className={styles.laneLabel}>{LANE_LABEL[lane]}</div>
-          <ul className={styles.rows}>
-            {part.lanes[lane].map((row, i) => renderRow(lane, row, i))}
-          </ul>
+      {standing.kind === "superseded" || standing.kind === "closed" ? (
+        <div className={styles.closed}>
+          <span role="status">{closedLine(standing, nodeLabel ?? "this node", record)}</span>
+          {standing.kind === "superseded" && onShowNewest ? (
+            <button type="button" className={styles.rowLink} onClick={onShowNewest}>
+              Show the newest
+            </button>
+          ) : null}
         </div>
-      ))}
-      {onRecordSelection && !done ? (
+      ) : null}
+      {live
+        ? lanes.map((lane) => (
+            <div key={lane} role="group" aria-label={LANE_LABEL[lane]} className={styles.lane}>
+              <div className={styles.laneLabel}>{LANE_LABEL[lane]}</div>
+              <ul className={styles.rows}>
+                {part.lanes[lane].map((row, i) => renderRow(lane, row, i))}
+              </ul>
+            </div>
+          ))
+        : null}
+      {onRecordSelection && live ? (
         <div className={styles.confirmRow}>
           <button
             type="button"
@@ -532,18 +602,18 @@ export const AgentDatasetCandidatesCard: React.FC<{
               Its {finderChat.name}&apos;s chat
             </button>
           ) : null}
-          {recorded ? (
-            <span className={styles.recorded} role="status">{recordedNote(recorded)}</span>
+          {recorded || serverNote ? (
+            <span className={styles.recorded} role="status">
+              {recorded ? recordedNote(recorded) : serverNote}
+            </span>
           ) : null}
           {recordError ? (
             <span className={styles.recordError} role="alert">{recordError}</span>
           ) : null}
         </div>
       ) : null}
-      {mirroredIn && !done ? (
-        <div className={styles.mirrored}>
-          The same card is in the {mirroredIn}&apos;s chat. A pick in either shows in both.
-        </div>
+      {mirroredIn && mirroredIn.length > 0 && live ? (
+        <div className={styles.mirrored}>{mirroredLine(mirroredIn)}</div>
       ) : null}
       {!onRecordSelection && (downloaded || recordError) ? (
         // A chat with no node to confirm for: the download still lands in the

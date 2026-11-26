@@ -229,6 +229,22 @@
   color: var(--curio-success-text);
 }
 
+/* A card nothing is to pick on any more: why, in place of its rows, and the
+   way to the card on offer now when a newer search replaced it. */
+.closed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--curio-surface-muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--curio-text-secondary);
+}
+
 /* The other chat that holds the same card. */
 .mirrored {
   padding: 0 10px 4px;

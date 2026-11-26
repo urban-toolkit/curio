@@ -4,6 +4,7 @@ import { useFlowContext } from "../../../providers/FlowProvider";
 import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
 import {
   attachmentDisplayName,
+  DATASET_SELECT_CAPABILITY,
   declaresCapability,
   landsAsAChange,
   ORCHESTRATE_CAPABILITY,
@@ -172,7 +173,7 @@ export const AgentChatPanel: React.FC<{
    * re-runs, and lands an executed review. Omitted → no row. */
   onSolveNode?: () => Promise<unknown>;
   /** Why the per-node Solve may not start now: a build runs on the node's
-   * plan. */
+   * plan, or its plan's row Solves it. */
   solveNodeBlocker?: string | null;
   /** dev/115: the running per-node Solve's narration. */
   solveNodeActivity?: string | null;
@@ -181,16 +182,22 @@ export const AgentChatPanel: React.FC<{
    * Omitted → entries inert, and no rail. */
   onOpenAgentChat?: (attachmentId: string) => void;
   /** dev/126: record the confirmed dataset selection for this attachment's
-   * node (an agent that declares dataset.select, on a node only). */
+   * node (an agent that declares dataset.select, on a node only), naming the
+   * card it was made on (*discoveryId*) when the card has an id. */
   onRecordDatasetSelection?: (
     picks: import("../../../services/agents").AgentDatasetPick[],
+    discoveryId?: string,
   ) => Promise<import("../../../services/agents").AgentDatasetSelection>;
   /** Record a pick on a node's candidates card in this chat, which asked for
-   * them: on the route of the node's Dataset Finder. */
+   * them: on the route of the node's Dataset Finder, naming the card. */
   onRecordSourcePick?: (
     finderAttachmentId: string,
     picks: import("../../../services/agents").AgentDatasetPick[],
+    discoveryId?: string,
   ) => Promise<import("../../../services/agents").AgentDatasetSelection>;
+  /** Whether a node is on the canvas: a candidates card whose Finder is gone
+   * says whether its node went too. Omitted, every node is taken as there. */
+  nodeOnCanvas?: (nodeId: string) => boolean;
   /** dev/132: the shared catalog import, for a candidate row the runtime
    * could not fetch — resolves with the imported dataset's id. */
   onImportDataset?: (
@@ -263,6 +270,7 @@ export const AgentChatPanel: React.FC<{
   onOpenAgentChat,
   onRecordDatasetSelection,
   onRecordSourcePick,
+  nodeOnCanvas,
   onImportDataset,
   delegateExists,
   agentNameOf,
@@ -449,6 +457,23 @@ export const AgentChatPanel: React.FC<{
   // What the agent is attached to: the header's words, Clear's question.
   const target = targetPhraseFor(attachment, targetName);
   const orchestrates = declaresCapability(attachment, ORCHESTRATE_CAPABILITY);
+  // The candidates cards this chat holds, by the node they are for and by
+  // the id of the search that minted them.
+  const sourceCardsOf = (nodeId: string) =>
+    Array.from(messagesRef.current?.querySelectorAll<HTMLElement>("[data-curio-source-pick]") ?? []).filter(
+      (card) => card.getAttribute("data-curio-source-pick") === nodeId,
+    );
+  // Brings the card *discoveryId* into view when this chat holds it, else
+  // opens the chat of its node's Finder (*finderAttachmentId*), which does.
+  const showCardOf = (discoveryId: string | null, finderAttachmentId: string | null) => {
+    const card = discoveryId
+      ? Array.from(messagesRef.current?.querySelectorAll<HTMLElement>("[data-curio-discovery]") ?? []).find(
+          (el) => el.getAttribute("data-curio-discovery") === discoveryId,
+        )
+      : undefined;
+    if (card) card.scrollIntoView({ block: "nearest" });
+    else if (finderAttachmentId && finderAttachmentId !== attachment.attachmentId) onOpenAgentChat?.(finderAttachmentId);
+  };
   const turnActions = {
     onComposePrompt: composePrompt,
     onInternalLink: (to: string) => leave(() => navigate(to)),
@@ -458,8 +483,12 @@ export const AgentChatPanel: React.FC<{
     onRecordDatasetSelection,
     onRecordSourcePick,
     // A node's candidates card in this chat reads the node's Finder's record
-    // from the live list.
-    attachmentOf: (attachmentId: string) => attachments?.find((a) => a.attachmentId === attachmentId) ?? null,
+    // from the live list: null once the list no longer holds the Finder, and
+    // undefined when this chat has no list to read.
+    attachmentOf: (attachmentId: string) =>
+      attachments ? attachments.find((a) => a.attachmentId === attachmentId) ?? null : undefined,
+    nodeOnCanvas,
+    showCardOf,
     targetName,
     // No plan row's Solve starts while a build runs on this agent's plan.
     buildRunning: buildRunningOn(attachment, simulating) !== null,
@@ -473,15 +502,25 @@ export const AgentChatPanel: React.FC<{
     installsWaitForOwner,
   };
   // The node this agent is on, and whether this chat holds the card of its
-  // candidates, which its Solve asked for.
+  // candidates, which its Solve asked for: Show its sources brings the card
+  // its Finder's record offers now into view, else the newest for the node.
   const ownNode = attachment.target.kind === "node" ? attachment.target.targetId ?? null : null;
+  const ownFinderRecord = ownNode
+    ? attachments?.find(
+        (a) =>
+          a.target.kind === "node" &&
+          a.target.targetId === ownNode &&
+          declaresCapability(a, DATASET_SELECT_CAPABILITY),
+      )?.sourceRecord ?? null
+    : null;
   const showSourceCard =
     ownNode && holdsSourceCardFor(turns, ownNode)
       ? () => {
-          const cards = Array.from(
-            messagesRef.current?.querySelectorAll<HTMLElement>("[data-curio-source-pick]") ?? [],
-          ).filter((card) => card.getAttribute("data-curio-source-pick") === ownNode);
-          cards[cards.length - 1]?.scrollIntoView({ block: "nearest" });
+          const cards = sourceCardsOf(ownNode);
+          const offered = ownFinderRecord?.discoveryId
+            ? cards.find((card) => card.getAttribute("data-curio-discovery") === ownFinderRecord.discoveryId)
+            : undefined;
+          (offered ?? cards[cards.length - 1])?.scrollIntoView({ block: "nearest" });
         }
       : null;
 
