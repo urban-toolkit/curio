@@ -158,6 +158,36 @@ def _note() -> dict:
     return {"id": "note", "type": CA, "title": "Note", "goal": "Keep a note", "content": "return 0", "x": 800, "y": 0}
 
 
+def _person_writes_off_the_doc(user, project, change) -> None:
+    """The person's *change*, written with a field the doc's layout has no
+    place for on the node ``sum``: ``place``, a key the layout gives a node
+    for something else (``doc_mapping.mappable``). Their write goes to the
+    file alone and drops the doc, and the next write, which cannot build the
+    doc from that file, goes to the file alone too."""
+    def off_the_doc(flow):
+        change(flow)
+        for node in flow["nodes"]:
+            if node.get("id") == "sum":
+                node["place"] = "here"
+    _person_writes(user, project, off_the_doc)
+
+
+def _to_the_file_alone(monkeypatch) -> list:
+    """What each write that goes to the file alone is (``dataflow_docs.
+    _without_doc``), its ``Actor``'s ``what``, in order."""
+    from utk_curio.backend.app.collaboration import dataflow_docs
+
+    without_doc = dataflow_docs._without_doc
+    seen: list = []
+
+    def recorded(*args, **kwargs):
+        seen.append(next(a.what for a in (*args, *kwargs.values()) if isinstance(a, dataflow_docs.Actor)))
+        return without_doc(*args, **kwargs)
+
+    monkeypatch.setattr(dataflow_docs, "_without_doc", recorded)
+    return seen
+
+
 def _mutations(step: dict) -> list[dict]:
     """A landed step's canvas mutations: one, or a list when the step also
     gave nodes their starters."""
@@ -686,6 +716,64 @@ class TestUndoByKind:
         assert "load" not in _by_id(flow)
         assert [s.get("name") for s in flow.get("scenarios") or []] == ["Cool roofs on every block"]
 
+    @pytest.mark.parametrize("refusal", ["kept-would-change", "changed-after"])
+    def test_a_refused_undo_of_a_plan_leaves_nothing_behind(
+        self, client, user_and_token, tmp_curio, monkeypatch, refusal,
+    ):
+        """A refused Undo writes nothing: no change to the file, none to the
+        doc, no point of the history. Refused once by the put-back, whose
+        write would change a field it keeps (``history.KeptWouldChange``): a
+        scenario made after the plan holds its node. And once before any
+        put-back: a node outside the plan changed after it."""
+        from utk_curio.backend.app.collaboration import dataflow_docs, history
+        from utk_curio.backend.app.projects import storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        project, att = _setup(client, user, token, coord=DFB)
+        card = self._land_replacing_the_loader(client, token, project, att, monkeypatch)
+        if refusal == "kept-would-change":
+            [new_id] = [node_id for node_id in _by_id(_saved(client, token, project)) if node_id != "sum"]
+            _person_writes(user, project, lambda flow: flow.update(scenarios=[
+                {"id": "s1", "name": "Fetched by hand", "color": "#4477aa", "nodes": [new_id], "context": [],
+                 "outcomes": []}]))
+        else:
+            def changed(flow):
+                for node in flow["nodes"]:
+                    if node.get("id") == "sum":
+                        node["content"] = "return input_0.max()  # after the plan"
+
+            _person_writes(user, project, changed)
+        put_back = history.put_back
+        calls: list = []
+
+        def recorded(*args, **kwargs):
+            try:
+                put = put_back(*args, **kwargs)
+            except history.HistoryError as exc:
+                calls.append(type(exc).__name__)
+                raise
+            calls.append("put back")
+            return put
+
+        monkeypatch.setattr(history, "put_back", recorded)
+
+        def as_it_is() -> tuple:
+            """The file with its revision, the doc's state and its log's end, and the history's points."""
+            dataflow_docs.flush(project)
+            with dataflow_docs._held(project, key) as entry:
+                doc = (entry.doc.get_state(), dataflow_docs.log_end(entry))
+            return storage.read_spec_file(key, project), doc, history.points(key, project)
+
+        before = as_it_is()
+        refused = _undo(client, token, project, att, card["changeId"])
+        assert refused.status_code == 409, refused.get_json()
+        assert "changed this dataflow after; nothing was undone." in refused.get_json()["error"]
+        # The put-back refused, or was never asked.
+        assert calls == (["KeptWouldChange"] if refusal == "kept-would-change" else []), calls
+        assert as_it_is() == before
+
     def test_undo_of_a_second_plan_gives_the_planner_back_the_first(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
         project, att = _setup(client, user, token, coord=DFB)
@@ -870,6 +958,116 @@ class TestAPlanFillsAnEmptyGoal:
         monkeypatch.setattr(dataflow_docs, "write", someone_saves_a_goal_first)
         undone = _undo(client, token, project, att, card["changeId"])
         assert read == [self.GOAL], read
+        assert undone.status_code == 200, undone.get_json()
+        flow = _saved(client, token, project)
+        assert set(_by_id(flow)) == {"load", "sum"}
+        assert flow.get("task") == "Find the shaded parks"
+        [canvas] = undone.get_json()["canvas"]
+        assert "task" not in canvas, canvas
+
+    def test_undo_leaves_a_goal_saved_before_it_puts_back(self, client, user_and_token, tmp_curio, monkeypatch):
+        """A goal someone saves after the Undo read the plan's goal, and before
+        the put-back reads the dataflow, is theirs too: the put-back's write
+        checks the goal against the plan's, which the Undo read (its
+        ``expect``), not against the goal the put-back read. Checked against
+        the goal the put-back read, it emptied their goal."""
+        from utk_curio.backend.app.collaboration import dataflow_docs, history
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        project, att = _setup(client, user, token, coord=DFB)
+        card, _ = self._land(client, token, project, att, monkeypatch)
+        assert card["goalSet"] == self.GOAL, card
+        put_back = history.put_back
+        asked: list = []
+
+        def someone_saves_a_goal_first(user_key, project_id, point_id, by, **kwargs):
+            if not asked:
+                # The Undo read the plan's goal already, and asks for it back.
+                goal = dataflow_docs.live(key, project)["dataflow"].get("task")
+                _person_sets_the_goal(user, project, "Find the shaded parks")
+                asked.append((kwargs.get("expect"), goal, dataflow_docs.live(key, project)["dataflow"].get("task")))
+            return put_back(user_key, project_id, point_id, by, **kwargs)
+
+        monkeypatch.setattr(history, "put_back", someone_saves_a_goal_first)
+        undone = _undo(client, token, project, att, card["changeId"])
+        assert asked == [({"task": self.GOAL}, self.GOAL, "Find the shaded parks")], asked
+        assert undone.status_code == 200, undone.get_json()
+        flow = _saved(client, token, project)
+        assert set(_by_id(flow)) == {"load", "sum"}
+        assert flow.get("task") == "Find the shaded parks"
+        [canvas] = undone.get_json()["canvas"]
+        assert "task" not in canvas, canvas
+
+    def test_a_goal_saved_before_the_plans_write_to_the_file_alone_stays(
+        self, client, user_and_token, tmp_curio, monkeypatch,
+    ):
+        """The same when the plan's write goes to the file alone, as a write
+        the doc's layout has no place for does: the person's goal, saved after
+        the plan's first step read the empty goal, comes with a field the doc
+        has no place for, so the plan's write finds the doc dropped and cannot
+        build it from the file. Their goal must stay there too, with no
+        ``goalSet`` and no ``task`` for a canvas. Before the fix the plan's
+        goal replaced theirs, and the card said *Goal set to*. The plan's
+        first write makes no point of the history there, so its Undo is not
+        this test's."""
+        from utk_curio.backend.app.collaboration import dataflow_docs
+
+        user, token = user_and_token
+        project, att = _setup(client, user, token, coord=DFB)
+        write = dataflow_docs.write
+        carried: list = []
+
+        def someone_saves_a_goal_first(user_key, project_id, spec, actor, **kwargs):
+            if (kwargs.get("point") or {}).get("change") and not carried:
+                # The plan's first write: its step read the dataflow already.
+                carried.append(spec["dataflow"].get("task"))
+                _person_writes_off_the_doc(user, project, lambda flow: flow.update(task="Map the parks"))
+            return write(user_key, project_id, spec, actor, **kwargs)
+
+        monkeypatch.setattr(dataflow_docs, "write", someone_saves_a_goal_first)
+        alone = _to_the_file_alone(monkeypatch)
+        card, landed = self._land(client, token, project, att, monkeypatch)
+        # Their write, then the plan's first, went to the file alone.
+        assert carried == [self.GOAL] and alone[:2] == ["edit", "plan"], (carried, alone)
+        flow = _saved(client, token, project)
+        assert "load" not in _by_id(flow)
+        assert flow["task"] == "Map the parks"
+        assert "goalSet" not in card, card
+        assert [m for step in landed["steps"] for m in _mutations(step) if "task" in m] == [], landed["steps"]
+        assert "task" not in landed["canvas"], landed["canvas"]
+
+    def test_undo_leaves_a_goal_saved_before_its_write_to_the_file_alone(
+        self, client, user_and_token, tmp_curio, monkeypatch,
+    ):
+        """The same when the put-back's write goes to the file alone: the
+        person's goal, saved after the put-back read the plan's goal, comes
+        with a field the doc has no place for, so the put-back's write finds
+        the doc dropped and cannot build it from the file. Their goal must
+        stay, and the Undo must carry no goal for a canvas. Before the fix the
+        Undo emptied their goal."""
+        from utk_curio.backend.app.collaboration import dataflow_docs
+
+        user, token = user_and_token
+        project, att = _setup(client, user, token, coord=DFB)
+        card, _ = self._land(client, token, project, att, monkeypatch)
+        assert card["goalSet"] == self.GOAL, card
+        write = dataflow_docs.write
+        read: list = []
+
+        def someone_saves_a_goal_first(user_key, project_id, spec, actor, **kwargs):
+            if actor.what == "putBack" and not read:
+                # The put-back's write: it read the plan's goal already.
+                read.append(spec.base["dataflow"].get("task"))
+                _person_writes_off_the_doc(user, project, lambda flow: flow.update(task="Find the shaded parks"))
+            return write(user_key, project_id, spec, actor, **kwargs)
+
+        monkeypatch.setattr(dataflow_docs, "write", someone_saves_a_goal_first)
+        alone = _to_the_file_alone(monkeypatch)
+        undone = _undo(client, token, project, att, card["changeId"])
+        # Their write, then the put-back's, went to the file alone.
+        assert read == [self.GOAL] and alone[:2] == ["edit", "putBack"], (read, alone)
         assert undone.status_code == 200, undone.get_json()
         flow = _saved(client, token, project)
         assert set(_by_id(flow)) == {"load", "sum"}
