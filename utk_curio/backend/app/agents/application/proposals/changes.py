@@ -36,8 +36,9 @@ history's checked writes:
 * a plan puts back the version before its first write (``history.put_back``),
   only while nobody changed the dataflow between its writes and nothing
   outside its own nodes changed since: so a node it removed comes back with
-  its connections. The dataflow's goal never holds it back: the goal goes
-  back only when the plan set it and it still reads what the plan wrote.
+  its connections. The dataflow's goal never holds it back, changed between
+  its writes or after them: the goal goes back only when the plan set it and
+  it still reads what the plan wrote.
 
 A change kept from before a Spatial Join's operation and output were its
 widgets, when the join kept them at ``metadata.spatialJoin``, is undone as the

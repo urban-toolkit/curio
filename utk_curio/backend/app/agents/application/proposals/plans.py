@@ -820,6 +820,17 @@ def _outside_the_plan(dataflow: dict, change: dict) -> dict:
     return _normal(out)
 
 
+def _only_the_goal_between(user_key: str, project_id: str, earlier: dict, later: dict) -> bool:
+    """Whether what reached the log between two of a plan's points, *earlier*
+    and *later*, changed nothing of the dataflow but its goal, which never
+    holds the plan's Undo back (``history.between``)."""
+    flows = history.between(user_key, project_id, earlier, later)
+    if flows is None:
+        return False
+    left, found = ({key: value for key, value in flow.items() if key != "task"} for flow in flows)
+    return _normal(left) == _normal(found)
+
+
 def _undo_plan(user_key: str, project_id: str, attachment_id: str, change: dict, by: dict) -> list[dict]:
     """Undo a plan an agent landed: put back the version the dataflow had
     before its first write, the parent of the first point naming the
@@ -828,9 +839,10 @@ def _undo_plan(user_key: str, project_id: str, attachment_id: str, change: dict,
     changed, when someone changed the dataflow between its writes, or when
     the dataflow outside the plan's own nodes is no longer what the plan
     left: a put-back would erase what a person did. The dataflow's goal never
-    refuses it: the goal goes back only when the plan set it (``goalSet``)
-    and it still reads what the plan wrote, and stays as it is otherwise.
-    The planner's session goes back to what it was."""
+    refuses it, changed between the plan's writes or after them: the goal
+    goes back only when the plan set it (``goalSet``) and it still reads what
+    the plan wrote, and stays as it is otherwise. The planner's session goes
+    back to what it was."""
     from utk_curio.backend.app.projects import storage as projects_storage
 
     change_id = change["changeId"]
@@ -841,7 +853,8 @@ def _undo_plan(user_key: str, project_id: str, attachment_id: str, change: dict,
             raise AgentServiceError("This plan is not in the dataflow's history; nothing was undone.", 409)
         first, last = points[steps[0]], points[steps[-1]]
         for at, after in zip(steps, steps[1:]):
-            if not history.follows(user_key, project_id, points[at], points[after]):
+            if not (history.follows(user_key, project_id, points[at], points[after])
+                    or _only_the_goal_between(user_key, project_id, points[at], points[after])):
                 raise _changed_after(points[at + 1:], change_id)
         then = history.dataflow_at(user_key, project_id, last["id"])
         before = history.dataflow_at(user_key, project_id, first["parent"])

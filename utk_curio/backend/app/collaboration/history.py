@@ -1228,6 +1228,21 @@ def follows(user_key: str, project_id: str, earlier: dict, later: dict) -> bool:
     return (records[-1][0] if records else 0) == earlier["end"]
 
 
+def between(user_key: str, project_id: str, earlier: dict, later: dict) -> Optional[tuple[dict, dict]]:
+    """The dataflow as the point *earlier* left it and as the point *later*
+    found it, two points of one doc: what reached the log between them made
+    the first the second (none of it, when *later* :func:`follows`). ``None``
+    for points of two docs, or a log that cannot be read."""
+    if "doc" not in earlier or "doc" not in later or earlier["doc"] != later["doc"]:
+        return None
+    left = (earlier["doc"], earlier["day"], earlier["end"])
+    found = (later["doc"], later["day"], later["start"])
+    flows = _dataflows_at(_folder(user_key, project_id), [left, found])
+    if flows.get(left) is None or flows.get(found) is None:
+        return None
+    return copy.deepcopy(flows[left]), copy.deepcopy(flows[found])
+
+
 def dataflow_at(user_key: str, project_id: str, point_id: str) -> Optional[dict]:
     """The dataflow as it stood at the point *point_id*, the part the doc
     holds; ``None`` for no such point, or one whose log cannot be read. A
