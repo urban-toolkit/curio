@@ -132,8 +132,10 @@ export interface AgentDatasetSourceRecord {
   discoveryId?: string;
   /** The id of the card the recorded pick was made on. */
   pickedFrom?: string;
-  /** What the server said comes next of the pick, one sentence: the card's
-   * Recorded line ends with it, in every chat and tab. */
+  /** What the server said comes next of the pick, one sentence, which ends
+   * the Source recorded turn in every chat that holds the card. A card the
+   * pick left open (a portal file to import, another row to pick) shows it
+   * in every tab; a Recorded card leaves it to that turn. */
   next?: string;
 }
 

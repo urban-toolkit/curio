@@ -107,18 +107,27 @@ export function pickKey(
   return undefined;
 }
 
+/** Where a recorded pick comes from, as its row says: its provider, else the
+ * Data Catalog for a row of the catalog. */
+function pickOrigin(pick: AgentDatasetCandidateRow): string | null {
+  if (pick.provider) return pick.provider;
+  return pick.sourceType === "catalog" ? "Data Catalog" : null;
+}
+
 /** What the card says once its node's Dataset Finder recorded the pick: what
- * was picked, then what the server said comes next of it (the record's
- * `next`), so it promises no build nobody starts, and says the same in every
- * chat and tab. Exported for tests. */
+ * was picked and where it comes from, and no more, the same in every chat and
+ * tab. What comes of the pick (the record's `next`) ends the Source recorded
+ * turn the server writes below the card in every chat that holds it, so the
+ * card leaves it to that turn and the chat says it once. Exported for tests. */
 export function recordedLine(record: AgentDatasetSourceRecord): string {
   const names = (record.picks ?? [])
     .map((pick) => {
       const name = pick.name || pick.datasetId || pick.url || "";
-      return pick.provider ? `${name} (${pick.provider})` : name;
+      const origin = pickOrigin(pick);
+      return origin ? `${name} (${origin})` : name;
     })
     .join(", ");
-  return record.next ? `Recorded: ${names}. ${record.next}` : `Recorded: ${names}.`;
+  return `Recorded: ${names}.`;
 }
 
 /** What a closed card says: why nothing is to pick on it any more. *node* is
@@ -181,7 +190,7 @@ export function verifiedPortalUrl(row: AgentDatasetCandidateRow): string | null 
  * records the pick on the Finder, naming the card it was made on. It follows
  * the Finder's record (`sourceCardStanding`): its rows show only while the
  * record asks for its pick; the card the pick was made on says Recorded, with
- * what the server said comes next; a card a newer search replaced, or one
+ * the pick and where it comes from; a card a newer search replaced, or one
  * whose Finder, node or record is gone, or whose node needs no pick, is
  * closed and says why.
  */
