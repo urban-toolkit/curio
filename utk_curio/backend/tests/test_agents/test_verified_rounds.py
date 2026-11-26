@@ -1280,8 +1280,8 @@ class TestVerifiedSolve:
                            headers=_auth(token)).get_json()["turns"]
         assert not [p for t in turns for p in (t.get("content") or []) if p.get("type") == "proposal"]
         card = next(p for t in reversed(turns) for p in (t.get("content") or []) if p.get("type") == "card")
-        assert any(line.startswith(ctx["load"][:8]) and "solved" in line and "pass after 1 round" in line
-                   for line in card["lines"]), card["lines"]
+        # Each node is named as its header on the canvas names it: the plan's title.
+        assert "Load · solved · pass after 1 round" in card["lines"], card["lines"]
 
     def test_verify_flag_is_validated(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token

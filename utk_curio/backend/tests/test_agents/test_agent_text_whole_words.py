@@ -480,9 +480,10 @@ class TestAValidatedChart:
                 "attempts": [{"round": 1, "verdict": "not-executable", "kind": "not-executable"}]}
         builder = SimpleNamespace(coord="agent.curio.node-builder@1",
                                   manifest=SimpleNamespace(name="Node Builder", category="node"))
+        # The round's line as the loop writes it (test_its_round_says_its_grammar_validated_it).
         list(validate._land_validated(
             "u1", "p1", "att-plan", "sess-plan", "att-map", "sess-map", "map", "Library branch map",
-            '{"mark": "bar"}', done, 1, ["round 1: not-executable"], resolution=builder,
+            '{"mark": "bar"}', done, 1, ["round 1: validated against its grammar"], resolution=builder,
         ))
         by_chat = {attachment: turns for attachment, turns in said}
         [home], [plan] = by_chat["att-map"], by_chat["att-plan"]
@@ -513,3 +514,18 @@ class TestAValidatedChart:
                            headers=_auth(token)).get_json()["turns"]
         assert turns[-1]["text"].startswith("Validated 'Library branch map': its vis-vega document is valid")
         assert turns[-1]["content"][0]["title"] == "Solve · VALIDATED against its grammar after 1 round"
+        # Its trail says the same, and nothing failed, so it has no attempts to fix.
+        assert turns[-1]["content"][0]["lines"] == ["round 1 · validated against its grammar"]
+        assert not [p for p in turns[-1]["content"] if p.get("type") == "solveAttempts"]
+
+    def test_its_round_says_its_grammar_validated_it(self, app, tmp_curio):
+        """The loop's own line for the round: the line the trace card shows
+        under its VALIDATED title, with no reason the sandbox ran nothing."""
+        from utk_curio.backend.tests.test_agents import test_document_validation as documents
+
+        _events, outcome, _inputs = documents.TestTheWriteGateInTheLoop()._rounds(
+            app, documents.VEGA, [documents.OWNERS_VEGA, documents.FIXED_VEGA],
+        )
+        assert outcome["verdict"] == "not-executable"
+        assert outcome["roundsTrace"][-1] == "round 2: validated against its grammar", outcome["roundsTrace"]
+        assert not [line for line in outcome["roundsTrace"] if "executable" in line], outcome["roundsTrace"]

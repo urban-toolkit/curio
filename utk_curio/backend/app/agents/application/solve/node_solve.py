@@ -238,7 +238,10 @@ def _solved_node(
                   "attempts": attempts, "evidence": outcome["evidence"],
                   # dev/127: which bound ended the loop, for the row's notice.
                   "stoppedBy": outcome.get("stoppedBy")}
-    trail_lines = _trail_lines(attempts)
+    # A chart's or a map's document its grammar validated: nothing failed, so
+    # its trail says so and it has no attempts to fix.
+    validated = labels.document_validated(verdict, outcome["evidence"])
+    trail_lines = _trail_lines(attempts, validated=validated)
     text, card_kind, parts = _conclude(
         user_key, project_id, attachment_id, session_id, spec, node, label, had_content,
         grounding_base, outcome, done, asker=acting_user, room_asker=room_asker, peer=peer,
@@ -258,7 +261,7 @@ def _solved_node(
                  f"round{'s' if rounds != 1 else ''}",
         "lines": trail_lines[:10],
     }
-    if verdict != "pass" and attempts:
+    if verdict != "pass" and attempts and not validated:
         # dev/127: the trail itself, with the code each attempt ran — in THIS
         # chat, durably, not only in the transient row above.
         trail_part = agents_rounds._solve_attempts_part(
@@ -377,10 +380,15 @@ def _run_node_loop(
     return outcome
 
 
-def _trail_lines(attempts: list) -> list[str]:
-    """One line per attempt (the first eight): round, verdict, kind, and why."""
+def _trail_lines(attempts: list, *, validated: bool = False) -> list[str]:
+    """One line per attempt (the first eight): round, verdict, kind, and why.
+    With *validated*, a document's round the sandbox did not run reads as its
+    grammar validated it."""
     trail_lines = []
     for attempt in attempts[:8]:
+        if validated and attempt.get("verdict") == "not-executable":
+            trail_lines.append(f"round {attempt.get('round')} · {labels.DOCUMENT_VALIDATED}")
+            continue
         why = agents_rounds._attempt_why(attempt, limit=160)
         line = f"round {attempt.get('round')} · {attempt.get('verdict')} · {attempt.get('kind')}"
         if attempt.get("verdict") == "pass":

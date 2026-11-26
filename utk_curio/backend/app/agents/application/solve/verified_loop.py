@@ -39,6 +39,7 @@ from utk_curio.backend.app.agents.domain import dashboards
 from utk_curio.backend.app.agents.domain import document_validation
 from utk_curio.backend.app.agents.domain import failure_text
 from utk_curio.backend.app.agents.domain import input_contract
+from utk_curio.backend.app.agents.domain.labels import document_validated, verdict_words
 from utk_curio.backend.app.agents.domain import map_edits
 from utk_curio.backend.app.agents.domain import node_context
 from utk_curio.backend.app.agents.domain import result_shape
@@ -1031,8 +1032,11 @@ class VerifiedRounds:
             "round": self.rounds_used, "verdict": verdict_result["verdict"],
         }
         round_evidence = (verdict_result.get("evidence") or {})
+        # A document its grammar validated ran nothing and failed nothing: the
+        # round says so, with no runner's reason it ran nothing.
+        validated = document_validated(verdict_result["verdict"], round_evidence)
         self.rounds_trace.append(
-            f"round {self.rounds_used}: {verdict_result['verdict']}"
+            f"round {self.rounds_used}: {verdict_words(verdict_result['verdict'], round_evidence)}"
             + (
                 # dev/127: the exception line, whole — this is the line that
                 # reached the owner's chat as "round 2: execution-error — de".
@@ -1040,7 +1044,8 @@ class VerifiedRounds:
                     round_evidence.get("stderrTail") or round_evidence.get("detail") or "",
                     code=self.candidate, limit=200,
                 ) + ")"
-                if verdict_result["verdict"] != "pass"
+                if verdict_result["verdict"] != "pass" and not validated
+                else "" if validated
                 else f", output {round_evidence.get('outputDataType') or '?'}"
             )
         )
