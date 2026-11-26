@@ -51,10 +51,11 @@ const PAUSED_NOTICE = "Paused: ";
  * Its more part, closed until asked for, holds the plan's nodes with their own
  * Solve, Build & validate plan, Step, the other batch actions and the hints,
  * at most a third of the panel's height, scrolling. What comes with a fix
- * stays in view under the line: a missing key's Add key, a missing
- * specialist's Add to project, the nodes awaiting a source, an action's error
- * with its Open API Settings. Before any plan there is no line: the planning
- * templates are in the empty conversation.
+ * stays in view under the line: a paused build's pause, said there once, a
+ * missing key's Add key, a missing specialist's Add to project, the nodes
+ * awaiting a source, an action's error with its Open API Settings. Before any
+ * plan there is no line: the planning templates are in the empty
+ * conversation.
  */
 export const AgentBuilderStrip: React.FC<{
   attachment: AgentAttachment;
@@ -346,6 +347,11 @@ export const AgentBuilderStrip: React.FC<{
     unresolved > 0 ? `${unresolved} node${unresolved === 1 ? "" : "s"} unsolved` : null;
 
   const paused = !building && Boolean(pauseReason);
+  // A paused build's pause is said once, under the line, whether the more
+  // part is open or not: the session's, which a tab opened since reads too,
+  // in place of this line's own notice of it.
+  const pauseLine = paused && pauseReason ? `${PAUSED_NOTICE}${pauseReason.message}` : null;
+  const noticeLine = pauseLine && notice?.startsWith(PAUSED_NOTICE) ? null : notice;
   const main = mainActionOf({
     solveRunning,
     canStopSolve: Boolean(onCancelSolve),
@@ -494,7 +500,8 @@ export const AgentBuilderStrip: React.FC<{
           onDismiss={onDismissProposal ? () => void review(onDismissProposal, installReview.proposalId) : undefined}
         />
       ) : null}
-      {notice ? <div className={styles.hint}>{notice}</div> : null}
+      {noticeLine ? <div className={styles.hint}>{noticeLine}</div> : null}
+      {pauseLine ? <div className={styles.hint}>{pauseLine}</div> : null}
       {error ? (
         <div className={styles.error}>
           {error} <LlmConfigAction remedy={errorRemedy} />
@@ -538,7 +545,12 @@ export const AgentBuilderStrip: React.FC<{
             />
           ) : null}
           {batchActions(otherParts, false)}
-          {solveDisabledReason && phase !== "ready" ? <div className={styles.hint}>{solveDisabledReason}</div> : null}
+          {/* Why Solve is off, but not that the nodes wait for you: the line
+              says how many need you, their rows say what for, and a paused
+              build's line says it under the line. */}
+          {solveDisabledReason && phase !== "ready" && (building || !everyUnresolvedNeedsUser) ? (
+            <div className={styles.hint}>{solveDisabledReason}</div>
+          ) : null}
           {solveRunning ? (
             // dev/115 (DEC-021 slice): the batch is a background job.
             <div className={styles.hint}>Solve keeps running if you close this panel.</div>
@@ -551,9 +563,6 @@ export const AgentBuilderStrip: React.FC<{
           ) : null}
           {simulationActivity ? (
             <div className={styles.hint} aria-live="polite">{simulationActivity}</div>
-          ) : null}
-          {paused && pauseReason ? (
-            <div className={styles.hint}>Paused: {pauseReason.message} (Resume continues from here.)</div>
           ) : null}
         </div>
       ) : null}

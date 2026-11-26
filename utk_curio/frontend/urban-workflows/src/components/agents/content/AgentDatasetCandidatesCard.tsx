@@ -450,7 +450,7 @@ export const AgentDatasetCandidatesCard: React.FC<{
             {row.url && !portalUrl ? <span className={styles.url}>{row.url}</span> : null}
             {row.fit ? (
               <span className={styles.fit}>
-                Fit {row.fit.score}/100 — {row.fit.rationale}
+                Fit {row.fit.score}/100: {row.fit.rationale}
               </span>
             ) : null}
             {row.requirement ? (

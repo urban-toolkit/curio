@@ -222,7 +222,7 @@ def _validate_events(
     which the ledger keeps for a node left waiting for its source."""
     node_id = node.get("id")
     execution_id = uuid.uuid4().hex
-    label = (node.get("goal") or node_id)[:60]
+    label = agents_node_solve.solve_label(node)
     try:
         with agents_room.at_work(user_key, project_id, attachment_id, spec=spec, coord=coord, who=room_asker):
             yield "validation_started", {"nodeId": node_id, "executionId": execution_id}

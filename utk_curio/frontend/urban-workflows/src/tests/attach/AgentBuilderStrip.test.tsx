@@ -914,7 +914,9 @@ describe("AgentBuilderStrip counts who waits for you from the listing", () => {
     );
     expect(screen.getByRole("group", { name: "Dataflow Builder" })).toHaveTextContent("1 needs you");
     openMore();
-    expect(screen.getAllByText("needs you")).toHaveLength(1);
+    // Its row reads Needs a source, once, and no "needs you" beside it.
+    expect(screen.getAllByText("Needs a source")).toHaveLength(1);
+    expect(screen.queryByText("needs you")).toBeNull();
   });
 });
 

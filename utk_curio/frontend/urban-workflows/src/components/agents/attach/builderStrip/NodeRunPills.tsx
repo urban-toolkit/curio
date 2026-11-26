@@ -1,11 +1,14 @@
 import React from "react";
 
 import styles from "../AgentBuilderStrip.module.css";
+import { ROW_STATE_CHIP } from "../../content/reviewCard/reviewCardText";
 import { STATUS_LABEL, type SolveWaitingRow } from "./builderStripDerived";
 
-/** One pill per plan node: its name, its live or persisted status in words,
- * whose turn it is (dev/131: "needs you" / "waiting upstream"), and the
- * per-node Solve. */
+/** One pill per plan node: its name, one label, and the per-node Solve. The
+ * label is whose turn it is when the node waits (dev/131): a node that waits
+ * for you to pick its source reads Needs a source, in the plan card's words,
+ * with the waiting dot; one that waits upstream says so. Else it is the node's
+ * live or persisted status in words. */
 export const NodeRunPills: React.FC<{
   entries: Array<[string, string]>;
   userBlockedIds: Set<string>;
@@ -22,19 +25,20 @@ export const NodeRunPills: React.FC<{
       const needsUser = userBlockedIds.has(nodeId);
       const waiting = (solveWaiting ?? []).find((w) => w.nodeId === nodeId);
       return (
-        <li key={nodeId} className={`${styles.nodeRun}${needsUser ? ` ${styles.nodeNeedsUser}` : ""}`}>
+        <li key={nodeId} className={styles.nodeRun}>
+          {needsUser ? <span className={styles.waitingDot} aria-hidden="true" /> : null}
           <span className={styles.nodeName} data-tooltip={name}>{name}</span>
-          <span className={styles[`status_${status}` as keyof typeof styles] ?? ""}>{STATUS_LABEL[status] ?? status}</span>
           {needsUser ? (
-            <span className={styles.needsYou} data-tooltip={waiting?.reason ?? undefined}>
-              needs you
+            <span className={styles.needsSource} data-tooltip={waiting?.reason ?? undefined}>
+              {ROW_STATE_CHIP["awaiting-source"]}
             </span>
-          ) : null}
-          {waiting && waiting.kind === "upstream" ? (
+          ) : waiting && waiting.kind === "upstream" ? (
             <span className={styles.waitingUpstream} data-tooltip={waiting.reason ?? undefined}>
               waiting upstream
             </span>
-          ) : null}
+          ) : (
+            <span className={styles[`status_${status}` as keyof typeof styles] ?? ""}>{STATUS_LABEL[status] ?? status}</span>
+          )}
           {onSolveNode && (status === "pending" || status === "failed") ? (
             <button
               type="button"

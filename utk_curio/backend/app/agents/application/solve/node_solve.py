@@ -32,9 +32,32 @@ from utk_curio.backend.app.agents.application.turns import delegates as agents_d
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import policy as agents_policy
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
+from utk_curio.backend.app.execution import node_names
 from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.collaboration import agent_peers
 from utk_curio.backend.app.collaboration import dataflow_docs, owner_guard
+
+#: The most characters of its goal a node with no title is named by.
+GOAL_NAME_CHARS = 60
+
+
+def solve_label(node: dict) -> str:
+    """What a Solve's turns call *node*: its title, whole, as its header on
+    the canvas shows it. A node with no title is named by its goal, cut on a
+    word with an ellipsis when it is longer than :data:`GOAL_NAME_CHARS` (a
+    first word longer than that stands whole), and one with no goal by its
+    id."""
+    title = node_names.saved_node_title(node)
+    if title:
+        return title
+    goal = " ".join(str(node.get("goal") or "").split())
+    if not goal:
+        return str(node.get("id") or "")
+    if len(goal) <= GOAL_NAME_CHARS:
+        return goal
+    head = goal[:GOAL_NAME_CHARS + 1]
+    cut = head.rsplit(" ", 1)[0] if " " in head else goal.split(" ", 1)[0]
+    return goal if cut == goal else cut.rstrip(" ,;:-–—") + "…"
 
 
 def solve_node_stream(
@@ -197,7 +220,7 @@ def _solved_node(
     """The per-node Solve body (dev/115 A2) over the ONE verified loop; returns
     its done payload, with the changes it landed (``landed``)."""
     node_id = node.get("id")
-    label = (node.get("goal") or node_id)[:60]
+    label = solve_label(node)
     started = time.monotonic()
     had_content = bool(str(node.get("content") or "").strip())
     yield "solve_node_started", {
