@@ -1924,3 +1924,254 @@ class TestTheChatThatAsksLaterGetsTheCardToo:
         listed = h.cards()
         assert (listed[h.att]["waitsForYou"], listed[node_builder]["waitsForYou"]) == ([h.load], [h.load]), listed
         assert len(h.discover_calls) == 1
+
+
+class _Asked:
+    """The model calls the dataflow of a harness makes from now on: the
+    loader's Node Builder's, its Dataset Finder's, and all of them."""
+
+    def __init__(self, h):
+        self.h = h
+        self.before = (len(h.dl_calls), len(h.discover_calls), len(h.model_calls))
+
+    def counts(self) -> dict:
+        builder, finder, every = self.before
+        return {
+            "the loader's Node Builder": len(self.h.dl_calls) - builder,
+            "its Dataset Finder": len(self.h.discover_calls) - finder,
+            "in all": len(self.h.model_calls) - every,
+        }
+
+    def of_the_loader(self) -> dict:
+        """The calls of the loader's own agents alone: a Solve of the plan
+        makes calls of its own besides theirs, two here."""
+        counts = self.counts()
+        return {who: counts[who] for who in ("the loader's Node Builder", "its Dataset Finder")}
+
+
+#: What a loader with no source costs when its Dataset Finder is asked first:
+#: the Finder's one call, and none of its Node Builder.
+FINDER_ALONE = {"the loader's Node Builder": 0, "its Dataset Finder": 1, "in all": 1}
+#: What a loader with a source costs: its Node Builder's first round, which
+#: builds it, and no Finder.
+BUILT_AT_ONCE = {"the loader's Node Builder": 1, "its Dataset Finder": 0, "in all": 1}
+
+
+def _delegated_solves(h) -> list[str]:
+    """The Solve turns another agent handed the loader's Node Builder: one
+    each time the loader goes to its builder."""
+    return [
+        t.get("text") or "" for t in h.session_turns(h.node_builder_attachment_id())
+        if (t.get("text") or "").startswith("[Delegated by")
+    ]
+
+
+def _a_dataset(user, title: str) -> str:
+    """A dataset the account imported into its Data Catalog, titled *title*,
+    in no dataflow: its id."""
+    from utk_curio.backend.app.datasets.install.installer import install_imported_file
+
+    return install_imported_file(_user_dir_key(user), b"a,b\n1,2\n", "rows.csv", "csv", title=title).manifest.id
+
+
+def _reads(dataset_id: str) -> str:
+    """A loader's code that reads *dataset_id* from the Data Catalog."""
+    return f'data = curio_load_data("{dataset_id}")\nreturn data'
+
+
+def _in_the_dataflow(h, dataset_id: str) -> None:
+    """Add *dataset_id* to the dataflow, as Add to project does."""
+    r = h.client.post(f"/api/dataflows/{h.pid}/datasets/install", json={"datasetId": dataset_id},
+                      headers=_auth(h.token))
+    assert r.status_code == 200, r.get_data(as_text=True)
+
+
+def _the_loader_holds(h, *, content: str | None = None, datasets: dict | None = None) -> None:
+    """The loader as the user left it: *content* as its code, and each of its
+    dataset widgets named in *datasets* holding the id given."""
+    with projects_storage.spec_write_lock(h.ukey, h.pid):
+        spec = dataflow_docs.live(h.ukey, h.pid)
+        node = next(n for n in spec["dataflow"]["nodes"] if n.get("id") == h.load)
+        if content is not None:
+            node["content"] = content
+        widgets = node.setdefault("metadata", {}).setdefault("widgets", [])
+        for name, dataset_id in (datasets or {}).items():
+            widget = next((w for w in widgets if w.get("name") == name), None)
+            if widget is None:
+                widgets.append({"name": name, "type": "dataset", "default": "", "value": dataset_id})
+            else:
+                widget["value"] = dataset_id
+        dataflow_docs.write(h.ukey, h.pid, spec, dataflow_docs.person(h.ukey, "edit"))
+
+
+class TestALoaderWithNoSourceAsksItsFinderFirst:
+    """A data-loading node with a Dataset Finder of its own, and nothing that
+    names its source: Solve, Build & validate plan, a plan row's Solve and
+    Solve this node each ask its Finder before any round, and the loader
+    waits for the pick with no call of its Node Builder. Step 5.3 of the agent
+    chat plan, found by the dev check of steps 4 and 5 (11-26). On main a Data
+    Catalog that held any dataset, a shipped one among them, grounded a first
+    attempt: the Node Builder wrote the loader round after round, each one
+    refused for its source, and the Finder was asked only once the rounds
+    ended (on dev 8 rounds and 48 s, here the 3 rounds the suite allows).
+
+    A loader that has a source it can load from is built as before, from its
+    first round: a dataset of its dataflow, a dataset of the Data Catalog its
+    goal names by title, one its dataset widget holds, its own code that
+    reads one, or a URL its goal names. So is a loader with no Dataset Finder
+    of its own: the Data Catalog grounds its first attempt, and discovery
+    starts once the rounds are refused for its source. Those guards pass on
+    main too."""
+
+    @pytest.fixture(autouse=True)
+    def _six_actions(self, monkeypatch):
+        monkeypatch.setattr(budgets, "SIMULATE_MAX_ACTIONS", 6)
+
+    def test_solve_asks_the_finder_before_the_loaders_builder(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        asked = _Asked(h)
+        load = h.solve()["results"][h.load]
+        assert asked.of_the_loader() == {"the loader's Node Builder": 0, "its Dataset Finder": 1}, (
+            asked.counts(), [a.get("kind") for a in load.get("attempts") or []],
+        )
+        assert load["status"] == "pending", load
+        assert load["reason"].startswith("awaiting your dataset selection"), load
+        assert load["attempts"] == [], load["attempts"]
+        assert h.node_content(h.load) == ""
+
+    def test_build_and_validate_plan_asks_the_finder_before_the_loaders_builder(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        asked = _Asked(h)
+        done = h.simulate("auto")[-1][1]
+        assert asked.counts() == FINDER_ALONE, asked.counts()
+        assert (done.get("status"), (done.get("reason") or {}).get("kind")) == ("paused", "awaiting-source"), done
+        assert done["builderSession"]["nodeStates"]["load"] == "awaiting-source", done["builderSession"]
+        # The loader was never handed to its Node Builder.
+        assert _delegated_solves(h) == []
+        assert h.node_content(h.load) == ""
+
+    def test_a_rows_solve_asks_the_finder_before_the_loaders_builder(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        asked = _Asked(h)
+        done = h.validate("load")[-1][1]
+        assert asked.counts() == FINDER_ALONE, asked.counts()
+        assert done.get("verdict") == "awaiting-source", done
+        assert done.get("attempts") == [], done.get("attempts")
+        assert _delegated_solves(h) == []
+        assert h.node_content(h.load) == ""
+
+    def test_solve_this_node_asks_the_finder_before_the_loaders_builder(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        asked = _Asked(h)
+        done = _solve_this_node(h, h.node_builder_attachment_id())
+        assert asked.counts() == FINDER_ALONE, asked.counts()
+        assert done.get("verdict") == "awaiting-source", done
+        assert h.node_content(h.load) == ""
+
+    def test_a_loader_its_dataflow_holds_a_dataset_for_is_built_from_its_first_round(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The dataflow holds a dataset its goal does not name: its builder is
+        handed the dataflow's datasets and loads it."""
+        user, token = user_and_token
+        dataset_id = _a_dataset(user, "Ward offices")
+        h = _Harness(client, user, token, monkeypatch, dl_replies=[_reads(dataset_id)])
+        _in_the_dataflow(h, dataset_id)
+        asked = _Asked(h)
+        done = h.validate("load")[-1][1]
+        assert done.get("verdict") == "pass", done
+        assert asked.counts() == BUILT_AT_ONCE, asked.counts()
+        assert dataset_id in h.node_content(h.load)
+
+    def test_a_loader_whose_goal_names_a_dataset_by_its_title_is_built_from_its_first_round(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The goal names a dataset of the Data Catalog by its title, in no
+        dataflow."""
+        user, token = user_and_token
+        dataset_id = _a_dataset(user, "Ward offices")
+        h = _Harness(client, user, token, monkeypatch, goal="load the city's ward offices",
+                     dl_replies=[_reads(dataset_id)])
+        asked = _Asked(h)
+        done = h.validate("load")[-1][1]
+        assert done.get("verdict") == "pass", done
+        assert asked.counts() == BUILT_AT_ONCE, asked.counts()
+        assert dataset_id in h.node_content(h.load)
+
+    def test_a_loader_whose_dataset_widget_holds_a_dataset_is_built_from_its_first_round(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The loader's Data widget holds a dataset of the Data Catalog, which
+        its code reads through the widget."""
+        user, token = user_and_token
+        dataset_id = _a_dataset(user, "Ward offices")
+        h = _Harness(client, user, token, monkeypatch, dl_replies=["data = curio_load_data([!! data !!])\nreturn data"])
+        _the_loader_holds(h, datasets={"data": dataset_id})
+        asked = _Asked(h)
+        done = h.validate("load")[-1][1]
+        assert done.get("verdict") == "pass", done
+        assert asked.counts() == BUILT_AT_ONCE, asked.counts()
+
+    def test_solve_this_node_runs_the_code_a_loader_holds_that_reads_a_dataset(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The loader's own code reads a dataset of the Data Catalog: Solve
+        this node runs it as it is, and asks no one."""
+        user, token = user_and_token
+        dataset_id = _a_dataset(user, "Ward offices")
+        h = _Harness(client, user, token, monkeypatch)
+        _the_loader_holds(h, content=_reads(dataset_id))
+        asked = _Asked(h)
+        done = _solve_this_node(h, h.node_builder_attachment_id())
+        assert done.get("verdict") == "pass", done
+        assert asked.counts() == {"the loader's Node Builder": 0, "its Dataset Finder": 0, "in all": 0}, asked.counts()
+        assert h.node_content(h.load) == _reads(dataset_id)
+
+    def test_a_loader_whose_goal_names_a_url_is_built_from_its_first_round(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch, goal=f"load the boundaries at {URL}",
+                     dl_replies=[f'import pandas as pd\nreturn pd.read_json("{URL}")'])
+        asked = _Asked(h)
+        done = h.validate("load")[-1][1]
+        assert done.get("verdict") == "pass", done
+        assert asked.counts() == BUILT_AT_ONCE, asked.counts()
+        assert URL in h.node_content(h.load)
+
+    def test_a_loader_with_no_finder_of_its_own_tries_before_a_finder_is_asked(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The loader's Dataset Finder was taken off it: the Data Catalog
+        grounds a first attempt, the rounds are refused for its source, and
+        only then does discovery start, which gives the loader a Finder. The
+        node waits for the pick with the trail of what was tried."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        finder = h.finder_attachment_id()
+        r = client.delete(f"/api/agents/projects/{h.pid}/attachments/{finder}", headers=_auth(token))
+        assert r.status_code == 200, r.get_data(as_text=True)
+        asked = _Asked(h)
+        load = h.solve()["results"][h.load]
+        assert asked.of_the_loader() == {"the loader's Node Builder": 3, "its Dataset Finder": 1}, asked.counts()
+        assert load["status"] == "pending", load
+        assert load["reason"].startswith("awaiting your dataset selection"), load
+        assert [a["kind"] for a in load["attempts"]] == ["ungrounded-source"] * 3
+        assert "areas.csv" in load["attempts"][0]["detail"]
+        assert h.exec_payloads == []  # nothing ungrounded ever ran
+        assert h.node_content(h.load) == ""
+        # The Finder the discovery gave the loader holds its candidates.
+        assert load["remedy"]["attachmentId"] == h.finder_attachment_id() != finder
+        assert dr.source_record(h.spec(), h.load)["status"] == dr.STATE_CANDIDATES_PENDING
