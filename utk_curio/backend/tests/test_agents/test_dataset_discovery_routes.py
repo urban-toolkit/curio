@@ -97,10 +97,12 @@ class _Harness:
     ``parent`` is the agent that plans and solves, the Dataflow Builder unless
     a test names another; ``prepare`` runs on the new project before it is
     installed. ``plan`` replaces the plan of one loader feeding one node: every
-    loader of it is answered from ``dl_replies``."""
+    loader of it is answered from ``dl_replies``. ``message`` is what the user
+    asks the parent for, in its chat, before the plan lands."""
 
     def __init__(self, client, user, token, monkeypatch, *, goal=None,
-                 discover_replies=None, dl_replies=None, parent=DFB, prepare=None, plan=None):
+                 discover_replies=None, dl_replies=None, parent=DFB, prepare=None, plan=None,
+                 message="plan it"):
         self.client, self.user, self.token = client, user, token
         self.ukey = _user_dir_key(user)
         routes_proposals.TestNodeCreate()._write_builtin_package(self.ukey, templates=TEMPLATES)
@@ -165,7 +167,7 @@ class _Harness:
             lambda url, **k: {"status": "verified", "detail": "200 OK"},
         )
         r = client.post(f"/api/agents/projects/{self.pid}/attachments/{self.att}/run",
-                        json={"message": "plan it"}, headers=_auth(token))
+                        json={"message": message}, headers=_auth(token))
         # The plan landed with the reply; its nodes are what the reply hands a
         # canvas no doc binds.
         graph = routes_proposals._landed_plan(r.get_json())["canvas"]

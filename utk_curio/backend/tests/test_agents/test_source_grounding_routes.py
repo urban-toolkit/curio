@@ -873,6 +873,28 @@ class TestValuesTheUserTyped:
         held = self._held(user, project)
         assert "np.random" not in held and "df['b'].sum()" in held and '"I", "J"]' in held, held
 
+    def test_a_plans_row_lands_the_values_the_user_typed_in_the_plans_chat(
+        self, client, user_and_token, tmp_curio, monkeypatch,
+    ):
+        """A plan row's Solve of a loader whose goal gives the values the user
+        typed in the Dataflow Builder's chat: its round passes the source
+        check, which reads the chat that asked, and its code lands, which is
+        checked the same way. On main the landing read the loader's Node
+        Builder chat, which holds no message of the user's, and refused the
+        values its round had passed, so the node failed with nothing written.
+        Found by step 5.3 of the agent chat plan."""
+        from utk_curio.backend.tests.test_agents.test_dataset_discovery_routes import _Harness
+
+        user, token = user_and_token
+        rows = 'import pandas as pd\nreturn pd.DataFrame({"count": [12, 15, 20]})'
+        h = _Harness(client, user, token, monkeypatch, message="Table the count 12, 15 and 20.",
+                     goal="load the count 12, 15 and 20 the user typed", dl_replies=[rows])
+        done = h.validate("load")[-1][1]
+        assert done.get("verdict") == "pass", done
+        assert h.node_content(h.load) == rows
+        # Built from its first round, with no Dataset Finder asked.
+        assert (len(h.dl_calls), len(h.discover_calls)) == (1, 0)
+
 
 class TestSolveSourceGrounding:
     """Solve never writes fabricated-path content: the data-loading node fails
