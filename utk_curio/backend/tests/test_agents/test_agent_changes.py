@@ -54,22 +54,23 @@ def _plan_tail(plan: dict) -> str:
     return "```curio.v1\n" + json.dumps({"dataflowPlan": plan}) + "\n```"
 
 
-def _project(client, user, token, nodes, edges) -> str:
-    """A dataflow of *nodes* and *edges* on the test templates the plan and
-    node tests use (``TestNodeCreate``)."""
+def _project(client, user, token, nodes, edges, task=None) -> str:
+    """A dataflow of *nodes* and *edges*, and the goal *task* when given, on
+    the test templates the plan and node tests use (``TestNodeCreate``)."""
     from utk_curio.backend.app.projects.services import _user_dir_key
 
     TestNodeCreate()._write_builtin_package(_user_dir_key(user))
+    dataflow = {"nodes": nodes, "edges": list(edges), "packages": [], **({"task": task} if task is not None else {})}
     created = client.post("/api/projects", headers=_auth(token), json={
-        "name": "p", "spec": {"dataflow": {"nodes": nodes, "edges": list(edges), "packages": []}}, "outputs": [],
+        "name": "p", "spec": {"dataflow": dataflow}, "outputs": [],
     })
     assert created.status_code == 201, created.get_data(as_text=True)
     return created.get_json()["id"]
 
 
-def _setup(client, user, token, coord=NB, target=None, nodes=None, edges=None):
+def _setup(client, user, token, coord=NB, target=None, nodes=None, edges=None, task=None):
     project = _project(client, user, token, nodes if nodes is not None else _nodes(),
-                       edges if edges is not None else _edges())
+                       edges if edges is not None else _edges(), task)
     _install(client, token, project, *dict.fromkeys((coord, NB)))
     att = _attach(client, token, project, coord, target=target)
     return project, att
@@ -471,6 +472,49 @@ class TestUndoByKind:
         assert _by_id(flow)["sum"]["content"] == "return input_0.max()  # while the plan landed"
         assert "load" not in _by_id(flow)
         assert flow["task"] == "Map the parks in the shade"
+
+    def test_undo_of_a_plan_keeps_what_a_person_wrote_before_it_with_no_version_of_its_own(
+        self, client, user_and_token, tmp_curio, monkeypatch,
+    ):
+        """A goal or a description written makes no version of its own, so the
+        version before a plan can be older than them: the plan's Undo puts
+        back the dataflow as the plan's first write found it, and what the
+        person wrote stays as they left it. Here they cleared the goal and
+        wrote a description before the plan, which then filled the goal.
+        Before the fix the Undo put back the version before those writes: the
+        goal they had cleared, and no description."""
+        from utk_curio.backend.app.collaboration import dataflow_docs
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        project, att = _setup(client, user, token, coord=DFB, task="Find the old parks")
+        # The doc open, as a tab holds it: its first version holds that goal.
+        with dataflow_docs._held(project, _user_dir_key(user)):
+            pass
+
+        def cleared_and_described(flow):
+            flow["task"] = ""
+            flow["description"] = "Parks a short walk from home"
+
+        _person_writes(user, project, cleared_and_described)
+        plan = {
+            "goal": "replace the loader",
+            "nodes": [{"ref": "a", "nodeType": CA, "title": "API Fetch", "intent": "fetch from the api"}],
+            "edges": [{"from": "a", "to": "sum"}],
+            "removeNodes": ["load"],
+        }
+        body, _ = _ask(client, token, project, att, monkeypatch, ["Here.\n" + _plan_tail(plan)])
+        card = _the_card(body)
+        assert card["goalSet"] == "replace the loader", card
+        undone = _undo(client, token, project, att, card["changeId"])
+        assert undone.status_code == 200, undone.get_json()
+        flow = _saved(client, token, project)
+        assert set(_by_id(flow)) == {"load", "sum"}
+        assert flow.get("task", "") == ""
+        assert flow.get("description") == "Parks a short walk from home"
+        # A canvas no doc binds gets the goal the plan found, not the one cleared.
+        [canvas] = undone.get_json()["canvas"]
+        assert canvas["task"] == "", canvas
 
     def test_undo_of_a_second_plan_gives_the_planner_back_the_first(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
