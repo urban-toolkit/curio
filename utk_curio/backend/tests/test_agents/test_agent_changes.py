@@ -361,6 +361,33 @@ class TestUndoByKind:
         assert "changed this dataflow after; nothing was undone." in refused.get_json()["error"]
         assert _by_id(_saved(client, token, project))["sum"]["content"] == "return input_0.max()  # after the plan"
 
+    def test_undo_of_a_plan_leaves_the_goal_someone_changed_after(
+        self, client, user_and_token, tmp_curio, monkeypatch,
+    ):
+        """The dataflow's goal is not the plan's: a goal changed after a plan
+        that did not set it leaves the plan's Undo free, and the Undo leaves
+        the goal as it is now. On main the Undo was refused (409) when only
+        the goal had changed."""
+        user, token = user_and_token
+        project, att = _setup(client, user, token, coord=DFB)
+        _person_sets_the_goal(user, project, "Map the parks")
+        plan = {
+            "goal": "replace the loader",
+            "nodes": [{"ref": "a", "nodeType": CA, "title": "API Fetch", "intent": "fetch from the api"}],
+            "edges": [{"from": "a", "to": "sum"}],
+            "removeNodes": ["load"],
+        }
+        body, _ = _ask(client, token, project, att, monkeypatch, ["Here.\n" + _plan_tail(plan)])
+        card = _the_card(body)
+        assert _saved(client, token, project)["task"] == "Map the parks"
+        _person_sets_the_goal(user, project, "Map the parks in the shade")
+        undone = _undo(client, token, project, att, card["changeId"])
+        assert undone.status_code == 200, undone.get_json()
+        flow = _saved(client, token, project)
+        assert set(_by_id(flow)) == {"load", "sum"}
+        assert [(e["source"], e["target"]) for e in flow["edges"]] == [("load", "sum")]
+        assert flow["task"] == "Map the parks in the shade"
+
     def test_undo_of_a_second_plan_gives_the_planner_back_the_first(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
         project, att = _setup(client, user, token, coord=DFB)
