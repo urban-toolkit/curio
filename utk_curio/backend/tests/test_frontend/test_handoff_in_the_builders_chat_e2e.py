@@ -215,10 +215,25 @@ def test_the_builders_chat_holds_the_loaders_candidates_and_its_pick_builds_the_
     dismiss_toasts(page)
     save_workflow_test_screenshot(page, SCREENSHOT_STEM, test_name="recorded", clip_selector=CHAT_PANEL_SELECTOR)
 
-    # The Finder's own chat holds the same card, recorded the same way.
+    # The card itself, in its Recorded state in the Builder's chat.
+    card.scroll_into_view_if_needed()
+    expect(card).to_be_in_viewport()
+    page.mouse.move(0, 0)
+    save_workflow_test_screenshot(
+        page, SCREENSHOT_STEM, test_name="card-recorded", clip_selector=CHAT_PANEL_SELECTOR, sweep_toasts=True,
+    )
+
+    # The Finder's own chat holds the same card, recorded the same way, and
+    # has no Solve this node.
     rail.get_by_role("button", name=f"Dataset Finder on {LOADER_TITLE}", exact=True).click()
     finder_panel = page.get_by_role("dialog", name=re.compile(r"^Chat with Dataset Finder"))
     expect(finder_panel).to_be_visible(timeout=20000)
     own = finder_panel.get_by_role("group", name=f"Sources for {LOADER_TITLE}")
     expect(own.get_by_role("status")).to_contain_text("Recorded: Example table: pedestrians per hour", timeout=30000)
     expect(finder_panel.get_by_role("group", name="Solve this node")).to_have_count(0)
+    own.scroll_into_view_if_needed()
+    expect(own).to_be_in_viewport()
+    page.mouse.move(0, 0)
+    save_workflow_test_screenshot(
+        page, SCREENSHOT_STEM, test_name="finder-chat", clip_selector=CHAT_PANEL_SELECTOR, sweep_toasts=True,
+    )
