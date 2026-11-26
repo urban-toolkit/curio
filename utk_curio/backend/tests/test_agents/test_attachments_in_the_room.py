@@ -171,7 +171,7 @@ def _a_loader_and_its_dataset_finder(flow, monkeypatch) -> SimpleNamespace:
     assert attached.status_code == 201, attached.get_data(as_text=True)
     finder = attached.get_json()
     sessions.append_turns(ukey, project, finder["sessionId"], finder["attachmentId"], [sessions.make_turn(
-        "agent", "1 dataset candidate(s) for this node.",
+        "agent", "I found 1 candidate for Load. Pick one with Use this source.",
         content=[{"type": "datasetCandidates", "lanes": {"external": [dict(ROW)], "catalog": []}}],
     )])
     access.add_editor(flow.alice, project, "bob")

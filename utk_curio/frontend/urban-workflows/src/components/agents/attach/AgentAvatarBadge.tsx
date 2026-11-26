@@ -27,17 +27,44 @@ export function workingText(attachment: AgentAttachment, atWork: string | null =
       : null);
 }
 
+/** The name of the dot of an agent that waits for you. */
+export const WAITS_FOR_YOU = "Waits for you";
+
+/** Whether *attachment*'s agent waits for the user to pick a node's source,
+ * as the listing says (`waitsForYou`): a node's Dataset Finder, and the
+ * agent whose chat asked for its candidates. Its badge, its chip in the dock
+ * and its entry in the chat's rail show the waiting dot. */
+export function waitsForYou(attachment: AgentAttachment): boolean {
+  return (attachment.waitsForYou ?? []).length > 0;
+}
+
 /**
  * What an agent's chip holds: its category's glyph, not the generic robot
  * (several agents can be attached to one canvas, and on the canvas the badge
- * is all there is to tell them apart), and while it works the running dot,
- * which *working* labels.
+ * is all there is to tell them apart), while it works the running dot, which
+ * *working* labels, and while it waits for you the waiting dot, in the
+ * running dot's corner, which moves aside for it.
  */
-export function AgentGlyph({ category, working }: { category: string | null | undefined; working: string | null }) {
+export function AgentGlyph({
+  category,
+  working,
+  waiting = false,
+}: {
+  category: string | null | undefined;
+  working: string | null;
+  waiting?: boolean;
+}) {
   return (
     <>
       <FontAwesomeIcon icon={agentCategoryIcon(category)} className={styles.icon} />
-      {working ? <span className={styles.runningDot} role="img" aria-label={working} /> : null}
+      {working ? (
+        <span
+          className={waiting ? `${styles.runningDot} ${styles.runningDotAside}` : styles.runningDot}
+          role="img"
+          aria-label={working}
+        />
+      ) : null}
+      {waiting ? <span className={styles.waitingDot} role="img" aria-label={WAITS_FOR_YOU} /> : null}
     </>
   );
 }
@@ -51,6 +78,8 @@ export function AgentGlyph({ category, working }: { category: string | null | un
  * While the agent is at work in the dataflow's room (`atWork`, what its chip
  * among the people says), the tooltip says what it is doing and the running
  * dot shows, as on its chip in the row: a canvas agent keeps this one chip.
+ * While it waits for you to pick a node's source (`waitsForYou`), the waiting
+ * dot shows, and its name and tooltip say so.
  */
 export const AgentAvatarBadge: React.FC<{
   attachment: AgentAttachment;
@@ -67,22 +96,23 @@ export const AgentAvatarBadge: React.FC<{
   // dev/115 (docs/11:178): the dock's running dot, while this agent's Solve
   // runs in the background, or while the agent is at work in the room.
   const working = workingText(attachment, atWork);
+  const waiting = waitsForYou(attachment);
   return (
     <div
       className={`${styles.badge} ${active ? styles.badgeActive : ""}`}
-      data-tooltip={atWork ?? displayName}
+      data-tooltip={atWork ?? (waiting ? `${displayName} waits for you` : displayName)}
       data-agent-at-work={atWork ? "true" : undefined}
     >
       <button
         type="button"
         className={`${styles.avatar} ${agentTint(attachment.category)}`}
-        aria-label={`Open chat with ${displayName}`}
+        aria-label={`Open chat with ${displayName}${waiting ? ", waits for you" : ""}`}
         onClick={(e) => {
           e.stopPropagation();
           onOpen();
         }}
       >
-        <AgentGlyph category={attachment.category} working={working} />
+        <AgentGlyph category={attachment.category} working={working} waiting={waiting} />
       </button>
       <button
         type="button"

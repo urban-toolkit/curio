@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, fireEvent, act } from "@testing-library/react";
+import { render, screen, fireEvent, act, within } from "@testing-library/react";
 
 import {
   AgentDatasetCandidatesCard,
@@ -36,7 +36,8 @@ describe("AgentDatasetCandidatesCard (dev/50 — the docs/06 two-lane surface)",
     expect(screen.getByRole("group", { name: "External sources" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "From your Data Catalog" })).toBeInTheDocument();
     expect(screen.getByText("NOAA Climate Data API")).toBeInTheDocument();
-    expect(screen.getByText("Fit 90/100 — direct match")).toBeInTheDocument();
+    // The fit's score, then why after a colon: no dash.
+    expect(screen.getByText("Fit 90/100: direct match")).toBeInTheDocument();
     expect(screen.getByText("API token required")).toBeInTheDocument();
     expect(screen.getByText("Installed")).toBeInTheDocument();
     expect(screen.getAllByText("Not installed")).toHaveLength(1);
@@ -317,12 +318,136 @@ describe("AgentDatasetCandidatesCard — dev/132 the portal download and its Imp
     fireEvent.click(screen.getByLabelText("Select NOAA Climate Data API"));
     await act(async () => {
       fireEvent.click(
-        screen.getByRole("button", { name: /Confirm source for this node/ }),
+        screen.getByRole("button", { name: /Use this source/ }),
       );
     });
     expect(
       screen.getByText(/picks this node up on its next pass/),
     ).toBeInTheDocument();
+  });
+});
+
+// The card in the Dataset Finder's chat, and the same card in the chat that
+// asked for it: the source its Finder recorded, as the listing has it.
+describe("AgentDatasetCandidatesCard: the source recorded for its node", () => {
+  const ROADS = { name: "Roads", sourceType: "catalog" as const, datasetId: "imported.def@1", installed: true };
+
+  it("names the node it finds a source for, and its pick button reads Use this source", () => {
+    render(<AgentDatasetCandidatesCard part={PART} nodeLabel="Load buildings" onRecordSelection={jest.fn()} />);
+    const card = screen.getByRole("group", { name: "Sources for Load buildings" });
+    expect(card).toHaveTextContent("Sources for Load buildings");
+    expect(within(card).getByRole("button", { name: "Use this source" })).toBeDisabled();
+  });
+
+  it("says Recorded with what was picked and where it comes from, in place of its rows and Use this source", () => {
+    render(
+      <AgentDatasetCandidatesCard
+        part={PART}
+        nodeLabel="Load buildings"
+        onRecordSelection={jest.fn()}
+        record={{
+          status: "resolved",
+          picks: [{ ...ROADS, provider: "City of Chicago" }],
+          next: "The Dataflow Builder goes on with its plan and builds the loader from this source.",
+        }}
+        waitsForPick={false}
+      />,
+    );
+    const card = screen.getByRole("group", { name: "Sources for Load buildings" });
+    // What comes of the pick is the Source recorded turn's, right under the
+    // card in both chats: the card never says it again.
+    expect(within(card).getByRole("status")).toHaveTextContent(/^Recorded: Roads \(City of Chicago\)\.$/);
+    expect(within(card).queryByRole("button", { name: "Use this source" })).toBeNull();
+    expect(within(card).queryAllByRole("checkbox")).toHaveLength(0);
+  });
+
+  it("says Recorded with what was picked alone when the server said nothing of what comes next", () => {
+    render(
+      <AgentDatasetCandidatesCard
+        part={PART}
+        onRecordSelection={jest.fn()}
+        record={{ status: "resolved", picks: [{ ...ROADS, provider: "City of Chicago" }] }}
+        waitsForPick={false}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(/^Recorded: Roads \(City of Chicago\)\.$/);
+  });
+
+  it("says a picked source that downloads for a paused plan is Recorded, from the Data Catalog, and leaves Resume to its Source recorded turn", () => {
+    render(
+      <AgentDatasetCandidatesCard
+        part={PART}
+        onRecordSelection={jest.fn()}
+        record={{
+          status: "awaiting-install",
+          picks: [{ ...ROADS, installed: false, acquiring: { jobId: "j1" } }],
+          next: "It is downloading into the Data Catalog: once it lands, press Resume in the Dataflow Builder's chat to build the loader.",
+        }}
+        waitsForPick={false}
+      />,
+    );
+    // A catalog pick with no provider comes from the Data Catalog.
+    expect(screen.getByRole("status")).toHaveTextContent(/^Recorded: Roads \(Data Catalog\)\.$/);
+  });
+
+  it("keeps its rows while the node still waits for the user's pick", () => {
+    render(
+      <AgentDatasetCandidatesCard
+        part={PART}
+        onRecordSelection={jest.fn()}
+        record={{ status: "candidates-pending", candidates: 3 }}
+        waitsForPick
+      />,
+    );
+    expect(screen.getAllByRole("checkbox")).toHaveLength(3);
+    expect(screen.getByRole("button", { name: "Use this source" })).toBeInTheDocument();
+    expect(screen.queryByText(/^Recorded:/)).toBeNull();
+  });
+});
+
+// The Recorded line names the pick and where it comes from, and nothing of
+// what comes next: the record's `next` ends the Source recorded turn right
+// under the card in every chat that holds it, so the chat says it once. The
+// line promises no build either.
+describe("AgentDatasetCandidatesCard: the Recorded line leaves what happens next to its turn", () => {
+  const ROADS = { name: "Roads", sourceType: "catalog" as const, datasetId: "imported.def@1", installed: true };
+
+  it("a download no plan waits on says Recorded, and neither to Solve the node nor that a build comes", () => {
+    render(
+      <AgentDatasetCandidatesCard
+        part={PART}
+        onRecordSelection={jest.fn()}
+        record={{
+          status: "awaiting-install",
+          picks: [{ ...ROADS, installed: false, acquiring: { jobId: "j1" } }],
+          next: "It is downloading into the Data Catalog: Solve the node once it lands.",
+        }}
+        waitsForPick={false}
+      />,
+    );
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent(/^Recorded: Roads \(Data Catalog\)\.$/);
+    expect(status).not.toHaveTextContent("Solve the node once it lands");
+    expect(status).not.toHaveTextContent("the loader is built from it once it lands");
+  });
+
+  it("a pick no builder takes says Recorded, and promises no build", () => {
+    render(
+      <AgentDatasetCandidatesCard
+        part={PART}
+        onRecordSelection={jest.fn()}
+        record={{
+          status: "resolved",
+          picks: [ROADS],
+          next: "No builder is attached to this node: Solve the node, or attach a Node Builder to it.",
+        }}
+        waitsForPick={false}
+      />,
+    );
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent(/^Recorded: Roads \(Data Catalog\)\.$/);
+    expect(status).not.toHaveTextContent("No builder is attached to this node");
+    expect(status).not.toHaveTextContent("The loader is built from this source");
   });
 });
 
@@ -377,7 +502,7 @@ describe("AgentDatasetCandidatesCard — a row Curio downloads", () => {
     render(<AgentDatasetCandidatesCard part={DISCOVERY} onRecordSelection={onRecordSelection} />);
     fireEvent.click(screen.getByLabelText("Select Chicago wards"));
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /Confirm source for this node/ }));
+      fireEvent.click(screen.getByRole("button", { name: /Use this source/ }));
     });
     expect(onRecordSelection).toHaveBeenCalledWith([
       { lane: "external", key: "source.cityofchicago.data-portal@1/sp34-6z76" },

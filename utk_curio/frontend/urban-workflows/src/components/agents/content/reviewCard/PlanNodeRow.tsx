@@ -16,6 +16,9 @@ export const PlanNodeRow: React.FC<{
   state: string;
   solvable: boolean;
   solveBlocker: string | null;
+  /** Its Solve runs on the server (the listing's `validating`), started in
+   *  another tab or by a pick: the row says so as for its own click. */
+  solving?: boolean;
   /** #662: its scenario, the node a copy copies, its widgets. */
   extras?: string[];
   /** The row's Solve and Run, each told the line the row shows while a
@@ -25,7 +28,20 @@ export const PlanNodeRow: React.FC<{
   /** dev/72: opens the chat that holds its validated code's change. */
   onOpenChange?: () => void;
   changeAgentName?: string;
-}> = ({ node, applied, deps, state, solvable, solveBlocker, extras, onSolve, onRun, onOpenChange, changeAgentName }) => {
+}> = ({
+  node,
+  applied,
+  deps,
+  state,
+  solvable,
+  solveBlocker,
+  solving = false,
+  extras,
+  onSolve,
+  onRun,
+  onOpenChange,
+  changeAgentName,
+}) => {
   // #662: a copy has its original's title; its scenario tells them apart.
   const label = node.scenario ? `${node.title} (${node.scenario})` : node.title;
   const [rowBusy, setRowBusy] = useState<"solve" | "run" | null>(null);
@@ -86,12 +102,12 @@ export const PlanNodeRow: React.FC<{
               <button
                 type="button"
                 className={styles.apply}
-                disabled={rowBusy !== null || !solvable}
+                disabled={rowBusy !== null || solving || !solvable}
                 data-tooltip={solveBlocker ?? undefined}
                 onClick={() => void act("solve", onSolve)}
                 aria-label={`Solve node ${label}`}
               >
-                {rowBusy === "solve" ? "Solving…" : "Solve"}
+                {rowBusy === "solve" || solving ? "Solving…" : "Solve"}
               </button>
             ) : null}
             {onRun && (state === "validated" || state === "approved") ? (

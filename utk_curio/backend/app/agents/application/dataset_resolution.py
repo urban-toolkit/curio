@@ -30,11 +30,21 @@ State lives on the node's Dataset Finder attachment record (``DEC-040`` —
 graph-backed), which is a backend-owned section of the spec, so a canvas save
 cannot wipe it and deleting the node prunes it. The selection is recorded from
 the runtime's own persisted candidate rows: a client sends KEYS, never a source.
+
+Every candidates card the node's Finder offers carries an id of its own
+(``discoveryId``), the same on the card the chat that asked holds (a
+``sourcePick`` part). The record names the card on offer now
+(``discoveryId``), the card its pick was made on (``pickedFrom``), every chat
+besides the Finder's that holds the card on offer (``askers``, the first of
+them also ``askedBy``) and, once the pick is recorded, what comes of it
+(``next``). A pick names its card, and one on a card the record no longer
+offers is refused, so a card is never read against another card's rows.
 """
 
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import datetime, timezone
 from utk_curio.backend.app.agents.application import attachments
 from utk_curio.backend.app.agents.application.proposals import plans
@@ -79,6 +89,11 @@ class DatasetResolutionError(ValueError):
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def new_discovery_id() -> str:
+    """The id of a candidates card the node's Finder offers."""
+    return uuid.uuid4().hex
 
 
 # ── the record ───────────────────────────────────────────────────────────────
@@ -149,37 +164,96 @@ def _picks_detail(record: dict) -> str:
     return ", ".join(n for n in names if n)[:200]
 
 
+def _counted(total: int) -> str:
+    """*total* candidates in the words a person reads: "1 candidate", "3
+    candidates"."""
+    return f"{total} candidate{'' if total == 1 else 's'}"
+
+
 def _pending_detail(record: dict, status: str) -> str:
     if status == STATE_AWAITING_INSTALL and any(
         p.get("acquiring") for p in record.get("picks") or [] if isinstance(p, dict)
     ):
         return f"{_picks_detail(record)}: downloading into the Data Catalog"
     if status == STATE_AWAITING_INSTALL:
-        return f"{_picks_detail(record)} — waiting for the reviewed install"
+        return f"{_picks_detail(record)}: waiting for the reviewed install"
     count = record.get("candidates")
     if isinstance(count, int) and count > 0:
-        return f"{count} candidate(s) awaiting your selection"
+        return f"{_counted(count)} awaiting your selection"
     return "candidates awaiting your selection"
 
 
+def askers_of(record: dict | None) -> list[str]:
+    """Every chat besides the node's Finder's that holds the card the
+    record offers, in the order they asked (``askers``; a record written
+    before them names its one asker as ``askedBy``)."""
+    if not isinstance(record, dict):
+        return []
+    askers = [a for a in record.get("askers") or [] if isinstance(a, str) and a]
+    if not askers and isinstance(record.get("askedBy"), str) and record["askedBy"]:
+        askers = [record["askedBy"]]
+    return list(dict.fromkeys(askers))
+
+
+def _set_askers(record: dict, askers: list[str]) -> None:
+    """Write *askers* on *record*: ``askers``, and ``askedBy`` as the first
+    of them; neither when there is none."""
+    askers = list(dict.fromkeys(a for a in askers if a))
+    if askers:
+        record["askers"] = askers
+        record["askedBy"] = askers[0]
+    else:
+        record.pop("askers", None)
+        record.pop("askedBy", None)
+
+
 def mark_candidates_pending(spec: dict, attachment_id: str, *, count: int,
-                            asked_by: str | None = None) -> dict | None:
-    """Record that candidates were minted for this node's Dataset Finder, and
-    the attachment whose chat asked for them (*asked_by*: the agent whose
-    Solve or Build & validate reached the node), which waits for the pick too
+                            asked_by: str | None = None, discovery_id: str | None = None) -> dict | None:
+    """Record that candidates were minted for this node's Dataset Finder, the
+    card that offers them (*discovery_id*), and the attachment whose chat
+    asked for them (*asked_by*: the agent whose Solve or Build & validate
+    reached the node), which holds the same card and waits for the pick too
     (:func:`waiting_on_user`)."""
 
     record = attachments.get_attachment(spec, attachment_id)
     if record is None:
         return None
-    record[RECORD_KEY] = {
+    state: dict = {
         "status": STATE_CANDIDATES_PENDING,
         "candidates": int(count),
         "proposedAt": _now(),
-        **({"askedBy": asked_by} if asked_by else {}),
+        **({"discoveryId": discovery_id} if discovery_id else {}),
     }
+    _set_askers(state, [asked_by] if asked_by else [])
+    record[RECORD_KEY] = state
     record["revision"] = int(record.get("revision", 1)) + 1
     return record[RECORD_KEY]
+
+
+def note_offer(spec: dict, attachment_id: str, discovery_id: str, *, count: int) -> list[str] | None:
+    """The node's Dataset Finder offered the candidates card *discovery_id*
+    (of *count* rows) in its own chat: the record names it as the card on
+    offer now, keeping its status. While the record waits for the user's pick
+    (:func:`source_wait`), the chats that asked hold the new card too, and
+    their ids are returned to put it there; otherwise no other chat holds it,
+    and the record names no asker. None when *attachment_id* is no
+    attachment of *spec*."""
+    record = attachments.get_attachment(spec, attachment_id)
+    if record is None:
+        return None
+    current = record.get(RECORD_KEY)
+    state = dict(current) if isinstance(current, dict) else {}
+    state["discoveryId"] = discovery_id
+    if source_wait(current) == WAITS_FOR_PICK:
+        if state.get("status") == STATE_CANDIDATES_PENDING:
+            state["candidates"] = int(count)
+        askers = askers_of(state)
+    else:
+        askers = []
+    _set_askers(state, askers)
+    record[RECORD_KEY] = state
+    record["revision"] = int(record.get("revision", 1)) + 1
+    return [asker for asker in askers if asker != attachment_id]
 
 
 #: What a node's source waits for, as its Dataset Finder's record says
@@ -222,10 +296,11 @@ def waiting_on_user(spec: dict | None) -> dict[str, list[str]]:
     """Who waits for the user to pick a node's source, by attachment id: the
     ids of the nodes it waits on. A node's Dataset Finder waits while its
     source waits for the user (:func:`source_wait`): its candidates await a
-    pick, or the portal file picked awaits its import. So does the attachment
-    whose chat asked for them (``askedBy``) while it is on the dataflow. A
-    pick that resolves the node, a skip, the node's removal or its Finder
-    taken off ends both waits; the asker's chat cleared ends its own
+    pick, or the portal file picked awaits its import. So does each
+    attachment whose chat asked for them and holds their card (the record's
+    askers, :func:`askers_of`) while it is on the dataflow. A pick that
+    resolves the node, a skip, the node's removal or its Finder taken off
+    ends every wait; an asker's chat cleared ends its own
     (:func:`forget_asker`)."""
     records = attachments.list_attachments(spec or {})
     present = {record.get("attachmentId") for record in records}
@@ -237,7 +312,7 @@ def waiting_on_user(spec: dict | None) -> dict[str, list[str]]:
             continue
         if target.get("kind") != "node" or not node_id:
             continue
-        for waiter in (record.get("attachmentId"), record[RECORD_KEY].get("askedBy")):
+        for waiter in (record.get("attachmentId"), *askers_of(record[RECORD_KEY])):
             if waiter in present and node_id not in waits.setdefault(waiter, []):
                 waits[waiter].append(node_id)
     return waits
@@ -245,13 +320,15 @@ def waiting_on_user(spec: dict | None) -> dict[str, list[str]]:
 
 def forget_asker(spec: dict, attachment_id: str) -> list[str]:
     """The chat of *attachment_id* was cleared, so it holds no candidates it
-    asked for: it no longer waits for their pick. Each node's Dataset Finder
-    still does. Returns the Finder attachments whose record changed."""
+    asked for: it is no asker of them any more, and no longer waits for their
+    pick. Each node's Dataset Finder, and every other asker, still does.
+    Returns the Finder attachments whose record changed."""
     changed: list[str] = []
     for record in attachments.list_attachments(spec):
         state = record.get(RECORD_KEY)
-        if isinstance(state, dict) and attachment_id and state.get("askedBy") == attachment_id:
-            state.pop("askedBy")
+        askers = askers_of(state)
+        if isinstance(state, dict) and attachment_id and attachment_id in askers:
+            _set_askers(state, [asker for asker in askers if asker != attachment_id])
             record["revision"] = int(record.get("revision", 1)) + 1
             changed.append(record.get("attachmentId"))
     return changed
@@ -462,6 +539,8 @@ def settle_acquisitions(spec: dict, held: dict) -> list[str]:
             continue
         if not any(_needs_install(p) for p in picks if isinstance(p, dict)):
             state["status"] = STATE_RESOLVED
+        # What the pick said came next was the download: it landed.
+        state.pop("next", None)
         state["recordedAt"] = _now()
         record["revision"] = int(record.get("revision", 1)) + 1
         changed.append(record.get("attachmentId"))
@@ -487,13 +566,17 @@ def _catalog_row(catalog_rows: list[dict] | None, dataset_id: str) -> dict | Non
     return None
 
 
-def record_selection(spec: dict, attachment_id: str, rows: list[dict]) -> dict | None:
+def record_selection(spec: dict, attachment_id: str, rows: list[dict], *,
+                     picked_from: str | None = None) -> dict | None:
     """Record the confirmed selection on the node's Dataset Finder attachment.
 
     A catalog pick that is not installed yet leaves the node
     ``awaiting-install`` — the reviewed ``dataset.install`` lane owns that
     step; an external pick the runtime could not reach is recorded WITH its
-    verdict and does not resolve the node (the card says why).
+    verdict and does not resolve the node (the card says why). The record
+    keeps the card on offer and the chats that hold it, and names the card
+    the pick was made on (*picked_from*); what came of an earlier pick
+    (``next``) goes with it.
     """
 
     record = attachments.get_attachment(spec, attachment_id)
@@ -516,15 +599,20 @@ def record_selection(spec: dict, attachment_id: str, rows: list[dict]) -> dict |
         status = STATE_AWAITING_INSTALL
     else:
         status = STATE_RESOLVED
-    # The chat that asked for the candidates is kept with the pick.
+    # The card on offer and the chats that asked for it are kept with the
+    # pick, which names the card it was made on.
     previous = record.get(RECORD_KEY)
-    asked_by = previous.get("askedBy") if isinstance(previous, dict) else None
-    record[RECORD_KEY] = {
+    previous = previous if isinstance(previous, dict) else {}
+    offered = previous.get("discoveryId") or picked_from
+    state: dict = {
         "status": status,
         "picks": rows,
         "recordedAt": _now(),
-        **({"askedBy": asked_by} if asked_by else {}),
+        **({"discoveryId": offered} if offered else {}),
+        **({"pickedFrom": picked_from} if picked_from else {}),
     }
+    _set_askers(state, askers_of(previous))
+    record[RECORD_KEY] = state
     record["revision"] = int(record.get("revision", 1)) + 1
     return record[RECORD_KEY]
 
@@ -547,6 +635,8 @@ def mark_dataset_installed(spec: dict, dataset_id: str) -> list[str]:
                 pick["installed"] = True
         if not any(_needs_install(p) for p in picks if isinstance(p, dict)):
             state["status"] = STATE_RESOLVED
+            # What the pick said came next was the install: it is applied.
+            state.pop("next", None)
             state["recordedAt"] = _now()
             record["revision"] = int(record.get("revision", 1)) + 1
             changed.append(record.get("attachmentId"))
@@ -597,7 +687,9 @@ def initiate(
     asker=None,
 ) -> dict:
     """Run ONE ``dataset.discover`` delegation for *node* and leave its
-    candidates awaiting the user in that node's own Dataset Finder chat.
+    candidates awaiting the user in that node's own Dataset Finder chat, and
+    in the chat of *parent_attachment_id*, which asked for them
+    (:func:`_mirror_candidates_turn`).
 
     *asker* is the person the run is for, which a Solve's thread names (its
     ``acting_user``) where no request does: the delegated run holds the
@@ -709,22 +801,35 @@ def initiate(
         return {"status": "no-candidates", "attachmentId": attachment_id,
                 "detail": model_text[:300]}
     total = sum(len(rows) for rows in (part.get("lanes") or {}).values())
-    _append_candidates_turn(user_key, project_id, attachment_id, part, total)
+    # The card's own id, the same in the Finder's chat and the chat that asked.
+    part["discoveryId"] = new_discovery_id()
+    _append_candidates_turn(user_key, project_id, attachment_id, node, part, total)
+    if parent_attachment_id and parent_attachment_id != attachment_id:
+        _mirror_candidates_turn(
+            user_key, project_id, parent_attachment_id, attachment_id, node, part, total, finder_name=finder_name,
+        )
     with projects_storage.spec_write_lock(user_key, project_id):
         fresh = dataflow_docs.live(user_key, project_id)
         if fresh is not None:
-            mark_candidates_pending(fresh, attachment_id, count=total, asked_by=parent_attachment_id)
+            mark_candidates_pending(
+                fresh, attachment_id, count=total,
+                asked_by=parent_attachment_id if parent_attachment_id != attachment_id else None,
+                discovery_id=part["discoveryId"],
+            )
             dataflow_docs.write(user_key, project_id, fresh, actor)
     return {"status": "awaiting", "attachmentId": attachment_id,
             "candidates": total,
-            "detail": f"{total} candidate(s) awaiting your selection"}
+            "detail": f"{_counted(total)} awaiting your selection"}
 
 
 def _append_candidates_turn(
-    user_key: str, project_id: str, attachment_id: str, part: dict, total: int
+    user_key: str, project_id: str, attachment_id: str, node: dict, part: dict, total: int
 ) -> None:
-    """Put the two-lane card in the node's Dataset Finder chat — where the
-    user selects, and where the agent that owns discovery lives."""
+    """Put the two-lane card in the node's Dataset Finder chat, where the
+    user selects and where the agent that owns discovery lives, under one
+    line that counts the candidates and names *node* as its header does. The
+    line is in the Finder's model context. Read outside the spec lock: a node
+    with no title is named by its template's label, from the package store."""
     from utk_curio.backend.app.projects import storage as projects_storage
 
     try:
@@ -733,16 +838,191 @@ def _append_candidates_turn(
         session_id = record.get("sessionId")
         if not isinstance(session_id, str):
             return
+        label = node_label(user_key, project_id, node)[:120]
         sessions.append_turns(
             user_key, project_id, session_id, attachment_id,
             [sessions.make_turn(
                 "agent",
-                f"{total} dataset candidate(s) for this node — select the source to "
-                "use and confirm; external rows carry the runtime's verification "
-                "verdict.",
+                f"I found {_counted(total)} for {label}. Pick one with Use this source.",
                 content=[part],
             )],
         )
     except Exception:  # noqa: BLE001
         log.warning("Could not append the candidates turn for attachment %s",
                     attachment_id, exc_info=True)
+
+
+def node_label(user_key: str, project_id: str, node: dict | None) -> str:
+    """The name the node's header shows (``node_names.saved_node_label``): its
+    title, else its template's label, read only when it has no title."""
+    from utk_curio.backend.app.execution import node_names
+
+    node = node if isinstance(node, dict) else {}
+    title = node_names.saved_node_title(node)
+    if title:
+        return title
+    return node_names.saved_node_label(node, node_names.template_labels(user_key, project_id)) or str(
+        node.get("id") or ""
+    )
+
+
+def _mirror_candidates_turn(
+    user_key: str, project_id: str, asker_id: str, finder_id: str, node: dict, part: dict, total: int,
+    *, finder_name: str,
+) -> None:
+    """The same candidates in the chat that asked for them (*asker_id*, the
+    agent whose Solve or Build & validate reached the node): one line that
+    names the node and its Dataset Finder, which the asking agent's next runs
+    read in their context, and the card, a ``sourcePick`` part. The card is
+    no text, so no run reads it (``sessions.context_messages``), and its pick
+    posts on the route of the Finder (*finder_id*), which records it. Read
+    outside the spec lock: a node with no title is named by its template's
+    label, from the package store."""
+    from utk_curio.backend.app.projects import storage as projects_storage
+
+    try:
+        spec = projects_storage.read_spec(user_key, project_id)
+        session_id = (attachments.get_attachment(spec or {}, asker_id) or {}).get("sessionId")
+        if not isinstance(session_id, str):
+            return
+        node_id = str(node.get("id") or "")
+        label = node_label(user_key, project_id, node)[:120]
+        sessions.append_turns(
+            user_key, project_id, session_id, asker_id,
+            [sessions.make_turn(
+                "agent",
+                f"**{label}** needs a source. Its {finder_name} found {_counted(total)}: pick one with Use this source.",
+                content=[{
+                    "type": "sourcePick",
+                    "finderAttachmentId": finder_id,
+                    "nodeId": node_id,
+                    "nodeLabel": label,
+                    **({"discoveryId": part["discoveryId"]} if part.get("discoveryId") else {}),
+                    "lanes": part.get("lanes") or {},
+                }],
+            )],
+        )
+    except Exception:  # noqa: BLE001 - the Finder's own chat holds the card either way
+        log.warning("Could not put the candidates of node %s in the chat of %s",
+                    node.get("id"), asker_id, exc_info=True)
+
+
+def _rows_in(part: dict) -> int:
+    """How many candidate rows the card *part* holds."""
+    return sum(len(rows) for rows in (part.get("lanes") or {}).values() if isinstance(rows, list))
+
+
+def _offered_part(user_key: str, project_id: str, finder: dict) -> dict | None:
+    """The candidates card the Finder *finder* offers now, as its chat holds
+    it: the one its record names (``discoveryId``), else, for a record written
+    before cards had ids, the newest. None when its chat holds none."""
+    session_id = finder.get("sessionId")
+    if not isinstance(session_id, str):
+        return None
+    record = finder.get(RECORD_KEY) if isinstance(finder.get(RECORD_KEY), dict) else {}
+    offered = record.get("discoveryId")
+    cards = [
+        part for turn in sessions.read_turns(user_key, project_id, session_id)
+        for part in (turn.get("content") or [])
+        if isinstance(part, dict) and part.get("type") == "datasetCandidates"
+    ]
+    if offered:
+        return next((part for part in reversed(cards) if part.get("discoveryId") == offered), None)
+    return cards[-1] if cards else None
+
+
+def _finder_name(user_key: str, finder: dict) -> str:
+    """The name of the Finder *finder*, as its manifest gives it."""
+    coord = str(finder.get("coord") or "")
+    return spec_reads._agent_name(user_key, coord) or coord.split("@", 1)[0] or "Dataset Finder"
+
+
+def ask_again(user_key: str, project_id: str, node: dict, asker_id: str) -> bool:
+    """A Solve or Build & validate of the chat of *asker_id* reached *node*,
+    whose candidates already wait for the user's pick, which another chat
+    asked for: this chat gets the card on offer too, the same card with the
+    same id, under the same line (:func:`_mirror_candidates_turn`), and joins
+    the record's askers, so it waits for the pick as well. The node's Finder,
+    and a chat already among the askers, get nothing. No model is asked.
+    Returns whether the chat got the card."""
+    from utk_curio.backend.app.collaboration import dataflow_docs
+    from utk_curio.backend.app.projects import storage as projects_storage
+
+    node_id = str(node.get("id") or "")
+    try:
+        spec = projects_storage.read_spec(user_key, project_id)
+        finder = finder_attachment(spec, node_id, user_key=user_key) or {}
+        finder_id = finder.get("attachmentId")
+        record = finder.get(RECORD_KEY) if isinstance(finder.get(RECORD_KEY), dict) else None
+        if (not finder_id or asker_id == finder_id or source_wait(record) != WAITS_FOR_PICK
+                or asker_id in askers_of(record)):
+            return False
+        if not isinstance((attachments.get_attachment(spec, asker_id) or {}).get("sessionId"), str):
+            return False
+        part = _offered_part(user_key, project_id, finder)
+        if part is None:
+            return False
+        # The card first, then the record: a tab that sees the record name this
+        # chat among the askers finds the card in it.
+        _mirror_candidates_turn(
+            user_key, project_id, asker_id, finder_id, node, part, _rows_in(part),
+            finder_name=_finder_name(user_key, finder),
+        )
+        with projects_storage.spec_write_lock(user_key, project_id):
+            fresh = dataflow_docs.live(user_key, project_id)
+            fresh_finder = attachments.get_attachment(fresh or {}, finder_id) if fresh is not None else None
+            state = (fresh_finder or {}).get(RECORD_KEY)
+            if not isinstance(state, dict) or state.get("discoveryId") != record.get("discoveryId"):
+                return True
+            askers = askers_of(state)
+            if asker_id not in askers:
+                _set_askers(state, [*askers, asker_id])
+                fresh_finder["revision"] = int(fresh_finder.get("revision", 1)) + 1
+                dataflow_docs.write(user_key, project_id, fresh, dataflow_docs.by_curio(user_key, "dataset"))
+        return True
+    except Exception:  # noqa: BLE001 - the Finder's own chat holds the card either way
+        log.warning("Could not put the candidates of node %s in the chat of %s", node_id, asker_id, exc_info=True)
+        return False
+
+
+def offer_from_chat(user_key: str, project_id: str, attachment_id: str, part: dict) -> None:
+    """The chat reply of *attachment_id* offered the candidates card *part*,
+    which carries its id (``discoveryId``). When that agent is its node's
+    Dataset Finder, the record names the card as the one on offer now
+    (:func:`note_offer`); while the node waits for the user's pick, the chats
+    that asked get the same card first. Any other chat's card changes
+    nothing. Never raises: the card is in the Finder's chat either way."""
+    from utk_curio.backend.app.collaboration import dataflow_docs
+    from utk_curio.backend.app.projects import storage as projects_storage
+
+    discovery_id = part.get("discoveryId") if isinstance(part, dict) else None
+    if not discovery_id:
+        return
+    try:
+        spec = projects_storage.read_spec(user_key, project_id)
+        record = attachments.get_attachment(spec or {}, attachment_id) or {}
+        target = record.get("target") or {}
+        node_id = target.get("targetId")
+        if target.get("kind") != "node" or not node_id:
+            return
+        if (finder_attachment(spec, node_id, user_key=user_key) or {}).get("attachmentId") != attachment_id:
+            return
+        node = next(
+            (n for n in ((spec or {}).get("dataflow") or {}).get("nodes") or []
+             if isinstance(n, dict) and n.get("id") == node_id),
+            {"id": node_id},
+        )
+        state = record.get(RECORD_KEY) if isinstance(record.get(RECORD_KEY), dict) else None
+        if source_wait(state) == WAITS_FOR_PICK:
+            for asker in askers_of(state):
+                if asker != attachment_id:
+                    _mirror_candidates_turn(
+                        user_key, project_id, asker, attachment_id, node, part, _rows_in(part),
+                        finder_name=_finder_name(user_key, record),
+                    )
+        with projects_storage.spec_write_lock(user_key, project_id):
+            fresh = dataflow_docs.live(user_key, project_id)
+            if fresh is not None and note_offer(fresh, attachment_id, discovery_id, count=_rows_in(part)) is not None:
+                dataflow_docs.write(user_key, project_id, fresh, dataflow_docs.by_curio(user_key, "dataset"))
+    except Exception:  # noqa: BLE001
+        log.warning("Could not record the candidates card of attachment %s", attachment_id, exc_info=True)

@@ -110,8 +110,9 @@ export interface AgentDatasetPick {
 }
 
 /** A node's source as its Dataset Finder records it: candidates awaiting a
- * pick, the pick, or why discovery was skipped, and the chat that asked for
- * the candidates. */
+ * pick, the pick, or why discovery was skipped, the card it offers now and
+ * the card the pick was made on, the chats that asked for the candidates, and
+ * what comes next after the pick. */
 export interface AgentDatasetSourceRecord {
   status: "candidates-pending" | "resolved" | "awaiting-install" | "not-needed" | string;
   /** How many candidates the Finder's card holds. */
@@ -121,8 +122,21 @@ export interface AgentDatasetSourceRecord {
   recordedAt?: string;
   /** The literal that already grounds the node, when discovery was skipped. */
   skippedBecause?: string;
-  /** The attachment whose chat asked for the candidates. */
+  /** The first chat that asked for the candidates (`askers[0]`). */
   askedBy?: string;
+  /** Every chat besides the Finder's that holds the card on offer now, in the
+   * order they asked. */
+  askers?: string[];
+  /** The id of the candidates card the record offers now: the newest card
+   * the node's Finder minted, in its own chat and in each asker's. */
+  discoveryId?: string;
+  /** The id of the card the recorded pick was made on. */
+  pickedFrom?: string;
+  /** What the server said comes next of the pick, one sentence, which ends
+   * the Source recorded turn in every chat that holds the card. A card the
+   * pick left open (a portal file to import, another row to pick) shows it
+   * in every tab; a Recorded card leaves it to that turn. */
+  next?: string;
 }
 
 /** dev/126: the recorded selection for a node. */
@@ -136,7 +150,7 @@ export interface AgentDatasetSelection {
    * a portal row waits for the download and the Import button. */
   delegated?: {
     /** `plan-waiting`: a plan's Build & validate or its row's Solve waits for
-     * this node; `attachmentId` is the plan's agent, whose chat goes on. */
+     * this node; `attachmentId` is the plan's agent, which goes on with it. */
     status:
       | "delegating"
       | "session-running"
@@ -153,7 +167,22 @@ export interface AgentDatasetSelection {
     executionId?: string;
     sources?: string[];
     jobIds?: string[];
+    /** `plan-waiting`: the node's ref in the plan. */
+    ref?: string | null;
+    /** `plan-waiting`: the Build & validate running on the plan now, which
+     * builds the node itself; null when none runs. */
+    running?: "step" | "auto" | null;
+    /** `plan-waiting`: how the plan's agent goes on, from the tab that picked,
+     * as the user was going: its Build & validate (`build`) after a Build &
+     * validate, one Step (`step`) after a Step, or the plan row's Solve
+     * (`node`) that left the node waiting; null while a build runs. */
+    continueWith?: "build" | "step" | "node" | null;
   };
+  /** The first chat that asked for the candidates. */
+  askedBy?: string;
+  /** Every chat that asked for the candidates and holds the same card, each
+   * of which says the source is recorded too. */
+  askers?: string[];
   /** The Discovery Catalog downloads the confirmation started, one per acquirable row. */
   acquisitions?: {
     name?: string;

@@ -8,6 +8,7 @@ import { useAgentSolve, type AgentSolveSlice } from "./useAgentSolve";
 import { useAgentSimulation, type AgentSimulationSlice } from "./useAgentSimulation";
 import { useAgentNodeRuns, type AgentNodeRunsSlice } from "./useAgentNodeRuns";
 import { useAttachmentsInTheRoom } from "./useAttachmentsInTheRoom";
+import { usePickGoesOn } from "./usePickGoesOn";
 
 /**
  * One source of truth for a project's agent attachments, shared by the canvas
@@ -64,6 +65,14 @@ export const AgentAttachmentsProvider: React.FC<{
   const solve = useAgentSolve({ projectRef, attachments: state.attachments, refreshAfterMutation });
   const simulation = useAgentSimulation({ projectRef, refreshAfterMutation });
   const nodeRuns = useAgentNodeRuns({ projectRef, refreshAfterMutation });
+  // A pick on a node's candidates card: the chat that asked reads its Source
+  // recorded turn, and the plan that waited for the node goes on by itself.
+  const recordDatasetSelection = usePickGoesOn({
+    recordDatasetSelection: proposals.recordDatasetSelection,
+    refreshAfterMutation,
+    runSimulation: simulation.runSimulation,
+    validateNode: nodeRuns.validateNode,
+  });
 
   // Opening a chat whose attachment carries a running job re-attaches to it.
   const { selectedId } = session;
@@ -80,6 +89,7 @@ export const AgentAttachmentsProvider: React.FC<{
       ...sessionValue,
       closeChat: () => setSelectedId(null),
       ...proposals,
+      recordDatasetSelection,
       ...solve,
       ...simulation,
       ...nodeRuns,
@@ -87,7 +97,8 @@ export const AgentAttachmentsProvider: React.FC<{
       dataflowId: effectiveProjectId,
     }),
     // `sessionValue` is a rest of `session`, whose identity already tracks its fields.
-    [state, session, setSelectedId, proposals, solve, simulation, nodeRuns, installsWaitForOwner, effectiveProjectId],
+    [state, session, setSelectedId, proposals, recordDatasetSelection, solve, simulation, nodeRuns,
+     installsWaitForOwner, effectiveProjectId],
   );
 
   return <AgentAttachmentsContext.Provider value={value}>{children}</AgentAttachmentsContext.Provider>;

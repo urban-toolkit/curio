@@ -54,11 +54,14 @@ class TestNodeSourceState:
         assert state["state"] == dr.STATE_RESOLVED
         assert state["detail"] == 'curio_data_path("d1") already grounds this node'
 
-    def test_candidates_pending_reports_the_count(self):
-        spec = _spec_with_finder(status=dr.STATE_CANDIDATES_PENDING, candidates=3)
+    @pytest.mark.parametrize("count, words", [(1, "1 candidate"), (3, "3 candidates")])
+    def test_candidates_pending_reports_the_count(self, count, words):
+        """The count in words, as a person reads it: on 7430c0d5a4 it said
+        "3 candidate(s)", which a Needs a source row shows on its tooltip."""
+        spec = _spec_with_finder(status=dr.STATE_CANDIDATES_PENDING, candidates=count)
         state = dr.node_source_state(spec, "n1")
         assert state["state"] == dr.STATE_CANDIDATES_PENDING
-        assert "3 candidate(s)" in state["detail"]
+        assert state["detail"] == f"{words} awaiting your selection"
 
     def test_awaiting_install_names_the_pick(self):
         spec = _spec_with_finder(

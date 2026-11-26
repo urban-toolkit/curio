@@ -463,14 +463,13 @@ class SolveBatch:
             self.results[node_id] = {"status": "pending", "reason": reason, **trail}
             return {"nodeId": node_id, "status": "pending", "error": reason, **trail}
         if outcome.get("verdict") == "awaiting-source":
-            # dev/126: the node's source is with the USER now — the Dataset
-            # Finder on this node proposed candidates (or said it found
-            # none). Nothing was generated or written, so this is PENDING
-            # with the reason, never a failure of content.
-            reason = (
-                "awaiting your dataset selection: "
-                + str(evidence.get("detail") or "")[:240]
-            )[:300]
+            # dev/126: the node's source is not here yet. Nothing was
+            # generated or written, so this is PENDING with the reason, never
+            # a failure of content. The reason says what the source waits on,
+            # as Solve this node says it (``sourceWait``): the user's pick of
+            # the candidates the node's Dataset Finder proposed, a download
+            # into the Data Catalog, or the install of the dataset picked.
+            reason = self._awaiting_source_reason(node_id, evidence)[:300]
             remedy = evidence.get("remedy") if isinstance(evidence.get("remedy"), dict) else None
             extra = {"remedy": remedy} if remedy else {}
             self.results[node_id] = {"status": "pending", "reason": reason, **trail, **extra}
@@ -481,6 +480,28 @@ class SolveBatch:
             # user, who loads the data upstream or unpins it.
             evidence = {**evidence, "remedy": dashboards.remedy(node_id)}
         return self._verified_failure(node_id, outcome, evidence, trail)
+
+    def _awaiting_source_reason(self, node_id: str, evidence: dict) -> str:
+        """Why a node waits for its source, by what it waits on (the loop's
+        ``sourceWait``), in the words Solve this node says it with: the user's
+        selection of its candidates, the source picked for it downloading into
+        the Data Catalog, or that source not installed yet. A pick the user
+        already made is never asked for again."""
+        wait = evidence.get("sourceWait") or agents_dataset_resolution.WAITS_FOR_PICK
+        if wait not in (agents_dataset_resolution.WAITS_FOR_DOWNLOAD, agents_dataset_resolution.WAITS_FOR_INSTALL):
+            return "awaiting your dataset selection: " + str(evidence.get("detail") or "")[:240]
+        try:
+            record = agents_dataset_resolution.source_record(
+                dataflow_docs.read(self.user_key, self.project_id), node_id, user_key=self.user_key,
+            ) or {}
+        except Exception:  # noqa: BLE001 - the reason names the source plainly without the record
+            log.warning("Could not read the source record of node %s", node_id, exc_info=True)
+            record = {}
+        picked = agents_dataset_resolution._picks_detail(record) or "the source picked for it"
+        if wait == agents_dataset_resolution.WAITS_FOR_DOWNLOAD:
+            return f"awaiting its source: {picked} is downloading into the Data Catalog; Solve again once it lands"
+        return (f"awaiting its source: {picked}, picked for it, is not installed yet; "
+                "install it from the Data Catalog, then Solve again")
 
     def _verified_pass(self, node_id: str, outcome: dict, trail: dict) -> dict:
         candidate = outcome.get("candidate") or ""

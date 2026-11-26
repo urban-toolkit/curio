@@ -1208,7 +1208,12 @@ class TestResearcher:
         # "spatialJoin" setting is gone, and a change of them is a widget's
         # value. Its widgets are set by name in a plan or a node.create, the
         # words test_prompt_promises.py holds every such sentence to.
-        "3fa724e9923117e595da029f85d339c4c352557ae775f8f04488352b318bb2d6"
+        # 2026-11-25: when Solve or Build & validate reaches a data-loading
+        # node, its candidates appear in this chat, found by its Dataset
+        # Finder, and the user picks one with Use this source; asked about data
+        # sources, it says so, and that the node's Dataset Finder owns its
+        # discovery and holds the same card (PR #1635, the plan's step 5).
+        "4c4966de3a48e58272daf0a6c1ae69baf6ab77411b9f0fb3d503dc13495809f4"
     )
 
     def test_manifest_surface(self):
