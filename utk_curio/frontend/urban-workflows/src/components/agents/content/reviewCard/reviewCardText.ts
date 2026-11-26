@@ -5,7 +5,7 @@
  * readiness a landed plan's rows compute from the attachment's ledgers.
  */
 import type { AgentProposalPart, AgentSourceRef } from "../../../../services/agents";
-import { BUILD_RUNNING_HINT } from "../../../../services/agents/planBuild";
+import { BUILD_RUNNING_HINT, ROW_SOLVE_RUNNING_HINT } from "../../../../services/agents/planBuild";
 
 /** What a plan's sections read of its card, a change's: its tool and plan. */
 export type PlanDisplay = { tool: string; plan?: AgentProposalPart["plan"] };
@@ -67,6 +67,10 @@ export interface PlanNodeReviewState {
   /** A Build & validate runs on the plan (`buildRunningOn`): no row's Solve
    * starts, since it would build the same node beside the build. */
   buildRunning?: boolean;
+  /** The ref whose row's Solve runs on the server (the listing's
+   * `validating`), the one a pick goes on with among them: its row reads
+   * Solving, and no other row's Solve starts over it. */
+  solvingRef?: string | null;
 }
 
 /** dev/71: what a row's lifecycle state means for its action cluster. A row
@@ -155,7 +159,8 @@ export function tilesLeftLine(removals: Array<{ pinned?: boolean }>): string | n
 /** A landed plan node's readiness for its row (dev/71): dependencies by name,
  * its lifecycle state, whether Solve may run, and: when not: why. Its
  * connections landed with the plan, so only an upstream plan node that is not
- * solved yet holds it back, or a build running on the plan. */
+ * solved yet holds it back, a build running on the plan, or a row's Solve
+ * running on the server (`solving`: this row's own). */
 export function planNodeRowState(
   part: PlanDisplay,
   node: { ref: string },
@@ -174,15 +179,19 @@ export function planNodeRowState(
     (edge) => planRefSet.has(edge.from) && !["validated", "approved"].includes(nodeStates[edge.from] ?? ""),
   );
   const buildRunning = Boolean(planNodeState?.buildRunning);
-  const solvable = applied && unsolvedUpstream.length === 0 && !buildRunning;
+  const solvingRef = planNodeState?.solvingRef ?? null;
+  const solving = solvingRef === node.ref;
+  const solvable = applied && unsolvedUpstream.length === 0 && !buildRunning && solvingRef === null;
   const solveBlocker = buildRunning
     ? BUILD_RUNNING_HINT
-    : applied && unsolvedUpstream.length
-      ? `needs '${unsolvedUpstream[0].fromLabel}' solved first`
-      : null;
+    : solvingRef !== null
+      ? ROW_SOLVE_RUNNING_HINT
+      : applied && unsolvedUpstream.length
+        ? `needs '${unsolvedUpstream[0].fromLabel}' solved first`
+        : null;
   // dev/72: the chat that holds the change its validated code landed as.
   const changeHomeId = planNodeState?.nodeChanges?.[node.ref]?.attachmentId ?? null;
-  return { deps, applied, state, solvable, solveBlocker, changeHomeId };
+  return { deps, applied, state, solvable, solveBlocker, changeHomeId, solving };
 }
 
 /** #662: a widget as its row reads it: its name, kind and value. */

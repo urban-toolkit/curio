@@ -1,36 +1,36 @@
 import type { AgentAttachment, AgentSessionTurn, AgentSourcePickPart } from "./types";
 
 /**
- * Whether a Build & validate runs on a landed plan, one rule for the plan
- * line, the plan card's rows and Solve this node: while one runs over a node's
- * plan, no Solve of that node starts. A build is a stream over the plan, not an
- * agent job, so a Solve started meanwhile would build the same node beside it.
+ * Whether a Build & validate runs on a landed plan, or a plan row's Solve on
+ * one of its nodes, one rule for the plan line, the plan card's rows and Solve
+ * this node: while either runs, no other run of the same nodes starts. A build
+ * is a stream over the plan, not an agent job, so a Solve started meanwhile
+ * would build the same node beside it. The server says whether one runs (the
+ * listing's `buildRunning` and `validating`): the browser's clock is never
+ * held against the server's.
  */
 
 /** Why no Solve is offered while a build of the plan runs. */
 export const BUILD_RUNNING_HINT = "The plan is being built: Stop the build to Solve";
 
-/** How long a build may run before the server takes it for gone, in seconds
- * (`solve/budgets.py`'s `SIMULATE_STALE_SECONDS`). */
-export const BUILD_STALE_S = 15 * 60;
+/** Why no build, Step or other row's Solve starts while a row's Solve of the
+ * plan runs. */
+export const ROW_SOLVE_RUNNING_HINT = "A node of this plan is being solved: wait for its Solve to end";
+
+/** Why Solve this node waits while the node's plan row Solves it. */
+export const NODE_ROW_SOLVE_HINT = "This node is being solved by its plan's row: wait for its Solve to end";
 
 /** A build's mode: one action, or every action until a pause. */
 export type BuildMode = "step" | "auto";
 
 /** The build running on *attachment*'s plan: the one this tab runs for it
- * (*simulating*), else the one the listing names (another tab's), while its
- * start is more recent than a build may run; null when none runs. */
+ * (*simulating*), else the one the server says runs (`buildRunning`, another
+ * tab's among them); null when none runs. */
 export function buildRunningOn(
   attachment: AgentAttachment,
   simulating: BuildMode | null | undefined = null,
-  nowS: number = Date.now() / 1000,
 ): BuildMode | null {
-  if (simulating) return simulating;
-  const session = attachment.builderSession;
-  const mode = session?.simulateMode;
-  const since = Number(session?.simulatingSince ?? 0);
-  if (!mode || !since || nowS - since >= BUILD_STALE_S) return null;
-  return mode;
+  return simulating ?? attachment.buildRunning ?? null;
 }
 
 /** Whether a build runs on a plan that holds the node *nodeId*: a plan of one
@@ -40,13 +40,25 @@ export function buildRunningOver(
   nodeId: string,
   attachments: AgentAttachment[],
   simulating: Record<string, BuildMode | undefined>,
-  nowS: number = Date.now() / 1000,
 ): boolean {
   return attachments.some(
     (a) =>
       Object.values(a.builderSession?.nodeIds ?? {}).includes(nodeId) &&
-      buildRunningOn(a, simulating[a.attachmentId] ?? null, nowS) !== null,
+      buildRunningOn(a, simulating[a.attachmentId] ?? null) !== null,
   );
+}
+
+/** Why Solve this node may not start on the node *nodeId* now: a build runs
+ * on a plan that holds it, or a plan row's Solve of it runs (the listing's
+ * `validating`); null when nothing runs over it. */
+export function solveNodeBlockerFor(
+  nodeId: string,
+  attachments: AgentAttachment[],
+  simulating: Record<string, BuildMode | undefined>,
+): string | null {
+  if (buildRunningOver(nodeId, attachments, simulating)) return BUILD_RUNNING_HINT;
+  if (attachments.some((a) => a.validating?.nodeId === nodeId)) return NODE_ROW_SOLVE_HINT;
+  return null;
 }
 
 /** Whether a chat's *turns* hold the card of the node *nodeId*'s candidates:

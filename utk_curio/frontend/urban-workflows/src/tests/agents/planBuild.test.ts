@@ -1,10 +1,17 @@
-import { buildRunningOn, buildRunningOver, type AgentAttachment } from "../../services/agents";
+import {
+  BUILD_RUNNING_HINT,
+  buildRunningOn,
+  buildRunningOver,
+  NODE_ROW_SOLVE_HINT,
+  solveNodeBlockerFor,
+  type AgentAttachment,
+} from "../../services/agents";
 
 /**
  * Whether a Build & validate runs on a plan: the one this tab runs for the
- * plan's agent, or one the listing names (another tab's), until its start is
- * older than the server lets a build run (`SIMULATE_STALE_SECONDS`). While one
- * runs over a node's plan, no Solve of that node starts.
+ * plan's agent, or one the server says runs (the listing's `buildRunning`,
+ * another tab's among them). While one runs over a node's plan, or the plan's
+ * row Solves the node (`validating`), no Solve of that node starts.
  */
 
 const NOW_S = 1_800_000_000;
@@ -28,30 +35,47 @@ const builder = (session: Record<string, unknown> = {}, attachmentId = "dfb"): A
 
 describe("buildRunningOn", () => {
   it("is the build this tab runs for the plan's agent", () => {
-    expect(buildRunningOn(builder(), "step", NOW_S)).toBe("step");
+    expect(buildRunningOn(builder(), "step")).toBe("step");
   });
 
-  it("is the build the listing names while its start is recent", () => {
-    expect(buildRunningOn(builder({ simulateMode: "auto", simulatingSince: NOW_S - 30 }), null, NOW_S)).toBe("auto");
+  it("is the build the server says runs, which the listing names", () => {
+    expect(
+      buildRunningOn({ ...builder({ simulateMode: "auto", simulatingSince: NOW_S - 30 }), buildRunning: "auto" }),
+    ).toBe("auto");
   });
 
-  it("is none for a build whose start is older than a build may run, or with no build", () => {
-    expect(buildRunningOn(builder({ simulateMode: "auto", simulatingSince: NOW_S - 16 * 60 }), null, NOW_S)).toBeNull();
-    expect(buildRunningOn(builder(), null, NOW_S)).toBeNull();
+  it("is none for a build the record names that the server says no longer runs, or with no build", () => {
+    expect(
+      buildRunningOn({ ...builder({ simulateMode: "auto", simulatingSince: NOW_S - 16 * 60 }), buildRunning: null }),
+    ).toBeNull();
+    expect(buildRunningOn(builder())).toBeNull();
   });
 });
 
 describe("buildRunningOver", () => {
   it("says a node's plan is being built while a build runs on the plan that holds it", () => {
-    const attachments = [builder({ simulateMode: "auto", simulatingSince: NOW_S - 5 })];
-    expect(buildRunningOver("n1", attachments, {}, NOW_S)).toBe(true);
-    expect(buildRunningOver("n9", attachments, {}, NOW_S)).toBe(false);
+    const attachments = [{ ...builder({ simulateMode: "auto", simulatingSince: NOW_S - 5 }), buildRunning: "auto" as const }];
+    expect(buildRunningOver("n1", attachments, {})).toBe(true);
+    expect(buildRunningOver("n9", attachments, {})).toBe(false);
   });
 
   it("reads this tab's own builds, by the plan's agent", () => {
     const attachments = [builder(), builder({ nodeIds: { other: "n9" } }, "dfb2")];
-    expect(buildRunningOver("n1", attachments, { dfb2: "auto" }, NOW_S)).toBe(false);
-    expect(buildRunningOver("n9", attachments, { dfb2: "auto" }, NOW_S)).toBe(true);
+    expect(buildRunningOver("n1", attachments, { dfb2: "auto" })).toBe(false);
+    expect(buildRunningOver("n9", attachments, { dfb2: "auto" })).toBe(true);
+  });
+});
+
+describe("solveNodeBlockerFor", () => {
+  it("is the build's hint while a build runs over the node's plan", () => {
+    const attachments = [{ ...builder(), buildRunning: "auto" as const }];
+    expect(solveNodeBlockerFor("n1", attachments, {})).toBe(BUILD_RUNNING_HINT);
+  });
+
+  it("is the row's hint while the node's plan row Solves it, and none for another node", () => {
+    const attachments = [{ ...builder(), validating: { ref: "load", nodeId: "n1" } }];
+    expect(solveNodeBlockerFor("n1", attachments, {})).toBe(NODE_ROW_SOLVE_HINT);
+    expect(solveNodeBlockerFor("n2", attachments, {})).toBeNull();
   });
 });
 
