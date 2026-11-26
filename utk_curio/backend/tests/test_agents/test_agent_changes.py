@@ -143,6 +143,21 @@ def _person_sets_the_goal(user, project, goal: str) -> None:
     _person_writes(user, project, lambda flow: flow.update(task=goal))
 
 
+def _renamed(scenario_id: str, name: str):
+    """The person's change that renames the scenario *scenario_id* to *name*,
+    for :func:`_person_writes`."""
+    def change(flow):
+        for scenario in flow.get("scenarios") or []:
+            if scenario.get("id") == scenario_id:
+                scenario["name"] = name
+    return change
+
+
+def _note() -> dict:
+    """A node with no connections, which a person's scenario can hold."""
+    return {"id": "note", "type": CA, "title": "Note", "goal": "Keep a note", "content": "return 0", "x": 800, "y": 0}
+
+
 def _mutations(step: dict) -> list[dict]:
     """A landed step's canvas mutations: one, or a list when the step also
     gave nodes their starters."""
@@ -569,6 +584,108 @@ class TestUndoByKind:
         assert [(e["source"], e["target"]) for e in flow["edges"]] == [("load", "sum")]
         assert [s.get("name") for s in flow.get("scenarios") or [] if s.get("id") == "s1"] == ["Cool roofs on every block"]
 
+    @pytest.mark.parametrize("place", ["nodes", "context", "outcomes"])
+    def test_undo_of_a_plan_is_refused_when_a_scenario_made_after_it_names_its_node(
+        self, client, user_and_token, tmp_curio, monkeypatch, place,
+    ):
+        """A scenario someone makes after a plan that saved none, naming the
+        plan's node among its nodes (*place*), its context or its outcomes:
+        the Undo, which takes that node away, would take it out of their
+        scenario too, so it is refused and changes nothing, as on main. Before
+        the fix it went ahead, and the write took the node out of what the
+        scenario named there."""
+        user, token = user_and_token
+        project, att = _setup(client, user, token, coord=DFB)
+        card = self._land_replacing_the_loader(client, token, project, att, monkeypatch)
+        [new_id] = [node_id for node_id in _by_id(_saved(client, token, project)) if node_id != "sum"]
+        scenario = {"id": "s1", "name": "Fetched by hand", "color": "#4477aa", "nodes": ["sum"],
+                    "context": [], "outcomes": [], place: [new_id]}
+        _person_writes(user, project, lambda flow: flow.update(scenarios=[scenario]))
+        held = [s for s in _saved(client, token, project).get("scenarios") or [] if s.get("id") == "s1"]
+        assert [s[place] for s in held] == [[new_id]], held
+        refused = _undo(client, token, project, att, card["changeId"])
+        assert refused.status_code == 409, refused.get_json()
+        assert "changed this dataflow after; nothing was undone." in refused.get_json()["error"]
+        flow = _saved(client, token, project)
+        assert set(_by_id(flow)) == {new_id, "sum"}
+        assert [s for s in flow.get("scenarios") or [] if s.get("id") == "s1"] == held
+
+    def _land_saving_a_scenario(self, client, user, token, monkeypatch):
+        """A dataflow with a scenario a person made on its note, and a plan
+        that replaced its loader and saved a scenario of its own on the node
+        it added. The project, the attachment, the plan's card, and the
+        scenarios and their sets as the plan found them."""
+        project, att = _setup(client, user, token, coord=DFB, nodes=_nodes() + [_note()])
+        _person_writes(user, project, lambda flow: flow.update(
+            scenarios=[{"id": "s1", "name": "Cool roofs", "color": "#4477aa", "nodes": ["note"]}]))
+        found = _saved(client, token, project)
+        before = {key: found.get(key) for key in ("scenarios", "scenarioSets")}
+        plan = {
+            "goal": "replace the loader",
+            "nodes": [{"ref": "a", "nodeType": CA, "title": "API Fetch", "intent": "fetch from the api"}],
+            "edges": [{"from": "a", "to": "sum"}],
+            "removeNodes": ["load"],
+            "scenarios": [{"name": "Fetched", "nodes": ["a"]}],
+        }
+        body, _ = _ask(client, token, project, att, monkeypatch, ["Here.\n" + _plan_tail(plan)])
+        card = _the_card(body)
+        names = sorted(s.get("name") for s in _saved(client, token, project).get("scenarios") or [])
+        assert names == ["Cool roofs", "Fetched"], names
+        return project, att, card, before
+
+    def test_undo_of_a_plan_that_saved_scenarios_takes_them_back(self, client, user_and_token, tmp_curio, monkeypatch):
+        """A plan that saved a scenario wrote the scenarios: its Undo takes its
+        scenario away with its node, and the scenarios are as the plan found
+        them, the person's own as they made it."""
+        user, token = user_and_token
+        project, att, card, before = self._land_saving_a_scenario(client, user, token, monkeypatch)
+        undone = _undo(client, token, project, att, card["changeId"])
+        assert undone.status_code == 200, undone.get_json()
+        flow = _saved(client, token, project)
+        assert set(_by_id(flow)) == {"load", "sum", "note"}
+        assert {key: flow.get(key) for key in ("scenarios", "scenarioSets")} == before
+
+    def test_undo_of_a_plan_that_saved_scenarios_is_refused_when_someone_changed_another_scenario(
+        self, client, user_and_token, tmp_curio, monkeypatch,
+    ):
+        """After a plan that saved a scenario, a change to any other scenario
+        refuses the plan's Undo, which would put every scenario back as the
+        plan found it: here the person renamed their own."""
+        user, token = user_and_token
+        project, att, card, _ = self._land_saving_a_scenario(client, user, token, monkeypatch)
+        _person_writes(user, project, _renamed("s1", "Cool roofs on every block"))
+        refused = _undo(client, token, project, att, card["changeId"])
+        assert refused.status_code == 409, refused.get_json()
+        assert "changed this dataflow after; nothing was undone." in refused.get_json()["error"]
+        flow = _saved(client, token, project)
+        assert "load" not in _by_id(flow)
+        assert sorted(s.get("name") for s in flow.get("scenarios") or []) == ["Cool roofs on every block", "Fetched"]
+
+    def test_undo_of_a_plan_whose_removal_changed_a_scenario_is_refused_when_someone_renamed_it(
+        self, client, user_and_token, tmp_curio, monkeypatch,
+    ):
+        """A plan that saves no scenario still writes the scenarios when it
+        removes a node a scenario names: its write takes the node out of the
+        scenario, here out of its context. A rename of that scenario after
+        the plan then refuses the plan's Undo, which would put the scenario
+        back as the plan found it."""
+        user, token = user_and_token
+        project, att = _setup(client, user, token, coord=DFB, nodes=_nodes() + [_note()])
+        _person_writes(user, project, lambda flow: flow.update(scenarios=[
+            {"id": "s1", "name": "Cool roofs", "color": "#4477aa", "nodes": ["note"], "context": ["load"],
+             "outcomes": []}]))
+        assert [s.get("context") for s in _saved(client, token, project).get("scenarios") or []] == [["load"]]
+        card = self._land_replacing_the_loader(client, token, project, att, monkeypatch)
+        # The plan's removal of the loader took it out of the scenario's context.
+        assert [s.get("context") for s in _saved(client, token, project).get("scenarios") or []] == [[]]
+        _person_writes(user, project, _renamed("s1", "Cool roofs on every block"))
+        refused = _undo(client, token, project, att, card["changeId"])
+        assert refused.status_code == 409, refused.get_json()
+        assert "changed this dataflow after; nothing was undone." in refused.get_json()["error"]
+        flow = _saved(client, token, project)
+        assert "load" not in _by_id(flow)
+        assert [s.get("name") for s in flow.get("scenarios") or []] == ["Cool roofs on every block"]
+
     def test_undo_of_a_second_plan_gives_the_planner_back_the_first(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
         project, att = _setup(client, user, token, coord=DFB)
@@ -683,6 +800,95 @@ class TestAPlanFillsAnEmptyGoal:
         assert flow["task"] == "Find the shaded parks"
         [canvas] = undone.get_json()["canvas"]
         assert "task" not in canvas, canvas
+
+    def test_a_goal_saved_between_the_plans_read_and_its_write_stays(
+        self, client, user_and_token, tmp_curio, monkeypatch,
+    ):
+        """A goal someone saves after the plan's first step read the empty
+        goal, and before that step's write, is theirs: the write gives the
+        dataflow the plan's goal only while the doc still holds the goal the
+        step read, in the write's own transaction. The change keeps no
+        ``goalSet``, so the card does not say *Goal set to* and no step
+        carries the goal to a canvas, and the Undo leaves their goal. Before
+        the fix the plan's goal replaced theirs."""
+        from utk_curio.backend.app.collaboration import dataflow_docs, history
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        project, att = _setup(client, user, token, coord=DFB)
+        write = dataflow_docs.write
+        carried: list = []
+
+        def someone_saves_a_goal_first(user_key, project_id, spec, actor, **kwargs):
+            if (kwargs.get("point") or {}).get("change") and not carried:
+                # The plan's first write: its step read the dataflow already.
+                carried.append(spec["dataflow"].get("task"))
+                _person_sets_the_goal(user, project, "Map the parks")
+            return write(user_key, project_id, spec, actor, **kwargs)
+
+        monkeypatch.setattr(dataflow_docs, "write", someone_saves_a_goal_first)
+        card, landed = self._land(client, token, project, att, monkeypatch)
+        # The step read an empty goal and wrote the plan's; theirs landed first.
+        assert carried == [self.GOAL], carried
+        points = [p for p in history.points(key, project) if p.get("change") == card["changeId"]]
+        assert history.dataflow_found_by(key, project, points[0]).get("task") == "Map the parks"
+        assert _saved(client, token, project)["task"] == "Map the parks"
+        assert "goalSet" not in card, card
+        assert [m for step in landed["steps"] for m in _mutations(step) if "task" in m] == [], landed["steps"]
+        assert "task" not in landed["canvas"], landed["canvas"]
+        undone = _undo(client, token, project, att, card["changeId"])
+        assert undone.status_code == 200, undone.get_json()
+        flow = _saved(client, token, project)
+        assert set(_by_id(flow)) == {"load", "sum"}
+        assert flow["task"] == "Map the parks"
+        [canvas] = undone.get_json()["canvas"]
+        assert "task" not in canvas, canvas
+
+    def test_undo_leaves_a_goal_saved_while_it_puts_back(self, client, user_and_token, tmp_curio, monkeypatch):
+        """A goal someone saves while the Undo puts the dataflow back, after
+        the put-back read the plan's goal and before its write, is theirs:
+        the put-back takes the goal back only while the doc still holds the
+        plan's goal, in its own transaction, and its mutation then carries no
+        goal for a canvas. Before the fix the Undo emptied their goal."""
+        from utk_curio.backend.app.collaboration import dataflow_docs
+
+        user, token = user_and_token
+        project, att = _setup(client, user, token, coord=DFB)
+        card, _ = self._land(client, token, project, att, monkeypatch)
+        assert card["goalSet"] == self.GOAL, card
+        write = dataflow_docs.write
+        read: list = []
+
+        def someone_saves_a_goal_first(user_key, project_id, spec, actor, **kwargs):
+            if actor.what == "putBack" and not read:
+                # The put-back's write: it read the plan's goal already.
+                read.append(spec.base["dataflow"].get("task"))
+                _person_sets_the_goal(user, project, "Find the shaded parks")
+            return write(user_key, project_id, spec, actor, **kwargs)
+
+        monkeypatch.setattr(dataflow_docs, "write", someone_saves_a_goal_first)
+        undone = _undo(client, token, project, att, card["changeId"])
+        assert read == [self.GOAL], read
+        assert undone.status_code == 200, undone.get_json()
+        flow = _saved(client, token, project)
+        assert set(_by_id(flow)) == {"load", "sum"}
+        assert flow.get("task") == "Find the shaded parks"
+        [canvas] = undone.get_json()["canvas"]
+        assert "task" not in canvas, canvas
+
+    def test_undo_names_the_plans_goal_to_a_canvas_no_doc_binds(self, client, user_and_token, tmp_curio, monkeypatch):
+        """The Undo's mutation carries the goal it put back (``task``) and the
+        plan's (``goalSet``): a canvas no doc binds takes the goal back only
+        while its own goal still reads the plan's, so a goal set there while
+        its room's socket was down stays."""
+        user, token = user_and_token
+        project, att = _setup(client, user, token, coord=DFB)
+        card, _ = self._land(client, token, project, att, monkeypatch)
+        undone = _undo(client, token, project, att, card["changeId"])
+        assert undone.status_code == 200, undone.get_json()
+        [canvas] = undone.get_json()["canvas"]
+        assert (canvas.get("task"), canvas.get("goalSet")) == ("", self.GOAL), canvas
 
     @pytest.mark.parametrize("goal", ["", "   "], ids=["empty", "whitespace"])
     def test_a_plan_with_no_goal_of_its_own_fills_nothing(
