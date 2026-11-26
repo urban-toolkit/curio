@@ -1574,15 +1574,17 @@ class TestSolveNode:
     LOADER = 'import pandas as pd\ndataset_path = curio_data_path("{DATASET}")\ndf = pd.read_csv(dataset_path)\nreturn df'
 
     def _setup(self, client, user, token, monkeypatch, *, content, child_replies=(), exec_outcomes=None,
-               node_type=DL):
+               node_type=DL, goal="load the heat data", title=None):
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         ukey = _user_dir_key(user)
         routes_proposals.TestNodeCreate()._write_builtin_package(ukey, templates=TEMPLATES)
         dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="heat.csv")
         content = content.replace("{DATASET}", dataset_id)
-        body = {"name": "p", "spec": {"dataflow": {"nodes": [
-            {"id": "n1", "type": node_type, "goal": "load the heat data", "content": content, "x": 0, "y": 0}],
+        node = {"id": "n1", "type": node_type, "goal": goal, "content": content, "x": 0, "y": 0}
+        if title is not None:
+            node["title"] = title
+        body = {"name": "p", "spec": {"dataflow": {"nodes": [node],
             "edges": [], "packages": []}}, "outputs": []}
         pid = client.post("/api/projects", json=body, headers=_auth(token)).get_json()["id"]
         # The Node Builder writes the content too, in its content mode.
@@ -2456,3 +2458,101 @@ class TestUnverifiedSolveValuesACallMakesUp:
         assert load["status"] == "skipped", load
         assert helper._node_content(ctx, ctx["load"]) == held
         assert ctx["dl_calls"] == [] and ctx["exec_payloads"] == []
+
+
+class TestASolveNamesTheNodeAsItsCanvasDoes:
+    """A Solve's turns name a node by its title, whole, as its header on the
+    canvas does. Its goal cut at 60 characters cut a word: a plan's loader was
+    "Load pedestrians", then a dash and the start of its intent, cut after
+    "on". A node with no title is named by its goal, cut on a word, with an
+    ellipsis where it was cut."""
+
+    #: A goal longer than a name's 60 characters, whose 60th character falls
+    #: inside "streets".
+    GOAL = "load the pedestrians counted per hour on the four busiest streets downtown"
+    #: That goal as the name of a node with no title.
+    GOAL_NAME = "load the pedestrians counted per hour on the four busiest…"
+
+    def test_a_rows_solve_names_the_loader_by_its_title_whole(self, client, user_and_token, tmp_curio, monkeypatch):
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        routes_proposals.TestNodeCreate()._write_builtin_package(_user_dir_key(user), templates=TEMPLATES)
+        dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="heat.csv")
+        body = {"name": "p", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}}, "outputs": []}
+        pid = client.post("/api/projects", json=body, headers=_auth(token)).get_json()["id"]
+        for coord in ("agent.curio.dataflow-builder@1", "agent.curio.node-builder@1"):
+            client.post(f"/api/agents/projects/{pid}/install", json={"coord": coord}, headers=_auth(token))
+        att = client.post(
+            f"/api/agents/projects/{pid}/attachments",
+            json={"coord": "agent.curio.dataflow-builder@1", "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        ).get_json()["attachmentId"]
+        # The plan saves the loader's goal as its title, a dash and its intent.
+        plan = {"goal": "pedestrians", "nodes": [
+            {"ref": "load", "nodeType": DL, "title": "Load pedestrians", "intent": self.GOAL}], "edges": []}
+        loader = f'import pandas as pd\ndataset_path = curio_data_path("{dataset_id}")\ndf = pd.read_csv(dataset_path)\nreturn df'
+        replies = ["Plan.\n```curio.v1\n" + json.dumps({"dataflowPlan": plan}) + "\n```", loader]
+        calls = []
+
+        def _fake_run(config, messages, **kwargs):
+            if messages and messages[0].get("content") == titles.title_prompt():
+                return "Title"
+            calls.append(messages)
+            return replies[min(len(calls) - 1, len(replies) - 1)]
+
+        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
+        monkeypatch.setattr(
+            "utk_curio.backend.app.execution.runner._http_exec",
+            lambda endpoint, payload: {"stdout": [], "stderr": "", "output": {"path": "art-1", "dataType": "dataframe"}},
+        )
+        r = client.post(f"/api/agents/projects/{pid}/attachments/{att}/run", json={"message": "plan"}, headers=_auth(token))
+        assert [c["tool"] for c in r.get_json().get("changes") or []] == ["dataflow.plan.write"]
+        r = client.post(f"/api/agents/projects/{pid}/attachments/{att}/validate-node",
+                        json={"ref": "load"}, headers=_auth(token))
+        assert r.status_code == 200, r.get_json()
+        done = routes_solve.TestStreamedSolve()._sse_events(r)[-1][1]
+        assert done["verdict"] == "pass", done
+        turns = client.get(f"/api/agents/projects/{pid}/attachments/{att}/session", headers=_auth(token)).get_json()["turns"]
+        solved = next(t for t in reversed(turns) if (t.get("text") or "").startswith("Solved"))
+        assert solved["text"].startswith("Solved 'Load pedestrians': PASS after 1 round:"), solved["text"]
+        summaries = [p.get("summary") for p in solved.get("content") or [] if p.get("type") == "delegation"]
+        assert summaries == ["Solve 'Load pedestrians': pass (1 round)"], summaries
+
+    def _verified_turn(self, client, user, token, monkeypatch, **node) -> str:
+        """The turn Solve this node ends with on a node whose code passes as it is."""
+        helper = TestSolveNode()
+        ctx = helper._setup(client, user, token, monkeypatch, content=helper.LOADER, **node)
+        done = helper._solve_node(client, token, ctx)[-1][1]
+        assert done["verdict"] == "pass" and done["unchanged"] is True, done
+        turns = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/session",
+                           headers=_auth(token)).get_json()["turns"]
+        return turns[-1]["text"]
+
+    def test_solve_this_node_names_a_titled_node_by_its_title_whole(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        text = self._verified_turn(client, user, token, monkeypatch, goal=self.GOAL, title="Load pedestrians")
+        assert text.startswith("Verified 'Load pedestrians': its current code ran successfully"), text
+
+    def test_a_node_with_no_title_is_named_by_its_goal_cut_on_a_word(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        text = self._verified_turn(client, user, token, monkeypatch, goal=self.GOAL)
+        assert text.startswith(f"Verified {self.GOAL_NAME!r}: its current code ran successfully"), text
+
+    def test_the_name_never_cuts_a_word(self):
+        from utk_curio.backend.app.agents.application.solve import node_solve
+
+        assert node_solve.solve_label({"id": "n1", "title": " Load pedestrians ", "goal": self.GOAL}) == (
+            "Load pedestrians"
+        )
+        assert node_solve.solve_label({"id": "n1", "goal": self.GOAL}) == self.GOAL_NAME
+        assert node_solve.solve_label({"id": "n1", "goal": "load the heat data"}) == "load the heat data"
+        # A first word longer than the bound stands whole.
+        word = "x" * 70
+        assert node_solve.solve_label({"id": "n1", "goal": f"{word} and more"}) == f"{word}…"
+        assert node_solve.solve_label({"id": "n1", "goal": word}) == word
+        assert node_solve.solve_label({"id": "n1"}) == "n1"

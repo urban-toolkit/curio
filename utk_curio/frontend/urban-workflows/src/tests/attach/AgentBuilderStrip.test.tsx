@@ -731,8 +731,13 @@ describe("AgentBuilderStrip — dev/131 the session, and nodes that depend on yo
       />,
     );
     openMore();
-    expect(screen.getAllByText("needs you")).toHaveLength(1);
-    expect(screen.getByText("waiting upstream")).toBeInTheDocument();
+    // One label each: the node that waits for its source reads Needs a
+    // source, as the plan card's row does, and the one that waits upstream
+    // says only that. Neither says its status beside it.
+    expect(screen.getAllByText("Needs a source")).toHaveLength(1);
+    expect(screen.getAllByText("waiting upstream")).toHaveLength(1);
+    expect(screen.queryByText("needs you")).toBeNull();
+    expect(screen.queryByText("pending")).toBeNull();
   });
 
   it("offers Solve on each unresolved pill, and disables it for a node that needs the user", async () => {
