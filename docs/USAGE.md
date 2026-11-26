@@ -122,7 +122,7 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 
 `--backend-host` / `--backend-port` (127.0.0.1:5002), `--sandbox-host` / `--sandbox-port` (127.0.0.1:2000), `--frontend-host` / `--frontend-port` (localhost:8080), and `--verbose N` (0=silent, 1=normal, 2=debug).
 
-Each server listens on its own host alone, so with the defaults only this machine reaches Curio. Curio's container commands give `--backend-host 0.0.0.0` and `--frontend-host 0.0.0.0`, because the ports that Docker publishes reach only a server on the container's own address.
+Each server listens on its own host alone, so with the defaults only this machine reaches Curio. In a container, start Curio with `--backend-host 0.0.0.0` and `--frontend-host 0.0.0.0`, as Curio's Dockerfile and compose files do.
 
 > [!WARNING]
 > Leave `--sandbox-host` at `127.0.0.1` unless you are genuinely running the backend on another machine. The sandbox executes arbitrary node code and, while it requires a shared secret, there is no reason to offer that surface to the network.
