@@ -2560,7 +2560,9 @@ for your review: nothing installs until you apply it.
 
 Each message runs on the server: close or reload the tab and the agent goes on,
 its reply in the chat when you come back. Everyone who edits the dataflow sees
-it as it runs. One message of a chat runs at a time: one you send while another
+it as it runs, and sees what Curio writes into the chat outside a message, such
+as a pick's *Source recorded* turn or the turns of **Solve**, as it lands, with
+no reload. One message of a chat runs at a time: one you send while another
 runs waits its turn (*Waiting its turn*), and **Withdraw** takes it back before
 it starts. While a message runs and the box is empty, **Stop** is in **Send**'s
 place: it stops the message at its next step, keeping what it said and changed

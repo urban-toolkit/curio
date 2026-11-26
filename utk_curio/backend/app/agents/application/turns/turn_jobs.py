@@ -21,6 +21,13 @@ message, who wrote it, the reply's text so far and the ask's other events,
 then takes the events after them. A tab no room holds, a hosted guest's,
 follows an ask over HTTP instead (:func:`follow`).
 
+What the server writes into a chat outside its asks' own events, a turn it
+appends (a pick's Source recorded, a Solve's or a build's, a task another
+agent hands over), a card's status (an Undo) or a clear, reaches the same
+tabs as a word that names the chat (:data:`CHAT_CHANGED_EVENT`,
+``sessions.when_changed``): each tab that read the chat reads it again. An
+ask's own exchange is told by its events alone.
+
 Whoever asked can withdraw a waiting ask (:func:`withdraw`). Whoever asked,
 the owner or any editor can stop a running turn (:func:`stop`): it stops at
 its next step (``turn_loop.Stop``), and what it said and landed until then
@@ -62,6 +69,10 @@ log = logging.getLogger(__name__)
 #: The room's event that carries an ask's events to the tabs that edit the
 #: dataflow: ``{projectId, attachmentId, askId, seq, event, data}``.
 EVENT = "agent_turn"
+#: The room's event that tells the tabs that edit the dataflow that the
+#: server changed an agent's chat outside its asks' own events:
+#: ``{projectId, attachmentId}``.
+CHAT_CHANGED_EVENT = "agent_chat_changed"
 
 WAITING = "waiting"
 RUNNING = "running"
@@ -393,6 +404,16 @@ def end_asks_of(user_key: str, project_id: str, attachment_ids) -> None:
 
 
 sessions.when_removed(end_asks_of)
+
+
+def _tell_chat_changed(user_key: str, project_id: str, attachment_id: str) -> None:
+    """Tell the tabs in the dataflow's room that edit it, a watcher's never,
+    that the chat of *attachment_id* changed outside its asks' own events
+    (``sessions.when_changed``): each that read it reads it again."""
+    roles.tell_editors(project_id, CHAT_CHANGED_EVENT, {"projectId": project_id, "attachmentId": attachment_id})
+
+
+sessions.when_changed(_tell_chat_changed)
 
 
 def forget_all() -> None:

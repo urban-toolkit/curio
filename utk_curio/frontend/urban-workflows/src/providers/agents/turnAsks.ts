@@ -21,6 +21,22 @@ import type {
  * dataflow, each in an `AgentTurnEnvelope`. */
 export const AGENT_TURN_EVENT = "agent_turn";
 
+/** The room's event that tells the tabs that edit the dataflow that the
+ * server changed an agent's chat outside its asks' own events
+ * (`turn_jobs.CHAT_CHANGED_EVENT` on the server): a turn it appended, such as
+ * a pick's Source recorded, a Solve's, a build's or a task another agent
+ * handed over, a card's status (an Undo), or a clear. `{projectId,
+ * attachmentId}`: a tab that read that chat reads it again. */
+export const AGENT_CHAT_CHANGED_EVENT = "agent_chat_changed";
+
+/** The chat a room's `AGENT_CHAT_CHANGED_EVENT` names, when *payload* is one
+ * of dataflow *projectId*'s; else null. */
+export function changedChatOf(payload: unknown, projectId: string | null): string | null {
+  const told = payload as { projectId?: unknown; attachmentId?: unknown } | null;
+  if (!projectId || told?.projectId !== projectId) return null;
+  return typeof told.attachmentId === "string" && told.attachmentId ? told.attachmentId : null;
+}
+
 /** An ask a tab follows, as far as the tab has seen it. */
 export interface LiveAsk {
   askId: string;

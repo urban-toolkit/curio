@@ -17,6 +17,10 @@ Every write reads the turns, changes them and writes the file whole, holding
 the dataflow's chats lock (:func:`_writing`): a delegated task appends to its
 home attachment's chat outside that attachment's queue, so two writes of one
 chat can come at once, in two threads or two backend processes.
+
+Each write is told once it is made (:func:`when_changed`): a turn appended,
+a card's status set, a chat cleared. An ask's own exchange is not, since its
+own events carry it already (``told_by_its_ask``).
 """
 
 from __future__ import annotations
@@ -148,14 +152,46 @@ def make_turn(
     return turn
 
 
+#: What is told of a chat the server changed: each called with the dataflow's
+#: key, its id and the attachment's id, after the write. The chat turns
+#: register theirs (``turns/turn_jobs.py``): the room hears which chat changed.
+_change_hooks: list = []
+
+
+def when_changed(hook) -> None:
+    """Call *hook* with ``(user_key, project_id, attachment_id)`` each time a
+    chat changes: a turn appended (:func:`append_turns`), a card's status set
+    (:func:`update_proposal_status`, :func:`update_change_status`) or the chat
+    cleared (:func:`clear_turns`)."""
+    if hook not in _change_hooks:
+        _change_hooks.append(hook)
+
+
+def _changed(user_key: str, project_id: str, attachment_id) -> None:
+    """Tell :func:`when_changed`'s hooks that the chat of *attachment_id*
+    changed. A hook that fails never fails the write, which stands."""
+    if not isinstance(attachment_id, str):
+        return
+    for hook in list(_change_hooks):
+        try:
+            hook(user_key, project_id, attachment_id)
+        except Exception:  # noqa: BLE001 - the write stands whether or not it was told
+            log.exception("the change of chat %s of %s could not be told", attachment_id, project_id)
+
+
 def append_turns(
-    user_key: str, project_id: str, session_id: str, attachment_id: str, new_turns: list[dict]
+    user_key: str, project_id: str, session_id: str, attachment_id: str, new_turns: list[dict],
+    *, told_by_its_ask: bool = False,
 ) -> list[dict]:
-    """Append turns and persist; returns the full transcript."""
+    """Append turns and persist; returns the full transcript. The change is
+    told (:func:`when_changed`), unless *told_by_its_ask*: the exchange of a
+    chat turn, whose own events carry it to every tab that follows the chat."""
     path = _session_path(user_key, project_id, session_id)
     with _writing(user_key, project_id):
         turns = read_turns(user_key, project_id, session_id) + list(new_turns)
         _write(path, session_id, attachment_id, turns)
+    if new_turns and not told_by_its_ask:
+        _changed(user_key, project_id, attachment_id)
     return turns
 
 
@@ -182,7 +218,7 @@ def update_change_status(
 def _set_part_status(user_key: str, project_id: str, session_id: str, kind: str, key: str,
                      part_id: str, status: str) -> bool:
     """Set *status* on the transcript's parts of type *kind* whose *key* is
-    *part_id*; whether any changed."""
+    *part_id*; whether any changed. A change is told (:func:`when_changed`)."""
     path = _session_path(user_key, project_id, session_id)
     if not path.exists():
         return False
@@ -206,14 +242,17 @@ def _set_part_status(user_key: str, project_id: str, session_id: str, kind: str,
             data = json.loads(path.read_text(encoding="utf-8"))
         attachment_id = data.get("attachmentId") if isinstance(data, dict) else None
         _write(path, session_id, attachment_id, turns)
+    _changed(user_key, project_id, attachment_id)
     return True
 
 
 def clear_turns(user_key: str, project_id: str, session_id: str, attachment_id: str) -> None:
-    """Empty the transcript but keep the session file/id."""
+    """Empty the transcript but keep the session file/id. Told
+    (:func:`when_changed`)."""
     path = _session_path(user_key, project_id, session_id)
     with _writing(user_key, project_id):
         _write(path, session_id, attachment_id, [])
+    _changed(user_key, project_id, attachment_id)
 
 
 def delete_session(user_key: str, project_id: str, session_id: str) -> None:

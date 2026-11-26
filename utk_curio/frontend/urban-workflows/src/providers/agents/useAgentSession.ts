@@ -14,7 +14,11 @@
  * it lands and its end. A tab no room holds (a hosted guest's) asks and follows
  * the answer itself, and follows the ask by its id when that answer breaks. A
  * chat opened while a turn runs or asks wait reads them as they stand, then
- * the events after them (`seq`).
+ * the events after them (`seq`). What the server writes into a chat outside
+ * its asks' own events (a pick's Source recorded turn, a Solve's turns, a
+ * task another agent handed over, an Undo, a clear) comes as a word that
+ * names the chat (`agent_chat_changed`): the open chat is read again at once,
+ * and one this tab read before when it opens again.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -33,7 +37,9 @@ import { holdsSourceCardFor } from "../../services/agents/planBuild";
 import { askersOf, sourceCardIds } from "../../services/agents/sourceCards";
 import { useCollab } from "../CollaborationProvider";
 import {
+  AGENT_CHAT_CHANGED_EVENT,
   AGENT_TURN_EVENT,
+  changedChatOf,
   isTurnEnvelope,
   liveAskOf,
   newAskId,
@@ -112,6 +118,12 @@ export function useAgentSession(
   attachmentsRef.current = state.attachments;
   const reloadRef = useRef(state.reload);
   reloadRef.current = state.reload;
+  // The chat this tab shows, read by the room's handlers, and the turns it
+  // holds of each chat, read by a read of one.
+  const selectedRef = useRef<string | null>(selectedId);
+  selectedRef.current = selectedId;
+  const transcriptsRef = useRef(transcripts);
+  transcriptsRef.current = transcripts;
 
   const collab = useCollab();
   // A tab the dataflow's room holds follows every ask through it; any other
@@ -507,7 +519,10 @@ export function useAgentSession(
         return;
       }
       bufferRef.current[attachmentId] = [];
-      setHydratingId(attachmentId);
+      // A chat this tab shows turns of already is read again quietly: its
+      // turns stay on screen until the read lands, with no "Loading" in
+      // their place.
+      if (!(attachmentId in transcriptsRef.current)) setHydratingId(attachmentId);
       setHydrateErrors((prev) => {
         if (!(attachmentId in prev)) return prev;
         const { [attachmentId]: _drop, ...rest } = prev;
@@ -602,6 +617,20 @@ export function useAgentSession(
         if (isTurnEnvelope(payload) && payload.projectId === projectRef.current) applyEnvelope(payload);
       }),
     [onRemote, applyEnvelope],
+  );
+  // A chat the server changed outside its asks' own events. The chat this tab
+  // shows is read again now, as is one whose read is in flight, which may
+  // have been answered before the change; one it read before is read again
+  // when it opens. A read is the chat whole, so no turn shows twice.
+  useEffect(
+    () =>
+      onRemote(AGENT_CHAT_CHANGED_EVENT, (payload) => {
+        const attachmentId = changedChatOf(payload, projectRef.current);
+        if (!attachmentId) return;
+        if (bufferRef.current[attachmentId] || selectedRef.current === attachmentId) reread(attachmentId);
+        else hydratedRef.current.delete(attachmentId);
+      }),
+    [onRemote, reread],
   );
   // A tab that joins the room again may have missed events while it was
   // away: it reads its chats again.
