@@ -12,7 +12,7 @@ import type { AgentAttachment } from "../../../services/agents";
 import { useAgentAttachmentsContext } from "../../../providers/agents";
 import { usePeopleHere } from "../../../providers/collab/usePeopleHere";
 import { composeAgentRunContext, skillsApi } from "../../../services/agents";
-import { BUILD_RUNNING_HINT, buildRunningOver } from "../../../services/agents/planBuild";
+import { solveNodeBlockerFor } from "../../../services/agents/planBuild";
 import { useAgentCanvasMutations } from "./useAgentCanvasMutations";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { useUserContext } from "../../../providers/userContext";
@@ -95,6 +95,16 @@ export const AgentDockOverlay: React.FC = () => {
   // What each agent is attached to, for the open chat's header and its rail
   // (#228). Computed here, above the `!ctx` return, because it uses hooks.
   const targetNames = useTargetNames(ctx?.attachments ?? NO_ATTACHMENTS);
+  // The nodes on the canvas, read off React Flow's store as one string, so a
+  // node added or removed draws the chat again and nothing else does: a
+  // candidates card whose Finder is gone says whether its node went too.
+  const nodeIdsOnCanvas = useStore(
+    useCallback((state: any) => Array.from((state.nodeInternals?.keys?.() ?? []) as Iterable<string>).join("\n"), []),
+  );
+  const nodeOnCanvas = useCallback(
+    (nodeId: string) => nodeIdsOnCanvas.split("\n").includes(nodeId),
+    [nodeIdsOnCanvas],
+  );
   // Who is at work in the dataflow's room, for the rail's running dots, as
   // their chips in the dock say it.
   const here = usePeopleHere();
@@ -261,12 +271,11 @@ export const AgentDockOverlay: React.FC = () => {
                   : undefined
               }
               solveNodeActivity={ctx.solveNodeActivity[shown.attachmentId] ?? null}
-              // No Solve of a node starts while a build runs on its plan.
+              // No Solve of a node starts while a build runs on its plan, or
+              // while its plan's row Solves it.
               solveNodeBlocker={
-                shown.target.kind === "node" &&
-                shown.target.targetId &&
-                buildRunningOver(shown.target.targetId, ctx.attachments, ctx.simulating)
-                  ? BUILD_RUNNING_HINT
+                shown.target.kind === "node" && shown.target.targetId
+                  ? solveNodeBlockerFor(shown.target.targetId, ctx.attachments, ctx.simulating)
                   : null
               }
               onDismissProposal={(proposalId) =>
@@ -276,14 +285,21 @@ export const AgentDockOverlay: React.FC = () => {
               // delegated agent's chat; existence-checked against the live
               // list so a detached home never renders a dead link.
               onOpenAgentChat={ctx.openChat}
-              onRecordDatasetSelection={(picks) =>
-                ctx.recordDatasetSelection(shown.attachmentId, picks)
+              // A pick names the card it was made on, when the card has an id.
+              onRecordDatasetSelection={(picks, discoveryId) =>
+                discoveryId
+                  ? ctx.recordDatasetSelection(shown.attachmentId, picks, discoveryId)
+                  : ctx.recordDatasetSelection(shown.attachmentId, picks)
               }
               // A node's candidates in the chat that asked for them: the pick
               // records on the node's Dataset Finder.
-              onRecordSourcePick={(finderAttachmentId, picks) =>
-                ctx.recordDatasetSelection(finderAttachmentId, picks)
+              onRecordSourcePick={(finderAttachmentId, picks, discoveryId) =>
+                discoveryId
+                  ? ctx.recordDatasetSelection(finderAttachmentId, picks, discoveryId)
+                  : ctx.recordDatasetSelection(finderAttachmentId, picks)
               }
+              // A card whose Finder is gone says whether its node went too.
+              nodeOnCanvas={nodeOnCanvas}
               // dev/132: the portal-download row's Import button.
               onImportDataset={ctx.importDataset}
               delegateExists={(id) =>

@@ -30,6 +30,7 @@ import type {
 } from "../../services/agents/types";
 import type { AgentRunStatus } from "../../services/agents/agentRunStatus";
 import { holdsSourceCardFor } from "../../services/agents/planBuild";
+import { askersOf, sourceCardIds } from "../../services/agents/sourceCards";
 import { useCollab } from "../CollaborationProvider";
 import {
   AGENT_TURN_EVENT,
@@ -554,28 +555,42 @@ export function useAgentSession(
   );
   rereadLater.current = reread;
 
-  // The open chat is read again when the listing says its agent waits for the
-  // user's pick on a node whose card the chat does not hold: the candidates
-  // came to its chat on the server, from a Build & validate or a Solve no
-  // turn of this tab followed (another tab's, among them). Once per node while
-  // it waits, so a chat whose card never came is not read over and over.
+  // The open chat is read again when the listing says it should hold a card
+  // of a node's candidates that it does not: the candidates came to its chat
+  // on the server, from a Build & validate, a Solve or a search no turn of
+  // this tab followed (another tab's, among them). Either its agent waits for
+  // the user's pick on a node whose card the chat holds none of, or a Finder's
+  // record names the card it offers now (`discoveryId`), which this chat
+  // holds as that Finder's own or as one of the chats that asked (`askers`),
+  // and the chat holds no card with that id: a newer search's card, though it
+  // holds an older one. Once per node while it waits, and once per card, so a
+  // chat whose card never came is not read over and over.
   const readForCards = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!selectedId) return;
     const open = state.attachments.find((a) => a.attachmentId === selectedId);
     const waits = open?.waitsForYou ?? [];
     for (const key of Array.from(readForCards.current)) {
-      const [chat, nodeId] = key.split("|");
-      if (chat === selectedId && !waits.includes(nodeId)) readForCards.current.delete(key);
+      const [chat, kind, nodeId] = key.split("|");
+      if (chat === selectedId && kind === "node" && !waits.includes(nodeId)) readForCards.current.delete(key);
     }
     if (!open || !hydratedRef.current.has(selectedId)) return;
     const turns = transcripts[selectedId] ?? [];
     const findsFor = open.target.kind === "node" ? open.target.targetId ?? null : null;
-    const missing = waits.filter(
-      (nodeId) => !holdsSourceCardFor(turns, nodeId, findsFor) && !readForCards.current.has(`${selectedId}|${nodeId}`),
-    );
+    const missingNodes = waits
+      .filter((nodeId) => !holdsSourceCardFor(turns, nodeId, findsFor))
+      .map((nodeId) => `${selectedId}|node|${nodeId}`);
+    const held = sourceCardIds(turns);
+    const missingCards = state.attachments
+      .filter((finder) => {
+        const offered = finder.sourceRecord?.discoveryId;
+        if (!offered || held.has(offered)) return false;
+        return finder.attachmentId === selectedId || askersOf(finder.sourceRecord).includes(selectedId);
+      })
+      .map((finder) => `${selectedId}|card|${finder.sourceRecord?.discoveryId}`);
+    const missing = [...missingNodes, ...missingCards].filter((key) => !readForCards.current.has(key));
     if (!missing.length) return;
-    for (const nodeId of missing) readForCards.current.add(`${selectedId}|${nodeId}`);
+    for (const key of missing) readForCards.current.add(key);
     reread(selectedId);
   }, [selectedId, state.attachments, transcripts, reread]);
 
