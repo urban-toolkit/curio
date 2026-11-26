@@ -237,4 +237,7 @@ HEALTHCHECK --start-period=180s --interval=30s --timeout=60s --retries=20 CMD \
 # sandbox share this container, so loopback is all the backend needs, and
 # binding the wider interface published an unauthenticated code-execution API
 # to anything that could reach the container.
-CMD ["python", "curio.py", "start", "all", "--backend-host", "0.0.0.0", "--backend-port", "5002", "--sandbox-port", "2000", "--with-examples"]
+# The frontend listens on --frontend-host (localhost by default), and the port
+# Docker publishes reaches only the container's own address, so it asks for
+# 0.0.0.0, as the backend does.
+CMD ["python", "curio.py", "start", "all", "--backend-host", "0.0.0.0", "--backend-port", "5002", "--frontend-host", "0.0.0.0", "--sandbox-port", "2000", "--with-examples"]
