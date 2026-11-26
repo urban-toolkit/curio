@@ -3,17 +3,22 @@ import React from "react";
 import styles from "../AgentReviewCard.module.css";
 import { removalsTitle, tilesLeftLine, type PlanDisplay } from "./reviewCardText";
 
-/** A landed plan's goal (its card's lines count what it added) and, when the
- * plan removed anything, DEC-049.2's removals block: every victim by NAME
- * with a content flag; dev/112: removed CONNECTIONS named too. */
-export const PlanSummary: React.FC<{ part: PlanDisplay }> = ({ part }) => {
+/** A landed plan's goal (its card's lines count what it added), which reads
+ * "Goal set to: <goal>" when the plan gave the dataflow its goal (*goalSet*),
+ * and, when the plan removed anything, DEC-049.2's removals block: every
+ * victim by NAME with a content flag; dev/112: removed CONNECTIONS named too. */
+export const PlanSummary: React.FC<{ part: PlanDisplay; goalSet?: string }> = ({ part, goalSet }) => {
   if (part.tool !== "dataflow.plan.write" || !part.plan) return null;
   const plan = part.plan;
   const removes = (plan.removals?.length ?? 0) > 0 || (plan.removedEdges?.length ?? 0) > 0;
   const tilesLeft = tilesLeftLine(plan.removals ?? []);
   return (
     <>
-      {plan.goal ? <div className={styles.meta}>{plan.goal}</div> : null}
+      {goalSet ? (
+        <div className={styles.meta}>{`Goal set to: ${goalSet}`}</div>
+      ) : plan.goal ? (
+        <div className={styles.meta}>{plan.goal}</div>
+      ) : null}
       {removes ? (
         <div className={styles.removals} role="group" aria-label="Nodes and connections this plan removed">
           <div className={styles.removalsTitle}>

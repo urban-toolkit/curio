@@ -102,6 +102,13 @@ type AgentCanvasMutationBody =
       removedEdgeIds?: string[];
       /** #662: the scenarios the plan saved, joined to the canvas's. */
       scenarios?: AgentAppliedScenario[];
+      /** The dataflow's goal: the one the plan gave a dataflow that had
+       *  none, which a canvas takes while its own goal is still empty or
+       *  only whitespace, or the one its Undo put back. */
+      task?: string;
+      /** On an Undo's mutation, the goal the plan set, which it takes back:
+       *  a canvas takes `task` only while its own goal still reads this. */
+      goalSet?: string;
     }
   | {
       /** Nodes and connections that leave: a node an agent added, undone.

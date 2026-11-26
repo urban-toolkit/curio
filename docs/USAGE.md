@@ -2621,7 +2621,10 @@ the dataflow is for there, with **Add what this dataflow is for** or the edit
 button: Enter or **Save** keeps it, Escape or **Cancel** leaves it as it was.
 The agents on the dataflow read it, and several of them, the Dataflow Builder
 most of all, are written around knowing what the dataflow is for. It is saved
-with the dataflow, and every agent's chat shows the same goal.
+with the dataflow, and every agent's chat shows the same goal. When the goal is
+empty, a plan the Dataflow Builder lands fills it with the plan's goal, and the
+plan's card says *Goal set to* with it. The plan's **Undo** takes that goal
+back while it still reads the plan's goal, and leaves any other goal as it is.
 
 ### What an agent may reach
 
