@@ -124,17 +124,22 @@ def _user_edits(client, token, project, nodes, edges=()):
     assert saved.status_code == 200, saved.get_data(as_text=True)
 
 
-def _person_sets_the_goal(user, project, goal: str) -> None:
-    """The person writes *goal* on the Goal line: the dataflow's ``task``,
-    changed in its doc as a tab's edit is. Never through ``_user_edits``,
-    whose save sends no goal."""
+def _person_writes(user, project, change) -> None:
+    """The person's own change to the dataflow: *change* made to its
+    ``dataflow`` and written in its doc as a tab's edit is. Never through
+    ``_user_edits``, whose save sends no goal."""
     from utk_curio.backend.app.collaboration import dataflow_docs
     from utk_curio.backend.app.projects.services import _user_dir_key
 
     key = _user_dir_key(user)
     spec = dataflow_docs.live(key, project)
-    spec["dataflow"]["task"] = goal
-    dataflow_docs.write(key, project, spec, dataflow_docs.person(key, "goal"))
+    change(spec["dataflow"])
+    dataflow_docs.write(key, project, spec, dataflow_docs.person(key, "edit"))
+
+
+def _person_sets_the_goal(user, project, goal: str) -> None:
+    """The person writes *goal* on the Goal line: the dataflow's ``task``."""
+    _person_writes(user, project, lambda flow: flow.update(task=goal))
 
 
 def _mutations(step: dict) -> list[dict]:
@@ -386,6 +391,85 @@ class TestUndoByKind:
         flow = _saved(client, token, project)
         assert set(_by_id(flow)) == {"load", "sum"}
         assert [(e["source"], e["target"]) for e in flow["edges"]] == [("load", "sum")]
+        assert flow["task"] == "Map the parks in the shade"
+
+    def _plan_with_a_write_while_it_lands(self, client, user, token, monkeypatch, change):
+        """A plan landed on an empty goal while the person's *change* to the
+        dataflow landed between the plan's first write and its next: the
+        project, the attachment, the plan's card and the dataflow as it was
+        before the plan."""
+        from utk_curio.backend.app.agents.application import in_the_room
+        from utk_curio.backend.app.collaboration import history
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        project, att = _setup(client, user, token, coord=DFB)
+        before = _saved(client, token, project)
+        act = in_the_room.act
+        between: list = []
+
+        def acting(peer, action, **kwargs):
+            acted = act(peer, action, **kwargs)
+            if acted.landed and not between:
+                between.append(action.what)
+                _person_writes(user, project, change)
+            return acted
+
+        monkeypatch.setattr(in_the_room, "act", acting)
+        plan = {
+            "goal": "replace the loader",
+            "nodes": [{"ref": "a", "nodeType": CA, "title": "API Fetch", "intent": "fetch from the api"}],
+            "edges": [{"from": "a", "to": "sum"}],
+            "removeNodes": ["load"],
+        }
+        body, _ = _ask(client, token, project, att, monkeypatch, ["Here.\n" + _plan_tail(plan)])
+        card = _the_card(body)
+        # The person's write came between the plan's first two writes.
+        key = _user_dir_key(user)
+        points = [p for p in history.points(key, project) if p.get("change") == card["changeId"]]
+        assert len(points) == 3 and not history.follows(key, project, points[0], points[1]), (between, points)
+        assert "load" not in _by_id(_saved(client, token, project))
+        return project, att, card, before
+
+    def test_undo_of_a_plan_leaves_a_goal_saved_while_it_landed(
+        self, client, user_and_token, tmp_curio, monkeypatch,
+    ):
+        """A goal saved between two of the plan's writes never holds its Undo
+        back either: the Undo takes the plan away, leaves that goal as it is,
+        and puts back the rest of the dataflow as it was before the plan. On
+        main the Undo was refused (409)."""
+        user, token = user_and_token
+        project, att, card, before = self._plan_with_a_write_while_it_lands(
+            client, user, token, monkeypatch, lambda flow: flow.update(task="Map the parks in the shade"),
+        )
+        assert _saved(client, token, project)["task"] == "Map the parks in the shade"
+        undone = _undo(client, token, project, att, card["changeId"])
+        assert undone.status_code == 200, undone.get_json()
+        flow = _saved(client, token, project)
+        assert _by_id(flow) == _by_id(before)
+        assert flow["edges"] == before["edges"]
+        assert flow["task"] == "Map the parks in the shade"
+
+    def test_undo_of_a_plan_someone_changed_more_than_the_goal_of_while_it_landed_is_refused(
+        self, client, user_and_token, tmp_curio, monkeypatch,
+    ):
+        """A write between two of the plan's writes that changes anything but
+        the goal still refuses the Undo, as on main: here a node's code
+        outside the plan, written with the goal."""
+        user, token = user_and_token
+
+        def goal_and_code(flow):
+            flow["task"] = "Map the parks in the shade"
+            for node in flow["nodes"]:
+                if node.get("id") == "sum":
+                    node["content"] = "return input_0.max()  # while the plan landed"
+
+        project, att, card, _ = self._plan_with_a_write_while_it_lands(client, user, token, monkeypatch, goal_and_code)
+        refused = _undo(client, token, project, att, card["changeId"])
+        assert refused.status_code == 409, refused.get_json()
+        assert "changed this dataflow after; nothing was undone." in refused.get_json()["error"]
+        flow = _saved(client, token, project)
+        assert _by_id(flow)["sum"]["content"] == "return input_0.max()  # while the plan landed"
+        assert "load" not in _by_id(flow)
         assert flow["task"] == "Map the parks in the shade"
 
     def test_undo_of_a_second_plan_gives_the_planner_back_the_first(self, client, user_and_token, tmp_curio, monkeypatch):
