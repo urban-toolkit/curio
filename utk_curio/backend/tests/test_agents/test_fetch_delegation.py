@@ -846,8 +846,9 @@ def _recorded_turns(h, attachment_id) -> list[str]:
 class TestTheRecordSaysWhatComesNext:
     """What comes after a pick is one sentence the server writes, the same in
     the pick's Source recorded turns and on the Finder's record (``next``),
-    which the card shows in every tab. A download says what builds the loader
-    once it lands, never a build nobody starts. Review of #1635, B3."""
+    which a card the pick left open shows in every tab. A download says what
+    builds the loader once it lands, never a build nobody starts. Review of
+    #1635, B3."""
 
     NEXT_ALONE = "It is downloading into the Data Catalog: Solve the node once it lands."
 

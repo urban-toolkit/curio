@@ -226,8 +226,10 @@ def _what_comes_next(user_key: str, rows: list[dict], state: dict, delegated: di
     plan going on, the node's builder writing the loader, a portal file to
     import, a download or an install to wait for and what builds the loader
     then, or what the user must do. Both chats' Source recorded turns end
-    with it, and the Finder's record keeps it (``next``), which the card shows
-    in every tab. It never promises a build nobody starts."""
+    with it, and the Finder's record keeps it (``next``), which a card the
+    pick left open shows in every tab. A Recorded card names only the pick
+    and where it comes from, so each chat says this once, in its turn. It
+    never promises a build nobody starts."""
     status = (delegated or {}).get("status")
     reason = str((delegated or {}).get("reason") or "")
     if status in (PLAN_WAITING, "no-builder", "acquire-failed"):
@@ -279,8 +281,10 @@ def _say_the_source_is_recorded(user_key: str, project_id: str, spec: dict, atta
     """The Finder's chat says what was recorded and what comes next (*after*,
     :func:`_what_comes_next`), once the selection's delegation is decided,
     and so does every chat that asked for the candidates and holds their card
-    (the record's askers), naming the node. *spec* is the dataflow the
-    selection wrote."""
+    (the record's askers), each in the same words, naming the node as its
+    header does. *spec* is the dataflow the selection wrote. Read outside the
+    spec lock: a node with no title is named by its template's label, from
+    the package store."""
     try:
         names = ", ".join(str(r.get("name") or r.get("datasetId") or r.get("url")) for r in rows)
         lines = [
@@ -299,27 +303,24 @@ def _say_the_source_is_recorded(user_key: str, project_id: str, spec: dict, atta
             "title": "Dataset selection recorded",
             "lines": lines,
         }
-        finder_session = (attachments.get_attachment(spec, attachment_id) or {}).get("sessionId")
-        if isinstance(finder_session, str):
-            sessions.append_turns(
-                user_key, project_id, finder_session, attachment_id,
-                [sessions.make_turn("agent", f"Source recorded for this node: {names}.{then}", content=[card])],
-            )
-        askers = [a for a in agents_dataset_resolution.askers_of(state) if a != attachment_id]
-        if not askers:
-            return
         node = next(
             (n for n in (spec.get("dataflow") or {}).get("nodes") or []
              if isinstance(n, dict) and n.get("id") == node_id),
             {"id": node_id},
         )
-        label = agents_dataset_resolution.node_label(user_key, project_id, node)
-        for asker in askers:
+        said = f"Source recorded for {agents_dataset_resolution.node_label(user_key, project_id, node)}: {names}.{then}"
+        finder_session = (attachments.get_attachment(spec, attachment_id) or {}).get("sessionId")
+        if isinstance(finder_session, str):
+            sessions.append_turns(
+                user_key, project_id, finder_session, attachment_id,
+                [sessions.make_turn("agent", said, content=[card])],
+            )
+        for asker in [a for a in agents_dataset_resolution.askers_of(state) if a != attachment_id]:
             asker_session = (attachments.get_attachment(spec, asker) or {}).get("sessionId")
             if isinstance(asker_session, str):
                 sessions.append_turns(
                     user_key, project_id, asker_session, asker,
-                    [sessions.make_turn("agent", f"Source recorded for {label}: {names}.{then}", content=[card])],
+                    [sessions.make_turn("agent", said, content=[card])],
                 )
     except Exception:  # noqa: BLE001
         log.warning("Could not log the dataset selection for %s", attachment_id,

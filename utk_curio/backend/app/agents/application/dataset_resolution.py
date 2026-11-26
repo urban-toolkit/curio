@@ -164,6 +164,12 @@ def _picks_detail(record: dict) -> str:
     return ", ".join(n for n in names if n)[:200]
 
 
+def _counted(total: int) -> str:
+    """*total* candidates in the words a person reads: "1 candidate", "3
+    candidates"."""
+    return f"{total} candidate{'' if total == 1 else 's'}"
+
+
 def _pending_detail(record: dict, status: str) -> str:
     if status == STATE_AWAITING_INSTALL and any(
         p.get("acquiring") for p in record.get("picks") or [] if isinstance(p, dict)
@@ -173,7 +179,7 @@ def _pending_detail(record: dict, status: str) -> str:
         return f"{_picks_detail(record)}: waiting for the reviewed install"
     count = record.get("candidates")
     if isinstance(count, int) and count > 0:
-        return f"{count} candidate(s) awaiting your selection"
+        return f"{_counted(count)} awaiting your selection"
     return "candidates awaiting your selection"
 
 
@@ -797,7 +803,7 @@ def initiate(
     total = sum(len(rows) for rows in (part.get("lanes") or {}).values())
     # The card's own id, the same in the Finder's chat and the chat that asked.
     part["discoveryId"] = new_discovery_id()
-    _append_candidates_turn(user_key, project_id, attachment_id, part, total)
+    _append_candidates_turn(user_key, project_id, attachment_id, node, part, total)
     if parent_attachment_id and parent_attachment_id != attachment_id:
         _mirror_candidates_turn(
             user_key, project_id, parent_attachment_id, attachment_id, node, part, total, finder_name=finder_name,
@@ -813,14 +819,17 @@ def initiate(
             dataflow_docs.write(user_key, project_id, fresh, actor)
     return {"status": "awaiting", "attachmentId": attachment_id,
             "candidates": total,
-            "detail": f"{total} candidate(s) awaiting your selection"}
+            "detail": f"{_counted(total)} awaiting your selection"}
 
 
 def _append_candidates_turn(
-    user_key: str, project_id: str, attachment_id: str, part: dict, total: int
+    user_key: str, project_id: str, attachment_id: str, node: dict, part: dict, total: int
 ) -> None:
-    """Put the two-lane card in the node's Dataset Finder chat — where the
-    user selects, and where the agent that owns discovery lives."""
+    """Put the two-lane card in the node's Dataset Finder chat, where the
+    user selects and where the agent that owns discovery lives, under one
+    line that counts the candidates and names *node* as its header does. The
+    line is in the Finder's model context. Read outside the spec lock: a node
+    with no title is named by its template's label, from the package store."""
     from utk_curio.backend.app.projects import storage as projects_storage
 
     try:
@@ -829,13 +838,12 @@ def _append_candidates_turn(
         session_id = record.get("sessionId")
         if not isinstance(session_id, str):
             return
+        label = node_label(user_key, project_id, node)[:120]
         sessions.append_turns(
             user_key, project_id, session_id, attachment_id,
             [sessions.make_turn(
                 "agent",
-                f"{total} dataset candidate(s) for this node: pick the source to use "
-                "with Use this source; external rows carry the runtime's verification "
-                "verdict.",
+                f"I found {_counted(total)} for {label}. Pick one with Use this source.",
                 content=[part],
             )],
         )
@@ -883,8 +891,7 @@ def _mirror_candidates_turn(
             user_key, project_id, session_id, asker_id,
             [sessions.make_turn(
                 "agent",
-                f"**{label}** needs a source. Its {finder_name} found {total} "
-                f"candidate{'' if total == 1 else 's'}: pick one with Use this source.",
+                f"**{label}** needs a source. Its {finder_name} found {_counted(total)}: pick one with Use this source.",
                 content=[{
                     "type": "sourcePick",
                     "finderAttachmentId": finder_id,
