@@ -609,7 +609,8 @@ def _replace_text(text: Text, new: str) -> None:
         text.insert(at, new[start:end_new])
 
 
-def apply_dataflow(doc: Doc, base: dict, target: dict) -> list[str]:
+def apply_dataflow(doc: Doc, base: dict, target: dict, *, checked: Iterable[str] = (),
+                   kept: Optional[list[str]] = None) -> list[str]:
     """Make *doc* carry what changed from *base* to *target*, two Trill
     ``dataflow`` objects (their parts outside the doc are left alone), in the
     transaction the caller holds or in one of its own. What the doc changed
@@ -617,8 +618,16 @@ def apply_dataflow(doc: Doc, base: dict, target: dict) -> list[str]:
 
     A node's code changes only where the doc still holds *base*'s code; the
     ids of the nodes whose code the doc changed too, and keeps, are returned.
-    Nothing is written where the doc holds the value already."""
+    A field of the dataflow *checked* names, such as its goal, changes the
+    same way: only while the doc still holds *base*'s value. The names of
+    those the doc changed too, and keeps, are added to *kept*. Only a field
+    the doc holds as one value can be checked. Nothing is written where the
+    doc holds the value already."""
     refused: list[str] = []
+    checked = frozenset(checked)
+    entry_lists = sorted(name for name in checked if str(_DATAFLOW.get(name, "")).startswith("@"))
+    if entry_lists:
+        raise ValueError(f"only a field the doc holds as one value can be checked, not {', '.join(entry_lists)}")
     with doc.transaction():
         meta = doc.get("meta", type=Map)
         fields = doc.get("dataflow", type=Map)
@@ -650,9 +659,23 @@ def apply_dataflow(doc: Doc, base: dict, target: dict) -> list[str]:
                         entries, entry_id, was, now, rules),
                 )
                 _set(meta, rules["listed"], True if isinstance(new, list) else MISSING)
+            elif name in checked:
+                _change_field(fields, name, old, new, kept)
             else:
                 _set(fields, name, new)
     return refused
+
+
+def _change_field(fields: Map, name: str, was: Any, now: Any, kept: Optional[list[str]]) -> None:
+    """*now* at the dataflow's field *name*, as :func:`_change_code` changes
+    code: only while the doc still holds *was* there. Otherwise the doc keeps
+    its own value, and *name* goes in *kept* unless that value is *now*."""
+    held = decode(fields[name]) if name in fields else MISSING
+    if not same(held, was):
+        if not same(held, now) and kept is not None:
+            kept.append(name)  # the doc changed this field too, and keeps it
+        return
+    _set(fields, name, now)
 
 
 def _entry_map(entry: dict, key: str) -> Map:

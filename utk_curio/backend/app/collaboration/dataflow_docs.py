@@ -1487,6 +1487,10 @@ class Written(NamedTuple):
     #: The connections the writer drew that did not land: an end of each was
     #: a node someone removed before the write.
     dropped: tuple = ()
+    #: The fields of the dataflow the writer had checked (:func:`write`'s
+    #: *checked*) that the doc kept: each held other than what the writer
+    #: was handed, so the writer's did not land.
+    kept: tuple = ()
 
 
 def _has_spec(user_key: str, project_id: str) -> bool:
@@ -1535,7 +1539,9 @@ def write(user_key: str, project_id: str, spec: Live, actor: Actor, *,
           on_refused: Optional[Callable[[tuple], None]] = None,
           on_dropped: Optional[Callable[[tuple], None]] = None,
           point: Optional[dict] = None,
-          backfilled: Iterable[str] = ()) -> Written:
+          backfilled: Iterable[str] = (),
+          checked: Iterable[str] = (),
+          on_kept: Optional[Callable[[tuple], None]] = None) -> Written:
     """Write what a writer changed in *spec*, which :func:`live` handed it,
     since then (or since its last write): one short transaction on the
     dataflow's doc, *actor* its origin, under the spec lock (unless this
@@ -1556,6 +1562,12 @@ def write(user_key: str, project_id: str, spec: Live, actor: Actor, *,
       ids before the file is written, as *on_refused* is. A connection a tab
       drew since to a node the writer removes is taken out there too, and
       the tab is told (:func:`_drop_dangling_connections`).
+    * A field of the dataflow *checked* names, such as its goal, lands as a
+      node's code does: only while the doc still holds what the writer was
+      handed, checked in the same transaction. Otherwise the doc keeps its
+      own and the field is in :attr:`Written.kept`; *on_kept*, given, is
+      called with those names before the file is written, as *on_refused*
+      is. Any other field lands as a person's change to it does.
     * The agents' sections are written beside the doc
       (:func:`_merged_beside`). A change to them alone is written to the file
       alone: a tab gets none of it, and the doc reads the file's next
@@ -1586,7 +1598,7 @@ def write(user_key: str, project_id: str, spec: Live, actor: Actor, *,
         return spec.written
     attachments = _attachments_of(spec.base)
     written = _write(user_key, project_id, spec.base, spec, actor, on_refused=on_refused, on_dropped=on_dropped,
-                     point=point, backfilled=backfilled)
+                     point=point, backfilled=backfilled, checked=checked, on_kept=on_kept)
     spec.base = copy.deepcopy(_writable(spec))
     spec.written = written
     if written.wrote:
@@ -1759,7 +1771,8 @@ def _write(user_key: str, project_id: str, base: dict, mine, actor: Actor, *,
            on_refused: Optional[Callable[[tuple], None]] = None,
            on_dropped: Optional[Callable[[tuple], None]] = None,
            history: Optional[dict] = None, point: Optional[dict] = None,
-           backfilled: Iterable[str] = ()) -> Written:
+           backfilled: Iterable[str] = (), checked: Iterable[str] = (),
+           on_kept: Optional[Callable[[tuple], None]] = None) -> Written:
     """What :func:`write` and :func:`put` write: the change from *base* to
     *mine*, under the spec lock. A connection it leaves pointing at a node
     the doc no longer holds, one it draws or one a tab drew to a node it
@@ -1797,9 +1810,11 @@ def _write(user_key: str, project_id: str, base: dict, mine, actor: Actor, *,
                 _roll(entry)
                 drawn = _drawn(base, theirs)
                 graph = _graph_keys(entry.doc)
+                kept: list[str] = []
                 with entry.doc.transaction(origin=actor):
                     refused = tuple(doc_mapping.apply_dataflow(
                         entry.doc, doc_mapping.owned(_dataflow_of(base)), doc_mapping.owned(_dataflow_of(theirs)),
+                        checked=checked, kept=kept,
                     ))
                     # Checked again here, under the doc's lock, by the rule a
                     # tab's change meets: a node removed after the writer read
@@ -1823,10 +1838,16 @@ def _write(user_key: str, project_id: str, base: dict, mine, actor: Actor, *,
                                 project_id, actor.what or actor.kind, len(dropped))
                     if on_dropped is not None:
                         on_dropped(dropped)
-                if (refused and on_refused is not None) or (dropped and on_dropped is not None):
+                if kept:
+                    logger.info("dataflow %s: %s changed while %s worked; the doc's stays",
+                                project_id, ", ".join(kept), actor.what or actor.kind)
+                    if on_kept is not None:
+                        on_kept(tuple(kept))
+                if ((refused and on_refused is not None) or (dropped and on_dropped is not None)
+                        or (kept and on_kept is not None)):
                     theirs = _writable(mine)
                 _written(entry, file, _merged_beside(file.spec, base, theirs), history=history)
-                return Written(True, refused, dropped)
+                return Written(True, refused, dropped, tuple(kept))
         except _NoDataflow:
             return Written(False)
         except doc_mapping.DocMappingError:

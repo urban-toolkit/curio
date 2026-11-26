@@ -135,6 +135,18 @@ class Refused(HistoryError):
         self.by = by
 
 
+class KeptWouldChange(HistoryError):
+    """A put-back refused, with nothing written: its write would change
+    ``fields``, fields of the dataflow it keeps as they are now, such as a
+    scenario that names a node it takes out, which the write would take out
+    of the scenario (:func:`put_back`)."""
+
+    def __init__(self, fields: Iterable[str]):
+        self.fields = tuple(fields)
+        super().__init__(f"Putting this version back would change {', '.join(self.fields)} as the dataflow "
+                         "holds it now; nothing was put back.", 409)
+
+
 # ---------------------------------------------------------------------------
 # What a change touched, and its origin
 # ---------------------------------------------------------------------------
@@ -1588,16 +1600,23 @@ def saved(user_key: str, project_id: str, by: dict) -> dict:
 
 
 def put_back(user_key: str, project_id: str, point_id: str, by: dict, *, keep: Iterable[str] = (),
-             target: Optional[dict] = None) -> dict:
+             target: Optional[dict] = None, expect: Optional[dict] = None) -> dict:
     """Put the version *point_id* back: one transaction makes the doc hold
     it, but for what :data:`KEPT_BY_A_PUT_BACK` and *keep* name, for every
     tab, and a version named after it, its parent the version put back.
     *target*, given, is the dataflow put back in place of the version's own:
     a plan's Undo puts back the dataflow as the plan's first write found it
-    (:func:`dataflow_found_by`). ``refused``: the nodes whose code someone
-    changed while it was being put back, which keep theirs. ``removed``: the
-    nodes it took out, which the tab that asked for it tells the others it
-    removed (``presence.noteRemoval``)."""
+    (:func:`dataflow_found_by`). *expect*, given, holds fields of the
+    dataflow it puts back only while the doc still holds the value *expect*
+    gives each, checked in the write's transaction (``dataflow_docs.write``'s
+    *checked*): a plan's Undo puts the goal back only while it reads the
+    plan's. Refused, with nothing written (:class:`KeptWouldChange`), when
+    its write would change a field it keeps (:func:`_changes_what_it_keeps`).
+    ``refused``: the nodes whose code someone changed while it was being put
+    back, which keep theirs. ``removed``: the nodes it took out, which the
+    tab that asked for it tells the others it removed
+    (``presence.noteRemoval``). ``kept``, with *expect*: the fields the doc
+    held otherwise, which keep their value."""
     folder = _folder(user_key, project_id)
     point = next((p for p in _read_points(folder) if p["id"] == point_id and _listed(p)), None)
     if point is None:
@@ -1616,14 +1635,36 @@ def put_back(user_key: str, project_id: str, point_id: str, by: dict, *, keep: I
     kept = doc_mapping.OUTSIDE_THE_DOC | KEPT_BY_A_PUT_BACK | frozenset(keep)
     spec["dataflow"] = {**{name: value for name, value in target.items() if name not in kept},
                         **{name: value for name, value in flow.items() if name in kept}}
+    changed = _changes_what_it_keeps(flow, spec["dataflow"], kept)
+    if changed:
+        raise KeptWouldChange(changed)
+    checked = {name: value for name, value in (expect or {}).items() if name not in kept}
+    if checked:
+        # The write's base holds what the doc must still hold for each to land.
+        spec.base.setdefault("dataflow", {}).update(copy.deepcopy(checked))
     made = {"kind": PUT_BACK, "what": "Put back", "restores": point_id, "parent": point_id, "by": by}
     written = dataflow_docs.write(user_key, project_id, spec, dataflow_docs.person(_account(by), "putBack"),
-                                  point=made)
+                                  point=made, checked=tuple(checked))
     if not written.wrote:
         with _held(user_key, project_id) as entry:
             doc_id, day, end = dataflow_docs.log_end(entry)
             _add(entry, {**made, "doc": doc_id, "day": day, "start": end, "end": end})
-    return {"refused": list(written.refused), "removed": removed if written.wrote else []}
+    return {"refused": list(written.refused), "removed": removed if written.wrote else [],
+            **({"kept": list(written.kept)} if checked else {})}
+
+
+def _changes_what_it_keeps(now: dict, back: dict, kept: frozenset) -> list[str]:
+    """The fields *kept* names that writing the dataflow *back* over *now*,
+    the dataflow as the doc holds it, would change. A write puts each
+    scenario in its set, with its context and outcomes, against the nodes
+    and connections it writes (``dataflow_docs._in_sets``), so a scenario
+    kept as it is now that names a node *back* does not hold, among its
+    nodes, its context or its outcomes, would lose it. Each field is
+    compared as a write leaves it, in both."""
+    after = dataflow_docs._in_sets({"dataflow": back})["dataflow"]
+    before = dataflow_docs._in_sets({"dataflow": now})["dataflow"]
+    return sorted(name for name in kept if not doc_mapping.same(before.get(name, doc_mapping.MISSING),
+                                                                after.get(name, doc_mapping.MISSING)))
 
 
 def write_code(user_key: str, project_id: str, by: dict, node_id: str, *, expect: str, code: str,

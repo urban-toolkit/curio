@@ -39,9 +39,11 @@ history's checked writes:
   writes and nothing it puts back outside the plan's own nodes changed
   since: so a node it removed comes back with its connections. It takes
   back only what the plan wrote: a field of the dataflow the plan did not
-  write stays as it is now, and never holds the Undo back. Nor does the
-  goal, changed between its writes or after them: it goes back only when
-  the plan set it and it still reads what the plan wrote.
+  write stays as it is now, and holds the Undo back only when the put-back
+  would change it, as a scenario made after the plan that holds one of its
+  nodes. The goal never holds it back, changed between its writes or after
+  them: it goes back only when the plan set it and it still reads what the
+  plan wrote as the put-back writes.
 
 A change kept from before a Spatial Join's operation and output were its
 widgets, when the join kept them at ``metadata.spatialJoin``, is undone as the

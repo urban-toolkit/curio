@@ -471,12 +471,13 @@ def _land_dataflow_plan(user_key: str, project_id: str, loop_ctx: dict, spec: di
     naming the change's id, so Undo, Provenance and the reply take the plan
     as one change. The first write also gives a dataflow whose goal is empty,
     or only whitespace, the plan's own goal (:meth:`_PlanSteps._goal`), which
-    the change keeps for its card and its Undo. The last step checks again
-    that every node it joins is still there: one someone removed meanwhile
-    stops the plan, what landed stays, and the result and the card say what
-    was left undone. Unlisted nodes keep their ids, places and code by
-    construction. The planner's session holds the plan as far as it landed,
-    whose nodes Build & validate and Solve fill."""
+    the change keeps for its card and its Undo, while the doc still holds the
+    goal that write read: a goal someone saved since stays. The last step
+    checks again that every node it joins is still there: one someone removed
+    meanwhile stops the plan, what landed stays, and the result and the card
+    say what was left undone. Unlisted nodes keep their ids, places and code
+    by construction. The planner's session holds the plan as far as it
+    landed, whose nodes Build & validate and Solve fill."""
     plan = landing["plan"]
     refusal = (
         _victims_changed(user_key, project_id, plan, landing)
@@ -551,6 +552,10 @@ class _PlanSteps:
         #: (:meth:`_goal`), and whether that write has decided it.
         self.goal = str(self.plan.get("goal") or "").strip()
         self.goal_decided = False
+        #: Whether the next write gives the dataflow that goal, checked in its
+        #: transaction, and whether the last write did, which its step's
+        #: mutation then carries (:meth:`_write`, :meth:`_step`).
+        self.filling = self.filled = False
         # What landed so far.
         self.created: list[dict] = []
         self.attached: list[dict] = []
@@ -621,31 +626,44 @@ class _PlanSteps:
         return spec
 
     def _write(self, spec, **kwargs):
+        """Write the step's *spec*. The write that gives the dataflow the
+        plan's goal (:meth:`_goal`) sets it only while the doc still holds
+        the goal the step read, checked in its transaction: when someone
+        saved a goal since, theirs stays, and the change keeps no
+        ``goalSet``, which its card and its Undo read."""
         actor = agents_changes.actor(self.user_key, spec, self.loop_ctx, "plan")
+        filling, self.filling = self.filling, False
+        if filling:
+            def kept(_fields: tuple) -> None:
+                self.change.pop("goalSet", None)
+                self._keep(spec)
+
+            kwargs.update(checked=("task",), on_kept=kept)
         written = dataflow_docs.write(self.user_key, self.project_id, spec, actor, point=self.point, **kwargs)
         self.spec = spec
+        self.filled = filling and written.wrote and "task" not in written.kept
         return written
 
-    def _goal(self, spec) -> dict:
+    def _goal(self, spec) -> None:
         """Give the dataflow the plan's goal in the plan's first write, when
         that write reads its goal empty or only whitespace: the plan's own,
         trimmed, which the change keeps (``goalSet``) for its card and its
-        Undo. A goal someone wrote stays as it is, and the plan's later
-        writes leave the goal alone. What the step's canvas mutation carries
-        of it, for a canvas no doc binds: the goal it gave, or nothing."""
+        Undo, and which the write sets only while the doc still holds the
+        goal the step read (:meth:`_write`). A goal someone wrote stays as it
+        is, and the plan's later writes leave the goal alone."""
         if self.goal_decided:
-            return {}
+            return
         self.goal_decided = True
         flow = spec.setdefault("dataflow", {})
         task = flow.get("task")
         if not self.goal or (isinstance(task, str) and task.strip()):
-            return {}
+            return
         flow["task"] = self.change["goalSet"] = self.goal
-        return {"task": self.goal}
+        self.filling = True
 
     def _removals(self):
         spec = self._live()
-        goal = self._goal(spec)
+        self._goal(spec)
         flow = spec.setdefault("dataflow", {})
         nodes = flow.setdefault("nodes", [])
         present = {n.get("id") for n in nodes if isinstance(n, dict)}
@@ -658,12 +676,12 @@ class _PlanSteps:
         did = [("removed", "node", n) for n in sorted(self.remove_node_set & present)]
         did += [("removed", "connection", e) for e in sorted(removed_edges)]
         return self._step({"nodes": [], "edges": [], "removedNodeIds": sorted(self.remove_node_set),
-                           "removedEdgeIds": sorted(removed_edges), **goal}), did
+                           "removedEdgeIds": sorted(removed_edges)}), did
 
     def _node(self, ref: str, created: dict):
         def write():
             spec = self._live()
-            goal = self._goal(spec)
+            self._goal(spec)
             node = copy.deepcopy(created)
             if ref in self.starters:
                 node["content"] = ""  # its starter lands with the connections
@@ -675,12 +693,12 @@ class _PlanSteps:
             self.landed_refs[ref] = node["id"]
             self._keep(spec)
             self._write(spec)
-            return self._step({"nodes": [node], "edges": [], **goal}), ()
+            return self._step({"nodes": [node], "edges": []}), ()
         return write
 
     def _connections(self):
         spec = self._live()
-        goal = self._goal(spec)
+        self._goal(spec)
         flow = spec.setdefault("dataflow", {})
         nodes, edges = flow.setdefault("nodes", []), flow.setdefault("edges", [])
         by_id = {n.get("id"): n for n in nodes if isinstance(n, dict)}
@@ -714,15 +732,18 @@ class _PlanSteps:
         did = [("added", "connection", str(e["id"])) for e in self.edges]
         did += [("added", "scenario", s["id"]) for s in self.scenarios if isinstance(s, dict) and s.get("id")]
         step = self._step({"nodes": [], "edges": copy.deepcopy(self.edges),
-                           **({"scenarios": copy.deepcopy(self.scenarios)} if self.scenarios else {}), **goal})
+                           **({"scenarios": copy.deepcopy(self.scenarios)} if self.scenarios else {})})
         filled = [{"kind": "node-content-applied", "nodeId": node_id, "content": content}
                   for node_id, content in started.items()]
         return ([step, *filled] if filled else step), did
 
     def _step(self, mutation: dict) -> dict:
         """One step's canvas mutation, for a canvas no doc binds, which takes
-        each step in turn."""
-        return {"kind": "graph-created", "planId": self.plan_id, "step": len(self.landed), **mutation}
+        each step in turn: with the goal the step's write gave the dataflow
+        (``task``), which such a canvas takes while its own goal is still
+        empty or only whitespace."""
+        return {"kind": "graph-created", "planId": self.plan_id, "step": len(self.landed), **mutation,
+                **({"task": self.goal} if self.filled else {})}
 
     # ── what landed ────────────────────────────────────────────────────────
 
@@ -823,7 +844,9 @@ def _outside_the_plan(dataflow: dict, change: dict, wrote: set) -> dict:
     connections but those the plan drew or that touch its nodes, and the
     fields the plan wrote (*wrote*), its scenarios but its own among them. A
     field the plan did not write, and the goal, the Undo leaves as they are
-    now (:func:`_undo_plan`), so a change to them never holds it back."""
+    now (:func:`_undo_plan`): a change to such a field holds it back only
+    when the put-back would change it, as a scenario made after the plan
+    that holds one of its nodes (``history.KeptWouldChange``)."""
     own = set(change.get("nodeIds") or [])
     own_edges = set(change.get("edgeIds") or [])
     own_scenarios = set(change.get("scenarioIds") or [])
@@ -862,12 +885,15 @@ def _undo_plan(user_key: str, project_id: str, attachment_id: str, change: dict,
     plan did not write stays as it is now (the put-back's ``keep``). Refused,
     with nothing changed, when someone changed the dataflow between its
     writes, or when, but for the plan's own nodes and connections, what it
-    puts back is no longer what the plan left (:func:`_outside_the_plan`): a
+    puts back is no longer what the plan left (:func:`_outside_the_plan`), or
+    when the put-back would change a field it keeps, as a scenario made after
+    the plan that holds one of its nodes (``history.KeptWouldChange``): a
     put-back would erase what a person did. The dataflow's goal never refuses
     it, changed between the plan's writes or after them: the goal goes back
     only when the plan set it (``goalSet``) and it still reads what the plan
-    wrote, and stays as it is otherwise. The planner's session goes back to
-    what it was."""
+    wrote, checked again in the put-back's own transaction (its ``expect``),
+    and stays as it is otherwise. The planner's session goes back to what it
+    was."""
     from utk_curio.backend.app.projects import storage as projects_storage
 
     change_id = change["changeId"]
@@ -896,10 +922,16 @@ def _undo_plan(user_key: str, project_id: str, attachment_id: str, change: dict,
         if not goal_back:
             keep.add("task")
         try:
-            history.put_back(user_key, project_id, first["parent"], by, keep=sorted(keep),
-                             target=copy.deepcopy(before))
+            # The goal goes back only while it still reads the plan's as the put-back writes.
+            put = history.put_back(user_key, project_id, first["parent"], by, keep=sorted(keep),
+                                   target=copy.deepcopy(before),
+                                   expect={"task": change["goalSet"]} if goal_back else None)
+        except history.KeptWouldChange as exc:
+            # A field it keeps names what it takes away: a scenario made after the plan holding its node.
+            raise _changed_after(points[steps[-1] + 1:], change_id) from exc
         except history.HistoryError as exc:
             raise AgentServiceError(str(exc), exc.status) from exc
+        goal_back = goal_back and "task" not in put.get("kept", ())
     spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     record = attachments.get_attachment(spec, attachment_id)
     if record is not None:
@@ -922,8 +954,9 @@ def _undo_plan(user_key: str, project_id: str, attachment_id: str, change: dict,
         "edges": [e for e in before.get("edges") or [] if isinstance(e, dict) and str(e.get("id")) in removed_edges],
         "removedNodeIds": list(change.get("nodeIds") or []),
         "removedEdgeIds": list(change.get("edgeIds") or []),
-        # The goal it took back, for a canvas no doc binds.
-        **({"task": goal_before} if goal_back else {}),
+        # The goal it took back, for a canvas no doc binds, which takes it
+        # while its own goal still reads the plan's.
+        **({"task": goal_before, "goalSet": change["goalSet"]} if goal_back else {}),
     }]
 
 
