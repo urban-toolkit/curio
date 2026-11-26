@@ -1639,9 +1639,6 @@ def put_back(user_key: str, project_id: str, point_id: str, by: dict, *, keep: I
     if changed:
         raise KeptWouldChange(changed)
     checked = {name: value for name, value in (expect or {}).items() if name not in kept}
-    if checked:
-        # The write's base holds what the doc must still hold for each to land.
-        spec.base.setdefault("dataflow", {}).update(copy.deepcopy(checked))
     made = {"kind": PUT_BACK, "what": "Put back", "restores": point_id, "parent": point_id, "by": by}
     written = dataflow_docs.write(user_key, project_id, spec, dataflow_docs.person(_account(by), "putBack"),
                                   point=made, checked=tuple(checked))
