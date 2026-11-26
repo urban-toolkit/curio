@@ -289,11 +289,15 @@ class TestWhatMayBeALoadersSource:
 
     NEIGHBORHOODS = "data.cityofchicago.neighborhoods"
 
-    def _judged(self, goal: str, **context) -> str | None:
+    def _judged(self, goal: str, *, titles: dict | None = None, **context) -> str | None:
+        """What may be the source of a loader whose goal is *goal*, with a Data
+        Catalog of *titles* (``{dataset id: title}``, Chicago Neighborhoods
+        alone by default)."""
         from utk_curio.backend.app.agents.application import source_grounding as sg
         from utk_curio.backend.app.agents.application.turns import grounding
 
-        catalog = {self.NEIGHBORHOODS: sg.CatalogRef(self.NEIGHBORHOODS, "Chicago Neighborhoods", "geojson", "")}
+        titles = titles if titles is not None else {self.NEIGHBORHOODS: "Chicago Neighborhoods"}
+        catalog = {dataset_id: sg.CatalogRef(dataset_id, title, "geojson", "") for dataset_id, title in titles.items()}
         ctx = sg.GroundingContext(catalog_ids=catalog, is_data_loading=True, code_engine="python", **context)
         return grounding._dataflow_grounded_literal({"id": "n1", "goal": goal}, ctx)
 
@@ -317,3 +321,51 @@ class TestWhatMayBeALoadersSource:
         named = self._judged("Tracts: load the tract population from api.census.gov", secrets=keys)
         assert named and "census" in named, named
         assert self._judged("Tracts: load the tract population", secrets=keys) is None
+
+    def test_a_title_in_the_singular_is_named_by_its_plural(self):
+        """A goal names a title in the plural, whatever its ending: "-ies",
+        "-es" or "-s". On 271aec86a4 only a last "s" was taken off, so
+        "boundaries" did not name "Chicago Boundary", nor "branches" "CPL
+        Branch". Found by the review of #1642."""
+        boundary = self._judged("Boundaries: load the Chicago boundaries",
+                                titles={"data.city.boundary": "Chicago Boundary"})
+        assert boundary and "'Chicago Boundary'" in boundary, boundary
+        branch = self._judged("Branches: load the CPL branches", titles={"data.cpl.branches": "CPL Branch"})
+        assert branch and "'CPL Branch'" in branch, branch
+
+    def test_a_title_is_named_by_its_words_together_and_in_order(self):
+        """A goal names a title when it holds the title's words together and
+        in order. A goal about other data that holds them apart names none:
+        "Chicago crime counts by community area" is about crimes. On
+        271aec86a4 every word of the title anywhere in the goal named it.
+        Found by the review of #1642."""
+        areas = {"data.city.areas": "Chicago Community Areas"}
+        assert self._judged("Crimes: load Chicago crime counts by community area", titles=areas) is None
+        named = self._judged("Areas: load the Chicago community areas", titles=areas)
+        assert named and "'Chicago Community Areas'" in named, named
+
+    def test_a_title_of_one_generic_word_names_no_goal(self):
+        """An import titled "Data" says nothing of what it holds, so no goal
+        names it. On 271aec86a4 every goal that said "data" named it. Found
+        by the review of #1642."""
+        assert self._judged("Parks: load the parks data", titles={"user.import.rows": "Data"}) is None
+
+    def test_a_lone_number_a_year_or_an_id_is_no_source(self):
+        """A number the user wrote that the goal repeats is no data when it is
+        a year, or one number alone, such as the 311 of a city service: the
+        loader's Finder is asked. On 271aec86a4 any number both wrote counted
+        as values the user typed. Found by the review of #1642."""
+        assert self._judged("Crimes: load the 2023 crimes", user_messages=("Map the crimes of 2023.",)) is None
+        assert self._judged("Requests: load the 311 service requests", user_messages=("Map the 311 requests.",)) is None
+        assert self._judged(
+            "Calls: load the 311 calls of 2022 and 2023", user_messages=("Show the 311 calls in 2022 and 2023.",),
+        ) is None
+
+    def test_values_the_user_typed_with_their_labels_may_be_its_source(self):
+        """Values the user typed each after its label are data, two as much as
+        several bare numbers, and so is a year typed as a label's value."""
+        rents = self._judged("Rents: load Loop 2450 and Pilsen 1500", user_messages=("Rents: Loop 2450, Pilsen 1500",))
+        assert rents and "1500, 2450" in rents, rents
+        built = self._judged("Years built: load Loop 1925 and Pilsen 1910",
+                             user_messages=("Built: Loop 1925, Pilsen 1910",))
+        assert built and "1910, 1925" in built, built

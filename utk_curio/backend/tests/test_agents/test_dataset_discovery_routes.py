@@ -2190,3 +2190,212 @@ class TestALoaderWithNoSourceAsksItsFinderFirst:
         # The Finder the discovery gave the loader holds its candidates.
         assert load["remedy"]["attachmentId"] == h.finder_attachment_id() != finder
         assert dr.source_record(h.spec(), h.load)["status"] == dr.STATE_CANDIDATES_PENDING
+
+    @pytest.mark.parametrize("message, goal, code", [
+        ("My branches are in /data/cpl_branches.csv", "load the locations of the CPL branches",
+         'import pandas as pd\nreturn pd.read_csv("/data/cpl_branches.csv")'),
+        ("Make a demo with synthetic data of parks", "load the daily visits of each park",
+         'import numpy as np\nimport pandas as pd\nreturn pd.DataFrame({"visits": np.random.randint(0, 500, 30)})'),
+        ("Rents: Loop 2450, Pilsen 1500", "load the rents, Loop 2450 and Pilsen 1500",
+         'import pandas as pd\nreturn pd.DataFrame({"Rents": [2450, 1500]}, index=["Loop", "Pilsen"])'),
+    ], ids=["path", "synthetic", "values"])
+    def test_a_source_the_user_gave_in_the_chat_that_asked_is_built_from_its_first_round(
+        self, client, user_and_token, tmp_curio, monkeypatch, message, goal, code,
+    ):
+        """The user gave the loader's source in the Dataflow Builder's chat,
+        and the plan's goal says it in other words: a path, a request for
+        synthetic data, values typed with their labels. The round's source
+        check reads that chat, so Build & validate builds the loader from its
+        first round and waits for no pick. On 271aec86a4 the step before the
+        rounds read the goal alone, so the Finder was asked for the path and
+        for the synthetic data, and the build paused for a pick the user did
+        not need. The typed values are a guard: the goal gives them. Found by
+        the review of #1642."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch, message=message, goal=goal, dl_replies=[code])
+        asked = _Asked(h)
+        done = h.simulate("auto")[-1][1]
+        assert asked.of_the_loader() == {"the loader's Node Builder": 1, "its Dataset Finder": 0}, asked.counts()
+        assert done.get("status") == "completed", done
+        assert h.node_content(h.load) == code
+
+    def test_a_year_the_chat_and_the_goal_share_is_no_source(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """A year the user wrote and the goal repeats says when the data is
+        from, and is no data: the loader's Finder is asked before its builder,
+        as for any loader with no source. On 271aec86a4 any number both wrote
+        counted as values the user typed, so the builder wrote the loader round
+        after round, each refused for its source, before the Finder was asked.
+        Found by the review of #1642."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch, message="Compare the 2023 crimes by community area.",
+                     goal="load the 2023 crimes")
+        asked = _Asked(h)
+        done = h.validate("load")[-1][1]
+        assert asked.counts() == FINDER_ALONE, asked.counts()
+        assert done.get("verdict") == "awaiting-source", done
+
+
+def _the_finders_first_run_fails(monkeypatch) -> list:
+    """The first run of a Dataset Finder fails, as when its model's endpoint
+    is down: the run ends in an error and offers nothing. Returns the tasks of
+    the runs that failed, filled as they fail."""
+    ask = providers.run_chat_turn
+    failed: list = []
+
+    def _asked(config, messages, **kwargs):
+        frame = (messages[-1].get("content") or "") if messages else ""
+        if not failed and "discoveryReplyContract" in frame:
+            failed.append(frame)
+            raise RuntimeError("the model endpoint is down")
+        return ask(config, messages, **kwargs)
+
+    monkeypatch.setattr(providers, "run_chat_turn", _asked)
+    return failed
+
+
+def _during_the_loaders_first_round(h, monkeypatch, act) -> list:
+    """Run *act* while the loader's Node Builder writes its first round, as
+    another chat acts while the rounds run. Returns a list that holds one
+    entry once *act* ran."""
+    ask = providers.run_chat_turn
+    ran: list = []
+
+    def _asked(config, messages, **kwargs):
+        frame = (messages[-1].get("content") or "") if messages else ""
+        if (not ran and "[delegated task" in frame and "discoveryReplyContract" not in frame
+                and f'"nodeId": "{h.load}"' in frame):
+            act()
+            ran.append(True)
+        return ask(config, messages, **kwargs)
+
+    monkeypatch.setattr(providers, "run_chat_turn", _asked)
+    return ran
+
+
+def _a_card(card_id: str) -> dict:
+    """A candidates card of a Dataset Finder, *card_id*, with the one row of
+    CANDIDATES."""
+    return {"type": "datasetCandidates", "discoveryId": card_id, **json.loads(CANDIDATES)["datasetCandidates"]}
+
+
+def _candidates_another_ask_left(h, card_id: str) -> None:
+    """Candidates the loader's Finder found on another chat's ask: its card
+    *card_id* in the Finder's chat, and its record waiting for the pick."""
+    node = next(n for n in h.spec()["dataflow"]["nodes"] if n.get("id") == h.load)
+    finder = h.finder_attachment_id()
+    dr._append_candidates_turn(h.ukey, h.pid, finder, node, _a_card(card_id), 1)
+    with projects_storage.spec_write_lock(h.ukey, h.pid):
+        spec = dataflow_docs.live(h.ukey, h.pid)
+        dr.mark_candidates_pending(spec, finder, count=1, discovery_id=card_id)
+        dataflow_docs.write(h.ukey, h.pid, spec, dataflow_docs.by_curio(h.ukey, "dataset"))
+
+
+class TestTheFinderAfterTheRounds:
+    """A loader with no source whose Dataset Finder, asked before the first
+    round, had nothing to offer: its rounds run, and when they are refused for
+    their source the loader keeps its own failure, with why, and the Finder is
+    not asked a second time. Unless that ask never ran, or a card came since:
+    then the Finder is asked again, or the loader waits for the card's pick,
+    as on main. Found by the review of #1642."""
+
+    def test_a_finder_that_could_not_run_before_the_rounds_is_asked_again_after_them(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The Finder's run failed before the first round. On 271aec86a4 the
+        loader then failed with that error, and the Finder was not asked
+        again."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        failed = _the_finders_first_run_fails(monkeypatch)
+        done = h.validate("load")[-1][1]
+        assert (len(failed), len(h.discover_calls)) == (1, 1), (done.get("verdict"), done.get("evidence"))
+        assert done.get("verdict") == "awaiting-source", done
+        # The rounds that ran before are kept, each refused for its source.
+        assert done.get("attempts"), done
+        assert {a.get("kind") for a in done["attempts"]} == {"ungrounded-source"}, done["attempts"]
+        assert dr.source_record(h.spec(), h.load)["status"] == dr.STATE_CANDIDATES_PENDING
+
+    def test_a_card_the_finders_own_chat_offers_during_the_rounds_has_it_asked_again(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The Finder found nothing before the first round, and while the
+        rounds ran it offered a card in its own chat, where the user asked it.
+        On 271aec86a4 the loader failed, and the Finder was not asked again."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch, discover_replies=["No source covers that.", CANDIDATES])
+        offered = _during_the_loaders_first_round(
+            h, monkeypatch, lambda: dr.offer_from_chat(h.ukey, h.pid, h.finder_attachment_id(), _a_card("its-own")),
+        )
+        done = h.validate("load")[-1][1]
+        assert offered == [True]
+        assert len(h.discover_calls) == 2, (done.get("verdict"), done.get("evidence"))
+        assert done.get("verdict") == "awaiting-source", done
+        assert dr.source_record(h.spec(), h.load)["status"] == dr.STATE_CANDIDATES_PENDING
+
+    def test_candidates_another_ask_left_during_the_rounds_are_waited_on(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The Finder found nothing before the first round, and while the
+        rounds ran another chat's ask left candidates waiting for the pick:
+        the loader waits for that pick, its card in the chat that asked too,
+        and the Finder is not asked again. On 271aec86a4 the loader failed
+        beside the waiting card."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch, discover_replies=["No source covers that."])
+        left = _during_the_loaders_first_round(h, monkeypatch, lambda: _candidates_another_ask_left(h, "another-ask"))
+        done = h.validate("load")[-1][1]
+        assert left == [True]
+        assert done.get("verdict") == "awaiting-source", done
+        assert len(h.discover_calls) == 1
+        assert [p.get("discoveryId") for p in _source_picks(h, h.att)] == ["another-ask"]
+
+    def test_a_finder_that_found_nothing_is_named_in_the_loaders_failure(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """Nothing came since the Finder found nothing: the loader keeps its
+        own failure, whose evidence says why discovery found nothing
+        (``discovery``), and the Finder was asked once."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch, discover_replies=["No source covers that."])
+        done = h.validate("load")[-1][1]
+        evidence = done.get("evidence") or {}
+        assert (done.get("verdict"), evidence.get("kind")) == ("fail", "ungrounded-source"), done
+        assert "no recognizable datasetCandidates block" in str(evidence.get("discovery")), evidence
+        assert len(h.discover_calls) == 1
+
+
+class TestTheUsersOwnSourceEndsTheWait:
+    """A loader waits for the pick on its Finder's card, and the user answers
+    by giving the loader its source on the node itself: a dataset on its Data
+    widget, or code that reads one. That ends the wait, and Resume builds the
+    loader from it. On 271aec86a4 the card outranked the node's own source,
+    so Resume paused again, awaiting the dataset selection. Found by the
+    review of #1642."""
+
+    @pytest.fixture(autouse=True)
+    def _six_actions(self, monkeypatch):
+        monkeypatch.setattr(budgets, "SIMULATE_MAX_ACTIONS", 6)
+
+    @pytest.mark.parametrize("given", ["widget", "code"])
+    def test_a_source_given_on_the_loader_ends_its_wait_and_resume_builds_it(
+        self, client, user_and_token, tmp_curio, monkeypatch, given,
+    ):
+        user, token = user_and_token
+        dataset_id = _a_dataset(user, "Ward offices")
+        built = "data = curio_load_data([!! data !!])\nreturn data" if given == "widget" else _reads(dataset_id)
+        h = _Harness(client, user, token, monkeypatch, dl_replies=[built])
+        paused = h.simulate("auto")[-1][1]
+        assert (paused.get("reason") or {}).get("kind") == "awaiting-source", paused
+        if given == "widget":
+            _the_loader_holds(h, datasets={"data": dataset_id})
+        else:
+            _the_loader_holds(h, content=_reads(dataset_id))
+        asked = _Asked(h)
+        done = h.simulate("auto")[-1][1]
+        assert asked.of_the_loader() == {"the loader's Node Builder": 1, "its Dataset Finder": 0}, asked.counts()
+        assert done.get("status") == "completed", done
+        assert h.node_content(h.load) == built
+        # Nobody waits for the pick any more.
+        assert dr.waiting_on_user(h.spec()) == {}

@@ -896,6 +896,41 @@ class TestValuesTheUserTyped:
         assert (len(h.dl_calls), len(h.discover_calls)) == (1, 0)
 
 
+class TestAPlanRowLandsWhatItsGoalGrounds:
+    """Build & validate and a plan row's Solve check a loader's round against
+    the user's words in the chat that asked, the loader's goal and the
+    dataflow's task, then land the code that passed as the agent's change,
+    which is checked again. That landing read the chat alone. So a loader
+    whose goal asks for synthetic data, or names its file, passed its round
+    and was refused when it landed, with nothing written, on main too. Found
+    by the review of #1642."""
+
+    @pytest.mark.parametrize("goal, code", [
+        ("generate synthetic sample data of daily park visits",
+         'import numpy as np\nimport pandas as pd\nreturn pd.DataFrame({"visits": np.random.randint(0, 500, 30)})'),
+        ("load the parks from /data/parks.csv", 'import pandas as pd\nreturn pd.read_csv("/data/parks.csv")'),
+    ], ids=["synthetic", "path"])
+    @pytest.mark.parametrize("asked_by", ["row", "build"])
+    def test_the_code_its_goal_grounds_lands_as_its_round_passed(
+        self, client, user_and_token, tmp_curio, monkeypatch, goal, code, asked_by,
+    ):
+        """The chat that asked says nothing of the source ("plan it"): the
+        goal alone grounds the loader's round, and its landing."""
+        from utk_curio.backend.tests.test_agents.test_dataset_discovery_routes import _Harness
+
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch, goal=goal, dl_replies=[code])
+        if asked_by == "row":
+            done = h.validate("load")[-1][1]
+            assert done.get("verdict") == "pass", done
+        else:
+            done = h.simulate("auto")[-1][1]
+            assert done.get("status") == "completed", done
+        assert h.node_content(h.load) == code
+        # Built from its first round, with no Dataset Finder asked.
+        assert (len(h.dl_calls), len(h.discover_calls)) == (1, 0)
+
+
 class TestSolveSourceGrounding:
     """Solve never writes fabricated-path content: the data-loading node fails
     loudly with the literal and the remedy; a sibling solves; the child was
