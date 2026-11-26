@@ -324,3 +324,80 @@ describe("unreadCount (dev/83)", () => {
     expect(getByTestId("unread").textContent).toBe("0");
   });
 });
+
+/**
+ * A browser tells a scroll on the frame after it, so the transcript reads
+ * where it stands then, after what changed meanwhile. When the line above
+ * the transcript goes (a build's narration as it pauses), the transcript's
+ * box grows, and the browser clamps its place at the new bottom: a scroll
+ * no reader made. When, before that frame, the lines above it come back
+ * taller (the paused plan's), the box is shorter than before, and the
+ * transcript reads that scroll as a reader who left the bottom by more than
+ * the threshold. The Builder's chat then stayed above the candidates card,
+ * behind a pill, in the handoff's card frame.
+ */
+describe("a scroll the browser made for a change of size, read after a later one", () => {
+  /** The transcript's box and content as each test sets them, and where it
+   * stands. */
+  function sized(el: HTMLElement, box: { scrollHeight: number; clientHeight: number }) {
+    let scrollTop = 0;
+    Object.defineProperty(el, "scrollHeight", { configurable: true, get: () => box.scrollHeight });
+    Object.defineProperty(el, "clientHeight", { configurable: true, get: () => box.clientHeight });
+    Object.defineProperty(el, "clientWidth", { configurable: true, get: () => 500 });
+    Object.defineProperty(el, "scrollTop", {
+      configurable: true,
+      get: () => scrollTop,
+      set: (v: number) => {
+        scrollTop = v;
+      },
+    });
+    (el as HTMLElement & { scrollTo: (opts: ScrollToOptions) => void }).scrollTo = (opts: ScrollToOptions) => {
+      scrollTop = opts.top ?? 0;
+    };
+  }
+
+  /** A transcript at its newest turn, which the browser has told. */
+  function atTheBottom() {
+    const box = { scrollHeight: 1000, clientHeight: 300 };
+    const utils = render(<Harness items={["a"]} />);
+    const el = utils.getByTestId("scroller");
+    sized(el, box);
+    utils.rerender(<Harness items={["a", "b"]} />);
+    expect(el.scrollTop).toBe(700);
+    fireEvent.scroll(el);
+    expect(utils.getByTestId("atBottom").textContent).toBe("true");
+    return { ...utils, el, box };
+  }
+
+  it("keeps a reader at the bottom there: the transcript follows to the new bottom, with no pill", () => {
+    const { el, box, rerender, getByTestId } = atTheBottom();
+    // The line above goes: the box grows by 100 px and the browser clamps the
+    // place to the new bottom, a scroll it tells on the next frame.
+    box.clientHeight = 400;
+    el.scrollTop = 600;
+    // Before that frame, the lines above come back taller than before.
+    box.clientHeight = 250;
+    fireEvent.scroll(el);
+    expect(getByTestId("atBottom").textContent).toBe("true");
+    expect(el.scrollTop).toBe(750);
+    // And the newest turn that lands next is followed too.
+    box.scrollHeight = 1300;
+    rerender(<Harness items={["a", "b", "c"]} />);
+    expect(el.scrollTop).toBe(1050);
+    expect(getByTestId("unread").textContent).toBe("0");
+  });
+
+  it("a reader who scrolled up keeps their place and the pill when the box changes size", () => {
+    const { el, box, rerender, getByTestId } = atTheBottom();
+    userScroll(el, 100);
+    expect(getByTestId("atBottom").textContent).toBe("false");
+    box.clientHeight = 250;
+    fireEvent.scroll(el);
+    expect(getByTestId("atBottom").textContent).toBe("false");
+    expect(el.scrollTop).toBe(100);
+    box.scrollHeight = 1300;
+    rerender(<Harness items={["a", "b", "c"]} />);
+    expect(el.scrollTop).toBe(100);
+    expect(getByTestId("unread").textContent).toBe("1");
+  });
+});

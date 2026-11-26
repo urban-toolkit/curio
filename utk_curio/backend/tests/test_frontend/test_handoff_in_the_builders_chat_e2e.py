@@ -188,6 +188,11 @@ def test_the_builders_chat_holds_the_loaders_candidates_and_its_pick_builds_the_
     cards = _cards(current_server, token, project_id)
     assert cards[builder]["waitsForYou"] == [loader], cards[builder]
     dismiss_toasts(page)
+    # The chat sat at its newest turn, so it follows the candidates turn down,
+    # read again as the build paused: the card's Use this source is in view,
+    # with no pill to jump to the latest, as the frame shows it.
+    expect(card.get_by_role("button", name="Use this source", exact=True)).to_be_in_viewport(timeout=10000)
+    expect(panel.get_by_role("button", name=re.compile(r"^Jump to "))).to_have_count(0)
     save_workflow_test_screenshot(page, SCREENSHOT_STEM, test_name="card", clip_selector=CHAT_PANEL_SELECTOR)
 
     # The pick, on the card in the Builder's chat.
