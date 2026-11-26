@@ -124,6 +124,26 @@ def _user_edits(client, token, project, nodes, edges=()):
     assert saved.status_code == 200, saved.get_data(as_text=True)
 
 
+def _person_sets_the_goal(user, project, goal: str) -> None:
+    """The person writes *goal* on the Goal line: the dataflow's ``task``,
+    changed in its doc as a tab's edit is. Never through ``_user_edits``,
+    whose save sends no goal."""
+    from utk_curio.backend.app.collaboration import dataflow_docs
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    key = _user_dir_key(user)
+    spec = dataflow_docs.live(key, project)
+    spec["dataflow"]["task"] = goal
+    dataflow_docs.write(key, project, spec, dataflow_docs.person(key, "goal"))
+
+
+def _mutations(step: dict) -> list[dict]:
+    """A landed step's canvas mutations: one, or a list when the step also
+    gave nodes their starters."""
+    canvas = step["canvas"]
+    return canvas if isinstance(canvas, list) else [canvas]
+
+
 class TestEachFamilyLandsAtOnce:
     def test_a_nodes_code_lands_with_no_review(self, client, user_and_token, tmp_curio, monkeypatch):
         from utk_curio.backend.app.agents.application.proposals import changes  # noqa: F401 - what main lacks
@@ -357,6 +377,127 @@ class TestUndoByKind:
         user, token = user_and_token
         project, att = _setup(client, user, token)
         assert _undo(client, token, project, att, "no-such-change").status_code == 404
+
+
+class TestAPlanFillsAnEmptyGoal:
+    """A plan the Dataflow Builder lands gives a dataflow whose goal is empty,
+    or only whitespace, the plan's own goal, trimmed, in the plan's first write
+    and so in its change: its card says so (``goalSet``), the step that set it
+    carries it to a canvas no doc binds, and its Undo takes it back while the
+    goal still reads what the plan wrote. A goal someone wrote stays as it is."""
+
+    GOAL = "Find the parks a short walk from home"
+
+    def _land(self, client, token, project, att, monkeypatch) -> tuple[dict, dict]:
+        """The plan landed: its card, and what landed with it for a canvas no
+        doc binds (its steps, and its canvas mutation whole)."""
+        plan = {
+            "goal": self.GOAL,
+            "nodes": [{"ref": "a", "nodeType": CA, "title": "API Fetch", "intent": "fetch from the api"}],
+            "edges": [{"from": "a", "to": "sum"}],
+            "removeNodes": ["load"],
+        }
+        body, _ = _ask(client, token, project, att, monkeypatch, ["Here.\n" + _plan_tail(plan)])
+        card = _the_card(body)
+        [landed] = [c for c in body.get("changes") or [] if c["changeId"] == card["changeId"]]
+        return card, landed
+
+    @pytest.mark.parametrize("before", ["", "   "], ids=["empty", "whitespace"])
+    def test_a_plan_fills_an_empty_goal_in_its_first_write(
+        self, client, user_and_token, tmp_curio, monkeypatch, before,
+    ):
+        from utk_curio.backend.app.collaboration import dataflow_docs, history
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        project, att = _setup(client, user, token, coord=DFB)
+        if before:
+            _person_sets_the_goal(user, project, before)
+        # The doc open, as a tab holds it, so the plan's points follow its first ones.
+        with dataflow_docs._held(project, key):
+            pass
+        card, landed = self._land(client, token, project, att, monkeypatch)
+        assert _saved(client, token, project)["task"] == self.GOAL
+        assert card["goalSet"] == self.GOAL, card
+        # In the plan's change, from its first write: the first point naming
+        # the change holds the goal, and the version before it the old one.
+        points = [p for p in history.points(key, project) if p.get("change") == card["changeId"]]
+        assert len(points) == 3, points
+        assert history.dataflow_at(key, project, points[0]["id"])["task"] == self.GOAL
+        assert history.dataflow_at(key, project, points[0]["parent"]).get("task", "") == before
+        # A canvas no doc binds takes it with the plan's first step, and with the plan whole.
+        assert _mutations(landed["steps"][0])[0].get("task") == self.GOAL, landed["steps"][0]
+        assert [m for step in landed["steps"][1:] for m in _mutations(step) if "task" in m] == [], landed["steps"]
+        assert landed["canvas"]["task"] == self.GOAL, landed["canvas"]
+
+    def test_a_goal_someone_wrote_stays_as_it_was(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        project, att = _setup(client, user, token, coord=DFB)
+        _person_sets_the_goal(user, project, "  Map the parks  ")
+        card, landed = self._land(client, token, project, att, monkeypatch)
+        assert _saved(client, token, project)["task"] == "  Map the parks  "
+        assert "goalSet" not in card, card
+        assert [m for step in landed["steps"] for m in _mutations(step) if "task" in m] == [], landed["steps"]
+        assert "task" not in landed["canvas"], landed["canvas"]
+
+    def test_undo_takes_back_the_goal_the_plan_set(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        project, att = _setup(client, user, token, coord=DFB)
+        before = _saved(client, token, project).get("task", "")
+        assert not before.strip(), before
+        card, _ = self._land(client, token, project, att, monkeypatch)
+        assert _saved(client, token, project)["task"] == self.GOAL
+        undone = _undo(client, token, project, att, card["changeId"])
+        assert undone.status_code == 200, undone.get_json()
+        flow = _saved(client, token, project)
+        assert flow.get("task", "") == before, flow.get("task")
+        assert set(_by_id(flow)) == {"load", "sum"}
+        # A canvas no doc binds takes the goal back with the Undo.
+        [canvas] = undone.get_json()["canvas"]
+        assert canvas["task"] == before, canvas
+
+    def test_undo_after_someone_changed_the_goal_keeps_theirs(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        project, att = _setup(client, user, token, coord=DFB)
+        card, _ = self._land(client, token, project, att, monkeypatch)
+        assert _saved(client, token, project)["task"] == self.GOAL
+        _person_sets_the_goal(user, project, "Find the shaded parks")
+        undone = _undo(client, token, project, att, card["changeId"])
+        assert undone.status_code == 200, undone.get_json()
+        # The plan is undone, what it removed is back and its node gone, and the goal is theirs.
+        flow = _saved(client, token, project)
+        assert set(_by_id(flow)) == {"load", "sum"}
+        assert [(e["source"], e["target"]) for e in flow["edges"]] == [("load", "sum")]
+        assert flow["task"] == "Find the shaded parks"
+        [canvas] = undone.get_json()["canvas"]
+        assert "task" not in canvas, canvas
+
+    @pytest.mark.parametrize("goal", ["", "   "], ids=["empty", "whitespace"])
+    def test_a_plan_with_no_goal_of_its_own_fills_nothing(
+        self, client, user_and_token, tmp_curio, monkeypatch, goal,
+    ):
+        """The grammar refuses a plan with no goal (``plan.field-empty``), so
+        this one is given *goal* after its checks: what keeps the dataflow's
+        goal empty then is the landing's own check."""
+        from utk_curio.backend.app.agents.domain import content
+
+        parse = content._parse_dataflow_plan_verbose
+
+        def without_its_goal(raw):
+            plan, errors = parse(raw)
+            if plan is not None:
+                plan["goal"] = goal
+            return plan, errors
+
+        monkeypatch.setattr(content, "_parse_dataflow_plan_verbose", without_its_goal)
+        user, token = user_and_token
+        project, att = _setup(client, user, token, coord=DFB)
+        card, landed = self._land(client, token, project, att, monkeypatch)
+        assert card["kind"] == "plan"
+        assert not _saved(client, token, project).get("task", "").strip()
+        assert "goalSet" not in card, card
+        assert [m for step in landed["steps"] for m in _mutations(step) if "task" in m] == [], landed["steps"]
 
 
 #: A review of each kind of change, as a dataflow saved one before agents
