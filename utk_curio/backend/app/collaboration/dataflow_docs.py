@@ -1488,8 +1488,9 @@ class Written(NamedTuple):
     #: a node someone removed before the write.
     dropped: tuple = ()
     #: The fields of the dataflow the writer had checked (:func:`write`'s
-    #: *checked*) that the doc kept: each held other than what the writer
-    #: was handed, so the writer's did not land.
+    #: *checked*) that the doc kept, or the file for a write the doc has no
+    #: place for: each held other than what the writer was handed, so the
+    #: writer's did not land.
     kept: tuple = ()
 
 
@@ -1564,10 +1565,12 @@ def write(user_key: str, project_id: str, spec: Live, actor: Actor, *,
       the tab is told (:func:`_drop_dangling_connections`).
     * A field of the dataflow *checked* names, such as its goal, lands as a
       node's code does: only while the doc still holds what the writer was
-      handed, checked in the same transaction. Otherwise the doc keeps its
-      own and the field is in :attr:`Written.kept`; *on_kept*, given, is
-      called with those names before the file is written, as *on_refused*
-      is. Any other field lands as a person's change to it does.
+      handed, checked in the same transaction, or, for a write the doc has
+      no place for, while the file still does (:func:`_without_doc`).
+      Otherwise the doc, or the file, keeps its own and the field is in
+      :attr:`Written.kept`; *on_kept*, given, is called with those names
+      before the file is written, as *on_refused* is. Any other field lands
+      as a person's change to it does.
     * The agents' sections are written beside the doc
       (:func:`_merged_beside`). A change to them alone is written to the file
       alone: a tab gets none of it, and the doc reads the file's next
@@ -1783,13 +1786,15 @@ def _write(user_key: str, project_id: str, base: dict, mine, actor: Actor, *,
     owner_guard.refuse(project_id, what="a write to it")
     if not _has_spec(user_key, project_id):
         return Written(False)
+    checked = tuple(checked)  # read again by _without_doc after a DocMappingError
     with _spec_lock(user_key, project_id):
         # Every writer's scenarios land in sets, as the canvas writes them, and
         # the writer's own spec holds them so after its write.
         theirs = _writable(mine)
         project_scenarios.normalize_spec_scenarios(theirs, keep_empty=True)
         if not doc_mapping.mappable(doc_mapping.owned(_dataflow_of(theirs))):
-            return _without_doc(user_key, project_id, base, theirs, history, actor, backfilled)
+            return _without_doc(user_key, project_id, base, mine, history, actor, backfilled,
+                                checked=checked, on_kept=on_kept)
         if doc_mapping.same(doc_mapping.owned(_dataflow_of(base)), doc_mapping.owned(_dataflow_of(theirs))):
             # Nothing the doc holds: the sections beside it, to the file alone.
             file = storage.read_spec_file(user_key, project_id)
@@ -1851,17 +1856,24 @@ def _write(user_key: str, project_id: str, base: dict, mine, actor: Actor, *,
         except _NoDataflow:
             return Written(False)
         except doc_mapping.DocMappingError:
-            return _without_doc(user_key, project_id, base, theirs, history, actor, backfilled)
+            return _without_doc(user_key, project_id, base, mine, history, actor, backfilled,
+                                checked=checked, on_kept=on_kept)
 
 
-def _without_doc(user_key: str, project_id: str, base: dict, mine: dict, history: Optional[dict],
-                 actor: Actor, backfilled: Iterable[str] = ()) -> Written:
+def _without_doc(user_key: str, project_id: str, base: dict, mine, history: Optional[dict],
+                 actor: Actor, backfilled: Iterable[str] = (), *, checked: Iterable[str] = (),
+                 on_kept: Optional[Callable[[tuple], None]] = None) -> Written:
     """A write the doc has no place for (``doc_mapping.DocMappingError``),
     made to the file alone as before the doc: each member the writer changed
-    is the writer's, *actor* its maker for the record of what the owner put
-    in (``owner_uses.py``), *backfilled* as :func:`write` says. The doc is
-    forgotten, so it is built anew from the file when it next opens, which
-    says why no tab can sync it."""
+    in *mine*, its spec, is the writer's, *actor* its maker for the record of
+    what the owner put in (``owner_uses.py``), *backfilled* as :func:`write`
+    says. A field of the dataflow *checked* names lands only while the file
+    still holds what the writer was handed, read under the spec lock the
+    write holds: otherwise the file keeps its own, and the field is in
+    :attr:`Written.kept`, *on_kept* called with those names before the file
+    is written, as :func:`write` says. The doc is forgotten, so it is built
+    anew from the file when it next opens, which says why no tab can sync
+    it."""
     logger.warning("dataflow %s: a write the doc's layout has no place for is written to the file alone",
                    project_id)
     entry = _open_entry(project_id)
@@ -1871,14 +1883,27 @@ def _without_doc(user_key: str, project_id: str, base: dict, mine: dict, history
     file = storage.read_spec_file(user_key, project_id)
     if not isinstance(file.spec, dict):
         return Written(False)
-    out = _merged_beside(file.spec, base, mine, every_field=True)
+    theirs = _in_sets(_writable(mine))
+    was, now, held = _dataflow_of(base), _dataflow_of(theirs), _dataflow_of(file.spec)
+    # Each checked field the writer changed that the file no longer holds as it was handed.
+    stays = [name for name in dict.fromkeys(checked)
+             if not doc_mapping.same(_member(was, name), _member(now, name))
+             and not doc_mapping.same(_member(held, name), _member(was, name))]
+    kept = tuple(name for name in stays if not doc_mapping.same(_member(held, name), _member(now, name)))
+    if kept:
+        logger.info("dataflow %s: %s changed while %s worked; the file's stays",
+                    project_id, ", ".join(kept), actor.what or actor.kind)
+        if on_kept is not None:
+            on_kept(kept)
+            theirs = _in_sets(_writable(mine))
+    out = _merged_beside(file.spec, base, theirs, every_field=True, leave=stays)
     if history:
         out.update(history)
     storage.write_spec(user_key, project_id, out)
     owner_uses.changed(user_key, project_id, owner_uses.entries(_dataflow_of(file.spec)),
                        owner_uses.entries(_dataflow_of(out)), by_owner=_by_its_owner(user_key, actor),
                        backfilled=backfilled)
-    return Written(True)
+    return Written(True, kept=kept)
 
 
 #: The sections beside the doc whose entries a write merges one by one, and
@@ -1889,14 +1914,17 @@ _SECTION_KEYS: dict[str, Callable] = {
 }
 
 
-def _merged_beside(on_file: dict, base: dict, mine: dict, *, every_field: bool = False) -> dict:
+def _merged_beside(on_file: dict, base: dict, mine: dict, *, every_field: bool = False,
+                   leave: Iterable[str] = ()) -> dict:
     """What the file holds, with what a writer changed from *base* to *mine*
     outside the doc merged in: each top-level member but the dataflow and the
     history, and each section of the dataflow kept beside the doc
     (``doc_mapping.OUTSIDE_THE_DOC``), the agents' attachments one by one. A
     member the writer changed is the writer's, and one it left alone stays as
     the file has it. *every_field*: each field of the dataflow is merged so,
-    for a write made without the doc."""
+    for a write made without the doc, but those *leave* names, which stay as
+    the file has them."""
+    leave = frozenset(leave)
     out = _writable(on_file)
     for key in dict.fromkeys([*base, *mine]):
         if key in storage.HISTORY_KEYS or key == "dataflow":
@@ -1913,7 +1941,7 @@ def _merged_beside(on_file: dict, base: dict, mine: dict, *, every_field: bool =
     names = dict.fromkeys([*was, *now]) if every_field else sorted(doc_mapping.OUTSIDE_THE_DOC)
     for name in names:
         before, after = _member(was, name), _member(now, name)
-        if doc_mapping.same(before, after):
+        if name in leave or doc_mapping.same(before, after):
             continue
         if after is doc_mapping.MISSING:
             dataflow.pop(name, None)
