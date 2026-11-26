@@ -599,7 +599,7 @@ describe("AgentBuilderStrip — dev/126 nodes awaiting a dataset selection", () 
         attachment={attachment({ phase: "applied", nodeRuns: { a: "pending", b: "pending" } })}
         onSolve={jest.fn()}
         solveErrors={{
-          a: "awaiting your dataset selection: 3 candidate(s) awaiting your selection",
+          a: "awaiting your dataset selection: 3 candidates awaiting your selection",
         }}
         solveRemedies={{ a: remedy("att-a"), b: remedy("att-b") }}
         onOpenChat={onOpenChat}
@@ -641,7 +641,7 @@ describe("AgentBuilderStrip — dev/126 nodes awaiting a dataset selection", () 
       <AgentBuilderStrip
         attachment={attachment({ phase: "applied", nodeRuns: { a: "pending" } })}
         onSolve={jest.fn()}
-        solveErrors={{ a: "awaiting your dataset selection: 1 candidate(s)" }}
+        solveErrors={{ a: "awaiting your dataset selection: 1 candidate awaiting your selection" }}
         solveRemedies={{ a: remedy("att-a") }}
       />,
     );
@@ -691,7 +691,7 @@ describe("AgentBuilderStrip — dev/131 the session, and nodes that depend on yo
   const waiting = (over: Partial<{ nodeId: string; kind: string; reason: string; attachmentId: string }> = {}) => ({
     nodeId: "a",
     kind: "dataset-selection",
-    reason: "awaiting your dataset selection: 3 candidate(s)",
+    reason: "awaiting your dataset selection: 3 candidates awaiting your selection",
     attachmentId: "att-df",
     ...over,
   });
@@ -1028,7 +1028,7 @@ describe("AgentBuilderStrip names each node's own finder", () => {
         solveWaiting={[{
           nodeId: "a",
           kind: "dataset-selection",
-          reason: "awaiting your dataset selection: 2 candidate(s)",
+          reason: "awaiting your dataset selection: 2 candidates awaiting your selection",
           attachmentId: "att-my-finder",
         }]}
         onSolveNode={jest.fn()}

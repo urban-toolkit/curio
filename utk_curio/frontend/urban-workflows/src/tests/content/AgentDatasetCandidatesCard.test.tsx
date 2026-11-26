@@ -339,7 +339,7 @@ describe("AgentDatasetCandidatesCard: the source recorded for its node", () => {
     expect(within(card).getByRole("button", { name: "Use this source" })).toBeDisabled();
   });
 
-  it("says Recorded with what was picked and what the server said comes of it, in place of its rows and Use this source", () => {
+  it("says Recorded with what was picked and where it comes from, in place of its rows and Use this source", () => {
     render(
       <AgentDatasetCandidatesCard
         part={PART}
@@ -354,9 +354,9 @@ describe("AgentDatasetCandidatesCard: the source recorded for its node", () => {
       />,
     );
     const card = screen.getByRole("group", { name: "Sources for Load buildings" });
-    expect(within(card).getByRole("status")).toHaveTextContent(
-      "Recorded: Roads (City of Chicago). The Dataflow Builder goes on with its plan and builds the loader from this source.",
-    );
+    // What comes of the pick is the Source recorded turn's, right under the
+    // card in both chats: the card never says it again.
+    expect(within(card).getByRole("status")).toHaveTextContent(/^Recorded: Roads \(City of Chicago\)\.$/);
     expect(within(card).queryByRole("button", { name: "Use this source" })).toBeNull();
     expect(within(card).queryAllByRole("checkbox")).toHaveLength(0);
   });
@@ -373,7 +373,7 @@ describe("AgentDatasetCandidatesCard: the source recorded for its node", () => {
     expect(screen.getByRole("status")).toHaveTextContent(/^Recorded: Roads \(City of Chicago\)\.$/);
   });
 
-  it("says a picked source that downloads for a paused plan is on its way, and to press Resume once it lands", () => {
+  it("says a picked source that downloads for a paused plan is Recorded, from the Data Catalog, and leaves Resume to its Source recorded turn", () => {
     render(
       <AgentDatasetCandidatesCard
         part={PART}
@@ -386,9 +386,8 @@ describe("AgentDatasetCandidatesCard: the source recorded for its node", () => {
         waitsForPick={false}
       />,
     );
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "Recorded: Roads. It is downloading into the Data Catalog: once it lands, press Resume in the Dataflow Builder's chat to build the loader.",
-    );
+    // A catalog pick with no provider comes from the Data Catalog.
+    expect(screen.getByRole("status")).toHaveTextContent(/^Recorded: Roads \(Data Catalog\)\.$/);
   });
 
   it("keeps its rows while the node still waits for the user's pick", () => {
@@ -406,13 +405,14 @@ describe("AgentDatasetCandidatesCard: the source recorded for its node", () => {
   });
 });
 
-// The Recorded line says what the server said comes next of the pick (the
-// record's `next`), in every chat and tab, so it promises no build nobody
-// starts, and keeps in view what the user must do.
-describe("AgentDatasetCandidatesCard: the Recorded line says what happens next", () => {
+// The Recorded line names the pick and where it comes from, and nothing of
+// what comes next: the record's `next` ends the Source recorded turn right
+// under the card in every chat that holds it, so the chat says it once. The
+// line promises no build either.
+describe("AgentDatasetCandidatesCard: the Recorded line leaves what happens next to its turn", () => {
   const ROADS = { name: "Roads", sourceType: "catalog" as const, datasetId: "imported.def@1", installed: true };
 
-  it("a download no plan waits on says to Solve the node once it lands", () => {
+  it("a download no plan waits on says Recorded, and neither to Solve the node nor that a build comes", () => {
     render(
       <AgentDatasetCandidatesCard
         part={PART}
@@ -426,11 +426,12 @@ describe("AgentDatasetCandidatesCard: the Recorded line says what happens next",
       />,
     );
     const status = screen.getByRole("status");
-    expect(status).toHaveTextContent("Recorded: Roads. It is downloading into the Data Catalog: Solve the node once it lands.");
+    expect(status).toHaveTextContent(/^Recorded: Roads \(Data Catalog\)\.$/);
+    expect(status).not.toHaveTextContent("Solve the node once it lands");
     expect(status).not.toHaveTextContent("the loader is built from it once it lands");
   });
 
-  it("a pick no builder takes says so, and promises no build", () => {
+  it("a pick no builder takes says Recorded, and promises no build", () => {
     render(
       <AgentDatasetCandidatesCard
         part={PART}
@@ -444,9 +445,8 @@ describe("AgentDatasetCandidatesCard: the Recorded line says what happens next",
       />,
     );
     const status = screen.getByRole("status");
-    expect(status).toHaveTextContent(
-      "Recorded: Roads. No builder is attached to this node: Solve the node, or attach a Node Builder to it.",
-    );
+    expect(status).toHaveTextContent(/^Recorded: Roads \(Data Catalog\)\.$/);
+    expect(status).not.toHaveTextContent("No builder is attached to this node");
     expect(status).not.toHaveTextContent("The loader is built from this source");
   });
 });

@@ -621,6 +621,47 @@ class TestDiscoveryIsInitiated:
             if p.get("type") in ("sourcePick", "datasetCandidates")
         ], "the loader's Node Builder asked for no candidates"
 
+    @pytest.mark.parametrize("found, words", [(1, "1 candidate"), (3, "3 candidates")])
+    def test_the_finders_chat_counts_its_candidates_and_names_the_node(
+        self, client, user_and_token, tmp_curio, monkeypatch, found, words
+    ):
+        """The Dataset Finder's chat says in plain words how many candidates
+        it found, for which node, and how to pick one, and the loader's row
+        counts them the same way. On 7430c0d5a4 the Finder's chat said "1
+        dataset candidate(s) for this node: pick the source to use with Use
+        this source; external rows carry the runtime's verification verdict.",
+        which never counted, named no node and spoke of the runtime, and the
+        row's reason said "1 candidate(s)". The line in the chat that asked
+        already counted and named the node: it is a guard here."""
+        rows = [{
+            "name": f"Chicago community areas {i}", "sourceType": "portal",
+            "url": f"https://data.example.org/areas-{i}.geojson", "format": "geojson",
+            "fit": {"score": 90, "rationale": "the boundaries the goal asks for"},
+        } for i in range(found)]
+        candidates = json.dumps({"datasetCandidates": {"lanes": {"external": rows, "catalog": []}}})
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch, discover_replies=[candidates])
+        body = h.solve()
+        said = {
+            "the Finder's chat": [
+                t.get("text") for t in h.session_turns(h.finder_attachment_id())
+                if any(p.get("type") == "datasetCandidates" for p in t.get("content") or [])
+            ],
+            "the chat that asked": [
+                t.get("text") for t in h.session_turns(h.att)
+                if any(p.get("type") == "sourcePick" for p in t.get("content") or [])
+            ],
+            "the loader's row": body["results"][h.load]["reason"],
+        }
+        # One comparison, so a failure shows every place that reads wrong.
+        assert said == {
+            "the Finder's chat": [f"I found {words} for Load boundaries. Pick one with Use this source."],
+            "the chat that asked": [
+                f"**Load boundaries** needs a source. Its Dataset Finder found {words}: pick one with Use this source."
+            ],
+            "the loader's row": f"awaiting your dataset selection: {words} awaiting your selection",
+        }
+
 
 class TestConfirmedSourceReachesTheBuilder:
     def test_a_recorded_selection_resolves_the_node_and_is_handed_over(
@@ -1225,7 +1266,8 @@ class TestTheChatThatAskedGoesOn:
         h.validate("load")
         h.select(URL)
         finder_said = [t.get("text") or "" for t in h.session_turns(h.finder_attachment_id())]
-        assert finder_said[-1].startswith("Source recorded for this node: Chicago community areas."), finder_said[-1]
+        # The Finder's chat names the node too, as the chat that asked does.
+        assert finder_said[-1].startswith("Source recorded for Load boundaries: Chicago community areas."), finder_said[-1]
         builder_turns = h.session_turns(h.att)
         recorded = [t for t in builder_turns if (t.get("text") or "").startswith("Source recorded for Load boundaries")]
         assert len(recorded) == 1, [t.get("text") for t in builder_turns]

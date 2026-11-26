@@ -10,9 +10,10 @@ pick that builds it.
    build pauses on the loader. The rail's entry of the Finder and the Finder's
    badge on the loader show the dot of an agent that waits for you.
 3. **Use this source** on the card in the Builder's chat records the pick on
-   the Finder. The card reads Recorded, in both chats, and the dots go. The
-   Builder goes on with Build & validate by itself, which builds the loader
-   from that dataset.
+   the Finder. The card reads Recorded, with the pick and where it comes
+   from, in both chats; the turn under it says what comes of the pick, which
+   nothing else in the chat says, and the dots go. The Builder goes on with
+   Build & validate by itself, which builds the loader from that dataset.
 
 Driven by the scripted provider, so no model is called. Nothing is drawn.
 
@@ -78,6 +79,12 @@ CANDIDATES = json.dumps({"datasetCandidates": {"lanes": {
 }}})
 #: The loader, once its source is picked.
 LOADER = f'import pandas as pd\nreturn pd.read_csv(curio_data_path("{DATASET}"))'
+#: What the card says once the pick is recorded, in both chats: the pick and
+#: where it comes from, and no more.
+RECORDED = "Recorded: Example table: pedestrians per hour (Data Catalog)."
+#: What comes of the pick, as the server says it: the Source recorded turn
+#: under the card ends with it, in both chats, and nothing else says it.
+NEXT = "The Dataflow Builder goes on with its plan and builds the loader from this source."
 
 #: How long a Build & validate pass may take on a loaded runner.
 BUILD_S = 240.0
@@ -164,6 +171,11 @@ def test_the_builders_chat_holds_the_loaders_candidates_and_its_pick_builds_the_
     panel.get_by_role("button", name="Build & validate plan", exact=True).click()
     card = panel.get_by_role("group", name=f"Sources for {LOADER_TITLE}")
     expect(card).to_be_visible(timeout=BUILD_S * 1000)
+    # The line over the card names the loader and counts its candidates.
+    expect(panel.get_by_text(
+        f"{LOADER_TITLE} needs a source. Its Dataset Finder found 1 candidate: pick one with Use this source.",
+        exact=True,
+    )).to_have_count(1)
     expect(panel.get_by_role("button", name="Resume", exact=True)).to_be_visible(timeout=60000)
     expect(card.get_by_role("button", name="Use this source", exact=True)).to_be_disabled()
     rail = panel.get_by_role("navigation", name="Agents on this dataflow")
@@ -196,12 +208,14 @@ def test_the_builders_chat_holds_the_loaders_candidates_and_its_pick_builds_the_
     )
     code = _loader_code(current_server, token, project_id, loader)
     assert f'curio_data_path("{DATASET}")' in code, code
-    expect(card.get_by_role("status")).to_contain_text("Recorded: Example table: pedestrians per hour", timeout=30000)
+    expect(card.get_by_role("status")).to_have_text(RECORDED, timeout=30000)
     expect(card.get_by_role("button", name="Use this source", exact=True)).to_have_count(0)
     expect(rail.get_by_role("button", name=f"Dataset Finder on {LOADER_TITLE}", exact=True)).to_be_visible(
         timeout=30000)
     expect(badge).to_have_count(0, timeout=30000)
     expect(panel.get_by_text(f"Source recorded for {LOADER_TITLE}", exact=False)).to_be_visible(timeout=30000)
+    # The pick is said once: what comes of it is the turn's alone.
+    expect(panel.get_by_text(NEXT, exact=False)).to_have_count(1, timeout=30000)
     # The server approves the loader before the tab's build ends: the frame
     # waits until the plan line has no Stop, so no build clock ticks in it.
     expect(panel.get_by_role("button", name=re.compile(r"^(Stop|Stopping…)$"))).to_have_count(0, timeout=60000)
@@ -229,8 +243,15 @@ def test_the_builders_chat_holds_the_loaders_candidates_and_its_pick_builds_the_
     finder_panel = page.get_by_role("dialog", name=re.compile(r"^Chat with Dataset Finder"))
     expect(finder_panel).to_be_visible(timeout=20000)
     own = finder_panel.get_by_role("group", name=f"Sources for {LOADER_TITLE}")
-    expect(own.get_by_role("status")).to_contain_text("Recorded: Example table: pedestrians per hour", timeout=30000)
+    expect(own.get_by_role("status")).to_have_text(RECORDED, timeout=30000)
     expect(finder_panel.get_by_role("group", name="Solve this node")).to_have_count(0)
+    # Its own turns count the candidates and name the loader, and the pick is
+    # said once here too.
+    expect(finder_panel.get_by_text(
+        f"I found 1 candidate for {LOADER_TITLE}. Pick one with Use this source.", exact=True,
+    )).to_have_count(1)
+    expect(finder_panel.get_by_text(f"Source recorded for {LOADER_TITLE}:", exact=False)).to_have_count(1)
+    expect(finder_panel.get_by_text(NEXT, exact=False)).to_have_count(1, timeout=30000)
     own.scroll_into_view_if_needed()
     expect(own).to_be_in_viewport()
     page.mouse.move(0, 0)

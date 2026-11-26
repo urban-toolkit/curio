@@ -2906,7 +2906,7 @@ describe("AgentChatPanel: a node's candidates in the chat that asked for them", 
   };
   const FOUND: AgentSessionTurn = {
     role: "agent" as const,
-    text: "1 dataset candidate for this node.",
+    text: "I found 1 candidate for Load boundaries. Pick one with Use this source.",
     content: [{ type: "datasetCandidates" as const, lanes: LANES }],
   };
 
@@ -2946,13 +2946,13 @@ describe("AgentChatPanel: a node's candidates in the chat that asked for them", 
   it("says Recorded, in both chats, once the Finder's record holds the pick", () => {
     const first = renderPanel({ attachment: BUILDER, turns: [ASKED], attachments: [BUILDER, RECORDED], onRecordSourcePick: jest.fn() });
     const card = screen.getByRole("group", { name: "Sources for Load boundaries" });
-    expect(within(card).getByRole("status")).toHaveTextContent("Recorded: Chicago areas (City of Chicago).");
+    expect(within(card).getByRole("status")).toHaveTextContent(/^Recorded: Chicago areas \(City of Chicago\)\.$/);
     expect(within(card).queryByRole("button", { name: "Use this source" })).toBeNull();
     first.unmount();
     // The Finder's own chat holds the same card, and says the same.
     renderPanel({ attachment: RECORDED, targetName: "Load boundaries", turns: [FOUND], onRecordDatasetSelection: jest.fn() });
     const own = screen.getByRole("group", { name: "Sources for Load boundaries" });
-    expect(within(own).getByRole("status")).toHaveTextContent("Recorded: Chicago areas (City of Chicago).");
+    expect(within(own).getByRole("status")).toHaveTextContent(/^Recorded: Chicago areas \(City of Chicago\)\.$/);
     expect(within(own).queryByRole("button", { name: "Use this source" })).toBeNull();
   });
 
@@ -3119,7 +3119,7 @@ describe("AgentChatPanel: a candidates card follows its Finder's record", () => 
   /** The Finder's own turn that holds the card of its search *discoveryId*. */
   const found = (discoveryId: string, row = AREAS): AgentSessionTurn => ({
     role: "agent" as const,
-    text: "1 dataset candidate for this node.",
+    text: "I found 1 candidate for Load boundaries. Pick one with Use this source.",
     content: [{ type: "datasetCandidates" as const, discoveryId, lanes: { external: [row], catalog: [] } }],
   });
   const finder = (sourceRecord: AgentAttachment["sourceRecord"], waitsForYou: string[] = []): AgentAttachment => ({
@@ -3208,9 +3208,48 @@ describe("AgentChatPanel: a candidates card follows its Finder's record", () => 
     const [older, newer] = cards();
     expect(within(older).getByRole("status")).not.toHaveTextContent("Recorded");
     expect(within(older).getByRole("status")).toHaveTextContent("Closed: newer candidates replaced these.");
-    expect(within(newer).getByRole("status")).toHaveTextContent(
-      "Recorded: Chicago blocks (City of Chicago). The Dataflow Builder goes on with its plan and builds the loader from this source.",
-    );
+    expect(within(newer).getByRole("status")).toHaveTextContent(/^Recorded: Chicago blocks \(City of Chicago\)\.$/);
+  });
+
+  it("says the pick once in each chat: the card names it and where it comes from, and the turn under it what comes of it", () => {
+    const NEXT = "The Dataflow Builder goes on with its plan and builds the loader from this source.";
+    const picked = finder({
+      status: "resolved",
+      picks: [{ ...BLOCKS, provider: "City of Chicago" }],
+      discoveryId: "d2",
+      pickedFrom: "d2",
+      askedBy: "dfb",
+      askers: ["dfb"],
+      next: NEXT,
+    });
+    /** The turn the pick writes in a chat that holds the card, as the server
+     * words it: *who* is the node's name, the same in both chats. */
+    const recordedTurn = (who: string): AgentSessionTurn => ({
+      role: "agent" as const,
+      text: `Source recorded for ${who}: Chicago blocks. ${NEXT}`,
+      content: [{ type: "card" as const, kind: "result", title: "Dataset selection recorded", lines: ["external · Chicago blocks · verified"] }],
+    });
+    // The chat that asked: the card, then the turn the pick wrote there.
+    const first = renderPanel({
+      attachment: { ...BUILDER, waitsForYou: [] },
+      turns: [asked("d2", BLOCKS), recordedTurn("Load boundaries")],
+      attachments: [{ ...BUILDER, waitsForYou: [] }, picked],
+      onRecordSourcePick: jest.fn(),
+    });
+    const [card] = cards();
+    expect(within(card).getByRole("status")).toHaveTextContent(/^Recorded: Chicago blocks \(City of Chicago\)\.$/);
+    expect(screen.getAllByText(NEXT, { exact: false })).toHaveLength(1);
+    first.unmount();
+    // The Finder's own chat: the same card, then its own turn.
+    renderPanel({
+      attachment: picked,
+      targetName: "Load boundaries",
+      turns: [found("d2", BLOCKS), recordedTurn("Load boundaries")],
+      onRecordDatasetSelection: jest.fn(),
+    });
+    const [own] = cards();
+    expect(within(own).getByRole("status")).toHaveTextContent(/^Recorded: Chicago blocks \(City of Chicago\)\.$/);
+    expect(screen.getAllByText(NEXT, { exact: false })).toHaveLength(1);
   });
 
   it("is closed once no pick is needed: a skip, whose source is grounded already", () => {

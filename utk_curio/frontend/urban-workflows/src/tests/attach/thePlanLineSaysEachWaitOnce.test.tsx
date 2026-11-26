@@ -67,7 +67,7 @@ const WAITS_FOR_THE_PICK = [
   {
     nodeId: "na",
     kind: "dataset-selection",
-    reason: "awaiting your dataset selection: 1 candidate(s)",
+    reason: "awaiting your dataset selection: 1 candidate awaiting your selection",
     attachmentId: "att-df",
   },
 ];
@@ -144,7 +144,7 @@ describe("Each row of the plan line has one label", () => {
     // wait's reason on them, and no status beside them.
     expect(within(a).getByText(NEEDS_A_SOURCE)).toHaveAttribute(
       "data-tooltip",
-      "awaiting your dataset selection: 1 candidate(s)",
+      "awaiting your dataset selection: 1 candidate awaiting your selection",
     );
     expect(within(a).queryByText("pending")).toBeNull();
     expect(within(a).queryByText(/needs you/i)).toBeNull();
