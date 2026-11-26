@@ -24,8 +24,8 @@ from utk_curio.backend.app.agents.application import spec_reads as agents_spec_r
 from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
 from utk_curio.backend.app.agents.application.proposals import changes as agents_changes
 from utk_curio.backend.app.agents.application.proposals import mint as agents_mint
-from utk_curio.backend.app.agents.application.solve import budgets as agents_budgets
 from utk_curio.backend.app.agents.application.solve import node_solve as agents_node_solve
+from utk_curio.backend.app.agents.application.solve import node_work as agents_node_work
 from utk_curio.backend.app.agents.application.solve import rounds as agents_rounds
 from utk_curio.backend.app.agents.application.solve import session as agents_session
 from utk_curio.backend.app.agents.application.turns import delegates as agents_delegates
@@ -71,6 +71,7 @@ def validate_node_stream(
     ref: str | None = None,
     node_id: str | None = None,
     exec_fn=None,
+    by: str = agents_node_work.BY_ROW,
 ):
     """Generate, execute through, validate, self-correct, and write, for ONE
     node of a plan (memo dev/67-7: a row's Solve, and Build & validate's
@@ -86,6 +87,12 @@ def validate_node_stream(
     its attempts, each with its code, stay in the node's agent chat. An
     ``infrastructure`` verdict writes nothing and leaves the node's state
     untouched.
+
+    *by* says who runs it: a row's Solve (``node``, the route's), or a Build &
+    validate (its mode, ``auto`` or ``step``). A row's Solve is work on its
+    node (``node_work``): it does not start while a build runs on the plan, or
+    while Solve this node runs on the node, and the listing names it while it
+    runs. One validation runs on a plan at a time.
     """
 
     agents_acquire._settle_discovery_acquisitions(user_key, project_id)
@@ -103,7 +110,14 @@ def validate_node_stream(
     if node is None:
         raise AgentServiceError(f"node {node_id!r} not found in the saved spec", 404)
     now = _time.time()
-    if session.get("validatingSince") and now - float(session.get("validatingSince") or 0) < agents_budgets.VALIDATE_STALE_SECONDS:
+    if by == agents_node_work.BY_ROW:
+        # A row's Solve: never over a build of its plan, nor over Solve this
+        # node running on the same node.
+        if agents_node_work.build_running(session):
+            raise AgentServiceError(agents_node_work.BUILD_RUNNING, 409)
+        if agents_node_work.solve_this_node_over(user_key, spec, node_id):
+            raise AgentServiceError(agents_node_work.NODE_SOLVING, 409)
+    if agents_node_work.validation_running(session):
         raise AgentServiceError("a validation is already running for this attachment", 409)
     manifest = agents_catalog._resolve_definition(user_key, record.get("coord", ""))
     resolution = delegation.resolve(
@@ -135,7 +149,7 @@ def validate_node_stream(
         # The home this validation attached is written alone: the plan's
         # record, as this read holds it, is left as the dataflow holds it.
         dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._agent_actor(user_key, spec, attachment_id, "validate"))
-    _mark_validating(user_key, project_id, attachment_id, now)
+    _mark_validating(user_key, project_id, attachment_id, now, ref=ref, node_id=node_id, by=by)
     return _validate_events(
         user_key, project_id, attachment_id, config, spec, node, ref,
         resolution, coord, session_id, exec_fn,
@@ -144,22 +158,38 @@ def validate_node_stream(
         # Captured here, in the request: the rounds validate on a thread.
         acting_user=agents_spec_reads._acting_user(),
         room_asker=agents_room.asker(),
+        by=by,
     )
 
 
-def _mark_validating(user_key: str, project_id: str, attachment_id: str, now: float) -> None:
+#: The fields a running validation keeps on the plan's record, which its end
+#: clears: when it began, its ref and node, who runs it (``node`` for a row's
+#: Solve, the build's mode for a build's) and the start it began in.
+_VALIDATING = ("validatingSince", "validatingRef", "validatingNodeId", "validatingBy", "validatingBootId")
+
+
+def _mark_validating(user_key: str, project_id: str, attachment_id: str, now: float, *,
+                     ref: str | None = None, node_id: str | None = None, by: str = agents_node_work.BY_ROW) -> None:
     """Set the in-flight guard on the plan's record as the dataflow holds it
     now, under its spec lock, as every writer of a node's source does: a pick
     that moved the plan's ledger since this validation read it keeps its
-    move. A validation already running refuses this one (409)."""
+    move. The guard names the node and who runs it, and the start it runs in,
+    so the listing names a row's Solve while it runs (``validating``). A
+    validation already running refuses this one (409), and so does a build
+    running on the plan for a row's Solve."""
     with projects_storage.spec_write_lock(user_key, project_id):
         spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
         record = agents_spec_reads._record_or_404(spec, attachment_id)
         session = record.get("builderSession") or {}
-        since = float(session.get("validatingSince") or 0)
-        if since and now - since < agents_budgets.VALIDATE_STALE_SECONDS:
+        if by == agents_node_work.BY_ROW and agents_node_work.build_running(session):
+            raise AgentServiceError(agents_node_work.BUILD_RUNNING, 409)
+        if agents_node_work.validation_running(session):
             raise AgentServiceError("a validation is already running for this attachment", 409)
         session["validatingSince"] = now
+        session["validatingRef"] = ref
+        session["validatingNodeId"] = node_id
+        session["validatingBy"] = by
+        session["validatingBootId"] = agents_node_work.this_start()
         record["builderSession"] = session
         dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._agent_actor(user_key, spec, attachment_id, "validate"))
 
@@ -181,13 +211,15 @@ def _validate_events(
     home_session_id: str | None = None,
     acting_user=None,
     room_asker: agents_room.Asker | None = None,
+    by: str = agents_node_work.BY_ROW,
 ):
     """The validate-node body over the ONE verified-content loop (dev/115):
     the loop streams its rounds live; this body owns the framing turns, the
     change that lands with its validation block, the per-node ledger, and the
     finally that clears the in-flight guard on every exit, disconnect
     included. Its agent is at work in the dataflow's room until the node's
-    state is settled, before ``done`` (``in_the_room``)."""
+    state is settled, before ``done`` (``in_the_room``). *by* is who runs it,
+    which the ledger keeps for a node left waiting for its source."""
     node_id = node.get("id")
     execution_id = uuid.uuid4().hex
     label = (node.get("goal") or node_id)[:60]
@@ -253,7 +285,7 @@ def _validate_events(
                 done["verdict"] = "fail"
                 _say_it_failed(user_key, project_id, attachment_id, session_id, home_attachment_id, home_session_id,
                                spec, node, label, outcome, rounds_trace)
-            done["builderSession"] = _settle_node_state(user_key, project_id, attachment_id, ref, done["verdict"])
+            done["builderSession"] = _settle_node_state(user_key, project_id, attachment_id, ref, done["verdict"], by=by)
         yield "done", done
     finally:
         # Disconnect-safe: the in-flight guard never wedges the attachment.
@@ -453,11 +485,15 @@ def _say_it_failed(user_key, project_id, attachment_id, session_id, home_attachm
         )
 
 
-def _settle_node_state(user_key, project_id, attachment_id, ref, verdict: str) -> dict:
+def _settle_node_state(user_key, project_id, attachment_id, ref, verdict: str, *,
+                       by: str = agents_node_work.BY_ROW) -> dict:
     """The per-node ledger: validated / failed / waiting for its source;
     infrastructure untouched. Written on the plan's record as the dataflow
     holds it now, under its spec lock, so a pick that landed meanwhile keeps
-    its move. Returns the builder session."""
+    its move. A node left waiting for its source keeps who left it so
+    (``sourceWaitBy``: *by*, the build's mode or ``node`` for a row's Solve),
+    which says how the plan goes on after the pick. Returns the builder
+    session."""
     with projects_storage.spec_write_lock(user_key, project_id):
         fresh = agents_spec_reads._live_spec_or_404(user_key, project_id)
         fresh_record = agents_spec_reads._record_or_404(fresh, attachment_id)
@@ -478,7 +514,12 @@ def _settle_node_state(user_key, project_id, attachment_id, ref, verdict: str) -
                 # run builds it.
                 node_id = (fresh_session.get("nodeIds") or {}).get(ref)
                 fresh_session["nodeStates"][ref] = plan_wait_state(fresh, node_id, user_key)
-        fresh_session.pop("validatingSince", None)
+            if fresh_session["nodeStates"].get(ref) in SOURCE_WAITS:
+                fresh_session.setdefault("sourceWaitBy", {})[ref] = by
+            elif verdict != "infrastructure":
+                (fresh_session.get("sourceWaitBy") or {}).pop(ref, None)
+        for key in _VALIDATING:
+            fresh_session.pop(key, None)
         fresh_record["builderSession"] = fresh_session
         dataflow_docs.write(user_key, project_id, fresh, agents_spec_reads._agent_actor(user_key, fresh, attachment_id, "validate"))
     return fresh_session
@@ -491,7 +532,8 @@ def _clear_validating_guard(user_key, project_id, attachment_id) -> None:
         cleanup_spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
         cleanup_record = agents_spec_reads._record_or_404(cleanup_spec, attachment_id)
         cleanup_session = cleanup_record.get("builderSession") or {}
-        if cleanup_session.pop("validatingSince", None) is not None:
+        popped = [cleanup_session.pop(key, None) for key in _VALIDATING]
+        if any(value is not None for value in popped):
             cleanup_record["builderSession"] = cleanup_session
             dataflow_docs.write(
                 user_key, project_id, cleanup_spec,
