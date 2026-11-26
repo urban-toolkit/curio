@@ -1788,6 +1788,10 @@ class TestSolveNode:
         assert ctx["calls"], "the loop asked for a corrected document"
         assert ctx["payloads"] == []  # never the sandbox: it is a document
         assert done["verdict"] == "not-executable"  # validated, not executed
+        # A round failed, so every attempt, with the code it ran, stays in the chat.
+        turns = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/session",
+                           headers=_auth(token)).get_json()["turns"]
+        assert [p for p in turns[-1].get("content") or [] if p.get("type") == "solveAttempts"], turns[-1]
 
     def test_an_empty_charts_document_that_validates_is_written_to_the_node(self, client, user_and_token, tmp_curio,
                                                                              monkeypatch):

@@ -238,9 +238,10 @@ def _solved_node(
                   "attempts": attempts, "evidence": outcome["evidence"],
                   # dev/127: which bound ended the loop, for the row's notice.
                   "stoppedBy": outcome.get("stoppedBy")}
-    # A chart's or a map's document its grammar validated: nothing failed, so
-    # its trail says so and it has no attempts to fix.
+    # A chart's or a map's document its grammar validated: its trail says so,
+    # and when no round failed it has no attempts to fix.
     validated = labels.document_validated(verdict, outcome["evidence"])
+    nothing_failed = validated and all(a.get("verdict") == "not-executable" for a in attempts)
     trail_lines = _trail_lines(attempts, validated=validated)
     text, card_kind, parts = _conclude(
         user_key, project_id, attachment_id, session_id, spec, node, label, had_content,
@@ -261,7 +262,7 @@ def _solved_node(
                  f"round{'s' if rounds != 1 else ''}",
         "lines": trail_lines[:10],
     }
-    if verdict != "pass" and attempts and not validated:
+    if verdict != "pass" and attempts and not nothing_failed:
         # dev/127: the trail itself, with the code each attempt ran — in THIS
         # chat, durably, not only in the transient row above.
         trail_part = agents_rounds._solve_attempts_part(
