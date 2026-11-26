@@ -120,7 +120,8 @@ def test_import_export_publish_and_add_keep_a_packages_skills(tmp_curio, tmp_pat
     ({"skills/street-trees/SKILL.md": SKILL.replace(
         "description: Use this skill when a node reads a city's street trees.\n", "")},
      "skills/street-trees/SKILL.md: it gives no description"),
-    ({"skills/street-trees/skill.md": SKILL}, "skills/street-trees holds no SKILL.md"),
+    ({"skills/street-trees/skill.md": SKILL},
+     "skills/street-trees holds skill.md, where a skill's file is named SKILL.md"),
     ({"skills/README.md": "Our skills.\n"}, "skills/README.md is no skill's folder"),
 ], ids=["name", "field", "description", "file-name", "loose-file"])
 def test_a_package_whose_skills_break_the_format_is_refused_and_leaves_nothing(
