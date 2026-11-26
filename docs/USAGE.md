@@ -2612,7 +2612,7 @@ most of all, are written around knowing what the dataflow is for. It is saved
 with the dataflow, and every agent's chat shows the same goal. When the goal is
 empty, a plan the Dataflow Builder lands fills it with the plan's goal, and the
 plan's card says *Goal set to* with it. The plan's **Undo** takes that goal
-back unless someone changed it since, and leaves any other goal as it is.
+back while it still reads the plan's goal, and leaves any other goal as it is.
 
 ### What an agent may reach
 
