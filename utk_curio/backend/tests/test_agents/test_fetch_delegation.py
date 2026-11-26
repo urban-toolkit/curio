@@ -29,7 +29,7 @@ from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.infrastructure import providers
 from utk_curio.backend.tests._support.agent_routes import _auth
 from utk_curio.backend.tests.test_agents import test_routes_turns as routes_turns
-from utk_curio.backend.tests.test_agents.test_dataset_discovery_routes import URL, _Harness
+from utk_curio.backend.tests.test_agents.test_dataset_discovery_routes import URL, _Harness, _sse_events
 
 DATA_OBSERVATION = {
     "status": "verified", "httpStatus": 200, "contentType": "application/geo+json",
@@ -654,6 +654,81 @@ class TestAPlanWaitsAsItsSourceDoes:
         assert len(h.dl_calls) == tried + 1
         assert f'curio_data_path("{dataset_id}")' in h.node_content(h.load)
 
+    def _downloading(self, client, user, token, monkeypatch):
+        """A plan whose loader Build & validate left waiting for its source,
+        whose candidates are a row Curio downloads, and the dataset that
+        download lands as. Returns ``(harness, dataset_id)``."""
+        dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="wards.csv")
+        fake = _FakeDiscovery(started={"jobId": "job-1", "status": "queued"}, job={"status": "running"})
+        roster = packages_roster._LazyRoster
+        monkeypatch.setattr(packages_roster, "_LazyRoster", lambda: roster(dict(ROSTER)))
+        monkeypatch.setattr(acquire, "_discovery_service", lambda: fake)
+        monkeypatch.setattr(acquire, "_DISCOVERY_APPLY_WAIT_S", 0)
+        loader = f'import pandas as pd\nreturn pd.read_csv(curio_data_path("{dataset_id}"))'
+        h = _Harness(client, user, token, monkeypatch, discover_replies=[DISCOVERY_CANDIDATES],
+                     dl_replies=[INVENTED] * 3 + [loader])
+        h.simulate("auto")
+        return h, dataset_id
+
+    def test_a_download_picked_for_a_waiting_loader_points_at_the_builders_build(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The loader waits in a plan whose Build & validate paused on it, so
+        its plan builds it, not a Solve of the node. Nothing settles the
+        download's landing by itself: the pick's answer and the Source
+        recorded turn, in the Finder's chat and in the Dataflow Builder's, say
+        to press Resume in the Dataflow Builder's chat once it lands, and
+        never ask for a Solve of the node. On main they said "Solve the node
+        once it lands", and that Solve built the loader outside its plan; on
+        04d7e8c03f they said the Dataflow Builder's Build & validate builds the
+        loader once it lands, which no build did by itself."""
+        user, token = user_and_token
+        h, _dataset_id = self._downloading(client, user, token, monkeypatch)
+        picked = h.select(URL)
+        delegated = picked.get("delegated") or {}
+        assert delegated.get("status") == "acquiring", picked
+        for said in (delegated.get("reason") or "", *[
+            (h.session_turns(chat)[-1].get("text") or "") for chat in (h.finder_attachment_id(), h.att)
+        ]):
+            assert "Solve the node" not in said, said
+            assert "once it lands, press Resume in the Dataflow Builder's chat to build the loader" in said, said
+
+    def test_a_loader_solve_this_node_built_after_its_download_is_not_built_again(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """Once the download lands, Solve this node, from the loader's own Node
+        Builder, builds the loader outside the plan that waited for it. Its
+        code passed its check, so it counts as built in that plan: the row
+        reads Validated, and the next Build & validate records it and builds
+        nothing again. On main the row went back to Placed, and the next Build
+        & validate built the loader a second time."""
+        user, token = user_and_token
+        h, dataset_id = self._downloading(client, user, token, monkeypatch)
+        h.select(URL)
+        from utk_curio.backend.app.datasets.repositories import user_store
+
+        monkeypatch.setattr(
+            user_store.UserDatasetRepository, "discovery_resource_index",
+            lambda self: {(CHICAGO, "cauq-8yn6"): dataset_id},
+        )
+        r = client.post(
+            f"/api/agents/projects/{h.pid}/attachments/{h.node_builder_attachment_id()}/solve-node",
+            json={"nodeId": h.load}, headers=_auth(token),
+        )
+        assert r.status_code == 200, r.get_data(as_text=True)
+        done = _sse_events(r)[-1][1]
+        assert done.get("verdict") == "pass", done
+        assert f'curio_data_path("{dataset_id}")' in h.node_content(h.load)
+        built, row = len(h.dl_calls), _plan_session(h)["nodeStates"]["load"]
+        done = h.simulate("auto")[-1][1]
+        assert len(h.dl_calls) == built, (
+            f"Build & validate built the loader again: {len(h.dl_calls) - built} more call(s) "
+            f"for its code, after Solve this node left its row {row!r}"
+        )
+        assert row == "validated", row
+        assert done.get("status") == "completed", done
+        assert done["builderSession"]["nodeStates"]["load"] == "approved", done["builderSession"]
+
     def test_a_pick_waiting_for_its_install_says_so_and_the_install_puts_the_row_back(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
@@ -746,3 +821,197 @@ class TestAPlanWaitsAsItsSourceDoes:
         session = _plan_session(h)
         assert session["nodeStates"]["load"] == "created", session
         assert "pauseReason" not in session, session
+
+
+def _solve_this_node(h, attachment_id) -> dict:
+    """Solve this node on the loader, from the chat of *attachment_id*, to its
+    end: its done payload."""
+    r = h.client.post(
+        f"/api/agents/projects/{h.pid}/attachments/{attachment_id}/solve-node",
+        json={"nodeId": h.load}, headers=_auth(h.token),
+    )
+    assert r.status_code == 200, r.get_data(as_text=True)
+    return _sse_events(r)[-1][1]
+
+
+def _recorded_turns(h, attachment_id) -> list[str]:
+    """The Source recorded turns the chat of *attachment_id* holds for the
+    loader, which a chat that asked for its candidates is told."""
+    return [
+        turn.get("text") or "" for turn in h.session_turns(attachment_id)
+        if (turn.get("text") or "").startswith("Source recorded for Load boundaries")
+    ]
+
+
+class TestTheRecordSaysWhatComesNext:
+    """What comes after a pick is one sentence the server writes, the same in
+    the pick's Source recorded turns and on the Finder's record (``next``),
+    which a card the pick left open shows in every tab. A download says what
+    builds the loader once it lands, never a build nobody starts. Review of
+    #1635, B3."""
+
+    NEXT_ALONE = "It is downloading into the Data Catalog: Solve the node once it lands."
+
+    @pytest.fixture(autouse=True)
+    def _six_actions(self, monkeypatch):
+        monkeypatch.setattr(budgets, "SIMULATE_MAX_ACTIONS", 6)
+
+    def test_a_download_no_plan_waits_on_says_to_solve_the_node_once_it_lands(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The Dataflow Builder's Solve asked for the loader's candidates, and
+        no plan waits on the loader. The user picks a row Curio downloads, and
+        the download is still running: the record keeps what comes next, to
+        Solve the node once it lands, and the Finder's Source recorded turn
+        ends with the same words. On 04d7e8c03f the record kept no such words,
+        and the card said the loader is built from it once it lands, which
+        nothing did."""
+        user, token = user_and_token
+        fake = _FakeDiscovery(started={"jobId": "job-1", "status": "queued"}, job={"status": "running"})
+        h, finder_id = _discovery_harness(client, user, token, monkeypatch, fake)
+        body = _select(h, finder_id, [{"lane": "external", "key": URL}]).get_json()
+        assert body["status"] == dr.STATE_AWAITING_INSTALL, body
+        record = dr.source_record(h.spec(), h.load) or {}
+        assert record.get("next") == self.NEXT_ALONE, record
+        said = h.session_turns(finder_id)[-1].get("text") or ""
+        assert said.endswith(self.NEXT_ALONE), said
+
+    def test_a_download_a_paused_plan_waits_on_says_to_press_resume_once_it_lands(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """Build & validate paused on the loader, and the user picks a row
+        Curio downloads. Nothing settles the download's landing by itself, so
+        the pick's answer and the record say to press Resume in the Dataflow
+        Builder's chat once it lands. On 04d7e8c03f they said the Dataflow
+        Builder's Build & validate builds the loader once it lands, which no
+        build did: the paused plan waited for a Resume."""
+        user, token = user_and_token
+        h, _dataset_id = TestAPlanWaitsAsItsSourceDoes()._downloading(client, user, token, monkeypatch)
+        picked = h.select(URL)
+        delegated = picked.get("delegated") or {}
+        assert delegated.get("status") == "acquiring", picked
+        press = "once it lands, press Resume in the Dataflow Builder's chat to build the loader"
+        assert press in (delegated.get("reason") or ""), delegated
+        record = dr.source_record(h.spec(), h.load) or {}
+        assert press in (record.get("next") or ""), record
+
+
+class TestTheAskingChatHearsWhatHappens:
+    """The Source recorded turn in the chat that asked for the candidates ends
+    with what comes next, as the pick's outcome is: the node's builder
+    writing the loader, a portal file to import, or what the user must do.
+    Review of #1635, B8."""
+
+    def test_a_pick_that_starts_the_builder_says_it_writes_the_loader(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """Solve this node, from the loader's Node Builder, asked for the
+        candidates, and no plan waits on the loader. The pick of a row code
+        can fetch starts the Node Builder on it. The Node Builder's chat is
+        told that it is writing the loader, and never to Solve the node. On
+        04d7e8c03f it was told to Solve the node to build its loader, while the
+        Node Builder was already writing it."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        node_builder = h.node_builder_attachment_id()
+        assert _solve_this_node(h, node_builder).get("verdict") == "awaiting-source"
+        monkeypatch.setattr(
+            'utk_curio.backend.app.agents.application.verify.verify_external_source',
+            lambda url, **k: dict(API_OBSERVATION),
+        )
+        started: list = []
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.application.solve.node_solve.solve_node_stream",
+            lambda *a, **k: started.append(k.get("node_id")),
+        )
+        body = _select(h, h.finder_attachment_id(), [{"lane": "external", "key": URL}]).get_json()
+        assert (body.get("delegated") or {}).get("status") == "delegating", body
+        assert started == [h.load], started
+        said = _recorded_turns(h, node_builder)
+        assert len(said) == 1, [t.get("text") for t in h.session_turns(node_builder)]
+        assert "is writing the loader from this source" in said[0], said[0]
+        assert "Solve the node to build" not in said[0], said[0]
+
+    def test_a_portal_pick_a_plan_waits_on_says_to_import_it(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """A row's Solve of the loader asked for the candidates, and the user
+        picks a portal row, whose file the user downloads and imports from the
+        card. The Dataflow Builder's chat is told it is a portal download, and
+        never to Solve the node. On 04d7e8c03f it was told to Solve the node to
+        build its loader, which no Solve could do before the import."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        h.validate("load")
+        monkeypatch.setattr(
+            'utk_curio.backend.app.agents.application.verify.verify_external_source',
+            lambda url, **k: dict(PORTAL_OBSERVATION),
+        )
+        body = _select(h, h.finder_attachment_id(), [{"lane": "external", "key": URL}]).get_json()
+        assert (body.get("delegated") or {}).get("status") == "manual-download", body
+        said = _recorded_turns(h, h.att)
+        assert len(said) == 1, [t.get("text") for t in h.session_turns(h.att)]
+        assert "It is a portal download" in said[0], said[0]
+        assert "Solve the node to build" not in said[0], said[0]
+
+
+class TestSolveThisNodeSaysWhatItsSourceWaitsOn:
+    """Solve this node on a loader whose source waits says what the source
+    waits on: the user's pick, a download into the Data Catalog, or an
+    install. A pick the user already made is never asked for again. Review of
+    #1635, B7."""
+
+    def test_a_loader_whose_pick_downloads_says_it_is_downloading(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """Solve this node, from the loader's Node Builder, asks for the
+        candidates, and the user picks a row Curio downloads. The download is
+        still running when Solve this node runs again: it waits for its
+        source, says the source is downloading into the Data Catalog, never
+        asks for a pick, and its answer names what the source waits on
+        (``sourceWait``). On 04d7e8c03f it asked the user to pick one with Use
+        this source on the card, a pick the user had already made."""
+        user, token = user_and_token
+        fake = _FakeDiscovery(started={"jobId": "job-1", "status": "queued"}, job={"status": "running"})
+        roster = packages_roster._LazyRoster
+        monkeypatch.setattr(packages_roster, "_LazyRoster", lambda: roster(dict(ROSTER)))
+        monkeypatch.setattr(acquire, "_discovery_service", lambda: fake)
+        monkeypatch.setattr(acquire, "_DISCOVERY_APPLY_WAIT_S", 0)
+        h = _Harness(client, user, token, monkeypatch, discover_replies=[DISCOVERY_CANDIDATES])
+        node_builder = h.node_builder_attachment_id()
+        assert _solve_this_node(h, node_builder).get("verdict") == "awaiting-source"
+        picked = _select(h, h.finder_attachment_id(), [{"lane": "external", "key": URL}]).get_json()
+        assert picked["status"] == dr.STATE_AWAITING_INSTALL and picked["picks"][0].get("acquiring"), picked
+        done = _solve_this_node(h, node_builder)
+        assert done.get("verdict") == "awaiting-source", done
+        said = h.session_turns(node_builder)[-1].get("text") or ""
+        assert "is downloading into the Data Catalog" in said, said
+        assert "pick one" not in said, said
+        assert done.get("sourceWait") == "download", done
+
+    def test_a_plans_solve_on_a_loader_whose_pick_downloads_says_it_is_downloading(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The plan's Solve asks for the loader's candidates, and the user
+        picks a row Curio downloads. The download is still running when the
+        plan is Solved again: the loader stays pending, and its reason says
+        what Solve this node says, that the source is downloading into the
+        Data Catalog, never that it awaits the user's selection. On 00b5cfca04
+        its reason said "awaiting your dataset selection", of a pick the user
+        had already made."""
+        user, token = user_and_token
+        fake = _FakeDiscovery(started={"jobId": "job-1", "status": "queued"}, job={"status": "running"})
+        roster = packages_roster._LazyRoster
+        monkeypatch.setattr(packages_roster, "_LazyRoster", lambda: roster(dict(ROSTER)))
+        monkeypatch.setattr(acquire, "_discovery_service", lambda: fake)
+        monkeypatch.setattr(acquire, "_DISCOVERY_APPLY_WAIT_S", 0)
+        h = _Harness(client, user, token, monkeypatch, discover_replies=[DISCOVERY_CANDIDATES])
+        first = h.solve()["results"][h.load]
+        assert first["status"] == "pending", first
+        assert first["reason"].startswith("awaiting your dataset selection"), first
+        picked = _select(h, h.finder_attachment_id(), [{"lane": "external", "key": URL}]).get_json()
+        assert picked["status"] == dr.STATE_AWAITING_INSTALL and picked["picks"][0].get("acquiring"), picked
+        again = h.solve()["results"][h.load]
+        assert again["status"] == "pending", again
+        assert "is downloading into the Data Catalog" in again["reason"], again
+        assert "awaiting your dataset selection" not in again["reason"], again

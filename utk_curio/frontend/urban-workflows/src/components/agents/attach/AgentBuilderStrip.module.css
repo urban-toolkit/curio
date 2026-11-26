@@ -55,8 +55,8 @@
   color: var(--curio-danger-text);
 }
 
-/* Whose turn it is: the nodes waiting for the user, in the warning tone the
-   rows' "needs you" has. */
+/* Whose turn it is: the nodes waiting for the user, in the warning tone their
+   rows' "Needs a source" has. */
 .lineNeedsYou {
   flex: none;
   font-weight: 600;
@@ -263,17 +263,20 @@
 }
 
 /* dev/131: a node that depends on the USER is visualized as such: the owner's
-   "the nodes that depend on user inputs should be better visualized". */
-.nodeNeedsUser {
-  padding-left: 6px;
-  border-left: 2px solid var(--curio-warning-text);
+   "the nodes that depend on user inputs should be better visualized". Its row
+   has the waiting dot the rail and the badges show, before its name, and one
+   label, Needs a source, in the warning tone. */
+.waitingDot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--curio-warning-text);
 }
 
-.needsYou {
+.needsSource {
   font-size: 0.66rem;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   color: var(--curio-warning-text);
   white-space: nowrap;
 }

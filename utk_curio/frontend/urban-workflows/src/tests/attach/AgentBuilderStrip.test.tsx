@@ -599,7 +599,7 @@ describe("AgentBuilderStrip — dev/126 nodes awaiting a dataset selection", () 
         attachment={attachment({ phase: "applied", nodeRuns: { a: "pending", b: "pending" } })}
         onSolve={jest.fn()}
         solveErrors={{
-          a: "awaiting your dataset selection: 3 candidate(s) awaiting your selection",
+          a: "awaiting your dataset selection: 3 candidates awaiting your selection",
         }}
         solveRemedies={{ a: remedy("att-a"), b: remedy("att-b") }}
         onOpenChat={onOpenChat}
@@ -641,7 +641,7 @@ describe("AgentBuilderStrip — dev/126 nodes awaiting a dataset selection", () 
       <AgentBuilderStrip
         attachment={attachment({ phase: "applied", nodeRuns: { a: "pending" } })}
         onSolve={jest.fn()}
-        solveErrors={{ a: "awaiting your dataset selection: 1 candidate(s)" }}
+        solveErrors={{ a: "awaiting your dataset selection: 1 candidate awaiting your selection" }}
         solveRemedies={{ a: remedy("att-a") }}
       />,
     );
@@ -691,7 +691,7 @@ describe("AgentBuilderStrip — dev/131 the session, and nodes that depend on yo
   const waiting = (over: Partial<{ nodeId: string; kind: string; reason: string; attachmentId: string }> = {}) => ({
     nodeId: "a",
     kind: "dataset-selection",
-    reason: "awaiting your dataset selection: 3 candidate(s)",
+    reason: "awaiting your dataset selection: 3 candidates awaiting your selection",
     attachmentId: "att-df",
     ...over,
   });
@@ -731,8 +731,13 @@ describe("AgentBuilderStrip — dev/131 the session, and nodes that depend on yo
       />,
     );
     openMore();
-    expect(screen.getAllByText("needs you")).toHaveLength(1);
-    expect(screen.getByText("waiting upstream")).toBeInTheDocument();
+    // One label each: the node that waits for its source reads Needs a
+    // source, as the plan card's row does, and the one that waits upstream
+    // says only that. Neither says its status beside it.
+    expect(screen.getAllByText("Needs a source")).toHaveLength(1);
+    expect(screen.getAllByText("waiting upstream")).toHaveLength(1);
+    expect(screen.queryByText("needs you")).toBeNull();
+    expect(screen.queryByText("pending")).toBeNull();
   });
 
   it("offers Solve on each unresolved pill, and disables it for a node that needs the user", async () => {
@@ -855,6 +860,64 @@ describe("AgentBuilderStrip while a build runs", () => {
     expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^(Solve|Retry)\b/ })).toBeNull();
   });
+
+  it("a build another tab runs, which the listing names, holds the line the same way", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={{
+          ...withLandedPlan({ a: "created", b: "created" }, { simulateMode: "auto", simulatingSince: Date.now() / 1000 }),
+          buildRunning: "auto",
+        }}
+        onSolve={jest.fn()}
+        onSimulate={jest.fn()}
+        onCancelSimulate={jest.fn()}
+      />,
+    );
+    expect(screen.getByText(/Building… · \d+:\d\d/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^(Solve|Retry)\b/ })).toBeNull();
+  });
+
+  it("a build the record names that the server does not say runs holds nothing", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={withLandedPlan(
+          { a: "created", b: "created" },
+          { simulateMode: "auto", simulatingSince: Date.now() / 1000 - 16 * 60 },
+        )}
+        onSolve={jest.fn()}
+        onSimulate={jest.fn()}
+        onCancelSimulate={jest.fn()}
+      />,
+    );
+    expect(screen.queryByText(/Building…/)).toBeNull();
+    expect(screen.getByRole("button", { name: /^Solve$/ })).toBeEnabled();
+  });
+});
+
+// The listing says which nodes the plan's agent waits on for the user: those
+// whose candidates its chat holds, as Build & validate paused on them.
+describe("AgentBuilderStrip counts who waits for you from the listing", () => {
+  it("the line says how many need you, and the more part marks them", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={{
+          ...withLandedPlan(
+            { a: "awaiting-source", b: "created" },
+            { pauseReason: { kind: "awaiting-source", message: "a needs a source", nodes: [{ ref: "a", nodeId: "na", attachmentId: "att-a" }] } },
+          ),
+          waitsForYou: ["na"],
+        }}
+        onSolve={jest.fn()}
+        onSimulate={jest.fn()}
+      />,
+    );
+    expect(screen.getByRole("group", { name: "Dataflow Builder" })).toHaveTextContent("1 needs you");
+    openMore();
+    // Its row reads Needs a source, once, and no "needs you" beside it.
+    expect(screen.getAllByText("Needs a source")).toHaveLength(1);
+    expect(screen.queryByText("needs you")).toBeNull();
+  });
 });
 
 describe("AgentBuilderStrip's batch Stop", () => {
@@ -965,7 +1028,7 @@ describe("AgentBuilderStrip names each node's own finder", () => {
         solveWaiting={[{
           nodeId: "a",
           kind: "dataset-selection",
-          reason: "awaiting your dataset selection: 2 candidate(s)",
+          reason: "awaiting your dataset selection: 2 candidates awaiting your selection",
           attachmentId: "att-my-finder",
         }]}
         onSolveNode={jest.fn()}
@@ -978,13 +1041,60 @@ describe("AgentBuilderStrip names each node's own finder", () => {
     expect(open).toHaveTextContent(/^Open My Finder$/);
     expect(open).toHaveAttribute(
       "data-tooltip",
-      "Opens this node's My Finder chat, where the candidates await your selection. Confirm one, then Solve again.",
+      "Opens this node's My Finder chat, where its candidates wait for you: pick one with Use this source.",
     );
     openMore();
     expect(screen.getByRole("button", { name: "Solve node a on its own" })).toHaveAttribute(
       "data-tooltip",
-      "This node is waiting for you to confirm a source: open its My Finder first",
+      "This node waits for you to pick its source on its card, with Use this source",
     );
     expect(screen.getByRole("group", { name: "My Orchestrator" })).not.toHaveTextContent(/Dataset Finder/);
+  });
+});
+
+// A plan row's Solve that runs on the server (the listing's `validating`), the
+// one a pick goes on with among them, is work on the plan's node: no build
+// starts over it.
+describe("AgentBuilderStrip while a row's Solve runs on the plan", () => {
+  it("Build & validate and Step wait for it, saying why", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={{ ...withLandedPlan({ a: "created", b: "created" }), validating: { ref: "a", nodeId: "na" } }}
+        onSolve={jest.fn()}
+        onSimulate={jest.fn()}
+      />,
+    );
+    openMore();
+    const build = screen.getByRole("button", { name: "Build & validate plan" });
+    expect(build).toBeDisabled();
+    expect(build).toHaveAttribute("data-tooltip", "A node of this plan is being solved: wait for its Solve to end");
+    expect(screen.getByRole("button", { name: "Step" })).toBeDisabled();
+  });
+});
+
+// A pause this line's build ended on says so until the plan goes on: a pick's
+// own continuation builds the plan from the provider, not from this line, and
+// the line no longer says the plan is paused once it does.
+describe("AgentBuilderStrip: a pause's line goes once the plan goes on", () => {
+  it("the Paused line goes once a build of the plan runs again, started elsewhere", async () => {
+    const onSimulate = jest.fn().mockResolvedValue({
+      status: "paused",
+      reason: { message: "a needs a source: pick one on its card in this chat" },
+    });
+    const props = {
+      attachment: withLandedPlan({ a: "created", b: "created" }),
+      onSolve: jest.fn(),
+      onSimulate,
+      onCancelSimulate: jest.fn(),
+    } as React.ComponentProps<typeof AgentBuilderStrip>;
+    const { rerender } = render(<AgentBuilderStrip {...props} />);
+    openMore();
+    fireEvent.click(screen.getByRole("button", { name: "Build & validate plan" }));
+    expect(await screen.findByText("Paused: a needs a source: pick one on its card in this chat")).toBeInTheDocument();
+    // The pick's continuation: a build of the plan from the provider.
+    rerender(<AgentBuilderStrip {...props} simulating="auto" />);
+    // It ends with every node built.
+    rerender(<AgentBuilderStrip {...props} attachment={withLandedPlan({ a: "approved", b: "approved" })} simulating={null} />);
+    expect(screen.queryByText(/^Paused:/)).toBeNull();
   });
 });

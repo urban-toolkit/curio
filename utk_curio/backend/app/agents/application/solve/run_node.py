@@ -27,13 +27,15 @@ from utk_curio.backend.app.collaboration import dataflow_docs
 
 def _validate_node_inline(
     user_key: str, project_id: str, attachment_id: str, config: ProviderConfig,
-    ref: str, exec_fn,
+    ref: str, exec_fn, *, by: str = "auto",
 ):
-    """The 67-7 validation loop, driven inline by the simulator — its
-    ``done`` payload is consumed (transformed into an ``action_result``),
-    everything else re-yields verbatim."""
+    """The 67-7 validation loop, driven inline by the simulator: its ``done``
+    payload is consumed (transformed into an ``action_result``), everything
+    else re-yields verbatim. *by* is the build's mode, ``auto`` or ``step``:
+    the build's own validation, which no build running on the plan holds
+    back."""
     yield from agents_validate.validate_node_stream(
-        user_key, project_id, attachment_id, config, ref=ref, exec_fn=exec_fn
+        user_key, project_id, attachment_id, config, ref=ref, exec_fn=exec_fn, by=by,
     )
 
 

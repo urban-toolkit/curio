@@ -1105,12 +1105,21 @@ class VerifiedRounds:
 
     def _awaiting_source(self, state: dict, *, rounds: int, after: str | None,
                          stopped_by: str | None) -> dict:
+        """The node waits for its source: for what the resolver's *state*
+        says it waits on (``wait``: the user's pick, a download into the Data
+        Catalog, or an install), which the evidence keeps (``sourceWait``)."""
         detail = str(state.get("detail") or "a source must be selected")
+        wait = str(state.get("wait") or "pick")
+        traced = {
+            "download": f"awaiting its download: {detail[:160]}",
+            "install": f"awaiting its install: {detail[:160]}",
+        }.get(wait, f"awaiting dataset selection: {detail[:160]}")
         return {
             "verdict": "awaiting-source",
             "evidence": {
                 "kind": "awaiting-selection",
                 "detail": detail[:2000],
+                "sourceWait": wait,
                 **({"after": after} if after is not None else {}),
                 **({"remedy": {
                     "kind": "dataset-selection",
@@ -1121,10 +1130,7 @@ class VerifiedRounds:
             "rounds": rounds,
             "candidate": "",
             "delegations": self.delegations,
-            "roundsTrace": (
-                [f"awaiting dataset selection — {detail[:160]}"] if stopped_by is None
-                else self.rounds_trace
-            ),
+            "roundsTrace": [traced] if stopped_by is None else self.rounds_trace,
             "attempts": [] if stopped_by is None else self.attempts,
             **({"stoppedBy": stopped_by} if stopped_by is not None else {}),
         }

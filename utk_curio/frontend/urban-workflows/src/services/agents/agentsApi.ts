@@ -224,15 +224,18 @@ export const agentsApi = {
 
   /** dev/126: record the user's confirmed dataset selection for the node this
    * Dataset Finder is attached to. The picks carry identifiers only — the
-   * server resolves them against the candidates it proposed. */
+   * server resolves them against the candidates it proposed: those of the
+   * card the pick was made on (*discoveryId*), which the server refuses once
+   * its Finder no longer asks for that card's pick. */
   recordDatasetSelection(
     projectId: string,
     attachmentId: string,
-    picks: AgentDatasetPick[]
+    picks: AgentDatasetPick[],
+    discoveryId?: string,
   ): Promise<AgentDatasetSelection> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/dataset-selection`,
-      { method: "POST", body: JSON.stringify({ picks }) }
+      { method: "POST", body: JSON.stringify(discoveryId ? { picks, discoveryId } : { picks }) }
     );
   },
 

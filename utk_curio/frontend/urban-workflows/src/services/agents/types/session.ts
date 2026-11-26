@@ -93,6 +93,10 @@ export interface AgentCardPart {
 export interface AgentDatasetCandidatesPart {
   type: "datasetCandidates";
   lanes: { external: AgentDatasetCandidateRow[]; catalog: AgentDatasetCandidateRow[] };
+  /** The card's own id: a node's Finder record names the card it offers now
+   * and the one the pick was made on, and a pick names its card. Absent on a
+   * card minted before cards had ids. */
+  discoveryId?: string;
 }
 
 /** A node's Dataset Finder candidates in the chat that asked for them (the
@@ -106,6 +110,8 @@ export interface AgentSourcePickPart {
   nodeLabel: string;
   /** The candidates, as the Finder's own card holds them. */
   lanes: AgentDatasetCandidatesPart["lanes"];
+  /** The id of the Finder's card this one is the same as. */
+  discoveryId?: string;
 }
 
 /** dev/72: a delegated task's compact entry on the PARENT's turn — the icon

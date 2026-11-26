@@ -19,19 +19,45 @@ from utk_curio.backend.app.agents.infrastructure import agent_jobs
 from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
+from utk_curio.backend.app.agents.application import dataset_resolution as agents_dataset_resolution
 from utk_curio.backend.app.agents.application import in_the_room as agents_room
 from utk_curio.backend.app.agents.application import lifecycle as agents_lifecycle
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
+from utk_curio.backend.app.agents.application.solve import node_work as agents_node_work
 from utk_curio.backend.app.agents.application.solve import rounds as agents_rounds
 from utk_curio.backend.app.agents.application.solve import session as agents_session
+from utk_curio.backend.app.agents.application.solve import simulation as agents_simulation
 from utk_curio.backend.app.agents.application.turns import delegates as agents_delegates
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import policy as agents_policy
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
+from utk_curio.backend.app.execution import node_names
 from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.collaboration import agent_peers
 from utk_curio.backend.app.collaboration import dataflow_docs, owner_guard
+
+#: The most characters of its goal a node with no title is named by.
+GOAL_NAME_CHARS = 60
+
+
+def solve_label(node: dict) -> str:
+    """What a Solve's turns call *node*: its title, whole, as its header on
+    the canvas shows it. A node with no title is named by its goal, cut on a
+    word with an ellipsis when it is longer than :data:`GOAL_NAME_CHARS` (a
+    first word longer than that stands whole), and one with no goal by its
+    id."""
+    title = node_names.saved_node_title(node)
+    if title:
+        return title
+    goal = " ".join(str(node.get("goal") or "").split())
+    if not goal:
+        return str(node.get("id") or "")
+    if len(goal) <= GOAL_NAME_CHARS:
+        return goal
+    head = goal[:GOAL_NAME_CHARS + 1]
+    cut = head.rsplit(" ", 1)[0] if " " in head else goal.split(" ", 1)[0]
+    return goal if cut == goal else cut.rstrip(" ,;:-–—") + "…"
 
 
 def solve_node_stream(
@@ -58,7 +84,9 @@ def solve_node_stream(
     ``solve_node_started``, the loop's ``generation_round`` /
     ``node_executed`` / ``round_verdict``, a ``change`` when corrected code
     lands, and ``done {verdict, rounds, attempts, unchanged?, written?,
-    changeId?, changeAttachmentId?}``.
+    changeId?, changeAttachmentId?, sourceWait?}``. It does not start while
+    a build runs on a plan that holds the node, or while a plan row's Solve
+    runs on it (409, ``node_work``).
     """
     # Only the process that owns the dataflow runs its Solves, refused before
     # anything is read or repaired.
@@ -78,6 +106,13 @@ def solve_node_stream(
     node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
     if node is None:
         raise AgentServiceError(f"node {node_id!r} not found in the saved spec", 404)
+    # Work on the node holds this Solve back (``node_work``): a build of a
+    # plan that holds the node would build it beside this one, and so would a
+    # row's Solve of it.
+    if agents_node_work.build_over(spec, node_id):
+        raise AgentServiceError(agents_node_work.BUILD_RUNNING, 409)
+    if agents_node_work.row_solve_over(spec, node_id):
+        raise AgentServiceError(agents_node_work.NODE_SOLVING, 409)
     manifest = agents_catalog._resolve_definition(user_key, record.get("coord", ""))
     resolution = delegation.resolve(
         user_key, project_id, manifest, "node.content.generate"
@@ -185,7 +220,7 @@ def _solved_node(
     """The per-node Solve body (dev/115 A2) over the ONE verified loop; returns
     its done payload, with the changes it landed (``landed``)."""
     node_id = node.get("id")
-    label = (node.get("goal") or node_id)[:60]
+    label = solve_label(node)
     started = time.monotonic()
     had_content = bool(str(node.get("content") or "").strip())
     yield "solve_node_started", {
@@ -223,6 +258,15 @@ def _solved_node(
         user_key, project_id, attachment_id, session_id, spec, node, label, had_content,
         grounding_base, outcome, done, asker=acting_user, room_asker=room_asker, peer=peer,
     )
+    if _built(done):
+        # Built outside a plan that holds the node: the plan counts it as
+        # built, so its Build & validate never builds it again.
+        agents_simulation.built_outside_the_plan(
+            user_key, project_id, node_id,
+            change=({"changeId": done["changeId"], "attachmentId": done.get("changeAttachmentId") or attachment_id}
+                    if done.get("changeId") else None),
+            actor=agents_spec_reads._agent_actor(user_key, spec, attachment_id, "solve", acting_user),
+        )
     card = {
         "type": "card", "kind": card_kind,
         "title": f"Solve · {verdict.upper()} after {rounds} round{'s' if rounds != 1 else ''}",
@@ -243,6 +287,15 @@ def _solved_node(
         _append_solve_turn(user_key, project_id, attachment_id, session_id, coord, config, execution_id,
                            started, text, card_kind, card, parts, outcome, verdict)
     return done
+
+
+def _built(done: dict) -> bool:
+    """Whether the per-node Solve left code in the node that passed its check,
+    or a document that validated: the node's current code, kept, or what the
+    Solve wrote into it, directly or as the agent's change."""
+    return done.get("verdict") in ("pass", "not-executable") and bool(
+        done.get("unchanged") or done.get("written") or done.get("changeId")
+    )
 
 
 def _not_executable_outcome(node: dict, label: str, kind: str) -> dict:
@@ -493,6 +546,9 @@ def _conclude(user_key, project_id, attachment_id, session_id, spec, node, label
         unrun = "The sandbox cannot run this kind, so it was not executed: Play the dataflow to see it render."
         kept = rounds == 1 and attempts and attempts[0].get("source") == "current content"
         if kept:
+            # The node's own document, valid as it is, stays: it counts as
+            # built, as code that ran as it is does.
+            done["unchanged"] = True
             text = f"Validated {label!r}: its {document} document is valid, so nothing was changed. {unrun}"
         elif not had_content:
             written, held_by = _write_empty_node_held(
@@ -531,23 +587,13 @@ def _conclude(user_key, project_id, attachment_id, session_id, spec, node, label
             )
         card_kind = "result"
     elif verdict == "awaiting-source":
-        # dev/126: the source is with the user. Nothing was generated or
-        # written; the node's own agent that finds datasets holds the candidates.
-        evidence = outcome.get("evidence") or {}
-        remedy_payload = evidence.get("remedy")
-        if isinstance(remedy_payload, dict):
-            done["remedy"] = remedy_payload
-        finder = (
-            agents_spec_reads._attachment_agent_name(
-                user_key, project_id, (remedy_payload or {}).get("attachmentId"),
-            )
-            or agents_spec_reads._shipped_name_declaring("dataset.discover")
-        )
-        text = (
-            f"Awaiting a source for {label!r}: {evidence.get('detail') or 'a dataset must be selected'}. "
-            f"Open {finder} on this node, select the source and confirm, then Solve "
-            "again. Nothing was generated or written."
-        )
+        # dev/126: the source is not here yet. Nothing was generated or
+        # written. It waits for what the node's Dataset Finder's record says
+        # (``sourceWait``): the user's pick on the card its Finder's chat
+        # holds, and this chat too when its Solve asked for the candidates, a
+        # download into the Data Catalog, or the install of the dataset
+        # picked. A pick already made is never asked for again.
+        text = _awaiting_source_text(user_key, project_id, attachment_id, node_id, label, outcome, done)
         card_kind = "result"
     elif (outcome.get("evidence") or {}).get("upstreamEmpty"):
         text = agents_grounding._then_sentence(
@@ -558,6 +604,56 @@ def _conclude(user_key, project_id, attachment_id, session_id, spec, node, label
     else:
         text, card_kind = _not_fixed(label, outcome, done), "error"
     return text, card_kind, parts
+
+
+def _awaiting_source_text(user_key, project_id, attachment_id, node_id, label, outcome: dict,
+                          done: dict) -> str:
+    """What the per-node Solve says while the node's source is not here yet: the
+    wait its Dataset Finder's record names, a download into the Data Catalog,
+    the install of the dataset picked, or the user's pick, on the card above
+    when this chat asked for the candidates. Writes the wait (``sourceWait``)
+    and, when the outcome carries one, the remedy into *done*."""
+    evidence = outcome.get("evidence") or {}
+    remedy_payload = evidence.get("remedy")
+    if isinstance(remedy_payload, dict):
+        done["remedy"] = remedy_payload
+    record = agents_dataset_resolution.source_record(
+        dataflow_docs.read(user_key, project_id), node_id, user_key=user_key,
+    ) or {}
+    wait = (
+        evidence.get("sourceWait")
+        or agents_dataset_resolution.source_wait(record)
+        or agents_dataset_resolution.WAITS_FOR_PICK
+    )
+    done["sourceWait"] = wait
+    picked = agents_dataset_resolution._picks_detail(record) or "the source picked for it"
+    if wait == agents_dataset_resolution.WAITS_FOR_DOWNLOAD:
+        text = (
+            f"Awaiting the source of {label!r}: {picked} is downloading into the Data Catalog. "
+            "Solve this node again once it lands. Nothing was generated or written."
+        )
+    elif wait == agents_dataset_resolution.WAITS_FOR_INSTALL:
+        text = (
+            f"Awaiting the source of {label!r}: {picked}, picked for it, is not installed yet. "
+            "Install it from the Data Catalog, then Solve this node again. Nothing was generated or written."
+        )
+    else:
+        finder = (
+            agents_spec_reads._attachment_agent_name(
+                user_key, project_id, (remedy_payload or {}).get("attachmentId"),
+            )
+            or agents_spec_reads._shipped_name_declaring("dataset.discover")
+        )
+        where = (
+            "Its candidates are on the card above: pick one with Use this source, and the loader is built from it."
+            if attachment_id in agents_dataset_resolution.askers_of(record) else
+            f"Open {finder} on this node and pick one with Use this source; the loader is built from it."
+        )
+        text = (
+            f"Awaiting a source for {label!r}: {evidence.get('detail') or 'a dataset must be selected'}. "
+            f"{where} Nothing was generated or written."
+        )
+    return text
 
 
 def _not_fixed(label: str, outcome: dict, done: dict) -> str:

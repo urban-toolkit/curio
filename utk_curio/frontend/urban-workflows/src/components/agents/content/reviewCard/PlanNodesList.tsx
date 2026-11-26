@@ -33,6 +33,7 @@ export const PlanNodesList: React.FC<{
           state={row.state}
           solvable={row.solvable}
           solveBlocker={row.solveBlocker}
+          solving={row.solving}
           extras={planNodeExtras(part, node)}
           onSolve={onSolvePlanNode ? (onLine) => onSolvePlanNode(node.ref, onLine) : undefined}
           onRun={onRunPlanNode ? (onLine) => onRunPlanNode(node.ref, onLine) : undefined}

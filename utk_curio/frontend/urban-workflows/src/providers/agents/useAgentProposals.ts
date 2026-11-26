@@ -33,7 +33,13 @@ export interface AgentProposalsSlice {
   /** Undo a change the attachment's agent made; rejects with the refusal
    * (who changed it after) when nothing was undone. */
   undoChange: (attachmentId: string, changeId: string) => Promise<AgentUndoResult>;
-  recordDatasetSelection: (attachmentId: string, picks: AgentDatasetPick[]) => Promise<AgentDatasetSelection>;
+  /** Record a pick on the node's Dataset Finder *attachmentId*, naming the
+   * card it was made on (*discoveryId*) when the card has an id. */
+  recordDatasetSelection: (
+    attachmentId: string,
+    picks: AgentDatasetPick[],
+    discoveryId?: string,
+  ) => Promise<AgentDatasetSelection>;
   /** `discoverySource` is where the file came from, recorded with it. */
   importDataset: (file: File, discoverySource?: DatasetDiscoverySourceInput) => Promise<string | null>;
 }
@@ -132,11 +138,13 @@ export function useAgentProposals(opts: {
   );
 
   const recordDatasetSelection = useCallback(
-    async (attachmentId: string, picks: AgentDatasetPick[]) => {
+    async (attachmentId: string, picks: AgentDatasetPick[], discoveryId?: string) => {
       const pid = projectRef.current;
       if (!pid) throw new Error("no project");
       try {
-        return await agentsApi.recordDatasetSelection(pid, attachmentId, picks);
+        return await (discoveryId
+          ? agentsApi.recordDatasetSelection(pid, attachmentId, picks, discoveryId)
+          : agentsApi.recordDatasetSelection(pid, attachmentId, picks));
       } finally {
         // The record lives on the attachment and the confirmation is logged
         // as a turn: refresh both, exactly as an apply does.
