@@ -13,18 +13,14 @@ export const NodeRunPills: React.FC<{
   solveRunning: boolean;
   nodeSolving: string | null;
   onSolveNode?: (nodeId: string) => void;
-  /** The name of the agent an attachment of this dataflow binds, from the live list. */
-  agentNameOf?: (attachmentId: string) => string | null;
   /** The name a node's header shows; its short id when it is not on the canvas. */
   nodeNameOf: (nodeId: string) => string;
-}> = ({ entries, userBlockedIds, solveWaiting, solveRunning, nodeSolving, onSolveNode, agentNameOf, nodeNameOf }) => (
+}> = ({ entries, userBlockedIds, solveWaiting, solveRunning, nodeSolving, onSolveNode, nodeNameOf }) => (
   <ul className={styles.nodeRuns} aria-live="polite" aria-label="Plan node progress">
     {entries.map(([nodeId, status]) => {
       const name = nodeNameOf(nodeId);
       const needsUser = userBlockedIds.has(nodeId);
       const waiting = (solveWaiting ?? []).find((w) => w.nodeId === nodeId);
-      // The node's own agent that holds its candidates, by its manifest's name.
-      const finder = waiting?.attachmentId ? agentNameOf?.(waiting.attachmentId) ?? null : null;
       return (
         <li key={nodeId} className={`${styles.nodeRun}${needsUser ? ` ${styles.nodeNeedsUser}` : ""}`}>
           <span className={styles.nodeName} data-tooltip={name}>{name}</span>
@@ -46,7 +42,7 @@ export const NodeRunPills: React.FC<{
               aria-label={`Solve node ${name} on its own`}
               data-tooltip={
                 needsUser
-                  ? `This node is waiting for you to confirm a source: open its ${finder ?? "candidates"} first`
+                  ? "This node waits for you to pick its source on its card, with Use this source"
                   : "Runs this node's own agent: generate, run in the sandbox, fix, and write only code that passed"
               }
               disabled={needsUser || solveRunning || nodeSolving === nodeId}

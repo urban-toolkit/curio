@@ -1,7 +1,7 @@
 import React, { useEffect, useId, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faChevronDown, faChevronUp } from "@fortawesome/free-solid-svg-icons";
-import { BUILD_RUNNING_HINT, buildRunningOn } from "../../../services/agents/planBuild";
+import { BUILD_RUNNING_HINT, ROW_SOLVE_RUNNING_HINT, buildRunningOn } from "../../../services/agents/planBuild";
 import type { AgentAttachment, AgentRemedy, AgentSolveWave } from "../../../services/agents";
 import { LlmConfigAction, remedyOf } from "../../llmConfigs/LlmConfigAction";
 import { useFlowContext } from "../../../providers/FlowProvider";
@@ -33,6 +33,9 @@ export const HIDE_PLAN_MORE = "Hide the plan's nodes and actions";
 
 /** Why no Solve is offered while a build of the plan runs. */
 export { BUILD_RUNNING_HINT };
+
+/** How the line's notice of a pause its build ended on starts. */
+const PAUSED_NOTICE = "Paused: ";
 
 /**
  * The plan line of an agent that declares dataflow.orchestrate (dev/52 DR-5),
@@ -145,8 +148,11 @@ export const AgentBuilderStrip: React.FC<{
   const [reviewBusy, setReviewBusy] = useState(false);
   const [simBusy, setSimBusy] = useState<"step" | "auto" | null>(null);
   // A build this line started, one the chat still runs for this agent, or one
-  // another tab runs, which the listing names.
+  // the server says runs (another tab's among them).
   const building = simBusy ?? buildRunningOn(attachment, simulating);
+  // A row's Solve of the plan runs on the server, the one a pick goes on with
+  // among them: no build or Step starts over it.
+  const buildWaitReason = attachment.validating ? ROW_SOLVE_RUNNING_HINT : null;
   // Its Stop was asked for: the build stops after its current step.
   const [buildStopping, setBuildStopping] = useState(false);
   useEffect(() => {
@@ -158,6 +164,12 @@ export const AgentBuilderStrip: React.FC<{
   // delegate this run relies on).
   const [errorRemedy, setErrorRemedy] = useState<AgentRemedy | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // A pause this line's build ended on is said until a build of the plan runs
+  // again, from this line or not: a pick's own continuation builds the plan
+  // from the provider, and the plan has gone on by then.
+  useEffect(() => {
+    if (building) setNotice((said) => (said?.startsWith(PAUSED_NOTICE) ? null : said));
+  }, [building]);
   // The more part opens only when asked for, and stays as it was across the
   // session's updates.
   const [moreOpen, setMoreOpen] = useState(false);
@@ -248,7 +260,7 @@ export const AgentBuilderStrip: React.FC<{
       : null;
 
   const simulate = async (mode: "step" | "auto") => {
-    if (!onSimulate || building) return;
+    if (!onSimulate || building || buildWaitReason) return;
     setSimBusy(mode);
     setError(null);
     setErrorRemedy(null);
@@ -256,7 +268,7 @@ export const AgentBuilderStrip: React.FC<{
     try {
       const done = (await onSimulate(mode)) as { status?: string; reason?: { message?: string } } | undefined;
       if (done?.status === "paused" && done.reason?.message) {
-        setNotice(`Paused: ${done.reason.message}`);
+        setNotice(`${PAUSED_NOTICE}${done.reason.message}`);
       } else if (done?.status === "cancelled") {
         setNotice("Simulation cancelled; everything already built stays.");
       }
@@ -322,9 +334,7 @@ export const AgentBuilderStrip: React.FC<{
   // While a build runs no Solve is offered: it would run over the same nodes.
   const solveDisabledReason = building
     ? BUILD_RUNNING_HINT
-    : solveDisabledReasonFor({
-        phase, unresolved, everyUnresolvedNeedsUser, userBlockedCount: userBlockedIds.size,
-      });
+    : solveDisabledReasonFor({ phase, unresolved, everyUnresolvedNeedsUser });
   const solveRunning = solving || phase === "solving" || liveJob?.kind === "solve-batch";
   // A batch's Stop reads Stopping… until that batch ends, however it ends: one
   // this line did not start (another tab's, or one a chat opened again found
@@ -448,7 +458,8 @@ export const AgentBuilderStrip: React.FC<{
           <button
             type="button"
             className={styles.solve}
-            data-tooltip={pauseReason ? `Paused: ${pauseReason.message}` : undefined}
+            disabled={Boolean(buildWaitReason)}
+            data-tooltip={buildWaitReason ?? (pauseReason ? `Paused: ${pauseReason.message}` : undefined)}
             onClick={() => void simulate("auto")}
           >
             Resume
@@ -500,7 +511,6 @@ export const AgentBuilderStrip: React.FC<{
               solveRunning={solveRunning || building !== null}
               nodeSolving={nodeSolving}
               onSolveNode={onSolveNode ? (nodeId) => void solveOne(nodeId) : undefined}
-              agentNameOf={agentNameOf}
               nodeNameOf={nodeNameOf}
             />
           ) : null}
@@ -523,6 +533,7 @@ export const AgentBuilderStrip: React.FC<{
               // A paused build's Resume is the line's own action, and so is a
               // running build's Stop.
               withBuild={main !== "resume"}
+              waitReason={buildWaitReason}
               onSimulate={(mode) => void simulate(mode)}
             />
           ) : null}

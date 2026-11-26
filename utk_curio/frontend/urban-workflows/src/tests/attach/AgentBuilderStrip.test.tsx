@@ -859,7 +859,10 @@ describe("AgentBuilderStrip while a build runs", () => {
   it("a build another tab runs, which the listing names, holds the line the same way", () => {
     render(
       <AgentBuilderStrip
-        attachment={withLandedPlan({ a: "created", b: "created" }, { simulateMode: "auto", simulatingSince: Date.now() / 1000 })}
+        attachment={{
+          ...withLandedPlan({ a: "created", b: "created" }, { simulateMode: "auto", simulatingSince: Date.now() / 1000 }),
+          buildRunning: "auto",
+        }}
         onSolve={jest.fn()}
         onSimulate={jest.fn()}
         onCancelSimulate={jest.fn()}
@@ -870,7 +873,7 @@ describe("AgentBuilderStrip while a build runs", () => {
     expect(screen.queryByRole("button", { name: /^(Solve|Retry)\b/ })).toBeNull();
   });
 
-  it("a build the listing names whose start is older than a build may run holds nothing", () => {
+  it("a build the record names that the server does not say runs holds nothing", () => {
     render(
       <AgentBuilderStrip
         attachment={withLandedPlan(
@@ -1031,12 +1034,12 @@ describe("AgentBuilderStrip names each node's own finder", () => {
     expect(open).toHaveTextContent(/^Open My Finder$/);
     expect(open).toHaveAttribute(
       "data-tooltip",
-      "Opens this node's My Finder chat, where the candidates await your selection. Confirm one, then Solve again.",
+      "Opens this node's My Finder chat, where its candidates wait for you: pick one with Use this source.",
     );
     openMore();
     expect(screen.getByRole("button", { name: "Solve node a on its own" })).toHaveAttribute(
       "data-tooltip",
-      "This node is waiting for you to confirm a source: open its My Finder first",
+      "This node waits for you to pick its source on its card, with Use this source",
     );
     expect(screen.getByRole("group", { name: "My Orchestrator" })).not.toHaveTextContent(/Dataset Finder/);
   });

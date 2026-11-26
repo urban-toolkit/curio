@@ -2780,10 +2780,10 @@ describe("AgentChatPanel names the agent a label opens or hands work to", () => 
     expect(open).toHaveTextContent(/^Open My Finder$/);
     expect(open).toHaveAttribute(
       "data-tooltip",
-      "Opens this node's My Finder chat, where the candidates await your selection. Confirm one, then Solve again.",
+      "Opens this node's My Finder chat, where its candidates wait for you: pick one with Use this source.",
     );
     expect(within(row).getByRole("status")).toHaveTextContent(
-      "Awaiting a source: this node's My Finder has candidates for you to confirm. Nothing was generated or written.",
+      "Awaiting a source: this node's My Finder has candidates for you to pick with Use this source. Nothing was generated or written.",
     );
     expect(row).not.toHaveTextContent(/Dataset Finder/);
     fireEvent.click(open);
@@ -3023,6 +3023,7 @@ describe("AgentChatPanel: no Solve starts over a running build", () => {
     const building: AgentAttachment = {
       ...LANDED,
       builderSession: { ...LANDED.builderSession!, simulateMode: "auto", simulatingSince: Date.now() / 1000 },
+      buildRunning: "auto",
     };
     renderPanel({ attachment: building, turns: [PLANNED], onSolvePlanNode: jest.fn() });
     const solve = screen.getByRole("button", { name: "Solve node Load boundaries" });
