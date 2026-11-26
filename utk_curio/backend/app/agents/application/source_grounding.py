@@ -176,12 +176,16 @@ class SourceRef:
 
 @dataclass(frozen=True)
 class CatalogRef:
-    """An installed Data Catalog dataset the runtime resolved to a real path."""
+    """A dataset of the Data Catalog listing, with the path the runtime
+    resolved for it. *installed*: whether the dataflow holds it (Add to
+    project), which a dataset the listing only offers, such as one Curio
+    ships, does not."""
 
     dataset_id: str
     title: str
     format: str
     path: str
+    installed: bool = False
 
 
 @dataclass(frozen=True)
@@ -1108,12 +1112,22 @@ def secret_for_host(ctx: "GroundingContext", url: str) -> "SecretRef | None":
 
 def path_literals(text: object) -> set[str]:
     """Path-shaped tokens in free text (the user's own messages)."""
+    return _literals_of(text, "path")
+
+
+def url_literals(text: object) -> set[str]:
+    """The URLs free text writes, such as a node's goal."""
+    return _literals_of(text, "url")
+
+
+def _literals_of(text: object, kind: str) -> set[str]:
+    """The tokens of free text that :func:`classify_literal` reads as *kind*."""
     if not isinstance(text, str) or not text:
         return set()
     out: set[str] = set()
     for token in _TOKEN_SPLIT_RE.split(text):
         candidate = token.strip().rstrip(_TRAILING_PUNCT)
-        if candidate and classify_literal(candidate) == "path":
+        if candidate and classify_literal(candidate) == kind:
             out.add(candidate)
     return out
 

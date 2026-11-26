@@ -177,6 +177,9 @@ class VerifiedRounds:
         self.refused: str | None = None
         self.url_evidence: list[dict] = []
         self.confirmed_source: dict | None = None
+        # Why the node's Dataset Finder, asked before the first round, found
+        # nothing to pick, when it did: the loop asks it no second time.
+        self.found_no_source: str | None = None
         self.stopped_by: str | None = None  # dev/127: which bound ended the loop
         self.repeats = 0
         self.use_current = False
@@ -1153,6 +1156,7 @@ class VerifiedRounds:
             # in the trail and let the round proceed, so the node still ends
             # with ITS own evidence (a refusal naming the literal, or the
             # builder's own decline) rather than a promise of candidates.
+            self.found_no_source = str(source_state.get("detail") or "")
             self.rounds_trace.append(
                 f"discovery found no source — {str(source_state.get('detail'))[:160]}"
             )
@@ -1172,12 +1176,18 @@ class VerifiedRounds:
     def _finish(self) -> dict:
         final_evidence = (self.verdict_result or {}).get("evidence") or {}
         final_verdict = self.verdict_result["verdict"] if self.verdict_result else "fail"
-        if (
+        refused_for_its_source = (
             self.is_data_loading
             and self.resolve_source is not None
             and final_verdict == "fail"
             and final_evidence.get("kind") in ("ungrounded-source", "source-missing")
-        ):
+        )
+        if refused_for_its_source and self.found_no_source is not None:
+            # The node's Dataset Finder, asked before the first round, found
+            # nothing: the rounds' refusal tells it nothing new, so it is not
+            # asked again, and the node keeps its own failure, with why.
+            final_evidence = {**final_evidence, "discovery": self.found_no_source[:600]}
+        elif refused_for_its_source:
             # dev/126: the round itself proved the source is missing — the gate
             # refused the literal the builder wrote, or the builder declined and
             # named what it needs. THIS is where the old dead end was: a failure

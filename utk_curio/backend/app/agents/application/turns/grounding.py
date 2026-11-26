@@ -9,6 +9,7 @@ and import order between siblings cannot matter.
 from __future__ import annotations
 
 import logging
+import re
 
 from utk_curio.backend.app.agents.application import askers as agents_askers
 from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
@@ -33,7 +34,9 @@ from utk_curio.backend.app.datasets.domain.constants import is_layer_group_id, l
 from utk_curio.backend.app.datasets.domain.layer_group import group_base_title, ids_read, layer_group_formats
 from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.execution import workflow_spec
-from utk_curio.backend.app.execution.code_references import resolve_references, waits_for_data
+from utk_curio.backend.app.execution.code_references import (
+    effective_value, is_picked, normalize_widgets, picked_choices, resolve_references, waits_for_data,
+)
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.agents.domain import agent_text
 
@@ -372,11 +375,109 @@ def _project_grounded_literal(ctx) -> str | None:
     about this node, so it ranks below a pending candidates card, and when the
     catalog turns out not to cover the node the ROUND says so and discovery is
     initiated on that evidence instead of on a guess.
+
+    Only for a node with no Dataset Finder of its own: the listing holds every
+    dataset Curio ships, so a node with one is grounded by what may be its
+    own source alone (:func:`_dataflow_grounded_literal`).
     """
     catalog = getattr(ctx, "catalog_ids", None) or {}
     if catalog:
         return f"the project's Data Catalog ({len(catalog)} dataset(s))"
     return None
+
+
+def _first_attempt_literal(spec: dict | None, node: dict, ctx, *, user_key: str) -> str | None:
+    """What grounds a first attempt at *node* when its own words name no
+    source; it ranks below candidates that await the user
+    (``dataset_resolution.node_source_state``). A node with a Dataset Finder
+    of its own is grounded by what may be its source alone
+    (:func:`_dataflow_grounded_literal`), and a node with nothing of the kind
+    asks its Finder before any round. Any other node is grounded by the Data
+    Catalog its builder is handed (:func:`_project_grounded_literal`), and
+    discovery, which gives it a Finder, starts once its rounds are refused
+    for its source."""
+    node_id = str(node.get("id") or "")
+    if agents_dataset_resolution.finder_attachment(spec, node_id, user_key=user_key) is not None:
+        return _dataflow_grounded_literal(node, ctx)
+    return _project_grounded_literal(ctx)
+
+
+def _dataflow_grounded_literal(node: dict, ctx) -> str | None:
+    """What may be the source of *node*, a data-loading node with a Dataset
+    Finder of its own, before its first round; None when nothing may be, and
+    then its Finder is asked before its builder. The Data Catalog listing
+    holds every dataset Curio ships, so it says nothing about this node. What
+    does, in this order:
+
+    - the code the node holds, when the gate grounds it on a source: Solve
+      this node runs it as its first round;
+    - a dataset of the Data Catalog one of its dataset widgets holds;
+    - a dataset of its dataflow (Add to project), which its builder is handed
+      with the dataflow's block (``dataflow_block.datasets_in``);
+    - a dataset of the Data Catalog whose title its goal names, every word of
+      the title (:func:`_named_by_title`);
+    - a URL its goal names, which the gate probes when the code fetches it.
+
+    What its words name outright (a path the user typed, a Data Catalog id, a
+    URL this conversation verified, synthetic data) grounds it already
+    (:func:`_node_grounded_literal`), and so does a pick recorded on its
+    Finder (``dataset_resolution.node_source_state``)."""
+    if ctx is None:
+        return None
+    catalog = getattr(ctx, "catalog_ids", None) or {}
+    content = str(node.get("content") or "")
+    if content.strip() and ctx.code_engine:
+        verdict = source_grounding.check_grounding(content, ctx.code_engine, ctx)
+        if verdict.ok and verdict.source:
+            return f"the source its code reads ({verdict.source.get('label') or 'grounded'})"
+    held = next((dataset_id for dataset_id in _dataset_widget_ids(node) if dataset_id in catalog), None)
+    if held is not None:
+        return f'curio_data_path("{held}") in its dataset widget'
+    installed = [ref for _dataset_id, ref in sorted(catalog.items()) if getattr(ref, "installed", False)]
+    if installed:
+        return "the dataflow's datasets (" + ", ".join(repr(ref.title) for ref in installed[:3]) + ")"
+    goal = str(node.get("goal") or "")
+    named = _named_by_title(goal, catalog)
+    if named is not None:
+        return f"the Data Catalog's {named.title!r}"
+    return next(iter(sorted(source_grounding.url_literals(goal))), None)
+
+
+def _dataset_widget_ids(node: dict) -> list[str]:
+    """The Data Catalog ids the dataset widgets of *node* hold: each one's
+    value, and each choice of one an input picks."""
+    widgets = ((node or {}).get("metadata") or {}).get("widgets")
+    ids: list[str] = []
+    for widget in normalize_widgets(widgets):
+        if widget.get("type") != "dataset":
+            continue
+        held = list(picked_choices(widget).values()) if is_picked(widget) else [effective_value(widget)]
+        ids.extend(value for value in held if isinstance(value, str) and value.strip())
+    return ids
+
+
+def _named_by_title(goal: str, catalog_ids: dict):
+    """The first dataset of *catalog_ids*, by id, whose title *goal* names:
+    every word of the title, in any order (:func:`_title_words`). None when
+    it names none."""
+    said = _title_words(goal)
+    for dataset_id in sorted(catalog_ids or {}):
+        ref = catalog_ids[dataset_id]
+        words = _title_words(getattr(ref, "title", "") or "")
+        if words and words <= said:
+            return ref
+    return None
+
+
+def _title_words(text: str) -> set[str]:
+    """The words a title is named by: the runs of letters and digits of
+    *text*, lowercased, of three characters or more, each without the plural
+    s of a word of four or more ("Areas" is "area")."""
+    words: set[str] = set()
+    for word in re.findall(r"[^\W_]+", str(text or "").lower()):
+        if len(word) >= 3:
+            words.add(word[:-1] if len(word) > 3 and word.endswith("s") else word)
+    return words
 
 
 def _source_resolver(
@@ -423,7 +524,7 @@ def _source_resolver(
             if stage == "pre" else None
         )
         project_literal = (
-            _project_grounded_literal(grounding_ctx) if stage == "pre" else None
+            _first_attempt_literal(spec, node, grounding_ctx, user_key=user_key) if stage == "pre" else None
         )
         state = agents_dataset_resolution.node_source_state(
             spec, node_id, grounded_literal=literal, project_literal=project_literal,
@@ -649,6 +750,7 @@ def _catalog_grounding_refs(project_id: str, items: list | None = None) -> tuple
             title=str(item.get("title") or item.get("id") or ""),
             format=str(item.get("format") or ""),
             path=path if isinstance(path, str) else "",
+            installed=bool(item.get("installed")),
         )
         by_id[ref.dataset_id] = ref
         if isinstance(path, str) and path.strip():
@@ -665,6 +767,7 @@ def _catalog_grounding_refs(project_id: str, items: list | None = None) -> tuple
             title=group_base_title(members, group_id),
             format=layer_group_kind(group_id) or "",
             path="",
+            installed=any(bool(member.get("installed")) for member in members),
         ))
     return by_path, by_id
 

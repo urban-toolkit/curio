@@ -421,22 +421,23 @@ class TestDiscoveryIsInitiated:
     def test_a_loader_the_project_cannot_ground_ends_awaiting_the_selection(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
-        """The end of the old dead end. The project's Data Catalog grounds a
-        first attempt (the child is handed its rows), the gate refuses the
-        filename the child invented anyway — and THAT is where discovery is
-        initiated: the node ends PENDING with candidates awaiting the user, the
-        trail of what was tried, and the remedy naming the chat to open."""
+        """The end of the old dead end. Nothing names the loader's source: its
+        own Dataset Finder is asked before its builder writes anything, and
+        the node ends PENDING with candidates awaiting the user and the remedy
+        naming the chat to open. A loader whose rounds were refused for their
+        source first keeps their trail
+        (``test_a_loader_with_no_finder_of_its_own_tries_before_a_finder_is_asked``)."""
         user, token = user_and_token
         h = _Harness(client, user, token, monkeypatch)
         body = h.solve()
         load = body["results"][h.load]
-        # PENDING, never failed: nothing was written, and the trail is kept.
+        # PENDING, never failed: nothing was generated, run or written.
         assert load["status"] == "pending"
         assert load["reason"].startswith("awaiting your dataset selection")
         assert load["remedy"]["kind"] == "dataset-selection"
         assert load["remedy"]["nodeId"] == h.load
-        assert [a["kind"] for a in load["attempts"]] == ["ungrounded-source"] * 3
-        assert "areas.csv" in load["attempts"][0]["detail"]
+        assert load["attempts"] == []
+        assert h.dl_calls == []  # its builder was never asked
         assert h.exec_payloads == []  # nothing ungrounded ever ran
         assert h.node_content(h.load) == ""
         # The candidates live in the node's OWN Dataset Finder chat.
@@ -547,7 +548,9 @@ class TestDiscoveryIsInitiated:
     ):
         """"Awaiting your selection" would be a lie when there is nothing to
         select: the node keeps its own honest outcome and the discovery attempt
-        rides along as the reason."""
+        rides along as the reason. The Finder, asked before the rounds, is not
+        asked again after them: each of the session's two passes asks it once,
+        before its 3 rounds."""
         user, token = user_and_token
         h = _Harness(
             client, user, token, monkeypatch,
@@ -560,6 +563,7 @@ class TestDiscoveryIsInitiated:
         assert "ungrounded-source" in load["error"]
         assert "invented.csv" in load["error"]
         assert all(a["kind"] == "ungrounded-source" for a in load["attempts"])
+        assert len(h.discover_calls) * 3 == len(h.dl_calls), (len(h.discover_calls), len(h.dl_calls))
         assert len(h.discover_calls) >= 1
 
     def test_the_finders_task_names_the_builder_and_its_mission(
@@ -668,23 +672,22 @@ class TestConfirmedSourceReachesTheBuilder:
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
         user, token = user_and_token
-        # Three ungrounded attempts (so discovery fires and candidates land),
-        # then the code that loads the confirmed URL.
+        # Nothing names the source, so the Finder is asked before any round
+        # and candidates land; then the code that loads the confirmed URL.
         h = _Harness(
             client, user, token, monkeypatch,
             dl_replies=[
-                'import pandas as pd\nreturn pd.read_csv("invented.csv")',
-                'import pandas as pd\nreturn pd.read_csv("invented.csv")',
-                'import pandas as pd\nreturn pd.read_csv("invented.csv")',
                 ("import pandas as pd\nreturn pd.read_json"
                  '("https://data.example.org/areas.geojson")'),
             ],
         )
         assert h.solve()["results"][h.load]["status"] == "pending"
+        assert h.dl_calls == []  # no round before the pick
         h.record_selection("https://data.example.org/areas.geojson")
         body = h.solve(node_ids=[h.load])
         load = body["results"][h.load]
         assert load["status"] == "solved", load
+        assert len(h.dl_calls) == 1  # built from its first round
         # The confirmed source was HANDED to the content child.
         frame = h.dl_calls[-1]
         assert "confirmedSource" in frame
@@ -707,21 +710,23 @@ class TestConfirmedSourceReachesTheBuilder:
         user, token = user_and_token
         url = "https://data.example.org/areas.geojson"
         invented = 'import pandas as pd\nreturn pd.read_csv("invented.csv")'
-        # Three ungrounded attempts in the first Solve, three more in the first
-        # pass after the selection, then the code that loads the confirmed URL.
+        # No round in the first Solve, which asks the Finder first; three
+        # ungrounded attempts in the first pass after the selection, then the
+        # code that loads the confirmed URL.
         h = _Harness(
             client, user, token, monkeypatch,
-            dl_replies=[invented] * 6 + [f'import pandas as pd\nreturn pd.read_json("{url}")'],
+            dl_replies=[invented] * 3 + [f'import pandas as pd\nreturn pd.read_json("{url}")'],
         )
         assert h.solve()["results"][h.load]["status"] == "pending"
+        assert h.dl_calls == []
         h.record_selection(url)
         body = h.solve(node_ids=[h.load])
         load = body["results"][h.load]
         assert load["status"] == "solved", load
         assert [a["kind"] for a in load["attempts"][:3]] == ["ungrounded-source"] * 3
-        # Every round after the selection was handed the confirmed source.
+        # Every round, all after the selection, was handed the confirmed source.
         assert len(h.dl_calls) > 3
-        for frame in h.dl_calls[3:]:
+        for frame in h.dl_calls:
             assert "confirmedSource" in frame
             assert url in frame
         assert len(h.discover_calls) == 1  # no second discovery, no second card
@@ -898,10 +903,11 @@ class TestAttemptTrailInTheTranscript:
     def test_an_awaiting_source_node_shows_what_it_tried(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
-        # dev/126's lane: the rounds that were refused before discovery ran are
-        # attempts too, and the owner asked for ALL of them.
+        # dev/126's lane: the goal names a path, so the rounds run first, and
+        # the builder misses it. The rounds that were refused before discovery
+        # ran are attempts too, and the owner asked for ALL of them.
         user, token = user_and_token
-        h = _Harness(client, user, token, monkeypatch)
+        h = _Harness(client, user, token, monkeypatch, goal="load /data/areas.csv from disk")
         h.solve()
         trail = next(
             p for p in self._turn_parts(h, h.att, "solveAttempts") if p["nodeId"] == h.load
@@ -949,11 +955,14 @@ class TestBuildAndValidateWaitsForTheSource:
         session = done["builderSession"]
         assert session["nodeStates"] == {"load": "awaiting-source", "stats": "created"}
         assert session["pauseReason"] == reason
+        # The Finder was asked before the loader's builder, which nothing
+        # asked: no Solve was handed to it.
         asked = [
             t.get("text") for t in h.session_turns(h.node_builder_attachment_id())
             if (t.get("text") or "").startswith("[Delegated by")
         ]
-        assert len(asked) == 1, asked
+        assert asked == [], asked
+        assert h.dl_calls == []
         assert h.node_content(h.load) == h.node_content(h.stats) == ""
 
     def test_a_rows_solve_leaves_the_row_needing_a_source(
@@ -997,10 +1006,9 @@ class TestBuildAndValidateWaitsForTheSource:
         started the loader's own builder on it beside the plan, which the next
         Build & validate then built again."""
         user, token = user_and_token
-        invented = 'import pandas as pd\nreturn pd.read_csv("invented.csv")'
         h = _Harness(
             client, user, token, monkeypatch,
-            dl_replies=[invented] * 3 + [f'import pandas as pd\nreturn pd.read_json("{URL}")'],
+            dl_replies=[f'import pandas as pd\nreturn pd.read_json("{URL}")'],
         )
         monkeypatch.setattr(
             'utk_curio.backend.app.agents.application.verify.verify_external_source',
@@ -1014,6 +1022,7 @@ class TestBuildAndValidateWaitsForTheSource:
         h.simulate("auto")
         assert h.recorded_urls()[0] == dr.STATE_CANDIDATES_PENDING
         tried = len(h.dl_calls)
+        assert tried == 0, "the loader's builder was asked before its Finder"
         picked = h.select(URL)
         assert picked["status"] == dr.STATE_RESOLVED, picked
         delegated = picked.get("delegated") or {}
@@ -1059,10 +1068,11 @@ class TestBuildAndValidateWaitsForTheSource:
         ], reason
         assert "Load parks" in reason["message"] and "Load schools" in reason["message"], reason
         assert len(h.discover_calls) == 2
-        # One pass of models: each loader's attempts and its Finder, nothing
-        # asked for the nodes that read from them.
-        assert len(h.dl_calls) == 6
-        assert len(h.model_calls) - calls == len(h.dl_calls) + len(h.discover_calls)
+        # One pass of models: each loader's Finder, asked before its builder,
+        # and nothing asked for the loaders' builders or the nodes that read
+        # from them.
+        assert h.dl_calls == []
+        assert len(h.model_calls) - calls == len(h.discover_calls)
         session = done["builderSession"]
         assert session["nodeStates"] == {
             "parks": "awaiting-source", "schools": "awaiting-source", "join": "created", "count": "created",
@@ -1126,10 +1136,9 @@ class TestBuildAndValidateWaitsForTheSource:
         strip said it needed a source, and the card named Build & validate
         plan while the strip's button read Resume."""
         user, token = user_and_token
-        invented = 'import pandas as pd\nreturn pd.read_csv("invented.csv")'
         h = _Harness(
             client, user, token, monkeypatch, plan=TWO_LOADERS,
-            dl_replies=[invented] * 6 + [f'import pandas as pd\nreturn pd.read_json("{URL}")'],
+            dl_replies=[f'import pandas as pd\nreturn pd.read_json("{URL}")'],
         )
         monkeypatch.setattr(
             'utk_curio.backend.app.agents.application.verify.verify_external_source',
@@ -1161,6 +1170,8 @@ class TestBuildAndValidateWaitsForTheSource:
         assert done["builderSession"]["nodeStates"] == {
             "parks": "approved", "schools": "awaiting-source", "join": "created", "count": "created",
         }
+        # Built from its first round: no loader's builder was asked before its pick.
+        assert len(h.dl_calls) == 1, len(h.dl_calls)
         assert "confirmedSource" in h.dl_calls[-1] and URL in h.dl_calls[-1]
         assert URL in h.node_content(ids["parks"])
         assert started == [], "the pick started the loader's builder beside the plan"
