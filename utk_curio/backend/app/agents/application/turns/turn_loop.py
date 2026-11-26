@@ -75,6 +75,7 @@ from utk_curio.backend.app.agents.infrastructure.providers import NativeToolsRef
 from utk_curio.backend.app.agents.infrastructure.providers import ToolCall
 from utk_curio.backend.app.agents.repositories import ledger
 from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
+from utk_curio.backend.app.agents.application import dataset_resolution as agents_dataset_resolution
 from utk_curio.backend.app.agents.application import in_the_room as agents_room
 from utk_curio.backend.app.agents.application import skill_runs as agents_skill_runs
 from utk_curio.backend.app.agents.application import tool_rounds as agents_tool_rounds
@@ -1056,8 +1057,6 @@ class AttachmentTurn:
             # A node's Dataset Finder offered candidates in its own chat: its
             # record names the card as the one on offer now, once the card is
             # in the chat.
-            from utk_curio.backend.app.agents.application import dataset_resolution as agents_dataset_resolution
-
             agents_dataset_resolution.offer_from_chat(self.user_key, self.project_id, self.attachment_id, offered)
         # Title before the done frame: the reply text already streamed via
         # deltas, and the client's post-send refresh must see the title.

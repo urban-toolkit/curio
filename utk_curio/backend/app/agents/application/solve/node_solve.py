@@ -570,46 +570,7 @@ def _conclude(user_key, project_id, attachment_id, session_id, spec, node, label
         # holds, and this chat too when its Solve asked for the candidates, a
         # download into the Data Catalog, or the install of the dataset
         # picked. A pick already made is never asked for again.
-        evidence = outcome.get("evidence") or {}
-        remedy_payload = evidence.get("remedy")
-        if isinstance(remedy_payload, dict):
-            done["remedy"] = remedy_payload
-        record = agents_dataset_resolution.source_record(
-            dataflow_docs.read(user_key, project_id), node_id, user_key=user_key,
-        ) or {}
-        wait = (
-            evidence.get("sourceWait")
-            or agents_dataset_resolution.source_wait(record)
-            or agents_dataset_resolution.WAITS_FOR_PICK
-        )
-        done["sourceWait"] = wait
-        picked = agents_dataset_resolution._picks_detail(record) or "the source picked for it"
-        if wait == agents_dataset_resolution.WAITS_FOR_DOWNLOAD:
-            text = (
-                f"Awaiting the source of {label!r}: {picked} is downloading into the Data Catalog. "
-                "Solve this node again once it lands. Nothing was generated or written."
-            )
-        elif wait == agents_dataset_resolution.WAITS_FOR_INSTALL:
-            text = (
-                f"Awaiting the source of {label!r}: {picked}, picked for it, is not installed yet. "
-                "Install it from the Data Catalog, then Solve this node again. Nothing was generated or written."
-            )
-        else:
-            finder = (
-                agents_spec_reads._attachment_agent_name(
-                    user_key, project_id, (remedy_payload or {}).get("attachmentId"),
-                )
-                or agents_spec_reads._shipped_name_declaring("dataset.discover")
-            )
-            where = (
-                "Its candidates are on the card above: pick one with Use this source, and the loader is built from it."
-                if attachment_id in agents_dataset_resolution.askers_of(record) else
-                f"Open {finder} on this node and pick one with Use this source; the loader is built from it."
-            )
-            text = (
-                f"Awaiting a source for {label!r}: {evidence.get('detail') or 'a dataset must be selected'}. "
-                f"{where} Nothing was generated or written."
-            )
+        text = _awaiting_source_text(user_key, project_id, attachment_id, node_id, label, outcome, done)
         card_kind = "result"
     elif (outcome.get("evidence") or {}).get("upstreamEmpty"):
         text = agents_grounding._then_sentence(
@@ -620,6 +581,56 @@ def _conclude(user_key, project_id, attachment_id, session_id, spec, node, label
     else:
         text, card_kind = _not_fixed(label, outcome, done), "error"
     return text, card_kind, parts
+
+
+def _awaiting_source_text(user_key, project_id, attachment_id, node_id, label, outcome: dict,
+                          done: dict) -> str:
+    """What the per-node Solve says while the node's source is not here yet: the
+    wait its Dataset Finder's record names, a download into the Data Catalog,
+    the install of the dataset picked, or the user's pick, on the card above
+    when this chat asked for the candidates. Writes the wait (``sourceWait``)
+    and, when the outcome carries one, the remedy into *done*."""
+    evidence = outcome.get("evidence") or {}
+    remedy_payload = evidence.get("remedy")
+    if isinstance(remedy_payload, dict):
+        done["remedy"] = remedy_payload
+    record = agents_dataset_resolution.source_record(
+        dataflow_docs.read(user_key, project_id), node_id, user_key=user_key,
+    ) or {}
+    wait = (
+        evidence.get("sourceWait")
+        or agents_dataset_resolution.source_wait(record)
+        or agents_dataset_resolution.WAITS_FOR_PICK
+    )
+    done["sourceWait"] = wait
+    picked = agents_dataset_resolution._picks_detail(record) or "the source picked for it"
+    if wait == agents_dataset_resolution.WAITS_FOR_DOWNLOAD:
+        text = (
+            f"Awaiting the source of {label!r}: {picked} is downloading into the Data Catalog. "
+            "Solve this node again once it lands. Nothing was generated or written."
+        )
+    elif wait == agents_dataset_resolution.WAITS_FOR_INSTALL:
+        text = (
+            f"Awaiting the source of {label!r}: {picked}, picked for it, is not installed yet. "
+            "Install it from the Data Catalog, then Solve this node again. Nothing was generated or written."
+        )
+    else:
+        finder = (
+            agents_spec_reads._attachment_agent_name(
+                user_key, project_id, (remedy_payload or {}).get("attachmentId"),
+            )
+            or agents_spec_reads._shipped_name_declaring("dataset.discover")
+        )
+        where = (
+            "Its candidates are on the card above: pick one with Use this source, and the loader is built from it."
+            if attachment_id in agents_dataset_resolution.askers_of(record) else
+            f"Open {finder} on this node and pick one with Use this source; the loader is built from it."
+        )
+        text = (
+            f"Awaiting a source for {label!r}: {evidence.get('detail') or 'a dataset must be selected'}. "
+            f"{where} Nothing was generated or written."
+        )
+    return text
 
 
 def _not_fixed(label: str, outcome: dict, done: dict) -> str:
