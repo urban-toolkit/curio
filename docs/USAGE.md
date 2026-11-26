@@ -2603,10 +2603,11 @@ also gives every created node a **Node Builder**, and every
 data-loading node a **Dataset Finder**, which Solve or **Build & validate plan**
 asks for candidates when the node's source is not settled. The candidates
 appear in the Dataflow Builder's chat, as the same card the Finder's chat
-holds: **Use this source** on either records your pick, the card you picked on
-says *Recorded* in both, with what comes of it, and the Dataflow Builder goes on
-with its plan by itself as you were going, one **Step** after a Step, building
-the loader from that source. A source that downloads into the Data Catalog, or
+holds: **Use this source** on either records your pick, and the card you picked
+on says *Recorded* in both, with the pick and where it comes from. Below it,
+each chat says what comes of the pick: the Dataflow Builder goes on with its
+plan by itself as you were going, one **Step** after a Step, building the
+loader from that source. A source that downloads into the Data Catalog, or
 waits for its install, is built once it is there and you press **Resume**. A
 card of older candidates, or one whose Finder or node is gone, closes and says
 why. See [Solve](AGENT-CATALOG.md#solve) in the Agent Catalog guide.
