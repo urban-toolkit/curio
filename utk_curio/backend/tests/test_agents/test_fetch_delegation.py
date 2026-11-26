@@ -673,12 +673,15 @@ class TestAPlanWaitsAsItsSourceDoes:
     def test_a_download_picked_for_a_waiting_loader_points_at_the_builders_build(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
-        """The loader waits in a plan, so the plan builds it once its download
-        lands: the pick's answer and the Source recorded turn, in the Finder's
-        chat and in the Dataflow Builder's, say the Dataflow Builder's Build &
-        validate builds it, and never ask for a Solve of the node. On main they
-        said "Solve the node once it lands", and that Solve built the loader
-        outside its plan."""
+        """The loader waits in a plan whose Build & validate paused on it, so
+        its plan builds it, not a Solve of the node. Nothing settles the
+        download's landing by itself: the pick's answer and the Source
+        recorded turn, in the Finder's chat and in the Dataflow Builder's, say
+        to press Resume in the Dataflow Builder's chat once it lands, and
+        never ask for a Solve of the node. On main they said "Solve the node
+        once it lands", and that Solve built the loader outside its plan; on
+        04d7e8c03f they said the Dataflow Builder's Build & validate builds the
+        loader once it lands, which no build did by itself."""
         user, token = user_and_token
         h, _dataset_id = self._downloading(client, user, token, monkeypatch)
         picked = h.select(URL)
@@ -688,7 +691,7 @@ class TestAPlanWaitsAsItsSourceDoes:
             (h.session_turns(chat)[-1].get("text") or "") for chat in (h.finder_attachment_id(), h.att)
         ]):
             assert "Solve the node" not in said, said
-            assert "Dataflow Builder's Build & validate builds the loader" in said, said
+            assert "once it lands, press Resume in the Dataflow Builder's chat to build the loader" in said, said
 
     def test_a_loader_solve_this_node_built_after_its_download_is_not_built_again(
         self, client, user_and_token, tmp_curio, monkeypatch
