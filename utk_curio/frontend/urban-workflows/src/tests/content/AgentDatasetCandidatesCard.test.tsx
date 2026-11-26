@@ -36,7 +36,8 @@ describe("AgentDatasetCandidatesCard (dev/50 — the docs/06 two-lane surface)",
     expect(screen.getByRole("group", { name: "External sources" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "From your Data Catalog" })).toBeInTheDocument();
     expect(screen.getByText("NOAA Climate Data API")).toBeInTheDocument();
-    expect(screen.getByText("Fit 90/100 — direct match")).toBeInTheDocument();
+    // The fit's score, then why after a colon: no dash.
+    expect(screen.getByText("Fit 90/100: direct match")).toBeInTheDocument();
     expect(screen.getByText("API token required")).toBeInTheDocument();
     expect(screen.getByText("Installed")).toBeInTheDocument();
     expect(screen.getAllByText("Not installed")).toHaveLength(1);
