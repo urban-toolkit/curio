@@ -1243,6 +1243,19 @@ def between(user_key: str, project_id: str, earlier: dict, later: dict) -> Optio
     return copy.deepcopy(flows[left]), copy.deepcopy(flows[found])
 
 
+def dataflow_found_by(user_key: str, project_id: str, point: dict) -> Optional[dict]:
+    """The dataflow as the change of *point* found it, where its records
+    start: the version before it, its parent, with every change since that
+    made no point of its own, such as a goal or a description written.
+    ``None`` for a point with no place in a log, or a log that cannot be
+    read."""
+    if "doc" not in point:
+        return None
+    place = (point["doc"], point["day"], point["start"])
+    flow = _dataflows_at(_folder(user_key, project_id), [place]).get(place)
+    return saved_joins.converted_dataflow(copy.deepcopy(flow)) if flow is not None else None
+
+
 def dataflow_at(user_key: str, project_id: str, point_id: str) -> Optional[dict]:
     """The dataflow as it stood at the point *point_id*, the part the doc
     holds; ``None`` for no such point, or one whose log cannot be read. A
@@ -1574,18 +1587,23 @@ def saved(user_key: str, project_id: str, by: dict) -> dict:
                             "start": end, "end": end})
 
 
-def put_back(user_key: str, project_id: str, point_id: str, by: dict, *, keep: Iterable[str] = ()) -> dict:
+def put_back(user_key: str, project_id: str, point_id: str, by: dict, *, keep: Iterable[str] = (),
+             target: Optional[dict] = None) -> dict:
     """Put the version *point_id* back: one transaction makes the doc hold
     it, but for what :data:`KEPT_BY_A_PUT_BACK` and *keep* name, for every
     tab, and a version named after it, its parent the version put back.
-    ``refused``: the nodes whose code someone changed while it was being put
-    back, which keep theirs. ``removed``: the nodes it took out, which the tab
-    that asked for it tells the others it removed (``presence.noteRemoval``)."""
+    *target*, given, is the dataflow put back in place of the version's own:
+    a plan's Undo puts back the dataflow as the plan's first write found it
+    (:func:`dataflow_found_by`). ``refused``: the nodes whose code someone
+    changed while it was being put back, which keep theirs. ``removed``: the
+    nodes it took out, which the tab that asked for it tells the others it
+    removed (``presence.noteRemoval``)."""
     folder = _folder(user_key, project_id)
     point = next((p for p in _read_points(folder) if p["id"] == point_id and _listed(p)), None)
     if point is None:
         raise HistoryError("This dataflow's history has no such version.", 404)
-    target = dataflow_at(user_key, project_id, point_id)
+    if target is None:
+        target = dataflow_at(user_key, project_id, point_id)
     if target is None:
         raise HistoryError("This version can no longer be rebuilt.", 409)
     spec = dataflow_docs.live(user_key, project_id)

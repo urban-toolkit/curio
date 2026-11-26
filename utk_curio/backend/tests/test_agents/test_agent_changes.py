@@ -576,11 +576,14 @@ class TestAPlanFillsAnEmptyGoal:
         assert _saved(client, token, project)["task"] == self.GOAL
         assert card["goalSet"] == self.GOAL, card
         # In the plan's change, from its first write: the first point naming
-        # the change holds the goal, and the version before it the old one.
+        # the change holds the goal, and the version before it, as that write
+        # found it and the plan's Undo puts it back, the person's. A goal
+        # written makes no version of its own, so the version listed before
+        # the plan (the first point's parent) can be older than it.
         points = [p for p in history.points(key, project) if p.get("change") == card["changeId"]]
         assert len(points) == 3, points
         assert history.dataflow_at(key, project, points[0]["id"])["task"] == self.GOAL
-        assert history.dataflow_at(key, project, points[0]["parent"]).get("task", "") == before
+        assert history.dataflow_found_by(key, project, points[0]).get("task", "") == before
         # A canvas no doc binds takes it with the plan's first step, and with the plan whole.
         assert _mutations(landed["steps"][0])[0].get("task") == self.GOAL, landed["steps"][0]
         assert [m for step in landed["steps"][1:] for m in _mutations(step) if "task" in m] == [], landed["steps"]
