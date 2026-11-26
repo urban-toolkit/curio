@@ -98,9 +98,14 @@ def _acquire_confirmed_picks(rows: list[dict]) -> list[dict]:
     return summaries
 
 
-def _acquisition_outcome(acquisitions: list[dict]) -> dict | None:
+def _acquisition_outcome(acquisitions: list[dict], *,
+                         once_it_lands: str = "Solve the node once it lands") -> dict | None:
     """What the confirmation says when no builder was started: a download still
-    running, or one that failed."""
+    running, or one that failed. A running download's reason ends with what
+    builds the loader once it lands (*once_it_lands*): nothing settles its
+    landing by itself, so the user's Solve of the node, or, for a loader a
+    plan waits on, the plan's Resume or the node's row's Solve
+    (``dataset_selection._once_it_lands``)."""
     running = [a for a in acquisitions if a.get("status") == "acquiring"]
     failed = [a for a in acquisitions if a.get("status") == "failed"]
     if running:
@@ -108,7 +113,7 @@ def _acquisition_outcome(acquisitions: list[dict]) -> dict | None:
         return {
             "status": "acquiring",
             "jobIds": [a["jobId"] for a in running],
-            "reason": f"{names} is downloading into your Data Catalog; Solve the node once it lands",
+            "reason": f"{names} is downloading into your Data Catalog; {once_it_lands}",
         }
     if failed:
         first = failed[0]

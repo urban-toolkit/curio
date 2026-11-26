@@ -82,6 +82,25 @@
   .runningDot { animation: none; }
 }
 
+/* An agent that waits for you to pick a node's source: a still dot in the
+   corner, in the warning tone the plan line's "needs you" has. The running
+   dot moves to the other corner beside it. */
+.waitingDot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--curio-warning-text);
+  box-shadow: 0 0 0 2px var(--curio-card-bg);
+}
+
+.runningDotAside {
+  right: auto;
+  left: -2px;
+}
+
 /* Category tints (icon color; the chip stays white). */
 .tint_node     { color: var(--curio-category-agent-node-fg); }
 .tint_canvas   { color: var(--curio-category-agent-canvas-fg); }

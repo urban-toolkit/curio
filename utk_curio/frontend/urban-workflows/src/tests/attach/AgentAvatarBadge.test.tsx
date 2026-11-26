@@ -87,6 +87,46 @@ describe("AgentAvatarBadge", () => {
   });
 });
 
+// The listing says which agents wait for the user to pick a node's source: a
+// node's Dataset Finder, and the agent whose chat asked for its candidates.
+describe("AgentAvatarBadge: the dot of an agent that waits for you", () => {
+  it("shows a labeled dot while the agent waits for you, and names it on the chip", () => {
+    const { rerender } = render(
+      <AgentAvatarBadge
+        attachment={attachment({ name: "Dataset Finder", waitsForYou: ["n1"] })}
+        active={false} onOpen={jest.fn()} onDetach={jest.fn()}
+      />,
+    );
+    expect(screen.getByRole("img", { name: "Waits for you" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open chat with Dataset Finder, waits for you" })).toBeInTheDocument();
+    expect(getByTooltip(document.body, "Dataset Finder waits for you")).toBeInTheDocument();
+    rerender(
+      <AgentAvatarBadge
+        attachment={attachment({ name: "Dataset Finder", waitsForYou: [] })}
+        active={false} onOpen={jest.fn()} onDetach={jest.fn()}
+      />,
+    );
+    expect(screen.queryByRole("img")).toBeNull();
+    expect(screen.getByRole("button", { name: "Open chat with Dataset Finder" })).toBeInTheDocument();
+  });
+
+  it("keeps the running dot beside it while the agent is at work too", () => {
+    render(
+      <AgentAvatarBadge
+        attachment={attachment({
+          waitsForYou: ["n1"],
+          liveJob: { executionId: "e1", kind: "solve-batch", status: "running", startedAt: 1 },
+        })}
+        active={false} onOpen={jest.fn()} onDetach={jest.fn()}
+      />,
+    );
+    expect(screen.getAllByRole("img").map((dot) => dot.getAttribute("aria-label"))).toEqual([
+      "Researcher is solving in the background",
+      "Waits for you",
+    ]);
+  });
+});
+
 describe("AgentAvatarBadge — dev/115 the running dot", () => {
   it("shows a labeled running dot only while a background job is live", () => {
     const { rerender } = render(

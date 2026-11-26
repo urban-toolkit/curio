@@ -447,9 +447,21 @@ def _source_resolver(
             }
         if state["state"] != agents_dataset_resolution.STATE_UNRESOLVED:
             # Candidates (or a reviewed install) already await the user: say so
-            # without spending a model call on a second identical card.
+            # without spending a model call on a second identical card. What
+            # the source waits on is the record's (``source_wait``). Candidates
+            # another chat asked for come to this one too, the same card, so
+            # this chat waits for the pick as well
+            # (``dataset_resolution.ask_again``).
+            record = agents_dataset_resolution.source_record(spec, node_id, user_key=user_key)
+            wait = agents_dataset_resolution.source_wait(record) or (
+                agents_dataset_resolution.WAITS_FOR_PICK
+                if state["state"] == agents_dataset_resolution.STATE_CANDIDATES_PENDING
+                else agents_dataset_resolution.WAITS_FOR_INSTALL
+            )
+            if wait == agents_dataset_resolution.WAITS_FOR_PICK and attachment_id:
+                agents_dataset_resolution.ask_again(user_key, project_id, node, attachment_id)
             return {"state": "awaiting", "detail": state["detail"],
-                    "attachmentId": state["attachmentId"]}
+                    "attachmentId": state["attachmentId"], "wait": wait}
         started = agents_dataset_resolution.initiate(
             user_key, project_id, node,
             config=config,
@@ -468,7 +480,8 @@ def _source_resolver(
         )
         if started["status"] == "awaiting":
             return {"state": "awaiting", "detail": started["detail"],
-                    "attachmentId": started.get("attachmentId")}
+                    "attachmentId": started.get("attachmentId"),
+                    "wait": agents_dataset_resolution.WAITS_FOR_PICK}
         # Discovery ran and found nothing usable, or the specialist could not
         # run at all. "Awaiting your selection" would be a lie — there is
         # nothing to select — so the node keeps its own honest outcome and the

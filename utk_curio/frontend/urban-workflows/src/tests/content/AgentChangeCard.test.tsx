@@ -4,7 +4,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 import { AgentChangeCard } from "../../components/agents/content/AgentChangeCard";
 import type { PlanNodeReviewState } from "../../components/agents/content/AgentReviewCard";
-import type { AgentChangePart } from "../../services/agents";
+import { BUILD_RUNNING_HINT, type AgentChangePart } from "../../services/agents";
 
 /** A change an agent made, as its turn's card carries it (`changes.card`). */
 const change = (overrides: Partial<AgentChangePart> = {}): AgentChangePart => ({
@@ -645,6 +645,17 @@ describe("AgentChangeCard: dev/71 a landed plan's rows: Solve then Run", () => {
     // The ref, and the row's listener for how far a download has come.
     await waitFor(() => expect(onRun).toHaveBeenCalledWith("b", expect.any(Function)));
     expect(screen.getByRole("button", { name: "Run through node Load" })).toBeInTheDocument();
+  });
+
+  // A build is a stream over the plan: a row's Solve started while it runs
+  // would build the same node beside it.
+  it("while a build runs on the plan, no row's Solve starts: each says why", () => {
+    renderRows({ appliedRefs: ["a", "b"], nodeStates: { a: "awaiting-source", b: "created" }, buildRunning: true });
+    for (const name of ["Solve node Load", "Solve node Analyze"]) {
+      const solve = screen.getByRole("button", { name });
+      expect(solve).toBeDisabled();
+      expect(solve).toHaveAttribute("data-tooltip", BUILD_RUNNING_HINT);
+    }
   });
 
   it("a card whose plan the attachment no longer holds shows its rows without actions", () => {

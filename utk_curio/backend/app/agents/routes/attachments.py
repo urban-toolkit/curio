@@ -114,17 +114,22 @@ def update_attachment(project_id: str, attachment_id: str):
 def record_dataset_selection(project_id: str, attachment_id: str):
     """dev/126: record the confirmed dataset selection for this node.
 
-    ``{"picks": [{"lane": "catalog"|"external", "key": "<datasetId>|<url>"}]}``
-    — identifiers only, resolved server-side against the candidates the runtime
-    itself proposed in this attachment's session; anything else is a 422. The
-    node's next Solve reads the record instead of asking the model what the
-    user picked. A download into the Data Catalog an editor's confirmation
-    would make waits for the dataflow's owner.
+    ``{"picks": [{"lane": "catalog"|"external", "key": "<datasetId>|<url>"}],
+    "discoveryId": "<the card's id>"}``: identifiers only, resolved
+    server-side against the candidates the runtime itself proposed in this
+    attachment's session, on the card the picks were made on when they name
+    it; anything else is a 422, and a card the Finder's record no longer
+    offers is a 409. The node's next Solve reads the record instead of asking
+    the model what the user picked. A download into the Data Catalog an
+    editor's confirmation would make waits for the dataflow's owner.
     """
 
     body = request.get_json(silent=True) or {}
     if "picks" not in body:
         return _error("body must include 'picks'")
+    discovery_id = body.get("discoveryId")
+    if discovery_id is not None and not isinstance(discovery_id, str):
+        return _error("'discoveryId' must be a string when present")
     try:
         flow = _dataflow(project_id)
         # dev/132: a confirmed fetchable source is delegated to the node's own
@@ -133,6 +138,7 @@ def record_dataset_selection(project_id: str, attachment_id: str):
         payload = agents_services.record_dataset_selection(
             flow.key, flow.project_id, attachment_id, body.get("picks"),
             guest=flow.guest, downloads_wait_for=flow.owner_name if flow.editor else None,
+            discovery_id=discovery_id or None,
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)

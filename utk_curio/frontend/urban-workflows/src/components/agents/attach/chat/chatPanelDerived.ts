@@ -26,8 +26,10 @@ export const INTENT_CLAMP_CHARS = 280;
 
 /** The meta line under one agent turn: the streaming reply shows the live
  * running indicator; finalized replies show their persisted execution
- * record; the newest reply falls back to the live run record when an old
- * server sent no execution fields — so a final message never renders bare. */
+ * record; the newest reply to a message falls back to the live run record
+ * when an old server sent no execution fields, so a final message never
+ * renders bare. A turn the runtime wrote after the reply (a source's
+ * candidates, a Recorded line) answers no message: it shows none. */
 export function turnMetaFor(
   t: AgentSessionTurn,
   i: number,
@@ -51,7 +53,7 @@ export function turnMetaFor(
       return { ...derived, durationMs: runStatus.durationMs };
     return derived;
   }
-  if (isLast && t.role === "agent" && !t.error && runStatus?.phase === "done")
+  if (isLast && t.role === "agent" && !t.error && turns[i - 1]?.role === "user" && runStatus?.phase === "done")
     return {
       kind: "done",
       durationMs: runStatus.durationMs,
@@ -114,10 +116,14 @@ export function canvasUnchangedFor(attachment: AgentAttachment, turns: AgentSess
 }
 
 /** A landed plan's card gets the plan's per-node state: the attachment's
- * plan (`planProposal`) and builder session, while they are this plan's. */
+ * plan (`planProposal`) and builder session, while they are this plan's,
+ * whether a build runs on it (*buildRunning*), which holds every row's Solve,
+ * and the row whose Solve runs on the server (the listing's `validating`),
+ * which reads Solving and holds the others. */
 export function planNodeStateFor(
   attachment: AgentAttachment,
   part: AgentChangePart,
+  buildRunning = false,
 ): PlanNodeReviewState | undefined {
   const plan = part.planId && attachment.planProposal?.proposalId === part.planId ? attachment.planProposal : null;
   return plan
@@ -126,6 +132,8 @@ export function planNodeStateFor(
         nodeStates: attachment.builderSession?.nodeStates ?? {}, // dev/71: the lifecycle ledger
         nodeChanges: attachment.builderSession?.nodeChanges ?? {}, // dev/72: where each node's change lives
         scenarioStates: plan.scenarioStates ?? {}, // #662: which scenarios are saved
+        buildRunning,
+        solvingRef: attachment.validating?.ref ?? null,
       }
     : undefined;
 }

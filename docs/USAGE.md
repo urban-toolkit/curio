@@ -2538,9 +2538,10 @@ the dock at the top of the canvas.
 
 Click an agent to open its chat panel, on the window's right under the top bar.
 Down its left side, the agents rail lists every agent on the dataflow by name,
-with what it is attached to under it, the open one marked and one at work with a
-dot: click one to open its chat, and hover it to see its conversation and what
-it is attached to. An agent attached to three nodes or more is one entry, which
+with what it is attached to under it, the open one marked, one at work with a
+dot, and one that waits for you to pick a node's source with a dot of its own,
+as its badge on the canvas has: click one to open its chat, and hover it to see
+its conversation and what it is attached to. An agent attached to three nodes or more is one entry, which
 lists its nodes. The header names the conversation, as *Node Builder: Heat
 colors* once it has a title, which Curio gives it from your first message; on
 the rail, two of one agent on one place whose conversations read the same are
@@ -2584,9 +2585,12 @@ plan stops there, and its card says what was left undone. Its plan line, under
 the Goal, then says where the plan stands, how many nodes wait for you, and
 holds one action: **Solve**, **Stop** while a Solve or a build runs, **Resume**
 when a build paused, or **Run workflow** once the plan is ready; while a build
-runs, neither the line nor the part its arrow opens offers **Solve**. The line
+runs, in your tab or another, no **Solve** of the plan's nodes starts, from the
+line, the plan's card or **Solve this node**, and while a row's **Solve** runs,
+its row reads *Solving…* and no build of the plan or other **Solve** of that
+node starts. The line
 also says when that part holds failures, or how the last Solve ended when it
-left work undone. A key to add or a source to confirm stays under the line.
+left work undone. A key to add or a source to pick stays under the line.
 Its arrow opens the plan's nodes, each
 with its own **Solve**, and **Build & validate plan**, which fills the plan's
 nodes in order: each node's code is run in the sandbox, and code that passes
@@ -2597,9 +2601,17 @@ nodes in one batch: it runs each node's code in the sandbox, corrects it when
 the run fails, and writes only code that ran. Before any plan, its empty chat
 offers planning templates, which fill the message box for you to send. A plan
 also gives every created node a **Node Builder**, and every
-data-loading node a **Dataset Finder**, which Solve asks for candidates when
-the node's source is not settled. See [Solve](AGENT-CATALOG.md#solve) in the
-Agent Catalog guide.
+data-loading node a **Dataset Finder**, which Solve or **Build & validate plan**
+asks for candidates when the node's source is not settled. The candidates
+appear in the Dataflow Builder's chat, as the same card the Finder's chat
+holds: **Use this source** on either records your pick, and the card you picked
+on says *Recorded* in both, with the pick and where it comes from. Below it,
+each chat says what comes of the pick: the Dataflow Builder goes on with its
+plan by itself as you were going, one **Step** after a Step, building the
+loader from that source. A source that downloads into the Data Catalog, or
+waits for its install, is built once it is there and you press **Resume**. A
+card of older candidates, or one whose Finder or node is gone, closes and says
+why. See [Solve](AGENT-CATALOG.md#solve) in the Agent Catalog guide.
 A plan can also declare the widgets each node's code reads, and save
 [scenarios](#scenarios), including a copy of one with a widget value changed;
 see [Widgets and scenarios](AGENT-CATALOG.md#widgets-and-scenarios).

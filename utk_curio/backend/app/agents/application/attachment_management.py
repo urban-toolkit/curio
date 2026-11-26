@@ -22,6 +22,7 @@ from utk_curio.backend.app.agents.application import delegation as agents_delega
 from utk_curio.backend.app.agents.application import lifecycle as agents_lifecycle
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
 from utk_curio.backend.app.agents.application.proposals import store as agents_store
+from utk_curio.backend.app.agents.application.solve import node_work as agents_node_work
 from utk_curio.backend.app.agents.application.solve import session as agents_session
 from utk_curio.backend.app.agents.application.solve import simulation as agents_simulation
 from utk_curio.backend.app.agents.application.turns import prompts as agents_prompts
@@ -122,6 +123,12 @@ def _attachment_card(spec: dict, record: dict, user_key: str, *,
         # The Dataflow Builder orchestration session (dev/52 DR-2) — drives
         # the phase-aware builder panel; absent for every other agent.
         "builderSession": record.get("builderSession"),
+        # The server's word on what runs on that plan now (``node_work``): the
+        # mode of its Build & validate, and its plan row's Solve, ``{ref,
+        # nodeId}``. A tab trusts these and never its own clock: a build an
+        # earlier start left, or one past its bound, runs no more.
+        "buildRunning": agents_node_work.build_running(record.get("builderSession")),
+        "validating": agents_node_work.row_solve_running(record.get("builderSession")),
         # dev/115: the running background job this process holds for the
         # attachment (Solve batch / per-node Solve), or null.
         "liveJob": agents_store._live_job_payload(user_key, record),

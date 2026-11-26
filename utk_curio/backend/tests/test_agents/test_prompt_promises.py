@@ -113,6 +113,22 @@ def test_the_node_builder_is_not_told_its_chat_starts_discovery():
     assert "the runtime initiates that discovery itself" not in held
 
 
+def test_the_dataflow_builder_is_told_the_candidates_appear_in_its_chat():
+    """When Solve or Build & validate reaches a data-loading node, its Dataset
+    Finder's candidates reach the chat that asked for them
+    (``dataset_resolution._mirror_candidates_turn``), the Dataflow Builder's,
+    where the user picks one with Use this source (``AgentDatasetCandidatesCard.tsx``):
+    ``test_dataset_discovery_routes.py::TestDiscoveryIsInitiated::test_the_candidates_reach_the_chat_that_asked``
+    checks it. So the Builder still plans first, and tells the user the
+    candidates appear in its chat, also when asked about data sources."""
+    instruction = _prompt(DATAFLOW_BUILDER)
+    assert "Plan first: never block a plan on dataset identity." in instruction
+    assert "resolve their sources at the node" not in instruction
+    for words in ("its candidates appear in this chat", "When the user asks about data sources"):
+        step = _sentence(instruction, words)
+        assert "this chat" in step and "Use this source" in step, step
+
+
 def test_no_agent_is_told_to_declare_a_synthetic_flag_the_gate_ignores():
     """``source_grounding.synthetic_requested`` reads only the user's own words;
     a ``"synthetic": true`` param changes nothing. Neither the Node Builder nor a

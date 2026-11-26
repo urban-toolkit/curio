@@ -3,6 +3,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faRobot } from "@fortawesome/free-solid-svg-icons";
 
 import {
+  askersOf,
   DATASET_SELECT_CAPABILITY,
   declaresCapability,
   installsIntoAccount,
@@ -19,6 +20,7 @@ import {
   type AgentProposalPart,
   type AgentSessionTurn,
   type AgentSolveAttemptsPart,
+  type AgentSourcePickPart,
   type RunStatusDisplay,
 } from "../../../../services/agents";
 import { AgentChangeCard } from "../../content/AgentChangeCard";
@@ -43,7 +45,31 @@ export interface AgentTurnActions {
   delegateExists?: (attachmentId: string) => boolean;
   /** The name of the agent another attachment binds, from the live list. */
   agentNameOf?: (attachmentId: string) => string | null;
-  onRecordDatasetSelection?: (picks: AgentDatasetPick[]) => Promise<AgentDatasetSelection>;
+  /** Record a pick on a card in this node Finder's chat, naming the card it
+   * was made on (*discoveryId*) when the card has an id. */
+  onRecordDatasetSelection?: (picks: AgentDatasetPick[], discoveryId?: string) => Promise<AgentDatasetSelection>;
+  /** Record a pick on a node's candidates card in the chat that asked for
+   * them: on the route of the node's Dataset Finder, *finderAttachmentId*,
+   * naming the card. */
+  onRecordSourcePick?: (
+    finderAttachmentId: string,
+    picks: AgentDatasetPick[],
+    discoveryId?: string,
+  ) => Promise<AgentDatasetSelection>;
+  /** Another attachment of the dataflow, from the live list: a candidates
+   * card in the chat that asked reads its node's Finder's record from it.
+   * Null once the list no longer holds it; undefined with no list to read. */
+  attachmentOf?: (attachmentId: string) => AgentAttachment | null | undefined;
+  /** Whether a node is on the canvas; omitted, every node is taken as there. */
+  nodeOnCanvas?: (nodeId: string) => boolean;
+  /** Brings the card *discoveryId* into view when this chat holds it, else
+   * opens the chat of its node's Finder (*finderAttachmentId*). */
+  showCardOf?: (discoveryId: string | null, finderAttachmentId: string | null) => void;
+  /** What this chat's agent is attached to, by the name its header shows: a
+   * node's Dataset Finder names its card for its node. */
+  targetName?: string | null;
+  /** A build runs on this agent's plan: no plan row's Solve starts. */
+  buildRunning?: boolean;
   onImportDataset?: (
     file: File,
     discoverySource?: import("../../../../services/datasetCatalog/datasetCatalogTypes").DatasetDiscoverySourceInput,
@@ -85,6 +111,15 @@ export const AgentTurn: React.FC<{
   // An install on an invited editor's chat is the owner's to review.
   const waitsForOwner = (part: AgentProposalPart) =>
     Boolean(actions.installsWaitForOwner) && installsIntoAccount(part.tool);
+  // A node's own Dataset Finder: the chats that asked for its candidates hold
+  // the same card, the one its record offers now, while their agents are on
+  // the dataflow.
+  const ownNode = attachment.target.targetId ?? null;
+  const ownRecord = isFinderOnNode ? attachment.sourceRecord ?? null : null;
+  const askerNames = askersOf(ownRecord)
+    .filter((asker) => asker !== attachment.attachmentId)
+    .map((asker) => actions.agentNameOf?.(asker) ?? null)
+    .filter((name): name is string => Boolean(name));
   return (
     <div className={styles.agentRow}>
       <span className={`${styles.agentRowAvatar} ${tint}`} aria-hidden="true">
@@ -116,15 +151,82 @@ export const AgentTurn: React.FC<{
                 handoffName={attachment.nodeBuildDelegate}
                 // dev/126: an agent that records selections, attached to a
                 // NODE, records the confirmed source for it, which the node's
-                // next Solve reads.
+                // next Solve reads, naming the card it was made on.
                 onRecordSelection={
-                  actions.onRecordDatasetSelection && isFinderOnNode ? actions.onRecordDatasetSelection : undefined
+                  actions.onRecordDatasetSelection && isFinderOnNode
+                    ? (picks) =>
+                        part.discoveryId
+                          ? actions.onRecordDatasetSelection!(picks, part.discoveryId)
+                          : actions.onRecordDatasetSelection!(picks)
+                    : undefined
                 }
                 // dev/132: and the Import button under a portal row's download
-                // steps — the same catalog import as the drawer footer.
+                // steps: the same catalog import as the drawer footer.
                 onImportDataset={actions.onImportDataset && isFinderOnNode ? actions.onImportDataset : undefined}
+                // The Finder's card is named for its node and follows its
+                // record: Recorded where the pick was made, closed once newer
+                // candidates replaced it, and, while it is the card on offer,
+                // it names the chats that asked, which hold the same card.
+                {...(isFinderOnNode
+                  ? {
+                      nodeLabel: actions.targetName ?? null,
+                      nodeId: ownNode,
+                      record: ownRecord,
+                      waitsForPick: Boolean(ownNode && (attachment.waitsForYou ?? []).includes(ownNode)),
+                      discoveryId: part.discoveryId ?? null,
+                      onShowNewest: actions.showCardOf
+                        ? () => actions.showCardOf!(ownRecord?.discoveryId ?? null, null)
+                        : null,
+                      mirroredIn:
+                        !part.discoveryId || ownRecord?.discoveryId === part.discoveryId ? askerNames : [],
+                    }
+                  : {})}
               />
             ))}
+          {(t.content ?? [])
+            .filter((p): p is AgentSourcePickPart => p.type === "sourcePick")
+            .map((part, j) => {
+              // A node's candidates in the chat that asked for them: the pick
+              // records on the node's Dataset Finder, naming this card, and
+              // the card follows that Finder's record, from the live list, as
+              // its own card does. A Finder the list no longer holds closes
+              // it (null); with no list to read (undefined) it stays open.
+              const finder = actions.attachmentOf?.(part.finderAttachmentId);
+              const finderName = finder ? actions.agentNameOf?.(part.finderAttachmentId) ?? finder.name : null;
+              return (
+                <AgentDatasetCandidatesCard
+                  key={`pick-${part.nodeId}-${j}`}
+                  part={{ type: "datasetCandidates", lanes: part.lanes }}
+                  tintClassName={tint}
+                  nodeLabel={part.nodeLabel}
+                  nodeId={part.nodeId}
+                  onRecordSelection={
+                    actions.onRecordSourcePick
+                      ? (picks) =>
+                          part.discoveryId
+                            ? actions.onRecordSourcePick!(part.finderAttachmentId, picks, part.discoveryId)
+                            : actions.onRecordSourcePick!(part.finderAttachmentId, picks)
+                      : undefined
+                  }
+                  onImportDataset={actions.onRecordSourcePick ? actions.onImportDataset : undefined}
+                  record={finder?.sourceRecord ?? null}
+                  waitsForPick={finder ? (finder.waitsForYou ?? []).includes(part.nodeId) : true}
+                  discoveryId={part.discoveryId ?? null}
+                  finderPresent={finder !== null}
+                  nodePresent={actions.nodeOnCanvas ? actions.nodeOnCanvas(part.nodeId) : true}
+                  onShowNewest={
+                    actions.showCardOf
+                      ? () => actions.showCardOf!(finder?.sourceRecord?.discoveryId ?? null, part.finderAttachmentId)
+                      : null
+                  }
+                  finderChat={
+                    finder && finderName && actions.onOpenAgentChat
+                      ? { name: finderName, onOpen: () => actions.onOpenAgentChat!(part.finderAttachmentId) }
+                      : null
+                  }
+                />
+              );
+            })}
           {(t.content ?? [])
             .filter((p): p is AgentSolveAttemptsPart => p.type === "solveAttempts")
             .map((part, j) => (
@@ -155,7 +257,7 @@ export const AgentTurn: React.FC<{
                 part={part}
                 tintClassName={tint}
                 onUndo={actions.onUndoChange}
-                planNodeState={planNodeStateFor(attachment, part)}
+                planNodeState={planNodeStateFor(attachment, part, Boolean(actions.buildRunning))}
                 onSolvePlanNode={actions.onSolvePlanNode}
                 onRunPlanNode={actions.onRunPlanNode}
                 onOpenAgentChat={actions.onOpenAgentChat}

@@ -89,6 +89,7 @@ from utk_curio.backend.app.agents.infrastructure.providers import NativeToolsRef
 from utk_curio.backend.app.agents.infrastructure.providers import ToolCall
 from utk_curio.backend.app.agents.repositories import ledger
 from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
+from utk_curio.backend.app.agents.application import dataset_resolution as agents_dataset_resolution
 from utk_curio.backend.app.agents.application import in_the_room as agents_room
 from utk_curio.backend.app.agents.application import skill_runs as agents_skill_runs
 from utk_curio.backend.app.agents.application import tool_rounds as agents_tool_rounds
@@ -1065,6 +1066,17 @@ class AttachmentTurn:
         run_skills = self.loop_ctx.get("skills")
         return list(run_skills.loaded) if run_skills is not None else []
 
+    @staticmethod
+    def _name_its_offers(parts: list) -> dict | None:
+        """Every candidates card the turn holds gets an id of its own
+        (``discoveryId``), which a pick on it names; returns the newest, which
+        a node's Dataset Finder offers for its node
+        (``dataset_resolution.offer_from_chat``), or None."""
+        cards = [part for part in parts if isinstance(part, dict) and part.get("type") == "datasetCandidates"]
+        for card in cards:
+            card.setdefault("discoveryId", uuid.uuid4().hex)
+        return cards[-1] if cards else None
+
     def settle_ok(self) -> dict:
         """Settle the reservation, persist both turns, title the conversation
         when this is its first exchange; returns the run's result payload. A
@@ -1091,6 +1103,7 @@ class AttachmentTurn:
             execution["cutAtOutputLimit"] = True
         if self.room_refused:
             execution["thinkingRoomRefused"] = True
+        offered = self._name_its_offers(run_parts)
         agents_prepare._persist_exchange(
             self.user_key,
             self.project_id,
@@ -1102,6 +1115,11 @@ class AttachmentTurn:
             parts=run_parts,
             writer=self.loop_ctx.get("writer"),
         )
+        if offered is not None:
+            # A node's Dataset Finder offered candidates in its own chat: its
+            # record names the card as the one on offer now, once the card is
+            # in the chat.
+            agents_dataset_resolution.offer_from_chat(self.user_key, self.project_id, self.attachment_id, offered)
         # Title before the done frame: the reply text already streamed via
         # deltas, and the client's post-send refresh must see the title.
         if self.wants_title and not self.stopped:

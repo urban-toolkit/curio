@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faChevronDown, faChevronUp } from "@fortawesome/free-solid-svg-icons";
+import { BUILD_RUNNING_HINT, ROW_SOLVE_RUNNING_HINT, buildRunningOn } from "../../../services/agents/planBuild";
 import type { AgentAttachment, AgentRemedy, AgentSolveWave } from "../../../services/agents";
 import { LlmConfigAction, remedyOf } from "../../llmConfigs/LlmConfigAction";
 import { useFlowContext } from "../../../providers/FlowProvider";
@@ -31,7 +32,10 @@ export const SHOW_PLAN_MORE = "Show the plan's nodes and actions";
 export const HIDE_PLAN_MORE = "Hide the plan's nodes and actions";
 
 /** Why no Solve is offered while a build of the plan runs. */
-export const BUILD_RUNNING_HINT = "The plan is being built: Stop the build to Solve";
+export { BUILD_RUNNING_HINT };
+
+/** How the line's notice of a pause its build ended on starts. */
+const PAUSED_NOTICE = "Paused: ";
 
 /**
  * The plan line of an agent that declares dataflow.orchestrate (dev/52 DR-5),
@@ -47,10 +51,11 @@ export const BUILD_RUNNING_HINT = "The plan is being built: Stop the build to So
  * Its more part, closed until asked for, holds the plan's nodes with their own
  * Solve, Build & validate plan, Step, the other batch actions and the hints,
  * at most a third of the panel's height, scrolling. What comes with a fix
- * stays in view under the line: a missing key's Add key, a missing
- * specialist's Add to project, the nodes awaiting a source, an action's error
- * with its Open API Settings. Before any plan there is no line: the planning
- * templates are in the empty conversation.
+ * stays in view under the line: a paused build's pause, said there once, a
+ * missing key's Add key, a missing specialist's Add to project, the nodes
+ * awaiting a source, an action's error with its Open API Settings. Before any
+ * plan there is no line: the planning templates are in the empty
+ * conversation.
  */
 export const AgentBuilderStrip: React.FC<{
   attachment: AgentAttachment;
@@ -106,8 +111,9 @@ export const AgentBuilderStrip: React.FC<{
   simulationActivity?: string;
   /** The build the chat runs for this agent, step or auto, which outlives
    *  this line: drawn again (the chat opened again, or the rail back on this
-   *  agent), the line still shows it and its Stop. Omitted, only a build this
-   *  line started. */
+   *  agent), the line still shows it and its Stop. A build another tab runs,
+   *  which the listing names, holds the line the same way
+   *  (`buildRunningOn`). */
   simulating?: "step" | "auto" | null;
 }> = ({
   attachment,
@@ -142,8 +148,12 @@ export const AgentBuilderStrip: React.FC<{
   const [cancelling, setCancelling] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [simBusy, setSimBusy] = useState<"step" | "auto" | null>(null);
-  // A build this line started, or one the chat still runs for this agent.
-  const building = simBusy ?? simulating;
+  // A build this line started, one the chat still runs for this agent, or one
+  // the server says runs (another tab's among them).
+  const building = simBusy ?? buildRunningOn(attachment, simulating);
+  // A row's Solve of the plan runs on the server, the one a pick goes on with
+  // among them: no build or Step starts over it.
+  const buildWaitReason = attachment.validating ? ROW_SOLVE_RUNNING_HINT : null;
   // Its Stop was asked for: the build stops after its current step.
   const [buildStopping, setBuildStopping] = useState(false);
   useEffect(() => {
@@ -155,6 +165,12 @@ export const AgentBuilderStrip: React.FC<{
   // delegate this run relies on).
   const [errorRemedy, setErrorRemedy] = useState<AgentRemedy | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // A pause this line's build ended on is said until a build of the plan runs
+  // again, from this line or not: a pick's own continuation builds the plan
+  // from the provider, and the plan has gone on by then.
+  useEffect(() => {
+    if (building) setNotice((said) => (said?.startsWith(PAUSED_NOTICE) ? null : said));
+  }, [building]);
   // The more part opens only when asked for, and stays as it was across the
   // session's updates.
   const [moreOpen, setMoreOpen] = useState(false);
@@ -245,7 +261,7 @@ export const AgentBuilderStrip: React.FC<{
       : null;
 
   const simulate = async (mode: "step" | "auto") => {
-    if (!onSimulate || building) return;
+    if (!onSimulate || building || buildWaitReason) return;
     setSimBusy(mode);
     setError(null);
     setErrorRemedy(null);
@@ -253,7 +269,7 @@ export const AgentBuilderStrip: React.FC<{
     try {
       const done = (await onSimulate(mode)) as { status?: string; reason?: { message?: string } } | undefined;
       if (done?.status === "paused" && done.reason?.message) {
-        setNotice(`Paused: ${done.reason.message}`);
+        setNotice(`${PAUSED_NOTICE}${done.reason.message}`);
       } else if (done?.status === "cancelled") {
         setNotice("Simulation cancelled; everything already built stays.");
       }
@@ -309,16 +325,17 @@ export const AgentBuilderStrip: React.FC<{
     }
   };
 
+  // The nodes that wait for the user's pick of their source: those the
+  // running Solve says, and those the listing says this agent waits on (the
+  // candidates its chat holds, as Build & validate paused on them).
   const userBlocked = (solveWaiting ?? []).filter((w) => w.kind === "dataset-selection");
-  const userBlockedIds = new Set(userBlocked.map((w) => w.nodeId));
+  const userBlockedIds = new Set([...userBlocked.map((w) => w.nodeId), ...(attachment.waitsForYou ?? [])]);
   const everyUnresolvedNeedsUser =
     unresolved > 0 && pending.concat(failed).every((id) => userBlockedIds.has(id));
   // While a build runs no Solve is offered: it would run over the same nodes.
   const solveDisabledReason = building
     ? BUILD_RUNNING_HINT
-    : solveDisabledReasonFor({
-        phase, unresolved, everyUnresolvedNeedsUser, userBlockedCount: userBlocked.length,
-      });
+    : solveDisabledReasonFor({ phase, unresolved, everyUnresolvedNeedsUser });
   const solveRunning = solving || phase === "solving" || liveJob?.kind === "solve-batch";
   // A batch's Stop reads Stopping… until that batch ends, however it ends: one
   // this line did not start (another tab's, or one a chat opened again found
@@ -330,6 +347,11 @@ export const AgentBuilderStrip: React.FC<{
     unresolved > 0 ? `${unresolved} node${unresolved === 1 ? "" : "s"} unsolved` : null;
 
   const paused = !building && Boolean(pauseReason);
+  // A paused build's pause is said once, under the line, whether the more
+  // part is open or not: the session's, which a tab opened since reads too,
+  // in place of this line's own notice of it.
+  const pauseLine = paused && pauseReason ? `${PAUSED_NOTICE}${pauseReason.message}` : null;
+  const noticeLine = pauseLine && notice?.startsWith(PAUSED_NOTICE) ? null : notice;
   const main = mainActionOf({
     solveRunning,
     canStopSolve: Boolean(onCancelSolve),
@@ -421,9 +443,9 @@ export const AgentBuilderStrip: React.FC<{
         >
           {sign ? sign.text : null}
         </span>
-        {userBlocked.length > 0 ? (
+        {userBlockedIds.size > 0 ? (
           <span className={styles.lineNeedsYou}>
-            {userBlocked.length} need{userBlocked.length === 1 ? "s" : ""} you
+            {userBlockedIds.size} need{userBlockedIds.size === 1 ? "s" : ""} you
           </span>
         ) : null}
         {mainPart ? batchActions([mainPart], true) : null}
@@ -442,7 +464,8 @@ export const AgentBuilderStrip: React.FC<{
           <button
             type="button"
             className={styles.solve}
-            data-tooltip={pauseReason ? `Paused: ${pauseReason.message}` : undefined}
+            disabled={Boolean(buildWaitReason)}
+            data-tooltip={buildWaitReason ?? (pauseReason ? `Paused: ${pauseReason.message}` : undefined)}
             onClick={() => void simulate("auto")}
           >
             Resume
@@ -477,7 +500,8 @@ export const AgentBuilderStrip: React.FC<{
           onDismiss={onDismissProposal ? () => void review(onDismissProposal, installReview.proposalId) : undefined}
         />
       ) : null}
-      {notice ? <div className={styles.hint}>{notice}</div> : null}
+      {noticeLine ? <div className={styles.hint}>{noticeLine}</div> : null}
+      {pauseLine ? <div className={styles.hint}>{pauseLine}</div> : null}
       {error ? (
         <div className={styles.error}>
           {error} <LlmConfigAction remedy={errorRemedy} />
@@ -494,13 +518,12 @@ export const AgentBuilderStrip: React.FC<{
               solveRunning={solveRunning || building !== null}
               nodeSolving={nodeSolving}
               onSolveNode={onSolveNode ? (nodeId) => void solveOne(nodeId) : undefined}
-              agentNameOf={agentNameOf}
               nodeNameOf={nodeNameOf}
             />
           ) : null}
           {solveRunning && (solvePass ?? 0) > 0 ? (
             <div className={styles.hint} aria-live="polite">
-              {passLineText(solvePass as number, unresolved, userBlocked.length)}
+              {passLineText(solvePass as number, unresolved, userBlockedIds.size)}
             </div>
           ) : null}
           {!solveRunning && solveEndedBy ? (
@@ -517,11 +540,17 @@ export const AgentBuilderStrip: React.FC<{
               // A paused build's Resume is the line's own action, and so is a
               // running build's Stop.
               withBuild={main !== "resume"}
+              waitReason={buildWaitReason}
               onSimulate={(mode) => void simulate(mode)}
             />
           ) : null}
           {batchActions(otherParts, false)}
-          {solveDisabledReason && phase !== "ready" ? <div className={styles.hint}>{solveDisabledReason}</div> : null}
+          {/* Why Solve is off, but not that the nodes wait for you: the line
+              says how many need you, their rows say what for, and a paused
+              build's line says it under the line. */}
+          {solveDisabledReason && phase !== "ready" && (building || !everyUnresolvedNeedsUser) ? (
+            <div className={styles.hint}>{solveDisabledReason}</div>
+          ) : null}
           {solveRunning ? (
             // dev/115 (DEC-021 slice): the batch is a background job.
             <div className={styles.hint}>Solve keeps running if you close this panel.</div>
@@ -534,9 +563,6 @@ export const AgentBuilderStrip: React.FC<{
           ) : null}
           {simulationActivity ? (
             <div className={styles.hint} aria-live="polite">{simulationActivity}</div>
-          ) : null}
-          {paused && pauseReason ? (
-            <div className={styles.hint}>Paused: {pauseReason.message} (Resume continues from here.)</div>
           ) : null}
         </div>
       ) : null}

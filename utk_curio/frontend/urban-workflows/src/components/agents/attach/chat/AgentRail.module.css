@@ -181,6 +181,11 @@
   background: var(--curio-role-running-fg);
 }
 
+/* A node whose agent waits for you to pick its source. */
+.flyoutDotWaiting {
+  background: var(--curio-warning-text);
+}
+
 .flyoutName {
   flex: 1;
   min-width: 0;
@@ -197,4 +202,10 @@
   font-size: 11px;
   color: var(--curio-role-running-fg);
   background: var(--curio-role-running-bg);
+}
+
+/* "waits for you", in the warning tone of the plan line's "needs you". */
+.flyoutNoteWaiting {
+  color: var(--curio-warning-text);
+  background: var(--curio-warning-bg);
 }
