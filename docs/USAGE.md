@@ -2585,9 +2585,11 @@ the Goal, then says where the plan stands, how many nodes wait for you, and
 holds one action: **Solve**, **Stop** while a Solve or a build runs, **Resume**
 when a build paused, or **Run workflow** once the plan is ready; while a build
 runs, in your tab or another, no **Solve** of the plan's nodes starts, from the
-line, the plan's card or **Solve this node**. The line
+line, the plan's card or **Solve this node**, and while a row's **Solve** runs,
+its row reads *Solving…* and no build of the plan or other **Solve** of that
+node starts. The line
 also says when that part holds failures, or how the last Solve ended when it
-left work undone. A key to add or a source to confirm stays under the line.
+left work undone. A key to add or a source to pick stays under the line.
 Its arrow opens the plan's nodes, each
 with its own **Solve**, and **Build & validate plan**, which fills the plan's
 nodes in order: each node's code is run in the sandbox, and code that passes
@@ -2601,10 +2603,13 @@ also gives every created node a **Node Builder**, and every
 data-loading node a **Dataset Finder**, which Solve or **Build & validate plan**
 asks for candidates when the node's source is not settled. The candidates
 appear in the Dataflow Builder's chat, as the same card the Finder's chat
-holds: **Use this source** on either records your pick, both cards say
-*Recorded*, and the Dataflow Builder goes on with its plan by itself, building
-the loader from that source. See [Solve](AGENT-CATALOG.md#solve) in the Agent
-Catalog guide.
+holds: **Use this source** on either records your pick, the card you picked on
+says *Recorded* in both, with what comes of it, and the Dataflow Builder goes on
+with its plan by itself as you were going, one **Step** after a Step, building
+the loader from that source. A source that downloads into the Data Catalog, or
+waits for its install, is built once it is there and you press **Resume**. A
+card of older candidates, or one whose Finder or node is gone, closes and says
+why. See [Solve](AGENT-CATALOG.md#solve) in the Agent Catalog guide.
 A plan can also declare the widgets each node's code reads, and save
 [scenarios](#scenarios), including a copy of one with a widget value changed;
 see [Widgets and scenarios](AGENT-CATALOG.md#widgets-and-scenarios).
