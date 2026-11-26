@@ -103,8 +103,12 @@ export interface AgentBuilderSession {
   nodeIds?: Record<string, string>;
   /** dev/67-9: the ref the driver is working on, while running. */
   currentRef?: string;
-  /** The mode of the Build & validate running now, while one runs. */
+  /** The mode of the Build & validate the record names as running. Whether
+   * one runs is the server's to say: the listing's `buildRunning`. */
   simulateMode?: "step" | "auto";
+  /** When that Build & validate started, in epoch seconds, by the server's
+   * clock. */
+  simulatingSince?: number;
   /** dev/67-9: why the sequence paused: a plain reason with a next action.
    * `awaiting-source`: no node can go on but loaders that wait for their
    * source, each as its `nodeStates` entry says; `nodes` names each by its

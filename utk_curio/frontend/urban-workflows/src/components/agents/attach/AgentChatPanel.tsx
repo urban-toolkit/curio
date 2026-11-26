@@ -4,6 +4,7 @@ import { useFlowContext } from "../../../providers/FlowProvider";
 import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
 import {
   attachmentDisplayName,
+  DATASET_SELECT_CAPABILITY,
   declaresCapability,
   landsAsAChange,
   ORCHESTRATE_CAPABILITY,
@@ -14,6 +15,7 @@ import {
   type AgentRunStatus,
   type RunSkill,
 } from "../../../services/agents";
+import { buildRunningOn, holdsSourceCardFor } from "../../../services/agents/planBuild";
 import { agentCategoryKey } from "../../menus/nodes/agentsPalette/agentCategoryStyle";
 import { AgentBuilderStrip } from "./AgentBuilderStrip";
 import { workingText } from "./AgentAvatarBadge";
@@ -165,10 +167,14 @@ export const AgentChatPanel: React.FC<{
   solveNotices?: Record<string, string>;
   /** dev/63: cancel the running solve. */
   onCancelSolve?: () => Promise<void>;
-  /** dev/115 (Amendment A2): the per-node Solve — offered when this agent is
-   * attached to a node; runs the node's current code in the sandbox, fixes
-   * errors, re-runs, and lands an executed review. Omitted → no row. */
+  /** dev/115 (Amendment A2): the per-node Solve: offered when this agent is
+   * attached to a node and solves nodes (`solvesNodes`, the server's own
+   * answer); runs the node's current code in the sandbox, fixes errors,
+   * re-runs, and lands an executed review. Omitted → no row. */
   onSolveNode?: () => Promise<unknown>;
+  /** Why the per-node Solve may not start now: a build runs on the node's
+   * plan, or its plan's row Solves it. */
+  solveNodeBlocker?: string | null;
   /** dev/115: the running per-node Solve's narration. */
   solveNodeActivity?: string | null;
   /** dev/72: opens ANOTHER attachment's chat: the rail's entries, and the
@@ -176,10 +182,22 @@ export const AgentChatPanel: React.FC<{
    * Omitted → entries inert, and no rail. */
   onOpenAgentChat?: (attachmentId: string) => void;
   /** dev/126: record the confirmed dataset selection for this attachment's
-   * node (an agent that declares dataset.select, on a node only). */
+   * node (an agent that declares dataset.select, on a node only), naming the
+   * card it was made on (*discoveryId*) when the card has an id. */
   onRecordDatasetSelection?: (
     picks: import("../../../services/agents").AgentDatasetPick[],
+    discoveryId?: string,
   ) => Promise<import("../../../services/agents").AgentDatasetSelection>;
+  /** Record a pick on a node's candidates card in this chat, which asked for
+   * them: on the route of the node's Dataset Finder, naming the card. */
+  onRecordSourcePick?: (
+    finderAttachmentId: string,
+    picks: import("../../../services/agents").AgentDatasetPick[],
+    discoveryId?: string,
+  ) => Promise<import("../../../services/agents").AgentDatasetSelection>;
+  /** Whether a node is on the canvas: a candidates card whose Finder is gone
+   * says whether its node went too. Omitted, every node is taken as there. */
+  nodeOnCanvas?: (nodeId: string) => boolean;
   /** dev/132: the shared catalog import, for a candidate row the runtime
    * could not fetch — resolves with the imported dataset's id. */
   onImportDataset?: (
@@ -237,6 +255,7 @@ export const AgentChatPanel: React.FC<{
   simulating = null,
   onSolve,
   onSolveNode,
+  solveNodeBlocker = null,
   solveNodeActivity = null,
   solveProgress,
   solveErrors,
@@ -250,6 +269,8 @@ export const AgentChatPanel: React.FC<{
   onCancelSolve,
   onOpenAgentChat,
   onRecordDatasetSelection,
+  onRecordSourcePick,
+  nodeOnCanvas,
   onImportDataset,
   delegateExists,
   agentNameOf,
@@ -436,6 +457,23 @@ export const AgentChatPanel: React.FC<{
   // What the agent is attached to: the header's words, Clear's question.
   const target = targetPhraseFor(attachment, targetName);
   const orchestrates = declaresCapability(attachment, ORCHESTRATE_CAPABILITY);
+  // The candidates cards this chat holds, by the node they are for and by
+  // the id of the search that minted them.
+  const sourceCardsOf = (nodeId: string) =>
+    Array.from(messagesRef.current?.querySelectorAll<HTMLElement>("[data-curio-source-pick]") ?? []).filter(
+      (card) => card.getAttribute("data-curio-source-pick") === nodeId,
+    );
+  // Brings the card *discoveryId* into view when this chat holds it, else
+  // opens the chat of its node's Finder (*finderAttachmentId*), which does.
+  const showCardOf = (discoveryId: string | null, finderAttachmentId: string | null) => {
+    const card = discoveryId
+      ? Array.from(messagesRef.current?.querySelectorAll<HTMLElement>("[data-curio-discovery]") ?? []).find(
+          (el) => el.getAttribute("data-curio-discovery") === discoveryId,
+        )
+      : undefined;
+    if (card) card.scrollIntoView({ block: "nearest" });
+    else if (finderAttachmentId && finderAttachmentId !== attachment.attachmentId) onOpenAgentChat?.(finderAttachmentId);
+  };
   const turnActions = {
     onComposePrompt: composePrompt,
     onInternalLink: (to: string) => leave(() => navigate(to)),
@@ -443,6 +481,17 @@ export const AgentChatPanel: React.FC<{
     delegateExists,
     agentNameOf,
     onRecordDatasetSelection,
+    onRecordSourcePick,
+    // A node's candidates card in this chat reads the node's Finder's record
+    // from the live list: null once the list no longer holds the Finder, and
+    // undefined when this chat has no list to read.
+    attachmentOf: (attachmentId: string) =>
+      attachments ? attachments.find((a) => a.attachmentId === attachmentId) ?? null : undefined,
+    nodeOnCanvas,
+    showCardOf,
+    targetName,
+    // No plan row's Solve starts while a build runs on this agent's plan.
+    buildRunning: buildRunningOn(attachment, simulating) !== null,
     onImportDataset,
     onApplyProposal,
     beginPackageReview: packageReview.beginReview,
@@ -452,6 +501,28 @@ export const AgentChatPanel: React.FC<{
     onRunPlanNode,
     installsWaitForOwner,
   };
+  // The node this agent is on, and whether this chat holds the card of its
+  // candidates, which its Solve asked for: Show its sources brings the card
+  // its Finder's record offers now into view, else the newest for the node.
+  const ownNode = attachment.target.kind === "node" ? attachment.target.targetId ?? null : null;
+  const ownFinderRecord = ownNode
+    ? attachments?.find(
+        (a) =>
+          a.target.kind === "node" &&
+          a.target.targetId === ownNode &&
+          declaresCapability(a, DATASET_SELECT_CAPABILITY),
+      )?.sourceRecord ?? null
+    : null;
+  const showSourceCard =
+    ownNode && holdsSourceCardFor(turns, ownNode)
+      ? () => {
+          const cards = sourceCardsOf(ownNode);
+          const offered = ownFinderRecord?.discoveryId
+            ? cards.find((card) => card.getAttribute("data-curio-discovery") === ownFinderRecord.discoveryId)
+            : undefined;
+          (offered ?? cards[cards.length - 1])?.scrollIntoView({ block: "nearest" });
+        }
+      : null;
 
   return (
     <div
@@ -489,13 +560,14 @@ export const AgentChatPanel: React.FC<{
         />
         {onSaveGoal ? <GoalLine goal={goal ?? ""} state={goalLine} /> : null}
 
-        {/* Solve this node, in a node agent's chat; the dev/52 plan line, in
-            the chat of an agent that declares dataflow.orchestrate, one that
-            plans a dataflow and solves it. */}
+        {/* Solve this node, in the chat of a node agent the server lets
+            Solve its node (`solvesNodes`); the dev/52 plan line, in the chat
+            of an agent that declares dataflow.orchestrate, one that plans a
+            dataflow and solves it. */}
         {/* Each keyed to its chat: the rail swaps the agent in this one
             panel, and what one chat's Solve or build started is not the
             next chat's. */}
-        {onSolveNode && attachment.target.kind === "node" ? (
+        {onSolveNode && attachment.target.kind === "node" && attachment.solvesNodes === true ? (
           <NodeSolveRow
             key={attachment.attachmentId}
             onSolveNode={onSolveNode}
@@ -503,6 +575,8 @@ export const AgentChatPanel: React.FC<{
             agentNameOf={agentNameOf}
             activity={solveNodeActivity}
             live={attachment.liveJob?.status === "running" && attachment.liveJob.kind === "solve-node"}
+            blocker={solveNodeBlocker}
+            onShowCard={showSourceCard}
           />
         ) : null}
         {orchestrates && onSolve ? (

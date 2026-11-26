@@ -33,8 +33,8 @@ export const OpenDatasetFinderAction: React.FC<{
       aria-label={`Open ${opens} for ${label || "this node"}`}
       data-tooltip={
         name
-          ? `Opens this node's ${name} chat, where the candidates await your selection. Confirm one, then Solve again.`
-          : "Opens the chat where this node's candidates await your selection. Confirm one, then Solve again."
+          ? `Opens this node's ${name} chat, where its candidates wait for you: pick one with Use this source.`
+          : "Opens the chat where this node's candidates wait for you: pick one with Use this source."
       }
       onClick={() => onOpenChat(attachmentId)}
     >

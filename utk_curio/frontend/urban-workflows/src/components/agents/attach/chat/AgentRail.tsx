@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import clsx from "clsx";
 
 import { attachmentDisplayName, type AgentAttachment } from "../../../../services/agents";
-import { AgentGlyph } from "../AgentAvatarBadge";
+import { AgentGlyph, waitsForYou } from "../AgentAvatarBadge";
 import { agentChipClass } from "./ChatHeader";
 import { targetPhraseFor, type TargetPhrase } from "./chatPanelDerived";
 import { useMenuPopup } from "./useMenuPopup";
@@ -113,9 +113,11 @@ function railNamesOf(
  * instances of one agent on one place that would read the same are numbered,
  * on the label as in the name. The open chat's entry is marked
  * (`aria-current`); an agent at work shows its running dot, from its job and
- * from the room, as its badge does. An agent attached three times or more
- * (six Node Builders) is one entry, which opens the list of its nodes; each
- * row opens that node's chat.
+ * from the room, as its badge does, and an agent that waits for you to pick a
+ * node's source its waiting dot (`waitsForYou`). An agent attached three times
+ * or more (six Node Builders) is one entry, which opens the list of its
+ * nodes; each row opens that node's chat. A group shows each dot when any of
+ * its members has it, and its list says which.
  */
 export const AgentRail: React.FC<{
   attachments: AgentAttachment[];
@@ -167,6 +169,7 @@ export const AgentRail: React.FC<{
           const first = entry.members[0];
           const open = entry.members.find((m) => m.attachmentId === selectedId) ?? null;
           const working = entry.members.map(workingOf).find(Boolean) ?? null;
+          const waiting = entry.members.filter(waitsForYou).length;
           if (entry.members.length === 1) {
             const { name, label, phrase } = nameOf(first);
             const named = `${name} ${phrase.header}`;
@@ -176,13 +179,13 @@ export const AgentRail: React.FC<{
                 type="button"
                 className={clsx(styles.entry, open && styles.entryOpen)}
                 aria-current={open ? "true" : undefined}
-                aria-label={working ? `${named}, at work` : named}
+                aria-label={[named, waiting ? "waits for you" : null, working ? "at work" : null].filter(Boolean).join(", ")}
                 data-tooltip={named}
                 data-curio-rail-entry={first.attachmentId}
                 onClick={() => onOpen(first.attachmentId)}
               >
                 <span className={clsx(styles.glyph, agentChipClass(first.category))}>
-                  <AgentGlyph category={first.category} working={working} />
+                  <AgentGlyph category={first.category} working={working} waiting={waiting > 0} />
                 </span>
                 <span className={styles.name}>{label}</span>
                 {phrase.short ? <span className={styles.sub}>{phrase.short}</span> : null}
@@ -197,6 +200,7 @@ export const AgentRail: React.FC<{
           const label = [
             `${first.name} on ${places}`,
             openName ? `open ${openName.rowHeader}` : null,
+            waiting ? `${waiting === 1 ? "one waits" : `${waiting} wait`} for you` : null,
             atWork ? `${atWork === 1 ? "one" : atWork} at work` : null,
           ].filter(Boolean).join(", ");
           return (
@@ -216,7 +220,7 @@ export const AgentRail: React.FC<{
               }}
             >
               <span className={clsx(styles.glyph, agentChipClass(first.category))}>
-                <AgentGlyph category={first.category} working={working} />
+                <AgentGlyph category={first.category} working={working} waiting={waiting > 0} />
                 <span className={styles.count} aria-hidden="true">{entry.members.length}</span>
               </span>
               <span className={styles.name}>{first.name}</span>
@@ -240,6 +244,7 @@ export const AgentRail: React.FC<{
           {openEntry.members.map((member) => {
             const { name, phrase, row } = nameOf(member);
             const working = workingOf(member);
+            const waiting = waitsForYou(member);
             const current = member.attachmentId === selectedId;
             return (
               <button
@@ -257,8 +262,12 @@ export const AgentRail: React.FC<{
                   onOpen(member.attachmentId);
                 }}
               >
-                <span className={clsx(styles.flyoutDot, working && styles.flyoutDotWorking)} aria-hidden="true" />
+                <span
+                  className={clsx(styles.flyoutDot, working && styles.flyoutDotWorking, waiting && styles.flyoutDotWaiting)}
+                  aria-hidden="true"
+                />
                 <span className={styles.flyoutName}>{row}</span>
+                {waiting ? <span className={clsx(styles.flyoutNote, styles.flyoutNoteWaiting)}>waits for you</span> : null}
                 {working ? <span className={styles.flyoutNote}>at work</span> : null}
               </button>
             );

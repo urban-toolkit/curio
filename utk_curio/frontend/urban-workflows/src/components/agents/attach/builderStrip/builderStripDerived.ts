@@ -143,24 +143,22 @@ export function passLineText(pass: number, unresolved: number, userBlocked: numb
 }
 
 /** Why the Solve button is disabled, or null when it is not. dev/131: a node
- * waiting for the USER (a dataset selection) cannot be helped by pressing
- * Solve — "while depending on user's input, the solve button should be
- * deactivated". */
+ * waiting for the USER (the pick of its source) cannot be helped by pressing
+ * Solve: "while depending on user's input, the solve button should be
+ * deactivated". Then every unresolved node waits for the user, and the reason
+ * counts them. */
 export function solveDisabledReasonFor(opts: {
   phase: string;
   unresolved: number;
   everyUnresolvedNeedsUser: boolean;
-  userBlockedCount: number;
 }): string | null {
-  const { phase, unresolved, everyUnresolvedNeedsUser, userBlockedCount } = opts;
+  const { phase, unresolved, everyUnresolvedNeedsUser } = opts;
   return phase === "idle"
     ? "Ask for a plan first"
     : unresolved === 0
         ? "No pending nodes"
         : everyUnresolvedNeedsUser
-          ? `Waiting for you: ${
-              userBlockedCount === 1 ? "confirm a dataset source" : `confirm a dataset source for ${userBlockedCount} nodes`
-            }`
+          ? `Waiting for you: ${unresolved === 1 ? "pick a node's source" : `pick the sources of ${unresolved} nodes`}`
           : null;
 }
 

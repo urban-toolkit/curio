@@ -320,3 +320,37 @@ describe("AgentDockOverlay: a plan row's Solve and Run say how far a download ha
     expect(lines).toEqual([MESSAGE, ""]);
   });
 });
+
+// A plan row's Solve that runs on the server, which the listing names
+// (`validating`), is work on its node: Solve this node in the chat of an agent
+// on that node waits for it, saying why.
+describe("AgentDockOverlay: Solve this node waits for its plan's row Solve", () => {
+  it("hands the node agent's chat why, while the plan's row solves the node", () => {
+    const builder = {
+      ...attachment("dfb", "Dataflow Builder"),
+      builderSession: { phase: "applied", nodeIds: { load: "node-a" } },
+      validating: { ref: "load", nodeId: "node-a" },
+    };
+    const nodeBuilder = { ...attachment("nb", "Node Builder"), target: { kind: "node", targetId: "node-a" }, solvesNodes: true };
+    mockCtx.mockReturnValue(ctx([builder, nodeBuilder], "nb"));
+    render(<AgentDockOverlay />);
+    const latest = panelProps[panelProps.length - 1];
+    expect(latest.solveNodeBlocker).toBe("This node is being solved by its plan's row: wait for its Solve to end");
+  });
+});
+
+// A pick names the card it was made on, in the Finder's own chat and in the
+// chat that asked for the candidates.
+describe("AgentDockOverlay: a pick names its card", () => {
+  it("records the pick with the card's id, on the Finder's route", () => {
+    const context = ctx([A], "a");
+    mockCtx.mockReturnValue(context);
+    render(<AgentDockOverlay />);
+    const latest = panelProps[panelProps.length - 1];
+    const picks = [{ lane: "external", key: "https://data.example.org/areas.geojson" }];
+    latest.onRecordSourcePick("att-df", picks, "d2");
+    expect(context.recordDatasetSelection).toHaveBeenCalledWith("att-df", picks, "d2");
+    latest.onRecordDatasetSelection(picks, "d3");
+    expect(context.recordDatasetSelection).toHaveBeenCalledWith("a", picks, "d3");
+  });
+});
