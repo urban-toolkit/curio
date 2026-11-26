@@ -987,3 +987,30 @@ class TestSolveThisNodeSaysWhatItsSourceWaitsOn:
         assert "is downloading into the Data Catalog" in said, said
         assert "pick one" not in said, said
         assert done.get("sourceWait") == "download", done
+
+    def test_a_plans_solve_on_a_loader_whose_pick_downloads_says_it_is_downloading(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The plan's Solve asks for the loader's candidates, and the user
+        picks a row Curio downloads. The download is still running when the
+        plan is Solved again: the loader stays pending, and its reason says
+        what Solve this node says, that the source is downloading into the
+        Data Catalog, never that it awaits the user's selection. On 00b5cfca04
+        its reason said "awaiting your dataset selection", of a pick the user
+        had already made."""
+        user, token = user_and_token
+        fake = _FakeDiscovery(started={"jobId": "job-1", "status": "queued"}, job={"status": "running"})
+        roster = packages_roster._LazyRoster
+        monkeypatch.setattr(packages_roster, "_LazyRoster", lambda: roster(dict(ROSTER)))
+        monkeypatch.setattr(acquire, "_discovery_service", lambda: fake)
+        monkeypatch.setattr(acquire, "_DISCOVERY_APPLY_WAIT_S", 0)
+        h = _Harness(client, user, token, monkeypatch, discover_replies=[DISCOVERY_CANDIDATES])
+        first = h.solve()["results"][h.load]
+        assert first["status"] == "pending", first
+        assert first["reason"].startswith("awaiting your dataset selection"), first
+        picked = _select(h, h.finder_attachment_id(), [{"lane": "external", "key": URL}]).get_json()
+        assert picked["status"] == dr.STATE_AWAITING_INSTALL and picked["picks"][0].get("acquiring"), picked
+        again = h.solve()["results"][h.load]
+        assert again["status"] == "pending", again
+        assert "is downloading into the Data Catalog" in again["reason"], again
+        assert "awaiting your dataset selection" not in again["reason"], again
