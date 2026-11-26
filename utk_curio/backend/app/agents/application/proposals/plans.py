@@ -801,22 +801,43 @@ def _normal(value):
     return value
 
 
-def _outside_the_plan(dataflow: dict, change: dict) -> dict:
-    """What the doc holds of *dataflow* but the plan's own: its nodes, the
-    connections it drew or that touch its nodes, its scenarios. The goal is
-    left out too, which never holds a plan's Undo back (:func:`_undo_plan`)."""
+#: The fields of a dataflow a plan's Undo does not judge as whole fields: its
+#: nodes and connections, which it checks one by one, and its goal, which has
+#: its own rule.
+_ONE_BY_ONE = frozenset({"nodes", "edges", "task"})
+
+
+def _written_by_the_plan(before: dict, then: dict) -> set:
+    """The fields of the dataflow the plan's writes changed: those that differ
+    between *before*, the dataflow its first write found, and *then*, the one
+    its last write left, but for :data:`_ONE_BY_ONE`. Nothing but the goal
+    changes between a plan's writes without refusing its Undo
+    (:func:`_only_the_goal_between`), so each of them is the plan's."""
+    return {name for name in (set(before) | set(then)) - _ONE_BY_ONE
+            if not doc_mapping.same(before.get(name, doc_mapping.MISSING), then.get(name, doc_mapping.MISSING))}
+
+
+def _outside_the_plan(dataflow: dict, change: dict, wrote: set) -> dict:
+    """What of *dataflow* must still be as the plan left it for its Undo to go
+    ahead, since the Undo puts it back: its nodes but the plan's own, its
+    connections but those the plan drew or that touch its nodes, and the
+    fields the plan wrote (*wrote*), its scenarios but its own among them. A
+    field the plan did not write, and the goal, the Undo leaves as they are
+    now (:func:`_undo_plan`), so a change to them never holds it back."""
     own = set(change.get("nodeIds") or [])
     own_edges = set(change.get("edgeIds") or [])
     own_scenarios = set(change.get("scenarioIds") or [])
     flow = doc_mapping.owned(dataflow)
-    out = {key: value for key, value in flow.items() if key not in ("nodes", "edges", "scenarios", "task")}
+    out = {key: value for key, value in flow.items() if key in wrote and key != "scenarios"}
     out["nodes"] = {n.get("id"): n for n in flow.get("nodes") or [] if isinstance(n, dict) and n.get("id") not in own}
     out["edges"] = {
         str(e.get("id")): e for e in flow.get("edges") or []
         if isinstance(e, dict) and str(e.get("id")) not in own_edges
         and e.get("source") not in own and e.get("target") not in own
     }
-    out["scenarios"] = [s for s in flow.get("scenarios") or [] if not (isinstance(s, dict) and s.get("id") in own_scenarios)]
+    if "scenarios" in wrote:
+        out["scenarios"] = [s for s in flow.get("scenarios") or []
+                            if not (isinstance(s, dict) and s.get("id") in own_scenarios)]
     return _normal(out)
 
 
@@ -837,13 +858,16 @@ def _undo_plan(user_key: str, project_id: str, attachment_id: str, change: dict,
     what a person changed since that made no version of its own, such as a
     goal or a description written (``history.put_back``), for every tab, so
     what it removed comes back with its connections and what it added goes.
-    Refused, with nothing changed, when someone changed the dataflow between
-    its writes, or when the dataflow outside the plan's own nodes is no
-    longer what the plan left: a put-back would erase what a person did. The
-    dataflow's goal never refuses it, changed between the plan's writes or
-    after them: the goal goes back only when the plan set it (``goalSet``)
-    and it still reads what the plan wrote, and stays as it is otherwise. The
-    planner's session goes back to what it was."""
+    It takes back only what the plan wrote: every field of the dataflow the
+    plan did not write stays as it is now (the put-back's ``keep``). Refused,
+    with nothing changed, when someone changed the dataflow between its
+    writes, or when, but for the plan's own nodes and connections, what it
+    puts back is no longer what the plan left (:func:`_outside_the_plan`): a
+    put-back would erase what a person did. The dataflow's goal never refuses
+    it, changed between the plan's writes or after them: the goal goes back
+    only when the plan set it (``goalSet``) and it still reads what the plan
+    wrote, and stays as it is otherwise. The planner's session goes back to
+    what it was."""
     from utk_curio.backend.app.projects import storage as projects_storage
 
     change_id = change["changeId"]
@@ -862,11 +886,17 @@ def _undo_plan(user_key: str, project_id: str, attachment_id: str, change: dict,
         now = dataflow_docs.live(user_key, project_id)
         if then is None or before is None or now is None:
             raise AgentServiceError("This plan's version can no longer be rebuilt; nothing was undone.", 409)
-        if _outside_the_plan(then, change) != _outside_the_plan(now.get("dataflow") or {}, change):
+        current = doc_mapping.owned(now.get("dataflow") or {})
+        wrote = _written_by_the_plan(before, then)
+        if _outside_the_plan(then, change, wrote) != _outside_the_plan(current, change, wrote):
             raise _changed_after(points[steps[-1] + 1:], change_id)
-        goal_back = "goalSet" in change and (now.get("dataflow") or {}).get("task") == change["goalSet"]
+        goal_back = "goalSet" in change and current.get("task") == change["goalSet"]
+        # Each field the plan did not write stays as it is now; the goal by its own rule.
+        keep = (set(before) | set(current)) - _ONE_BY_ONE - wrote
+        if not goal_back:
+            keep.add("task")
         try:
-            history.put_back(user_key, project_id, first["parent"], by, keep=() if goal_back else ("task",),
+            history.put_back(user_key, project_id, first["parent"], by, keep=sorted(keep),
                              target=copy.deepcopy(before))
         except history.HistoryError as exc:
             raise AgentServiceError(str(exc), exc.status) from exc
