@@ -55,7 +55,7 @@ def curio_root() -> Path:
     from utk_curio.backend.config import _is_testing
 
     # CURIO_STATE_DIR relocates the whole ``.curio`` tree without moving the
-    # DATA root (``launch_dir`` also anchors ``/file/`` and relative node paths,
+    # launch folder (``launch_dir`` also anchors ``/file/`` and relative node paths,
     # and ``safe_paths.is_within`` resolves symlinks, so those cannot be
     # redirected). The parallel e2e harness gives each backend+sandbox pair
     # its own; see backend/tests/shards.py.

@@ -314,8 +314,8 @@ def main():
     parser.add_argument(
         "--state-dir", default=None, metavar="PATH",
         help=(
-            "Directory for the .curio state: every user's store, the caches "
-            "and the launcher's log (sets CURIO_STATE_DIR). Defaults to .curio/ "
+            "Directory for the .curio state: every user's store, the node "
+            "outputs, the caches and the launcher's log (sets CURIO_STATE_DIR). Defaults to .curio/ "
             "in the directory Curio is started from."
         ),
     )

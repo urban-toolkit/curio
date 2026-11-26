@@ -166,6 +166,7 @@ if __name__ == '__main__':
             gid=None,
             hosted=_isolation_mode.mode_from_environment()[1],
             model_weights_dir=os.environ.get('CURIO_MODEL_WEIGHTS_DIR'),
+            state_dir=os.environ.get('CURIO_STATE_DIR'),
         )
         for _finding in _findings:
             print(f"[isolation] {_finding}", file=sys.stderr, flush=True)

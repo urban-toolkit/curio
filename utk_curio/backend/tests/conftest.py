@@ -69,7 +69,7 @@ else:
     _TEST_OWNED_DIR = os.path.join(
         os.environ.get("CURIO_STATE_DIR") or os.path.join(_REPO_ROOT, ".curio"), "test")
 
-# CURIO_STATE_DIR relocates ``.curio`` without moving the data root; it must
+# CURIO_STATE_DIR relocates ``.curio`` without moving the launch folder; it must
 # agree with config._resolve_database_uri and user_storage.curio_root.
 _STATE_DIR = os.environ.get("CURIO_STATE_DIR") or os.path.join(_TEST_WORKSPACE, ".curio")
 _TEST_DB_DIR = os.path.join(_STATE_DIR, "test")

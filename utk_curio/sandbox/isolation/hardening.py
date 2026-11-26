@@ -147,8 +147,55 @@ def expand(launch_dir, relative):
     )
 
 
-def audit(launch_dir, *, uid, gid, paths=SENSITIVE_PATHS):
-    """Report every sensitive path the execution user can still read.
+#: The sensitive paths a start keeps in its state folder (``--state-dir``,
+#: ``CURIO_STATE_DIR``), which is ``.curio`` of the launch directory unless a
+#: start names another.
+STATE_FOLDER = ".curio"
+
+
+def moved_paths(launch_dir, *, state_dir=None, shared_data_dir=None):
+    """Where a start keeps the sensitive paths it moved out of *launch_dir*:
+    ``{pattern: absolute path}``.
+
+    ``--state-dir`` moves every path of :data:`STATE_FOLDER`, and
+    ``CURIO_SHARED_DATA`` names the artifact store, ``.curio/data``. A path
+    that is where *launch_dir* has it is left out, and so is one with a ``*``,
+    which no start moves. The path under *launch_dir* is still hardened and
+    audited: what an earlier start kept there stays as sensitive.
+
+    A state or data folder that is *launch_dir* or a folder above it moves
+    nothing: hardening it would lock the execution user out of Curio's own
+    files (``docs/``, Node's packages, the shipped ``discovery/``).
+    """
+    launch = os.path.realpath(launch_dir)
+
+    def elsewhere(path, relative):
+        real = os.path.realpath(path)
+        holds_the_launch_folder = launch == real or launch.startswith(real.rstrip(os.sep) + os.sep)
+        return not holds_the_launch_folder and real != os.path.realpath(os.path.join(launch_dir, relative))
+
+    moved = {}
+    if state_dir and elsewhere(state_dir, STATE_FOLDER):
+        for pattern, _reason in SENSITIVE_PATHS:
+            if pattern.startswith(STATE_FOLDER + "/") and "*" not in pattern:
+                moved[pattern] = os.path.join(os.path.abspath(state_dir), pattern[len(STATE_FOLDER) + 1:])
+    if shared_data_dir and elsewhere(shared_data_dir, ".curio/data"):
+        moved[".curio/data"] = os.path.abspath(shared_data_dir)
+    return moved
+
+
+def _targets(launch_dir, pattern, moved):
+    """Each path *pattern* names: ``(name, path)`` under *launch_dir*, then
+    where a start moved it (:func:`moved_paths`), named by its full path."""
+    for relative in expand(launch_dir, pattern):
+        yield relative, os.path.join(launch_dir, relative)
+    if moved and pattern in moved:
+        yield moved[pattern], moved[pattern]
+
+
+def audit(launch_dir, *, uid, gid, paths=SENSITIVE_PATHS, moved=None):
+    """Report every sensitive path the execution user can still read, under
+    *launch_dir* and where a start moved it (*moved*, :func:`moved_paths`).
 
     Returns a list of sentences, empty when nothing is exposed. Missing paths
     are skipped rather than reported: a fresh workspace has no ``instance/``
@@ -156,8 +203,7 @@ def audit(launch_dir, *, uid, gid, paths=SENSITIVE_PATHS):
     """
     findings = []
     for pattern, reason in paths:
-        for relative in expand(launch_dir, pattern):
-            target = os.path.join(launch_dir, relative)
+        for relative, target in _targets(launch_dir, pattern, moved):
             try:
                 path_stat = os.stat(target)
             except OSError:
@@ -179,8 +225,10 @@ def _tighten(target, mode):
         return False
 
 
-def harden_paths(launch_dir, *, paths=SENSITIVE_PATHS, recurse_files=True):
-    """Restrict the sensitive paths to their owner. Returns what changed.
+def harden_paths(launch_dir, *, paths=SENSITIVE_PATHS, recurse_files=True, moved=None):
+    """Restrict the sensitive paths to their owner, under *launch_dir* and
+    where a start moved them (*moved*, :func:`moved_paths`). Returns what
+    changed.
 
     Only called when isolation is enabled. Applying this on every launch would
     break the CI overlay (root plus ``umask 000``, with the host reaching into
@@ -197,8 +245,7 @@ def harden_paths(launch_dir, *, paths=SENSITIVE_PATHS, recurse_files=True):
 
     changed, failed = [], []
     for pattern, _reason in paths:
-        for relative in expand(launch_dir, pattern):
-            target = os.path.join(launch_dir, relative)
+        for relative, target in _targets(launch_dir, pattern, moved):
             if not os.path.exists(target):
                 continue
             if os.path.isdir(target):
@@ -440,8 +487,13 @@ def audit_model_weights(weights_dir, *, uid, gid):
     ]
 
 
-def apply_and_report(launch_dir, shared_data_dir, *, uid, gid, hosted, model_weights_dir=None):
+def apply_and_report(launch_dir, shared_data_dir, *, uid, gid, hosted, model_weights_dir=None,
+                     state_dir=None):
     """Harden, then audit, and say what is left. Returns (findings, fatal).
+
+    The sensitive paths are those under *launch_dir*, and those the start
+    keeps elsewhere: in its state folder *state_dir* (``--state-dir``), and
+    the artifact store at *shared_data_dir* (:func:`moved_paths`).
 
     *fatal* is True when a hosted instance is still exposed after hardening.
     The caller refuses to serve in that case: a hosted deployment that believes
@@ -464,11 +516,12 @@ def apply_and_report(launch_dir, shared_data_dir, *, uid, gid, hosted, model_wei
     # scratch subtree, so this is belt and braces rather than the load-bearing
     # part -- but it means the scratch root gets its mode last either way, and
     # a future change to the walk cannot silently take it away again.
-    harden_paths(launch_dir)
+    moved = moved_paths(launch_dir, state_dir=state_dir, shared_data_dir=shared_data_dir)
+    harden_paths(launch_dir, moved=moved)
     open_node_packages(launch_dir)
     open_model_weights(model_weights_dir)
     prepare_scratch_root(shared_data_dir, exec_uid=uid)
-    findings = audit(launch_dir, uid=uid, gid=gid)
+    findings = audit(launch_dir, uid=uid, gid=gid, moved=moved)
     # #332: the node-library trees, Node's packages and the model weights
     # --model-weights-dir names must stay readable, so they are asked the
     # opposite question.

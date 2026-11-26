@@ -87,6 +87,24 @@ def set_state_dir(state_dir=None):
         os.environ["CURIO_STATE_DIR"] = str(Path(state_dir).expanduser().resolve())
 
 
+def _data_folder():
+    """The data folder of the state folder: the node outputs and
+    ``curio_data.duckdb``.
+
+    Under ``--state-dir``, a warning when the launch folder still holds the
+    data folder of an earlier start: nothing moves that folder, and this start
+    does not read it."""
+    data = (Path(os.environ.get("CURIO_STATE_DIR") or ".curio") / "data").resolve()
+    earlier = Path(".curio/data").resolve()
+    if earlier != data and earlier.is_dir():
+        log_warning(
+            f"This start keeps its node outputs in {data}, and {earlier} exists. If an earlier "
+            f"start without --state-dir kept its outputs there, this start does not read them: "
+            f"move {earlier.parent} into {data.parent} to keep them."
+        )
+    return data
+
+
 def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, agent_search_url=None, backend_url=None, discovery_root=None, save_node_outputs=None, solve_max_attempts=None, solve_node_budget=None, solve_session_deadline=None, solve_batch_deadline=None, validation_exec_timeout=None, validation_node_limit=None, discovery_max_download_mb=None, media_cache_max_gb=None, media_cache_max_file_gb=None, db_pool_size=None, db_pool_overflow=None, db_pool_timeout=None, proxy_hops=None, package_workers=None, js_parallelism=None, js_registry_url=None, js_block_unpinned=None, shared_guest_name=None, shared_guest_username=None, guest_packages=None, collab_origins=None, collab_namespace=None, log_to_stdout=None, packages_root=None, llm_endpoint_file=None, model_weights_dir=None, monitor_dir=None, bucket_mounts_dir=None, bucket_mount_socket=None):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
@@ -158,13 +176,13 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     _use_bucket_mounts(bucket_mounts_dir, bucket_mount_socket, deploy=deploy)
     # Respect an already-set CURIO_LAUNCH_CWD / CURIO_SHARED_DATA so the test
     # harness can point the backend at a dedicated workspace (see
-    # utk_curio/backend/tests/conftest.py). Only fall back to cwd otherwise.
+    # utk_curio/backend/tests/conftest.py). Otherwise the data folder is in
+    # the state folder: --state-dir's, or .curio of the launch folder.
     os.environ["CURIO_LAUNCH_CWD"] = os.environ.get(
         "CURIO_LAUNCH_CWD"
     ) or os.getcwd()
-    os.environ["CURIO_SHARED_DATA"] = os.environ.get(
-        "CURIO_SHARED_DATA"
-    ) or str(Path("./.curio/data").resolve())
+    if not os.environ.get("CURIO_SHARED_DATA"):
+        os.environ["CURIO_SHARED_DATA"] = str(_data_folder())
 
     # Set before anything reads it: the database URL, the testing routes and
     # the isolation exemption below all key off this one value. A pre-set env
