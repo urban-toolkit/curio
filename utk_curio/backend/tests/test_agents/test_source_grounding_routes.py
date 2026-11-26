@@ -449,10 +449,10 @@ class TestExternalDiscovery:
         assert '"catalog"' in child_frame and dataset_id in child_frame
         assert "datasetCandidates" in child_frame and "discoveryReplyContract" in child_frame
         # The parent learned the outcome and the two-turn rule.
-        assert "shown to the user to choose from" in calls[2][-1]["content"]
-        assert "1 catalog row(s) were dropped" in calls[2][-1]["content"]
+        assert "The user is shown 3 dataset candidates to choose from;" in calls[2][-1]["content"]
+        assert "Dropped 1 catalog row that the Data Catalog does not hold." in calls[2][-1]["content"]
         entry = next(p for p in body["content"] if p["type"] == "delegation")
-        assert entry["status"] == "ok" and "select and confirm" in entry["summary"]
+        assert entry["status"] == "ok" and entry["summary"] == "dataset candidates shown for review: select and confirm"
 
     def test_same_turn_create_after_candidates_is_refused(self, client, user_and_token, tmp_curio, project, monkeypatch):
         user, token = user_and_token
@@ -1237,7 +1237,7 @@ class TestCandidatesMint:
         assert part["lanes"]["external"][0]["verification"]["status"] == "verified"
         assert loop_ctx["_candidates_pending_review"] is True
         assert loop_ctx["_verified_urls"] == {NOAA: part["lanes"]["external"][0]["verification"]}
-        assert "1 catalog row(s) were dropped" in text
+        assert "Dropped 1 catalog row that the Data Catalog does not hold." in text
 
     def test_nothing_usable_is_honest(self):
         from utk_curio.backend.app.agents.application.turns import delegates as s
@@ -1247,6 +1247,7 @@ class TestCandidatesMint:
             [],
         )
         assert part is None and outcome == "no-candidates"
-        assert "1 catalog row(s) dropped" in text and "ask the user for a path or URL" in text
+        assert "(dropped 1 catalog row that the Data Catalog does not hold)" in text
+        assert "ask the user for a path or URL" in text
         part, text, outcome = s._mint_candidates_from_delegate({}, "Sure! Here are some ideas.", [])
         assert part is None and outcome == "no-candidates" and "do not invent" in text

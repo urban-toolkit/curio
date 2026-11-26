@@ -35,8 +35,8 @@ from utk_curio.backend.tests._support.agent_routes import _auth
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 PACKAGE = REPO_ROOT / "utk_curio" / "backend" / "app" / "agents"
-#: The en dash and the em dash.
-DASHES = re.compile("[–—]")
+#: The en dash (U+2013) and the em dash (U+2014).
+DASHES = re.compile("[" + chr(0x2013) + chr(0x2014) + "]")
 #: A count written for one and for many at once; "http(s)" names two schemes.
 PLURAL_S = re.compile(r"(?<!http)\(s\)")
 #: What a slice that names a node reads: its goal, its title or its label.

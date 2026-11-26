@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from utk_curio.backend.app.execution import runner
 from utk_curio.backend.app.agents.domain import agent_text
+from utk_curio.backend.app.agents.domain import labels
 
 # Sandbox runtime dataType → template port type vocabulary. Unmapped types
 # skip the compatibility check (fail-open — honesty over false alarms).
@@ -75,15 +76,15 @@ def _consumer_type_mismatch(
         if not declared:
             continue
         if absent:
-            label = (consumer.get("goal") or edge.get("target") or "?")
+            label = labels.node_label(consumer) or edge.get("target") or "?"
             return agent_text.message(
-                "result-shape.consumer-no-output", label=repr(str(label)[:60]), declared=', '.join(sorted(declared)),
+                "result-shape.consumer-no-output", label=repr(str(label)), declared=', '.join(sorted(declared)),
             )
         if port_type not in declared:
-            label = (consumer.get("goal") or edge.get("target") or "?")
+            label = labels.node_label(consumer) or edge.get("target") or "?"
             return agent_text.message(
                 "result-shape.consumer-type-mismatch", output_data_type=repr(output_data_type),
-                label=repr(str(label)[:60]), declared=', '.join(sorted(declared)),
+                label=repr(str(label)), declared=', '.join(sorted(declared)),
             )
     return None
 
@@ -206,7 +207,7 @@ def validate_candidate(
             evidence.update({
                 "kind": "upstream-blocker",
                 "blocker": blocker,
-                "blockerLabel": str(blocker_node.get("goal") or blocker)[:60],
+                "blockerLabel": labels.node_label(blocker_node) or str(blocker),
                 "stderrTail": blocker_record.get("stderrTail", ""),
                 "detail": report.get("error"),
             })

@@ -24,6 +24,7 @@ from utk_curio.backend.app.agents.domain import dashboards
 from utk_curio.backend.app.agents.domain import node_settings
 from utk_curio.backend.app.agents.domain import plan_topology
 from utk_curio.backend.app.agents.domain.counts import count_label
+from utk_curio.backend.app.agents.domain.labels import node_label
 from utk_curio.backend.app.agents.repositories import project_agents
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
@@ -180,7 +181,7 @@ def _validate_plan_fanin(
         else:
             node = existing_nodes.get(target) or {}
             node_type = _strip_type_version(str(node.get("type") or ""))
-            label = (node.get("goal") or target)[:60]
+            label = node_label(node) or target
             existing_count = surviving_in.get(target, 0)
         entry = available.get(node_type)
         if entry is None:
@@ -199,7 +200,8 @@ def _validate_plan_fanin(
         )
         if max_in == 0:
             errors.append(
-                agent_text.message("plan.fanin-no-inputs", label=repr(label), node_type=node_type, src_list=src_list)
+                agent_text.message("plan.fanin-no-inputs", label=repr(label), node_type=node_type, src_list=src_list,
+                                   s="s" if len(sources) != 1 else "")
             )
         elif max_in == 1:
             errors.append(
@@ -409,7 +411,7 @@ def _victims_changed(user_key: str, project_id: str, plan: dict, landing: dict) 
         victim = nodes.get(node_id)
         digest = hashlib.sha256(((victim or {}).get("content") or "").encode("utf-8")).hexdigest()
         if victim is None or digest != pins.get(node_id):
-            label = ((victim or {}).get("goal") or node_id)[:60]
+            label = node_label(victim) or node_id
             return agent_text.message("change.plan-victim-changed", label=label)
     return None
 
@@ -1131,7 +1133,7 @@ def _plan_review_part(proposal_id: str, plan: dict, existing_nodes: dict, existi
     n_edges = len(plan["edges"])
     in_scenario = plan_scenarios.scenario_names(plan)
     preview_lines = [
-        f"{node['title']} · {node['nodeType']} — {node['intent']}" for node in plan["nodes"]
+        f"{node['title']} · {node['nodeType']} · {node['intent']}" for node in plan["nodes"]
     ]
     # A node's settings, each in its node's words, on its own line's end: a
     # Data Pool's modes, a Simple View's image column.
@@ -1141,7 +1143,7 @@ def _plan_review_part(proposal_id: str, plan: dict, existing_nodes: dict, existi
     preview_lines += plan_scenarios.preview_lines(plan)
     for node_id in remove_nodes:
         victim = existing_nodes[node_id]
-        label = (victim.get("goal") or node_id)[:80]
+        label = node_label(victim) or node_id
         # A pinned victim is a dashboard tile, which its removal takes off the dashboard.
         tile = " · a dashboard tile, which leaves the dashboard" if dashboards.is_pinned(victim) else ""
         preview_lines.append(f"− Remove: {label} · {victim.get('type') or 'untyped'}{tile}")
@@ -1192,7 +1194,7 @@ def _plan_review_part(proposal_id: str, plan: dict, existing_nodes: dict, existi
         part["plan"]["removals"] = [
             {
                 "id": node_id,
-                "label": (existing_nodes[node_id].get("goal") or node_id)[:80],
+                "label": node_label(existing_nodes[node_id]) or node_id,
                 "nodeType": existing_nodes[node_id].get("type"),
                 "contentChars": len(existing_nodes[node_id].get("content") or ""),
                 # Only on a dashboard tile, which leaves the dashboard.
@@ -1402,14 +1404,15 @@ def _attach_node_builder(spec: dict, node_id: str, *, user_key: str | None = Non
 
 def _plan_endpoint_label(endpoint: str, plan: dict, existing_nodes: dict) -> str:
     """A human label for one plan-edge endpoint: the plan node's title, or the
-    existing node's goal (id as the last resort). #662: a planned node in a
-    scenario is labelled with it too, so a copy and its original read apart."""
+    existing node's name as its canvas shows it (``node_label``; the id as the
+    last resort). #662: a planned node in a scenario is labelled with it too,
+    so a copy and its original read apart."""
     for node in plan.get("nodes", []):
         if node["ref"] == endpoint:
             scenario = plan_scenarios.scenario_names(plan).get(endpoint)
-            return node["title"][:60] + (f" ({scenario})" if scenario else "")
+            return node_label(node) + (f" ({scenario})" if scenario else "")
     existing = existing_nodes.get(endpoint) or {}
-    return str(existing.get("goal") or endpoint)[:60]
+    return node_label(existing) or str(endpoint)
 
 
 def _existing_plan_edge(edges: list, plan_edges: list, index: int, source: str, target: str,
@@ -1573,7 +1576,7 @@ def _planned_nodes(nodes: list, plan: dict, proposal: dict, starters: dict, *,
             "title": plan_node["title"],
             "content": starter["content"] if starter else plan_node.get("content", ""),
             "goal": edited_goals.get(plan_node["ref"])
-            or f"{plan_node['title']} — {plan_node['intent']}",
+            or f"{plan_node['title']}: {plan_node['intent']}",
             "x": float(pos.get("x", base_x + depth * _PLAN_COLUMN_OFFSET)),
             "y": float(pos.get("y", base_y + row * _PLAN_ROW_OFFSET)),
         }

@@ -429,7 +429,7 @@ def run_through_node(
         # content nobody ran. Refuse first, by name.
         report["notExecutable"] = True
         report["error"] = (
-            f"node {node_id!r} ({target.raw_type}) has no code the sandbox could run — "
+            f"node {node_id!r} ({target.raw_type}) has no code the sandbox could run, as "
             "it works in the browser or through its own service; Play the dataflow to see it"
         )
         return report

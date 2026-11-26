@@ -130,7 +130,7 @@ export const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClo
     ["Category", agent.category],
     ["Publisher", agent.provenance?.publisher ?? "curio"],
     ["Trust", agent.provenance?.trust ?? "built-in"],
-    ["Attaches to", agent.hooks.length ? agent.hooks.join(", ") : "—"],
+    ["Attaches to", agent.hooks.length ? agent.hooks.join(", ") : "Nothing"],
     ["In all projects", agent.imported ? "Yes" : "No"],
     ["In the catalog", agent.published ? "Published" : "Not published"],
     [

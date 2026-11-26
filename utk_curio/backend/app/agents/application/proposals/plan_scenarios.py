@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import uuid
 
-from utk_curio.backend.app.agents.domain import node_settings, widget_grammar
+from utk_curio.backend.app.agents.domain import labels, node_settings, widget_grammar
 from utk_curio.backend.app.execution.code_references import widget_with_default
 from utk_curio.backend.app.projects.scenarios import next_scenario_color, normalize_scenarios
 from utk_curio.backend.app.scenario_catalog.domain.duplicate import lineage_of
@@ -174,7 +174,7 @@ def display_scenarios(plan: dict, existing_nodes: dict) -> list[dict]:
             "name": scenario["name"],
             "color": scenario["color"],
             "nodes": [
-                {"ref": m, "label": (titles.get(m) or str((existing_nodes.get(m) or {}).get("goal") or m))[:60]}
+                {"ref": m, "label": titles.get(m) or labels.node_label(existing_nodes.get(m)) or m}
                 for m in scenario["nodes"]
             ],
         }

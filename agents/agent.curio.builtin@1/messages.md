@@ -398,7 +398,7 @@ specialist {coord} is not installed in this project; an Install proposal ({propo
 
 ## plan.fanin-no-inputs
 
-target {label} ({node_type}) accepts no inputs: remove the edge(s) from {src_list}
+target {label} ({node_type}) accepts no inputs: remove the edge{s} from {src_list}
 
 ## plan.fanin-single-input
 
@@ -1306,7 +1306,7 @@ the agent asked for datasets
 
 ## dataset.candidates-none-usable-dropped
 
-({dropped} catalog row(s) dropped: not in the Data Catalog)
+(dropped {dropped} catalog row{s} that the Data Catalog does not hold)
 
 ## dataset.candidates-none-usable
 
@@ -1314,15 +1314,15 @@ the agent asked for datasets
 
 ## dataset.candidates-shown-dropped
 
-{dropped} catalog row(s) were dropped (not in the Data Catalog).
+Dropped {dropped} catalog row{s} that the Data Catalog does not hold.
 
 ## dataset.candidates-shown
 
-{total} dataset candidate(s) are shown to the user to choose from; external rows carry the runtime's verification verdict.{note} Do NOT add a node in this turn: ask the user to select and confirm; you will build from the confirmed source on the next turn.
+The user is shown {total} dataset candidate{s} to choose from; Curio checked each external source itself, and its row says what it found.{note} Do NOT add a node in this turn: ask the user to select and confirm; you will build from the confirmed source on the next turn.
 
 ## dataset.candidates-unconfirmed
 
-{unconfirmed} Discovery resource id(s) went unconfirmed, so their rows are not marked downloadable.
+{unconfirmed} Discovery resource id{s} went unconfirmed, and a row whose id went unconfirmed is not marked downloadable.
 
 ## dataset.catalog-listed
 
@@ -1402,7 +1402,7 @@ no installed notes template was available
 
 ## delegate.notes-added
 
-{answer}{count} note(s) are on the canvas{refusal}, for everyone in the dataflow; the user can undo each from this chat
+{answer}Added {count} note{s} to the canvas{refusal}, for everyone in the dataflow; the user can undo each from this chat
 
 ## delegate.draft-empty
 
@@ -1434,11 +1434,11 @@ this correction changed the package id from {pinned_package_id} to {draft_id}. F
 
 ## delegate.draft-notes-reconciled
 
-(the draft's {count} note(s) carry the caller's findings verbatim: runtime-reconciled from the delegation inputs)
+(the caller's findings are in the draft's {count} note{s} verbatim: runtime-reconciled from the delegation inputs)
 
 ## delegate.draft-corrected
 
-(after {round_index} correction round(s))
+(after {round_index} correction round{s})
 
 ## delegate.draft-rerun-failed
 
@@ -1450,7 +1450,7 @@ no reply
 
 ## delegate.draft-unusable-attempts
 
-after {rounds} attempt(s)
+after {rounds} attempts
 
 ## delegate.draft-unusable
 

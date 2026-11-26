@@ -790,7 +790,7 @@ class TestDec047DatasetFinderHandoff:
         monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         _run(client, token, pid, att_id)
         system = calls[0][0]["content"]
-        assert "dataset.fetch.author — handled by Node Builder" in system
+        assert "- dataset.fetch.author: handled by Node Builder" in system
         # Its Node Builder entry names what it hands over: never node content.
         assert "node.content.generate \N{EM DASH} handled by" not in system
 

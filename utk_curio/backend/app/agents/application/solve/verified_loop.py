@@ -443,7 +443,7 @@ class VerifiedRounds:
         self.verdict_result = {"verdict": "fail", "evidence": {"kind": kind, "detail": refusal[:2000]}}
         yield "round_verdict", {"round": self.rounds_used, "verdict": "fail"}
         self.rounds_trace.append(
-            f"round {self.rounds_used}: fail — {trace if trace is not None else refusal[:trace_limit]}"
+            f"round {self.rounds_used}: fail ({trace if trace is not None else refusal[:trace_limit]})"
         )
         attempt = {
             "round": self.rounds_used, "contentSha256": agents_rounds._content_sha(self.candidate),
@@ -932,7 +932,7 @@ class VerifiedRounds:
                 "delegations": self.delegations,
                 "roundsTrace": self.rounds_trace + [
                     f"round {self.rounds_used}: the document is valid and its "
-                    "last render drew nothing — its input was empty"
+                    "last render drew nothing, as its input was empty"
                 ],
                 "attempts": self.attempts + [{
                     "round": self.rounds_used,
@@ -1036,12 +1036,12 @@ class VerifiedRounds:
             + (
                 # dev/127: the exception line, whole — this is the line that
                 # reached the owner's chat as "round 2: execution-error — de".
-                " — " + failure_text.summary(
+                " (" + failure_text.summary(
                     round_evidence.get("stderrTail") or round_evidence.get("detail") or "",
                     code=self.candidate, limit=200,
-                )
+                ) + ")"
                 if verdict_result["verdict"] != "pass"
-                else f" — output {round_evidence.get('outputDataType') or '?'}"
+                else f", output {round_evidence.get('outputDataType') or '?'}"
             )
         )
         attempt = self._round_attempt(round_evidence)
@@ -1154,7 +1154,7 @@ class VerifiedRounds:
             # with ITS own evidence (a refusal naming the literal, or the
             # builder's own decline) rather than a promise of candidates.
             self.rounds_trace.append(
-                f"discovery found no source — {str(source_state.get('detail'))[:160]}"
+                f"discovery found no source: {str(source_state.get('detail'))[:160]}"
             )
         if source_state.get("state") == "awaiting":
             return self._awaiting_source(source_state, rounds=0, after=None, stopped_by=None)
@@ -1195,11 +1195,11 @@ class VerifiedRounds:
                 final_evidence = {**final_evidence,
                                   "discovery": str(post["detail"])[:600]}
                 self.rounds_trace.append(
-                    f"discovery found no source — {str(post['detail'])[:160]}"
+                    f"discovery found no source: {str(post['detail'])[:160]}"
                 )
             if post.get("state") == "awaiting":
                 detail = str(post.get("detail") or "a source must be selected")
-                self.rounds_trace.append(f"awaiting dataset selection — {detail[:160]}")
+                self.rounds_trace.append(f"awaiting dataset selection: {detail[:160]}")
                 return self._awaiting_source(
                     post, rounds=self.rounds_used,
                     after=str(final_evidence.get("detail") or "")[:600], stopped_by="source",

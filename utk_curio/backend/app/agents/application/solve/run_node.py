@@ -15,6 +15,8 @@ import time as _time
 import uuid
 
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
+from utk_curio.backend.app.agents.domain import labels
+from utk_curio.backend.app.agents.domain.counts import count_label
 from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
@@ -252,16 +254,16 @@ def _run_node_events(
             break
         thread.join(timeout=5)
         target_record = (report.get("nodes") or {}).get(node_id) or {}
-        label = (node.get("goal") or node_id)[:60]
+        label = labels.node_label(node) or node_id
         if isinstance(session_id, str):
             if report.get("ok"):
                 lines = [
                     f"{label} · ok",
                     f"output: {(target_record.get('output') or {}).get('dataType') or '?'}",
-                    f"{len(report.get('order') or [])} node(s) in the chain",
+                    f"{count_label(len(report.get('order') or []), 'node')} in the chain",
                 ]
                 if target_record.get("stderrTail"):
-                    lines.append("warnings captured — see node.runtime.read")
+                    lines.append("warnings captured: see node.runtime.read")
                 text = f"Ran through {label!r}: ok."
             else:
                 blocker = report.get("blocker")
@@ -273,7 +275,7 @@ def _run_node_events(
                 tail = failed_record.get("stderrTail") or ""
                 if tail:
                     lines.append(tail[-300:])
-                text = f"Ran through {label!r}: FAILED — {report.get('error')}"
+                text = f"Ran through {label!r}: FAILED ({report.get('error')})."
             sessions.append_turns(
                 user_key, project_id, session_id, attachment_id,
                 [sessions.make_turn(

@@ -343,7 +343,7 @@ def refusal_text(shape: dict, violation: dict) -> str:
                 str(c.get("name")) for c in (schema.get("columns") or [])[:8]
             )
             kind = schema.get("kind") or ""
-            detail = f" — {kind}" + (f": {columns}" if columns else "")
+            detail = f" ({kind}" + (f": {columns}" if columns else "") + ")"
         slots.append(f"{_slot_chip(slot)} = {label}{detail}")
     body = "; ".join(slots)
     chips = [_slot_chip(slot) for slot in (shape.get("slots") or [])[:2]] or [f"{circle}[0]", f"{circle}[1]"]

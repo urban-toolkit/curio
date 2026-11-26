@@ -18,6 +18,7 @@ from utk_curio.backend.app.agents.domain import dashboards
 from utk_curio.backend.app.agents.domain import map_edits
 from utk_curio.backend.app.agents.domain import node_settings
 from utk_curio.backend.app.agents.domain import widget_grammar
+from utk_curio.backend.app.agents.domain.counts import count_label
 from utk_curio.backend.app.agents.application import tool_rounds as agents_tool_rounds
 from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
 from utk_curio.backend.app.agents.application.proposals import cards as agents_cards
@@ -453,7 +454,7 @@ def _mint_package_draft_apply(
         f"{len(files_diff.get('added') or [])} added / "
         f"{len(files_diff.get('modified') or [])} modified / "
         f"{len(files_diff.get('preserved') or [])} preserved files; "
-        f"{len(request.nodes)} node(s) after install"
+        f"{count_label(len(request.nodes), 'node')} after install"
     )
     # memo dev/91 §5: the trust edge is stated ON the card, before Apply —
     # a backend-bearing draft names its handlers and declared permissions.
@@ -470,7 +471,7 @@ def _mint_package_draft_apply(
         }
         names = ", ".join(h.get("name", "?") for h in backend_card["handlers"])
         preview_line += (
-            f"; runs server-side code in the package sandbox — handlers: {names}"
+            f"; runs server-side code in the package sandbox, with the handlers {names}"
             + ("; may reach the network (server-network declared)"
                if backend_card["network"] else "")
         )
@@ -1057,7 +1058,7 @@ def _mint_project_install(
     summary = f"Install {name} in this project"
     preview = (
         f"Capability {capability} is handled by {name} ({coord}), which is not "
-        "installed in this project. Applying installs only this project template — "
+        "installed in this project. Applying installs only this project template: "
         "it does not import, attach, run, publish, or grant anything."
     )
     part = content.make_proposal_part(

@@ -48,6 +48,7 @@ from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import dashboards
 from utk_curio.backend.app.agents.domain import failure_text
 from utk_curio.backend.app.agents.domain.counts import count_label
+from utk_curio.backend.app.agents.domain import labels
 from utk_curio.backend.app.agents.domain import map_edits
 from utk_curio.backend.app.collaboration import agent_peers
 from utk_curio.backend.app.collaboration import dataflow_docs
@@ -923,12 +924,14 @@ class SolveBatch:
     def _transcript_lines(self, cancelled: bool) -> tuple[list[str], list]:
         lines: list[str] = []
         for node_id, outcome in list(self.results.items())[:10]:
-            line = f"{node_id[:8]} · {outcome['status']}"
+            # Each node named as its header on the canvas names it.
+            line = f"{labels.node_label(self.nodes_by_id.get(node_id)) or node_id} · {outcome['status']}"
             if outcome.get("verdict"):
                 # dev/115: the verified loop's verdict and, on failure,
                 # the attempt trail — one line per round, bounded.
-                rounds = outcome.get("rounds") or 0
-                line += f" · {outcome['verdict']} after {rounds} round{'s' if rounds != 1 else ''}"
+                validated = (outcome.get("verification") or {}).get("status") == "document-valid"
+                verdict = labels.DOCUMENT_VALIDATED if validated else outcome["verdict"]
+                line += f" · {verdict} after {count_label(outcome.get('rounds') or 0, 'round')}"
             if outcome.get("reason") and outcome["status"] in ("pending", "skipped"):
                 line += f": {str(outcome['reason'])[:120]}"
             lines.append(line)
@@ -953,17 +956,17 @@ class SolveBatch:
             node = self.nodes_by_id.get(nid) or {}
             part = agents_rounds._solve_attempts_part(
                 self.current.get("spec") or self.spec, nid,
-                str(node.get("goal") or nid)[:120], outcome, user_key=self.user_key,
+                labels.node_label(node) or nid, outcome, user_key=self.user_key,
             )
             if part is not None:
                 attempt_parts.append(part)
         if len(trailed) > agents_budgets.MAX_ATTEMPT_PARTS:
             lines.append(
-                f"{len(trailed) - agents_budgets.MAX_ATTEMPT_PARTS} more node(s) have attempt trails; "
+                f"attempt trails of {count_label(len(trailed) - agents_budgets.MAX_ATTEMPT_PARTS, 'more node')}: "
                 "open each node's agent to read them"
             )
         if cancelled:
-            lines.append(f"cancelled: {len(self.unstarted)} node(s) not attempted")
+            lines.append(f"cancelled: {count_label(len(self.unstarted), 'node')} not attempted")
         if self.batch_reason:
             # ONE reason line for the batch (not six identical ones).
             lines.append(f"reason: {self.batch_reason}")

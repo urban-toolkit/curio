@@ -570,7 +570,7 @@ class TestNodeCreate:
         self._run(client, token, alice_project, att_id)
         system = calls[0][0]["content"]
         assert "Available node templates" in system
-        assert "- curio.builtin/python-computation — Python Computation" in system
+        assert "- curio.builtin/python-computation (Python Computation)" in system
         # Non-authorable templates are not offered.
         assert "data-pool" not in system
 

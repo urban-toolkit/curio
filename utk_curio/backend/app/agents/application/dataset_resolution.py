@@ -53,6 +53,7 @@ from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application import spec_reads
 from utk_curio.backend.app.agents.application import tools
 from utk_curio.backend.app.agents.application import verify
+from utk_curio.backend.app.agents.domain import labels
 from utk_curio.backend.app.agents.domain import node_context
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.domain import agent_text
@@ -446,7 +447,7 @@ def resolve_picks(
             row = _catalog_row(catalog_rows, key.strip())
         if row is None:
             raise DatasetResolutionError(
-                f"{key!r} is not a {lane} candidate on this node — select a row the "
+                f"{key!r} is not a {lane} candidate of this node: select a row the "
                 "Dataset Finder proposed"
             )
         if (lane, key) in seen:
@@ -838,7 +839,7 @@ def _append_candidates_turn(
         session_id = record.get("sessionId")
         if not isinstance(session_id, str):
             return
-        label = node_label(user_key, project_id, node)[:120]
+        label = labels.on_a_word(node_label(user_key, project_id, node), 120)
         sessions.append_turns(
             user_key, project_id, session_id, attachment_id,
             [sessions.make_turn(
@@ -886,7 +887,7 @@ def _mirror_candidates_turn(
         if not isinstance(session_id, str):
             return
         node_id = str(node.get("id") or "")
-        label = node_label(user_key, project_id, node)[:120]
+        label = labels.on_a_word(node_label(user_key, project_id, node), 120)
         sessions.append_turns(
             user_key, project_id, session_id, asker_id,
             [sessions.make_turn(

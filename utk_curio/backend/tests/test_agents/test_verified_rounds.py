@@ -2488,7 +2488,7 @@ class TestASolveNamesTheNodeAsItsCanvasDoes:
             json={"coord": "agent.curio.dataflow-builder@1", "target": {"kind": "canvas"}},
             headers=_auth(token),
         ).get_json()["attachmentId"]
-        # The plan saves the loader's goal as its title, a dash and its intent.
+        # The plan saves the loader's goal as its title, a colon and its intent.
         plan = {"goal": "pedestrians", "nodes": [
             {"ref": "load", "nodeType": DL, "title": "Load pedestrians", "intent": self.GOAL}], "edges": []}
         loader = f'import pandas as pd\ndataset_path = curio_data_path("{dataset_id}")\ndf = pd.read_csv(dataset_path)\nreturn df'

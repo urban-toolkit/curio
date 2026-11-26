@@ -179,7 +179,8 @@ def _runnable(user_key: str, project_id: str, attachment_id: str) -> tuple:
     missing = tools.missing_required(requested_tools)
     if missing:
         raise AgentServiceError(
-            f"required tool(s) not available for this agent: {', '.join(sorted(missing))}", 422
+            f"required tool{'' if len(missing) == 1 else 's'} not available for this agent: "
+            f"{', '.join(sorted(missing))}", 422
         )
     instruction = record.get("intent") or agents_prompts._resolve_instruction_text(user_key, coord)
     if instruction is None:

@@ -1634,7 +1634,7 @@ def _judge_refs(
             saved = secret_for_host(ctx, ref.literal)
             if saved is not None:
                 gated["hint"] = (
-                    f"a connection key {saved.name!r} is saved for this host — use "
+                    f"a connection key {saved.name!r} is saved for this host: use "
                     f"{saved.use_line}"
                 )
             source_refs.append(gated)

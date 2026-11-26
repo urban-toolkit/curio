@@ -6,22 +6,33 @@ import styles from "../AgentReviewCard.module.css";
 
 type Validation = NonNullable<AgentChangePart["validation"]>;
 
+/** A chart's or a map's document: the sandbox does not run one, so its
+ * grammar's schema validates it, and a document that validated failed
+ * nothing. */
+const documentValidated = (validation: Validation): boolean =>
+  validation.verdict === "not-executable" && Boolean(validation.evidence?.documentValidated);
+
 /** dev/67-7: the validation verdict of code that landed: real runtime
  * evidence, rendered inert. dev/115: the engineering loop's trail: every
  * round the runtime ran (or refused before running), how it failed, and that
- * a fix followed. Collapsed by default. */
+ * a fix followed. Collapsed by default. A document its grammar validated says
+ * so, as a check that passed. */
 export const ValidationBlock: React.FC<{ validation: Validation }> = ({ validation }) => (
   <div
-    className={`${styles.validation} ${validation.verdict === "pass" ? styles.validationPass : styles.validationFail}`}
+    className={`${styles.validation} ${validation.verdict === "pass" || documentValidated(validation) ? styles.validationPass : styles.validationFail}`}
     role="status"
-    aria-label={`Validation ${validation.verdict}`}
+    aria-label={documentValidated(validation) ? "Validated against its grammar" : `Validation ${validation.verdict}`}
   >
-    <span className={styles.validationBadge}>{validation.verdict === "pass" ? "PASS" : "FAIL"}</span>
+    <span className={styles.validationBadge}>
+      {validation.verdict === "pass" ? "PASS" : documentValidated(validation) ? "VALID" : "FAIL"}
+    </span>
     <span>
       {validation.verdict === "pass"
         ? `Executed through the dataflow${
             validation.evidence?.outputDataType ? ` (output: ${validation.evidence.outputDataType})` : ""
           }`
+        : documentValidated(validation)
+          ? "Validated against its grammar, not executed"
         : validation.evidence?.kind === "upstream-blocker"
           ? `Upstream node ${validation.evidence?.blockerLabel ?? "?"} failed before this node ran`
           : (validation.evidence?.detail ??
@@ -48,7 +59,9 @@ export const ValidationBlock: React.FC<{ validation: Validation }> = ({ validati
                 {attempt.verdict === "pass"
                   ? "pass ✓"
                   : attempt.verdict === "not-executable"
-                    ? "not executable: no code to run, nothing ran"
+                    ? documentValidated(validation)
+                      ? "validated against its grammar, not executed"
+                      : "not executable: no code to run, nothing ran"
                     : attempt.verdict}
                 {attempt.kind && attempt.verdict !== "pass" && attempt.verdict !== "not-executable" ? ` · ${attempt.kind}` : ""}
                 {attempt.source === "current content" ? " · the node's current code" : ""}

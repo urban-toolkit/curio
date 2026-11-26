@@ -48,23 +48,25 @@ class TestClassifyAccess:
             })
             assert verdict["access"] == verify.ACCESS_MANUAL
             assert str(status) in verdict["why"]
+            # The card's download line says it with no dash.
+            assert verdict["why"] == f'the data URL answered {status}: the portal gates it ("Sign in")'
 
     def test_everything_else_is_unknown_and_says_why(self):
         assert verify.classify_access(None)["access"] == verify.ACCESS_UNKNOWN
         assert verify.classify_access(
             {"status": "unverified", "detail": "no probeable URL — the identifier was never checked"}
         )["why"].startswith("no probeable URL")
-        assert verify.classify_access(
-            {"status": "refused", "detail": "scheme not allowed"}
-        )["access"] == verify.ACCESS_UNKNOWN
+        refused = verify.classify_access({"status": "refused", "detail": "scheme not allowed"})
+        assert refused["access"] == verify.ACCESS_UNKNOWN
+        assert refused["why"] == "the egress policy refused the URL, so nothing was observed"
         # A 404 is not a portal: nothing observed says a human could download it.
         assert verify.classify_access(
             {"status": "unreachable", "httpStatus": 404, "detail": "the endpoint answered 404"}
         )["access"] == verify.ACCESS_UNKNOWN
         # 2xx with an unrecognized type is not silently upgraded.
-        assert verify.classify_access(
-            {"status": "verified", "httpStatus": 200, "contentType": "application/pdf"}
-        )["access"] == verify.ACCESS_UNKNOWN
+        pdf = verify.classify_access({"status": "verified", "httpStatus": 200, "contentType": "application/pdf"})
+        assert pdf["access"] == verify.ACCESS_UNKNOWN
+        assert pdf["why"] == "answered 200 with application/pdf, which is not recognized as data"
 
 
 class TestAnArchiveCurioUnpacksIsData:

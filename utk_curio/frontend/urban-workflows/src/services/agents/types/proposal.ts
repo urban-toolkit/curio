@@ -231,6 +231,9 @@ export interface AgentProposalPart {
       outputDataType?: string;
       blocker?: string;
       blockerLabel?: string;
+      /** A chart's or a map's document its grammar's schema validated: its
+       * grammar, by its node type's suffix ("vis-vega"). */
+      documentValidated?: string;
       warnings?: string;
       goal?: string;
       durationMs?: number;

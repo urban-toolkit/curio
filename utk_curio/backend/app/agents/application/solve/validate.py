@@ -15,6 +15,8 @@ import uuid
 from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.domain import content
+from utk_curio.backend.app.agents.domain import labels
+from utk_curio.backend.app.agents.domain.counts import count_label
 from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
@@ -336,7 +338,7 @@ def _say_the_answer(user_key, project_id, attachment_id, session_id, home_attach
     attempt below it, and the agent the Solve was asked of says it too."""
     text = agents_node_solve._not_fixed(label, outcome, {})
     trail = agents_rounds._solve_attempts_part(
-        spec, node.get("id"), str(node.get("goal") or node.get("id"))[:120],
+        spec, node.get("id"), label,
         {"attempts": outcome["attempts"], "rounds": outcome["rounds"],
          "verdict": outcome["verdict"], "stoppedBy": outcome.get("stoppedBy")},
         user_key=user_key,
@@ -368,15 +370,14 @@ def _writes(done: dict) -> bool:
 
 
 def _trace_card(done: dict, rounds_used: int, rounds_trace: list) -> dict:
+    executed = count_label(len(done["evidence"].get("executedNodes") or []), "node")
+    outcome = f"{labels.verdict_words(done['verdict'], done['evidence'])} after {count_label(rounds_used, 'round')}"
+    lines = [f"dependencies executed: {executed}", *rounds_trace, f"outcome: {outcome}"]
     return {
         "type": "card",
         "kind": "result" if done["verdict"] in ("pass", "not-executable") else "error",
-        "title": f"Solve trace · {done['verdict'].upper()}",
-        "lines": (
-            [f"dependencies executed: {len(done['evidence'].get('executedNodes') or [])} node(s)"]
-            + rounds_trace
-            + [f"outcome: {done['verdict']} after {rounds_used} round{'s' if rounds_used != 1 else ''}"]
-        )[:10],
+        "title": f"Solve trace · {labels.verdict_words(done['verdict'], done['evidence'], capitals=True)}",
+        "lines": lines[:10],
     }
 
 
@@ -416,13 +417,17 @@ def _land_validated(user_key, project_id, attachment_id, session_id, home_attach
     }
     done["changeId"] = part["changeId"]
     done["changeAttachmentId"] = change_attachment
+    rounds = count_label(rounds_used, "round")
+    # A chart's or a map's document the sandbox does not run: its grammar's
+    # schema validated it, and nothing failed.
+    validated = labels.document_validated(done["verdict"], done["evidence"])
     if isinstance(change_session, str):
         sessions.append_turns(
             user_key, project_id, change_session, change_attachment,
             [sessions.make_turn(
                 "agent",
-                f"Validated content for {label!r}: {done['verdict'].upper()} after {rounds_used} "
-                f"round{'s' if rounds_used != 1 else ''}, written into the node.",
+                f"Validated {label!r} against its grammar after {rounds}, written into the node." if validated
+                else f"Validated content for {label!r}: {done['verdict'].upper()} after {rounds}, written into the node.",
                 content=[_trace_card(done, rounds_used, rounds_trace), part],
             )],
         )
@@ -432,13 +437,13 @@ def _land_validated(user_key, project_id, attachment_id, session_id, home_attach
         delegate = getattr(resolution, "manifest", None)
         delegate_coord = getattr(resolution, "coord", None) or ""
         delegate_name = getattr(delegate, "name", None) or delegate_coord
+        said = (f"Validated {label!r} against its grammar after {rounds}" if validated
+                else f"Solved {label!r}: {done['verdict'].upper()} after {rounds}")
         sessions.append_turns(
             user_key, project_id, session_id, attachment_id,
             [sessions.make_turn(
                 "agent",
-                f"Solved {label!r}: {done['verdict'].upper()} after "
-                f"{rounds_used} round{'s' if rounds_used != 1 else ''}: "
-                f"the trace and the change live in the node's {delegate_name}.",
+                f"{said}: the trace and the change live in the node's {delegate_name}.",
                 content=[content.make_delegation_part(
                     capability="node.content.generate",
                     coord=delegate_coord,
@@ -446,8 +451,8 @@ def _land_validated(user_key, project_id, attachment_id, session_id, home_attach
                     category=getattr(delegate, "category", "") or "",
                     attachment_id=home_attachment_id,
                     status="ok",
-                    summary=f"Solve {label!r}: {done['verdict']} "
-                    f"({rounds_used} round{'s' if rounds_used != 1 else ''})",
+                    summary=(f"Validated {label!r} against its grammar ({rounds})" if validated
+                             else f"Solve {label!r}: {done['verdict']} ({rounds})"),
                 )],
             )],
         )
@@ -464,7 +469,7 @@ def _say_it_failed(user_key, project_id, attachment_id, session_id, home_attachm
     text = (f"Validated content for {label!r}: FAIL after {rounds_used} "
             f"round{'s' if rounds_used != 1 else ''}; nothing was written. Each attempt's code is below.")
     trail = agents_rounds._solve_attempts_part(
-        spec, node.get("id"), str(node.get("goal") or node.get("id"))[:120],
+        spec, node.get("id"), label,
         {"attempts": outcome["attempts"], "rounds": rounds_used,
          "verdict": "fail", "stoppedBy": outcome.get("stoppedBy")},
         user_key=user_key,

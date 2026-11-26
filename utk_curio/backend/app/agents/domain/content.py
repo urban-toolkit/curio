@@ -33,6 +33,7 @@ import json
 import re
 
 from utk_curio.backend.app.agents.domain import agent_text
+from utk_curio.backend.app.agents.domain import labels
 from utk_curio.backend.app.agents.domain.contracts import MAX_NOTES
 
 TAIL_FENCE = "```curio.v1"
@@ -1457,7 +1458,7 @@ def delegation_instruction(entries: list[tuple[str, str]], *, native_tools: bool
     With *native_tools* the run delegates through the ``delegate`` tool, so the
     paragraph names it instead of the ``delegateRequest`` syntax.
     """
-    lines = "\n".join(f"- {cap} — handled by {name}" for cap, name in entries)
+    lines = "\n".join(f"- {cap}: handled by {name}" for cap, name in entries)
     ending = _protocol("delegate-tool" if native_tools else "delegate-request")
     return f"{_protocol('delegation')}\n{lines}\n{ending}"
 
@@ -1637,7 +1638,7 @@ def make_solve_attempts_part(
     part = {
         "type": "solveAttempts",
         "nodeId": str(node_id or "")[:80],
-        "label": str(label or "")[:120],
+        "label": labels.on_a_word(label, 120),
         "attachmentId": attachment_id if isinstance(attachment_id, str) else None,
         "rounds": int(rounds or len(rows)),
         "stoppedBy": str(stopped_by or "")[:32],

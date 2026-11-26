@@ -2172,7 +2172,7 @@ describe("AgentChatPanel — dev/114 candidates in the Node Builder chat", () =>
     });
     fireEvent.click(screen.getByRole("checkbox", { name: "Select NOAA Climate Data API" }));
     expect(screen.getByPlaceholderText(/^Message /)).toHaveValue(
-      "Build the data-loading node — fetch from: NOAA Climate Data API (https://api.noaa.gov).",
+      "Build the data-loading node. Fetch from: NOAA Climate Data API (https://api.noaa.gov).",
     );
   });
 
@@ -2189,7 +2189,7 @@ describe("AgentChatPanel — dev/114 candidates in the Node Builder chat", () =>
     });
     fireEvent.click(screen.getByRole("checkbox", { name: "Select NOAA Climate Data API" }));
     expect(screen.getByPlaceholderText(/^Message /)).toHaveValue(
-      "Confirm my selection — hand off to Node Builder: NOAA Climate Data API.",
+      "Confirm my selection. Hand off to Node Builder: NOAA Climate Data API.",
     );
   });
 });
@@ -2448,13 +2448,15 @@ describe("AgentChatPanel — dev/116 the per-node Solve row's remedy", () => {
         },
       ],
       onRecordDatasetSelection,
+      targetName: "Load areas",
     });
-    const card = screen.getByRole("group", { name: "Dataset candidates" });
+    const card = screen.getByRole("group", { name: "Sources for Load areas" });
     const confirm = within(card).getByRole("button", { name: /Use this source/ });
     expect(confirm).toBeDisabled();  // nothing selected yet
     fireEvent.click(within(card).getByRole("checkbox", { name: "Select Chicago areas" }));
     fireEvent.click(confirm);
-    await screen.findByText(/Source recorded for this node/);
+    // The note names the node, as the Source recorded turns do.
+    await screen.findByText("Source recorded for Load areas: Solve it to build its loader from this source.");
     // Identifiers ONLY: the server resolves the url against its own rows.
     expect(onRecordDatasetSelection).toHaveBeenCalledWith([
       { lane: "external", key: "https://data.example.org/areas.geojson" },
@@ -2695,7 +2697,7 @@ describe("AgentChatPanel offers each feature by what the agent declares", () => 
     });
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Chicago areas" }));
     expect(screen.getByPlaceholderText(/^Message /)).toHaveValue(
-      "Build the data-loading node — fetch from: Chicago areas (https://data.example.org/areas.geojson).",
+      "Build the data-loading node. Fetch from: Chicago areas (https://data.example.org/areas.geojson).",
     );
   });
 
@@ -2714,11 +2716,12 @@ describe("AgentChatPanel offers each feature by what the agent declares", () => 
       },
       turns: [candidates],
       onRecordDatasetSelection,
+      targetName: "Load areas",
     });
-    const card = screen.getByRole("group", { name: "Dataset candidates" });
+    const card = screen.getByRole("group", { name: "Sources for Load areas" });
     fireEvent.click(within(card).getByRole("checkbox", { name: "Select Chicago areas" }));
     fireEvent.click(within(card).getByRole("button", { name: /Use this source/ }));
-    await screen.findByText(/Source recorded for this node/);
+    await screen.findByText("Source recorded for Load areas: Solve it to build its loader from this source.");
     expect(onRecordDatasetSelection).toHaveBeenCalledWith([
       { lane: "external", key: "https://data.example.org/areas.geojson" },
     ]);
@@ -2860,7 +2863,7 @@ describe("AgentChatPanel names the agent a label opens or hands work to", () => 
     });
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Chicago areas" }));
     expect(screen.getByPlaceholderText(/^Message /)).toHaveValue(
-      "Confirm my selection \u2014 hand off to My Builder: Chicago areas.",
+      "Confirm my selection. Hand off to My Builder: Chicago areas.",
     );
   });
 });

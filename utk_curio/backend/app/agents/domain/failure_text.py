@@ -192,6 +192,6 @@ def summary(raw: object, *, code: object = None, limit: int = 300) -> str:
     if is_self_raised(raw, code):
         parts.append("raised by the code's own check, not by the library")
     if is_chained(raw):
-        parts.append("(one of several chained exceptions — the trail has the rest)")
+        parts.append("(one of several chained exceptions; the trail has the rest)")
     text = " · ".join(parts)
     return text if len(text) <= limit else excerpt(text, limit=limit, head=True)

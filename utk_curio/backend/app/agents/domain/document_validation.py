@@ -346,7 +346,7 @@ def _vega_message(exc: Exception) -> str:
         parts.append(f"at {path}")
     elif rule:
         parts.append(rule.rstrip(":"))
-    return _detail(" — ".join(parts))
+    return _detail(", ".join(parts))
 
 
 #: At most this many schema errors are reported, in the order the schema meets

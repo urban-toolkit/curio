@@ -24,6 +24,7 @@ from utk_curio.backend.app.agents.application import verify
 from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain import content
+from utk_curio.backend.app.agents.domain import labels
 from utk_curio.backend.app.agents.domain import node_context
 from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.repositories import sessions
@@ -87,16 +88,25 @@ def _mint_candidates_from_delegate(
         "catalog": kept,
     }})
     if parsed is None:
-        note = " " + agent_text.message("dataset.candidates-none-usable-dropped", dropped=dropped) if dropped else ""
+        note = (" " + agent_text.message("dataset.candidates-none-usable-dropped", dropped=dropped, s=_plural_s(dropped))
+                if dropped else "")
         return None, agent_text.message("dataset.candidates-none-usable", who=who, note=note), "no-candidates"
     agents_grounding._verify_candidate_parts([parsed], loop_ctx)
     loop_ctx["_candidates_pending_review"] = True
     total = sum(len(v) for v in parsed["lanes"].values())
-    note = " " + agent_text.message("dataset.candidates-shown-dropped", dropped=dropped) if dropped else ""
+    note = (" " + agent_text.message("dataset.candidates-shown-dropped", dropped=dropped, s=_plural_s(dropped))
+            if dropped else "")
     unconfirmed = agents_acquire._unconfirmed(parsed["lanes"].get("external"))
     if unconfirmed:
-        note += (" " + agent_text.message("dataset.candidates-unconfirmed", unconfirmed=unconfirmed))
-    return parsed, agent_text.message("dataset.candidates-shown", total=total, note=note), "ok"
+        note += " " + agent_text.message(
+            "dataset.candidates-unconfirmed", unconfirmed=unconfirmed, s=_plural_s(unconfirmed),
+        )
+    return parsed, agent_text.message("dataset.candidates-shown", total=total, s=_plural_s(total), note=note), "ok"
+
+
+def _plural_s(count: int) -> str:
+    """The ending a message's noun takes after *count*: "s", but none after 1."""
+    return "" if count == 1 else "s"
 
 
 def _dataset_discover_inputs(
@@ -331,7 +341,7 @@ def _run_delegate_traced(
                 detail = verification.get("detail") or verification.get("datasetName") or ""
                 lines.append(
                     f"runtime-verified: {verification.get('status')}"
-                    + (f" — {detail}" if detail else "")
+                    + (f" ({detail})" if detail else "")
                 )
             lines.append(f"{int((time.monotonic() - started) * 1000)} ms")
             sessions.append_turns(
@@ -446,7 +456,7 @@ def _mint_content_review_from_delegate(
             home_name = agents_spec_reads._agent_name(user_key, str(home.get("coord") or ""))
         for node in ((fresh_spec or {}).get("dataflow") or {}).get("nodes") or []:
             if isinstance(node, dict) and node.get("id") == node_id:
-                node_label = (node.get("goal") or node_id)[:60]
+                node_label = labels.node_label(node) or node_id
                 break
     # dev/114: the mint's grounding gate reads the PARENT run's evidence
     # (current message and the one before it, verified rows, probe cache, grants) — the home
@@ -620,7 +630,7 @@ def _reuse_finding_text(user_key: str, project_id: str, finding: dict) -> str:
     middle rung). Unknown enlistment state simply omits the hint.
     """
     dir_name = finding["dirName"]
-    reason = f" — {finding['reason']}" if finding.get("reason") else ""
+    reason = f" ({finding['reason']})" if finding.get("reason") else ""
     hint = ""
     try:
         from utk_curio.backend.app.packages import service as packages_services
@@ -779,7 +789,7 @@ def _mint_notes_from_delegate(
             "delegate.notes-none-added", answer=f"{answer}\n\n" if answer else "", last_refusal=last_refusal,
         ), "failed"
     summary = agent_text.message(
-        "delegate.notes-added", answer=f"{answer}\n\n" if answer else "", count=len(parts),
+        "delegate.notes-added", answer=f"{answer}\n\n" if answer else "", count=len(parts), s=_plural_s(len(parts)),
         refusal=f" ({last_refusal})" if last_refusal else "",
     )
     return parts, summary, "ok"
@@ -1009,10 +1019,10 @@ def _mint_package_draft_from_delegate(
             if status == "proposed":
                 if reconciled:
                     text += (
-                        " " + agent_text.message("delegate.draft-notes-reconciled", count=len(notes))
+                        " " + agent_text.message("delegate.draft-notes-reconciled", count=len(notes), s=_plural_s(len(notes)))
                     )
                 if round_index:
-                    text += " " + agent_text.message("delegate.draft-corrected", round_index=round_index)
+                    text += " " + agent_text.message("delegate.draft-corrected", round_index=round_index, s=_plural_s(round_index))
                 return part, text, "ok"
             # The build service refused. Some refusals cannot improve by
             # re-authoring (a policy or permission verdict); retrying those
