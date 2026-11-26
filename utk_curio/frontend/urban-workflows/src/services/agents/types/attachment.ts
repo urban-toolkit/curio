@@ -69,6 +69,13 @@ export interface AgentAttachment {
    * own check, that an agent installed in the dataflow writes node content
    * for it. */
   solvesNodes?: boolean;
+  /** The server's verdict on a Build & validate of this agent's plan: the
+   * mode of the one that runs, or null when none does. A build its process
+   * left behind, at a restart, runs no more. */
+  buildRunning?: "step" | "auto" | null;
+  /** A plan row's Solve that runs on the server on this agent's plan, the one
+   * a pick goes on with among them: its ref and node, or null when none runs. */
+  validating?: { ref: string; nodeId: string } | null;
 }
 
 /** dev/115: the liveness projection of a detached agent job — no event bodies. */
