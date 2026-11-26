@@ -516,6 +516,59 @@ class TestUndoByKind:
         [canvas] = undone.get_json()["canvas"]
         assert canvas["task"] == "", canvas
 
+    def _land_replacing_the_loader(self, client, token, project, att, monkeypatch) -> dict:
+        """The plan these tests land on *project*: it removes the loader and
+        wires a new node into ``sum``. Its card."""
+        plan = {
+            "goal": "replace the loader",
+            "nodes": [{"ref": "a", "nodeType": CA, "title": "API Fetch", "intent": "fetch from the api"}],
+            "edges": [{"from": "a", "to": "sum"}],
+            "removeNodes": ["load"],
+        }
+        body, _ = _ask(client, token, project, att, monkeypatch, ["Here.\n" + _plan_tail(plan)])
+        return _the_card(body)
+
+    def test_undo_of_a_plan_keeps_a_description_written_after_it(self, client, user_and_token, tmp_curio, monkeypatch):
+        """The plan's Undo takes back what the plan wrote, and no more: the
+        description, which the plan did not write, written after it landed
+        (with no version of its own), stays as the person left it, and holds
+        the Undo back no more than the goal does. Before the fix the Undo was
+        refused (409), as for any field of the dataflow changed after a plan."""
+        user, token = user_and_token
+        project, att = _setup(client, user, token, coord=DFB)
+        card = self._land_replacing_the_loader(client, token, project, att, monkeypatch)
+        _person_writes(user, project, lambda flow: flow.update(description="Parks a short walk from home"))
+        undone = _undo(client, token, project, att, card["changeId"])
+        assert undone.status_code == 200, undone.get_json()
+        flow = _saved(client, token, project)
+        assert set(_by_id(flow)) == {"load", "sum"}
+        assert [(e["source"], e["target"]) for e in flow["edges"]] == [("load", "sum")]
+        assert flow.get("description") == "Parks a short walk from home"
+
+    def test_undo_of_a_plan_keeps_a_scenario_renamed_after_it(self, client, user_and_token, tmp_curio, monkeypatch):
+        """The same for a scenario the plan did not write, renamed after it
+        landed: the name stays, and the Undo goes ahead. The scenario is on a
+        node with no connections, so the plan's writes leave it as it was."""
+        user, token = user_and_token
+        note = {"id": "note", "type": CA, "title": "Note", "goal": "Keep a note", "content": "return 0", "x": 800, "y": 0}
+        project, att = _setup(client, user, token, coord=DFB, nodes=_nodes() + [note])
+        _person_writes(user, project, lambda flow: flow.update(
+            scenarios=[{"id": "s1", "name": "Cool roofs", "color": "#4477aa", "nodes": ["note"]}]))
+        card = self._land_replacing_the_loader(client, token, project, att, monkeypatch)
+
+        def renamed(flow):
+            for scenario in flow.get("scenarios") or []:
+                if scenario.get("id") == "s1":
+                    scenario["name"] = "Cool roofs on every block"
+
+        _person_writes(user, project, renamed)
+        undone = _undo(client, token, project, att, card["changeId"])
+        assert undone.status_code == 200, undone.get_json()
+        flow = _saved(client, token, project)
+        assert set(_by_id(flow)) == {"load", "sum", "note"}
+        assert [(e["source"], e["target"]) for e in flow["edges"]] == [("load", "sum")]
+        assert [s.get("name") for s in flow.get("scenarios") or [] if s.get("id") == "s1"] == ["Cool roofs on every block"]
+
     def test_undo_of_a_second_plan_gives_the_planner_back_the_first(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
         project, att = _setup(client, user, token, coord=DFB)
