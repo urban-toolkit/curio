@@ -308,6 +308,8 @@ export interface AgentChangePart
   nodeId?: string;
   /** A plan's id: its rows read the attachment's ledger by it. */
   planId?: string;
+  /** The dataflow's goal, which the plan gave a dataflow that had none. */
+  goalSet?: string;
   /** A new node's kind, and the roster's answer to whether the sandbox can
    * run it (dev/119, DEC-076): display only. */
   nodeType?: string;

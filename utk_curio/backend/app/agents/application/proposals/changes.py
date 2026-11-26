@@ -36,7 +36,8 @@ history's checked writes:
 * a plan puts back the version before its first write (``history.put_back``),
   only while nobody changed the dataflow between its writes and nothing
   outside its own nodes changed since: so a node it removed comes back with
-  its connections.
+  its connections. The dataflow's goal never holds it back: the goal goes
+  back only when the plan set it and it still reads what the plan wrote.
 
 A change kept from before a Spatial Join's operation and output were its
 widgets, when the join kept them at ``metadata.spatialJoin``, is undone as the
@@ -244,6 +245,9 @@ def card(part: dict, change: dict, lines: list[str]) -> dict:
     if change.get("planId"):
         # The plan's rows read its ledger, on the attachment, by this id.
         out["planId"] = change["planId"]
+    if "goalSet" in change:
+        # The dataflow's goal, which the plan gave a dataflow that had none.
+        out["goalSet"] = change["goalSet"]
     return out
 
 

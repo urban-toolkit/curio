@@ -1559,13 +1559,13 @@ def saved(user_key: str, project_id: str, by: dict) -> dict:
                             "start": end, "end": end})
 
 
-def put_back(user_key: str, project_id: str, point_id: str, by: dict) -> dict:
+def put_back(user_key: str, project_id: str, point_id: str, by: dict, *, keep: Iterable[str] = ()) -> dict:
     """Put the version *point_id* back: one transaction makes the doc hold
-    it, but for what :data:`KEPT_BY_A_PUT_BACK` names, for every tab, and a
-    version named after it, its parent the version put back. ``refused``: the
-    nodes whose code someone changed while it was being put back, which keep
-    theirs. ``removed``: the nodes it took out, which the tab that asked for
-    it tells the others it removed (``presence.noteRemoval``)."""
+    it, but for what :data:`KEPT_BY_A_PUT_BACK` and *keep* name, for every
+    tab, and a version named after it, its parent the version put back.
+    ``refused``: the nodes whose code someone changed while it was being put
+    back, which keep theirs. ``removed``: the nodes it took out, which the tab
+    that asked for it tells the others it removed (``presence.noteRemoval``)."""
     folder = _folder(user_key, project_id)
     point = next((p for p in _read_points(folder) if p["id"] == point_id and _listed(p)), None)
     if point is None:
@@ -1580,7 +1580,7 @@ def put_back(user_key: str, project_id: str, point_id: str, by: dict) -> dict:
     back = {node.get("id") for node in target.get("nodes") or [] if isinstance(node, dict)}
     removed = [node.get("id") for node in flow.get("nodes") or []
                if isinstance(node, dict) and node.get("id") not in back]
-    kept = doc_mapping.OUTSIDE_THE_DOC | KEPT_BY_A_PUT_BACK
+    kept = doc_mapping.OUTSIDE_THE_DOC | KEPT_BY_A_PUT_BACK | frozenset(keep)
     spec["dataflow"] = {**{name: value for name, value in target.items() if name not in kept},
                         **{name: value for name, value in flow.items() if name in kept}}
     made = {"kind": PUT_BACK, "what": "Put back", "restores": point_id, "parent": point_id, "by": by}

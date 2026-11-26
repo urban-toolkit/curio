@@ -89,7 +89,7 @@ export function useAgentCanvasMutations(): void {
   const { createCodeNode } = useCode();
   const {
     applyNodeContent, applyNodeSettings, onEdgesChange, handOverAlongEdges, applyReviewedRemovals, scenarios,
-    setScenarios, dataflowDoc,
+    setScenarios, setWorkflowGoal, dataflowDoc,
   } = useFlowContext();
   const { agentEditProv } = useProvenanceContext();
   const { reveal } = useNotebookViewContext();
@@ -226,6 +226,9 @@ export function useAgentCanvasMutations(): void {
       // which hands it over there.)
       handOverAlongEdges(added as never);
       joinSaved(mutation.scenarios);
+      // The goal the plan gave a dataflow that had none, or the one its Undo
+      // put back, which the Goal line shows and a save writes.
+      if (typeof mutation.task === "string") setWorkflowGoal(mutation.task);
       window.setTimeout(
         () => fitViewWithMenuOffset(reactFlow, { duration: 400 }),
         50,

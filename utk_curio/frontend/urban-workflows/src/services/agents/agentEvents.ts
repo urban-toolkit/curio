@@ -102,6 +102,9 @@ type AgentCanvasMutationBody =
       removedEdgeIds?: string[];
       /** #662: the scenarios the plan saved, joined to the canvas's. */
       scenarios?: AgentAppliedScenario[];
+      /** The dataflow's goal: the one the plan gave a dataflow that had
+       *  none, or the one its Undo put back. */
+      task?: string;
     }
   | {
       /** Nodes and connections that leave: a node an agent added, undone.
