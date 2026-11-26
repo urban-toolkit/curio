@@ -518,6 +518,120 @@ class TestUndoByKind:
         assert "load" not in _by_id(flow)
         assert flow["task"] == "Map the parks in the shade"
 
+    def _two_nodes_with_a_write_after_each(self, client, user, token, monkeypatch, change):
+        """A plan of two new nodes and the connection between them, landed on
+        an empty goal, while right after each of its nodes landed, before the
+        plan's next write, the person's change ``change(node_id)`` reached the
+        dataflow, as an open tab's own write does. The project, the
+        attachment, the plan's card, the dataflow as it was before the plan,
+        and the plan's nodes."""
+        from utk_curio.backend.app.agents.application import in_the_room
+        from utk_curio.backend.app.collaboration import history
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        project, att = _setup(client, user, token, coord=DFB)
+        before = _saved(client, token, project)
+        act = in_the_room.act
+        landed: list = []
+
+        def acting(peer, action, **kwargs):
+            acted = act(peer, action, **kwargs)
+            added = [node_id for verb, thing, node_id in action.did if (verb, thing) == ("added", "node")]
+            if acted.landed and added:
+                landed.extend(added)
+                _person_writes(user, project, change(added[0]))
+            return acted
+
+        monkeypatch.setattr(in_the_room, "act", acting)
+        plan = {
+            "goal": "count the parks by street",
+            "nodes": [{"ref": "parks", "nodeType": CA, "title": "Parks", "intent": "load the parks"},
+                      {"ref": "count", "nodeType": CA, "title": "Count", "intent": "count the parks by street"}],
+            "edges": [{"from": "parks", "to": "count"}],
+        }
+        body, _ = _ask(client, token, project, att, monkeypatch, ["Here.\n" + _plan_tail(plan)])
+        card = _the_card(body)
+        assert card.get("goalSet") == "count the parks by street", card
+        # The person's write after the plan's first node came before the plan's next write.
+        key = _user_dir_key(user)
+        points = [p for p in history.points(key, project) if p.get("change") == card["changeId"]]
+        assert len(landed) == 2 and len(points) == 3, (landed, points)
+        assert not history.follows(key, project, points[0], points[1]), points
+        return project, att, card, before, landed
+
+    @pytest.mark.parametrize("made", ["the canvas's defaults", "code typed in it", "a connection to it"])
+    def test_undo_of_a_plan_goes_ahead_when_only_its_own_nodes_changed_while_it_landed(
+        self, client, user_and_token, tmp_curio, monkeypatch, made,
+    ):
+        """A change made between two of the plan's writes that stays within the
+        plan's own nodes never holds its Undo back: the Undo removes those
+        nodes with everything in them and every connection to them. As #1636's
+        dev check saw (11-26), an open tab wrote the settings its canvas gives
+        a node (its Save toggle, its input and output types, its keywords)
+        into each of the plan's nodes as it arrived; here also code typed in
+        the plan's first node, and a connection drawn to it. The Undo must
+        answer 200, put the dataflow back as it was before the plan, and empty
+        the goal the plan set. Before the fix each was refused (409), nothing
+        undone."""
+        user, token = user_and_token
+        connected: list = []
+
+        def change(node_id):
+            def made_in(flow):
+                if made == "a connection to it":
+                    # Only to the plan's first node, which the plan feeds nothing.
+                    if not connected:
+                        connected.append(node_id)
+                        flow["edges"].append({"id": f"sum-{node_id}", "source": "sum", "target": node_id,
+                                              "sourceHandle": "out", "targetHandle": "in"})
+                    return
+                for node in flow["nodes"]:
+                    if node.get("id") != node_id:
+                        continue
+                    if made == "code typed in it":
+                        node["content"] = "return 'typed while the plan landed'"
+                    else:
+                        node.update({"saveOutputDataset": False, "in": "DEFAULT", "out": "DEFAULT"})
+                        node["metadata"] = {**(node.get("metadata") or {}), "keywords": []}
+            return made_in
+
+        project, att, card, before, landed = self._two_nodes_with_a_write_after_each(
+            client, user, token, monkeypatch, change,
+        )
+        assert set(_by_id(_saved(client, token, project))) == {"load", "sum", *landed}
+        undone = _undo(client, token, project, att, card["changeId"])
+        assert undone.status_code == 200, undone.get_json()
+        flow = _saved(client, token, project)
+        assert _by_id(flow) == _by_id(before)
+        assert flow["edges"] == before["edges"]
+        assert flow.get("task", "") == ""
+
+    def test_undo_of_a_plan_is_refused_when_another_node_changed_while_it_landed(
+        self, client, user_and_token, tmp_curio, monkeypatch,
+    ):
+        """A change made between two of the plan's writes to a node the plan did
+        not add still refuses its Undo, as on main, and nothing changes: here
+        the Save toggle of ``sum``, with no goal written."""
+        user, token = user_and_token
+
+        def change(_node_id):
+            def made_in(flow):
+                for node in flow["nodes"]:
+                    if node.get("id") == "sum":
+                        node["saveOutputDataset"] = True
+            return made_in
+
+        project, att, card, _, landed = self._two_nodes_with_a_write_after_each(
+            client, user, token, monkeypatch, change,
+        )
+        refused = _undo(client, token, project, att, card["changeId"])
+        assert refused.status_code == 409, refused.get_json()
+        assert "changed this dataflow after; nothing was undone." in refused.get_json()["error"]
+        flow = _saved(client, token, project)
+        assert set(_by_id(flow)) == {"load", "sum", *landed}
+        assert _by_id(flow)["sum"]["saveOutputDataset"] is True
+        assert flow["task"] == "count the parks by street"
+
     def test_undo_of_a_plan_keeps_what_a_person_wrote_before_it_with_no_version_of_its_own(
         self, client, user_and_token, tmp_curio, monkeypatch,
     ):
