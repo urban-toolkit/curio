@@ -2241,11 +2241,14 @@ class TestStatusWordsOnce:
     pending reason is, because the strip's notice and the Solve card put the
     status before it."""
 
-    def _card_line(self, client, token, ctx, node_id):
+    def _card_line(self, client, token, ctx, title):
+        """The Solve card's one line for the node titled *title*: each line
+        names its node as its header on the canvas does."""
         turns = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/session",
                            headers=_auth(token)).get_json()["turns"]
         card = next(p for t in reversed(turns) for p in (t.get("content") or []) if p.get("type") == "card")
-        return next(line for line in card["lines"] if line.startswith(node_id[:8]))
+        [line] = [line for line in card["lines"] if line.startswith(f"{title} · ")]
+        return line
 
     def _says_its_status_once(self, result, line, status):
         assert result["status"] == status, result
@@ -2258,7 +2261,7 @@ class TestStatusWordsOnce:
         ctx = helper._setup(client, user, token, monkeypatch,
                             dl_replies=["No catalog dataset covers the tract heat data."])
         stats = helper._solve(client, token, ctx)["results"][ctx["stats"]]
-        self._says_its_status_once(stats, self._card_line(client, token, ctx, ctx["stats"]), "pending")
+        self._says_its_status_once(stats, self._card_line(client, token, ctx, "Stats"), "pending")
 
     def test_a_node_validation_skips_says_skipped_once(self, client, user_and_token, tmp_curio, monkeypatch):
         helper = TestVerifiedSolve()
@@ -2278,7 +2281,7 @@ class TestStatusWordsOnce:
 
         monkeypatch.setattr('utk_curio.backend.app.agents.domain.validation.validate_candidate', _bounded)
         stats = helper._solve(client, token, ctx)["results"][ctx["stats"]]
-        self._says_its_status_once(stats, self._card_line(client, token, ctx, ctx["stats"]), "skipped")
+        self._says_its_status_once(stats, self._card_line(client, token, ctx, "Stats"), "skipped")
 
 
 class TestOneLineAnswers:

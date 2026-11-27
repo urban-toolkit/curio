@@ -1221,9 +1221,9 @@ class TestDataflowPlanApply:
         # existing node (x 10, default width 525), so nothing overlaps (#410).
         assert load["x"] == 10 + 525 + 120
         assert analyze["x"] == load["x"] + 525 + 120
-        # The goal is the plan row's title and intent; no code yet.
+        # The goal is the plan row's title, a colon and its intent; no code yet.
         assert load["content"] == ""
-        assert load["goal"].startswith("Load ") and load["goal"].endswith(" load the data")
+        assert load["goal"] == "Load: load the data", load["goal"]
         # The plan's name for each node is its title, the name its header shows.
         assert (load["title"], analyze["title"]) == ("Load", "Analyze")
         # Builder session: applied phase, both nodes pending for Build & validate or Solve.

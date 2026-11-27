@@ -202,8 +202,9 @@ def _without(node_id: str):
 
 
 def _plan_nodes(flow) -> dict:
-    """The plan's new nodes in *flow*, by the title their goal starts with."""
-    return {node["goal"].split(" ")[0]: node for node in flow["nodes"]
+    """The plan's new nodes in *flow*, by the title their goal starts with: a
+    plan writes a node's goal as its title, a colon and its intent."""
+    return {node["goal"].partition(": ")[0]: node for node in flow["nodes"]
             if node.get("goal") and node["id"] not in ("load", "sum")}
 
 

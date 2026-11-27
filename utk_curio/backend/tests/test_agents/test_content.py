@@ -600,7 +600,7 @@ class TestDelegationInstruction:
         text = content.delegation_instruction(
             [("node.content.generate", "Node Builder")]
         )
-        assert "- node.content.generate \N{EM DASH} handled by Node Builder" in text
+        assert "- node.content.generate: handled by Node Builder" in text
         assert '"delegateRequest"' in text
 
 
