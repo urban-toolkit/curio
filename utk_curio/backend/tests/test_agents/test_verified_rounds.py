@@ -1050,7 +1050,10 @@ class TestVerifiedSolve:
     NB = "agent.curio.node-builder@1"
 
     def _plan_tail(self, with_stats=True):
-        nodes = [{"ref": "load", "nodeType": DL, "title": "Load", "intent": "load the tract heat data"}]
+        # The loader's intent names the dataset _setup imports, "Heat Tracts",
+        # by its title, so the loader has a source and gets its rounds; with
+        # none, its Dataset Finder would be asked before any of them.
+        nodes = [{"ref": "load", "nodeType": DL, "title": "Load", "intent": "load the heat tracts"}]
         edges = []
         if with_stats:
             nodes.append({"ref": "stats", "nodeType": CA, "title": "Stats", "intent": "compute stats"})

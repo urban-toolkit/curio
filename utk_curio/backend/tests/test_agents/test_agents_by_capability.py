@@ -269,8 +269,6 @@ class TestPlannedNodesGetTheCopies:
 
 
 class TestSolveUsesTheCopies:
-    INVENTED = 'import pandas as pd\nreturn pd.read_csv("invented.csv")'
-
     def _harness(self, client, user, token, monkeypatch, **kw):
         def prepare(h):
             _write_copies(h.ukey)
@@ -309,10 +307,11 @@ class TestSolveUsesTheCopies:
         user, token = user_and_token
         h = self._harness(
             client, user, token, monkeypatch,
-            dl_replies=[self.INVENTED, self.INVENTED, self.INVENTED,
-                        f'import geopandas as gpd\nreturn gpd.read_file("{URL}")'],
+            dl_replies=[f'import geopandas as gpd\nreturn gpd.read_file("{URL}")'],
         )
         h.solve()
+        # The copied Finder was asked before the copied builder, which nothing asked.
+        assert h.dl_calls == []
         finder_id = _attachment_of(h.spec(), h.load, MY_FINDER)["attachmentId"]
         monkeypatch.setattr(
             'utk_curio.backend.app.agents.application.verify.verify_external_source',
