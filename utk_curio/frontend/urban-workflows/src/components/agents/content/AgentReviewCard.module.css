@@ -375,37 +375,76 @@
   color: var(--curio-text-secondary);
 }
 
-/* dev/67-7 — the validation verdict block. */
-.validation {
+/* dev/67-7: the check of code that landed, one line, then Verification. */
+.check {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-  padding: 8px 10px;
-  border-radius: 6px;
-  font-size: 0.8rem;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 12px;
 }
 
-.validationPass {
-  background: var(--curio-success-bg);
-  border: 1px solid var(--curio-success-bg);
+.checkLine {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.checkIcon {
+  flex: none;
+  font-size: 11px;
+}
+
+.checkPass .checkLine {
   color: var(--curio-success-text);
 }
 
-.validationFail {
-  background: var(--curio-danger-bg);
-  border: 1px solid var(--curio-danger-border);
+.checkFail .checkLine {
   color: var(--curio-danger-text);
 }
 
-.validationBadge {
-  font-weight: 700;
-  letter-spacing: 0.04em;
+.validationDetails {
+  color: var(--curio-text-secondary);
 }
 
-.validationDetails {
-  flex-basis: 100%;
+/* Verification: every round and its code, one click away. */
+.verificationToggle {
+  width: fit-content;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* A change's source, one line. */
+.sourceLine {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--curio-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* Show all of a change's code, and back. */
+.codeToggle {
+  margin-top: 4px;
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--curio-text-secondary);
+  cursor: pointer;
+}
+
+.previewWhole {
+  max-height: none;
+}
+
+/* A change's foot: its Undo. */
+.changeFoot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .validationDetails pre {

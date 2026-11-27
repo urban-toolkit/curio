@@ -1,10 +1,34 @@
 import React from "react";
 import { subscribeApiSettingsRequests } from "../../components/apiSettings/apiSettingsRequest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { faCircle } from "@fortawesome/free-solid-svg-icons";
 
 import { AgentChangeCard } from "../../components/agents/content/AgentChangeCard";
 import type { PlanNodeReviewState } from "../../components/agents/content/AgentReviewCard";
+import { PREVIEW_LINES } from "../../components/agents/content/reviewCard/CodePreview";
+import { registerNode } from "../../registry/nodeRegistry";
+import type { NodeDescriptor } from "../../registry/types";
 import type { AgentChangePart } from "../../services/agents";
+
+/** A template the registry knows, as a new node's card names its kind. */
+const PYTHON = "curio.builtin/python-computation@1";
+beforeAll(() => {
+  registerNode({
+    id: PYTHON,
+    category: "computation",
+    label: "Python Computation",
+    icon: faCircle,
+    inputPorts: [],
+    outputPorts: [],
+    editor: "code",
+    inPalette: true,
+    description: "",
+    hasCode: true,
+    hasWidgets: false,
+    hasGrammar: false,
+    adapter: { handles: [], editor: null, container: {}, useNodeBehavior: () => ({}) },
+  } as unknown as NodeDescriptor);
+});
 
 /** A change an agent made, as its turn's card carries it (`changes.card`). */
 const change = (overrides: Partial<AgentChangePart> = {}): AgentChangePart => ({
@@ -21,10 +45,13 @@ const change = (overrides: Partial<AgentChangePart> = {}): AgentChangePart => ({
 });
 
 describe("AgentChangeCard (an agent's change, landed, with its Undo)", () => {
-  it("says what the change did and offers Undo, never Apply or Dismiss", () => {
-    render(<AgentChangeCard part={change()} onUndo={jest.fn()} />);
-    expect(screen.getByRole("group", { name: "Change: Replaced the content of the Python node · n1" })).toBeInTheDocument();
-    expect(screen.getByText("Python · n1")).toBeInTheDocument();
+  it("says what the change did, to its node by the name its header shows, and offers Undo, never Apply or Dismiss", () => {
+    render(<AgentChangeCard part={change()} nodeName="Load parks" onUndo={jest.fn()} />);
+    // Its accessible name keeps the change's own summary, which the agents read.
+    const card = screen.getByRole("group", { name: "Change: Replaced the content of the Python node · n1" });
+    expect(within(card).getByText("Replaced the code of Load parks")).toBeInTheDocument();
+    // Its line named the node again: the title names it.
+    expect(screen.queryByText("Python · n1")).toBeNull();
     expect(screen.getByText("print(2)")).toBeInTheDocument();
     // Its title says what it is: no chip names its kind.
     expect(screen.queryByText("code")).toBeNull();
@@ -79,13 +106,69 @@ describe("AgentChangeCard (an agent's change, landed, with its Undo)", () => {
   });
 
   it.each([
-    ["content", "code"],
-    ["settings", "settings"],
-    ["node", "new node"],
-    ["plan", "plan"],
-  ])("a %s change's header names its kind as %s", (kind, label) => {
-    render(<AgentChangeCard part={change({ kind, preview: "", plan: undefined })} />);
-    expect(screen.getByText(label)).toBeInTheDocument();
+    ["content", change({ kind: "content" }), "Load parks", "Replaced the code of Load parks", "code"],
+    [
+      "settings",
+      change({ kind: "settings", tool: "node.settings.write", summary: "Changed the settings of the Data Pool node" }),
+      "Pools",
+      "Changed the settings of Pools",
+      "settings",
+    ],
+    [
+      "new node",
+      change({ kind: "node", tool: "node.create", summary: "Created a new Python Computation node", nodeType: PYTHON }),
+      "Python Computation",
+      "Added a Python Computation node",
+      "new node",
+    ],
+    [
+      "new node with a title",
+      change({ kind: "node", tool: "node.create", summary: "Created a new Python Computation node · Load parks", nodeType: PYTHON }),
+      "Load parks",
+      "Added Load parks, a Python Computation node",
+      "new node",
+    ],
+  ])("a %s change's title says what it did, and no chip names its kind", (_kind, part, nodeName, title, chip) => {
+    render(<AgentChangeCard part={{ ...part, preview: "" }} nodeName={nodeName} />);
+    expect(screen.getByText(title)).toBeInTheDocument();
+    expect(screen.queryByText(chip)).toBeNull();
+  });
+
+  it("names its node by the change's own words once the node is not on the canvas", () => {
+    const { unmount } = render(<AgentChangeCard part={change()} nodeName={null} />);
+    expect(screen.getByText("Replaced the content of the Python node · n1")).toBeInTheDocument();
+    unmount();
+    // A new node taken back by its Undo still says its kind.
+    render(
+      <AgentChangeCard
+        part={change({ kind: "node", tool: "node.create", summary: "Created a new Python Computation node", nodeType: PYTHON, status: "undone" })}
+        nodeName={null}
+      />,
+    );
+    expect(screen.getByText("Added a Python Computation node")).toBeInTheDocument();
+    expect(screen.getByText("Undone")).toBeInTheDocument();
+  });
+
+  it("shows a long code's first lines, and all of it on Show all", () => {
+    const code = Array.from({ length: 20 }, (_, i) => `line_${i + 1} = ${i + 1}`).join("\n");
+    render(<AgentChangeCard part={change({ preview: code })} />);
+    expect(screen.getByText(new RegExp(`line_${PREVIEW_LINES} = `))).toBeInTheDocument();
+    expect(screen.queryByText(/line_20 = 20/)).toBeNull();
+    const all = screen.getByRole("button", { name: "Show all 20 lines" });
+    expect(all).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(all);
+    expect(screen.getByText(/line_20 = 20/)).toBeInTheDocument();
+    const less = screen.getByRole("button", { name: "Show less" });
+    expect(less).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(less);
+    expect(screen.queryByText(/line_20 = 20/)).toBeNull();
+  });
+
+  it("shows short code whole, with no Show all", () => {
+    const code = Array.from({ length: PREVIEW_LINES + 1 }, (_, i) => `v${i} = ${i}`).join("\n");
+    render(<AgentChangeCard part={change({ preview: code })} />);
+    expect(screen.getByText(new RegExp(`v${PREVIEW_LINES} = ${PREVIEW_LINES}`))).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Show all/ })).toBeNull();
   });
 });
 
@@ -105,10 +188,19 @@ describe("AgentChangeCard: a settings change names the node and says each change
 
   it("the header names the node, each change is a line of its own, and there is no code", () => {
     const lines = ["Conflict inside visualization: Overwrite", "Conflict between visualizations: Merge (AND)"];
-    render(<AgentChangeCard part={settings(lines)} onUndo={jest.fn()} />);
-    expect(screen.getByText("Changed the settings of the Data Pool node · Picked photos")).toBeInTheDocument();
+    render(<AgentChangeCard part={settings(lines)} nodeName="Picked photos" onUndo={jest.fn()} />);
+    expect(screen.getByText("Changed the settings of Picked photos")).toBeInTheDocument();
     for (const line of lines) expect(screen.getAllByText(line)).toHaveLength(1);
+    // The line that named the node is the title's.
+    expect(screen.queryByText("Picked photos")).toBeNull();
     expect(screen.getByRole("button", { name: "Undo" })).toBeInTheDocument();
+  });
+
+  it("a card from before the settings' own lines says them from its lines, without the node's", () => {
+    const part = { ...settings(["Combine: max"]), settingLines: undefined };
+    render(<AgentChangeCard part={part} nodeName="Picked photos" />);
+    expect(screen.getAllByText("Combine: max")).toHaveLength(1);
+    expect(screen.queryByText("Picked photos")).toBeNull();
   });
 
   it.each([
@@ -122,7 +214,7 @@ describe("AgentChangeCard: a settings change names the node and says each change
   });
 });
 
-describe("AgentChangeCard: a new node (dev/118, dev/119: what Solve does with it)", () => {
+describe("AgentChangeCard: a new node", () => {
   const source = { kind: "external", label: "x", refs: [{ kind: "external", value: "https://a.org", verification: { status: "verified" } }] };
   const created = (overrides: Partial<AgentChangePart>) =>
     change({
@@ -133,37 +225,32 @@ describe("AgentChangeCard: a new node (dev/118, dev/119: what Solve does with it
       ...overrides,
     });
 
-  it("the roster's executable flag decides what the card says Solve does", () => {
-    const { unmount } = render(
-      <AgentChangeCard part={created({ nodeType: "some.pkg/custom-python@1", executable: true, source })} />,
-    );
-    expect(screen.getByText("Solve runs it in the sandbox and fixes errors before its code is trusted.")).toBeInTheDocument();
-    unmount();
-    const second = render(
-      <AgentChangeCard part={created({ nodeType: "curio.builtin/spatial-join@1", executable: false, source })} />,
-    );
-    expect(
-      screen.getByText(/has no code to run: Solve writes it, the browser or its own service renders it; it is never called verified/),
-    ).toBeInTheDocument();
-    second.unmount();
-    // A card from before the flag, on a kind the registry has never seen:
-    // the card says nothing rather than guessing.
-    render(<AgentChangeCard part={created({ nodeType: "ghost.pkg/unknown@1", source })} />);
-    expect(screen.queryByText(/Solve runs it in the sandbox/)).toBeNull();
-    expect(screen.queryByText(/has no code to run/)).toBeNull();
+  it("says nothing of what Solve does with it: the guide does", () => {
+    for (const executable of [true, false]) {
+      const { unmount } = render(<AgentChangeCard part={created({ nodeType: "some.pkg/custom-python@1", executable, source })} />);
+      expect(screen.queryByText(/Solve runs it in the sandbox/)).toBeNull();
+      expect(screen.queryByText(/has no code to run/)).toBeNull();
+      unmount();
+    }
   });
 
-  it("a node that opens no source says nothing of Solve", () => {
-    render(<AgentChangeCard part={created({ nodeType: "x", executable: true })} />);
-    expect(screen.queryByText(/Solve runs it/)).toBeNull();
+  it("its kind and its id are run details", () => {
+    const { unmount } = render(<AgentChangeCard part={created({})} />);
+    expect(screen.queryByText("Load · curio.builtin/data-loading")).toBeNull();
+    expect(screen.queryByText("node n9")).toBeNull();
+    unmount();
+    render(<AgentChangeCard part={created({})} runDetails />);
+    expect(screen.getByText("Load · curio.builtin/data-loading")).toHaveAttribute("data-curio-run-details");
+    expect(screen.getByText("node n9")).toHaveAttribute("data-curio-run-details");
   });
 });
 
-describe("AgentChangeCard: dev/114 (DEC-072) the Source block", () => {
+describe("AgentChangeCard: dev/114 (DEC-072) the source, on one line", () => {
   const withSource = (source: AgentChangePart["source"]) =>
     change({ tool: "node.create", kind: "node", summary: "Created a new Data Loading node", source });
+  const line = () => screen.getByRole("group", { name: "Data source" });
 
-  it("names a Data Catalog source by title, format and id", () => {
+  it("names a Data Catalog source by its title, its format and id on the line's tooltip", () => {
     render(
       <AgentChangeCard
         part={withSource({
@@ -174,12 +261,11 @@ describe("AgentChangeCard: dev/114 (DEC-072) the Source block", () => {
         })}
       />,
     );
-    const block = screen.getByRole("group", { name: "Data source" });
-    expect(block).toHaveTextContent("Source · Data Catalog");
-    expect(block).toHaveTextContent("Census ACS 5-year (parquet) · imported.acs@1");
+    expect(line()).toHaveTextContent(/^Source: Census ACS 5-year, Data Catalog$/);
+    expect(line()).toHaveAttribute("data-tooltip", "Census ACS 5-year (parquet) · imported.acs@1");
   });
 
-  it("shows an external URL with the runtime's verification chip", () => {
+  it("an external URL the runtime verified needs no chip", () => {
     render(
       <AgentChangeCard
         part={withSource({
@@ -190,13 +276,11 @@ describe("AgentChangeCard: dev/114 (DEC-072) the Source block", () => {
         })}
       />,
     );
-    const block = screen.getByRole("group", { name: "Data source" });
-    expect(block).toHaveTextContent("Source · External source");
-    expect(block).toHaveTextContent("https://api.noaa.gov/climate");
-    expect(screen.getByText("Verified ✓")).toBeInTheDocument();
+    expect(line()).toHaveTextContent(/^Source: https:\/\/api\.noaa\.gov\/climate, External source$/);
+    expect(screen.queryByText("Verified ✓")).toBeNull();
   });
 
-  it("says a credential-gated endpoint is gated and a user path is unchecked", () => {
+  it("an external source that may not work keeps its chip, and says a credential-gated endpoint and an unchecked path on its tooltip", () => {
     render(
       <AgentChangeCard
         part={withSource({
@@ -210,21 +294,24 @@ describe("AgentChangeCard: dev/114 (DEC-072) the Source block", () => {
         })}
       />,
     );
-    const block = screen.getByRole("group", { name: "Data source" });
-    expect(block).toHaveTextContent("Source · Several sources");
-    expect(block).toHaveTextContent("https://api.x.gov/v1 · credential-gated");
-    expect(block).toHaveTextContent("data/tracts.geojson (not checked by Curio)");
+    expect(line()).toHaveTextContent("Sources: https://api.x.gov/v1, External source; data/tracts.geojson, User-provided path");
+    // Whatever the probe's words, a chip that says the source may not work.
+    expect(within(line()).getByText(/✗$/)).toBeInTheDocument();
+    expect(line()).toHaveAttribute(
+      "data-tooltip",
+      "https://api.x.gov/v1 · credential-gated\ndata/tracts.geojson (not checked by Curio)",
+    );
   });
 
-  it("labels synthetic data as generated in the node", () => {
+  it("labels synthetic data as made up in the node", () => {
     render(
       <AgentChangeCard
         part={withSource({ kind: "synthetic", label: "Synthetic · generated in the node, no external source",
                            refs: [{ kind: "synthetic" }] })}
       />,
     );
-    expect(screen.getByRole("group", { name: "Data source" })).toHaveTextContent("Source · Synthetic data");
-    expect(screen.getByText(/generated in the node, no external source/)).toBeInTheDocument();
+    expect(line()).toHaveTextContent(/^Source: Synthetic data$/);
+    expect(line()).toHaveAttribute("data-tooltip", "generated in the node, no external source");
   });
 
   it("names the calls that made values up, as the user asked, beside another source", () => {
@@ -240,11 +327,9 @@ describe("AgentChangeCard: dev/114 (DEC-072) the Source block", () => {
         })}
       />,
     );
-    const block = screen.getByRole("group", { name: "Data source" });
-    expect(block).toHaveTextContent("Source · Several sources");
-    expect(block).toHaveTextContent("Tracts (csv) · tracts");
-    expect(block).toHaveTextContent("np.random.randint (made up in the node, as the user asked)");
-    expect(block).not.toHaveTextContent("no external source");
+    expect(line()).toHaveTextContent("Sources: Tracts, Data Catalog; np.random.randint, Synthetic data");
+    expect(line()).toHaveAttribute("data-tooltip", "Tracts (csv) · tracts\nnp.random.randint (made up in the node, as the user asked)");
+    expect(line()).not.toHaveTextContent("no external source");
   });
 
   it("names the values the user typed that the code added to the node's own", () => {
@@ -254,12 +339,11 @@ describe("AgentChangeCard: dev/114 (DEC-072) the Source block", () => {
                            refs: [{ kind: "user-values", value: "'J', 'K', 60, 33" }] })}
       />,
     );
-    const block = screen.getByRole("group", { name: "Data source" });
-    expect(block).toHaveTextContent("Source · User-provided values");
-    expect(block).toHaveTextContent("'J', 'K', 60, 33 (typed in the chat)");
+    expect(line()).toHaveTextContent("Source: 'J', 'K', 60, 33, User-provided values");
+    expect(line()).toHaveAttribute("data-tooltip", "'J', 'K', 60, 33 (typed in the chat)");
   });
 
-  it("renders no Source block when the change carries none", () => {
+  it("renders no source when the change carries none", () => {
     render(<AgentChangeCard part={change()} />);
     expect(screen.queryByRole("group", { name: "Data source" })).toBeNull();
   });
@@ -275,7 +359,7 @@ describe("AgentChangeCard: dev/114 (DEC-072) the Source block", () => {
     expect(container.textContent).toContain("<img src=x");
   });
 
-  it("a secret ref reads as a connection key by name: never a value (dev/116)", () => {
+  it("a secret ref reads as a connection key by name, its host on the tooltip: never a value (dev/116)", () => {
     render(
       <AgentChangeCard
         part={withSource({ kind: "mixed", label: "External · … · Connection key · census", refs: [
@@ -284,12 +368,13 @@ describe("AgentChangeCard: dev/114 (DEC-072) the Source block", () => {
         ] })}
       />,
     );
-    const block = screen.getByRole("group", { name: "Data source" });
-    expect(block).toHaveTextContent("Connection key · census · api.census.gov");
-    expect(block).not.toHaveTextContent("query:key");
+    expect(line()).toHaveTextContent("census, Connection key");
+    expect(line().getAttribute("data-tooltip")).toContain("Connection key · census · api.census.gov");
+    expect(line()).not.toHaveTextContent("query:key");
+    expect(line().getAttribute("data-tooltip")).not.toContain("query:key");
   });
 
-  it("a credential-gated external ref shows the saved-key hint (dev/116)", () => {
+  it("a credential-gated external ref's saved-key hint is on the line's tooltip (dev/116)", () => {
     render(
       <AgentChangeCard
         part={withSource({ kind: "external", label: "x", refs: [
@@ -299,24 +384,33 @@ describe("AgentChangeCard: dev/114 (DEC-072) the Source block", () => {
         ] })}
       />,
     );
-    expect(screen.getByRole("group", { name: "Data source" })).toHaveTextContent(/credential-gated \(a connection key 'census' is saved/);
+    expect(line().getAttribute("data-tooltip")).toMatch(/credential-gated \(a connection key 'census' is saved/);
   });
 });
 
-describe("AgentChangeCard: dev/67-7 the validation block of code that landed", () => {
+describe("AgentChangeCard: dev/67-7 the check of code that landed, on one line", () => {
   const validated = (verdict: string, evidence = {}) =>
     change({ validation: { verdict, rounds: verdict === "pass" ? 1 : 3, evidence } });
+  const check = () => screen.getByRole("status");
 
-  it("renders PASS with the output type", () => {
-    render(<AgentChangeCard part={validated("pass", { outputDataType: "dataframe" })} onUndo={jest.fn()} />);
-    expect(screen.getByText("PASS")).toBeInTheDocument();
-    expect(screen.getByText(/output: dataframe/)).toBeInTheDocument();
+  it("says the code ran in the sandbox, and what it put out", () => {
+    render(<AgentChangeCard part={validated("pass", { outputDataType: "geodataframe" })} onUndo={jest.fn()} />);
+    expect(check()).toHaveAccessibleName("Validation pass");
+    expect(check()).toHaveTextContent(/^Ran in the sandbox: a GeoDataFrame$/);
     expect(screen.getByRole("button", { name: "Undo" })).toBeInTheDocument();
   });
 
-  it("renders FAIL with the traceback", () => {
+  it("says why it failed, with the traceback", () => {
+    const { unmount } = render(
+      <AgentChangeCard part={validated("fail", { kind: "execution-error", detail: "node 'n1' failed", stderrTail: "Traceback: KeyError" })} />,
+    );
+    expect(check()).toHaveAccessibleName("Validation fail");
+    expect(check()).toHaveTextContent(/^node 'n1' failed \(3 rounds\)/);
+    expect(screen.getByText("Traceback: KeyError")).toBeInTheDocument();
+    unmount();
+    // With no reason of its own, how many rounds it took.
     render(<AgentChangeCard part={validated("fail", { kind: "execution-error", stderrTail: "Traceback: KeyError" })} />);
-    expect(screen.getByText("FAIL")).toBeInTheDocument();
+    expect(check()).toHaveTextContent(/^Validation failed after 3 rounds/);
     expect(screen.getByText("Traceback: KeyError")).toBeInTheDocument();
   });
 
@@ -325,13 +419,13 @@ describe("AgentChangeCard: dev/67-7 the validation block of code that landed", (
     expect(screen.getByText(/Upstream node Load CSV failed/)).toBeInTheDocument();
   });
 
-  it("changes without validation render no block", () => {
+  it("changes without validation render no check", () => {
     render(<AgentChangeCard part={change()} />);
-    expect(screen.queryByText("PASS")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
   });
 });
 
-describe("AgentChangeCard: dev/115 the verification attempt trail", () => {
+describe("AgentChangeCard: dev/115 every round, under Verification", () => {
   const executed = change({
     validation: {
       verdict: "pass",
@@ -347,7 +441,7 @@ describe("AgentChangeCard: dev/115 the verification attempt trail", () => {
 
   it("lists every round under a collapsed disclosure, errors nested", () => {
     render(<AgentChangeCard part={executed} onUndo={jest.fn()} />);
-    const summary = screen.getByText("Verification · 2 attempts");
+    const summary = screen.getByText("Verification: 2 rounds");
     expect(summary.closest("details")).not.toHaveAttribute("open");
     const list = screen.getByRole("list", { name: "Verification attempts" });
     expect(list).toHaveTextContent("Round 1 · fail · execution-error · the node's current code");
@@ -356,6 +450,18 @@ describe("AgentChangeCard: dev/115 the verification attempt trail", () => {
     expect(list).toHaveTextContent("400 Client Error");
     // The code on the card is the code that ran, and it landed: Undo puts back the code before.
     expect(screen.getByRole("button", { name: "Undo" })).not.toBeDisabled();
+  });
+
+  it("says each round carries its code when every round that failed does", () => {
+    const withCode = change({
+      validation: {
+        ...executed.validation!,
+        attempts: [{ ...executed.validation!.attempts![0], code: "load()" }, executed.validation!.attempts![1]],
+      },
+    });
+    render(<AgentChangeCard part={withCode} />);
+    expect(screen.getByText("Verification: 2 rounds, each with its code")).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Verification attempts" })).toHaveTextContent("The code this attempt ran");
   });
 
   it("a failed round names what the endpoint actually answered (dev/115 field fix)", () => {
@@ -378,7 +484,7 @@ describe("AgentChangeCard: dev/115 the verification attempt trail", () => {
 
   it("no trail renders without attempts", () => {
     render(<AgentChangeCard part={change({ validation: { verdict: "pass", rounds: 1 } })} />);
-    expect(screen.queryByText(/Verification · /)).toBeNull();
+    expect(screen.queryByText(/^Verification/)).toBeNull();
   });
 
   it("a failed attempt with a missing-key remedy offers Add key for the host, which asks for the settings form (dev/116)", () => {

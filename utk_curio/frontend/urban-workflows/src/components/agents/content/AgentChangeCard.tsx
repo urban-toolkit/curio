@@ -6,25 +6,10 @@ import styles from "./AgentReviewCard.module.css";
 import { PlanDetails } from "./reviewCard/PlanDetails";
 import { PlanNodesList, type NodeChat } from "./reviewCard/PlanNodesList";
 import { PlanSummary } from "./reviewCard/PlanSummary";
-import { SourceBlock } from "./reviewCard/SourceBlock";
+import { CodePreview } from "./reviewCard/CodePreview";
+import { SourceLine } from "./reviewCard/SourceLine";
 import { ValidationBlock } from "./reviewCard/ValidationBlock";
-import { nodeKindExecutable, planTitle, type PlanNodeReviewState } from "./reviewCard/reviewCardText";
-
-/** dev/115 (Amendment A2) → dev/118 (DEC-075) → dev/119 (DEC-076): what Solve
- * does with a new node that loads data. Whether the sandbox can run its kind
- * is the ROSTER's answer (`executable`), falling back to the registry
- * descriptor; unknown says nothing rather than guessing. */
-const SolveLine: React.FC<{ part: AgentChangePart }> = ({ part }) => {
-  const executable = nodeKindExecutable({ nodeType: part.nodeType, executable: part.executable });
-  if (executable === null) return null;
-  return (
-    <div className={styles.meta}>
-      {executable
-        ? "Solve runs it in the sandbox and fixes errors before its code is trusted."
-        : "This kind has no code to run: Solve writes it, the browser or its own service renders it; it is never called verified."}
-    </div>
-  );
-};
+import { changeTitle, type PlanNodeReviewState } from "./reviewCard/reviewCardText";
 
 /** What a plan's Undo takes back, on its tooltip. */
 export const PLAN_UNDO_HINT = "Takes the plan back";
@@ -42,8 +27,15 @@ export const PLAN_UNDO_GOAL_HINT = "Takes the plan back, and the goal it set";
  * anew, until the user acts on it again. Either says it only while the card
  * holds the status it was refused on: undone by someone else since, it has
  * nothing to say. The code is model output: it renders as inert plain text
- * (REQ-SEC-002), never markup. Its title says what it is: no chip names its
- * kind.
+ * (REQ-SEC-002), never markup. Its title says what it did, to the node its
+ * header names: "Replaced the code of CPL branches", "Changed the settings
+ * of Pools", "Added a Python Computation node". No chip names its kind; its
+ * accessible name keeps the change's own summary, which the agents read.
+ *
+ * A node's code or new node shows, each on one line, its source and its
+ * check, Verification holding every round and its code, then its code's
+ * first lines with Show all. A settings change shows each setting in its
+ * node's words. A new node's kind and id are run details.
  *
  * A plan's card, "Plan: 3 nodes, 2 connections", lists its nodes, one row
  * each with its state, its Solve while it can run and its Run once built
@@ -71,6 +63,11 @@ export const AgentChangeCard: React.FC<{
   agentNameOf?: (attachmentId: string) => string | null;
   /** A plan node's own agent, whose chat its row's name opens. */
   nodeChatOf?: (nodeId: string) => NodeChat | null;
+  /** The name the header of the change's node shows, null when the node is
+   * not on the canvas. */
+  nodeName?: string | null;
+  /** The viewer shows run details: a new node's kind and id. */
+  runDetails?: boolean;
 }> = ({
   part,
   tintClassName,
@@ -83,6 +80,8 @@ export const AgentChangeCard: React.FC<{
   delegateExists,
   agentNameOf,
   nodeChatOf,
+  nodeName = null,
+  runDetails = false,
 }) => {
   const [busy, setBusy] = useState(false);
   // Why the card's own last Undo was refused, with the status it was refused
@@ -123,6 +122,15 @@ export const AgentChangeCard: React.FC<{
       {busy ? "Undoing…" : "Undo"}
     </button>
   ) : null;
+  // The card's lines: a settings change's each setting, in its node's words.
+  // A code change's line names its node, as its title does; a new node's
+  // kind and id are run details.
+  const lines =
+    part.kind === "settings"
+      ? part.settingLines ?? (part.lines ?? []).slice(1)
+      : part.kind === "content" || part.kind === "node"
+        ? []
+        : part.lines ?? [];
   // The scenarios the plan could not save stay in view.
   const unsaved = isPlan
     ? (part.plan?.scenarios ?? [])
@@ -133,7 +141,7 @@ export const AgentChangeCard: React.FC<{
     <div className={styles.card} role="group" aria-label={`Change: ${part.summary}`} data-change-status={part.status}>
       <div className={`${styles.header} ${tintClassName ?? ""}`}>
         <span className={styles.accentDot} aria-hidden="true" />
-        <span>{isPlan ? planTitle(part) : part.summary}</span>
+        <span>{changeTitle(part, nodeName)}</span>
       </div>
       {isPlan ? (
         <>
@@ -170,18 +178,22 @@ export const AgentChangeCard: React.FC<{
         </>
       ) : (
         <>
-          {part.source ? <SourceBlock source={part.source} /> : null}
-          {(part.lines ?? []).map((line, i) => (
+          {part.source ? <SourceLine source={part.source} /> : null}
+          {lines.map((line, i) => (
             <div key={`line-${i}`} className={styles.meta}>
               {line}
             </div>
           ))}
           {part.validation ? <ValidationBlock validation={part.validation} /> : null}
-          {part.kind === "content" || part.kind === "node" ? (
-            part.preview ? <div className={styles.preview}>{part.preview}</div> : null
-          ) : null}
-          {part.kind === "node" && part.source ? <SolveLine part={part} /> : null}
-          {undoControl ? <div className={styles.actions}>{undoControl}</div> : null}
+          {(part.kind === "content" || part.kind === "node") && part.preview ? <CodePreview text={part.preview} /> : null}
+          {runDetails && part.kind === "node"
+            ? (part.lines ?? []).map((line, i) => (
+                <div key={`detail-${i}`} className={styles.meta} data-curio-run-details="">
+                  {line}
+                </div>
+              ))
+            : null}
+          {undoControl ? <div className={styles.changeFoot}>{undoControl}</div> : null}
         </>
       )}
       {said ? (

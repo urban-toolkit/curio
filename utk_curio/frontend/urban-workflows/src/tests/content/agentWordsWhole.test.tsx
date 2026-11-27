@@ -145,8 +145,7 @@ describe("a chart's change card says its document was validated against its gram
   it("as a passed check, never a failure", () => {
     render(<ValidationBlock validation={{ verdict: "not-executable", rounds: 1, evidence, attempts }} />);
     const block = screen.getByRole("status", { name: "Validated against its grammar" });
-    expect(block).toHaveTextContent(/^VALID/);
-    expect(block).toHaveTextContent("Validated against its grammar, not executed");
+    expect(block).toHaveTextContent(/^Valid: checked against its grammar/);
     expect(block).toHaveTextContent("Round 1 · validated against its grammar, not executed");
     expect(block).not.toHaveTextContent(/FAIL|failed|not executable|no code the sandbox could run|this attempt ran/);
     // The document the round validated stays in the chat, under words of a check that passed.

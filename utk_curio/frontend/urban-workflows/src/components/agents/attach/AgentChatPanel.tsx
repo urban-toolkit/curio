@@ -206,6 +206,9 @@ export const AgentChatPanel: React.FC<{
   /** Whether a node is on the canvas: a candidates card whose Finder is gone
    * says whether its node went too. Omitted, every node is taken as there. */
   nodeOnCanvas?: (nodeId: string) => boolean;
+  /** The name a node's header shows, null when it is not on the canvas: a
+   * change card's title names its node by it. */
+  nodeNameOf?: (nodeId: string) => string | null;
   /** dev/132: the shared catalog import, for a candidate row the runtime
    * could not fetch — resolves with the imported dataset's id. */
   onImportDataset?: (
@@ -279,6 +282,7 @@ export const AgentChatPanel: React.FC<{
   onRecordDatasetSelection,
   onRecordSourcePick,
   nodeOnCanvas,
+  nodeNameOf,
   onImportDataset,
   delegateExists,
   agentNameOf,
@@ -496,6 +500,7 @@ export const AgentChatPanel: React.FC<{
     attachmentOf: (attachmentId: string) =>
       attachments ? attachments.find((a) => a.attachmentId === attachmentId) ?? null : undefined,
     nodeOnCanvas,
+    nodeNameOf,
     showCardOf,
     targetName,
     // No plan row's Solve starts while a build runs on this agent's plan.

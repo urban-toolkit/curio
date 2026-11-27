@@ -75,6 +75,9 @@ export interface AgentTurnActions {
   planLive?: PlanLive;
   /** A plan node's own agent, whose chat its row's name opens. */
   nodeChatOf?: (nodeId: string) => NodeChat | null;
+  /** The name a node's header shows, null when the node is not on the
+   * canvas: a change card's title names its node by it. */
+  nodeNameOf?: (nodeId: string) => string | null;
   onImportDataset?: (
     file: File,
     discoverySource?: import("../../../../services/datasetCatalog/datasetCatalogTypes").DatasetDiscoverySourceInput,
@@ -291,6 +294,8 @@ export const AgentTurn: React.FC<{
                 delegateExists={actions.delegateExists}
                 agentNameOf={actions.agentNameOf}
                 nodeChatOf={actions.nodeChatOf}
+                nodeName={part.nodeId ? actions.nodeNameOf?.(part.nodeId) ?? null : null}
+                runDetails={runDetails}
               />
             ))}
           {(t.content ?? [])

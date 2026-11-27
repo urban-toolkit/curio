@@ -203,6 +203,84 @@ export function planTitle(part: PlanDisplay): string {
   return `Plan: ${parts.join(", ")}`;
 }
 
+/** "a" or "an" before *word*, by its first letter. */
+function article(word: string): string {
+  return /^[aeiou]/i.test(word) ? "an" : "a";
+}
+
+/** A change card's title, in Curio's words: what the change did, and to the
+ * node its header names (*nodeName*, null when the node is not on the canvas):
+ * "Replaced the code of CPL branches", "Changed the settings of Pools",
+ * "Added a Python Computation node", "Added CPL branches, a Data Loading
+ * node", "Plan: 3 nodes, 2 connections". Without its node, a code or a
+ * settings change says the change's own summary, which the agents read too. */
+export function changeTitle(
+  part: PlanDisplay & { kind: string; summary: string; nodeType?: string },
+  nodeName: string | null,
+): string {
+  if (part.kind === "plan" && part.plan) return planTitle(part);
+  if (part.kind === "content" && nodeName) return `Replaced the code of ${nodeName}`;
+  if (part.kind === "settings" && nodeName) return `Changed the settings of ${nodeName}`;
+  if (part.kind === "node") {
+    const label = part.nodeType ? tryGetNodeDescriptor(part.nodeType)?.label : undefined;
+    if (label) {
+      const kind = `${article(label)} ${label} node`;
+      return nodeName && nodeName !== label ? `Added ${nodeName}, ${kind}` : `Added ${kind}`;
+    }
+  }
+  return part.summary;
+}
+
+/** One source of a change, as its one line names it: a dataset by its title,
+ * a URL, a key by its name; null for data made up in the node. */
+function sourceName(ref: AgentSourceRef): string | null {
+  switch (ref.kind) {
+    case "catalog":
+      return ref.title ?? ref.datasetId ?? null;
+    case "secret":
+      return ref.name ?? null;
+    case "synthetic":
+      return ref.value ?? null;
+    default:
+      return ref.value ?? null;
+  }
+}
+
+/** A change's source on one line: "Source: Chicago Neighborhoods, Data
+ * Catalog", each source with its kind when it has several. The rest of what
+ * the runtime grounded (a format, a dataset's id, a key's host) is the
+ * line's tooltip (`sourceRefText`). */
+export function sourceLine(source: { kind: string; refs: AgentSourceRef[] }): string {
+  const named = source.refs.map((ref) => {
+    const kind = SOURCE_KIND_LABEL[ref.kind] ?? ref.kind;
+    const name = sourceName(ref);
+    return name ? `${name}, ${kind}` : kind;
+  });
+  if (!named.length) return `Source: ${SOURCE_KIND_LABEL[source.kind] ?? source.kind}`;
+  return `${named.length === 1 ? "Source" : "Sources"}: ${named.join("; ")}`;
+}
+
+/** What a node's code put out, as its check line says it. */
+const OUTPUT_WORDS: Record<string, string> = {
+  dataframe: "a DataFrame",
+  geodataframe: "a GeoDataFrame",
+  int: "a number",
+  float: "a number",
+  str: "a string",
+  bool: "a boolean",
+  list: "a list",
+  dict: "a dictionary",
+  raster: "a raster",
+  outputs: "several outputs",
+  value: "a value",
+};
+
+/** What a round put out, in words: "a GeoDataFrame". */
+export function outputWords(dataType: string): string {
+  const key = dataType.trim().toLowerCase();
+  return OUTPUT_WORDS[key] ?? `${article(key)} ${key}`;
+}
+
 /** What a landed plan's row shows of its node. */
 export type PlanRowView =
   /** The plan could not place it. */
