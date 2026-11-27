@@ -681,6 +681,9 @@ def _mint_node_content_write(
         user_key, project_id, loop_ctx,
         code=proposed, engine=engine,
         node_type=node.get("type"), params=params,
+        # The intents a validated round's check read beside the chat (the
+        # node's goal and the dataflow's task), which its landing reads too.
+        extra_texts=tuple(loop_ctx.get("_intent_texts") or ()),
         base=loop_ctx.get("_grounding_base"), chips=chips,
         node_id=node_id, current=current,
     )

@@ -18,10 +18,11 @@ So resolution INITIATES discovery. The rule, in one place:
   and the record never suppresses a later discovery;
 - a node with its own Dataset Finder is grounded for a first attempt only by
   what may be its source (its code, its dataset widget, a dataset of its
-  dataflow, a dataset or URL its goal names): with none of it, its Finder is
-  asked before any round, since the Data Catalog listing holds every dataset
-  Curio ships and says nothing about the node. A node without one is grounded
-  by any dataset of the Data Catalog, as before;
+  dataflow, a dataset or URL its goal names, a source the user gave in the
+  chat that asked): with none of it, its Finder is asked before any round,
+  since the Data Catalog listing holds every dataset Curio ships and says
+  nothing about the node. A node without one is grounded by any dataset of
+  the Data Catalog, as before;
 - a node whose ROUND failed for its source anyway — the gate refused a
   fabricated literal, or the content builder declined — is unresolved by
   evidence, and discovery is initiated then, with the attempt trail kept;
@@ -132,17 +133,21 @@ def node_source_state(
     Two kinds of grounding evidence, deliberately ranked (the caller owns
     grounding; this module owns the state):
 
-    - ``grounded_literal`` is about THIS node — a path or dataset id in its own
-      intent, a URL verified for it, an explicit synthetic request. It wins
-      over a pending card, because the user has since said what to load and
-      should not be stuck answering a card they have overtaken.
+    - ``grounded_literal`` is about THIS node: a path or dataset id in its own
+      intent, a URL verified for it, an explicit synthetic request, and, for a
+      node with its own Dataset Finder, the source the user gave the node
+      itself, its code or its dataset widget
+      (``grounding._node_own_source``). It wins over a pending card, because
+      the user has since said what to load and should not be stuck answering
+      a card they have overtaken.
     - ``project_literal`` is about the DATAFLOW, and may or may not cover this
       node: for a node with its own Dataset Finder, what may be its source in
-      the dataflow (``grounding._dataflow_grounded_literal``), else "the Data
-      Catalog holds N datasets". It grounds a first attempt (the content child
-      is handed those rows and the ``DEC-072`` gate enforces them), but it
-      loses to a pending card: once candidates are waiting, re-generating
-      against the whole catalog is not progress.
+      the dataflow and in the chat that asked
+      (``grounding._dataflow_grounded_literal``), else "the Data Catalog
+      holds N datasets". It grounds a first attempt (the content child is
+      handed those rows and the ``DEC-072`` gate enforces them), but it loses
+      to a pending card: once candidates are waiting, re-generating against
+      the whole catalog is not progress.
 
     Returns ``{state, attachmentId, detail}``.
     """
