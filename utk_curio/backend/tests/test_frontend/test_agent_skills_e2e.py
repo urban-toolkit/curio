@@ -43,6 +43,7 @@ from .utils import (
     require_project_page,
     require_user_auth,
     save_workflow_test_screenshot,
+    show_run_details,
     stub_db_user,
     use_scripted_llm,
 )
@@ -237,8 +238,11 @@ def test_a_skill_added_to_an_agent_reaches_its_chat(page, frontend_server, curre
     box.fill(message)
     panel.get_by_role("button", name="Send", exact=True).click()
 
-    # The line names what the run held: its instruction's own, then the one named.
+    # The line names what the run held: its instruction's own, then the one
+    # named. What a run held is a run detail, which More's Show run details
+    # shows.
     expect(panel.get_by_text(VISIBLE_PROSE, exact=False)).to_be_visible(timeout=30000)
+    show_run_details(panel)
     line = panel.locator('[data-curio-reply-skills="true"]')
     used = [*spec.instruction_skills, ADDED]
     expect(line).to_have_text(f"Skills: {', '.join(used)}", timeout=15000)

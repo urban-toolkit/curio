@@ -33,7 +33,7 @@ from playwright.sync_api import expect
 from .utils import (
     api_json,
     dismiss_toasts,
-    open_plan_more,
+    open_plan_actions,
     require_owner_view,
     require_project_page,
     require_user_auth,
@@ -165,10 +165,9 @@ def test_the_builders_chat_holds_the_loaders_candidates_and_its_pick_builds_the_
     expect(panel).to_have_attribute("aria-label", re.compile(re.escape(TITLE)), timeout=30000)
     loader = _loader_id(current_server, token, project_id)
 
-    # Build & validate plan: the loader waits for its source, and the build
-    # pauses on it.
-    open_plan_more(panel)
-    panel.get_by_role("button", name="Build & validate plan", exact=True).click()
+    # Build & validate plan, from the plan line's menu: the loader waits for
+    # its source, and the build pauses on it.
+    open_plan_actions(panel).get_by_role("menuitem", name=re.compile(r"^Build & validate plan")).click()
     card = panel.get_by_role("group", name=f"Sources for {LOADER_TITLE}")
     expect(card).to_be_visible(timeout=BUILD_S * 1000)
     # The line over the card names the loader and counts its candidates.
@@ -176,7 +175,12 @@ def test_the_builders_chat_holds_the_loaders_candidates_and_its_pick_builds_the_
         f"{LOADER_TITLE} needs a source. Its Dataset Finder found 1 candidate: pick one with Use this source.",
         exact=True,
     )).to_have_count(1)
-    expect(panel.get_by_role("button", name="Resume", exact=True)).to_be_visible(timeout=60000)
+    # The plan line names the pause once, and goes to the card: the pick goes
+    # on by itself, so it offers no Resume.
+    expect(panel.locator("[data-curio-plan-words]")).to_have_text(
+        f"Paused · {LOADER_TITLE} needs a source", timeout=60000)
+    expect(panel.get_by_role("button", name="Show its sources", exact=True)).to_be_visible(timeout=60000)
+    expect(panel.get_by_role("button", name="Resume", exact=True)).to_have_count(0)
     expect(card.get_by_role("button", name="Use this source", exact=True)).to_be_disabled()
     rail = panel.get_by_role("navigation", name="Agents on this dataflow")
     expect(rail.get_by_role("button", name=f"Dataset Finder on {LOADER_TITLE}, waits for you")).to_be_visible(
@@ -224,13 +228,19 @@ def test_the_builders_chat_holds_the_loaders_candidates_and_its_pick_builds_the_
     # The server approves the loader before the tab's build ends: the frame
     # waits until the plan line has no Stop, so no build clock ticks in it.
     expect(panel.get_by_role("button", name=re.compile(r"^(Stop|Stopping…)$"))).to_have_count(0, timeout=60000)
-    # The build's own turn reaches the chat when the tab reads it again as the
-    # build ends, so the frame waits for it too. It names the loader by its
-    # title, whole, as the canvas does.
+    # The build ends with one sentence, which reaches the chat when the tab
+    # reads it again as the build ends, so the frame waits for it too. It
+    # names the loader by its title, whole, as the canvas does. The loader's
+    # own turn is kept for the agents: its row on the plan's card says it.
+    expect(panel.get_by_text(
+        f"Built its node. {LOADER_TITLE} ran in the sandbox. Its code and checks are in its Node Builder.",
+        exact=True,
+    )).to_be_visible(timeout=60000)
     solved = re.compile(rf"Solved '{re.escape(LOADER_TITLE)}': PASS after \d+ rounds?")
-    expect(panel.get_by_text(solved).last).to_be_visible(timeout=60000)
-    # The plan went on and was built: the line says no more that it paused.
-    expect(panel.get_by_text(re.compile(r"^Paused:"))).to_have_count(0)
+    expect(panel.get_by_text(solved)).to_have_count(0)
+    # The plan went on and was built: the line says so, and no more that it
+    # paused.
+    expect(panel.locator("[data-curio-plan-words]")).to_have_text("Ready · 1 node built", timeout=30000)
     dismiss_toasts(page)
     save_workflow_test_screenshot(page, SCREENSHOT_STEM, test_name="recorded", clip_selector=CHAT_PANEL_SELECTOR)
 
