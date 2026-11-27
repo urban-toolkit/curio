@@ -176,8 +176,8 @@
           "description": "Node-package lockfile: the '<packageId>@<major>' directory names whose manifests must be installed for this dataflow's node types to resolve. BACKEND-OWNED ON UPDATE - packages/domain/spec_packages.py:preserve_project_packages overwrites whatever the client sends with the on-disk value, so a stale tab cannot clobber an install. Sorted and de-duplicated by set_project_packages; sortedness is a writer invariant this schema cannot express. Absent or empty is recoverable: project_packages backfills it from the node types.",
           "items": {
             "type": "string",
-            "pattern": "^[a-z][a-z0-9_.-]*[a-z0-9]@(?:0|[1-9][0-9]{0,3})$",
-            "description": "A package directory name. The package-id half follows the laxer manifest grammar of node-package.v4.json rather than the stricter one enforced on the package half of node.type, because set_project_packages writes whatever directory is installed."
+            "pattern": "^[a-z][a-z0-9-]{0,62}(?:\\.[a-z][a-z0-9-]{0,62}){1,5}@(?:0|[1-9][0-9]{0,3})$",
+            "description": "A package directory name, in the grammar of the directories Curio installs: PACKAGE_DIR_RE in packages/domain/package_id.py, since set_project_packages writes whatever directory is installed. Its package id may end in '-', as the loader takes one, though node-package.v4.json's id does not."
           }
         },
         "description": {

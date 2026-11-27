@@ -1092,6 +1092,17 @@ class TestSchemaMatchesConstants:
             )
             assert bool(schema_re.match(candidate)) == backend_ok, candidate
 
+    def test_the_lockfile_pattern_is_the_package_directory_grammar(self):
+        """The lockfile names the directories Curio installed, and Curio
+        installs only those ``PACKAGE_DIR_RE`` takes."""
+        from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
+
+        lockfile = DEFS["dataflowBase"]["properties"]["packages"]["items"]["pattern"]
+        assert lockfile == PACKAGE_DIR_RE.pattern, (
+            "dataflow.packages must use the grammar of PACKAGE_DIR_RE in "
+            "packages/domain/package_id.py"
+        )
+
     def test_the_agent_coord_pattern_is_the_storage_grammar(self):
         from utk_curio.backend.app.agents.repositories.storage import AGENT_DIR_RE
 

@@ -109,10 +109,10 @@ install pip-installs it for whoever installs your package.
 If you would rather start from files, which you will need for Tier 2 anyway:
 
 ```bash
-python scripts/new_package.py me.roughness
+python scripts/new_package.py me.rolling-stats
 ```
 
-That writes a valid `packages/me.roughness@1/` with a manifest, a Python
+That writes a valid `packages/me.rolling-stats@1/` with a manifest, a Python
 starter, a README, a LICENSE and an `integrity.json`. Install it from the canvas
 via **Node Catalog → Browse Node Catalog + → Browse all → Add to project**.
 
@@ -124,8 +124,8 @@ place each one in the source as `[!! name !!]`:
 
 ```json
 {
-  "id": "roughness",
-  "source": "sources/roughness.py",
+  "id": "rolling-stats",
+  "source": "sources/rolling-stats.py",
   "hasWidgets": true,
   "widgets": [
     { "name": "window", "type": "number", "label": "Window size", "default": 5 },
