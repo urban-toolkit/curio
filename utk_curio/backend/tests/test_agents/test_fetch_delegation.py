@@ -72,16 +72,16 @@ class TestAFetchableRowIsDelegated:
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
         user, token = user_and_token
+        # The Finder is asked before the loader's builder, which writes only
+        # the code that loads the pick.
         h, finder_id = _await_candidates(
             client, user, token, monkeypatch,
             dl_replies=[
-                'import pandas as pd\nreturn pd.read_csv("invented.csv")',
-                'import pandas as pd\nreturn pd.read_csv("invented.csv")',
-                'import pandas as pd\nreturn pd.read_csv("invented.csv")',
                 ('import geopandas as gpd\nreturn gpd.read_file('
                  '"https://data.example.org/areas.geojson")'),
             ],
         )
+        assert h.dl_calls == []
         monkeypatch.setattr(
             'utk_curio.backend.app.agents.application.verify.verify_external_source',
             lambda url, **k: dict(API_OBSERVATION),
@@ -173,13 +173,11 @@ class TestTheBuildRunsOnTheBuildersConfiguration:
         h, finder_id = _await_candidates(
             client, user, token, monkeypatch,
             dl_replies=[
-                'import pandas as pd\nreturn pd.read_csv("invented.csv")',
-                'import pandas as pd\nreturn pd.read_csv("invented.csv")',
-                'import pandas as pd\nreturn pd.read_csv("invented.csv")',
                 ('import geopandas as gpd\nreturn gpd.read_file('
                  '"https://data.example.org/areas.geojson")'),
             ],
         )
+        assert h.dl_calls == [], "the loader's builder was asked before its Finder"
         monkeypatch.setattr(
             'utk_curio.backend.app.agents.application.verify.verify_external_source',
             lambda url, **k: dict(API_OBSERVATION),
@@ -583,11 +581,6 @@ class TestSettlingAcquisitions:
         assert pick["sourceId"] == CHICAGO and pick["acquirable"] is True
 
 
-#: A loader's first attempts, a file nothing grounds: the gate refuses them,
-#: and its Dataset Finder is asked for candidates.
-INVENTED = 'import pandas as pd\nreturn pd.read_csv("invented.csv")'
-
-
 def _plan_session(h) -> dict:
     """The plan's ledger and pause, as the Dataflow Builder's record holds them."""
     return dict((attachments.get_attachment(h.spec(), h.att) or {}).get("builderSession") or {})
@@ -621,8 +614,9 @@ class TestAPlanWaitsAsItsSourceDoes:
         monkeypatch.setattr(acquire, "_DISCOVERY_APPLY_WAIT_S", 0)
         loader = f'import pandas as pd\nreturn pd.read_csv(curio_data_path("{dataset_id}"))'
         h = _Harness(client, user, token, monkeypatch, discover_replies=[DISCOVERY_CANDIDATES],
-                     dl_replies=[INVENTED] * 3 + [loader])
+                     dl_replies=[loader])
         h.simulate("auto")
+        assert h.dl_calls == [], "the loader's builder was asked before its Finder"
         picked = h.select(URL)
         assert picked["status"] == dr.STATE_AWAITING_INSTALL, picked
         assert (picked.get("delegated") or {}).get("status") == "acquiring", picked
@@ -666,8 +660,9 @@ class TestAPlanWaitsAsItsSourceDoes:
         monkeypatch.setattr(acquire, "_DISCOVERY_APPLY_WAIT_S", 0)
         loader = f'import pandas as pd\nreturn pd.read_csv(curio_data_path("{dataset_id}"))'
         h = _Harness(client, user, token, monkeypatch, discover_replies=[DISCOVERY_CANDIDATES],
-                     dl_replies=[INVENTED] * 3 + [loader])
+                     dl_replies=[loader])
         h.simulate("auto")
+        assert h.dl_calls == [], "the loader's builder was asked before its Finder"
         return h, dataset_id
 
     def test_a_download_picked_for_a_waiting_loader_points_at_the_builders_build(

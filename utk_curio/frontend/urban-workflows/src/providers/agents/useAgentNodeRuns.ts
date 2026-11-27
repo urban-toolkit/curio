@@ -19,7 +19,7 @@ export interface AgentNodeRunsSlice {
 
 export function useAgentNodeRuns(opts: {
   projectRef: React.MutableRefObject<string | null>;
-  refreshAfterMutation: (attachmentId: string) => Promise<void>;
+  refreshAfterMutation: (attachmentId: string) => Promise<unknown>;
 }): AgentNodeRunsSlice {
   const { projectRef, refreshAfterMutation } = opts;
 

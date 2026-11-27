@@ -429,6 +429,32 @@ class TestUserTexts:
         ):
             assert sg.synthetic_requested([said]) is False, said
 
+    def test_synthetic_is_not_heard_when_the_user_says_no_or_means_their_own_file(self):
+        """A request the user says no to, with "no", "not", "don't",
+        "without", "instead of" or "rather than" before it, asks for no made-up
+        data, and nor does "sample data" or "example data" the user uploaded or
+        imported: that is their file. On 6031770487 every one of these asked
+        for made-up data, since the words were found anywhere in the text.
+        Found by the second review of #1642."""
+        for said in (
+            "No synthetic data: load the city's parks.",
+            "Please do not use fake data.",
+            "Don't invent any stations, load the real ones.",
+            "Load the real counts instead of made-up numbers.",
+            "Use the census rather than synthetic tracts.",
+            "Build it without dummy data.",
+            "Map the sample data I uploaded.",
+            "Chart the example data I imported yesterday.",
+        ):
+            assert sg.synthetic_requested([said]) is False, said
+        # A no in another clause, or after the request, says no to something else.
+        for asked in (
+            "No real data exists yet, so use synthetic data.",
+            "Use synthetic data instead of the real feed.",
+            "Generate sample data like the file I uploaded.",
+        ):
+            assert sg.synthetic_requested([asked]) is True, asked
+
 
 class TestVerdicts:
     def test_made_up_roofs_the_person_asked_for_are_grounded(self):
@@ -443,6 +469,26 @@ class TestVerdicts:
         verdict = sg.check_grounding(MADE_UP_ROOFS, "python", ctx)
         assert verdict.ok, verdict.violations
         assert [ref["kind"] for ref in verdict.source["refs"]] == ["synthetic"], verdict.source
+
+    @pytest.mark.parametrize("said", [
+        "No synthetic data: load the city's green roofs.",
+        "Please do not use fake data for the roofs.",
+        "Load the sample data I uploaded.",
+    ], ids=["no", "do-not", "uploaded"])
+    def test_made_up_rows_the_user_said_no_to_are_refused(self, said):
+        """The gate reads the user's words as ``synthetic_requested`` does, so
+        made-up rows for a request the user said no to, or for "sample data"
+        they uploaded, have no grounded source and are refused. On 6031770487
+        they passed as synthetic data the user asked for. Found by the second
+        review of #1642."""
+        from utk_curio.backend.app.agents.application.turns import grounding
+
+        base = {"catalog_paths": {}, "catalog_ids": {}, "verified": {}, "secrets": {}, "texts": [said]}
+        ctx = grounding._grounding_context("4242", "p-1", {"message": said}, node_type="curio.builtin/data-loading",
+                                           base=base, is_data_loading=True)
+        verdict = sg.check_grounding(MADE_UP_ROOFS, "python", ctx)
+        assert not verdict.ok, verdict.source
+        assert "no grounded source" in " ".join(verdict.violations), verdict.violations
 
     def test_issue_298_shape_is_refused_with_the_literal_named(self):
         verdict = sg.check_grounding(ISSUE_298, "python", _ctx(is_data_loading=True))

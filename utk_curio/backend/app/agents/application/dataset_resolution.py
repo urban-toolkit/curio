@@ -11,11 +11,18 @@ runtime-minted two-lane candidates part with real verification verdicts.
 
 So resolution INITIATES discovery. The rule, in one place:
 
-- a node whose source is already grounded (a path the user typed, a dataset in
-  the project's Data Catalog, a URL verified in this conversation, an explicit
+- a node whose source is already grounded (a path the user typed, a Data
+  Catalog dataset it names, a URL verified in this conversation, an explicit
   synthetic request) needs no discovery — the skip is RECORDED with the literal
   that grounded it, so "always initiated" stays auditable instead of assumed,
   and the record never suppresses a later discovery;
+- a node with its own Dataset Finder is grounded for a first attempt only by
+  what may be its source, each tied to it (its code, its dataset widget, a
+  dataset of its dataflow, a dataset or URL its goal names, a path the user
+  typed in the chat that asked whose file its goal names): with none of it,
+  its Finder is asked before any round, since the Data Catalog listing holds
+  every dataset Curio ships and says nothing about the node. A node without
+  one is grounded by any dataset of the Data Catalog, as before;
 - a node whose ROUND failed for its source anyway — the gate refused a
   fabricated literal, or the content builder declined — is unresolved by
   evidence, and discovery is initiated then, with the attempt trail kept;
@@ -38,11 +45,14 @@ Every candidates card the node's Finder offers carries an id of its own
 besides the Finder's that holds the card on offer (``askers``, the first of
 them also ``askedBy``) and, once the pick is recorded, what comes of it
 (``next``). A pick names its card, and one on a card the record no longer
-offers is refused, so a card is never read against another card's rows.
+offers is refused, so a card is never read against another card's rows. The
+record also keeps what the node held when the card was offered or the pick
+made (``held``): only what the node holds since may end a wait on it.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -56,6 +66,7 @@ from utk_curio.backend.app.agents.application import verify
 from utk_curio.backend.app.agents.domain import node_context
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.domain import agent_text
+from utk_curio.backend.app.datasets.domain.code_refs import dataset_widget_ids
 
 log = logging.getLogger(__name__)
 
@@ -126,15 +137,21 @@ def node_source_state(
     Two kinds of grounding evidence, deliberately ranked (the caller owns
     grounding; this module owns the state):
 
-    - ``grounded_literal`` is about THIS node — a path or dataset id in its own
-      intent, a URL verified for it, an explicit synthetic request. It wins
-      over a pending card, because the user has since said what to load and
-      should not be stuck answering a card they have overtaken.
-    - ``project_literal`` is about the PROJECT — "the Data Catalog holds N
-      datasets", which may or may not cover this node. It grounds a first
-      attempt (the content child is handed those rows and the ``DEC-072`` gate
-      enforces them), but it loses to a pending card: once candidates are
-      waiting, re-generating against the whole catalog is not progress.
+    - ``grounded_literal`` is about THIS node: a path or dataset id in its own
+      intent, a URL verified for it, an explicit synthetic request, and, for a
+      node with its own Dataset Finder, the source the user gave the node
+      itself, its code or its dataset widget, counted while a card waits
+      only when it came after the card (``grounding._node_own_source``). It
+      wins over a pending card, because the user has since said what to load
+      and should not be stuck answering a card they have overtaken.
+    - ``project_literal`` is about the DATAFLOW, and may or may not cover this
+      node: for a node with its own Dataset Finder, what may be its source in
+      the dataflow and in the chat that asked
+      (``grounding._dataflow_grounded_literal``), else "the Data Catalog
+      holds N datasets". It grounds a first attempt (the content child is
+      handed those rows and the ``DEC-072`` gate enforces them), but it loses
+      to a pending card: once candidates are waiting, re-generating against
+      the whole catalog is not progress.
 
     Returns ``{state, attachmentId, detail}``.
     """
@@ -207,12 +224,45 @@ def _set_askers(record: dict, askers: list[str]) -> None:
         record.pop("askedBy", None)
 
 
+def held_by(node: dict | None) -> dict:
+    """What *node* holds that may be its source: a digest of its code, read
+    without the spaces that end its lines, and the Data Catalog ids its
+    dataset widgets hold (``code_refs.dataset_widget_ids``). The record of a
+    card offered for the node keeps it (``held``), so that only what the node
+    holds since may end the wait on the card (``grounding._node_own_source``)."""
+    node = node if isinstance(node, dict) else {}
+    code = "\n".join(line.rstrip() for line in str(node.get("content") or "").splitlines()).strip()
+    return {"code": hashlib.sha256(code.encode("utf-8")).hexdigest(), "datasets": dataset_widget_ids(node)}
+
+
+def _node_of(spec: dict | None, record: dict | None) -> dict | None:
+    """The node of *spec* that the attachment *record* is on, or None."""
+    target = (record or {}).get("target") or {}
+    if target.get("kind") != "node" or not target.get("targetId"):
+        return None
+    nodes = ((spec or {}).get("dataflow") or {}).get("nodes") or []
+    return next((n for n in nodes if isinstance(n, dict) and n.get("id") == target["targetId"]), None)
+
+
+def held_while_waiting(record: dict | None) -> dict | None:
+    """While the node's source waits on a card, its candidates for a pick or
+    its pick for an install, what the node held when that card was offered
+    or that pick made (``held``, :func:`held_by`); an empty dict for a record
+    written before records kept it, so that nothing the node holds is newer
+    than its card. None while nothing waits."""
+    if not isinstance(record, dict) or record.get("status") not in (STATE_CANDIDATES_PENDING, STATE_AWAITING_INSTALL):
+        return None
+    held = record.get("held")
+    return dict(held) if isinstance(held, dict) else {}
+
+
 def mark_candidates_pending(spec: dict, attachment_id: str, *, count: int,
                             asked_by: str | None = None, discovery_id: str | None = None) -> dict | None:
     """Record that candidates were minted for this node's Dataset Finder, the
-    card that offers them (*discovery_id*), and the attachment whose chat
-    asked for them (*asked_by*: the agent whose Solve or Build & validate
-    reached the node), which holds the same card and waits for the pick too
+    card that offers them (*discovery_id*), what the node holds now
+    (:func:`held_by`), and the attachment whose chat asked for them
+    (*asked_by*: the agent whose Solve or Build & validate reached the node),
+    which holds the same card and waits for the pick too
     (:func:`waiting_on_user`)."""
 
     record = attachments.get_attachment(spec, attachment_id)
@@ -223,6 +273,7 @@ def mark_candidates_pending(spec: dict, attachment_id: str, *, count: int,
         "candidates": int(count),
         "proposedAt": _now(),
         **({"discoveryId": discovery_id} if discovery_id else {}),
+        "held": held_by(_node_of(spec, record)),
     }
     _set_askers(state, [asked_by] if asked_by else [])
     record[RECORD_KEY] = state
@@ -248,6 +299,8 @@ def note_offer(spec: dict, attachment_id: str, discovery_id: str, *, count: int)
         if state.get("status") == STATE_CANDIDATES_PENDING:
             state["candidates"] = int(count)
         askers = askers_of(state)
+        # The node waits on this card now: what it holds is older than it.
+        state["held"] = held_by(_node_of(spec, record))
     else:
         askers = []
     _set_askers(state, askers)
@@ -610,6 +663,9 @@ def record_selection(spec: dict, attachment_id: str, rows: list[dict], *,
         "recordedAt": _now(),
         **({"discoveryId": offered} if offered else {}),
         **({"pickedFrom": picked_from} if picked_from else {}),
+        # A pick that waits, for its install or for another pick, waits on
+        # what the node holds now: the pick came after it.
+        "held": held_by(_node_of(spec, record)),
     }
     _set_askers(state, askers_of(previous))
     record[RECORD_KEY] = state

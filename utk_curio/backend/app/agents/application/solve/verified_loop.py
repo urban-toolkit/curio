@@ -177,6 +177,11 @@ class VerifiedRounds:
         self.refused: str | None = None
         self.url_evidence: list[dict] = []
         self.confirmed_source: dict | None = None
+        # Why the node's Dataset Finder, asked before the first round, found
+        # nothing to pick, when it did, and the card its record named then:
+        # the loop asks it no second time unless a card came since.
+        self.found_no_source: str | None = None
+        self.finder_offer: str | None = None
         self.stopped_by: str | None = None  # dev/127: which bound ended the loop
         self.repeats = 0
         self.use_current = False
@@ -1153,6 +1158,11 @@ class VerifiedRounds:
             # in the trail and let the round proceed, so the node still ends
             # with ITS own evidence (a refusal naming the literal, or the
             # builder's own decline) rather than a promise of candidates.
+            if source_state.get("discovery") == "no-candidates":
+                # The Finder ran and found nothing to pick. One that could not
+                # run ("unavailable") is asked again after the rounds.
+                self.found_no_source = str(source_state.get("detail") or "")
+                self.finder_offer = source_state.get("offer")
             self.rounds_trace.append(
                 f"discovery found no source — {str(source_state.get('detail'))[:160]}"
             )
@@ -1169,15 +1179,36 @@ class VerifiedRounds:
             self.rounds_trace.append(f"source: {str(source_state['detail'])[:160]}")
         return None
 
+    def _offered_since(self) -> bool:
+        """Whether the node's Dataset Finder, which found nothing to pick
+        before the first round, has a card for the user since: candidates
+        another ask left waiting for the pick, or a card its own chat offered
+        while the rounds ran. Read with no one asked. Then, as for a node
+        whose Finder was not asked before its rounds, the node waits for that
+        pick, or the Finder is asked again."""
+        try:
+            now = self.resolve_source(self.node, self.grounding_ctx, stage="post", ask=False) or {}
+        except Exception:  # noqa: BLE001
+            log.warning("The source of node %s could not be read", self.node_id, exc_info=True)
+            return False
+        return now.get("state") == "awaiting" or now.get("offer") != self.finder_offer
+
     def _finish(self) -> dict:
         final_evidence = (self.verdict_result or {}).get("evidence") or {}
         final_verdict = self.verdict_result["verdict"] if self.verdict_result else "fail"
-        if (
+        refused_for_its_source = (
             self.is_data_loading
             and self.resolve_source is not None
             and final_verdict == "fail"
             and final_evidence.get("kind") in ("ungrounded-source", "source-missing")
-        ):
+        )
+        if refused_for_its_source and self.found_no_source is not None and not self._offered_since():
+            # The node's Dataset Finder, asked before the first round, found
+            # nothing, and has offered no card since: the rounds' refusal
+            # tells it nothing new, so it is not asked again, and the node
+            # keeps its own failure, with why.
+            final_evidence = {**final_evidence, "discovery": self.found_no_source[:600]}
+        elif refused_for_its_source:
             # dev/126: the round itself proved the source is missing — the gate
             # refused the literal the builder wrote, or the builder declined and
             # named what it needs. THIS is where the old dead end was: a failure

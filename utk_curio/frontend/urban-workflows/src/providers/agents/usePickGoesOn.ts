@@ -21,7 +21,7 @@ export function usePickGoesOn(opts: {
     picks: AgentDatasetPick[],
     discoveryId?: string,
   ) => Promise<AgentDatasetSelection>;
-  refreshAfterMutation: (attachmentId: string) => Promise<void>;
+  refreshAfterMutation: (attachmentId: string) => Promise<unknown>;
   runSimulation: (attachmentId: string, mode: "step" | "auto") => Promise<unknown>;
   validateNode: (attachmentId: string, target: { ref?: string }) => Promise<unknown>;
 }): (attachmentId: string, picks: AgentDatasetPick[], discoveryId?: string) => Promise<AgentDatasetSelection> {

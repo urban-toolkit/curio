@@ -1975,20 +1975,9 @@ def _merged_section(name: str, before, after, theirs):
     return out
 
 
-@dataclass
-class _AttachmentsWait:
-    """A dataflow's wait after a word of its agents: whether a change came
-    during it, which is told when it ends, and the app to tell it with."""
-
-    timer: threading.Timer
-    changed: bool = False
-    app: object = None
-
-
-#: Each dataflow whose room was told of its agents less than
-#: :data:`ATTACHMENTS_TOLD_EVERY_S` ago, by id.
-_attachments_waits: dict[str, _AttachmentsWait] = {}
-_attachments_waits_lock = threading.Lock()
+#: The word of a dataflow's agents, paced: at once, then at most once more
+#: every :data:`ATTACHMENTS_TOLD_EVERY_S`, read as it starts each wait.
+_attachments_word = roles.PacedWord(ATTACHMENTS_CHANGED_EVENT, lambda: ATTACHMENTS_TOLD_EVERY_S)
 
 
 def _attachments_of(spec):
@@ -2004,57 +1993,11 @@ def _tell_attachments(project_id: str, before, after) -> None:
     watcher's tab lists none and is told nothing, as is every tab of a write
     that left the attachments as they were. The word goes at once, then at
     most one more every :data:`ATTACHMENTS_TOLD_EVERY_S`: a change made during
-    the wait, a burst's last among them, is told when the wait ends."""
+    the wait, a burst's last among them, is told when the wait ends
+    (``roles.PacedWord``, which paces a chat's word too)."""
     if doc_mapping.same(before, after):
         return
-    app = _app_at_hand()
-    with _attachments_waits_lock:
-        wait = _attachments_waits.get(project_id)
-        if wait is not None:
-            wait.changed = True
-            wait.app = app or wait.app
-            return
-        _attachments_waits[project_id] = _AttachmentsWait(_wait_after_word(project_id), app=app)
-    _say_attachments_changed(project_id, app)
-
-
-def _wait_after_word(project_id: str) -> threading.Timer:
-    """The wait after a word of *project_id*'s agents, started."""
-    timer = threading.Timer(ATTACHMENTS_TOLD_EVERY_S, _attachments_wait_ends, args=(project_id,))
-    timer.daemon = True
-    timer.start()
-    return timer
-
-
-def _attachments_wait_ends(project_id: str) -> None:
-    """A change made during the wait is told now, and another wait starts;
-    with none, the dataflow waits no more."""
-    with _attachments_waits_lock:
-        wait = _attachments_waits.get(project_id)
-        if wait is None:
-            return
-        if not wait.changed:
-            del _attachments_waits[project_id]
-            return
-        wait.changed = False
-        wait.timer = _wait_after_word(project_id)
-        app = wait.app
-    _say_attachments_changed(project_id, app)
-
-
-def _say_attachments_changed(project_id: str, app) -> None:
-    try:
-        roles.tell_editors(project_id, ATTACHMENTS_CHANGED_EVENT, {"projectId": project_id}, app=app)
-    except Exception:  # noqa: BLE001 - the write stands whether or not the room heard of it
-        logger.exception("the room of dataflow %s could not be told its agents changed", project_id)
-
-
-def _app_at_hand():
-    """The app of the request or job at hand, for a word told when a wait
-    ends, on the wait's own thread, which holds no app context."""
-    from flask import current_app, has_app_context
-
-    return current_app._get_current_object() if has_app_context() else None
+    _attachments_word.tell(project_id)
 
 
 def _keyed_by(entries, key_of) -> Optional[dict]:

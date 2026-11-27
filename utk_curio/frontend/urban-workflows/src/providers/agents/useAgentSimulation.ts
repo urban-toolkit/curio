@@ -19,7 +19,7 @@ export interface AgentSimulationSlice {
 
 export function useAgentSimulation(opts: {
   projectRef: React.MutableRefObject<string | null>;
-  refreshAfterMutation: (attachmentId: string) => Promise<void>;
+  refreshAfterMutation: (attachmentId: string) => Promise<unknown>;
 }): AgentSimulationSlice {
   const { projectRef, refreshAfterMutation } = opts;
   // dev/67-9: the running simulation's narration line, per attachment.
