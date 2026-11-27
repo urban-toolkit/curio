@@ -439,4 +439,46 @@ describe("a scroll the browser made for a change of size, read after a later one
     expect(el.scrollTop).toBe(200);
     expect(getByTestId("atBottom").textContent).toBe("false");
   });
+
+  /**
+   * A script that reads the page's layout between two frames (a check of
+   * what is on screen, or this hook's own read as a turn lands) makes the
+   * browser clamp the place there and then. The observer reports sizes only
+   * on a frame, after that frame's scroll events, so no report says where
+   * the clamp left the transcript before the browser tells its scroll.
+   */
+  it("keeps a reader at the bottom there when the browser clamped the place between frames, before any report", () => {
+    const { el, box, getByTestId } = atTheBottom();
+    // The line above goes, and a script reads the layout before the next
+    // frame: the box grows by 100 px and the browser clamps the place to the
+    // new bottom then. No observer reports the bigger box.
+    box.clientHeight = 400;
+    el.scrollTop = 600;
+    // Before that frame, the lines above come back taller than before.
+    box.clientHeight = 250;
+    // The frame: the scroll is told first, then the observer reports.
+    fireEvent.scroll(el);
+    reportSizes();
+    expect(getByTestId("atBottom").textContent).toBe("true");
+    expect(el.scrollTop).toBe(750);
+    expect(getByTestId("unread").textContent).toBe("0");
+  });
+
+  it("keeps a reader at the bottom there when the clamp came at this hook's own read of a chat read again", () => {
+    const { el, box, rerender, getByTestId } = atTheBottom();
+    // The line above goes, then the chat is read again with the same turns:
+    // this hook's read of the layout is where the browser clamps the place to
+    // the new bottom, which it finds the transcript at, so it moves nothing.
+    box.clientHeight = 400;
+    el.scrollTop = 600;
+    rerender(<Harness items={["a", "b"]} />);
+    expect(el.scrollTop).toBe(600);
+    // Before the next frame, the lines above come back taller than before.
+    box.clientHeight = 250;
+    fireEvent.scroll(el);
+    reportSizes();
+    expect(getByTestId("atBottom").textContent).toBe("true");
+    expect(el.scrollTop).toBe(750);
+    expect(getByTestId("unread").textContent).toBe("0");
+  });
 });
