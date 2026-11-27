@@ -530,6 +530,29 @@ class TestTheWriteGateInTheLoop:
         # And the correction was told exactly what to fix.
         assert "document refused" in inputs[1]["validationError"]
 
+    def test_a_corrected_charts_attempts_say_its_grammar_validated_its_last_round(self, app, tmp_curio):
+        """The round whose document its grammar validated ran nothing and
+        failed nothing. Its attempt, and its row on the attempts card that
+        Solve this node shows when an earlier round failed, carry the
+        validation, never the runner's reason that the sandbox runs no code
+        of its kind."""
+        from utk_curio.backend.app.agents.domain import content
+
+        _events, outcome, _inputs = self._rounds(app, VEGA, [OWNERS_VEGA, FIXED_VEGA])
+        assert len(outcome["attempts"]) == 2, outcome["attempts"]
+        last = outcome["attempts"][-1]
+        assert last["verdict"] == "not-executable" and last.get("documentValidated") == "vis-vega", last
+        assert "detail" not in last, last
+        part = content.make_solve_attempts_part(
+            node_id="n1", label="Density chart", attachment_id=None, rounds=outcome["rounds"],
+            stopped_by=outcome.get("stoppedBy") or "", attempts=outcome["attempts"], verdict=outcome["verdict"],
+        )
+        refused, validated = part["attempts"]
+        # The round that failed keeps the validator's complaint and its code.
+        assert "'else' was unexpected" in refused["error"] and refused["code"] == OWNERS_VEGA, refused
+        assert validated["documentValidated"] == "vis-vega" and validated["error"] == "", validated
+        assert validated["code"] == FIXED_VEGA, validated
+
     def test_a_kind_with_no_validator_is_reported_unchecked(self, app, tmp_curio):
         events, outcome, inputs = self._rounds(
             app, "curio.builtin/some-package-grammar", ['{"whatever": 1}'],

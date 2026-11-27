@@ -1631,7 +1631,7 @@ def make_solve_attempts_part(
                 row["codeTruncated"] = True
             if attempt.get("codeIsProse"):
                 row["codeIsProse"] = True
-        for key in ("durationMs", "outputDataType", "contentSha256", "source"):
+        for key in ("durationMs", "outputDataType", "contentSha256", "source", "documentValidated"):
             if attempt.get(key) is not None:
                 row[key] = attempt[key] if key == "durationMs" else str(attempt[key])[:80]
         rows.append(row)

@@ -275,6 +275,11 @@ def _solved_node(
         )
         if trail_part is not None:
             parts.append(trail_part)
+    if any(part.get("type") == "solveAttempts" or (part.get("type") == "change" and part.get("validation"))
+           for part in parts):
+        # Its rounds are in view already, under the change card's
+        # Verification or on the attempts card: the trail is a run detail.
+        card["runDetails"] = True
     if isinstance(session_id, str):
         _append_solve_turn(user_key, project_id, attachment_id, session_id, coord, config, execution_id,
                            started, text, card_kind, card, parts, outcome, verdict)

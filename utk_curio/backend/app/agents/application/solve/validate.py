@@ -290,7 +290,8 @@ def _validate_events(
                 done["verdict"] = "fail"
                 _say_it_failed(user_key, project_id, attachment_id, session_id, home_attachment_id, home_session_id,
                                spec, node, label, outcome, rounds_trace)
-            done["builderSession"] = _settle_node_state(user_key, project_id, attachment_id, ref, done["verdict"], by=by)
+            done["builderSession"] = _settle_node_state(user_key, project_id, attachment_id, ref, done["verdict"], by=by,
+                                                        check=check_of(done))
         yield "done", done
     finally:
         # Disconnect-safe: the in-flight guard never wedges the attachment.
@@ -320,7 +321,9 @@ def _handed_to_the_builder(rounds, announce):
 
 def _announce_delegated_solve(user_key, project_id, home_attachment_id, home_session_id, label,
                               *, parent_name: str) -> None:
-    """The framing user turn at HOME: the agent named *parent_name* delegated this Solve."""
+    """The framing user turn at HOME: the agent named *parent_name* delegated
+    this Solve. The chat draws it as one quiet line, "Asked by the Dataflow
+    Builder: solve CPL branches." (``asked``)."""
     if isinstance(home_session_id, str):
         with contextlib.suppress(Exception):
             sessions.append_turns(
@@ -329,6 +332,7 @@ def _announce_delegated_solve(user_key, project_id, home_attachment_id, home_ses
                     "user",
                     f"{sessions.DELEGATED_TURN_PREFIX}{parent_name}] Solve {label!r}: generate, "
                     "execute through the dataflow, validate, self-correct.",
+                    asked={"by": parent_name, "task": f"solve {label}"},
                 )],
             )
 
@@ -373,6 +377,8 @@ def _writes(done: dict) -> bool:
 
 
 def _trace_card(done: dict, rounds_used: int, rounds_trace: list) -> dict:
+    """The Solve's trace, a line a round: a run detail (``runDetails``), its
+    rounds being the change card's Verification, each with its code."""
     executed = count_label(len(done["evidence"].get("executedNodes") or []), "node")
     outcome = f"{labels.verdict_words(done['verdict'], done['evidence'])} after {count_label(rounds_used, 'round')}"
     lines = [f"dependencies executed: {executed}", *rounds_trace, f"outcome: {outcome}"]
@@ -381,6 +387,7 @@ def _trace_card(done: dict, rounds_used: int, rounds_trace: list) -> dict:
         "kind": "result" if done["verdict"] in ("pass", "not-executable") else "error",
         "title": f"Solve trace · {labels.verdict_words(done['verdict'], done['evidence'], capitals=True)}",
         "lines": lines[:10],
+        "runDetails": True,
     }
 
 
@@ -440,13 +447,17 @@ def _land_validated(user_key, project_id, attachment_id, session_id, home_attach
             [sessions.make_turn(
                 "agent",
                 f"Validated {label!r} against its grammar after {rounds}, written into the node." if validated
+                else f"Validated {label}: its code ran after {rounds} and is written into the node."
+                if done["verdict"] == "pass"
                 else f"Validated content for {label!r}: {done['verdict'].upper()} after {rounds}, written into the node.",
                 content=[_trace_card(done, rounds_used, rounds_trace), part],
             )],
         )
     if home_attachment_id and home_attachment_id != attachment_id and isinstance(session_id, str):
         # The parent references and LINKS; the story lives at home. The agent
-        # that wrote it is named as its manifest names it.
+        # that wrote it is named as its manifest names it. Its chat does not
+        # draw the turn: the node's row on the plan's card says it is built,
+        # and its name opens that chat. The agents read it.
         delegate = getattr(resolution, "manifest", None)
         delegate_coord = getattr(resolution, "coord", None) or ""
         delegate_name = getattr(delegate, "name", None) or delegate_coord
@@ -457,6 +468,7 @@ def _land_validated(user_key, project_id, attachment_id, session_id, home_attach
             [sessions.make_turn(
                 "agent",
                 f"{said}: the trace and the change live in the node's {delegate_name}.",
+                for_agents=True,
                 content=[content.make_delegation_part(
                     capability="node.content.generate",
                     coord=delegate_coord,
@@ -503,14 +515,32 @@ def _say_it_failed(user_key, project_id, attachment_id, session_id, home_attachm
         )
 
 
+#: How a node's code that landed was checked, as its row on the plan's card
+#: says it (``nodeChecks``): it ran in the sandbox, its document is valid
+#: against its grammar, or it was written with no code to run.
+CHECK_RAN, CHECK_VALID, CHECK_WRITTEN = "ran", "valid", "written"
+
+
+def check_of(done: dict) -> str | None:
+    """How the code a validation landed was checked (``CHECK_*``), from its
+    verdict and evidence; None for code that did not pass."""
+    if done.get("verdict") == "pass":
+        return CHECK_RAN
+    if done.get("verdict") == "not-executable":
+        return CHECK_VALID if labels.document_validated("not-executable", done.get("evidence") or {}) else CHECK_WRITTEN
+    return None
+
+
 def _settle_node_state(user_key, project_id, attachment_id, ref, verdict: str, *,
-                       by: str = agents_node_work.BY_ROW) -> dict:
+                       by: str = agents_node_work.BY_ROW, check: str | None = None) -> dict:
     """The per-node ledger: validated / failed / waiting for its source;
     infrastructure untouched. Written on the plan's record as the dataflow
     holds it now, under its spec lock, so a pick that landed meanwhile keeps
     its move. A node left waiting for its source keeps who left it so
     (``sourceWaitBy``: *by*, the build's mode or ``node`` for a row's Solve),
-    which says how the plan goes on after the pick. Returns the builder
+    which says how the plan goes on after the pick. A node validated keeps
+    how its code was checked (``nodeChecks``: *check*, :func:`check_of`),
+    which its row's tick says; one that did not lose it. Returns the builder
     session."""
     with projects_storage.spec_write_lock(user_key, project_id):
         fresh = agents_spec_reads._live_spec_or_404(user_key, project_id)
@@ -522,7 +552,11 @@ def _settle_node_state(user_key, project_id, attachment_id, ref, verdict: str, *
                 # plan's ledger (Simulation Mode auto-approves it); the
                 # change's validation block carries the honest label.
                 fresh_session["nodeStates"][ref] = "validated"
-            elif verdict == "fail":
+                if check:
+                    fresh_session.setdefault("nodeChecks", {})[ref] = check
+            elif verdict != "infrastructure":
+                (fresh_session.get("nodeChecks") or {}).pop(ref, None)
+            if verdict == "fail":
                 fresh_session["nodeStates"][ref] = "failed"
             elif verdict == AWAITING_SOURCE:
                 # The node waits for its source, for what its Dataset Finder's

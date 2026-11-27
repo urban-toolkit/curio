@@ -614,6 +614,11 @@ class TestAValidatedChart:
         assert trace["title"] == "Solve trace · VALIDATED against its grammar"
         assert trace["lines"][0] == "dependencies executed: 0 nodes"
         assert trace["lines"][-1] == "outcome: validated against its grammar after 1 round"
+        # The trace is a run detail, its rounds the change card's; the plan's
+        # chat keeps its turn of the node for the agents, the node's row on
+        # the plan's card saying it is built.
+        assert trace["runDetails"] is True, trace
+        assert plan["forAgents"] is True, plan
         [entry] = [p for p in plan["content"] if p.get("type") == "delegation"]
         assert entry["summary"] == "Validated 'Library branch map' against its grammar (1 round)"
         shown = [home["text"], plan["text"], trace["title"], *trace["lines"], entry["summary"]]
@@ -634,6 +639,8 @@ class TestAValidatedChart:
         assert turns[-1]["content"][0]["title"] == "Solve · VALIDATED against its grammar after 1 round"
         # Its trail says the same, and nothing failed, so it has no attempts to fix.
         assert turns[-1]["content"][0]["lines"] == ["round 1 · validated against its grammar"]
+        # No other card holds its round: its trail stays in view.
+        assert "runDetails" not in turns[-1]["content"][0], turns[-1]["content"][0]
         assert not [p for p in turns[-1]["content"] if p.get("type") == "solveAttempts"]
 
     def test_its_round_says_its_grammar_validated_it(self, app, tmp_curio):

@@ -106,6 +106,11 @@ class TestSolve:
             d["parentExecutionId"] == body["executionId"]
             for d in solve_turn["execution"]["delegations"]
         )
+        # Its sentence says how the batch ended, each node's row its own: the
+        # batch's card of lines is a run detail.
+        assert solve_turn["text"] == "Solved 2 of 2 plan nodes.", solve_turn["text"]
+        card = next(p for p in solve_turn["content"] if p.get("type") == "card" and p.get("title") == "Solve: 2 of 2 nodes")
+        assert card["runDetails"] is True, card
 
     def test_solve_needs_only_the_dataflow_builder_and_the_node_builder(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
@@ -1077,6 +1082,78 @@ class TestBuildAndValidate:
         assert not {"node_created", "edges_created", "plan_removals"} & set(names)
         saved = _saved_nodes(user, alice_project)
         assert all(saved[ids[ref]]["content"] == "print('generated')" for ref in refs)
+
+    def test_a_build_that_builds_the_whole_plan_ends_with_one_sentence(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
+    ):
+        """The plan's chat keeps each node's own turn for the agents, its row
+        on the plan's card saying it for people, and says once, when the build
+        leaves every node built, how each node's code was checked and where
+        its code and checks are. The ledger keeps each node's check, which
+        its row's tick says."""
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        self._fake_exec(monkeypatch)
+        att_id, card, _ids, _ = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Plan.\n" + helper._plan_tail(), "print('generated')"],
+        )
+        done = self._simulate(client, token, alice_project, att_id, "auto")[-1][1]
+        assert done["status"] == "completed"
+        refs = [n["ref"] for n in card["plan"]["nodes"]]
+        assert done["builderSession"]["nodeChecks"] == {ref: "ran" for ref in refs}
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session", headers=_auth(token),
+        ).get_json()["turns"]
+        per_node = [t for t in turns if "the trace and the change live in the node's" in (t.get("text") or "")]
+        assert len(per_node) == len(refs) and all(t.get("forAgents") is True for t in per_node), per_node
+        last = turns[-1]
+        assert last["role"] == "agent" and not last.get("forAgents"), last
+        assert last["text"] == (
+            "Built all 2 nodes. Load and Analyze ran in the sandbox. "
+            "Each node's code and checks are in its Node Builder."
+        ), last["text"]
+
+    def test_the_closing_sentence_says_each_check_in_words(self):
+        from utk_curio.backend.app.agents.application.solve.simulation import built_sentence
+
+        assert built_sentence(
+            [("CPL branches", "ran"), ("Branch points", "ran"), ("Library branch map", "valid")], "Node Builder",
+        ) == (
+            "Built all 3 nodes. CPL branches and Branch points ran in the sandbox, and Library branch map is "
+            "valid against its grammar. Each node's code and checks are in its Node Builder."
+        )
+        # Several of a kind, a node with no code to run, and nodes whose code
+        # landed with different agents.
+        assert built_sentence(
+            [("Load", "ran"), ("Map", "valid"), ("Chart", "valid"), ("Notes", "written")], None,
+        ) == (
+            "Built all 4 nodes. Load ran in the sandbox, Map and Chart are valid against their grammar, and "
+            "Notes was written, with no code to run. Each node's code and checks are in its own agent's chat."
+        )
+        # One node; a node whose check the ledger does not hold says none.
+        assert built_sentence([("Load", None)], "Node Builder") == (
+            "Built its node. Its code and checks are in its Node Builder."
+        )
+
+    def test_a_build_that_leaves_a_node_to_build_says_no_sentence(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
+    ):
+        """A Step that builds the plan's first node leaves the second to
+        build: the plan is not built, and its chat says nothing of it."""
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        self._fake_exec(monkeypatch)
+        att_id, _card, _ids, _ = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Plan.\n" + helper._plan_tail(), "print('generated')"],
+        )
+        done = self._simulate(client, token, alice_project, att_id, "step")[-1][1]
+        assert done["status"] == "stepped"
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session", headers=_auth(token),
+        ).get_json()["turns"]
+        assert not [t for t in turns if (t.get("text") or "").startswith("Built ")], turns
         # The approval is recorded on each node's change (DEC-054), whose card
         # is in the node's own agent's chat (dev/72).
         from utk_curio.backend.app.projects import storage as projects_storage
@@ -1372,6 +1449,42 @@ class TestValidateNode:
         part = self._card(client, token, alice_project, done["changeAttachmentId"], done["changeId"])
         assert part["validation"]["verdict"] == "pass"
         assert part["kind"] == "content"
+
+    def test_a_pass_keeps_how_it_was_checked_and_says_its_news_where_people_look(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
+    ):
+        """The plan's ledger keeps how the node's code was checked (it ran in
+        the sandbox), which its row's tick says. The node's agent's chat draws
+        the task the plan's agent asked of it as one quiet line (``asked``),
+        says the code ran, and keeps the Solve's trace as a run detail, its
+        rounds being the change card's Verification. The plan's chat keeps
+        its turn of the node for the agents: the node's row says it is built."""
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        self._fake_exec(monkeypatch)
+        att_id, ref, _node_id, _ = self._setup_plan_node(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Plan.\n" + helper._plan_tail(), "print('validated code')"],
+        )
+        done = self._validate(client, token, alice_project, att_id, {"ref": ref})[-1][1]
+        assert done["builderSession"]["nodeChecks"] == {ref: "ran"}
+
+        def turns_of(attachment_id):
+            return client.get(
+                f"/api/agents/projects/{alice_project}/attachments/{attachment_id}/session", headers=_auth(token),
+            ).get_json()["turns"]
+
+        home = turns_of(done["changeAttachmentId"])
+        [asked] = [t for t in home if t["role"] == "user"]
+        assert asked["asked"] == {"by": "Dataflow Builder", "task": "solve Load"}, asked
+        assert asked["text"].startswith("[Delegated by Dataflow Builder] Solve 'Load'"), asked["text"]
+        reply = home[-1]
+        assert reply["text"] == "Validated Load: its code ran after 1 round and is written into the node.", reply["text"]
+        trace = next(p for p in reply["content"] if p.get("type") == "card")
+        assert trace["runDetails"] is True, trace
+        plan_chat = turns_of(att_id)
+        [solved] = [t for t in plan_chat if "the trace and the change live in the node's" in (t.get("text") or "")]
+        assert solved["forAgents"] is True, solved
 
     def test_failure_self_corrects_with_the_traceback(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token

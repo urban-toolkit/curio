@@ -993,11 +993,16 @@ class SolveBatch:
                     "agent",
                     f"Solved {solved} of {len(self.targets)} plan nodes."
                     + (f" Cancelled: {len(self.unstarted)} not attempted." if cancelled else ""),
+                    # The sentence says how the batch ended, and each node's row
+                    # on the plan's card says its own: the card's lines are a
+                    # run detail (``runDetails``). A failed node's attempts
+                    # stay in view.
                     content=[{
                         "type": "card",
                         "kind": "result",
                         "title": f"Solve: {solved} of {count_label(len(self.targets), 'node')}",
                         "lines": lines,
+                        "runDetails": True,
                     }, *attempt_parts, *self.extra_parts],
                     execution=agents_policy._execution_record(
                         self.solve_execution_id,
