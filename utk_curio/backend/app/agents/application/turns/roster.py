@@ -230,7 +230,9 @@ class _LazyRoster:
             base = (urlparse(str(source.get("baseUrl") or "")).hostname or "").lower()
             if base != host:
                 continue
-            provider = next((m for m in RECOGNISERS if m.PROVIDER_TYPE == source.get("provider")), None)
+            provider = next(
+                (m for m in RECOGNISERS if getattr(m, "PROVIDER_TYPE", None) == source.get("provider")), None,
+            )
             resource_id = provider.recognize(url) if provider is not None else None
             if resource_id:
                 return dir_name, str(resource_id)
