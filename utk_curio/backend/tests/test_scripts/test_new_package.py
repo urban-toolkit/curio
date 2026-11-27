@@ -128,10 +128,47 @@ def test_major_and_template_id_overrides(tmp_path):
     assert raw["templates"][0]["id"] == "my-thing"
 
 
-@pytest.mark.parametrize("package_id", ["9lives", "me..thing-", "me thing", ""])
+@pytest.mark.parametrize("package_id", [
+    "9lives", "me..thing-", "me thing", "",
+    # The package loader's ids are two to six segments, each a letter, then
+    # letters, digits or '-' (``packages.domain.package_id.PACKAGE_DIR_RE``).
+    "roughness", "me.my_node", "me..x", "me.a.b.c.d.e.f", "me.x-", "me." + "a" * 64,
+])
 def test_invalid_package_ids_exit_2(tmp_path, package_id):
     assert new_package.main([package_id, "--dest", str(tmp_path)]) == 2
     assert list(tmp_path.iterdir()) == [], "nothing should be written for a bad id"
+
+
+def test_an_id_whose_part_starts_with_a_digit_exits_2(tmp_path):
+    """With a template id of its own, the package id's check alone refuses it."""
+    assert new_package.main(["me.9lives", "--template-id", "lives", "--dest", str(tmp_path)]) == 2
+    assert list(tmp_path.iterdir()) == [], "nothing should be written for a bad id"
+
+
+def test_a_major_the_loader_refuses_exits_2(tmp_path):
+    """The loader reads a major of at most four digits."""
+    assert new_package.main(["me.thing", "--major", "10000", "--dest", str(tmp_path)]) == 2
+    assert list(tmp_path.iterdir()) == [], "nothing should be written for a bad major"
+
+
+@pytest.mark.parametrize("package_id", [
+    "me.roughness", "edu.uic.cs529.alice", "me.my-node", "me.a.b.c.d.e", "a.b",
+    "me." + "a" * 63,
+])
+def test_an_id_the_loader_takes_is_scaffolded_and_loads(tmp_path, package_id):
+    assert new_package.main([package_id, "--dest", str(tmp_path)]) == 0
+
+    manifest = new_package.load_package_manifest(tmp_path / f"{package_id}@1")
+    assert manifest.package_id == package_id
+
+
+def test_the_refusal_says_what_an_id_is_made_of(tmp_path, capsys):
+    assert new_package.main(["me.my_node", "--dest", str(tmp_path)]) == 2
+
+    said = capsys.readouterr().err
+    assert "'_'" not in said, said
+    assert "two to six" in said, said
+    assert "63" in said, said
 
 
 @pytest.mark.parametrize("template_id", ["9lives", "has_underscore", "x" * 64])
