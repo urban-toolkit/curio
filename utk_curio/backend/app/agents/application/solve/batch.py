@@ -63,6 +63,7 @@ from utk_curio.backend.app.agents.application.proposals import mint as agents_mi
 from utk_curio.backend.app.agents.application.solve import budgets as agents_budgets
 from utk_curio.backend.app.agents.application.solve import rounds as agents_rounds
 from utk_curio.backend.app.agents.application.solve import session as agents_session
+from utk_curio.backend.app.agents.application.solve import validate as agents_validate
 from utk_curio.backend.app.agents.application.turns import delegates as agents_delegates
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import policy as agents_policy
@@ -83,6 +84,39 @@ CHANGED_MEANWHILE = "its code changed while Solve worked on it; that code stays"
 #: Why a node Solve solved is left as it was: someone other than whoever asked
 #: was still in it when the wait for them ended (:meth:`SolveBatch._wave_held`).
 PERSON_EDITING = "{name} was editing it, so Solve wrote nothing there"
+
+#: What the plan's ledger keeps of the last Solve's word on its nodes, which
+#: the plan's line and its card's rows say after a reload and in every tab, as
+#: the stream says it live: why each pending, skipped or failed node is so, by
+#: node id, and the Solve's own reason.
+NODE_REASONS, BATCH_REASON = "nodeReasons", "batchReason"
+
+
+def check_of_result(outcome: dict) -> str | None:
+    """How a node this Solve solved was checked (``validate.CHECK_*``): its
+    code ran in the sandbox, its document its grammar validated, or its kind
+    has no code to run; None for code written that nothing ran, and for a
+    node it did not solve."""
+    if outcome.get("status") != "solved":
+        return None
+    if outcome.get("verdict") == "pass":
+        return agents_validate.CHECK_RAN
+    verification = (outcome.get("verification") or {}).get("status")
+    if verification == "document-valid":
+        return agents_validate.CHECK_VALID
+    if verification in ("not-executable", "no-content"):
+        return agents_validate.CHECK_WRITTEN
+    return None
+
+
+def reason_of_result(outcome: dict) -> str | None:
+    """Why a node is pending, skipped or failed after this Solve, as its
+    result says it; None for a node solved, or with no reason."""
+    status = outcome.get("status")
+    reason = outcome.get("reason") if status in ("pending", "skipped") else (
+        outcome.get("error") if status == "failed" else None
+    )
+    return str(reason)[:300] if reason else None
 
 
 class SolveBatch:
@@ -787,6 +821,7 @@ class SolveBatch:
                 if outcome and nid in node_runs and outcome.get("status") in ("solved", "failed", "skipped"):
                     node_runs[nid] = outcome["status"]
             session["nodeRuns"] = node_runs
+            self._keep_checks(spec_doc, session, [nid for nid in wave_ids if nid in node_runs])
             if session.get("phase") == "solving":
                 session["solvingSince"] = time.time()
             record["builderSession"] = session
@@ -795,6 +830,44 @@ class SolveBatch:
                 on_refused=lambda node_ids: self._changed_meanwhile(node_ids, node_runs),
             )
         self.current["spec"] = spec_doc
+
+    def _keep_checks(self, spec_doc: dict, session: dict, node_ids: list[str]) -> None:
+        """The plan's ledger keeps how each node of *node_ids* this Solve
+        solved was checked (:func:`check_of_result`), on the code it holds in
+        *spec_doc* now, which its row's tick says; code written that nothing
+        ran keeps no check. A build's pause on the failure of a node it solved
+        ends. A node of an earlier plan, with no ref in the ledger, has no row
+        to say it."""
+        refs = {node_id: ref for ref, node_id in (session.get("nodeIds") or {}).items()}
+        for node_id in node_ids:
+            outcome = self.results.get(node_id) or {}
+            ref = refs.get(node_id)
+            if ref is None or outcome.get("status") != "solved":
+                continue
+            agents_validate.keep_check(session, ref, check_of_result(outcome),
+                                       agents_validate.node_code(spec_doc, node_id))
+            agents_validate.end_pause_on(session, ref)
+
+    def _keep_reasons(self, session: dict, node_ids: list[str]) -> None:
+        """The plan's ledger keeps this Solve's word on each of *node_ids*: why
+        it is pending, skipped or failed (:data:`NODE_REASONS`), none for a
+        node it solved, and the Solve's own reason (:data:`BATCH_REASON`). A
+        node this Solve did not attempt keeps what an earlier Solve said."""
+        reasons = dict(session.get(NODE_REASONS) or {})
+        for node_id in node_ids:
+            reason = reason_of_result(self.results.get(node_id) or {})
+            if reason:
+                reasons[node_id] = reason
+            else:
+                reasons.pop(node_id, None)
+        if reasons:
+            session[NODE_REASONS] = reasons
+        else:
+            session.pop(NODE_REASONS, None)
+        if self.batch_reason:
+            session[BATCH_REASON] = str(self.batch_reason)[:300]
+        else:
+            session.pop(BATCH_REASON, None)
 
     @contextmanager
     def _wave_held(self):
@@ -857,15 +930,18 @@ class SolveBatch:
             agents_askers.account(self.user_key, self.acting_user), "solve",
         )
 
-    def _changed_meanwhile(self, node_ids: tuple, node_runs: dict) -> None:
+    def _changed_meanwhile(self, node_ids: tuple, node_runs: dict, session: dict | None = None) -> None:
         """The nodes whose code the dataflow kept (``dataflow_docs.write``):
         each took other code after this persist read it, someone's edit, which
         stays. Each is skipped, as a node that holds content is
-        (:meth:`apply_contents`), and says why."""
+        (:meth:`apply_contents`), and says why, on the plan's ledger too when
+        this persist keeps the Solve's reasons (*session*)."""
         for node_id in node_ids:
             self.results[node_id] = {"status": "skipped", "reason": CHANGED_MEANWHILE}
             if node_id in node_runs:
                 node_runs[node_id] = "skipped"
+        if session is not None:
+            self._keep_reasons(session, [node_id for node_id in node_ids if node_id in node_runs])
 
     def finish(self) -> dict:
         # One batched spec write: contents (re-guarded against the CURRENT
@@ -904,6 +980,9 @@ class SolveBatch:
                 if node_id in node_runs:
                     node_runs[node_id] = outcome["status"] if outcome["status"] != "skipped" else "skipped"
             session["nodeRuns"] = node_runs
+            settled = [node_id for node_id in self.results if node_id in node_runs]
+            self._keep_checks(spec, session, settled)
+            self._keep_reasons(session, settled)
             session.pop("solvingSince", None)
             session.pop("solveExecutionId", None)
             session.pop("cancelRequested", None)
@@ -915,7 +994,7 @@ class SolveBatch:
             record["builderSession"] = session
             dataflow_docs.write(
                 self.user_key, self.project_id, spec, self._actor(),
-                on_refused=lambda node_ids: self._changed_meanwhile(node_ids, node_runs),
+                on_refused=lambda node_ids: self._changed_meanwhile(node_ids, node_runs, session),
             )
         applied = [
             i for i in self.applied_contents if self.results.get(i["nodeId"], {}).get("status") == "solved"

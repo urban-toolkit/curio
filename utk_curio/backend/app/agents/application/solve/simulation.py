@@ -310,7 +310,7 @@ def _not_built(state: str) -> bool:
 
 
 def built_outside_the_plan(user_key: str, project_id: str, node_id: str, *, change: dict | None = None,
-                           actor=None) -> list[dict]:
+                           check: str | None = None, actor=None) -> list[dict]:
     """A node whose code Solve this node left in it and checked (written into
     it, kept as it was, or landed as the agent's change) counts as built in
     each landed plan that holds it and has not built it yet: its row is
@@ -318,34 +318,40 @@ def built_outside_the_plan(user_key: str, project_id: str, node_id: str, *, chan
     its code landed as one, so Build & validate approves it, recording the
     approval on that change when there is one and in the plan's ledger, and
     never builds it again. A pause for sources that named it names it no
-    more, and ends when it named no other. Written under the spec lock, on the
-    dataflow as it is now, by *actor*. Returns ``{attachmentId, ref}`` for
-    each plan row that moved."""
+    more, and ends when it named no other; a pause on its failure ends. Each
+    plan that holds it, built already or not (its code may have landed as
+    the agent's change, which built its row), keeps the check this Solve
+    made, *check* (``validate.check_of``), on the code the node holds now.
+    Written under the spec lock, on the dataflow as it is now, by *actor*.
+    Returns ``{attachmentId, ref}`` for each plan row that moved."""
     moved: list[dict] = []
     with projects_storage.spec_write_lock(user_key, project_id):
         spec = dataflow_docs.live(user_key, project_id)
         if spec is None:
             return moved
+        changed = False
         for record in attachments.list_attachments(spec):
             session = record.get("builderSession")
             states = session.get("nodeStates") if isinstance(session, dict) else None
             if not isinstance(states, dict):
                 continue
-            refs = [
-                ref for ref, built in (session.get("nodeIds") or {}).items()
-                if built == node_id and _not_built(states.get(ref, "created"))
-            ]
-            if not refs:
+            holding = [ref for ref, built in (session.get("nodeIds") or {}).items() if built == node_id]
+            if not holding:
                 continue
+            refs = [ref for ref in holding if _not_built(states.get(ref, "created"))]
             for ref in refs:
                 states[ref] = "validated"
                 (session.get("sourceWaitBy") or {}).pop(ref, None)
                 if change and change.get("changeId"):
                     session.setdefault("nodeChanges", {})[ref] = dict(change)
+            for ref in holding:
+                agents_validate.keep_check(session, ref, check, agents_validate.node_code(spec, node_id))
+                agents_validate.end_pause_on(session, ref)
             _pause_follows(user_key, spec, record, session)
             record["builderSession"] = session
+            changed = True
             moved += [{"attachmentId": record.get("attachmentId"), "ref": ref} for ref in refs]
-        if moved:
+        if changed:
             dataflow_docs.write(user_key, project_id, spec, actor or dataflow_docs.by_curio(user_key, "solve"))
     return moved
 
@@ -659,7 +665,9 @@ class SimulationDriver:
         states = session.get("nodeStates") or {}
         if not nodes or any(states.get(n["ref"]) not in _BUILT_STATES for n in nodes):
             return
-        checks = session.get("nodeChecks") or {}
+        # Only the checks that still hold: a node whose code changed after its
+        # check, by anyone, is said with none.
+        checks = agents_validate.checks_that_hold(spec, session)
         changes = session.get("nodeChanges") or {}
         homes = {(changes.get(n["ref"]) or {}).get("attachmentId") for n in nodes}
         agents = {
@@ -815,7 +823,7 @@ class SimulationDriver:
             })
         if verdict == "fail":
             return self._pause({
-                "kind": "validation-failed", "ref": ref,
+                "kind": agents_validate.PAUSED_ON_A_FAILURE, "ref": ref,
                 "message": "validation failed and nothing was written: each attempt's code is in the "
                 "node's agent chat; edit the node or its inputs, then continue",
             })

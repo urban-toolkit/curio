@@ -520,6 +520,10 @@ def _say_it_failed(user_key, project_id, attachment_id, session_id, home_attachm
 #: against its grammar, or it was written with no code to run.
 CHECK_RAN, CHECK_VALID, CHECK_WRITTEN = "ran", "valid", "written"
 
+#: The plan's ledger of checks: how each node's code was checked, by ref, and
+#: the digest of the code each check was made on.
+CHECKS, CHECKED_CODE = "nodeChecks", "nodeCheckedCode"
+
 
 def check_of(done: dict) -> str | None:
     """How the code a validation landed was checked (``CHECK_*``), from its
@@ -531,6 +535,70 @@ def check_of(done: dict) -> str | None:
     return None
 
 
+def node_code(spec: dict, node_id: object) -> str | None:
+    """The code the node *node_id* holds in *spec*; None when *spec* holds no
+    such node."""
+    nodes = (spec.get("dataflow") or {}).get("nodes") or []
+    node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
+    return None if node is None else str(node.get("content") or "")
+
+
+def keep_check(session: dict, ref: str, check: str | None, code: str | None) -> None:
+    """Keep in the plan's ledger (*session*) how the code of its node *ref*
+    was checked, *check*, with the digest of *code*, the code that check was
+    made on. With no check, or no code, the ledger keeps none for *ref*: no
+    row claims a check that did not run on the code its node holds."""
+    if check and code is not None:
+        session.setdefault(CHECKS, {})[ref] = check
+        session.setdefault(CHECKED_CODE, {})[ref] = agents_rounds._content_sha(code)
+        return
+    for key in (CHECKS, CHECKED_CODE):
+        held = session.get(key)
+        if isinstance(held, dict):
+            held.pop(ref, None)
+
+
+def checks_that_hold(spec: dict, session: dict | None) -> dict[str, str]:
+    """The checks of *session*'s plan nodes that still hold in *spec*: each
+    ``nodeChecks`` entry whose node holds the code the check was made on. A
+    change to a node's code after its check, by anyone, drops the check, and
+    so does a node no longer there."""
+    session = session if isinstance(session, dict) else {}
+    digests = session.get(CHECKED_CODE) or {}
+    node_ids = session.get("nodeIds") or {}
+    held: dict[str, str] = {}
+    for ref, check in (session.get(CHECKS) or {}).items():
+        code = node_code(spec, node_ids.get(ref))
+        if code is not None and digests.get(ref) == agents_rounds._content_sha(code):
+            held[ref] = check
+    return held
+
+
+def session_as_it_holds(spec: dict, session: dict | None) -> dict | None:
+    """A copy of the plan's ledger *session* as a reader of *spec* is told it:
+    its checks those that still hold (:func:`checks_that_hold`). The ledger
+    kept is never changed by a read."""
+    if not isinstance(session, dict):
+        return session
+    shown = dict(session)
+    if CHECKS in shown:
+        shown[CHECKS] = checks_that_hold(spec, session)
+    return shown
+
+
+#: Why a build paused when a node's check failed (``pauseReason.kind``).
+PAUSED_ON_A_FAILURE = "validation-failed"
+
+
+def end_pause_on(session: dict, ref: str | None) -> None:
+    """A build's pause on a node whose check failed is about that node
+    alone: once something builds the node, the plan is paused on nothing,
+    and its line says where it stands."""
+    pause = session.get("pauseReason")
+    if ref and isinstance(pause, dict) and pause.get("kind") == PAUSED_ON_A_FAILURE and pause.get("ref") == ref:
+        session.pop("pauseReason", None)
+
+
 def _settle_node_state(user_key, project_id, attachment_id, ref, verdict: str, *,
                        by: str = agents_node_work.BY_ROW, check: str | None = None) -> dict:
     """The per-node ledger: validated / failed / waiting for its source;
@@ -540,8 +608,9 @@ def _settle_node_state(user_key, project_id, attachment_id, ref, verdict: str, *
     (``sourceWaitBy``: *by*, the build's mode or ``node`` for a row's Solve),
     which says how the plan goes on after the pick. A node validated keeps
     how its code was checked (``nodeChecks``: *check*, :func:`check_of`),
-    which its row's tick says; one that did not lose it. Returns the builder
-    session."""
+    with the code it was checked on, which its row's tick says, and a build's
+    pause on its failure ends; one that did not lose its check. Returns the
+    builder session."""
     with projects_storage.spec_write_lock(user_key, project_id):
         fresh = agents_spec_reads._live_spec_or_404(user_key, project_id)
         fresh_record = agents_spec_reads._record_or_404(fresh, attachment_id)
@@ -552,10 +621,11 @@ def _settle_node_state(user_key, project_id, attachment_id, ref, verdict: str, *
                 # plan's ledger (Simulation Mode auto-approves it); the
                 # change's validation block carries the honest label.
                 fresh_session["nodeStates"][ref] = "validated"
-                if check:
-                    fresh_session.setdefault("nodeChecks", {})[ref] = check
+                keep_check(fresh_session, ref, check,
+                           node_code(fresh, (fresh_session.get("nodeIds") or {}).get(ref)))
+                end_pause_on(fresh_session, ref)
             elif verdict != "infrastructure":
-                (fresh_session.get("nodeChecks") or {}).pop(ref, None)
+                keep_check(fresh_session, ref, None, None)
             if verdict == "fail":
                 fresh_session["nodeStates"][ref] = "failed"
             elif verdict == AWAITING_SOURCE:
