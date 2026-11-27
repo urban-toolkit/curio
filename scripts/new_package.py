@@ -25,7 +25,7 @@ See ``docs/AUTHORING-NODES.md`` for the full walkthrough.
 
 HOW
 ---
-    python scripts/new_package.py me.roughness
+    python scripts/new_package.py me.rolling-stats
     python scripts/new_package.py me.heatmap --with-ui
     python scripts/new_package.py me.thing --major 2 --template-id my-thing
 
@@ -487,7 +487,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "package_id",
         metavar="PACKAGE_ID",
-        help="Reverse-domain id, e.g. 'me.roughness' or 'edu.uic.cs529.alice'",
+        help="Reverse-domain id, e.g. 'me.rolling-stats' or 'edu.uic.cs529.alice'",
     )
     parser.add_argument(
         "--major", type=int, default=1, help="Major version (default: 1)"
@@ -521,7 +521,7 @@ def main(argv: list[str] | None = None) -> int:
             f"error: package id {package_id!r} is invalid.\n"
             "       Use two to six parts separated by '.'. Each part is a lowercase\n"
             "       letter, then lowercase letters, digits or '-', 63 characters at\n"
-            "       most, and the id ends with a letter or digit. Example: me.roughness",
+            "       most, and the id ends with a letter or digit. Example: me.rolling-stats",
             file=sys.stderr,
         )
         return 2

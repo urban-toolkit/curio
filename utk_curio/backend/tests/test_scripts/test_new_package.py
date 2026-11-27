@@ -30,15 +30,15 @@ new_package = _load("new_package")
 
 
 def test_scaffolds_a_package_that_the_backend_can_load(tmp_path):
-    rc = new_package.main(["me.roughness", "--dest", str(tmp_path)])
+    rc = new_package.main(["me.rolling-stats", "--dest", str(tmp_path)])
     assert rc == 0
 
-    root = tmp_path / "me.roughness@1"
+    root = tmp_path / "me.rolling-stats@1"
     assert (root / "manifest.json").is_file()
     assert (root / "README.md").is_file()
     assert (root / "LICENSE").is_file()
     assert (root / "integrity.json").is_file()
-    assert (root / "sources" / "roughness.py").is_file()
+    assert (root / "sources" / "rolling-stats.py").is_file()
 
     # The scaffolder validates through the real loader, so a passing run means
     # the emitted manifest is installable, not merely well-formed JSON.
@@ -48,8 +48,8 @@ def test_scaffolds_a_package_that_the_backend_can_load(tmp_path):
     assert manifest is not None
 
     raw = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
-    assert raw["id"] == "me.roughness"
-    assert [t["id"] for t in raw["templates"]] == ["roughness"]
+    assert raw["id"] == "me.rolling-stats"
+    assert [t["id"] for t in raw["templates"]] == ["rolling-stats"]
     # A Tier 1 package reuses the built-in editor and ships no bundle.
     assert "behaviorScript" not in raw
 
@@ -132,7 +132,7 @@ def test_major_and_template_id_overrides(tmp_path):
     "9lives", "me..thing-", "me thing", "",
     # The package loader's ids are two to six segments, each a letter, then
     # letters, digits or '-' (``packages.domain.package_id.PACKAGE_DIR_RE``).
-    "roughness", "me.my_node", "me..x", "me.a.b.c.d.e.f", "me.x-", "me." + "a" * 64,
+    "rolling-stats", "me.my_node", "me..x", "me.a.b.c.d.e.f", "me.x-", "me." + "a" * 64,
 ])
 def test_invalid_package_ids_exit_2(tmp_path, package_id):
     assert new_package.main([package_id, "--dest", str(tmp_path)]) == 2
@@ -152,7 +152,7 @@ def test_a_major_the_loader_refuses_exits_2(tmp_path):
 
 
 @pytest.mark.parametrize("package_id", [
-    "me.roughness", "edu.uic.cs529.alice", "me.my-node", "me.a.b.c.d.e", "a.b",
+    "me.rolling-stats", "edu.uic.cs529.alice", "me.my-node", "me.a.b.c.d.e", "a.b",
     "me." + "a" * 63,
 ])
 def test_an_id_the_loader_takes_is_scaffolded_and_loads(tmp_path, package_id):
@@ -195,12 +195,12 @@ def test_ids_are_normalised_rather_than_rejected(tmp_path):
     a capitalised id gets a working package rather than an error.
     """
     rc = new_package.main(
-        ["  Me.Roughness  ", "--template-id", "Rough-Ness", "--dest", str(tmp_path)]
+        ["  Me.Rolling-Stats  ", "--template-id", "Rolling-Window", "--dest", str(tmp_path)]
     )
     assert rc == 0
-    root = tmp_path / "me.roughness@1"
+    root = tmp_path / "me.rolling-stats@1"
     assert root.is_dir()
-    assert (root / "sources" / "rough-ness.py").is_file()
+    assert (root / "sources" / "rolling-window.py").is_file()
 
 
 def test_a_leading_dash_id_is_rejected_by_argparse(tmp_path):
