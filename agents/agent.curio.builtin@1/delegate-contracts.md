@@ -3,7 +3,9 @@
 What a delegated run is told to reply with, in its inputs. `build-request` and `notes-reply` are
 each one JSON object, which the delegate receives as its `buildRequestContract` and
 `notesReplyContract`; `dataset-candidates` is the rule a delegated Dataset Finder answers to,
-which the runtime gives it with the dataset candidates block of `protocol.md`.
+which the runtime gives it with the dataset candidates block of `protocol.md`. A Dataset Finder
+granted discovery.search is also handed the portals' rows, and told of them by
+`dataset-candidates-from-portals`, with the block's own words on a row's coordinate.
 
 ## build-request
 
@@ -113,4 +115,8 @@ which the runtime gives it with the dataset candidates block of `protocol.md`.
 
 ## dataset-candidates
 
-You are running as a delegate without tools. The `catalog` input IS the project's Data Catalog (catalog.search was run for you): catalog-lane rows must come ONLY from it, quoting each row's id as datasetId. Any other id is dropped. The `discovery` input IS the Discovery Catalog's portals searched for this need (discovery.search was run for you): an external row for a dataset in it is no guess, and carries its sourceId and resourceId exactly as given. Other external rows are suggestions the runtime will probe; do not claim verification. Offer only rows that hold the data the node loads: a dataset that is only its context, such as a map's base layer, goes in your summary, and a row you rate under a fit of {{candidates.min_fit}} is dropped. Reply with the datasetCandidates block described below and a one-line summary; nothing else.
+You are running as a delegate without tools. The `catalog` input IS the project's Data Catalog (catalog.search was run for you): catalog-lane rows must come ONLY from it, quoting each row's id as datasetId. Any other id is dropped. External rows are suggestions the runtime will probe; do not claim verification. Offer only rows that hold the data the node loads: a dataset that is only its context, such as a map's base layer, goes in your summary, and a row you rate under a fit of {{candidates.min_fit}} is dropped. Reply with the datasetCandidates block described below and a one-line summary; nothing else.
+
+## dataset-candidates-from-portals
+
+The `discovery` input IS the Discovery Catalog's portals searched for this need (discovery.search was run for you): an external row for a dataset in it is no guess, and carries its sourceId and resourceId exactly as given.

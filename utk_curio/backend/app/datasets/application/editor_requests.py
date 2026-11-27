@@ -17,7 +17,12 @@ of his Data Catalog onto her dataflow each ask her (:func:`asked`), as a
   into hers, within her cache's bound;
 * a dataset of the shared Data Catalog needs no copy: his Add to project of one
   asks her to add it, and his drop of one asks nothing, since every account's
-  runs read the shared catalog.
+  runs read the shared catalog;
+* a dataset of her own Data Catalog needs no copy either: his pick of one on a
+  Dataset Finder's card, which a run of hers offered, asks her to add it
+  (``ownersOwn``), and her Apply adds it as her Add to project does. Only
+  that pick asks for one (``owners_own``): no ask by an id names what her
+  store holds.
 """
 
 from __future__ import annotations
@@ -45,6 +50,9 @@ ITEMS = "datasets"
 #: What the owner is told who asks herself.
 OWNERS_OWN = "You own this dataflow: add the dataset to it with Add to project."
 NOT_FOUND = "Dataset not found"
+#: An editor's pick on a Dataset Finder's card may ask her for a dataset of
+#: her own (``projects/editor_requests.ask``'s ``owners_own``).
+ASKS_FOR_THE_OWNERS_OWN = True
 
 
 # ---------------------------------------------------------------------------
@@ -93,13 +101,15 @@ def _listed(flow, dataset_ids: list[str]) -> bool:
     return bool(dataset_ids) and all(dataset_id in listed for dataset_id in dataset_ids)
 
 
-def asked(flow, dataset_id: str, *, add: bool) -> Asked:
+def asked(flow, dataset_id: str, *, add: bool, owners_own: bool = False) -> Asked:
     """What an editor's ask for *dataset_id* is for: one of his own Data
     Catalog, which he dropped as a file, dragged as a card or added with Add to
     project (*add*), a collection among them; or one of the shared catalog,
-    asked for only by Add to project, since every account's runs read it. The
-    answer says why nothing needs asking: the dataflow lists it already, or a
-    drop of a shared one."""
+    asked for only by Add to project, since every account's runs read it; or,
+    with *owners_own*, one of the owner's own Data Catalog, which his pick on
+    a Dataset Finder's card asks her to add (:func:`_owners_own`). The answer
+    says why nothing needs asking: the dataflow lists it already, or a drop
+    of a shared one."""
     from utk_curio.backend.app.projects.services import _history_person
 
     folders, collection = _own_folders(flow.asker_key, dataset_id)
@@ -114,6 +124,8 @@ def asked(flow, dataset_id: str, *, add: bool) -> Asked:
     else:
         shared = _shared_item(dataset_id)
         if shared is None:
+            if owners_own:
+                return _owners_own(flow, dataset_id)
             raise DatasetCatalogError(NOT_FOUND, 404)
         if not add:
             # Every account's runs read the shared catalog: nothing to ask.
@@ -131,6 +143,31 @@ def asked(flow, dataset_id: str, *, add: bool) -> Asked:
         "shared": store is None,
         "store": store,
         "dirNames": [row.dir_name for row in folders],
+    })
+
+
+def _owners_own(flow, dataset_id: str) -> Asked:
+    """An editor's ask for *dataset_id*, a dataset of the owner's own Data
+    Catalog the dataflow does not list: her Apply copies nothing, since her
+    store holds it, and adds it to the dataflow as her Add to project does.
+    Not found when her store does not hold it."""
+    folders, collection = _own_folders(flow.owner_key, dataset_id)
+    if not folders:
+        raise DatasetCatalogError(NOT_FOUND, 404)
+    first = folders[0]
+    title = (first.title or dataset_id) if not is_layer_group_id(dataset_id) else _group_title(folders, dataset_id)
+    fmt = first.format if len(folders) == 1 else "layers"
+    noun = "collection" if collection else "dataset"
+    return Asked(item=dataset_id, fields={
+        "summary": f"Add {noun} · {title}",
+        "preview": " · ".join(part for part in (title, (fmt or "").upper(), f"from {flow.owner_name}'s Data Catalog")
+                              if part),
+        "datasetName": title,
+        "format": "collection" if collection else fmt,
+        "shared": False,
+        "ownersOwn": True,
+        "store": None,
+        "dirNames": [],
     })
 
 

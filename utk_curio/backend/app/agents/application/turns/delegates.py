@@ -127,11 +127,12 @@ def _plural_s(count: int) -> str:
 
 
 def _dataset_discover_inputs(
-    user_key: str, project_id: str, inputs: dict, *, catalog_rows: list | None = None, asker=None, lookups=None,
+    user_key: str, project_id: str, inputs: dict, *, catalog_rows: list | None = None, portals: bool = False,
+    asker=None, lookups=None,
 ) -> dict:
     """dev/114: the sixth DEC-063 application — a tool-less Dataset Finder
     child gets the catalog listing, the Discovery Catalog's search for its
-    need and the reply schema as INPUTS.
+    need when its agent may search it, and the reply schema as INPUTS.
 
     The catalog is always the runtime's: *catalog_rows* when the caller
     listed them (a Solve lists them while its request lasts), else read here.
@@ -139,9 +140,15 @@ def _dataset_discover_inputs(
     child's candidates are checked against the runtime's listing and a list
     the parent made up would only mislead it. The child is shown the
     listing's first rows, as catalog.search shows them, and how many it was
-    not shown. So is the ``discovery`` input, the portals the runtime searched
-    for the child as *asker*, the account a job's thread runs for, holding
-    *lookups* when given (:func:`_delegated_discovery_rows`)."""
+    not shown.
+
+    A child whose agent is granted discovery.search (*portals*,
+    :func:`_searches_portals`) is also handed the ``discovery`` input, the
+    portals the runtime searched for it as *asker*, the account a job's
+    thread runs for, its store read under *lookups* when given
+    (:func:`_delegated_discovery_rows`), and told of it by its reply
+    contract. Any other child gets neither, as a chat run of its agent is
+    told nothing of the portals: a ``discovery`` the parent wrote goes."""
     enriched = dict(inputs)
     rows = (
         catalog_rows if catalog_rows is not None
@@ -155,9 +162,12 @@ def _dataset_discover_inputs(
         ),
         **tools._cut("rows", rows, tools._CATALOG_SEARCH_MAX_ROWS),
     }
-    enriched["discovery"] = _delegated_discovery_rows(enriched, asker=asker, lookups=lookups)
+    if portals:
+        enriched["discovery"] = _delegated_discovery_rows(enriched, asker=asker, lookups=lookups)
+    else:
+        enriched.pop("discovery", None)
     if "discoveryReplyContract" not in enriched:
-        enriched["discoveryReplyContract"] = _discovery_reply_contract()
+        enriched["discoveryReplyContract"] = _discovery_reply_contract(portals=portals)
     return enriched
 
 
@@ -182,9 +192,11 @@ def _delegated_discovery_rows(inputs: dict, *, asker=None, lookups=None) -> dict
     ``research.notes.compose`` children get the runtime's web search: the
     child cannot search, so on its own it could name a portal's dataset only
     from memory, as a guess. Searched as *asker* when given (a Solve's thread
-    holds no request), else as the request's account. The search reads what
-    the account holds, so a Solve's threads hold its lock on those reads
-    (*lookups*, ``SolveBatch.dataset_lookups``) while it runs.
+    holds no request), else as the request's account. The search ends with a
+    read of what the account holds (the held formats, which sync the dataset
+    index), so a Solve's threads hold their lock on such reads (*lookups*,
+    ``SolveBatch.dataset_lookups``) around that read alone, never around the
+    portals' fan-out: two loaders of one wave search at once.
 
     The search is the portals' own fan-out, outside the run's web budget,
     which the card's probes and describes keep whole. A search that fails is
@@ -193,8 +205,7 @@ def _delegated_discovery_rows(inputs: dict, *, asker=None, lookups=None) -> dict
     if not need:
         return {"note": agent_text.message("dataset.discovery-unavailable")}
     try:
-        with lookups if lookups is not None else contextlib.nullcontext():
-            rows, unavailable = tools._discovery_search_rows({"q": need}, user=asker)
+        rows, unavailable = tools._discovery_search_rows({"q": need}, user=asker, store_reads=lookups)
     except Exception:  # noqa: BLE001 - the child still gets its other inputs, and says the search failed
         log.warning("The Discovery Catalog could not be searched for a Dataset Finder's need", exc_info=True)
         return {"note": agent_text.message("dataset.discovery-unavailable")}
@@ -641,16 +652,34 @@ def _notes_reply_contract() -> dict:
     return _contract("notes-reply")
 
 
-def _discovery_reply_contract() -> str:
+def _discovery_reply_contract(*, portals: bool = False) -> str:
     """dev/114: what a tool-less Dataset Finder child answers to, the section
     ``dataset-candidates`` of ``delegate-contracts.md``, then the
     ``datasetCandidates`` block of ``protocol.md`` (#269: ONE schema, never a
-    second copy) and how an external row carries the coordinate of a dataset
-    its ``discovery`` input holds, as a run granted discovery.search is told
-    (``content.tail_instruction``)."""
+    second copy).
+
+    A child whose agent is granted discovery.search (*portals*) is handed the
+    portals' rows (``discovery``), so its rule goes on with the section
+    ``dataset-candidates-from-portals`` of ``delegate-contracts.md`` and the
+    block with the section of that name of ``protocol.md``: how an external
+    row carries a portal's coordinate, as a chat run granted discovery.search
+    is told (``content.tail_instruction``). Every word is its pages'."""
     candidates = agent_text.section(builtin.PROTOCOL_FILE, "dataset-candidates")
-    portals = agent_text.section(builtin.PROTOCOL_FILE, "dataset-candidates-from-portals")
-    return f"{_contracts_section('dataset-candidates')}\n\n{candidates}\n{portals}"
+    if not portals:
+        return f"{_contracts_section('dataset-candidates')}\n\n{candidates}"
+    rule = f"{_contracts_section('dataset-candidates')}\n{_contracts_section('dataset-candidates-from-portals')}"
+    coordinate = agent_text.section(builtin.PROTOCOL_FILE, "dataset-candidates-from-portals")
+    return f"{rule}\n\n{candidates}\n{coordinate}"
+
+
+def _searches_portals(manifest) -> bool:
+    """Whether a delegate whose agent is *manifest* is granted discovery.search,
+    as a chat run of that agent is (``content.tail_instruction``): only such a
+    delegate is handed the portals' rows and told how a row carries their
+    coordinate."""
+    if manifest is None:
+        return False
+    return content._DISCOVERY_CANDIDATES_TOOL in tools.resolve_grants(getattr(manifest, "tools", None) or [])
 
 
 def _extract_reuse_finding(child_text: str) -> dict | None:
@@ -1272,7 +1301,7 @@ def _authoring_reuse_evidence(
 
 def _enriched_delegate_inputs(
     user_key: str, project_id: str, loop_ctx: dict, capability: str, inputs: dict,
-    *, catalog_rows: list | None = None,
+    *, catalog_rows: list | None = None, delegate=None,
 ) -> dict:
     """dev/67-6: content-generation delegates get the composed node context
     appended server-side (never overwriting the model's own keys) — the child
@@ -1283,7 +1312,9 @@ def _enriched_delegate_inputs(
     sources, whatever node the agent is attached to.
 
     *catalog_rows* is the Data Catalog listing a ``dataset.discover`` child is
-    shown, when the caller has already read it (:func:`_dataset_discover_inputs`)."""
+    shown, when the caller has already read it (:func:`_dataset_discover_inputs`),
+    and *delegate* the manifest of the child's agent, whose grants say whether
+    it is handed the portals' rows too (:func:`_searches_portals`)."""
     if capability == "research.verify" and "verification" not in inputs:
         # dev/67-4: DEC-046 children are structurally tool-less — the runtime
         # runs the deterministic validators and the child synthesizes over
@@ -1338,11 +1369,13 @@ def _enriched_delegate_inputs(
     if capability == "dataset.discover":
         # dev/114 — the SIXTH runtime-supplied-inputs application (DEC-063):
         # a tool-less Dataset Finder child cannot run catalog.search or
-        # discovery.search, so the runtime lists the catalog and searches the
-        # portals for it, as the run's asker, and teaches the ONE reply schema
-        # (#269's). Model-supplied keys win, but for the catalog and the
-        # portals' rows: those are always the runtime's.
+        # discovery.search, so the runtime lists the catalog for it, searches
+        # the portals for a child whose agent may search them, as the run's
+        # asker, and teaches the ONE reply schema (#269's). Model-supplied
+        # keys win, but for the catalog and the portals' rows: those are
+        # always the runtime's.
         return _dataset_discover_inputs(user_key, project_id, inputs, catalog_rows=catalog_rows,
+                                        portals=_searches_portals(delegate),
                                         asker=loop_ctx.get("asker"), lookups=loop_ctx.get("lookups"))
     if capability != "node.content.generate" or "nodeContext" in inputs:
         return inputs

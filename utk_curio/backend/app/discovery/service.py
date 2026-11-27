@@ -7,6 +7,7 @@ the internal layering can move without a sweep.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import Any
 
@@ -131,12 +132,18 @@ class DiscoveryService:
         transport=None,
         budget=None,
         dataflow_id: str | None = None,
+        store_reads=None,
     ) -> None:
         self.user_key = user_key or "-"
         # The ``User`` row, when there is one. Only ``credentials`` reads it,
         # and only to answer "does this account hold that slot" and to hand the
         # transport one header.
         self.user = user
+        #: The lock a search's read of what the account holds is made under
+        #: (:meth:`_held_formats`), when a caller gives one: an agents' Solve,
+        #: whose threads take one lock around their reads of the account's
+        #: store. Only that read: a portal's answer is waited for outside it.
+        self._store_reads = store_reads
         #: The dataflow whose collections :meth:`collection` finds besides
         #: the account's own: a run's, when it names one.
         self.dataflow_id = dataflow_id
@@ -586,13 +593,15 @@ class DiscoveryService:
     def _held_formats(self) -> dict[tuple[str, str], dict[str, str]]:
         """What this account holds from any source, by resource and format.
 
-        One store walk per page of rows, not one per row.
+        One store walk per page of rows, not one per row, under the caller's
+        lock on such reads when it gave one (``store_reads``).
         """
         from utk_curio.backend.app.datasets.repositories.user_store import (
             UserDatasetRepository,
         )
 
-        return UserDatasetRepository(self.user).discovery_resource_formats()
+        with self._store_reads if self._store_reads is not None else contextlib.nullcontext():
+            return UserDatasetRepository(self.user).discovery_resource_formats()
 
     def _find_held(self, source_id, resource_id, fmt, parameters_hash=None):
         from utk_curio.backend.app.datasets.repositories.user_store import (

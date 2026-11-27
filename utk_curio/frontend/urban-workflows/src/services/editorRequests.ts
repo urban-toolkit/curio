@@ -6,7 +6,9 @@
  * group or collection of his Data Catalog (a file he drops, his Add to
  * project, a card he drags), and a package or model of his store or of the
  * shared catalog (his Add to project, a card he drops, a model he drops on a
- * node) each ask her instead (`useAskTheOwner`). Only she applies or dismisses
+ * node) each ask her instead (`useAskTheOwner`), and so does his pick on a
+ * Dataset Finder's card of a dataset the dataflow does not hold, one of her
+ * own among them (`ownersOwn`). Only she applies or dismisses
  * a request, on the review card an install an agent asks for has
  * (`AgentReviewCard`): a request is a `dataset.install` or a `package.install`
  * of `contracts/agentInstalls.json`, kept by its kind's routes.
@@ -60,6 +62,9 @@ export interface DatasetRequest extends RequestBase {
   datasetName: string;
   /** `collection` for a collection. */
   format?: string;
+  /** For a dataset of the owner's own Data Catalog, which an editor's pick
+   * on a Dataset Finder's card asks her to add: no copy brings it. */
+  ownersOwn?: boolean;
 }
 
 /** A request for a node package or a model package. */
@@ -289,6 +294,12 @@ export function requestEffect(request: EditorRequest, viewer: RequestViewer | nu
     return owner
       ? "Applying adds this dataset of the shared Data Catalog to this dataflow."
       : "Applying adds this dataset of the shared Data Catalog to this dataflow, for the dataflow's owner.";
+  }
+  if (request.ownersOwn === true) {
+    const noun = request.format === "collection" ? "collection" : "dataset";
+    return owner
+      ? `Applying adds this ${noun} of your Data Catalog to this dataflow.`
+      : `Applying adds this ${noun} of the Data Catalog of the dataflow's owner to this dataflow.`;
   }
   if (request.format === "collection") {
     return owner

@@ -912,7 +912,7 @@ def _catalog_search_rows(user_key: str, project_id: str, params: dict) -> list[d
     return _catalog_listing_rows(user_key, project_id, params)[:_CATALOG_SEARCH_MAX_ROWS]
 
 
-def _catalog_listing_rows(user_key: str, project_id: str, params: dict) -> list[dict]:
+def _catalog_listing_rows(user_key: str, project_id: str, params: dict, *, user=None) -> list[dict]:
     """Every row of the Data Catalog listing *params* filters, as the
     catalog.search tool shows a row. A candidate row is checked against
     these, all of them, since a dataset past the rows a search shows is
@@ -921,7 +921,9 @@ def _catalog_listing_rows(user_key: str, project_id: str, params: dict) -> list[
     Thin wrapper over the datasets domain (`ADR-AG-007`): the acting user
     rides the request context (the datasets service is user-object keyed,
     unlike the key-based agents/packages stores), and the listing is the
-    same `list_catalog` the Data Catalog drawer browses — one truth.
+    same `list_catalog` the Data Catalog drawer browses: one truth. *user*,
+    when given, lists it as that account instead: the dataflow's owner, for
+    an editor's pick of a dataset of hers.
     """
     from flask import g
 
@@ -929,7 +931,8 @@ def _catalog_listing_rows(user_key: str, project_id: str, params: dict) -> list[
         DatasetCatalogService,
     )
 
-    user = getattr(g, "user", None)
+    if user is None:
+        user = getattr(g, "user", None)
 
     def _param(name: str) -> str | None:
         value = params.get(name)
@@ -1482,22 +1485,19 @@ def _discovery_service():
     """
     from flask import g
 
+    return _discovery_service_as(getattr(g, "user", None))
+
+
+def _discovery_service_as(user, *, store_reads=None):
+    """The discovery service for *user*: the request's account, or the
+    account a job's thread runs for, which no request names there (a Solve's
+    ``acting_user``). Its reads of the account's store are made under
+    *store_reads* when given: the lock a Solve batch's threads take around
+    such reads (``SolveBatch.dataset_lookups``)."""
     from utk_curio.backend.app.discovery.service import DiscoveryService
     from utk_curio.backend.app.projects.services import _user_dir_key
 
-    user = getattr(g, "user", None)
-    return DiscoveryService(
-        _user_dir_key(user) if user is not None else None, user=user
-    )
-
-
-def _discovery_service_as(user):
-    """The discovery service for *user*, the account a job's thread runs for,
-    which no request names there: a Solve's ``acting_user``."""
-    from utk_curio.backend.app.discovery.service import DiscoveryService
-    from utk_curio.backend.app.projects.services import _user_dir_key
-
-    return DiscoveryService(_user_dir_key(user), user=user)
+    return DiscoveryService(_user_dir_key(user) if user is not None else None, user=user, store_reads=store_reads)
 
 
 def _portal_rows(sources) -> list[dict]:
@@ -1530,21 +1530,25 @@ def _discovery_source_rows() -> list[dict]:
     return rows
 
 
-def _discovery_search_rows(params: dict, *, user=None) -> tuple[list[dict], list[dict]]:
+def _discovery_search_rows(params: dict, *, user=None, store_reads=None) -> tuple[list[dict], list[dict]]:
     """The rows a discovery.search with *params* answers, and the portals that
     did not answer, searched as *user* when given (a job's thread), else as
-    the request's account. Each row names its source by the id the roster
-    keys it by (``discovery.sources``' ``sourceId``, its id with its major):
-    the search names it by its manifest's id alone, which no roster lookup,
-    describe or download takes, so a candidates row copied from a search
-    lost its coordinate."""
+    the request's account, its reads of what the account holds made under
+    *store_reads* when given (:func:`_discovery_service_as`). Each row names
+    its source by the id the roster keys it by (``discovery.sources``'
+    ``sourceId``, its id with its major): the search names it by its
+    manifest's id alone, which no roster lookup, describe or download takes,
+    so a candidates row copied from a search lost its coordinate."""
     def _param(name: str) -> str | None:
         value = params.get(name)
         if isinstance(value, str) and value.strip():
             return value.strip()[:_CATALOG_PARAM_MAX_CHARS]
         return None
 
-    service = _discovery_service_as(user) if user is not None else _discovery_service()
+    service = (
+        _discovery_service() if user is None and store_reads is None
+        else _discovery_service_as(user if user is not None else _request_user(), store_reads=store_reads)
+    )
     query = _param("q") or ""
     source_id = _param("sourceId")
     fmt = _param("format")

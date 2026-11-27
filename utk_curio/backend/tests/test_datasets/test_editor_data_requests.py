@@ -399,6 +399,22 @@ def test_a_watcher_cannot_ask_nor_read_the_review(client, flow):
     assert _hers(flow) == before
 
 
+def test_no_ask_by_an_id_names_a_dataset_of_her_own(client, flow):
+    """Only bob's pick on a Dataset Finder's card, of a row a run of alice's
+    offered, asks her for a dataset of her own store (``owners_own``, which no
+    route passes): his Add to project or drop naming her parks by their id
+    asks for nothing, so no request shows him what her store holds."""
+    parks = _import(client, flow.tokens["alice"], "parks.csv", PARKS)
+    before = _hers(flow)
+
+    for body in ({"add": True}, {"nodeId": "parks-loader"}):
+        asked = _ask(client, flow, "bob", parks["id"], **body)
+        assert asked.status_code == 404, f"bob's ask {body} answered {asked.status_code}: {asked.get_data(as_text=True)[:300]}"
+
+    assert _review(client, flow) == []
+    assert _hers(flow) == before
+
+
 # ---------------------------------------------------------------------------
 # bob's Remove from project
 # ---------------------------------------------------------------------------

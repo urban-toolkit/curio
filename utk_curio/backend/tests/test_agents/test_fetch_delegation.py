@@ -379,10 +379,18 @@ class _FakeDiscovery:
         return self.job
 
 
+def _the_discovery_catalog_is(monkeypatch, fake) -> None:
+    """*fake* stands in for the Discovery Catalog of whoever asks: the
+    request's account, and the person a Solve's thread runs for, whom a
+    card's describes are asked as."""
+    monkeypatch.setattr(acquire, "_discovery_service", lambda: fake)
+    monkeypatch.setattr(acquire, "_discovery_service_for", lambda user: fake)
+
+
 def _discovery_harness(client, user, token, monkeypatch, fake):
     roster = packages_roster._LazyRoster
     monkeypatch.setattr(packages_roster, "_LazyRoster", lambda: roster(dict(ROSTER)))
-    monkeypatch.setattr(acquire, "_discovery_service", lambda: fake)
+    _the_discovery_catalog_is(monkeypatch, fake)
     monkeypatch.setattr(acquire, "_DISCOVERY_APPLY_WAIT_S", 0.2)
     return _await_candidates(client, user, token, monkeypatch,
                              discover_replies=[DISCOVERY_CANDIDATES])
@@ -449,7 +457,7 @@ class TestAnAcquirableRowIsDownloaded:
             "dirName": direct, "provider": "direct",
             "capabilities": {"download": True, "formats": ["csv", "geojson"]},
         }}))
-        monkeypatch.setattr(acquire, "_discovery_service", lambda: fake)
+        _the_discovery_catalog_is(monkeypatch, fake)
         # The Finder's row names only a link: no coordinate was ever proposed.
         h, finder_id = _await_candidates(client, user, token, monkeypatch)
         loader = f'import pandas as pd\nreturn pd.read_csv(curio_data_path("{dataset_id}"))'
@@ -610,7 +618,7 @@ class TestAPlanWaitsAsItsSourceDoes:
         fake = _FakeDiscovery(started={"jobId": "job-1", "status": "queued"}, job={"status": "running"})
         roster = packages_roster._LazyRoster
         monkeypatch.setattr(packages_roster, "_LazyRoster", lambda: roster(dict(ROSTER)))
-        monkeypatch.setattr(acquire, "_discovery_service", lambda: fake)
+        _the_discovery_catalog_is(monkeypatch, fake)
         monkeypatch.setattr(acquire, "_DISCOVERY_APPLY_WAIT_S", 0)
         loader = f'import pandas as pd\nreturn pd.read_csv(curio_data_path("{dataset_id}"))'
         h = _Harness(client, user, token, monkeypatch, discover_replies=[DISCOVERY_CANDIDATES],
@@ -656,7 +664,7 @@ class TestAPlanWaitsAsItsSourceDoes:
         fake = _FakeDiscovery(started={"jobId": "job-1", "status": "queued"}, job={"status": "running"})
         roster = packages_roster._LazyRoster
         monkeypatch.setattr(packages_roster, "_LazyRoster", lambda: roster(dict(ROSTER)))
-        monkeypatch.setattr(acquire, "_discovery_service", lambda: fake)
+        _the_discovery_catalog_is(monkeypatch, fake)
         monkeypatch.setattr(acquire, "_DISCOVERY_APPLY_WAIT_S", 0)
         loader = f'import pandas as pd\nreturn pd.read_csv(curio_data_path("{dataset_id}"))'
         h = _Harness(client, user, token, monkeypatch, discover_replies=[DISCOVERY_CANDIDATES],
@@ -1018,7 +1026,7 @@ class TestSolveThisNodeSaysWhatItsSourceWaitsOn:
         fake = _FakeDiscovery(started={"jobId": "job-1", "status": "queued"}, job={"status": "running"})
         roster = packages_roster._LazyRoster
         monkeypatch.setattr(packages_roster, "_LazyRoster", lambda: roster(dict(ROSTER)))
-        monkeypatch.setattr(acquire, "_discovery_service", lambda: fake)
+        _the_discovery_catalog_is(monkeypatch, fake)
         monkeypatch.setattr(acquire, "_DISCOVERY_APPLY_WAIT_S", 0)
         h = _Harness(client, user, token, monkeypatch, discover_replies=[DISCOVERY_CANDIDATES])
         node_builder = h.node_builder_attachment_id()
@@ -1046,7 +1054,7 @@ class TestSolveThisNodeSaysWhatItsSourceWaitsOn:
         fake = _FakeDiscovery(started={"jobId": "job-1", "status": "queued"}, job={"status": "running"})
         roster = packages_roster._LazyRoster
         monkeypatch.setattr(packages_roster, "_LazyRoster", lambda: roster(dict(ROSTER)))
-        monkeypatch.setattr(acquire, "_discovery_service", lambda: fake)
+        _the_discovery_catalog_is(monkeypatch, fake)
         monkeypatch.setattr(acquire, "_DISCOVERY_APPLY_WAIT_S", 0)
         h = _Harness(client, user, token, monkeypatch, discover_replies=[DISCOVERY_CANDIDATES])
         first = h.solve()["results"][h.load]

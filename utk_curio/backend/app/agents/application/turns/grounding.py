@@ -322,8 +322,10 @@ def _then_sentence(text: str, sentence: str) -> str:
     return f"{text}{'' if text.endswith(('.', '!', '?', '…')) else '.'} {sentence}"
 
 
-def _catalog_rows_for_discovery(user_key: str, project_id: str) -> list[dict]:
-    """The project's Data Catalog rows, resolved WHILE A REQUEST CONTEXT EXISTS.
+def _catalog_rows_for_discovery(user_key: str, project_id: str, *, user=None) -> list[dict]:
+    """The project's Data Catalog rows, resolved WHILE A REQUEST CONTEXT EXISTS,
+    as the request's account lists them, or as *user* when given: the
+    dataflow's owner, whose datasets an editor's pick asks her to add.
 
     dev/126, learned from dev/123's field finding: ``catalog.search`` rides the
     request context (the datasets domain is user-object keyed), and a detached
@@ -336,7 +338,7 @@ def _catalog_rows_for_discovery(user_key: str, project_id: str) -> list[dict]:
     selection, are checked against all of them (:func:`_grounded_catalog_rows`).
     """
     try:
-        return tools._catalog_listing_rows(user_key, project_id, {})
+        return tools._catalog_listing_rows(user_key, project_id, {}, user=user)
     except Exception:  # noqa: BLE001
         log.warning("Data Catalog listing unavailable for project %s", project_id,
                     exc_info=True)
@@ -788,8 +790,10 @@ def _verify_candidate_parts(parts: list, loop_ctx: dict | None = None) -> None:
     run-budget shape; provider refinements like Socrata add dataset
     name/columns on top of the generic gate, which covers ANY dataset API);
     URL-less rows are loudly UNVERIFIED. The evidence rides the row into the
-    card and the Node Builder handoff. Then each card's rows are ranked by
-    what can be done with them, and its lanes best first
+    card and the Node Builder handoff. A source's describe of a row's
+    resource is asked as the loop's asker, the person a Solve's thread runs
+    for, which holds no request (``_LazyRoster.asked_by``). Then each card's
+    rows are ranked by what can be done with them, and its lanes best first
     (``agents_content.rank_candidates``)."""
     # One budget for the whole pass, spent per real HTTP request rather than
     # per row. The old counter ticked once per candidate while a single row
@@ -805,7 +809,7 @@ def _verify_candidate_parts(parts: list, loop_ctx: dict | None = None) -> None:
         if loop_ctx is not None
         else egress.CallBudget(agents_budgets.RUN_EGRESS_CALLS)
     )
-    roster = agents_roster._LazyRoster()
+    roster = agents_roster._LazyRoster().asked_by((loop_ctx or {}).get("asker"))
     for part in parts:
         if not isinstance(part, dict) or part.get("type") != "datasetCandidates":
             continue
@@ -858,14 +862,25 @@ _NO_CANDIDATES_CARD = {
 }
 
 
-def _no_candidates_card(*, under_the_floor: bool) -> dict:
-    """The card a candidates card becomes when none of its rows is left: the
-    rows were rated under the fit a source needs, or the Data Catalog does
-    not hold the datasets they named."""
+def _no_candidates_card(*, under_the_floor: int = 0, not_in_the_catalog: int = 0) -> dict:
+    """The card a candidates card becomes when none of its rows is left,
+    saying why each went: *under_the_floor* rows were rated under the fit a
+    source needs, and the Data Catalog does not hold the datasets
+    *not_in_the_catalog* rows named. With neither counted, the Data Catalog
+    holds none of them."""
+    floor = agents_content.CANDIDATE_MIN_FIT
+    if under_the_floor and not not_in_the_catalog:
+        return {**_NO_CANDIDATES_CARD, "lines": [
+            f"Every dataset this reply proposed was rated under a fit of {floor}: "
+            "none of them holds the data asked for.",
+        ]}
     if under_the_floor:
         return {**_NO_CANDIDATES_CARD, "lines": [
-            f"Every dataset this reply proposed was rated under a fit of {agents_content.CANDIDATE_MIN_FIT}: "
-            "none of them holds the data asked for.",
+            f"{count_label(under_the_floor, 'dataset')} this reply proposed "
+            f"{'was' if under_the_floor == 1 else 'were'} rated under a fit of {floor}: "
+            "not the data asked for.",
+            f"{count_label(not_in_the_catalog, 'other dataset')} it proposed "
+            f"{'is' if not_in_the_catalog == 1 else 'are'} not in your Data Catalog.",
         ]}
     return {**_NO_CANDIDATES_CARD, "lines": list(_NO_CANDIDATES_CARD["lines"])}
 
@@ -885,12 +900,13 @@ def _ground_catalog_lanes(parts: list, listing) -> None:
             continue
         lanes = part.get("lanes") or {}
         under = agents_content.drop_under_the_fit_floor(part)
+        dropped = 0
         if lanes.get("catalog"):
             if rows is None:
                 rows = listing()
-            lanes["catalog"], _ = _grounded_catalog_rows(lanes["catalog"], rows)
+            lanes["catalog"], dropped = _grounded_catalog_rows(lanes["catalog"], rows)
         if not any(lanes.get(lane) for lane in ("catalog", "external")):
-            parts[index] = _no_candidates_card(under_the_floor=bool(under))
+            parts[index] = _no_candidates_card(under_the_floor=under, not_in_the_catalog=dropped)
 
 
 def _run_egress_budget(loop_ctx: dict) -> "egress.CallBudget":

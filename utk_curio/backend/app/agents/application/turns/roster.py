@@ -188,6 +188,19 @@ class _LazyRoster:
     def __init__(self, sources: dict | None = None) -> None:
         self._sources = sources
         self._described: dict[tuple[str, str], bool] = {}
+        #: Whom its describes are asked as (:meth:`asked_by`); None for the
+        #: request's account.
+        self.asker = None
+
+    def asked_by(self, user) -> "_LazyRoster":
+        """This roster, its describes asked as *user*: the person a job's
+        thread runs for, which holds no request, as a Solve's threads run for
+        its ``acting_user``. A portal limits and keys its requests by the
+        account that makes them, so a describe asked as no one shares one
+        bucket with every other and never sends a token. None leaves them the
+        request's account's."""
+        self.asker = user
+        return self
 
     def get(self, dir_name: object) -> dict | None:
         if self._sources is None:
@@ -214,16 +227,23 @@ class _LazyRoster:
 
     def portal_coordinate(self, url: str) -> tuple[str, str] | None:
         """The coordinate of the dataset the link *url* names on a portal of
-        the roster: a source whose provider's base URL is on the link's host,
-        and whose provider recognizes a dataset id in the link (the provider
-        modules' ``recognize``, as ``verify.py``'s refinements use it). None
-        for a link on no such portal, or one that names no dataset there."""
+        the roster, which the portal's own export downloads whole: a source
+        whose provider's base URL is on the link's host, and whose provider
+        recognizes in the link a dataset id it takes (the provider modules'
+        ``recognize``, as ``verify.py``'s refinements use it, and their
+        ``RESOURCE_ID_RE``, which a describe and a download validate the id
+        with). None for a link on no such portal, one that names no dataset
+        id its provider takes (a CKAN or WFS recogniser answers with the
+        whole link), and one that asks for more than the dataset: a link with
+        a query, such as a Socrata ``$where`` or ``$limit``, which an export
+        built from the id would drop, so such a link is downloaded as it is."""
         from urllib.parse import urlparse
 
         from utk_curio.backend.app.discovery.providers import RECOGNISERS
 
-        host = (urlparse(str(url or "")).hostname or "").lower()
-        if not host:
+        parsed = urlparse(str(url or ""))
+        host = (parsed.hostname or "").lower()
+        if not host or parsed.query:
             return None
         self.get(None)
         for dir_name, source in (self._sources or {}).items():
@@ -233,14 +253,16 @@ class _LazyRoster:
             provider = next(
                 (m for m in RECOGNISERS if getattr(m, "PROVIDER_TYPE", None) == source.get("provider")), None,
             )
-            resource_id = provider.recognize(url) if provider is not None else None
-            if resource_id:
-                return dir_name, str(resource_id)
+            resource_id = str(provider.recognize(url) or "") if provider is not None else ""
+            takes = getattr(provider, "RESOURCE_ID_RE", None)
+            if resource_id and takes is not None and takes.match(resource_id):
+                return dir_name, resource_id
         return None
 
     def describes(self, dir_name: str, resource_id: str, ask, *, budget=None) -> bool | None:
         """Whether the source *dir_name* describes *resource_id*, as *ask*
-        answers it: the caller's describe through the Discovery Catalog
+        answers it, called with the source, the resource and :attr:`asker`:
+        the caller's describe through the Discovery Catalog
         (``proposals.acquire._source_describes``), asked once per resource in
         a pass. With *budget*, the run's web budget, each ask spends one call,
         and once it is spent the source is not asked: None, unconfirmed."""
@@ -250,5 +272,5 @@ class _LazyRoster:
                 if budget.exhausted:
                     return None
                 budget.spend()
-            self._described[key] = bool(ask(dir_name, resource_id))
+            self._described[key] = bool(ask(dir_name, resource_id, self.asker))
         return self._described[key]

@@ -227,6 +227,13 @@ def test_a_delegated_run_s_contracts_the_title_prompt_and_the_keyword_types_are_
     assert delegates._discovery_reply_contract() == (
         f"{_section(page, 'dataset-candidates')}\n\n{_section(builtin.PROTOCOL_FILE, 'dataset-candidates')}"
     )
+    # A Finder granted discovery.search is handed the portals' rows: its rule
+    # and its block each go on with their page's own section on them.
+    assert delegates._discovery_reply_contract(portals=True) == (
+        f"{_section(page, 'dataset-candidates')}\n{_section(page, 'dataset-candidates-from-portals')}"
+        f"\n\n{_section(builtin.PROTOCOL_FILE, 'dataset-candidates')}"
+        f"\n{_section(builtin.PROTOCOL_FILE, 'dataset-candidates-from-portals')}"
+    )
     title = agent_text.page_text(builtin.TITLE_FILE)
     assert titles.title_prompt() == title.rstrip("\n")
     keyword_types = agent_text.page_text(contracts.KEYWORD_TYPES_PAGE)

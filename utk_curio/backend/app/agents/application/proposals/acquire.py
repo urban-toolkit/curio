@@ -176,12 +176,19 @@ def _held_discovery_resources(project_id: str) -> dict:
 
 
 def _discovery_service():
+    """The Discovery Catalog of the request's account."""
     from flask import g
 
+    return _discovery_service_for(getattr(g, "user", None))
+
+
+def _discovery_service_for(user):
+    """The Discovery Catalog of *user*: the request's account, or the person
+    a job's thread runs for, which holds no request (a Solve's
+    ``acting_user``). A portal's rate limit and token are that account's."""
     from utk_curio.backend.app.discovery.service import DiscoveryService
     from utk_curio.backend.app.projects.services import _user_dir_key
 
-    user = getattr(g, "user", None)
     return DiscoveryService(
         _user_dir_key(user) if user is not None else None, user=user
     )
@@ -435,12 +442,18 @@ def _mint_row_acquirable(row: dict, roster: "_LazyRoster", budget=None) -> None:
 
     A row with a plain link and no coordinate gets one minted here, after
     parsing, so it is never model-supplied and never meets the parser's length
-    cap: first its portal's, when the link is on a portal of the roster and
-    names a dataset of it (``_LazyRoster.portal_coordinate``), which Curio
-    downloads through the portal with its own export, then a ``direct`` one.
-    A coordinate, minted or the model's, stays only when the row qualifies or
+    cap: first its portal's, when the link is on a portal of the roster,
+    names a dataset id its provider takes and asks for nothing more of it (no
+    query; ``_LazyRoster.portal_coordinate``), which Curio downloads whole
+    through the portal's own export; then a ``direct`` one, which downloads
+    the link as it is, tried when the portal refused its coordinate. A
+    coordinate, minted or the model's, stays only when the row qualifies or
     the source was not asked, so one the source refused never reaches a
-    download, a builder or a file's provenance. A downloadable row offers that
+    download, a builder or a file's provenance. A portal's coordinate the
+    spent web budget left unconfirmed stays, as a copied one does, and the
+    pick asks the portal with a budget of its own, rather than the link
+    alone, which can answer less than the export (a Socrata link with no
+    ``$limit`` answers its first 1,000 rows). A downloadable row offers that
     and nothing else, so it carries no portal steps.
     """
     row.pop("acquirable", None)
@@ -483,13 +496,17 @@ def _unconfirmed(rows: list) -> int:
     )
 
 
-def _source_describes(dir_name: str, resource_id: str) -> bool:
+def _source_describes(dir_name: str, resource_id: str, asker=None) -> bool:
     """Whether the Discovery Catalog describes *resource_id* of the source
-    *dir_name*, through the acting user's service: the call a
-    ``discovery.acquire`` proposal is grounded in. A describe that fails, for
-    a resource the source does not have or for any other reason, is a no."""
+    *dir_name*: the call a ``discovery.acquire`` proposal is grounded in,
+    asked as *asker* when given, the person a Solve's thread runs for, else
+    as the request's account. A describe asked as no one would share one rate
+    limit per portal with every other and send no token. A describe that
+    fails, for a resource the source does not have or for any other reason,
+    is a no."""
     try:
-        _discovery_service().describe_resource(dir_name, resource_id)
+        service = _discovery_service_for(asker) if asker is not None else _discovery_service()
+        service.describe_resource(dir_name, resource_id)
     except Exception as exc:  # noqa: BLE001 - an unconfirmed resource is not offered, never a run error
         log.info("%s did not describe %s (%s): the row is not offered for download",
                  dir_name, resource_id, exc)

@@ -29,6 +29,7 @@ from utk_curio.backend.app.agents.application.turns import grounding as agents_g
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 from utk_curio.backend.app.agents.infrastructure import agent_jobs as agents_agent_jobs
 from utk_curio.backend.app.collaboration import dataflow_docs
+from utk_curio.backend.app.projects import editor_requests as projects_editor_requests
 from utk_curio.backend.app.projects import storage as projects_storage
 
 log = logging.getLogger(__name__)
@@ -112,30 +113,8 @@ def record_dataset_selection(
         part = next((p for p in reversed(cards) if p.get("discoveryId") == discovery_id), None)
         if part is None:
             raise AgentServiceError(f"these candidates are no longer in the {name}'s chat", 409)
-    try:
-        rows = agents_dataset_resolution.resolve_picks(
-            part, picks,
-            # dev/132: the Data Catalog listing, so a dataset the user just
-            # imported from the card's download steps can be confirmed — the
-            # card predates the file.
-            catalog_rows=agents_grounding._catalog_rows_for_discovery(user_key, project_id),
-        )
-    except agents_dataset_resolution.DatasetResolutionError as exc:
-        raise AgentServiceError(str(exc), 422) from exc
-    # Re-probe the external picks: the card may be minutes or days old, and the
-    # record must carry what is true NOW (the row keeps its own mint-time
-    # verdict in the transcript either way).
-    budget = egress.CallBudget(agents_budgets.RUN_EGRESS_CALLS)
-    roster = agents_roster._LazyRoster()
-    for row in rows:
-        if row["lane"] != "external":
-            continue
-        if row.get("url"):
-            row["verification"] = verify.verify_external_source(row["url"], budget=budget)
-            # dev/132: and what can be DONE with it now — the card's verdict
-            # may be days old, and the delegation below depends on this one.
-            agents_mint._mint_row_access(row)
-        agents_acquire._mint_row_acquirable(row, roster, budget)
+    rows = _resolved_picks(user_key, project_id, part, picks, editor=owner_reviews is not None)
+    _probe_the_external_picks_again(rows)
     if owner_reviews is not None and any(r["lane"] == "external" and r.get("acquirable") for r in rows):
         raise AgentServiceError(agents_editors.download_refusal(owner_reviews), 403)
     # A row Curio can download is downloaded now, by the Discovery Catalog, and
@@ -192,12 +171,62 @@ def record_dataset_selection(
     return payload
 
 
+def _resolved_picks(user_key: str, project_id: str, part: dict | None, picks: object, *, editor: bool) -> list[dict]:
+    """The rows *picks* name on the card *part*, read again from the Data
+    Catalog listing (``dataset_resolution.resolve_picks``); a pick that names
+    no such row is refused (422).
+
+    dev/132: the listing, so a dataset the user just imported from the
+    card's download steps can be confirmed, though the card predates the
+    file. For an *editor* the owner invited, a row of the card his listing
+    does not hold is read from the owner's (her own datasets, which a card a
+    run of hers made offers), so his pick asks her to add it
+    (:func:`_add_catalog_picks`); a dataset of hers no card offered is never
+    read for him."""
+    try:
+        return agents_dataset_resolution.resolve_picks(
+            part, picks,
+            catalog_rows=agents_grounding._catalog_rows_for_discovery(user_key, project_id),
+            owners_listing=(
+                (lambda: agents_grounding._catalog_rows_for_discovery(
+                    user_key, project_id, user=agents_spec_reads._dataflow_owner(project_id)))
+                if editor else None
+            ),
+        )
+    except agents_dataset_resolution.DatasetResolutionError as exc:
+        raise AgentServiceError(str(exc), 422) from exc
+
+
+def _probe_the_external_picks_again(rows: list[dict]) -> None:
+    """Probe each external pick again, and say again what can be done with
+    it: the card may be minutes or days old, and the record must carry what
+    is true now (the row keeps its own mint-time verdict in the transcript
+    either way), as the delegation that follows depends on it (dev/132)."""
+    budget = egress.CallBudget(agents_budgets.RUN_EGRESS_CALLS)
+    roster = agents_roster._LazyRoster()
+    for row in rows:
+        if row["lane"] != "external":
+            continue
+        if row.get("url"):
+            row["verification"] = verify.verify_external_source(row["url"], budget=budget)
+            agents_mint._mint_row_access(row)
+        agents_acquire._mint_row_acquirable(row, roster, budget)
+
+
 def settle_source_waits(user_key: str, project_id: str) -> None:
     """End each wait of a node's source that came to an end outside a Solve:
     a pick whose dataset the dataflow holds now, as the owner's Apply of an
     editor's request adds it, or whose download landed; a plan that waited
-    for such a node goes on (``acquire._settle_discovery_acquisitions``)."""
+    for such a node goes on (``acquire._settle_discovery_acquisitions``).
+    Registered with the editor requests (``projects/editor_requests.py``,
+    ``when_applied``), whose Apply calls it with the dataflow's owner key."""
     agents_acquire._settle_discovery_acquisitions(user_key, project_id)
+
+
+# The owner's Apply of an editor's request ends the wait of a pick for what it
+# added, at once: the projects package tells what it applied, and imports
+# nothing of the agents.
+projects_editor_requests.when_applied(settle_source_waits)
 
 
 #: What a pick's answer says when its Data Catalog dataset waits for the
@@ -215,13 +244,20 @@ def _add_catalog_picks(project_id: str, rows: list[dict], *, node_id: str, owner
     An editor the owner invited (*owner_reviews*, her name) changes no
     account but his own: his pick asks her to add the dataset, as his Add to
     project does (``projects/editor_requests.py``, the request naming the
-    node), and waits for her review. Her Apply adds it, and the next Solve or
-    Resume finds the dataflow holding it (``acquire._settle_discovery_acquisitions``).
+    node), whether it is his, the shared catalog's or one of her own a card
+    offered (:func:`_ask_the_owner`), and waits for her review. Her Apply adds
+    it and ends the wait (:func:`settle_source_waits`).
+
+    A pick whose download outlasted the confirmation's wait (``acquiring``)
+    names no dataset yet: its landing, not an add, ends its wait.
 
     Returns a summary while a pick still waits: ``owner-review`` with the
     names and the owner, or ``add-failed`` with why the Data Catalog refused
     the add. None when the dataflow holds every pick."""
-    needed = [row for row in rows if agents_dataset_resolution._needs_install(row)]
+    needed = [
+        row for row in rows
+        if row.get("datasetId") and not row.get("acquiring") and agents_dataset_resolution._needs_install(row)
+    ]
     if not needed:
         return None
     user = agents_spec_reads._acting_user()
@@ -243,24 +279,46 @@ def _add_catalog_picks(project_id: str, rows: list[dict], *, node_id: str, owner
 
 def _ask_the_owner(user, project_id: str, rows: list[dict], *, node_id: str, owner: str) -> dict | None:
     """An editor's request that the dataflow's *owner* add each of *rows*,
-    naming the node *node_id*; a dataset the dataflow holds already needs no
-    request. A dataset he cannot ask for (one of her own the dataflow does not
-    list) refuses the pick (403): only she can add it."""
-    from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
-    from utk_curio.backend.app.projects import editor_requests
+    naming the node *node_id*: a dataset of his, which her Apply copies into
+    her store, one of the shared catalog, or one of her own, which a card of
+    a run of hers offered (``owners_own``: the listing he picked from vouched
+    for each row, :func:`_resolved_picks`). A dataset the dataflow holds
+    already needs no request.
 
+    Every row is checked before any is asked for, so a row the requests
+    refuse, one no Data Catalog holds any more, refuses the pick (422) and
+    leaves no request of its other rows in her review."""
+    for row in rows:
+        _asked_of_the_owner(user, project_id, row, node_id=node_id, check=True)
     waiting = []
     for row in rows:
-        try:
-            asked = editor_requests.ask(user, project_id, "datasets", row["datasetId"], node_id=node_id, add=True)
-        except (editor_requests.RequestError, DatasetCatalogError) as exc:
-            raise AgentServiceError(agents_editors.add_refusal(owner, row.get("name") or row["datasetId"]),
-                                    403) from exc
-        if asked.get("requested"):
+        if _asked_of_the_owner(user, project_id, row, node_id=node_id).get("requested"):
             waiting.append(str(row.get("name") or row["datasetId"]))
         else:
             row["installed"] = True
     return {"status": OWNER_REVIEW, "names": waiting, "owner": owner} if waiting else None
+
+
+def _asked_of_the_owner(user, project_id: str, row: dict, *, node_id: str, check: bool = False) -> dict:
+    """The editor's request for the dataset of *row* (:func:`_ask_the_owner`),
+    or with *check* the request's checks alone, which ask for nothing. A
+    refusal is the pick's: the request's own status, or a 422 for a dataset
+    no Data Catalog holds."""
+    from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
+
+    dataset_id = str(row["datasetId"])
+    try:
+        if check:
+            projects_editor_requests.check(user, project_id, "datasets", dataset_id, add=True, owners_own=True)
+            return {}
+        return projects_editor_requests.ask(user, project_id, "datasets", dataset_id, node_id=node_id, add=True,
+                                            owners_own=True)
+    except projects_editor_requests.RequestError as exc:
+        raise AgentServiceError(str(exc), exc.status) from exc
+    except DatasetCatalogError as exc:
+        raise AgentServiceError(
+            f"{row.get('name') or dataset_id!r} is not in the Data Catalog: select a dataset it holds", 422,
+        ) from exc
 
 
 def _add_outcome(user_key: str, added: dict | None, waiting_plan: dict | None) -> dict | None:

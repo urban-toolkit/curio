@@ -29,7 +29,6 @@ from utk_curio.backend.app.agents.application.catalog import (
 )
 from utk_curio.backend.app.agents.application.dataset_selection import (
     record_dataset_selection,
-    settle_source_waits,
 )
 from utk_curio.backend.app.agents.application.editors import (
     ACCOUNT_INSTALL_TOOLS,
@@ -170,7 +169,6 @@ __all__ = [
     "list_my_imports",
     "read_definition_bundle_anywhere",
     "record_dataset_selection",
-    "settle_source_waits",
     "ACCOUNT_INSTALL_TOOLS",
     "download_refusal",
     "install_refusal",

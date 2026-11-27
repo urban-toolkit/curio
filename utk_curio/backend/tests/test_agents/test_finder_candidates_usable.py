@@ -24,6 +24,14 @@ and built from without a manual step (ci-reports/finder-candidates-1126/REPORT.m
   probe says it is Curio and what it accepts.
 - F5: rows the Finder itself rates as not the data are not offered.
 
+The review of #1652 and the owner's call on F2b (11-26) added: an invited
+editor's pick of a dataset of the owner's own waits for her, through the
+editor requests; the portals and their contract go only to a Finder granted
+discovery.search; a card's describes are asked as the person who asked, on a
+Solve's threads too (on main as well); a link with a query, or an id its
+portal does not take, is no portal coordinate; and what the review found of
+the picks' adds, the lookup lock and the error card.
+
 Names main lacks are read inside each test, so the module imports on main and
 each test fails at its own check.
 """
@@ -31,6 +39,8 @@ each test fails at its own check.
 from __future__ import annotations
 
 import json
+import logging
+import threading
 
 import pytest
 
@@ -43,6 +53,7 @@ from utk_curio.backend.app.agents.application.turns import grounding
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.domain import builtin
+from utk_curio.backend.app.agents.infrastructure import egress
 from utk_curio.backend.app.discovery.service import DiscoveryService
 from utk_curio.backend.tests._support.agent_routes import _auth
 from utk_curio.backend.tests.test_agents.test_dataset_discovery_routes import (
@@ -53,7 +64,7 @@ from utk_curio.backend.tests.test_agents.test_dataset_discovery_routes import (
     _reads,
     _solve_this_node,
 )
-from utk_curio.backend.tests.test_agents.test_editors_drive_agents import BOB_TOKEN, _account
+from utk_curio.backend.tests.test_agents.test_editors_drive_agents import BOB_TOKEN, CAROL_TOKEN, _account
 from utk_curio.backend.tests.test_agents.test_fetch_delegation import _plan_session, _select
 
 #: The City of Chicago Data Portal, by the id the roster keys it by, and by its manifest's own id.
@@ -85,11 +96,13 @@ LIBRARIES_CANDIDATES = json.dumps({"datasetCandidates": {"lanes": {"external": [
 }], "catalog": []}}})
 
 
-def _the_portals(monkeypatch, *, fails: bool = False) -> list[dict]:
+def _the_portals(monkeypatch, *, fails: bool = False, described: list | None = None) -> list[dict]:
     """The Discovery Catalog with one portal, Chicago's, whose search answers
     the library branches and which describes that dataset alone; its downloads
     start and keep running. Returns each search asked of it: its text and the
-    account it was asked as. With *fails*, a search raises."""
+    account it was asked as. With *fails*, a search raises. Each describe
+    asked of it goes into *described*, when given: the source, the resource
+    and the account it was asked as."""
     from utk_curio.backend.app.discovery.domain.errors import DiscoveryError
 
     searched: list[dict] = []
@@ -105,6 +118,8 @@ def _the_portals(monkeypatch, *, fails: bool = False) -> list[dict]:
         return {"sources": [dict(CHICAGO_SOURCE)], "facets": {}}
 
     def _describe(self, dir_name, resource_id):
+        if described is not None:
+            described.append((dir_name, resource_id, getattr(self.user, "id", None)))
         if (dir_name, resource_id) != (CHICAGO, LIBRARIES):
             raise DiscoveryError(f"{resource_id} is not on {dir_name}")
         return {"resourceId": resource_id, "name": LIBRARIES_NAME, "formats": ["csv", "geojson", "json"]}
@@ -147,6 +162,22 @@ def _held_by_the_dataflow(h) -> list[str]:
     """The ids of the datasets the dataflow holds (Add to project's refs)."""
     return [str(ref.get("datasetId") or ref.get("id")) for ref in (h.spec()["dataflow"].get("datasets") or [])
             if isinstance(ref, dict)]
+
+
+def _store_of(user) -> set[str]:
+    """The folders of *user*'s dataset store, by name."""
+    from utk_curio.backend.app.datasets.infrastructure.storage import list_user_datasets
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    return {folder.name for folder in list_user_datasets(_user_dir_key(user))}
+
+
+def _requests_of(client, h, token: str) -> list[dict]:
+    """The requests for datasets the owner's review holds for the dataflow,
+    as the account of *token* reads them."""
+    listed = client.get(f"/api/dataflows/{h.pid}/datasets/requests", headers=_auth(token))
+    assert listed.status_code == 200, listed.get_data(as_text=True)
+    return listed.get_json()["requests"]
 
 
 def _catalog_candidates(*rows) -> str:
@@ -209,14 +240,109 @@ class TestTheFinderSearchesTheDiscoveryCatalog:
         assert len(h.discover_calls) == 1, len(h.discover_calls)
         frame = h.discover_calls[0]
         assert '"discovery": {' in frame, frame
+        # The note it is told to report (the review of #1652: this was not checked).
+        assert json.dumps(agent_text.message("dataset.discovery-unavailable")) in frame, frame
         assert LIBRARIES not in frame, frame
         assert len(_cards(h, h.finder_attachment_id())) == 1
 
-    def test_the_finders_reply_contract_teaches_the_portal_coordinate(self):
-        """The delegate answers to a contract it can see: it now holds the
-        portals' rows, so it is told how a row carries their coordinate."""
-        contract = delegates._discovery_reply_contract()
-        assert agent_text.section(builtin.PROTOCOL_FILE, "dataset-candidates-from-portals") in contract, contract
+    def test_the_finders_reply_contract_teaches_the_portal_coordinate(self, app, monkeypatch):
+        """The delegate answers to a contract it can see: the shipped Finder,
+        granted discovery.search, holds the portals' rows, so it is told what
+        they are and how a row carries their coordinate, each in its page's
+        own words."""
+        _the_portals(monkeypatch)
+        contracts_page = builtin.DELEGATE_CONTRACTS_FILE
+        with app.app_context():
+            enriched = delegates._enriched_delegate_inputs(
+                "1", "p", {}, "dataset.discover", {"mission": "library branches"}, catalog_rows=[],
+                delegate=builtin.get_builtin_manifest("agent.curio.dataset-finder@1"),
+            )
+        assert enriched["discovery"]["resources"][0]["resourceId"] == LIBRARIES, enriched["discovery"]
+        contract = enriched["discoveryReplyContract"]
+        for page, section in ((contracts_page, "dataset-candidates-from-portals"),
+                              (builtin.PROTOCOL_FILE, "dataset-candidates-from-portals")):
+            assert agent_text.section(page, section) in contract, (page, section, contract)
+
+    def test_a_delegate_not_granted_discovery_search_is_handed_no_portals(self, app, monkeypatch):
+        """Found by the review of #1652: the delegated path searched the
+        portals and taught their coordinate whatever the delegate's agent was
+        granted. A chat run of an agent without discovery.search is told
+        nothing of the portals (``content.tail_instruction``), and neither is
+        its delegated run now: no search is asked, a ``discovery`` its parent
+        wrote goes, and its contract is the one a run without the portals
+        always had."""
+        from types import SimpleNamespace
+
+        from utk_curio.backend.app.agents.domain.manifest import ToolRequirement
+
+        searched = _the_portals(monkeypatch)
+        catalog_only = SimpleNamespace(tools=[ToolRequirement(id="catalog.search", required=False)])
+        with app.app_context():
+            enriched = delegates._enriched_delegate_inputs(
+                "1", "p", {}, "dataset.discover",
+                {"mission": "library branches", "discovery": {"resources": [dict(LIBRARIES_ROW)]}},
+                catalog_rows=[], delegate=catalog_only,
+            )
+        assert searched == [], searched
+        assert "discovery" not in enriched, enriched
+        contract = enriched["discoveryReplyContract"]
+        assert contract == delegates._discovery_reply_contract(), contract
+        for page in (builtin.DELEGATE_CONTRACTS_FILE, builtin.PROTOCOL_FILE):
+            assert agent_text.section(page, "dataset-candidates-from-portals") not in contract, (page, contract)
+
+    @pytest.mark.parametrize("entry", ["solve", "row-solve", "solve-this-node"])
+    def test_a_cards_describes_are_asked_as_the_person_who_asked(
+        self, client, user_and_token, tmp_curio, monkeypatch, entry
+    ):
+        """Found by the review of #1652, on main too: a Solve's threads hold
+        no request, so the describe that confirms a portal row's id was asked
+        as no account. Every Solve then shared one rate limit per portal
+        (Chicago's allows 30 a minute), a describe it refused read as "does
+        not describe it" and took the row's coordinate off, and a portal that
+        needs a token never described anything. Solve, a row's Solve and
+        Solve this node each ask it as the person who asked."""
+        user, token = user_and_token
+        described: list = []
+        _the_portals(monkeypatch, described=described)
+        h = _Harness(client, user, token, monkeypatch, discover_replies=[LIBRARIES_CANDIDATES])
+        if entry == "solve":
+            h.solve()
+        elif entry == "row-solve":
+            h.validate("load")
+        else:
+            _solve_this_node(h, h.node_builder_attachment_id())
+        assert described, "no describe was asked"
+        assert {(source, resource) for source, resource, _who in described} == {(CHICAGO, LIBRARIES)}, described
+        assert {who for _source, _resource, who in described} == {user.id}, described
+
+    def test_a_solves_lookup_lock_is_held_only_while_the_search_reads_what_the_account_holds(
+        self, app, user_and_token, monkeypatch
+    ):
+        """Found by the review of #1652: a Solve's lookup lock was held over
+        the portals' whole fan-out (up to four portals at once, 15 s a
+        request), though what it guards is the read of what the account holds
+        at the search's end, so the other loaders of a wave waited for it."""
+        from utk_curio.backend.app.datasets.repositories.user_store import UserDatasetRepository
+        from utk_curio.backend.app.discovery.application.browse import DiscoveryBrowse
+
+        user, _token = user_and_token
+        lock = threading.Lock()
+        held: dict = {}
+
+        def _fan_out(self, portals, query, extra_pages=()):
+            held["searching"] = lock.locked()
+            return [], []
+
+        def _formats(self):
+            held["reading"] = lock.locked()
+            return {}
+
+        monkeypatch.setattr(DiscoveryBrowse, "search_all", _fan_out)
+        monkeypatch.setattr(UserDatasetRepository, "discovery_resource_formats", _formats)
+        with app.app_context():
+            found = delegates._delegated_discovery_rows({"mission": "library branches"}, asker=user, lookups=lock)
+        assert found.get("note") == agent_text.message("dataset.discovery-searched"), found
+        assert held == {"searching": False, "reading": True}, held
 
     def test_a_discovery_search_names_each_source_as_the_roster_does(self, app, monkeypatch):
         """Found on the way, on main: discovery.search answered each row's
@@ -360,28 +486,149 @@ class TestAPickAddsACatalogDataset:
         assert dr.source_record(h.spec(), h.load)["status"] == dr.STATE_RESOLVED
         assert f'curio_load_data("{dataset_id}")' in h.node_content(h.load)
 
-    def test_an_editors_pick_of_the_owners_own_dataset_is_refused_with_why(
+    def test_an_editors_pick_of_the_owners_own_dataset_asks_her_and_her_apply_ends_the_wait(
         self, client, db, user_and_token, tmp_curio, monkeypatch
     ):
-        """A dataset of the owner's own store the dataflow does not hold is
-        hers to add: an editor cannot ask for it as for one of his, so his
-        pick of it is refused with whom it waits for, and nothing is recorded
-        or added."""
+        """The owner's call (F2b, 11-26): an invited editor's pick waits for
+        the owner. A card a run of hers made offers a dataset of her own
+        store, which his listing lacks: his pick of it is read from her
+        listing and asks her, through the editor requests, to add her own
+        dataset, naming the loader. Her Apply adds it, copying nothing, and
+        ends the pick's wait at once; the plan then builds the loader from it.
+        On main the pick was refused, the dataset "not in the Data Catalog"
+        (422), and on this PR's first head with a 403."""
         from utk_curio.backend.app.projects import access
 
         alice, alice_token = user_and_token
         _account(db, "bob", "Bob", BOB_TOKEN)
         dataset_id = _a_dataset(alice, "Library branches")
         h = _Harness(client, alice, alice_token, monkeypatch,
-                     discover_replies=[_catalog_candidates((dataset_id, "Library branches", 90))])
+                     discover_replies=[_catalog_candidates((dataset_id, "Library branches", 90))],
+                     dl_replies=[_reads(dataset_id)])
         h.simulate("auto")
         access.add_editor(alice, h.pid, "bob")
         h.token = BOB_TOKEN
+        store = _store_of(alice)
         picked = _select(h, h.finder_attachment_id(), [{"lane": "catalog", "key": dataset_id}])
-        assert picked.status_code == 403, picked.get_data(as_text=True)
-        assert "waits for Alice" in picked.get_json()["error"], picked.get_json()
-        assert dr.source_record(h.spec(), h.load)["status"] == dr.STATE_CANDIDATES_PENDING
+        assert picked.status_code == 200, picked.get_data(as_text=True)
+        body = picked.get_json()
+        assert body["status"] == dr.STATE_AWAITING_INSTALL, body
+        assert "Alice" in ((body.get("delegated") or {}).get("reason") or ""), body
         assert dataset_id not in _held_by_the_dataflow(h)
+        requests = _requests_of(client, h, alice_token)
+        assert [(r["datasetId"], r["nodeIds"], r["by"]["name"], r.get("ownersOwn")) for r in requests] == [
+            (dataset_id, [h.load], "Bob", True)], requests
+        assert "from Alice's Data Catalog" in requests[0]["preview"], requests[0]
+        applied = client.post(f"/api/dataflows/{h.pid}/datasets/requests/{requests[0]['proposalId']}/apply",
+                              headers=_auth(alice_token))
+        assert applied.status_code == 200, applied.get_data(as_text=True)
+        assert dataset_id in _held_by_the_dataflow(h)
+        assert _store_of(alice) == store, "her Apply copied a dataset her store already held"
+        assert dr.source_record(h.spec(), h.load)["status"] == dr.STATE_RESOLVED
+        h.token = alice_token
+        h.simulate("auto")
+        assert f'curio_load_data("{dataset_id}")' in h.node_content(h.load)
+
+    def test_no_one_else_adds_through_a_pick(
+        self, client, db, user_and_token, guest_user_and_token, tmp_curio, monkeypatch
+    ):
+        """What no one may add stays refused, with no request filed and
+        nothing recorded: a pick by a watcher, and by a hosted guest on
+        another account's dataflow (403), and an editor's pick of another
+        account's dataset: Carol's, which a card her run offered while she
+        edited the dataflow, is neither his nor the owner's (422)."""
+        from utk_curio.backend import config
+        from utk_curio.backend.app.projects import access
+
+        alice, alice_token = user_and_token
+        _account(db, "bob", "Bob", BOB_TOKEN)
+        carol = _account(db, "carol", "Carol", CAROL_TOKEN)
+        _account(db, "dave", "Dave", "dave-token-for-tests")
+        hers = _a_dataset(carol, "Library branches")
+        h = _Harness(client, alice, alice_token, monkeypatch,
+                     discover_replies=[_catalog_candidates((hers, "Library branches", 90))])
+        access.add_editor(alice, h.pid, "bob")
+        access.add_editor(alice, h.pid, "carol")
+        h.token = CAROL_TOKEN
+        h.simulate("auto")
+        finder = h.finder_attachment_id()
+        assert [r["datasetId"] for r in _cards(h, finder)[-1]["lanes"]["catalog"]] == [hers]
+        monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
+        _guest, guest_token = guest_user_and_token
+        for token, status in ((BOB_TOKEN, 422), ("dave-token-for-tests", 403), (guest_token, 403)):
+            h.token = token
+            picked = _select(h, finder, [{"lane": "catalog", "key": hers}])
+            assert picked.status_code == status, (token, picked.get_data(as_text=True))
+        assert _requests_of(client, h, alice_token) == []
+        assert dr.source_record(h.spec(), h.load)["status"] == dr.STATE_CANDIDATES_PENDING
+        assert hers not in _held_by_the_dataflow(h)
+
+    def test_an_editors_pick_with_a_row_the_requests_refuse_asks_for_none_of_them(
+        self, client, db, user_and_token, tmp_curio, monkeypatch
+    ):
+        """Found by the review of #1652: an editor's pick asked the owner row
+        by row, so when a later row was refused, the requests for the rows
+        before it stayed in her review though the pick was refused and nothing
+        was recorded. Every row is checked before any is asked for."""
+        from utk_curio.backend.app.datasets.application import editor_requests as dataset_requests
+        from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
+        from utk_curio.backend.app.projects import access
+
+        alice, alice_token = user_and_token
+        bob = _account(db, "bob", "Bob", BOB_TOKEN)
+        branches = _a_dataset(bob, "Library branches")
+        hours = _a_dataset(bob, "Library hours")
+        h = _Harness(client, alice, alice_token, monkeypatch,
+                     discover_replies=[_catalog_candidates((branches, "Library branches", 90),
+                                                           (hours, "Library hours", 80))])
+        access.add_editor(alice, h.pid, "bob")
+        h.token = BOB_TOKEN
+        h.simulate("auto")
+        asked = dataset_requests.asked
+
+        def _hours_gone(flow, dataset_id, **kwargs):
+            if dataset_id == hours:
+                raise DatasetCatalogError(dataset_requests.NOT_FOUND, 404)
+            return asked(flow, dataset_id, **kwargs)
+
+        monkeypatch.setattr(dataset_requests, "asked", _hours_gone)
+        picked = _select(h, h.finder_attachment_id(),
+                         [{"lane": "catalog", "key": branches}, {"lane": "catalog", "key": hours}])
+        assert _requests_of(client, h, alice_token) == [], picked.get_data(as_text=True)
+        assert picked.status_code == 422, picked.get_data(as_text=True)
+        assert dr.source_record(h.spec(), h.load)["status"] == dr.STATE_CANDIDATES_PENDING
+
+    def test_a_pick_whose_download_outlasts_the_wait_still_adds_its_catalog_row(
+        self, client, user_and_token, tmp_curio, monkeypatch, caplog
+    ):
+        """Found by the review of #1652: a pick of a row Curio downloads whose
+        download outlasts the confirmation's wait is a catalog pick with no
+        dataset yet. Its add raised a KeyError, logged as a failed add, and a
+        Data Catalog row picked after it was never added."""
+        user, token = user_and_token
+        _the_portals(monkeypatch)
+        started = _downloads(monkeypatch)
+        dataset_id = _a_dataset(user, "Library branches")
+        reply = json.dumps({"datasetCandidates": {"lanes": {
+            "external": [{"name": LIBRARIES_NAME, "sourceType": "discovery", "sourceId": CHICAGO,
+                          "resourceId": LIBRARIES, "format": "csv",
+                          "fit": {"score": 90, "rationale": "the branch locations"}}],
+            "catalog": [{"name": "Library branches", "sourceType": "catalog", "datasetId": dataset_id,
+                         "fit": {"score": 85, "rationale": "the branches too"}}],
+        }}})
+        h = _Harness(client, user, token, monkeypatch, discover_replies=[reply])
+        h.validate("load")
+        with caplog.at_level(logging.WARNING):
+            picked = _select(h, h.finder_attachment_id(), [
+                {"lane": "external", "key": f"{CHICAGO}/{LIBRARIES}"}, {"lane": "catalog", "key": dataset_id},
+            ])
+        assert picked.status_code == 200, picked.get_data(as_text=True)
+        assert started == [(CHICAGO, LIBRARIES)], started
+        assert dataset_id in _held_by_the_dataflow(h), _held_by_the_dataflow(h)
+        assert "Could not add the picked dataset" not in caplog.text, caplog.text
+        body = picked.get_json()
+        assert (body.get("delegated") or {}).get("status") == "acquiring", body
+        assert [p.get("installed") for p in body["picks"] if p.get("datasetId") == dataset_id] == [True], body
 
 
 # ── F3: a portal link's coordinate, no web page read as data, the card's order ─
@@ -402,6 +649,26 @@ _VERDICTS = {
 
 def _external(name: str, fit: int, **row) -> dict:
     return {"name": name, "sourceType": "portal", "fit": {"score": fit, "rationale": f"rated {fit}"}, **row}
+
+
+#: The source that downloads a link as it is.
+DIRECT_URL = "source.curio.direct-url@1"
+
+#: What the probe and the access check say of a link that answered JSON data.
+_FETCHED_JSON = {
+    "verification": {"status": "verified", "httpStatus": 200, "contentType": "application/json",
+                     "sampleKeys": ["name"]},
+    "access": verify.ACCESS_FETCHABLE,
+}
+
+
+def _with_direct_url(source: dict) -> dict:
+    """A roster of the portal *source* and the Direct URL source, by dirName."""
+    return {
+        source["dirName"]: dict(source),
+        DIRECT_URL: {"dirName": DIRECT_URL, "provider": "direct", "kind": "portal", "baseUrl": "",
+                     "capabilities": {"download": True, "formats": ["csv", "geojson", "json"]}},
+    }
 
 
 def _minted(app, monkeypatch, reply: dict, listing: list) -> dict:
@@ -443,6 +710,39 @@ class TestTheCardOffersWhatCanBeDone:
         with app.app_context():
             acquire._mint_row_acquirable(row, agents_roster._LazyRoster(sources), None)
         assert (row.get("sourceId"), row.get("resourceId"), row.get("acquirable")) == (CHICAGO, LIBRARIES, True), row
+
+    def test_a_portal_link_with_a_query_downloads_as_it_is(self, app, monkeypatch):
+        """Found by the review of #1652: a link that asks the portal for more
+        than its dataset, such as a Socrata filter, got the portal's
+        coordinate, whose export is built from the id alone: the filter was
+        dropped and the whole dataset downloaded, up to the 1 GiB cap. Such a
+        link is downloaded as it is, through Direct URL."""
+        described: list = []
+        _the_portals(monkeypatch, described=described)
+        url = f"https://data.cityofchicago.org/resource/{LIBRARIES}.json?$where=year=2024&$limit=50000"
+        row = {"name": LIBRARIES_NAME, "sourceType": "portal", "url": url, **_FETCHED_JSON}
+        with app.app_context():
+            acquire._mint_row_acquirable(row, agents_roster._LazyRoster(_with_direct_url(CHICAGO_SOURCE)), None)
+        assert (row.get("sourceId"), row.get("resourceId"), row.get("acquirable")) == (DIRECT_URL, url, True), row
+        assert described == [], described
+
+    def test_a_link_whose_id_its_portal_does_not_take_is_left_to_direct_url(self, app, monkeypatch):
+        """Found by the review of #1652: a CKAN recogniser answers with the
+        whole link, which got a portal coordinate no describe takes. Asking
+        spent a call of the run's web budget and a rate token, and once the
+        budget was spent the row kept that coordinate and Direct URL was never
+        tried. A coordinate is minted only of an id its provider takes."""
+        described: list = []
+        _the_portals(monkeypatch, described=described)
+        ckan = "source.example.ckan-portal@1"
+        portal = {"dirName": ckan, "provider": "ckan", "kind": "portal", "baseUrl": "https://data.example.org",
+                  "capabilities": {"describe": True, "download": True, "formats": ["csv", "json"]}}
+        url = "https://data.example.org/api/3/action/package_show"
+        row = {"name": "Library branches", "sourceType": "portal", "url": url, **_FETCHED_JSON}
+        with app.app_context():
+            acquire._mint_row_acquirable(row, agents_roster._LazyRoster(_with_direct_url(portal)), egress.CallBudget(0))
+        assert (row.get("sourceId"), row.get("resourceId"), row.get("acquirable")) == (DIRECT_URL, url, True), row
+        assert described == [], described
 
     def test_a_web_page_answer_is_named_a_web_page(self):
         """A link that answers a web page answered, but it is no data: the
@@ -647,3 +947,22 @@ class TestOnlyTheDataIsOffered:
         assert [row["name"] for row in parts[0]["lanes"]["external"]] == ["The data"], parts[0]
         assert parts[1].get("type") == "card", parts[1]
         assert "Data Catalog" not in " ".join(parts[1].get("lines") or []), parts[1]
+
+    def test_a_card_emptied_for_both_reasons_says_why_each_row_went(self):
+        """Found by the review of #1652: a chat's own card whose rows all
+        went, some rated under the floor and some naming datasets the Data
+        Catalog does not hold, said every row was rated under the floor."""
+        from utk_curio.backend.app.agents.domain import content
+
+        emptied = {"type": "datasetCandidates", "lanes": {
+            "external": [_external("Context", 30, url="https://data.example.org/portal")],
+            "catalog": [{"name": "Gone", "sourceType": "catalog", "datasetId": "imported.gone@1",
+                         "fit": {"score": 80, "rationale": "rated 80"}}],
+        }}
+        parts = [emptied]
+        grounding._ground_catalog_lanes(parts, lambda: [])
+        assert parts[0].get("type") == "card", parts[0]
+        lines = parts[0].get("lines") or []
+        assert any(f"rated under a fit of {content.CANDIDATE_MIN_FIT}" in line and "Every" not in line
+                   for line in lines), lines
+        assert any("not in your Data Catalog" in line for line in lines), lines
