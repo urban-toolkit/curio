@@ -22,7 +22,6 @@ const OPERATOR_FLAGS = [
     "--js-parallelism",
     "--js-registry-url",
     "--js-block-unpinned",
-    "--state-dir",
     "--shared-guest-name",
     "--shared-guest-username",
     "--collab-origins",
@@ -59,6 +58,9 @@ const REMOVED_LLM_SETTINGS = [
     "GUEST_LLM_API_TYPE", "GUEST_LLM_BASE_URL", "GUEST_LLM_API_KEY", "GUEST_LLM_MODEL",
 ];
 
+/** The flags curio.py no longer has: no guide names one, and the parser declares none. */
+const REMOVED_FLAGS = ["--state-dir"];
+
 test.each(OPERATOR_FLAGS)("a guide names %s", (flag) => {
     expect(guidesNaming(flag, readGuides())).not.toEqual([]);
 });
@@ -77,6 +79,11 @@ test("USAGE.md and DEPLOYMENT.md name --guest-packages, the packages every hoste
 
 test.each(REMOVED_LLM_SETTINGS)("no guide names %s", (name) => {
     expect(guidesNaming(name, readGuides())).toEqual([]);
+});
+
+test.each(REMOVED_FLAGS)("no guide names %s, and curio.py declares no such flag", (flag) => {
+    expect(guidesNaming(flag, readGuides())).toEqual([]);
+    expect(parserFlags()).not.toContain(flag);
 });
 
 test("every curio.py flag is named in a guide", () => {

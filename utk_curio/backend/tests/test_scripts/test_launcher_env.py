@@ -1190,7 +1190,8 @@ def test_a_preset_testing_env_var_still_counts(monkeypatch):
 #: Every variable these flags write: #615's table but the guest configuration's,
 #: CURIO_PACKAGES_ROOT, CURIO_PROXY_HOPS, CURIO_MODEL_WEIGHTS_DIR,
 #: CURIO_MONITOR_DIR, CURIO_MEDIA_CACHE_MAX_FILE_GB and the bucket mount
-#: service's two.
+#: service's two. And CURIO_STATE_DIR, which no flag writes: the e2e shards set
+#: it, and a start must leave it as they set it.
 OPERATOR_KEYS = (
     "CURIO_MEDIA_CACHE_MAX_GB",
     "CURIO_MEDIA_CACHE_MAX_FILE_GB",
@@ -1227,7 +1228,6 @@ OPERATOR_FLAG_NAMES = (
     "--js-parallelism",
     "--js-registry-url",
     "--js-block-unpinned",
-    "--state-dir",
     "--shared-guest-name",
     "--shared-guest-username",
     "--collab-origins",
@@ -1487,51 +1487,16 @@ def test_under_deploy_the_socket_folder_is_made_its_owners_alone(tmp_path, linux
     assert control.stat().st_mode & 0o777 == 0o700
 
 
-def test_the_state_dir_flag_is_resolved_and_read_by_the_backend(tmp_path):
+def test_the_state_dir_variable_is_read_by_the_backend(tmp_path):
+    """The e2e shards give each stack its own state folder through this
+    variable, which the backend reads."""
     from utk_curio.backend.app.common import user_storage
     from utk_curio.backend.config import _is_testing
-    from utk_curio.cli.environment import set_state_dir
-
-    set_state_dir(str(tmp_path / "a" / ".." / "state"))
 
     state = (tmp_path / "state").resolve()
-    assert Path(os.environ["CURIO_STATE_DIR"]) == state
+    os.environ["CURIO_STATE_DIR"] = str(state)
+
     assert user_storage.curio_root() == (state / "test" if _is_testing() else state)
-
-
-def test_without_the_state_dir_flag_the_variable_is_left_alone():
-    from utk_curio.cli.environment import set_state_dir
-
-    set_state_dir(None)
-    assert "CURIO_STATE_DIR" not in os.environ
-
-    os.environ["CURIO_STATE_DIR"] = "/srv/curio-state"
-    set_state_dir(None)
-    assert os.environ["CURIO_STATE_DIR"] == "/srv/curio-state"
-
-
-def test_the_state_dir_is_set_before_the_launcher_opens_its_log(monkeypatch, tmp_path):
-    """The launcher writes its own log into the state directory, so main() has
-    to put the flag in the environment before setup_logging runs."""
-    import utk_curio.main as launcher
-
-    class _LogOpened(Exception):
-        pass
-
-    def setup_logging(server):
-        raise _LogOpened(os.environ.get("CURIO_STATE_DIR"))
-
-    monkeypatch.setenv("CURIO_DEV", "0")
-    monkeypatch.setattr("sys.argv", ["curio.py", "start", "--state-dir", str(tmp_path / "state")])
-    monkeypatch.setattr(launcher, "signal", SimpleNamespace(
-        SIGINT=signal.SIGINT, SIGTERM=signal.SIGTERM, signal=lambda *args: None,
-    ))
-    monkeypatch.setattr(launcher, "setup_logging", setup_logging)
-
-    with pytest.raises(_LogOpened) as opened:
-        launcher.main()
-
-    assert opened.value.args[0] == str((tmp_path / "state").resolve())
 
 
 def test_a_start_refuses_state_dir(monkeypatch, tmp_path):
