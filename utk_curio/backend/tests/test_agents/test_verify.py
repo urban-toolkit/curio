@@ -46,12 +46,14 @@ class TestGenericGate:
         assert outcome["sampleKeys"] == ["records", "total"]
         assert outcome["checkedAt"]
 
-    def test_error_statuses_are_unreachable_with_evidence(self):
+    def test_error_statuses_are_named_with_evidence(self):
+        # An error answer is what it was, never Unreachable, which is for a
+        # link that gave no answer at all (step 5.4, F4).
         outcome = verify.verify_external_source(
             "https://data.example.gov/api/gone",
             request_fn=_request({}), resolver=_resolver(),
         )
-        assert outcome["status"] == "unreachable"
+        assert outcome["status"] == "http-error"
         assert outcome["httpStatus"] == 404
 
     def test_transport_failure_is_unreachable_and_ssrf_is_refused(self):
@@ -94,7 +96,7 @@ class TestGenericGate:
         outcome = verify.verify_external_source(
             "https://data.example.gov/x", request_fn=_fn, resolver=_resolver(),
         )
-        assert outcome["status"] == "unreachable" and outcome["httpStatus"] == 400
+        assert outcome["status"] == "http-error" and outcome["httpStatus"] == 400
         assert outcome["bodySample"] == "error: unknown/unsupported geography heirarchy"
         assert "finalUrl" not in outcome  # no redirect happened
         # JSON answers keep the shape sample and never grow a body sample.
@@ -118,7 +120,9 @@ class TestGenericGate:
             params={"key": "s3cr3t-value-0123"}, headers={"X-Api-Key": "hdr-value-0123"},
         )
         assert outcome["status"] == "verified" and "finalUrl" not in outcome
-        assert seen == [("https://data.example.gov/data?key=s3cr3t-value-0123", {"X-Api-Key": "hdr-value-0123"})]
+        # The key's header, beside the ones every probe sends (step 5.4, F4).
+        assert seen == [("https://data.example.gov/data?key=s3cr3t-value-0123",
+                         {**verify.PROBE_HEADERS, "X-Api-Key": "hdr-value-0123"})]
 
     def test_no_url_is_loudly_unverified(self):
         outcome = verify.verify_external_source(None)
@@ -147,12 +151,13 @@ class TestSocrataRefinement:
         assert outcome["datasetName"] == "Chicago Heat Deaths 2024"
         assert outcome["columns"] == ["week", "deaths"]
 
-    def test_a_hallucinated_socrata_id_is_unreachable_by_name(self):
+    def test_a_hallucinated_socrata_id_is_an_error_answer_by_name(self):
+        # Its view document answers 404: an error answer, named as one.
         outcome = verify.verify_external_source(
             "https://data.cityofchicago.org/resource/fake-0000.json",
             request_fn=_request({}),
             resolver=_resolver({"data.cityofchicago.org": ["93.184.216.34"]}),
         )
-        assert outcome["status"] == "unreachable"
+        assert outcome["status"] == "http-error" and outcome["httpStatus"] == 404
         assert outcome["provider"] == "socrata"
         assert outcome["datasetId"] == "fake-0000"

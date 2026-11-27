@@ -360,6 +360,29 @@ class TestAPickAddsACatalogDataset:
         assert dr.source_record(h.spec(), h.load)["status"] == dr.STATE_RESOLVED
         assert f'curio_load_data("{dataset_id}")' in h.node_content(h.load)
 
+    def test_an_editors_pick_of_the_owners_own_dataset_is_refused_with_why(
+        self, client, db, user_and_token, tmp_curio, monkeypatch
+    ):
+        """A dataset of the owner's own store the dataflow does not hold is
+        hers to add: an editor cannot ask for it as for one of his, so his
+        pick of it is refused with whom it waits for, and nothing is recorded
+        or added."""
+        from utk_curio.backend.app.projects import access
+
+        alice, alice_token = user_and_token
+        _account(db, "bob", "Bob", BOB_TOKEN)
+        dataset_id = _a_dataset(alice, "Library branches")
+        h = _Harness(client, alice, alice_token, monkeypatch,
+                     discover_replies=[_catalog_candidates((dataset_id, "Library branches", 90))])
+        h.simulate("auto")
+        access.add_editor(alice, h.pid, "bob")
+        h.token = BOB_TOKEN
+        picked = _select(h, h.finder_attachment_id(), [{"lane": "catalog", "key": dataset_id}])
+        assert picked.status_code == 403, picked.get_data(as_text=True)
+        assert "waits for Alice" in picked.get_json()["error"], picked.get_json()
+        assert dr.source_record(h.spec(), h.load)["status"] == dr.STATE_CANDIDATES_PENDING
+        assert dataset_id not in _held_by_the_dataflow(h)
+
 
 # ── F3: a portal link's coordinate, no web page read as data, the card's order ─
 
@@ -584,6 +607,21 @@ class TestOnlyTheDataIsOffered:
         assert load["status"] == "failed" and "ungrounded-source" in load["error"], load
         assert len(h.discover_calls) >= 1
         assert len(h.discover_calls) * 3 == len(h.dl_calls), (len(h.discover_calls), len(h.dl_calls))
+
+    def test_the_finder_is_told_the_floor_the_code_holds(self, monkeypatch):
+        """The floor is a number the code owns: the delegate's contract and
+        the Finder's instruction state it through ``{{candidates.min_fit}}``,
+        so a change to the code reaches what the Finder is told."""
+        from utk_curio.backend.app.agents.domain import content
+        from utk_curio.backend.app.agents.domain import contracts
+        from utk_curio.backend.tests.test_agents.test_python_prose import AGENTS, _dev
+
+        instruction = AGENTS / "agent.curio.dataset-finder@1" / "prompts" / "discovery_instruction.md"
+        assert "{{candidates.min_fit}}" in instruction.read_text(encoding="utf-8")
+        assert contracts.PROMPT_FIELDS["candidates.min_fit"].render(None) == str(content.CANDIDATE_MIN_FIT)
+        _dev(monkeypatch)
+        monkeypatch.setattr(content, "CANDIDATE_MIN_FIT", 987)
+        assert "a fit of 987" in delegates._discovery_reply_contract()
 
     def test_a_row_with_no_fit_is_still_offered(self, app, monkeypatch):
         """The floor is the Finder's own rating: a row it gave none is kept."""

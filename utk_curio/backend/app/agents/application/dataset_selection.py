@@ -192,6 +192,14 @@ def record_dataset_selection(
     return payload
 
 
+def settle_source_waits(user_key: str, project_id: str) -> None:
+    """End each wait of a node's source that came to an end outside a Solve:
+    a pick whose dataset the dataflow holds now, as the owner's Apply of an
+    editor's request adds it, or whose download landed; a plan that waited
+    for such a node goes on (``acquire._settle_discovery_acquisitions``)."""
+    agents_acquire._settle_discovery_acquisitions(user_key, project_id)
+
+
 #: What a pick's answer says when its Data Catalog dataset waits for the
 #: dataflow owner's review of an editor's request, and when it could not be
 #: added to the dataflow.
@@ -340,7 +348,7 @@ def _what_comes_next(user_key: str, rows: list[dict], state: dict, delegated: di
         return f"It must be installed from the Data Catalog: {then.replace('once it lands', 'once it is')}."
     if state["status"] == agents_dataset_resolution.STATE_RESOLVED:
         return "Solve the node to build its loader from this source."
-    return "Nothing selectable was confirmed: the runtime could not reach it. Pick another row."
+    return "Nothing selectable was confirmed: its link answered with an error, or not at all. Pick another row."
 
 
 def _keep_what_comes_next(user_key: str, project_id: str, attachment_id: str, state: dict, after: str) -> None:

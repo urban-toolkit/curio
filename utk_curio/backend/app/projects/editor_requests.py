@@ -19,8 +19,10 @@ says what is asked and what her Apply does (:data:`KINDS`):
   (:data:`REQUESTS_FILE`), which the doc does not carry and no tab writes. It
   writes nothing in the owner's store and nothing in the dataflow.
 * :func:`apply`, the owner's alone, does what the kind's Apply does, as her
-  change. A request whose asker no longer edits the dataflow goes, with the
-  reason. One the kind cannot apply stays in her review, with the reason.
+  change, and a node whose source waited for the item (an editor's pick on a
+  Dataset Finder's card) stops waiting. A request whose asker no longer edits
+  the dataflow goes, with the reason. One the kind cannot apply stays in her
+  review, with the reason.
 * :func:`dismiss`, the owner's alone, drops the request and leaves nothing
   behind.
 
@@ -343,8 +345,21 @@ def apply(user, project_id: str, kind_name: str, request_id: str) -> dict[str, A
         if reason is None:
             raise
         raise RequestError(f"{name} could not be added: {reason}", 409) from exc
+    _settle_the_agents(flow)
     _tell_the_room(flow.project_id, kind_name)
     return {"proposalId": request_id, "status": "applied", **outcome}
+
+
+def _settle_the_agents(flow: Dataflow) -> None:
+    """A node whose source waited for what this Apply added, the dataset an
+    editor picked on a Dataset Finder's card, stops waiting, and a plan that
+    waited for it goes on (``agents/service.py``'s ``settle_source_waits``)."""
+    try:
+        from utk_curio.backend.app.agents import service as agents_service
+
+        agents_service.settle_source_waits(flow.owner_key, flow.project_id)
+    except Exception:  # noqa: BLE001 - the Apply stands; the next Solve or Resume ends the wait
+        logger.exception("the agents of dataflow %s could not take in what the owner added", flow.project_id)
 
 
 def _put_back(flow: Dataflow, request: dict[str, Any]) -> None:

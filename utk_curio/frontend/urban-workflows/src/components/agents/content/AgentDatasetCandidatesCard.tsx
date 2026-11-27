@@ -421,7 +421,7 @@ export const AgentDatasetCandidatesCard: React.FC<{
     if (selection.status === "awaiting-install") {
       return `${recordedFor}: install the dataset from the Data Catalog, then Solve it.`;
     }
-    return "Nothing selectable was confirmed: the runtime could not reach it. Pick another row.";
+    return "Nothing selectable was confirmed: its link answered with an error, or not at all. Pick another row.";
   };
 
   const toggle = (lane: "external" | "catalog", index: number) => {
