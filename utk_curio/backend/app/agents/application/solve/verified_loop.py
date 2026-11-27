@@ -1191,7 +1191,7 @@ class VerifiedRounds:
         except Exception:  # noqa: BLE001
             log.warning("The source of node %s could not be read", self.node_id, exc_info=True)
             return False
-        return now.get("state") == "awaiting" or now.get("offer") != self.finder_offer
+        return now.get("offer") != self.finder_offer
 
     def _finish(self) -> dict:
         final_evidence = (self.verdict_result or {}).get("evidence") or {}
