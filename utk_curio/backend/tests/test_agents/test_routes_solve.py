@@ -1082,6 +1082,25 @@ class TestBuildAndValidate:
         assert not {"node_created", "edges_created", "plan_removals"} & set(names)
         saved = _saved_nodes(user, alice_project)
         assert all(saved[ids[ref]]["content"] == "print('generated')" for ref in refs)
+        # The approval is recorded on each node's change (DEC-054), whose card
+        # is in the node's own agent's chat (dev/72).
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        records = {
+            record["attachmentId"]: record
+            for record in projects_storage.read_spec(_user_dir_key(user), alice_project)["dataflow"]["agentAttachments"]
+        }
+        for ref in refs:
+            entry = session["nodeChanges"][ref]
+            assert entry["attachmentId"] != att_id
+            kept = next(c for c in records[entry["attachmentId"]]["changes"] if c["changeId"] == entry["changeId"])
+            assert kept["approvedBy"] == "simulation-auto"
+            home = client.get(
+                f"/api/agents/projects/{alice_project}/attachments/{entry['attachmentId']}/session",
+                headers=_auth(token),
+            ).get_json()["turns"]
+            assert any(p.get("changeId") == entry["changeId"] for t in home for p in t.get("content") or [])
 
     def test_a_build_that_builds_the_whole_plan_ends_with_one_sentence(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
@@ -1154,25 +1173,6 @@ class TestBuildAndValidate:
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/session", headers=_auth(token),
         ).get_json()["turns"]
         assert not [t for t in turns if (t.get("text") or "").startswith("Built ")], turns
-        # The approval is recorded on each node's change (DEC-054), whose card
-        # is in the node's own agent's chat (dev/72).
-        from utk_curio.backend.app.projects import storage as projects_storage
-        from utk_curio.backend.app.projects.services import _user_dir_key
-
-        records = {
-            record["attachmentId"]: record
-            for record in projects_storage.read_spec(_user_dir_key(user), alice_project)["dataflow"]["agentAttachments"]
-        }
-        for ref in refs:
-            entry = session["nodeChanges"][ref]
-            assert entry["attachmentId"] != att_id
-            kept = next(c for c in records[entry["attachmentId"]]["changes"] if c["changeId"] == entry["changeId"])
-            assert kept["approvedBy"] == "simulation-auto"
-            home = client.get(
-                f"/api/agents/projects/{alice_project}/attachments/{entry['attachmentId']}/session",
-                headers=_auth(token),
-            ).get_json()["turns"]
-            assert any(p.get("changeId") == entry["changeId"] for t in home for p in t.get("content") or [])
 
     def test_undo_of_a_validated_nodes_code_puts_back_the_code_before(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch,

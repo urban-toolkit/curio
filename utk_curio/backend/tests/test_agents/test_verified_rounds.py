@@ -681,7 +681,12 @@ class TestNotExecutableKinds:
         assert exec_fn.calls == [] and len(inputs) == 1  # generated once, never run, never corrected
         attempt = outcome["attempts"][0]
         assert attempt["verdict"] == "not-executable" and attempt["kind"] == "not-executable"
-        assert "no code the sandbox could run" in attempt["detail"]
+        # The runner's honest outcome is the evidence's. The round, whose
+        # document its grammar validated, says that instead of why the sandbox
+        # ran nothing (test_document_validation.py, "a corrected chart's
+        # attempts").
+        assert "no code the sandbox could run" in outcome["evidence"]["detail"]
+        assert attempt["documentValidated"] == "vis-vega" and "detail" not in attempt, attempt
         assert [k for k, _ in events if k == "round_verdict"] == ["round_verdict"]
 
 
