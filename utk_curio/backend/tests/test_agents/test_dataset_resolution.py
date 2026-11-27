@@ -307,11 +307,11 @@ class TestWhatMayBeALoadersSource:
         assert named and "Chicago Neighborhoods" in named, named
 
     def test_numbers_the_goal_gives_that_the_user_typed_may_be_its_source(self):
-        typed = ("Table the count 12, 15 and 20.",)
-        given = self._judged("Counts: load the count 12, 15 and 20", user_messages=typed)
+        typed = ("Table the count: Loop 12, Pilsen 15, Hyde Park 20.",)
+        given = self._judged("Counts: load the count, Loop 12, Pilsen 15 and Hyde Park 20", user_messages=typed)
         assert given and "12, 15, 20" in given, given
         # Typed in no message of this conversation, or given by no goal: no source.
-        assert self._judged("Counts: load the count 12, 15 and 20") is None
+        assert self._judged("Counts: load the count, Loop 12, Pilsen 15 and Hyde Park 20") is None
         assert self._judged("Counts: load the counts", user_messages=typed) is None
 
     def test_a_saved_key_whose_host_the_goal_names_may_be_its_source(self):

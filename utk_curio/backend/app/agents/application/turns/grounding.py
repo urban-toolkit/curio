@@ -33,6 +33,7 @@ from utk_curio.backend.app.agents.domain import document_validation
 from utk_curio.backend.app.datasets.domain.code_refs import collection_ids_in_code, dataset_ids_in_code
 from utk_curio.backend.app.datasets.domain.constants import is_layer_group_id, layer_group_kind
 from utk_curio.backend.app.datasets.domain.layer_group import group_base_title, ids_read, layer_group_formats
+from utk_curio.backend.app.datasets.domain.provenance import catalog_item_is_computed_provenance
 from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.execution.code_references import (
@@ -404,26 +405,40 @@ def _first_attempt_literals(
     for its source."""
     literal = _node_grounded_literal(node, ctx, extra_texts=extra_texts)
     node_id = str(node.get("id") or "")
-    if agents_dataset_resolution.finder_attachment(spec, node_id, user_key=user_key) is None:
+    finder = agents_dataset_resolution.finder_attachment(spec, node_id, user_key=user_key)
+    if finder is None:
         return literal, _project_grounded_literal(ctx)
-    return literal or _node_own_source(node, ctx), _dataflow_grounded_literal(node, ctx)
+    since = agents_dataset_resolution.held_while_waiting(finder.get(agents_dataset_resolution.RECORD_KEY))
+    return literal or _node_own_source(node, ctx, since=since), _dataflow_grounded_literal(node, ctx)
 
 
-def _node_own_source(node: dict, ctx) -> str | None:
+def _node_own_source(node: dict, ctx, *, since: dict | None = None) -> str | None:
     """The source the user gave *node* itself, or None: the code it holds,
     when the gate grounds it on a source (Solve this node runs that code as
     its first round), or a Data Catalog dataset one of its dataset widgets
     holds. A person who answers a candidates card by giving the node its
-    source on the node waits on the card no longer."""
+    source on the node waits on the card no longer.
+
+    While the node waits on a card, *since* is what the node held when the
+    card was offered or the pick that waits was made
+    (``dataset_resolution.held_while_waiting``), and only what came after
+    it counts: code that changed since, or a dataset its widgets did not
+    hold then. What the node held before is what its rounds were refused
+    with, so it answers no card: counted, it would close the card and run
+    the same rounds again on every Resume. A record that kept nothing counts
+    nothing."""
     if ctx is None:
         return None
+    now = agents_dataset_resolution.held_by(node)
     content = str(node.get("content") or "")
-    if content.strip() and ctx.code_engine:
+    if content.strip() and ctx.code_engine and (since is None or since.get("code") not in (None, now["code"])):
         verdict = source_grounding.check_grounding(content, ctx.code_engine, ctx)
         if verdict.ok and verdict.source:
             return f"the source its code reads ({verdict.source.get('label') or 'grounded'})"
     catalog = getattr(ctx, "catalog_ids", None) or {}
-    held = next((dataset_id for dataset_id in _dataset_widget_ids(node) if dataset_id in catalog), None)
+    newer = None if since is None else set(now["datasets"]) - set(since.get("datasets", now["datasets"]) or ())
+    held = next((dataset_id for dataset_id in _dataset_widget_ids(node)
+                 if dataset_id in catalog and (newer is None or dataset_id in newer)), None)
     return f'curio_data_path("{held}") in its dataset widget' if held is not None else None
 
 
@@ -437,20 +452,24 @@ def _dataflow_grounded_literal(node: dict, ctx) -> str | None:
 
     - a dataset of its dataflow (Add to project), which its builder is handed
       with the dataflow's block (``dataflow_block.datasets_in``);
-    - a dataset of the Data Catalog whose title its goal names, the title's
-      words together and in order (:func:`_named_by_title`);
-    - values the user typed in this conversation that its goal gives as data
-      (:func:`_typed_data`), which its code may write inline;
-    - what the user said in the chat that asked, which the round's source
-      check reads as well (:func:`_said_in_the_chat`). A Solve and Solve
-      this node read no chat: their grounding base holds no message of the
-      user's (:func:`_grounding_context`);
+    - a dataset the user or Curio put in the Data Catalog whose title its
+      goal names, the title's words together and in order
+      (:func:`_named_by_title`);
+    - values the user typed in this conversation that its goal gives as
+      data, each after a label of its own (:func:`_typed_data`), which its
+      code may write inline;
+    - a path the user typed in the chat that asked, which the round's
+      source check reads as well, when its goal or title names the file
+      (:func:`_said_in_the_chat`). A Solve and Solve this node read no chat:
+      their grounding base holds no message of the user's
+      (:func:`_grounding_context`);
     - a saved connection key whose host its goal names, which its code may
       fetch with;
     - a URL its goal names, which the gate probes when the code fetches it.
 
-    A dataset of its dataflow stays a source although the node's goal may be
-    about other data: the person who added it to the dataflow said what the
+    Each is tied to this one node by its goal or title, but a dataset of its
+    dataflow, which stays a source although the node's goal may be about
+    other data: the person who added it to the dataflow said what the
     dataflow loads, and its builder is handed it."""
     if ctx is None:
         return None
@@ -465,7 +484,7 @@ def _dataflow_grounded_literal(node: dict, ctx) -> str | None:
     typed = _typed_data(ctx.user_messages, goal)
     if typed:
         return "values the user typed, which its goal gives (" + ", ".join(str(n) for n in typed[:6]) + ")"
-    said = _said_in_the_chat(ctx)
+    said = _said_in_the_chat(node, ctx)
     if said is not None:
         return said
     key = next((ref for ref in (ctx.secrets or {}).values() if ref.host and ref.host.lower() in goal.lower()), None)
@@ -474,56 +493,71 @@ def _dataflow_grounded_literal(node: dict, ctx) -> str | None:
     return next(iter(sorted(source_grounding.url_literals(goal))), None)
 
 
-def _said_in_the_chat(ctx) -> str | None:
-    """A source the user gave in the chat that asked (``ctx.user_messages``,
-    and the candidates its cards verified), as the round's source check reads
-    it there: a path the user typed, their request for synthetic data, or a
-    URL that chat verified. None for none."""
-    said = tuple(ctx.user_messages or ())
-    path = next(iter(sorted(source_grounding.user_paths(said))), None)
-    if path is not None:
-        return f"{path}, a path the user typed"
-    if source_grounding.synthetic_requested(said):
-        return "synthetic data, which the user asked for"
-    url = next(iter(sorted(ctx.verified_urls or {})), None)
-    return f"{url}, which this conversation verified" if url is not None else None
+def _said_in_the_chat(node: dict, ctx) -> str | None:
+    """A path the user typed in the chat that asked (``ctx.user_messages``),
+    which the round's source check reads there too, when *node*'s goal or
+    title names its file (:func:`_names_the_file`); None for none.
+
+    Nothing else that chat holds says which loader it is for. A request for
+    synthetic data there grounds a loader only when its own goal asks for it
+    (:func:`_node_grounded_literal`). A URL a candidates card there verified
+    is a candidate: while its card stands, the node waits for its pick,
+    which outranks this rank, and once the card is closed (its Finder's chat
+    cleared, a skip) the user never picked the URL, so its Finder is asked
+    again."""
+    named_by = (str(node.get("goal") or ""), str(node.get("title") or ""))
+    for path in sorted(source_grounding.user_paths(tuple(ctx.user_messages or ()))):
+        if _names_the_file(path, named_by):
+            return f"{path}, a path the user typed"
+    return None
+
+
+def _names_the_file(path: str, texts) -> bool:
+    """Whether one of *texts* names the file *path* points at: the words of
+    its name before the extension, together and in order ("CPL branches" for
+    ``/data/cpl_branches.csv``), unless they are generic words alone, as in
+    ``data.csv`` (:func:`_title_words`)."""
+    stem = _title_words(re.split(r"[\\/]", path.rstrip("\\/"))[-1].split(".", 1)[0])
+    if not stem or set(stem) <= _GENERIC_TITLE_WORDS:
+        return False
+    return any(_holds_in_order(_title_words(text), stem) for text in texts)
 
 
 #: A number as a sentence writes it: its digits, grouped by commas or not,
 #: its decimals, and a minus sign written before it.
 _WRITTEN_NUMBER = r"-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?"
-_WRITTEN_NUMBER_RE = re.compile(rf"(?<![\w.]){_WRITTEN_NUMBER}(?!\w)")
 #: A value written after its label: "Loop 2450", "Pilsen: 1,500".
 _LABELED_NUMBER_RE = re.compile(rf"(?<!\w)([^\W\d_]+)(?:\s*[:=]\s*|\s+)({_WRITTEN_NUMBER})(?!\w)")
 #: The words a number follows to say when, how many or which, not whose value
-#: it is: "in 2023", "since 2019", "top 10", "the 311".
+#: it is: "in 2023", "since 2019", "top 10", "the 311", "load 5".
 _NOT_A_LABEL = frozenset({
     "a", "an", "the", "and", "or", "in", "of", "on", "at", "by", "to", "from", "for", "since", "until",
     "till", "through", "before", "after", "during", "between", "within", "over", "under", "about",
     "around", "near", "than", "per", "top", "first", "last", "next", "past", "year", "years",
+    "load", "get", "read", "fetch", "import", "show", "list", "map", "find", "keep", "take", "use", "pick",
+    "select",
 })
 
 
 def _typed_data(messages, goal: str) -> list[Decimal]:
     """The values the user typed in *messages* that *goal* gives as data,
-    least first, or none. A lone number, a year or an id is no data: the
-    values count when there are three or more of them, or two or more that
-    each follow a label both write ("Loop 2450, Pilsen 1500"). A year is one
-    of them only as such a label's value; otherwise it says when the data is
-    from."""
-    typed: set[Decimal] = set()
-    labeled: set[tuple[str, Decimal]] = set()
+    least first, or none. Only a value written after a label of its own is
+    data, and only two or more of them: "Loop 2450, Pilsen 1500, Hyde Park
+    1700". A label written before several numbers, in the user's messages
+    or the goal, names ids or settings ("ward 1 and ward 2", "route 9 and
+    route 66"), and a number with no label says how many, which or when:
+    three zip codes, the hours of a day, "the 3 largest parks within 5 km".
+    A year is one of the values as a label's own ("Loop 1925, Pilsen
+    1910")."""
+    said: set[tuple[str, Decimal]] = set()
     for message in messages or ():
-        typed |= _written_numbers(message)
-        labeled |= _labeled_numbers(message)
-    labels = {number for _label, number in labeled & _labeled_numbers(goal)}
-    values = sorted(number for number in typed & _written_numbers(goal) if number in labels or not _a_year(number))
-    return values if len(values) >= 3 or len(labels) >= 2 else []
-
-
-def _written_numbers(text: object) -> set[Decimal]:
-    """The numbers *text* writes, each by its value."""
-    return {Decimal(found.replace(",", "")) for found in _WRITTEN_NUMBER_RE.findall(str(text or ""))}
+        said |= _labeled_numbers(message)
+    given = _labeled_numbers(goal)
+    values_of: dict[str, set[Decimal]] = {}
+    for label, number in said | given:
+        values_of.setdefault(label, set()).add(number)
+    values = sorted(number for label, number in said & given if len(values_of[label]) == 1)
+    return values if len(values) >= 2 else []
 
 
 def _labeled_numbers(text: object) -> set[tuple[str, Decimal]]:
@@ -533,11 +567,6 @@ def _labeled_numbers(text: object) -> set[tuple[str, Decimal]]:
         for label, number in _LABELED_NUMBER_RE.findall(str(text or ""))
         if label.lower() not in _NOT_A_LABEL
     }
-
-
-def _a_year(number: Decimal) -> bool:
-    """Whether *number* reads as a year: a whole number from 1900 to 2100."""
-    return number == number.to_integral_value() and 1900 <= number <= 2100
 
 
 def _dataset_widget_ids(node: dict) -> list[str]:
@@ -556,11 +585,16 @@ def _dataset_widget_ids(node: dict) -> list[str]:
 def _named_by_title(goal: str, catalog_ids: dict):
     """The first dataset of *catalog_ids*, by id, whose title *goal* names:
     the title's words together and in order, each in the singular
-    (:func:`_title_words`). A title of generic words alone, such as "Data",
-    names nothing. None when it names none."""
+    (:func:`_title_words`). Only a dataset the user or Curio put in the Data
+    Catalog is named: the listing also holds every saved node output of the
+    account, of any dataflow, titled after its node, which says nothing of
+    this goal (``CatalogRef.computed``). A title of generic words alone, such
+    as "Data" or "Load", names nothing. None when it names none."""
     said = _title_words(goal)
     for dataset_id in sorted(catalog_ids or {}):
         ref = catalog_ids[dataset_id]
+        if getattr(ref, "computed", False):
+            continue
         words = _title_words(getattr(ref, "title", "") or "")
         if words and not set(words) <= _GENERIC_TITLE_WORDS and _holds_in_order(said, words):
             return ref
@@ -574,9 +608,11 @@ def _holds_in_order(said: list[str], words: list[str]) -> bool:
 
 def _title_words(text: str) -> list[str]:
     """The words a title is named by, in order: the runs of letters and
-    digits of *text*, lowercased, of three characters or more, each in the
-    singular (:func:`_word_stem`)."""
-    return [_word_stem(word) for word in re.findall(r"[^\W_]+", str(text or "").lower()) if len(word) >= 3]
+    digits of *text*, lowercased, short ones too ("LA Parks" is no
+    "Chicago parks"), with no possessive "'s", each in the singular
+    (:func:`_word_stem`)."""
+    text = re.sub(r"['’]s\b", "", str(text or "").lower())
+    return [_word_stem(word) for word in re.findall(r"[^\W_]+", text)]
 
 
 def _word_stem(word: str) -> str:
@@ -597,11 +633,13 @@ def _word_stem(word: str) -> str:
 
 
 #: The words of a title that says nothing of its dataset when it has no
-#: other: "Data", "Untitled dataset", "Export".
+#: other: "Data", "Untitled dataset", "Export", the verbs a node's title
+#: starts with ("Load", "Show"), and the short words between them.
 _GENERIC_TITLE_WORDS = frozenset(_word_stem(word) for word in (
     "the", "data", "dataset", "table", "file", "export", "import", "upload", "download", "sample",
     "example", "test", "untitled", "new", "copy", "output", "result", "layer", "sheet", "map", "list",
     "record", "row", "value", "info", "information", "csv", "json", "geojson",
+    "load", "get", "read", "fetch", "show", "a", "an", "of", "and", "for", "my", "our", "all",
 ))
 
 
@@ -892,6 +930,8 @@ def _catalog_grounding_refs(project_id: str, items: list | None = None) -> tuple
             format=str(item.get("format") or ""),
             path=path if isinstance(path, str) else "",
             installed=bool(item.get("installed")),
+            # A saved node output, as the Data Catalog's Computed rail lists it.
+            computed=catalog_item_is_computed_provenance(item),
         )
         by_id[ref.dataset_id] = ref
         if isinstance(path, str) and path.strip():
@@ -909,6 +949,7 @@ def _catalog_grounding_refs(project_id: str, items: list | None = None) -> tuple
             format=layer_group_kind(group_id) or "",
             path="",
             installed=any(bool(member.get("installed")) for member in members),
+            computed=all(catalog_item_is_computed_provenance(member) for member in members),
         ))
     return by_path, by_id
 

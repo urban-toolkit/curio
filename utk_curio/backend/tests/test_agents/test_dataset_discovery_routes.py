@@ -2227,7 +2227,7 @@ class TestALoaderWithNoSourceAsksItsFinderFirst:
     @pytest.mark.parametrize("message, goal, code", [
         ("My branches are in /data/cpl_branches.csv", "load the locations of the CPL branches",
          'import pandas as pd\nreturn pd.read_csv("/data/cpl_branches.csv")'),
-        ("Make a demo with synthetic data of parks", "load the daily visits of each park",
+        ("Make a demo with synthetic data of parks", "make up synthetic daily visits of each park",
          'import numpy as np\nimport pandas as pd\nreturn pd.DataFrame({"visits": np.random.randint(0, 500, 30)})'),
         ("Rents: Loop 2450, Pilsen 1500", "load the rents, Loop 2450 and Pilsen 1500",
          'import pandas as pd\nreturn pd.DataFrame({"Rents": [2450, 1500]}, index=["Loop", "Pilsen"])'),
@@ -2243,7 +2243,10 @@ class TestALoaderWithNoSourceAsksItsFinderFirst:
         rounds read the goal alone, so the Finder was asked for the path and
         for the synthetic data, and the build paused for a pick the user did
         not need. The typed values are a guard: the goal gives them. Found by
-        the review of #1642."""
+        the review of #1642. Since the second review a request for synthetic
+        data in the chat grounds no loader before its rounds, so the plan's
+        goal carries it too, as a plan's goal does when the user asks
+        (``test_what_the_chat_said_grounds_only_the_loader_it_names``)."""
         user, token = user_and_token
         h = _Harness(client, user, token, monkeypatch, message=message, goal=goal, dl_replies=[code])
         asked = _Asked(h)

@@ -886,9 +886,9 @@ class TestValuesTheUserTyped:
         from utk_curio.backend.tests.test_agents.test_dataset_discovery_routes import _Harness
 
         user, token = user_and_token
-        rows = 'import pandas as pd\nreturn pd.DataFrame({"count": [12, 15, 20]})'
-        h = _Harness(client, user, token, monkeypatch, message="Table the count 12, 15 and 20.",
-                     goal="load the count 12, 15 and 20 the user typed", dl_replies=[rows])
+        rows = 'import pandas as pd\nreturn pd.DataFrame({"count": [12, 15, 20]}, index=["Loop", "Pilsen", "Hyde Park"])'
+        h = _Harness(client, user, token, monkeypatch, message="Table the count: Loop 12, Pilsen 15, Hyde Park 20.",
+                     goal="load the count, Loop 12, Pilsen 15 and Hyde Park 20, the user typed", dl_replies=[rows])
         done = h.validate("load")[-1][1]
         assert done.get("verdict") == "pass", done
         assert h.node_content(h.load) == rows
