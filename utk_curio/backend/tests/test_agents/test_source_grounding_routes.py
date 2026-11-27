@@ -937,10 +937,14 @@ class TestSolveSourceGrounding:
     HANDED the grounded sources (the seventh DEC-063 application)."""
 
     def _plan_tail(self):
+        # The loader's intent names the dataset the test imports, "Heat
+        # Tracts", by its title, so the loader has a source and gets its
+        # rounds; with none, its Dataset Finder would be asked before any of
+        # them.
         plan = {
             "goal": "heat by tract",
             "nodes": [
-                {"ref": "load", "nodeType": DL, "title": "Load", "intent": "load the tract heat data"},
+                {"ref": "load", "nodeType": DL, "title": "Load", "intent": "load the heat tracts"},
                 {"ref": "stats", "nodeType": CA, "title": "Stats", "intent": "compute stats"},
             ],
             "edges": [{"from": "load", "to": "stats"}],
