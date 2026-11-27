@@ -171,6 +171,15 @@ def test_the_refusal_says_what_an_id_is_made_of(tmp_path, capsys):
     assert "63" in said, said
 
 
+def test_the_id_check_is_the_schemas():
+    """The scaffold checks an id with the schema's own pattern, so the two
+    cannot drift apart."""
+    schema = json.loads(
+        (REPO_ROOT / "docs" / "schemas" / "node-package.v4.json").read_text(encoding="utf-8")
+    )
+    assert new_package.PACKAGE_ID_RE.pattern == schema["properties"]["id"]["pattern"]
+
+
 @pytest.mark.parametrize("template_id", ["9lives", "has_underscore", "x" * 64])
 def test_invalid_template_ids_exit_2(tmp_path, template_id):
     rc = new_package.main(
