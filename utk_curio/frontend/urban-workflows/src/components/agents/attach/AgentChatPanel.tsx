@@ -136,6 +136,10 @@ export const AgentChatPanel: React.FC<{
   onDismissProposal?: (proposalId: string) => Promise<void>;
   /** Undo a change this agent made; omitted → its change cards offer none. */
   onUndoChange?: (changeId: string) => Promise<unknown>;
+  /** Why the server refused the last Undo, Apply or Dismiss of a card of this
+   * chat, by the card's change or proposal id: the card says it until the
+   * user acts on it again, though a read of the chat draws it anew. */
+  refusals?: Record<string, string>;
   /** dev/71: per-row Solve/Run on a landed plan's card; each tells the row's
    *  `onLine` how far a download on first use of what the node reads has come. */
   onSolvePlanNode?: (ref: string, onLine?: (line: string) => void) => Promise<void>;
@@ -247,6 +251,7 @@ export const AgentChatPanel: React.FC<{
   onApplyProposal,
   onDismissProposal,
   onUndoChange,
+  refusals,
   onSolvePlanNode,
   onRunPlanNode,
   onSimulate,
@@ -497,6 +502,7 @@ export const AgentChatPanel: React.FC<{
     beginPackageReview: packageReview.beginReview,
     onDismissProposal,
     onUndoChange,
+    refusalOf: (cardId: string) => refusals?.[cardId] ?? null,
     onSolvePlanNode,
     onRunPlanNode,
     installsWaitForOwner,

@@ -52,7 +52,7 @@ function readWaiting(raw: unknown): AgentSolveWaiting {
 export function useAgentSolve(opts: {
   projectRef: React.MutableRefObject<string | null>;
   attachments: AgentAttachment[];
-  refreshAfterMutation: (attachmentId: string) => Promise<void>;
+  refreshAfterMutation: (attachmentId: string) => Promise<unknown>;
 }): AgentSolveSlice {
   const { projectRef, attachments, refreshAfterMutation } = opts;
   // dev/63: the live solve's per-node overlay + its abort handle.

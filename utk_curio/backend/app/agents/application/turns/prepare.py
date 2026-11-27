@@ -366,7 +366,9 @@ def _persist_exchange(
     """Persist one exchange to the session (no-op without a session id). Error
     markers are display-only history, excluded from future context (dev/20).
     The execution record (dev/37) and content parts (dev/39) ride the agent
-    turn; *writer*, who wrote the message, rides the user turn."""
+    turn; *writer*, who wrote the message, rides the user turn. The exchange
+    is the turn's own, whose events reach every tab that follows the chat
+    (``turn_jobs``), so the room is told nothing more of it."""
     if session_id is None:
         return
     sessions.append_turns(
@@ -378,4 +380,5 @@ def _persist_exchange(
             sessions.make_turn("user", message, by=writer),
             sessions.make_turn("agent", reply, error=error, execution=execution, content=parts),
         ],
+        told_by_its_ask=True,
     )

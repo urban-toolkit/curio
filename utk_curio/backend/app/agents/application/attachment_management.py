@@ -306,19 +306,21 @@ def get_attachment_session(user_key: str, project_id: str, attachment_id: str) -
     turn's message and reply so far, then the asks waiting their turn. The
     asks are read first: a turn that ends meanwhile is in the transcript, and
     leaves the asks (by its execution id), so a tab never shows it twice or
-    misses it."""
+    misses it. With them, how many times the chat was cleared (``clears``):
+    a tab that finds it moved on since its last read knows the chat was
+    cleared, from whichever tab, and drops the turns only it kept."""
     spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
     asks = turn_jobs.asks_of(user_key, project_id, attachment_id)
     session_id = record.get("sessionId")
-    turns = (
-        sessions.read_turns(user_key, project_id, session_id)
+    turns, clears = (
+        sessions.read_session(user_key, project_id, session_id)
         if isinstance(session_id, str)
-        else []
+        else ([], 0)
     )
     settled = {(turn.get("execution") or {}).get("executionId") for turn in turns if isinstance(turn, dict)}
     asks = [each for each in asks if not _settled_in(each, settled)]
-    return {"attachmentId": attachment_id, "sessionId": session_id, "turns": turns, "asks": asks}
+    return {"attachmentId": attachment_id, "sessionId": session_id, "turns": turns, "asks": asks, "clears": clears}
 
 
 def _settled_in(asked: dict, settled: set) -> bool:
@@ -342,8 +344,9 @@ def clear_attachment_session(user_key: str, project_id: str, attachment_id: str)
     spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
     session_id = record.get("sessionId")
+    clears = 0
     if isinstance(session_id, str):
-        sessions.clear_turns(user_key, project_id, session_id, attachment_id)
+        clears = sessions.clear_turns(user_key, project_id, session_id, attachment_id)
     with projects_storage.spec_write_lock(user_key, project_id):
         fresh = agents_spec_reads._live_spec_or_404(user_key, project_id)
         fresh_record = agents_spec_reads._record_or_404(fresh, attachment_id)
@@ -360,4 +363,4 @@ def clear_attachment_session(user_key: str, project_id: str, attachment_id: str)
             changed = True
         if changed:
             dataflow_docs.write(user_key, project_id, fresh, agents_spec_reads._person(user_key, "attachment"))
-    return {"attachmentId": attachment_id, "sessionId": session_id, "turns": []}
+    return {"attachmentId": attachment_id, "sessionId": session_id, "turns": [], "clears": clears}

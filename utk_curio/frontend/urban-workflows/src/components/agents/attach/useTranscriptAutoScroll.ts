@@ -52,6 +52,17 @@ const isNearBottom = (el: HTMLElement) =>
  * User input that expresses "leave the bottom" therefore unpins synchronously
  * in the input handler itself; a false positive (a nudge still within the
  * threshold) is re-pinned by the next scroll event.
+ *
+ * A scroll event is read where the transcript stands when it is told, on the
+ * frame after the scroll, so after what changed meanwhile. The browser
+ * scrolls the transcript itself when its box grows (it clamps the place at
+ * the new bottom), and the observer below sees where that left it. When the
+ * box shrinks again before the event is told (a line above the transcript
+ * comes back taller), the event would read a reader who never moved as one
+ * who left the bottom. So while pinned, a scroll event that finds the
+ * transcript where this hook last saw it is told late: nothing moved since,
+ * and the transcript follows to its new bottom. A scroll that moved it (the
+ * reader's, or one into a card) is read as it is.
  */
 export function useTranscriptAutoScroll({
   content,
@@ -88,6 +99,13 @@ export function useTranscriptAutoScroll({
   itemCountRef.current = itemCount ?? null;
   /** Item count captured at the pinned→detached moment — the unread baseline. */
   const [countAtDetach, setCountAtDetach] = useState<number | null>(null);
+  /** Where the transcript stood when this hook last saw it: after a scroll
+   * it made, at each scroll event it read, and at each change of size the
+   * observer reported. */
+  const seenTopRef = useRef<number | null>(null);
+  const noteWhereItStands = useCallback((el: HTMLElement) => {
+    seenTopRef.current = el.scrollTop;
+  }, []);
 
   const setPinned = useCallback((pinned: boolean) => {
     if (!pinned && pinnedRef.current) {
@@ -120,7 +138,8 @@ export function useTranscriptAutoScroll({
     } else {
       el.scrollTop = target; // jsdom has no scrollTo
     }
-  }, []);
+    noteWhereItStands(el);
+  }, [noteWhereItStands]);
 
   const pinToLatest = useCallback(() => {
     setPinned(true);
@@ -196,9 +215,20 @@ export function useTranscriptAutoScroll({
           endJumpFlight();
         }
         setPinned(true);
+        noteWhereItStands(el);
+        return;
+      }
+      const toldLate = seenTopRef.current !== null && Math.abs(el.scrollTop - seenTopRef.current) < 1;
+      if (pinnedRef.current && toldLate && !isNearBottom(el)) {
+        // The transcript is where this hook last saw it: the scroll told is
+        // the browser's, made before what changed size since, and the reader
+        // never left the bottom.
+        scrollToBottom("auto");
+        noteWhereItStands(el);
         return;
       }
       setPinned(isNearBottom(el));
+      noteWhereItStands(el);
     };
     el.addEventListener("wheel", onWheel, { passive: true });
     el.addEventListener("touchmove", onTouchMove, { passive: true });
@@ -212,7 +242,7 @@ export function useTranscriptAutoScroll({
       el.removeEventListener("keydown", onKeyDown);
       el.removeEventListener("scroll", onScroll);
     };
-  }, [setPinned, endJumpFlight]);
+  }, [setPinned, endJumpFlight, scrollToBottom, noteWhereItStands]);
 
   // A pending landing-guarantee timer must not outlive the component.
   useEffect(() => endJumpFlight, [endJumpFlight]);
@@ -243,12 +273,15 @@ export function useTranscriptAutoScroll({
     if (!el) return;
     const ro = new ResizeObserver(() => {
       if (pinnedRef.current) scrollToBottom("auto");
+      // Where a change of size left it: the browser may tell its own scroll
+      // for that change only after the next one.
+      noteWhereItStands(el);
     });
     ro.observe(el);
     // The last message is where streamed markdown grows after render.
     if (el.lastElementChild) ro.observe(el.lastElementChild);
     return () => ro.disconnect();
-  }, [content, ready, scrollToBottom]);
+  }, [content, ready, scrollToBottom, noteWhereItStands]);
 
   // Pure render-time derivation — no effect, no extra state updates on content
   // churn (the dev/75 zero-per-chunk contract): every re-pin path resets it to
