@@ -778,6 +778,7 @@ def initiate(
     mission: str | None = None,
     catalog_rows: list | None = None,
     asker=None,
+    lookups=None,
 ) -> dict:
     """Run ONE ``dataset.discover`` delegation for *node* and leave its
     candidates awaiting the user in that node's own Dataset Finder chat, and
@@ -787,7 +788,9 @@ def initiate(
     *asker* is the person the run is for, which a Solve's thread names (its
     ``acting_user``) where no request does: the delegated run holds the
     skills of the dataflow's packages as that person's runs do
-    (``delegation.run_delegate``).
+    (``delegation.run_delegate``), and the portals are searched for it as that
+    person, holding *lookups*, the Solve batch's lock on its reads of the
+    account's store, when it gives one.
 
     Server-initiated: the model does not choose this, which is why the Dataset
     Finder is a declared hard dependency of both composites (``DEC-068``'s
@@ -853,7 +856,7 @@ def initiate(
         "attachment_id": parent_attachment_id,
         "manifest": parent_manifest,
         "target": {"kind": "node", "targetId": node_id},
-        "asker": asker,  # whom the runtime searches the portals as, for the Finder
+        "asker": asker, "lookups": lookups,  # whom the portals are searched as, and the batch's lock
     }
     inputs = {
         "mission": (mission or str(node.get("goal") or "") or "").strip()[:2000],

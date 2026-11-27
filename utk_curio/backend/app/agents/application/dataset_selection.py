@@ -385,7 +385,7 @@ def _say_the_source_is_recorded(user_key: str, project_id: str, spec: dict, atta
         names = ", ".join(str(r.get("name") or r.get("datasetId") or r.get("url")) for r in rows)
         lines = [
             f"{r['lane']} · {r.get('name') or r.get('datasetId') or r.get('url')}"
-            + (f" · {(r.get('verification') or {}).get('status')}"
+            + (f" · {_verdict_words(r.get('verification'))}"
                if r["lane"] == "external" else
                " · downloading" if r.get("acquiring") else
                (" · installed" if r.get("installed") else " · not installed yet"))
@@ -421,6 +421,19 @@ def _say_the_source_is_recorded(user_key: str, project_id: str, spec: dict, atta
     except Exception:  # noqa: BLE001
         log.warning("Could not log the dataset selection for %s", attachment_id,
                     exc_info=True)
+
+
+def _verdict_words(verification: dict | None) -> str:
+    """What an external pick's link answered, in the words its card's chip
+    says it (``verificationChip.tsx``)."""
+    verification = verification if isinstance(verification, dict) else {}
+    status = verification.get("status")
+    if status == verify.VERIFIED:
+        return "web page" if verification.get("webPage") else "verified"
+    if status in verify.FAILED_STATUSES:
+        http_status = verification.get("httpStatus")
+        return f"answered {http_status}" if isinstance(http_status, int) else "unreachable"
+    return str(status or "unverified")
 
 
 #: dev/132: the two rows worth delegating a fetch for — an external row the

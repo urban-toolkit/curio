@@ -657,9 +657,14 @@ def _source_resolver(
     extra_texts=(),
     catalog_rows: list | None = None,
     asker=None,
+    lookups=None,
 ):
     """dev/126: the callable the content loop consults BEFORE generating for a
     data-loading node — the one place resolution initiates discovery.
+
+    *lookups* is the lock a Solve batch holds around what its nodes' threads
+    read of the account's store (``SolveBatch.dataset_lookups``): the
+    Dataset Finder's search of the portals reads what the account holds.
 
     Same policy on all three resolution paths (the Solve batch, the per-node
     Solve, Simulation Mode's validate): a node whose source is already
@@ -748,6 +753,7 @@ def _source_resolver(
             )[:2000],
             catalog_rows=catalog_rows,
             asker=asker,
+            lookups=lookups,
         )
         if started["status"] == "awaiting":
             return {"state": "awaiting", "detail": started["detail"],

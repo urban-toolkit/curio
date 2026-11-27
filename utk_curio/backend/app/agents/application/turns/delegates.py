@@ -127,7 +127,7 @@ def _plural_s(count: int) -> str:
 
 
 def _dataset_discover_inputs(
-    user_key: str, project_id: str, inputs: dict, *, catalog_rows: list | None = None, asker=None,
+    user_key: str, project_id: str, inputs: dict, *, catalog_rows: list | None = None, asker=None, lookups=None,
 ) -> dict:
     """dev/114: the sixth DEC-063 application — a tool-less Dataset Finder
     child gets the catalog listing, the Discovery Catalog's search for its
@@ -140,8 +140,8 @@ def _dataset_discover_inputs(
     the parent made up would only mislead it. The child is shown the
     listing's first rows, as catalog.search shows them, and how many it was
     not shown. So is the ``discovery`` input, the portals the runtime searched
-    for the child as *asker*, the account a job's thread runs for
-    (:func:`_delegated_discovery_rows`)."""
+    for the child as *asker*, the account a job's thread runs for, holding
+    *lookups* when given (:func:`_delegated_discovery_rows`)."""
     enriched = dict(inputs)
     rows = (
         catalog_rows if catalog_rows is not None
@@ -155,7 +155,7 @@ def _dataset_discover_inputs(
         ),
         **tools._cut("rows", rows, tools._CATALOG_SEARCH_MAX_ROWS),
     }
-    enriched["discovery"] = _delegated_discovery_rows(enriched, asker=asker)
+    enriched["discovery"] = _delegated_discovery_rows(enriched, asker=asker, lookups=lookups)
     if "discoveryReplyContract" not in enriched:
         enriched["discoveryReplyContract"] = _discovery_reply_contract()
     return enriched
@@ -176,13 +176,15 @@ def _discovery_need(inputs: dict) -> str:
     return ""
 
 
-def _delegated_discovery_rows(inputs: dict, *, asker=None) -> dict:
+def _delegated_discovery_rows(inputs: dict, *, asker=None, lookups=None) -> dict:
     """ONE search of the Discovery Catalog's portals for a tool-less Dataset
     Finder child (DEC-046), run by the RUNTIME as discovery.search runs it, as
     ``research.notes.compose`` children get the runtime's web search: the
     child cannot search, so on its own it could name a portal's dataset only
     from memory, as a guess. Searched as *asker* when given (a Solve's thread
-    holds no request), else as the request's account.
+    holds no request), else as the request's account. The search reads what
+    the account holds, so a Solve's threads hold its lock on those reads
+    (*lookups*, ``SolveBatch.dataset_lookups``) while it runs.
 
     The search is the portals' own fan-out, outside the run's web budget,
     which the card's probes and describes keep whole. A search that fails is
@@ -191,7 +193,8 @@ def _delegated_discovery_rows(inputs: dict, *, asker=None) -> dict:
     if not need:
         return {"note": agent_text.message("dataset.discovery-unavailable")}
     try:
-        rows, unavailable = tools._discovery_search_rows({"q": need}, user=asker)
+        with lookups if lookups is not None else contextlib.nullcontext():
+            rows, unavailable = tools._discovery_search_rows({"q": need}, user=asker)
     except Exception:  # noqa: BLE001 - the child still gets its other inputs, and says the search failed
         log.warning("The Discovery Catalog could not be searched for a Dataset Finder's need", exc_info=True)
         return {"note": agent_text.message("dataset.discovery-unavailable")}
@@ -1340,7 +1343,7 @@ def _enriched_delegate_inputs(
         # (#269's). Model-supplied keys win, but for the catalog and the
         # portals' rows: those are always the runtime's.
         return _dataset_discover_inputs(user_key, project_id, inputs, catalog_rows=catalog_rows,
-                                        asker=loop_ctx.get("asker"))
+                                        asker=loop_ctx.get("asker"), lookups=loop_ctx.get("lookups"))
     if capability != "node.content.generate" or "nodeContext" in inputs:
         return inputs
     node_id = _delegate_target_node_id(loop_ctx, inputs)

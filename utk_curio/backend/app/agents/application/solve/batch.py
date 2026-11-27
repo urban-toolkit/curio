@@ -1581,6 +1581,7 @@ class SolveBatch:
                 extra_texts=(str((self.spec.get("dataflow") or {}).get("task") or ""),),
                 catalog_rows=self.catalog_rows,
                 asker=self.acting_user,
+                lookups=self.dataset_lookups,
             ),
             # dev/131: this node may not outlive the session, so its budget is
             # what is left of the session's, and spending it is the session's stop.

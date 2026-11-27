@@ -763,8 +763,9 @@ class TestAPlanWaitsAsItsSourceDoes:
         # The owner applies his request: the dataset is in her dataflow.
         listed = client.get(f"/api/dataflows/{h.pid}/datasets/requests", headers=_auth(alice_token))
         assert listed.status_code == 200, listed.get_data(as_text=True)
-        [request] = listed.get_json()["requests"]
-        applied = client.post(f"/api/dataflows/{h.pid}/datasets/requests/{request['proposalId']}/apply",
+        requests = listed.get_json()["requests"]
+        assert [(r["datasetId"], r["nodeIds"]) for r in requests] == [(dataset_id, [h.load])], requests
+        applied = client.post(f"/api/dataflows/{h.pid}/datasets/requests/{requests[0]['proposalId']}/apply",
                               headers=_auth(alice_token))
         assert applied.status_code == 200, applied.get_data(as_text=True)
         assert dr.source_record(h.spec(), h.load)["status"] == dr.STATE_RESOLVED
