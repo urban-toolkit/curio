@@ -34,16 +34,6 @@
   flex: 0 0 auto;
 }
 
-.kind {
-  font-weight: 400;
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--curio-text-meta);
-  flex: 0 0 auto;
-  white-space: nowrap;
-}
-
 .preview {
   background: var(--curio-card-bg);
   border: 1px solid var(--curio-border);
@@ -357,22 +347,6 @@
   color: var(--curio-success-text);
   font-size: 0.78rem;
   font-weight: 600;
-}
-
-.planGoalInput {
-  width: 100%;
-  box-sizing: border-box;
-  font: inherit;
-  font-size: 0.8rem;
-  padding: 6px 8px;
-  border: 1px solid var(--curio-border-strong);
-  border-radius: 4px;
-  resize: vertical;
-}
-
-.planGoalInput:disabled {
-  background: var(--curio-surface-muted);
-  color: var(--curio-text-secondary);
 }
 
 /* dev/67-7: the check of code that landed, one line, then Verification. */
