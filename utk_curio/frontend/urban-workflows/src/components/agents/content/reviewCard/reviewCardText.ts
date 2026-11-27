@@ -303,8 +303,9 @@ export type PlanRowView =
 
 /** A landed plan node's row (dev/71): what it shows, whether its Solve may
  * run, and the facts it names. Its connections landed with the plan, so only
- * an upstream plan node not built yet holds it back ("after"), and while a
- * build or a Solve runs over the plan no row's Solve starts. A loader whose
+ * an upstream plan node not built yet holds it back ("after"). While a build
+ * or a Solve runs over the plan no row's Solve starts, and a row the run is
+ * not at says nothing of what it waits for: the line says what runs. A loader whose
  * source waits says what for; one that waits for the person's pick goes on
  * by itself once the pick is made, so its row offers no Solve. */
 export function planNodeRowState(
@@ -352,10 +353,10 @@ export function planNodeRowState(
               ? "install"
               : state === "failed" || run === "failed"
                 ? "failed"
-                : unsolvedUpstream.length
-                  ? "after"
-                  : buildRunning || batchRunning || solvingRef !== null
-                    ? "none"
+                : buildRunning || batchRunning || solvingRef !== null
+                  ? "none"
+                  : unsolvedUpstream.length
+                    ? "after"
                     : "solve";
   // Its Solve, while nothing runs over the plan: a node not built yet, one
   // whose check failed, and a loader whose source was picked and waits.

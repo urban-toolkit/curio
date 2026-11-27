@@ -837,7 +837,9 @@ describe("AgentChangeCard: dev/71 a landed plan's rows: Solve then Run", () => {
     expect(screen.queryByRole("button", { name: /^Solve node/ })).toBeNull();
     const building = within(row("a")).getByText("Building…");
     expect(building).toHaveAttribute("data-tooltip", "Generating content (round 1)");
-    expect(within(row("b")).getByText("after Load")).toBeInTheDocument();
+    // The row it waits on is at work: it says nothing until the run ends.
+    expect(row("b")).toHaveAttribute("data-curio-row-view", "none");
+    expect(within(row("b")).queryByText(/^after /)).toBeNull();
   });
 
   it.each([
