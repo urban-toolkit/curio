@@ -89,7 +89,7 @@ export function useAgentCanvasMutations(): void {
   const { createCodeNode } = useCode();
   const {
     applyNodeContent, applyNodeSettings, onEdgesChange, handOverAlongEdges, applyReviewedRemovals, scenarios,
-    setScenarios, dataflowDoc,
+    setScenarios, workflowGoal, workflowGoalRef, setWorkflowGoal, dataflowDoc,
   } = useFlowContext();
   const { agentEditProv } = useProvenanceContext();
   const { reveal } = useNotebookViewContext();
@@ -146,6 +146,18 @@ export function useAgentCanvasMutations(): void {
   // #662: scenarios the apply saved join the canvas's, which a save writes.
   const joinSaved = (saved: Scenario[] | undefined) => {
     if (saved?.length) setScenarios(joinScenarios(scenarios, saved));
+  };
+
+  // The goal the plan gave a dataflow that had none, or the one its Undo put
+  // back, which the Goal line shows and a save writes. It lands only on the
+  // goal the server's step found, read as the canvas holds it now: the plan's
+  // on a goal still empty or only whitespace, the Undo's (which names the
+  // plan's goal, `goalSet`) on a goal that still reads the plan's. A goal the
+  // person set here meanwhile, while the room's socket was down, stays.
+  const takeGoal = (task: string | undefined, goalSet: string | undefined) => {
+    if (typeof task !== "string") return;
+    const goal = workflowGoalRef?.current ?? workflowGoal ?? "";
+    if (typeof goalSet === "string" ? goal === goalSet : !goal.trim()) setWorkflowGoal(task);
   };
 
   // What a landed plan removes, or an Undo takes away (dev/62): the plan's
@@ -226,6 +238,7 @@ export function useAgentCanvasMutations(): void {
       // which hands it over there.)
       handOverAlongEdges(added as never);
       joinSaved(mutation.scenarios);
+      takeGoal(mutation.task, mutation.goalSet);
       window.setTimeout(
         () => fitViewWithMenuOffset(reactFlow, { duration: 400 }),
         50,

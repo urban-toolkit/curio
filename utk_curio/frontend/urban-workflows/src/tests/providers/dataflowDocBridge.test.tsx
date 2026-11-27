@@ -401,6 +401,16 @@ describe("the dataflow's own fields, connections and scenarios", () => {
         expect(api.scenarioSets).toEqual([{ id: "set-s1", name: "Renamed by Ana" }]);
     });
 
+    test("a goal taken out of the doc, as the Undo of a plan that set it can, clears this canvas's", async () => {
+        const goaled = { dataflow: { ...spec().dataflow, task: "Find the shade" } };
+        await open(serverDoc(goaled.dataflow), goaled);
+        expect(api.workflowGoal).toBe("Find the shade");
+        await fromAnotherTab((df) => {
+            delete df.task;
+        });
+        expect(api.workflowGoal).toBe("");
+    });
+
     test("this canvas's name, auto-run and scenarios reach the doc, and the server's sections never go from here", async () => {
         await open(serverDoc(spec().dataflow));
         act(() => {

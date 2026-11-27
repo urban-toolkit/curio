@@ -119,6 +119,7 @@ export const FlowContext = createContext<FlowContextProps>({
     loading: false,
     suggestionsLeft: 0,
     workflowGoal: "",
+    workflowGoalRef: { current: "" },
     allMinimized: 0,
     expandStatus: 'expanded',
     setWorkflowGoal: () => {},

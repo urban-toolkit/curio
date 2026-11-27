@@ -33,10 +33,17 @@ history's checked writes:
   gave it;
 * settings get their old values back, as a new point, only while they hold
   what the agent set;
-* a plan puts back the version before its first write (``history.put_back``),
-  only while nobody changed the dataflow between its writes and nothing
-  outside its own nodes changed since: so a node it removed comes back with
-  its connections.
+* a plan puts back the dataflow as its first write found it
+  (``history.put_back``), with what a person wrote before it that made no
+  version of its own, only while nobody changed the dataflow between its
+  writes and nothing it puts back outside the plan's own nodes changed
+  since: so a node it removed comes back with its connections. It takes
+  back only what the plan wrote: a field of the dataflow the plan did not
+  write stays as it is now, and holds the Undo back only when the put-back
+  would change it, as a scenario made after the plan that holds one of its
+  nodes. The goal never holds it back, changed between its writes or after
+  them: it goes back only when the plan set it and it still reads what the
+  plan wrote as the put-back writes.
 
 A change kept from before a Spatial Join's operation and output were its
 widgets, when the join kept them at ``metadata.spatialJoin``, is undone as the
@@ -244,6 +251,9 @@ def card(part: dict, change: dict, lines: list[str]) -> dict:
     if change.get("planId"):
         # The plan's rows read its ledger, on the attachment, by this id.
         out["planId"] = change["planId"]
+    if "goalSet" in change:
+        # The dataflow's goal, which the plan gave a dataflow that had none.
+        out["goalSet"] = change["goalSet"]
     return out
 
 
