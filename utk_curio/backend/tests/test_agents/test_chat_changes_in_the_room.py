@@ -11,9 +11,15 @@ tab that read that chat reads it again, with no reload. An ask's own
 exchange is told by its own events alone, so no tab is told it twice. A
 watcher's tab is told nothing, and so is a tab of another dataflow.
 
+The room is told at once, then at most once more per dataflow per wait
+(``CHAT_CHANGES_TOLD_EVERY_S``): the chats written during a wait are named,
+all in one word, when it ends. Each word is told once its write is in the
+chat's file, which a tab told reads at once.
+
 alice owns the dataflows, bob is an editor she invited, and carol watches.
 The app runs on a SQLite file, as the room's other tests do. A word can come
-from a job's thread, so each test reads what its tabs heard over a while.
+from a job's thread, or when a wait ends, so each test reads what its tabs
+heard over a while.
 
 On main, where the room is told nothing of these writes, every test fails at
 its check of what the tabs were told.
@@ -22,6 +28,7 @@ its check of what the tabs were told.
 from __future__ import annotations
 
 import time
+import uuid
 from types import SimpleNamespace
 
 import pytest
@@ -41,6 +48,9 @@ NAMESPACE = "/collab"
 EVENT = "agent_chat_changed"
 #: How long a test reads what its tabs were told: past the end of any write.
 HEARD_FOR_S = 1.5
+#: How long the tabs wait before they join: past the wait after a word of the
+#: writes made before them, whose last word would come to them otherwise.
+QUIET_S = 0.5
 NEW_CODE = "return input_0.sum()"
 
 
@@ -80,7 +90,9 @@ def flow(tmp_curio, tmp_path):
 
 
 def _tabs(flow, project: str) -> dict:
-    """A tab of alice's, one of bob's and one of carol's in *project*'s room."""
+    """A tab of alice's, one of bob's and one of carol's in *project*'s room,
+    joined once the room was told the writes made before them."""
+    time.sleep(QUIET_S)
     room = SimpleNamespace(app=flow.app, project=project)
     return {name: _tab(room, token) for name, token in (("alice", ALICE), ("bob", BOB), ("carol", CAROL))}
 
@@ -242,5 +254,96 @@ def test_a_cleared_chat_is_told_to_the_owners_and_the_editors_tabs(flow):
             assert heard[name] == [{"projectId": flow.project, "attachmentId": flow.att}], (
                 f"{name}'s tab was not told once that bob cleared the Node Builder's chat: {heard[name]}")
         assert heard["carol"] == [], "a watcher's tab was told of the dataflow's chats"
+    finally:
+        _leave(tabs)
+
+
+def test_a_burst_of_writes_is_told_at_once_then_in_one_word_naming_every_chat_when_the_wait_ends(
+    flow, monkeypatch,
+):
+    """Four writes in a row into three chats, well inside one wait, as a
+    build's turns come: each tab is told the first at once, naming its chat,
+    and the three after it in one word when the wait ends, naming every chat
+    they wrote, so each tab reads each of those chats once more and no more.
+    At most one word per wait: a build that writes many turns costs each tab
+    a read of each chat per wait, not one per write."""
+    from utk_curio.backend.app.agents.application.turns import turn_jobs
+    from utk_curio.backend.app.agents.repositories import sessions
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    monkeypatch.setattr(turn_jobs, "CHAT_CHANGES_TOLD_EVERY_S", 3.0, raising=False)
+    ukey = _user_dir_key(flow.alice)
+    chats = {attachment: uuid.uuid4().hex for attachment in ("att-one", "att-two", "att-three")}
+    tabs = _tabs(flow, flow.project)
+    try:
+        for attachment in ("att-one", "att-two", "att-one", "att-three"):
+            sessions.append_turns(ukey, flow.project, chats[attachment], attachment, [
+                sessions.make_turn("agent", f"Solved a node for {attachment}."),
+            ])
+
+        at_once = _heard(tabs)
+        for name in ("alice", "bob"):
+            assert at_once[name] == [{"projectId": flow.project, "attachmentIds": ["att-one"]}], (
+                f"{name}'s tab was not told the burst's first write at once, and only it, "
+                f"before the wait ended: {at_once[name]}")
+        when_it_ends = _heard(tabs, seconds=3.0)
+        for name in ("alice", "bob"):
+            words = when_it_ends[name]
+            assert len(words) == 1, (
+                f"{name}'s tab was told the burst's other writes in {len(words)} words, not one: {words}")
+            assert words[0]["projectId"] == flow.project, words
+            assert sorted(words[0]["attachmentIds"]) == ["att-one", "att-three", "att-two"], (
+                f"the word at the end of the wait did not name every chat written during it: {words}")
+        assert at_once["carol"] == [] and when_it_ends["carol"] == [], "a watcher's tab was told of the chats"
+    finally:
+        _leave(tabs)
+
+
+def test_each_word_is_told_once_its_write_is_in_the_chats_file(flow, monkeypatch):
+    """A tab told of a chat reads it at once, from whichever backend process
+    owns the dataflow, which reads the chat's file. So when the room tells a
+    word, the write it is for is already in the file: a turn appended, a
+    card's status set, a cleared chat. Each write here comes after the wait of
+    the one before it has ended, so each is told at once."""
+    from utk_curio.backend.app.agents.repositories import sessions
+    from utk_curio.backend.app.collaboration import roles
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    ukey = _user_dir_key(flow.alice)
+    listed = flow.client.get(f"/api/agents/projects/{flow.project}/attachments", headers=_auth(ALICE)).get_json()
+    session_id = next(c["sessionId"] for c in listed["attachments"] if c["attachmentId"] == flow.att)
+    # What the chat's file held each time the room told a word of the dataflow's chats.
+    on_disk: list[list[dict]] = []
+    telling = roles.tell_editors
+
+    def tell_editors(project_id, event, payload, *, app=None):
+        if event == EVENT and project_id == flow.project:
+            on_disk.append(sessions.read_turns(ukey, flow.project, session_id))
+        return telling(project_id, event, payload, app=app)
+
+    monkeypatch.setattr(roles, "tell_editors", tell_editors)
+    change = {"type": "change", "changeId": "change-1", "kind": "content", "summary": "Rewrote the sum",
+              "status": "applied"}
+    tabs = _tabs(flow, flow.project)
+    try:
+        turn = sessions.make_turn("agent", "Rewrote the sum.", content=[change])
+        sessions.append_turns(ukey, flow.project, session_id, flow.att, [turn])
+        heard = _heard(tabs)
+        assert heard["alice"], "the room told alice's tab nothing of the turn appended"
+        assert on_disk and on_disk[-1] == [turn], (
+            f"the room told of the appended turn before the chat's file held it: {on_disk}")
+
+        on_disk.clear()
+        assert sessions.update_change_status(ukey, flow.project, session_id, "change-1", "undone")
+        heard = _heard(tabs)
+        assert heard["alice"], "the room told alice's tab nothing of the card's new status"
+        assert on_disk and on_disk[-1][0]["content"][0]["status"] == "undone", (
+            f"the room told of the card's new status before the chat's file held it: {on_disk}")
+
+        on_disk.clear()
+        sessions.clear_turns(ukey, flow.project, session_id, flow.att)
+        heard = _heard(tabs)
+        assert heard["alice"], "the room told alice's tab nothing of the cleared chat"
+        assert on_disk == [[]], f"the room told of the cleared chat before its file was empty: {on_disk}"
     finally:
         _leave(tabs)
