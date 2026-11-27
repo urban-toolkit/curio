@@ -122,6 +122,8 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 
 `--backend-host` / `--backend-port` (127.0.0.1:5002), `--sandbox-host` / `--sandbox-port` (127.0.0.1:2000), `--frontend-host` / `--frontend-port` (localhost:8080), and `--verbose N` (0=silent, 1=normal, 2=debug).
 
+Each server listens on its own host alone, so with the defaults only this machine reaches Curio. In a container, start Curio with `--backend-host 0.0.0.0` and `--frontend-host 0.0.0.0`, as Curio's Dockerfile and compose files do.
+
 > [!WARNING]
 > Leave `--sandbox-host` at `127.0.0.1` unless you are genuinely running the backend on another machine. The sandbox executes arbitrary node code and, while it requires a shared secret, there is no reason to offer that surface to the network.
 
@@ -2626,7 +2628,10 @@ the dataflow is for there, with **Add what this dataflow is for** or the edit
 button: Enter or **Save** keeps it, Escape or **Cancel** leaves it as it was.
 The agents on the dataflow read it, and several of them, the Dataflow Builder
 most of all, are written around knowing what the dataflow is for. It is saved
-with the dataflow, and every agent's chat shows the same goal.
+with the dataflow, and every agent's chat shows the same goal. When the goal is
+empty, a plan the Dataflow Builder lands fills it with the plan's goal, and the
+plan's card says *Goal set to* with it. The plan's **Undo** takes that goal
+back while it still reads the plan's goal, and leaves any other goal as it is.
 
 ### What an agent may reach
 

@@ -99,6 +99,8 @@ services:
       - "1"
       - --backend-host
       - 0.0.0.0
+      - --frontend-host
+      - 0.0.0.0
       - --backend-port
       - "5002"
       # No --sandbox-host: the sandbox keeps its 127.0.0.1 default. It runs

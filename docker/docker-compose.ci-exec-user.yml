@@ -94,6 +94,8 @@ services:
       - --with-examples
       - --backend-host
       - 0.0.0.0
+      - --frontend-host
+      - 0.0.0.0
       - --backend-port
       - "5002"
       - --backend-url

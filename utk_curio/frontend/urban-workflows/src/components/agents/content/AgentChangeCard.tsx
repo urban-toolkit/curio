@@ -106,7 +106,7 @@ export const AgentChangeCard: React.FC<{
         <span className={styles.kind}>{CHANGE_KIND_LABEL[part.kind] ?? part.kind}</span>
       </div>
       {part.source ? <SourceBlock source={part.source} /> : null}
-      {isPlan ? <PlanSummary part={part} /> : null}
+      {isPlan ? <PlanSummary part={part} goalSet={part.goalSet} /> : null}
       {(part.lines ?? []).map((line, i) => (
         <div key={`line-${i}`} className={styles.meta}>
           {line}

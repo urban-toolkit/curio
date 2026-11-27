@@ -33,8 +33,18 @@ from utk_curio.common.llm_endpoint import without_backend_only
 from utk_curio.sandbox.isolation.lifecycle import backend_server_environment, server_environment
 
 
+def _listen_address(host):
+    """Where the frontend listens for *host*, its ``--frontend-host``: the name
+    ``localhost`` as ``127.0.0.1``. Node resolves ``localhost`` to ``::1``
+    first on macOS, where the dev server then never answers an IPv4 client,
+    such as ``scripts/test.sh``'s wait for the frontend; the page server's
+    IPv4 socket already takes ``127.0.0.1`` for it."""
+    return "127.0.0.1" if host == "localhost" else host
+
+
 def start_frontend(host="localhost", port=8080, force_rebuild=False, no_server=False, base_path=""):
     log_info(f"Starting frontend on {host}:{port}...", COLOR_FRONTEND, 0)
+    listen = _listen_address(host)
 
     _kill_port(int(port))
 
@@ -60,10 +70,16 @@ def start_frontend(host="localhost", port=8080, force_rebuild=False, no_server=F
         if os.environ.get("CURIO_DEV") == "1":
 
             # --port pins the requested port; otherwise webpack-dev-server
-            # auto-bumps to the next free port when ours is held.
-            start_cmd = ["npm", "run", "start", "--", "--port", str(port)]
+            # auto-bumps to the next free port when ours is held. --host, as
+            # for the page server below: with none it listens on every interface.
+            start_cmd = ["npm", "run", "start", "--", "--port", str(port), "--host", listen]
             if os.environ.get("CURIO_NO_OPEN"):
                 start_cmd.append("--no-open")
+            elif listen != host:
+                # It opens the page at its --host: keep the origin the guides
+                # name, whose sign-in and storage a developer's tab holds. The
+                # reset first: package.json's --open is a flag, not a list.
+                start_cmd += ["--open-reset", "--open-target", f"http://{host}:{port}/"]
             process = subprocess.Popen(
                 start_cmd,
                 stdout=subprocess.PIPE,
@@ -106,7 +122,7 @@ def start_frontend(host="localhost", port=8080, force_rebuild=False, no_server=F
                     (
                         "from utk_curio.cli.static_server import run_spa_static_server; "
                         f"run_spa_static_server('dist', {port}, {base_path!r}, "
-                        f"{os.environ.get('BACKEND_URL', '')!r})"
+                        f"{os.environ.get('BACKEND_URL', '')!r}, {listen!r})"
                     ),
                 ],
                 stdout=subprocess.PIPE,

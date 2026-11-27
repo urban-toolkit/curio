@@ -95,4 +95,4 @@ services:
       - >-
         umask 000 && exec python curio.py start all --testing --with-examples
         --backend-host 0.0.0.0 --backend-port 5002 --backend-url "${CURIO_E2E_BACKEND_URL:?the host address of this stack's backend}"
-        --sandbox-host 0.0.0.0 --sandbox-port 2000 --exec-memory-mb 24576
+        --frontend-host 0.0.0.0 --sandbox-host 0.0.0.0 --sandbox-port 2000 --exec-memory-mb 24576

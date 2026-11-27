@@ -61,6 +61,9 @@ export interface FlowContextProps {
     setExpandStatus: (value: 'expanded' | 'minimized') => void;
     suggestionsLeft: number;
     workflowGoal: string;
+    /** The goal as the canvas holds it now, which `setWorkflowGoal` and the
+     *  dataflow's doc write at once: what a change that lands reads. */
+    workflowGoalRef: React.MutableRefObject<string>;
     setWorkflowGoal: (goal: string) => void;
     loading: boolean;
 

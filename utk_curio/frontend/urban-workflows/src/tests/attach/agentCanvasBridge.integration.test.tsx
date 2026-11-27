@@ -27,6 +27,10 @@ const mockShowToast = jest.fn();
 // Where a node's settings land when no setter of the node's own takes them.
 const mockUpdateDataNode = jest.fn();
 const mockMarkNodeStale = jest.fn();
+// The dataflow's goal, which a plan that set it gives the canvas.
+const mockSetWorkflowGoal = jest.fn();
+// The canvas's goal, which its setter writes at once, as the hook's ref.
+const mockWorkflowGoal = { current: '' };
 
 jest.mock('../../hook/useWorkflowOperations', () => ({
   useWorkflowOperations: () => ({
@@ -44,7 +48,12 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     setExpandStatus: jest.fn(),
     updateDataNode: (...args: unknown[]) => mockUpdateDataNode(...args),
     updateDefaultCode: jest.fn(),
-    workflowGoal: '',
+    workflowGoal: mockWorkflowGoal.current,
+    workflowGoalRef: mockWorkflowGoal,
+    setWorkflowGoal: (goal: string) => {
+      mockWorkflowGoal.current = goal;
+      mockSetWorkflowGoal(goal);
+    },
     acceptSuggestion: jest.fn(),
   }),
 }));
@@ -302,5 +311,101 @@ describe('edges an agent applies hand over what their sources hold, as a drawn c
     const planned = api.nodes.find((n: any) => n.id === PLANNED.id);
     expect(planned?.data?.input).toEqual({ path: RESULT });
     expect(planned?.data?.source).toBe(CREATED.id);
+  });
+});
+
+describe('the goal a plan set reaches a canvas no doc binds, and its Undo takes it back', () => {
+  const GOAL = 'Find the parks a short walk from home';
+
+  // The canvas's goal is empty, as on a new dataflow.
+  beforeEach(() => {
+    mockWorkflowGoal.current = '';
+  });
+
+  it('the step that set the goal gives it to the canvas, and the Undo gives back the goal before it', async () => {
+    mockSetWorkflowGoal.mockClear();
+    renderCanvas();
+    await flush();
+    await act(async () => {
+      notifyAgentCanvasMutation({
+        kind: 'graph-created', planId: 'plan-sets-the-goal', step: 0, nodes: [CREATED], edges: [], task: GOAL,
+      });
+    });
+    await flush();
+    expect(mockSetWorkflowGoal).toHaveBeenCalledTimes(1);
+    expect(mockSetWorkflowGoal).toHaveBeenLastCalledWith(GOAL);
+    await act(async () => {
+      notifyAgentCanvasMutation({
+        kind: 'graph-created', planId: 'undo:plan-sets-the-goal', nodes: [], edges: [],
+        removedNodeIds: [CREATED.id], removedEdgeIds: [], task: '', goalSet: GOAL,
+      });
+    });
+    await flush();
+    expect(mockSetWorkflowGoal).toHaveBeenCalledTimes(2);
+    expect(mockSetWorkflowGoal).toHaveBeenLastCalledWith('');
+  });
+
+  it('a plan that set no goal leaves the canvas\'s goal as it is', async () => {
+    mockSetWorkflowGoal.mockClear();
+    renderCanvas();
+    await flush();
+    await act(async () => {
+      notifyAgentCanvasMutation({
+        kind: 'graph-created', planId: 'plan-keeps-the-goal', step: 0, nodes: [CREATED], edges: [],
+      });
+    });
+    await flush();
+    expect(mockSetWorkflowGoal).not.toHaveBeenCalled();
+  });
+});
+
+describe('a canvas no doc binds keeps a goal set on it while its socket was down', () => {
+  const GOAL = 'Find the parks a short walk from home';
+  const THEIRS = 'Map the shaded parks';
+
+  beforeEach(() => {
+    mockWorkflowGoal.current = THEIRS;
+    mockSetWorkflowGoal.mockClear();
+  });
+
+  it("the plan's step gives its goal only to a canvas whose goal is still empty or only whitespace", async () => {
+    renderCanvas();
+    await flush();
+    await act(async () => {
+      notifyAgentCanvasMutation({
+        kind: 'graph-created', planId: 'plan-finds-a-goal', step: 0, nodes: [CREATED], edges: [], task: GOAL,
+      });
+    });
+    await flush();
+    expect(mockSetWorkflowGoal).not.toHaveBeenCalled();
+    expect(mockWorkflowGoal.current).toBe(THEIRS);
+  });
+
+  it("a canvas whose goal is only whitespace takes the plan's goal", async () => {
+    mockWorkflowGoal.current = '   ';
+    renderCanvas();
+    await flush();
+    await act(async () => {
+      notifyAgentCanvasMutation({
+        kind: 'graph-created', planId: 'plan-fills-whitespace', step: 0, nodes: [CREATED], edges: [], task: GOAL,
+      });
+    });
+    await flush();
+    expect(mockSetWorkflowGoal).toHaveBeenCalledTimes(1);
+    expect(mockSetWorkflowGoal).toHaveBeenLastCalledWith(GOAL);
+  });
+
+  it("the Undo takes the goal back only from a canvas whose goal still reads the plan's", async () => {
+    renderCanvas();
+    await flush();
+    await act(async () => {
+      notifyAgentCanvasMutation({
+        kind: 'graph-created', planId: 'undo:plan-finds-a-goal', nodes: [], edges: [],
+        removedNodeIds: [], removedEdgeIds: [], task: '', goalSet: GOAL,
+      });
+    });
+    await flush();
+    expect(mockSetWorkflowGoal).not.toHaveBeenCalled();
+    expect(mockWorkflowGoal.current).toBe(THEIRS);
   });
 });
