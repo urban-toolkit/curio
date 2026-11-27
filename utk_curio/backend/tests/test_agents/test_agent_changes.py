@@ -518,10 +518,11 @@ class TestUndoByKind:
         assert "load" not in _by_id(flow)
         assert flow["task"] == "Map the parks in the shade"
 
-    def _two_nodes_with_a_write_after_each(self, client, user, token, monkeypatch, change):
+    def _two_nodes_with_a_write_after_each(self, client, user, token, monkeypatch, change, nodes=None):
         """A plan of two new nodes and the connection between them, landed on
-        an empty goal, while right after each of its nodes landed, before the
-        plan's next write, the person's change ``change(node_id)`` reached the
+        an empty goal of a dataflow of *nodes* (the loader and ``sum`` when not
+        given), while right after each of its nodes landed, before the plan's
+        next write, the person's change ``change(node_id)`` reached the
         dataflow, as an open tab's own write does. The project, the
         attachment, the plan's card, the dataflow as it was before the plan,
         and the plan's nodes."""
@@ -529,7 +530,7 @@ class TestUndoByKind:
         from utk_curio.backend.app.collaboration import history
         from utk_curio.backend.app.projects.services import _user_dir_key
 
-        project, att = _setup(client, user, token, coord=DFB)
+        project, att = _setup(client, user, token, coord=DFB, nodes=nodes)
         before = _saved(client, token, project)
         act = in_the_room.act
         landed: list = []
@@ -631,6 +632,55 @@ class TestUndoByKind:
         assert set(_by_id(flow)) == {"load", "sum", *landed}
         assert _by_id(flow)["sum"]["saveOutputDataset"] is True
         assert flow["task"] == "count the parks by street"
+
+    @pytest.mark.parametrize("made", ["a-connection-between-two-nodes-it-found", "a-scenario-not-its-own",
+                                      "the-description"])
+    def test_undo_of_a_plan_is_refused_when_something_outside_it_changed_while_it_landed(
+        self, client, user_and_token, tmp_curio, monkeypatch, made,
+    ):
+        """A connection drawn between two nodes the dataflow held before the
+        plan, a scenario that is not the plan's, or the dataflow's description,
+        written once between two of the plan's writes, right after its first
+        node landed, still refuses its Undo, and nothing changes. Only the
+        check between the plan's writes holds these back: the plan's last
+        write left each of them, so the check after the plan finds nothing
+        changed, and the put-back of the dataflow the plan found would erase
+        them."""
+        user, token = user_and_token
+        written: list = []
+
+        def change(_node_id):
+            def made_in(flow):
+                if written:
+                    return
+                written.append(made)
+                if made == "a-connection-between-two-nodes-it-found":
+                    flow["edges"].append({"id": "sum-note", "source": "sum", "target": "note",
+                                          "sourceHandle": "out", "targetHandle": "in"})
+                elif made == "a-scenario-not-its-own":
+                    flow["scenarios"] = [{"id": "s1", "name": "Cool roofs", "color": "#4477aa", "nodes": ["note"]}]
+                else:
+                    flow["description"] = "Parks a short walk from home"
+            return made_in
+
+        project, att, card, _, landed = self._two_nodes_with_a_write_after_each(
+            client, user, token, monkeypatch, change, nodes=_nodes() + [_note()],
+        )
+        held = _saved(client, token, project)
+        assert set(_by_id(held)) == {"load", "sum", "note", *landed}
+        assert held["task"] == "count the parks by street"
+        if made == "a-connection-between-two-nodes-it-found":
+            theirs = [(e["source"], e["target"]) for e in held["edges"] if e.get("id") == "sum-note"]
+            assert theirs == [("sum", "note")], held["edges"]
+        elif made == "a-scenario-not-its-own":
+            theirs = [(s.get("id"), s.get("name")) for s in held.get("scenarios") or []]
+            assert theirs == [("s1", "Cool roofs")], held
+        else:
+            assert held.get("description") == "Parks a short walk from home", held
+        refused = _undo(client, token, project, att, card["changeId"])
+        assert refused.status_code == 409, refused.get_json()
+        assert refused.get_json()["error"] == "Someone changed this dataflow after; nothing was undone."
+        assert _saved(client, token, project) == held
 
     def test_undo_of_a_plan_keeps_what_a_person_wrote_before_it_with_no_version_of_its_own(
         self, client, user_and_token, tmp_curio, monkeypatch,
