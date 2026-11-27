@@ -6,7 +6,7 @@ writes into a chat with no ask of it running: a Solve's turns and the task it
 hands a loader's Dataset Finder, a pick's Source recorded turn in the
 Finder's chat and in the chat that asked for the candidates, an Undo's card
 turned undone, a cleared chat. Each such write tells the same tabs which
-chat changed (``agent_chat_changed``, ``{projectId, attachmentId}``), and a
+chat changed (``agent_chat_changed``, ``{projectId, attachmentIds}``), and a
 tab that read that chat reads it again, with no reload. An ask's own
 exchange is told by its own events alone, so no tab is told it twice. A
 watcher's tab is told nothing, and so is a tab of another dataflow.
@@ -135,13 +135,15 @@ def _written(before: dict, after: dict) -> set[str]:
 
 def _the_editors_are_told_of(project: str, tabs: dict, written: set[str]) -> None:
     """alice's tab and bob's were told of each chat in *written*, and of no
-    other, each word naming the dataflow and the chat; carol's of none."""
+    other, each word naming the dataflow and its chats; carol's of none."""
     heard = _heard(tabs)
     for name in ("alice", "bob"):
-        told = {e.get("attachmentId") for e in heard[name]}
+        told = {attachment for e in heard[name] for attachment in e.get("attachmentIds") or []}
         assert told == written, (
             f"{name}'s tab was told of the chats {sorted(told)}, not of the chats the server wrote: {sorted(written)}")
-        assert all(e == {"projectId": project, "attachmentId": e["attachmentId"]} for e in heard[name]), heard[name]
+        assert all(
+            e == {"projectId": project, "attachmentIds": e["attachmentIds"]} and e["attachmentIds"] for e in heard[name]
+        ), heard[name]
     assert heard["carol"] == [], "a watcher's tab was told of the dataflow's chats"
 
 
@@ -224,7 +226,7 @@ def test_an_undo_is_told_and_an_asks_own_exchange_only_by_its_ask(flow, monkeypa
 
         heard = _heard(tabs)
         for name in ("alice", "bob"):
-            assert heard[name] == [{"projectId": flow.project, "attachmentId": flow.att}], (
+            assert heard[name] == [{"projectId": flow.project, "attachmentIds": [flow.att]}], (
                 f"{name}'s tab was not told once that the Undo changed the Node Builder's chat: {heard[name]}")
         assert heard["carol"] == [], "a watcher's tab was told of the dataflow's chats"
     finally:
@@ -251,7 +253,7 @@ def test_a_cleared_chat_is_told_to_the_owners_and_the_editors_tabs(flow):
 
         heard = _heard(tabs)
         for name in ("alice", "bob"):
-            assert heard[name] == [{"projectId": flow.project, "attachmentId": flow.att}], (
+            assert heard[name] == [{"projectId": flow.project, "attachmentIds": [flow.att]}], (
                 f"{name}'s tab was not told once that bob cleared the Node Builder's chat: {heard[name]}")
         assert heard["carol"] == [], "a watcher's tab was told of the dataflow's chats"
     finally:
@@ -271,7 +273,7 @@ def test_a_burst_of_writes_is_told_at_once_then_in_one_word_naming_every_chat_wh
     from utk_curio.backend.app.agents.repositories import sessions
     from utk_curio.backend.app.projects.services import _user_dir_key
 
-    monkeypatch.setattr(turn_jobs, "CHAT_CHANGES_TOLD_EVERY_S", 3.0, raising=False)
+    monkeypatch.setattr(turn_jobs, "CHAT_CHANGES_TOLD_EVERY_S", 3.0)
     ukey = _user_dir_key(flow.alice)
     chats = {attachment: uuid.uuid4().hex for attachment in ("att-one", "att-two", "att-three")}
     tabs = _tabs(flow, flow.project)

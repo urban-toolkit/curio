@@ -28,7 +28,9 @@ export type { PlanNodeReviewState } from "./reviewCard/reviewCardText";
  * Since memo dev/142 (F4) the card COMPOSES one section per concern: source,
  * a draft's justification, package-draft details, the backend trust edge, the
  * effect line and the actions. It keeps only what spans them: the busy /
- * error state of an action.
+ * error state of an action. A refused Apply or Dismiss says why, as an alert;
+ * in a chat, which keeps that reason for the card (`refusal`), though a read
+ * of the chat draws the card anew, until the user acts on it again.
  */
 export const AgentReviewCard: React.FC<{
   part: AgentProposalPart;
@@ -45,9 +47,14 @@ export const AgentReviewCard: React.FC<{
    * agent made, says what the owner's Apply of it does
    * (`EditorRequestsSection`). */
   effect?: string;
-}> = ({ part, tintClassName, onApply, onDismiss, waitsForOwner = false, effect }) => {
+  /** Why the server refused the card's last Apply or Dismiss, as the chat
+   * keeps it until the user acts on the card again: said in place of the
+   * card's own record of it, which a card drawn anew no longer holds. */
+  refusal?: string | null;
+}> = ({ part, tintClassName, onApply, onDismiss, waitsForOwner = false, effect, refusal = null }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const said = busy ? null : refusal ?? error;
   // A review of a change, saved before agents changed the dataflow directly:
   // its Apply is gone, never offered, and only its Dismiss is left.
   const madeBefore = landsAsAChange(part.tool);
@@ -86,7 +93,11 @@ export const AgentReviewCard: React.FC<{
         waitsForOwner={waitsForOwner}
         madeBefore={madeBefore}
       />
-      {error ? <div className={styles.error}>{error}</div> : null}
+      {said ? (
+        <div className={styles.error} role="alert">
+          {said}
+        </div>
+      ) : null}
     </div>
   );
 };

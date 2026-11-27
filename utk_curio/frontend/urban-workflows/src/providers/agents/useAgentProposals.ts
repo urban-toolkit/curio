@@ -5,10 +5,12 @@
  * import. An applied install and an Undo carry their mutation to the LIVE
  * canvas through the dev/48 §3.3 bridge: the server's answer is the only
  * payload source: and then refresh the transcript and the listing, which are
- * the truth.
+ * the truth. Why the server refused a card's Undo, Apply or Dismiss is kept
+ * here, by chat and card (`refusals`), so the card says it across the reads
+ * that draw it anew, until the user acts on it again.
  */
 import type { DatasetDiscoverySourceInput } from "../../services/datasetCatalog/datasetCatalogTypes";
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useFlowContext } from "../FlowProvider";
 import { useOptionalToastContext } from "../ToastProvider";
@@ -42,6 +44,10 @@ export interface AgentProposalsSlice {
   ) => Promise<AgentDatasetSelection>;
   /** `discoverySource` is where the file came from, recorded with it. */
   importDataset: (file: File, discoverySource?: DatasetDiscoverySourceInput) => Promise<string | null>;
+  /** Why the server refused the last Undo, Apply or Dismiss of a card, by
+   * chat and by the card's change or proposal id: its card says it, though a
+   * read of the chat draws the card anew, until the user acts on it again. */
+  refusals: Record<string, Record<string, string>>;
 }
 
 export function useAgentProposals(opts: {
@@ -80,44 +86,73 @@ export function useAgentProposals(opts: {
     [importDatasetFile],
   );
 
+  const [refusals, setRefusals] = useState<Record<string, Record<string, string>>>({});
+  // Another dataflow's cards are not this one's.
+  useEffect(() => setRefusals({}), [effectiveProjectId]);
+  /** Act on the card *cardId* of *attachmentId*'s chat with *request*: the
+   * reason the server refused its last action goes as the user acts again;
+   * whatever the answer, the chat and the listing are read again after it
+   * and waited for, so the card never offers its action again on its old
+   * status; a refusal's reason, the server's words, is kept for the card,
+   * which a read may draw anew, before the refusal reaches it. */
+  const actOnCard = useCallback(
+    async <T,>(attachmentId: string, cardId: string, request: () => Promise<T>): Promise<T> => {
+      setRefusals((prev) => {
+        if (!prev[attachmentId]?.[cardId]) return prev;
+        const { [cardId]: _gone, ...rest } = prev[attachmentId];
+        return { ...prev, [attachmentId]: rest };
+      });
+      let why: string | null = null;
+      try {
+        return await request();
+      } catch (e) {
+        why = e instanceof Error && e.message ? e.message : null;
+        throw e;
+      } finally {
+        await refreshAfterMutation(attachmentId);
+        if (why !== null) {
+          const reason = why;
+          setRefusals((prev) => ({ ...prev, [attachmentId]: { ...prev[attachmentId], [cardId]: reason } }));
+        }
+      }
+    },
+    [refreshAfterMutation],
+  );
+
   const applyProposal = useCallback(
     async (attachmentId: string, proposalId: string) => {
       const pid = projectRef.current;
       if (!pid) throw new Error("no project");
-      try {
+      // Success appends the result turn + statuses; a 409 marked it stale:
+      // either way the transcript and listing are the truth.
+      return actOnCard(attachmentId, proposalId, async () => {
         const result = await agentsApi.applyProposal(pid, attachmentId, proposalId);
         bridgeApplyResult(proposalId, result);
         // dev/106: a reviewed project.install landed a template (and its
-        // required closure) in the lockfile — the AGENTS palette repaints.
+        // required closure) in the lockfile: the AGENTS palette repaints.
         if (result.installedCoord) notifyAgentCatalogRefresh();
         return result;
-      } finally {
-        // Success appends the result turn + statuses; a 409 marked it stale —
-        // either way the transcript and listing are the truth.
-        await refreshAfterMutation(attachmentId);
-      }
+      });
     },
-    [projectRef, refreshAfterMutation],
+    [projectRef, actOnCard],
   );
 
   const dismissProposal = useCallback(
     async (attachmentId: string, proposalId: string) => {
       const pid = projectRef.current;
       if (!pid) throw new Error("no project");
-      try {
-        await agentsApi.dismissProposal(pid, attachmentId, proposalId);
-      } finally {
-        await refreshAfterMutation(attachmentId);
-      }
+      await actOnCard(attachmentId, proposalId, () => agentsApi.dismissProposal(pid, attachmentId, proposalId));
     },
-    [projectRef, refreshAfterMutation],
+    [projectRef, actOnCard],
   );
 
   const undoChange = useCallback(
     async (attachmentId: string, changeId: string) => {
       const pid = projectRef.current;
       if (!pid) throw new Error("no project");
-      try {
+      // Undone, the card says so; refused, nothing changed, and the card
+      // says why.
+      return actOnCard(attachmentId, changeId, async () => {
         const result = await agentsApi.undoChange(pid, attachmentId, changeId);
         // The nodes the Undo took out are this tab's removal: a tab that was
         // editing one says who removed it.
@@ -129,12 +164,9 @@ export function useAgentProposals(opts: {
         // binds takes the same mutations here.
         notifyAgentChangesLanded(result.canvas);
         return result;
-      } finally {
-        // Undone, the card says so; refused, nothing changed.
-        await refreshAfterMutation(attachmentId);
-      }
+      });
     },
-    [projectRef, refreshAfterMutation],
+    [projectRef, actOnCard],
   );
 
   const recordDatasetSelection = useCallback(
@@ -155,8 +187,8 @@ export function useAgentProposals(opts: {
   );
 
   return useMemo(
-    () => ({ applyProposal, dismissProposal, undoChange, recordDatasetSelection, importDataset }),
-    [applyProposal, dismissProposal, undoChange, recordDatasetSelection, importDataset],
+    () => ({ applyProposal, dismissProposal, undoChange, recordDatasetSelection, importDataset, refusals }),
+    [applyProposal, dismissProposal, undoChange, recordDatasetSelection, importDataset, refusals],
   );
 }
 

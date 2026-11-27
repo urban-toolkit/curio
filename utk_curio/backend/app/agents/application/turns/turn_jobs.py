@@ -25,8 +25,12 @@ What the server writes into a chat outside its asks' own events, a turn it
 appends (a pick's Source recorded, a Solve's or a build's, a task another
 agent hands over), a card's status (an Undo) or a clear, reaches the same
 tabs as a word that names the chat (:data:`CHAT_CHANGED_EVENT`,
-``sessions.when_changed``): each tab that read the chat reads it again. An
-ask's own exchange is told by its events alone.
+``sessions.when_changed``), once the write is in the chat's file: each tab
+that read the chat reads it again. The word goes at once, then at most once
+more per dataflow every :data:`CHAT_CHANGES_TOLD_EVERY_S`, naming every chat
+written during the wait, as the dataflow's agents' word is paced
+(``roles.PacedWord``): a build that writes many turns costs each tab a read
+of each chat per wait. An ask's own exchange is told by its events alone.
 
 Whoever asked can withdraw a waiting ask (:func:`withdraw`). Whoever asked,
 the owner or any editor can stop a running turn (:func:`stop`): it stops at
@@ -70,9 +74,12 @@ log = logging.getLogger(__name__)
 #: dataflow: ``{projectId, attachmentId, askId, seq, event, data}``.
 EVENT = "agent_turn"
 #: The room's event that tells the tabs that edit the dataflow that the
-#: server changed an agent's chat outside its asks' own events:
-#: ``{projectId, attachmentId}``.
+#: server changed agents' chats outside their asks' own events:
+#: ``{projectId, attachmentIds}``, the chats changed since the last word.
 CHAT_CHANGED_EVENT = "agent_chat_changed"
+#: After one such word, at most one more per dataflow in this many seconds:
+#: the chats changed during the wait are named when it ends.
+CHAT_CHANGES_TOLD_EVERY_S = 0.25
 
 WAITING = "waiting"
 RUNNING = "running"
@@ -406,11 +413,17 @@ def end_asks_of(user_key: str, project_id: str, attachment_ids) -> None:
 sessions.when_removed(end_asks_of)
 
 
+#: The word of a dataflow's chats, paced: at once, then at most once more
+#: every :data:`CHAT_CHANGES_TOLD_EVERY_S`, read as it starts each wait.
+_chats_word = roles.PacedWord(CHAT_CHANGED_EVENT, lambda: CHAT_CHANGES_TOLD_EVERY_S, names="attachmentIds")
+
+
 def _tell_chat_changed(user_key: str, project_id: str, attachment_id: str) -> None:
     """Tell the tabs in the dataflow's room that edit it, a watcher's never,
     that the chat of *attachment_id* changed outside its asks' own events
-    (``sessions.when_changed``): each that read it reads it again."""
-    roles.tell_editors(project_id, CHAT_CHANGED_EVENT, {"projectId": project_id, "attachmentId": attachment_id})
+    (``sessions.when_changed``), now or with the other chats changed when the
+    wait after the last word ends: each that read it reads it again."""
+    _chats_word.tell(project_id, attachment_id)
 
 
 sessions.when_changed(_tell_chat_changed)

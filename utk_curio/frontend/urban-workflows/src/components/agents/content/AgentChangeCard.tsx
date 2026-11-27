@@ -40,7 +40,9 @@ const SolveLine: React.FC<{ part: AgentChangePart }> = ({ part }) => {
  * the change replaced, by kind: a node's code gets its code before, a new node
  * goes with its connections, settings get their old values, a plan puts back
  * the dataflow before it. When someone changed it after, Undo is refused and
- * the card says who; nothing was undone. The code is model output: it renders
+ * the card says who; nothing was undone. The chat keeps that reason for the
+ * card (`refusal`), so the card says it though a read of the chat draws it
+ * anew, until the user acts on it again. The code is model output: it renders
  * as inert plain text (REQ-SEC-002), never markup.
  *
  * A plan's card lists its nodes, each with Solve then Run as its code is
@@ -53,6 +55,10 @@ export const AgentChangeCard: React.FC<{
   tintClassName?: string;
   /** Undo the change; omitted, the card offers none. */
   onUndo?: (changeId: string) => Promise<unknown>;
+  /** Why the server refused the card's last Undo, as the chat keeps it
+   * until the user acts on the card again: said in place of the card's own
+   * record of it, which a card drawn anew no longer holds. */
+  refusal?: string | null;
   /** A plan's rows: the attachment's ledger of the plan this card is. */
   planNodeState?: PlanNodeReviewState;
   onSolvePlanNode?: (ref: string, onLine?: (line: string) => void) => Promise<void>;
@@ -64,6 +70,7 @@ export const AgentChangeCard: React.FC<{
   part,
   tintClassName,
   onUndo,
+  refusal = null,
   planNodeState,
   onSolvePlanNode,
   onRunPlanNode,
@@ -73,6 +80,7 @@ export const AgentChangeCard: React.FC<{
 }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const said = busy ? null : refusal ?? error;
 
   const undo = async () => {
     if (!onUndo || busy) return;
@@ -134,9 +142,9 @@ export const AgentChangeCard: React.FC<{
           </button>
         </div>
       ) : null}
-      {error ? (
+      {said ? (
         <div className={styles.error} role="alert">
-          {error}
+          {said}
         </div>
       ) : null}
     </div>

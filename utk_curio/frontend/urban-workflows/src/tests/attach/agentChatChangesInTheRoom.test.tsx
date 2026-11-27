@@ -183,11 +183,11 @@ function setStatus(attachmentId: string, id: string, status: string) {
     turn.content
       ? {
           ...turn,
-          content: turn.content.map((part) =>
-            (part.type === "change" && part.changeId === id) || (part.type === "proposal" && part.proposalId === id)
-              ? ({ ...part, status } as AgentContentPart)
-              : part,
-          ),
+          content: turn.content.map((part) => {
+            const card = part as { type: string; changeId?: string; proposalId?: string };
+            const named = card.type === "change" ? card.changeId : card.type === "proposal" ? card.proposalId : null;
+            return named === id ? ({ ...part, status } as AgentContentPart) : part;
+          }),
         }
       : turn,
   );
@@ -228,9 +228,10 @@ function fire(socket: FakeSocket, event: string, payload?: any) {
   });
 }
 
-/** The server tells the room it changed the chat of *attachmentId*. */
+/** The server tells the room it changed the chat of *attachmentId*, in a word
+ * of its own. */
 function chatChanged(socket: FakeSocket, attachmentId: string, projectId = "p1") {
-  fire(socket, CHAT_CHANGED, { projectId, attachmentId });
+  fire(socket, CHAT_CHANGED, { projectId, attachmentIds: [attachmentId] });
 }
 
 /** The room tells this tab one event of an ask on the Dataflow Builder's chat. */

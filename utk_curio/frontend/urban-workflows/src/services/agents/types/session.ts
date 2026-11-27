@@ -164,6 +164,12 @@ export interface AgentSessionTurn {
   error?: boolean;
   /** A client-side error turn's remedy (the refusal's own), never persisted. */
   remedy?: AgentRemedy;
+  /** A turn of an ask of this tab's that failed, which the server may hold
+   * none of: its message, the reply it streamed and its error. A read of the
+   * chat keeps it where it stood until the server holds the ask's exchange
+   * (its turn's execution, when it had one) or the chat is cleared. Never
+   * persisted. */
+  failedAsk?: { askId: string; executionId?: string };
   /** Execution record for agent turns produced by a run (memo dev/37). */
   execution?: AgentExecution;
   /** Typed content parts for agent turns (memo dev/39); absent on old turns. */
