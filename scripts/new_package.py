@@ -51,9 +51,9 @@ from utk_curio.backend.app.packages.repositories.archive import refresh_package_
 from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 from utk_curio.backend.app.packages.service import PACKAGE_DIR_RE, ManifestError
 
-# Mirrors the schema's `id` pattern (docs/schemas/node-package.v4.json). The
-# package loader's PACKAGE_DIR_RE is stricter, and an id must pass both.
-PACKAGE_ID_RE = re.compile(r"^[a-z][a-z0-9_.-]*[a-z0-9]$")
+# The schema's `id` pattern (docs/schemas/node-package.v4.json): the package
+# loader's grammar (PACKAGE_DIR_RE), with the id ending in a letter or digit.
+PACKAGE_ID_RE = re.compile(r"^(?:[a-z][a-z0-9-]{0,62}\.){1,5}[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 # Mirrors storage.TEMPLATE_ID_RE.
 TEMPLATE_ID_RE = re.compile(r"^[a-z][a-z0-9-]{0,62}$")
 
