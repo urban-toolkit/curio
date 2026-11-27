@@ -1534,6 +1534,31 @@ def test_the_state_dir_is_set_before_the_launcher_opens_its_log(monkeypatch, tmp
     assert opened.value.args[0] == str((tmp_path / "state").resolve())
 
 
+def test_a_start_refuses_state_dir(monkeypatch, tmp_path):
+    """A start keeps its state in .curio of the folder it starts from, the one
+    layout the sandbox locks under an execution account. So --state-dir is no
+    argument: argparse refuses it before the launcher opens its log."""
+    import utk_curio.main as launcher
+
+    class _LogOpened(Exception):
+        pass
+
+    def setup_logging(server):
+        raise _LogOpened(server)
+
+    monkeypatch.setenv("CURIO_DEV", "0")
+    monkeypatch.setattr("sys.argv", ["curio.py", "start", "--state-dir", str(tmp_path / "state")])
+    monkeypatch.setattr(launcher, "signal", SimpleNamespace(
+        SIGINT=signal.SIGINT, SIGTERM=signal.SIGTERM, signal=lambda *args: None,
+    ))
+    monkeypatch.setattr(launcher, "setup_logging", setup_logging)
+
+    with pytest.raises(SystemExit) as refused:
+        launcher.main()
+
+    assert refused.value.code == 2
+
+
 def _parser_flags():
     """Every flag main()'s parser declares, as its source spells them."""
     import utk_curio.main as launcher
