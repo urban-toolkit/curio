@@ -434,7 +434,8 @@ class TestDataflowReadProjection:
 
     def test_a_read_just_past_the_bound_sheds_only_what_it_must(self, tmp_curio):
         """Goals cut to 40 characters bring it within the bound: its lineage,
-        its widgets and every node stay."""
+        its widgets and every node stay. A goal of one word longer than that
+        is cut within the 40, with its ellipsis (labels.fit)."""
         from utk_curio.backend.app.agents.domain import agent_text
 
         text, payload = self._read(self._shedding_spec(100, goal=200))
@@ -443,7 +444,7 @@ class TestDataflowReadProjection:
         assert "nodesElided" not in payload
         assert len(payload["nodes"]) == 100
         row = payload["nodes"][0]
-        assert row["goal"] == "g" * 40
+        assert row["goal"] == "g" * 39 + "…"
         assert row["copiedFrom"] == ["origin-0"]
         assert row["widgets"] == [{"name": "w", "type": "number", "value": 1}]
 
