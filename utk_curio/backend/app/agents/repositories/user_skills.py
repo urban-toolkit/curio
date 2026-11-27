@@ -71,7 +71,7 @@ def folders(user_key: str) -> tuple[Path, ...]:
 def holds(user_key: str, name: str) -> bool:
     """Whether the account holds a skill named *name*."""
     try:
-        return (skill_dir(user_key, name) / skill_format.SKILL_FILE).is_file()
+        return skill_format.holds_skill_file(skill_dir(user_key, name))
     except (skill_format.SkillError, PathTraversalError):
         return False
 

@@ -477,8 +477,8 @@ def refuse_unreadable_skills(package_root: Path) -> None:
         if entry.is_symlink() or not entry.is_dir():
             problems.append(f"{where} is no skill's folder: {SKILLS_DIR}/ holds one folder per skill, "
                             f"each with its {skill_format.SKILL_FILE}")
-        elif skill_file.is_symlink() or not skill_file.is_file():
-            problems.append(f"{where} holds no {skill_format.SKILL_FILE}")
+        elif skill_file.is_symlink() or not skill_format.holds_skill_file(entry):
+            problems.append(skill_format.no_skill_file(where, entry))
         else:
             try:
                 skill_format.parse(entry)

@@ -122,6 +122,42 @@ class Skill:
         return self.folder / SKILL_FILE
 
 
+def holds_skill_file(folder) -> bool:
+    """Whether *folder* holds a file named :data:`SKILL_FILE` by its exact
+    name. ``(folder / SKILL_FILE).is_file()`` alone is also true of a
+    ``skill.md`` where the file system ignores case, as macOS's and Windows's
+    do, and false of it on Linux: a skill would read on one and be missing on
+    the other."""
+    folder = Path(folder)
+    return (folder / SKILL_FILE).is_file() and SKILL_FILE in _names_in(folder)
+
+
+def misnamed_skill_file(folder) -> str | None:
+    """The file *folder* holds by :data:`SKILL_FILE`'s name in another case,
+    such as ``skill.md``; None when it holds none."""
+    return next(
+        (name for name in sorted(_names_in(Path(folder)))
+         if name != SKILL_FILE and name.casefold() == SKILL_FILE.casefold()),
+        None,
+    )
+
+
+def no_skill_file(where, folder) -> str:
+    """What is wrong with *folder*, called *where*, that holds no
+    :data:`SKILL_FILE`: the file it holds in another case, when it holds one."""
+    other = misnamed_skill_file(folder)
+    if other is None:
+        return f"{where} holds no {SKILL_FILE}"
+    return f"{where} holds {other}, where a skill's file is named {SKILL_FILE}"
+
+
+def _names_in(folder: Path) -> list[str]:
+    try:
+        return os.listdir(folder)
+    except OSError:
+        return []
+
+
 def is_name(name) -> bool:
     """Whether *name* is a skill's name as the specification has it: 1 to 64
     lowercase letters, digits and single hyphens, neither first nor last. A
@@ -142,8 +178,8 @@ def parse(folder, *, strict: bool = True, text: str | None = None) -> Skill:
     where = f"{folder.name}/{SKILL_FILE}"
     if text is None:
         file = folder / SKILL_FILE
-        if not file.is_file():
-            raise SkillError(f"{folder} holds no {SKILL_FILE}")
+        if not holds_skill_file(folder):
+            raise SkillError(no_skill_file(folder, folder))
         text = file.read_text(encoding="utf-8")
     # Lines end as a checkout writes them, in a line break alone or after a
     # carriage return; either mode reads the line break alone.
@@ -509,7 +545,7 @@ def folders_in(root) -> tuple[Path, ...]:
         return ()
     return tuple(
         folder for folder in sorted(root.iterdir())
-        if folder.is_dir() and not folder.name.startswith(".") and (folder / SKILL_FILE).is_file()
+        if folder.is_dir() and not folder.name.startswith(".") and holds_skill_file(folder)
     )
 
 
@@ -540,7 +576,7 @@ def shipped_skill_file(name: str) -> Path:
                          "single hyphens")
     root = skills_dir()
     file = root / name / SKILL_FILE
-    if not file.is_file():
+    if not holds_skill_file(root / name):
         raise SkillError(f"Curio ships no skill named {name}: {SKILLS_DIR}/{name}/{SKILL_FILE} is missing")
     if not file.resolve().is_relative_to(root.resolve()):
         raise SkillError(f"{SKILLS_DIR}/{name}/{SKILL_FILE} leads out of {SKILLS_DIR}/, to {file.resolve()}")

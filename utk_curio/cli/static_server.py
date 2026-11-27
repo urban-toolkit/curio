@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import socket
 import urllib.error
 import urllib.request
 
@@ -100,7 +101,18 @@ def _payload_backend(backend_url: str) -> str:
     return backend_base_url()
 
 
-def run_spa_static_server(directory: str, port: int, base_path: str = "", backend_url: str = "") -> None:
+def _server_class(host: str):
+    """The server that listens on *host*: ``ThreadingHTTPServer``, whose
+    socket is IPv4, or for an IPv6 address such as ``::1`` the same server on
+    an IPv6 socket, which the IPv4 one cannot bind."""
+    if ":" not in host:
+        return ThreadingHTTPServer
+    return type("IPv6ThreadingHTTPServer", (ThreadingHTTPServer,), {"address_family": socket.AF_INET6})
+
+
+def run_spa_static_server(
+    directory: str, port: int, base_path: str = "", backend_url: str = "", host: str = "0.0.0.0",
+) -> None:
     """Serve a built SPA with index.html fallback for deep links.
 
     ``python -m http.server`` returns 404 for routes like ``/auth/signup`` or
@@ -121,6 +133,9 @@ def run_spa_static_server(directory: str, port: int, base_path: str = "", backen
     visitor who opens it (:func:`sign_in_cookie`): a hosted guest's dashboard
     of an example is their own copy of it, which the backend builds for that
     sign-in alone (``projects/visitor_copies.py``).
+
+    It listens on *host*: the launcher's ``--frontend-host`` (``localhost``
+    unless a container asks for ``0.0.0.0``, ``services.start_frontend``).
     """
 
     dist_dir = os.path.abspath(directory)
@@ -254,5 +269,5 @@ def run_spa_static_server(directory: str, port: int, base_path: str = "", backen
                 return self._send_index(with_body=False)
             return super().do_HEAD()
 
-    with ThreadingHTTPServer(("0.0.0.0", port), SpaStaticHandler) as httpd:
+    with _server_class(host)((host, port), SpaStaticHandler) as httpd:
         httpd.serve_forever()
