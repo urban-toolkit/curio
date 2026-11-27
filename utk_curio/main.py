@@ -19,7 +19,7 @@ from utk_curio.cli.dependencies import (
     require_supported_python,
     seed_duckdb_extensions,
 )
-from utk_curio.cli.environment import set_environment_variables, set_state_dir
+from utk_curio.cli.environment import set_environment_variables
 from utk_curio.cli.frontend_build import _frontend_must_build, _require_supported_node
 from utk_curio.cli.lifecycle import clean_shutdown, signal_handler
 from utk_curio.cli.logs import COLOR_BACKEND, COLOR_FRONTEND, log_always, log_info, print_output_queue, setup_logging
@@ -312,14 +312,6 @@ def main():
         ),
     )
     parser.add_argument(
-        "--state-dir", default=None, metavar="PATH",
-        help=(
-            "Directory for the .curio state: every user's store, the caches "
-            "and the launcher's log (sets CURIO_STATE_DIR). Defaults to .curio/ "
-            "in the directory Curio is started from."
-        ),
-    )
-    parser.add_argument(
         "--catalog-root", default=None, metavar="PATH",
         help=(
             "Directory for the shared Data Catalog (hub read + publish "
@@ -550,8 +542,6 @@ def main():
     if args.base_path and os.environ["CURIO_DEV"] == "1":
         parser.error("--base-path applies to the built frontend, not to the --dev server")
 
-    # Before setup_logging, which opens the launcher's log in this directory.
-    set_state_dir(args.state_dir)
     setup_logging(args.server)
     logs.verbosity = int(args.verbose)
     # Before anything is installed or started, on setup, start and the

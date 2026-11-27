@@ -70,14 +70,13 @@ def test_flags_exist_regardless_of_dev_mode(flag, monkeypatch, capsys):
 
 def _keep_main_to_itself(monkeypatch):
     """What main() changes outside itself, put back after the test: its
-    signal handlers, CURIO_DEV, the verbosity, the state folder, the
-    launcher's log and the environment it hands the servers."""
+    signal handlers, CURIO_DEV, the verbosity, the launcher's log and the
+    environment it hands the servers."""
     monkeypatch.setattr(main, "signal", SimpleNamespace(
         SIGINT=signal.SIGINT, SIGTERM=signal.SIGTERM, signal=lambda *args: None,
     ))
     monkeypatch.setenv("CURIO_DEV", "0")
     monkeypatch.setattr(logs, "verbosity", logs.verbosity)
-    monkeypatch.setattr(main, "set_state_dir", lambda state_dir: None)
     monkeypatch.setattr(main, "setup_logging", lambda server: None)
     monkeypatch.setattr(main, "set_environment_variables", lambda **kwargs: None)
 

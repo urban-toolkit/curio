@@ -58,7 +58,6 @@ def _setup(monkeypatch, version):
     ))
     # Its own value, as main() would set it, so that monkeypatch takes it out after.
     monkeypatch.setenv("CURIO_DEV", "0")
-    monkeypatch.setattr(launcher, "set_state_dir", lambda state_dir: None)
     monkeypatch.setattr(launcher, "setup_logging", lambda server: None)
     monkeypatch.setattr(launcher, "set_environment_variables", lambda **kwargs: None)
     monkeypatch.setattr(launcher, "install_framework_requirements", lambda: steps.append("framework"))
