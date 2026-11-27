@@ -2597,26 +2597,31 @@ plan lands as one change you can undo: first the nodes and connections it
 removes, then its nodes, dragged in from their tiles one after another, then its
 connections. When someone removes a node the plan connects while it lands, the
 plan stops there, and its card says what was left undone. The plan's card
-lists its nodes, one row each, with where the node stands (a tick once its
-code is in, *Building…*, *Needs a source*, *Failed* and why, or *after* the
+lists its nodes, one row each, with where the node stands (a tick once a check
+ran on the code it holds, *Not checked* when none did, *Building…*, *Needs a
+source*, which goes to that node's sources, *Failed* and why, or *after* the
 node it waits for), its **Solve** while it can be built and its **Run** once it
 is; its **Details** hold the rest of the plan. Its plan line, under the Goal,
 then says where the plan stands, such as *Planned · 3 nodes* or *Paused · CPL
 branches needs a source*, and holds one action: **Solve**, **Stop** while a
 Solve or a build runs, **Show its sources** while the plan waits for your pick
-of a source, **Resume** when a build paused on anything else, or **Run
-workflow** once every node is built. While a build or a Solve runs over the
+of a source (its tooltip says whether the sources are in this chat or in the
+node's Dataset Finder's chat), **Resume** when a build paused on anything
+else, or **Run workflow** once every node is built. While a build or a Solve runs over the
 plan, in your tab or another, no row offers **Solve** and **Solve this node**
 waits, and the node at work reads *Building…*. A key to add stays under the
 line. Beside its action, **More plan actions** holds **Build & validate
 plan**, which fills the plan's nodes in order: each node's code is run in the
 sandbox, and code that passes lands, with its **Undo**, before the next node;
 the first failure pauses the build with nothing written after it, and
-**Resume** continues from there. **Step** does one action at a time. A build
+**Resume** continues from there; once that node is built another way, by its
+row's **Solve** among them, the pause ends. **Step** does one action at a time. A build
 that leaves every node built ends with one sentence that says how each node's
 code was checked. The line's **Solve** fills in the planned
 nodes in one batch: it runs each node's code in the sandbox, corrects it when
-the run fails, and writes only code that ran. Before any plan, its empty chat
+the run fails, and writes only code that ran. Why it left a node pending,
+skipped or failed is on the node's row, and its own reason on the line's
+tooltip, in every tab and after a reload. Before any plan, its empty chat
 offers planning templates, which fill the message box for you to send. A plan
 also gives every created node a **Node Builder**, and every
 data-loading node a **Dataset Finder**, which Solve or **Build & validate plan**
