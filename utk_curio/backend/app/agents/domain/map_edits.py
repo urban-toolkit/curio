@@ -42,8 +42,9 @@ EDIT_WORDS = (
     "move", "add", "draw",
 )
 #: Where a goal's sentences and clauses part: after a stop, a colon or a
-#: semicolon, at a dash between spaces (a plan's goal is its node's title, a
-#: dash, then its intent) and at a line break.
+#: semicolon (a plan's goal is its node's title, a colon, or a semicolon after
+#: a title that holds one, then its intent), at a dash between spaces (as an
+#: older plan joined them) and at a line break.
 _DASHES = "-" + chr(0x2013) + chr(0x2014)
 _SENTENCES = re.compile(rf"(?<=[.!?;:])\s+|\s+[{_DASHES}]+\s+|\n+")
 _EDIT_WORD = re.compile(r"(?:" + "|".join(re.escape(word) for word in EDIT_WORDS) + r")\b", re.IGNORECASE)

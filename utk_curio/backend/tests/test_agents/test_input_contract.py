@@ -139,7 +139,9 @@ class TestArgShape:
         assert [(s["circle"], s["chip"]) for s in shape["slots"]] == [
             (0, "[!! input_0 !!]"), (3, "[!! input_3 !!]"),
         ]
-        assert "[!! input_3 !!] = Population Data" in ic.describe(shape)
+        # Each upstream is named as its header names it: two Data Loading
+        # nodes with no title, told apart by a short id.
+        assert "[!! input_3 !!] = Data Loading (p)" in ic.describe(shape)
         # Each circle holds one value, so any of its attributes may be read.
         assert ic.check("gdf = [!! input_3 !!]\nreturn gdf.crs", shape) is None
         assert ic.check("pop = [!! input_3 !!]\nreturn input_0.crs", shape) is None
@@ -150,23 +152,23 @@ class TestArgShape:
             "edges": [{"id": "e0", "source": "p", "target": "a", "targetHandle": "in_1"}],
         }}
         assert ic.describe(ic.arg_shape(spec, "a")) == (
-            "[!! input_1 !!] IS the value Population Data returned"
+            "[!! input_1 !!] IS the value Data Loading returned"
         )
 
     def test_describe_reads_as_a_sentence(self):
         line = ic.describe(ic.arg_shape(MULTI_INPUT_SPEC, "a"))
         assert line.startswith("2 inputs, one per circle: ")
-        assert "[!! input_0 !!] = Chicago Community Boundaries" in line
-        assert "[!! input_1 !!] = Population Data" in line
+        assert "[!! input_0 !!] = Data Loading (b)" in line
+        assert "[!! input_1 !!] = Data Loading (p)" in line
         gathered = ic.describe(ic.arg_shape(POOL_SPEC, "a"))
         assert gathered.startswith("input_0 is a list of 2 inputs: ")
-        assert "[!! input_0 !!][1] = Population Data" in gathered
+        assert "[!! input_0 !!][1] = Data Loading (p)" in gathered
         single = {"dataflow": {
             "nodes": MULTI_INPUT_SPEC["dataflow"]["nodes"],
             "edges": [{"id": "e", "source": "b", "target": "a", "targetHandle": "in"}],
         }}
         assert ic.describe(ic.arg_shape(single, "a")) == (
-            "[!! input_0 !!] IS the value Chicago Community Boundaries returned"
+            "[!! input_0 !!] IS the value Data Loading returned"
         )
         assert ic.describe(ic.arg_shape(MULTI_INPUT_SPEC, "b")) == "this node has no input"
         assert ic.describe(None) == ""
@@ -208,8 +210,8 @@ class TestTheKinds:
         assert "via" not in shape
         assert all("argIndex" not in s for s in shape["slots"])
         assert ic.describe(shape) == (
-            "2 inputs, one per circle: [!! input_0 !!] = Chicago Community Boundaries; "
-            "[!! input_1 !!] = Population Data"
+            "2 inputs, one per circle: [!! input_0 !!] = Data Loading (b); "
+            "[!! input_1 !!] = Data Loading (p)"
         )
 
     def test_one_circle_is_single(self):
@@ -219,7 +221,7 @@ class TestTheKinds:
         }}
         shape = ic.arg_shape(spec, "a")
         assert shape["kind"] == "single"
-        assert ic.describe(shape) == "[!! input_1 !!] IS the value Population Data returned"
+        assert ic.describe(shape) == "[!! input_1 !!] IS the value Data Loading returned"
 
     def test_a_pool_of_several_on_one_circle_is_gathered(self):
         shape = ic.arg_shape(POOL_SPEC, "a")
@@ -244,7 +246,7 @@ class TestTheKinds:
         assert ic.check("return input_0[1].crs", shape) is None
         text = ic.refusal_text(shape, ic.check("return input_0.crs", shape))
         assert "`input_0` is a LIST of them" in text
-        assert "[!! input_0 !!][0] = Chicago Community Boundaries" in text
+        assert "[!! input_0 !!][0] = Data Loading (b)" in text
         assert "arg" not in text
 
     def test_list_is_refused(self):
@@ -306,8 +308,8 @@ class TestCheck:
             "input contract refused: 2 inputs reach this node on one circle, so `input_0` is a LIST "
             "of them in order: "
         )
-        assert "[!! input_0 !!][0] = Chicago Community Boundaries" in text
-        assert "[!! input_0 !!][1] = Population Data" in text
+        assert "[!! input_0 !!][0] = Data Loading (b)" in text
+        assert "[!! input_0 !!][1] = Data Loading (p)" in text
         assert "community" in text  # the columns of the slot it should have used
         assert "Your code used `gdf.crs (line 5)`: a list has no attribute 'crs'" in text
         assert "Read the input you need by its index ([!! input_0 !!][0], [!! input_0 !!][1], ...)" in text
@@ -442,8 +444,8 @@ class TestTheGateInTheLoop:
         # And the correction was told exactly what was wrong.
         error = inputs[1]["validationError"]
         assert "2 inputs reach this node on one circle, so `input_0` is a LIST of them in order" in error
-        assert "[!! input_0 !!][0] = Boundaries" in error
-        assert "[!! input_0 !!][1] = Population" in error
+        assert "[!! input_0 !!][0] = Data Loading (b)" in error
+        assert "[!! input_0 !!][1] = Data Loading (p)" in error
 
     def test_the_contract_rides_the_first_generation_and_every_correction(self, app, tmp_curio):
         events, outcome, inputs = self._rounds(

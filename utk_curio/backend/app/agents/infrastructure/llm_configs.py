@@ -344,7 +344,7 @@ class LlmConfigStore:
             raise LlmConfigError("endpoint must be 'own'")
         unknown = sorted(set(body) - allowed)
         if unknown:
-            raise LlmConfigError(f"unknown field(s): {', '.join(unknown)}")
+            raise LlmConfigError(f"unknown field{'' if len(unknown) == 1 else 's'}: {', '.join(unknown)}")
         return body
 
     @staticmethod

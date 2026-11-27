@@ -568,8 +568,8 @@ class TestDelegationTailAndBudget:
         system = calls[0][0]["content"]
         assert "delegateRequest" in system
         # Its own mode is offered under its own name, beside the other agents'.
-        assert "node.content.generate \N{EM DASH} handled by Node Builder" in system
-        assert "research.verify \N{EM DASH} handled by Researcher" in system
+        assert "- node.content.generate: handled by Node Builder" in system
+        assert "- research.verify: handled by Researcher" in system
 
     def test_non_delegating_agent_gets_no_delegation_paragraph(self, client, user_and_token, tmp_curio, monkeypatch):
         from utk_curio.backend.tests._support.agent_routes import _write_reader
@@ -790,9 +790,9 @@ class TestDec047DatasetFinderHandoff:
         monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn', _fake_run)
         _run(client, token, pid, att_id)
         system = calls[0][0]["content"]
-        assert "dataset.fetch.author — handled by Node Builder" in system
+        assert "- dataset.fetch.author: handled by Node Builder" in system
         # Its Node Builder entry names what it hands over: never node content.
-        assert "node.content.generate \N{EM DASH} handled by" not in system
+        assert "node.content.generate: handled by" not in system
 
 
 class TestCapabilityFirstResolution:
@@ -930,13 +930,13 @@ class TestTheParagraphNamesWhoRuns:
             installed = client.post(f"/api/agents/projects/{pid}/install", json={"coord": coord}, headers=_auth(token))
             assert installed.status_code == 201, installed.get_json()
         system = self._system(client, token, pid, DF, monkeypatch)
-        assert "node.explain \N{EM DASH} handled by My Explainer" in system
+        assert "- node.explain: handled by My Explainer" in system
         # An agent an entry names takes only what the entry names: the
         # Finder's entry for the Researcher names research.verify alone.
-        assert "research.verify \N{EM DASH} handled by Researcher" in system
-        assert "research.notes.compose \N{EM DASH} handled by" not in system
+        assert "- research.verify: handled by Researcher" in system
+        assert "research.notes.compose: handled by" not in system
         # And its own capabilities are not offered back to it.
-        assert "dataset.discover \N{EM DASH} handled by" not in system
+        assert "dataset.discover: handled by" not in system
 
     def test_a_capability_is_offered_under_the_name_of_the_agent_that_takes_it(
         self, client, user_and_token, tmp_curio, monkeypatch
@@ -952,8 +952,8 @@ class TestTheParagraphNamesWhoRuns:
         nb = builtin.get_builtin_manifest(NB)
         assert delegation.resolve(_user_dir_key(user), pid, nb, "research.verify").coord == checker
         system = self._system(client, token, pid, NB, monkeypatch)
-        assert "research.verify \N{EM DASH} handled by My Checker" in system
-        assert "research.verify \N{EM DASH} handled by Researcher" not in system
+        assert "- research.verify: handled by My Checker" in system
+        assert "research.verify: handled by Researcher" not in system
 
 
 class TestDelegationTransparency:
@@ -1116,7 +1116,7 @@ class TestOwnModes:
         # the mode's prompt in its place.
         assert len(calls) == 3
         assert CHAT_PROMPT in calls[0][0]["content"]
-        assert "node.output.interpret \N{EM DASH} handled by My Helper" in calls[0][0]["content"]
+        assert "- node.output.interpret: handled by My Helper" in calls[0][0]["content"]
         child_system = calls[1][0]["content"]
         assert MODE_PROMPT in child_system and CHAT_PROMPT not in child_system
         assert "[delegated task from agent.test.my-helper@1" in calls[1][1]["content"]
@@ -1328,7 +1328,7 @@ class TestChatContentReviewMint:
         body = _run(client, token, pid, att_id, message="change n1 to median").get_json()
         # dev/73 roster: the capability is OFFERED in the delegation paragraph,
         # as the Node Builder's.
-        assert "node.content.generate \N{EM DASH} handled by Node Builder" in calls[0][0]["content"]
+        assert "- node.content.generate: handled by Node Builder" in calls[0][0]["content"]
         entry = next(p for p in body["content"] if p["type"] == "delegation")
         assert entry["attachmentId"] and entry["attachmentId"] != att_id
         cards = client.get(

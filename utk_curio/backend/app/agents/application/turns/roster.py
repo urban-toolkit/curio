@@ -60,7 +60,7 @@ def _template_line(entry: dict, *, suffix: str = "") -> str:
     widgets = entry.get("widgets") or []
     if widgets:
         suffix = f" (widgets: {', '.join(widgets)})" + suffix
-    return f"- {entry['id']} — {entry['label']}" + (f": {desc}" if desc else "") + suffix
+    return f"- {entry['id']} ({entry['label']})" + (f": {desc}" if desc else "") + suffix
 
 
 def _frame(name: str) -> str:

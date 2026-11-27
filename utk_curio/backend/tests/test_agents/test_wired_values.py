@@ -138,4 +138,5 @@ def test_a_season_and_a_region_reach_their_readers_with_no_type_mismatch():
     assert validation._consumer_type_mismatch(spec, "season", "str", available) is None
     assert validation._consumer_type_mismatch(spec, "region", "dict", available) is None
     wrong = validation._consumer_type_mismatch(spec, "region", "str", available)
-    assert wrong and "'Average depth'" in wrong, wrong
+    # The consumer, with no title, named as its header names it.
+    assert wrong and "'Raster Calculator'" in wrong, wrong

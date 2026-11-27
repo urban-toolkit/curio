@@ -148,7 +148,7 @@ class TestPresentationTemplates:
 SHIPPED_BUILTIN = Path(__file__).resolve().parents[4] / "packages" / "curio.builtin@1"
 NOTE = "curio.builtin/note"
 #: The Note's line in a roster of templates (``roster._template_line``).
-ROSTER_LINE = f"- {NOTE} {chr(0x2014)} Note: "
+ROSTER_LINE = f"- {NOTE} (Note): "
 
 
 def _write_shipped_builtin(user_key: str) -> None:

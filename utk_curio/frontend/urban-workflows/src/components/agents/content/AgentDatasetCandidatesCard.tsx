@@ -75,7 +75,7 @@ export function composeConfirmationPrompt(
           .join(", ")}`,
       );
     }
-    return bits.length ? `Build the data-loading node — ${bits.join("; ")}.` : "";
+    return bits.length ? `Build the data-loading node. ${sentence(bits)}` : "";
   }
   if (catalogRows.length) {
     bits.push(
@@ -93,7 +93,14 @@ export function composeConfirmationPrompt(
       `hand off to ${(handoffName ?? "").trim() || "an agent that builds nodes"}: ${handoff.map((r) => r.name).join(", ")}`,
     );
   }
-  return bits.length ? `Confirm my selection — ${bits.join("; ")}.` : "";
+  return bits.length ? `Confirm my selection. ${sentence(bits)}` : "";
+}
+
+/** *bits*, the parts of a selection's message, as one sentence: joined with
+ * semicolons, its first letter a capital, ending with a full stop. */
+function sentence(bits: string[]): string {
+  const text = bits.join("; ");
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
 }
 
 /** How a pick addresses a row, matching the server's `row_key`. Exported for tests. */
@@ -384,23 +391,26 @@ export const AgentDatasetCandidatesCard: React.FC<{
   };
 
   const recordedNote = (selection: AgentDatasetSelection): string => {
+    // The node the pick is for, named as the Source recorded turns name it.
+    const recordedFor = nodeLabel ? `Source recorded for ${nodeLabel}` : "Source recorded";
     // dev/132: when the runtime handed the fetch to the node's own builder,
     // say THAT: the user has nothing left to compose or press.
     const delegated = selection.delegated;
     if (delegated?.status === "delegating") {
-      return "Source recorded: this node's builder is writing the loader for it now.";
+      return `${recordedFor}: its ${delegated.name || "builder"} is writing the loader from it now.`;
     }
     if (delegated?.status === "session-running") {
-      return "Source recorded: the running Solve session picks this node up on its next pass.";
+      return `${recordedFor}: the running Solve session builds its loader on its next pass.`;
     }
     if (delegated?.reason) {
-      return `Source recorded: ${delegated.reason}.`;
+      const reason = delegated.reason.trim().replace(/\.$/, "");
+      return `${recordedFor}. ${reason.charAt(0).toUpperCase()}${reason.slice(1)}.`;
     }
     if (selection.status === "resolved") {
-      return "Source recorded for this node: Solve it to build the loader from this source.";
+      return `${recordedFor}: Solve it to build its loader from this source.`;
     }
     if (selection.status === "awaiting-install") {
-      return "Source recorded: install the dataset from the Data Catalog, then Solve the node.";
+      return `${recordedFor}: install the dataset from the Data Catalog, then Solve it.`;
     }
     return "Nothing selectable was confirmed: the runtime could not reach it. Pick another row.";
   };
@@ -472,7 +482,7 @@ export const AgentDatasetCandidatesCard: React.FC<{
               <span className={styles.download}>
                 <span className={styles.downloadHead}>
                   Download it from the portal
-                  {row.accessWhy ? ` — ${row.accessWhy}` : ""}
+                  {row.accessWhy ? `: ${row.accessWhy}` : ""}
                 </span>
                 {row.downloadSteps?.length ? (
                   <ol className={styles.steps}>

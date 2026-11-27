@@ -51,7 +51,12 @@ BUILDER = "agent.curio.node-builder@1"
 CA = "curio.builtin/python-computation"
 SINK = "queue-sink"
 SINK_GOAL = "Sum the parks"
+#: What the agents call the sink, which has no title: its template's label, as
+#: its header on the canvas names it.
+SINK_NAME = "Python Computation"
 TITLES = ["Fetch", "Clean", "Count"]
+#: The goal the plan writes for each of its nodes: its title, a colon and its intent.
+GOALS = [f"{title}: {title.lower()} the parks" for title in TITLES]
 
 DOCK = '[role="toolbar"][aria-label="Canvas agents"]'
 PEOPLE = f'{DOCK} [role="group"][aria-label="People here"]'
@@ -324,10 +329,10 @@ def _near(x: float, y: float, drop: dict) -> bool:
 
 def _node_at(saved: dict, drop: dict, label: str) -> str | None:
     """The saved node a drag of *label* dropped at *drop*: its top-left there,
-    and its title, or its goal's first word, the label (two agents' nodes can
-    take one place)."""
+    and its title, or the title its goal starts with, the label (two agents'
+    nodes can take one place)."""
     return next((node["id"] for node in saved["nodes"] if _near(node["x"], node["y"], drop) and (
-        node.get("title") == label or (node.get("goal") or "").split(" ")[0] == label)), None)
+        node.get("title") == label or (node.get("goal") or "").partition(": ")[0] == label)), None)
 
 
 def _landed_at(log: list, node_id: str) -> int | None:
@@ -419,13 +424,13 @@ def test_a_node_removed_under_a_queued_action_stops_the_queue_with_a_chat_line(r
     saved = room.saved()
     assert SINK not in {node["id"] for node in saved["nodes"]}, "Ben's removal of Sum never reached the server"
     [card] = [part for part in replies["plan"]["content"] if part.get("type") == "change"]
-    line = f"Left undone: 3 connections, since '{SINK_GOAL}' was removed"
+    line = f"Left undone: 3 connections, since '{SINK_NAME}' was removed"
     assert card["status"] == "applied" and line in card["lines"], card
     _wait_until_gone(editor, "Ben's tab")
     # The plan's three nodes still landed, one at a time; none of its connections did.
     log = _recorded(editor)
     _assert_dragged_one_at_a_time(log, saved, planner, TITLES, "Ben's tab")
-    assert sorted(node.get("goal", "").split(" ")[0] for node in saved["nodes"]) == sorted(TITLES), saved["nodes"]
+    assert sorted(node.get("goal", "") for node in saved["nodes"]) == sorted(GOALS), saved["nodes"]
     assert saved["edges"] == [], f"a connection of the stopped plan landed: {saved['edges']}"
     # Ana's chat shows the change's card, saying what was left undone.
     owner.get_by_role("button", name=re.compile(r"^Open chat with Dataflow Builder")).first.click()
@@ -466,13 +471,13 @@ def test_removing_a_node_as_the_agents_node_lands_on_the_canvas_removes_that_nod
     saved = room.saved()
     assert SINK not in {node["id"] for node in saved["nodes"]}, "Ben's removal of Sum never reached the server"
     [card] = [part for part in replies["plan"]["content"] if part.get("type") == "change"]
-    line = f"Left undone: 3 connections, since '{SINK_GOAL}' was removed"
+    line = f"Left undone: 3 connections, since '{SINK_NAME}' was removed"
     assert card["status"] == "applied" and line in card["lines"], card
     # The agent's node Ben's canvas was taking stays, in the dataflow and on his canvas.
     assert landed in {node["id"] for node in saved["nodes"]}, (
         f"Ben's removal of Sum took the agent's node {landed} too: {saved['nodes']}"
     )
-    assert sorted(node.get("goal", "").split(" ")[0] for node in saved["nodes"]) == sorted(TITLES), saved["nodes"]
+    assert sorted(node.get("goal", "") for node in saved["nodes"]) == sorted(GOALS), saved["nodes"]
     assert saved["edges"] == [], f"a connection of the stopped plan landed: {saved['edges']}"
     try:
         node_locator(editor, landed).wait_for(state="attached", timeout=15000)

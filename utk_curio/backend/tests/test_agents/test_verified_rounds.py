@@ -1283,8 +1283,8 @@ class TestVerifiedSolve:
                            headers=_auth(token)).get_json()["turns"]
         assert not [p for t in turns for p in (t.get("content") or []) if p.get("type") == "proposal"]
         card = next(p for t in reversed(turns) for p in (t.get("content") or []) if p.get("type") == "card")
-        assert any(line.startswith(ctx["load"][:8]) and "solved" in line and "pass after 1 round" in line
-                   for line in card["lines"]), card["lines"]
+        # Each node is named as its header on the canvas names it: the plan's title.
+        assert "Load · solved · pass after 1 round" in card["lines"], card["lines"]
 
     def test_verify_flag_is_validated(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
@@ -1791,6 +1791,10 @@ class TestSolveNode:
         assert ctx["calls"], "the loop asked for a corrected document"
         assert ctx["payloads"] == []  # never the sandbox: it is a document
         assert done["verdict"] == "not-executable"  # validated, not executed
+        # A round failed, so every attempt, with the code it ran, stays in the chat.
+        turns = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/session",
+                           headers=_auth(token)).get_json()["turns"]
+        assert [p for p in turns[-1].get("content") or [] if p.get("type") == "solveAttempts"], turns[-1]
 
     def test_an_empty_charts_document_that_validates_is_written_to_the_node(self, client, user_and_token, tmp_curio,
                                                                              monkeypatch):
@@ -2240,11 +2244,14 @@ class TestStatusWordsOnce:
     pending reason is, because the strip's notice and the Solve card put the
     status before it."""
 
-    def _card_line(self, client, token, ctx, node_id):
+    def _card_line(self, client, token, ctx, title):
+        """The Solve card's one line for the node titled *title*: each line
+        names its node as its header on the canvas does."""
         turns = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/session",
                            headers=_auth(token)).get_json()["turns"]
         card = next(p for t in reversed(turns) for p in (t.get("content") or []) if p.get("type") == "card")
-        return next(line for line in card["lines"] if line.startswith(node_id[:8]))
+        [line] = [line for line in card["lines"] if line.startswith(f"{title} · ")]
+        return line
 
     def _says_its_status_once(self, result, line, status):
         assert result["status"] == status, result
@@ -2257,7 +2264,7 @@ class TestStatusWordsOnce:
         ctx = helper._setup(client, user, token, monkeypatch,
                             dl_replies=["No catalog dataset covers the tract heat data."])
         stats = helper._solve(client, token, ctx)["results"][ctx["stats"]]
-        self._says_its_status_once(stats, self._card_line(client, token, ctx, ctx["stats"]), "pending")
+        self._says_its_status_once(stats, self._card_line(client, token, ctx, "Stats"), "pending")
 
     def test_a_node_validation_skips_says_skipped_once(self, client, user_and_token, tmp_curio, monkeypatch):
         helper = TestVerifiedSolve()
@@ -2277,7 +2284,7 @@ class TestStatusWordsOnce:
 
         monkeypatch.setattr('utk_curio.backend.app.agents.domain.validation.validate_candidate', _bounded)
         stats = helper._solve(client, token, ctx)["results"][ctx["stats"]]
-        self._says_its_status_once(stats, self._card_line(client, token, ctx, ctx["stats"]), "skipped")
+        self._says_its_status_once(stats, self._card_line(client, token, ctx, "Stats"), "skipped")
 
 
 class TestOneLineAnswers:
@@ -2491,7 +2498,7 @@ class TestASolveNamesTheNodeAsItsCanvasDoes:
             json={"coord": "agent.curio.dataflow-builder@1", "target": {"kind": "canvas"}},
             headers=_auth(token),
         ).get_json()["attachmentId"]
-        # The plan saves the loader's goal as its title, a dash and its intent.
+        # The plan saves the loader's goal as its title, a colon and its intent.
         plan = {"goal": "pedestrians", "nodes": [
             {"ref": "load", "nodeType": DL, "title": "Load pedestrians", "intent": self.GOAL}], "edges": []}
         loader = f'import pandas as pd\ndataset_path = curio_data_path("{dataset_id}")\ndf = pd.read_csv(dataset_path)\nreturn df'
@@ -2539,23 +2546,26 @@ class TestASolveNamesTheNodeAsItsCanvasDoes:
         text = self._verified_turn(client, user, token, monkeypatch, goal=self.GOAL, title="Load pedestrians")
         assert text.startswith("Verified 'Load pedestrians': its current code ran successfully"), text
 
-    def test_a_node_with_no_title_is_named_by_its_goal_cut_on_a_word(
+    def test_a_node_with_no_title_is_named_by_its_templates_label(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
+        # As its header on the canvas names it, never by its goal.
         user, token = user_and_token
         text = self._verified_turn(client, user, token, monkeypatch, goal=self.GOAL)
-        assert text.startswith(f"Verified {self.GOAL_NAME!r}: its current code ran successfully"), text
+        assert text.startswith("Verified 'Data Loading': its current code ran successfully"), text
 
     def test_the_name_never_cuts_a_word(self):
         from utk_curio.backend.app.agents.application.solve import node_solve
 
-        assert node_solve.solve_label({"id": "n1", "title": " Load pedestrians ", "goal": self.GOAL}) == (
-            "Load pedestrians"
-        )
-        assert node_solve.solve_label({"id": "n1", "goal": self.GOAL}) == self.GOAL_NAME
-        assert node_solve.solve_label({"id": "n1", "goal": "load the heat data"}) == "load the heat data"
+        def name(node):
+            return node_solve.solve_label(node, templates={})
+
+        assert name({"id": "n1", "title": " Load pedestrians ", "goal": self.GOAL}) == "Load pedestrians"
+        # A node with no title or type, its goal cut on a word.
+        assert name({"id": "n1", "goal": self.GOAL}) == self.GOAL_NAME
+        assert name({"id": "n1", "goal": "load the heat data"}) == "load the heat data"
         # A first word longer than the bound stands whole.
         word = "x" * 70
-        assert node_solve.solve_label({"id": "n1", "goal": f"{word} and more"}) == f"{word}…"
-        assert node_solve.solve_label({"id": "n1", "goal": word}) == word
-        assert node_solve.solve_label({"id": "n1"}) == "n1"
+        assert name({"id": "n1", "goal": f"{word} and more"}) == f"{word}…"
+        assert name({"id": "n1", "goal": word}) == word
+        assert name({"id": "n1"}) == "n1"

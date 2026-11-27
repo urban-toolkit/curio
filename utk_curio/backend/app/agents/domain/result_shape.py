@@ -37,6 +37,7 @@ from utk_curio.backend.app.agents.domain.contracts import (
     is_document_at_fault,
 )
 from utk_curio.backend.app.agents.domain import agent_text
+from utk_curio.backend.app.agents.domain import labels
 
 #: The summary kinds emptiness is defined for. A ``VALUE``, a ``dict``, a raster
 #: or a plot has no row count, and inventing one would be a guess.
@@ -227,7 +228,7 @@ def _columns_line(summary: dict | None) -> str:
 
 def _slot_line(index: int, row: dict) -> str:
     summary = row.get("schema") if isinstance(row.get("schema"), dict) else None
-    goal = str(row.get("goal") or row.get("upstreamNodeId") or "an input")[:60]
+    goal = labels.on_a_word(row.get("goal"), labels.GOAL_NAME_CHARS) or str(row.get("upstreamNodeId") or "an input")
     # The name the node reads the row by: its circle's input, or one item of
     # the list a node with no code gathered on that circle.
     circle = row.get("circle") if isinstance(row.get("circle"), int) else index

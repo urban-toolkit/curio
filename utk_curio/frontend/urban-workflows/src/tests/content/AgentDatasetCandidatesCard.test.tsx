@@ -119,11 +119,11 @@ describe("AgentDatasetCandidatesCard (dev/50 — the docs/06 two-lane surface)",
     render(<AgentDatasetCandidatesCard part={PART} onComposePrompt={onComposePrompt} handoffName="Node Builder" />);
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Cities" }));
     expect(onComposePrompt).toHaveBeenLastCalledWith(
-      "Confirm my selection — install from the Data Catalog: Cities (imported.abc@1).",
+      "Confirm my selection. Install from the Data Catalog: Cities (imported.abc@1).",
     );
     fireEvent.click(screen.getByRole("checkbox", { name: "Select NOAA Climate Data API" }));
     expect(onComposePrompt).toHaveBeenLastCalledWith(
-      "Confirm my selection — install from the Data Catalog: Cities (imported.abc@1); " +
+      "Confirm my selection. Install from the Data Catalog: Cities (imported.abc@1); " +
         "hand off to Node Builder: NOAA Climate Data API.",
     );
     // Deselecting empties the composition back out.
@@ -167,7 +167,7 @@ describe("AgentDatasetCandidatesCard — dev/67-4 verification verdicts", () => 
       />,
     );
     expect(screen.getByText("Verified ✓")).toBeInTheDocument();
-    expect(screen.getByText("Unverified — never checked")).toBeInTheDocument();
+    expect(screen.getByText("Unverified: never checked")).toBeInTheDocument();
     expect(screen.getByText("Unreachable ✗")).toBeInTheDocument();
   });
 });
@@ -179,11 +179,11 @@ describe("AgentDatasetCandidatesCard — dev/114 the Node Builder chat variant",
     render(<AgentDatasetCandidatesCard part={PART} onComposePrompt={onComposePrompt} variant="builder" />);
     fireEvent.click(screen.getByRole("checkbox", { name: "Select NOAA Climate Data API" }));
     expect(onComposePrompt).toHaveBeenLastCalledWith(
-      "Build the data-loading node — fetch from: NOAA Climate Data API (https://api.noaa.gov).",
+      "Build the data-loading node. Fetch from: NOAA Climate Data API (https://api.noaa.gov).",
     );
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Cities" }));
     expect(onComposePrompt).toHaveBeenLastCalledWith(
-      "Build the data-loading node — load from the Data Catalog: Cities (imported.abc@1); " +
+      "Build the data-loading node. Load from the Data Catalog: Cities (imported.abc@1); " +
         "fetch from: NOAA Climate Data API (https://api.noaa.gov).",
     );
     // Still only the read-only View details buttons; the prompt stays the
@@ -196,10 +196,10 @@ describe("AgentDatasetCandidatesCard — dev/114 the Node Builder chat variant",
 
   it("the finder variant is the default and unchanged", () => {
     expect(composeConfirmationPrompt([], [PART.lanes.external[0]], undefined, "Node Builder")).toBe(
-      "Confirm my selection — hand off to Node Builder: NOAA Climate Data API.",
+      "Confirm my selection. Hand off to Node Builder: NOAA Climate Data API.",
     );
     expect(composeConfirmationPrompt([], [PART.lanes.external[0]], "builder")).toBe(
-      "Build the data-loading node — fetch from: NOAA Climate Data API (https://api.noaa.gov).",
+      "Build the data-loading node. Fetch from: NOAA Climate Data API (https://api.noaa.gov).",
     );
   });
 });
@@ -277,9 +277,9 @@ describe("AgentDatasetCandidatesCard — dev/132 the portal download and its Imp
       { lane: "catalog", key: "imported.x99@1" },
     ]);
     // And the card says the builder took over from there.
-    expect(
-      screen.getByText(/this node's builder is writing the loader for it now/),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /^Source recorded: its builder is writing the loader from it now\.$/,
+    );
   });
 
   it("a failed import records nothing", async () => {
@@ -321,9 +321,9 @@ describe("AgentDatasetCandidatesCard — dev/132 the portal download and its Imp
         screen.getByRole("button", { name: /Use this source/ }),
       );
     });
-    expect(
-      screen.getByText(/picks this node up on its next pass/),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /^Source recorded: the running Solve session builds its loader on its next pass\.$/,
+    );
   });
 });
 

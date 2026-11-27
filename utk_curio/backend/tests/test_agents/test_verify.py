@@ -123,7 +123,7 @@ class TestGenericGate:
     def test_no_url_is_loudly_unverified(self):
         outcome = verify.verify_external_source(None)
         assert outcome["status"] == "unverified"
-        assert "never checked" in outcome["detail"]
+        assert outcome["detail"] == "no probeable URL, so the identifier was never checked"
 
 
 class TestSocrataRefinement:

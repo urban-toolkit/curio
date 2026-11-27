@@ -1676,7 +1676,7 @@ class TestReuseLadder:
 
         # The distinction the single-bucket roster could not express.
         assert "Installed but NOT enlisted in this project" in system
-        assert "- curio.notes/note-surface — Note" in system
+        assert "- curio.notes/note-surface (Note)" in system
         # The dirName a package.install proposal takes, so nothing is guessed.
         assert "(package curio.notes@1)" in system
         assert "do NOT" in system and "duplicate package" in system
@@ -1705,7 +1705,7 @@ class TestReuseLadder:
         # the roster's own marker — the dirName suffix only the enlist section
         # emits — because the instruction text names that section by title.
         assert "(package curio.notes@1)" not in system
-        assert "- curio.notes/note-surface — Note" in system
+        assert "- curio.notes/note-surface (Note)" in system
 
     # dev/105 D1 — the live 2026-08-25 failure: the model quoted the manifest
     # id `curio.notes` (the spelling its own prose used), the mint exact-matched

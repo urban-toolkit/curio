@@ -20,6 +20,7 @@ from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import upstream_schema
+from utk_curio.backend.app.agents.domain.counts import count_label
 from utk_curio.backend.app.agents.domain.manifest import AgentManifest
 from utk_curio.backend.app.agents.infrastructure import agent_jobs
 from utk_curio.backend.app.agents.infrastructure import provider_config
@@ -65,9 +66,9 @@ def _reconcile_solve_session(user_key: str, project_id: str, spec: dict, record:
                 user_key, project_id, session_id, record.get("attachmentId"),
                 [sessions.make_turn(
                     "agent",
-                    "Solve was interrupted — the server stopped while it was running. "
+                    "Solve was interrupted: the server stopped while it was running. "
                     "Nothing was replayed; finished nodes kept their content. "
-                    f"{pending} node{'s' if pending != 1 else ''} still need solving — Retry continues.",
+                    f"Still to solve: {count_label(pending, 'node')}; Retry continues.",
                     content=[{
                         "type": "card", "kind": "error", "title": "Solve interrupted",
                         "lines": [
@@ -244,7 +245,7 @@ def solve_attachment_stream(
     _reconcile_solve_session(user_key, project_id, spec, record)
     session = record.get("builderSession") or {}
     if not session.get("appliedPlanId"):
-        raise AgentServiceError("nothing to solve — apply a plan first", 409)
+        raise AgentServiceError("nothing to solve: apply a plan first", 409)
     now = _time.time()
     if session.get("phase") == "solving" and now - float(session.get("solvingSince") or 0) < agents_budgets.SOLVE_STALE_SECONDS:
         raise AgentServiceError("a solve is already running for this plan", 409)

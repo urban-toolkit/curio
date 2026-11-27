@@ -17,7 +17,7 @@ export function verificationLabel(status: string | undefined): string {
     case "refused":
       return "Refused ✗";
     default:
-      return "Unverified — never checked";
+      return "Unverified: never checked";
   }
 }
 

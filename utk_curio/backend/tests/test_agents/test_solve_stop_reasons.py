@@ -191,14 +191,22 @@ class TestANodeSolvedOnItsOwn:
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
         # The sandbox does not run a Vega-Lite document: the loop checks it
-        # once and stops, which is not the attempt cap running out.
+        # once and stops, which is not the attempt cap running out. Its card
+        # says its grammar validated it, and no round failed, so it has no
+        # attempts card, as a pass has none.
+        from utk_curio.backend.app.agents.domain import contracts
+
         user, token = user_and_token
         h = _tvr.TestSolveNode()
         ctx = h._setup(client, user, token, monkeypatch, content='{"mark": "bar"}', node_type=_tvr.VEGA)
         done = h._solve_node(client, token, ctx)[-1][1]
         assert done["verdict"] == "not-executable" and done["rounds"] == 1
-        trails = _trails(_session_turns(client, token, ctx), "n1")
-        assert [p["stoppedBy"] for p in trails] == ["not-executable"]
+        turns = _session_turns(client, token, ctx)
+        card = turns[-1]["content"][0]
+        assert card["title"] == "Solve · VALIDATED against its grammar after 1 round", card
+        cap = contracts.STOPPED_BY_PHRASES["rounds"]
+        assert not [text for text in (turns[-1]["text"], card["title"], *card["lines"]) if cap in text], turns[-1]
+        assert _trails(turns, "n1") == []
         assert done.get("stoppedBy") == "not-executable", done
 
     def test_a_one_line_answer_is_the_answer_and_names_its_reason(

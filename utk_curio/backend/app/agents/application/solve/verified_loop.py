@@ -39,6 +39,7 @@ from utk_curio.backend.app.agents.domain import dashboards
 from utk_curio.backend.app.agents.domain import document_validation
 from utk_curio.backend.app.agents.domain import failure_text
 from utk_curio.backend.app.agents.domain import input_contract
+from utk_curio.backend.app.agents.domain.labels import document_validated, verdict_words
 from utk_curio.backend.app.agents.domain import map_edits
 from utk_curio.backend.app.agents.domain import node_context
 from utk_curio.backend.app.agents.domain import result_shape
@@ -50,6 +51,7 @@ from utk_curio.backend.app.agents.application.solve import rounds as agents_roun
 from utk_curio.backend.app.agents.application.solve import session as agents_session
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.domain import validation as agents_validation
+from utk_curio.backend.app.execution import node_names
 from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.execution.code_references import node_run_code
 from utk_curio.backend.app.packages import service as packages_services
@@ -203,7 +205,9 @@ class VerifiedRounds:
         # once (it cannot change mid-loop), handed to the child as an input, and
         # enforced before the sandbox. The owner's report: a node fed several
         # inputs as one list treated the list as a frame.
-        self.arg_contract = input_contract.arg_shape(spec, self.node_id)
+        self.arg_contract = input_contract.arg_shape(
+            spec, self.node_id, templates=node_names.template_labels(self.user_key, self.project_id),
+        )
         if (extra_inputs or {}).get("upstreamOutputs"):
             self.arg_contract = input_contract.with_schemas(
                 self.arg_contract, (extra_inputs or {}).get("upstreamOutputs")
@@ -448,7 +452,7 @@ class VerifiedRounds:
         self.verdict_result = {"verdict": "fail", "evidence": {"kind": kind, "detail": refusal[:2000]}}
         yield "round_verdict", {"round": self.rounds_used, "verdict": "fail"}
         self.rounds_trace.append(
-            f"round {self.rounds_used}: fail — {trace if trace is not None else refusal[:trace_limit]}"
+            f"round {self.rounds_used}: fail ({trace if trace is not None else refusal[:trace_limit]})"
         )
         attempt = {
             "round": self.rounds_used, "contentSha256": agents_rounds._content_sha(self.candidate),
@@ -937,7 +941,7 @@ class VerifiedRounds:
                 "delegations": self.delegations,
                 "roundsTrace": self.rounds_trace + [
                     f"round {self.rounds_used}: the document is valid and its "
-                    "last render drew nothing — its input was empty"
+                    "last render drew nothing, as its input was empty"
                 ],
                 "attempts": self.attempts + [{
                     "round": self.rounds_used,
@@ -1036,17 +1040,21 @@ class VerifiedRounds:
             "round": self.rounds_used, "verdict": verdict_result["verdict"],
         }
         round_evidence = (verdict_result.get("evidence") or {})
+        # A document its grammar validated ran nothing and failed nothing: the
+        # round says so, with no runner's reason it ran nothing.
+        validated = document_validated(verdict_result["verdict"], round_evidence)
         self.rounds_trace.append(
-            f"round {self.rounds_used}: {verdict_result['verdict']}"
+            f"round {self.rounds_used}: {verdict_words(verdict_result['verdict'], round_evidence)}"
             + (
                 # dev/127: the exception line, whole — this is the line that
                 # reached the owner's chat as "round 2: execution-error — de".
-                " — " + failure_text.summary(
+                " (" + failure_text.summary(
                     round_evidence.get("stderrTail") or round_evidence.get("detail") or "",
                     code=self.candidate, limit=200,
-                )
-                if verdict_result["verdict"] != "pass"
-                else f" — output {round_evidence.get('outputDataType') or '?'}"
+                ) + ")"
+                if verdict_result["verdict"] != "pass" and not validated
+                else "" if validated
+                else f", output {round_evidence.get('outputDataType') or '?'}"
             )
         )
         attempt = self._round_attempt(round_evidence)
@@ -1164,7 +1172,7 @@ class VerifiedRounds:
                 self.found_no_source = str(source_state.get("detail") or "")
                 self.finder_offer = source_state.get("offer")
             self.rounds_trace.append(
-                f"discovery found no source — {str(source_state.get('detail'))[:160]}"
+                f"discovery found no source: {str(source_state.get('detail'))[:160]}"
             )
         if source_state.get("state") == "awaiting":
             return self._awaiting_source(source_state, rounds=0, after=None, stopped_by=None)
@@ -1226,11 +1234,11 @@ class VerifiedRounds:
                 final_evidence = {**final_evidence,
                                   "discovery": str(post["detail"])[:600]}
                 self.rounds_trace.append(
-                    f"discovery found no source — {str(post['detail'])[:160]}"
+                    f"discovery found no source: {str(post['detail'])[:160]}"
                 )
             if post.get("state") == "awaiting":
                 detail = str(post.get("detail") or "a source must be selected")
-                self.rounds_trace.append(f"awaiting dataset selection — {detail[:160]}")
+                self.rounds_trace.append(f"awaiting dataset selection: {detail[:160]}")
                 return self._awaiting_source(
                     post, rounds=self.rounds_used,
                     after=str(final_evidence.get("detail") or "")[:600], stopped_by="source",

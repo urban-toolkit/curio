@@ -182,7 +182,7 @@ class TestKeysStayWithTheirEndpoint:
 
 class TestValidation:
     @pytest.mark.parametrize("fields, fragment", [
-        ({"colour": "red"}, "unknown field"),
+        ({"colour": "red"}, "unknown field: colour"),
         ({"label": ""}, "label is required"),
         ({"model": " "}, "model is required"),
         ({"apiType": "mistral"}, "apiType must be one of"),
@@ -197,7 +197,8 @@ class TestValidation:
         ({"apiKey": "k" * 4097}, "longer than 4096"),
         ({"endpoint": "deployment"}, llm_configs.DEPLOYMENT_REFUSAL),
         ({"endpoint": "elsewhere"}, "endpoint must be 'own'"),
-        ({"endpointName": "Test gateway"}, "unknown field(s): endpointName"),
+        ({"endpointName": "Test gateway"}, "unknown field: endpointName"),
+        ({"colour": "red", "endpointName": "Test gateway"}, "unknown fields: colour, endpointName"),
     ])
     def test_a_bad_configuration_is_refused(self, client, user_and_token, tmp_curio, fields, fragment):
         _, token = user_and_token

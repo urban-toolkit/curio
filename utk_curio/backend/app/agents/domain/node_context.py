@@ -26,6 +26,7 @@ produced the record.
 
 from __future__ import annotations
 
+from utk_curio.backend.app.agents.domain import labels
 from utk_curio.backend.app.agents.domain import map_edits
 from utk_curio.backend.app.execution import runtime_journal
 from utk_curio.backend.app.agents.domain import agent_text
@@ -160,7 +161,7 @@ def compose_node_context(
         row = {
             "id": nid,
             "type": neighbor.get("type"),
-            "goal": str(neighbor.get("goal") or "")[:_GOAL_MAX_CHARS],
+            "goal": labels.fit(neighbor.get("goal"), _GOAL_MAX_CHARS),
             "hasContent": bool(content_text.strip()),
             "contentChars": len(content_text),
             "runtimeStatus": _status(nid),
@@ -187,9 +188,9 @@ def compose_node_context(
             # "name": ""}`` — an absence that was a bug, not honesty.
             row = {
                 "id": entry.get("id") or entry.get("datasetId"),
-                "name": (
-                    entry.get("name") or entry.get("title") or entry.get("dirName") or ""
-                )[:_GOAL_MAX_CHARS],
+                "name": labels.fit(
+                    entry.get("name") or entry.get("title") or entry.get("dirName") or "", _GOAL_MAX_CHARS,
+                ),
             }
             if entry.get("origin"):
                 row["origin"] = str(entry.get("origin"))[:40]
@@ -197,7 +198,7 @@ def compose_node_context(
     return {
         "nodeId": node_id,
         "nodeType": node.get("type"),
-        "intent": str(node.get("goal") or "")[:_INTENT_MAX_CHARS],
+        "intent": labels.fit(node.get("goal"), _INTENT_MAX_CHARS),
         "currentContent": current,
         "runtimeStatus": _status(node_id),
         # dev/135: the owner's `a29d1ad8` — a Vega node visibly red, and the

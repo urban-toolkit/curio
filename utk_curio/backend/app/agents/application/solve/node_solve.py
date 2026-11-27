@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import time
 import uuid
+from collections.abc import Mapping
 
 from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
 from utk_curio.backend.app.agents.application import delegation
@@ -32,32 +33,18 @@ from utk_curio.backend.app.agents.application.turns import delegates as agents_d
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import policy as agents_policy
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
+from utk_curio.backend.app.agents.domain import labels
 from utk_curio.backend.app.execution import node_names
 from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.collaboration import agent_peers
 from utk_curio.backend.app.collaboration import dataflow_docs, owner_guard
 
-#: The most characters of its goal a node with no title is named by.
-GOAL_NAME_CHARS = 60
 
-
-def solve_label(node: dict) -> str:
-    """What a Solve's turns call *node*: its title, whole, as its header on
-    the canvas shows it. A node with no title is named by its goal, cut on a
-    word with an ellipsis when it is longer than :data:`GOAL_NAME_CHARS` (a
-    first word longer than that stands whole), and one with no goal by its
-    id."""
-    title = node_names.saved_node_title(node)
-    if title:
-        return title
-    goal = " ".join(str(node.get("goal") or "").split())
-    if not goal:
-        return str(node.get("id") or "")
-    if len(goal) <= GOAL_NAME_CHARS:
-        return goal
-    head = goal[:GOAL_NAME_CHARS + 1]
-    cut = head.rsplit(" ", 1)[0] if " " in head else goal.split(" ", 1)[0]
-    return goal if cut == goal else cut.rstrip(" ,;:-–—") + "…"
+def solve_label(node: dict, *, templates: Mapping[str, str]) -> str:
+    """What a Solve's turns call *node*: the name its header on the canvas
+    shows, its title whole or else its template's label from *templates*
+    (``labels.node_label``)."""
+    return labels.node_label(node, templates=templates)
 
 
 def solve_node_stream(
@@ -220,7 +207,7 @@ def _solved_node(
     """The per-node Solve body (dev/115 A2) over the ONE verified loop; returns
     its done payload, with the changes it landed (``landed``)."""
     node_id = node.get("id")
-    label = solve_label(node)
+    label = solve_label(node, templates=node_names.template_labels(user_key, project_id))
     started = time.monotonic()
     had_content = bool(str(node.get("content") or "").strip())
     yield "solve_node_started", {
@@ -253,7 +240,11 @@ def _solved_node(
                   "attempts": attempts, "evidence": outcome["evidence"],
                   # dev/127: which bound ended the loop, for the row's notice.
                   "stoppedBy": outcome.get("stoppedBy")}
-    trail_lines = _trail_lines(attempts)
+    # A chart's or a map's document its grammar validated: its trail says so,
+    # and when no round failed it has no attempts to fix.
+    validated = labels.document_validated(verdict, outcome["evidence"])
+    nothing_failed = validated and all(a.get("verdict") == "not-executable" for a in attempts)
+    trail_lines = _trail_lines(attempts, validated=validated)
     text, card_kind, parts = _conclude(
         user_key, project_id, attachment_id, session_id, spec, node, label, had_content,
         grounding_base, outcome, done, asker=acting_user, room_asker=room_asker, peer=peer,
@@ -269,14 +260,15 @@ def _solved_node(
         )
     card = {
         "type": "card", "kind": card_kind,
-        "title": f"Solve · {verdict.upper()} after {rounds} round{'s' if rounds != 1 else ''}",
+        "title": f"Solve · {labels.verdict_words(verdict, outcome['evidence'], capitals=True)} after {rounds} "
+                 f"round{'s' if rounds != 1 else ''}",
         "lines": trail_lines[:10],
     }
-    if verdict != "pass" and attempts:
+    if verdict != "pass" and attempts and not nothing_failed:
         # dev/127: the trail itself, with the code each attempt ran — in THIS
         # chat, durably, not only in the transient row above.
         trail_part = agents_rounds._solve_attempts_part(
-            spec, node_id, str(node.get("goal") or node_id)[:120],
+            spec, node_id, label,
             {"attempts": attempts, "rounds": rounds, "verdict": verdict,
              "stoppedBy": outcome.get("stoppedBy")},
             user_key=user_key,
@@ -303,17 +295,17 @@ def _not_executable_outcome(node: dict, label: str, kind: str) -> dict:
     simple view) or presentation content with no validator. No round, no
     sandbox, no generation — nothing this loop could verify; say so and change nothing."""
     reason = (
-        f"{label!r} ({node.get('type')}) is wired, not written: this kind has no "
+        f"{label!r} ({node.get('type')}) is wired, not written, as this kind has no "
         "content to author; it renders or forwards its input"
         if kind == workflow_spec.CONTENT_KIND_NONE else
-        f"{label!r} ({node.get('type')}) has no code the sandbox could run — it works "
+        f"{label!r} ({node.get('type')}) has no code the sandbox could run, as it works "
         "in the browser or through its own service; Play the dataflow to see it"
     )
     outcome = {
         "verdict": "not-executable",
         "evidence": {"kind": "not-executable", "detail": reason},
         "rounds": 0, "candidate": "", "delegations": [],
-        "roundsTrace": [f"not executable — {reason}"], "attempts": [],
+        "roundsTrace": [f"not executable: {reason}"], "attempts": [],
     }
     return outcome
 
@@ -391,16 +383,21 @@ def _run_node_loop(
     return outcome
 
 
-def _trail_lines(attempts: list) -> list[str]:
-    """One line per attempt (the first eight): round, verdict, kind, and why."""
+def _trail_lines(attempts: list, *, validated: bool = False) -> list[str]:
+    """One line per attempt (the first eight): round, verdict, kind, and why.
+    With *validated*, a document's round the sandbox did not run reads as its
+    grammar validated it."""
     trail_lines = []
     for attempt in attempts[:8]:
+        if validated and attempt.get("verdict") == "not-executable":
+            trail_lines.append(f"round {attempt.get('round')} · {labels.DOCUMENT_VALIDATED}")
+            continue
         why = agents_rounds._attempt_why(attempt, limit=160)
         line = f"round {attempt.get('round')} · {attempt.get('verdict')} · {attempt.get('kind')}"
         if attempt.get("verdict") == "pass":
             line += f" · {attempt.get('outputDataType') or '?'}"
         elif why:
-            line += f" — {why}"
+            line += f": {why}"
         if attempt.get("verdict") != "pass" and attempt.get("endpointEvidence"):
             line += f" · endpoint: {str(attempt['endpointEvidence'])[:200]}"
         trail_lines.append(line)
@@ -501,7 +498,7 @@ def _conclude(user_key, project_id, attachment_id, session_id, spec, node, label
     )
     parts: list = []
     if verdict == "pass" and unchanged:
-        text = f"Verified {label!r}: its current code ran successfully — no change needed."
+        text = f"Verified {label!r}: its current code ran successfully; no change needed."
         done["unchanged"] = True
         card_kind = "result"
     elif verdict == "pass" and not had_content:
@@ -518,7 +515,7 @@ def _conclude(user_key, project_id, attachment_id, session_id, spec, node, label
             if written else
             f"Solved {label!r}: the code ran successfully, but {held_by} is editing the node, so nothing was written."
             if held_by else
-            f"Solved {label!r}: the code ran successfully, but the node gained content meanwhile — nothing written."
+            f"Solved {label!r}: the code ran successfully, but the node gained content meanwhile, so nothing was written."
         )
         card_kind = "result"
     elif verdict == "pass":
@@ -533,7 +530,7 @@ def _conclude(user_key, project_id, attachment_id, session_id, spec, node, label
         card_kind = "result"
     elif verdict == "infrastructure":
         text = (
-            f"Not verified: the sandbox was unreachable while solving {label!r} — "
+            f"Not verified: the sandbox was unreachable while solving {label!r}, so "
             "nothing was run, corrected, or written. Retry when it is back."
         )
         card_kind = "error"
@@ -582,7 +579,7 @@ def _conclude(user_key, project_id, attachment_id, session_id, spec, node, label
             )
         else:
             text = (
-                f"Not executable: {label!r} has no code the sandbox could run — it works in the "
+                f"Not executable: {label!r} has no code the sandbox could run, as it works in the "
                 "browser or through its own service. Play the dataflow to see it. Nothing was changed."
             )
         card_kind = "result"

@@ -232,7 +232,7 @@ class TestOnlyTheRuntimeSaysActionable:
             {"_egress_budget": egress.CallBudget(0)}, child, [],
         )
         assert outcome == "ok" and part["lanes"]["external"][0].get("acquirable") is None
-        assert "1 Discovery resource id(s) went unconfirmed" in text
+        assert "1 Discovery resource id went unconfirmed, and a row whose id went unconfirmed" in text
 
     def test_a_row_with_no_coordinate_is_not_marked(self, app, shipped_root):
         assert self._row(url="https://a.example/x").get("acquirable") is None

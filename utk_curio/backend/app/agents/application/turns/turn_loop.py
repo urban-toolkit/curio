@@ -83,6 +83,7 @@ from utk_curio.backend.app.agents.application.tool_rounds import _RunConversatio
 from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import tool_names
+from utk_curio.backend.app.agents.domain.counts import count_label
 from utk_curio.backend.app.agents.infrastructure import provider_config
 from utk_curio.backend.app.agents.infrastructure.providers import ChatTurn
 from utk_curio.backend.app.agents.infrastructure.providers import NativeToolsRefused
@@ -962,7 +963,7 @@ class AttachmentTurn:
             delegate_summary = text
             if draft_part is not None:
                 self.minted.append(draft_part)
-                delegate_summary = "reviewed package draft proposed — awaits Apply"
+                delegate_summary = "reviewed package draft proposed: it awaits Apply"
             # dev/93 D5: the delegation card reports the OUTCOME, not merely
             # that the child ran — "ok" beside "returned no parseable draft"
             # is how the parent learned nothing.
@@ -978,7 +979,7 @@ class AttachmentTurn:
             delegate_summary = text
             if cand_part is not None:
                 self.minted.append(cand_part)
-                delegate_summary = "dataset candidates shown for review — select and confirm"
+                delegate_summary = "dataset candidates shown for review: select and confirm"
             status = cand_outcome
         elif status == "ok" and req["capability"] == "research.notes.compose":
             # dev/95 (Follow-up D): notes success ⇒ the notes EXIST, each the
@@ -990,7 +991,7 @@ class AttachmentTurn:
             delegate_summary = text
             if note_parts:
                 self.minted.extend(note_parts)
-                delegate_summary = f"{len(note_parts)} note(s) added"
+                delegate_summary = f"{count_label(len(note_parts), 'note')} added"
             status = notes_outcome
         return status, text, child, home_att, delegate_summary
 

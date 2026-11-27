@@ -694,7 +694,7 @@ class TestConnectionKeys:
         assert verdict.ok
         ref = verdict.source["refs"][0]
         assert ref["requirement"] == "credential-gated"
-        assert ref["hint"] == "a connection key 'census' is saved for this host — use api_key = curio_secret(\"census\")"
+        assert ref["hint"] == "a connection key 'census' is saved for this host: use api_key = curio_secret(\"census\")"
         without = sg.check_grounding('import requests\nreturn requests.get("https://api.census.gov/data").json()',
                                      "python", _ctx(is_data_loading=True, probe=probe))
         assert "hint" not in without.source["refs"][0]

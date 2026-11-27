@@ -18,8 +18,10 @@ Verdicts:
 
 from __future__ import annotations
 
+from utk_curio.backend.app.execution import node_names
 from utk_curio.backend.app.execution import runner
 from utk_curio.backend.app.agents.domain import agent_text
+from utk_curio.backend.app.agents.domain import labels
 
 # Sandbox runtime dataType → template port type vocabulary. Unmapped types
 # skip the compatibility check (fail-open — honesty over false alarms).
@@ -60,6 +62,7 @@ def _consumer_type_mismatch(
     # A type this build does not recognize still fails open, just above.
     dataflow = (spec_dict or {}).get("dataflow") or {}
     nodes = {n.get("id"): n for n in dataflow.get("nodes") or [] if isinstance(n, dict)}
+    templates = node_names.labels_of(available.values())
     for edge in dataflow.get("edges") or []:
         if not isinstance(edge, dict) or edge.get("source") != node_id:
             continue
@@ -75,15 +78,15 @@ def _consumer_type_mismatch(
         if not declared:
             continue
         if absent:
-            label = (consumer.get("goal") or edge.get("target") or "?")
+            label = labels.node_label(consumer, templates=templates) or edge.get("target") or "?"
             return agent_text.message(
-                "result-shape.consumer-no-output", label=repr(str(label)[:60]), declared=', '.join(sorted(declared)),
+                "result-shape.consumer-no-output", label=repr(str(label)), declared=', '.join(sorted(declared)),
             )
         if port_type not in declared:
-            label = (consumer.get("goal") or edge.get("target") or "?")
+            label = labels.node_label(consumer, templates=templates) or edge.get("target") or "?"
             return agent_text.message(
                 "result-shape.consumer-type-mismatch", output_data_type=repr(output_data_type),
-                label=repr(str(label)[:60]), declared=', '.join(sorted(declared)),
+                label=repr(str(label)), declared=', '.join(sorted(declared)),
             )
     return None
 
@@ -206,7 +209,9 @@ def validate_candidate(
             evidence.update({
                 "kind": "upstream-blocker",
                 "blocker": blocker,
-                "blockerLabel": str(blocker_node.get("goal") or blocker)[:60],
+                "blockerLabel": labels.node_label(
+                    blocker_node, templates=node_names.labels_of((available_templates or {}).values()),
+                ) or str(blocker),
                 "stderrTail": blocker_record.get("stderrTail", ""),
                 "detail": report.get("error"),
             })

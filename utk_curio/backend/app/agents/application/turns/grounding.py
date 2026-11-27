@@ -30,6 +30,7 @@ from utk_curio.backend.app.agents.application.proposals import mint as agents_mi
 from utk_curio.backend.app.agents.application.solve import budgets as agents_budgets
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 from utk_curio.backend.app.agents.domain import document_validation
+from utk_curio.backend.app.agents.domain.counts import count_label
 from utk_curio.backend.app.datasets.domain.code_refs import collection_ids_in_code, dataset_ids_in_code
 from utk_curio.backend.app.datasets.domain.constants import is_layer_group_id, layer_group_kind
 from utk_curio.backend.app.datasets.domain.layer_group import group_base_title, ids_read, layer_group_formats
@@ -384,7 +385,7 @@ def _project_grounded_literal(ctx) -> str | None:
     """
     catalog = getattr(ctx, "catalog_ids", None) or {}
     if catalog:
-        return f"the project's Data Catalog ({len(catalog)} dataset(s))"
+        return f"the project's Data Catalog ({count_label(len(catalog), 'dataset')})"
     return None
 
 

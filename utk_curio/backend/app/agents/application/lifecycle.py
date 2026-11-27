@@ -345,7 +345,7 @@ def install_in_project(user_key: str, project_id: str, coord: str) -> dict:
             f"{root.name} ({coord}) requires "
             + ", ".join(missing)
             + ", which " + ("is" if len(missing) == 1 else "are")
-            + " not available in the catalog or your imports — nothing was installed",
+            + " not available in the catalog or your imports, so nothing was installed",
             409,
         )
     spec = dataflow_docs.live(user_key, project_id)
@@ -444,7 +444,7 @@ def _disclose_closure_repair(
             user_key, project_id, session_id, attachment_id,
             [sessions.make_turn(
                 "agent",
-                f"Added {', '.join(names)} — required by {dependent_name}.",
+                f"Added {', '.join(names)}: required by {dependent_name}.",
                 content=[{
                     "type": "card",
                     "kind": "result",
@@ -478,7 +478,7 @@ def uninstall_from_project(user_key: str, project_id: str, coord: str) -> dict:
             names.append(f"{dm.name} ({d})" if dm else d)
         raise AgentServiceError(
             f"{coord} is required by " + ", ".join(names)
-            + " — uninstall " + ("that agent" if len(names) == 1 else "those agents") + " first",
+            + "; uninstall " + ("that agent" if len(names) == 1 else "those agents") + " first",
             409,
         )
     dirty = False

@@ -187,7 +187,7 @@ def load_artifact_preview(
 #: instead of a bare ``401 Client Error``.
 _SANDBOX_REJECTED = (
     "the sandbox rejected the backend on {path}: the two processes disagree "
-    "about CURIO_SANDBOX_TOKEN — this usually means one of them was started "
+    "about CURIO_SANDBOX_TOKEN, which usually means one of them was started "
     "outside 'curio start' or was restarted without the other"
 )
 
@@ -429,7 +429,7 @@ def run_through_node(
         # content nobody ran. Refuse first, by name.
         report["notExecutable"] = True
         report["error"] = (
-            f"node {node_id!r} ({target.raw_type}) has no code the sandbox could run — "
+            f"node {node_id!r} ({target.raw_type}) has no code the sandbox could run, as "
             "it works in the browser or through its own service; Play the dataflow to see it"
         )
         return report
@@ -442,7 +442,7 @@ def run_through_node(
         for upstream in spec.upstream_nodes(node.id):
             if upstream in wanted and upstream not in seen:
                 report["error"] = (
-                    f"the upstream slice contains a cycle through {node.id!r} — "
+                    f"the upstream slice contains a cycle through {node.id!r}, and "
                     "validation needs an acyclic dataflow"
                 )
                 return report
@@ -642,7 +642,7 @@ def run_through_node(
             result = {
                 "stdout": [],
                 "stderr": (
-                    f"{exc} (sandbox execution timeout) — the code hung or the "
+                    f"{exc} (sandbox execution timeout): the code hung or the "
                     "request has no timeout; add one and bound the fetch"
                 ),
                 "output": {"path": "", "dataType": ""},

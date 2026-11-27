@@ -57,6 +57,7 @@ from utk_curio.backend.app.agents.domain.tool_names import (
 )
 from utk_curio.backend.app.agents.domain.manifest import ToolRequirement
 from utk_curio.backend.app.agents.domain import dashboards
+from utk_curio.backend.app.agents.domain import labels
 from utk_curio.backend.app.agents.domain import skills as skill_format
 from utk_curio.backend.app.execution.code_references import WIDGET_KINDS
 
@@ -1149,7 +1150,7 @@ def _node_row(node: dict, goal_cap: int | None, *, lineage: bool = True, values:
     content = str(node.get("content") or "")
     row: dict = {"id": node.get("id"), "type": node.get("type")}
     if goal_cap is not None:
-        row["goal"] = str(node.get("goal") or "")[:goal_cap]
+        row["goal"] = labels.fit(node.get("goal"), goal_cap)
     row["hasContent"] = bool(content.strip())
     row["contentChars"] = len(content)
     # A node pinned to the dataflow's dashboard is one of its tiles.

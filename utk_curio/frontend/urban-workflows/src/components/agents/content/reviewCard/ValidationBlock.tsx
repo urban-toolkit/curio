@@ -5,23 +5,41 @@ import { AddKeyAction } from "../../../connectionKeys/AddKeyAction";
 import styles from "../AgentReviewCard.module.css";
 
 type Validation = NonNullable<AgentChangePart["validation"]>;
+type Attempt = NonNullable<Validation["attempts"]>[number];
+
+/** A chart's or a map's document: the sandbox does not run one, so its
+ * grammar's schema validates it, and a document that validated failed
+ * nothing. */
+const documentValidated = (validation: Validation): boolean =>
+  validation.verdict === "not-executable" && Boolean(validation.evidence?.documentValidated);
+
+/** A round whose document its grammar validated: it reads as a check that
+ * passed, with no reason the sandbox ran nothing and its document under
+ * plain words. A round whose document failed its check keeps its error. */
+const validatedRound = (validation: Validation, attempt: Attempt): boolean =>
+  documentValidated(validation) && attempt.verdict === "not-executable";
 
 /** dev/67-7: the validation verdict of code that landed: real runtime
  * evidence, rendered inert. dev/115: the engineering loop's trail: every
  * round the runtime ran (or refused before running), how it failed, and that
- * a fix followed. Collapsed by default. */
+ * a fix followed. Collapsed by default. A document its grammar validated says
+ * so, as a check that passed. */
 export const ValidationBlock: React.FC<{ validation: Validation }> = ({ validation }) => (
   <div
-    className={`${styles.validation} ${validation.verdict === "pass" ? styles.validationPass : styles.validationFail}`}
+    className={`${styles.validation} ${validation.verdict === "pass" || documentValidated(validation) ? styles.validationPass : styles.validationFail}`}
     role="status"
-    aria-label={`Validation ${validation.verdict}`}
+    aria-label={documentValidated(validation) ? "Validated against its grammar" : `Validation ${validation.verdict}`}
   >
-    <span className={styles.validationBadge}>{validation.verdict === "pass" ? "PASS" : "FAIL"}</span>
+    <span className={styles.validationBadge}>
+      {validation.verdict === "pass" ? "PASS" : documentValidated(validation) ? "VALID" : "FAIL"}
+    </span>
     <span>
       {validation.verdict === "pass"
         ? `Executed through the dataflow${
             validation.evidence?.outputDataType ? ` (output: ${validation.evidence.outputDataType})` : ""
           }`
+        : documentValidated(validation)
+          ? "Validated against its grammar, not executed"
         : validation.evidence?.kind === "upstream-blocker"
           ? `Upstream node ${validation.evidence?.blockerLabel ?? "?"} failed before this node ran`
           : (validation.evidence?.detail ??
@@ -48,7 +66,9 @@ export const ValidationBlock: React.FC<{ validation: Validation }> = ({ validati
                 {attempt.verdict === "pass"
                   ? "pass ✓"
                   : attempt.verdict === "not-executable"
-                    ? "not executable: no code to run, nothing ran"
+                    ? documentValidated(validation)
+                      ? "validated against its grammar, not executed"
+                      : "not executable: no code to run, nothing ran"
                     : attempt.verdict}
                 {attempt.kind && attempt.verdict !== "pass" && attempt.verdict !== "not-executable" ? ` · ${attempt.kind}` : ""}
                 {attempt.source === "current content" ? " · the node's current code" : ""}
@@ -64,7 +84,7 @@ export const ValidationBlock: React.FC<{ validation: Validation }> = ({ validati
                   {attempt.outputDataType ? ` output: ${attempt.outputDataType}` : ""}
                   {typeof attempt.durationMs === "number" ? ` · ${(attempt.durationMs / 1000).toFixed(1)} s` : ""}
                 </span>
-              ) : attempt.detail || attempt.stderrTail ? (
+              ) : !validatedRound(validation, attempt) && (attempt.detail || attempt.stderrTail) ? (
                 <details className={styles.attemptError}>
                   <summary>{(attempt.detail ?? attempt.stderrTail ?? "").slice(0, 120)}</summary>
                   <pre>{attempt.stderrTail ?? attempt.detail}</pre>
@@ -73,7 +93,16 @@ export const ValidationBlock: React.FC<{ validation: Validation }> = ({ validati
               {attempt.verdict !== "pass" && attempt.endpointEvidence ? (
                 <span className={styles.attemptEndpoint}>Endpoint: {attempt.endpointEvidence}</span>
               ) : null}
-              {attempt.verdict !== "pass" && attempt.code ? (
+              {validatedRound(validation, attempt) && attempt.code ? (
+                // dev/127: every round's content stays in the chat; this one passed its check.
+                <details className={styles.attemptDocument}>
+                  <summary>
+                    The document this round validated
+                    {attempt.codeTruncated ? " (truncated)" : ""}
+                  </summary>
+                  <pre>{attempt.code}</pre>
+                </details>
+              ) : attempt.verdict !== "pass" && attempt.code ? (
                 // dev/127: what this round actually ran.
                 <details className={styles.attemptError}>
                   <summary>

@@ -352,8 +352,9 @@ class TestAPlanNamesTheTilesItRemoves:
         assert removals["map"]["pinned"] is True
         assert "pinned" not in removals["loader"]
         lines = card["preview"].splitlines()
-        [tile] = [line for line in lines if "Parks map" in line]
-        [loader] = [line for line in lines if "Load CSV" in line]
+        # Each named as its header names it: no title, so its template's label.
+        [tile] = [line for line in lines if " Remove: Autark · " in line]
+        [loader] = [line for line in lines if " Remove: Python Computation · " in line]
         assert tile.endswith(f" · {AUTK} · a dashboard tile, which leaves the dashboard"), tile
         assert loader.endswith(f" · {CA}"), loader
         assert sorted(card["canvas"]["removedNodeIds"]) == ["loader", "map"]

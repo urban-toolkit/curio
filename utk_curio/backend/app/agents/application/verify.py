@@ -24,6 +24,7 @@ import re
 import time
 from urllib.parse import urlparse
 
+from utk_curio.backend.app.agents.domain import labels
 from utk_curio.backend.app.agents.infrastructure import egress
 
 _SAMPLE_KEYS_MAX = 12
@@ -71,7 +72,7 @@ def _body_evidence(body: str, content_type: str) -> dict:
     if "html" in lowered or body.lstrip()[:1] == "<":
         match = _TITLE_RE.search(body)
         title = " ".join(_TAG_RE.sub(" ", match.group(1)).split()) if match else ""
-        return {"pageTitle": title[:_PAGE_TITLE_MAX]} if title else {}
+        return {"pageTitle": labels.fit(title, _PAGE_TITLE_MAX)} if title else {}
     sample = " ".join(_TAG_RE.sub(" ", body[: _BODY_SAMPLE_MAX * 4]).split())
     return {"bodySample": sample[:_BODY_SAMPLE_MAX]} if sample else {}
 
@@ -206,7 +207,7 @@ def verify_external_source(url: str | None, *, request_fn=None, resolver=None, b
     if not isinstance(url, str) or not url.strip():
         return {
             "status": "unverified",
-            "detail": "no probeable URL — the identifier was never checked",
+            "detail": "no probeable URL, so the identifier was never checked",
             "checkedAt": _now(),
         }
     url = url.strip()
@@ -354,18 +355,18 @@ def classify_access(observation: dict | None, url: str | None = None) -> dict:
             "access": ACCESS_UNKNOWN,
             "why": (
                 f"answered {http_status or 200} with "
-                f"{obs.get('contentType') or 'no content type'} — not recognized as data"
+                f"{obs.get('contentType') or 'no content type'}, which is not recognized as data"
             )[:_ACCESS_WHY_MAX],
         }
     if status == "unreachable" and http_status in _GATED_STATUSES:
-        why = f"the data URL answered {http_status} — the portal gates it"
+        why = f"the data URL answered {http_status}: the portal gates it"
         if title:
             why += f' ("{title}")'
         return {"access": ACCESS_MANUAL, "why": why[:_ACCESS_WHY_MAX]}
     if status == "refused":
         return {
             "access": ACCESS_UNKNOWN,
-            "why": ("the egress policy refused the URL — nothing was observed")[:_ACCESS_WHY_MAX],
+            "why": ("the egress policy refused the URL, so nothing was observed")[:_ACCESS_WHY_MAX],
         }
     detail = str(obs.get("detail") or "the URL was never checked")
     return {"access": ACCESS_UNKNOWN, "why": detail[:_ACCESS_WHY_MAX]}

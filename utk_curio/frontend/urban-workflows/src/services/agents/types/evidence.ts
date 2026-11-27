@@ -164,6 +164,8 @@ export interface AgentDatasetSelection {
     reason?: string;
     attachmentId?: string;
     nodeId?: string;
+    /** `delegating`: the builder that writes the loader, as its manifest names it. */
+    name?: string;
     executionId?: string;
     sources?: string[];
     jobIds?: string[];

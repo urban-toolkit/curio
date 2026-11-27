@@ -49,7 +49,8 @@ describe('composeConfirmationPrompt', () => {
 
   test('a row without a coordinate still goes to Node Builder', () => {
     const prompt = composeConfirmationPrompt([], [external({ url: 'https://a.example/x' })], undefined, 'Node Builder');
-    expect(prompt).toContain('hand off to Node Builder');
+    expect(prompt).toBe('Confirm my selection. Hand off to Node Builder: Bike Routes.');
+    expect(prompt).toContain('Hand off to Node Builder');
     expect(prompt).not.toContain('download into my Data Catalog');
   });
 
@@ -61,7 +62,8 @@ describe('composeConfirmationPrompt', () => {
       undefined,
       'Node Builder'
     );
-    expect(prompt).toContain('hand off to Node Builder');
+    expect(prompt).toBe('Confirm my selection. Hand off to Node Builder: Bike Routes.');
+    expect(prompt).toContain('Hand off to Node Builder');
   });
 
   test('a mixed selection asks for the rest, in one prompt', () => {
@@ -74,7 +76,11 @@ describe('composeConfirmationPrompt', () => {
       undefined,
       'Node Builder'
     );
-    expect(prompt).toContain('install from the Data Catalog');
+    expect(prompt).toBe(
+      'Confirm my selection. Install from the Data Catalog: Chicago Boundary (data.utk.chicago-boundary); '
+        + 'hand off to Node Builder: Something Else.',
+    );
+    expect(prompt).toContain('Install from the Data Catalog');
     expect(prompt).not.toContain('download');
     expect(prompt).toContain('hand off to Node Builder: Something Else');
   });

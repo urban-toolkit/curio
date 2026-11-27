@@ -36,6 +36,7 @@ from utk_curio.backend.app.agents.application.proposals import store as agents_s
 from utk_curio.backend.app.agents.application.solve import simulation as agents_simulation
 from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.domain import node_settings
+from utk_curio.backend.app.agents.domain.counts import count_label
 from utk_curio.backend.app.agents.infrastructure import testing_provider
 from utk_curio.backend.app.collaboration import agent_peers
 from utk_curio.backend.app.collaboration import dataflow_docs
@@ -282,7 +283,7 @@ def _apply_dataset_install(
     if item is None:
         raise agents_store._mark_stale(
             user_key, project_id, proposal_id, spec, proposal, session_id,
-            f"the dataset is no longer available ({err}) — ask the agent to search again",
+            f"the dataset is no longer available ({err}): ask the agent to search again",
         )
     try:
         DatasetCatalogService(getattr(g, "user", None)).install_dataset(
@@ -315,7 +316,7 @@ def _apply_dataset_install(
         f"Applied: dataset installed ({name}).",
         "Applied: dataset installed",
         [name, dataset_id,
-         *([f"{len(resolved_nodes)} node(s) waiting for it can now be solved"]
+         *([f"{count_label(len(resolved_nodes), 'node')} waiting for it can now be solved"]
            if resolved_nodes else []),
          f"proposal {proposal_id[:8]}"],
     )
@@ -351,13 +352,13 @@ def _apply_package_install(
     except packages_services.PackageServiceError as exc:
         raise agents_store._mark_stale(
             user_key, project_id, proposal_id, spec, proposal, session_id,
-            f"the package is no longer installable ({exc}) — ask the agent to search again",
+            f"the package is no longer installable ({exc}): ask the agent to search again",
         ) from exc
     if report["conflicts"]:
         named = ", ".join(sorted({c["package"] for c in report["conflicts"]}))
         raise agents_store._mark_stale(
             user_key, project_id, proposal_id, spec, proposal, session_id,
-            f"installing would conflict with this project's packages ({named}) — "
+            f"installing would conflict with this project's packages ({named}): "
             "resolve the conflict in the Nodes Catalog first",
         )
     try:
@@ -540,7 +541,7 @@ def _apply_package_draft(
     except build_promotion.PromotionError as exc:
         raise agents_store._mark_stale(
             user_key, project_id, proposal_id, spec, proposal, session_id,
-            f"the reviewed build can no longer be applied: {exc} — ask the "
+            f"the reviewed build can no longer be applied ({exc}): ask the "
             "agent to rebuild the draft",
         ) from exc
 
@@ -583,7 +584,7 @@ def _apply_package_draft(
             attachments.find_proposal(unchanged, attachment_id, proposal_id) or proposal,
             session_id,
             f"the package installed but its nodes could not be created ({exc}); "
-            f"the prior state was {rolled['rollback']['status']} — ask the agent "
+            f"the prior state was {rolled['rollback']['status']}. Ask the agent "
             "to rebuild",
         ) from exc
 
@@ -603,7 +604,7 @@ def _apply_package_draft(
         restart_line = (
             " Restart Curio to pick up "
             + ", ".join(str(lib) for lib in restart["libs"])
-            + " — running nodes keep the previously loaded versions until then."
+            + ": running nodes keep the previously loaded versions until then."
         )
     # A declared library that installed but cannot be imported. Said here
     # because this turn is what claims the package was installed: pip counts
@@ -617,12 +618,12 @@ def _apply_package_draft(
                 f"{lib} installed but cannot be imported ({reason})"
                 for lib, reason in sorted(broken_imports.items())
             )
-            + " — nodes needing it will fail until it is repaired."
+            + ". Nodes needing it will fail until it is repaired."
         )
     agents_store._log_applied_turn(
         user_key, project_id, session_id, attachment_id, proposal_id,
         f"Applied: package {name} built and installed"
-        + (f"; {len(created_nodes)} node(s) created." if created_nodes else ".")
+        + (f"; {count_label(len(created_nodes), 'node')} created." if created_nodes else ".")
         + restart_line,
         "Applied: package draft installed",
         [name, target, f"proposal {proposal_id[:8]}"],

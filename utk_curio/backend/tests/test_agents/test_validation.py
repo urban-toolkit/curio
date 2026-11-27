@@ -65,7 +65,9 @@ class TestValidateCandidate:
         assert result["verdict"] == "fail"
         assert result["evidence"]["kind"] == "upstream-blocker"
         assert result["evidence"]["blocker"] == "up"
-        assert result["evidence"]["blockerLabel"] == "Load CSV"
+        # Named as its header names it: no title, so its type in words, as no
+        # catalog was given.
+        assert result["evidence"]["blockerLabel"] == "Python Computation"
 
     def test_consumer_type_mismatch_is_named(self, tmp_curio):
         spec = _spec(
@@ -81,7 +83,9 @@ class TestValidateCandidate:
         )
         assert result["verdict"] == "fail"
         assert result["evidence"]["kind"] == "type-mismatch"
-        assert "'Chart it'" in result["evidence"]["detail"]
+        # The consumer, with no title, is named as its header names it: its
+        # type in words, as the given templates carry no label.
+        assert "'Vis Vega'" in result["evidence"]["detail"]
         # Fail-open: no arity metadata → no mismatch claims.
         result = validation.validate_candidate(
             KEY, PID, spec, "t", "x()", exec_fn=_exec({}), available_templates=None,
@@ -109,7 +113,7 @@ class TestValidateCandidate:
         assert result["evidence"]["kind"] == "type-mismatch"
         detail = result["evidence"]["detail"]
         assert "returned no output (None)" in detail
-        assert "'Neighborhood Pool'" in detail
+        assert "'Data Pool'" in detail
         assert "DATAFRAME, GEODATAFRAME" in detail
         # The honest alternative is named, because it exists (dev/115).
         assert "say so in one line instead of returning code" in detail
@@ -251,5 +255,5 @@ class TestEmptyUpstream:
         result = validation.validate_candidate(KEY, PID, spec, "t", "return input_0", exec_fn=lambda e, p: {"stdout": [], "stderr": "", "output": {"path": "x", "dataType": "dataframe"}})
         assert result["verdict"] == "fail"
         assert result["evidence"]["kind"] == "upstream-blocker" and result["evidence"]["upstreamEmpty"] is True
-        assert result["evidence"]["blocker"] == "a" and result["evidence"]["blockerLabel"] == "load the tracts"
+        assert result["evidence"]["blocker"] == "a" and result["evidence"]["blockerLabel"] == "Python Computation"
         assert result["evidence"]["executedNodes"] == []

@@ -437,12 +437,13 @@ def _change_lands(ctx: Ctx, panel) -> None:
 
 def _by_title(saved: dict, title: str) -> dict:
     """The saved node a plan made under *title*, which it holds as its title,
-    as the example's node does; a plan writes its goal as the title and then
-    the plan row's intent."""
+    as the example's node does; a plan writes its goal as the title, a colon
+    (a semicolon after a title that holds one) and the plan row's intent."""
     found = [node for node in saved["nodes"] if node.get("title") == title]
     assert len(found) == 1, f"{len(found)} saved nodes are titled {title!r}"
     goal = str(found[0].get("goal") or "")
-    assert goal.startswith(f"{title} "), f"the node titled {title!r} has the goal {goal!r}"
+    joined = f"{title}; " if ":" in title else f"{title}: "
+    assert goal.startswith(joined), f"the node titled {title!r} has the goal {goal!r}"
     return found[0]
 
 
