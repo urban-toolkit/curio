@@ -3,12 +3,21 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faCheck } from "@fortawesome/free-solid-svg-icons";
 
 import styles from "../AgentReviewCard.module.css";
-import { ROW_CHECK, ROW_WAIT_WORDS, type PlanRowView } from "./reviewCardText";
+import { ROW_CHECK, ROW_UNCHECKED, ROW_WAIT_WORDS, type PlanRowView } from "./reviewCardText";
+
+/** Where a row whose node waits for the person's pick goes: its sources, in
+ *  this chat or in its Dataset Finder's, and the tooltip that says which. */
+export interface RowSources {
+  show: () => void;
+  hint: string;
+}
 
 /** One node of a landed plan (dev/71's lifecycle), one row: its name, which
  * opens the chat of its node's own agent; its state in one word, or a tick
- * once its code landed; its Solve while it can run and its Run once built;
- * then what it does, and why it failed when it did. */
+ * once its code landed and a check ran on it ("Not checked" when none did);
+ * its Solve while it can run and its Run once built; then what it does, and
+ * why it failed when it did. A row whose node waits for the person's pick
+ * goes to its own sources. */
 export const PlanNodeRow: React.FC<{
   node: { ref: string; nodeType: string; title: string; intent: string; expects?: string; scenario?: string };
   view: PlanRowView;
@@ -30,6 +39,8 @@ export const PlanNodeRow: React.FC<{
   /** Opens the chat of its node's own agent, named *chatAgentName*. */
   onOpenChat?: () => void;
   chatAgentName?: string | null;
+  /** Its node's sources, while it waits for the person's pick. */
+  sources?: RowSources | null;
 }> = ({
   node,
   view,
@@ -43,6 +54,7 @@ export const PlanNodeRow: React.FC<{
   onRun,
   onOpenChat,
   chatAgentName,
+  sources = null,
 }) => {
   // #662: a copy has its original's title; its scenario tells them apart.
   const label = node.scenario ? `${node.title} (${node.scenario})` : node.title;
@@ -70,7 +82,9 @@ export const PlanNodeRow: React.FC<{
     }
   };
 
-  const ticked = check ? ROW_CHECK[check] ?? ROW_CHECK.ran : null;
+  // Its tick says how its code was checked; a check this row cannot name is
+  // no claim.
+  const ticked = check ? ROW_CHECK[check] ?? null : null;
   const building = view === "building" || rowBusy === "solve";
   return (
     <li className={styles.planNodeRow} data-curio-plan-row={node.ref} data-curio-row-view={building ? "building" : view}>
@@ -101,6 +115,21 @@ export const PlanNodeRow: React.FC<{
           <span className={styles.planRowBuilding} data-tooltip={atWork ?? undefined}>
             Building…
           </span>
+        ) : view === "done" && !ticked ? (
+          <span className={styles.planRowAfter} data-tooltip={ROW_UNCHECKED.says}>
+            {ROW_UNCHECKED.word}
+          </span>
+        ) : view === "pick" && sources ? (
+          // Its word goes to its own sources, and says where on its tooltip.
+          <button
+            type="button"
+            className={styles.planRowWaitsLink}
+            data-tooltip={sources.hint}
+            aria-label={`${ROW_WAIT_WORDS["awaiting-source"]}: show the sources of ${label}`}
+            onClick={sources.show}
+          >
+            {ROW_WAIT_WORDS["awaiting-source"]}
+          </button>
         ) : view === "pick" ? (
           <span className={styles.planRowWaits}>{ROW_WAIT_WORDS["awaiting-source"]}</span>
         ) : view === "download" ? (

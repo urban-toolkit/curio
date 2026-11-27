@@ -1,7 +1,7 @@
 import React from "react";
 
 import styles from "../AgentReviewCard.module.css";
-import { PlanNodeRow } from "./PlanNodeRow";
+import { PlanNodeRow, type RowSources } from "./PlanNodeRow";
 import { planNodeRowState, type PlanDisplay, type PlanNodeReviewState } from "./reviewCardText";
 
 /** The chat of a node's own agent, the one that writes its code. */
@@ -26,7 +26,20 @@ export const PlanNodesList: React.FC<{
   agentNameOf?: (attachmentId: string) => string | null;
   /** The node's own agent that writes its code, from the live list. */
   nodeChatOf?: (nodeId: string) => NodeChat | null;
-}> = ({ part, planNodeState, onSolvePlanNode, onRunPlanNode, onOpenAgentChat, delegateExists, agentNameOf, nodeChatOf }) => (
+  /** Where a node that waits for the person's pick finds its sources: this
+   *  chat or its Dataset Finder's, and the tooltip that says which. */
+  sourcesOf?: (nodeId: string) => RowSources | null;
+}> = ({
+  part,
+  planNodeState,
+  onSolvePlanNode,
+  onRunPlanNode,
+  onOpenAgentChat,
+  delegateExists,
+  agentNameOf,
+  nodeChatOf,
+  sourcesOf,
+}) => (
   <ul className={styles.planNodes} aria-label="Planned nodes">
     {part.plan!.nodes.map((node) => {
       const row = planNodeRowState(part, node, planNodeState);
@@ -53,6 +66,7 @@ export const PlanNodesList: React.FC<{
           onRun={onRunPlanNode ? (onLine) => onRunPlanNode(node.ref, onLine) : undefined}
           onOpenChat={home && onOpenAgentChat ? () => onOpenAgentChat(home.attachmentId) : undefined}
           chatAgentName={home?.name ?? null}
+          sources={row.view === "pick" && row.nodeId ? sourcesOf?.(row.nodeId) ?? null : null}
         />
       );
     })}

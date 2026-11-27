@@ -7,6 +7,9 @@
  * menu's close is committed before the chat's own listener runs, which then
  * finds no layer open and would close the chat too. It takes the focus as it
  * opens, on its current item if it has one, and the arrow keys walk its items.
+ * A menu its owner stops drawing (*drawn* false: its suggestions went, a build
+ * started) is closed at once, its layer with it: no Escape goes to a menu
+ * nobody sees, and it never opens again by itself once drawn again.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -31,8 +34,13 @@ export interface MenuPopup<K> {
   onMenuKeyDown: (event: React.KeyboardEvent<HTMLElement>) => void;
 }
 
-export function useMenuPopup<K = true>(): MenuPopup<K> {
-  const [open, setOpen] = useState<K | null>(null);
+export function useMenuPopup<K = true>(drawn = true): MenuPopup<K> {
+  const [held, setOpen] = useState<K | null>(null);
+  // Not drawn, it is closed in this very render, so its layer goes with it.
+  const open = drawn ? held : null;
+  useEffect(() => {
+    if (!drawn) setOpen(null);
+  }, [drawn]);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const anchorRef = useRef<HTMLElement | null>(null);
 

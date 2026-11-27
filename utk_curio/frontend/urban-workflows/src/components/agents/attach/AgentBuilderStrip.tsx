@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import clsx from "clsx";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faChevronDown, faChevronUp } from "@fortawesome/free-solid-svg-icons";
-import { ROW_SOLVE_RUNNING_HINT, buildRunningOn } from "../../../services/agents/planBuild";
+import { ROW_SOLVE_RUNNING_HINT, buildRunningOn, isBuiltNode } from "../../../services/agents/planBuild";
 import type { AgentAttachment, AgentRemedy, AgentSolveWave } from "../../../services/agents";
 import { LlmConfigAction, remedyOf } from "../../llmConfigs/LlmConfigAction";
 import { useFlowContext } from "../../../providers/FlowProvider";
@@ -15,8 +15,6 @@ import { useMenuPopup } from "./chat/useMenuPopup";
 import {
   AT_WORK_RUNS,
   AT_WORK_WORDS,
-  BUILT_RUNS,
-  BUILT_STATES,
   builtCount,
   inPlanOrder,
   mainActionOf,
@@ -44,6 +42,10 @@ export const STOP_SOLVE_HINT =
 export const STOP_BUILD_HINT =
   "Stops the build after its current step. Everything built stays. The build goes on if you close this chat.";
 export const SHOW_SOURCES_HINT = "Goes to its sources in this chat. Your pick builds it, and the plan goes on.";
+/** Show its sources' tooltip when this chat holds no card of the node's
+ *  sources: the chat of its Dataset Finder, named *finder*, does. */
+export const showSourcesInFinderHint = (finder: string): string =>
+  `Opens the chat of its ${finder}, which holds its sources. Your pick builds it, and the plan goes on.`;
 export const RESUME_HINT = "Goes on with the build, in plan order, from where it paused";
 export const RUN_HINT = "Runs every node of the dataflow";
 
@@ -149,6 +151,9 @@ export const AgentBuilderStrip: React.FC<{
   /** Brings the card of *nodeId*'s sources into view: in this chat, else in
    *  its Dataset Finder's. */
   onShowSources?: (nodeId: string) => void;
+  /** Where Show its sources goes for *nodeId*, on its tooltip: this chat, or
+   *  its Dataset Finder's. Omitted, this chat. */
+  sourcesHintOf?: (nodeId: string) => string;
   /** The viewer shows run details: the batch's pass and wave. */
   runDetails?: boolean;
 }> = ({
@@ -169,6 +174,7 @@ export const AgentBuilderStrip: React.FC<{
   simulationActivity,
   simulating = null,
   onShowSources,
+  sourcesHintOf,
   runDetails = false,
 }) => {
   const { playAllNodes, isRunActive: browserRunActive, serverRunActive, nodes } = useFlowContext();
@@ -200,8 +206,7 @@ export const AgentBuilderStrip: React.FC<{
   // The refusal's remedy, when it has one (no LLM configuration answers a
   // delegate this run relies on).
   const [errorRemedy, setErrorRemedy] = useState<AgentRemedy | null>(null);
-  const menu = useMenuPopup();
-  // When the line first saw what runs now: its clock.
+  // When the line first saw what runs now.
   const [runStartedAt, setRunStartedAt] = useState<number | null>(null);
 
   const session = attachment.builderSession ?? { phase: "idle" as const };
@@ -228,7 +233,7 @@ export const AgentBuilderStrip: React.FC<{
     canvasIds,
   ).map(([id]) => id);
   const stateOf = (id: string) => (refOf[id] ? nodeStates[refOf[id]] : undefined);
-  const isBuilt = (id: string) => BUILT_STATES.has(stateOf(id) ?? "") || BUILT_RUNS.has(runs[id] ?? "");
+  const isBuilt = (id: string) => isBuiltNode(stateOf(id), runs[id]);
   const built = ids.filter(isBuilt).length;
   const left = ids.length - built;
   const failed = ids.filter((id) => !isBuilt(id) && (runs[id] === "failed" || stateOf(id) === "failed"));
@@ -247,10 +252,19 @@ export const AgentBuilderStrip: React.FC<{
   ]);
   const pickIds = ids.filter((id) => waitsForPick.has(id)).concat([...waitsForPick].filter((id) => !ids.includes(id)));
 
-  // The plan that landed, while any of its nodes is left to build: Build &
-  // validate and Step work on it.
-  const landedPlan = planLeftToBuild(plan, session) ? plan : null;
-  const pauseReason = !building ? session.pauseReason ?? null : null;
+  // The plan that landed, while any of its nodes is left to build, counted as
+  // the line counts them: Build & validate and Step work on it.
+  const landedPlan = planLeftToBuild(plan, session, runs) ? plan : null;
+  // A build's pause on a node whose check failed is about that node alone:
+  // once something built it (a record saved before the server ended such a
+  // pause holds it still), the plan is paused on nothing.
+  const pausedOnABuiltNode = (() => {
+    const held = session.pauseReason;
+    if (held?.kind !== "validation-failed" || !held.ref) return false;
+    const id = plan?.nodeIds?.[held.ref] ?? session.nodeIds?.[held.ref];
+    return isBuiltNode(nodeStates[held.ref], id ? runs[id] : undefined);
+  })();
+  const pauseReason = !building && !pausedOnABuiltNode ? session.pauseReason ?? null : null;
   // Why the build paused, as the line names it; a wait for a pick is the
   // line's own (`pickIds`).
   const pause: PauseView | null = (() => {
@@ -304,12 +318,20 @@ export const AgentBuilderStrip: React.FC<{
     phase: shownPhase,
   });
 
-  // The running line's clock: from when this line first saw the run; a run
-  // of another kind starts it again.
+  // The running line's clock: from when the server says the run began
+  // (`simulatingSince` for a build, `solvingSince` for a batch, in epoch
+  // seconds), so a chat opened again goes on counting; never from later than
+  // this line first saw the run, so a browser clock behind the server's counts
+  // from that sight, never below it. A run of another kind starts it again.
   const runKind = solveRunning ? "solve" : building ? "build" : null;
   useEffect(() => {
     setRunStartedAt(runKind ? Date.now() : null);
   }, [runKind]);
+  const serverSince = runKind === "build" ? session.simulatingSince : runKind === "solve" ? session.solvingSince : undefined;
+  const clockFrom =
+    runStartedAt !== null && typeof serverSince === "number" && serverSince > 0
+      ? Math.min(serverSince * 1000, runStartedAt)
+      : runStartedAt;
   // A batch's Stop reads Stopping… until that batch ends, however it ends.
   useEffect(() => {
     if (!solveRunning) setCancelling(false);
@@ -401,9 +423,9 @@ export const AgentBuilderStrip: React.FC<{
     running ||
     Boolean(error) ||
     keyRemedies.length > 0;
-  if (!shown) return null;
 
-  // The line's menu: the builds that can run now, never while one runs.
+  // The line's menu: the builds that can run now, never while one runs. A
+  // menu the line stops drawing closes, layer and all (`useMenuPopup`).
   const menuItems: Array<{ mode: "auto" | "step"; name: string; says: string }> =
     landedPlan && onSimulate && !running && !rowSolveRunning
       ? [
@@ -411,6 +433,8 @@ export const AgentBuilderStrip: React.FC<{
           { mode: "step" as const, name: "Step", says: STEP_SAYS },
         ]
       : [];
+  const menu = useMenuPopup(shown && menuItems.length > 0);
+  if (!shown) return null;
 
   // What runs, on which node, for the running line.
   const atWork = solveRunning
@@ -435,11 +459,24 @@ export const AgentBuilderStrip: React.FC<{
     solveRunning && pickIds.length > 0
       ? ` · ${pickIds.length === 1 ? `${nodeNameOf(pickIds[0])} needs a source` : `${plural(pickIds.length, "node")} need a source`}`
       : "";
-  // The line's tooltip: why a build paused, in the server's words, else the
-  // failures' reasons; each is on its node's row of the card too.
+  // The line's tooltip: why a build paused, in the server's words, else why
+  // its nodes failed, and the last Solve's own reason while nodes are left:
+  // the live batch's words over those the plan's ledger keeps of the last
+  // Solve (`nodeReasons`, `batchReason`), which a reload and every tab read.
+  // Each node's is on its row of the card too.
+  const keptReasons = session.nodeReasons ?? {};
   const reasons = pauseReason
     ? [pauseReason.message]
-    : Array.from(new Set(failed.map((id) => solveErrors?.[id]).filter((r): r is string => Boolean(r))));
+    : Array.from(
+        new Set(
+          [...failed.map((id) => solveErrors?.[id] ?? keptReasons[id]), left > 0 ? session.batchReason : undefined].filter(
+            (r): r is string => Boolean(r),
+          ),
+        ),
+      );
+
+  // Where Show its sources goes for a node: this chat, or its Finder's.
+  const sourcesHint = (nodeId: string) => sourcesHintOf?.(nodeId) ?? SHOW_SOURCES_HINT;
 
   const solveLabel =
     phase === "interrupted"
@@ -453,13 +490,13 @@ export const AgentBuilderStrip: React.FC<{
   return (
     <div className={styles.plan} role="group" aria-label={attachment.name}>
       <div className={styles.line}>
-        {running && runStartedAt !== null ? (
+        {running && clockFrom !== null ? (
           <span className={styles.lineWords}>
             <PlanRunLine
               label={building === "step" ? "Stepping" : building ? "Building" : "Solving"}
               subject={atWorkSubject}
               detail={builtCount(built, ids.length) + pickWords}
-              startedAt={runStartedAt}
+              startedAt={clockFrom}
               tooltip={atWorkTooltip}
               srLabel={building ? "Build running" : "Solve batch running"}
             />
@@ -528,7 +565,14 @@ export const AgentBuilderStrip: React.FC<{
           <button
             type="button"
             className={styles.solve}
-            data-tooltip={SHOW_SOURCES_HINT}
+            // Where it goes: this chat, or the node's Dataset Finder's. With
+            // several nodes waiting it goes to the first, which it names;
+            // each node's row on the plan card goes to its own.
+            data-tooltip={
+              pickIds.length > 1
+                ? `${nodeNameOf(pickIds[0])}: ${sourcesHint(pickIds[0])}`
+                : sourcesHint(pickIds[0])
+            }
             disabled={!onShowSources}
             onClick={() => onShowSources?.(pickIds[0])}
           >

@@ -145,16 +145,31 @@ export function useAgentSolve(opts: {
         const status = typeof payload.status === "string" ? payload.status : "failed";
         const verification = payload.verification as { status?: unknown; reason?: unknown } | undefined;
         const notExecutable = status === "solved" && verification?.status === "not-executable";
+        // A chart's or a map's document its grammar validated is VALID.
+        const documentValid = status === "solved" && verification?.status === "document-valid";
         // dev/118: a browser-rendered kind is WRITTEN, never "verified".
-        mark(nodeId, notExecutable ? "written" : status === "solved" && payload.verdict === "pass" ? "verified" : status);
+        mark(
+          nodeId,
+          notExecutable
+            ? "written"
+            : documentValid
+              ? "valid"
+              : status === "solved" && payload.verdict === "pass"
+                ? "verified"
+                : status,
+        );
         // dev/137: this result is the node's current truth — whatever an
         // earlier pass said about it is gone before the new state is written.
         forget(nodeId);
+        // Why a node is left pending or skipped, in the words its row says
+        // after a reload too (the plan's ledger keeps the same reason): its
+        // reason, or the error a sandbox outage leaves it pending with.
+        const left = typeof payload.reason === "string" ? payload.reason : typeof payload.error === "string" ? payload.error : null;
         const notice =
           notExecutable && typeof verification?.reason === "string"
             ? verification.reason
-            : (status === "pending" || status === "skipped") && typeof payload.reason === "string"
-              ? `${status}: ${payload.reason}`
+            : (status === "pending" || status === "skipped") && left
+              ? `${status}: ${left}`
               : null;
         if (notice) {
           setSolveNotices((prev) => ({ ...prev, [attachmentId]: { ...(prev[attachmentId] ?? {}), [nodeId]: notice } }));

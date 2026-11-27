@@ -221,6 +221,7 @@
 .planNodeHead > .planRowRun,
 .planNodeHead > .planRowFailed,
 .planNodeHead > .planRowWaits,
+.planNodeHead > .planRowWaitsLink,
 .planNodeHead > .planRowBuilding,
 .planNodeHead > .planRowAfter {
   flex: none;
@@ -237,6 +238,24 @@
   font-size: 12px;
   font-weight: 600;
   color: var(--curio-warning-text);
+}
+
+/* A row that waits for the person's pick: its word, in the wait's tone, goes
+   to its node's sources. */
+.planRowWaitsLink {
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--curio-warning-text);
+  cursor: pointer;
+}
+
+.planRowWaitsLink:hover,
+.planRowWaitsLink:focus-visible {
+  text-decoration: underline;
 }
 
 .planRowFailed {

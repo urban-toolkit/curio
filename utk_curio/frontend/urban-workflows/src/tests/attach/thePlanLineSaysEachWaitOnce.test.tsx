@@ -1,14 +1,16 @@
 import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 
 const mockPlayAllNodes = jest.fn();
 jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({ playAllNodes: mockPlayAllNodes }),
 }));
 
-import { AgentBuilderStrip } from "../../components/agents/attach/AgentBuilderStrip";
+import { AgentBuilderStrip, PLAN_ACTIONS } from "../../components/agents/attach/AgentBuilderStrip";
+import { planNodeStateFor } from "../../components/agents/attach/chat/chatPanelDerived";
+import { AgentChangeCard } from "../../components/agents/content/AgentChangeCard";
 import { ROW_WAIT_WORDS } from "../../components/agents/content/reviewCard/reviewCardText";
-import type { AgentAttachment } from "../../services/agents";
+import type { AgentAttachment, AgentChangePart } from "../../services/agents";
 
 // The owner's boards say a paused build's pause once, on the plan line, which
 // names its node; each row of the plan card has one label (AgentChangeCard's
@@ -90,12 +92,18 @@ describe("The plan line says a paused build's pause once", () => {
     );
     expect(words()).toHaveTextContent(/^Paused · na needs a source$/);
     expect(words()).toHaveAttribute("data-tooltip", PAUSE);
-    // Said once: no line under the line, in these words or in others.
+    // Said once: no line under the line, in these words or in others. The
+    // plan line is its words, its one action and its menu's chevron, and
+    // nothing else is said in it.
     expect(screen.getAllByText(/needs a source/)).toHaveLength(1);
     expect(screen.queryByText(PAUSE)).toBeNull();
-    expect(screen.queryByText(/^Waiting for you/)).toBeNull();
-    expect(screen.queryByText(/needs you/)).toBeNull();
-    expect(screen.queryByText(/Resume continues from here/)).toBeNull();
+    const group = screen.getByRole("group", { name: "Dataflow Builder" });
+    expect(group.children).toHaveLength(1);
+    expect(group).toHaveTextContent(/^Paused · na needs a sourceShow its sources$/);
+    expect(within(group).getAllByRole("button").map((b) => b.getAttribute("aria-label") ?? b.textContent)).toEqual([
+      "Show its sources",
+      PLAN_ACTIONS,
+    ]);
   });
 
   it("goes to the card, not Resume, while the pause waits for the pick, which goes on by itself", () => {
@@ -118,7 +126,56 @@ describe("The plan line says a paused build's pause once", () => {
     expect(screen.getAllByText(/needs a source/)).toHaveLength(1);
   });
 
-  it("the row's word and the line's are the plan card's", () => {
-    expect(NEEDS_A_SOURCE).toBe("Needs a source");
+  it("the row of the loader says the plan card's word, once; the row after it says only that it waits on it", () => {
+    // The same agent, its plan of two nodes: the loader a (node na), and b
+    // (node nb), which reads from it.
+    const agent = pausedOnTheLoader();
+    const twoNodes = {
+      ...agent,
+      builderSession: {
+        ...agent.builderSession!,
+        nodeRuns: { na: "pending", nb: "pending" },
+        nodeStates: { a: "awaiting-source", b: "created" },
+        nodeIds: { a: "na", b: "nb" },
+      },
+      planProposal: { ...agent.planProposal!, appliedRefs: ["a", "b"], nodeIds: { a: "na", b: "nb" } },
+    } as AgentAttachment;
+    const card = {
+      type: "change", changeId: "c-plan", tool: "dataflow.plan.write", kind: "plan", planId: "pp1",
+      summary: "Plan · 2 nodes, 1 edges", status: "applied", lines: [],
+      plan: {
+        goal: "g",
+        nodes: [
+          { ref: "a", nodeType: "t", title: "Load a", intent: "load it" },
+          { ref: "b", nodeType: "t", title: "Count b", intent: "count it" },
+        ],
+        edgeCount: 1,
+        edges: [{ from: "a", to: "b", fromLabel: "Load a", toLabel: "Count b" }],
+      },
+    } as unknown as AgentChangePart;
+    const waiting = [...WAITS_FOR_THE_PICK, { nodeId: "nb", kind: "upstream", reason: "upstream node 'a' has no content yet" }];
+    render(
+      <>
+        <AgentBuilderStrip attachment={twoNodes} onSolve={jest.fn()} onSimulate={jest.fn()} solveWaiting={waiting} onShowSources={jest.fn()} />
+        <AgentChangeCard
+          part={card}
+          planNodeState={planNodeStateFor(twoNodes, card, false, { solveWaiting: waiting })}
+          onSolvePlanNode={jest.fn()}
+        />
+      </>,
+    );
+    const row = (ref: string) => document.querySelector<HTMLElement>(`[data-curio-plan-row="${ref}"]`)!;
+    // The loader's row: the card's one word, no status beside it, no Solve.
+    expect(row("a")).toHaveAttribute("data-curio-row-view", "pick");
+    expect(within(row("a")).getByText(NEEDS_A_SOURCE)).toBeInTheDocument();
+    expect(within(row("a")).queryByText(/pending/)).toBeNull();
+    expect(within(row("a")).queryByRole("button", { name: /^Solve node/ })).toBeNull();
+    // The node that reads from it says only that it comes after it.
+    expect(within(row("b")).getByText("after Load a")).toBeInTheDocument();
+    expect(within(row("b")).queryByText(NEEDS_A_SOURCE)).toBeNull();
+    expect(within(row("b")).queryByText(/pending|upstream/)).toBeNull();
+    // The line says the wait once, in the card's words for the loader.
+    expect(words()).toHaveTextContent(/^Paused · na needs a source$/);
+    expect(screen.getAllByText(NEEDS_A_SOURCE)).toHaveLength(1);
   });
 });

@@ -648,6 +648,27 @@ describe("AgentChangeCard: dev/52 a landed plan", () => {
     );
     expect(screen.getByText("Left undone: 1 connection, since Load was removed")).toBeInTheDocument();
   });
+
+  it("a card stored before it kept what was left undone apart says it from its lines, in view", () => {
+    // Such a card held it only among the lines the agents read, before the
+    // Topology verdict.
+    render(
+      <AgentChangeCard
+        part={{
+          ...plan,
+          lines: [
+            "+2 nodes · +1 connection",
+            "Left undone: 1 connection, since Load was removed",
+            "Topology: connected",
+          ],
+        }}
+        planNodeState={{ appliedRefs: ["a", "b"] }}
+      />,
+    );
+    // On the card's face, with Details closed.
+    expect(screen.queryByRole("group", { name: "Plan details" })).toBeNull();
+    expect(screen.getByText("Left undone: 1 connection, since Load was removed")).toBeInTheDocument();
+  });
 });
 
 describe("AgentChangeCard: dev/59 a plan that removed nodes (DEC-049.2)", () => {
@@ -752,9 +773,12 @@ describe("AgentChangeCard: dev/71 a landed plan's rows: Solve then Run", () => {
     expect(screen.getByRole("button", { name: "Solve node Load" })).toBeEnabled();
   });
 
-  it("Solve comes once upstream is built, and targets the ref; a built row shows its tick", async () => {
+  it("Solve comes once upstream is built, and targets the ref; a built row shows the tick of the check it holds", async () => {
     const onSolve = jest.fn().mockResolvedValue(undefined);
-    renderRows({ appliedRefs: ["a", "b"], nodeStates: { a: "approved", b: "created" } }, { onSolve });
+    renderRows(
+      { appliedRefs: ["a", "b"], nodeStates: { a: "approved", b: "created" }, nodeChecks: { a: "ran" } },
+      { onSolve },
+    );
     const solveB = screen.getByRole("button", { name: "Solve node Analyze" });
     expect(solveB).toBeEnabled();
     fireEvent.click(solveB);
@@ -764,12 +788,78 @@ describe("AgentChangeCard: dev/71 a landed plan's rows: Solve then Run", () => {
     expect(screen.queryByRole("button", { name: "Solve node Load" })).toBeNull();
     const tick = within(row("a")).getByRole("img", { name: "Solved" });
     expect(tick).toHaveAttribute("data-tooltip", "Solved: its code ran in the sandbox");
+    expect(within(row("a")).queryByText("Not checked")).toBeNull();
   });
 
-  it("a validated upstream (its code landed) is enough for the next node's Solve", () => {
+  it("a validated upstream (its code landed) is enough for the next node's Solve, and claims no check it does not hold", () => {
     renderRows({ appliedRefs: ["a", "b"], nodeStates: { a: "validated", b: "created" } });
     expect(screen.getByRole("button", { name: "Solve node Analyze" })).toBeEnabled();
-    expect(within(row("a")).getByRole("img", { name: "Solved" })).toBeInTheDocument();
+    expect(within(row("a")).queryByRole("img")).toBeNull();
+    expect(within(row("a")).getByText("Not checked")).toBeInTheDocument();
+  });
+
+  // Never claim a check that did not run: a row the ledger holds no check
+  // for (its template's code landed with the plan, an agent wrote it in its
+  // chat, or its code changed after its check) says so, whatever its kind.
+  it.each([
+    ["approved", "curio.builtin/python-computation"],
+    ["validated", "curio.vega-lite/bars"],
+    ["approved", "t"],
+  ])("a %s row of %s with no check shows no tick, and says no check ran on its code", (state, nodeType) => {
+    render(
+      <AgentChangeCard
+        part={planChange({ ...progressive.plan!, nodes: progressive.plan!.nodes.map((n) => ({ ...n, nodeType })) })}
+        onSolvePlanNode={jest.fn()}
+        onRunPlanNode={jest.fn()}
+        planNodeState={{ appliedRefs: ["a", "b"], nodeStates: { a: state, b: "created" } }}
+      />,
+    );
+    expect(within(row("a")).queryByRole("img")).toBeNull();
+    expect(within(row("a")).getByText("Not checked")).toHaveAttribute(
+      "data-tooltip",
+      "No check ran on the code it holds now",
+    );
+    // Built all the same: it offers Run, not Solve.
+    expect(screen.getByRole("button", { name: "Run through node Load" })).toBeInTheDocument();
+  });
+
+  it.each([
+    ["ran", "Solved", "Solved: its code ran in the sandbox"],
+    ["valid", "Valid", "Valid: its document was checked against its grammar"],
+    ["written", "Written", "Written: it has no code to run, and renders in the browser"],
+  ])("a row whose ledger holds the check %s shows its tick, %s", (check, name, says) => {
+    renderRows({ appliedRefs: ["a", "b"], nodeStates: { a: "validated", b: "created" }, nodeChecks: { a: check } });
+    expect(within(row("a")).getByRole("img", { name })).toHaveAttribute("data-tooltip", says);
+    expect(within(row("a")).queryByText("Not checked")).toBeNull();
+  });
+
+  it("a check the row cannot name is no claim", () => {
+    renderRows({ appliedRefs: ["a", "b"], nodeStates: { a: "approved", b: "created" }, nodeChecks: { a: "guessed" } });
+    expect(within(row("a")).queryByRole("img")).toBeNull();
+    expect(within(row("a")).getByText("Not checked")).toBeInTheDocument();
+  });
+
+  // A batch's Solve builds a row by its run alone: its record says created
+  // still, and the row reads built all the same, as the plan line counts it.
+  it.each([
+    ["verified", "Solved"],
+    ["valid", "Valid"],
+    ["written", "Written"],
+  ])("a row a batch built, its run %s and its record still created, reads as built with the tick of that run", (run, name) => {
+    renderRows({ appliedRefs: ["a", "b"], nodeIds: { a: "na", b: "nb" }, nodeStates: { a: "created", b: "created" }, runs: { na: run } });
+    expect(within(row("a")).getByRole("img", { name })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run through node Load" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Solve node Load" })).toBeNull();
+    // The node it feeds can be solved now.
+    expect(screen.getByRole("button", { name: "Solve node Analyze" })).toBeEnabled();
+  });
+
+  it("a row a batch built, its run solved and no check kept, reads as built and claims no check", () => {
+    renderRows({ appliedRefs: ["a", "b"], nodeIds: { a: "na", b: "nb" }, nodeStates: { a: "created", b: "created" }, runs: { na: "solved" } });
+    expect(within(row("a")).queryByRole("img")).toBeNull();
+    expect(within(row("a")).getByText("Not checked")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run through node Load" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Solve node Analyze" })).toBeEnabled();
   });
 
   it("a failed row says so, why on a line of its own, and offers Solve again", () => {
@@ -802,6 +892,53 @@ describe("AgentChangeCard: dev/71 a landed plan's rows: Solve then Run", () => {
     });
     expect(within(row("a")).getByText("Needs a source")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Solve node Load" })).toBeNull();
+  });
+
+  it("each row that waits for the person's pick goes to its own sources, its tooltip saying where", () => {
+    // Two loaders, each waiting for its pick: one whose card this chat holds,
+    // one whose card only its Dataset Finder's chat holds.
+    const twoLoaders = planChange({
+      goal: "g",
+      nodes: [
+        { ref: "a", nodeType: "t", title: "Load parks", intent: "load parks" },
+        { ref: "b", nodeType: "t", title: "Load trees", intent: "load trees" },
+      ],
+      edgeCount: 0,
+      edges: [],
+    });
+    const shown: string[] = [];
+    const hints: Record<string, string> = {
+      na: "Goes to its sources in this chat. Your pick builds it, and the plan goes on.",
+      nb: "Opens the chat of its Dataset Finder, which holds its sources. Your pick builds it, and the plan goes on.",
+    };
+    render(
+      <AgentChangeCard
+        part={twoLoaders}
+        onSolvePlanNode={jest.fn()}
+        planNodeState={{
+          appliedRefs: ["a", "b"],
+          nodeIds: { a: "na", b: "nb" },
+          nodeStates: { a: "awaiting-source", b: "awaiting-source" },
+        }}
+        sourcesOf={(nodeId) => ({ show: () => shown.push(nodeId), hint: hints[nodeId] })}
+      />,
+    );
+    const parks = within(row("a")).getByRole("button", { name: "Needs a source: show the sources of Load parks" });
+    const trees = within(row("b")).getByRole("button", { name: "Needs a source: show the sources of Load trees" });
+    expect(parks).toHaveTextContent(/^Needs a source$/);
+    expect(parks).toHaveAttribute("data-tooltip", hints.na);
+    expect(trees).toHaveAttribute("data-tooltip", hints.nb);
+    fireEvent.click(trees);
+    fireEvent.click(parks);
+    expect(shown).toEqual(["nb", "na"]);
+    // Still no Solve: the pick goes on by itself.
+    expect(screen.queryByRole("button", { name: /^Solve node/ })).toBeNull();
+  });
+
+  it("a waiting row with nowhere to go says Needs a source as a word, not a button", () => {
+    renderRows({ appliedRefs: ["a", "b"], nodeIds: { a: "na", b: "nb" }, nodeStates: { a: "awaiting-source", b: "created" } });
+    expect(within(row("a")).getByText("Needs a source").tagName).toBe("SPAN");
+    expect(within(row("a")).queryByRole("button", { name: /Needs a source/ })).toBeNull();
   });
 
   it.each([

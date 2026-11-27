@@ -75,6 +75,59 @@ describe("a landed plan's rows read their state from the plan's agent", () => {
     });
   });
 
+  // The batch's card of lines is a run detail: what it said of each node it
+  // left unbuilt is kept on the plan's ledger (`nodeReasons`), which a reload
+  // and every tab read, where no stream speaks.
+  describe("what the last Solve said of its nodes, after a reload and in every tab", () => {
+    const OUT_OF_TIME = "the batch's time budget (45 min) was spent; Retry continues from here";
+    const OUTAGE = "not verified (sandbox unreachable): connection refused; nothing was run or written; Retry when the sandbox is back";
+    const NO_BUILDER = "no installed agent declares node.content.generate";
+    const reloaded = (nodeRuns: Record<string, string>, nodeReasons: Record<string, string>, extra = {}) =>
+      agent({
+        builderSession: {
+          phase: "applied", planProposalId: "pp1",
+          nodeStates: { a: "created", b: "created" }, nodeIds: { a: "na", b: "nb" },
+          nodeRuns, nodeReasons, ...extra,
+        } as never,
+      });
+
+    it("a node left pending or skipped says why as a notice, in the words the stream says it with", () => {
+      const state = planNodeStateFor(reloaded({ na: "pending", nb: "skipped" }, { na: OUT_OF_TIME, nb: OUTAGE }), card())!;
+      expect(state.notices).toEqual({ na: `pending: ${OUT_OF_TIME}`, nb: `skipped: ${OUTAGE}` });
+      expect(state.failures).toEqual({});
+    });
+
+    it("a node that failed says why as its failure", () => {
+      const state = planNodeStateFor(reloaded({ na: "failed", nb: "failed" }, { na: NO_BUILDER, nb: NO_BUILDER }), card())!;
+      expect(state.failures).toEqual({ na: NO_BUILDER, nb: NO_BUILDER });
+    });
+
+    it("a node built since says none of it", () => {
+      const state = planNodeStateFor(
+        reloaded({ na: "pending", nb: "pending" }, { na: OUT_OF_TIME, nb: OUT_OF_TIME }, {
+          nodeStates: { a: "validated", b: "created" },
+        }),
+        card(),
+      )!;
+      expect(state.notices).toEqual({ nb: `pending: ${OUT_OF_TIME}` });
+    });
+
+    it("the live batch's words win, and while a batch runs only its stream speaks", () => {
+      const kept = reloaded({ na: "pending", nb: "failed" }, { na: OUT_OF_TIME, nb: NO_BUILDER });
+      const live = planNodeStateFor(kept, card(), false, {
+        solveNotices: { na: "pending: awaiting your dataset selection" },
+        solveErrors: { nb: "KeyError: 'x'" },
+      })!;
+      expect(live.notices).toEqual({ na: "pending: awaiting your dataset selection" });
+      expect(live.failures).toEqual({ nb: "KeyError: 'x'" });
+      const running = planNodeStateFor(
+        reloaded({ na: "pending", nb: "failed" }, { na: OUT_OF_TIME, nb: NO_BUILDER }, { phase: "solving" }),
+        card(),
+      )!;
+      expect([running.notices, running.failures]).toEqual([{}, {}]);
+    });
+  });
+
   it("the nodes that wait for the person's pick: the agent's, and the batch's, not a wait upstream", () => {
     const state = planNodeStateFor(agent({ waitsForYou: ["na"] }), card(), false, {
       solveWaiting: [

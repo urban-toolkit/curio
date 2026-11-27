@@ -19,9 +19,16 @@ jest.mock("../../services/packages/packagesApi", () => ({
 import { packagesApi } from "../../services/packages/packagesApi";
 
 import { AgentChatPanel } from "../../components/agents/attach/AgentChatPanel";
+import { SHOW_SOURCES_HINT } from "../../components/agents/attach/AgentBuilderStrip";
 import { GOAL_EMPTY, GOAL_PLACEHOLDER, GOAL_TOOLTIP } from "../../components/agents/attach/chat/GoalLine";
 import { modalStackDepth } from "../../components/ModalShell";
-import { BUILDER_TEMPLATES, BUILD_RUNNING_HINT, type AgentAttachment, type AgentSessionTurn } from "../../services/agents";
+import {
+  BUILDER_TEMPLATES,
+  BUILD_RUNNING_HINT,
+  type AgentAttachment,
+  type AgentChangePart,
+  type AgentSessionTurn,
+} from "../../services/agents";
 
 const attachment: AgentAttachment = {
   attachmentId: "a1",
@@ -1728,21 +1735,44 @@ describe("AgentChatPanel draws a task another agent asked as one quiet line, and
     expect(document.querySelector(".msgUser")).toBeNull();
   });
 
-  it("a turn the runtime keeps for the agents is not drawn, and takes no part in the unread count or the suggestions", () => {
+  it("a turn the runtime keeps for the agents is not drawn, and leaves the reply before it with no suggestions to offer", () => {
+    const planned: AgentSessionTurn = {
+      role: "agent",
+      text: "I planned 3 nodes.",
+      content: [{ type: "suggestedPrompts", primary: "Solve the plan", alternatives: [] }],
+    };
+    const { rerender, props } = renderPanel({ turns: [{ role: "user", text: "Map the libraries." }, planned] });
+    expect(screen.getByRole("button", { name: "1 suggestion" })).toBeInTheDocument();
+    // The runtime spoke after the reply (a build's turn of a node, kept for
+    // the agents): the reply's suggestions are stale, as after a message of
+    // the person's, though the chat draws nothing new.
+    rerender(
+      <AgentChatPanel
+        {...props}
+        turns={[
+          { role: "user", text: "Map the libraries." },
+          planned,
+          { role: "agent", text: "Solved 'CPL branches': PASS after 1 round.", forAgents: true },
+        ]}
+      />,
+    );
+    expect(screen.queryByText(/Solved 'CPL branches'/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /suggestions?$/ })).toBeNull();
+  });
+
+  it("a turn kept for the agents offers no suggestions of its own either", () => {
     renderPanel({
       turns: [
         { role: "user", text: "Map the libraries." },
         {
           role: "agent",
-          text: "I planned 3 nodes.",
-          content: [{ type: "suggestedPrompts", primary: "Solve the plan", alternatives: [] }],
+          text: "Kept for the agents.",
+          forAgents: true,
+          content: [{ type: "suggestedPrompts", primary: "Hidden", alternatives: [] }],
         },
-        { role: "agent", text: "Source recorded for CPL branches: Chicago Neighborhoods.", forAgents: true },
       ],
     });
-    expect(screen.queryByText(/Source recorded for/)).toBeNull();
-    // The newest reply drawn still offers its suggestion.
-    expect(screen.getByRole("button", { name: "1 suggestion" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /suggestions?$/ })).toBeNull();
   });
 
   it("a chat whose every turn is kept for the agents reads as an empty chat", () => {
@@ -3377,6 +3407,38 @@ describe("AgentChatPanel: Solve this node points at the card in its own chat", (
       Element.prototype.scrollIntoView = scrollIntoView;
     }
   });
+
+  it("a card only in a turn kept for the agents is none to show: the row does not point at it", async () => {
+    renderPanel({
+      attachment: { ...attachment, attachmentId: "nb1", coord: "agent.curio.node-builder@1", name: "Node Builder", target: { kind: "node" as const, targetId: "n1" }, solvesNodes: true, waitsForYou: ["n1"] },
+      targetName: "Load boundaries",
+      turns: [{
+        role: "agent" as const,
+        text: "**Load boundaries** needs a source.",
+        forAgents: true,
+        content: [{
+          type: "sourcePick" as const, finderAttachmentId: "att-df", nodeId: "n1", nodeLabel: "Load boundaries",
+          lanes: { external: [{ name: "Chicago areas", sourceType: "portal" as const, url: "https://data.example.org/areas.geojson" }], catalog: [] },
+        }],
+      }],
+      onRecordSourcePick: jest.fn(),
+      onSolveNode: jest.fn().mockResolvedValue({
+        verdict: "awaiting-source",
+        rounds: 0,
+        remedy: { kind: "dataset-selection", attachmentId: "att-df", nodeId: "n1" },
+      }),
+      onOpenAgentChat: jest.fn(),
+      agentNameOf: (id: string) => (id === "att-df" ? "Dataset Finder" : null),
+    });
+    const row = screen.getByRole("group", { name: "Solve this node" });
+    fireEvent.click(within(row).getByRole("button", { name: "Solve this node" }));
+    // It says where the candidates are: with the node's Dataset Finder.
+    expect(await within(row).findByRole("status")).toHaveTextContent(
+      "Awaiting a source: this node's Dataset Finder has candidates for you to pick with Use this source.",
+    );
+    expect(screen.queryByRole("group", { name: "Sources for Load boundaries" })).toBeNull();
+    expect(within(row).queryByRole("button", { name: "Show its sources" })).toBeNull();
+  });
 });
 
 // The plan line's Show its sources, while the plan waits for the person's
@@ -3446,6 +3508,66 @@ describe("AgentChatPanel: the plan line's Show its sources", () => {
     renderPanel({ attachment: BUILDER, turns: [], attachments: [BUILDER, FINDER], onOpenAgentChat, onSolve: jest.fn() });
     fireEvent.click(screen.getByRole("button", { name: "Show its sources" }));
     expect(onOpenAgentChat).toHaveBeenCalledWith("att-df");
+  });
+
+  it("says on its tooltip where it goes: this chat, or the chat of the node's Finder, by its name", () => {
+    const { unmount } = renderPanel({
+      attachment: BUILDER, turns: [ASKED], attachments: [BUILDER, FINDER], onRecordSourcePick: jest.fn(),
+      onOpenAgentChat: jest.fn(), onSolve: jest.fn(),
+    });
+    expect(screen.getByRole("button", { name: "Show its sources" })).toHaveAttribute("data-tooltip", SHOW_SOURCES_HINT);
+    unmount();
+    renderPanel({
+      attachment: BUILDER, turns: [], attachments: [BUILDER, FINDER], onOpenAgentChat: jest.fn(), onSolve: jest.fn(),
+      agentNameOf: (id: string) => (id === "att-df" ? "My Finder" : null),
+    });
+    expect(screen.getByRole("button", { name: "Show its sources" })).toHaveAttribute(
+      "data-tooltip",
+      "Opens the chat of its My Finder, which holds its sources. Your pick builds it, and the plan goes on.",
+    );
+  });
+
+  it("a card only in a turn kept for the agents is in no view: it goes to the Finder's chat", () => {
+    const onOpenAgentChat = jest.fn();
+    renderPanel({
+      attachment: BUILDER, turns: [{ ...ASKED, forAgents: true }], attachments: [BUILDER, FINDER], onOpenAgentChat,
+      onRecordSourcePick: jest.fn(), onSolve: jest.fn(),
+    });
+    const show = screen.getByRole("button", { name: "Show its sources" });
+    expect(show).toHaveAttribute("data-tooltip", expect.stringMatching(/^Opens the chat of its Dataset Finder/));
+    fireEvent.click(show);
+    expect(onOpenAgentChat).toHaveBeenCalledWith("att-df");
+  });
+
+  it("the plan card's waiting row goes to its node's sources too, its tooltip saying where", () => {
+    const scrolled: Element[] = [];
+    const scrollIntoView = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this);
+    };
+    try {
+      const PLAN_CARD: AgentSessionTurn = {
+        role: "agent" as const,
+        text: "Planned.",
+        content: [{
+          type: "change" as const, changeId: "c-plan", tool: "dataflow.plan.write", kind: "plan", planId: "pp1",
+          summary: "Plan · 1 node", status: "applied", lines: [], preview: "",
+          plan: { goal: "g", nodes: [{ ref: "load", nodeType: "t", title: "Load boundaries", intent: "load them" }], edgeCount: 0, edges: [] },
+        } as AgentChangePart],
+      };
+      renderPanel({
+        attachment: BUILDER, turns: [PLAN_CARD, ASKED], attachments: [BUILDER, FINDER], onRecordSourcePick: jest.fn(),
+        onOpenAgentChat: jest.fn(), onSolve: jest.fn(), onSolvePlanNode: jest.fn(),
+      });
+      const row = document.querySelector<HTMLElement>('[data-curio-plan-row="load"]')!;
+      const waits = within(row).getByRole("button", { name: "Needs a source: show the sources of Load boundaries" });
+      expect(waits).toHaveAttribute("data-tooltip", SHOW_SOURCES_HINT);
+      scrolled.length = 0;
+      fireEvent.click(waits);
+      expect(scrolled).toEqual([screen.getByRole("group", { name: "Sources for Load boundaries" })]);
+    } finally {
+      Element.prototype.scrollIntoView = scrollIntoView;
+    }
   });
 });
 

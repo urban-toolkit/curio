@@ -5,6 +5,7 @@ import type { AgentChangePart } from "../../../services/agents";
 import styles from "./AgentReviewCard.module.css";
 import { PlanDetails } from "./reviewCard/PlanDetails";
 import { PlanNodesList, type NodeChat } from "./reviewCard/PlanNodesList";
+import type { RowSources } from "./reviewCard/PlanNodeRow";
 import { PlanSummary } from "./reviewCard/PlanSummary";
 import { CodePreview } from "./reviewCard/CodePreview";
 import { SourceLine } from "./reviewCard/SourceLine";
@@ -13,6 +14,10 @@ import { changeTitle, type PlanNodeReviewState } from "./reviewCard/reviewCardTe
 
 /** What a plan's Undo takes back, on its tooltip. */
 export const PLAN_UNDO_HINT = "Takes the plan back";
+
+/** How the line of what a plan left undone starts, among its card's lines
+ * (`plans.py`'s `left_undone`). */
+const LEFT_UNDONE = "Left undone: ";
 export const PLAN_UNDO_GOAL_HINT = "Takes the plan back, and the goal it set";
 
 /**
@@ -63,6 +68,9 @@ export const AgentChangeCard: React.FC<{
   agentNameOf?: (attachmentId: string) => string | null;
   /** A plan node's own agent, whose chat its row's name opens. */
   nodeChatOf?: (nodeId: string) => NodeChat | null;
+  /** Where a plan node that waits for the person's pick finds its sources,
+   * which its row goes to. */
+  sourcesOf?: (nodeId: string) => RowSources | null;
   /** The name the header of the change's node shows, null when the node is
    * not on the canvas. */
   nodeName?: string | null;
@@ -80,6 +88,7 @@ export const AgentChangeCard: React.FC<{
   delegateExists,
   agentNameOf,
   nodeChatOf,
+  sourcesOf,
   nodeName = null,
   runDetails = false,
 }) => {
@@ -131,6 +140,11 @@ export const AgentChangeCard: React.FC<{
       : part.kind === "content" || part.kind === "node"
         ? []
         : part.lines ?? [];
+  // What the plan left undone stays in view: the card's own word, or, on a
+  // card stored before it had one, its line among those the agents read.
+  const leftUndone = isPlan
+    ? part.leftUndone ?? (part.lines ?? []).find((line) => line.startsWith(LEFT_UNDONE)) ?? null
+    : null;
   // The scenarios the plan could not save stay in view.
   const unsaved = isPlan
     ? (part.plan?.scenarios ?? [])
@@ -146,7 +160,7 @@ export const AgentChangeCard: React.FC<{
       {isPlan ? (
         <>
           <PlanSummary part={part} />
-          {part.leftUndone ? <div className={styles.planWarning}>{part.leftUndone}</div> : null}
+          {leftUndone ? <div className={styles.planWarning}>{leftUndone}</div> : null}
           {unsaved.length ? <div className={styles.planWarning}>{`Not saved ✗: ${unsaved.join(", ")}`}</div> : null}
           {!undone ? (
             <PlanNodesList
@@ -158,6 +172,7 @@ export const AgentChangeCard: React.FC<{
               delegateExists={delegateExists}
               agentNameOf={agentNameOf}
               nodeChatOf={nodeChatOf}
+              sourcesOf={planNodeState ? sourcesOf : undefined}
             />
           ) : null}
           <div className={styles.planFoot}>

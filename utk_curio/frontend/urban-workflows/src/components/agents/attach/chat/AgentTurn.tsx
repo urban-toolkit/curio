@@ -34,6 +34,7 @@ import { AgentRunStatusLine } from "../AgentRunStatusLine";
 import { LlmConfigAction } from "../../../llmConfigs/LlmConfigAction";
 import styles from "../AgentChatPanel.module.css";
 import type { NodeChat } from "../../content/reviewCard/PlanNodesList";
+import type { RowSources } from "../../content/reviewCard/PlanNodeRow";
 import { failedCallWords, lastingToolFailures, planNodeStateFor, toolsCalledBy, type PlanLive } from "./chatPanelDerived";
 
 /** The callbacks a turn's cards may need: an install's review, a change's
@@ -75,6 +76,9 @@ export interface AgentTurnActions {
   planLive?: PlanLive;
   /** A plan node's own agent, whose chat its row's name opens. */
   nodeChatOf?: (nodeId: string) => NodeChat | null;
+  /** Where a plan node that waits for the person's pick finds its sources:
+   * this chat or its Dataset Finder's, which its row goes to. */
+  sourcesOf?: (nodeId: string) => RowSources | null;
   /** The name a node's header shows, null when the node is not on the
    * canvas: a change card's title names its node by it. */
   nodeNameOf?: (nodeId: string) => string | null;
@@ -294,6 +298,7 @@ export const AgentTurn: React.FC<{
                 delegateExists={actions.delegateExists}
                 agentNameOf={actions.agentNameOf}
                 nodeChatOf={actions.nodeChatOf}
+                sourcesOf={actions.sourcesOf}
                 nodeName={part.nodeId ? actions.nodeNameOf?.(part.nodeId) ?? null : null}
                 runDetails={runDetails}
               />

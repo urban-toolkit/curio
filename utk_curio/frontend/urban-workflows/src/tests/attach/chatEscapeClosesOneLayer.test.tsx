@@ -215,6 +215,53 @@ test("Escape closes the Suggestions menu, and the chat stays open", () => {
   expect(props.onClose).toHaveBeenCalledTimes(1);
 });
 
+test("a Suggestions menu whose suggestions go closes with its layer: the next Escape is the chat's, and it never opens again by itself", () => {
+  const asked = { role: "user" as const, text: "Map the libraries." };
+  const reply = {
+    role: "agent" as const,
+    text: "Planned.",
+    content: [{ type: "suggestedPrompts" as const, primary: "Solve the plan", alternatives: ["Show the plan"] }],
+  };
+  const { props, rerender } = renderChat({ turns: [asked, reply] });
+  fireEvent.click(screen.getByRole("button", { name: "2 suggestions" }));
+  expect(screen.getByRole("menu", { name: "Suggested messages" })).toBeInTheDocument();
+  expect(modalStackDepth()).toBe(1);
+
+  // A turn the runtime wrote after the reply: its suggestions are stale, and
+  // their menu goes with them.
+  const later = { role: "agent" as const, text: "Solved Load: PASS after 1 round.", forAgents: true };
+  rerender(<AgentChatPanel {...props} turns={[asked, reply, later]} />);
+  expect(screen.queryByRole("button", { name: /suggestions?$/ })).toBeNull();
+  expect(screen.queryByRole("menu", { name: "Suggested messages" })).toBeNull();
+  expect(modalStackDepth()).toBe(0);
+  escapeOn(window);
+  expect(props.onClose).toHaveBeenCalledTimes(1);
+
+  // A newer reply's suggestions: their button, its menu closed.
+  const newer = { ...reply, text: "Built.", content: [{ type: "suggestedPrompts" as const, primary: "Run it", alternatives: [] }] };
+  rerender(<AgentChatPanel {...props} turns={[asked, reply, later, newer]} />);
+  expect(screen.getByRole("button", { name: "1 suggestion" })).toHaveAttribute("aria-expanded", "false");
+  expect(screen.queryByRole("menu", { name: "Suggested messages" })).toBeNull();
+  expect(modalStackDepth()).toBe(0);
+});
+
+test("Show run details chosen from the keyboard leaves the focus on More, never on the page", () => {
+  renderChat();
+  const more = screen.getByRole("button", { name: /^More/ });
+  fireEvent.click(more);
+  const item = within(screen.getByRole("menu", { name: "Chat menu" })).getByRole("menuitemcheckbox", {
+    name: /^Show run details/,
+  });
+  item.focus();
+  // Enter on a button is its click.
+  fireEvent.keyDown(item, { key: "Enter" });
+  fireEvent.click(item, { detail: 0 });
+  expect(screen.queryByRole("menu", { name: "Chat menu" })).toBeNull();
+  expect(more).toHaveFocus();
+  expect(document.body).not.toHaveFocus();
+  expect(modalStackDepth()).toBe(0);
+});
+
 test("Escape closes the Edit initial intent dialog alone, and the chat stays open", async () => {
   const { props } = renderChat({ onSaveIntent: jest.fn().mockResolvedValue(undefined) });
   fireEvent.click(screen.getByRole("button", { name: /^More/ }));

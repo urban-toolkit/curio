@@ -18,6 +18,7 @@ import {
   STOP_BUILD_HINT,
   STOP_SOLVE_HINT,
 } from "../../components/agents/attach/AgentBuilderStrip";
+import { modalStackDepth } from "../../components/ModalShell";
 import type { AgentAttachment } from "../../services/agents";
 
 const attachment = (session: AgentAttachment["builderSession"]): AgentAttachment =>
@@ -237,26 +238,37 @@ describe("AgentBuilderStrip streamed solve (dev/63)", () => {
         attachment={attachment({
           phase: "solving",
           appliedPlanId: "p1",
-          nodeRuns: { "node-aaaa-1": "pending", "node-bbbb-2": "pending" },
+          nodeRuns: { "node-aaaa-1": "pending", "node-bbbb-2": "pending", "node-cccc-3": "pending" },
         })}
         onSolve={jest.fn()}
-        solveProgress={{ "node-aaaa-1": "generating", "node-bbbb-2": "solved" }}
+        solveProgress={{ "node-aaaa-1": "generating", "node-bbbb-2": "solved", "node-cccc-3": "verified" }}
         onCancelSolve={jest.fn()}
       />,
     );
-    expect(line()).toHaveTextContent(/Solving node-aaa · \d+:\d\d · 1 of 2 built/);
+    // A node the batch solved, or whose run passed in the sandbox, is built,
+    // though the record says pending still.
+    expect(line()).toHaveTextContent(/Solving node-aaa · \d+:\d\d · 2 of 3 built/);
     expect(screen.getByRole("status")).toHaveAttribute("data-tooltip", "node-aaa: writing its code");
   });
 
-  it("no live solve, no Stop", () => {
+  it("an overlay a batch left on a plan no batch runs on draws no Stop and no running line", () => {
     render(
       <AgentBuilderStrip
-        attachment={attachment({ phase: "applied", appliedPlanId: "p1", nodeRuns: { "node-aaaa-1": "pending" } })}
+        attachment={attachment({
+          phase: "applied",
+          appliedPlanId: "p1",
+          nodeRuns: { "node-aaaa-1": "pending", "node-bbbb-2": "pending" },
+        })}
         onSolve={jest.fn()}
+        solveProgress={{ "node-aaaa-1": "solving", "node-bbbb-2": "solved" }}
         onCancelSolve={jest.fn()}
       />,
     );
     expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.queryByText("Solve batch running")).toBeNull();
+    // The line says where the plan stands, the overlay's solved node built.
+    expect(words()).toHaveTextContent(/^Planned · 1 of 2 built$/);
   });
 
   it("Stop appears during a session, says the session goes on if the chat closes, and disables after the click", async () => {
@@ -350,14 +362,35 @@ describe("AgentBuilderStrip over a landed plan (dev/67-9, DEC-054)", () => {
     await waitFor(() => expect(onSimulate).toHaveBeenCalledWith("auto"));
   });
 
-  it("a validated node still waits for its approve step, so the builds stay", () => {
+  // The line and its menu count a node built the same way: a plan the line
+  // calls Ready has nothing left for Build & validate or Step.
+  it.each([
+    ["validated by its row's Solve", { a: "approved", b: "validated" }, {}, {}],
+    ["solved by a batch, its record still created", { a: "approved", b: "created" }, { nodeRuns: { na: "pending", nb: "solved" } }, {}],
+    ["run in the sandbox, as the batch's stream says", { a: "approved", b: "created" }, {}, { nb: "verified" }],
+  ])("a plan whose last node was %s reads Ready, offers Run workflow, and holds no menu", (_how, nodeStates, extra, overlay) => {
     render(
       <AgentBuilderStrip
-        attachment={withLandedPlan({ a: "approved", b: "validated" })}
+        attachment={withLandedPlan(nodeStates, extra)}
+        onSolve={jest.fn()}
+        onSimulate={jest.fn()}
+        solveProgress={overlay}
+      />,
+    );
+    expect(words()).toHaveTextContent(/^Ready · 2 nodes built$/);
+    expect(screen.getByRole("button", { name: "Run workflow" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: PLAN_ACTIONS })).toBeNull();
+  });
+
+  it("a node not built yet keeps the menu, beside the line that says so", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={withLandedPlan({ a: "approved", b: "created" })}
         onSolve={jest.fn()}
         onSimulate={jest.fn()}
       />,
     );
+    expect(words()).toHaveTextContent(/^Planned · 1 of 2 built$/);
     expect(within(openActions()).getByRole("menuitem", { name: /^Build & validate plan/ })).toBeInTheDocument();
   });
 
@@ -1133,5 +1166,187 @@ describe("AgentBuilderStrip: a pause's line goes once the plan goes on", () => {
     // It ends with every node built.
     rerender(<AgentBuilderStrip {...props} attachment={withLandedPlan({ a: "approved", b: "approved" })} simulating={null} />);
     expect(screen.queryByText(/Paused/)).toBeNull();
+  });
+
+  // A record saved before the server ended such a pause keeps it: the line
+  // reads it as the server now does.
+  it("a pause on a failed node something built since says nothing, and a plan built out offers Run workflow", () => {
+    const failedThenBuilt = (b: string) =>
+      withLandedPlan(
+        { a: "validated", b },
+        { pauseReason: { kind: "validation-failed", ref: "a", message: "validation failed and nothing was written" } },
+      );
+    const { rerender } = render(
+      <AgentBuilderStrip attachment={failedThenBuilt("created")} onSolve={jest.fn()} onSimulate={jest.fn()} />,
+    );
+    expect(screen.queryByText(/Paused/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+    expect(words()).toHaveTextContent(/^Planned · 1 of 2 built$/);
+    expect(words()).not.toHaveAttribute("data-tooltip");
+    rerender(<AgentBuilderStrip attachment={failedThenBuilt("validated")} onSolve={jest.fn()} onSimulate={jest.fn()} />);
+    expect(words()).toHaveTextContent(/^Ready · 2 nodes built$/);
+    expect(screen.getByRole("button", { name: "Run workflow" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+  });
+});
+
+// The batch's card of lines is a run detail: what the last Solve said of the
+// plan's nodes is kept on the plan's ledger, which a reload and every tab
+// read, and the line's tooltip says it there as the stream says it live.
+describe("AgentBuilderStrip says the last Solve's reasons after a reload", () => {
+  it("why its nodes failed: no agent that builds nodes", () => {
+    const reason = "no installed agent declares node.content.generate";
+    render(
+      <AgentBuilderStrip
+        attachment={attachment({
+          phase: "applied",
+          appliedPlanId: "p1",
+          nodeRuns: { n1: "failed", n2: "failed" },
+          nodeReasons: { n1: reason, n2: reason },
+          batchReason: reason,
+        })}
+        onSolve={jest.fn()}
+      />,
+    );
+    expect(words()).toHaveTextContent(/^Failed · 2 nodes$/);
+    expect(words()).toHaveAttribute("data-tooltip", reason);
+  });
+
+  it("the Solve's own reason while nodes are left: it ran out of time", () => {
+    const reason = "the batch's time budget (45 min) was spent; Retry continues from here";
+    const { rerender } = render(
+      <AgentBuilderStrip
+        attachment={attachment({
+          phase: "applied",
+          appliedPlanId: "p1",
+          nodeRuns: { n1: "solved", n2: "pending" },
+          nodeReasons: { n2: reason },
+          batchReason: reason,
+        })}
+        onSolve={jest.fn()}
+      />,
+    );
+    expect(words()).toHaveTextContent(/^Planned · 1 of 2 built$/);
+    expect(words()).toHaveAttribute("data-tooltip", reason);
+    // Once nothing is left, it says nothing of it.
+    rerender(
+      <AgentBuilderStrip
+        attachment={attachment({
+          phase: "ready",
+          appliedPlanId: "p1",
+          nodeRuns: { n1: "solved", n2: "solved" },
+          batchReason: reason,
+        })}
+        onSolve={jest.fn()}
+      />,
+    );
+    expect(words()).toHaveTextContent(/^Ready · 2 nodes built$/);
+    expect(words()).not.toHaveAttribute("data-tooltip");
+  });
+
+  it("the live batch's words win", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={attachment({
+          phase: "applied",
+          appliedPlanId: "p1",
+          nodeRuns: { n1: "failed" },
+          nodeReasons: { n1: "an older reason" },
+        })}
+        onSolve={jest.fn()}
+        solveErrors={{ n1: "KeyError: 'x'" }}
+      />,
+    );
+    expect(words()).toHaveAttribute("data-tooltip", "KeyError: 'x'");
+  });
+});
+
+// A menu the line stops drawing closes, and its layer of the modal stack goes
+// with it: the chat's Escape is its own again, and the menu never opens again
+// by itself when the line draws it again.
+describe("AgentBuilderStrip's menu, when a build starts elsewhere", () => {
+  it("closes with its layer, and is closed when it comes back", () => {
+    const props = {
+      attachment: withLandedPlan({ a: "created", b: "created" }),
+      onSolve: jest.fn(),
+      onSimulate: jest.fn(),
+      onCancelSimulate: jest.fn(),
+    } as React.ComponentProps<typeof AgentBuilderStrip>;
+    const { rerender } = render(<AgentBuilderStrip {...props} />);
+    openActions();
+    expect(modalStackDepth()).toBe(1);
+    // Another tab's build: the line holds its Stop, and no menu.
+    rerender(<AgentBuilderStrip {...props} attachment={{ ...props.attachment, buildRunning: "auto" }} />);
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(screen.queryByRole("button", { name: PLAN_ACTIONS })).toBeNull();
+    expect(modalStackDepth()).toBe(0);
+    // The build ended: the menu's button is back, its menu closed.
+    rerender(<AgentBuilderStrip {...props} />);
+    expect(screen.getByRole("button", { name: PLAN_ACTIONS })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(modalStackDepth()).toBe(0);
+  });
+});
+
+// The running line's clock is the run's, not this line's: a chat opened
+// again mid-run goes on counting from when the server says the run began.
+describe("AgentBuilderStrip's running line, drawn again mid-run", () => {
+  it.each([
+    ["a build", { simulatingSince: Date.now() / 1000 - 125 }, { buildRunning: "auto" as const }],
+    ["a batch", { phase: "solving" as const, solvingSince: Date.now() / 1000 - 125 }, {}],
+  ])("%s counts from its start, not from when the line was drawn", (_kind, sessionFields, attachmentFields) => {
+    render(
+      <AgentBuilderStrip
+        attachment={{ ...withLandedPlan({ a: "created", b: "created" }, sessionFields), ...attachmentFields }}
+        onSolve={jest.fn()}
+        onSimulate={jest.fn()}
+        onCancelSimulate={jest.fn()}
+        onCancelSolve={jest.fn()}
+      />,
+    );
+    expect(line()).toHaveTextContent(/ · 2:0\d · /);
+  });
+
+  it("a server clock ahead of the browser's never counts below 0:00, nor past the line's own sight", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={{
+          ...withLandedPlan({ a: "created", b: "created" }, { simulatingSince: Date.now() / 1000 + 600 }),
+          buildRunning: "auto",
+        }}
+        onSolve={jest.fn()}
+        onSimulate={jest.fn()}
+        onCancelSimulate={jest.fn()}
+      />,
+    );
+    expect(line()).toHaveTextContent(/ · 0:00 · /);
+  });
+});
+
+// Show its sources goes to this chat's card of the node's sources, else to
+// its Dataset Finder's chat: its tooltip says which, and with several nodes
+// waiting, which node it goes to.
+describe("AgentBuilderStrip's Show its sources says where it goes", () => {
+  const waiting = (ids: string[]) =>
+    ({ ...attachment({ phase: "applied", appliedPlanId: "p1", nodeRuns: Object.fromEntries(ids.map((id) => [id, "pending"])) }), waitsForYou: ids }) as AgentAttachment;
+
+  it("to its Finder's chat, when this chat holds no card of it", () => {
+    const hint = "Opens the chat of its Dataset Finder, which holds its sources. Your pick builds it, and the plan goes on.";
+    render(<AgentBuilderStrip attachment={waiting(["n1"])} onSolve={jest.fn()} onShowSources={jest.fn()} sourcesHintOf={() => hint} />);
+    expect(screen.getByRole("button", { name: "Show its sources" })).toHaveAttribute("data-tooltip", hint);
+  });
+
+  it("to this chat, by default", () => {
+    render(<AgentBuilderStrip attachment={waiting(["n1"])} onSolve={jest.fn()} onShowSources={jest.fn()} />);
+    expect(screen.getByRole("button", { name: "Show its sources" })).toHaveAttribute("data-tooltip", SHOW_SOURCES_HINT);
+  });
+
+  it("to the first node's, which it names, when several wait", () => {
+    const onShowSources = jest.fn();
+    render(<AgentBuilderStrip attachment={waiting(["n1", "n2"])} onSolve={jest.fn()} onShowSources={onShowSources} />);
+    const show = screen.getByRole("button", { name: "Show its sources" });
+    expect(show).toHaveAttribute("data-tooltip", `n1: ${SHOW_SOURCES_HINT}`);
+    fireEvent.click(show);
+    expect(onShowSources).toHaveBeenCalledWith("n1");
   });
 });

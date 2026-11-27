@@ -6,6 +6,7 @@
  * and effect lines, and a plan's details.
  */
 import type { AgentProposalPart, AgentSourceRef } from "../../../../services/agents";
+import { isBuiltNode } from "../../../../services/agents/planBuild";
 
 /** What a plan's sections read of its card, a change's: its tool and plan. */
 export type PlanDisplay = { tool: string; plan?: AgentProposalPart["plan"] };
@@ -65,8 +66,9 @@ export interface PlanNodeReviewState {
   nodeChanges?: Record<string, { changeId: string; attachmentId?: string | null }>;
   /** ref → the node the plan made. */
   nodeIds?: Record<string, string>;
-  /** ref → how the code that landed was checked: `ran` in the sandbox,
-   *  `valid` against its grammar, or `written`, with no code to run. */
+  /** ref → how the code each node holds now was checked: `ran` in the
+   *  sandbox, `valid` against its grammar, or `written`, with no code to run.
+   *  A node whose code no check ran on has none. */
   nodeChecks?: Record<string, string>;
   /** #662: scenario index → applied|refused. */
   scenarioStates?: Record<string, string>;
@@ -108,6 +110,16 @@ export const ROW_CHECK: Record<string, { name: string; says: string }> = {
   written: { name: "Written", says: "Written: it has no code to run, and renders in the browser" },
 };
 
+/** What a built row whose code no check ran on says, in place of a tick: its
+ * template's code that landed with the plan, code an agent wrote in its chat,
+ * code written that nothing ran, or code changed since its check. */
+export const ROW_UNCHECKED = { word: "Not checked", says: "No check ran on the code it holds now" };
+
+/** How a node's live run says its code was checked, while the batch that ran
+ * it streams: a run that passed in the sandbox, a document its grammar
+ * validated, a kind with no code to run. Any other run says none. */
+const RUN_CHECK: Record<string, string> = { verified: "ran", valid: "valid", written: "written" };
+
 /** What a node at work does now, on its row's tooltip. */
 const AT_WORK_ROW_WORDS: Record<string, string> = {
   solving: "Solving it",
@@ -116,11 +128,8 @@ const AT_WORK_ROW_WORDS: Record<string, string> = {
   fixing: "The run failed: fixing it",
 };
 
-/** A node's runs that are over, its runs while a Solve works on it, and its
- * ledger states that are built. */
-const BUILT_RUN = new Set(["solved", "verified", "written"]);
+/** A node's runs while a Solve works on it. */
 const AT_WORK_RUN = new Set(["solving", "generating", "verifying", "fixing"]);
-const BUILT_STATE = new Set(["validated", "approved"]);
 
 export const OUTCOME_LABEL: Record<string, string> = {
   applied: "Applied",
@@ -327,7 +336,8 @@ export function planNodeRowState(
     const id = idOf(ref);
     return id ? planNodeState?.runs?.[id] : undefined;
   };
-  const builtRef = (ref: string) => BUILT_STATE.has(nodeStates[ref] ?? "") || BUILT_RUN.has(runOf(ref) ?? "");
+  // Built, as the plan line counts it: its ledger state, or a Solve's run.
+  const builtRef = (ref: string) => isBuiltNode(nodeStates[ref], runOf(ref));
   const nodeId = idOf(node.ref);
   const run = runOf(node.ref);
   const unsolvedUpstream = incoming.filter((edge) => planRefSet.has(edge.from) && !builtRef(edge.from));
@@ -362,20 +372,10 @@ export function planNodeRowState(
   // whose check failed, and a loader whose source was picked and waits.
   const solvable =
     ["solve", "failed", "download", "install"].includes(view) && !buildRunning && !batchRunning && solvingRef === null;
-  // How the code that landed was checked: the ledger's word, else the run's,
-  // else by its kind: a chart's or a map's document is checked against its
-  // grammar, any other code runs in the sandbox.
-  const check =
-    view !== "done"
-      ? null
-      : planNodeState?.nodeChecks?.[node.ref] ??
-        (run === "written"
-          ? "written"
-          : run === "verified"
-            ? "ran"
-            : node.nodeType && tryGetNodeDescriptor(node.nodeType)?.grammarId
-              ? "valid"
-              : "ran");
+  // How the code it holds was checked: the ledger's word, which the server
+  // keeps only of the code each node holds now, else the live run's own.
+  // Never guessed from its kind: a row whose code no check ran on claims none.
+  const check = view !== "done" ? null : planNodeState?.nodeChecks?.[node.ref] ?? RUN_CHECK[run ?? ""] ?? null;
   const atWork =
     view === "building"
       ? (planNodeState?.buildRef === node.ref && planNodeState?.buildActivity

@@ -17,7 +17,8 @@ import {
 } from "../../../services/agents";
 import { buildRunningOn, holdsSourceCardFor } from "../../../services/agents/planBuild";
 import { agentCategoryKey } from "../../menus/nodes/agentsPalette/agentCategoryStyle";
-import { AgentBuilderStrip } from "./AgentBuilderStrip";
+import { AgentBuilderStrip, SHOW_SOURCES_HINT, showSourcesInFinderHint } from "./AgentBuilderStrip";
+import type { RowSources } from "../content/reviewCard/PlanNodeRow";
 import { workingText } from "./AgentAvatarBadge";
 import { NodeSolveRow } from "./NodeSolveRow";
 import { TranscriptJumpButton } from "./TranscriptJumpButton";
@@ -311,8 +312,9 @@ export const AgentChatPanel: React.FC<{
   // The viewer's own Show run details, the same in every chat.
   const [runDetails, setRunDetails] = useRunDetails();
   // The turns the chat draws: a turn the runtime keeps for the agents alone
-  // is read by them and never drawn. What a chat counts, follows and suggests
-  // is read from these; the cards it holds, from every turn.
+  // is read by them and never drawn. What a chat counts and follows, and the
+  // cards it can bring into view, are read from these; its suggestions, from
+  // the newest turn, drawn or not.
   const shownTurns = useMemo(() => turns.filter(shownInChat), [turns]);
   // Inline click-to-edit conversation title (memo dev/25).
   const title = useConversationTitle(attachment, onSaveTitle);
@@ -392,8 +394,11 @@ export const AgentChatPanel: React.FC<{
   };
 
   // The newest reply's suggestions, behind one button: the message box stays
-  // empty for the person's own words until they pick one.
-  const suggestions = useMemo(() => suggestionsOf(suggestedPromptsOf(shownTurns)), [shownTurns]);
+  // empty for the person's own words until they pick one. Read off the newest
+  // turn, drawn or kept for the agents: a turn the runtime wrote after the
+  // reply (a build's turn of a node) leaves its suggestions stale, as a
+  // message of the person's does.
+  const suggestions = useMemo(() => suggestionsOf(suggestedPromptsOf(turns)), [turns]);
   const pickSuggestion = (prompt: string) => {
     setInput(prompt);
     lastPrefill.current = prompt;
@@ -486,6 +491,65 @@ export const AgentChatPanel: React.FC<{
     if (card) card.scrollIntoView({ block: "nearest" });
     else if (finderAttachmentId && finderAttachmentId !== attachment.attachmentId) onOpenAgentChat?.(finderAttachmentId);
   };
+  // The node this agent is on, and whether this chat holds the card of its
+  // candidates, which its Solve asked for: Show its sources brings the card
+  // its Finder's record offers now into view, else the newest for the node.
+  const ownNode = attachment.target.kind === "node" ? attachment.target.targetId ?? null : null;
+  const ownFinderRecord = ownNode
+    ? attachments?.find(
+        (a) =>
+          a.target.kind === "node" &&
+          a.target.targetId === ownNode &&
+          declaresCapability(a, DATASET_SELECT_CAPABILITY),
+      )?.sourceRecord ?? null
+    : null;
+  // Only a card the chat draws: one in a turn kept for the agents is in no
+  // view to bring into it.
+  const showSourceCard =
+    ownNode && holdsSourceCardFor(shownTurns, ownNode)
+      ? () => {
+          const cards = sourceCardsOf(ownNode);
+          const offered = ownFinderRecord?.discoveryId
+            ? cards.find((card) => card.getAttribute("data-curio-discovery") === ownFinderRecord.discoveryId)
+            : undefined;
+          (offered ?? cards[cards.length - 1])?.scrollIntoView({ block: "nearest" });
+        }
+      : null;
+  // The Dataset Finder on a node, from the live list.
+  const finderOf = (nodeId: string) =>
+    attachments?.find(
+      (a) =>
+        a.target.kind === "node" && a.target.targetId === nodeId && declaresCapability(a, DATASET_SELECT_CAPABILITY),
+    );
+  // The plan line's Show its sources, and a waiting row's: the card of the
+  // node's candidates this chat holds, the one its Finder's record offers now,
+  // else the newest; with none here, the chat of the node's Finder, which
+  // holds its own.
+  const showSourcesOf = (nodeId: string) => {
+    const finder = finderOf(nodeId);
+    const cards = sourceCardsOf(nodeId);
+    const offered = finder?.sourceRecord?.discoveryId
+      ? cards.find((card) => card.getAttribute("data-curio-discovery") === finder.sourceRecord?.discoveryId)
+      : undefined;
+    const card = offered ?? cards[cards.length - 1];
+    if (card) card.scrollIntoView({ block: "nearest" });
+    else if (finder) onOpenAgentChat?.(finder.attachmentId);
+  };
+  // Whether this chat draws a card of a node's sources: one a chat that
+  // asked for them holds, or a Finder's own, on its node.
+  const findsFor = ownNode && declaresCapability(attachment, DATASET_SELECT_CAPABILITY) ? ownNode : null;
+  const drawsSourcesOf = (nodeId: string) => holdsSourceCardFor(shownTurns, nodeId, findsFor);
+  // Where Show its sources goes for a node, on its tooltip: this chat, or
+  // the chat of its Finder, named as the live list names it.
+  const sourcesHintOf = (nodeId: string): string => {
+    const finder = drawsSourcesOf(nodeId) ? undefined : finderOf(nodeId);
+    return finder ? showSourcesInFinderHint(agentNameOf?.(finder.attachmentId) ?? finder.name) : SHOW_SOURCES_HINT;
+  };
+  // A waiting row's way to its sources, when it has one to go to.
+  const sourcesOf = (nodeId: string): RowSources | null =>
+    drawsSourcesOf(nodeId) || (finderOf(nodeId) && onOpenAgentChat)
+      ? { show: () => showSourcesOf(nodeId), hint: sourcesHintOf(nodeId) }
+      : null;
   const turnActions = {
     onComposePrompt: composePrompt,
     onInternalLink: (to: string) => leave(() => navigate(to)),
@@ -515,6 +579,8 @@ export const AgentChatPanel: React.FC<{
       );
       return own ? { attachmentId: own.attachmentId, name: agentNameOf?.(own.attachmentId) ?? own.name } : null;
     },
+    // A plan row that waits for the person's pick goes to its own sources.
+    sourcesOf,
     onImportDataset,
     onApplyProposal,
     beginPackageReview: packageReview.beginReview,
@@ -524,44 +590,6 @@ export const AgentChatPanel: React.FC<{
     onSolvePlanNode,
     onRunPlanNode,
     installsWaitForOwner,
-  };
-  // The node this agent is on, and whether this chat holds the card of its
-  // candidates, which its Solve asked for: Show its sources brings the card
-  // its Finder's record offers now into view, else the newest for the node.
-  const ownNode = attachment.target.kind === "node" ? attachment.target.targetId ?? null : null;
-  const ownFinderRecord = ownNode
-    ? attachments?.find(
-        (a) =>
-          a.target.kind === "node" &&
-          a.target.targetId === ownNode &&
-          declaresCapability(a, DATASET_SELECT_CAPABILITY),
-      )?.sourceRecord ?? null
-    : null;
-  const showSourceCard =
-    ownNode && holdsSourceCardFor(turns, ownNode)
-      ? () => {
-          const cards = sourceCardsOf(ownNode);
-          const offered = ownFinderRecord?.discoveryId
-            ? cards.find((card) => card.getAttribute("data-curio-discovery") === ownFinderRecord.discoveryId)
-            : undefined;
-          (offered ?? cards[cards.length - 1])?.scrollIntoView({ block: "nearest" });
-        }
-      : null;
-  // The plan line's Show its sources: the card of the node's candidates this
-  // chat holds, the one its Finder's record offers now, else the newest; with
-  // none here, the chat of the node's Finder, which holds its own.
-  const showSourcesOf = (nodeId: string) => {
-    const finder = attachments?.find(
-      (a) =>
-        a.target.kind === "node" && a.target.targetId === nodeId && declaresCapability(a, DATASET_SELECT_CAPABILITY),
-    );
-    const cards = sourceCardsOf(nodeId);
-    const offered = finder?.sourceRecord?.discoveryId
-      ? cards.find((card) => card.getAttribute("data-curio-discovery") === finder.sourceRecord?.discoveryId)
-      : undefined;
-    const card = offered ?? cards[cards.length - 1];
-    if (card) card.scrollIntoView({ block: "nearest" });
-    else if (finder) onOpenAgentChat?.(finder.attachmentId);
   };
 
   return (
@@ -635,6 +663,7 @@ export const AgentChatPanel: React.FC<{
             solveWave={solveWave}
             onCancelSolve={onCancelSolve}
             onShowSources={showSourcesOf}
+            sourcesHintOf={sourcesHintOf}
             runDetails={runDetails}
             onApplyProposal={onApplyProposal}
             onDismissProposal={onDismissProposal}

@@ -20,6 +20,7 @@ import {
   type AgentRunStatus,
   type RunStatusDisplay,
 } from "../../../../services/agents";
+import { isBuiltNode } from "../../../../services/agents/planBuild";
 import type { PlanNodeReviewState } from "../../content/AgentReviewCard";
 
 /** Whether the chat draws *turn*: a turn the runtime keeps for the agents
@@ -170,8 +171,12 @@ export interface PlanLive {
  * (*buildRunning*), on which node and doing what, or a batch Solve; the row
  * whose Solve runs on the server (the listing's `validating`), which reads
  * Building and holds the others; each node's run, the reason it failed (a
- * build's pause on it among them) and the nodes that wait for the person's
- * pick of their source. */
+ * build's pause on it among them), the notice of one left pending or
+ * skipped, and the nodes that wait for the person's pick of their source.
+ * Reasons and notices are the live batch's words, over those the plan's
+ * ledger keeps of the last Solve (`nodeReasons`), which a reload and every
+ * tab read, said only of a node still not built, and not while a batch runs,
+ * whose stream says its own. */
 export function planNodeStateFor(
   attachment: AgentAttachment,
   part: AgentChangePart,
@@ -182,7 +187,24 @@ export function planNodeStateFor(
   if (!plan) return undefined;
   const session = attachment.builderSession;
   const nodeIds = { ...(session?.nodeIds ?? {}), ...(plan.nodeIds ?? {}) };
-  const failures = { ...(live.solveErrors ?? {}) };
+  const runs = { ...(session?.nodeRuns ?? {}), ...(live.solveProgress ?? {}) };
+  const batchRunning =
+    session?.phase === "solving" ||
+    (attachment.liveJob?.status === "running" && attachment.liveJob.kind === "solve-batch");
+  // What the last Solve said of each node it left unbuilt, as its run says.
+  const keptFailures: Record<string, string> = {};
+  const keptNotices: Record<string, string> = {};
+  if (!batchRunning) {
+    const stateOf: Record<string, string | undefined> = {};
+    for (const [ref, id] of Object.entries(nodeIds)) stateOf[id] = session?.nodeStates?.[ref];
+    for (const [id, reason] of Object.entries(session?.nodeReasons ?? {})) {
+      const run = runs[id];
+      if (isBuiltNode(stateOf[id], run)) continue;
+      if (run === "failed") keptFailures[id] = reason;
+      else if (run === "pending" || run === "skipped") keptNotices[id] = `${run}: ${reason}`;
+    }
+  }
+  const failures = { ...keptFailures, ...(live.solveErrors ?? {}) };
   // A build that paused on a node whose check failed says why on its row.
   const pause = session?.pauseReason;
   if (!buildRunning && pause?.kind === "validation-failed" && pause.ref && nodeIds[pause.ref]) {
@@ -200,13 +222,11 @@ export function planNodeStateFor(
     buildRunning,
     buildRef: buildRunning ? session?.currentRef ?? null : null,
     buildActivity: buildRunning ? live.simulationActivity ?? null : null,
-    batchRunning:
-      session?.phase === "solving" ||
-      (attachment.liveJob?.status === "running" && attachment.liveJob.kind === "solve-batch"),
+    batchRunning,
     solvingRef: attachment.validating?.ref ?? null,
-    runs: { ...(session?.nodeRuns ?? {}), ...(live.solveProgress ?? {}) },
+    runs,
     failures,
-    notices: live.solveNotices ?? {},
+    notices: { ...keptNotices, ...(live.solveNotices ?? {}) },
     waitsForPick: [
       ...(attachment.waitsForYou ?? []),
       ...(live.solveWaiting ?? []).filter((w) => w.kind === "dataset-selection").map((w) => w.nodeId),
@@ -259,10 +279,12 @@ export function targetTooltipFor(attachment: AgentAttachment): string {
 }
 
 /** SUGGESTED PROMPTS (memo dev/39, docs/08): only the newest turn's part
- * counts — once the user replies, earlier follow-ups are stale noise. */
+ * counts, drawn or kept for the agents: once the user replies, or the runtime
+ * writes a turn after the reply, earlier follow-ups are stale noise. A turn
+ * the chat does not draw offers none of its own. */
 export function suggestedPromptsOf(turns: AgentSessionTurn[]): AgentSuggestedPromptsPart | null {
   const last = turns[turns.length - 1];
-  if (!last || last.role !== "agent" || last.error) return null;
+  if (!last || last.role !== "agent" || last.error || !shownInChat(last)) return null;
   const part = (last.content ?? []).find((p) => p.type === "suggestedPrompts");
   return (part as AgentSuggestedPromptsPart | undefined) ?? null;
 }

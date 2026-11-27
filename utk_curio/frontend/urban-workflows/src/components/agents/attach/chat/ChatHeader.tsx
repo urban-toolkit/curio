@@ -83,6 +83,12 @@ export const ChatHeader: React.FC<{
     menu.close();
     action();
   };
+  // Show run details changes the chat in place, so nothing else takes the
+  // focus: it goes back to More, never to the page's body.
+  const toggleRunDetails = () => {
+    menu.close(true);
+    runDetails.onToggle();
+  };
   const total = tokens ? tokens.input + tokens.output : 0;
   return (
     // Addressable from outside the CSS-module hash, so the #228 baseline can
@@ -135,7 +141,7 @@ export const ChatHeader: React.FC<{
               role="menuitemcheckbox"
               aria-checked={runDetails.shown}
               className={styles.menuItem}
-              onClick={() => choose(runDetails.onToggle)}
+              onClick={toggleRunDetails}
             >
               <span className={clsx(styles.menuCheck, runDetails.shown && styles.menuCheckOn)} aria-hidden="true">
                 {runDetails.shown ? <FontAwesomeIcon icon={faCheck} /> : null}

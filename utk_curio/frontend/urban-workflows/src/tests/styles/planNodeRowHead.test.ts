@@ -27,6 +27,7 @@ describe("a plan row's head", () => {
       ".planNodeHead > .planRowRun",
       ".planNodeHead > .planRowFailed",
       ".planNodeHead > .planRowWaits",
+      ".planNodeHead > .planRowWaitsLink",
       ".planNodeHead > .planRowBuilding",
       ".planNodeHead > .planRowAfter",
     ]) {

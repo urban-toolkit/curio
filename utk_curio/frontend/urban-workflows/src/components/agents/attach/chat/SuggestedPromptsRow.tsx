@@ -24,7 +24,8 @@ export const SuggestedPromptsRow: React.FC<{
   /** Puts the picked suggestion in the message box. */
   onPick: (prompt: string) => void;
 }> = ({ suggestions, onPick }) => {
-  const menu = useMenuPopup();
+  // Its menu goes with its suggestions, layer and all.
+  const menu = useMenuPopup(suggestions.length > 0);
   if (suggestions.length === 0) return null;
   const count = `${suggestions.length} suggestion${suggestions.length === 1 ? "" : "s"}`;
   return (

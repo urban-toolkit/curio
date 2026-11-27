@@ -7,6 +7,7 @@
  * is about; each node's own state is on its row of the plan's card.
  */
 import type { AgentBuilderSession, AgentProposalSummary, AgentRemedy, AgentSolveWave } from "../../../../services/agents";
+import { isBuiltNode } from "../../../../services/agents/planBuild";
 
 /** The plan line's one action, or none while a build nobody can stop runs. */
 export type PlanMainAction = "solve" | "stop-solve" | "stop-build" | "resume" | "show-sources" | "run" | null;
@@ -146,15 +147,21 @@ function lineWordsBesidePicks(opts: {
   return { phase: "Planned", muted: left > 0 && left < nodes ? builtCount(nodes - left, nodes) : plural(nodes, "node") };
 }
 
-/** Whether *plan*, the plan the agent landed, has a node Build & validate
- * still has work on: one not approved yet in the builder session's ledger. */
+/** Whether *plan*, the plan the agent landed, has a node left to build: one
+ * the line does not count as built (`isBuiltNode`), by its ledger state or by
+ * its run, *runs* the live batch's over the record's. A plan the line calls
+ * Ready has none, so Build & validate and Step have nothing to offer it. */
 export function planLeftToBuild(
   plan: AgentProposalSummary | null | undefined,
-  session: Pick<AgentBuilderSession, "nodeStates">,
+  session: Pick<AgentBuilderSession, "nodeStates" | "nodeIds">,
+  runs: Record<string, string> = {},
 ): boolean {
   if (!plan || plan.tool !== "dataflow.plan.write" || plan.status !== "applied") return false;
   const states = session.nodeStates ?? {};
-  return (plan.appliedRefs ?? []).some((ref) => (states[ref] ?? "created") !== "approved");
+  return (plan.appliedRefs ?? []).some((ref) => {
+    const nodeId = plan.nodeIds?.[ref] ?? session.nodeIds?.[ref];
+    return !isBuiltNode(states[ref], nodeId ? runs[nodeId] : undefined);
+  });
 }
 
 /** The order the plan's nodes read in: the plan's own, as its card lists its
@@ -175,10 +182,6 @@ export function inPlanOrder<T>(
   return [...entries].sort(([a], [b]) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0));
 }
 
-/** A node's run states that are over. */
-export const BUILT_RUNS = new Set(["solved", "verified", "written"]);
-/** A node's ledger states that are built. */
-export const BUILT_STATES = new Set(["validated", "approved"]);
 /** A node's run states while its Solve works on it. */
 export const AT_WORK_RUNS = new Set(["solving", "generating", "verifying", "fixing"]);
 
