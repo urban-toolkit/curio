@@ -24,7 +24,7 @@ from utk_curio.backend.app.agents.domain import dashboards
 from utk_curio.backend.app.agents.domain import node_settings
 from utk_curio.backend.app.agents.domain import plan_topology
 from utk_curio.backend.app.agents.domain.counts import count_label
-from utk_curio.backend.app.agents.domain.labels import node_label
+from utk_curio.backend.app.agents.domain.labels import node_label, planned_goal
 from utk_curio.backend.app.agents.repositories import project_agents
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
@@ -788,11 +788,11 @@ class _PlanSteps:
 
     def named(self, node_ids) -> str:
         """The nodes *node_ids* by name: a planned node's title, else an
-        existing node's goal or title, else its id."""
+        existing node's name as its canvas shows it (``node_label``: its title
+        whole, else its goal cut on a word), else its id."""
         titles = {self.ref_to_id.get(n["ref"]): n.get("title") for n in self.plan.get("nodes", [])}
         nodes = {n.get("id"): n for n in self.before if isinstance(n, dict)}
-        names = [repr(titles.get(i) or (nodes.get(i) or {}).get("goal") or (nodes.get(i) or {}).get("title") or i)
-                 for i in node_ids or ()]
+        names = [repr(titles.get(i) or node_label(nodes.get(i)) or i) for i in node_ids or ()]
         return ", ".join(names) or "a node"
 
     def left_undone(self) -> str:
@@ -1575,8 +1575,7 @@ def _planned_nodes(nodes: list, plan: dict, proposal: dict, starters: dict, *,
             "type": plan_node["nodeType"],
             "title": plan_node["title"],
             "content": starter["content"] if starter else plan_node.get("content", ""),
-            "goal": edited_goals.get(plan_node["ref"])
-            or f"{plan_node['title']}: {plan_node['intent']}",
+            "goal": edited_goals.get(plan_node["ref"]) or planned_goal(plan_node["title"], plan_node["intent"]),
             "x": float(pos.get("x", base_x + depth * _PLAN_COLUMN_OFFSET)),
             "y": float(pos.get("y", base_y + row * _PLAN_ROW_OFFSET)),
         }

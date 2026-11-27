@@ -5,6 +5,9 @@ A node with no title is named by its goal, cut on a word with an ellipsis when
 it runs past :data:`GOAL_NAME_CHARS`, and one with no goal by its id. A text
 that must fit a bound is cut the same way, so no word shown is cut in half.
 
+A plan gives a node it lands its title and its intent as its goal, joined so
+that the goal holds no second colon (:func:`planned_goal`).
+
 The domain layer holds it so that every module that names a node, the
 checks' messages among them, reads the one rule.
 """
@@ -58,6 +61,29 @@ def node_label(node: Mapping | None) -> str:
     if title:
         return title
     return on_a_word(node.get("goal"), GOAL_NAME_CHARS) or str(node.get("id") or "")
+
+
+def planned_goal(title: str, intent: str) -> str:
+    """The goal a plan gives a node it lands, the mission its agents read and
+    their chats show: its title, a colon and its intent. A title that holds a
+    colon of its own is joined to its intent with a semicolon instead, so the
+    goal holds no second colon, and the intent reads on as a clause
+    (:func:`_as_a_clause`)."""
+    if ":" in title:
+        return f"{title}; {_as_a_clause(intent)}"
+    return f"{title}: {intent}"
+
+
+def _as_a_clause(text: str) -> str:
+    """*text* as a clause after a semicolon: its first letter in lower case
+    when its first word is a plain capitalized word, letters with a capital
+    only at the start ("Plot", "Show,", "A"). Any other first word keeps its
+    case: one with more capitals (NYC, OpenStreetMap), with an apostrophe
+    (Chicago's) or a path."""
+    first = text.split(" ", 1)[0].rstrip(",;:.")
+    if first.isalpha() and first[0].isupper() and first[1:] == first[1:].lower():
+        return text[:1].lower() + text[1:]
+    return text
 
 
 def document_validated(verdict: object, evidence: Mapping | None) -> bool:
