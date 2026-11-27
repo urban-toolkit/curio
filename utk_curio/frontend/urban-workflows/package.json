@@ -10,6 +10,7 @@
     "start": "webpack serve --open --mode development",
     "start:e2e": "export PORT=3000 && webpack serve --mode development --port $PORT",
     "build": "webpack --mode production && npm run build:packages && npm run build:autk-data",
+    "postbuild": "node scripts/write-build-stamp.cjs",
     "build:packages": "webpack --config webpack.packages.config.js",
     "build:autk-data": "webpack --config webpack.autk-data.config.js",
     "lint": "eslint src/",
