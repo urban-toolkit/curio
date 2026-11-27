@@ -267,28 +267,38 @@ describe("AgentChatPanel", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("shows the prompt-sourced initial intent, with a placeholder when absent", () => {
-    renderPanel();
-    expect(screen.getByText(attachment.intent as string)).toBeInTheDocument();
-    renderPanel({ attachment: { ...attachment, intent: null } });
-    expect(screen.getByText(/no instruction prompt available/i)).toBeInTheDocument();
+  /** Opens More's Edit initial intent, and its dialog. */
+  const openIntent = () => {
+    fireEvent.click(within(openMore()).getByRole("menuitem", { name: /^Edit initial intent…/ }));
+    return screen.getByRole("dialog", { name: "Initial intent" });
+  };
+
+  it("keeps the agent's initial intent out of the transcript: More's Edit initial intent shows it, or a placeholder when absent", () => {
+    const first = renderPanel({ onSaveIntent: jest.fn() });
+    // Not a bubble of the person's at the top of the chat.
+    expect(document.querySelector(".messages")).not.toHaveTextContent(attachment.intent as string);
+    expect(within(openIntent()).getByRole("textbox", { name: "Initial intent" })).toHaveValue(attachment.intent);
+    first.unmount();
+
+    renderPanel({ attachment: { ...attachment, intent: null }, onSaveIntent: jest.fn() });
+    const field = within(openIntent()).getByRole("textbox", { name: "Initial intent" });
+    expect(field).toHaveValue("");
+    expect(field).toHaveAttribute("placeholder", "No instruction prompt available for this agent.");
   });
 
-  it("renders the intent as the first message, clamped with a show more/less toggle", () => {
+  it("shows a long intent whole in its field, with nothing cut off to show more of", () => {
     const long = "x".repeat(400);
-    renderPanel({ attachment: { ...attachment, intent: long, intentEdited: true } });
-    const bubble = screen.getByText(long);
-    expect(bubble.className).toMatch(/msgUser/); // plain first-message styling
-    const toggle = screen.getByRole("button", { name: /show more/i });
-    fireEvent.click(toggle);
-    expect(screen.getByRole("button", { name: /show less/i })).toBeInTheDocument();
+    renderPanel({ attachment: { ...attachment, intent: long, intentEdited: true }, onSaveIntent: jest.fn() });
+    expect(screen.queryByText(long)).toBeNull();
+    const dialog = openIntent();
+    expect(within(dialog).getByRole("textbox", { name: "Initial intent" })).toHaveValue(long);
+    expect(screen.queryByRole("button", { name: /show more/i })).toBeNull();
   });
 
   it("edits the intent: save sends the draft; an emptied draft sends null", async () => {
     const onSaveIntent = jest.fn().mockResolvedValue(undefined);
     renderPanel({ onSaveIntent });
-    fireEvent.click(screen.getByRole("button", { name: "Edit initial intent" }));
-    const textarea = screen.getByRole("textbox", { name: /initial intent/i });
+    const textarea = within(openIntent()).getByRole("textbox", { name: /initial intent/i });
     fireEvent.change(textarea, { target: { value: "focus on cost" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(onSaveIntent).toHaveBeenCalledWith("focus on cost");
@@ -296,12 +306,39 @@ describe("AgentChatPanel", () => {
       expect(screen.queryByRole("textbox", { name: /initial intent/i })).not.toBeInTheDocument(),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit initial intent" }));
-    fireEvent.change(screen.getByRole("textbox", { name: /initial intent/i }), {
+    fireEvent.change(within(openIntent()).getByRole("textbox", { name: /initial intent/i }), {
       target: { value: "   " },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(onSaveIntent).toHaveBeenLastCalledWith(null);
+  });
+
+  it("Cancel and Escape close the intent's dialog and save nothing, and Escape leaves the chat open", async () => {
+    const onSaveIntent = jest.fn().mockResolvedValue(undefined);
+    const onClose = jest.fn();
+    renderPanel({ onSaveIntent, onClose });
+    fireEvent.change(within(openIntent()).getByRole("textbox", { name: "Initial intent" }), {
+      target: { value: "never kept" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog", { name: "Initial intent" })).toBeNull();
+
+    openIntent();
+    fireEvent.keyDown(document.activeElement ?? window, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Initial intent" })).toBeNull());
+    expect(onSaveIntent).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("a refused save keeps the dialog open and says why", async () => {
+    const onSaveIntent = jest.fn().mockRejectedValue(new Error("the intent is too long"));
+    renderPanel({ onSaveIntent });
+    fireEvent.change(within(openIntent()).getByRole("textbox", { name: "Initial intent" }), {
+      target: { value: "y".repeat(10) },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("the intent is too long");
+    expect(screen.getByRole("dialog", { name: "Initial intent" })).toBeInTheDocument();
   });
 
   it("shows history loading and a retryable history error", () => {
@@ -708,9 +745,10 @@ describe("AgentChatPanel's agents rail", () => {
 });
 
 describe("AgentChatPanel's More menu", () => {
-  it("holds Rename conversation, Clear conversation and Tokens used", () => {
+  it("holds Rename conversation, Edit initial intent, Show run details, Clear conversation and Tokens used", () => {
     renderPanel({
       onSaveTitle: jest.fn(),
+      onSaveIntent: jest.fn(),
       onClearConversation: jest.fn(),
       turns: [
         { role: "user", text: "q1" },
@@ -719,15 +757,25 @@ describe("AgentChatPanel's More menu", () => {
     });
     // Named by what it does, which the tokens never change ("keeps its name
     // while the conversation's tokens arrive", below).
-    const more = screen.getByRole("button", { name: "More: rename, clear" });
+    const more = screen.getByRole("button", { name: "More: rename, edit initial intent, run details, clear" });
     expect(more).toHaveAttribute("aria-haspopup", "menu");
     expect(more).toHaveAttribute("data-tooltip", "More");
     const menu = openMore();
     expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
       "Rename conversation",
+      "Edit initial intent…What this chat's agent starts from",
       "Clear conversation…",
       "Tokens used: 1.4k1.1k in, 300 out, over 1 reply",
     ]);
+    // The viewer's switch, between them, off until turned on.
+    const runDetails = within(menu).getByRole("menuitemcheckbox", { name: /^Show run details/ });
+    expect(runDetails).toHaveTextContent("Show run detailsSkills, time, tokens and tools under each reply");
+    expect(runDetails).toHaveAttribute("aria-checked", "false");
+    expect(
+      Array.from(menu.querySelectorAll('[role="menuitem"], [role="menuitemcheckbox"]')).map((item) =>
+        item.textContent?.replace(/(…|details).*$/, "$1"),
+      ),
+    ).toEqual(["Rename conversation", "Edit initial intent…", "Show run details", "Clear conversation…", "Tokens used: 1.4k1.1k in, 300 out, over 1 reply"]);
   });
 
   it("Rename conversation opens the title for editing", () => {
@@ -754,9 +802,13 @@ describe("AgentChatPanel's More menu", () => {
     expect(screen.queryByRole("menu", { name: "Chat menu" })).toBeNull();
   });
 
-  it("is not there when it would hold nothing", () => {
+  it("holds the viewer's Show run details in a chat that offers nothing else", () => {
     renderPanel();
-    expect(screen.queryByRole("button", { name: /^More/ })).toBeNull();
+    const more = screen.getByRole("button", { name: "More: run details" });
+    fireEvent.click(more);
+    const menu = screen.getByRole("menu", { name: "Chat menu" });
+    expect(within(menu).queryAllByRole("menuitem")).toHaveLength(0);
+    expect(within(menu).getByRole("menuitemcheckbox", { name: /^Show run details/ })).toHaveFocus();
   });
 
   const used: AgentSessionTurn[] = [
@@ -764,25 +816,31 @@ describe("AgentChatPanel's More menu", () => {
     { role: "agent", text: "a1", execution: { executionId: "e1", usage: { inputTokens: 1100, outputTokens: 300 }, status: "ok", durationMs: 10 } },
   ];
 
-  it("Tokens used is reached from the keyboard, and a menu of tokens alone opens on it", () => {
+  it("every item, Show run details and Tokens used among them, is reached from the keyboard", () => {
     const first = renderPanel({ onSaveTitle: jest.fn(), onClearConversation: jest.fn(), turns: used });
     const menu = openMore();
     expect(within(menu).getByRole("menuitem", { name: "Rename conversation" })).toHaveFocus();
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowDown" });
+    expect(within(menu).getByRole("menuitemcheckbox", { name: /^Show run details/ })).toHaveFocus();
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: "End" });
     expect(screen.getByLabelText(/session token usage/i)).toHaveFocus();
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowDown" });
     expect(within(menu).getByRole("menuitem", { name: "Rename conversation" })).toHaveFocus();
     first.unmount();
 
+    // A menu of the switch and the tokens opens on the switch, and the
+    // tokens are one step down.
     renderPanel({ turns: used });
     openMore();
+    expect(screen.getByRole("menuitemcheckbox", { name: /^Show run details/ })).toHaveFocus();
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowDown" });
     expect(screen.getByLabelText(/session token usage/i)).toHaveFocus();
   });
 
   it("keeps its name while the conversation's tokens arrive", () => {
     const { rerender, props } = renderPanel({ onSaveTitle: jest.fn(), onClearConversation: jest.fn() });
     const more = screen.getByRole("button", { name: /^More/ });
-    expect(more).toHaveAccessibleName("More: rename, clear");
+    expect(more).toHaveAccessibleName("More: rename, run details, clear");
     rerender(
       <AgentChatPanel
         {...props}
@@ -791,7 +849,7 @@ describe("AgentChatPanel's More menu", () => {
       />,
     );
     expect(screen.getByRole("button", { name: /^More/ })).toBe(more);
-    expect(more).toHaveAccessibleName("More: rename, clear");
+    expect(more).toHaveAccessibleName("More: rename, run details, clear");
     fireEvent.click(more);
     expect(screen.getByLabelText(/session token usage/i)).toHaveTextContent("Tokens used: 1.0k");
   });
@@ -806,6 +864,87 @@ describe("AgentChatPanel's More menu", () => {
     expect(screen.getByText(/^Tokens used:/)).toHaveClass("menuTokensLive");
     rerender(<AgentChatPanel {...props} turns={used} runStatus={{ phase: "done", startedAt: Date.now(), durationMs: 10 }} />);
     expect(screen.getByText(/^Tokens used:/)).not.toHaveClass("menuTokensLive");
+  });
+});
+
+/** Turns on the viewer's Show run details from More. */
+const showRunDetails = () => {
+  fireEvent.click(within(openMore()).getByRole("menuitemcheckbox", { name: /^Show run details/ }));
+};
+
+describe("AgentChatPanel's Show run details", () => {
+  const ranReply: AgentSessionTurn = {
+    role: "agent",
+    text: "I planned 3 nodes.",
+    execution: {
+      executionId: "e-ran",
+      usage: { inputTokens: 36104, outputTokens: 2211 },
+      status: "ok",
+      durationMs: 14000,
+      pins: { skills: { handed: ["reuse-first"] } },
+      toolCalls: [
+        { tool: "dataflow.read", status: "ok" },
+        { tool: "catalog.search", status: "ok" },
+        { tool: "dataflow.read", status: "ok" },
+        { tool: "dataflow.plan.write", status: "applied" },
+      ],
+      skillsLoaded: ["data-sources"],
+    },
+  };
+  const ranTurns: AgentSessionTurn[] = [{ role: "user", text: "Map the libraries." }, ranReply];
+
+  it("is off for a viewer who never turned it on: no time, tokens, skills or tools under a reply", () => {
+    renderPanel({ turns: ranTurns });
+    expect(screen.queryByText(/Finished in/)).toBeNull();
+    expect(document.querySelector('[data-curio-reply-skills="true"]')).toBeNull();
+    expect(document.querySelector('[data-curio-reply-tools="true"]')).toBeNull();
+    expect(screen.getByText("I planned 3 nodes.")).toBeInTheDocument();
+  });
+
+  it("on, puts each reply's skills, time and tokens, and the tools it called, each once, under it", () => {
+    renderPanel({ turns: ranTurns });
+    showRunDetails();
+    expect(document.querySelector('[data-curio-reply-skills="true"]')).toHaveTextContent(
+      "Skills: reuse-first, data-sources",
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Finished in 14s · 38.3k tokens");
+    expect(document.querySelector('[data-curio-reply-tools="true"]')).toHaveTextContent(
+      "Tools: dataflow.read, catalog.search, dataflow.plan.write",
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^More/ }));
+    expect(screen.getByRole("menuitemcheckbox", { name: /^Show run details/ })).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("is the viewer's own: kept in this browser, the same in every chat, until turned off", () => {
+    const { RUN_DETAILS_KEY } = require("../../components/agents/attach/chat/runDetails");
+    const first = renderPanel({ turns: ranTurns });
+    showRunDetails();
+    expect(window.localStorage.getItem(RUN_DETAILS_KEY)).toBe("on");
+    first.unmount();
+
+    // Another agent's chat, opened later, shows them too.
+    const second = renderPanel({
+      attachment: { ...attachment, attachmentId: "a2", sessionId: "s2other", name: "Other Agent" },
+      turns: ranTurns,
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("Finished in 14s");
+    showRunDetails();
+    expect(window.localStorage.getItem(RUN_DETAILS_KEY)).toBeNull();
+    expect(screen.queryByText(/Finished in/)).toBeNull();
+    second.unmount();
+  });
+
+  it("a browser that keeps nothing still turns it on, for this page", () => {
+    const setItem = jest.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("storage is blocked");
+    });
+    try {
+      renderPanel({ turns: ranTurns });
+      showRunDetails();
+      expect(screen.getByRole("status")).toHaveTextContent("Finished in 14s");
+    } finally {
+      setItem.mockRestore();
+    }
   });
 });
 
@@ -1109,22 +1248,35 @@ describe("AgentChatPanel structured content (memo dev/39)", () => {
     expect(screen.getByText("n1 → canvas")).toBeInTheDocument();
   });
 
-  it("prefills the primary prompt and renders the chip row", () => {
+  /** Opens the Suggestions button's menu. */
+  const openSuggestions = (count: string) => {
+    fireEvent.click(screen.getByRole("button", { name: count }));
+    return screen.getByRole("menu", { name: "Suggested messages" });
+  };
+
+  it("leaves the message box empty, and counts the suggestions, the first one first, on one button", () => {
     renderPanel({ turns: promptsTurns });
-    expect(screen.getByDisplayValue("Build the NOAA node")).toBeInTheDocument();
-    expect(screen.getByRole("group", { name: "Suggested prompts" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Show the fetch code" })).toBeInTheDocument();
-    // The prefilled primary makes Send active immediately (docs/08).
-    expect(screen.getByRole("button", { name: "Send" })).not.toBeDisabled();
+    expect(screen.getByPlaceholderText(/^Message /)).toHaveValue("");
+    // Nothing to send until the person writes or picks something.
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    const menu = openSuggestions("3 suggestions");
+    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+      "Build the NOAA node",
+      "Show the fetch code",
+      "Use the catalog copy",
+    ]);
   });
 
-  it("clicking a chip replaces the input draft", () => {
+  it("a pick puts the suggestion in the message box, where it can be edited, and closes the menu", () => {
     renderPanel({ turns: promptsTurns });
-    fireEvent.click(screen.getByRole("button", { name: "Use the catalog copy" }));
+    fireEvent.click(within(openSuggestions("3 suggestions")).getByRole("menuitem", { name: "Use the catalog copy" }));
     expect(screen.getByDisplayValue("Use the catalog copy")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Use the catalog copy")).toHaveFocus();
+    expect(screen.queryByRole("menu", { name: "Suggested messages" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
   });
 
-  it("a user-typed draft is never overwritten by a prefill", () => {
+  it("a user-typed draft is never overwritten: no suggestion goes in the box by itself", () => {
     const { rerender, props } = renderPanel({ turns: [{ role: "user", text: "q" }] });
     fireEvent.change(screen.getByPlaceholderText(/^Message /), {
       target: { value: "my own words" },
@@ -1134,14 +1286,14 @@ describe("AgentChatPanel structured content (memo dev/39)", () => {
     expect(screen.queryByDisplayValue("Build the NOAA node")).toBeNull();
   });
 
-  it("suggestions are stale once the user replied (no chip row)", () => {
+  it("suggestions are stale once the user replied (no Suggestions button)", () => {
     renderPanel({
       turns: [...promptsTurns, { role: "user", text: "next question" }],
     });
-    expect(screen.queryByRole("group", { name: "Suggested prompts" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /suggestions?$/ })).toBeNull();
   });
 
-  it("no chip row when alternatives are empty (prefill only)", () => {
+  it("a reply's one suggestion is one on the button, and the box stays empty", () => {
     renderPanel({
       turns: [
         {
@@ -1151,8 +1303,18 @@ describe("AgentChatPanel structured content (memo dev/39)", () => {
         },
       ],
     });
-    expect(screen.queryByRole("group", { name: "Suggested prompts" })).toBeNull();
-    expect(screen.getByDisplayValue("Only one")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/^Message /)).toHaveValue("");
+    expect(within(openSuggestions("1 suggestion")).getByRole("menuitem", { name: "Only one" })).toBeInTheDocument();
+  });
+
+  it("Escape closes the Suggestions menu, not the chat", () => {
+    const onClose = jest.fn();
+    renderPanel({ turns: promptsTurns, onClose });
+    openSuggestions("3 suggestions");
+    fireEvent.keyDown(document.activeElement ?? window, { key: "Escape" });
+    expect(screen.queryByRole("menu", { name: "Suggested messages" })).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "3 suggestions" })).toHaveFocus();
   });
 });
 
@@ -1212,16 +1374,16 @@ describe("AgentChatPanel changes, reviews + tool activity (memo dev/41)", () => 
     expect(onApplyProposal).toHaveBeenCalledWith("p1");
   });
 
-  it("shows transient tool-activity system lines", () => {
+  it("shows what the running turn does now: its newest step alone, one live line", () => {
     renderPanel({
       turns: [{ role: "user", text: "q" }],
       toolActivity: ["node.read …", "node.read · ok"],
     });
-    expect(screen.getByText("node.read …")).toBeInTheDocument();
     expect(screen.getByText("node.read · ok")).toBeInTheDocument();
+    expect(screen.queryByText("node.read …")).toBeNull();
   });
 
-  it("a reloaded reply keeps a failed tool call's reason under it (#447)", () => {
+  it("a reloaded reply keeps a failed tool call's reason under it, in plain words (#447)", () => {
     renderPanel({
       turns: [
         { role: "user", text: "check the data endpoint" },
@@ -1233,8 +1395,27 @@ describe("AgentChatPanel changes, reviews + tool activity (memo dev/41)", () => 
         }),
       ],
     });
-    expect(screen.getByText(`web.fetch · ${REFUSAL}`)).toBeInTheDocument();
+    expect(screen.getByText(`A page read was ${REFUSAL}`)).toBeInTheDocument();
+    // The tool's id is Show run details'.
+    expect(screen.queryByText(/web\.fetch/)).toBeNull();
     // A call that succeeded leaves no line.
+    expect(screen.queryByText(/^node\.read ·/)).not.toBeInTheDocument();
+  });
+
+  it("with Show run details, a failed call's line names its tool, as the call's record does (#447)", () => {
+    renderPanel({
+      turns: [
+        { role: "user", text: "check the data endpoint" },
+        savedReply("I could not reach that address.", {
+          toolCalls: [
+            { tool: "node.read", status: "ok", durationMs: 2 },
+            { tool: "web.fetch", status: "error", durationMs: 4, reason: REFUSAL, egress: true },
+          ],
+        }),
+      ],
+    });
+    showRunDetails();
+    expect(screen.getByText(`web.fetch · ${REFUSAL}`)).toBeInTheDocument();
     expect(screen.queryByText(/^node\.read ·/)).not.toBeInTheDocument();
   });
 
@@ -1250,7 +1431,19 @@ describe("AgentChatPanel changes, reviews + tool activity (memo dev/41)", () => 
         }),
       ],
     });
-    expect(screen.getByText(`web.fetch · ${REFUSAL}`)).toBeInTheDocument();
+    expect(screen.getByText(`A page read was ${REFUSAL}`)).toBeInTheDocument();
+  });
+
+  it("a failed call of a tool with no plain words of its own reads as a step, with its reason", () => {
+    renderPanel({
+      turns: [
+        { role: "user", text: "read the plan" },
+        savedReply("I could not read it.", {
+          toolCalls: [{ tool: "dataflow.read", status: "error", durationMs: 4, reason: "the dataflow is gone" }],
+        }),
+      ],
+    });
+    expect(screen.getByText("A step failed: the dataflow is gone")).toBeInTheDocument();
   });
 });
 
@@ -1356,8 +1549,10 @@ describe("AgentChatPanel says when a canvas agent changed nothing (#243)", () =>
         }),
       ],
     });
-    expect(screen.getByText("node.create · template.content must be a non-empty string")).toBeInTheDocument();
+    expect(screen.getByText("Adding a node failed: template.content must be a non-empty string")).toBeInTheDocument();
     expect(screen.getByText(NO_CHANGE)).toBeInTheDocument();
+    showRunDetails();
+    expect(screen.getByText("node.create · template.content must be a non-empty string")).toBeInTheDocument();
   });
 
   it("a node.create the turn recovered from leaves no line beside the change (#447)", () => {
@@ -1374,6 +1569,8 @@ describe("AgentChatPanel says when a canvas agent changed nothing (#243)", () =>
       ],
     });
     expect(screen.getByRole("group", { name: "Change: Created a new Python node" })).toBeInTheDocument();
+    expect(screen.queryByText(/^Adding a node failed/)).not.toBeInTheDocument();
+    showRunDetails();
     expect(screen.queryByText(/^node\.create ·/)).not.toBeInTheDocument();
   });
 
@@ -1511,6 +1708,43 @@ describe("AgentChatPanel has no attachment settings cog", () => {
   });
 });
 
+describe("AgentChatPanel draws a task another agent asked as one quiet line, and no turn kept for the agents", () => {
+  const asked: AgentSessionTurn = {
+    role: "user",
+    text: "[Delegated by Dataflow Builder] dataset.discover · intent: Load the branch locations.",
+    asked: { by: "Dataflow Builder", task: "find a source for CPL branches" },
+  };
+
+  it("a task asked by another agent reads as who asked and what, never as the person's message", () => {
+    renderPanel({ turns: [asked, { role: "agent", text: "I found 4 candidates." }] });
+    expect(screen.getByText("Asked by the Dataflow Builder: find a source for CPL branches.")).toBeInTheDocument();
+    expect(screen.queryByText(/\[Delegated by/)).toBeNull();
+    expect(document.querySelector(".msgUser")).toBeNull();
+  });
+
+  it("a turn the runtime keeps for the agents is not drawn, and takes no part in the unread count or the suggestions", () => {
+    renderPanel({
+      turns: [
+        { role: "user", text: "Map the libraries." },
+        {
+          role: "agent",
+          text: "I planned 3 nodes.",
+          content: [{ type: "suggestedPrompts", primary: "Solve the plan", alternatives: [] }],
+        },
+        { role: "agent", text: "Source recorded for CPL branches: Chicago Neighborhoods.", forAgents: true },
+      ],
+    });
+    expect(screen.queryByText(/Source recorded for/)).toBeNull();
+    // The newest reply drawn still offers its suggestion.
+    expect(screen.getByRole("button", { name: "1 suggestion" })).toBeInTheDocument();
+  });
+
+  it("a chat whose every turn is kept for the agents reads as an empty chat", () => {
+    renderPanel({ turns: [{ role: "agent", text: "kept for the agents", forAgents: true }] });
+    expect(screen.getByText("Ask this agent something to get started.")).toBeInTheDocument();
+  });
+});
+
 describe("AgentChatPanel delegation entries (memo dev/72)", () => {
   const delegation = {
     type: "delegation" as const,
@@ -1523,16 +1757,22 @@ describe("AgentChatPanel delegation entries (memo dev/72)", () => {
     summary: "verified — 200",
   };
 
-  it("an agent turn's delegation part renders the entry and routes the icon-link", () => {
+  it("an agent turn's delegation part names the agent it asked, whose name opens its chat", () => {
     const onOpenAgentChat = jest.fn();
     renderPanel({
       turns: [{ role: "agent", text: "done", content: [delegation] }],
       onOpenAgentChat,
       delegateExists: (id) => id === "att-r",
     });
-    expect(screen.getByText("research.verify")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Open Researcher's chat" }));
+    const name = screen.getByRole("button", { name: "Open Researcher's chat" });
+    expect(name).toHaveTextContent("Researcher");
+    expect(screen.getByText("verified — 200")).toBeInTheDocument();
+    // What ran the task is Show run details'.
+    expect(screen.queryByText("research.verify")).toBeNull();
+    fireEvent.click(name);
     expect(onOpenAgentChat).toHaveBeenCalledWith("att-r");
+    showRunDetails();
+    expect(screen.getByText("research.verify · ok")).toBeInTheDocument();
   });
 
   it("a detached home renders the entry without a link", () => {
@@ -1541,7 +1781,9 @@ describe("AgentChatPanel delegation entries (memo dev/72)", () => {
       onOpenAgentChat: jest.fn(),
       delegateExists: () => false,
     });
-    expect(screen.getByText("research.verify")).toBeInTheDocument();
+    expect(screen.getByText("Researcher")).toBeInTheDocument();
+    showRunDetails();
+    expect(screen.getByText("research.verify · ok")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /open researcher/i }),
     ).toBeNull();
@@ -1801,7 +2043,7 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
     expect(statuses[0]).toHaveTextContent(/Cooking… · 0:00/);
   });
 
-  it("every finalized reply carries its own duration and tokens", () => {
+  it("with Show run details, every finalized reply carries its own duration and tokens", () => {
     renderPanel({
       turns: [
         { role: "user", text: "q1" },
@@ -1810,6 +2052,9 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
         doneTurn("a2", [100, 100], 900),
       ],
     });
+    // Off, a reply that finished says nothing of its run.
+    expect(screen.queryByRole("status")).toBeNull();
+    showRunDetails();
     const statuses = screen.getAllByRole("status");
     expect(statuses).toHaveLength(2);
     expect(statuses[0]).toHaveTextContent("Finished in 12s · 1.4k tokens");
@@ -1999,6 +2244,7 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
         { role: "agent", text: "a1" },
       ],
     });
+    showRunDetails();
     expect(screen.getByRole("status")).toHaveTextContent("Finished in 12s · 1.4k tokens");
   });
 
@@ -2016,6 +2262,7 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
         { role: "agent", text: "Load pedestrians needs a source." },
       ],
     });
+    showRunDetails();
     // One line, the reply's: the runtime's turn is not the reply again.
     const statuses = screen.getAllByRole("status");
     expect(statuses).toHaveLength(1);
@@ -2043,30 +2290,38 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Failed");
   });
 
-  it("a pending install review marks only the newest reply", () => {
+  it("a pending install review says so once, on its own card, which starts with Review: and carries no chip under any reply", () => {
+    const review = {
+      type: "proposal" as const,
+      proposalId: "p1",
+      tool: "dataset.install",
+      summary: "Install dataset · Cities",
+      preview: "Cities · csv · imported",
+      pins: { datasetId: "imported.cities@1" },
+      status: "pending" as const,
+    };
     renderPanel({
       attachment: {
         ...attachment,
-        activeProposal: {
-          proposalId: "p1",
-          tool: "dataset.install",
-          nodeId: "",
-          summary: "Install dataset · Cities",
-          status: "pending",
-        },
+        activeProposal: { proposalId: "p1", tool: "dataset.install", nodeId: "", summary: review.summary, status: "pending" },
       },
       turns: [
         { role: "user", text: "q1" },
         doneTurn("a1", [10, 10]),
         { role: "user", text: "q2" },
-        doneTurn("a2", [10, 10]),
+        { ...doneTurn("a2", [10, 10]), content: [review] } as AgentSessionTurn,
       ],
+      onApplyProposal: jest.fn(),
+      onDismissProposal: jest.fn(),
     });
-    const chips = screen.getAllByText("Awaiting your review");
-    expect(chips).toHaveLength(1);
-    const statuses = screen.getAllByRole("status");
-    expect(statuses[0]).not.toHaveTextContent("Awaiting your review");
-    expect(statuses[1]).toHaveTextContent("Awaiting your review");
+    const card = screen.getByRole("group", { name: `Review proposal: ${review.summary}` });
+    expect(within(card).getByText(`Review: ${review.summary}`)).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "Apply" })).toBeInTheDocument();
+    expect(screen.queryByText("Awaiting your review")).toBeNull();
+    // Nor with Show run details, whose lines under each reply are its run's.
+    showRunDetails();
+    expect(screen.getAllByRole("status")).toHaveLength(2);
+    expect(screen.queryByText("Awaiting your review")).toBeNull();
   });
 
   it("a review of a change saved before agents edited directly awaits nothing and keeps Dismiss alone", () => {
@@ -2624,6 +2879,11 @@ describe("AgentChatPanel offers each feature by what the agent declares", () => 
       BUILDER_TEMPLATES.map((t) => t.label),
     );
     expect(BUILDER_TEMPLATES).toHaveLength(6);
+    // What a template does is each chip's tooltip, not a line of the chat.
+    for (const chip of within(templates).getAllByRole("button")) {
+      expect(chip).toHaveAttribute("data-tooltip", "Fills the message box. Nothing is sent until you press Send.");
+    }
+    expect(screen.queryByText(/nothing is sent until you press Send/i)).toBeNull();
     fireEvent.click(within(templates).getByRole("button", { name: "Load and Clean" }));
     expect(screen.getByPlaceholderText(/^Message /)).toHaveValue(BUILDER_TEMPLATES[0].seed);
     // Nothing is sent until Send.
@@ -2720,6 +2980,8 @@ describe("AgentChatPanel offers each feature by what the agent declares", () => 
     });
     const card = screen.getByRole("group", { name: "Sources for Load areas" });
     fireEvent.click(within(card).getByRole("checkbox", { name: "Select Chicago areas" }));
+    // A card that records its own pick leaves the message box alone.
+    expect(screen.getByPlaceholderText(/^Message /)).toHaveValue("");
     fireEvent.click(within(card).getByRole("button", { name: /Use this source/ }));
     await screen.findByText("Source recorded for Load areas: Solve it to build its loader from this source.");
     expect(onRecordDatasetSelection).toHaveBeenCalledWith([

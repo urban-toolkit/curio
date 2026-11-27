@@ -86,6 +86,9 @@ export interface AgentCardPart {
   kind: string; // "result" today; unknown kinds render the generic shell
   title: string;
   lines: string[];
+  /** A run's trace (a Solve's rounds, a delegated task's record): drawn only
+   *  while the viewer shows run details. */
+  runDetails?: boolean;
 }
 
 /** The dev/50 two-lane suggestions part. Selection and confirmation live
@@ -178,6 +181,13 @@ export interface AgentSessionTurn {
   execution?: AgentExecution;
   /** Typed content parts for agent turns (memo dev/39); absent on old turns. */
   content?: AgentContentPart[];
+  /** A turn the runtime keeps for the agents alone, which the chat never
+   *  draws: what it says is said on a card in view. */
+  forAgents?: boolean;
+  /** A task another agent asked of this one, on the user turn the runtime
+   *  writes for it: who asked, and the task in a few words, which the chat
+   *  draws as one quiet line. */
+  asked?: { by: string; task: string };
 }
 
 export interface AgentSession {

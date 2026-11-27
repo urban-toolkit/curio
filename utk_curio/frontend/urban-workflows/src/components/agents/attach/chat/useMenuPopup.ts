@@ -12,9 +12,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { answerEscape, escapeAnswered, holdModalStack } from "../../../ModalShell";
 
-/** Its items. One that only says something, as Tokens used does, is disabled
- *  but still takes the focus and the arrows' walk, so the keyboard reads it. */
-const ITEMS = '[role="menuitem"]';
+/** Its items, a switch such as Show run details among them. One that only
+ *  says something, as Tokens used does, is disabled but still takes the focus
+ *  and the arrows' walk, so the keyboard reads it. */
+const ITEM_ROLES = ['[role="menuitem"]', '[role="menuitemcheckbox"]'];
+const ITEMS = ITEM_ROLES.join(", ");
+/** Its current item, the one it opens on when it has one. */
+const CURRENT_ITEM = ITEM_ROLES.map((role) => `[aria-current="true"]${role}`).join(", ");
 
 export interface MenuPopup<K> {
   /** What is open, or null: one menu, or one of a few (a rail's groups). */
@@ -43,8 +47,7 @@ export function useMenuPopup<K = true>(): MenuPopup<K> {
     if (open === null) return undefined;
     const release = holdModalStack();
     const menu = menuRef.current;
-    const first =
-      menu?.querySelector<HTMLElement>(`[aria-current="true"]${ITEMS}`) ?? menu?.querySelector<HTMLElement>(ITEMS);
+    const first = menu?.querySelector<HTMLElement>(CURRENT_ITEM) ?? menu?.querySelector<HTMLElement>(ITEMS);
     first?.focus();
     const onPress = (event: PointerEvent) => {
       const target = event.target as Node;

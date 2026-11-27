@@ -1,7 +1,7 @@
 import React from "react";
 import clsx from "clsx";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faEllipsis, faPen, faTrashCan, faXmark } from "@fortawesome/free-solid-svg-icons";
+import { faCheck, faEllipsis, faFileLines, faPen, faTrashCan, faXmark } from "@fortawesome/free-solid-svg-icons";
 
 import { formatTokenCount } from "../../../../services/agents";
 import { agentCategoryIcon, agentCategoryKey } from "../../../menus/nodes/agentsPalette/agentCategoryStyle";
@@ -24,12 +24,19 @@ export interface ChatTokens {
   live: boolean;
 }
 
+/** What Show run details puts under each reply, under its name in More. */
+export const RUN_DETAILS_SAYS = "Skills, time, tokens and tools under each reply";
+
+/** What Edit initial intent edits, under its name in More. */
+export const EDIT_INTENT_SAYS = "What this chat's agent starts from";
+
 /**
  * The dark header of the open chat, one row (DEC-042, dev/21): the agent's
  * glyph, the conversation's title, what the agent is attached to (its ids on
- * that line's tooltip), then More (Rename conversation, Clear conversation,
- * Tokens used) and Close. No Pin, no static "Agent Catalog" bar (that chrome
- * is the roster drawer's). The agents themselves are the rail's, beside it.
+ * that line's tooltip), then More and Close. More holds Rename conversation,
+ * Edit initial intent, the viewer's Show run details, Clear conversation and
+ * Tokens used. No Pin, no static "Agent Catalog" bar (that chrome is the
+ * roster drawer's). The agents themselves are the rail's, beside it.
  */
 export const ChatHeader: React.FC<{
   category: string | null | undefined;
@@ -39,18 +46,39 @@ export const ChatHeader: React.FC<{
   titleError: string | null;
   /** Starts the rename; omitted, More offers none. */
   onRename?: () => void;
+  /** Opens the instructions this chat's agent starts from for editing;
+   *  omitted, More offers none. */
+  onEditIntent?: () => void;
+  /** The viewer's own Show run details, and its switch. */
+  runDetails: { shown: boolean; onToggle: () => void };
   /** Asks to clear the conversation; omitted, More offers none. */
   onClear?: () => void;
   /** What the conversation used; null while none was reported. */
   tokens: ChatTokens | null;
   onClose: () => void;
-}> = ({ category, title, targetLabel, targetTooltip, titleError, onRename, onClear, tokens, onClose }) => {
+}> = ({
+  category,
+  title,
+  targetLabel,
+  targetTooltip,
+  titleError,
+  onRename,
+  onEditIntent,
+  runDetails,
+  onClear,
+  tokens,
+  onClose,
+}) => {
   const menu = useMenuPopup();
   // More is named by what it does, which no reply's tokens change: its name
-  // holds still while they arrive. Tokens used alone names it when it holds
-  // nothing else.
-  const actions = [onRename ? "rename" : null, onClear ? "clear" : null].filter(Boolean);
-  const named = `More: ${actions.length ? actions.join(", ") : "tokens used"}`;
+  // holds still while they arrive.
+  const actions = [
+    onRename ? "rename" : null,
+    onEditIntent ? "edit initial intent" : null,
+    "run details",
+    onClear ? "clear" : null,
+  ].filter(Boolean);
+  const named = `More: ${actions.join(", ")}`;
   const choose = (action: () => void) => {
     menu.close();
     action();
@@ -70,37 +98,56 @@ export const ChatHeader: React.FC<{
       </span>
       {titleError ? <span className={styles.titleError}>{titleError}</span> : null}
       <span className={styles.headerSpacer} />
-      {actions.length > 0 || tokens ? (
-        <span className={styles.menuWrap}>
-          <button
-            ref={(el) => {
-              menu.anchorRef.current = el;
-            }}
-            type="button"
-            className={clsx(styles.headerBtn, menu.open !== null && styles.headerBtnOpen)}
-            aria-label={named}
-            aria-haspopup="menu"
-            aria-expanded={menu.open !== null}
-            data-tooltip="More"
-            onClick={() => menu.toggle(true)}
-          >
-            <FontAwesomeIcon icon={faEllipsis} />
-          </button>
-          {menu.open !== null ? (
-            <div
-              ref={menu.menuRef}
-              className={styles.menu}
-              role="menu"
-              aria-label="Chat menu"
-              onKeyDown={menu.onMenuKeyDown}
+      <span className={styles.menuWrap}>
+        <button
+          ref={(el) => {
+            menu.anchorRef.current = el;
+          }}
+          type="button"
+          className={clsx(styles.headerBtn, menu.open !== null && styles.headerBtnOpen)}
+          aria-label={named}
+          aria-haspopup="menu"
+          aria-expanded={menu.open !== null}
+          data-tooltip="More"
+          onClick={() => menu.toggle(true)}
+        >
+          <FontAwesomeIcon icon={faEllipsis} />
+        </button>
+        {menu.open !== null ? (
+          <div ref={menu.menuRef} className={styles.menu} role="menu" aria-label="Chat menu" onKeyDown={menu.onMenuKeyDown}>
+            {onRename ? (
+              <button type="button" role="menuitem" className={styles.menuItem} onClick={() => choose(onRename)}>
+                <FontAwesomeIcon icon={faPen} className={styles.menuIcon} />
+                Rename conversation
+              </button>
+            ) : null}
+            {onEditIntent ? (
+              <button type="button" role="menuitem" className={styles.menuItem} onClick={() => choose(onEditIntent)}>
+                <FontAwesomeIcon icon={faFileLines} className={styles.menuIcon} />
+                <span className={styles.menuItemText}>
+                  Edit initial intent…
+                  <span className={styles.menuItemSays}>{EDIT_INTENT_SAYS}</span>
+                </span>
+              </button>
+            ) : null}
+            <button
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={runDetails.shown}
+              className={styles.menuItem}
+              onClick={() => choose(runDetails.onToggle)}
             >
-              {onRename ? (
-                <button type="button" role="menuitem" className={styles.menuItem} onClick={() => choose(onRename)}>
-                  <FontAwesomeIcon icon={faPen} className={styles.menuIcon} />
-                  Rename conversation
-                </button>
-              ) : null}
-              {onClear ? (
+              <span className={clsx(styles.menuCheck, runDetails.shown && styles.menuCheckOn)} aria-hidden="true">
+                {runDetails.shown ? <FontAwesomeIcon icon={faCheck} /> : null}
+              </span>
+              <span className={styles.menuItemText}>
+                Show run details
+                <span className={styles.menuItemSays}>{RUN_DETAILS_SAYS}</span>
+              </span>
+            </button>
+            {onClear ? (
+              <>
+                <div role="separator" className={styles.menuSep} />
                 <button
                   type="button"
                   role="menuitem"
@@ -110,33 +157,33 @@ export const ChatHeader: React.FC<{
                   <FontAwesomeIcon icon={faTrashCan} className={styles.menuIcon} />
                   Clear conversation…
                 </button>
-              ) : null}
-              {tokens ? (
-                <>
-                  {onRename || onClear ? <div role="separator" className={styles.menuSep} /> : null}
-                  {/* Read, not chosen: disabled, yet the focus and the arrows
-                      reach it, so the keyboard reads it too. */}
-                  <div
-                    role="menuitem"
-                    aria-disabled="true"
-                    tabIndex={-1}
-                    className={styles.menuTokens}
-                    aria-label={`Session token usage: ${formatTokenCount(total)} tokens, ${tokens.input.toLocaleString()} in and ${tokens.output.toLocaleString()} out, as the provider reported`}
-                  >
-                    <span className={clsx(styles.menuTokensTotal, tokens.live && styles.menuTokensLive)}>
-                      Tokens used: {formatTokenCount(total)}
-                    </span>
-                    <span className={styles.menuTokensSub}>
-                      {formatTokenCount(tokens.input)} in, {formatTokenCount(tokens.output)} out, over{" "}
-                      {tokens.replies} {tokens.replies === 1 ? "reply" : "replies"}
-                    </span>
-                  </div>
-                </>
-              ) : null}
-            </div>
-          ) : null}
-        </span>
-      ) : null}
+              </>
+            ) : null}
+            {tokens ? (
+              <>
+                <div role="separator" className={styles.menuSep} />
+                {/* Read, not chosen: disabled, yet the focus and the arrows
+                    reach it, so the keyboard reads it too. */}
+                <div
+                  role="menuitem"
+                  aria-disabled="true"
+                  tabIndex={-1}
+                  className={styles.menuTokens}
+                  aria-label={`Session token usage: ${formatTokenCount(total)} tokens, ${tokens.input.toLocaleString()} in and ${tokens.output.toLocaleString()} out, as the provider reported`}
+                >
+                  <span className={clsx(styles.menuTokensTotal, tokens.live && styles.menuTokensLive)}>
+                    Tokens used: {formatTokenCount(total)}
+                  </span>
+                  <span className={styles.menuTokensSub}>
+                    {formatTokenCount(tokens.input)} in, {formatTokenCount(tokens.output)} out, over {tokens.replies}{" "}
+                    {tokens.replies === 1 ? "reply" : "replies"}
+                  </span>
+                </div>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+      </span>
       <button type="button" className={styles.headerBtn} aria-label="Close chat" data-tooltip="Close chat" onClick={onClose}>
         <FontAwesomeIcon icon={faXmark} />
       </button>

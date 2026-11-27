@@ -1,9 +1,10 @@
 /**
  * Pure derivations the chat panel renders from (memo dev/142, F4 — split out
- * of `AgentChatPanel.tsx`): the per-turn status meta, the failed tool calls
- * a reply keeps lines for, whether a canvas agent's reply changed nothing,
- * the plan-row state a landed plan's card gets from the attachment, the
- * header's target label, and the newest turn's suggested prompts.
+ * of `AgentChatPanel.tsx`): the turns a chat draws, the per-turn status meta,
+ * the failed tool calls a reply keeps lines for and how they read, whether a
+ * canvas agent's reply changed nothing, the plan-row state a landed plan's
+ * card gets from the attachment, the header's target label, and the newest
+ * turn's suggested prompts.
  */
 import {
   declaresCapability,
@@ -21,8 +22,48 @@ import {
 } from "../../../../services/agents";
 import type { PlanNodeReviewState } from "../../content/AgentReviewCard";
 
-/** Heuristic: prompts longer than this get the clamp + expand toggle. */
-export const INTENT_CLAMP_CHARS = 280;
+/** Whether the chat draws *turn*: a turn the runtime keeps for the agents
+ * alone (`forAgents`), such as a pick's Source recorded turn, whose words the
+ * card says, is read by the agents and never drawn. */
+export function shownInChat(turn: AgentSessionTurn): boolean {
+  return turn.forAgents !== true;
+}
+
+/** The one quiet line a task another agent asked of this one reads as:
+ * "Asked by the Dataflow Builder: find a source for CPL branches." Null for
+ * any other turn. */
+export function askedLine(turn: AgentSessionTurn): string | null {
+  const asked = turn.role === "user" ? turn.asked : undefined;
+  if (!asked?.by || !asked.task) return null;
+  const task = asked.task.trim().replace(/\.$/, "");
+  return `Asked by the ${asked.by}: ${task}.`;
+}
+
+/** How a failed tool call reads under its reply, without its tool's id, which
+ * Show run details adds: what the call did, in plain words, then its reason. */
+export function failedCallWords(call: AgentToolCall): string {
+  const what = CALL_WORDS[call.tool] ?? "A step";
+  const reason = (call.reason ?? "").trim();
+  return /^refused\b/i.test(reason) ? `${what} was ${reason}` : `${what} failed: ${reason}`;
+}
+
+/** The tools whose failed calls a reply names in plain words; any other is "A
+ * step". */
+const CALL_WORDS: Record<string, string> = {
+  "web.fetch": "A page read",
+  "web.search": "A web search",
+  "node.create": "Adding a node",
+  "node.content.write": "Writing a node's code",
+  "node.settings.write": "Changing a node's settings",
+  "dataflow.plan.write": "Landing the plan",
+};
+
+/** The tools a reply's run called, each once, in the order it first called
+ * them: Show run details lists them. */
+export function toolsCalledBy(turn: AgentSessionTurn): string[] {
+  const tools = (turn.execution?.toolCalls ?? []).map((call) => call.tool).filter(Boolean);
+  return tools.filter((tool, i) => tools.indexOf(tool) === i);
+}
 
 /** The meta line under one agent turn: the streaming reply shows the live
  * running indicator; finalized replies show their persisted execution
@@ -37,15 +78,13 @@ export function turnMetaFor(
     turns: AgentSessionTurn[];
     runStatus: AgentRunStatus | null | undefined;
     runInFlight: boolean;
-    lastAgentIdx: number;
-    pendingReview: boolean;
   },
 ): RunStatusDisplay | null {
-  const { turns, runStatus, runInFlight, lastAgentIdx, pendingReview } = ctx;
+  const { turns, runStatus, runInFlight } = ctx;
   const isLast = i === turns.length - 1;
   if (runInFlight && isLast && t.role === "agent" && !t.error && runStatus)
     return { kind: "running", startedAt: runStatus.startedAt };
-  const derived = turnStatusDisplay(t, { pendingReview: i === lastAgentIdx && pendingReview });
+  const derived = turnStatusDisplay(t);
   if (derived) {
     // The just-failed reply's elapsed-at-failure lives on the run record
     // (client error turns carry no execution).
@@ -58,7 +97,6 @@ export function turnMetaFor(
       kind: "done",
       durationMs: runStatus.durationMs,
       usage: runStatus.usage ?? null,
-      pendingReview: i === lastAgentIdx && pendingReview,
     };
   return null;
 }

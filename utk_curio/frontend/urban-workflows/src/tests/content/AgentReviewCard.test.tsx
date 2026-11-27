@@ -23,6 +23,12 @@ describe("AgentReviewCard (an install's review, memo dev/41)", () => {
     expect(screen.getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
   });
 
+  it("its title says it waits for a review, and no chip names its kind", () => {
+    render(<AgentReviewCard part={part()} onApply={jest.fn()} onDismiss={jest.fn()} />);
+    expect(screen.getByText("Review: Install dataset · Cities")).toBeInTheDocument();
+    expect(screen.queryByText("review")).toBeNull();
+  });
+
   it("the preview renders model output inert (REQ-SEC-002)", () => {
     const hostile = { ...part(), preview: '<script>window.__reviewPwned = true;</script>' };
     const { container } = render(<AgentReviewCard part={hostile} onApply={jest.fn()} />);

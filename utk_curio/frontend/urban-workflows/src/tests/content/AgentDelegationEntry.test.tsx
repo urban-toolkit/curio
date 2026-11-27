@@ -17,26 +17,38 @@ const part = (overrides: Partial<AgentDelegationPart> = {}): AgentDelegationPart
 });
 
 describe("AgentDelegationEntry (memo dev/72)", () => {
-  it("renders the task, delegate name, status, and summary — icon opens the chat", () => {
+  it("names the agent it asked, whose name opens its chat, and the task's outcome", () => {
     const onOpenChat = jest.fn();
     render(<AgentDelegationEntry part={part()} onOpenChat={onOpenChat} />);
-    expect(screen.getByText("research.verify")).toBeInTheDocument();
-    expect(screen.getByText("Researcher")).toBeInTheDocument();
-    expect(screen.getByText("ok")).toBeInTheDocument();
+    const name = screen.getByRole("button", { name: "Open Researcher's chat" });
+    expect(name).toHaveTextContent("Researcher");
+    expect(name).toHaveAttribute("data-tooltip", "Open Researcher's chat");
     expect(screen.getByText("verified — 200, socrata")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Open Researcher's chat" }));
+    // The capability and its status are Show run details'.
+    expect(screen.queryByText(/research\.verify/)).toBeNull();
+    expect(screen.queryByText("ok")).toBeNull();
+    fireEvent.click(name);
     expect(onOpenChat).toHaveBeenCalledWith("att-r");
   });
 
-  it("failed status renders the failed chip", () => {
-    render(<AgentDelegationEntry part={part({ status: "failed", summary: "boom" })} />);
+  it("with run details, says the capability and how the task ended", () => {
+    render(<AgentDelegationEntry part={part()} onOpenChat={jest.fn()} runDetails />);
+    expect(screen.getByText("research.verify · ok")).toBeInTheDocument();
+  });
+
+  it("failed status says failed, with or without run details", () => {
+    const { unmount } = render(<AgentDelegationEntry part={part({ status: "failed", summary: "boom" })} />);
     expect(screen.getByText("failed")).toBeInTheDocument();
     expect(screen.getByText("boom")).toBeInTheDocument();
+    unmount();
+    render(<AgentDelegationEntry part={part({ status: "failed", summary: "boom" })} runDetails />);
+    expect(screen.getByText("research.verify · failed")).toBeInTheDocument();
   });
 
   it("no home (attachmentId null) → plain entry, no button", () => {
     render(<AgentDelegationEntry part={part({ attachmentId: null })} onOpenChat={jest.fn()} />);
     expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.getByText("Researcher")).toBeInTheDocument();
   });
 
   it("a detached home (delegateExists false) → plain entry, never a dead link", () => {
@@ -45,22 +57,25 @@ describe("AgentDelegationEntry (memo dev/72)", () => {
         part={part()}
         onOpenChat={jest.fn()}
         delegateExists={() => false}
+        runDetails
       />,
     );
     expect(screen.queryByRole("button")).toBeNull();
-    expect(screen.getByText("research.verify")).toBeInTheDocument();
+    expect(screen.getByText("research.verify · ok")).toBeInTheDocument();
   });
 });
 
 describe("AgentDelegationEntry: what the delegate ran on", () => {
-  it("shows the delegate's configuration and model, which may not be the parent's", () => {
-    render(<AgentDelegationEntry part={part({ model: "llama3", llmLabel: "Local" })} />);
-    expect(screen.getByText("Local (llama3)")).toBeInTheDocument();
+  it("with run details, shows the delegate's configuration and model, which may not be the parent's", () => {
+    const { unmount } = render(<AgentDelegationEntry part={part({ model: "llama3", llmLabel: "Local" })} />);
+    expect(screen.queryByText(/Local \(llama3\)/)).toBeNull();
+    unmount();
+    render(<AgentDelegationEntry part={part({ model: "llama3", llmLabel: "Local" })} runDetails />);
+    expect(screen.getByText("research.verify · Local (llama3) · ok")).toBeInTheDocument();
   });
 
   it("shows nothing extra when the entry names no model", () => {
-    const { container } = render(<AgentDelegationEntry part={part()} />);
+    const { container } = render(<AgentDelegationEntry part={part()} runDetails />);
     expect(container.textContent).not.toContain("(");
   });
 });
-

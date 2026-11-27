@@ -2,12 +2,13 @@ import React from "react";
 import { act, render, renderHook, screen } from "@testing-library/react";
 
 /**
- * Each chat reply lists the skills its run used, in a quiet line under it:
- * the skills its run was handed for its node, those its message named with
- * `/<name>`, those earlier turns took in, then those it loaded with
- * skill.read, each once, from the run's record. Each name says on hover how
- * the run came to hold it. A reply that just streamed in lists them as the
- * saved one will, so the line needs no reload.
+ * With the viewer's Show run details, each chat reply lists the skills its run
+ * used, in a quiet line under it: the skills its run was handed for its node,
+ * those its message named with `/<name>`, those earlier turns took in, then
+ * those it loaded with skill.read, each once, from the run's record. Each name
+ * says on hover how the run came to hold it. A reply that just streamed in
+ * lists them as the saved one will, so the line needs no reload. Without Show
+ * run details, no reply has the line.
  */
 
 const mockRunAttachmentStream = jest.fn();
@@ -51,10 +52,10 @@ const attachment: AgentAttachment = {
 
 const actions = { onComposePrompt: jest.fn(), beginPackageReview: jest.fn() };
 
-function renderTurn(turn: AgentSessionTurn) {
+function renderTurn(turn: AgentSessionTurn, runDetails = true) {
   return render(
     <MemoryRouter>
-      <AgentTurn turn={turn} attachment={attachment} tint="" meta={null} actions={actions} />
+      <AgentTurn turn={turn} attachment={attachment} tint="" meta={null} actions={actions} runDetails={runDetails} />
     </MemoryRouter>,
   );
 }
@@ -128,6 +129,19 @@ describe("the line under a reply", () => {
       execution: { executionId: "e1", usage: null, status: "ok", pins: { skills: { handed: ["widgets"] } } },
     });
     expect(line()).toHaveTextContent("Skills: widgets");
+  });
+
+  it("is absent while the viewer does not show run details", () => {
+    renderTurn(
+      {
+        role: "agent",
+        text: "Hello.",
+        execution: { executionId: "e1", usage: null, status: "ok", pins: { skills: { handed: ["widgets"] } } },
+      },
+      false,
+    );
+    expect(screen.getByText("Hello.")).toBeInTheDocument();
+    expect(line()).toBeNull();
   });
 });
 

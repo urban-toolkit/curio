@@ -855,9 +855,10 @@ describe("AgentAttachmentsProvider lines that stay under a reply (#447, #243)", 
     expect(seen.flat()).toContain(`web.fetch · ${REFUSAL}`);
     // ...the transient lines are gone once the turn ends...
     expect(seen[seen.length - 1]).toEqual([]);
-    // ...and the refusal stays under the reply.
+    // ...and the refusal stays under the reply, in plain words (its tool's id
+    // is Show run details').
     expect(screen.getByText("I could not reach that address.")).toBeInTheDocument();
-    expect(screen.getByText(`web.fetch · ${REFUSAL}`)).toBeInTheDocument();
+    expect(screen.getByText(`A page read was ${REFUSAL}`)).toBeInTheDocument();
   });
 
   it("a Node Builder reply with only a dataflow.read call says nothing changed on the canvas (#243)", async () => {

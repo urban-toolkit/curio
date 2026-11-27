@@ -6,7 +6,6 @@ import {
   attachmentDisplayName,
   DATASET_SELECT_CAPABILITY,
   declaresCapability,
-  landsAsAChange,
   ORCHESTRATE_CAPABILITY,
   sessionTokenTotals,
   writtenBySomeoneElse,
@@ -37,14 +36,17 @@ import { ClearConversationDialog } from "./chat/ClearConversationDialog";
 import { Composer } from "./chat/Composer";
 import { ConversationTitle } from "./chat/ConversationTitle";
 import { GoalLine } from "./chat/GoalLine";
-import { IntentMessage } from "./chat/IntentMessage";
+import { IntentDialog } from "./chat/IntentDialog";
 import { PendingReplyRow } from "./chat/PendingReplyRow";
-import { SuggestedPromptsRow } from "./chat/SuggestedPromptsRow";
+import { SuggestedPromptsRow, suggestionsOf } from "./chat/SuggestedPromptsRow";
 import { useConversationTitle } from "./chat/useConversationTitle";
 import { useGoalLine } from "./chat/useGoalLine";
+import { useRunDetails } from "./chat/runDetails";
 import { WaitingAskRow } from "./chat/WaitingAskRow";
 import {
+  askedLine,
   canvasUnchangedFor,
+  shownInChat,
   suggestedPromptsOf,
   targetPhraseFor,
   targetTooltipFor,
@@ -61,12 +63,15 @@ import type { WaitingAsk } from "../../../providers/agents/turnAsks";
  * one marked, and a click opens another's chat. Beside it, per DEC-042
  * (dev/21), ONE dark header row: the agent's glyph, the conversation's title,
  * what it is attached to (its ids on that line's tooltip), More (Rename
- * conversation, Clear conversation, Tokens used) and Close; no Pin, and no
- * static "Agent Catalog" bar (that chrome is exclusive to the Agents Roster
- * drawer). Under the header: the dataflow's goal (`GoalLine`), the same in
- * every agent's chat; the plan line of an agent that solves a dataflow, or
- * Solve this node in a node agent's; then the intent-as-first-message
- * transcript and the pill composer.
+ * conversation, Edit initial intent, Show run details, Clear conversation,
+ * Tokens used) and Close; no Pin, and no static "Agent Catalog" bar (that
+ * chrome is exclusive to the Agents Roster drawer). Under the header: the
+ * dataflow's goal (`GoalLine`), the same in every agent's chat; the plan line
+ * of an agent that solves a dataflow, or Solve this node in a node agent's;
+ * then the transcript, the newest reply's suggestions behind one button, and
+ * the pill composer, empty until the person writes or picks something. A task
+ * another agent asked of this one reads as one quiet line, and a turn the
+ * runtime keeps for the agents alone is not drawn.
  *
  * Presentational: the transcript and intent live in AgentAttachmentsProvider
  * (server-persisted session, memo dev/20), so closing/reopening restores the
@@ -299,6 +304,14 @@ export const AgentChatPanel: React.FC<{
   const [sending, setSending] = useState(false);
   // The app's own dialog, not the browser's (#197).
   const [confirmingClear, setConfirmingClear] = useState(false);
+  // More's Edit initial intent, in a dialog over the panel.
+  const [editingIntent, setEditingIntent] = useState(false);
+  // The viewer's own Show run details, the same in every chat.
+  const [runDetails, setRunDetails] = useRunDetails();
+  // The turns the chat draws: a turn the runtime keeps for the agents alone
+  // is read by them and never drawn. What a chat counts, follows and suggests
+  // is read from these; the cards it holds, from every turn.
+  const shownTurns = useMemo(() => turns.filter(shownInChat), [turns]);
   // Inline click-to-edit conversation title (memo dev/25).
   const title = useConversationTitle(attachment, onSaveTitle);
   // The dataflow's goal, edited on its line under the header.
@@ -315,15 +328,16 @@ export const AgentChatPanel: React.FC<{
     jumpToLatest,
     pinToLatest,
   } = useTranscriptAutoScroll({
-    content: turns,
+    content: shownTurns,
     resetKey: attachment.attachmentId,
     ready: !loadingHistory,
     // Turn count, not content: the pill's unread badge (dev/83) counts whole
     // landed messages — streamed chunk growth never increments it.
-    itemCount: turns.length,
+    itemCount: shownTurns.length,
   });
-  /** The last value this panel prefilled — so a prefill may replace a prior
-   * prefill, but never a draft the user actually typed (memo dev/39). */
+  /** The last value a template or a candidates card put in the box, so the
+   * next may replace it, but never a draft the user actually typed (memo
+   * dev/39). */
   const lastPrefill = useRef("");
   // Multiline composer (memo dev/77): one-row pill that grows with content up
   // to ~6 rows, then scrolls internally. Keyed on `input`, so prefills and the
@@ -335,22 +349,13 @@ export const AgentChatPanel: React.FC<{
   const packageReview = usePackageInstallReview(onApplyProposal);
 
   // Per-reply execution status (memo dev/80, amended: the status rides each
-  // agent message, not a global strip). The review chip derives from the
-  // attachment's install mirror: it self-clears on apply/dismiss: and
-  // marks only the NEWEST reply. A review of a change saved before agents
-  // changed the dataflow directly awaits nothing: it can only be dismissed.
-  const pendingReview =
-    attachment.activeProposal?.status === "pending" && !landsAsAChange(attachment.activeProposal.tool);
+  // agent message, not a global strip).
   const runInFlight = runStatus?.phase === "running";
-  const lastAgentIdx = useMemo(() => {
-    for (let i = turns.length - 1; i >= 0; i--) if (turns[i].role === "agent") return i;
-    return -1;
-  }, [turns]);
-  const metaCtx = { turns, runStatus, runInFlight, lastAgentIdx, pendingReview };
+  const metaCtx = { turns: shownTurns, runStatus, runInFlight };
   // The reply being generated appears in `turns` only from its first delta;
   // until then (tool rounds, the blocking fallback) a standalone pending row
   // at the transcript tail carries the live indicator.
-  const streamingTurnVisible = runInFlight && turns[turns.length - 1]?.role === "agent";
+  const streamingTurnVisible = runInFlight && shownTurns[shownTurns.length - 1]?.role === "agent";
   // The conversation's tokens, More's Tokens used: persisted Actuals plus the
   // in-flight run's interim sums (dev/37: provider-reported only, never an
   // estimate), and how many replies reported theirs. None while history
@@ -384,19 +389,19 @@ export const AgentChatPanel: React.FC<{
     onStopTurn().catch(() => setStopAskedFor((asked) => (asked === runKey ? null : asked)));
   };
 
-  const suggested = useMemo(() => suggestedPromptsOf(turns), [turns]);
+  // The newest reply's suggestions, behind one button: the message box stays
+  // empty for the person's own words until they pick one.
+  const suggestions = useMemo(() => suggestionsOf(suggestedPromptsOf(shownTurns)), [shownTurns]);
+  const pickSuggestion = (prompt: string) => {
+    setInput(prompt);
+    lastPrefill.current = prompt;
+    composerRef.current?.focus();
+  };
 
-  // The primary prompt prefills the input, editable with send active — but a
-  // user-typed draft always wins over any prefill.
-  useEffect(() => {
-    const primary = suggested?.primary ?? "";
-    setInput((prev) => (prev === "" || prev === lastPrefill.current ? primary : prev));
-    lastPrefill.current = primary;
-  }, [suggested, attachment.attachmentId]);
-
-  // Candidate-selection composition (dev/50): the two-lane card composes the
-  // confirmation prompt through the same prefill rule — an explicit selection
-  // updates a prefill, never a draft the user actually typed.
+  // A planning template, and the selection of a candidates card with no pick
+  // of its own (dev/50), put their message in the box through the same rule:
+  // one replaces what the last of them put there, never a draft the user
+  // actually typed.
   const composePrompt = (prompt: string) => {
     setInput((prev) => (prev === "" || prev === lastPrefill.current ? prompt : prev));
     lastPrefill.current = prompt;
@@ -560,6 +565,8 @@ export const AgentChatPanel: React.FC<{
           targetTooltip={targetTooltipFor(attachment)}
           titleError={title.error}
           onRename={onSaveTitle ? title.start : undefined}
+          onEditIntent={onSaveIntent ? () => setEditingIntent(true) : undefined}
+          runDetails={{ shown: runDetails, onToggle: () => setRunDetails(!runDetails) }}
           onClear={onClearConversation ? () => setConfirmingClear(true) : undefined}
           tokens={chatTokens}
           onClose={onClose}
@@ -612,7 +619,6 @@ export const AgentChatPanel: React.FC<{
         ) : null}
 
         <div className={styles.messages} ref={messagesRef} tabIndex={-1}>
-          <IntentMessage intent={attachment.intent} onSaveIntent={onSaveIntent} />
           {historyError ? (
             <div className={`${styles.systemLine} ${styles.systemError}`}>
               {historyError}
@@ -625,27 +631,28 @@ export const AgentChatPanel: React.FC<{
           ) : null}
           {loadingHistory ? (
             <div className={styles.systemLine}>Loading conversation…</div>
-          ) : turns.length === 0 && !historyError ? (
+          ) : shownTurns.length === 0 && !historyError ? (
             orchestrates && onSolve && (attachment.builderSession?.phase ?? "idle") === "idle" ? (
               // The planning templates, while the conversation is empty and no
               // plan landed: Clear conversation leaves a landed plan, and its
-              // line, in place.
+              // line, in place. What a template does is its tooltip.
               <div className={styles.emptyChat}>
-                <p className={styles.emptyChatText}>
-                  Ask for a dataflow, or start from one of these:
-                  <span className={styles.emptyChatSub}>
-                    They fill the message box; nothing is sent until you press Send.
-                  </span>
-                </p>
+                <p className={styles.emptyChatText}>Ask for a dataflow, or start from one of these:</p>
                 <PlanningTemplates onComposePrompt={composePrompt} />
               </div>
             ) : (
               <div className={styles.systemLine}>Ask this agent something to get started.</div>
             )
           ) : (
-            turns.map((t, i) =>
+            shownTurns.map((t, i) =>
               t.role === "user" ? (
-                writtenBySomeoneElse(t.by, viewerAccount) ? (
+                askedLine(t) ? (
+                  // A task another agent asked of this one: one quiet line,
+                  // never a message of the person's.
+                  <div key={i} className={styles.askedLine} data-curio-asked="">
+                    {askedLine(t)}
+                  </div>
+                ) : writtenBySomeoneElse(t.by, viewerAccount) ? (
                   // A message someone else wrote names its writer above it.
                   <div key={i} className={styles.userTurn} data-curio-writer={t.by?.name}>
                     <div className={styles.msgWriter}>{t.by?.name}</div>
@@ -664,16 +671,16 @@ export const AgentChatPanel: React.FC<{
                   tint={tint}
                   meta={turnMetaFor(t, i, metaCtx)}
                   actions={turnActions}
-                  canvasUnchanged={canvasUnchangedFor(attachment, turns, i)}
+                  canvasUnchanged={canvasUnchangedFor(attachment, shownTurns, i)}
+                  runDetails={runDetails}
                 />
               ),
             )
           )}
-          {toolActivity.map((line, i) => (
-            <div key={`tool-${i}`} className={styles.systemLine}>
-              {line}
-            </div>
-          ))}
+          {/* What the running turn does now: its newest step alone. */}
+          {toolActivity.length > 0 ? (
+            <div className={styles.systemLine}>{toolActivity[toolActivity.length - 1]}</div>
+          ) : null}
           {runInFlight && !streamingTurnVisible && runStatus ? (
             <PendingReplyRow tint={tint} startedAt={runStatus.startedAt} />
           ) : null}
@@ -690,9 +697,7 @@ export const AgentChatPanel: React.FC<{
           </div>
         ) : null}
 
-        {suggested && suggested.alternatives.length > 0 ? (
-          <SuggestedPromptsRow alternatives={suggested.alternatives} onPick={setInput} />
-        ) : null}
+        <SuggestedPromptsRow suggestions={suggestions} onPick={pickSuggestion} />
 
         <Composer
           agentName={attachment.name}
@@ -721,6 +726,9 @@ export const AgentChatPanel: React.FC<{
           onCancel={packageReview.cancel}
           onConfirm={() => void packageReview.confirm()}
         />
+      ) : null}
+      {editingIntent && onSaveIntent ? (
+        <IntentDialog intent={attachment.intent} onSave={onSaveIntent} onClose={() => setEditingIntent(false)} />
       ) : null}
       {confirmingClear ? (
         <ClearConversationDialog

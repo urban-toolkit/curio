@@ -1,7 +1,8 @@
 /**
  * One Escape closes one layer of the agents' chat: the header's More menu, a
- * rail group's list of nodes, or a dialog the chat opened, never the chat
- * under it as well.
+ * rail group's list of nodes, the Suggestions menu, or a dialog the chat
+ * opened (Clear conversation, Edit initial intent), never the chat under it as
+ * well.
  *
  * Each of them listens for Escape on `document` or on `window`, as the chat
  * does, so one Escape reaches every listener in turn. In a browser React
@@ -113,7 +114,7 @@ const nodeBuilderOn = (attachmentId: string, targetId: string): AgentAttachment 
  *  rail entry and one group. */
 const ON_THE_DATAFLOW = [BUILDER, nodeBuilderOn("nb1", "load"), nodeBuilderOn("nb2", "heat"), nodeBuilderOn("nb3", "map")];
 
-function renderChat() {
+function renderChat(overrides: Partial<React.ComponentProps<typeof AgentChatPanel>> = {}) {
   const props: React.ComponentProps<typeof AgentChatPanel> = {
     attachment: BUILDER,
     turns: [],
@@ -123,6 +124,7 @@ function renderChat() {
     onClose: jest.fn(),
     onSaveTitle: jest.fn().mockResolvedValue(undefined),
     onClearConversation: jest.fn().mockResolvedValue(undefined),
+    ...overrides,
   };
   return { ...render(<AgentChatPanel {...props} />, { wrapper: MemoryRouter }), props };
 }
@@ -188,4 +190,45 @@ test("a dialog the chat opened takes Escape alone, though the chat listened agai
 
   escapeOn(window);
   expect(closeNow).toHaveBeenCalledTimes(1);
+});
+
+test("Escape closes the Suggestions menu, and the chat stays open", () => {
+  const { props } = renderChat({
+    turns: [
+      { role: "user", text: "Map the libraries." },
+      { role: "agent", text: "Planned.", content: [{ type: "suggestedPrompts", primary: "Solve the plan", alternatives: ["Show the plan"] }] },
+    ],
+  });
+  const button = screen.getByRole("button", { name: "2 suggestions" });
+  fireEvent.click(button);
+  const menu = screen.getByRole("menu", { name: "Suggested messages" });
+  expect(modalStackDepth()).toBe(1);
+
+  escapeOn(document.activeElement ?? menu);
+  expect(screen.queryByRole("menu", { name: "Suggested messages" })).toBeNull();
+  expect(props.onClose).not.toHaveBeenCalled();
+  expect(chat()).toBeInTheDocument();
+  expect(button).toHaveFocus();
+  expect(modalStackDepth()).toBe(0);
+
+  escapeOn(window);
+  expect(props.onClose).toHaveBeenCalledTimes(1);
+});
+
+test("Escape closes the Edit initial intent dialog alone, and the chat stays open", async () => {
+  const { props } = renderChat({ onSaveIntent: jest.fn().mockResolvedValue(undefined) });
+  fireEvent.click(screen.getByRole("button", { name: /^More/ }));
+  fireEvent.click(
+    within(screen.getByRole("menu", { name: "Chat menu" })).getByRole("menuitem", { name: /^Edit initial intent…/ }),
+  );
+  const dialog = await screen.findByRole("dialog", { name: "Initial intent" });
+
+  escapeOn(dialog);
+  expect(screen.queryByRole("dialog", { name: "Initial intent" })).toBeNull();
+  expect(props.onSaveIntent).not.toHaveBeenCalled();
+  expect(props.onClose).not.toHaveBeenCalled();
+  expect(chat()).toBeInTheDocument();
+
+  escapeOn(window);
+  expect(props.onClose).toHaveBeenCalledTimes(1);
 });
