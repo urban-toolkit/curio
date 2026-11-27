@@ -126,8 +126,8 @@ export function useAgentSolve(opts: {
       const nodeId = typeof payload.nodeId === "string" ? payload.nodeId : null;
       if (!nodeId) return;
       if (name === "node_download") {
-        // How far what the node reads has downloaded on its first use, under
-        // the pills while it does; nothing once that is over.
+        // How far what the node reads has downloaded on its first use, on its
+        // row of the plan's card while it does; nothing once that is over.
         const message = downloadLine(payload);
         setSolveNotices((prev) => {
           const forAttachment = prev[attachmentId] ?? {};

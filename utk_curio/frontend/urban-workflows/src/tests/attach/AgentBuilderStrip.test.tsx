@@ -693,7 +693,7 @@ describe("AgentBuilderStrip — dev/126 nodes awaiting a dataset selection", () 
 });
 
 
-describe("AgentBuilderStrip — dev/118 waves", () => {
+describe("AgentBuilderStrip: dev/118 waves", () => {
   it("names the wave with Show run details while solving, and counts what is built on the line", () => {
     const props = {
       attachment: attachment({ phase: "solving", nodeRuns: { a: "solved", b: "pending", c: "pending" } }),

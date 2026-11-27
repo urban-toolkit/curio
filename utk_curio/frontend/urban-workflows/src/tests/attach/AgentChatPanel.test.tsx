@@ -1760,7 +1760,7 @@ describe("AgentChatPanel delegation entries (memo dev/72)", () => {
     category: "node",
     attachmentId: "att-r",
     status: "ok" as const,
-    summary: "verified — 200",
+    summary: "verified: 200",
   };
 
   it("an agent turn's delegation part names the agent it asked, whose name opens its chat", () => {
@@ -1772,7 +1772,7 @@ describe("AgentChatPanel delegation entries (memo dev/72)", () => {
     });
     const name = screen.getByRole("button", { name: "Open Researcher's chat" });
     expect(name).toHaveTextContent("Researcher");
-    expect(screen.getByText("verified — 200")).toBeInTheDocument();
+    expect(screen.getByText("verified: 200")).toBeInTheDocument();
     // What ran the task is Show run details'.
     expect(screen.queryByText("research.verify")).toBeNull();
     fireEvent.click(name);

@@ -151,7 +151,7 @@
   color: var(--curio-danger-strong);
 }
 
-/* dev/67-5 — a landed plan's nodes, one row each, divided by hairlines. */
+/* dev/67-5: a landed plan's nodes, one row each, divided by hairlines. */
 .planNodes {
   list-style: none;
   margin: 4px 0 0;
