@@ -418,8 +418,9 @@ class TestExternalDiscovery:
             external=[
                 {"name": "NOAA Climate Data API", "sourceType": "api", "url": NOAA,
                  "provider": "NOAA", "format": "JSON", "fit": {"score": 94, "rationale": "direct"}},
+                # Rated over the fit floor, so it is offered and probed.
                 {"name": "Ghost portal", "sourceType": "portal", "url": GHOST,
-                 "fit": {"score": 40, "rationale": "guess"}},
+                 "fit": {"score": 60, "rationale": "guess"}},
             ],
             catalog=[
                 {"name": "Heat", "sourceType": "catalog", "datasetId": dataset_id, "installed": False},

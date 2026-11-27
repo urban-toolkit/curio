@@ -159,6 +159,11 @@ describe("AgentDatasetCandidatesCard — dev/67-4 verification verdicts", () => 
                 url: "https://data.example.gov/gone.json",
                 verification: { status: "unreachable", httpStatus: 404, detail: "the endpoint answered 404" },
               },
+              {
+                name: "Down API", sourceType: "endpoint",
+                url: "https://down.example.gov/data.json",
+                verification: { status: "unreachable", detail: "timed out" },
+              },
             ],
             catalog: [],
           },
@@ -168,6 +173,9 @@ describe("AgentDatasetCandidatesCard — dev/67-4 verification verdicts", () => 
     );
     expect(screen.getByText("Verified ✓")).toBeInTheDocument();
     expect(screen.getByText("Unverified: never checked")).toBeInTheDocument();
+    // An error answer says what it answered (step 5.4); Unreachable is for a
+    // link that gave no answer.
+    expect(screen.getByText("Answered 404 ✗")).toBeInTheDocument();
     expect(screen.getByText("Unreachable ✗")).toBeInTheDocument();
   });
 });
