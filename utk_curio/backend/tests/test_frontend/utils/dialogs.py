@@ -111,16 +111,18 @@ def open_plan_details(card: Locator, *, timeout: float = 20000) -> Locator:
     return details
 
 
-def show_run_details(panel: Locator, *, timeout: float = 20000) -> None:
-    """Turn on Show run details in *panel*'s More menu: each reply's skills,
-    time, tokens and tools, and the cards of its trace. The viewer's own
-    setting, kept in the browser for every chat; it is left on when it is."""
+def show_run_details(panel: Locator, on: bool = True, *, timeout: float = 20000) -> None:
+    """Turn Show run details on in *panel*'s More menu, or off with *on*
+    False: each reply's skills, time, tokens and tools, and the cards of its
+    trace. The viewer's own setting, kept in the browser for every chat, so a
+    test whose page later tests share turns it off again; a setting already
+    as asked is left as it is."""
     more = panel.get_by_role("button", name=re.compile(r"^More: "))
     more.click()
     item = panel.get_by_role("menuitemcheckbox", name=re.compile(r"^Show run details"))
     expect(item).to_be_visible(timeout=timeout)
-    if item.get_attribute("aria-checked") == "true":
-        # Already on: More closes its menu, and it stays on.
+    if (item.get_attribute("aria-checked") == "true") == on:
+        # Already as asked: More closes its menu, and it stays so.
         more.click()
     else:
         item.click()
