@@ -810,6 +810,111 @@ describe("what the canvas changes in place, with no new node", () => {
     });
 });
 
+/** Every update this tab's canvas writes into *held*'s doc from now on, each
+ *  as the readable runs of its bytes, so a failure says what was written. */
+function canvasWrites(held: DataflowDocProvider): () => string[] {
+    const written: string[] = [];
+    held.doc.on("update", (update: Uint8Array, origin: unknown) => {
+        if (origin !== CANVAS_ORIGIN) return;
+        const text = Array.from(update, (byte) => (byte >= 32 && byte < 127 ? String.fromCharCode(byte) : " ")).join("");
+        written.push(text.replace(/ +/g, " ").trim());
+    });
+    return () => written;
+}
+
+describe("what another writer brings, this tab takes and writes none of back", () => {
+    // Found by #1636's dev check (11-26): the open tab wrote the settings its
+    // canvas gives a node into each node a plan's step brought, between the
+    // plan's writes, and the plan's Undo was refused.
+    test("a node as a plan's step writes it, with none of the settings the canvas gives a node", async () => {
+        await open(serverDoc(spec().dataflow));
+        const written = canvasWrites(provider);
+        await fromAnotherTab((df) => {
+            df.nodes.push({ id: "k", type: TYPE, x: 50, y: 60, title: "Cities table",
+                goal: "Build a table of three cities", content: "", metadata: {} });
+        });
+        expect(canvasNode("k")).toBeDefined();
+        expect(written()).toEqual([]);
+        const noDefaults = () => {
+            const held = docNode("k");
+            for (const field of ["saveOutputDataset", "in", "out"]) expect(held).not.toHaveProperty(field);
+            expect(held.metadata?.keywords).toBeUndefined();
+        };
+        noDefaults();
+
+        // What this tab changes in the node after is written, and only that.
+        act(() => api.updateDataNode("k", { ...canvasNode("k").data, title: "Three cities" }));
+        await flush();
+        expect(docNode("k").title).toBe("Three cities");
+        noDefaults();
+    });
+
+    test("a node the doc holds that the file did not, which the canvas takes at the bind", async () => {
+        const live: any = spec().dataflow;
+        live.nodes.push({ id: "k", type: TYPE, x: 50, y: 60, title: "Cities table", content: "" });
+        const held = serverDoc(live);
+        const written = canvasWrites(held);
+        await open(held, spec());
+        expect(canvasNode("k")).toBeDefined();
+        expect(written()).toEqual([]);
+        expect(docNode("k")).not.toHaveProperty("saveOutputDataset");
+    });
+
+    test("a connection that names no handles, which the canvas draws on its default ones", async () => {
+        const dataflow = spec().dataflow;
+        dataflow.edges = [];
+        await open(serverDoc(dataflow), { dataflow } as any);
+        const written = canvasWrites(provider);
+        await fromAnotherTab((df) => {
+            df.edges.push({ id: "n-m", source: "n", target: "m" });
+        });
+        expect(api.edges.map((e: any) => [e.id, e.sourceHandle, e.targetHandle])).toEqual([["n-m", "out", "in"]]);
+        expect(written()).toEqual([]);
+        expect(docToDataflow(provider.doc).edges).toEqual([{ id: "n-m", source: "n", target: "m" }]);
+    });
+
+    test("a node's setting taken out of the doc, which the canvas then shows at its default", async () => {
+        await open(serverDoc(spec().dataflow));
+        const fallback = api.defaultSaveOutputDataset;
+        await fromAnotherTab((df) => {
+            df.nodes[0].saveOutputDataset = !fallback;
+        });
+        expect(canvasNode().data.saveOutputDataset).toBe(!fallback);
+        const written = canvasWrites(provider);
+        // As a version put back that never had it.
+        await fromAnotherTab((df) => {
+            delete df.nodes[0].saveOutputDataset;
+        });
+        expect(canvasNode().data.saveOutputDataset).toBe(fallback);
+        expect(written()).toEqual([]);
+        expect(docNode()).not.toHaveProperty("saveOutputDataset");
+    });
+
+    test("a widget with no default, which the canvas gives one", async () => {
+        await open(serverDoc(spec().dataflow));
+        const written = canvasWrites(provider);
+        await fromAnotherTab((df) => {
+            df.nodes[0].metadata = { ...(df.nodes[0].metadata ?? {}), widgets: [{ name: "rows", type: "number" }] };
+        });
+        expect(canvasNode().data.widgets).toHaveLength(1);
+        expect(canvasNode().data.widgets[0]).toHaveProperty("default");
+        expect(written()).toEqual([]);
+        expect(docNode().metadata.widgets[0]).not.toHaveProperty("default");
+    });
+
+    test("a goal taken out of the doc, as the Undo of a plan that set it can", async () => {
+        const goaled = { dataflow: { ...spec().dataflow, task: "Find the shade" } };
+        await open(serverDoc(goaled.dataflow), goaled);
+        const written = canvasWrites(provider);
+        await fromAnotherTab((df) => {
+            delete df.task;
+        });
+        expect(api.workflowGoal).toBe("");
+        expect(written()).toEqual([]);
+        expect(docToDataflow(provider.doc)).not.toHaveProperty("task");
+    });
+});
+
 describe("binding", () => {
     test("opening a dataflow writes nothing into its doc", async () => {
         const held = serverDoc(spec().dataflow);

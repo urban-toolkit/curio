@@ -17,7 +17,13 @@
  * changed since the last commit is written as one transaction
  * (`applyDataflow`): what the doc changed meanwhile stays where the change
  * leaves it alone, and nothing is written where the doc holds the value
- * already. The sections the server owns are never written from here:
+ * already. Nor is anything written back that the canvas took from the doc,
+ * whoever wrote it there: a node, a connection or a field the doc brings is
+ * the writer's base as the canvas built it, once the canvas shows it
+ * (`foldTaken`), with what the canvas made of it (a setting it gives every
+ * node, a connection's default handles, an empty goal for one the doc no
+ * longer holds), so the writer writes only what this tab changed. The
+ * sections the server owns are never written from here:
  * `packages`, `datasets`, and the `timestamp` and `provenance_id` a save
  * stamps. Nor is what a node's editor holds: its code reaches the doc from
  * the editor (`useYMonacoBinding`), and from here only as a writer sets it
@@ -35,8 +41,8 @@
  * new dataflow) goes into the doc, and from then on every change goes both
  * ways. No tab saves a dataflow it is bound to. Opening a dataflow writes nothing into the doc: what
  * a load itself makes of a node (a place out of another's way, a default
- * setting) stays on the canvas until that node changes. A tab that watches
- * never writes.
+ * setting) stays on the canvas, as what the canvas makes of anything the doc
+ * brings later does. A tab that watches never writes.
  *
  * **A node removed while this tab edits its code** is taken off with a
  * message naming who removed it and **Put it back**, which adds it again with
@@ -70,6 +76,7 @@ import {
     same,
     CONTENT,
     EDGE_ID,
+    MISSING,
     NODE_ID,
 } from "../collab/docMapping";
 import { isBound } from "../collab/boundTexts";
@@ -192,6 +199,20 @@ export function trillNodeOf(node: Node): Fields {
     return TrillGenerator.generateTrill([node], [], "").dataflow.nodes[0];
 }
 
+/** The Trill the writer takes of one canvas node: as a save writes it, its
+ *  code only as a writer set it (`defaultCode`: a load, a drop, an agent, a
+ *  rewrite). A node's code reaches the doc from its editor, typed in it or
+ *  written into it (y-monaco), or from such a writer. `data.code` is the
+ *  editor's own mirror of what it holds, which lags behind the doc and starts
+ *  as "" or "{}" while the editor mounts: it is never written from here. */
+function writerTrillOf(node: Node): Fields {
+    const trill = trillNodeOf(node);
+    const content = node.data?.defaultCode;
+    if (typeof content === "string" && content !== "") trill.content = content;
+    else delete trill.content;
+    return trill;
+}
+
 /** The Trill of the canvas's edges, as a save writes them. */
 export function trillEdgesOf(edges: Edge[]): Fields[] {
     return TrillGenerator.generateTrill([], edges, "").dataflow.edges;
@@ -226,6 +247,163 @@ function withoutDangling(base: Fields, doc: Y.Doc): Fields {
     const edges = (base.edges as Fields[]).filter((e) => !docEdges.has(e[EDGE_ID] as string)
         || (nodes.has(e.source as string) && nodes.has(e.target as string)));
     return edges.length === base.edges.length ? base : { ...base, edges };
+}
+
+/** What the canvas took of one node from the doc, as it built it, that the
+ *  writer's base does not hold yet (`foldTaken`): each Trill field and each
+ *  metadata setting it took, `MISSING` for one it leaves out. */
+interface TakenNode {
+    /** The canvas did not hold the node, or held it as another type: it takes
+     *  all of it, once it holds it as the doc's type. */
+    whole: boolean;
+    fields: Map<string, unknown>;
+    metadata: Map<string, unknown>;
+}
+
+/** What the canvas took from the doc, as it built it, until the writer's
+ *  base holds it: nodes and connections by id, and the dataflow's own
+ *  fields. */
+interface Taken {
+    nodes: Map<string, TakenNode>;
+    edges: Map<string, unknown>;
+    fields: Map<string, unknown>;
+}
+
+function nothingTaken(): Taken {
+    return { nodes: new Map(), edges: new Map(), fields: new Map() };
+}
+
+/** *source*'s *name*, `MISSING` when it holds none. */
+function valueAt(source: unknown, name: string): unknown {
+    return source && typeof source === "object" && !Array.isArray(source)
+        && Object.prototype.hasOwnProperty.call(source, name) && (source as Fields)[name] !== undefined
+        ? (source as Fields)[name]
+        : MISSING;
+}
+
+/** A node the canvas takes whole, as its Trill *trill* says. */
+function takenWhole(trill: Fields): TakenNode {
+    const fields = new Map<string, unknown>();
+    for (const [name, value] of Object.entries(trill)) {
+        if (name !== NODE_ID && name !== "metadata" && value !== undefined) fields.set(name, value);
+    }
+    const metadata = new Map<string, unknown>();
+    if (trill.metadata && typeof trill.metadata === "object") {
+        for (const [name, value] of Object.entries(trill.metadata as Fields)) {
+            if (value !== undefined) metadata.set(name, value);
+        }
+    }
+    return { whole: true, fields, metadata };
+}
+
+/** Note in *taken* what the canvas takes of the node *id* from the doc, as
+ *  it builds it (*built*, its Trill): each field and metadata setting the
+ *  doc changed (*changed*) whose canvas data the canvas sets (*sets*). A node
+ *  the canvas has not drawn yet it takes whole, as the doc now holds it. */
+function noteTakenNode(taken: Taken, id: string, built: Fields, changed: Set<string>,
+                       sets: (key: string) => boolean): void {
+    const held = taken.nodes.get(id);
+    if (held?.whole) {
+        taken.nodes.set(id, takenWhole(built));
+        return;
+    }
+    const took = held ?? { whole: false, fields: new Map<string, unknown>(), metadata: new Map<string, unknown>() };
+    for (const name of changed) {
+        const setting = Object.prototype.hasOwnProperty.call(METADATA_FIELD_DATA, name);
+        const keys = setting ? METADATA_FIELD_DATA[name]
+            : Object.prototype.hasOwnProperty.call(NODE_FIELD_DATA, name) ? NODE_FIELD_DATA[name] : undefined;
+        if (!keys || !keys.some(sets)) continue;
+        if (setting) took.metadata.set(name, valueAt(built.metadata, name));
+        else took.fields.set(name, valueAt(built, name));
+    }
+    if (took.fields.size || took.metadata.size) taken.nodes.set(id, took);
+}
+
+/** Each value in *taken* that *shown*, what the canvas shows now, holds as
+ *  the canvas built it goes into *into*, the writer's base, and is taken no
+ *  more. One the canvas shows otherwise while *was*, the base before, holds
+ *  another is the canvas's own change, which the writer writes: it is taken
+ *  no more either. One the canvas shows as *was* still is not on the canvas
+ *  yet, and waits. */
+function foldValues(taken: Map<string, unknown>, into: Fields, shown: unknown, was: unknown): void {
+    for (const [name, built] of Array.from(taken)) {
+        const now = valueAt(shown, name);
+        if (same(now, built)) {
+            if (built === MISSING) delete into[name];
+            else into[name] = built;
+            taken.delete(name);
+        } else if (!same(now, valueAt(was, name))) {
+            taken.delete(name);
+        }
+    }
+}
+
+/** The writer's *base* holding what the canvas took from the doc (*taken*)
+ *  and shows in *target*, the canvas as the writer takes it now, each as the
+ *  canvas built it: what the doc brought, and what the canvas made of it (a
+ *  setting it gives every node, a connection's default handles, an empty
+ *  goal for one the doc no longer holds), so the writer writes none of it
+ *  back, whoever wrote it. A node, or a connection, the base did not hold
+ *  enters it in the canvas's order once the canvas holds it, a node as the
+ *  doc's type. */
+function foldTaken(base: Fields, target: Fields, taken: Taken): Fields {
+    if (!taken.nodes.size && !taken.edges.size && !taken.fields.size) return base;
+    const out: Fields = { ...base };
+    if (taken.nodes.size && Array.isArray(base.nodes) && Array.isArray(target.nodes)) {
+        const shownNodes = new Map((target.nodes as Fields[]).map((node) => [node[NODE_ID] as string, node]));
+        const nodes = [...(base.nodes as Fields[])];
+        const at = new Map(nodes.map((node, index) => [node[NODE_ID] as string, index]));
+        const arrived = new Map<string, Fields>();
+        for (const [id, took] of Array.from(taken.nodes)) {
+            const shown = shownNodes.get(id);
+            if (!shown) {
+                // A node that left the canvas takes nothing more; one not drawn yet waits.
+                if (!took.whole) taken.nodes.delete(id);
+                continue;
+            }
+            if (took.whole && !same(valueAt(shown, "type"), took.fields.get("type") ?? MISSING)) continue;
+            const was = took.whole ? undefined : nodes[at.get(id) ?? -1];
+            const next: Fields = was ? { ...was } : { [NODE_ID]: id };
+            foldValues(took.fields, next, shown, was);
+            if (took.metadata.size) {
+                const settings: Fields = { ...((next.metadata as Fields | undefined) ?? {}) };
+                foldValues(took.metadata, settings, shown.metadata, was?.metadata);
+                next.metadata = settings;
+            }
+            took.whole = false;
+            if (!took.fields.size && !took.metadata.size) taken.nodes.delete(id);
+            if (at.has(id)) nodes[at.get(id)!] = next;
+            else arrived.set(id, next);
+        }
+        for (const node of target.nodes as Fields[]) {
+            const next = arrived.get(node[NODE_ID] as string);
+            if (next) nodes.push(next);
+        }
+        out.nodes = nodes;
+    }
+    if (taken.edges.size && Array.isArray(base.edges) && Array.isArray(target.edges)) {
+        const shownEdges = new Map((target.edges as Fields[]).map((edge) => [edge[EDGE_ID] as string, edge]));
+        const edges = [...(base.edges as Fields[])];
+        const at = new Map(edges.map((edge, index) => [edge[EDGE_ID] as string, index]));
+        const arrived = new Map<string, Fields>();
+        for (const [id, built] of Array.from(taken.edges)) {
+            const shown = shownEdges.get(id) ?? MISSING;
+            if (same(shown, built)) {
+                taken.edges.delete(id);
+                if (at.has(id)) edges[at.get(id)!] = built as Fields;
+                else arrived.set(id, built as Fields);
+            } else if (!same(shown, at.has(id) ? edges[at.get(id)!] : MISSING)) {
+                taken.edges.delete(id);
+            }
+        }
+        for (const edge of target.edges as Fields[]) {
+            const next = arrived.get(edge[EDGE_ID] as string);
+            if (next) edges.push(next);
+        }
+        out.edges = edges;
+    }
+    foldValues(taken.fields, out, target, base);
+    return out;
 }
 
 /** Whether *a* and *b* join the same two handles, which React Flow's
@@ -371,6 +549,9 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
     const notHeldRef = useRef<{ epoch: number; ids: Set<string> }>({ epoch: -1, ids: new Set() });
     /** Each canvas node's last Trill, and what it was taken from. */
     const cacheRef = useRef(new Map<string, CachedTrill>());
+    /** What the canvas took from the doc, as it built it, that the writer's
+     *  base does not hold yet (`foldTaken`). */
+    const takenRef = useRef<Taken>(nothingTaken());
     /** The dataflow's history while the canvas is bound to this load's doc. */
     const historyRef = useRef<ServerHistory | null>(null);
     /** The bridge's `whenKept`, as of this render. */
@@ -397,6 +578,28 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
         position: () => ({ x: 0, y: 0 }),
     });
 
+    /** The dataflow's own fields as the canvas holds them, each scenario in
+     *  its set against the nodes *nodeIds* and the connections *edges*. */
+    const canvasFields = useCallback((nodeIds: string[], edges: any[]): Fields => {
+        const current = latest.current;
+        const dataflow: Fields = {
+            name: current.workflowNameRef.current,
+            task: current.workflowGoalRef.current ?? "",
+        };
+        if (current.workflowDescriptionRef.current) dataflow.description = current.workflowDescriptionRef.current;
+        dataflow.categories = current.workflowCategoriesRef.current;
+        dataflow.autoRun = current.autoRunRef.current;
+        // Each scenario in its set, with its context and outcomes, as the
+        // server keeps them (`projects/scenario_sets.py`).
+        const filled = normalizeScenarioSets(
+            normalizeScenarios(current.scenariosRef.current, nodeIds), current.scenarioSetsRef.current,
+            nodeIds, edges, dataflow.name,
+        );
+        dataflow.scenarios = filled.scenarios;
+        dataflow.scenarioSets = filled.sets;
+        return dataflow;
+    }, []);
+
     /** The canvas as a save writes it, the sections the server owns left out. */
     const canvasTrill = useCallback((): Fields => {
         const current = latest.current;
@@ -411,50 +614,27 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
                 trillNodes.push(cached.trill);
                 continue;
             }
-            const trill = trillNodeOf(node);
-            // A node's code reaches the doc from its editor, typed in it or
-            // written into it (y-monaco), or from a writer that sets the
-            // node's code (`defaultCode`: a load, a drop, an agent, a rewrite).
-            // `data.code` is the editor's own mirror of what it holds, which
-            // lags behind the doc and starts as "" or "{}" while the editor
-            // mounts: it is never written from here.
-            const content = node.data?.defaultCode;
-            if (typeof content === "string" && content !== "") trill.content = content;
-            else delete trill.content;
+            const trill = writerTrillOf(node);
             cache.set(node.id, { node, ...nodeDataKeys(node), trill });
             trillNodes.push(trill);
         }
         for (const id of Array.from(cache.keys())) if (!seen.has(id)) cache.delete(id);
-        const dataflow: Fields = {
-            nodes: trillNodes,
-            edges: trillEdgesOf(current.edges),
-            name: current.workflowNameRef.current,
-            task: current.workflowGoalRef.current ?? "",
-        };
-        if (current.workflowDescriptionRef.current) dataflow.description = current.workflowDescriptionRef.current;
-        dataflow.categories = current.workflowCategoriesRef.current;
-        dataflow.autoRun = current.autoRunRef.current;
-        // Each scenario in its set, with its context and outcomes, as the
-        // server keeps them (`projects/scenario_sets.py`).
-        const nodeIds = trillNodes.map((n) => n.id as string);
-        const filled = normalizeScenarioSets(
-            normalizeScenarios(current.scenariosRef.current, nodeIds), current.scenarioSetsRef.current,
-            nodeIds, dataflow.edges, dataflow.name,
-        );
-        dataflow.scenarios = filled.scenarios;
-        dataflow.scenarioSets = filled.sets;
-        return dataflow;
-    }, []);
+        const edges = trillEdgesOf(current.edges);
+        return { nodes: trillNodes, edges, ...canvasFields(trillNodes.map((n) => n.id as string), edges) };
+    }, [canvasFields]);
 
-    /** Write what the canvas changed since the writer last ran into the doc. */
+    /** Write what the canvas changed since the writer last ran into the doc:
+     *  what it took from the doc meanwhile, as it built it, is the base's
+     *  first (`foldTaken`), so only what this tab changed is written. */
     const write = useCallback(() => {
         const bound = boundRef.current;
         if (!bound || !latest.current.canWrite) return;
         if (latest.current.loadedDataflowRef?.current?.epoch !== bound.epoch) return;
         const target = canvasTrill();
-        const base = writerBaseRef.current;
+        const last = writerBaseRef.current;
         writerBaseRef.current = target;
-        if (!base) return;
+        if (!last) return;
+        const base = foldTaken(last, target, takenRef.current);
         const kept = new Set((target.nodes as Fields[]).map((n) => n.id as string));
         // Only this tab's own removals are noted: a node the doc no longer
         // holds went with someone else's change, which this canvas only took.
@@ -549,6 +729,9 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
         const doc = held?.doc;
         const awareness = held?.awareness;
         const notHeld = notHeldRef.current.ids;
+        // What the canvas takes here, as it builds it, which the writer's base
+        // takes once the canvas shows it (`foldTaken`).
+        const fromDoc = takenRef.current;
         const nodeIds = touched?.nodes ?? new Set([...prev.nodes.keys(), ...next.nodes.keys()]);
         const edgeIds = touched?.edges ?? new Set([...prev.edges.keys(), ...next.edges.keys()]);
         const fieldNames = touched?.fields ?? new Set([...Object.keys(prev.fields), ...Object.keys(next.fields)]);
@@ -573,6 +756,7 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
                 offCanvas.add(id);
                 if (!notHeld.has(id)) goneEdges.push(canvasEdgeFromTrill(was));
                 notHeld.delete(id);
+                fromDoc.edges.delete(id);
             }
             if (now) newEdges.push(now);
         }
@@ -586,6 +770,7 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
             if (!now) {
                 if (!was) continue;
                 removedNodes.push(id);
+                fromDoc.nodes.delete(id);
                 // Only a drawn node has an editor: the warning, and Put it
                 // back, take it and its connections as this tab shows them.
                 const onCanvas = current.nodes.find((n) => n.id === id);
@@ -597,7 +782,9 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
             }
             if (!was || was.type !== now.type) {
                 if (was) removedNodes.push(id);
-                addedNodes.push(buildCodeNode(now.type, nodeMetaFromTrill(now, () => ({ x: 0, y: 0 })), runtime()));
+                const added = buildCodeNode(now.type, nodeMetaFromTrill(now, () => ({ x: 0, y: 0 })), runtime());
+                addedNodes.push(added);
+                fromDoc.nodes.set(id, takenWhole(writerTrillOf(added)));
                 continue;
             }
             if (same(was, now)) continue;
@@ -616,6 +803,9 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
                 else if ((key === "code" || key === "defaultCode") && editorHasIt) continue;
                 else data[key] = (built.data as Fields)[key];
             }
+            // What the canvas takes of the doc's change, as it builds it.
+            const placed = position !== undefined;
+            noteTakenNode(fromDoc, id, writerTrillOf(built), trill, (key) => key in data || (key === "position" && placed));
             // A place the notebook view takes for its canvas spot: the node
             // stays in its cell, and a new node object has the view stamp it.
             let restamp = false;
@@ -665,6 +855,7 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
                 offCanvas.add(id);
                 if (!notHeld.has(id)) goneEdges.push(canvasEdgeFromTrill(edge));
                 notHeld.add(id);
+                fromDoc.edges.delete(id);
             }
         }
         // The connections the canvas holds once this change lands, its new ones aside.
@@ -714,13 +905,22 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
                     if (taken && !twin) {
                         connected.push(canvasEdge);
                         notHeld.delete(canvasEdge.id);
+                        fromDoc.edges.set(canvasEdge.id, trillEdgesOf([canvasEdge])[0]);
                     } else {
                         notHeld.add(canvasEdge.id);
                     }
                 }
             });
         }
-    }, [removedWhileEditing, setNodes, setEdges]);
+        // The dataflow's own fields as the canvas holds them now, its
+        // scenarios set against the nodes and connections it holds once this
+        // change lands.
+        if (Object.keys(fields).length > 0) {
+            const drawn = Array.from(next.edges.values()).filter((edge) => !notHeld.has(edge[EDGE_ID] as string));
+            const own = canvasFields(Array.from(next.nodes.keys()), drawn);
+            for (const name of Object.keys(fields)) fromDoc.fields.set(name, valueAt(own, name));
+        }
+    }, [removedWhileEditing, setNodes, setEdges, canvasFields]);
 
     // ------------------------------------------------------------------
     // Binding
@@ -867,6 +1067,7 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
         historyRef.current = null;
         docStateRef.current = null;
         writerBaseRef.current = null;
+        takenRef.current = nothingTaken();
         cacheRef.current.clear();
         remoteDragRef.current.clear();
         droppedRef.current.forEach((timer) => clearTimeout(timer));
