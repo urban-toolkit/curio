@@ -83,7 +83,9 @@ class TestValidateCandidate:
         )
         assert result["verdict"] == "fail"
         assert result["evidence"]["kind"] == "type-mismatch"
-        assert "'Chart it'" in result["evidence"]["detail"]
+        # The consumer, with no title, is named as its header names it: its
+        # type in words, as the given templates carry no label.
+        assert "'Vis Vega'" in result["evidence"]["detail"]
         # Fail-open: no arity metadata → no mismatch claims.
         result = validation.validate_candidate(
             KEY, PID, spec, "t", "x()", exec_fn=_exec({}), available_templates=None,
@@ -111,7 +113,7 @@ class TestValidateCandidate:
         assert result["evidence"]["kind"] == "type-mismatch"
         detail = result["evidence"]["detail"]
         assert "returned no output (None)" in detail
-        assert "'Neighborhood Pool'" in detail
+        assert "'Data Pool'" in detail
         assert "DATAFRAME, GEODATAFRAME" in detail
         # The honest alternative is named, because it exists (dev/115).
         assert "say so in one line instead of returning code" in detail

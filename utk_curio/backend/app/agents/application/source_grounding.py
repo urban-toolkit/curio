@@ -1577,7 +1577,7 @@ def _judge_refs(
                     "kind": "catalog",
                     "value": f'{ref.call}("{ref.literal}")',
                     "datasetId": catalog.dataset_id,
-                    "title": labels.on_a_word(catalog.title, _TITLE_MAX_CHARS),
+                    "title": labels.fit(catalog.title, _TITLE_MAX_CHARS),
                     "format": catalog.format,
                 })
             continue
@@ -1595,7 +1595,7 @@ def _judge_refs(
                     "kind": "catalog",
                     "value": ref.literal[:_VALUE_MAX_CHARS],
                     "datasetId": catalog.dataset_id,
-                    "title": labels.on_a_word(catalog.title, _TITLE_MAX_CHARS),
+                    "title": labels.fit(catalog.title, _TITLE_MAX_CHARS),
                     "format": catalog.format,
                 })
             elif _user_match(ref.literal, ctx):
@@ -1921,7 +1921,7 @@ def source_payload(refs: list[dict]) -> dict:
         named.append(f"…and {len(refs) - 2} more")
     return {
         "kind": kind,
-        "label": labels.on_a_word(" · ".join(named), _LABEL_MAX_CHARS),
+        "label": labels.fit(" · ".join(named), _LABEL_MAX_CHARS),
         "refs": refs[:MAX_REFS],
     }
 

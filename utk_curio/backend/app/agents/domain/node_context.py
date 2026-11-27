@@ -188,7 +188,7 @@ def compose_node_context(
             # "name": ""}`` — an absence that was a bug, not honesty.
             row = {
                 "id": entry.get("id") or entry.get("datasetId"),
-                "name": labels.on_a_word(
+                "name": labels.fit(
                     entry.get("name") or entry.get("title") or entry.get("dirName") or "", _GOAL_MAX_CHARS,
                 ),
             }

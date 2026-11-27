@@ -655,7 +655,7 @@ class TestAnInputContractNamesItsSlots:
     two of one name apart."""
 
     def test_each_slot_by_its_name_and_two_alike_by_a_short_id(self):
-        from utk_curio.backend.app.agents.domain import input_contract, labels
+        from utk_curio.backend.app.agents.domain import input_contract
 
         spec = {"dataflow": {
             "nodes": [
@@ -680,10 +680,14 @@ class TestAnInputContractNamesItsSlots:
         refusal = input_contract.refusal_text(shape, {"name": "input_0", "attribute": "crs", "line": 2})
         assert all(f"[!! input_{i} !!] = {name}" in refusal for i, name in enumerate(names)), refusal
         # Each slot keeps its node's goal for a model to read: whole when it
-        # fits, else cut on a word.
-        assert [slot["goal"] for slot in shape["slots"]] == [
-            labels.on_a_word(LONG_GOAL, 120), labels.on_a_word(LONG_GOAL, 120), "the heat again",
-        ]
+        # fits, else cut on a word within its bound of 120.
+        goals = [slot["goal"] for slot in shape["slots"]]
+        assert goals[2] == "the heat again"
+        whole = " ".join(LONG_GOAL.split())
+        for goal in goals[:2]:
+            body = goal[:-1]
+            assert goal.endswith("…") and len(goal) <= 120 and whole.startswith(body), goal
+            assert not whole[len(body)].isalnum(), f"{goal!r} halves a word"
 
 
 class TestWhereANotEnlistedPackagesDirNameIs:

@@ -72,7 +72,7 @@ def _body_evidence(body: str, content_type: str) -> dict:
     if "html" in lowered or body.lstrip()[:1] == "<":
         match = _TITLE_RE.search(body)
         title = " ".join(_TAG_RE.sub(" ", match.group(1)).split()) if match else ""
-        return {"pageTitle": labels.on_a_word(title, _PAGE_TITLE_MAX)} if title else {}
+        return {"pageTitle": labels.fit(title, _PAGE_TITLE_MAX)} if title else {}
     sample = " ".join(_TAG_RE.sub(" ", body[: _BODY_SAMPLE_MAX * 4]).split())
     return {"bodySample": sample[:_BODY_SAMPLE_MAX]} if sample else {}
 

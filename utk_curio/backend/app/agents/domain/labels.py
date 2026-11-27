@@ -60,10 +60,15 @@ def on_a_word(text: object, limit: int) -> str:
 
 def fit(text: object, limit: int) -> str:
     """*text* as it is when it is at most *limit* characters; else cut on a
-    word (:func:`on_a_word`). For a bound on a whole text, such as a goal,
-    whose line breaks a reader keeps when it fits."""
+    word with its ellipsis within *limit* (:func:`on_a_word`). For a bound
+    that must hold, such as a goal a listing carries or a title a node keeps,
+    whose line breaks a reader keeps when it fits: a first word longer than
+    the bound is the one word cut, so the bound holds."""
     text = str(text or "")
-    return text if len(text) <= limit else on_a_word(text, limit)
+    if len(text) <= limit:
+        return text
+    cut = on_a_word(text, limit - 1)
+    return cut if len(cut) <= limit else " ".join(text.split())[:limit - 1] + ELLIPSIS
 
 
 def node_label(node: Mapping | None, *, templates: Mapping[str, str]) -> str:

@@ -963,7 +963,7 @@ def _mint_node_create(
     # live test's notes were all headed "Note".
     title = params.get("title")
     title = (
-        labels.on_a_word(title, agents_delegates.NODE_TITLE_MAX_CHARS)
+        labels.fit(title.strip(), agents_delegates.NODE_TITLE_MAX_CHARS)
         if isinstance(title, str) and title.strip() else None
     )
     # dev/89 (additive): optional appearance, normalized by the ONE shared
