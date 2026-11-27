@@ -1565,12 +1565,7 @@ def _discovery_search_rows(params: dict, *, user=None) -> tuple[list[dict], list
         payload = service.search_all(
             q=query, fmt=fmt, limit=_DISCOVERY_MAX_ROWS, include_storage=False
         )
-    # Each source by the id the roster keys it by, from its manifest's id.
-    roster_ids = {
-        source.get("sourceId"): source.get("dirName")
-        for source in service.list_catalog().get("sources") or []
-        if source.get("sourceId") and source.get("dirName")
-    }
+    roster_ids = _roster_ids(service)
     rows = []
     for row in (payload.get("resources") or [])[:_DISCOVERY_MAX_ROWS]:
         rows.append(
@@ -1593,6 +1588,20 @@ def _discovery_search_rows(params: dict, *, user=None) -> tuple[list[dict], list
         for leg in (payload.get("sources") or [])
         if leg.get("status") != "ok"
     ]
+
+
+def _roster_ids(service) -> dict:
+    """Each source's id with its major (``dirName``), the one the roster keys
+    it by, by its manifest's id; empty when the roster cannot be read, so a
+    search's rows keep the ids it gave them."""
+    try:
+        sources = service.list_catalog().get("sources") or []
+    except Exception:  # noqa: BLE001 - the rows go out as the search named them
+        return {}
+    return {
+        source.get("sourceId"): source.get("dirName")
+        for source in sources if source.get("sourceId") and source.get("dirName")
+    }
 
 
 def discovery_sources_contacted(params: dict) -> int:
