@@ -359,7 +359,8 @@ def test_a_node_removed_while_the_plan_lands_stops_it_and_its_card_says_what_was
     assert removed == [0], "alice did not remove Sum while the plan landed"
     card = _the_card(body)
     assert card["status"] == "applied", card
-    assert "Left undone: 2 connections, since 'Sum them' was removed" in card["lines"], card["lines"]
+    # Sum is named as its header on the canvas names it: its title.
+    assert "Left undone: 2 connections, since 'Sum' was removed" in card["lines"], card["lines"]
     assert card["lines"][-1].startswith("Topology"), card["lines"]
     flow = _saved(client, token, project)
     assert set(_plan_nodes(flow)) == {"Fetch", "Clean"} and "sum" not in _by_id(flow), flow["nodes"]

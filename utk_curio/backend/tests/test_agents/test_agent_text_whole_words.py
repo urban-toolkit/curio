@@ -293,6 +293,36 @@ class TestAPlannedNodesGoal:
         # The plan's card says its node the same way, with no dash.
         assert card["preview"].splitlines()[0] == f"{TITLE} · {PY} · {INTENT}"
 
+    def test_after_a_title_that_holds_a_colon_is_a_semicolon(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """A title with a colon of its own, as the Crown Heights plot's, gave
+        its goal two colons. A semicolon joins such a title to its intent,
+        which reads on as a clause: its first word in lower case, and a word
+        with more capitals, such as NYC, as it is. Any other title keeps the
+        colon, and its intent its case."""
+        from utk_curio.backend.tests.test_agents import test_routes_proposals as routes
+
+        user, token = user_and_token
+        plot, load, count = "Plot: shadow on Block 1259 through the day", "Load: buildings", "Count trees"
+        rows = [
+            {"ref": "plot", "nodeType": PY, "title": plot, "intent": "Plot the share of Block 1259 in shadow by the hour"},
+            {"ref": "load", "nodeType": PY, "title": load, "intent": "NYC's footprints around the block"},
+            {"ref": "count", "nodeType": PY, "title": count, "intent": "Count the trees on each block"},
+        ]
+        helper = routes.TestDataflowPlanMint()
+        tail = helper._plan_tail(nodes=rows, edges=[])
+        att_id, _ = helper._setup(client, user, token, alice_project, monkeypatch, replies=["Here is the plan.\n" + tail])
+        card = routes._landed_plan(helper._run(client, token, alice_project, att_id).get_json())
+        goals = {
+            plot: f"{plot}; plot the share of Block 1259 in shadow by the hour",
+            load: f"{load}; NYC's footprints around the block",
+            count: f"{count}: Count the trees on each block",
+        }
+        assert {node["title"]: node["goal"] for node in card["canvas"]["nodes"]} == goals
+        saved = routes.TestNodeCreate()._spec_nodes(user, alice_project)
+        assert {node["title"]: node["goal"] for node in saved if node.get("title") in goals} == goals
+
 
 class TestATurnNamesTheNodeWhole:
     """Each turn that names a node names it as its header on the canvas does."""
