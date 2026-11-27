@@ -153,10 +153,8 @@ FIRST_TITLE = "Crown Heights shade study"
 TOWER_TITLE = "The proposed tower"
 PLOT_AND_MAP_TITLE = "The day's plot and the added shade"
 
-#: A by-intent key is this long a part of the intent it answers, from its
-#: second letter: enough to tell the example's nodes apart, short of any
-#: trimming of the intent. A plan writes the first letter in lower case after
-#: a title that holds a colon.
+#: A by-intent key is this long a start of the intent it answers: enough to
+#: tell the example's nodes apart, short of any trimming of the intent.
 _INTENT_KEY_CHARS = 48
 
 
@@ -261,7 +259,7 @@ def _intent(node: dict) -> str:
 
 
 def _intent_key(intent: str) -> str:
-    return intent[1:1 + _INTENT_KEY_CHARS]
+    return intent[:_INTENT_KEY_CHARS]
 
 
 def _plan(spec: dict, refs: dict[str, str], goal: str, extra: tuple = ()) -> dict:

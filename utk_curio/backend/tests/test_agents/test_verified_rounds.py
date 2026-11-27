@@ -2543,23 +2543,26 @@ class TestASolveNamesTheNodeAsItsCanvasDoes:
         text = self._verified_turn(client, user, token, monkeypatch, goal=self.GOAL, title="Load pedestrians")
         assert text.startswith("Verified 'Load pedestrians': its current code ran successfully"), text
 
-    def test_a_node_with_no_title_is_named_by_its_goal_cut_on_a_word(
+    def test_a_node_with_no_title_is_named_by_its_templates_label(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
+        # As its header on the canvas names it, never by its goal.
         user, token = user_and_token
         text = self._verified_turn(client, user, token, monkeypatch, goal=self.GOAL)
-        assert text.startswith(f"Verified {self.GOAL_NAME!r}: its current code ran successfully"), text
+        assert text.startswith("Verified 'Data Loading': its current code ran successfully"), text
 
     def test_the_name_never_cuts_a_word(self):
         from utk_curio.backend.app.agents.application.solve import node_solve
 
-        assert node_solve.solve_label({"id": "n1", "title": " Load pedestrians ", "goal": self.GOAL}) == (
-            "Load pedestrians"
-        )
-        assert node_solve.solve_label({"id": "n1", "goal": self.GOAL}) == self.GOAL_NAME
-        assert node_solve.solve_label({"id": "n1", "goal": "load the heat data"}) == "load the heat data"
+        def name(node):
+            return node_solve.solve_label(node, templates={})
+
+        assert name({"id": "n1", "title": " Load pedestrians ", "goal": self.GOAL}) == "Load pedestrians"
+        # A node with no title or type, its goal cut on a word.
+        assert name({"id": "n1", "goal": self.GOAL}) == self.GOAL_NAME
+        assert name({"id": "n1", "goal": "load the heat data"}) == "load the heat data"
         # A first word longer than the bound stands whole.
         word = "x" * 70
-        assert node_solve.solve_label({"id": "n1", "goal": f"{word} and more"}) == f"{word}…"
-        assert node_solve.solve_label({"id": "n1", "goal": word}) == word
-        assert node_solve.solve_label({"id": "n1"}) == "n1"
+        assert name({"id": "n1", "goal": f"{word} and more"}) == f"{word}…"
+        assert name({"id": "n1", "goal": word}) == word
+        assert name({"id": "n1"}) == "n1"

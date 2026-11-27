@@ -14,13 +14,18 @@ Step 5.1 of the owner's agent chat plan. Earlier steps found these on main:
   validated, where nothing failed.
 
 A node is named as its header on the canvas names it: by its title, whole;
-with no title, by its goal cut on a word with an ellipsis; with no goal, by
-its id.
+with no title, by its template's label (its type in words when the catalog
+has none); with no type, by its goal cut on a word with an ellipsis; with no
+goal, by its id. Where several nodes are named at once, a node in a scenario
+says its scenario, as the plan's card does, and names that still read alike
+end with a short id.
 
 The guards read the agents package's Python as the prose guard does: every
 string but a docstring, a string statement and a log line's text, which is
-for whoever runs Curio. New names are read inside each test, so this module
-imports on a checkout without them and each test fails on its own.
+for whoever runs Curio. The dash and "(s)" guards read the folders of
+:data:`ALSO_SCANNED` too, whose texts reach the agents' cards and models. New
+names are read inside each test, so this module imports on a checkout without
+them and each test fails on its own.
 """
 
 from __future__ import annotations
@@ -34,7 +39,8 @@ from types import SimpleNamespace
 from utk_curio.backend.tests._support.agent_routes import _auth
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-PACKAGE = REPO_ROOT / "utk_curio" / "backend" / "app" / "agents"
+APP = REPO_ROOT / "utk_curio" / "backend" / "app"
+PACKAGE = APP / "agents"
 #: The en dash (U+2013) and the em dash (U+2014).
 DASHES = re.compile("[" + chr(0x2013) + chr(0x2014) + "]")
 #: A count written for one and for many at once; "http(s)" names two schemes.
@@ -52,6 +58,14 @@ LEFT_FOLDERS = {
     "evaluation/": (
         "the offline reconstruction evaluation: its reports and the intents its oracle scripts are "
         "tooling for whoever runs an evaluation, not what Curio's agents show or are told"
+    ),
+}
+#: Folders of the app beside the agents package whose strings the dash and
+#: "(s)" guards read too, and why.
+ALSO_SCANNED = {
+    "execution/": (
+        "the runner's and the runtime journal's texts: a validation's evidence, a Solve's turns and cards, "
+        "and a node's context carry them to people and to models"
     ),
 }
 #: Slices that bound a text rather than name a node: (file in the package, the
@@ -157,17 +171,33 @@ class _Shown(ast.NodeVisitor):
                 self.visit(part.value)
 
 
+def _strings_of(path: Path, relative: str) -> list[tuple[str, str, int, str]]:
+    """Every string the module at *path* shows or says: (file, def, line, text)."""
+    shown = _Shown()
+    shown.visit(ast.parse(path.read_text(encoding="utf-8")))
+    return [(relative, where, line, text) for where, line, text in shown.found]
+
+
 def _shown_strings() -> list[tuple[str, str, int, str]]:
-    """Every string the agents package shows or says: (file, def, line, text)."""
+    """Every string the agents package, and each folder of
+    :data:`ALSO_SCANNED`, shows or says: (file, def, line, text)."""
     found = []
     for path in sorted(PACKAGE.rglob("*.py")):
         relative = _relative(path)
-        if _left_out(relative):
-            continue
-        shown = _Shown()
-        shown.visit(ast.parse(path.read_text(encoding="utf-8")))
-        found += [(relative, where, line, text) for where, line, text in shown.found]
+        if not _left_out(relative):
+            found += _strings_of(path, relative)
+    for folder in ALSO_SCANNED:
+        for path in sorted((APP / folder).rglob("*.py")):
+            found += _strings_of(path, path.relative_to(APP).as_posix())
     return found
+
+
+def _a_bound(upper: ast.AST | None) -> bool:
+    """Whether *upper*, the end of a slice, bounds a text: a number, or a
+    bound held in a name or an attribute (a constant or a parameter)."""
+    if isinstance(upper, ast.Constant):
+        return isinstance(upper.value, int)
+    return isinstance(upper, (ast.Name, ast.Attribute))
 
 
 def _offenders(pattern: re.Pattern) -> list[str]:
@@ -211,14 +241,17 @@ class TestTheTextTheAgentsShow:
                     wrong.append(f"{page.relative_to(REPO_ROOT).as_posix()}:{number}: {line.strip()[:120]}")
         assert not wrong, "\n".join(wrong)
 
-    def test_each_folder_left_out_is_there_and_says_why(self):
+    def test_each_folder_left_out_or_read_too_is_there_and_says_why(self):
         for folder, why in LEFT_FOLDERS.items():
             assert (PACKAGE / folder).is_dir() and why, folder
+        for folder, why in ALSO_SCANNED.items():
+            assert (APP / folder).is_dir() and why, folder
 
     def test_no_label_is_cut_by_a_slice(self):
         """A node's goal, title or label is never cut to its first N
-        characters: a name is the node's title whole, or its goal cut on a
-        word, and a bound cuts on a word too."""
+        characters, N a number or a bound held in a constant or a parameter:
+        a name is the node's title whole, or the name its header shows, and a
+        bound cuts on a word too."""
         found = []
         for path in sorted(PACKAGE.rglob("*.py")):
             relative = _relative(path)
@@ -228,7 +261,7 @@ class TestTheTextTheAgentsShow:
                 if (
                     isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Slice)
                     and node.slice.lower is None and node.slice.step is None
-                    and isinstance(node.slice.upper, ast.Constant) and isinstance(node.slice.upper.value, int)
+                    and _a_bound(node.slice.upper)
                     and NAMES.search(ast.unparse(node.value))
                 ):
                     found.append((relative, ast.unparse(node.value), node.lineno))
@@ -245,19 +278,31 @@ class TestTheTextTheAgentsShow:
 class TestANodeIsNamedAsItsCanvasNamesIt:
     """The one rule that names a node in what the agents show."""
 
-    def test_its_title_whole_else_its_goal_cut_on_a_word_else_its_id(self):
+    #: Each template's label by unversioned id, as a project's catalog holds them.
+    TEMPLATES = {"curio.builtin/vis-vega": "Vega-Lite", "curio.builtin/data-loading": "Data Loading"}
+
+    def _name(self, node) -> str:
         from utk_curio.backend.app.agents.domain import labels
 
+        return labels.node_label(node, templates=self.TEMPLATES)
+
+    def test_its_title_whole_else_its_templates_label_else_its_goal_cut_on_a_word_else_its_id(self):
         long_title = "Load the pedestrians counted per hour on the four busiest streets downtown since 2019"
-        assert labels.node_label({"id": "n1", "title": f" {TITLE} ", "goal": INTENT}) == TITLE
-        assert labels.node_label({"id": "n1", "title": long_title, "goal": INTENT}) == long_title
-        assert labels.node_label({"id": "n1", "goal": INTENT}) == INTENT_NAME
-        assert labels.node_label({"id": "n1", "goal": "load the heat data"}) == "load the heat data"
-        assert labels.node_label({"id": "n1", "goal": "  "}) == "n1"
-        assert labels.node_label({"id": "n1"}) == "n1"
-        assert labels.node_label(None) == ""
+        assert self._name({"id": "n1", "title": f" {TITLE} ", "goal": INTENT}) == TITLE
+        assert self._name({"id": "n1", "title": long_title, "goal": INTENT}) == long_title
+        # With no title, the name its header shows: its template's label, for
+        # a versioned type too, else its type in words.
+        assert self._name({"id": "n1", "type": "curio.builtin/vis-vega@1", "goal": INTENT}) == "Vega-Lite"
+        assert self._name({"id": "n1", "type": "curio.builtin/vis-vega", "title": "  ", "goal": INTENT}) == "Vega-Lite"
+        assert self._name({"id": "n1", "type": "curio.sky/sky-view", "goal": INTENT}) == "Sky View"
+        # With no type, its goal cut on a word; with no goal, its id.
+        assert self._name({"id": "n1", "goal": INTENT}) == INTENT_NAME
+        assert self._name({"id": "n1", "goal": "load the heat data"}) == "load the heat data"
+        assert self._name({"id": "n1", "goal": "  "}) == "n1"
+        assert self._name({"id": "n1"}) == "n1"
+        assert self._name(None) == ""
         word = "x" * 70
-        assert labels.node_label({"id": "n1", "goal": f"{word} and more"}) == f"{word}…"
+        assert self._name({"id": "n1", "goal": f"{word} and more"}) == f"{word}…"
 
     def test_no_cut_halves_a_word(self):
         from utk_curio.backend.app.agents.domain import labels
@@ -298,9 +343,8 @@ class TestAPlannedNodesGoal:
     ):
         """A title with a colon of its own, as the Crown Heights plot's, gave
         its goal two colons. A semicolon joins such a title to its intent,
-        which reads on as a clause: its first word in lower case, and a word
-        with more capitals, such as NYC, as it is. Any other title keeps the
-        colon, and its intent its case."""
+        which keeps its case as the plan wrote it, as it does after the colon
+        that joins any other title."""
         from utk_curio.backend.tests.test_agents import test_routes_proposals as routes
 
         user, token = user_and_token
@@ -315,7 +359,7 @@ class TestAPlannedNodesGoal:
         att_id, _ = helper._setup(client, user, token, alice_project, monkeypatch, replies=["Here is the plan.\n" + tail])
         card = routes._landed_plan(helper._run(client, token, alice_project, att_id).get_json())
         goals = {
-            plot: f"{plot}; plot the share of Block 1259 in shadow by the hour",
+            plot: f"{plot}; Plot the share of Block 1259 in shadow by the hour",
             load: f"{load}; NYC's footprints around the block",
             count: f"{count}: Count the trees on each block",
         }
@@ -379,7 +423,17 @@ class TestATurnNamesTheNodeWhole:
         node = {"id": "n1", "content": "print(1)", "title": TITLE, "goal": INTENT}
         assert self._written_by_a_delegate(client, token, monkeypatch, node) == [f"Wrote the content of {TITLE!r}."]
 
-    def test_a_node_with_no_title_is_named_by_its_goal_cut_on_a_word(
+    def test_a_node_with_no_title_is_named_by_its_templates_label(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        # As its header on the canvas names it, never by its goal.
+        _user, token = user_and_token
+        node = {"id": "n1", "type": PY, "content": "print(1)", "goal": INTENT}
+        assert self._written_by_a_delegate(client, token, monkeypatch, node) == [
+            "Wrote the content of 'Python Computation'."
+        ]
+
+    def test_a_node_with_no_title_or_type_is_named_by_its_goal_cut_on_a_word(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
         _user, token = user_and_token
@@ -411,7 +465,7 @@ class TestATurnNamesTheNodeWhole:
         from utk_curio.backend.app.agents.application.solve import node_solve
 
         node = {"id": "n1", "goal": LONG_GOAL}
-        label = self._attempts_label(monkeypatch, node, node_solve.solve_label(node))
+        label = self._attempts_label(monkeypatch, node, node_solve.solve_label(node, templates={}))
         assert label == INTENT_NAME
 
     def test_solve_this_node_names_its_attempts_card_by_the_nodes_title(
@@ -432,33 +486,67 @@ class TestATurnNamesTheNodeWhole:
         labels = [p["label"] for p in turns[-1].get("content") or [] if p.get("type") == "solveAttempts"]
         assert labels == [TITLE], labels
 
-    def test_the_build_transcript_names_each_node_as_its_canvas_does(self):
+    def _transcript(self, nodes, results, *, scenarios=None, unstarted=(), cancelled=False):
+        """The Build & validate transcript's lines and attempts cards for
+        *results*, over a dataflow of *nodes* and *scenarios*."""
         from utk_curio.backend.app.agents.application.solve.batch import SolveBatch
 
+        batch = object.__new__(SolveBatch)
+        batch.nodes_by_id = {node["id"]: node for node in nodes}
+        batch.spec = {"dataflow": {"nodes": nodes, **({"scenarios": scenarios} if scenarios else {})}}
+        batch.current = {"spec": batch.spec}
+        batch.user_key, batch.project_id = "u1", "p1"
+        batch.unstarted = list(unstarted)
+        batch.batch_reason = None
+        batch.results = results
+        return batch._transcript_lines(cancelled)
+
+    def test_the_build_transcript_names_each_node_as_its_canvas_does(self):
         nodes = [
             {"id": "a1b2c3d4-load", "title": TITLE, "goal": LONG_GOAL},
             {"id": "e5f6a7b8-map", "title": "Library branch map", "goal": "map the branches"},
             {"id": "c9d0e1f2-sum", "goal": LONG_GOAL},
         ]
-        batch = object.__new__(SolveBatch)
-        batch.nodes_by_id = {node["id"]: node for node in nodes}
-        batch.spec = {"dataflow": {"nodes": nodes}}
-        batch.current = {"spec": batch.spec}
-        batch.user_key = "u1"
-        batch.unstarted = ["c9d0e1f2-sum"]
-        batch.batch_reason = None
         failed = {"round": 1, "verdict": "fail", "kind": "execution-error", "detail": "NameError: boom"}
-        batch.results = {
+        results = {
             "a1b2c3d4-load": {"status": "failed", "verdict": "fail", "rounds": 2, "stoppedBy": "attempts",
                               "attempts": [failed, {**failed, "round": 2}]},
             "e5f6a7b8-map": {"status": "solved", "verdict": "not-executable", "rounds": 1, "attempts": [],
                              "verification": {"status": "document-valid", "reason": "validated"}},
         }
-        lines, parts = batch._transcript_lines(True)
+        lines, parts = self._transcript(nodes, results, unstarted=["c9d0e1f2-sum"], cancelled=True)
         assert lines[0] == f"{TITLE} · failed · fail after 2 rounds", lines
         assert "Library branch map · solved · validated against its grammar after 1 round" in lines, lines
         assert "cancelled: 1 node not attempted" in lines, lines
         assert [part["label"] for part in parts] == [TITLE]
+
+    def test_the_build_transcript_tells_nodes_of_one_name_apart(self):
+        """A scenario's copy holds its original's title, and a person can
+        title two nodes alike. The transcript's lines and its attempts cards
+        say each node's scenario, as the plan's card does, and end names that
+        still read alike with a short id."""
+        nodes = [
+            {"id": "a1b2c3d4-shade", "type": PY, "title": "Shade"},
+            {"id": "e5f6a7b8-shade", "type": PY, "title": "Shade"},
+            {"id": "c9d0e1f2-load", "type": PY, "title": "Load"},
+            {"id": "f3a4b5c6-load", "type": PY, "title": "Load"},
+        ]
+        scenarios = [
+            {"id": "s1", "name": "Base", "color": "#1f77b4", "nodes": ["a1b2c3d4-shade"]},
+            {"id": "s2", "name": "Heat", "color": "#ff7f0e", "nodes": ["e5f6a7b8-shade"]},
+        ]
+        failed = {"round": 1, "verdict": "fail", "kind": "execution-error", "detail": "NameError: boom"}
+        results = {
+            node["id"]: {"status": "failed", "verdict": "fail", "rounds": 1, "stoppedBy": "attempts",
+                         "attempts": [failed]}
+            for node in nodes
+        }
+        lines, parts = self._transcript(nodes, results, scenarios=scenarios)
+        names = ["Shade (Base)", "Shade (Heat)", "Load (c9d0e1f2)", "Load (f3a4b5c6)"]
+        assert [line for line in lines if not line.startswith(" ")] == [
+            f"{name} · failed · fail after 1 round" for name in names
+        ], lines
+        assert [part["label"] for part in parts] == names
 
 
 class TestTheFinderCountsItsCandidates:
@@ -559,3 +647,62 @@ class TestAValidatedChart:
         assert outcome["verdict"] == "not-executable"
         assert outcome["roundsTrace"][-1] == "round 2: validated against its grammar", outcome["roundsTrace"]
         assert not [line for line in outcome["roundsTrace"] if "executable" in line], outcome["roundsTrace"]
+
+
+class TestAnInputContractNamesItsSlots:
+    """What a model is told of a node's inputs names each upstream node as its
+    header names it, never by its goal cut in the middle of a word, and tells
+    two of one name apart."""
+
+    def test_each_slot_by_its_name_and_two_alike_by_a_short_id(self):
+        from utk_curio.backend.app.agents.domain import input_contract, labels
+
+        spec = {"dataflow": {
+            "nodes": [
+                {"id": "a1b2c3d4-tracts", "type": PY, "title": "Tracts", "goal": LONG_GOAL},
+                {"id": "e5f6a7b8-heat", "type": PY, "goal": LONG_GOAL},
+                {"id": "c9d0e1f2-heat", "type": PY, "goal": "the heat again"},
+                {"id": "join", "type": PY, "title": "Join", "goal": "join them"},
+            ],
+            "edges": [
+                {"id": "e0", "source": "a1b2c3d4-tracts", "target": "join", "targetHandle": "in"},
+                {"id": "e1", "source": "e5f6a7b8-heat", "target": "join", "targetHandle": "in_1"},
+                {"id": "e2", "source": "c9d0e1f2-heat", "target": "join", "targetHandle": "in_2"},
+            ],
+        }}
+        shape = input_contract.arg_shape(spec, "join", templates={PY: "Python Computation"})
+        names = ["Tracts", "Python Computation (e5f6a7b8)", "Python Computation (c9d0e1f2)"]
+        assert [slot["label"] for slot in shape["slots"]] == names
+        assert input_contract.describe(shape) == (
+            "3 inputs, one per circle: [!! input_0 !!] = Tracts; "
+            "[!! input_1 !!] = Python Computation (e5f6a7b8); [!! input_2 !!] = Python Computation (c9d0e1f2)"
+        )
+        refusal = input_contract.refusal_text(shape, {"name": "input_0", "attribute": "crs", "line": 2})
+        assert all(f"[!! input_{i} !!] = {name}" in refusal for i, name in enumerate(names)), refusal
+        # Each slot keeps its node's goal for a model to read: whole when it
+        # fits, else cut on a word.
+        assert [slot["goal"] for slot in shape["slots"]] == [
+            labels.on_a_word(LONG_GOAL, 120), labels.on_a_word(LONG_GOAL, 120), "the heat again",
+        ]
+
+
+class TestWhereANotEnlistedPackagesDirNameIs:
+    """A not-enlisted template's line in the roster holds two groups in
+    parentheses, its label's and its package's. Each page that tells a model
+    where a dirName is points at the one after 'package'."""
+
+    POINTER = "follows 'package' in the parentheses that end its line"
+
+    def test_the_line_and_each_page_that_points_into_it_agree(self):
+        from utk_curio.backend.app.agents.application.turns import roster
+
+        entry = {"id": "curio.notes/note-surface", "label": "Note", "description": "A note on the canvas."}
+        line = roster._template_line(entry, suffix=" (package curio.notes@1)")
+        assert line == "- curio.notes/note-surface (Note): A note on the canvas. (package curio.notes@1)"
+        for page in ("skills/reuse-first/SKILL.md", "agents/agent.curio.builtin@1/messages.md",
+                     "agents/agent.curio.builtin@1/tools.md"):
+            pointing = [
+                text for text in (REPO_ROOT / page).read_text(encoding="utf-8").splitlines()
+                if "dirName" in text and "parentheses" in text
+            ]
+            assert pointing and all(self.POINTER in text for text in pointing), (page, pointing)

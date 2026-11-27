@@ -135,7 +135,12 @@ describe("the candidates card's lines say with no dash what a dash said", () => 
 describe("a chart's change card says its document was validated against its grammar", () => {
   // Read from a variable: the evidence a chart's validation carries.
   const evidence = { kind: "not-executable", documentValidated: "vis-vega" };
-  const attempts = [{ round: 1, verdict: "not-executable", kind: "not-executable" }];
+  // A round as the loop records it: the runner's reason, cut at 120
+  // characters, and the document the round checked.
+  const reason =
+    "node 'map' (curio.builtin/vis-vega) has no code the sandbox could run, as it works in the browser or through its own s";
+  const document = '{"mark": "bar", "encoding": {"x": {"field": "a"}}}';
+  const attempts = [{ round: 1, verdict: "not-executable", kind: "not-executable", detail: reason, code: document }];
 
   it("as a passed check, never a failure", () => {
     render(<ValidationBlock validation={{ verdict: "not-executable", rounds: 1, evidence, attempts }} />);
@@ -143,7 +148,25 @@ describe("a chart's change card says its document was validated against its gram
     expect(block).toHaveTextContent(/^VALID/);
     expect(block).toHaveTextContent("Validated against its grammar, not executed");
     expect(block).toHaveTextContent("Round 1 · validated against its grammar, not executed");
-    expect(block).not.toHaveTextContent(/FAIL|failed|not executable/);
+    expect(block).not.toHaveTextContent(/FAIL|failed|not executable|no code the sandbox could run|this attempt ran/);
+    // The document the round validated stays in the chat, under words of a check that passed.
+    const shown = within(block).getByText("The document this round validated").closest("details");
+    expect(shown).not.toBeNull();
+    expect(shown).toHaveTextContent(document);
+  });
+
+  it("while a corrected chart's failed round keeps its error and the document it checked", () => {
+    const refused = "the document's encoding.x needs a type";
+    const corrected = [
+      { round: 1, verdict: "fail", kind: "document-invalid", detail: refused, code: '{"mark": "bar"}' },
+      ...attempts.map((attempt) => ({ ...attempt, round: 2 })),
+    ];
+    render(<ValidationBlock validation={{ verdict: "not-executable", rounds: 2, evidence, attempts: corrected }} />);
+    const block = screen.getByRole("status", { name: "Validated against its grammar" });
+    expect(block).toHaveTextContent(refused);
+    expect(block).toHaveTextContent("The code this attempt ran");
+    expect(block).not.toHaveTextContent(/no code the sandbox could run/);
+    expect(block).toHaveTextContent("Round 2 · validated against its grammar, not executed");
   });
 
   it("while a node with no document to check still says it ran nothing", () => {

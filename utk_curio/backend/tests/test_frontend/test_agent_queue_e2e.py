@@ -51,6 +51,9 @@ BUILDER = "agent.curio.node-builder@1"
 CA = "curio.builtin/python-computation"
 SINK = "queue-sink"
 SINK_GOAL = "Sum the parks"
+#: What the agents call the sink, which has no title: its template's label, as
+#: its header on the canvas names it.
+SINK_NAME = "Python Computation"
 TITLES = ["Fetch", "Clean", "Count"]
 #: The goal the plan writes for each of its nodes: its title, a colon and its intent.
 GOALS = [f"{title}: {title.lower()} the parks" for title in TITLES]
@@ -421,7 +424,7 @@ def test_a_node_removed_under_a_queued_action_stops_the_queue_with_a_chat_line(r
     saved = room.saved()
     assert SINK not in {node["id"] for node in saved["nodes"]}, "Ben's removal of Sum never reached the server"
     [card] = [part for part in replies["plan"]["content"] if part.get("type") == "change"]
-    line = f"Left undone: 3 connections, since '{SINK_GOAL}' was removed"
+    line = f"Left undone: 3 connections, since '{SINK_NAME}' was removed"
     assert card["status"] == "applied" and line in card["lines"], card
     _wait_until_gone(editor, "Ben's tab")
     # The plan's three nodes still landed, one at a time; none of its connections did.
@@ -468,7 +471,7 @@ def test_removing_a_node_as_the_agents_node_lands_on_the_canvas_removes_that_nod
     saved = room.saved()
     assert SINK not in {node["id"] for node in saved["nodes"]}, "Ben's removal of Sum never reached the server"
     [card] = [part for part in replies["plan"]["content"] if part.get("type") == "change"]
-    line = f"Left undone: 3 connections, since '{SINK_GOAL}' was removed"
+    line = f"Left undone: 3 connections, since '{SINK_NAME}' was removed"
     assert card["status"] == "applied" and line in card["lines"], card
     # The agent's node Ben's canvas was taking stays, in the dataflow and on his canvas.
     assert landed in {node["id"] for node in saved["nodes"]}, (
