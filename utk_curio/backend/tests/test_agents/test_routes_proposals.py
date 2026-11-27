@@ -1410,7 +1410,9 @@ class TestDestructiveReplan:
         # DEC-049: the victim was held to the code the mint read; the card names it.
         assert "old-loader" in self._landing(user, alice_project, att_id)["removeContentSha256"]
         (removal,) = card["plan"]["removals"]
-        assert removal == {"id": "old-loader", "label": "Load CSV",
+        # Named as its header names it: no title, so its template's label, and
+        # a short id, as the cleaner is a Python Computation with no title too.
+        assert removal == {"id": "old-loader", "label": "Python Computation (old-load)",
                            "nodeType": "curio.builtin/python-computation",
                            "contentChars": len("load_csv()")}
         assert card["plan"]["cascadeCount"] == 1  # edge-1 dies with it
@@ -2842,7 +2844,7 @@ class TestPlanTopologyMint:
         assert self._landed(body) is None
         feedback = calls[1][-1]["content"]
         assert "creates a cycle" in feedback
-        assert "Metric Distribution" in feedback and "Pool Input Combine" in feedback
+        assert "'Vega'" in feedback and "'Python Computation (combine)'" in feedback
         assert '"kind": "interaction"' in feedback
         # The saved graph is untouched: nothing materialized (DEC-051 discipline).
         from utk_curio.backend.app.projects import storage as projects_storage
@@ -2856,9 +2858,11 @@ class TestPlanTopologyMint:
         card = self._landed(self._run(client, token, alice_project, att_id).get_json())
         assert card is not None, "an edge-only plan must land (no filler nodes needed)"
         assert card["summary"] == "Plan · 0 nodes, 1 edge"
+        # Each node named as its header names it: these hold no title, so their
+        # template's label, and the three code steps a short id each.
         assert card["plan"]["edges"] == [{
             "from": "vis", "to": "pool", "kind": "interaction",
-            "fromLabel": "Metric Distribution", "toLabel": "Time Data Pool",
+            "fromLabel": "Vega", "toLabel": "Data Pool",
         }]
 
     def test_interaction_edge_into_a_code_step_is_refused_naming_the_fix(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
@@ -2884,7 +2888,7 @@ class TestPlanTopologyMint:
         assert card["summary"] == "Plan · 0 nodes, 0 edges, removes 1 connection"
         assert card["plan"]["removals"] == []
         assert card["plan"]["removedEdges"] == [
-            {"id": "e5", "fromLabel": "Metric Distribution", "toLabel": "Pool Input Combine"},
+            {"id": "e5", "fromLabel": "Vega", "toLabel": "Python Computation (combine)"},
         ]
         assert card["canvas"]["removedEdgeIds"] == ["e5"]
 
@@ -2910,7 +2914,7 @@ class TestPlanTopologyMint:
         card = self._landed(self._run(client, token, alice_project, att_id).get_json())
         assert card is not None, calls[-1][-1]["content"]
         assert card["plan"]["removedEdges"] == [
-            {"id": edge_id, "fromLabel": "Metric Distribution", "toLabel": "Pool Input Combine"},
+            {"id": edge_id, "fromLabel": "Vega", "toLabel": "Python Computation (combine)"},
         ]
         assert card["canvas"]["removedEdgeIds"] == [edge_id]
 
@@ -2992,7 +2996,7 @@ class TestPlanTopologyApply:
         card = base._landed(base._run(client, token, alice_project, att_id).get_json())
         verdict = card["lines"][-1]
         assert verdict.startswith("Topology: cycle through")
-        assert "Metric Distribution" in verdict and "Pool Input Combine" in verdict
+        assert "Vega" in verdict and "Python Computation (combine)" in verdict
 
     def test_a_connection_drawn_while_the_plan_waited_that_it_would_close_into_a_cycle_refuses_it(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch,

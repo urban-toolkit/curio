@@ -68,6 +68,7 @@ from utk_curio.backend.app.agents.application.turns import grounding as agents_g
 from utk_curio.backend.app.agents.application.turns import policy as agents_policy
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 from utk_curio.backend.app.agents.domain import upstream_schema as agents_upstream_schema
+from utk_curio.backend.app.execution import node_names
 from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.packages import service as _pkg_services
 from utk_curio.backend.app.projects import storage as projects_storage
@@ -921,11 +922,22 @@ class SolveBatch:
         ]
         return session, applied
 
+    def _names(self) -> dict[str, str]:
+        """Each node of the transcript named as its header on the canvas
+        names it, told apart from one of the same name by its scenario, as
+        the plan's card does, else by a short id (``labels.told_apart``)."""
+        spec = self.current.get("spec") or self.spec or {}
+        return labels.told_apart(
+            {node_id: self.nodes_by_id.get(node_id) for node_id in self.results},
+            templates=node_names.template_labels(self.user_key, self.project_id),
+            scenarios=labels.scenario_names(spec.get("dataflow")),
+        )
+
     def _transcript_lines(self, cancelled: bool) -> tuple[list[str], list]:
         lines: list[str] = []
+        names = self._names()
         for node_id, outcome in list(self.results.items())[:10]:
-            # Each node named as its header on the canvas names it.
-            line = f"{labels.node_label(self.nodes_by_id.get(node_id)) or node_id} · {outcome['status']}"
+            line = f"{names.get(node_id) or node_id} · {outcome['status']}"
             if outcome.get("verdict"):
                 # dev/115: the verified loop's verdict and, on failure,
                 # the attempt trail — one line per round, bounded.
@@ -953,10 +965,9 @@ class SolveBatch:
             and (outcome or {}).get("status") in ("failed", "pending", "skipped")
         ]
         for nid, outcome in trailed[:agents_budgets.MAX_ATTEMPT_PARTS]:
-            node = self.nodes_by_id.get(nid) or {}
             part = agents_rounds._solve_attempts_part(
                 self.current.get("spec") or self.spec, nid,
-                labels.node_label(node) or nid, outcome, user_key=self.user_key,
+                names.get(nid) or nid, outcome, user_key=self.user_key,
             )
             if part is not None:
                 attempt_parts.append(part)

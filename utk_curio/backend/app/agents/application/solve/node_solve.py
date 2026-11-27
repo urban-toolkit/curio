@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import time
 import uuid
+from collections.abc import Mapping
 
 from utk_curio.backend.app.agents.application import dataflow_block as agents_dataflow_block
 from utk_curio.backend.app.agents.application import delegation
@@ -33,16 +34,17 @@ from utk_curio.backend.app.agents.application.turns import grounding as agents_g
 from utk_curio.backend.app.agents.application.turns import policy as agents_policy
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 from utk_curio.backend.app.agents.domain import labels
+from utk_curio.backend.app.execution import node_names
 from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.collaboration import agent_peers
 from utk_curio.backend.app.collaboration import dataflow_docs, owner_guard
 
 
-def solve_label(node: dict) -> str:
-    """What a Solve's turns call *node*: its title, whole, as its header on
-    the canvas shows it; with no title, its goal cut on a word with an
-    ellipsis; with no goal, its id (``labels.node_label``)."""
-    return labels.node_label(node)
+def solve_label(node: dict, *, templates: Mapping[str, str]) -> str:
+    """What a Solve's turns call *node*: the name its header on the canvas
+    shows, its title whole or else its template's label from *templates*
+    (``labels.node_label``)."""
+    return labels.node_label(node, templates=templates)
 
 
 def solve_node_stream(
@@ -205,7 +207,7 @@ def _solved_node(
     """The per-node Solve body (dev/115 A2) over the ONE verified loop; returns
     its done payload, with the changes it landed (``landed``)."""
     node_id = node.get("id")
-    label = solve_label(node)
+    label = solve_label(node, templates=node_names.template_labels(user_key, project_id))
     started = time.monotonic()
     had_content = bool(str(node.get("content") or "").strip())
     yield "solve_node_started", {

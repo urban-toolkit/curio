@@ -5,12 +5,19 @@ import { AddKeyAction } from "../../../connectionKeys/AddKeyAction";
 import styles from "../AgentReviewCard.module.css";
 
 type Validation = NonNullable<AgentChangePart["validation"]>;
+type Attempt = NonNullable<Validation["attempts"]>[number];
 
 /** A chart's or a map's document: the sandbox does not run one, so its
  * grammar's schema validates it, and a document that validated failed
  * nothing. */
 const documentValidated = (validation: Validation): boolean =>
   validation.verdict === "not-executable" && Boolean(validation.evidence?.documentValidated);
+
+/** A round whose document its grammar validated: it reads as a check that
+ * passed, with no reason the sandbox ran nothing and its document under
+ * plain words. A round whose document failed its check keeps its error. */
+const validatedRound = (validation: Validation, attempt: Attempt): boolean =>
+  documentValidated(validation) && attempt.verdict === "not-executable";
 
 /** dev/67-7: the validation verdict of code that landed: real runtime
  * evidence, rendered inert. dev/115: the engineering loop's trail: every
@@ -77,7 +84,7 @@ export const ValidationBlock: React.FC<{ validation: Validation }> = ({ validati
                   {attempt.outputDataType ? ` output: ${attempt.outputDataType}` : ""}
                   {typeof attempt.durationMs === "number" ? ` · ${(attempt.durationMs / 1000).toFixed(1)} s` : ""}
                 </span>
-              ) : attempt.detail || attempt.stderrTail ? (
+              ) : !validatedRound(validation, attempt) && (attempt.detail || attempt.stderrTail) ? (
                 <details className={styles.attemptError}>
                   <summary>{(attempt.detail ?? attempt.stderrTail ?? "").slice(0, 120)}</summary>
                   <pre>{attempt.stderrTail ?? attempt.detail}</pre>
@@ -86,7 +93,16 @@ export const ValidationBlock: React.FC<{ validation: Validation }> = ({ validati
               {attempt.verdict !== "pass" && attempt.endpointEvidence ? (
                 <span className={styles.attemptEndpoint}>Endpoint: {attempt.endpointEvidence}</span>
               ) : null}
-              {attempt.verdict !== "pass" && attempt.code ? (
+              {validatedRound(validation, attempt) && attempt.code ? (
+                // dev/127: every round's content stays in the chat; this one passed its check.
+                <details className={styles.attemptDocument}>
+                  <summary>
+                    The document this round validated
+                    {attempt.codeTruncated ? " (truncated)" : ""}
+                  </summary>
+                  <pre>{attempt.code}</pre>
+                </details>
+              ) : attempt.verdict !== "pass" && attempt.code ? (
                 // dev/127: what this round actually ran.
                 <details className={styles.attemptError}>
                   <summary>

@@ -854,17 +854,12 @@ def _append_candidates_turn(
 
 
 def node_label(user_key: str, project_id: str, node: dict | None) -> str:
-    """The name the node's header shows (``node_names.saved_node_label``): its
-    title, else its template's label, read only when it has no title."""
+    """The name the node's header shows (``labels.node_label``): its title,
+    else its template's label, read only when it has no title."""
     from utk_curio.backend.app.execution import node_names
 
-    node = node if isinstance(node, dict) else {}
-    title = node_names.saved_node_title(node)
-    if title:
-        return title
-    return node_names.saved_node_label(node, node_names.template_labels(user_key, project_id)) or str(
-        node.get("id") or ""
-    )
+    title = node_names.saved_node_title(node) if isinstance(node, dict) else ""
+    return title or labels.node_label(node, templates=node_names.template_labels(user_key, project_id))
 
 
 def _mirror_candidates_turn(

@@ -165,8 +165,10 @@ def node_display(node: dict, names: dict) -> dict:
     return shown
 
 
-def display_scenarios(plan: dict, existing_nodes: dict) -> list[dict]:
-    """The plan's scenarios for the plan's card: each with its nodes by name."""
+def display_scenarios(plan: dict, existing_nodes: dict, *, names: dict | None = None) -> list[dict]:
+    """The plan's scenarios for the plan's card: each with its nodes by name,
+    an existing node's by *names* (``labels.told_apart`` over the dataflow's
+    nodes)."""
     titles = {n["ref"]: n["title"] for n in plan["nodes"]}
     rows = []
     for scenario in plan.get("scenarios") or []:
@@ -174,7 +176,8 @@ def display_scenarios(plan: dict, existing_nodes: dict) -> list[dict]:
             "name": scenario["name"],
             "color": scenario["color"],
             "nodes": [
-                {"ref": m, "label": titles.get(m) or labels.node_label(existing_nodes.get(m)) or m}
+                {"ref": m, "label": titles.get(m) or (names or {}).get(m)
+                 or labels.node_label(existing_nodes.get(m), templates={}) or m}
                 for m in scenario["nodes"]
             ],
         }

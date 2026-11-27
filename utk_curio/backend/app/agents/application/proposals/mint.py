@@ -15,6 +15,7 @@ from utk_curio.backend.app.agents.application import source_grounding
 from utk_curio.backend.app.agents.application import verify
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import dashboards
+from utk_curio.backend.app.agents.domain import labels
 from utk_curio.backend.app.agents.domain import map_edits
 from utk_curio.backend.app.agents.domain import node_settings
 from utk_curio.backend.app.agents.domain import widget_grammar
@@ -961,7 +962,10 @@ def _mint_node_create(
     # used to drop this param while the prompt asked for it — the second
     # live test's notes were all headed "Note".
     title = params.get("title")
-    title = title.strip()[:agents_delegates.NODE_TITLE_MAX_CHARS] if isinstance(title, str) and title.strip() else None
+    title = (
+        labels.on_a_word(title, agents_delegates.NODE_TITLE_MAX_CHARS)
+        if isinstance(title, str) and title.strip() else None
+    )
     # dev/89 (additive): optional appearance, normalized by the ONE shared
     # utility — an invalid or inaccessible color refuses at mint, loudly.
     from utk_curio.backend.app.packages.application.note_palette import NOTE_PALETTE

@@ -51,6 +51,7 @@ from utk_curio.backend.app.agents.application.solve import rounds as agents_roun
 from utk_curio.backend.app.agents.application.solve import session as agents_session
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.domain import validation as agents_validation
+from utk_curio.backend.app.execution import node_names
 from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.execution.code_references import node_run_code
 from utk_curio.backend.app.packages import service as packages_services
@@ -199,7 +200,9 @@ class VerifiedRounds:
         # once (it cannot change mid-loop), handed to the child as an input, and
         # enforced before the sandbox. The owner's report: a node fed several
         # inputs as one list treated the list as a frame.
-        self.arg_contract = input_contract.arg_shape(spec, self.node_id)
+        self.arg_contract = input_contract.arg_shape(
+            spec, self.node_id, templates=node_names.template_labels(self.user_key, self.project_id),
+        )
         if (extra_inputs or {}).get("upstreamOutputs"):
             self.arg_contract = input_contract.with_schemas(
                 self.arg_contract, (extra_inputs or {}).get("upstreamOutputs")

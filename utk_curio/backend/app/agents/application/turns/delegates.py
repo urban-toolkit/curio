@@ -39,6 +39,7 @@ from utk_curio.backend.app.agents.application.proposals import plans as agents_p
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 from utk_curio.backend.app.collaboration import dataflow_docs
+from utk_curio.backend.app.execution import node_names
 from utk_curio.backend.app.projects import storage as projects_storage
 
 log = logging.getLogger(__name__)
@@ -456,7 +457,7 @@ def _mint_content_review_from_delegate(
             home_name = agents_spec_reads._agent_name(user_key, str(home.get("coord") or ""))
         for node in ((fresh_spec or {}).get("dataflow") or {}).get("nodes") or []:
             if isinstance(node, dict) and node.get("id") == node_id:
-                node_label = labels.node_label(node) or node_id
+                node_label = labels.node_label(node, templates=node_names.template_labels(user_key, project_id)) or node_id
                 break
     # dev/114: the mint's grounding gate reads the PARENT run's evidence
     # (current message and the one before it, verified rows, probe cache, grants) — the home

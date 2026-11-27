@@ -494,6 +494,13 @@
     overflow-wrap: anywhere;
 }
 
+/* The document a round's grammar validated: a check that passed. */
+.attemptDocument summary {
+    cursor: pointer;
+    color: var(--curio-text-secondary);
+    overflow-wrap: anywhere;
+}
+
 .attemptEndpoint {
     display: block;
     color: var(--curio-text-secondary);

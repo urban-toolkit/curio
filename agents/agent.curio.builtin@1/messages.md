@@ -215,7 +215,7 @@ proposal {proposal_id} created to install dataset {name}; it awaits the user's e
 
 ## mint.package-miss-hint
 
-use the dirName shown in parentheses after '(package …)' in the 'Installed but NOT enlisted in this project' list
+use the dirName that follows 'package' in the parentheses that end its line of the 'Installed but NOT enlisted in this project' list
 
 ## mint.package-miss-hint-catalog
 

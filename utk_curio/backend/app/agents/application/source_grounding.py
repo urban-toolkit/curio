@@ -137,6 +137,7 @@ from utk_curio.backend.app.users.connection_keys import (  # noqa: E402
     secret_names as _secret_names,
 )
 from utk_curio.backend.app.agents.domain import agent_text
+from utk_curio.backend.app.agents.domain import labels
 
 # KEEP IN SYNC with the editor's twin (dev/117):
 # frontend/urban-workflows/src/services/connectionKeys/credentialLiterals.ts —
@@ -1576,7 +1577,7 @@ def _judge_refs(
                     "kind": "catalog",
                     "value": f'{ref.call}("{ref.literal}")',
                     "datasetId": catalog.dataset_id,
-                    "title": catalog.title[:_TITLE_MAX_CHARS],
+                    "title": labels.on_a_word(catalog.title, _TITLE_MAX_CHARS),
                     "format": catalog.format,
                 })
             continue
@@ -1594,7 +1595,7 @@ def _judge_refs(
                     "kind": "catalog",
                     "value": ref.literal[:_VALUE_MAX_CHARS],
                     "datasetId": catalog.dataset_id,
-                    "title": catalog.title[:_TITLE_MAX_CHARS],
+                    "title": labels.on_a_word(catalog.title, _TITLE_MAX_CHARS),
                     "format": catalog.format,
                 })
             elif _user_match(ref.literal, ctx):
@@ -1913,14 +1914,14 @@ def source_payload(refs: list[dict]) -> dict:
     """The bounded proposal ``source`` payload — plain data for the card."""
     kinds = {r.get("kind") for r in refs}
     kind = next(iter(kinds)) if len(kinds) == 1 else "mixed"
-    labels: list[str] = []
+    named: list[str] = []
     for ref in refs[:2]:
-        labels.append(_ref_label(ref))
+        named.append(_ref_label(ref))
     if len(refs) > 2:
-        labels.append(f"…and {len(refs) - 2} more")
+        named.append(f"…and {len(refs) - 2} more")
     return {
         "kind": kind,
-        "label": " · ".join(labels)[:_LABEL_MAX_CHARS],
+        "label": labels.on_a_word(" · ".join(named), _LABEL_MAX_CHARS),
         "refs": refs[:MAX_REFS],
     }
 

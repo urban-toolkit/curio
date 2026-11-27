@@ -24,10 +24,11 @@ from utk_curio.backend.app.agents.domain import dashboards
 from utk_curio.backend.app.agents.domain import node_settings
 from utk_curio.backend.app.agents.domain import plan_topology
 from utk_curio.backend.app.agents.domain.counts import count_label
-from utk_curio.backend.app.agents.domain.labels import node_label, planned_goal
+from utk_curio.backend.app.agents.domain.labels import node_label, planned_goal, scenario_names, told_apart
 from utk_curio.backend.app.agents.repositories import project_agents
 from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.application import spec_reads as agents_spec_reads
+from utk_curio.backend.app.execution import node_names
 from utk_curio.backend.app.execution import run_plan
 from utk_curio.backend.app.execution.workflow_spec import slot_handle_id
 from utk_curio.backend.app.agents.application.proposals import changes as agents_changes
@@ -150,6 +151,8 @@ def _validate_plan_fanin(
     existing_edges: list,
     remove_node_set: set,
     remove_edge_set: set,
+    *,
+    names: dict | None = None,
 ) -> list[str]:
     """dev/67-3 (DEC-051): every edge target must accept its NET incoming
     degree — plan edges plus the SURVIVING existing edges (dev/59 victims
@@ -181,7 +184,9 @@ def _validate_plan_fanin(
         else:
             node = existing_nodes.get(target) or {}
             node_type = _strip_type_version(str(node.get("type") or ""))
-            label = node_label(node) or target
+            label = (names or {}).get(target) or node_label(
+                node, templates=node_names.labels_of(available.values()),
+            ) or target
             existing_count = surviving_in.get(target, 0)
         entry = available.get(node_type)
         if entry is None:
@@ -256,19 +261,20 @@ def _interaction_spec_edge(source: str, target: str, from_view: str | None = Non
     }
 
 
-def _topology_clause(spec: dict) -> str:
+def _topology_clause(spec: dict, *, templates: dict | None = None) -> str:
     """dev/112 (G5): the applied turn's verdict on the saved graph — what the
     agent reads to confirm a repair instead of asserting one. A cycle the plan
-    could not have created (the user drew it) is reported here, never refused."""
+    could not have created (the user drew it) is reported here, never refused.
+    Each node of a cycle is named as its header names it, told apart from one
+    of the same name (``told_apart``; *templates* is each template's label)."""
     dataflow = spec.get("dataflow") or {}
     nodes = {n.get("id"): n for n in dataflow.get("nodes") or [] if isinstance(n, dict)}
     pairs = plan_topology.net_data_edges(dataflow.get("edges") or [], {"edges": []}, set(), set())
     path = plan_topology.find_data_cycle(pairs)
     if path is None:
         return "Topology: acyclic."
-    return "Topology: cycle through " + plan_topology.format_cycle(
-        path, lambda x: (nodes.get(x) or {}).get("goal") or x
-    ) + "."
+    names = told_apart(nodes, templates=templates or {}, scenarios=scenario_names(dataflow))
+    return "Topology: cycle through " + plan_topology.format_cycle(path, lambda x: names.get(x) or x) + "."
 
 
 def _removal_phrase(n_nodes: int, n_edges: int, *, prefix: str = "removed ") -> str:
@@ -367,16 +373,23 @@ def _mint_dataflow_plan(
     if scenario_errors:
         return "refused", "\n- ".join([agent_text.message("plan.widgets-scenarios-invalid")] + scenario_errors), None
     plan_scenarios.assign_colors(plan, scenarios)
+    # Each existing node as the plan's card and its refusals name it: as its
+    # header names it, told apart from one of the same name.
+    names = told_apart(
+        existing_nodes, templates=node_names.labels_of(available.values()), scenarios=scenario_names(dataflow),
+    )
     # dev/67-3 (DEC-051): fan-in validates BEFORE anything materializes — an
     # invalid multi-input topology is unmintable, and the corrective error
     # says how to rewire it.
     fanin_errors = _validate_plan_fanin(
         plan, available, existing_nodes, existing_edges,
-        remove_node_set, set(remove_edges),
+        remove_node_set, set(remove_edges), names=names,
     )
     if fanin_errors:
         return "refused", "\n- ".join([agent_text.message("plan.fanin-invalid")] + fanin_errors), None
-    refusal = _plan_topology_refusal(plan, existing_nodes, existing_edges, available, remove_node_set, remove_edges)
+    refusal = _plan_topology_refusal(
+        plan, existing_nodes, existing_edges, available, remove_node_set, remove_edges, names=names,
+    )
     if refusal:
         return "refused", refusal, None
     cascade_edge_ids = _plan_cascade_edge_ids(existing_edges, remove_node_set, remove_edges)
@@ -384,7 +397,8 @@ def _mint_dataflow_plan(
     _digest, pins = _plan_pins(spec, plan, existing_nodes)
     plan_id = uuid.uuid4().hex
     summary = _plan_summary(plan)
-    part = _plan_review_part(plan_id, plan, existing_nodes, existing_edges, pins, summary, cascade_edge_ids)
+    part = _plan_review_part(plan_id, plan, existing_nodes, existing_edges, pins, summary, cascade_edge_ids,
+                             names=names)
     landing = {
         "proposalId": plan_id,
         "tool": "dataflow.plan.write",
@@ -411,8 +425,11 @@ def _victims_changed(user_key: str, project_id: str, plan: dict, landing: dict) 
         victim = nodes.get(node_id)
         digest = hashlib.sha256(((victim or {}).get("content") or "").encode("utf-8")).hexdigest()
         if victim is None or digest != pins.get(node_id):
-            label = node_label(victim) or node_id
-            return agent_text.message("change.plan-victim-changed", label=label)
+            names = told_apart(
+                nodes, templates=node_names.template_labels(user_key, project_id),
+                scenarios=scenario_names(fresh.get("dataflow")),
+            )
+            return agent_text.message("change.plan-victim-changed", label=names.get(node_id) or node_id)
     return None
 
 
@@ -495,7 +512,8 @@ def _land_dataflow_plan(user_key: str, project_id: str, loop_ctx: dict, spec: di
         return "refused", agent_text.message("change.plan-target-removed", gone=gone), None
     agents_changes.landed(loop_ctx, steps.change, steps.canvas(), steps=steps.landed)
     text, lines = _plan_landed_lines(steps.spec, steps.created, steps.edges, steps.removed_nodes, steps.removed_edges,
-                                     steps.node_runs, steps.attached, steps.scenarios)
+                                     steps.node_runs, steps.attached, steps.scenarios,
+                                     templates=node_names.template_labels(user_key, project_id))
     if left is not None:
         what, gone = steps.left_undone(), steps.named(left.gone)
         text = agent_text.message("change.plan-stopped", gone=gone, left=what) + " " + text
@@ -788,11 +806,15 @@ class _PlanSteps:
 
     def named(self, node_ids) -> str:
         """The nodes *node_ids* by name: a planned node's title, else an
-        existing node's name as its canvas shows it (``node_label``: its title
-        whole, else its goal cut on a word), else its id."""
+        existing node's name as its canvas shows it, told apart from one of
+        the same name (``told_apart``), else its id."""
         titles = {self.ref_to_id.get(n["ref"]): n.get("title") for n in self.plan.get("nodes", [])}
-        nodes = {n.get("id"): n for n in self.before if isinstance(n, dict)}
-        names = [repr(titles.get(i) or node_label(nodes.get(i)) or i) for i in node_ids or ()]
+        existing = told_apart(
+            {n.get("id"): n for n in self.before if isinstance(n, dict)},
+            templates=node_names.template_labels(self.user_key, self.project_id),
+            scenarios=scenario_names((self.spec or {}).get("dataflow")),
+        )
+        names = [repr(titles.get(i) or existing.get(i) or i) for i in node_ids or ()]
         return ", ".join(names) or "a node"
 
     def left_undone(self) -> str:
@@ -1002,7 +1024,7 @@ def _plan_revision_errors(plan: dict, existing_nodes: dict, existing_edges: list
 
 
 def _plan_topology_refusal(plan: dict, existing_nodes: dict, existing_edges: list, available: dict,
-                           remove_node_set: set, remove_edges: list) -> str | None:
+                           remove_node_set: set, remove_edges: list, *, names: dict | None = None) -> str | None:
     """dev/112 (DEC-070): the topology refusal, or None: an interaction edge must reach a node that
     shows the selection it carries, and no plan DATA edge may close a cycle in the NET graph;
     validated BEFORE anything materializes."""
@@ -1040,7 +1062,7 @@ def _plan_topology_refusal(plan: dict, existing_nodes: dict, existing_edges: lis
     closing = plan_topology.closing_plan_edges(net_pairs, plan)
     if closing:
         def _label(node_id: str) -> str:
-            return _plan_endpoint_label(node_id, plan, existing_nodes)
+            return _plan_endpoint_label(node_id, plan, existing_nodes, names=names)
         cycle_errors = [
             agent_text.message(
                 "plan.edge-closes-cycle", source=repr(_label(u)), target=repr(_label(v)),
@@ -1125,9 +1147,11 @@ def _plan_summary(plan: dict) -> str:
 
 
 def _plan_review_part(proposal_id: str, plan: dict, existing_nodes: dict, existing_edges: list,
-                      pins: dict, summary: str, cascade_edge_ids: list) -> dict:
+                      pins: dict, summary: str, cascade_edge_ids: list, *, names: dict | None = None) -> dict:
     """The part the plan's card renders: the preview, the display copy of the plan (edges by
-    NAME, dev/67-8), and the removals listed by name (DEC-049.2; edges too, dev/112)."""
+    NAME, dev/67-8), and the removals listed by name (DEC-049.2; edges too, dev/112). An
+    existing node is named by *names* (``labels.told_apart`` over the dataflow's nodes)."""
+    names = names or {}
     remove_nodes = plan.get("removeNodes", [])
     remove_edges = plan.get("removeEdges", [])
     n_edges = len(plan["edges"])
@@ -1143,7 +1167,7 @@ def _plan_review_part(proposal_id: str, plan: dict, existing_nodes: dict, existi
     preview_lines += plan_scenarios.preview_lines(plan)
     for node_id in remove_nodes:
         victim = existing_nodes[node_id]
-        label = node_label(victim) or node_id
+        label = names.get(node_id) or node_label(victim, templates={}) or node_id
         # A pinned victim is a dashboard tile, which its removal takes off the dashboard.
         tile = " · a dashboard tile, which leaves the dashboard" if dashboards.is_pinned(victim) else ""
         preview_lines.append(f"− Remove: {label} · {victim.get('type') or 'untyped'}{tile}")
@@ -1179,22 +1203,22 @@ def _plan_review_part(proposal_id: str, plan: dict, existing_nodes: dict, existi
                 **({"kind": e["kind"]} if e.get("kind") else {}),  # dev/112
                 # The views an interaction edge names at each end, which the card names after their nodes.
                 **{field: e[field] for field in ("fromView", "toView") if e.get(field)},
-                "fromLabel": _plan_endpoint_label(e["from"], plan, existing_nodes),
-                "toLabel": _plan_endpoint_label(e["to"], plan, existing_nodes),
+                "fromLabel": _plan_endpoint_label(e["from"], plan, existing_nodes, names=names),
+                "toLabel": _plan_endpoint_label(e["to"], plan, existing_nodes, names=names),
             }
             for e in plan["edges"]
         ],
     }
     if plan.get("scenarios"):
         # #662: the scenarios the plan saves, each with its nodes by name.
-        part["plan"]["scenarios"] = plan_scenarios.display_scenarios(plan, existing_nodes)
+        part["plan"]["scenarios"] = plan_scenarios.display_scenarios(plan, existing_nodes, names=names)
     if remove_nodes or remove_edges:
         # DEC-049.2: removals listed by NAME, every victim with a
         # content flag; the cascade counted.
         part["plan"]["removals"] = [
             {
                 "id": node_id,
-                "label": node_label(existing_nodes[node_id]) or node_id,
+                "label": names.get(node_id) or node_label(existing_nodes[node_id], templates={}) or node_id,
                 "nodeType": existing_nodes[node_id].get("type"),
                 "contentChars": len(existing_nodes[node_id].get("content") or ""),
                 # Only on a dashboard tile, which leaves the dashboard.
@@ -1210,8 +1234,10 @@ def _plan_review_part(proposal_id: str, plan: dict, existing_nodes: dict, existi
         part["plan"]["removedEdges"] = [
             {
                 "id": edge_id,
-                "fromLabel": _plan_endpoint_label(str(edges_by_id[edge_id].get("source")), plan, existing_nodes),
-                "toLabel": _plan_endpoint_label(str(edges_by_id[edge_id].get("target")), plan, existing_nodes),
+                "fromLabel": _plan_endpoint_label(str(edges_by_id[edge_id].get("source")), plan, existing_nodes,
+                                                  names=names),
+                "toLabel": _plan_endpoint_label(str(edges_by_id[edge_id].get("target")), plan, existing_nodes,
+                                                names=names),
                 **(
                     {"kind": "interaction"}
                     if plan_topology.is_interaction_edge(edges_by_id[edge_id])
@@ -1402,17 +1428,18 @@ def _attach_node_builder(spec: dict, node_id: str, *, user_key: str | None = Non
     return row.get("attachmentId")
 
 
-def _plan_endpoint_label(endpoint: str, plan: dict, existing_nodes: dict) -> str:
+def _plan_endpoint_label(endpoint: str, plan: dict, existing_nodes: dict, *, names: dict | None = None) -> str:
     """A human label for one plan-edge endpoint: the plan node's title, or the
-    existing node's name as its canvas shows it (``node_label``; the id as the
-    last resort). #662: a planned node in a scenario is labelled with it too,
-    so a copy and its original read apart."""
+    existing node's name by *names* (``labels.told_apart`` over the dataflow's
+    nodes: as its canvas shows it, told apart from one of the same name; the
+    id as the last resort). #662: a planned node in a scenario is labelled
+    with it too, so a copy and its original read apart."""
     for node in plan.get("nodes", []):
         if node["ref"] == endpoint:
             scenario = plan_scenarios.scenario_names(plan).get(endpoint)
-            return node_label(node) + (f" ({scenario})" if scenario else "")
+            return node_label(node, templates={}) + (f" ({scenario})" if scenario else "")
     existing = existing_nodes.get(endpoint) or {}
-    return node_label(existing) or str(endpoint)
+    return (names or {}).get(endpoint) or node_label(existing, templates={}) or str(endpoint)
 
 
 def _existing_plan_edge(edges: list, plan_edges: list, index: int, source: str, target: str,
@@ -1697,12 +1724,12 @@ def _plan_apply_session(spec: dict, attachment_id: str, proposal_id: str, create
 
 def _plan_landed_lines(spec: dict, created_nodes: list, created_edges: list, remove_node_set: set,
                        removed_edge_ids: set, node_runs: dict, attached_results: list,
-                       created_scenarios: list = ()) -> tuple[str, list[str]]:
+                       created_scenarios: list = (), *, templates: dict | None = None) -> tuple[str, list[str]]:
     """What a landed plan did, for the model and for its card: truthful for
     connections (dev/112), the topology verdict the agent needs to confirm a
     fix instead of asserting one, and the scenarios it saved (#662)."""
     removed_summary = _removal_phrase(len(remove_node_set), len(removed_edge_ids))
-    topology = _topology_clause(spec)
+    topology = _topology_clause(spec, templates=templates)
     scenario_summary = (
         f" It saved {count_label(len(created_scenarios), 'scenario')}: "
         + ", ".join(s["name"] for s in created_scenarios) + "."

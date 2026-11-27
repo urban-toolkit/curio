@@ -34,6 +34,7 @@ from utk_curio.backend.app.agents.application.turns import delegates as agents_d
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 from utk_curio.backend.app.collaboration import dataflow_docs
+from utk_curio.backend.app.execution import node_names
 from utk_curio.backend.app.projects import storage as projects_storage
 
 #: A plan node's state while it waits for the user to pick its source in its
@@ -224,7 +225,7 @@ def _validate_events(
     which the ledger keeps for a node left waiting for its source."""
     node_id = node.get("id")
     execution_id = uuid.uuid4().hex
-    label = agents_node_solve.solve_label(node)
+    label = agents_node_solve.solve_label(node, templates=node_names.template_labels(user_key, project_id))
     try:
         with agents_room.at_work(user_key, project_id, attachment_id, spec=spec, coord=coord, who=room_asker):
             yield "validation_started", {"nodeId": node_id, "executionId": execution_id}

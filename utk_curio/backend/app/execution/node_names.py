@@ -13,7 +13,8 @@ on the server calls the node in its steps and skip reasons.
   has.
 - :func:`saved_node_label`: :func:`display_label` of a saved node.
 - :func:`template_labels`: each template's label by unversioned id, for the
-  templates a project can use (what the canvas's registry holds).
+  templates a project can use (what the canvas's registry holds);
+  :func:`labels_of` reads them from rows already listed.
 """
 from __future__ import annotations
 
@@ -74,6 +75,16 @@ def saved_node_label(node: Mapping, labels: Optional[Mapping[str, str]] = None) 
     return display_label(node_type, saved_node_title(node), template)
 
 
+def labels_of(templates) -> dict:
+    """``{unversioned template id: label}`` of *templates*, the rows a
+    project's catalog lists (``available_templates``)."""
+    return {
+        row["id"]: row.get("label") or ""
+        for row in templates or ()
+        if isinstance(row, Mapping) and row.get("id")
+    }
+
+
 def template_labels(user_key: str, project_id: str) -> dict:
     """``{unversioned template id: label}`` for the templates *project_id* may
     use. Empty when the package store cannot be read: names then fall back to
@@ -81,11 +92,7 @@ def template_labels(user_key: str, project_id: str) -> dict:
     try:
         from utk_curio.backend.app.packages.service import available_templates
 
-        return {
-            row["id"]: row.get("label") or ""
-            for row in available_templates(user_key, project_id)
-            if isinstance(row, dict) and row.get("id")
-        }
+        return labels_of(available_templates(user_key, project_id))
     except Exception:  # noqa: BLE001 - a name is never worth failing a save or a run
         log.warning("template labels for project %s could not be read", project_id, exc_info=True)
         return {}

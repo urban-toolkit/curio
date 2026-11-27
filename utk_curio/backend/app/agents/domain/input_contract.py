@@ -42,6 +42,7 @@ import logging
 import re
 
 from utk_curio.backend.app.agents.domain import agent_text
+from utk_curio.backend.app.agents.domain import labels
 
 log = logging.getLogger(__name__)
 
@@ -85,8 +86,13 @@ def _graph(spec: dict | None):
         return None
 
 
-def arg_shape(spec: dict | None, node_id: str) -> dict:
+def arg_shape(spec: dict | None, node_id: str, *, templates: dict | None = None) -> dict:
     """What *node_id*'s inputs will be, read the way the runner reads them.
+
+    Each slot, and a single input, carries ``label``: its upstream node named
+    as its header on the canvas names it, told apart from one of the same
+    name (``labels.told_apart``; *templates* is each template's label by
+    unversioned id, and with none an untitled node is its type in words).
 
     ``{"kind": "several", "length": N, "circles": [...], "slots": [{circle,
     chip, upstreamNodeId, goal, upstreamNodeType}]}``: one value per circle,
@@ -102,13 +108,11 @@ def arg_shape(spec: dict | None, node_id: str) -> dict:
     if graph is None:
         return {"kind": KIND_NONE}
     nodes = {n.id: n for n in graph.nodes}
-    # The parsed NodeSpec carries type and category, not the node's goal — the
-    # human label lives in the raw spec, which is where the slot table reads it.
-    goals = {
-        n.get("id"): str(n.get("goal") or "")[:_GOAL_CHARS]
-        for n in ((spec or {}).get("dataflow") or {}).get("nodes") or []
-        if isinstance(n, dict)
-    }
+    # The parsed NodeSpec carries type and category, not the node's goal or
+    # title: those live in the raw spec, which is where the slot table reads them.
+    dataflow = (spec or {}).get("dataflow") or {}
+    raw = {n.get("id"): n for n in dataflow.get("nodes") or [] if isinstance(n, dict)}
+    goals = {nid: labels.fit(n.get("goal"), _GOAL_CHARS) for nid, n in raw.items()}
 
     def _describe(nid: str, arg_index: int | None = None) -> dict:
         node = nodes.get(nid)
@@ -170,7 +174,26 @@ def arg_shape(spec: dict | None, node_id: str) -> dict:
             return _resolve(upstream, depth + 1)
         return {"kind": KIND_SINGLE, **_describe(upstream), "chip": own_chip}
 
-    return _resolve(node_id, 0)
+    return _named(_resolve(node_id, 0), raw, templates or {}, labels.scenario_names(dataflow))
+
+
+def _named(shape: dict, raw: dict, templates: dict, scenarios: dict) -> dict:
+    """*shape* with each upstream node's ``label``, the name its header shows,
+    told apart from one of the same name (``labels.told_apart``)."""
+    def names(upstreams: list) -> dict:
+        return labels.told_apart(
+            {str(nid): raw.get(nid) for nid in upstreams}, templates=templates, scenarios=scenarios,
+        )
+
+    if shape.get("kind") in (KIND_SEVERAL, KIND_GATHERED):
+        named = names([slot.get("upstreamNodeId") for slot in shape.get("slots") or []])
+        return {**shape, "slots": [
+            {**slot, "label": named[str(slot.get("upstreamNodeId"))]} for slot in shape.get("slots") or []
+        ]}
+    if shape.get("kind") == KIND_SINGLE:
+        upstream = shape.get("upstreamNodeId")
+        return {**shape, "label": names([upstream])[str(upstream)]}
+    return shape
 
 
 def with_schemas(shape: dict, rows: list | None) -> dict:
@@ -222,7 +245,7 @@ def describe(shape: dict | None) -> str:
     if kind in (KIND_SEVERAL, KIND_GATHERED):
         parts = []
         for slot in shape.get("slots") or []:
-            label = slot.get("goal") or slot.get("upstreamNodeId") or "?"
+            label = slot.get("label") or slot.get("goal") or slot.get("upstreamNodeId") or "?"
             schema = slot.get("schema") if isinstance(slot.get("schema"), dict) else None
             columns = (
                 ", ".join(str(c.get("name")) for c in (schema.get("columns") or [])[:6])
@@ -235,7 +258,7 @@ def describe(shape: dict | None) -> str:
             return f"{shape.get('length')} inputs, one per circle: " + "; ".join(parts)
         return f"{_circle_name(shape)} is a list of {shape.get('length')} inputs: " + "; ".join(parts)
     if kind == KIND_SINGLE:
-        label = shape.get("goal") or shape.get("upstreamNodeId") or "the upstream node"
+        label = shape.get("label") or shape.get("goal") or shape.get("upstreamNodeId") or "the upstream node"
         return f"{shape.get('chip') or _chip(0)} IS the value {label} returned"
     return "this node has no input"
 
@@ -335,7 +358,7 @@ def refusal_text(shape: dict, violation: dict) -> str:
     used = f"{name}.{attribute}" + (f" (line {line})" if line else "")
     slots = []
     for slot in (shape.get("slots") or [])[:MAX_SLOTS]:
-        label = slot.get("goal") or slot.get("upstreamNodeId") or "?"
+        label = slot.get("label") or slot.get("goal") or slot.get("upstreamNodeId") or "?"
         schema = slot.get("schema") if isinstance(slot.get("schema"), dict) else None
         detail = ""
         if schema:

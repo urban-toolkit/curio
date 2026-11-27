@@ -75,7 +75,7 @@ BROWSER_MESSAGE_CHARS = 2000
 #: unknown type to fail open on; it is no output at all.
 NULL_OUTPUT_TYPES = ("", "null", "none", "nonetype")
 NO_OUTPUT_REASON = (
-    "the code returned no output (None) — a node must return the data it "
+    "the code returned no output (None): a node must return the data it "
     "produces, and nothing downstream can read an absent output"
 )
 

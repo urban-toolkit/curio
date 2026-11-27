@@ -25,6 +25,7 @@ from utk_curio.backend.app.agents.application.solve import validate as agents_va
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 from utk_curio.backend.app.collaboration import dataflow_docs
+from utk_curio.backend.app.execution import node_names
 
 
 def _validate_node_inline(
@@ -254,7 +255,7 @@ def _run_node_events(
             break
         thread.join(timeout=5)
         target_record = (report.get("nodes") or {}).get(node_id) or {}
-        label = labels.node_label(node) or node_id
+        label = labels.node_label(node, templates=node_names.template_labels(user_key, project_id)) or node_id
         if isinstance(session_id, str):
             if report.get("ok"):
                 lines = [
