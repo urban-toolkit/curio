@@ -25,7 +25,7 @@ See ``docs/AUTHORING-NODES.md`` for the full walkthrough.
 
 HOW
 ---
-    python scripts/new_package.py me.roughness
+    python scripts/new_package.py me.rolling-stats
     python scripts/new_package.py me.heatmap --with-ui
     python scripts/new_package.py me.thing --major 2 --template-id my-thing
 
@@ -49,10 +49,11 @@ if str(REPO_ROOT) not in sys.path:
 
 from utk_curio.backend.app.packages.repositories.archive import refresh_package_integrity
 from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
-from utk_curio.backend.app.packages.service import ManifestError
+from utk_curio.backend.app.packages.service import PACKAGE_DIR_RE, ManifestError
 
-# Mirrors the schema's `id` pattern (docs/schemas/node-package.v4.json).
-PACKAGE_ID_RE = re.compile(r"^[a-z][a-z0-9_.-]*[a-z0-9]$")
+# The schema's `id` pattern (docs/schemas/node-package.v4.json): the package
+# loader's grammar (PACKAGE_DIR_RE), with the id ending in a letter or digit.
+PACKAGE_ID_RE = re.compile(r"^(?:[a-z][a-z0-9-]{0,62}\.){1,5}[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 # Mirrors storage.TEMPLATE_ID_RE.
 TEMPLATE_ID_RE = re.compile(r"^[a-z][a-z0-9-]{0,62}$")
 
@@ -351,7 +352,7 @@ SOFTWARE.
 
 
 def _default_template_id(package_id: str) -> str:
-    """``me.my-thing`` -> ``my-thing``; underscores and dots become dashes."""
+    """``me.my-thing`` -> ``my-thing``: the id's last part."""
     tail = package_id.rsplit(".", 1)[-1]
     return re.sub(r"[^a-z0-9-]", "-", tail).strip("-") or "my-node"
 
@@ -486,7 +487,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "package_id",
         metavar="PACKAGE_ID",
-        help="Reverse-domain id, e.g. 'me.roughness' or 'edu.uic.cs529.alice'",
+        help="Reverse-domain id, e.g. 'me.rolling-stats' or 'edu.uic.cs529.alice'",
     )
     parser.add_argument(
         "--major", type=int, default=1, help="Major version (default: 1)"
@@ -515,16 +516,17 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     package_id: str = args.package_id.strip().lower()
-    if not PACKAGE_ID_RE.match(package_id):
+    if not (PACKAGE_ID_RE.match(package_id) and PACKAGE_DIR_RE.match(f"{package_id}@0")):
         print(
             f"error: package id {package_id!r} is invalid.\n"
-            "       Use lowercase letters, digits, '.', '-' and '_'; start with a\n"
-            "       letter and end with a letter or digit. Example: me.roughness",
+            "       Use two to six parts separated by '.'. Each part is a lowercase\n"
+            "       letter, then lowercase letters, digits or '-', 63 characters at\n"
+            "       most, and the id ends with a letter or digit. Example: me.rolling-stats",
             file=sys.stderr,
         )
         return 2
-    if args.major < 0:
-        print("error: --major must be >= 0", file=sys.stderr)
+    if not PACKAGE_DIR_RE.match(f"{package_id}@{args.major}"):
+        print("error: --major must be a whole number from 0 to 9999", file=sys.stderr)
         return 2
 
     template_id: str = (

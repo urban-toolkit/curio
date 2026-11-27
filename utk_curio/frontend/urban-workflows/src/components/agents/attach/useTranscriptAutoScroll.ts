@@ -56,13 +56,18 @@ const isNearBottom = (el: HTMLElement) =>
  * A scroll event is read where the transcript stands when it is told, on the
  * frame after the scroll, so after what changed meanwhile. The browser
  * scrolls the transcript itself when its box grows (it clamps the place at
- * the new bottom), and the observer below sees where that left it. When the
- * box shrinks again before the event is told (a line above the transcript
- * comes back taller), the event would read a reader who never moved as one
- * who left the bottom. So while pinned, a scroll event that finds the
- * transcript where this hook last saw it is told late: nothing moved since,
- * and the transcript follows to its new bottom. A scroll that moved it (the
- * reader's, or one into a card) is read as it is.
+ * the new bottom). When the box shrinks again before the event is told (a
+ * line above the transcript comes back taller), the event would read a
+ * reader who never moved as one who left the bottom. So while pinned, a
+ * scroll event is told late, and the transcript follows to its new bottom,
+ * when it finds the transcript where this hook last saw it (nothing moved
+ * since), or its box at another size than this hook last saw. The second
+ * is a clamp at a layout a script forced between frames (this hook's own
+ * read as a turn lands, or a check of what is on screen): the observer
+ * below reports a change of size only on a frame, after that frame's scroll
+ * events, so no report said where that clamp left the transcript. A scroll
+ * that moved it while its box kept its size (the reader's, or one into a
+ * card) is read as it is.
  */
 export function useTranscriptAutoScroll({
   content,
@@ -103,8 +108,11 @@ export function useTranscriptAutoScroll({
    * it made, at each scroll event it read, and at each change of size the
    * observer reported. */
   const seenTopRef = useRef<number | null>(null);
+  /** How tall its box was then. */
+  const seenHeightRef = useRef<number | null>(null);
   const noteWhereItStands = useCallback((el: HTMLElement) => {
     seenTopRef.current = el.scrollTop;
+    seenHeightRef.current = el.clientHeight;
   }, []);
 
   const setPinned = useCallback((pinned: boolean) => {
@@ -219,10 +227,13 @@ export function useTranscriptAutoScroll({
         return;
       }
       const toldLate = seenTopRef.current !== null && Math.abs(el.scrollTop - seenTopRef.current) < 1;
-      if (pinnedRef.current && toldLate && !isNearBottom(el)) {
-        // The transcript is where this hook last saw it: the scroll told is
-        // the browser's, made before what changed size since, and the reader
-        // never left the bottom.
+      // The box is not the size this hook last saw: the observer reports that
+      // change only after this event, and the browser may have scrolled for it.
+      const resized = seenHeightRef.current !== null && Math.abs(el.clientHeight - seenHeightRef.current) >= 1;
+      if (pinnedRef.current && (toldLate || resized) && !isNearBottom(el)) {
+        // The transcript is where this hook last saw it, or its box changed
+        // size since: the scroll told is the browser's, made for a change of
+        // size, and the reader never left the bottom.
         scrollToBottom("auto");
         noteWhereItStands(el);
         return;
