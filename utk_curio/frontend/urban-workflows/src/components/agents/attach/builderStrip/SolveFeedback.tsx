@@ -3,71 +3,20 @@ import React from "react";
 import type { AgentRemedy } from "../../../../services/agents";
 import { AddKeyAction } from "../../../connectionKeys/AddKeyAction";
 import { useHostedGuest } from "../../../apiSettings/useHostedGuest";
-import { OpenDatasetFinderAction } from "../OpenDatasetFinderAction";
 import styles from "../AgentBuilderStrip.module.css";
 
-/** What the live batch said about its nodes, de-duplicated, in the plan
- * line's more part: the failure reasons (dev/106) and the notices that are
- * not errors (dev/118). */
-export const SolveFeedback: React.FC<{
-  reasons: string[];
-  notices: string[];
-}> = ({ reasons, notices }) => (
-  <>
-    {reasons.length ? (
-      <div className={styles.error} aria-live="polite">
-        {reasons.map((r) => (
-          <div key={r}>{r}</div>
-        ))}
-      </div>
-    ) : null}
-    {notices.length ? (
-      <div className={styles.hint} role="note" aria-label="Solve notices">
-        {notices.map((n) => (
-          <div key={n}>{n}</div>
-        ))}
-      </div>
-    ) : null}
-  </>
-);
-
-/** The fixes the live batch offers, kept in view under the plan line: the
- * missing connection keys by host (dev/116; none for a hosted guest, who
- * cannot save one) and the nodes awaiting a dataset selection (dev/126). */
+/** The missing connection keys the live batch names, kept in view under the
+ * plan line, one Add key per host (dev/116); none for a hosted guest, who
+ * cannot save one. Why each node failed is on its row of the plan's card. */
 export const SolveRemedies: React.FC<{
   remedies: AgentRemedy[];
-  selectionRemedies: Array<[string, AgentRemedy]>;
-  onOpenChat?: (attachmentId: string) => void;
-  /** The name of the agent an attachment of this dataflow binds, from the live list. */
-  agentNameOf?: (attachmentId: string) => string | null;
-  /** The name a node's header shows, as its pill says it. */
-  nodeNameOf?: (nodeId: string) => string;
-}> = ({ remedies, selectionRemedies, onOpenChat, agentNameOf, nodeNameOf }) => {
+}> = ({ remedies }) => {
   const hostedGuest = useHostedGuest();
-  return (
-    <>
-      {remedies.length && !hostedGuest ? (
-        <div className={styles.actions} role="group" aria-label="Missing connection keys">
-          {remedies.map((r) => (
-            <AddKeyAction key={`${r.kind}:${r.host}`} remedy={r} />
-          ))}
-        </div>
-      ) : null}
-      {selectionRemedies.length && onOpenChat ? (
-        <div className={styles.actions} role="group" aria-label="Nodes awaiting a dataset selection">
-          {selectionRemedies.map(([nodeId, r]) => (
-            <OpenDatasetFinderAction
-              key={r.attachmentId}
-              remedy={r}
-              onOpenChat={onOpenChat}
-              agentName={r.attachmentId ? agentNameOf?.(r.attachmentId) ?? null : null}
-              // One awaiting node needs no disambiguation; several are named
-              // as their pills name them.
-              nodeLabel={selectionRemedies.length > 1 ? (nodeNameOf?.(nodeId) ?? nodeId.slice(0, 8)) : undefined}
-            />
-          ))}
-        </div>
-      ) : null}
-    </>
-  );
+  return remedies.length && !hostedGuest ? (
+    <div className={styles.actions} role="group" aria-label="Missing connection keys">
+      {remedies.map((r) => (
+        <AddKeyAction key={`${r.kind}:${r.host}`} remedy={r} />
+      ))}
+    </div>
+  ) : null;
 };

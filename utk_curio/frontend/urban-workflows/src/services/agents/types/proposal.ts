@@ -123,6 +123,9 @@ export interface AgentBuilderSession {
   /** ref → the change its validated code landed as, and the attachment
    * whose chat holds it (dev/72: the node's own agent). */
   nodeChanges?: Record<string, { changeId: string; attachmentId?: string | null }>;
+  /** ref → how the code that landed was checked: `ran` in the sandbox,
+   * `valid` against its grammar, `written` with no code to run. */
+  nodeChecks?: Record<string, string>;
 }
 
 /** dev/114: the proposal's source block — bounded plain data. */
@@ -317,6 +320,11 @@ export interface AgentChangePart
   planId?: string;
   /** The dataflow's goal, which the plan gave a dataflow that had none. */
   goalSet?: string;
+  /** A plan's checks and the agents it put on its nodes, worded for a
+   *  person: its card's Details. Its `lines` say the same for the agents. */
+  checks?: string[];
+  /** What a plan left undone, when a node it joins went while it landed. */
+  leftUndone?: string;
   /** A new node's kind, and the roster's answer to whether the sandbox can
    * run it (dev/119, DEC-076): display only. */
   nodeType?: string;

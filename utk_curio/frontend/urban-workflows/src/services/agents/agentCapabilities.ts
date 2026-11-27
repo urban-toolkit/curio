@@ -12,6 +12,8 @@ export const ORCHESTRATE_CAPABILITY = "dataflow.orchestrate";
 export const NODE_BUILD_CAPABILITY = "node.build";
 /** Records the dataset a node loads: the candidates card's confirm. */
 export const DATASET_SELECT_CAPABILITY = "dataset.select";
+/** Writes a node's code: a plan row's name opens its chat. */
+export const CONTENT_GENERATE_CAPABILITY = "node.content.generate";
 
 /** Whether the agent behind *attachment* declares *capability*. */
 export function declaresCapability(attachment: { capabilities?: string[] }, capability: string): boolean {

@@ -207,7 +207,7 @@
   background: var(--curio-role-running-bg);
 }
 
-/* "waits for you", in the warning tone of the plan line's "needs you". */
+/* "waits for you", in the warning tone of the plan line's waits. */
 .flyoutNoteWaiting {
   color: var(--curio-warning-text);
   background: var(--curio-warning-bg);

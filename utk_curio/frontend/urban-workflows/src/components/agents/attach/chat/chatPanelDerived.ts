@@ -153,27 +153,65 @@ export function canvasUnchangedFor(attachment: AgentAttachment, turns: AgentSess
   );
 }
 
+/** What runs on a plan now, as the chat streams it: the live batch's runs,
+ * its reasons and notices, the nodes it waits on the person for, and the
+ * running build's narration. */
+export interface PlanLive {
+  solveProgress?: Record<string, string>;
+  solveErrors?: Record<string, string>;
+  solveNotices?: Record<string, string>;
+  solveWaiting?: Array<{ nodeId: string; kind: string }>;
+  simulationActivity?: string;
+}
+
 /** A landed plan's card gets the plan's per-node state: the attachment's
  * plan (`planProposal`) and builder session, while they are this plan's,
- * whether a build runs on it (*buildRunning*), which holds every row's Solve,
- * and the row whose Solve runs on the server (the listing's `validating`),
- * which reads Solving and holds the others. */
+ * with what runs on it now (*live*): whether a build runs on it
+ * (*buildRunning*), on which node and doing what, or a batch Solve; the row
+ * whose Solve runs on the server (the listing's `validating`), which reads
+ * Building and holds the others; each node's run, the reason it failed (a
+ * build's pause on it among them) and the nodes that wait for the person's
+ * pick of their source. */
 export function planNodeStateFor(
   attachment: AgentAttachment,
   part: AgentChangePart,
   buildRunning = false,
+  live: PlanLive = {},
 ): PlanNodeReviewState | undefined {
   const plan = part.planId && attachment.planProposal?.proposalId === part.planId ? attachment.planProposal : null;
-  return plan
-    ? {
-        appliedRefs: plan.appliedRefs ?? [],
-        nodeStates: attachment.builderSession?.nodeStates ?? {}, // dev/71: the lifecycle ledger
-        nodeChanges: attachment.builderSession?.nodeChanges ?? {}, // dev/72: where each node's change lives
-        scenarioStates: plan.scenarioStates ?? {}, // #662: which scenarios are saved
-        buildRunning,
-        solvingRef: attachment.validating?.ref ?? null,
-      }
-    : undefined;
+  if (!plan) return undefined;
+  const session = attachment.builderSession;
+  const nodeIds = { ...(session?.nodeIds ?? {}), ...(plan.nodeIds ?? {}) };
+  const failures = { ...(live.solveErrors ?? {}) };
+  // A build that paused on a node whose check failed says why on its row.
+  const pause = session?.pauseReason;
+  if (!buildRunning && pause?.kind === "validation-failed" && pause.ref && nodeIds[pause.ref]) {
+    const message = pause.message.trim();
+    const failedId = nodeIds[pause.ref];
+    if (!failures[failedId]) failures[failedId] = `${message.charAt(0).toUpperCase()}${message.slice(1)}`;
+  }
+  return {
+    appliedRefs: plan.appliedRefs ?? [],
+    nodeStates: session?.nodeStates ?? {}, // dev/71: the lifecycle ledger
+    nodeChanges: session?.nodeChanges ?? {}, // dev/72: where each node's change lives
+    nodeChecks: session?.nodeChecks ?? {},
+    nodeIds,
+    scenarioStates: plan.scenarioStates ?? {}, // #662: which scenarios are saved
+    buildRunning,
+    buildRef: buildRunning ? session?.currentRef ?? null : null,
+    buildActivity: buildRunning ? live.simulationActivity ?? null : null,
+    batchRunning:
+      session?.phase === "solving" ||
+      (attachment.liveJob?.status === "running" && attachment.liveJob.kind === "solve-batch"),
+    solvingRef: attachment.validating?.ref ?? null,
+    runs: { ...(session?.nodeRuns ?? {}), ...(live.solveProgress ?? {}) },
+    failures,
+    notices: live.solveNotices ?? {},
+    waitsForPick: [
+      ...(attachment.waitsForYou ?? []),
+      ...(live.solveWaiting ?? []).filter((w) => w.kind === "dataset-selection").map((w) => w.nodeId),
+    ],
+  };
 }
 
 /** What an agent is attached to, in the chat's words. */

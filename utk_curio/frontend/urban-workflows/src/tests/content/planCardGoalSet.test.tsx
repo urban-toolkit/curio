@@ -1,12 +1,13 @@
 /**
  * A landed plan's card says when the plan set the dataflow's goal: the plan's
  * first write gives a dataflow whose goal is empty the plan's own, and the
- * card's part carries it (`goalSet`, from `changes.card`). The card then reads
- * "Goal set to: <goal>", one line, in place of the plan's goal on its own. A
- * plan that found a goal written says nothing of it.
+ * card's part carries it (`goalSet`, from `changes.card`). The card's Details
+ * then read "Goal set to: <goal>", one line, in place of the plan's goal on
+ * its own, and its Undo says it takes that goal back. A plan that found a
+ * goal written says nothing of it.
  */
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 
 import { AgentChangeCard } from "../../components/agents/content/AgentChangeCard";
 import type { AgentChangePart } from "../../services/agents";
@@ -33,17 +34,31 @@ const landedPlan = (overrides: Partial<AgentChangePart> = {}): AgentChangePart =
   ...overrides,
 });
 
+/** Opens the card's Details. */
+const openDetails = () => {
+  fireEvent.click(screen.getByRole("button", { name: "Details" }));
+  return screen.getByRole("group", { name: "Plan details" });
+};
+
 describe("a landed plan's card and the dataflow's goal", () => {
-  it("says, in one line, the goal the plan set", () => {
+  it("says, in one line of its Details, the goal the plan set, and its Undo takes it back", () => {
     render(<AgentChangeCard part={landedPlan({ goalSet: GOAL })} onUndo={jest.fn()} />);
-    expect(screen.getByText(`Goal set to: ${GOAL}`)).toBeInTheDocument();
+    expect(screen.queryByText(`Goal set to: ${GOAL}`)).toBeNull();
+    expect(screen.getByRole("button", { name: "Undo" })).toHaveAttribute(
+      "data-tooltip",
+      "Takes the plan back, and the goal it set",
+    );
+    const details = openDetails();
+    expect(within(details).getByText(`Goal set to: ${GOAL}`)).toBeInTheDocument();
     // That line is the plan's goal on the card: it is not shown twice.
     expect(screen.queryByText(GOAL)).toBeNull();
   });
 
   it("says nothing of the dataflow's goal when the plan set none", () => {
     render(<AgentChangeCard part={landedPlan()} onUndo={jest.fn()} />);
+    expect(screen.getByRole("button", { name: "Undo" })).toHaveAttribute("data-tooltip", "Takes the plan back");
+    const details = openDetails();
     expect(screen.queryByText(/Goal set to/)).toBeNull();
-    expect(screen.getByText(GOAL)).toBeInTheDocument();
+    expect(within(details).getByText(GOAL)).toBeInTheDocument();
   });
 });

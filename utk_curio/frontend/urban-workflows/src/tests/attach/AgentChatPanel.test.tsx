@@ -3241,6 +3241,9 @@ describe("AgentChatPanel: a node's candidates in the chat that asked for them", 
 });
 
 describe("AgentChatPanel: no Solve starts over a running build", () => {
+  // Its loader is placed and not built yet: its row offers its Solve while
+  // nothing runs over the plan. (A loader that waits for the person's pick
+  // offers none: the pick goes on by itself, AgentChangeCard.test.tsx.)
   const LANDED: AgentAttachment = {
     ...attachment,
     attachmentId: "dfb",
@@ -3252,7 +3255,7 @@ describe("AgentChatPanel: no Solve starts over a running build", () => {
       proposalId: "pp1", tool: "dataflow.plan.write", nodeId: "", summary: "Plan \u00b7 1 node", status: "applied",
       appliedRefs: ["load"],
     },
-    builderSession: { phase: "applied", planProposalId: "pp1", nodeStates: { load: "awaiting-source" }, nodeIds: { load: "n1" } },
+    builderSession: { phase: "applied", planProposalId: "pp1", nodeStates: { load: "created" }, nodeIds: { load: "n1" } },
   };
   const PLANNED: AgentSessionTurn = {
     role: "agent" as const,
@@ -3275,13 +3278,15 @@ describe("AgentChatPanel: no Solve starts over a running build", () => {
     }],
   };
 
-  it("the plan card's row Solve waits while this chat's build runs, saying why", () => {
-    const { rerender, props } = renderPanel({ attachment: LANDED, turns: [PLANNED], onSolvePlanNode: jest.fn() });
+  it("the plan card's row offers no Solve while this chat's build runs, which the plan line says", () => {
+    const { rerender, props } = renderPanel({
+      attachment: LANDED, turns: [PLANNED], onSolvePlanNode: jest.fn(), onSolve: jest.fn(),
+    });
     expect(screen.getByRole("button", { name: "Solve node Load boundaries" })).toBeEnabled();
+    expect(screen.queryByText("Build running")).toBeNull();
     rerender(<AgentChatPanel {...props} simulating="auto" />);
-    const solve = screen.getByRole("button", { name: "Solve node Load boundaries" });
-    expect(solve).toBeDisabled();
-    expect(solve).toHaveAttribute("data-tooltip", BUILD_RUNNING_HINT);
+    expect(screen.queryByRole("button", { name: "Solve node Load boundaries" })).toBeNull();
+    expect(screen.getByText("Build running")).toBeInTheDocument();
   });
 
   it("and while a build another tab runs, which the listing names", () => {
@@ -3290,10 +3295,24 @@ describe("AgentChatPanel: no Solve starts over a running build", () => {
       builderSession: { ...LANDED.builderSession!, simulateMode: "auto", simulatingSince: Date.now() / 1000 },
       buildRunning: "auto",
     };
-    renderPanel({ attachment: building, turns: [PLANNED], onSolvePlanNode: jest.fn() });
-    const solve = screen.getByRole("button", { name: "Solve node Load boundaries" });
-    expect(solve).toBeDisabled();
-    expect(solve).toHaveAttribute("data-tooltip", BUILD_RUNNING_HINT);
+    renderPanel({ attachment: building, turns: [PLANNED], onSolvePlanNode: jest.fn(), onSolve: jest.fn() });
+    expect(screen.queryByRole("button", { name: "Solve node Load boundaries" })).toBeNull();
+    expect(screen.getByText("Build running")).toBeInTheDocument();
+  });
+
+  it("the row the build is at reads Building, what it does on its tooltip", () => {
+    const at: AgentAttachment = { ...LANDED, builderSession: { ...LANDED.builderSession!, currentRef: "load" } };
+    renderPanel({
+      attachment: at,
+      turns: [PLANNED],
+      onSolvePlanNode: jest.fn(),
+      simulating: "auto",
+      simulationActivity: "writing its code",
+    });
+    const row = document.querySelector<HTMLElement>('[data-curio-plan-row="load"]')!;
+    expect(row).toHaveAttribute("data-curio-row-view", "building");
+    expect(within(row).getByText("Building…")).toHaveAttribute("data-tooltip", "Writing its code");
+    expect(within(row).queryByRole("button", { name: /^Solve node/ })).toBeNull();
   });
 
   it("Solve this node waits while a build runs on its node's plan, saying why", () => {
@@ -3351,6 +3370,76 @@ describe("AgentChatPanel: Solve this node points at the card in its own chat", (
     } finally {
       Element.prototype.scrollIntoView = scrollIntoView;
     }
+  });
+});
+
+// The plan line's Show its sources, while the plan waits for the person's
+// pick: it goes to the node's sources card in this chat, which the build
+// asked for, else to the node's Dataset Finder's chat, which holds its own.
+describe("AgentChatPanel: the plan line's Show its sources", () => {
+  const BUILDER: AgentAttachment = {
+    ...attachment,
+    attachmentId: "dfb",
+    coord: "agent.curio.dataflow-builder@1",
+    name: "Dataflow Builder",
+    category: "canvas",
+    capabilities: DATAFLOW_BUILDER_CAPABILITIES,
+    waitsForYou: ["n1"],
+    planProposal: {
+      proposalId: "pp1", tool: "dataflow.plan.write", nodeId: "", summary: "Plan · 1 node", status: "applied",
+      appliedRefs: ["load"], nodeIds: { load: "n1" },
+    },
+    builderSession: { phase: "applied", planProposalId: "pp1", nodeStates: { load: "awaiting-source" }, nodeIds: { load: "n1" } },
+  };
+  const FINDER: AgentAttachment = {
+    ...attachment,
+    attachmentId: "att-df",
+    coord: "agent.curio.dataset-finder@1",
+    name: "Dataset Finder",
+    category: "data",
+    capabilities: DATASET_FINDER_CAPABILITIES,
+    target: { kind: "node" as const, targetId: "n1" },
+    waitsForYou: ["n1"],
+    sourceRecord: { status: "candidates-pending", candidates: 1, askedBy: "dfb" },
+    solvesNodes: false,
+  };
+  const ASKED: AgentSessionTurn = {
+    role: "agent" as const,
+    text: "**Load boundaries** needs a source. Its Dataset Finder found 1 candidate: pick one with Use this source.",
+    content: [{
+      type: "sourcePick" as const, finderAttachmentId: "att-df", nodeId: "n1", nodeLabel: "Load boundaries",
+      lanes: { external: [{ name: "Chicago areas", sourceType: "portal" as const, url: "https://data.example.org/areas.geojson" }], catalog: [] },
+    }],
+  };
+
+  it("shows the node's card in this chat", () => {
+    const scrolled: Element[] = [];
+    const scrollIntoView = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this);
+    };
+    try {
+      const onOpenAgentChat = jest.fn();
+      renderPanel({
+        attachment: BUILDER, turns: [ASKED], attachments: [BUILDER, FINDER], onRecordSourcePick: jest.fn(), onOpenAgentChat,
+        onSolve: jest.fn(),
+      });
+      // The line offers no Resume: the pick goes on by itself.
+      expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+      scrolled.length = 0;
+      fireEvent.click(screen.getByRole("button", { name: "Show its sources" }));
+      expect(scrolled).toEqual([screen.getByRole("group", { name: "Sources for Load boundaries" })]);
+      expect(onOpenAgentChat).not.toHaveBeenCalled();
+    } finally {
+      Element.prototype.scrollIntoView = scrollIntoView;
+    }
+  });
+
+  it("opens the node's Dataset Finder's chat when this chat holds no card of it", () => {
+    const onOpenAgentChat = jest.fn();
+    renderPanel({ attachment: BUILDER, turns: [], attachments: [BUILDER, FINDER], onOpenAgentChat, onSolve: jest.fn() });
+    fireEvent.click(screen.getByRole("button", { name: "Show its sources" }));
+    expect(onOpenAgentChat).toHaveBeenCalledWith("att-df");
   });
 });
 
@@ -3621,14 +3710,26 @@ describe("AgentChatPanel: a row's Solve the server runs shows on the plan card",
     }],
   };
 
-  it("its row reads Solving and waits, and the other rows' Solve waits for it, saying why", () => {
-    renderPanel({ attachment: RUNNING, turns: [PLANNED], onSolvePlanNode: jest.fn() });
-    const solving = screen.getByRole("button", { name: "Solve node Load boundaries" });
-    expect(solving).toBeDisabled();
-    expect(solving).toHaveTextContent("Solving…");
-    const other = screen.getByRole("button", { name: "Solve node Stats" });
-    expect(other).toBeDisabled();
-    expect(other).toHaveAttribute("data-tooltip", "A node of this plan is being solved: wait for its Solve to end");
+  it("its row reads Building, and no row offers its Solve until it ends", () => {
+    const { rerender, props } = renderPanel({
+      attachment: RUNNING,
+      turns: [PLANNED],
+      onSolvePlanNode: jest.fn(),
+      onSolve: jest.fn(),
+      onSimulate: jest.fn().mockResolvedValue(undefined),
+    });
+    const row = (ref: string) => document.querySelector<HTMLElement>(`[data-curio-plan-row="${ref}"]`)!;
+    expect(row("load")).toHaveAttribute("data-curio-row-view", "building");
+    expect(within(row("load")).getByText("Building…")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Solve node Load boundaries" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Solve node Stats" })).toBeNull();
+    // No build starts over it either: the plan line's menu of builds waits.
+    expect(screen.queryByRole("button", { name: "More plan actions" })).toBeNull();
+    // Its Solve over, each row not built offers its own again.
+    rerender(<AgentChatPanel {...props} attachment={{ ...RUNNING, validating: undefined }} />);
+    expect(screen.getByRole("button", { name: "Solve node Load boundaries" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Solve node Stats" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "More plan actions" })).toBeInTheDocument();
   });
 });
 

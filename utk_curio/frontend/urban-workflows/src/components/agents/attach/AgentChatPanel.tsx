@@ -4,6 +4,7 @@ import { useFlowContext } from "../../../providers/FlowProvider";
 import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
 import {
   attachmentDisplayName,
+  CONTENT_GENERATE_CAPABILITY,
   DATASET_SELECT_CAPABILITY,
   declaresCapability,
   ORCHESTRATE_CAPABILITY,
@@ -168,8 +169,6 @@ export const AgentChatPanel: React.FC<{
   solveWaiting?: Array<{ nodeId: string; kind: string; reason?: string; attachmentId?: string | null }>;
   solveEndedBy?: string | null;
   solvePass?: number | null;
-  /** dev/131: resolve ONE node through its own agent, from its pill. */
-  onSolveOneNode?: (nodeId: string) => Promise<unknown>;
   /** dev/118: the live batch's current topological wave. */
   solveWave?: import("../../../services/agents").AgentSolveWave;
   /** dev/118: per-node notices that are not errors (pending/skipped reasons, written-not-executed). */
@@ -273,7 +272,6 @@ export const AgentChatPanel: React.FC<{
   solveWaiting,
   solveEndedBy,
   solvePass,
-  onSolveOneNode,
   solveWave,
   solveNotices,
   onCancelSolve,
@@ -502,6 +500,16 @@ export const AgentChatPanel: React.FC<{
     targetName,
     // No plan row's Solve starts while a build runs on this agent's plan.
     buildRunning: buildRunningOn(attachment, simulating) !== null,
+    // What runs on the plan now: each row of its card says its node's.
+    planLive: { solveProgress, solveErrors, solveNotices, solveWaiting, simulationActivity },
+    // A plan row's name opens its node's own agent, the one that writes its
+    // code, from the live list.
+    nodeChatOf: (nodeId: string) => {
+      const own = attachments?.find(
+        (a) => a.target.kind === "node" && a.target.targetId === nodeId && declaresCapability(a, CONTENT_GENERATE_CAPABILITY),
+      );
+      return own ? { attachmentId: own.attachmentId, name: agentNameOf?.(own.attachmentId) ?? own.name } : null;
+    },
     onImportDataset,
     onApplyProposal,
     beginPackageReview: packageReview.beginReview,
@@ -534,6 +542,22 @@ export const AgentChatPanel: React.FC<{
           (offered ?? cards[cards.length - 1])?.scrollIntoView({ block: "nearest" });
         }
       : null;
+  // The plan line's Show its sources: the card of the node's candidates this
+  // chat holds, the one its Finder's record offers now, else the newest; with
+  // none here, the chat of the node's Finder, which holds its own.
+  const showSourcesOf = (nodeId: string) => {
+    const finder = attachments?.find(
+      (a) =>
+        a.target.kind === "node" && a.target.targetId === nodeId && declaresCapability(a, DATASET_SELECT_CAPABILITY),
+    );
+    const cards = sourceCardsOf(nodeId);
+    const offered = finder?.sourceRecord?.discoveryId
+      ? cards.find((card) => card.getAttribute("data-curio-discovery") === finder.sourceRecord?.discoveryId)
+      : undefined;
+    const card = offered ?? cards[cards.length - 1];
+    if (card) card.scrollIntoView({ block: "nearest" });
+    else if (finder) onOpenAgentChat?.(finder.attachmentId);
+  };
 
   return (
     <div
@@ -600,15 +624,13 @@ export const AgentChatPanel: React.FC<{
             solveProgress={solveProgress}
             solveErrors={solveErrors}
             solveRemedies={solveRemedies}
-            onOpenChat={onOpenAgentChat}
-            agentNameOf={agentNameOf}
             solveWaiting={solveWaiting}
             solveEndedBy={solveEndedBy}
             solvePass={solvePass}
-            onSolveNode={onSolveOneNode}
             solveWave={solveWave}
-            solveNotices={solveNotices}
             onCancelSolve={onCancelSolve}
+            onShowSources={showSourcesOf}
+            runDetails={runDetails}
             onApplyProposal={onApplyProposal}
             onDismissProposal={onDismissProposal}
             onSimulate={onSimulate}

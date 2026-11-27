@@ -2,11 +2,18 @@ import React from "react";
 
 import styles from "../AgentReviewCard.module.css";
 import { PlanNodeRow } from "./PlanNodeRow";
-import { planNodeExtras, planNodeRowState, type PlanDisplay, type PlanNodeReviewState } from "./reviewCardText";
+import { planNodeRowState, type PlanDisplay, type PlanNodeReviewState } from "./reviewCardText";
 
-/** A landed plan's nodes, each inspectable: its goal, what it expects, and
- * Solve then Run as its code is written and checked. No generated code ever
- * renders here (plans are content-free by contract). */
+/** The chat of a node's own agent, the one that writes its code. */
+export interface NodeChat {
+  attachmentId: string;
+  name: string;
+}
+
+/** A landed plan's nodes, one row each: its name, which opens its node's own
+ * agent's chat, its state, Solve then Run as its code is written and checked,
+ * and what it does. No generated code ever renders here (plans are
+ * content-free by contract). */
 export const PlanNodesList: React.FC<{
   part: PlanDisplay;
   planNodeState?: PlanNodeReviewState;
@@ -17,28 +24,35 @@ export const PlanNodesList: React.FC<{
   delegateExists?: (attachmentId: string) => boolean;
   /** The name of the agent another attachment binds, from the live list. */
   agentNameOf?: (attachmentId: string) => string | null;
-}> = ({ part, planNodeState, onSolvePlanNode, onRunPlanNode, onOpenAgentChat, delegateExists, agentNameOf }) => (
+  /** The node's own agent that writes its code, from the live list. */
+  nodeChatOf?: (nodeId: string) => NodeChat | null;
+}> = ({ part, planNodeState, onSolvePlanNode, onRunPlanNode, onOpenAgentChat, delegateExists, agentNameOf, nodeChatOf }) => (
   <ul className={styles.planNodes} aria-label="Planned nodes">
     {part.plan!.nodes.map((node) => {
       const row = planNodeRowState(part, node, planNodeState);
-      const linkable = Boolean(
-        row.changeHomeId && onOpenAgentChat && (delegateExists ? delegateExists(row.changeHomeId) : true),
-      );
+      // The chat that holds the change its code landed as, else its node's
+      // own agent's, which writes it.
+      const home =
+        row.changeHomeId && (delegateExists ? delegateExists(row.changeHomeId) : true)
+          ? { attachmentId: row.changeHomeId, name: agentNameOf?.(row.changeHomeId) ?? null }
+          : row.nodeId
+            ? nodeChatOf?.(row.nodeId) ?? null
+            : null;
       return (
         <PlanNodeRow
           key={node.ref}
           node={node}
-          applied={row.applied}
-          deps={row.deps}
-          state={row.state}
+          view={row.view}
           solvable={row.solvable}
-          solveBlocker={row.solveBlocker}
-          solving={row.solving}
-          extras={planNodeExtras(part, node)}
+          check={row.check}
+          atWork={row.atWork}
+          afterLabel={row.afterLabel}
+          reason={row.reason}
+          notice={row.notice}
           onSolve={onSolvePlanNode ? (onLine) => onSolvePlanNode(node.ref, onLine) : undefined}
           onRun={onRunPlanNode ? (onLine) => onRunPlanNode(node.ref, onLine) : undefined}
-          onOpenChange={linkable ? () => onOpenAgentChat!(row.changeHomeId!) : undefined}
-          changeAgentName={row.changeHomeId ? agentNameOf?.(row.changeHomeId) ?? undefined : undefined}
+          onOpenChat={home && onOpenAgentChat ? () => onOpenAgentChat(home.attachmentId) : undefined}
+          chatAgentName={home?.name ?? null}
         />
       );
     })}

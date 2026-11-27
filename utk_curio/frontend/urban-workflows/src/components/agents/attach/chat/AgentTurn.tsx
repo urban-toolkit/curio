@@ -33,7 +33,8 @@ import { SafeAgentContent } from "../../content/SafeAgentContent";
 import { AgentRunStatusLine } from "../AgentRunStatusLine";
 import { LlmConfigAction } from "../../../llmConfigs/LlmConfigAction";
 import styles from "../AgentChatPanel.module.css";
-import { failedCallWords, lastingToolFailures, planNodeStateFor, toolsCalledBy } from "./chatPanelDerived";
+import type { NodeChat } from "../../content/reviewCard/PlanNodesList";
+import { failedCallWords, lastingToolFailures, planNodeStateFor, toolsCalledBy, type PlanLive } from "./chatPanelDerived";
 
 /** The callbacks a turn's cards may need: an install's review, a change's
  * Undo, a landed plan's rows. */
@@ -70,6 +71,10 @@ export interface AgentTurnActions {
   targetName?: string | null;
   /** A build runs on this agent's plan: no plan row's Solve starts. */
   buildRunning?: boolean;
+  /** What runs on this agent's plan now: each row of its card says its node's. */
+  planLive?: PlanLive;
+  /** A plan node's own agent, whose chat its row's name opens. */
+  nodeChatOf?: (nodeId: string) => NodeChat | null;
   onImportDataset?: (
     file: File,
     discoverySource?: import("../../../../services/datasetCatalog/datasetCatalogTypes").DatasetDiscoverySourceInput,
@@ -279,12 +284,13 @@ export const AgentTurn: React.FC<{
                 tintClassName={tint}
                 onUndo={actions.onUndoChange}
                 refusal={actions.refusalOf?.(part.changeId) ?? null}
-                planNodeState={planNodeStateFor(attachment, part, Boolean(actions.buildRunning))}
+                planNodeState={planNodeStateFor(attachment, part, Boolean(actions.buildRunning), actions.planLive)}
                 onSolvePlanNode={actions.onSolvePlanNode}
                 onRunPlanNode={actions.onRunPlanNode}
                 onOpenAgentChat={actions.onOpenAgentChat}
                 delegateExists={actions.delegateExists}
                 agentNameOf={actions.agentNameOf}
+                nodeChatOf={actions.nodeChatOf}
               />
             ))}
           {(t.content ?? [])

@@ -1,5 +1,5 @@
 /* dev/52 DR-5: the Dataflow Builder's plan line under the chat's Goal line,
-   its more part, and Solve this node's line in a node agent's chat. */
+   and Solve this node's line in a node agent's chat. */
 
 .plan {
   flex: none;
@@ -9,15 +9,15 @@
   background: var(--curio-card-bg);
 }
 
-/* The phase in words, the counts, who it waits for, one main action and the
-   more toggle, on one row. The words give way, cut short with an ellipsis. */
+/* Where the plan stands, its one action and the menu of its other actions,
+   on one row. The words give way, cut short with an ellipsis. */
 .line {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 40px;
+  min-height: 44px;
   box-sizing: border-box;
-  padding: 6px 8px 6px 12px;
+  padding: 6px 6px 6px 12px;
   font-size: 12.5px;
   color: var(--curio-text-primary);
 }
@@ -34,34 +34,73 @@
   font-weight: 600;
 }
 
-/* What the closed more part holds that the line does not say: the plan's
-   failures, or how the last session ended. It gives way after the words.
-   Empty, it takes no room: the gap before it is given back. */
-.lineSign {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--curio-text-meta);
+/* A count after the phase, and the dot before a node's name. */
+.lineMuted {
+  color: var(--curio-text-secondary);
 }
 
-.lineSign:empty {
-  margin-left: -8px;
+/* What a node waits for, in the tone the rail's waiting dot has. */
+.lineWarn {
+  font-weight: 600;
+  color: var(--curio-warning-text);
 }
 
-.lineSignFailed {
+.lineFail {
   font-weight: 600;
   color: var(--curio-danger-text);
 }
 
-/* Whose turn it is: the nodes waiting for the user, in the warning tone their
-   rows' "Needs a source" has. */
-.lineNeedsYou {
-  flex: none;
-  font-weight: 600;
+/* While a batch or a build runs: its dot, what runs on which node, the time,
+   and the count. */
+.runLine {
+  display: inline;
+}
+
+.runDot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 7px;
+  border-radius: 50%;
+  vertical-align: 1px;
+  background: var(--curio-role-running-fg);
+  animation: planRunPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes planRunPulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .runDot {
+    animation: none;
+  }
+}
+
+/* Visually hidden, still announced: what runs. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
   white-space: nowrap;
-  color: var(--curio-warning-text);
+  border: 0;
+}
+
+/* The menu of the plan's other actions: its chevron, and the menu under it. */
+.menuWrap {
+  position: relative;
+  flex: none;
+  display: flex;
 }
 
 .moreToggle {
@@ -80,31 +119,64 @@
 }
 
 .moreToggle:hover,
-.moreToggle:focus-visible {
+.moreToggle:focus-visible,
+.moreToggleOpen {
   background: var(--curio-surface-muted);
   color: var(--curio-text-primary);
 }
 
-/* What comes with a fix, under the line, in view whatever the more part does. */
+.menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 5;
+  width: 262px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: 10px;
+  background: var(--curio-card-bg);
+  box-shadow: var(--curio-shadow-modal);
+}
+
+.menuItem {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--curio-text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.menuItem:hover,
+.menuItem:focus-visible {
+  background: var(--curio-surface-muted);
+}
+
+.menuItemSays {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--curio-text-secondary);
+}
+
+/* What comes with a fix, under the line, in view. */
 .plan > .actions,
 .plan > .hint,
 .plan > .error {
   padding: 0 12px 8px;
-}
-
-/* The nodes, the other actions and the hints: at most a third of the panel,
-   which starts under the top bar, and scrolling past that, so the
-   conversation is never squeezed to nothing. */
-.more {
-  composes: thinScrollbar from "../../../styles/scrollbars.module.css";
-  max-height: calc((100vh - var(--curio-top-bar-height)) / 3);
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 8px 12px 10px;
-  border-top: 1px solid var(--curio-border);
-  background: var(--curio-surface-muted);
 }
 
 /* Solve this node: the button, then its narration or outcome, on one row. */
@@ -159,50 +231,6 @@
   color: var(--curio-accent-sky-fg, var(--curio-role-running-fg));
 }
 
-/* The plan's nodes, one row each: its name, its state in words, whose turn it
-   is, and its own Solve. */
-.nodeRuns {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.nodeRun {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.75rem;
-  padding: 3px 0;
-  min-width: 0;
-}
-
-/* A long name is cut with "…", as a node's header cuts it; its tooltip says
-   it whole. */
-.nodeName {
-  flex: 1;
-  color: var(--curio-text-primary);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.status_pending { color: var(--curio-text-secondary); }
-.status_solving { color: var(--curio-role-running-fg); }
-.status_solved { color: var(--curio-success-text); }
-.status_failed { color: var(--curio-danger-text); }
-.status_skipped { color: var(--curio-warning-text); }
-/* dev/115: the verified loop's live states. */
-.status_generating { color: var(--curio-role-running-fg); }
-.status_verifying { color: var(--curio-role-running-fg); font-style: italic; }
-.status_fixing { color: var(--curio-warning-text); }
-.status_verified { color: var(--curio-success-text); font-weight: 600; }
-.status_proposed { color: var(--curio-text-secondary); }
-.status_written { color: var(--curio-text-secondary); font-style: italic; }
-
 /* A row out of width moves its next button to a new line; a button keeps its
    label on one (#505). */
 .actions {
@@ -214,7 +242,7 @@
 
 .solve,
 .run {
-  font-size: 0.78rem;
+  font-size: 12px;
   font-weight: 600;
   border-radius: 8px;
   padding: 5px 14px;
@@ -230,15 +258,17 @@
   min-width: 0;
 }
 
+/* The line's action. */
 .solve {
   background: var(--curio-top-bar-bg);
   color: var(--curio-text-on-dark);
 }
 
+/* Stop, and a review's Dismiss: a quiet button. */
 .run {
   background: var(--curio-card-bg);
-  color: var(--curio-success-text);
-  border-color: var(--curio-success-bg);
+  color: var(--curio-text-primary);
+  border-color: var(--curio-border-strong);
 }
 
 .solve:disabled,
@@ -260,51 +290,4 @@
   color: var(--curio-text-secondary);
   align-self: center;
   margin-right: 4px;
-}
-
-/* dev/131: a node that depends on the USER is visualized as such: the owner's
-   "the nodes that depend on user inputs should be better visualized". Its row
-   has the waiting dot the rail and the badges show, before its name, and one
-   label, Needs a source, in the warning tone. */
-.waitingDot {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--curio-warning-text);
-}
-
-.needsSource {
-  font-size: 0.66rem;
-  font-weight: 700;
-  color: var(--curio-warning-text);
-  white-space: nowrap;
-}
-
-.waitingUpstream {
-  font-size: 0.66rem;
-  color: var(--curio-text-secondary);
-  white-space: nowrap;
-}
-
-/* dev/131: resolve ONE node from its own row. */
-.nodeSolve {
-  flex: none;
-  font-size: 0.66rem;
-  font-weight: 600;
-  border-radius: 6px;
-  padding: 1px 8px;
-  cursor: pointer;
-  border: 1px solid var(--curio-border-strong);
-  background: var(--curio-card-bg);
-  color: var(--curio-text-primary);
-}
-
-.nodeSolve:hover:not(:disabled) {
-  border-color: var(--curio-text-secondary);
-}
-
-.nodeSolve:disabled {
-  cursor: default;
-  opacity: 0.5;
 }

@@ -1,10 +1,10 @@
 import React from "react";
 import { subscribeApiSettingsRequests } from "../../components/apiSettings/apiSettingsRequest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 
 import { AgentChangeCard } from "../../components/agents/content/AgentChangeCard";
 import type { PlanNodeReviewState } from "../../components/agents/content/AgentReviewCard";
-import { BUILD_RUNNING_HINT, type AgentChangePart } from "../../services/agents";
+import type { AgentChangePart } from "../../services/agents";
 
 /** A change an agent made, as its turn's card carries it (`changes.card`). */
 const change = (overrides: Partial<AgentChangePart> = {}): AgentChangePart => ({
@@ -26,7 +26,8 @@ describe("AgentChangeCard (an agent's change, landed, with its Undo)", () => {
     expect(screen.getByRole("group", { name: "Change: Replaced the content of the Python node · n1" })).toBeInTheDocument();
     expect(screen.getByText("Python · n1")).toBeInTheDocument();
     expect(screen.getByText("print(2)")).toBeInTheDocument();
-    expect(screen.getByText("code")).toBeInTheDocument();
+    // Its title says what it is: no chip names its kind.
+    expect(screen.queryByText("code")).toBeNull();
     expect(screen.getByRole("button", { name: "Undo" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Apply" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Dismiss" })).toBeNull();
@@ -450,6 +451,12 @@ const planChange = (plan: AgentChangePart["plan"], overrides: Partial<AgentChang
     ...overrides,
   });
 
+/** Opens a plan card's Details. */
+const openDetails = () => {
+  fireEvent.click(screen.getByRole("button", { name: "Details" }));
+  return screen.getByRole("group", { name: "Plan details" });
+};
+
 describe("AgentChangeCard: dev/52 a landed plan", () => {
   const plan = planChange({
     goal: "heat analysis",
@@ -461,33 +468,79 @@ describe("AgentChangeCard: dev/52 a landed plan", () => {
     edges: [{ from: "a", to: "b", toHandle: "in_0", fromLabel: "Load", toLabel: "Analyze" }],
   });
 
-  it("states its goal and what it added, lists its nodes and names its connections", () => {
+  it("is titled in Curio's words, lists its nodes with what each does, and keeps the rest in its Details", () => {
     render(<AgentChangeCard part={plan} planNodeState={{ appliedRefs: ["a", "b"] }} onUndo={jest.fn()} />);
-    expect(screen.getByText("heat analysis")).toBeInTheDocument();
-    expect(screen.getByText("+2 nodes · +1 connection")).toBeInTheDocument();
+    expect(screen.getByText("Plan: 2 nodes, 1 connection")).toBeInTheDocument();
+    // No chip names its kind, and its counts are not lines of the card.
+    expect(screen.queryByText("plan")).toBeNull();
+    expect(screen.queryByText("+2 nodes · +1 connection")).toBeNull();
+    expect(screen.getByText("load it")).toBeInTheDocument();
+    expect(screen.getByText("crunch it")).toBeInTheDocument();
     // Rows, not the raw preview: no generated code surface on plans.
     expect(screen.queryByText(/should not render/)).toBeNull();
-    expect(screen.getByText("in: none · out: dataframe")).toBeInTheDocument();
-    expect(screen.getByText("crunch it")).toBeInTheDocument();
+    // What each node reads and writes, and the connections, are its Details'.
+    expect(screen.queryByText("in: none · out: dataframe")).toBeNull();
+    const toggle = screen.getByRole("button", { name: "Details" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    const details = openDetails();
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(toggle).toHaveAttribute("aria-controls", details.id);
+    expect(within(details).getByText("heat analysis")).toBeInTheDocument();
+    expect(within(details).getByText("in: none · out: dataframe")).toBeInTheDocument();
     // The whole pair shows on hover too, handle included (#511).
-    expect(screen.getByText("Load → Analyze [in_0]")).toHaveAttribute("data-tooltip", "Load → Analyze [in_0]");
-    expect(screen.getByRole("button", { name: "Undo" })).toBeInTheDocument();
+    expect(within(details).getByText("Load → Analyze [in_0]")).toHaveAttribute("data-tooltip", "Load → Analyze [in_0]");
+    expect(screen.getByRole("button", { name: "Undo" })).toHaveAttribute("data-tooltip", "Takes the plan back");
+  });
+
+  it("its Details say its checks and agents in a person's words, where a card from before them says what the agents read", () => {
+    const { unmount } = render(
+      <AgentChangeCard
+        part={{ ...plan, checks: ["Checks: no cycles. Node Builder on 2 nodes, Dataset Finder on Load."] }}
+        planNodeState={{ appliedRefs: ["a", "b"] }}
+      />,
+    );
+    let details = openDetails();
+    expect(within(details).getByText("Checks: no cycles. Node Builder on 2 nodes, Dataset Finder on Load.")).toBeInTheDocument();
+    expect(within(details).queryByText("+2 nodes · +1 connection")).toBeNull();
+    unmount();
+    render(<AgentChangeCard part={plan} planNodeState={{ appliedRefs: ["a", "b"] }} />);
+    details = openDetails();
+    expect(within(details).getByText("+2 nodes · +1 connection")).toBeInTheDocument();
   });
 
   it("nothing is applied or edited row by row: no Apply, no goal box, no Connect", () => {
     render(<AgentChangeCard part={plan} planNodeState={{ appliedRefs: ["a", "b"] }} />);
+    openDetails();
     expect(screen.queryByRole("button", { name: /^Create node/ })).toBeNull();
     expect(screen.queryByRole("textbox")).toBeNull();
     expect(screen.queryByRole("button", { name: /^Connect/ })).toBeNull();
   });
 
-  it("an undone plan offers no row actions and no Undo", () => {
+  it("an undone plan offers no row actions and no Undo, only its Details", () => {
     render(
       <AgentChangeCard part={{ ...plan, status: "undone" }} planNodeState={{ appliedRefs: ["a", "b"] }}
         onSolvePlanNode={jest.fn()} onRunPlanNode={jest.fn()} onUndo={jest.fn()} />,
     );
     expect(screen.getByText("Undone")).toBeInTheDocument();
-    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual(["Details"]);
+  });
+
+  it("its Undo says it takes back the goal the plan set", () => {
+    render(<AgentChangeCard part={{ ...plan, goalSet: "heat analysis" }} planNodeState={{ appliedRefs: ["a", "b"] }} onUndo={jest.fn()} />);
+    expect(screen.getByRole("button", { name: "Undo" })).toHaveAttribute(
+      "data-tooltip",
+      "Takes the plan back, and the goal it set",
+    );
+  });
+
+  it("what a plan left undone stays in view", () => {
+    render(
+      <AgentChangeCard
+        part={{ ...plan, leftUndone: "Left undone: 1 connection, since Load was removed" }}
+        planNodeState={{ appliedRefs: ["a", "b"] }}
+      />,
+    );
+    expect(screen.getByText("Left undone: 1 connection, since Load was removed")).toBeInTheDocument();
   });
 });
 
@@ -503,7 +556,7 @@ describe("AgentChangeCard: dev/59 a plan that removed nodes (DEC-049.2)", () => 
     cascadeCount: 1,
   });
 
-  it("names every victim with a content flag and the cascade, and the tile that left the dashboard", () => {
+  it("names every victim with a content flag and the cascade, and the tile that left the dashboard, in view", () => {
     render(<AgentChangeCard part={revision} onUndo={jest.fn()} />);
     const section = screen.getByRole("group", { name: "Nodes and connections this plan removed" });
     expect(section).toHaveTextContent("Removed 2 nodes (and 1 connected edge)");
@@ -524,7 +577,7 @@ describe("AgentChangeCard: dev/59 a plan that removed nodes (DEC-049.2)", () => 
     const section = screen.getByRole("group", { name: "Nodes and connections this plan removed" });
     expect(section).toHaveTextContent("Removed 1 connection");
     expect(section).toHaveTextContent("Metric Distribution → Pool Input Merge");
-    expect(screen.getByText("Metric Distribution ⇄ Time Data Pool · interaction")).toBeInTheDocument();
+    expect(within(openDetails()).getByText("Metric Distribution ⇄ Time Data Pool · interaction")).toBeInTheDocument();
   });
 
   // An interaction edge on a view's dot (`fromView`, `toView`) names the view
@@ -540,8 +593,9 @@ describe("AgentChangeCard: dev/59 a plan that removed nodes (DEC-049.2)", () => 
       ],
     });
     render(<AgentChangeCard part={viewEdges} />);
-    expect(screen.getByText("Heights chart ⇄ Two views · heights · interaction")).toBeInTheDocument();
-    expect(screen.getByText("Two views · city ⇄ Pool · interaction")).toBeInTheDocument();
+    const details = openDetails();
+    expect(within(details).getByText("Heights chart ⇄ Two views · heights · interaction")).toBeInTheDocument();
+    expect(within(details).getByText("Two views · city ⇄ Pool · interaction")).toBeInTheDocument();
   });
 
   it("additive plans render no Removed section", () => {
@@ -575,21 +629,24 @@ describe("AgentChangeCard: dev/71 a landed plan's rows: Solve then Run", () => {
       />,
     );
 
-  it("rows name their dependencies", () => {
+  /** A row of the card, by its node's ref. */
+  const row = (ref: string) => document.querySelector<HTMLElement>(`[data-curio-plan-row="${ref}"]`)!;
+
+  it("a row that waits upstream says after which node, and no row lists what it needs", () => {
     renderRows({ appliedRefs: ["a", "b"] });
-    expect(screen.getByText("needs: Load")).toBeInTheDocument();
+    expect(within(row("b")).getByText("after Load")).toBeInTheDocument();
+    expect(screen.queryByText("needs: Load")).toBeNull();
   });
 
-  it("Solve gates on solved dependencies, with the blocker named", () => {
+  it("Solve shows only where it can run: the node after an unbuilt one waits, saying after which", () => {
     renderRows({ appliedRefs: ["a", "b"], nodeStates: { a: "created", b: "created" } });
-    const solveB = screen.getByRole("button", { name: "Solve node Analyze" });
-    expect(solveB).toBeDisabled();
-    expect(solveB).toHaveAttribute("data-tooltip", "needs 'Load' solved first");
+    expect(screen.queryByRole("button", { name: "Solve node Analyze" })).toBeNull();
+    expect(within(row("b")).getByText("after Load")).toBeInTheDocument();
     // The first node has no upstream: it can be solved now.
     expect(screen.getByRole("button", { name: "Solve node Load" })).toBeEnabled();
   });
 
-  it("Solve enables once upstream is approved, and targets the ref", async () => {
+  it("Solve comes once upstream is built, and targets the ref; a built row shows its tick", async () => {
     const onSolve = jest.fn().mockResolvedValue(undefined);
     renderRows({ appliedRefs: ["a", "b"], nodeStates: { a: "approved", b: "created" } }, { onSolve });
     const solveB = screen.getByRole("button", { name: "Solve node Analyze" });
@@ -597,43 +654,45 @@ describe("AgentChangeCard: dev/71 a landed plan's rows: Solve then Run", () => {
     fireEvent.click(solveB);
     // The ref, and the row's listener for how far a download has come.
     await waitFor(() => expect(onSolve).toHaveBeenCalledWith("b", expect.any(Function)));
-    // Upstream approved rows show Run, not Solve.
+    // An upstream row that is built shows its tick, not Solve.
     expect(screen.queryByRole("button", { name: "Solve node Load" })).toBeNull();
-    expect(screen.getByText("Solved ✓")).toBeInTheDocument();
+    const tick = within(row("a")).getByRole("img", { name: "Solved" });
+    expect(tick).toHaveAttribute("data-tooltip", "Solved: its code ran in the sandbox");
   });
 
   it("a validated upstream (its code landed) is enough for the next node's Solve", () => {
     renderRows({ appliedRefs: ["a", "b"], nodeStates: { a: "validated", b: "created" } });
     expect(screen.getByRole("button", { name: "Solve node Analyze" })).toBeEnabled();
-    expect(screen.getByText("Validated ✓")).toBeInTheDocument();
+    expect(within(row("a")).getByRole("img", { name: "Solved" })).toBeInTheDocument();
   });
 
-  it("a failed row offers Solve again", () => {
-    renderRows({ appliedRefs: ["a", "b"], nodeStates: { a: "failed", b: "created" } });
-    expect(screen.getByText("Failed: Solve retries")).toBeInTheDocument();
+  it("a failed row says so, why on a line of its own, and offers Solve again", () => {
+    renderRows({
+      appliedRefs: ["a", "b"],
+      nodeIds: { a: "na", b: "nb" },
+      nodeStates: { a: "failed", b: "created" },
+      failures: { na: "Validation failed and nothing was written" },
+    });
+    expect(within(row("a")).getByText("Failed")).toBeInTheDocument();
+    expect(within(row("a")).getByText("Validation failed and nothing was written")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Solve node Load" })).toBeEnabled();
   });
 
-  it("a row awaiting its source says Needs a source and keeps Solve", async () => {
-    const onSolve = jest.fn().mockResolvedValue(undefined);
-    renderRows({ appliedRefs: ["a", "b"], nodeStates: { a: "awaiting-source", b: "created" } }, { onSolve });
-    expect(screen.getByText("Needs a source")).toBeInTheDocument();
-    const solveA = screen.getByRole("button", { name: "Solve node Load" });
-    expect(solveA).toBeEnabled();
-    fireEvent.click(solveA);
-    await waitFor(() => expect(onSolve).toHaveBeenCalledWith("a", expect.any(Function)));
+  it("a row awaiting the person's pick says Needs a source, and offers no Solve: the pick goes on by itself", () => {
+    renderRows({ appliedRefs: ["a", "b"], nodeStates: { a: "awaiting-source", b: "created" } });
+    expect(within(row("a")).getByText("Needs a source")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Solve node Load" })).toBeNull();
     // The node it feeds waits for it, which is named.
-    const solveB = screen.getByRole("button", { name: "Solve node Analyze" });
-    expect(solveB).toBeDisabled();
-    expect(solveB).toHaveAttribute("data-tooltip", "needs 'Load' solved first");
+    expect(screen.queryByRole("button", { name: "Solve node Analyze" })).toBeNull();
+    expect(within(row("b")).getByText("after Load")).toBeInTheDocument();
   });
 
   it.each([
     ["awaiting-download", "Downloading its source"],
     ["awaiting-install", "Needs its dataset installed"],
-  ])("a row whose source is %s says so, not that it needs a source, and keeps Solve", (state, chip) => {
+  ])("a row whose source is %s says so, not that it needs a source, and keeps Solve", (state, words) => {
     renderRows({ appliedRefs: ["a", "b"], nodeStates: { a: state, b: "created" } });
-    expect(screen.getByText(chip)).toBeInTheDocument();
+    expect(screen.getByText(words)).toBeInTheDocument();
     expect(screen.queryByText("Needs a source")).toBeNull();
     expect(screen.getByRole("button", { name: "Solve node Load" })).toBeEnabled();
   });
@@ -649,13 +708,55 @@ describe("AgentChangeCard: dev/71 a landed plan's rows: Solve then Run", () => {
 
   // A build is a stream over the plan: a row's Solve started while it runs
   // would build the same node beside it.
-  it("while a build runs on the plan, no row's Solve starts: each says why", () => {
-    renderRows({ appliedRefs: ["a", "b"], nodeStates: { a: "awaiting-source", b: "created" }, buildRunning: true });
-    for (const name of ["Solve node Load", "Solve node Analyze"]) {
-      const solve = screen.getByRole("button", { name });
-      expect(solve).toBeDisabled();
-      expect(solve).toHaveAttribute("data-tooltip", BUILD_RUNNING_HINT);
-    }
+  it("while a build runs on the plan, no row's Solve is offered, and the node it builds reads Building", () => {
+    renderRows({
+      appliedRefs: ["a", "b"],
+      nodeIds: { a: "na", b: "nb" },
+      nodeStates: { a: "created", b: "created" },
+      buildRunning: true,
+      buildRef: "a",
+      buildActivity: "generating content (round 1)",
+    });
+    expect(screen.queryByRole("button", { name: /^Solve node/ })).toBeNull();
+    const building = within(row("a")).getByText("Building…");
+    expect(building).toHaveAttribute("data-tooltip", "Generating content (round 1)");
+    expect(within(row("b")).getByText("after Load")).toBeInTheDocument();
+  });
+
+  it("while a batch Solve runs, no row's Solve is offered; the node it works on reads Building, its step on its tooltip", () => {
+    renderRows({
+      appliedRefs: ["a", "b"],
+      nodeIds: { a: "na", b: "nb" },
+      nodeStates: { a: "approved", b: "created" },
+      batchRunning: true,
+      runs: { na: "solved", nb: "verifying" },
+    });
+    expect(screen.queryByRole("button", { name: /^Solve node/ })).toBeNull();
+    expect(within(row("b")).getByText("Building…")).toHaveAttribute("data-tooltip", "Running it in the sandbox");
+  });
+
+  it("a written row says its node has no code to run, on its tick", () => {
+    renderRows({ appliedRefs: ["a", "b"], nodeIds: { a: "na", b: "nb" }, runs: { na: "written", nb: "pending" } });
+    expect(within(row("a")).getByRole("img", { name: "Written" })).toHaveAttribute(
+      "data-tooltip",
+      "Written: it has no code to run, and renders in the browser",
+    );
+  });
+
+  it("a notice that is no failure is a quiet line on its row", () => {
+    renderRows({
+      appliedRefs: ["a", "b"],
+      nodeIds: { a: "na", b: "nb" },
+      notices: { na: "pending: the batch's time budget (45 min) was spent; Retry continues from here" },
+    });
+    expect(within(row("a")).getByText(/time budget/)).toBeInTheDocument();
+    expect(within(row("b")).queryByText(/time budget/)).toBeNull();
+  });
+
+  it("a row the plan could not place says Not placed", () => {
+    renderRows({ appliedRefs: ["a"] });
+    expect(within(row("b")).getByText("Not placed")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Solve node Analyze" })).toBeNull();
   });
 
   it("a card whose plan the attachment no longer holds shows its rows without actions", () => {
@@ -665,7 +766,7 @@ describe("AgentChangeCard: dev/71 a landed plan's rows: Solve then Run", () => {
   });
 });
 
-describe("AgentChangeCard: dev/72 a row's chip links to the chat that holds its code's change", () => {
+describe("AgentChangeCard: dev/72 a row's name opens the chat of its node's own agent", () => {
   const plan = planChange({
     goal: "g",
     nodes: [{ ref: "a", nodeType: "t", title: "Load", intent: "load" }],
@@ -673,7 +774,7 @@ describe("AgentChangeCard: dev/72 a row's chip links to the chat that holds its 
     edges: [],
   });
 
-  it("the chip opens the node agent's chat, named as the live list names it", () => {
+  it("the name opens the chat that holds its code's change, named as the live list names its agent", () => {
     const onOpenAgentChat = jest.fn();
     render(
       <AgentChangeCard
@@ -688,12 +789,29 @@ describe("AgentChangeCard: dev/72 a row's chip links to the chat that holds its 
         }}
       />,
     );
-    expect(screen.getByText("Validated ✓")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Open Node Builder's chat" }));
+    const name = screen.getByRole("button", { name: "Load" });
+    expect(name).toHaveAttribute("data-tooltip", "Open its Node Builder");
+    fireEvent.click(name);
     expect(onOpenAgentChat).toHaveBeenCalledWith("att-nb");
   });
 
-  it("a home that is gone renders no link", () => {
+  it("before its code landed, the name opens the node's own agent, from the live list", () => {
+    const onOpenAgentChat = jest.fn();
+    render(
+      <AgentChangeCard
+        part={plan}
+        onOpenAgentChat={onOpenAgentChat}
+        nodeChatOf={(nodeId: string) => (nodeId === "na" ? { attachmentId: "att-own", name: "My Builder" } : null)}
+        planNodeState={{ appliedRefs: ["a"], nodeIds: { a: "na" }, nodeStates: { a: "created" } }}
+      />,
+    );
+    const name = screen.getByRole("button", { name: "Load" });
+    expect(name).toHaveAttribute("data-tooltip", "Open its My Builder");
+    fireEvent.click(name);
+    expect(onOpenAgentChat).toHaveBeenCalledWith("att-own");
+  });
+
+  it("a home that is gone, and no agent of its own, renders the name as plain text", () => {
     render(
       <AgentChangeCard
         part={plan}
@@ -706,7 +824,8 @@ describe("AgentChangeCard: dev/72 a row's chip links to the chat that holds its 
         }}
       />,
     );
-    expect(screen.queryByRole("button", { name: /chat/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Load" })).toBeNull();
+    expect(screen.getByText("Load")).toBeInTheDocument();
   });
 });
 
@@ -737,8 +856,10 @@ describe("AgentChangeCard: #662 a landed plan's widgets, copies and scenarios", 
       ],
     });
 
-  it("names each scenario with its nodes, what a duplicate copies and the value it changes", () => {
+  it("names each scenario with its nodes, what a duplicate copies and the value it changes, in its Details", () => {
     render(<AgentChangeCard part={scenarioPlan()} />);
+    expect(screen.getByText("Plan: 3 nodes, 3 connections, 2 scenarios")).toBeInTheDocument();
+    openDetails();
     const group = screen.getByRole("group", { name: "Scenarios this plan saves" });
     expect(group).toHaveTextContent("Real heights");
     const twin = screen.getByLabelText("Scenario Twice as tall");
@@ -746,27 +867,40 @@ describe("AgentChangeCard: #662 a landed plan's widgets, copies and scenarios", 
     expect(twin).toHaveTextContent("every building doubled");
   });
 
-  it("a copy's row reads apart from its original's, with its widgets", () => {
+  it("a copy reads apart from its original's, with its widgets, in its Details", () => {
     render(<AgentChangeCard part={scenarioPlan()} planNodeState={{ appliedRefs: ["buildings", "shadows", "shadows_tall"] }} />);
-    expect(screen.getByText("in Twice as tall · a copy of Shadows")).toBeInTheDocument();
-    expect(screen.getByText("widgets: height_factor (number, 2)")).toBeInTheDocument();
+    const details = openDetails();
+    expect(within(details).getByText("in Twice as tall · a copy of Shadows")).toBeInTheDocument();
+    expect(within(details).getByText("widgets: height_factor (number, 2)")).toBeInTheDocument();
   });
 
-  it("a saved scenario says so", () => {
+  it("a saved scenario says so, in its Details", () => {
     render(
       <AgentChangeCard
         part={scenarioPlan()}
         planNodeState={{ appliedRefs: ["shadows", "shadows_tall"], scenarioStates: { "0": "applied" } }}
       />,
     );
+    openDetails();
     expect(screen.getByLabelText("Scenario Real heights")).toHaveTextContent("Saved ✓");
     expect(screen.getByLabelText("Scenario Twice as tall")).not.toHaveTextContent("Saved");
+  });
+
+  it("a scenario the plan could not save says so on the card, in view", () => {
+    render(
+      <AgentChangeCard
+        part={scenarioPlan()}
+        planNodeState={{ appliedRefs: ["shadows", "shadows_tall"], scenarioStates: { "0": "applied", "1": "refused" } }}
+      />,
+    );
+    expect(screen.getByText("Not saved ✗: Twice as tall")).toBeInTheDocument();
   });
 
   it("a plan without scenarios renders no Scenarios section", () => {
     const part = scenarioPlan();
     delete part.plan!.scenarios;
     render(<AgentChangeCard part={part} />);
+    openDetails();
     expect(screen.queryByRole("group", { name: "Scenarios this plan saves" })).toBeNull();
   });
 });
@@ -786,7 +920,7 @@ describe("AgentChangeCard: a landed Spatial Join, Data Pool and Simple View say 
       edgeCount: 2,
     } as never);
 
-  it("a join's row names the operation and the output the plan set by name, as its widgets, and no other row names one", () => {
+  it("a join's Details name the operation and the output the plan set by name, as its widgets, and no other node's", () => {
     render(
       <AgentChangeCard
         part={joinPlan({
@@ -795,6 +929,7 @@ describe("AgentChangeCard: a landed Spatial Join, Data Pool and Simple View say 
         planNodeState={{ appliedRefs: ["labels", "hoods", "join"] }}
       />,
     );
+    openDetails();
     expect(screen.getByText('widgets: operation (choice, "within"), output (choice, "counts")')).toBeInTheDocument();
     expect(screen.getAllByText(/^widgets: /)).toHaveLength(1);
   });
@@ -807,10 +942,11 @@ describe("AgentChangeCard: a landed Spatial Join, Data Pool and Simple View say 
       />,
     );
     expect(screen.getByText("count the labels within each neighborhood")).toBeInTheDocument();
+    openDetails();
     expect(screen.queryAllByText(/^operation |output counts|^widgets: /)).toHaveLength(0);
   });
 
-  it("a pool's row names its modes as its selects do, a view's its image column, and no other row names one", () => {
+  it("a pool's Details name its modes as its selects do, a view's its image column, and no other node's", () => {
     render(
       <AgentChangeCard
         part={planChange({
@@ -836,6 +972,7 @@ describe("AgentChangeCard: a landed Spatial Join, Data Pool and Simple View say 
         planNodeState={{ appliedRefs: ["photos", "pool", "either", "view"] }}
       />,
     );
+    openDetails();
     expect(screen.getByText("Conflict between visualizations: Merge (AND)")).toBeInTheDocument();
     expect(
       screen.getByText("Conflict inside visualization: Merge (OR); Conflict between visualizations: Merge (OR)"),

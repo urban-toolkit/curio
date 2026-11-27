@@ -1,11 +1,11 @@
 /**
  * The review and change cards' pure text and state derivations (memo dev/142,
- * F4: split out of `AgentReviewCard.tsx`): the source block's labels, the
- * row-state chips, an install's outcome and effect lines, and the per-row
- * readiness a landed plan's rows compute from the attachment's ledgers.
+ * F4: split out of `AgentReviewCard.tsx`): the source block's labels, a landed
+ * plan's row for each node (what its row says and offers, from the
+ * attachment's ledgers and what runs on the plan now), an install's outcome
+ * and effect lines, and a plan's details.
  */
 import type { AgentProposalPart, AgentSourceRef } from "../../../../services/agents";
-import { BUILD_RUNNING_HINT, ROW_SOLVE_RUNNING_HINT } from "../../../../services/agents/planBuild";
 
 /** What a plan's sections read of its card, a change's: its tool and plan. */
 export type PlanDisplay = { tool: string; plan?: AgentProposalPart["plan"] };
@@ -53,7 +53,8 @@ export function sourceRefText(ref: AgentSourceRef): string {
   }
 }
 
-/** A landed plan's per-node state (its mirror + the builder session). */
+/** A landed plan's per-node state (its mirror + the builder session), with
+ * what runs on it now. */
 export interface PlanNodeReviewState {
   /** The refs the plan placed. */
   appliedRefs: string[];
@@ -62,34 +63,64 @@ export interface PlanNodeReviewState {
   /** ref → the change its validated code landed as, and the attachment
    * whose chat holds it (dev/72: the node's own agent). */
   nodeChanges?: Record<string, { changeId: string; attachmentId?: string | null }>;
+  /** ref → the node the plan made. */
+  nodeIds?: Record<string, string>;
+  /** ref → how the code that landed was checked: `ran` in the sandbox,
+   *  `valid` against its grammar, or `written`, with no code to run. */
+  nodeChecks?: Record<string, string>;
   /** #662: scenario index → applied|refused. */
   scenarioStates?: Record<string, string>;
   /** A Build & validate runs on the plan (`buildRunningOn`): no row's Solve
    * starts, since it would build the same node beside the build. */
   buildRunning?: boolean;
+  /** The ref the running build works on, and what it does there now. */
+  buildRef?: string | null;
+  buildActivity?: string | null;
+  /** A Solve of the whole plan runs: no row's Solve starts beside it. */
+  batchRunning?: boolean;
   /** The ref whose row's Solve runs on the server (the listing's
    * `validating`), the one a pick goes on with among them: its row reads
-   * Solving, and no other row's Solve starts over it. */
+   * Building, and no other row's Solve starts over it. */
   solvingRef?: string | null;
+  /** node id → its run: the live batch's over the persisted ones. */
+  runs?: Record<string, string>;
+  /** node id → why it failed: the live batch's reasons, and a build's pause
+   *  on it. */
+  failures?: Record<string, string>;
+  /** node id → a notice that is no failure (a skip, code written that ran
+   *  nowhere). */
+  notices?: Record<string, string>;
+  /** The nodes that wait for the person's pick of their source. */
+  waitsForPick?: string[];
 }
 
-/** dev/71: what a row's lifecycle state means for its action cluster. A row
- * whose loader waits for its source says what for: the user's pick in its
- * Dataset Finder's chat, the download of the source picked, or the install
- * of the dataset picked. It keeps its Solve. */
-export const ROW_STATE_CHIP: Record<string, string> = {
-  solving: "Validating",
-  validated: "Validated ✓",
-  approved: "Solved ✓",
-  failed: "Failed: Solve retries",
+/** What a row says of a node waiting for its source, by what it waits on. */
+export const ROW_WAIT_WORDS: Record<string, string> = {
   "awaiting-source": "Needs a source",
   "awaiting-download": "Downloading its source",
   "awaiting-install": "Needs its dataset installed",
 };
 
-/** The states whose row offers Solve: a node not built yet, one whose code
- * failed its check, and a loader waiting for its source. */
-export const ROW_STATES_WITH_SOLVE = ["created", "failed", "awaiting-source", "awaiting-download", "awaiting-install"];
+/** A built row's tick, by how its code was checked: its name and its tooltip. */
+export const ROW_CHECK: Record<string, { name: string; says: string }> = {
+  ran: { name: "Solved", says: "Solved: its code ran in the sandbox" },
+  valid: { name: "Valid", says: "Valid: its document was checked against its grammar" },
+  written: { name: "Written", says: "Written: it has no code to run, and renders in the browser" },
+};
+
+/** What a node at work does now, on its row's tooltip. */
+const AT_WORK_ROW_WORDS: Record<string, string> = {
+  solving: "Solving it",
+  generating: "Writing its code",
+  verifying: "Running it in the sandbox",
+  fixing: "The run failed: fixing it",
+};
+
+/** A node's runs that are over, its runs while a Solve works on it, and its
+ * ledger states that are built. */
+const BUILT_RUN = new Set(["solved", "verified", "written"]);
+const AT_WORK_RUN = new Set(["solving", "generating", "verifying", "fixing"]);
+const BUILT_STATE = new Set(["validated", "approved"]);
 
 export const OUTCOME_LABEL: Record<string, string> = {
   applied: "Applied",
@@ -120,6 +151,11 @@ export function nodeKindExecutable(pins: AgentProposalPart["pins"] | undefined):
   if (typeof nodeType !== "string" || !nodeType) return null;
   const descriptor = tryGetNodeDescriptor(nodeType);
   return descriptor ? Boolean(descriptor.hasCode) : null;
+}
+
+/** A node kind as its template names it ("Data Loading"), else its id. */
+export function templateLabelOf(nodeType: string): string {
+  return tryGetNodeDescriptor(nodeType)?.label || nodeType;
 }
 
 /** What one Apply click of an install does, per kind: stated on its card. */
@@ -156,14 +192,46 @@ export function tilesLeftLine(removals: Array<{ pinned?: boolean }>): string | n
     : `${tiles} of them were dashboard tiles, which left the dashboard.`;
 }
 
-/** A landed plan node's readiness for its row (dev/71): dependencies by name,
- * its lifecycle state, whether Solve may run, and: when not: why. Its
- * connections landed with the plan, so only an upstream plan node that is not
- * solved yet holds it back, a build running on the plan, or a row's Solve
- * running on the server (`solving`: this row's own). */
+/** A plan card's title, in Curio's words: "Plan: 3 nodes, 2 connections",
+ * and its scenarios when it saves any. */
+export function planTitle(part: PlanDisplay): string {
+  const plan = part.plan;
+  if (!plan) return "Plan";
+  const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+  const parts = [count(plan.nodes.length, "node"), count(plan.edgeCount ?? plan.edges?.length ?? 0, "connection")];
+  if (plan.scenarios?.length) parts.push(count(plan.scenarios.length, "scenario"));
+  return `Plan: ${parts.join(", ")}`;
+}
+
+/** What a landed plan's row shows of its node. */
+export type PlanRowView =
+  /** The plan could not place it. */
+  | "not-placed"
+  /** A build or a Solve works on it now. */
+  | "building"
+  /** Its code landed: the row's tick. */
+  | "done"
+  /** Its source waits: for the person's pick, a download, an install. */
+  | "pick"
+  | "download"
+  | "install"
+  | "failed"
+  /** It waits for a node upstream of it to be built. */
+  | "after"
+  /** Its Solve can run now. */
+  | "solve"
+  /** Nothing to say or offer while a build or a Solve runs over the plan. */
+  | "none";
+
+/** A landed plan node's row (dev/71): what it shows, whether its Solve may
+ * run, and the facts it names. Its connections landed with the plan, so only
+ * an upstream plan node not built yet holds it back ("after"), and while a
+ * build or a Solve runs over the plan no row's Solve starts. A loader whose
+ * source waits says what for; one that waits for the person's pick goes on
+ * by itself once the pick is made, so its row offers no Solve. */
 export function planNodeRowState(
   part: PlanDisplay,
-  node: { ref: string },
+  node: { ref: string; nodeType?: string },
   planNodeState: PlanNodeReviewState | undefined,
 ) {
   const planEdges = part.plan!.edges ?? [];
@@ -175,23 +243,88 @@ export function planNodeRowState(
   // to another plan), each of its nodes was placed.
   const applied = planNodeState ? planNodeState.appliedRefs.includes(node.ref) : true;
   const state = nodeStates[node.ref] ?? (applied ? "created" : "planned");
-  const unsolvedUpstream = incoming.filter(
-    (edge) => planRefSet.has(edge.from) && !["validated", "approved"].includes(nodeStates[edge.from] ?? ""),
-  );
+  const idOf = (ref: string) => planNodeState?.nodeIds?.[ref] ?? null;
+  const runOf = (ref: string) => {
+    const id = idOf(ref);
+    return id ? planNodeState?.runs?.[id] : undefined;
+  };
+  const builtRef = (ref: string) => BUILT_STATE.has(nodeStates[ref] ?? "") || BUILT_RUN.has(runOf(ref) ?? "");
+  const nodeId = idOf(node.ref);
+  const run = runOf(node.ref);
+  const unsolvedUpstream = incoming.filter((edge) => planRefSet.has(edge.from) && !builtRef(edge.from));
   const buildRunning = Boolean(planNodeState?.buildRunning);
+  const batchRunning = Boolean(planNodeState?.batchRunning);
   const solvingRef = planNodeState?.solvingRef ?? null;
   const solving = solvingRef === node.ref;
-  const solvable = applied && unsolvedUpstream.length === 0 && !buildRunning && solvingRef === null;
-  const solveBlocker = buildRunning
-    ? BUILD_RUNNING_HINT
-    : solvingRef !== null
-      ? ROW_SOLVE_RUNNING_HINT
-      : applied && unsolvedUpstream.length
-        ? `needs '${unsolvedUpstream[0].fromLabel}' solved first`
-        : null;
-  // dev/72: the chat that holds the change its validated code landed as.
+  const building =
+    solving || (buildRunning && planNodeState?.buildRef === node.ref) || AT_WORK_RUN.has(run ?? "");
+  const waitsForPick =
+    state === "awaiting-source" || Boolean(nodeId && planNodeState?.waitsForPick?.includes(nodeId));
+  const view: PlanRowView = !applied
+    ? "not-placed"
+    : building
+      ? "building"
+      : builtRef(node.ref)
+        ? "done"
+        : waitsForPick
+          ? "pick"
+          : state === "awaiting-download"
+            ? "download"
+            : state === "awaiting-install"
+              ? "install"
+              : state === "failed" || run === "failed"
+                ? "failed"
+                : unsolvedUpstream.length
+                  ? "after"
+                  : buildRunning || batchRunning || solvingRef !== null
+                    ? "none"
+                    : "solve";
+  // Its Solve, while nothing runs over the plan: a node not built yet, one
+  // whose check failed, and a loader whose source was picked and waits.
+  const solvable =
+    ["solve", "failed", "download", "install"].includes(view) && !buildRunning && !batchRunning && solvingRef === null;
+  // How the code that landed was checked: the ledger's word, else the run's,
+  // else by its kind: a chart's or a map's document is checked against its
+  // grammar, any other code runs in the sandbox.
+  const check =
+    view !== "done"
+      ? null
+      : planNodeState?.nodeChecks?.[node.ref] ??
+        (run === "written"
+          ? "written"
+          : run === "verified"
+            ? "ran"
+            : node.nodeType && tryGetNodeDescriptor(node.nodeType)?.grammarId
+              ? "valid"
+              : "ran");
+  const atWork =
+    view === "building"
+      ? (planNodeState?.buildRef === node.ref && planNodeState?.buildActivity
+          ? sentenceCase(planNodeState.buildActivity)
+          : AT_WORK_ROW_WORDS[run ?? ""]) ?? null
+      : null;
+  // dev/72: the chat that holds the change its code landed as.
   const changeHomeId = planNodeState?.nodeChanges?.[node.ref]?.attachmentId ?? null;
-  return { deps, applied, state, solvable, solveBlocker, changeHomeId, solving };
+  return {
+    deps,
+    applied,
+    state,
+    view,
+    solvable,
+    solving,
+    check,
+    atWork,
+    afterLabel: unsolvedUpstream[0]?.fromLabel ?? null,
+    reason: view === "failed" && nodeId ? planNodeState?.failures?.[nodeId] ?? null : null,
+    notice: nodeId ? planNodeState?.notices?.[nodeId] ?? null : null,
+    nodeId,
+    changeHomeId,
+  };
+}
+
+/** *text* with its first letter a capital. */
+function sentenceCase(text: string): string {
+  return text ? `${text.charAt(0).toUpperCase()}${text.slice(1)}` : text;
 }
 
 /** #662: a widget as its row reads it: its name, kind and value. */
