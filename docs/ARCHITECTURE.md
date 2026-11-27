@@ -2235,6 +2235,7 @@ Everything an agent reads is hand-written Markdown in `agents/`, the Agent Catal
   | `note.palette` | The colour names a node's appearance accepts | `note_palette.NOTE_PALETTE` |
   | `egress.calls_per_run` | The web calls one run may make | `egress_policy.MAX_CALLS_PER_RUN` |
   | `candidates.rows_per_lane` | The rows each lane of a candidates card holds | `content._CANDIDATES_MAX_ROWS_PER_LANE` |
+  | `candidates.min_fit` | The fit a candidates row needs to be offered | `content.CANDIDATE_MIN_FIT` |
   | `node_context.runtime_keys` | The keys of a node row's `runtime` block | `node_context.RUNTIME_BLOCK_KEYS` |
   | `input_contract.single`, `input_contract.several`, `input_contract.gathered` | The `inputContract` kinds a node's inputs can have | `input_contract.KIND_SINGLE`, `KIND_SEVERAL`, `KIND_GATHERED` |
   | `vega.runtime_field:<name>` | A field Curio adds to every row a Vega-Lite node reads | `document_validation.RUNTIME_FIELDS` |

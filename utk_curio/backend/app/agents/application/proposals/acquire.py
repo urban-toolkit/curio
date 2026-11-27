@@ -125,36 +125,54 @@ def _acquisition_outcome(acquisitions: list[dict], *,
 
 
 def _settle_discovery_acquisitions(user_key: str, project_id: str) -> None:
-    """Resolve nodes whose confirmed download has landed since it was confirmed.
+    """Resolve nodes whose confirmed pick has come since it was confirmed: a
+    download that landed, or a dataset the dataflow holds now that a pick
+    waited for the install of, however it was added (Add to project, the
+    owner's Apply of an editor's request).
 
-    Called at a Solve's entry, while the request's user can read the datasets
-    domain (a detached job cannot). Reads the spec first, so a project with no
-    download in flight costs one read. A plan that waited for such a node's
-    download goes on with it (``simulation.follow_the_sources``): a running
-    Build & validate builds it, or the next one does.
+    Called at the entry of a Solve, Solve this node and each validation of a
+    plan's node (Build & validate, Resume, a row's Solve), while the request's
+    user can read the datasets domain (a detached job cannot); an install
+    needs only the dataflow. Reads the spec first, so a project with nothing
+    to settle costs one read. A plan that waited for such a node goes on with
+    it (``simulation.follow_the_sources``): a running Build & validate builds
+    it, or the next one does.
     """
 
     spec = projects_storage.read_spec(user_key, project_id)
-    if not agents_dataset_resolution.has_acquiring_picks(spec):
+    downloading = agents_dataset_resolution.has_acquiring_picks(spec)
+    installed = bool(agents_dataset_resolution.installs_awaited(spec) & agents_dataset_resolution.held_datasets(spec))
+    if not downloading and not installed:
         return
+    held = _held_discovery_resources(project_id) if downloading else {}
+    with projects_storage.spec_write_lock(user_key, project_id):
+        fresh = dataflow_docs.live(user_key, project_id)
+        if fresh is None:
+            return
+        changed = agents_dataset_resolution.settle_acquisitions(fresh, held) if held else []
+        changed += agents_dataset_resolution.settle_installs(fresh)
+        if changed:
+            agents_simulation.follow_the_sources(user_key, fresh)
+            dataflow_docs.write(user_key, project_id, fresh, dataflow_docs.by_curio(user_key, "dataset"))
+
+
+def _held_discovery_resources(project_id: str) -> dict:
+    """What the acting user's store holds from the Discovery Catalog, by
+    ``(sourceId, resourceId)``; empty with no request's user, or a store that
+    cannot be read."""
     user = agents_spec_reads._acting_user()
     if user is None:
-        return
+        return {}
     try:
         from utk_curio.backend.app.datasets.repositories.user_store import (
             UserDatasetRepository,
         )
 
-        held = UserDatasetRepository(user).discovery_resource_index()
+        return UserDatasetRepository(user).discovery_resource_index()
     except Exception:  # noqa: BLE001 - an unreadable store settles nothing
         log.warning("Could not read the held Discovery Catalog datasets for project %s",
                     project_id, exc_info=True)
-        return
-    with projects_storage.spec_write_lock(user_key, project_id):
-        fresh = dataflow_docs.live(user_key, project_id)
-        if fresh is not None and agents_dataset_resolution.settle_acquisitions(fresh, held):
-            agents_simulation.follow_the_sources(user_key, fresh)
-            dataflow_docs.write(user_key, project_id, fresh, dataflow_docs.by_curio(user_key, "dataset"))
+        return {}
 
 
 def _discovery_service():
@@ -415,19 +433,34 @@ def _mint_row_acquirable(row: dict, roster: "_LazyRoster", budget=None) -> None:
       whose ``resourceId`` is that same URL, so what is downloaded is what was
       probed.
 
-    A row with a plain link and no coordinate is tried as a ``direct`` row: the
-    coordinate is minted here, after parsing, so it is never model-supplied and
-    never meets the parser's length cap. A coordinate, minted or the model's,
-    stays only when the row qualifies or the source was not asked, so one the
-    source refused never reaches a download, a builder or a file's provenance.
-    A downloadable row offers that and nothing else, so it carries no portal
-    steps.
+    A row with a plain link and no coordinate gets one minted here, after
+    parsing, so it is never model-supplied and never meets the parser's length
+    cap: first its portal's, when the link is on a portal of the roster and
+    names a dataset of it (``_LazyRoster.portal_coordinate``), which Curio
+    downloads through the portal with its own export, then a ``direct`` one.
+    A coordinate, minted or the model's, stays only when the row qualifies or
+    the source was not asked, so one the source refused never reaches a
+    download, a builder or a file's provenance. A downloadable row offers that
+    and nothing else, so it carries no portal steps.
     """
     row.pop("acquirable", None)
-    if not (row.get("sourceId") and row.get("resourceId")) and str(row.get("url") or "").startswith("https://"):
-        direct = roster.direct()
-        if direct:
-            row["sourceId"], row["resourceId"] = direct, row["url"]
+    url = str(row.get("url") or "")
+    if (row.get("sourceId") and row.get("resourceId")) or not url.startswith("https://"):
+        _keep_if_acquirable(row, roster, budget)
+        return
+    direct = roster.direct()
+    for coordinate in (roster.portal_coordinate(url), (direct, url) if direct else None):
+        if coordinate is None:
+            continue
+        row["sourceId"], row["resourceId"] = coordinate
+        if _keep_if_acquirable(row, roster, budget) is not False:
+            return
+
+
+def _keep_if_acquirable(row: dict, roster: "_LazyRoster", budget=None) -> bool | None:
+    """Mark *row* acquirable, or take its coordinate off when its source
+    refused it; a coordinate its source was not asked about stays. Returns
+    :func:`_acquirable`'s verdict."""
     verdict = _acquirable(row, roster, budget)
     if verdict:
         row["acquirable"] = True
@@ -435,6 +468,7 @@ def _mint_row_acquirable(row: dict, roster: "_LazyRoster", budget=None) -> None:
     elif verdict is not None:
         row.pop("sourceId", None)
         row.pop("resourceId", None)
+    return verdict
 
 
 def _unconfirmed(rows: list) -> int:

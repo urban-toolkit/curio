@@ -60,6 +60,10 @@ from utk_curio.backend.app.agents.domain import agent_text
 
 MAX_BODY_BYTES = 256 * 1024
 TIMEOUT_S = 10
+#: Who Curio's agents are to a server they ask, as a usage policy asks of a
+#: client (Overpass's, most portals'). A caller sends it; ``fetch`` adds no
+#: header of its own.
+USER_AGENT = "Curio (https://curio.urbantk.org) agents"
 # A dataset download is not a metadata probe: portals are slow and the payload
 # is orders of magnitude larger, so it gets its own timeout rather than
 # stretching the one that bounds an agent's verification call.

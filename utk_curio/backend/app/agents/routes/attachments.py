@@ -120,8 +120,10 @@ def record_dataset_selection(project_id: str, attachment_id: str):
     attachment's session, on the card the picks were made on when they name
     it; anything else is a 422, and a card the Finder's record no longer
     offers is a 409. The node's next Solve reads the record instead of asking
-    the model what the user picked. A download into the Data Catalog an
-    editor's confirmation would make waits for the dataflow's owner.
+    the model what the user picked. A pick of a Data Catalog dataset the
+    dataflow does not hold adds it to the dataflow. A download into the Data
+    Catalog an editor's confirmation would make waits for the dataflow's
+    owner, and an editor's add is asked of her.
     """
 
     body = request.get_json(silent=True) or {}
@@ -137,7 +139,7 @@ def record_dataset_selection(project_id: str, attachment_id: str):
         # either way (the delegation says why a build did not start).
         payload = agents_services.record_dataset_selection(
             flow.key, flow.project_id, attachment_id, body.get("picks"),
-            guest=flow.guest, downloads_wait_for=flow.owner_name if flow.editor else None,
+            guest=flow.guest, owner_reviews=flow.owner_name if flow.editor else None,
             discovery_id=discovery_id or None,
         )
     except projects_repo.NotFoundError:

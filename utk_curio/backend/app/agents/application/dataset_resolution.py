@@ -645,7 +645,7 @@ def record_selection(spec: dict, attachment_id: str, rows: list[dict], *,
     needs_install = [r for r in rows if _needs_install(r)]
     unreachable = [
         r for r in rows
-        if r["lane"] == "external" and (r.get("verification") or {}).get("status") == "unreachable"
+        if r["lane"] == "external" and (r.get("verification") or {}).get("status") in verify.FAILED_STATUSES
     ]
     if unreachable and len(unreachable) == len(rows):
         status = STATE_CANDIDATES_PENDING  # nothing usable was confirmed
@@ -697,6 +697,42 @@ def mark_dataset_installed(spec: dict, dataset_id: str) -> list[str]:
             state["recordedAt"] = _now()
             record["revision"] = int(record.get("revision", 1)) + 1
             changed.append(record.get("attachmentId"))
+    return changed
+
+
+def held_datasets(spec: dict | None) -> set[str]:
+    """The ids of the datasets the dataflow of *spec* holds: the refs Add to
+    project, an applied install and an owner's Apply of an editor's request
+    write."""
+    refs = ((spec or {}).get("dataflow") or {}).get("datasets") or []
+    return {
+        str(ref.get("datasetId") or ref.get("id"))
+        for ref in refs if isinstance(ref, dict) and (ref.get("datasetId") or ref.get("id"))
+    }
+
+
+def installs_awaited(spec: dict | None) -> set[str]:
+    """The ids of the datasets a pick waits for the install of, in *spec*."""
+    awaited: set[str] = set()
+    for record in attachments.list_attachments(spec or {}):
+        state = record.get(RECORD_KEY)
+        if not isinstance(state, dict) or state.get("status") != STATE_AWAITING_INSTALL:
+            continue
+        awaited |= {
+            str(pick["datasetId"]) for pick in state.get("picks") or []
+            if isinstance(pick, dict) and pick.get("datasetId") and _needs_install(pick)
+        }
+    return awaited
+
+
+def settle_installs(spec: dict) -> list[str]:
+    """Resolve every pick that waits for the install of a dataset the
+    dataflow of *spec* holds now, however it got there: Add to project from
+    the Data Catalog, the owner's Apply of an editor's request, or an applied
+    ``dataset.install``. Returns the attachment ids whose record resolved."""
+    changed: list[str] = []
+    for dataset_id in sorted(installs_awaited(spec) & held_datasets(spec)):
+        changed += mark_dataset_installed(spec, dataset_id)
     return changed
 
 
@@ -817,6 +853,7 @@ def initiate(
         "attachment_id": parent_attachment_id,
         "manifest": parent_manifest,
         "target": {"kind": "node", "targetId": node_id},
+        "asker": asker,  # whom the runtime searches the portals as, for the Finder
     }
     inputs = {
         "mission": (mission or str(node.get("goal") or "") or "").strip()[:2000],
@@ -951,6 +988,8 @@ def _mirror_candidates_turn(
                     "nodeLabel": label,
                     **({"discoveryId": part["discoveryId"]} if part.get("discoveryId") else {}),
                     "lanes": part.get("lanes") or {},
+                    # Its lanes as the Finder's card draws them, best first.
+                    **({"laneOrder": part["laneOrder"]} if part.get("laneOrder") else {}),
                 }],
             )],
         )

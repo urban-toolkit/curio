@@ -1491,6 +1491,15 @@ def _discovery_service():
     )
 
 
+def _discovery_service_as(user):
+    """The discovery service for *user*, the account a job's thread runs for,
+    which no request names there: a Solve's ``acting_user``."""
+    from utk_curio.backend.app.discovery.service import DiscoveryService
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    return DiscoveryService(_user_dir_key(user), user=user)
+
+
 def _portal_rows(sources) -> list[dict]:
     """The portals among *sources*. Storage and service sources are added from
     the Discovery Catalog page, where a row can be narrowed and a service's area
@@ -1521,14 +1530,21 @@ def _discovery_source_rows() -> list[dict]:
     return rows
 
 
-def _discovery_search_rows(params: dict) -> list[dict]:
+def _discovery_search_rows(params: dict, *, user=None) -> tuple[list[dict], list[dict]]:
+    """The rows a discovery.search with *params* answers, and the portals that
+    did not answer, searched as *user* when given (a job's thread), else as
+    the request's account. Each row names its source by the id the roster
+    keys it by (``discovery.sources``' ``sourceId``, its id with its major):
+    the search names it by its manifest's id alone, which no roster lookup,
+    describe or download takes, so a candidates row copied from a search
+    lost its coordinate."""
     def _param(name: str) -> str | None:
         value = params.get(name)
         if isinstance(value, str) and value.strip():
             return value.strip()[:_CATALOG_PARAM_MAX_CHARS]
         return None
 
-    service = _discovery_service()
+    service = _discovery_service_as(user) if user is not None else _discovery_service()
     query = _param("q") or ""
     source_id = _param("sourceId")
     fmt = _param("format")
@@ -1549,11 +1565,17 @@ def _discovery_search_rows(params: dict) -> list[dict]:
         payload = service.search_all(
             q=query, fmt=fmt, limit=_DISCOVERY_MAX_ROWS, include_storage=False
         )
+    # Each source by the id the roster keys it by, from its manifest's id.
+    roster_ids = {
+        source.get("sourceId"): source.get("dirName")
+        for source in service.list_catalog().get("sources") or []
+        if source.get("sourceId") and source.get("dirName")
+    }
     rows = []
     for row in (payload.get("resources") or [])[:_DISCOVERY_MAX_ROWS]:
         rows.append(
             {
-                "sourceId": row.get("sourceId"),
+                "sourceId": roster_ids.get(row.get("sourceId")) or row.get("sourceId"),
                 "sourceName": row.get("sourceName"),
                 "resourceId": row.get("resourceId"),
                 "name": row.get("name"),
@@ -1567,7 +1589,7 @@ def _discovery_search_rows(params: dict) -> list[dict]:
     # The per-source statuses ride along: a model told that one portal did not
     # answer can say so, instead of reporting a short list as the whole truth.
     return rows, [
-        {"sourceId": leg.get("sourceId"), "status": leg.get("status")}
+        {"sourceId": roster_ids.get(leg.get("sourceId")) or leg.get("sourceId"), "status": leg.get("status")}
         for leg in (payload.get("sources") or [])
         if leg.get("status") != "ok"
     ]

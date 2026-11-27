@@ -93,6 +93,10 @@ export interface AgentCardPart {
 export interface AgentDatasetCandidatesPart {
   type: "datasetCandidates";
   lanes: { external: AgentDatasetCandidateRow[]; catalog: AgentDatasetCandidateRow[] };
+  /** The lanes best first, the lane that holds the row that can be used most
+   * directly first, as the server ranked them; each lane's rows come ranked
+   * too. Absent on a card minted before cards were ranked. */
+  laneOrder?: ("external" | "catalog")[];
   /** The card's own id: a node's Finder record names the card it offers now
    * and the one the pick was made on, and a pick names its card. Absent on a
    * card minted before cards had ids. */
@@ -110,6 +114,8 @@ export interface AgentSourcePickPart {
   nodeLabel: string;
   /** The candidates, as the Finder's own card holds them. */
   lanes: AgentDatasetCandidatesPart["lanes"];
+  /** The lanes best first, as the Finder's own card draws them. */
+  laneOrder?: AgentDatasetCandidatesPart["laneOrder"];
   /** The id of the Finder's card this one is the same as. */
   discoveryId?: string;
 }

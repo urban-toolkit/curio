@@ -17,6 +17,9 @@ same review holds what an editor asks the owner to add to the dataflow from
 his own store, a dataset, a collection, a package or a model
 (``projects/editor_requests.py``), and only the owner applies or dismisses it
 too, refused in the same words (``projects/access.py``, :func:`owners_review`).
+His pick of a Data Catalog dataset the dataflow does not hold is such a
+request; one of the owner's own datasets, which he cannot ask for, is refused
+(:func:`add_refusal`).
 """
 
 from __future__ import annotations
@@ -50,3 +53,10 @@ def download_refusal(owner: str) -> str:
         f"Downloading a source into the Data Catalog waits for {owner}, who owns this "
         "dataflow: ask them to confirm it."
     )
+
+
+def add_refusal(owner: str, name: str) -> str:
+    """What an editor the owner invited is told whose dataset selection
+    would add *name* to the dataflow, a dataset of *owner*'s own he cannot
+    ask for: only she can add it."""
+    return f"Adding {name} to this dataflow waits for {owner}, who owns it: ask them to add it."

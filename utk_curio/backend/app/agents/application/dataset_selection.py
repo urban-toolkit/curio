@@ -44,7 +44,7 @@ PLAN_WAITING = "plan-waiting"
 
 def record_dataset_selection(
     user_key: str, project_id: str, attachment_id: str, picks: object,
-    guest: bool = False, downloads_wait_for: str | None = None, discovery_id: str | None = None,
+    guest: bool = False, owner_reviews: str | None = None, discovery_id: str | None = None,
 ) -> dict:
     """dev/126: record the user's confirmed dataset selection for a node.
 
@@ -62,10 +62,16 @@ def record_dataset_selection(
     one gone with a cleared chat. So a pick is never read against another
     card's rows, and starts no build beside the plan.
 
-    *downloads_wait_for* names the dataflow's owner when an editor the owner
+    A pick of a Data Catalog dataset the dataflow does not hold adds it to
+    the dataflow at once, as a pick downloads a row Curio downloads (the
+    owner's "Pick adds it", 11-26): :func:`_add_catalog_picks`.
+
+    *owner_reviews* names the dataflow's owner when an editor the owner
     invited confirms: a pick Curio would download into the Data Catalog then
     refuses the whole confirmation, before anything is downloaded or recorded
-    (``editors.download_refusal``).
+    (``editors.download_refusal``), and a pick of a dataset the dataflow does
+    not hold asks the owner to add it, as his Add to project does, and waits
+    for her review.
     """
 
     spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
@@ -130,12 +136,14 @@ def record_dataset_selection(
             # may be days old, and the delegation below depends on this one.
             agents_mint._mint_row_access(row)
         agents_acquire._mint_row_acquirable(row, roster, budget)
-    if downloads_wait_for is not None and any(r["lane"] == "external" and r.get("acquirable") for r in rows):
-        raise AgentServiceError(agents_editors.download_refusal(downloads_wait_for), 403)
+    if owner_reviews is not None and any(r["lane"] == "external" and r.get("acquirable") for r in rows):
+        raise AgentServiceError(agents_editors.download_refusal(owner_reviews), 403)
     # A row Curio can download is downloaded now, by the Discovery Catalog, and
     # recorded as the catalog pick it becomes.
     acquisitions = agents_acquire._acquire_confirmed_picks(rows)
     node_id = str(target.get("targetId") or "")
+    # Before the spec lock, which the add's own write takes.
+    added = _add_catalog_picks(project_id, rows, node_id=node_id, owner_reviews=owner_reviews)
     with projects_storage.spec_write_lock(user_key, project_id):
         fresh = agents_spec_reads._live_spec_or_404(user_key, project_id)
         if discovery_id is not None:
@@ -173,13 +181,93 @@ def record_dataset_selection(
         payload["acquisitions"] = acquisitions
     delegated = _delegate_confirmed_fetch(
         user_key, project_id, node_id, rows, state, guest=guest, released=released,
-    ) or agents_acquire._acquisition_outcome(acquisitions, once_it_lands=_once_it_lands(user_key, waiting_plan))
+    ) or agents_acquire._acquisition_outcome(
+        acquisitions, once_it_lands=_once_it_lands(user_key, waiting_plan),
+    ) or _add_outcome(user_key, added, waiting_plan)
     if delegated is not None:
         payload["delegated"] = delegated
     after = _what_comes_next(user_key, rows, state, delegated, waiting_plan)
     _keep_what_comes_next(user_key, project_id, attachment_id, state, after)
     _say_the_source_is_recorded(user_key, project_id, fresh, attachment_id, rows, state, after, node_id=node_id)
     return payload
+
+
+#: What a pick's answer says when its Data Catalog dataset waits for the
+#: dataflow owner's review of an editor's request, and when it could not be
+#: added to the dataflow.
+OWNER_REVIEW = "owner-review"
+ADD_FAILED = "add-failed"
+
+
+def _add_catalog_picks(project_id: str, rows: list[dict], *, node_id: str, owner_reviews: str | None) -> dict | None:
+    """The owner's "Pick adds it" (11-26): each picked Data Catalog dataset
+    the dataflow does not hold is added to it now, as Add to project adds it,
+    so the pick resolves the node and a plan that waits for it goes on.
+
+    An editor the owner invited (*owner_reviews*, her name) changes no
+    account but his own: his pick asks her to add the dataset, as his Add to
+    project does (``projects/editor_requests.py``, the request naming the
+    node), and waits for her review. Her Apply adds it, and the next Solve or
+    Resume finds the dataflow holding it (``acquire._settle_discovery_acquisitions``).
+
+    Returns a summary while a pick still waits: ``owner-review`` with the
+    names and the owner, or ``add-failed`` with why the Data Catalog refused
+    the add. None when the dataflow holds every pick."""
+    needed = [row for row in rows if agents_dataset_resolution._needs_install(row)]
+    if not needed:
+        return None
+    user = agents_spec_reads._acting_user()
+    if owner_reviews is not None:
+        return _ask_the_owner(user, project_id, needed, node_id=node_id, owner=owner_reviews)
+    from utk_curio.backend.app.datasets.application.catalog_service import DatasetCatalogService
+
+    for row in needed:
+        try:
+            DatasetCatalogService(user).install_dataset(project_id, str(row["datasetId"]))
+        except Exception as exc:  # noqa: BLE001 - the pick waits for its install, and says why
+            log.warning("Could not add the picked dataset %s to dataflow %s", row.get("datasetId"), project_id,
+                        exc_info=True)
+            name = row.get("name") or row.get("datasetId")
+            return {"status": ADD_FAILED, "reason": f"{name} could not be added to the dataflow: {str(exc)[:200]}"}
+        row["installed"] = True
+    return None
+
+
+def _ask_the_owner(user, project_id: str, rows: list[dict], *, node_id: str, owner: str) -> dict | None:
+    """An editor's request that the dataflow's *owner* add each of *rows*,
+    naming the node *node_id*; a dataset the dataflow holds already needs no
+    request. A dataset he cannot ask for (one of her own the dataflow does not
+    list) refuses the pick (403): only she can add it."""
+    from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
+    from utk_curio.backend.app.projects import editor_requests
+
+    waiting = []
+    for row in rows:
+        try:
+            asked = editor_requests.ask(user, project_id, "datasets", row["datasetId"], node_id=node_id, add=True)
+        except (editor_requests.RequestError, DatasetCatalogError) as exc:
+            raise AgentServiceError(agents_editors.add_refusal(owner, row.get("name") or row["datasetId"]),
+                                    403) from exc
+        if asked.get("requested"):
+            waiting.append(str(row.get("name") or row["datasetId"]))
+        else:
+            row["installed"] = True
+    return {"status": OWNER_REVIEW, "names": waiting, "owner": owner} if waiting else None
+
+
+def _add_outcome(user_key: str, added: dict | None, waiting_plan: dict | None) -> dict | None:
+    """What a pick's answer says of a picked Data Catalog dataset that still
+    waits (*added*, :func:`_add_catalog_picks`): for the owner's review, then
+    what builds the loader once she added it, or why the add failed."""
+    if not added or added.get("status") != OWNER_REVIEW:
+        return added
+    names = ", ".join(added["names"])
+    then = _once_it_lands(user_key, waiting_plan).replace("once it lands", "once it is added")
+    return {
+        "status": OWNER_REVIEW,
+        "reason": f"{names} waits for {added['owner']}, who owns this dataflow, to add it from the requests "
+                  f"in the Data Catalog's drawer; {then}",
+    }
 
 
 def _still_offered(record: dict, discovery_id: str, name: str) -> None:
@@ -232,7 +320,7 @@ def _what_comes_next(user_key: str, rows: list[dict], state: dict, delegated: di
     never promises a build nobody starts."""
     status = (delegated or {}).get("status")
     reason = str((delegated or {}).get("reason") or "")
-    if status in (PLAN_WAITING, "no-builder", "acquire-failed"):
+    if status in (PLAN_WAITING, "no-builder", "acquire-failed", OWNER_REVIEW, ADD_FAILED):
         return _sentence(reason)
     if status == "delegating":
         return f"Its {(delegated or {}).get('name') or 'builder'} is writing the loader from this source."

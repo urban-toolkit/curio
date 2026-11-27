@@ -48,9 +48,14 @@ export interface AgentDatasetCandidateRow {
   /** dev/67-4 (DEC-053): the deterministic verification verdict — external
    * rows only; runtime-probed through the egress policy, never model-claimed. */
   verification?: {
-    status: "verified" | "unreachable" | "refused" | "unverified" | string;
+    /** `http-error`: the link answered with an error status, `httpStatus`;
+     * `unreachable`: no answer came. */
+    status: "verified" | "http-error" | "unreachable" | "refused" | "unverified" | string;
     detail?: string;
     httpStatus?: number;
+    /** The link answered a web page: it answered, but it is no data. */
+    webPage?: boolean;
+    contentType?: string;
     provider?: string;
     datasetId?: string;
     datasetName?: string;

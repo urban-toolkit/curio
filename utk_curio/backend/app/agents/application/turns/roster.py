@@ -212,6 +212,30 @@ class _LazyRoster:
                 return dir_name
         return None
 
+    def portal_coordinate(self, url: str) -> tuple[str, str] | None:
+        """The coordinate of the dataset the link *url* names on a portal of
+        the roster: a source whose provider's base URL is on the link's host,
+        and whose provider recognizes a dataset id in the link (the provider
+        modules' ``recognize``, as ``verify.py``'s refinements use it). None
+        for a link on no such portal, or one that names no dataset there."""
+        from urllib.parse import urlparse
+
+        from utk_curio.backend.app.discovery.providers import RECOGNISERS
+
+        host = (urlparse(str(url or "")).hostname or "").lower()
+        if not host:
+            return None
+        self.get(None)
+        for dir_name, source in (self._sources or {}).items():
+            base = (urlparse(str(source.get("baseUrl") or "")).hostname or "").lower()
+            if base != host:
+                continue
+            provider = next((m for m in RECOGNISERS if m.PROVIDER_TYPE == source.get("provider")), None)
+            resource_id = provider.recognize(url) if provider is not None else None
+            if resource_id:
+                return dir_name, str(resource_id)
+        return None
+
     def describes(self, dir_name: str, resource_id: str, ask, *, budget=None) -> bool | None:
         """Whether the source *dir_name* describes *resource_id*, as *ask*
         answers it: the caller's describe through the Discovery Catalog

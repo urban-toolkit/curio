@@ -29,6 +29,7 @@ from utk_curio.backend.app.agents.application.proposals import acquire as agents
 from utk_curio.backend.app.agents.application.proposals import mint as agents_mint
 from utk_curio.backend.app.agents.application.solve import budgets as agents_budgets
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
+from utk_curio.backend.app.agents.domain import content as agents_content
 from utk_curio.backend.app.agents.domain import document_validation
 from utk_curio.backend.app.agents.domain.counts import count_label
 from utk_curio.backend.app.datasets.domain.code_refs import collection_ids_in_code, dataset_ids_in_code
@@ -781,7 +782,9 @@ def _verify_candidate_parts(parts: list, loop_ctx: dict | None = None) -> None:
     run-budget shape; provider refinements like Socrata add dataset
     name/columns on top of the generic gate, which covers ANY dataset API);
     URL-less rows are loudly UNVERIFIED. The evidence rides the row into the
-    card and the Node Builder handoff."""
+    card and the Node Builder handoff. Then each card's rows are ranked by
+    what can be done with them, and its lanes best first
+    (``agents_content.rank_candidates``)."""
     # One budget for the whole pass, spent per real HTTP request rather than
     # per row. The old counter ticked once per candidate while a single row
     # could issue a dozen requests (a Socrata probe fetched twice, and every
@@ -818,6 +821,7 @@ def _verify_candidate_parts(parts: list, loop_ctx: dict | None = None) -> None:
                     loop_ctx.setdefault("_verified_urls", {})[url] = row["verification"]
             agents_mint._mint_row_access(row)
             agents_acquire._mint_row_acquirable(row, roster, budget)
+        agents_content.rank_candidates(part)
 
 
 def _grounded_catalog_rows(rows: list, listing: list) -> tuple[list, int]:
@@ -848,26 +852,39 @@ _NO_CANDIDATES_CARD = {
 }
 
 
+def _no_candidates_card(*, under_the_floor: bool) -> dict:
+    """The card a candidates card becomes when none of its rows is left: the
+    rows were rated under the fit a source needs, or the Data Catalog does
+    not hold the datasets they named."""
+    if under_the_floor:
+        return {**_NO_CANDIDATES_CARD, "lines": [
+            f"Every dataset this reply proposed was rated under a fit of {agents_content.CANDIDATE_MIN_FIT}: "
+            "none of them holds the data asked for.",
+        ]}
+    return {**_NO_CANDIDATES_CARD, "lines": list(_NO_CANDIDATES_CARD["lines"])}
+
+
 def _ground_catalog_lanes(parts: list, listing) -> None:
     """A run's own candidates cards, checked as a delegated card is
-    (``delegates._mint_candidates_from_delegate``): a catalog row stays only
-    when the Data Catalog listing holds its dataset, and says installed or not
-    as the listing does (:func:`_grounded_catalog_rows`). A card left with no
-    row is replaced by :data:`_NO_CANDIDATES_CARD`. *listing* returns the
-    listing's rows; it is called once, and only when a card holds a catalog
-    row."""
+    (``delegates._mint_candidates_from_delegate``): a row rated under the fit
+    a source needs goes (``content.drop_under_the_fit_floor``), and a catalog
+    row stays only when the Data Catalog listing holds its dataset, and says
+    installed or not as the listing does (:func:`_grounded_catalog_rows`). A
+    card left with no row is replaced by a card that says why
+    (:func:`_no_candidates_card`). *listing* returns the listing's rows; it is
+    called once, and only when a card holds a catalog row."""
     rows = None
     for index, part in enumerate(parts):
         if not isinstance(part, dict) or part.get("type") != "datasetCandidates":
             continue
         lanes = part.get("lanes") or {}
-        if not lanes.get("catalog"):
-            continue
-        if rows is None:
-            rows = listing()
-        lanes["catalog"], _ = _grounded_catalog_rows(lanes["catalog"], rows)
+        under = agents_content.drop_under_the_fit_floor(part)
+        if lanes.get("catalog"):
+            if rows is None:
+                rows = listing()
+            lanes["catalog"], _ = _grounded_catalog_rows(lanes["catalog"], rows)
         if not any(lanes.get(lane) for lane in ("catalog", "external")):
-            parts[index] = {**_NO_CANDIDATES_CARD, "lines": list(_NO_CANDIDATES_CARD["lines"])}
+            parts[index] = _no_candidates_card(under_the_floor=bool(under))
 
 
 def _run_egress_budget(loop_ctx: dict) -> "egress.CallBudget":

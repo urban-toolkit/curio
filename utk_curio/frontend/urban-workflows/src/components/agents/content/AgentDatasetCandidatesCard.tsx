@@ -40,6 +40,15 @@ const LANE_LABEL: Record<"external" | "catalog", string> = {
   catalog: "From your Data Catalog",
 };
 
+/** The card's lanes in the order it draws them: the server's (`laneOrder`,
+ * the lane that holds the best row first), then any lane it did not name, in
+ * the order a card minted before cards were ranked drew them. */
+function laneOrder(part: AgentDatasetCandidatesPart): ("external" | "catalog")[] {
+  const lanes: ("external" | "catalog")[] = ["external", "catalog"];
+  const ranked = (part.laneOrder ?? []).filter((lane) => lanes.includes(lane));
+  return [...ranked, ...lanes.filter((lane) => !ranked.includes(lane))];
+}
+
 /** dev/114: whose chat the card lives in — the Dataset Finder's (the DEC-047
  * install / hand-off prompt) or the Node Builder's (the runtime minted the
  * candidates from a dataset.discover delegation; the confirmation asks the
@@ -544,9 +553,9 @@ export const AgentDatasetCandidatesCard: React.FC<{
     );
   };
 
-  const lanes = (["external", "catalog"] as const).filter(
-    (lane) => (part.lanes[lane] ?? []).length > 0,
-  );
+  // The lanes best first, as the server ranked them; a card minted before
+  // cards were ranked draws the external lane first.
+  const lanes = laneOrder(part).filter((lane) => (part.lanes[lane] ?? []).length > 0);
   // The card's own name: the node its candidates are for, when it knows it.
   const title = nodeLabel ? `Sources for ${nodeLabel}` : "Dataset candidates";
   // Where the card stands by its node's Finder's record: a card with no pick
