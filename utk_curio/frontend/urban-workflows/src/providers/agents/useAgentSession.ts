@@ -22,11 +22,15 @@
  *
  * A read is the chat whole, with what only this tab holds kept where it
  * stood: an ask of its own whose request has no answer yet, and the turns of
- * one that failed, which the server may hold none of (`failedAsk`). A chat's
- * reads come one after another: one asked while another is in flight comes
- * after it, since the server may have answered that one before what changed,
- * and whoever waits for a read (a card's Undo, Apply or Dismiss, through
- * `refreshAfterMutation`) waits for that one too.
+ * one that failed, which the server may hold none of (`failedAsk`), until
+ * the server holds that ask or the chat is cleared, from whichever tab (a
+ * read says how many times it was, `clears`). Each ask's turns are its own
+ * (`askId`): its reply grows in its own turn, and its failure marks its own
+ * turns alone. A chat's reads come one after another: one asked while
+ * another is in flight comes after it, since the server may have answered
+ * that one before what changed, and whoever waits for a read (a card's Undo,
+ * Apply or Dismiss, through `refreshAfterMutation`) waits for that one too,
+ * and gets the turns it read.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -88,8 +92,9 @@ export interface AgentSessionSlice {
   projectRef: React.MutableRefObject<string | null>;
   /** After a mutation the transcript and the listing are the truth: read the
    * chat again, after the read in flight when one is, and wait for it, then
-   * reload the listing. */
-  refreshAfterMutation: (attachmentId: string) => Promise<void>;
+   * reload the listing. Settles with the chat's turns as that read found
+   * them, or null when it found none. */
+  refreshAfterMutation: (attachmentId: string) => Promise<AgentSessionTurn[] | null>;
 }
 
 /** A `done` event's payload, as a turn's end says it. */
@@ -129,8 +134,17 @@ export function useAgentSession(
   // after the last (`rereadRef`); it settles once no more is queued.
   const readingRef = useRef<Partial<Record<string, Promise<void>>>>({});
   // Who waits for a chat's next read to land: the one queued after the read
-  // in flight, or the first of the reads a read again started.
-  const nextReadRef = useRef<Partial<Record<string, { landed: Promise<void>; land: () => void }>>>({});
+  // in flight, or the first of the reads a read again started. It lands with
+  // the turns it read, or null.
+  const nextReadRef = useRef<
+    Partial<Record<string, { landed: Promise<AgentSessionTurn[] | null>; land: (read: AgentSessionTurn[] | null) => void }>>
+  >({});
+  // How many times each chat was cleared, as this tab's last read of it
+  // said: a read that says otherwise finds it cleared since, from any tab.
+  const clearsRef = useRef<Record<string, number>>({});
+  // This tab's asks it failed when neither of their requests was answered:
+  // the server may have taken one all the same, which the room then tells.
+  const lostRef = useRef<Set<string>>(new Set());
   const attachmentsRef = useRef(state.attachments);
   attachmentsRef.current = state.attachments;
   const reloadRef = useRef(state.reload);
@@ -164,8 +178,10 @@ export function useAgentSession(
     bufferRef.current = {};
     rereadRef.current = new Set();
     readingRef.current = {};
+    clearsRef.current = {};
+    lostRef.current = new Set();
     // No read of the other dataflow's chats is waited for any more.
-    for (const next of Object.values(nextReadRef.current)) next?.land();
+    for (const next of Object.values(nextReadRef.current)) next?.land(null);
     nextReadRef.current = {};
   }, [effectiveProjectId]);
 
@@ -176,24 +192,36 @@ export function useAgentSession(
     }));
   }, []);
 
-  const replaceLastAgentTurn = useCallback(
+  /** *added*, turns of *ask*, after its own last turn: its reply after its
+   * message. What came after that meanwhile (an ask of this tab's that the
+   * server refused) stays after them. */
+  const placeAfterAsk = useCallback((ask: LiveAsk, added: AgentSessionTurn[]) => {
+    setTranscripts((prev) => ({
+      ...prev,
+      [ask.attachmentId]: afterAsk(prev[ask.attachmentId] ?? [], ask.askId, added),
+    }));
+  }, []);
+
+  /** The reply of *ask* as it stands now: its own reply's turn changes, never
+   * another turn, which may have come after it (another ask's error). */
+  const replaceReply = useCallback(
     (
-      attachmentId: string,
+      ask: LiveAsk,
       text: string,
       execution?: AgentSessionTurn["execution"],
       content?: AgentSessionTurn["content"],
     ) => {
       setTranscripts((prev) => {
-        const turns = prev[attachmentId] ?? [];
-        const last = turns[turns.length - 1];
-        if (!last || last.role !== "agent") return prev;
+        const turns = prev[ask.attachmentId] ?? [];
+        const at = lastIndexOf(turns, (turn) => turn.askId === ask.askId && turn.role === "agent" && !turn.error);
+        if (at === -1) return prev;
         const updated = {
-          ...last,
+          ...turns[at],
           text,
           ...(execution ? { execution } : {}),
           ...(content && content.length ? { content } : {}),
         };
-        return { ...prev, [attachmentId]: [...turns.slice(0, -1), updated] };
+        return { ...prev, [ask.attachmentId]: [...turns.slice(0, at), updated, ...turns.slice(at + 1)] };
       });
     },
     [],
@@ -218,7 +246,7 @@ export function useAgentSession(
 
   /** The ask's message, as the transcript shows it. */
   const userTurnOf = (ask: LiveAsk): AgentSessionTurn => ({
-    role: "user", text: ask.message, ...(ask.by ? { by: ask.by } : {}),
+    role: "user", text: ask.message, ...(ask.by ? { by: ask.by } : {}), askId: ask.askId,
   });
 
   /** The ask's turn starts: its message joins the transcript, the strip runs. */
@@ -257,8 +285,8 @@ export function useAgentSession(
   /** The ask failed: its partial reply stays, an error turn follows it. The
    * turns of an ask this tab made are marked as its failed ask's
    * (`failedAsk`): the server may hold none of them, so a read of the chat
-   * keeps them. They are the transcript's last: its message, then the reply
-   * it streamed. */
+   * keeps them. They are its own turns (`askId`), wherever they stand: its
+   * message, then the reply it streamed, and its error after them. */
   const failAsk = useCallback(
     (ask: LiveAsk, e: unknown) => {
       const attachmentId = ask.attachmentId;
@@ -268,26 +296,36 @@ export function useAgentSession(
       const failedAsk = ask.mine
         ? { failedAsk: { askId: ask.askId, ...(ask.executionId ? { executionId: ask.executionId } : {}) } }
         : {};
-      const shown = ask.mine ? (ask.inTranscript ? 1 : 0) + (ask.inTranscript && ask.streamed ? 1 : 0) : 0;
       const turns: AgentSessionTurn[] = ask.inTranscript ? [] : [{ ...userTurnOf(ask), ...failedAsk }];
       ask.inTranscript = true;
       turns.push({
         role: "agent", text: `(error) ${msg}${reset}`, error: true,
-        ...(body?.remedy ? { remedy: body.remedy } : {}), ...failedAsk,
+        ...(body?.remedy ? { remedy: body.remedy } : {}), ...failedAsk, askId: ask.askId,
       });
       const startedAt = ask.startedAt;
       setRunStatus((prev) => ({
         ...prev, [attachmentId]: { phase: "error", startedAt, durationMs: Date.now() - startedAt },
       }));
       setTranscripts((prev) => {
-        const before = prev[attachmentId] ?? [];
-        const kept = before.map((turn, i) => (i >= before.length - shown ? { ...turn, ...failedAsk } : turn));
-        return { ...prev, [attachmentId]: [...kept, ...turns] };
+        const marked = (prev[attachmentId] ?? []).map((turn) =>
+          turn.askId === ask.askId ? { ...turn, ...failedAsk } : turn,
+        );
+        return { ...prev, [attachmentId]: afterAsk(marked, ask.askId, turns) };
       });
       forgetAsk(ask, true);
     },
     [forgetAsk],
   );
+
+  /** The turns this tab kept of its failed ask *askId* go: the server holds
+   * that ask after all, and shows it. */
+  const dropFailedAsk = useCallback((attachmentId: string, askId: string) => {
+    setTranscripts((prev) => {
+      const turns = prev[attachmentId];
+      if (!turns?.some((turn) => turn.failedAsk?.askId === askId)) return prev;
+      return { ...prev, [attachmentId]: turns.filter((turn) => turn.failedAsk?.askId !== askId) };
+    });
+  }, []);
 
   /** The ask's turn ended (`done`): its reply lands with its execution record
    * (memo dev/37), its duration (dev/80), its tool calls (#447), the skills
@@ -326,10 +364,13 @@ export function useAgentSession(
       }));
       const reply = end.reply ?? ask.streamed;
       if (!ask.streamed)
-        appendTurns(attachmentId, [
-          { role: "agent", text: reply, ...(execution ? { execution } : {}), ...(content ? { content } : {}) },
+        placeAfterAsk(ask, [
+          {
+            role: "agent", text: reply, ...(execution ? { execution } : {}), ...(content ? { content } : {}),
+            askId: ask.askId,
+          },
         ]);
-      else replaceLastAgentTurn(attachmentId, reply, execution, content);
+      else replaceReply(ask, reply, execution, content);
       forgetAsk(ask, true);
       // The first exchange may title the conversation (memo dev/25), a
       // proposal or a change moves the listing's mirrors, and a delegation
@@ -338,7 +379,7 @@ export function useAgentSession(
       const untitled = !attachmentsRef.current.find((a) => a.attachmentId === attachmentId)?.title;
       if (sawProposal || ask.delegated || untitled) void reloadRef.current();
     },
-    [appendTurns, replaceLastAgentTurn, forgetAsk],
+    [appendTurns, placeAfterAsk, replaceReply, forgetAsk],
   );
 
   /** What one event of an ask does to the chat. *quiet*: an event read with
@@ -377,8 +418,8 @@ export function useAgentSession(
       if (name === "delta") {
         const text = typeof data.text === "string" ? data.text : "";
         if (!text) return;
-        if (!ask.streamed) appendTurns(attachmentId, [{ role: "agent", text }]);
-        else replaceLastAgentTurn(attachmentId, ask.streamed + text);
+        if (!ask.streamed) placeAfterAsk(ask, [{ role: "agent", text, askId: ask.askId }]);
+        else replaceReply(ask, ask.streamed + text);
         ask.streamed += text;
         return;
       }
@@ -423,7 +464,7 @@ export function useAgentSession(
           [attachmentId]: [...(prev[attachmentId] ?? []), line],
         }));
     },
-    [appendTurns, replaceLastAgentTurn, setWaiting, startAsk, forgetAsk, endAsk, failAsk],
+    [placeAfterAsk, replaceReply, setWaiting, startAsk, forgetAsk, endAsk, failAsk],
   );
 
   /** One of an ask's events through the room: applied once, in order. An
@@ -443,6 +484,10 @@ export function useAgentSession(
       const asks = (asksRef.current[attachmentId] ??= {});
       let ask = asks[env.askId];
       if (ask?.via === "stream") return;
+      // An ask of this tab's that it failed when neither of its requests was
+      // answered, whose events the room tells now: the server took it all the
+      // same, so the turns kept of its failure go, and its events show it.
+      if (!ask && lostRef.current.delete(env.askId)) dropFailedAsk(attachmentId, env.askId);
       if (!ask && !hydratedRef.current.has(attachmentId)) {
         if (env.event === "done") {
           const content = (env.data as TurnEnd).content ?? [];
@@ -472,7 +517,7 @@ export function useAgentSession(
       ask.seq = env.seq;
       applyEvent(ask, env.event, env.data ?? {});
     },
-    [applyEvent],
+    [applyEvent, dropFailedAsk],
   );
 
   /** The chat as it stands on the server: its transcript, with the turns of
@@ -480,10 +525,15 @@ export function useAgentSession(
    * among its turns, then its running turn's message and reply so far, and
    * the asks waiting their turn. An ask this tab follows by its own stream,
    * or one it asked through the room whose request has no answer yet, stays
-   * as this tab holds it, after them, until the server holds it. */
-  const restore = useCallback((attachmentId: string, turns: AgentSessionTurn[], views: AgentAskView[]) => {
+   * as this tab holds it, after them, until the server holds it. A chat
+   * cleared since this tab last read it (*cleared*), from whichever tab,
+   * keeps none of this tab's failed asks, and its strip goes unless a turn
+   * runs, as this tab's own Clear takes them. */
+  const restore = useCallback((attachmentId: string, turns: AgentSessionTurn[], views: AgentAskView[], cleared: boolean) => {
     const settled = new Set(turns.map((turn) => turn.execution?.executionId));
     const viewed = new Set(views.map((view) => view.askId));
+    // A lost ask of this tab's that the server holds is the server's now.
+    for (const view of views) lostRef.current.delete(view.askId);
     const followed = Object.values(asksRef.current[attachmentId] ?? {});
     const mine = new Set(followed.filter((ask) => ask.mine).map((ask) => ask.askId));
     const own = followed.filter(
@@ -507,7 +557,7 @@ export function useAgentSession(
       }
       let liveUsage: AgentUsage | null = null;
       restored.push(userTurnOf(ask));
-      if (ask.streamed) restored.push({ role: "agent", text: ask.streamed });
+      if (ask.streamed) restored.push({ role: "agent", text: ask.streamed, askId: ask.askId });
       for (const event of view.events ?? []) {
         const data = event.data ?? {};
         if (event.event === "execution" && typeof data.executionId === "string") ask.executionId = data.executionId;
@@ -530,13 +580,13 @@ export function useAgentSession(
         continue;
       }
       restored.push(userTurnOf(ask));
-      if (ask.streamed) restored.push({ role: "agent", text: ask.streamed });
+      if (ask.streamed) restored.push({ role: "agent", text: ask.streamed, askId: ask.askId });
       if (ask.state === "running") ownRuns = true;
     }
     asksRef.current[attachmentId] = asks;
     setTranscripts((prev) => ({
       ...prev,
-      [attachmentId]: [...withFailedAsks(prev[attachmentId] ?? [], turns, settled), ...restored],
+      [attachmentId]: [...withFailedAsks(cleared ? [] : prev[attachmentId] ?? [], turns, settled, viewed), ...restored],
     }));
     setWaitingAsks((prev) => ({ ...prev, [attachmentId]: waiting }));
     // The tool lines and the strip of a turn this tab streams stay its own.
@@ -549,7 +599,7 @@ export function useAgentSession(
       }));
     } else if (!ownRuns) {
       setRunStatus((prev) => {
-        if (prev[attachmentId]?.phase !== "running") return prev;
+        if (!(attachmentId in prev) || (!cleared && prev[attachmentId]?.phase !== "running")) return prev;
         const { [attachmentId]: _drop, ...rest } = prev;
         return rest;
       });
@@ -557,9 +607,10 @@ export function useAgentSession(
   }, []);
 
   /** One read of the chat: its turns as the server holds them (`restore`),
-   * then the room's events of it that came meanwhile, those after it. */
+   * then the room's events of it that came meanwhile, those after it.
+   * Settles with the turns it read, or null. */
   const readOnce = useCallback(
-    async (pid: string, attachmentId: string) => {
+    async (pid: string, attachmentId: string): Promise<AgentSessionTurn[] | null> => {
       bufferRef.current[attachmentId] = [];
       // A chat this tab shows turns of already is read again quietly: its
       // turns stay on screen until the read lands, with no "Loading" in
@@ -570,15 +621,20 @@ export function useAgentSession(
         const { [attachmentId]: _drop, ...rest } = prev;
         return rest;
       });
-      let read = false;
+      let read: AgentSessionTurn[] | null = null;
       try {
         const session = await agentsApi.getSession(pid, attachmentId);
-        if (projectRef.current !== pid) return; // stale: project switched mid-fetch
-        restore(attachmentId, session.turns, session.asks ?? []);
+        if (projectRef.current !== pid) return null; // stale: project switched mid-fetch
+        // A count of clears other than the one this tab last read: the chat
+        // was cleared since, from whichever tab.
+        const clears = typeof session.clears === "number" ? session.clears : null;
+        const known = clearsRef.current[attachmentId];
+        if (clears !== null) clearsRef.current[attachmentId] = clears;
+        restore(attachmentId, session.turns, session.asks ?? [], clears !== null && known !== undefined && clears !== known);
         hydratedRef.current.add(attachmentId);
-        read = true;
+        read = session.turns;
       } catch (e) {
-        if (projectRef.current !== pid) return;
+        if (projectRef.current !== pid) return null;
         setHydrateErrors((prev) => ({
           ...prev,
           [attachmentId]: e instanceof Error ? e.message : "Failed to load the conversation",
@@ -590,6 +646,7 @@ export function useAgentSession(
         // The events that came while the chat was read: those after it apply.
         if (read) for (const env of buffered) applyEnvelope(env);
       }
+      return read;
     },
     [restore, applyEnvelope],
   );
@@ -610,10 +667,11 @@ export function useAgentSession(
             rereadRef.current.delete(attachmentId);
             const waiting = nextReadRef.current[attachmentId];
             delete nextReadRef.current[attachmentId];
+            let read: AgentSessionTurn[] | null = null;
             try {
-              await readOnce(pid, attachmentId);
+              read = await readOnce(pid, attachmentId);
             } finally {
-              waiting?.land();
+              waiting?.land(read);
             }
             if (projectRef.current !== pid || !rereadRef.current.has(attachmentId)) return;
             hydratedRef.current.delete(attachmentId);
@@ -630,16 +688,16 @@ export function useAgentSession(
 
   /** Read a chat again from the server: now, or, when a read of it is in
    * flight, once more after it, which the server may have answered before
-   * what changed. Settles once that read lands, a read queued after it
-   * meanwhile not waited for. */
+   * what changed. Settles once that read lands, with the turns it read (null
+   * when it read none), a read queued after it meanwhile not waited for. */
   const reread = useCallback(
-    (attachmentId: string): Promise<void> => {
-      if (!projectRef.current) return Promise.resolve();
+    (attachmentId: string): Promise<AgentSessionTurn[] | null> => {
+      if (!projectRef.current) return Promise.resolve(null);
       hydratedRef.current.delete(attachmentId);
       let next = nextReadRef.current[attachmentId];
       if (!next) {
-        let land: () => void = () => undefined;
-        const landed = new Promise<void>((resolve) => (land = resolve));
+        let land: (read: AgentSessionTurn[] | null) => void = () => undefined;
+        const landed = new Promise<AgentSessionTurn[] | null>((resolve) => (land = resolve));
         next = nextReadRef.current[attachmentId] = { landed, land };
       }
       if (readingRef.current[attachmentId]) rereadRef.current.add(attachmentId);
@@ -729,11 +787,13 @@ export function useAgentSession(
   // A card's action (an Undo, an Apply, a Dismiss) and a run's end wait for
   // the chat read after them: a read the room's word started meanwhile may
   // have been answered before the change, so the one after it is waited for
-  // too, and a card never offers its action again on its old status.
+  // too, and a card never offers its action again on its old status. Whoever
+  // waits gets the turns that read found: the card's status after a refusal.
   const refreshAfterMutation = useCallback(
     async (attachmentId: string) => {
-      await reread(attachmentId);
+      const read = await reread(attachmentId);
       await state.reload();
+      return read;
     },
     [reread, state.reload],
   );
@@ -819,11 +879,16 @@ export function useAgentSession(
             } catch (e) {
               // An answer that never came may still have asked: asked again by
               // its id, it is the same ask.
-              if ((e as { status?: number } | null)?.status !== undefined || attempt > 0) {
-                const followed = current();
-                if (followed) failAsk(followed, e);
-                return;
-              }
+              const answered = (e as { status?: number } | null)?.status !== undefined;
+              if (!answered && attempt === 0) continue;
+              const followed = current();
+              // Neither request was answered, but the room told an event of
+              // the ask: the server took it, and it goes on, as the room tells
+              // it. Told nothing yet, it fails here, until the room tells it.
+              if (!followed || (!answered && followed.seq >= 0)) return;
+              if (!answered) lostRef.current.add(ask.askId);
+              failAsk(followed, e);
+              return;
             }
           }
         } finally {
@@ -905,7 +970,11 @@ export function useAgentSession(
   const clearConversation = useCallback(async (attachmentId: string) => {
     const pid = projectRef.current;
     if (!pid) return;
-    await agentsApi.clearSession(pid, attachmentId);
+    const cleared = await agentsApi.clearSession(pid, attachmentId);
+    // This clear is counted already: a read that finds no other since keeps
+    // what this tab keeps after it.
+    if (typeof cleared?.clears === "number") clearsRef.current[attachmentId] = cleared.clears;
+    else delete clearsRef.current[attachmentId];
     setTranscripts((prev) => ({ ...prev, [attachmentId]: [] }));
     // dev/80: the status strip lives exactly as long as the conversation.
     setRunStatus((prev) => {
@@ -921,6 +990,7 @@ export function useAgentSession(
       await state.detach(attachmentId);
       hydratedRef.current.delete(attachmentId);
       delete asksRef.current[attachmentId];
+      delete clearsRef.current[attachmentId];
       setTranscripts((prev) => {
         const { [attachmentId]: _drop, ...rest } = prev;
         return rest;
@@ -949,15 +1019,30 @@ export function useAgentSession(
   );
 }
 
+/** The index of the last of *turns* that *matches*, or -1. */
+function lastIndexOf(turns: AgentSessionTurn[], matches: (turn: AgentSessionTurn) => boolean): number {
+  for (let i = turns.length - 1; i >= 0; i -= 1) if (matches(turns[i])) return i;
+  return -1;
+}
+
+/** *turns* with *added* after the last turn of the ask *askId*, or after
+ * them all when none is its. */
+function afterAsk(turns: AgentSessionTurn[], askId: string, added: AgentSessionTurn[]): AgentSessionTurn[] {
+  const at = lastIndexOf(turns, (turn) => turn.askId === askId) + 1 || turns.length;
+  return [...turns.slice(0, at), ...added, ...turns.slice(at)];
+}
+
 /** *server*, a chat's turns as the server holds them, with the turns of
  * this tab's own failed asks that *shown*, the chat as the tab showed it,
  * holds (`failedAsk`), each where it stood: after as many of the chat's
  * other turns as came before it there. A failed ask whose turn's execution
- * the server holds (*settled*) is the server's to show. */
+ * the server holds (*settled*), or that the server shows as it stands
+ * (*viewed*, its asks), is the server's to show. */
 function withFailedAsks(
   shown: AgentSessionTurn[],
   server: AgentSessionTurn[],
   settled: Set<string | undefined>,
+  viewed: Set<string>,
 ): AgentSessionTurn[] {
   const out: AgentSessionTurn[] = [];
   let others = 0;
@@ -968,7 +1053,7 @@ function withFailedAsks(
       others += 1;
       continue;
     }
-    if (failed.executionId && settled.has(failed.executionId)) continue;
+    if ((failed.executionId && settled.has(failed.executionId)) || viewed.has(failed.askId)) continue;
     for (; placed < Math.min(others, server.length); placed += 1) out.push(server[placed]);
     out.push(turn);
   }

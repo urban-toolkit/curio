@@ -2557,9 +2557,11 @@ everyone on the dataflow, as your own edit does; it waits while someone else is
 working in the node it changes. A new node is dragged in from its tile in the
 tool rail, and lands as the drop ends. Its card in the chat has **Undo**, which puts
 back what it replaced, unless someone changed it after: then the card says who,
-until you act on it again, and nothing changes. An install (a package, a
-dataset, a download, an agent) waits for your review: nothing installs until
-you apply it, and an **Apply** or **Dismiss** Curio refuses says why on its card.
+until you act on it again or someone else undoes it, and nothing changes. An
+install (a package, a dataset, a download, an agent) waits for your review:
+nothing installs until you apply it, and an **Apply** or **Dismiss** Curio
+refuses says why on its card, until you act on it again or someone else
+applies or dismisses it.
 
 Each message runs on the server: close or reload the tab and the agent goes on,
 its reply in the chat when you come back. Everyone who edits the dataflow sees
@@ -2568,8 +2570,9 @@ as a pick's *Source recorded* turn or the turns of **Solve**, as it lands, with
 no reload. One message of a chat runs at a time: one you send while another
 runs waits its turn (*Waiting its turn*), and **Withdraw** takes it back before
 it starts. A message Curio refuses stays in your chat with the reason under
-it, until you clear the chat. While a message runs and the box is empty,
-**Stop** is in **Send**'s place: it stops the message at its next step, keeping
+it, until you or someone else clears the chat. While a message runs and the
+box is empty, **Stop** is in **Send**'s place: it stops the message at its next
+step, keeping
 what it said and changed
 so far. A reply that reaches the output limit (4,096
 tokens) stops there and ends with a line that says it was cut off. When the

@@ -7,7 +7,9 @@
  * payload source: and then refresh the transcript and the listing, which are
  * the truth. Why the server refused a card's Undo, Apply or Dismiss is kept
  * here, by chat and card (`refusals`), so the card says it across the reads
- * that draw it anew, until the user acts on it again.
+ * that draw it anew, until the user acts on it again, or while the card holds
+ * the status it was refused on: someone else's action that moves it on (an
+ * Undo, an Apply in another tab) leaves the reason nothing to say.
  */
 import type { DatasetDiscoverySourceInput } from "../../services/datasetCatalog/datasetCatalogTypes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -26,6 +28,7 @@ import type {
   AgentApplyResult,
   AgentDatasetPick,
   AgentDatasetSelection,
+  AgentSessionTurn,
   AgentUndoResult,
 } from "../../services/agents/types";
 
@@ -46,16 +49,28 @@ export interface AgentProposalsSlice {
   importDataset: (file: File, discoverySource?: DatasetDiscoverySourceInput) => Promise<string | null>;
   /** Why the server refused the last Undo, Apply or Dismiss of a card, by
    * chat and by the card's change or proposal id: its card says it, though a
-   * read of the chat draws the card anew, until the user acts on it again. */
+   * read of the chat draws the card anew, until the user acts on it again,
+   * and while the card holds the status it was refused on. */
   refusals: Record<string, Record<string, string>>;
+}
+
+/** A refusal kept for a card: the server's reason, and the status the chat
+ * read after it held of the card (*on*), none when that read found none. */
+interface KeptRefusal {
+  why: string;
+  on?: string;
 }
 
 export function useAgentProposals(opts: {
   effectiveProjectId: string | null;
   projectRef: React.MutableRefObject<string | null>;
-  refreshAfterMutation: (attachmentId: string) => Promise<void>;
+  refreshAfterMutation: (attachmentId: string) => Promise<AgentSessionTurn[] | null>;
+  /** Each chat's turns as this tab holds them: what holds each card's status. */
+  transcripts: Record<string, AgentSessionTurn[]>;
 }): AgentProposalsSlice {
-  const { effectiveProjectId, projectRef, refreshAfterMutation } = opts;
+  const { effectiveProjectId, projectRef, refreshAfterMutation, transcripts } = opts;
+  const transcriptsRef = useRef(transcripts);
+  transcriptsRef.current = transcripts;
   // The canvas's doc as an Undo answers, which tells the others what the
   // Undo took out.
   const { dataflowDoc } = useFlowContext();
@@ -86,18 +101,35 @@ export function useAgentProposals(opts: {
     [importDatasetFile],
   );
 
-  const [refusals, setRefusals] = useState<Record<string, Record<string, string>>>({});
+  const [kept, setKept] = useState<Record<string, Record<string, KeptRefusal>>>({});
   // Another dataflow's cards are not this one's.
-  useEffect(() => setRefusals({}), [effectiveProjectId]);
+  useEffect(() => setKept({}), [effectiveProjectId]);
+  // What each card says: the reason kept for it while the chat holds the card
+  // on the status it was refused on. Once someone else's action moved the
+  // card on, or the chat holds it no more (a clear), the reason goes: a
+  // card's status moves on, never back.
+  const refusals = useMemo(() => {
+    const said: Record<string, Record<string, string>> = {};
+    for (const [attachmentId, cards] of Object.entries(kept)) {
+      for (const [cardId, refusal] of Object.entries(cards)) {
+        if (refusal.on !== undefined && statusOfCard(transcripts[attachmentId], cardId) === refusal.on) {
+          (said[attachmentId] ??= {})[cardId] = refusal.why;
+        }
+      }
+    }
+    return said;
+  }, [kept, transcripts]);
   /** Act on the card *cardId* of *attachmentId*'s chat with *request*: the
    * reason the server refused its last action goes as the user acts again;
    * whatever the answer, the chat and the listing are read again after it
    * and waited for, so the card never offers its action again on its old
    * status; a refusal's reason, the server's words, is kept for the card,
-   * which a read may draw anew, before the refusal reaches it. */
+   * which a read may draw anew, before the refusal reaches it, with the
+   * status the read after it holds of the card (the chat as the tab holds it
+   * when that read failed). */
   const actOnCard = useCallback(
     async <T,>(attachmentId: string, cardId: string, request: () => Promise<T>): Promise<T> => {
-      setRefusals((prev) => {
+      setKept((prev) => {
         if (!prev[attachmentId]?.[cardId]) return prev;
         const { [cardId]: _gone, ...rest } = prev[attachmentId];
         return { ...prev, [attachmentId]: rest };
@@ -109,10 +141,10 @@ export function useAgentProposals(opts: {
         why = e instanceof Error && e.message ? e.message : null;
         throw e;
       } finally {
-        await refreshAfterMutation(attachmentId);
+        const read = await refreshAfterMutation(attachmentId);
         if (why !== null) {
-          const reason = why;
-          setRefusals((prev) => ({ ...prev, [attachmentId]: { ...prev[attachmentId], [cardId]: reason } }));
+          const refusal = { why, on: statusOfCard(read ?? transcriptsRef.current[attachmentId], cardId) };
+          setKept((prev) => ({ ...prev, [attachmentId]: { ...prev[attachmentId], [cardId]: refusal } }));
         }
       }
     },
@@ -190,6 +222,20 @@ export function useAgentProposals(opts: {
     () => ({ applyProposal, dismissProposal, undoChange, recordDatasetSelection, importDataset, refusals }),
     [applyProposal, dismissProposal, undoChange, recordDatasetSelection, importDataset, refusals],
   );
+}
+
+/** The status *turns* hold of the card *cardId*, a change's or an install's;
+ * none when they hold no such card. */
+function statusOfCard(turns: AgentSessionTurn[] | null | undefined, cardId: string): string | undefined {
+  let status: string | undefined;
+  for (const turn of turns ?? []) {
+    for (const part of turn.content ?? []) {
+      const card = part as { type: string; changeId?: string; proposalId?: string; status?: string };
+      const id = card.type === "change" ? card.changeId : card.type === "proposal" ? card.proposalId : undefined;
+      if (id === cardId) status = card.status;
+    }
+  }
+  return status;
 }
 
 /** The apply→canvas bridge (dev/48 §3.3): the saved spec was mutated; carry

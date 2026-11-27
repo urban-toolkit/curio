@@ -9,7 +9,8 @@ of the owner and the editors, as an agent's chat turns reach them
 (``agents/application/turns/turn_jobs.py``): a watcher's tab hears nothing.
 A word each tab answers with a read (:class:`PacedWord`) is told at once,
 then at most once more per dataflow per wait: what changed during the wait
-is told, in one word, when it ends.
+is told, in one word, when it ends. A wait whose timer cannot start ends
+there, so the dataflow's next change is told at once.
 """
 from __future__ import annotations
 
@@ -128,7 +129,10 @@ class PacedWord:
 
     def _wait_ends(self, project_id: str) -> None:
         """A change made during the wait is told now, and another wait
-        starts; with none, the dataflow waits no more."""
+        starts; with none, the dataflow waits no more. Nor does it when the
+        next wait's timer cannot start (no thread to start): kept, its wait
+        would never end, and no change of the dataflow would be told again,
+        so the next change is told at once."""
         with self._lock:
             wait = self._waits.get(project_id)
             if wait is None:
@@ -137,8 +141,12 @@ class PacedWord:
                 del self._waits[project_id]
                 return
             names, wait.names, wait.changed = wait.names, [], False
-            wait.timer = self._wait_after_word(project_id)
             app = wait.app
+            try:
+                wait.timer = self._wait_after_word(project_id)
+            except Exception:  # noqa: BLE001 - a wait that cannot start ends here, and the word is still told
+                del self._waits[project_id]
+                log.exception("the wait after a word of dataflow %s could not start", project_id)
         self._say(project_id, names, app)
 
     def _say(self, project_id: str, names: list, app) -> None:

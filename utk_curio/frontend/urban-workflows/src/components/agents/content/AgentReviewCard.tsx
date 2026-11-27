@@ -30,7 +30,9 @@ export type { PlanNodeReviewState } from "./reviewCard/reviewCardText";
  * effect line and the actions. It keeps only what spans them: the busy /
  * error state of an action. A refused Apply or Dismiss says why, as an alert;
  * in a chat, which keeps that reason for the card (`refusal`), though a read
- * of the chat draws the card anew, until the user acts on it again.
+ * of the chat draws the card anew, until the user acts on it again. Either
+ * says it only while the card holds the status it was refused on: applied or
+ * dismissed by someone else since, it has nothing to say.
  */
 export const AgentReviewCard: React.FC<{
   part: AgentProposalPart;
@@ -53,20 +55,24 @@ export const AgentReviewCard: React.FC<{
   refusal?: string | null;
 }> = ({ part, tintClassName, onApply, onDismiss, waitsForOwner = false, effect, refusal = null }) => {
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const said = busy ? null : refusal ?? error;
+  // Why the card's own last action was refused, with the status it was
+  // refused on: once the card's status moves on, the reason goes.
+  const [error, setError] = useState<{ why: string; on: string } | null>(null);
+  const own = error && error.on === part.status ? error.why : null;
+  const said = busy ? null : refusal ?? own;
   // A review of a change, saved before agents changed the dataflow directly:
   // its Apply is gone, never offered, and only its Dismiss is left.
   const madeBefore = landsAsAChange(part.tool);
 
   const act = async (fn?: (proposalId: string) => Promise<unknown>) => {
     if (!fn || busy) return;
+    const on = part.status;
     setBusy(true);
     setError(null);
     try {
       await fn(part.proposalId);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "The review action failed");
+      setError({ why: e instanceof Error ? e.message : "The review action failed", on });
     } finally {
       setBusy(false);
     }

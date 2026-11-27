@@ -166,10 +166,14 @@ export interface AgentSessionTurn {
   remedy?: AgentRemedy;
   /** A turn of an ask of this tab's that failed, which the server may hold
    * none of: its message, the reply it streamed and its error. A read of the
-   * chat keeps it where it stood until the server holds the ask's exchange
-   * (its turn's execution, when it had one) or the chat is cleared. Never
-   * persisted. */
+   * chat keeps it where it stood until the server holds the ask (its turn's
+   * execution, when it had one, or the ask as it stands) or the chat is
+   * cleared, from any tab. Never persisted. */
   failedAsk?: { askId: string; executionId?: string };
+  /** The ask whose message, reply or error this turn is, on a turn of an ask
+   * this tab follows: each ask changes its own turns alone, never another's
+   * that came after them. Never persisted. */
+  askId?: string;
   /** Execution record for agent turns produced by a run (memo dev/37). */
   execution?: AgentExecution;
   /** Typed content parts for agent turns (memo dev/39); absent on old turns. */
@@ -183,6 +187,10 @@ export interface AgentSession {
   /** The asks as they stand: the running turn's first, then those waiting
    * their turn, in order. Absent from an old server. */
   asks?: AgentAskView[];
+  /** How many times the chat was cleared, from any tab: a tab whose read
+   * finds it moved on since its last read drops the turns only it kept.
+   * Absent from an old server. */
+  clears?: number;
 }
 
 /** One event of an ask, as the room and a follow of the ask carry it

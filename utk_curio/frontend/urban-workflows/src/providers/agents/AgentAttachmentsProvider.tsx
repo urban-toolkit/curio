@@ -61,7 +61,9 @@ export const AgentAttachmentsProvider: React.FC<{
   useAttachmentsInTheRoom(effectiveProjectId, state.reload);
   const session = useAgentSession(effectiveProjectId, state);
   const { projectRef, refreshAfterMutation, setSelectedId, ...sessionValue } = session;
-  const proposals = useAgentProposals({ effectiveProjectId, projectRef, refreshAfterMutation });
+  const proposals = useAgentProposals({
+    effectiveProjectId, projectRef, refreshAfterMutation, transcripts: session.transcripts,
+  });
   const solve = useAgentSolve({ projectRef, attachments: state.attachments, refreshAfterMutation });
   const simulation = useAgentSimulation({ projectRef, refreshAfterMutation });
   const nodeRuns = useAgentNodeRuns({ projectRef, refreshAfterMutation });
