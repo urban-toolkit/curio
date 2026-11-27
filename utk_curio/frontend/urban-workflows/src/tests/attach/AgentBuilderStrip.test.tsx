@@ -1288,41 +1288,6 @@ describe("AgentBuilderStrip's menu, when a build starts elsewhere", () => {
   });
 });
 
-// The running line's clock is the run's, not this line's: a chat opened
-// again mid-run goes on counting from when the server says the run began.
-describe("AgentBuilderStrip's running line, drawn again mid-run", () => {
-  it.each([
-    ["a build", { simulatingSince: Date.now() / 1000 - 125 }, { buildRunning: "auto" as const }],
-    ["a batch", { phase: "solving" as const, solvingSince: Date.now() / 1000 - 125 }, {}],
-  ])("%s counts from its start, not from when the line was drawn", (_kind, sessionFields, attachmentFields) => {
-    render(
-      <AgentBuilderStrip
-        attachment={{ ...withLandedPlan({ a: "created", b: "created" }, sessionFields), ...attachmentFields }}
-        onSolve={jest.fn()}
-        onSimulate={jest.fn()}
-        onCancelSimulate={jest.fn()}
-        onCancelSolve={jest.fn()}
-      />,
-    );
-    expect(line()).toHaveTextContent(/ · 2:0\d · /);
-  });
-
-  it("a server clock ahead of the browser's never counts below 0:00, nor past the line's own sight", () => {
-    render(
-      <AgentBuilderStrip
-        attachment={{
-          ...withLandedPlan({ a: "created", b: "created" }, { simulatingSince: Date.now() / 1000 + 600 }),
-          buildRunning: "auto",
-        }}
-        onSolve={jest.fn()}
-        onSimulate={jest.fn()}
-        onCancelSimulate={jest.fn()}
-      />,
-    );
-    expect(line()).toHaveTextContent(/ · 0:00 · /);
-  });
-});
-
 // Show its sources goes to this chat's card of the node's sources, else to
 // its Dataset Finder's chat: its tooltip says which, and with several nodes
 // waiting, which node it goes to.

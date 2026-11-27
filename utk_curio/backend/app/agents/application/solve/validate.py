@@ -290,8 +290,11 @@ def _validate_events(
                 done["verdict"] = "fail"
                 _say_it_failed(user_key, project_id, attachment_id, session_id, home_attachment_id, home_session_id,
                                spec, node, label, outcome, rounds_trace)
-            done["builderSession"] = _settle_node_state(user_key, project_id, attachment_id, ref, done["verdict"], by=by,
-                                                        check=check_of(done))
+            done["builderSession"] = _settle_node_state(
+                user_key, project_id, attachment_id, ref, done["verdict"], by=by, check=check_of(done),
+                change=({"changeId": done["changeId"], "attachmentId": done.get("changeAttachmentId") or attachment_id}
+                        if done.get("changeId") else None),
+            )
         yield "done", done
     finally:
         # Disconnect-safe: the in-flight guard never wedges the attachment.
@@ -600,7 +603,8 @@ def end_pause_on(session: dict, ref: str | None) -> None:
 
 
 def _settle_node_state(user_key, project_id, attachment_id, ref, verdict: str, *,
-                       by: str = agents_node_work.BY_ROW, check: str | None = None) -> dict:
+                       by: str = agents_node_work.BY_ROW, check: str | None = None,
+                       change: dict | None = None) -> dict:
     """The per-node ledger: validated / failed / waiting for its source;
     infrastructure untouched. Written on the plan's record as the dataflow
     holds it now, under its spec lock, so a pick that landed meanwhile keeps
@@ -608,9 +612,10 @@ def _settle_node_state(user_key, project_id, attachment_id, ref, verdict: str, *
     (``sourceWaitBy``: *by*, the build's mode or ``node`` for a row's Solve),
     which says how the plan goes on after the pick. A node validated keeps
     how its code was checked (``nodeChecks``: *check*, :func:`check_of`),
-    with the code it was checked on, which its row's tick says, and a build's
-    pause on its failure ends; one that did not lose its check. Returns the
-    builder session."""
+    with the code it was checked on, which its row's tick says, and where its
+    code's change lives (``nodeChanges``: *change*, a row's Solve's as a
+    build's), and a build's pause on its failure ends; one that did not lose
+    its check. Returns the builder session."""
     with projects_storage.spec_write_lock(user_key, project_id):
         fresh = agents_spec_reads._live_spec_or_404(user_key, project_id)
         fresh_record = agents_spec_reads._record_or_404(fresh, attachment_id)
@@ -623,6 +628,8 @@ def _settle_node_state(user_key, project_id, attachment_id, ref, verdict: str, *
                 fresh_session["nodeStates"][ref] = "validated"
                 keep_check(fresh_session, ref, check,
                            node_code(fresh, (fresh_session.get("nodeIds") or {}).get(ref)))
+                if change:
+                    fresh_session.setdefault("nodeChanges", {})[ref] = dict(change)
                 end_pause_on(fresh_session, ref)
             elif verdict != "infrastructure":
                 keep_check(fresh_session, ref, None, None)

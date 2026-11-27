@@ -1233,6 +1233,10 @@ class TestBuildAndValidate:
         first = TestValidateNode()._validate(client, token, alice_project, att_id, {"ref": refs[0]})[-1][1]
         assert first["verdict"] == "pass"
         assert first["builderSession"]["nodeChecks"] == {refs[0]: "ran"}
+        # The row's Solve keeps where its code's change lives, as a build does.
+        assert first["builderSession"]["nodeChanges"][refs[0]] == {
+            "changeId": first["changeId"], "attachmentId": first["changeAttachmentId"],
+        }
 
         def listed_checks():
             cards = client.get(
@@ -1251,10 +1255,8 @@ class TestBuildAndValidate:
         turns = client.get(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/session", headers=_auth(token),
         ).get_json()["turns"]
-        # A row's Solve keeps no record of where its change lives, so the
-        # sentence names no one agent's chat.
         assert turns[-1]["text"] == (
-            "Built all 2 nodes. Analyze ran in the sandbox. Each node's code and checks are in its own agent's chat."
+            "Built all 2 nodes. Analyze ran in the sandbox. Each node's code and checks are in its Node Builder."
         ), turns[-1]["text"]
         assert listed_checks() == {refs[1]: "ran"}
 
