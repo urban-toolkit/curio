@@ -832,8 +832,8 @@ def _written_by_the_plan(before: dict, then: dict) -> set:
     """The fields of the dataflow the plan's writes changed: those that differ
     between *before*, the dataflow its first write found, and *then*, the one
     its last write left, but for :data:`_ONE_BY_ONE`. Nothing but the goal
-    changes between a plan's writes without refusing its Undo
-    (:func:`_only_the_goal_between`), so each of them is the plan's."""
+    and the plan's own nodes changes between a plan's writes without refusing
+    its Undo (:func:`_only_the_plan_between`), so each of them is the plan's."""
     return {name for name in (set(before) | set(then)) - _ONE_BY_ONE
             if not doc_mapping.same(before.get(name, doc_mapping.MISSING), then.get(name, doc_mapping.MISSING))}
 
@@ -864,15 +864,22 @@ def _outside_the_plan(dataflow: dict, change: dict, wrote: set) -> dict:
     return _normal(out)
 
 
-def _only_the_goal_between(user_key: str, project_id: str, earlier: dict, later: dict) -> bool:
+def _only_the_plan_between(user_key: str, project_id: str, earlier: dict, later: dict, change: dict) -> bool:
     """Whether what reached the log between two of a plan's points, *earlier*
-    and *later*, changed nothing of the dataflow but its goal, which never
-    holds the plan's Undo back (``history.between``)."""
+    and *later*, changed nothing of the dataflow but its goal and the plan's
+    own nodes (``history.between``), none of which holds the plan's Undo
+    back: the Undo removes those nodes with everything in them and every
+    connection to them, as :func:`_outside_the_plan` leaves them out. So an
+    open tab's write into a node the plan just added, a setting its canvas
+    gives the node, code typed there or a connection drawn to it, is the
+    plan's; a change to any other node or connection, or to a field of the
+    dataflow, is not."""
     flows = history.between(user_key, project_id, earlier, later)
     if flows is None:
         return False
-    left, found = ({key: value for key, value in flow.items() if key != "task"} for flow in flows)
-    return _normal(left) == _normal(found)
+    left, found = flows
+    fields = (set(left) | set(found)) - _ONE_BY_ONE
+    return _outside_the_plan(left, change, fields) == _outside_the_plan(found, change, fields)
 
 
 def _undo_plan(user_key: str, project_id: str, attachment_id: str, change: dict, by: dict) -> list[dict]:
@@ -884,8 +891,10 @@ def _undo_plan(user_key: str, project_id: str, attachment_id: str, change: dict,
     It takes back only what the plan wrote: every field of the dataflow the
     plan did not write stays as it is now (the put-back's ``keep``). Refused,
     with nothing changed, when someone changed the dataflow between its
-    writes, or when, but for the plan's own nodes and connections, what it
-    puts back is no longer what the plan left (:func:`_outside_the_plan`), or
+    writes, but for its goal and the plan's own nodes, with everything in them
+    and every connection to them (:func:`_only_the_plan_between`), or when,
+    but for those nodes and the plan's own connections, what it puts back is
+    no longer what the plan left (:func:`_outside_the_plan`), or
     when the put-back would change a field it keeps, as a scenario made after
     the plan that holds one of its nodes (``history.KeptWouldChange``): a
     put-back would erase what a person did. The dataflow's goal never refuses
@@ -905,7 +914,7 @@ def _undo_plan(user_key: str, project_id: str, attachment_id: str, change: dict,
         first, last = points[steps[0]], points[steps[-1]]
         for at, after in zip(steps, steps[1:]):
             if not (history.follows(user_key, project_id, points[at], points[after])
-                    or _only_the_goal_between(user_key, project_id, points[at], points[after])):
+                    or _only_the_plan_between(user_key, project_id, points[at], points[after], change)):
                 raise _changed_after(points[at + 1:], change_id)
         then = history.dataflow_at(user_key, project_id, last["id"])
         before = history.dataflow_found_by(user_key, project_id, first)
