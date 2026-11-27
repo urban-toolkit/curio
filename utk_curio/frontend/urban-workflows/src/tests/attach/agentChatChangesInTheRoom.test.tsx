@@ -12,10 +12,14 @@
  *
  * A read is the chat whole, but what only this tab holds stays: a message it
  * sent that the server does not hold yet, and an ask of its own the server
- * refused before it kept anything. A card this tab acts on (Undo, Apply,
- * Dismiss) stays at work until the chat is read after the action, the read
- * the room's word started meanwhile included, and a refusal stays on its
- * card until the user acts on it again.
+ * refused before it kept anything, until the chat is cleared from any tab.
+ * Each ask's turns are its own: a reply that streams in after this tab's
+ * refused ask grows in its own turn, never in the error's, and an ask whose
+ * requests went unanswered, which the server took, shows as the server's,
+ * once. A card this tab acts on (Undo, Apply, Dismiss) stays at work until
+ * the chat is read after the action, the read the room's word started
+ * meanwhile included, and a refusal stays on its card until the user acts on
+ * it again, or until someone else's action moves the card on.
  *
  * The room is the real `CollaborationProvider` on a fake socket, so the word
  * reaches the chat only if the provider hands it on.
@@ -84,6 +88,7 @@ const api = agentsApi as jest.Mocked<typeof agentsApi>;
 const CHAT_CHANGED = "agent_chat_changed";
 
 const ANA = { kind: "person" as const, account: "7", name: "Ana" };
+const BEN = { kind: "person" as const, account: "8", name: "Ben" };
 
 function attachment(attachmentId: string, coord: string, name: string, target: Record<string, unknown>) {
   return {
@@ -119,8 +124,9 @@ const RECORDED =
 const SOLVED = "Solved 'CPL branches': PASS after 9 rounds: the trace and the change live in the node's Node Builder.";
 const SOLVED_TOO = "Solved 'Branch points': PASS after 1 round: the trace and the change live in the node's Node Builder.";
 
-/** Each chat as the server holds it, which a read of the chat answers. */
-let server: Record<string, { turns: AgentSessionTurn[]; asks: AgentAskView[] }> = {};
+/** Each chat as the server holds it, which a read of the chat answers, with
+ * how many times it was cleared (none when not said). */
+let server: Record<string, { turns: AgentSessionTurn[]; asks: AgentAskView[]; clears?: number }> = {};
 /** The reads of each chat that wait, answered with the chat as the server
  * held it when it was asked, once let go (`holdNextRead`). */
 let held: Record<string, Array<Promise<void>>> = {};
@@ -277,6 +283,9 @@ const Chat: React.FC = () => {
       <button onClick={() => void ctx.clearConversation("a1")}>Clear the Dataflow Builder's chat</button>
       <div data-testid="open">{open ?? "none"}</div>
       <div data-testid="turns">{shownTurns}</div>
+      <div data-testid="errors">
+        {open ? (ctx.transcripts[open] ?? []).filter((t) => t.error).map((t) => t.text).join("|") : ""}
+      </div>
       <div data-testid="run-status">{ctx.runStatus["a1"]?.phase ?? "none"}</div>
     </div>
   );
@@ -308,6 +317,8 @@ const Panel: React.FC = () => {
 };
 
 const turns = () => screen.getByTestId("turns").textContent;
+/** The open chat's turns styled as an error, by their text. */
+const errors = () => screen.getByTestId("errors").textContent;
 /** The open chat's card of the Node Builder's change, and of its install. */
 const changeCard = () => screen.getByRole("group", { name: `Change: ${(CHANGE as { summary: string }).summary}` });
 const reviewCard = () =>
@@ -369,6 +380,7 @@ beforeEach(() => {
       sessionId: `s-${attachmentId}`,
       turns: [...(server[attachmentId]?.turns ?? [])],
       asks: [...(server[attachmentId]?.asks ?? [])],
+      clears: server[attachmentId]?.clears ?? 0,
     };
     const waits = held[attachmentId]?.shift();
     if (waits) await waits;
@@ -743,3 +755,209 @@ test.each([
   await opens("Node Builder", "a3", nodeBuilder);
   expect(within(reviewCard()).getByRole("alert")).toHaveTextContent(why);
 });
+
+test.each([
+  {
+    action: "Undo",
+    card: changeCard,
+    id: "c1",
+    request: () => api.undoChange,
+    why: "Someone changed this dataflow after; nothing was undone.",
+    status: 409,
+    resolved: "undone",
+    outcome: "Undone",
+  },
+  {
+    action: "Apply",
+    card: reviewCard,
+    id: "p1",
+    request: () => api.applyProposal,
+    why: "The Data Catalog did not answer; nothing was installed.",
+    status: 502,
+    resolved: "applied",
+    outcome: "Applied",
+  },
+])(
+  "a refused $action says why no more once someone else's $action moves its card on, in the open chat and drawn anew",
+  async ({ action, card, id, request, why, status, resolved, outcome }) => {
+    api.listAttachments.mockResolvedValue({ attachments: [BUILDER, FINDER, NODE_BUILDER] } as never);
+    const socket = await anasTabInTheRoom(<Panel />);
+    const nodeBuilder = `user:${REWRITE}|agent:${REWRITTEN}`;
+    await opens("Node Builder", "a3", nodeBuilder);
+
+    // Ana's action is refused: her card says why.
+    (request() as jest.Mock).mockRejectedValueOnce(refused(status, why));
+    await act(async () => {
+      fireEvent.click(within(card()).getByRole("button", { name: action }));
+    });
+    await waitFor(() => expect(within(card()).getByRole("alert")).toHaveTextContent(why));
+
+    // Ben's own action in his tab moves the card on. The room tells Ana's
+    // tab, which reads the chat: her card says its outcome, and no longer why
+    // her own action was refused, though she never acted on it again.
+    setStatus("a3", id, resolved);
+    chatChanged(socket, "a3");
+    await waitFor(() => expect(within(card()).getByText(outcome)).toBeInTheDocument());
+    expect(within(card()).queryByRole("alert")).toBeNull();
+
+    // Drawn anew, after a look at another chat, it says no reason either.
+    await opens("Dataflow Builder", "a1", `user:${ASKED}|agent:${PAUSED}`);
+    await opens("Node Builder", "a3", nodeBuilder);
+    expect(within(card()).getByText(outcome)).toBeInTheDocument();
+    expect(within(card()).queryByRole("alert")).toBeNull();
+  },
+);
+
+test("this tab's refused ask goes when another tab clears the chat, and its next refused ask stays across a read", async () => {
+  const socket = await anasTabInTheRoom();
+  const before = `user:${ASKED}|agent:${PAUSED}`;
+  await opens("Dataflow Builder", "a1", before);
+
+  // Ana's ask is refused before the server keeps anything of it.
+  const tooMany = "Too many asks of this agent at once.";
+  api.askTurn.mockRejectedValueOnce(refused(429, tooMany));
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  });
+  const failed = `user:Build it.|agent:(error) ${tooMany}`;
+  await waitFor(() => expect(turns()).toBe(`${before}|${failed}`));
+
+  // Ben clears the Builder's chat in his tab. Ana's tab, told, reads it
+  // again: the read says the chat was cleared since her last read, and her
+  // refused ask goes with the rest, as her own Clear would take it.
+  server.a1 = { turns: [], asks: [], clears: 1 };
+  chatChanged(socket, "a1");
+  await waitFor(() => expect(readsOf("a1")).toBe(2));
+  await settle();
+  expect(turns()).toBe("");
+  expect(screen.getByTestId("run-status").textContent).toBe("none");
+
+  // Her next ask is refused too, after the clear: it stays across the next
+  // read, which finds the chat cleared no more since.
+  api.askTurn.mockRejectedValueOnce(refused(429, tooMany));
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  });
+  await waitFor(() => expect(turns()).toBe(failed));
+  server.a1.turns.push(said("agent", SOLVED));
+  chatChanged(socket, "a1");
+  await waitFor(() => expect(readsOf("a1")).toBe(3));
+  await settle();
+  expect(turns()).toBe(`${failed}|agent:${SOLVED}`);
+});
+
+test("a reply that streams in after this tab's refused ask grows in its own turn, never as the error, and shows once", async () => {
+  const socket = await anasTabInTheRoom();
+  const before = `user:${ASKED}|agent:${PAUSED}`;
+  await opens("Dataflow Builder", "a1", before);
+
+  // Ben asks the Builder in his tab, and his turn streams into Ana's.
+  const bens = "b".repeat(32);
+  turnEvent(socket, bens, 0, "asked", { by: BEN, message: "Map the branches.", askedAt: 1, waiting: false });
+  turnEvent(socket, bens, 1, "started", { startedAt: 2 });
+  turnEvent(socket, bens, 2, "execution", { executionId: "e7" });
+  turnEvent(socket, bens, 3, "delta", { text: "Mapping" });
+  expect(turns()).toBe(`${before}|user:Map the branches.|agent:Mapping`);
+
+  // Ana asks too, and the server refuses her ask before it keeps anything.
+  const tooMany = "Too many asks of this agent at once.";
+  api.askTurn.mockRejectedValueOnce(refused(429, tooMany));
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  });
+  const hers = `user:Build it.|agent:(error) ${tooMany}`;
+  await waitFor(() => expect(turns()).toBe(`${before}|user:Map the branches.|agent:Mapping|${hers}`));
+
+  // Ben's reply goes on: it grows in its own turn, and her error stays hers.
+  turnEvent(socket, bens, 4, "delta", { text: " the branches." });
+  expect(turns()).toBe(`${before}|user:Map the branches.|agent:Mapping the branches.|${hers}`);
+  expect(errors()).toBe(`(error) ${tooMany}`);
+
+  // His turn ends, and the server holds its exchange. Read again, the chat
+  // shows his reply once, as a reply, and her refused ask after it.
+  server.a1 = {
+    turns: [
+      ...server.a1.turns,
+      { role: "user", text: "Map the branches.", by: BEN },
+      {
+        role: "agent",
+        text: "Mapping the branches.",
+        execution: { executionId: "e7", usage: null, status: "ok", durationMs: 5 },
+      },
+      said("agent", SOLVED),
+    ],
+    asks: [],
+  };
+  turnEvent(socket, bens, 5, "done", { reply: "Mapping the branches.", executionId: "e7", usage: null });
+  chatChanged(socket, "a1");
+  const after = `${before}|user:Map the branches.|agent:Mapping the branches.|${hers}|agent:${SOLVED}`;
+  await waitFor(() => expect(turns()).toBe(after));
+  await settle();
+  expect(turns()).toBe(after);
+  expect(errors()).toBe(`(error) ${tooMany}`);
+});
+
+test.each([
+  { when: "before them", toldFirst: true },
+  { when: "only after them", toldFirst: false },
+])(
+  "this tab's ask that the server took though neither of its two requests was answered shows once, with no error, the room telling it $when",
+  async ({ toldFirst }) => {
+    const socket = await anasTabInTheRoom();
+    const before = `user:${ASKED}|agent:${PAUSED}`;
+    await opens("Dataflow Builder", "a1", before);
+
+    // Ana asks. The server takes her ask, but neither her request nor the
+    // one that asks again by its id gets an answer.
+    const lost = () => new TypeError("Failed to fetch");
+    let lose: (e: unknown) => void = () => undefined;
+    api.askTurn
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => (lose = reject)) as never)
+      .mockRejectedValueOnce(lost());
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    });
+    const askId = api.askTurn.mock.calls[0][2];
+    const itStarts = () => {
+      turnEvent(socket, askId, 0, "asked", { by: ANA, message: "Build it.", askedAt: 1, waiting: false });
+      turnEvent(socket, askId, 1, "started", { startedAt: 2 });
+    };
+    if (toldFirst) itStarts();
+    await act(async () => {
+      lose(lost());
+    });
+    await settle();
+    expect(api.askTurn).toHaveBeenCalledTimes(2);
+    if (!toldFirst) itStarts();
+
+    // Her ask runs on the server: the chat shows her message once, no error.
+    expect(turns()).toBe(`${before}|user:Build it.`);
+    expect(errors()).toBe("");
+    expect(screen.getByTestId("run-status").textContent).toBe("running");
+
+    // Its reply streams, its turn ends, and the server holds the exchange:
+    // read again, the chat shows it once.
+    turnEvent(socket, askId, 2, "execution", { executionId: "e9" });
+    turnEvent(socket, askId, 3, "delta", { text: "Building the map." });
+    server.a1 = {
+      turns: [
+        ...server.a1.turns,
+        { role: "user", text: "Build it.", by: ANA },
+        {
+          role: "agent",
+          text: "Building the map.",
+          execution: { executionId: "e9", usage: null, status: "ok", durationMs: 5 },
+        },
+        said("agent", RECORDED),
+      ],
+      asks: [],
+    };
+    turnEvent(socket, askId, 4, "done", { reply: "Building the map.", executionId: "e9", usage: null });
+    chatChanged(socket, "a1");
+    const after = `${before}|user:Build it.|agent:Building the map.|agent:${RECORDED}`;
+    await waitFor(() => expect(turns()).toBe(after));
+    await settle();
+    expect(turns()).toBe(after);
+    expect(errors()).toBe("");
+  },
+);

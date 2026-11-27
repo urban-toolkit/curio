@@ -16,13 +16,18 @@ The room is told at once, then at most once more per dataflow per wait
 all in one word, when it ends. Each word is told once its write is in the
 chat's file, which a tab told reads at once.
 
+A read of a chat says how many times it was cleared (``clears``), so a tab
+that reads it again after another tab cleared it knows, and drops the turns
+only it kept (an ask of its own the server refused) with the rest.
+
 alice owns the dataflows, bob is an editor she invited, and carol watches.
 The app runs on a SQLite file, as the room's other tests do. A word can come
 from a job's thread, or when a wait ends, so each test reads what its tabs
 heard over a while.
 
 On main, where the room is told nothing of these writes, every test fails at
-its check of what the tabs were told.
+its check of what the tabs were told; the read's count of clears fails at
+its check that alice's read after bob's clear says the chat was cleared.
 """
 
 from __future__ import annotations
@@ -258,6 +263,56 @@ def test_a_cleared_chat_is_told_to_the_owners_and_the_editors_tabs(flow):
         assert heard["carol"] == [], "a watcher's tab was told of the dataflow's chats"
     finally:
         _leave(tabs)
+
+
+def test_a_read_says_how_many_times_the_chat_was_cleared_so_a_tab_knows_another_cleared_it(flow):
+    """alice's tab kept a turn of its own in the Node Builder's chat, which
+    the server holds none of (an ask it refused). bob clears the chat in his
+    tab, and alice's tab, told, reads it again: an empty chat alone does not
+    say it was cleared, since a chat can hold no turn and still keep hers, so
+    the read says how many times the chat was cleared. The count moves on
+    with each clear, whoever clears it, bob's DELETE answering it too, and
+    no other write moves it: neither a turn appended nor a card's status."""
+    from utk_curio.backend.app.agents.repositories import sessions
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    ukey = _user_dir_key(flow.alice)
+    url = f"/api/agents/projects/{flow.project}/attachments/{flow.att}/session"
+    listed = flow.client.get(f"/api/agents/projects/{flow.project}/attachments", headers=_auth(ALICE)).get_json()
+    session_id = next(c["sessionId"] for c in listed["attachments"] if c["attachmentId"] == flow.att)
+
+    def read() -> dict:
+        answer = flow.client.get(url, headers=_auth(ALICE))
+        assert answer.status_code == 200, answer.get_data(as_text=True)
+        return answer.get_json()
+
+    sessions.append_turns(ukey, flow.project, session_id, flow.att, [
+        sessions.make_turn("user", "What does it do?"), sessions.make_turn("agent", "It sums its input."),
+    ])
+    before = read()
+    cleared = flow.client.delete(url, headers=_auth(BOB))
+    assert cleared.status_code == 200, cleared.get_data(as_text=True)
+    after = read()
+    assert after["turns"] == []
+    assert isinstance(after.get("clears"), int) and after.get("clears") != before.get("clears"), (
+        "alice's read after bob's clear did not say the chat was cleared since her last read: "
+        f"{before.get('clears')!r}, then {after.get('clears')!r}")
+    assert (before["clears"], after["clears"]) == (0, 1)
+    assert cleared.get_json().get("clears") == 1, f"bob's clear did not answer the chat's count: {cleared.get_json()}"
+
+    change = {"type": "change", "changeId": "change-1", "kind": "content", "summary": "Rewrote the sum",
+              "status": "applied"}
+    sessions.append_turns(ukey, flow.project, session_id, flow.att, [
+        sessions.make_turn("agent", "Rewrote the sum.", content=[change]),
+    ])
+    assert sessions.update_change_status(ukey, flow.project, session_id, "change-1", "undone")
+    kept = read()
+    assert [turn["text"] for turn in kept["turns"]] == ["Rewrote the sum."]
+    assert kept["clears"] == 1, f"a turn appended or a card's status set moved the count of clears: {kept}"
+
+    again = flow.client.delete(url, headers=_auth(ALICE))
+    assert again.status_code == 200, again.get_data(as_text=True)
+    assert read()["clears"] == 2
 
 
 def test_a_burst_of_writes_is_told_at_once_then_in_one_word_naming_every_chat_when_the_wait_ends(
