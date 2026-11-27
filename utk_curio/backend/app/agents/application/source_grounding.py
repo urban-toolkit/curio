@@ -109,6 +109,21 @@ SYNTHETIC_ASKS: tuple[re.Pattern, ...] = (
     re.compile(r"(?:^|[.!?;:]\s*|\b(?:please|just|can you|could you|would you|will you|go ahead and|let's)\s+)"
                r"mak(?:e|ing)\s+(?:\w+\s+){0,3}?up\b", re.IGNORECASE),
 )
+#: The words that say no to the ask they come before, in its clause and among
+#: the :data:`_NO_REACH` words before it: "No synthetic data", "do not use
+#: fake data", "without dummy data", "non-synthetic". A word ending in "n't"
+#: says no too.
+_NO_WORDS = frozenset({"no", "not", "never", "nor", "without", "non", "dont", "doesnt", "didnt", "cant", "wont"})
+#: The pairs of words that do the same: "instead of made-up numbers".
+_NO_PAIRS = (("instead", "of"), ("rather", "than"))
+_NO_REACH = 5
+#: The markers that also name a file of the user's: "the sample data I
+#: uploaded" is no ask for made-up data when an upload or an import is said
+#: right around it.
+_OWN_FILE_MARKERS = ("sample data", "example data")
+_BROUGHT_IN = frozenset({"upload", "uploads", "uploaded", "uploading", "import", "imports", "imported", "importing"})
+_CLAUSE_END_RE = re.compile(r"[.!?;:,\n]")
+_SAID_WORD_RE = re.compile(r"[a-z0-9]+(?:['’][a-z]+)?")
 
 #: Bounds — a source list is display metadata, never a document.
 MAX_REFS = 32
@@ -177,12 +192,19 @@ class SourceRef:
 
 @dataclass(frozen=True)
 class CatalogRef:
-    """An installed Data Catalog dataset the runtime resolved to a real path."""
+    """A dataset of the Data Catalog listing, with the path the runtime
+    resolved for it. *installed*: whether the dataflow holds it (Add to
+    project), which a dataset the listing only offers, such as one Curio
+    ships, does not. *computed*: whether it is a saved node output, of any
+    dataflow of the account, which the listing titles after its node, rather
+    than a dataset the user or Curio put in the Data Catalog."""
 
     dataset_id: str
     title: str
     format: str
     path: str
+    installed: bool = False
+    computed: bool = False
 
 
 @dataclass(frozen=True)
@@ -1109,12 +1131,22 @@ def secret_for_host(ctx: "GroundingContext", url: str) -> "SecretRef | None":
 
 def path_literals(text: object) -> set[str]:
     """Path-shaped tokens in free text (the user's own messages)."""
+    return _literals_of(text, "path")
+
+
+def url_literals(text: object) -> set[str]:
+    """The URLs free text writes, such as a node's goal."""
+    return _literals_of(text, "url")
+
+
+def _literals_of(text: object, kind: str) -> set[str]:
+    """The tokens of free text that :func:`classify_literal` reads as *kind*."""
     if not isinstance(text, str) or not text:
         return set()
     out: set[str] = set()
     for token in _TOKEN_SPLIT_RE.split(text):
         candidate = token.strip().rstrip(_TRAILING_PUNCT)
-        if candidate and classify_literal(candidate) == "path":
+        if candidate and classify_literal(candidate) == kind:
             out.add(candidate)
     return out
 
@@ -1164,13 +1196,55 @@ def confirmed_dataset_ids(confirmed: object) -> set[str]:
 
 
 def synthetic_requested(texts: list[str] | tuple[str, ...], params: dict | None = None) -> bool:
-    """True when the USER asked for made-up data in their own words. A
+    """True when the USER asked for made-up data in their own words: a
+    marker or an ask of one of *texts* that no word before it says no to
+    (:func:`_said_no_to`), and, for "sample data" or "example data", that
+    names no file the user uploaded or imported (:func:`_brought_in`). A
     model's ``synthetic`` declaration counts for nothing: *params* is
     accepted so every caller passes the same shape, and is not read."""
-    said = [t for t in (texts or ()) if isinstance(t, str)]
-    lowered = " ".join(t.lower() for t in said)
-    return (any(marker in lowered for marker in SYNTHETIC_MARKERS)
-            or any(ask.search(text) for text in said for ask in SYNTHETIC_ASKS))
+    return any(_asks_for_made_up_data(text) for text in texts or () if isinstance(text, str))
+
+
+def _asks_for_made_up_data(text: str) -> bool:
+    """Whether *text* asks for made-up data somewhere (:func:`synthetic_requested`)."""
+    lowered = text.lower()
+    for marker in SYNTHETIC_MARKERS:
+        for found in re.finditer(re.escape(marker), lowered):
+            if _said_no_to(lowered[:found.start()]):
+                continue
+            if marker in _OWN_FILE_MARKERS and _brought_in(lowered[:found.start()], lowered[found.end():]):
+                continue
+            return True
+    for ask in SYNTHETIC_ASKS:
+        for found in ask.finditer(lowered):
+            # An ask's match may start with the punctuation that ends the
+            # clause before it: the words before are read from its own.
+            start = found.start() + len(found.group()) - len(found.group().lstrip(" \t\n.!?;:"))
+            if not _said_no_to(lowered[:start]):
+                return True
+    return False
+
+
+def _said_no_to(before: str) -> bool:
+    """Whether *before*, the lowercased text up to an ask, says no to it:
+    one of :data:`_NO_WORDS`, or a word ending in "n't", among the last
+    :data:`_NO_REACH` words of its clause, or a pair of :data:`_NO_PAIRS`
+    there. A no in an earlier clause says no to something else: "No real
+    data exists yet, so use synthetic data" asks."""
+    words = [w.replace("’", "'") for w in _SAID_WORD_RE.findall(_CLAUSE_END_RE.split(before)[-1])]
+    near = words[-_NO_REACH:]
+    if any(word in _NO_WORDS or word.endswith("n't") for word in near):
+        return True
+    return any(pair in _NO_PAIRS for pair in zip(near, near[1:]))
+
+
+def _brought_in(before: str, after: str) -> bool:
+    """Whether an upload or an import is said right around a marker, in its
+    clause: among the two words before it or the three after it ("my
+    uploaded sample data", "the example data I imported")."""
+    said = (_SAID_WORD_RE.findall(_CLAUSE_END_RE.split(before)[-1])[-2:]
+            + _SAID_WORD_RE.findall(_CLAUSE_END_RE.split(after)[0])[:3])
+    return any(word in _BROUGHT_IN for word in said)
 
 
 # A number as the user types it: a run of digits with its decimals, and a

@@ -240,6 +240,7 @@ export const AgentDockOverlay: React.FC = () => {
                 ctx.applyProposal(shown.attachmentId, proposalId)
               }
               onUndoChange={(changeId) => ctx.undoChange(shown.attachmentId, changeId)}
+              refusals={ctx.refusals?.[shown.attachmentId]}
               // A plan row's Solve and Run: how far a download on first use
               // of what the node reads has come reaches the row's own line,
               // as a node's Solve narrates it.

@@ -40,8 +40,12 @@ const SolveLine: React.FC<{ part: AgentChangePart }> = ({ part }) => {
  * the change replaced, by kind: a node's code gets its code before, a new node
  * goes with its connections, settings get their old values, a plan puts back
  * the dataflow before it. When someone changed it after, Undo is refused and
- * the card says who; nothing was undone. The code is model output: it renders
- * as inert plain text (REQ-SEC-002), never markup.
+ * the card says who; nothing was undone. The chat keeps that reason for the
+ * card (`refusal`), so the card says it though a read of the chat draws it
+ * anew, until the user acts on it again. Either says it only while the card
+ * holds the status it was refused on: undone by someone else since, it has
+ * nothing to say. The code is model output: it renders as inert plain text
+ * (REQ-SEC-002), never markup.
  *
  * A plan's card lists its nodes, each with Solve then Run as its code is
  * written and checked (Build & validate fills them in order), its
@@ -53,6 +57,10 @@ export const AgentChangeCard: React.FC<{
   tintClassName?: string;
   /** Undo the change; omitted, the card offers none. */
   onUndo?: (changeId: string) => Promise<unknown>;
+  /** Why the server refused the card's last Undo, as the chat keeps it
+   * until the user acts on the card again: said in place of the card's own
+   * record of it, which a card drawn anew no longer holds. */
+  refusal?: string | null;
   /** A plan's rows: the attachment's ledger of the plan this card is. */
   planNodeState?: PlanNodeReviewState;
   onSolvePlanNode?: (ref: string, onLine?: (line: string) => void) => Promise<void>;
@@ -64,6 +72,7 @@ export const AgentChangeCard: React.FC<{
   part,
   tintClassName,
   onUndo,
+  refusal = null,
   planNodeState,
   onSolvePlanNode,
   onRunPlanNode,
@@ -72,17 +81,22 @@ export const AgentChangeCard: React.FC<{
   agentNameOf,
 }) => {
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Why the card's own last Undo was refused, with the status it was refused
+  // on: once the card's status moves on, the reason goes.
+  const [error, setError] = useState<{ why: string; on: string } | null>(null);
+  const own = error && error.on === part.status ? error.why : null;
+  const said = busy ? null : refusal ?? own;
 
   const undo = async () => {
     if (!onUndo || busy) return;
+    const on = part.status;
     setBusy(true);
     setError(null);
     try {
       await onUndo(part.changeId);
     } catch (e) {
       // Refused: the server says who changed it after; nothing was undone.
-      setError(e instanceof Error ? e.message : "Undo failed; nothing was undone.");
+      setError({ why: e instanceof Error ? e.message : "Undo failed; nothing was undone.", on });
     } finally {
       setBusy(false);
     }
@@ -134,9 +148,9 @@ export const AgentChangeCard: React.FC<{
           </button>
         </div>
       ) : null}
-      {error ? (
+      {said ? (
         <div className={styles.error} role="alert">
-          {error}
+          {said}
         </div>
       ) : null}
     </div>

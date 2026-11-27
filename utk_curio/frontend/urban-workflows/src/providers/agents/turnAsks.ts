@@ -21,6 +21,24 @@ import type {
  * dataflow, each in an `AgentTurnEnvelope`. */
 export const AGENT_TURN_EVENT = "agent_turn";
 
+/** The room's event that tells the tabs that edit the dataflow that the
+ * server changed agents' chats outside their asks' own events
+ * (`turn_jobs.CHAT_CHANGED_EVENT` on the server): a turn it appended, such as
+ * a pick's Source recorded, a Solve's, a build's or a task another agent
+ * handed over, a card's status (an Undo), or a clear. `{projectId,
+ * attachmentIds}`, the chats changed since the room's last such word, which
+ * it tells at most once per wait: a tab that read one of them reads it
+ * again. */
+export const AGENT_CHAT_CHANGED_EVENT = "agent_chat_changed";
+
+/** The chats a room's `AGENT_CHAT_CHANGED_EVENT` names, when *payload* is one
+ * of dataflow *projectId*'s; else none. */
+export function changedChatsOf(payload: unknown, projectId: string | null): string[] {
+  const told = payload as { projectId?: unknown; attachmentIds?: unknown } | null;
+  if (!projectId || told?.projectId !== projectId || !Array.isArray(told.attachmentIds)) return [];
+  return told.attachmentIds.filter((id): id is string => typeof id === "string" && id.length > 0);
+}
+
 /** An ask a tab follows, as far as the tab has seen it. */
 export interface LiveAsk {
   askId: string;
@@ -51,6 +69,12 @@ export interface LiveAsk {
   via: "room" | "stream";
   /** Its turn's execution, once its turn said it. */
   executionId?: string;
+  /** This tab asked it: its turns, should it fail, are this tab's own to
+   * keep (`failedAsk`). */
+  mine?: boolean;
+  /** This tab's ask through the room whose request has no answer yet: the
+   * server may hold nothing of it, so a read of the chat keeps it. */
+  posting?: boolean;
 }
 
 /** An ask waiting its turn, as the chat lists it after the transcript. */

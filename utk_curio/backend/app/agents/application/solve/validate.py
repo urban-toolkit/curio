@@ -281,7 +281,9 @@ def _validate_events(
                 yield from _land_validated(user_key, project_id, attachment_id, session_id,
                                            home_attachment_id, home_session_id,
                                            node_id, label, candidate, done, rounds_used, rounds_trace,
-                                           resolution=resolution, asker=acting_user, room_asker=room_asker)
+                                           resolution=resolution, asker=acting_user, room_asker=room_asker,
+                                           intent_texts=(str(node.get("goal") or ""),
+                                                         str((spec.get("dataflow") or {}).get("task") or "")))
             elif candidate and done["verdict"] in ("fail", "not-executable"):
                 # Code that failed its check is not written: its attempts, each
                 # with the code it ran, stay in the node's agent chat.
@@ -384,11 +386,15 @@ def _trace_card(done: dict, rounds_used: int, rounds_trace: list) -> dict:
 
 def _land_validated(user_key, project_id, attachment_id, session_id, home_attachment_id, home_session_id,
                     node_id, label, candidate, done: dict, rounds_used: int, rounds_trace: list,
-                    *, resolution=None, asker=None, room_asker=None):
+                    *, resolution=None, asker=None, room_asker=None, intent_texts=()):
     """Write the code that passed its check into its node, as the agent's
     change with its Undo, through the ``node.content.write`` mint and its
-    checks, at the NODE's agent when it exists (dev/72). Its card carries the
-    validation block (verdict, rounds, attempts). Yields its ``change``
+    checks, at the NODE's agent when it exists (dev/72). Those checks read
+    what the round's did: the user's words in the chat that asked,
+    *session_id*, and *intent_texts*, the node's goal and the dataflow's
+    task. So the code lands as it passed: values the user typed there, a
+    path the goal names, synthetic data the goal asks for. Its card carries
+    the validation block (verdict, rounds, attempts). Yields its ``change``
     event; writes the change's id, or why it did not land, into *done*.
     *asker*: the person the job took when it started, whom the change names
     and whose own focus in the node never holds it back; *room_asker*, the
@@ -397,7 +403,13 @@ def _land_validated(user_key, project_id, attachment_id, session_id, home_attach
     change_attachment = home_attachment_id or attachment_id
     change_session = home_session_id or session_id
     ctx = {"attachment_id": change_attachment, "session_id": change_session,
-           "asker_id": getattr(asker, "id", None), "asker": asker, "room_asker": room_asker}
+           "asker_id": getattr(asker, "id", None), "asker": asker, "room_asker": room_asker,
+           "_intent_texts": tuple(text for text in intent_texts if text)}
+    if isinstance(session_id, str):
+        # The change lands in the node's agent's chat, but the user's words are
+        # in the chat that asked for the validation, which the round's source
+        # check read: the landing's check reads the same chat.
+        ctx["asked_in_session_id"] = session_id
     status, text, part = agents_mint._mint_node_content_write(
         user_key, project_id, ctx,
         {"tool": "node.content.write", "params": {"nodeId": node_id, "content": candidate}},

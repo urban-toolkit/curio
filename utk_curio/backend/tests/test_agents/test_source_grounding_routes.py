@@ -873,6 +873,63 @@ class TestValuesTheUserTyped:
         held = self._held(user, project)
         assert "np.random" not in held and "df['b'].sum()" in held and '"I", "J"]' in held, held
 
+    def test_a_plans_row_lands_the_values_the_user_typed_in_the_plans_chat(
+        self, client, user_and_token, tmp_curio, monkeypatch,
+    ):
+        """A plan row's Solve of a loader whose goal gives the values the user
+        typed in the Dataflow Builder's chat: its round passes the source
+        check, which reads the chat that asked, and its code lands, which is
+        checked the same way. On main the landing read the loader's Node
+        Builder chat, which holds no message of the user's, and refused the
+        values its round had passed, so the node failed with nothing written.
+        Found by step 5.3 of the agent chat plan."""
+        from utk_curio.backend.tests.test_agents.test_dataset_discovery_routes import _Harness
+
+        user, token = user_and_token
+        rows = 'import pandas as pd\nreturn pd.DataFrame({"count": [12, 15, 20]}, index=["Loop", "Pilsen", "Hyde Park"])'
+        h = _Harness(client, user, token, monkeypatch, message="Table the count: Loop 12, Pilsen 15, Hyde Park 20.",
+                     goal="load the count, Loop 12, Pilsen 15 and Hyde Park 20, the user typed", dl_replies=[rows])
+        done = h.validate("load")[-1][1]
+        assert done.get("verdict") == "pass", done
+        assert h.node_content(h.load) == rows
+        # Built from its first round, with no Dataset Finder asked.
+        assert (len(h.dl_calls), len(h.discover_calls)) == (1, 0)
+
+
+class TestAPlanRowLandsWhatItsGoalGrounds:
+    """Build & validate and a plan row's Solve check a loader's round against
+    the user's words in the chat that asked, the loader's goal and the
+    dataflow's task, then land the code that passed as the agent's change,
+    which is checked again. That landing read the chat alone. So a loader
+    whose goal asks for synthetic data, or names its file, passed its round
+    and was refused when it landed, with nothing written, on main too. Found
+    by the review of #1642."""
+
+    @pytest.mark.parametrize("goal, code", [
+        ("generate synthetic sample data of daily park visits",
+         'import numpy as np\nimport pandas as pd\nreturn pd.DataFrame({"visits": np.random.randint(0, 500, 30)})'),
+        ("load the parks from /data/parks.csv", 'import pandas as pd\nreturn pd.read_csv("/data/parks.csv")'),
+    ], ids=["synthetic", "path"])
+    @pytest.mark.parametrize("asked_by", ["row", "build"])
+    def test_the_code_its_goal_grounds_lands_as_its_round_passed(
+        self, client, user_and_token, tmp_curio, monkeypatch, goal, code, asked_by,
+    ):
+        """The chat that asked says nothing of the source ("plan it"): the
+        goal alone grounds the loader's round, and its landing."""
+        from utk_curio.backend.tests.test_agents.test_dataset_discovery_routes import _Harness
+
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch, goal=goal, dl_replies=[code])
+        if asked_by == "row":
+            done = h.validate("load")[-1][1]
+            assert done.get("verdict") == "pass", done
+        else:
+            done = h.simulate("auto")[-1][1]
+            assert done.get("status") == "completed", done
+        assert h.node_content(h.load) == code
+        # Built from its first round, with no Dataset Finder asked.
+        assert (len(h.dl_calls), len(h.discover_calls)) == (1, 0)
+
 
 class TestSolveSourceGrounding:
     """Solve never writes fabricated-path content: the data-loading node fails
@@ -880,10 +937,14 @@ class TestSolveSourceGrounding:
     HANDED the grounded sources (the seventh DEC-063 application)."""
 
     def _plan_tail(self):
+        # The loader's intent names the dataset the test imports, "Heat
+        # Tracts", by its title, so the loader has a source and gets its
+        # rounds; with none, its Dataset Finder would be asked before any of
+        # them.
         plan = {
             "goal": "heat by tract",
             "nodes": [
-                {"ref": "load", "nodeType": DL, "title": "Load", "intent": "load the tract heat data"},
+                {"ref": "load", "nodeType": DL, "title": "Load", "intent": "load the heat tracts"},
                 {"ref": "stats", "nodeType": CA, "title": "Stats", "intent": "compute stats"},
             ],
             "edges": [{"from": "load", "to": "stats"}],

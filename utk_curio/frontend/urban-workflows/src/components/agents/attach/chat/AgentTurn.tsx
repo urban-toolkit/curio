@@ -80,6 +80,9 @@ export interface AgentTurnActions {
   onDismissProposal?: (proposalId: string) => Promise<void>;
   /** Undo a change this attachment's agent made. */
   onUndoChange?: (changeId: string) => Promise<unknown>;
+  /** Why the server refused the last Undo, Apply or Dismiss of the card of
+   * a change or a proposal, by its id, as the chat keeps it. */
+  refusalOf?: (cardId: string) => string | null;
   onSolvePlanNode?: (ref: string, onLine?: (line: string) => void) => Promise<void>;
   onRunPlanNode?: (ref: string, onLine?: (line: string) => void) => Promise<void>;
   /** An invited editor's chat: an install waits for the owner's review. */
@@ -257,6 +260,7 @@ export const AgentTurn: React.FC<{
                 part={part}
                 tintClassName={tint}
                 onUndo={actions.onUndoChange}
+                refusal={actions.refusalOf?.(part.changeId) ?? null}
                 planNodeState={planNodeStateFor(attachment, part, Boolean(actions.buildRunning))}
                 onSolvePlanNode={actions.onSolvePlanNode}
                 onRunPlanNode={actions.onRunPlanNode}
@@ -281,6 +285,7 @@ export const AgentTurn: React.FC<{
                       : actions.onApplyProposal
                 }
                 onDismiss={waitsForOwner(part) ? undefined : actions.onDismissProposal}
+                refusal={actions.refusalOf?.(part.proposalId) ?? null}
               />
             ))}
         </div>

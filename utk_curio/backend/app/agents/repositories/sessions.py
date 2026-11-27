@@ -5,7 +5,7 @@ private sidecar file OUTSIDE the project spec so the graph spec (and therefore
 the share pipeline and canvas saves) never contains conversation content:
 
     .curio/users/<key>/projects/<pid>/agent-sessions/<sessionId>.json
-    {"sessionId": ..., "attachmentId": ..., "turns": [{"role", "text", ...}]}
+    {"sessionId": ..., "attachmentId": ..., "turns": [{"role", "text", ...}], "clears": n}
 
 A transcript lives exactly as long as its attachment (fail-closed interim
 retention; final durations remain ``OQ-008``): every removal of attachments
@@ -13,10 +13,19 @@ deletes their files (:func:`delete_sessions_of`). A missing or unreadable
 file reads as an empty transcript, so records that predate this store need no
 migration.
 
+The file counts the times its chat was cleared (``clears``, absent before the
+first), which every other write keeps: a read answers it with the turns
+(:func:`read_session`), so a tab that reads the chat again knows another tab
+cleared it since, and drops the turns only it kept with the rest.
+
 Every write reads the turns, changes them and writes the file whole, holding
 the dataflow's chats lock (:func:`_writing`): a delegated task appends to its
 home attachment's chat outside that attachment's queue, so two writes of one
 chat can come at once, in two threads or two backend processes.
+
+Each write is told once it is made (:func:`when_changed`): a turn appended,
+a card's status set, a chat cleared. An ask's own exchange is not, since its
+own events carry it already (``told_by_its_ask``).
 """
 
 from __future__ import annotations
@@ -76,32 +85,54 @@ def _writing(user_key: str, project_id: str):
         yield
 
 
-def _write(path: Path, session_id: str, attachment_id, turns: list[dict]) -> None:
-    """Write a transcript whole, through a temporary file of this write's own,
-    so a reader sees the old turns or the new ones: a half-written file reads
-    as an empty transcript, which the next append would then write back."""
+def _write(path: Path, session_id: str, attachment_id, turns: list[dict], clears: int = 0) -> None:
+    """Write a transcript whole, with the times it was cleared (*clears*),
+    through a temporary file of this write's own, so a reader sees the old
+    turns or the new ones: a half-written file reads as an empty transcript,
+    which the next append would then write back."""
     tmp = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
+    data: dict = {"sessionId": session_id, "attachmentId": attachment_id, "turns": turns}
+    if clears:
+        data["clears"] = clears
     try:
-        tmp.write_text(
-            json.dumps({"sessionId": session_id, "attachmentId": attachment_id, "turns": turns}, indent=2),
-            encoding="utf-8",
-        )
+        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
         os.replace(tmp, path)
     finally:
         tmp.unlink(missing_ok=True)
 
 
-def read_turns(user_key: str, project_id: str, session_id: str) -> list[dict]:
-    """The session's turns, oldest first. Missing/corrupt file → empty list."""
-    path = _session_path(user_key, project_id, session_id)
+def _read(path: Path) -> dict:
+    """The session file as it stands; a missing or corrupt file reads as
+    an empty one."""
     if not path.exists():
-        return []
+        return {}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return []
-    turns = data.get("turns") if isinstance(data, dict) else None
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _turns_of(data: dict) -> list[dict]:
+    turns = data.get("turns")
     return [t for t in turns if isinstance(t, dict)] if isinstance(turns, list) else []
+
+
+def _clears_of(data: dict) -> int:
+    clears = data.get("clears")
+    return clears if isinstance(clears, int) and not isinstance(clears, bool) and clears > 0 else 0
+
+
+def read_turns(user_key: str, project_id: str, session_id: str) -> list[dict]:
+    """The session's turns, oldest first. Missing/corrupt file → empty list."""
+    return _turns_of(_read(_session_path(user_key, project_id, session_id)))
+
+
+def read_session(user_key: str, project_id: str, session_id: str) -> tuple[list[dict], int]:
+    """The session's turns, oldest first, and how many times its chat was
+    cleared (:func:`clear_turns`), both from one read of its file."""
+    data = _read(_session_path(user_key, project_id, session_id))
+    return _turns_of(data), _clears_of(data)
 
 
 def a_persons_message(turn: dict) -> bool:
@@ -148,14 +179,46 @@ def make_turn(
     return turn
 
 
+#: What is told of a chat the server changed: each called with the dataflow's
+#: key, its id and the attachment's id, after the write. The chat turns
+#: register theirs (``turns/turn_jobs.py``): the room hears which chat changed.
+_change_hooks: list = []
+
+
+def when_changed(hook) -> None:
+    """Call *hook* with ``(user_key, project_id, attachment_id)`` each time a
+    chat changes: a turn appended (:func:`append_turns`), a card's status set
+    (:func:`update_proposal_status`, :func:`update_change_status`) or the chat
+    cleared (:func:`clear_turns`)."""
+    if hook not in _change_hooks:
+        _change_hooks.append(hook)
+
+
+def _changed(user_key: str, project_id: str, attachment_id) -> None:
+    """Tell :func:`when_changed`'s hooks that the chat of *attachment_id*
+    changed. A hook that fails never fails the write, which stands."""
+    if not isinstance(attachment_id, str):
+        return
+    for hook in list(_change_hooks):
+        try:
+            hook(user_key, project_id, attachment_id)
+        except Exception:  # noqa: BLE001 - the write stands whether or not it was told
+            log.exception("the change of chat %s of %s could not be told", attachment_id, project_id)
+
+
 def append_turns(
-    user_key: str, project_id: str, session_id: str, attachment_id: str, new_turns: list[dict]
+    user_key: str, project_id: str, session_id: str, attachment_id: str, new_turns: list[dict],
+    *, told_by_its_ask: bool = False,
 ) -> list[dict]:
-    """Append turns and persist; returns the full transcript."""
+    """Append turns and persist; returns the full transcript. The change is
+    told (:func:`when_changed`), unless *told_by_its_ask*: the exchange of a
+    chat turn, whose own events carry it to every tab that follows the chat."""
     path = _session_path(user_key, project_id, session_id)
     with _writing(user_key, project_id):
         turns = read_turns(user_key, project_id, session_id) + list(new_turns)
-        _write(path, session_id, attachment_id, turns)
+        _write(path, session_id, attachment_id, turns, _clears_of(_read(path)))
+    if new_turns and not told_by_its_ask:
+        _changed(user_key, project_id, attachment_id)
     return turns
 
 
@@ -182,7 +245,7 @@ def update_change_status(
 def _set_part_status(user_key: str, project_id: str, session_id: str, kind: str, key: str,
                      part_id: str, status: str) -> bool:
     """Set *status* on the transcript's parts of type *kind* whose *key* is
-    *part_id*; whether any changed."""
+    *part_id*; whether any changed. A change is told (:func:`when_changed`)."""
     path = _session_path(user_key, project_id, session_id)
     if not path.exists():
         return False
@@ -201,19 +264,23 @@ def _set_part_status(user_key: str, project_id: str, session_id: str, kind: str,
                     changed = True
         if not changed:
             return False
-        data = {}
-        with contextlib.suppress(OSError, json.JSONDecodeError):
-            data = json.loads(path.read_text(encoding="utf-8"))
-        attachment_id = data.get("attachmentId") if isinstance(data, dict) else None
-        _write(path, session_id, attachment_id, turns)
+        data = _read(path)
+        attachment_id = data.get("attachmentId")
+        _write(path, session_id, attachment_id, turns, _clears_of(data))
+    _changed(user_key, project_id, attachment_id)
     return True
 
 
-def clear_turns(user_key: str, project_id: str, session_id: str, attachment_id: str) -> None:
-    """Empty the transcript but keep the session file/id."""
+def clear_turns(user_key: str, project_id: str, session_id: str, attachment_id: str) -> int:
+    """Empty the transcript but keep the session file/id, and count the
+    clear; returns the times the chat was cleared. Told
+    (:func:`when_changed`)."""
     path = _session_path(user_key, project_id, session_id)
     with _writing(user_key, project_id):
-        _write(path, session_id, attachment_id, [])
+        clears = _clears_of(_read(path)) + 1
+        _write(path, session_id, attachment_id, [], clears)
+    _changed(user_key, project_id, attachment_id)
+    return clears
 
 
 def delete_session(user_key: str, project_id: str, session_id: str) -> None:

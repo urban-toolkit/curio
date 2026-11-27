@@ -97,10 +97,12 @@ class _Harness:
     ``parent`` is the agent that plans and solves, the Dataflow Builder unless
     a test names another; ``prepare`` runs on the new project before it is
     installed. ``plan`` replaces the plan of one loader feeding one node: every
-    loader of it is answered from ``dl_replies``."""
+    loader of it is answered from ``dl_replies``. ``message`` is what the user
+    asks the parent for, in its chat, before the plan lands."""
 
     def __init__(self, client, user, token, monkeypatch, *, goal=None,
-                 discover_replies=None, dl_replies=None, parent=DFB, prepare=None, plan=None):
+                 discover_replies=None, dl_replies=None, parent=DFB, prepare=None, plan=None,
+                 message="plan it"):
         self.client, self.user, self.token = client, user, token
         self.ukey = _user_dir_key(user)
         routes_proposals.TestNodeCreate()._write_builtin_package(self.ukey, templates=TEMPLATES)
@@ -165,7 +167,7 @@ class _Harness:
             lambda url, **k: {"status": "verified", "detail": "200 OK"},
         )
         r = client.post(f"/api/agents/projects/{self.pid}/attachments/{self.att}/run",
-                        json={"message": "plan it"}, headers=_auth(token))
+                        json={"message": message}, headers=_auth(token))
         # The plan landed with the reply; its nodes are what the reply hands a
         # canvas no doc binds.
         graph = routes_proposals._landed_plan(r.get_json())["canvas"]
@@ -421,22 +423,23 @@ class TestDiscoveryIsInitiated:
     def test_a_loader_the_project_cannot_ground_ends_awaiting_the_selection(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
-        """The end of the old dead end. The project's Data Catalog grounds a
-        first attempt (the child is handed its rows), the gate refuses the
-        filename the child invented anyway — and THAT is where discovery is
-        initiated: the node ends PENDING with candidates awaiting the user, the
-        trail of what was tried, and the remedy naming the chat to open."""
+        """The end of the old dead end. Nothing names the loader's source: its
+        own Dataset Finder is asked before its builder writes anything, and
+        the node ends PENDING with candidates awaiting the user and the remedy
+        naming the chat to open. A loader whose rounds were refused for their
+        source first keeps their trail
+        (``test_a_loader_with_no_finder_of_its_own_tries_before_a_finder_is_asked``)."""
         user, token = user_and_token
         h = _Harness(client, user, token, monkeypatch)
         body = h.solve()
         load = body["results"][h.load]
-        # PENDING, never failed: nothing was written, and the trail is kept.
+        # PENDING, never failed: nothing was generated, run or written.
         assert load["status"] == "pending"
         assert load["reason"].startswith("awaiting your dataset selection")
         assert load["remedy"]["kind"] == "dataset-selection"
         assert load["remedy"]["nodeId"] == h.load
-        assert [a["kind"] for a in load["attempts"]] == ["ungrounded-source"] * 3
-        assert "areas.csv" in load["attempts"][0]["detail"]
+        assert load["attempts"] == []
+        assert h.dl_calls == []  # its builder was never asked
         assert h.exec_payloads == []  # nothing ungrounded ever ran
         assert h.node_content(h.load) == ""
         # The candidates live in the node's OWN Dataset Finder chat.
@@ -547,7 +550,9 @@ class TestDiscoveryIsInitiated:
     ):
         """"Awaiting your selection" would be a lie when there is nothing to
         select: the node keeps its own honest outcome and the discovery attempt
-        rides along as the reason."""
+        rides along as the reason. The Finder, asked before the rounds, is not
+        asked again after them: each of the session's two passes asks it once,
+        before its 3 rounds."""
         user, token = user_and_token
         h = _Harness(
             client, user, token, monkeypatch,
@@ -560,6 +565,7 @@ class TestDiscoveryIsInitiated:
         assert "ungrounded-source" in load["error"]
         assert "invented.csv" in load["error"]
         assert all(a["kind"] == "ungrounded-source" for a in load["attempts"])
+        assert len(h.discover_calls) * 3 == len(h.dl_calls), (len(h.discover_calls), len(h.dl_calls))
         assert len(h.discover_calls) >= 1
 
     def test_the_finders_task_names_the_builder_and_its_mission(
@@ -668,23 +674,22 @@ class TestConfirmedSourceReachesTheBuilder:
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
         user, token = user_and_token
-        # Three ungrounded attempts (so discovery fires and candidates land),
-        # then the code that loads the confirmed URL.
+        # Nothing names the source, so the Finder is asked before any round
+        # and candidates land; then the code that loads the confirmed URL.
         h = _Harness(
             client, user, token, monkeypatch,
             dl_replies=[
-                'import pandas as pd\nreturn pd.read_csv("invented.csv")',
-                'import pandas as pd\nreturn pd.read_csv("invented.csv")',
-                'import pandas as pd\nreturn pd.read_csv("invented.csv")',
                 ("import pandas as pd\nreturn pd.read_json"
                  '("https://data.example.org/areas.geojson")'),
             ],
         )
         assert h.solve()["results"][h.load]["status"] == "pending"
+        assert h.dl_calls == []  # no round before the pick
         h.record_selection("https://data.example.org/areas.geojson")
         body = h.solve(node_ids=[h.load])
         load = body["results"][h.load]
         assert load["status"] == "solved", load
+        assert len(h.dl_calls) == 1  # built from its first round
         # The confirmed source was HANDED to the content child.
         frame = h.dl_calls[-1]
         assert "confirmedSource" in frame
@@ -707,21 +712,23 @@ class TestConfirmedSourceReachesTheBuilder:
         user, token = user_and_token
         url = "https://data.example.org/areas.geojson"
         invented = 'import pandas as pd\nreturn pd.read_csv("invented.csv")'
-        # Three ungrounded attempts in the first Solve, three more in the first
-        # pass after the selection, then the code that loads the confirmed URL.
+        # No round in the first Solve, which asks the Finder first; three
+        # ungrounded attempts in the first pass after the selection, then the
+        # code that loads the confirmed URL.
         h = _Harness(
             client, user, token, monkeypatch,
-            dl_replies=[invented] * 6 + [f'import pandas as pd\nreturn pd.read_json("{url}")'],
+            dl_replies=[invented] * 3 + [f'import pandas as pd\nreturn pd.read_json("{url}")'],
         )
         assert h.solve()["results"][h.load]["status"] == "pending"
+        assert h.dl_calls == []
         h.record_selection(url)
         body = h.solve(node_ids=[h.load])
         load = body["results"][h.load]
         assert load["status"] == "solved", load
         assert [a["kind"] for a in load["attempts"][:3]] == ["ungrounded-source"] * 3
-        # Every round after the selection was handed the confirmed source.
+        # Every round, all after the selection, was handed the confirmed source.
         assert len(h.dl_calls) > 3
-        for frame in h.dl_calls[3:]:
+        for frame in h.dl_calls:
             assert "confirmedSource" in frame
             assert url in frame
         assert len(h.discover_calls) == 1  # no second discovery, no second card
@@ -898,10 +905,11 @@ class TestAttemptTrailInTheTranscript:
     def test_an_awaiting_source_node_shows_what_it_tried(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
-        # dev/126's lane: the rounds that were refused before discovery ran are
-        # attempts too, and the owner asked for ALL of them.
+        # dev/126's lane: the goal names a path, so the rounds run first, and
+        # the builder misses it. The rounds that were refused before discovery
+        # ran are attempts too, and the owner asked for ALL of them.
         user, token = user_and_token
-        h = _Harness(client, user, token, monkeypatch)
+        h = _Harness(client, user, token, monkeypatch, goal="load /data/areas.csv from disk")
         h.solve()
         trail = next(
             p for p in self._turn_parts(h, h.att, "solveAttempts") if p["nodeId"] == h.load
@@ -949,11 +957,14 @@ class TestBuildAndValidateWaitsForTheSource:
         session = done["builderSession"]
         assert session["nodeStates"] == {"load": "awaiting-source", "stats": "created"}
         assert session["pauseReason"] == reason
+        # The Finder was asked before the loader's builder, which nothing
+        # asked: no Solve was handed to it.
         asked = [
             t.get("text") for t in h.session_turns(h.node_builder_attachment_id())
             if (t.get("text") or "").startswith("[Delegated by")
         ]
-        assert len(asked) == 1, asked
+        assert asked == [], asked
+        assert h.dl_calls == []
         assert h.node_content(h.load) == h.node_content(h.stats) == ""
 
     def test_a_rows_solve_leaves_the_row_needing_a_source(
@@ -997,10 +1008,9 @@ class TestBuildAndValidateWaitsForTheSource:
         started the loader's own builder on it beside the plan, which the next
         Build & validate then built again."""
         user, token = user_and_token
-        invented = 'import pandas as pd\nreturn pd.read_csv("invented.csv")'
         h = _Harness(
             client, user, token, monkeypatch,
-            dl_replies=[invented] * 3 + [f'import pandas as pd\nreturn pd.read_json("{URL}")'],
+            dl_replies=[f'import pandas as pd\nreturn pd.read_json("{URL}")'],
         )
         monkeypatch.setattr(
             'utk_curio.backend.app.agents.application.verify.verify_external_source',
@@ -1014,6 +1024,7 @@ class TestBuildAndValidateWaitsForTheSource:
         h.simulate("auto")
         assert h.recorded_urls()[0] == dr.STATE_CANDIDATES_PENDING
         tried = len(h.dl_calls)
+        assert tried == 0, "the loader's builder was asked before its Finder"
         picked = h.select(URL)
         assert picked["status"] == dr.STATE_RESOLVED, picked
         delegated = picked.get("delegated") or {}
@@ -1059,10 +1070,11 @@ class TestBuildAndValidateWaitsForTheSource:
         ], reason
         assert "Load parks" in reason["message"] and "Load schools" in reason["message"], reason
         assert len(h.discover_calls) == 2
-        # One pass of models: each loader's attempts and its Finder, nothing
-        # asked for the nodes that read from them.
-        assert len(h.dl_calls) == 6
-        assert len(h.model_calls) - calls == len(h.dl_calls) + len(h.discover_calls)
+        # One pass of models: each loader's Finder, asked before its builder,
+        # and nothing asked for the loaders' builders or the nodes that read
+        # from them.
+        assert h.dl_calls == []
+        assert len(h.model_calls) - calls == len(h.discover_calls)
         session = done["builderSession"]
         assert session["nodeStates"] == {
             "parks": "awaiting-source", "schools": "awaiting-source", "join": "created", "count": "created",
@@ -1126,10 +1138,9 @@ class TestBuildAndValidateWaitsForTheSource:
         strip said it needed a source, and the card named Build & validate
         plan while the strip's button read Resume."""
         user, token = user_and_token
-        invented = 'import pandas as pd\nreturn pd.read_csv("invented.csv")'
         h = _Harness(
             client, user, token, monkeypatch, plan=TWO_LOADERS,
-            dl_replies=[invented] * 6 + [f'import pandas as pd\nreturn pd.read_json("{URL}")'],
+            dl_replies=[f'import pandas as pd\nreturn pd.read_json("{URL}")'],
         )
         monkeypatch.setattr(
             'utk_curio.backend.app.agents.application.verify.verify_external_source',
@@ -1161,6 +1172,8 @@ class TestBuildAndValidateWaitsForTheSource:
         assert done["builderSession"]["nodeStates"] == {
             "parks": "approved", "schools": "awaiting-source", "join": "created", "count": "created",
         }
+        # Built from its first round: no loader's builder was asked before its pick.
+        assert len(h.dl_calls) == 1, len(h.dl_calls)
         assert "confirmedSource" in h.dl_calls[-1] and URL in h.dl_calls[-1]
         assert URL in h.node_content(ids["parks"])
         assert started == [], "the pick started the loader's builder beside the plan"
@@ -1924,3 +1937,679 @@ class TestTheChatThatAsksLaterGetsTheCardToo:
         listed = h.cards()
         assert (listed[h.att]["waitsForYou"], listed[node_builder]["waitsForYou"]) == ([h.load], [h.load]), listed
         assert len(h.discover_calls) == 1
+
+
+class _Asked:
+    """The model calls the dataflow of a harness makes from now on: the
+    loader's Node Builder's, its Dataset Finder's, and all of them."""
+
+    def __init__(self, h):
+        self.h = h
+        self.before = (len(h.dl_calls), len(h.discover_calls), len(h.model_calls))
+
+    def counts(self) -> dict:
+        builder, finder, every = self.before
+        return {
+            "the loader's Node Builder": len(self.h.dl_calls) - builder,
+            "its Dataset Finder": len(self.h.discover_calls) - finder,
+            "in all": len(self.h.model_calls) - every,
+        }
+
+    def of_the_loader(self) -> dict:
+        """The calls of the loader's own agents alone. A Solve of the plan
+        also asks the builder of the node that reads the loader, once a pass,
+        which finds its input empty (``batch.py``'s ``upstreamEmpty``): two
+        calls here, on main as with this change."""
+        counts = self.counts()
+        return {who: counts[who] for who in ("the loader's Node Builder", "its Dataset Finder")}
+
+
+#: What a loader with no source costs when its Dataset Finder is asked first:
+#: the Finder's one call, and none of its Node Builder.
+FINDER_ALONE = {"the loader's Node Builder": 0, "its Dataset Finder": 1, "in all": 1}
+#: What a loader with a source costs: its Node Builder's first round, which
+#: builds it, and no Finder.
+BUILT_AT_ONCE = {"the loader's Node Builder": 1, "its Dataset Finder": 0, "in all": 1}
+
+
+def _delegated_solves(h) -> list[str]:
+    """The Solve turns another agent handed the loader's Node Builder: one
+    each time the loader goes to its builder."""
+    return [
+        t.get("text") or "" for t in h.session_turns(h.node_builder_attachment_id())
+        if (t.get("text") or "").startswith("[Delegated by")
+    ]
+
+
+def _a_dataset(user, title: str) -> str:
+    """A dataset the account imported into its Data Catalog, titled *title*,
+    in no dataflow: its id."""
+    from utk_curio.backend.app.datasets.install.installer import install_imported_file
+
+    return install_imported_file(_user_dir_key(user), b"a,b\n1,2\n", "rows.csv", "csv", title=title).manifest.id
+
+
+def _reads(dataset_id: str) -> str:
+    """A loader's code that reads *dataset_id* from the Data Catalog."""
+    return f'data = curio_load_data("{dataset_id}")\nreturn data'
+
+
+def _in_the_dataflow(h, dataset_id: str) -> None:
+    """Add *dataset_id* to the dataflow, as Add to project does."""
+    r = h.client.post(f"/api/dataflows/{h.pid}/datasets/install", json={"datasetId": dataset_id},
+                      headers=_auth(h.token))
+    assert r.status_code == 200, r.get_data(as_text=True)
+
+
+def _the_loader_holds(h, *, content: str | None = None, datasets: dict | None = None) -> None:
+    """The loader as the user left it: *content* as its code, and each of its
+    dataset widgets named in *datasets* holding the id given."""
+    with projects_storage.spec_write_lock(h.ukey, h.pid):
+        spec = dataflow_docs.live(h.ukey, h.pid)
+        node = next(n for n in spec["dataflow"]["nodes"] if n.get("id") == h.load)
+        if content is not None:
+            node["content"] = content
+        widgets = node.setdefault("metadata", {}).setdefault("widgets", [])
+        for name, dataset_id in (datasets or {}).items():
+            widget = next((w for w in widgets if w.get("name") == name), None)
+            if widget is None:
+                widgets.append({"name": name, "type": "dataset", "default": "", "value": dataset_id})
+            else:
+                widget["value"] = dataset_id
+        dataflow_docs.write(h.ukey, h.pid, spec, dataflow_docs.person(h.ukey, "edit"))
+
+
+#: The file the user names in the Dataflow Builder's chat for the branches.
+BRANCHES_FILE = "/data/cpl_branches.csv"
+#: The URL a candidates card of the Builder's own chat verified for the branches.
+BRANCHES_URL = "https://data.example.org/cpl_branches.csv"
+
+
+def _branches_and_crimes(branches_intent: str) -> dict:
+    """A plan of two loaders, the library branches, whose intent is
+    *branches_intent*, and the crimes, and a node that reads both."""
+    return {
+        "goal": "compare library branches with crimes",
+        "nodes": [
+            {"ref": "branches", "nodeType": DL, "title": "CPL branches", "intent": branches_intent},
+            {"ref": "crimes", "nodeType": DL, "title": "Crimes", "intent": "load the crimes by community area"},
+            {"ref": "join", "nodeType": CA, "title": "Join", "intent": "count the crimes near each branch"},
+        ],
+        "edges": [{"from": "branches", "to": "join"}, {"from": "crimes", "to": "join"}],
+    }
+
+
+def _the_builder_offered(h, url: str) -> None:
+    """A candidates card the Dataflow Builder's own chat offered, as when the
+    user asked it for data before the plan: one external row, *url*,
+    verified, for no node."""
+    session_id = (attachments.get_attachment(h.spec(), h.att) or {}).get("sessionId")
+    card = {"type": "datasetCandidates", "discoveryId": "the-builders-own", "lanes": {"catalog": [], "external": [{
+        "name": "CPL branches", "sourceType": "portal", "url": url, "format": "csv",
+        "verification": {"status": "verified", "detail": "200 OK", "httpStatus": 200},
+    }]}}
+    sessions.append_turns(h.ukey, h.pid, session_id, h.att,
+                          [sessions.make_turn("agent", "I found 1 candidate.", content=[card])])
+
+
+class TestALoaderWithNoSourceAsksItsFinderFirst:
+    """A data-loading node with a Dataset Finder of its own, and nothing that
+    names its source: Solve, Build & validate plan, a plan row's Solve and
+    Solve this node each ask its Finder before any round, and the loader
+    waits for the pick with no call of its Node Builder. Step 5.3 of the agent
+    chat plan, found by the dev check of steps 4 and 5 (11-26). On main a Data
+    Catalog that held any dataset, a shipped one among them, grounded a first
+    attempt: the Node Builder wrote the loader round after round, each one
+    refused for its source, and the Finder was asked only once the rounds
+    ended (on dev 8 rounds and 48 s, here the 3 rounds the suite allows).
+
+    A loader that has a source it can load from is built as before, from its
+    first round: a dataset of its dataflow, a dataset of the Data Catalog its
+    goal names by title, one its dataset widget holds, its own code that
+    reads one, or a URL its goal names. So is a loader with no Dataset Finder
+    of its own: the Data Catalog grounds its first attempt, and discovery
+    starts once the rounds are refused for its source. Those guards pass on
+    main too."""
+
+    @pytest.fixture(autouse=True)
+    def _six_actions(self, monkeypatch):
+        monkeypatch.setattr(budgets, "SIMULATE_MAX_ACTIONS", 6)
+
+    def test_solve_asks_the_finder_before_the_loaders_builder(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        asked = _Asked(h)
+        load = h.solve()["results"][h.load]
+        assert asked.of_the_loader() == {"the loader's Node Builder": 0, "its Dataset Finder": 1}, (
+            asked.counts(), [a.get("kind") for a in load.get("attempts") or []],
+        )
+        assert load["status"] == "pending", load
+        assert load["reason"].startswith("awaiting your dataset selection"), load
+        assert load["attempts"] == [], load["attempts"]
+        assert h.node_content(h.load) == ""
+
+    def test_build_and_validate_plan_asks_the_finder_before_the_loaders_builder(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        asked = _Asked(h)
+        done = h.simulate("auto")[-1][1]
+        assert asked.counts() == FINDER_ALONE, asked.counts()
+        assert (done.get("status"), (done.get("reason") or {}).get("kind")) == ("paused", "awaiting-source"), done
+        assert done["builderSession"]["nodeStates"]["load"] == "awaiting-source", done["builderSession"]
+        # The loader was never handed to its Node Builder.
+        assert _delegated_solves(h) == []
+        assert h.node_content(h.load) == ""
+
+    def test_a_rows_solve_asks_the_finder_before_the_loaders_builder(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        asked = _Asked(h)
+        done = h.validate("load")[-1][1]
+        assert asked.counts() == FINDER_ALONE, asked.counts()
+        assert done.get("verdict") == "awaiting-source", done
+        assert done.get("attempts") == [], done.get("attempts")
+        assert _delegated_solves(h) == []
+        assert h.node_content(h.load) == ""
+
+    def test_solve_this_node_asks_the_finder_before_the_loaders_builder(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        asked = _Asked(h)
+        done = _solve_this_node(h, h.node_builder_attachment_id())
+        assert asked.counts() == FINDER_ALONE, asked.counts()
+        assert done.get("verdict") == "awaiting-source", done
+        assert h.node_content(h.load) == ""
+
+    def test_a_loader_its_dataflow_holds_a_dataset_for_is_built_from_its_first_round(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The dataflow holds a dataset its goal does not name: its builder is
+        handed the dataflow's datasets and loads it."""
+        user, token = user_and_token
+        dataset_id = _a_dataset(user, "Ward offices")
+        h = _Harness(client, user, token, monkeypatch, dl_replies=[_reads(dataset_id)])
+        _in_the_dataflow(h, dataset_id)
+        asked = _Asked(h)
+        done = h.validate("load")[-1][1]
+        assert done.get("verdict") == "pass", done
+        assert asked.counts() == BUILT_AT_ONCE, asked.counts()
+        assert dataset_id in h.node_content(h.load)
+
+    def test_a_loader_whose_goal_names_a_dataset_by_its_title_is_built_from_its_first_round(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The goal names a dataset of the Data Catalog by its title, in no
+        dataflow."""
+        user, token = user_and_token
+        dataset_id = _a_dataset(user, "Ward offices")
+        h = _Harness(client, user, token, monkeypatch, goal="load the city's ward offices",
+                     dl_replies=[_reads(dataset_id)])
+        asked = _Asked(h)
+        done = h.validate("load")[-1][1]
+        assert done.get("verdict") == "pass", done
+        assert asked.counts() == BUILT_AT_ONCE, asked.counts()
+        assert dataset_id in h.node_content(h.load)
+
+    def test_a_loader_whose_dataset_widget_holds_a_dataset_is_built_from_its_first_round(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The loader's Data widget holds a dataset of the Data Catalog, which
+        its code reads through the widget."""
+        user, token = user_and_token
+        dataset_id = _a_dataset(user, "Ward offices")
+        h = _Harness(client, user, token, monkeypatch, dl_replies=["data = curio_load_data([!! data !!])\nreturn data"])
+        _the_loader_holds(h, datasets={"data": dataset_id})
+        asked = _Asked(h)
+        done = h.validate("load")[-1][1]
+        assert done.get("verdict") == "pass", done
+        assert asked.counts() == BUILT_AT_ONCE, asked.counts()
+
+    def test_solve_this_node_runs_the_code_a_loader_holds_that_reads_a_dataset(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The loader's own code reads a dataset of the Data Catalog: Solve
+        this node runs it as it is, and asks no one."""
+        user, token = user_and_token
+        dataset_id = _a_dataset(user, "Ward offices")
+        h = _Harness(client, user, token, monkeypatch)
+        _the_loader_holds(h, content=_reads(dataset_id))
+        asked = _Asked(h)
+        done = _solve_this_node(h, h.node_builder_attachment_id())
+        assert done.get("verdict") == "pass", done
+        assert asked.counts() == {"the loader's Node Builder": 0, "its Dataset Finder": 0, "in all": 0}, asked.counts()
+        assert h.node_content(h.load) == _reads(dataset_id)
+
+    def test_a_loader_whose_goal_names_a_url_is_built_from_its_first_round(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch, goal=f"load the boundaries at {URL}",
+                     dl_replies=[f'import pandas as pd\nreturn pd.read_json("{URL}")'])
+        asked = _Asked(h)
+        done = h.validate("load")[-1][1]
+        assert done.get("verdict") == "pass", done
+        assert asked.counts() == BUILT_AT_ONCE, asked.counts()
+        assert URL in h.node_content(h.load)
+
+    def test_a_loader_with_no_finder_of_its_own_tries_before_a_finder_is_asked(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The loader's Dataset Finder was taken off it: the Data Catalog
+        grounds a first attempt, the rounds are refused for its source, and
+        only then does discovery start, which gives the loader a Finder. The
+        node waits for the pick with the trail of what was tried."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        finder = h.finder_attachment_id()
+        r = client.delete(f"/api/agents/projects/{h.pid}/attachments/{finder}", headers=_auth(token))
+        assert r.status_code == 200, r.get_data(as_text=True)
+        asked = _Asked(h)
+        load = h.solve()["results"][h.load]
+        assert asked.of_the_loader() == {"the loader's Node Builder": 3, "its Dataset Finder": 1}, asked.counts()
+        assert load["status"] == "pending", load
+        assert load["reason"].startswith("awaiting your dataset selection"), load
+        assert [a["kind"] for a in load["attempts"]] == ["ungrounded-source"] * 3
+        assert "areas.csv" in load["attempts"][0]["detail"]
+        assert h.exec_payloads == []  # nothing ungrounded ever ran
+        assert h.node_content(h.load) == ""
+        # The Finder the discovery gave the loader holds its candidates.
+        assert load["remedy"]["attachmentId"] == h.finder_attachment_id() != finder
+        assert dr.source_record(h.spec(), h.load)["status"] == dr.STATE_CANDIDATES_PENDING
+
+    @pytest.mark.parametrize("message, goal, code", [
+        ("My branches are in /data/cpl_branches.csv", "load the locations of the CPL branches",
+         'import pandas as pd\nreturn pd.read_csv("/data/cpl_branches.csv")'),
+        ("Make a demo with synthetic data of parks", "make up synthetic daily visits of each park",
+         'import numpy as np\nimport pandas as pd\nreturn pd.DataFrame({"visits": np.random.randint(0, 500, 30)})'),
+        ("Rents: Loop 2450, Pilsen 1500", "load the rents, Loop 2450 and Pilsen 1500",
+         'import pandas as pd\nreturn pd.DataFrame({"Rents": [2450, 1500]}, index=["Loop", "Pilsen"])'),
+    ], ids=["path", "synthetic", "values"])
+    def test_a_source_the_user_gave_in_the_chat_that_asked_is_built_from_its_first_round(
+        self, client, user_and_token, tmp_curio, monkeypatch, message, goal, code,
+    ):
+        """The user gave the loader's source in the Dataflow Builder's chat,
+        and the plan's goal says it in other words: a path, a request for
+        synthetic data, values typed with their labels. The round's source
+        check reads that chat, so Build & validate builds the loader from its
+        first round and waits for no pick. On 271aec86a4 the step before the
+        rounds read the goal alone, so the Finder was asked for the path and
+        for the synthetic data, and the build paused for a pick the user did
+        not need. The typed values are a guard: the goal gives them. Found by
+        the review of #1642. Since the second review a request for synthetic
+        data in the chat grounds no loader before its rounds, so the plan's
+        goal carries it too, as a plan's goal does when the user asks
+        (``test_what_the_chat_said_grounds_only_the_loader_it_names``)."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch, message=message, goal=goal, dl_replies=[code])
+        asked = _Asked(h)
+        done = h.simulate("auto")[-1][1]
+        assert asked.of_the_loader() == {"the loader's Node Builder": 1, "its Dataset Finder": 0}, asked.counts()
+        assert done.get("status") == "completed", done
+        assert h.node_content(h.load) == code
+
+    def test_a_year_the_chat_and_the_goal_share_is_no_source(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """A year the user wrote and the goal repeats says when the data is
+        from, and is no data: the loader's Finder is asked before its builder,
+        as for any loader with no source. On 271aec86a4 any number both wrote
+        counted as values the user typed, so the builder wrote the loader round
+        after round, each refused for its source, before the Finder was asked.
+        Found by the review of #1642."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch, message="Compare the 2023 crimes by community area.",
+                     goal="load the 2023 crimes")
+        asked = _Asked(h)
+        done = h.validate("load")[-1][1]
+        assert asked.counts() == FINDER_ALONE, asked.counts()
+        assert done.get("verdict") == "awaiting-source", done
+
+    @pytest.mark.parametrize("message, branches_intent, code, offered", [
+        (f"My branches are in {BRANCHES_FILE}", "load the CPL branches",
+         f'import pandas as pd\nreturn pd.read_csv("{BRANCHES_FILE}")', None),
+        ("Make a demo with synthetic data.", "generate synthetic CPL branches",
+         'import numpy as np\nimport pandas as pd\nreturn pd.DataFrame({"visits": np.random.randint(0, 500, 30)})', None),
+        ("plan it", f"load the CPL branches from {BRANCHES_URL}",
+         f'import pandas as pd\nreturn pd.read_csv("{BRANCHES_URL}")', BRANCHES_URL),
+    ], ids=["path", "synthetic", "url"])
+    def test_what_the_chat_said_grounds_only_the_loader_it_names(
+        self, client, user_and_token, tmp_curio, monkeypatch, message, branches_intent, code, offered,
+    ):
+        """A plan of two loaders, the library branches and the crimes, and in
+        the Dataflow Builder's chat a path, a request for synthetic data, or a
+        candidates card of its own with a verified URL. The branches loader,
+        whose goal names that source, is built from its first round; the
+        crimes loader's Finder is asked before its builder. On 6031770487
+        what the chat said grounded every loader of the plan, so the crimes
+        loader was built from the branches' file, URL or made-up rows. Found
+        by the second review of #1642."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch, message=message, plan=_branches_and_crimes(branches_intent),
+                     dl_replies=[code])
+        if offered:
+            _the_builder_offered(h, offered)
+        asked = _Asked(h)
+        crimes = h.validate("crimes")[-1][1]
+        assert asked.counts() == FINDER_ALONE, (asked.counts(), crimes.get("verdict"))
+        assert crimes.get("verdict") == "awaiting-source", crimes
+        asked = _Asked(h)
+        branches = h.validate("branches")[-1][1]
+        assert branches.get("verdict") == "pass", branches
+        assert asked.counts() == BUILT_AT_ONCE, asked.counts()
+        assert h.node_content(h.ref_ids()["branches"]) == code
+
+    def test_a_card_its_finder_no_longer_offers_grounds_nothing(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The chat that asked holds the loader's candidates card, with a URL
+        it verified, and the Finder's chat was cleared, so its record offers
+        that card no more. Build & validate asks the Finder again before any
+        round: the card's URL was a candidate the user never picked. While a
+        card stands, the node waits for its pick, which outranks anything the
+        chat says."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        h.simulate("auto")
+        assert [p.get("nodeId") for p in _source_picks(h, h.att)] == [h.load]
+        finder = h.finder_attachment_id()
+        r = client.delete(f"/api/agents/projects/{h.pid}/attachments/{finder}/session", headers=_auth(token))
+        assert r.status_code == 200, r.get_data(as_text=True)
+        asked = _Asked(h)
+        done = h.simulate("auto")[-1][1]
+        assert asked.counts() == FINDER_ALONE, asked.counts()
+        assert (done.get("reason") or {}).get("kind") == "awaiting-source", done
+
+
+def _the_finders_first_run_fails(monkeypatch) -> list:
+    """The first run of a Dataset Finder fails, as when its model's endpoint
+    is down: the run ends in an error and offers nothing. Returns the tasks of
+    the runs that failed, filled as they fail."""
+    ask = providers.run_chat_turn
+    failed: list = []
+
+    def _asked(config, messages, **kwargs):
+        frame = (messages[-1].get("content") or "") if messages else ""
+        if not failed and "discoveryReplyContract" in frame:
+            failed.append(frame)
+            raise RuntimeError("the model endpoint is down")
+        return ask(config, messages, **kwargs)
+
+    monkeypatch.setattr(providers, "run_chat_turn", _asked)
+    return failed
+
+
+def _during_the_loaders_first_round(h, monkeypatch, act) -> list:
+    """Run *act* while the loader's Node Builder writes its first round, as
+    another chat acts while the rounds run. Returns a list that holds one
+    entry once *act* ran."""
+    ask = providers.run_chat_turn
+    ran: list = []
+
+    def _asked(config, messages, **kwargs):
+        frame = (messages[-1].get("content") or "") if messages else ""
+        if (not ran and "[delegated task" in frame and "discoveryReplyContract" not in frame
+                and f'"nodeId": "{h.load}"' in frame):
+            act()
+            ran.append(True)
+        return ask(config, messages, **kwargs)
+
+    monkeypatch.setattr(providers, "run_chat_turn", _asked)
+    return ran
+
+
+def _a_card(card_id: str) -> dict:
+    """A candidates card of a Dataset Finder, *card_id*, with the one row of
+    CANDIDATES."""
+    return {"type": "datasetCandidates", "discoveryId": card_id, **json.loads(CANDIDATES)["datasetCandidates"]}
+
+
+def _candidates_another_ask_left(h, card_id: str) -> None:
+    """Candidates the loader's Finder found on another chat's ask: its card
+    *card_id* in the Finder's chat, and its record waiting for the pick."""
+    node = next(n for n in h.spec()["dataflow"]["nodes"] if n.get("id") == h.load)
+    finder = h.finder_attachment_id()
+    dr._append_candidates_turn(h.ukey, h.pid, finder, node, _a_card(card_id), 1)
+    with projects_storage.spec_write_lock(h.ukey, h.pid):
+        spec = dataflow_docs.live(h.ukey, h.pid)
+        dr.mark_candidates_pending(spec, finder, count=1, discovery_id=card_id)
+        dataflow_docs.write(h.ukey, h.pid, spec, dataflow_docs.by_curio(h.ukey, "dataset"))
+
+
+def _offered_while_nothing_waits(h, card: dict) -> None:
+    """The loader's Finder offered *card* in its own chat while the loader
+    waited for nothing: the card is in the Finder's chat, and its record
+    names it as the card on offer."""
+    node = next(n for n in h.spec()["dataflow"]["nodes"] if n.get("id") == h.load)
+    finder = h.finder_attachment_id()
+    dr._append_candidates_turn(h.ukey, h.pid, finder, node, card, 1)
+    dr.offer_from_chat(h.ukey, h.pid, finder, card)
+
+
+def _a_pick_that_waits_for_its_install(h, card_id: str, dataset_id: str) -> None:
+    """The user's pick, on the card *card_id* of the loader's Finder, of
+    *dataset_id*, a dataset of the Data Catalog that the dataflow does not
+    hold: the pick waits for its reviewed install."""
+    row = {"lane": "catalog", "datasetId": dataset_id, "name": "Ward offices", "sourceType": "catalog",
+           "installed": False}
+    finder = h.finder_attachment_id()
+    with projects_storage.spec_write_lock(h.ukey, h.pid):
+        spec = dataflow_docs.live(h.ukey, h.pid)
+        dr.record_selection(spec, finder, [row], picked_from=card_id)
+        dataflow_docs.write(h.ukey, h.pid, spec, dataflow_docs.person(h.ukey, "dataset"))
+
+
+class TestTheFinderAfterTheRounds:
+    """A loader with no source whose Dataset Finder, asked before the first
+    round, had nothing to offer: its rounds run, and when they are refused for
+    their source the loader keeps its own failure, with why, and the Finder is
+    not asked a second time. Unless that ask never ran, or a card came since:
+    then the Finder is asked again, or the loader waits for the card's pick,
+    as on main. Found by the review of #1642."""
+
+    def test_a_finder_that_could_not_run_before_the_rounds_is_asked_again_after_them(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The Finder's run failed before the first round. On 271aec86a4 the
+        loader then failed with that error, and the Finder was not asked
+        again."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        failed = _the_finders_first_run_fails(monkeypatch)
+        done = h.validate("load")[-1][1]
+        assert (len(failed), len(h.discover_calls)) == (1, 1), (done.get("verdict"), done.get("evidence"))
+        assert done.get("verdict") == "awaiting-source", done
+        # The rounds that ran before are kept, each refused for its source.
+        assert done.get("attempts"), done
+        assert {a.get("kind") for a in done["attempts"]} == {"ungrounded-source"}, done["attempts"]
+        assert dr.source_record(h.spec(), h.load)["status"] == dr.STATE_CANDIDATES_PENDING
+
+    def test_a_card_the_finders_own_chat_offers_during_the_rounds_has_it_asked_again(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The Finder found nothing before the first round, and while the
+        rounds ran it offered a card in its own chat, where the user asked it.
+        On 271aec86a4 the loader failed, and the Finder was not asked again."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch, discover_replies=["No source covers that.", CANDIDATES])
+        offered = _during_the_loaders_first_round(
+            h, monkeypatch, lambda: dr.offer_from_chat(h.ukey, h.pid, h.finder_attachment_id(), _a_card("its-own")),
+        )
+        done = h.validate("load")[-1][1]
+        assert offered == [True]
+        assert len(h.discover_calls) == 2, (done.get("verdict"), done.get("evidence"))
+        assert done.get("verdict") == "awaiting-source", done
+        assert dr.source_record(h.spec(), h.load)["status"] == dr.STATE_CANDIDATES_PENDING
+
+    def test_candidates_another_ask_left_during_the_rounds_are_waited_on(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The Finder found nothing before the first round, and while the
+        rounds ran another chat's ask left candidates waiting for the pick:
+        the loader waits for that pick, its card in the chat that asked too,
+        and the Finder is not asked again. On 271aec86a4 the loader failed
+        beside the waiting card."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch, discover_replies=["No source covers that."])
+        left = _during_the_loaders_first_round(h, monkeypatch, lambda: _candidates_another_ask_left(h, "another-ask"))
+        done = h.validate("load")[-1][1]
+        assert left == [True]
+        assert done.get("verdict") == "awaiting-source", done
+        assert len(h.discover_calls) == 1
+        assert [p.get("discoveryId") for p in _source_picks(h, h.att)] == ["another-ask"]
+
+    def test_a_finder_that_found_nothing_is_named_in_the_loaders_failure(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """Nothing came since the Finder found nothing: the loader keeps its
+        own failure, whose evidence says why discovery found nothing
+        (``discovery``), and the Finder was asked once."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch, discover_replies=["No source covers that."])
+        done = h.validate("load")[-1][1]
+        evidence = done.get("evidence") or {}
+        assert (done.get("verdict"), evidence.get("kind")) == ("fail", "ungrounded-source"), done
+        assert "no recognizable datasetCandidates block" in str(evidence.get("discovery")), evidence
+        assert len(h.discover_calls) == 1
+
+    @pytest.mark.parametrize("since", ["another-card", "a-pick-that-waits"])
+    def test_each_half_of_what_came_since_the_finders_ask_is_read(
+        self, client, user_and_token, tmp_curio, monkeypatch, since,
+    ):
+        """Before the rounds the Finder's record named a card it had offered
+        while nothing waited, and the Finder, asked again, found nothing. What
+        comes during the rounds is read by one half of ``_offered_since``
+        each, so each case fails with its own half removed. Another card
+        offered in the Finder's own chat, which no one waits on, has the
+        Finder asked again after the rounds. A pick on the card from before
+        that waits for its install leaves that card on offer, and the loader
+        waits for the install."""
+        user, token = user_and_token
+        dataset_id = _a_dataset(user, "Ward offices")
+        h = _Harness(client, user, token, monkeypatch, discover_replies=["No source covers that.", CANDIDATES])
+        _offered_while_nothing_waits(h, {**_a_card("before"), "lanes": {"external": [], "catalog": [
+            {"datasetId": dataset_id, "name": "Ward offices", "sourceType": "catalog", "installed": False},
+        ]}})
+        def _another_card():
+            dr.offer_from_chat(h.ukey, h.pid, h.finder_attachment_id(), _a_card("another"))
+
+        def _a_pick_on_the_card_from_before():
+            _a_pick_that_waits_for_its_install(h, "before", dataset_id)
+
+        acted = _during_the_loaders_first_round(
+            h, monkeypatch, _another_card if since == "another-card" else _a_pick_on_the_card_from_before,
+        )
+        done = h.validate("load")[-1][1]
+        assert acted == [True]
+        evidence = done.get("evidence") or {}
+        assert done.get("verdict") == "awaiting-source", (done.get("verdict"), evidence)
+        waits = {"another-card": ("pick", 2), "a-pick-that-waits": ("install", 1)}[since]
+        assert (evidence.get("sourceWait"), len(h.discover_calls)) == waits, evidence
+
+    def test_the_resolver_that_asks_no_one_writes_nothing(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """``ask=False``, with which the loop reads whether a card came since
+        the Finder's first ask (``_offered_since``), asks no model and writes
+        nothing, whatever the loader's source: none, for which a resolve that
+        asks has its Finder asked; a path its goal names, which such a resolve
+        records as a skip; or candidates another chat's ask left waiting,
+        which such a resolve puts in its own chat too."""
+        from utk_curio.backend.app.agents.application import source_grounding as sg
+        from utk_curio.backend.app.agents.application.turns import grounding
+        from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
+
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        resolve = grounding._source_resolver(
+            h.ukey, h.pid, coord=DFB, attachment_id=h.att, execution_id="e-ask-no-one",
+            config=ProviderConfig(api_key="k", api_type="openai_compatible", base_url="http://x", model="m"),
+        )
+        writes: list = []
+        turns: list = []
+        write, append = dataflow_docs.write, sessions.append_turns
+        monkeypatch.setattr(dataflow_docs, "write", lambda *a, **k: (writes.append(a), write(*a, **k))[1])
+        monkeypatch.setattr(sessions, "append_turns", lambda *a, **k: (turns.append(a), append(*a, **k))[1])
+
+        def _state_asking_no_one(node, stage):
+            before = (len(writes), len(turns), len(h.model_calls), json.dumps(h.spec(), sort_keys=True))
+            answer = resolve(node, sg.GroundingContext(), stage=stage, ask=False)
+            after = (len(writes), len(turns), len(h.model_calls), json.dumps(h.spec(), sort_keys=True))
+            assert after == before, (stage, answer, after[:3], before[:3])
+            return answer.get("state")
+
+        node = next(n for n in h.spec()["dataflow"]["nodes"] if n.get("id") == h.load)
+        assert _state_asking_no_one(node, "pre") == "unresolved"
+        assert _state_asking_no_one({**node, "goal": "load /data/areas.csv"}, "pre") == "resolved"
+        _candidates_another_ask_left(h, "another-ask")
+        assert _state_asking_no_one(node, "post") == "awaiting"
+
+
+class TestTheUsersOwnSourceEndsTheWait:
+    """A loader waits for the pick on its Finder's card, and the user answers
+    by giving the loader its source on the node itself: a dataset on its Data
+    widget, or code that reads one. That ends the wait, and Resume builds the
+    loader from it. On 271aec86a4 the card outranked the node's own source,
+    so Resume paused again, awaiting the dataset selection. Found by the
+    review of #1642."""
+
+    @pytest.fixture(autouse=True)
+    def _six_actions(self, monkeypatch):
+        monkeypatch.setattr(budgets, "SIMULATE_MAX_ACTIONS", 6)
+
+    @pytest.mark.parametrize("given", ["widget", "code"])
+    def test_a_source_given_on_the_loader_ends_its_wait_and_resume_builds_it(
+        self, client, user_and_token, tmp_curio, monkeypatch, given,
+    ):
+        user, token = user_and_token
+        dataset_id = _a_dataset(user, "Ward offices")
+        built = "data = curio_load_data([!! data !!])\nreturn data" if given == "widget" else _reads(dataset_id)
+        h = _Harness(client, user, token, monkeypatch, dl_replies=[built])
+        paused = h.simulate("auto")[-1][1]
+        assert (paused.get("reason") or {}).get("kind") == "awaiting-source", paused
+        if given == "widget":
+            _the_loader_holds(h, datasets={"data": dataset_id})
+        else:
+            _the_loader_holds(h, content=_reads(dataset_id))
+        asked = _Asked(h)
+        done = h.simulate("auto")[-1][1]
+        assert asked.of_the_loader() == {"the loader's Node Builder": 1, "its Dataset Finder": 0}, asked.counts()
+        assert done.get("status") == "completed", done
+        assert h.node_content(h.load) == built
+        # Nobody waits for the pick any more.
+        assert dr.waiting_on_user(h.spec()) == {}
+
+    @pytest.mark.parametrize("held", ["widget", "code"])
+    def test_what_the_loader_held_before_its_card_does_not_end_the_wait(
+        self, client, user_and_token, tmp_curio, monkeypatch, held,
+    ):
+        """The loader held a dataset before its Finder's card was offered, on
+        its Data widget or in its code, and its goal is about other data: its
+        rounds were refused for their source, and its Finder was asked. Resume
+        then waits on the card and asks no one. On 6031770487 what the loader
+        held before the card outranked it: every Resume closed the card, ran
+        the rounds again and had the Finder offer a new card. Found by the
+        second review of #1642."""
+        user, token = user_and_token
+        dataset_id = _a_dataset(user, "Ward offices")
+        h = _Harness(client, user, token, monkeypatch)
+        if held == "widget":
+            _the_loader_holds(h, datasets={"data": dataset_id})
+        else:
+            _the_loader_holds(h, content=_reads(dataset_id))
+        paused = h.simulate("auto")[-1][1]
+        assert (paused.get("reason") or {}).get("kind") == "awaiting-source", paused
+        offered = dr.source_record(h.spec(), h.load).get("discoveryId")
+        asked = _Asked(h)
+        again = h.simulate("auto")[-1][1]
+        assert asked.counts() == {"the loader's Node Builder": 0, "its Dataset Finder": 0, "in all": 0}, asked.counts()
+        assert (again.get("reason") or {}).get("kind") == "awaiting-source", again
+        record = dr.source_record(h.spec(), h.load)
+        assert (record.get("status"), record.get("discoveryId")) == (dr.STATE_CANDIDATES_PENDING, offered), record
