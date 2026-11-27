@@ -71,8 +71,8 @@ function named(names: string[]): { subject: string; several: boolean } {
 
 /**
  * The plan line's words while nothing runs: "Planned · 3 nodes", "Planned ·
- * 3 nodes, 1 to solve" once some are built, "Ready · 3 nodes built", "Paused
- * · CPL branches needs a source", "Paused · CPL
+ * 2 of 3 built" once some are built, "Ready · 3 nodes built", "Paused · CPL
+ * branches needs a source", "Paused · CPL
  * branches failed", "Failed · 2 nodes", "Stopped · 2 left", "Interrupted · 2
  * left". A pause or a failure names its node, or counts them when several.
  * Nodes that wait for the person's pick pause the plan when no other node is
@@ -142,8 +142,8 @@ function lineWordsBesidePicks(opts: {
   }
   if (phase === "ready") return { phase: "Ready", muted: `${plural(nodes, "node")} built` };
   if (phase === "idle") return { phase: "No plan yet" };
-  // Some of the plan built: how many are left to solve.
-  return { phase: "Planned", muted: left > 0 && left < nodes ? `${plural(nodes, "node")}, ${left} to solve` : plural(nodes, "node") };
+  // One count: the plan's nodes, or once some are built, how many of them.
+  return { phase: "Planned", muted: left > 0 && left < nodes ? builtCount(nodes - left, nodes) : plural(nodes, "node") };
 }
 
 /** Whether *plan*, the plan the agent landed, has a node Build & validate

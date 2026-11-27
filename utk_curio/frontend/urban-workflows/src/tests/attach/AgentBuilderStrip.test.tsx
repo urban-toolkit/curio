@@ -73,7 +73,8 @@ describe("AgentBuilderStrip (dev/52 DR-5)", () => {
         onSolve={jest.fn()}
       />,
     );
-    expect(words()).toHaveTextContent(/^Planned · 2 nodes, 1 to solve$/);
+    // One count: how many of the plan's nodes are built.
+    expect(words()).toHaveTextContent(/^Planned · 1 of 2 built$/);
     expect(screen.queryByText("Review")).not.toBeInTheDocument();
     rerender(
       <AgentBuilderStrip

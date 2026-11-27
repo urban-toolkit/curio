@@ -2927,7 +2927,7 @@ describe("AgentChatPanel offers each feature by what the agent declares", () => 
       // Clear conversation emptied the transcript; the plan and its line stay.
       turns: [],
     });
-    expect(screen.getByRole("group", { name: "My Orchestrator" })).toHaveTextContent("Planned · 2 nodes, 1 to solve");
+    expect(screen.getByRole("group", { name: "My Orchestrator" })).toHaveTextContent("Planned · 1 of 2 built");
     expect(screen.queryByRole("group", { name: "Planning templates" })).toBeNull();
     expect(screen.queryByText("Ask for a dataflow, or start from one of these:")).toBeNull();
     expect(screen.getByText("Ask this agent something to get started.")).toBeInTheDocument();
