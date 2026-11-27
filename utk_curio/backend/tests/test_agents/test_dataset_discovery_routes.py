@@ -2019,6 +2019,39 @@ def _the_loader_holds(h, *, content: str | None = None, datasets: dict | None = 
         dataflow_docs.write(h.ukey, h.pid, spec, dataflow_docs.person(h.ukey, "edit"))
 
 
+#: The file the user names in the Dataflow Builder's chat for the branches.
+BRANCHES_FILE = "/data/cpl_branches.csv"
+#: The URL a candidates card of the Builder's own chat verified for the branches.
+BRANCHES_URL = "https://data.example.org/cpl_branches.csv"
+
+
+def _branches_and_crimes(branches_intent: str) -> dict:
+    """A plan of two loaders, the library branches, whose intent is
+    *branches_intent*, and the crimes, and a node that reads both."""
+    return {
+        "goal": "compare library branches with crimes",
+        "nodes": [
+            {"ref": "branches", "nodeType": DL, "title": "CPL branches", "intent": branches_intent},
+            {"ref": "crimes", "nodeType": DL, "title": "Crimes", "intent": "load the crimes by community area"},
+            {"ref": "join", "nodeType": CA, "title": "Join", "intent": "count the crimes near each branch"},
+        ],
+        "edges": [{"from": "branches", "to": "join"}, {"from": "crimes", "to": "join"}],
+    }
+
+
+def _the_builder_offered(h, url: str) -> None:
+    """A candidates card the Dataflow Builder's own chat offered, as when the
+    user asked it for data before the plan: one external row, *url*,
+    verified, for no node."""
+    session_id = (attachments.get_attachment(h.spec(), h.att) or {}).get("sessionId")
+    card = {"type": "datasetCandidates", "discoveryId": "the-builders-own", "lanes": {"catalog": [], "external": [{
+        "name": "CPL branches", "sourceType": "portal", "url": url, "format": "csv",
+        "verification": {"status": "verified", "detail": "200 OK", "httpStatus": 200},
+    }]}}
+    sessions.append_turns(h.ukey, h.pid, session_id, h.att,
+                          [sessions.make_turn("agent", "I found 1 candidate.", content=[card])])
+
+
 class TestALoaderWithNoSourceAsksItsFinderFirst:
     """A data-loading node with a Dataset Finder of its own, and nothing that
     names its source: Solve, Build & validate plan, a plan row's Solve and
@@ -2236,6 +2269,61 @@ class TestALoaderWithNoSourceAsksItsFinderFirst:
         assert asked.counts() == FINDER_ALONE, asked.counts()
         assert done.get("verdict") == "awaiting-source", done
 
+    @pytest.mark.parametrize("message, branches_intent, code, offered", [
+        (f"My branches are in {BRANCHES_FILE}", "load the CPL branches",
+         f'import pandas as pd\nreturn pd.read_csv("{BRANCHES_FILE}")', None),
+        ("Make a demo with synthetic data.", "generate synthetic CPL branches",
+         'import numpy as np\nimport pandas as pd\nreturn pd.DataFrame({"visits": np.random.randint(0, 500, 30)})', None),
+        ("plan it", f"load the CPL branches from {BRANCHES_URL}",
+         f'import pandas as pd\nreturn pd.read_csv("{BRANCHES_URL}")', BRANCHES_URL),
+    ], ids=["path", "synthetic", "url"])
+    def test_what_the_chat_said_grounds_only_the_loader_it_names(
+        self, client, user_and_token, tmp_curio, monkeypatch, message, branches_intent, code, offered,
+    ):
+        """A plan of two loaders, the library branches and the crimes, and in
+        the Dataflow Builder's chat a path, a request for synthetic data, or a
+        candidates card of its own with a verified URL. The branches loader,
+        whose goal names that source, is built from its first round; the
+        crimes loader's Finder is asked before its builder. On 6031770487
+        what the chat said grounded every loader of the plan, so the crimes
+        loader was built from the branches' file, URL or made-up rows. Found
+        by the second review of #1642."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch, message=message, plan=_branches_and_crimes(branches_intent),
+                     dl_replies=[code])
+        if offered:
+            _the_builder_offered(h, offered)
+        asked = _Asked(h)
+        crimes = h.validate("crimes")[-1][1]
+        assert asked.counts() == FINDER_ALONE, (asked.counts(), crimes.get("verdict"))
+        assert crimes.get("verdict") == "awaiting-source", crimes
+        asked = _Asked(h)
+        branches = h.validate("branches")[-1][1]
+        assert branches.get("verdict") == "pass", branches
+        assert asked.counts() == BUILT_AT_ONCE, asked.counts()
+        assert h.node_content(h.ref_ids()["branches"]) == code
+
+    def test_a_card_its_finder_no_longer_offers_grounds_nothing(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """The chat that asked holds the loader's candidates card, with a URL
+        it verified, and the Finder's chat was cleared, so its record offers
+        that card no more. Build & validate asks the Finder again before any
+        round: the card's URL was a candidate the user never picked. While a
+        card stands, the node waits for its pick, which outranks anything the
+        chat says."""
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        h.simulate("auto")
+        assert [p.get("nodeId") for p in _source_picks(h, h.att)] == [h.load]
+        finder = h.finder_attachment_id()
+        r = client.delete(f"/api/agents/projects/{h.pid}/attachments/{finder}/session", headers=_auth(token))
+        assert r.status_code == 200, r.get_data(as_text=True)
+        asked = _Asked(h)
+        done = h.simulate("auto")[-1][1]
+        assert asked.counts() == FINDER_ALONE, asked.counts()
+        assert (done.get("reason") or {}).get("kind") == "awaiting-source", done
+
 
 def _the_finders_first_run_fails(monkeypatch) -> list:
     """The first run of a Dataset Finder fails, as when its model's endpoint
@@ -2290,6 +2378,29 @@ def _candidates_another_ask_left(h, card_id: str) -> None:
         spec = dataflow_docs.live(h.ukey, h.pid)
         dr.mark_candidates_pending(spec, finder, count=1, discovery_id=card_id)
         dataflow_docs.write(h.ukey, h.pid, spec, dataflow_docs.by_curio(h.ukey, "dataset"))
+
+
+def _offered_while_nothing_waits(h, card: dict) -> None:
+    """The loader's Finder offered *card* in its own chat while the loader
+    waited for nothing: the card is in the Finder's chat, and its record
+    names it as the card on offer."""
+    node = next(n for n in h.spec()["dataflow"]["nodes"] if n.get("id") == h.load)
+    finder = h.finder_attachment_id()
+    dr._append_candidates_turn(h.ukey, h.pid, finder, node, card, 1)
+    dr.offer_from_chat(h.ukey, h.pid, finder, card)
+
+
+def _a_pick_that_waits_for_its_install(h, card_id: str, dataset_id: str) -> None:
+    """The user's pick, on the card *card_id* of the loader's Finder, of
+    *dataset_id*, a dataset of the Data Catalog that the dataflow does not
+    hold: the pick waits for its reviewed install."""
+    row = {"lane": "catalog", "datasetId": dataset_id, "name": "Ward offices", "sourceType": "catalog",
+           "installed": False}
+    finder = h.finder_attachment_id()
+    with projects_storage.spec_write_lock(h.ukey, h.pid):
+        spec = dataflow_docs.live(h.ukey, h.pid)
+        dr.record_selection(spec, finder, [row], picked_from=card_id)
+        dataflow_docs.write(h.ukey, h.pid, spec, dataflow_docs.person(h.ukey, "dataset"))
 
 
 class TestTheFinderAfterTheRounds:
@@ -2365,6 +2476,78 @@ class TestTheFinderAfterTheRounds:
         assert "no recognizable datasetCandidates block" in str(evidence.get("discovery")), evidence
         assert len(h.discover_calls) == 1
 
+    @pytest.mark.parametrize("since", ["another-card", "a-pick-that-waits"])
+    def test_each_half_of_what_came_since_the_finders_ask_is_read(
+        self, client, user_and_token, tmp_curio, monkeypatch, since,
+    ):
+        """Before the rounds the Finder's record named a card it had offered
+        while nothing waited, and the Finder, asked again, found nothing. What
+        comes during the rounds is read by one half of ``_offered_since``
+        each, so each case fails with its own half removed. Another card
+        offered in the Finder's own chat, which no one waits on, has the
+        Finder asked again after the rounds. A pick on the card from before
+        that waits for its install leaves that card on offer, and the loader
+        waits for the install."""
+        user, token = user_and_token
+        dataset_id = _a_dataset(user, "Ward offices")
+        h = _Harness(client, user, token, monkeypatch, discover_replies=["No source covers that.", CANDIDATES])
+        _offered_while_nothing_waits(h, {**_a_card("before"), "lanes": {"external": [], "catalog": [
+            {"datasetId": dataset_id, "name": "Ward offices", "sourceType": "catalog", "installed": False},
+        ]}})
+        def _another_card():
+            dr.offer_from_chat(h.ukey, h.pid, h.finder_attachment_id(), _a_card("another"))
+
+        def _a_pick_on_the_card_from_before():
+            _a_pick_that_waits_for_its_install(h, "before", dataset_id)
+
+        acted = _during_the_loaders_first_round(
+            h, monkeypatch, _another_card if since == "another-card" else _a_pick_on_the_card_from_before,
+        )
+        done = h.validate("load")[-1][1]
+        assert acted == [True]
+        evidence = done.get("evidence") or {}
+        assert done.get("verdict") == "awaiting-source", (done.get("verdict"), evidence)
+        waits = {"another-card": ("pick", 2), "a-pick-that-waits": ("install", 1)}[since]
+        assert (evidence.get("sourceWait"), len(h.discover_calls)) == waits, evidence
+
+    def test_the_resolver_that_asks_no_one_writes_nothing(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """``ask=False``, with which the loop reads whether a card came since
+        the Finder's first ask (``_offered_since``), asks no model and writes
+        nothing, whatever the loader's source: none, for which a resolve that
+        asks has its Finder asked; a path its goal names, which such a resolve
+        records as a skip; or candidates another chat's ask left waiting,
+        which such a resolve puts in its own chat too."""
+        from utk_curio.backend.app.agents.application import source_grounding as sg
+        from utk_curio.backend.app.agents.application.turns import grounding
+        from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
+
+        user, token = user_and_token
+        h = _Harness(client, user, token, monkeypatch)
+        resolve = grounding._source_resolver(
+            h.ukey, h.pid, coord=DFB, attachment_id=h.att, execution_id="e-ask-no-one",
+            config=ProviderConfig(api_key="k", api_type="openai_compatible", base_url="http://x", model="m"),
+        )
+        writes: list = []
+        turns: list = []
+        write, append = dataflow_docs.write, sessions.append_turns
+        monkeypatch.setattr(dataflow_docs, "write", lambda *a, **k: (writes.append(a), write(*a, **k))[1])
+        monkeypatch.setattr(sessions, "append_turns", lambda *a, **k: (turns.append(a), append(*a, **k))[1])
+
+        def _state_asking_no_one(node, stage):
+            before = (len(writes), len(turns), len(h.model_calls), json.dumps(h.spec(), sort_keys=True))
+            answer = resolve(node, sg.GroundingContext(), stage=stage, ask=False)
+            after = (len(writes), len(turns), len(h.model_calls), json.dumps(h.spec(), sort_keys=True))
+            assert after == before, (stage, answer, after[:3], before[:3])
+            return answer.get("state")
+
+        node = next(n for n in h.spec()["dataflow"]["nodes"] if n.get("id") == h.load)
+        assert _state_asking_no_one(node, "pre") == "unresolved"
+        assert _state_asking_no_one({**node, "goal": "load /data/areas.csv"}, "pre") == "resolved"
+        _candidates_another_ask_left(h, "another-ask")
+        assert _state_asking_no_one(node, "post") == "awaiting"
+
 
 class TestTheUsersOwnSourceEndsTheWait:
     """A loader waits for the pick on its Finder's card, and the user answers
@@ -2399,3 +2582,31 @@ class TestTheUsersOwnSourceEndsTheWait:
         assert h.node_content(h.load) == built
         # Nobody waits for the pick any more.
         assert dr.waiting_on_user(h.spec()) == {}
+
+    @pytest.mark.parametrize("held", ["widget", "code"])
+    def test_what_the_loader_held_before_its_card_does_not_end_the_wait(
+        self, client, user_and_token, tmp_curio, monkeypatch, held,
+    ):
+        """The loader held a dataset before its Finder's card was offered, on
+        its Data widget or in its code, and its goal is about other data: its
+        rounds were refused for their source, and its Finder was asked. Resume
+        then waits on the card and asks no one. On 6031770487 what the loader
+        held before the card outranked it: every Resume closed the card, ran
+        the rounds again and had the Finder offer a new card. Found by the
+        second review of #1642."""
+        user, token = user_and_token
+        dataset_id = _a_dataset(user, "Ward offices")
+        h = _Harness(client, user, token, monkeypatch)
+        if held == "widget":
+            _the_loader_holds(h, datasets={"data": dataset_id})
+        else:
+            _the_loader_holds(h, content=_reads(dataset_id))
+        paused = h.simulate("auto")[-1][1]
+        assert (paused.get("reason") or {}).get("kind") == "awaiting-source", paused
+        offered = dr.source_record(h.spec(), h.load).get("discoveryId")
+        asked = _Asked(h)
+        again = h.simulate("auto")[-1][1]
+        assert asked.counts() == {"the loader's Node Builder": 0, "its Dataset Finder": 0, "in all": 0}, asked.counts()
+        assert (again.get("reason") or {}).get("kind") == "awaiting-source", again
+        record = dr.source_record(h.spec(), h.load)
+        assert (record.get("status"), record.get("discoveryId")) == (dr.STATE_CANDIDATES_PENDING, offered), record
