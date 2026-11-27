@@ -37,7 +37,7 @@ export const SOLVE_HINT = "Builds every node: each runs in the sandbox, is fixed
 export const RETRY_FAILED_HINT = "Solves the nodes that failed again: each runs in the sandbox, is fixed, and lands only once it ran";
 export const RETRY_INTERRUPTED_HINT =
   "Solve was interrupted: the server stopped while it was running. Finished nodes kept their content; nothing was " +
-  "replayed. Retry continues from what is still pending.";
+  "replayed. Retry continues from what is still pending, in a new run linked to the interrupted one.";
 export const STOP_SOLVE_HINT =
   "Ends the session after the current node finishes (a running fetch cannot be aborted). Everything already written " +
   "stays. Solve keeps running if you close this chat.";
@@ -271,6 +271,9 @@ export const AgentBuilderStrip: React.FC<{
   })();
 
   const running = solveRunning || building !== null;
+  // A plan whose every node is built is ready, whatever built them: a batch,
+  // a build or the rows' own Solves.
+  const shownPhase = phase === "applied" && ids.length > 0 && left === 0 ? "ready" : phase;
   // The plan waits on the person when every node left to build waits for its
   // pick, or for a node upstream of it that does, as a build that paused on a
   // pick says by pausing: then the line's action goes to the card; else Solve
@@ -281,7 +284,7 @@ export const AgentBuilderStrip: React.FC<{
     (pauseReason?.kind === "awaiting-source" ||
       ids.filter((id) => !isBuilt(id)).every((id) => waitsForPick.has(id) || waitsUpstream.has(id)));
   const words = planLineWords({
-    phase,
+    phase: shownPhase,
     waitingForPick: running ? [] : pickIds.map(nodeNameOf),
     pickBlocksAll,
     pause: pause && pause.kind !== "pick" ? pause : null,
@@ -298,7 +301,7 @@ export const AgentBuilderStrip: React.FC<{
     canStopBuild: Boolean(onCancelSimulate),
     waitsForPick: pickBlocksAll,
     paused: Boolean(pauseReason && landedPlan && onSimulate),
-    phase,
+    phase: shownPhase,
   });
 
   // The running line's clock: from when this line first saw the run; a run
@@ -473,7 +476,8 @@ export const AgentBuilderStrip: React.FC<{
             <span className={styles.linePhase}>{words.phase}</span>
             {words.muted ? <span className={styles.lineMuted}>{` · ${words.muted}`}</span> : null}
             {words.subject || words.predicate ? <span className={styles.lineMuted}>{" · "}</span> : null}
-            {words.subject ? <span>{words.subject}</span> : null}
+            {/* A name too long for the line is cut: its tooltip says it whole. */}
+            {words.subject ? <span data-tooltip={words.subject}>{words.subject}</span> : null}
             {words.predicate ? (
               <span className={words.tone === "fail" ? styles.lineFail : words.tone === "warn" ? styles.lineWarn : undefined}>
                 {words.subject ? ` ${words.predicate}` : words.predicate}

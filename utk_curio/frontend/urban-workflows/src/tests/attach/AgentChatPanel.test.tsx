@@ -224,7 +224,10 @@ describe("AgentChatPanel", () => {
 
   it("a user turn containing newlines keeps them in the transcript text", () => {
     renderPanel({ turns: [{ role: "user", text: "first\nsecond" }] });
-    const bubble = screen.getByText((_, el) => el?.textContent === "first\nsecond");
+    // The transcript holds this one turn, so its text is the transcript's too:
+    // the innermost element that holds it is the bubble.
+    const holders = screen.getAllByText((_, el) => el?.textContent === "first\nsecond");
+    const bubble = holders[holders.length - 1];
     expect(bubble.className).toMatch(/msgUser/);
   });
 
@@ -1267,9 +1270,11 @@ describe("AgentChatPanel structured content (memo dev/39)", () => {
     ]);
   });
 
-  it("a pick puts the suggestion in the message box, where it can be edited, and closes the menu", () => {
+  it("a pick puts the suggestion in the message box in place of what it held, where it can be edited, and closes the menu", () => {
     renderPanel({ turns: promptsTurns });
+    fireEvent.change(screen.getByPlaceholderText(/^Message /), { target: { value: "my own words" } });
     fireEvent.click(within(openSuggestions("3 suggestions")).getByRole("menuitem", { name: "Use the catalog copy" }));
+    expect(screen.getByPlaceholderText(/^Message /)).toHaveValue("Use the catalog copy");
     expect(screen.getByDisplayValue("Use the catalog copy")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Use the catalog copy")).toHaveFocus();
     expect(screen.queryByRole("menu", { name: "Suggested messages" })).toBeNull();
@@ -1398,8 +1403,9 @@ describe("AgentChatPanel changes, reviews + tool activity (memo dev/41)", () => 
     expect(screen.getByText(`A page read was ${REFUSAL}`)).toBeInTheDocument();
     // The tool's id is Show run details'.
     expect(screen.queryByText(/web\.fetch/)).toBeNull();
-    // A call that succeeded leaves no line.
-    expect(screen.queryByText(/^node\.read ·/)).not.toBeInTheDocument();
+    // A call that succeeded leaves no line: a tool with no plain words of its
+    // own would read as a step.
+    expect(screen.queryByText(/^A step/)).not.toBeInTheDocument();
   });
 
   it("with Show run details, a failed call's line names its tool, as the call's record does (#447)", () => {

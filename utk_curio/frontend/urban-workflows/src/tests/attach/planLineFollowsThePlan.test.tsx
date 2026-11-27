@@ -86,7 +86,7 @@ const awaitingSource = (nodeId: string): AgentRemedy => ({
  *  pick, keyed in the order given; returns what Show its sources went to. */
 function showSourcesOf(value: AgentAttachment, waits: string[]): string {
   const onShowSources = jest.fn();
-  render(
+  const { unmount } = render(
     <AgentBuilderStrip
       attachment={value}
       onSolve={jest.fn()}
@@ -95,6 +95,7 @@ function showSourcesOf(value: AgentAttachment, waits: string[]): string {
     />,
   );
   fireEvent.click(screen.getByRole("button", { name: "Show its sources" }));
+  unmount();
   return onShowSources.mock.calls[0][0];
 }
 
@@ -111,6 +112,25 @@ test("Show its sources goes to the plan's first waiting node, whatever order nod
 });
 
 test("a node the plan does not list follows the plan's, in the canvas's order, and one off the canvas comes last", () => {
+  // The plan's own node first, though the canvas holds the earlier plan's
+  // street trees before it.
+  expect(
+    showSourcesOf(
+      attachment(
+        [["streets", STREETS], ["grid", GRID]],
+        {
+          [GONE_LAST]: "pending",
+          [PARKS]: "pending",
+          [GRID]: "pending",
+          [TREES]: "pending",
+          [GONE_FIRST]: "pending",
+          [STREETS]: "solved",
+        },
+      ),
+      [GONE_LAST, PARKS, GONE_FIRST, TREES, GRID],
+    ),
+  ).toBe(GRID);
+  // With the plan's own built, the earlier plan's, in the canvas's order.
   expect(
     showSourcesOf(
       attachment(

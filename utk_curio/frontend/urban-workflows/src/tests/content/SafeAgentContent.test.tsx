@@ -181,10 +181,12 @@ describe("AgentChatCard (docs/03 visual contract, generic shell)", () => {
     lines: ["noaa.parquet → DATA palette", "Provenance: agent-created"],
   };
 
-  it("renders title, kind label, and lines as plain text", () => {
+  it("renders title and lines as plain text, its kind in its accessible name", () => {
     render(<AgentChatCard card={card} />);
     expect(screen.getByText("Created dataset node")).toBeInTheDocument();
-    expect(screen.getByText("result")).toBeInTheDocument();
+    // Its title says what it is: no chip names its kind, which names the card.
+    expect(screen.getByRole("group", { name: "result card: Created dataset node" })).toBeInTheDocument();
+    expect(screen.queryByText("result")).toBeNull();
     expect(screen.getByText("noaa.parquet → DATA palette")).toBeInTheDocument();
   });
 
@@ -203,8 +205,9 @@ describe("AgentChatCard (docs/03 visual contract, generic shell)", () => {
 
   it("unknown kinds render the same generic shell", () => {
     render(<AgentChatCard card={{ ...card, kind: "preview" }} />);
-    expect(screen.getByText("preview")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "preview card: Created dataset node" })).toBeInTheDocument();
     expect(screen.getByText("Created dataset node")).toBeInTheDocument();
+    expect(screen.getByText("noaa.parquet → DATA palette")).toBeInTheDocument();
   });
 
   it("carries no action buttons (docs/08 invariant)", () => {

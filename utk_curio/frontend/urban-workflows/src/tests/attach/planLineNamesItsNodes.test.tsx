@@ -6,7 +6,7 @@
  * a batch runs, all the same way.
  */
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { faCircle } from "@fortawesome/free-solid-svg-icons";
 
 const PYTHON = "curio.builtin/python-computation@1";
@@ -83,6 +83,8 @@ test("the line names a failed node by its title", () => {
   );
   expect(words()).toHaveTextContent(/^Failed · Load roads$/);
   expect(words()).not.toHaveTextContent(LOAD.slice(0, 8));
+  // A name too long for the line is cut; its tooltip says it whole.
+  expect(within(words()!).getByText("Load roads")).toHaveAttribute("data-tooltip", "Load roads");
 });
 
 test("a node without a title is named by its template's label, as its header is", () => {

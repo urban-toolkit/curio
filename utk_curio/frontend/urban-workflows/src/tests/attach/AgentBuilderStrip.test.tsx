@@ -73,7 +73,7 @@ describe("AgentBuilderStrip (dev/52 DR-5)", () => {
         onSolve={jest.fn()}
       />,
     );
-    expect(words()).toHaveTextContent(/^Planned · 2 nodes$/);
+    expect(words()).toHaveTextContent(/^Planned · 2 nodes, 1 to solve$/);
     expect(screen.queryByText("Review")).not.toBeInTheDocument();
     rerender(
       <AgentBuilderStrip
@@ -418,6 +418,8 @@ describe("AgentBuilderStrip running line (dev/83)", () => {
     expect(line()).toHaveTextContent(/Solving d · \d+:\d\d · 1 of 5 built/);
     expect(screen.getByText("Solve batch running")).toBeInTheDocument();
     expect(screen.queryByText("solving…")).toBeNull(); // the dev/52 note is gone
+    // With no way to stop it here, the line's Solve says it runs, and waits.
+    expect(screen.getByRole("button", { name: "Solving…" })).toBeDisabled();
   });
 
   it("renders no running line while no batch is active", () => {
@@ -562,19 +564,25 @@ describe("AgentBuilderStrip — dev/115 verified Solve as a background job", () 
     expect(retry).toHaveAttribute("data-tooltip", RETRY_INTERRUPTED_HINT);
     expect(RETRY_INTERRUPTED_HINT).toMatch(/Solve was interrupted/);
     expect(RETRY_INTERRUPTED_HINT).toMatch(/nothing was replayed/);
+    expect(RETRY_INTERRUPTED_HINT).toMatch(/linked to the interrupted one/);
   });
 
-  it("the node at work says its verified loop's state in words, on the line's tooltip", () => {
+  it.each([
+    ["solving", "solving it"],
+    ["generating", "writing its code"],
+    ["verifying", "running it in the sandbox"],
+    ["fixing", "the run failed: fixing it"],
+  ])("the node at work says its verified loop's state %s in words, on the line's tooltip", (run, said) => {
     render(
       <AgentBuilderStrip
         attachment={attachment({ phase: "solving", appliedPlanId: "p1",
           nodeRuns: { "node-aaaa-1": "pending", "node-cccc-3": "pending" } })}
         onSolve={jest.fn()}
-        solveProgress={{ "node-aaaa-1": "verifying", "node-cccc-3": "verified" }}
+        solveProgress={{ "node-aaaa-1": run, "node-cccc-3": "verified" }}
       />,
     );
     expect(line()).toHaveTextContent(/Solving node-aaa · \d+:\d\d · 1 of 2 built/);
-    expect(screen.getByRole("status")).toHaveAttribute("data-tooltip", "node-aaa: running it in the sandbox");
+    expect(screen.getByRole("status")).toHaveAttribute("data-tooltip", `node-aaa: ${said}`);
   });
 
   it("a running background job (reattached) shows Solving even before the strip's own click, and offers no Solve", () => {
@@ -770,6 +778,33 @@ describe("AgentBuilderStrip — dev/131 the session, and nodes that depend on yo
       />,
     );
     expect(words()).toHaveTextContent(/^Ready · 1 node built$/);
+    // A session that left nothing to do reads the same while the plan's
+    // record still says applied: its every node is built.
+    rerender(
+      <AgentBuilderStrip
+        attachment={attachment({ phase: "applied", nodeRuns: { a: "solved" } })}
+        onSolve={jest.fn()}
+        solveEndedBy="complete"
+      />,
+    );
+    expect(words()).toHaveTextContent(/^Ready · 1 node built$/);
+    expect(screen.getByRole("button", { name: "Run workflow" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Solve" })).toBeNull();
+  });
+
+  it("a node that waits on another that waits for a pick waits too: the plan goes to the sources", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={attachment({ phase: "applied", nodeRuns: { a: "pending", b: "pending" } })}
+        onSolve={jest.fn()}
+        solveWaiting={[waiting(), waiting({ nodeId: "b", kind: "upstream", reason: "waits for a" })]}
+        onShowSources={jest.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /^(Solve|Retry)/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Show its sources" })).toBeEnabled();
+    // Only a is named as needing a source: b waits on it.
+    expect(words()).toHaveTextContent(/^Paused · a needs a source$/);
   });
 });
 
@@ -1083,7 +1118,13 @@ describe("AgentBuilderStrip: a pause's line goes once the plan goes on", () => {
     } as React.ComponentProps<typeof AgentBuilderStrip>;
     const { rerender } = render(<AgentBuilderStrip {...props} />);
     expect(words()).toHaveTextContent(/^Paused · na needs a source$/);
-    // The pick's continuation: a build of the plan from the provider.
+    // The pick's continuation: a build of the plan from the provider, before
+    // the plan's record says anything new. The pause is no longer said, and
+    // the line's action is the build's Stop.
+    rerender(<AgentBuilderStrip {...props} simulating="auto" />);
+    expect(screen.queryByText(/Paused/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+    // Then the record: the pick placed the loader again.
     rerender(
       <AgentBuilderStrip {...props} attachment={withLandedPlan({ a: "created", b: "created" })} simulating="auto" />,
     );

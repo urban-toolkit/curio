@@ -35,6 +35,10 @@ describe("a plan row's head", () => {
     }
   });
 
+  test("a built row's tick, beside the name, never shrinks", () => {
+    expect(value(".planNodeTick", "flex")).toBe("none");
+  });
+
   test("its name gives way, cut short with an ellipsis on one line, as a link or as plain text", () => {
     for (const selector of [".planNodeTitle", ".planNodeName"]) {
       expect([selector, value(selector, "flex")]).toEqual([selector, "0 1 auto"]);

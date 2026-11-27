@@ -976,7 +976,8 @@ describe("AgentAttachmentsProvider lines that stay under a reply (#447, #243)", 
     await act(async () => {
       fireEvent.click(screen.getByText("send-go"));
     });
-    expect(screen.getByText("node.settings.write · no such setting")).toBeInTheDocument();
+    // In plain words: its tool's id is Show run details'.
+    expect(screen.getByText("Changing a node's settings failed: no such setting")).toBeInTheDocument();
   });
 });
 

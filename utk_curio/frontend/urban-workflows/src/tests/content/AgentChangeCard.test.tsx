@@ -793,6 +793,17 @@ describe("AgentChangeCard: dev/71 a landed plan's rows: Solve then Run", () => {
     expect(within(row("b")).getByText("after Load")).toBeInTheDocument();
   });
 
+  it("a row the batch says waits for the person's pick says Needs a source, and offers no Solve", () => {
+    renderRows({
+      appliedRefs: ["a", "b"],
+      nodeIds: { a: "na", b: "nb" },
+      nodeStates: { a: "created", b: "created" },
+      waitsForPick: ["na"],
+    });
+    expect(within(row("a")).getByText("Needs a source")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Solve node Load" })).toBeNull();
+  });
+
   it.each([
     ["awaiting-download", "Downloading its source"],
     ["awaiting-install", "Needs its dataset installed"],
@@ -829,16 +840,21 @@ describe("AgentChangeCard: dev/71 a landed plan's rows: Solve then Run", () => {
     expect(within(row("b")).getByText("after Load")).toBeInTheDocument();
   });
 
-  it("while a batch Solve runs, no row's Solve is offered; the node it works on reads Building, its step on its tooltip", () => {
+  it.each([
+    ["solving", "Solving it"],
+    ["generating", "Writing its code"],
+    ["verifying", "Running it in the sandbox"],
+    ["fixing", "The run failed: fixing it"],
+  ])("while a batch Solve runs, no row's Solve is offered; the node it works on reads Building, its step %s on its tooltip", (run, said) => {
     renderRows({
       appliedRefs: ["a", "b"],
       nodeIds: { a: "na", b: "nb" },
       nodeStates: { a: "approved", b: "created" },
       batchRunning: true,
-      runs: { na: "solved", nb: "verifying" },
+      runs: { na: "solved", nb: run },
     });
     expect(screen.queryByRole("button", { name: /^Solve node/ })).toBeNull();
-    expect(within(row("b")).getByText("Building…")).toHaveAttribute("data-tooltip", "Running it in the sandbox");
+    expect(within(row("b")).getByText("Building…")).toHaveAttribute("data-tooltip", said);
   });
 
   it("a written row says its node has no code to run, on its tick", () => {
@@ -857,6 +873,8 @@ describe("AgentChangeCard: dev/71 a landed plan's rows: Solve then Run", () => {
     });
     expect(within(row("a")).getByText(/time budget/)).toBeInTheDocument();
     expect(within(row("b")).queryByText(/time budget/)).toBeNull();
+    // It is no failure: the row does not say Failed.
+    expect(within(row("a")).queryByText("Failed")).toBeNull();
   });
 
   it("a row the plan could not place says Not placed", () => {
@@ -931,7 +949,8 @@ describe("AgentChangeCard: dev/72 a row's name opens the chat of its node's own 
       />,
     );
     expect(screen.queryByRole("button", { name: "Load" })).toBeNull();
-    expect(screen.getByText("Load")).toBeInTheDocument();
+    // A name too long for the row is cut; its tooltip says it whole.
+    expect(screen.getByText("Load")).toHaveAttribute("data-tooltip", "Load");
   });
 });
 

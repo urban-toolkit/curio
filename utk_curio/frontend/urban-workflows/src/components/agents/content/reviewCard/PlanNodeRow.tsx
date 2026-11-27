@@ -85,7 +85,10 @@ export const PlanNodeRow: React.FC<{
             {node.title}
           </button>
         ) : (
-          <span className={styles.planNodeTitle}>{node.title}</span>
+          // A name too long for the row is cut: its tooltip says it whole.
+          <span className={styles.planNodeTitle} data-tooltip={node.title}>
+            {node.title}
+          </span>
         )}
         {ticked && !building ? (
           <span className={styles.planNodeTick} role="img" aria-label={ticked.name} data-tooltip={ticked.says}>
