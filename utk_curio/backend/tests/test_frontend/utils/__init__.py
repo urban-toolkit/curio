@@ -63,6 +63,7 @@ from .dialogs import (  # noqa: F401
     accept_confirm_dialog,
     leave_agent_badge,
     open_plan_actions,
+    open_plan_details,
     show_run_details,
     wait_for_drawer_closed,
 )

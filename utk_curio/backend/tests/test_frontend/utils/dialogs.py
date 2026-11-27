@@ -96,6 +96,21 @@ def open_plan_actions(panel: Locator, *, timeout: float = 20000) -> Locator:
     return menu
 
 
+def open_plan_details(card: Locator, *, timeout: float = 20000) -> Locator:
+    """Open a landed plan's **Details** on its *card* (a ``Change: Plan``
+    group) and return them: the plan's goal, its checks, each node's template
+    and what it reads and writes, its connections and its scenarios. Details
+    already open stay open."""
+    details = card.get_by_role("group", name="Plan details", exact=True)
+    if details.count():
+        return details
+    toggle = card.get_by_role("button", name="Details", exact=True)
+    expect(toggle).to_be_visible(timeout=timeout)
+    toggle.click()
+    expect(details).to_be_visible(timeout=timeout)
+    return details
+
+
 def show_run_details(panel: Locator, *, timeout: float = 20000) -> None:
     """Turn on Show run details in *panel*'s More menu: each reply's skills,
     time, tokens and tools, and the cards of its trace. The viewer's own
