@@ -382,9 +382,9 @@ class _FakeDiscovery:
 def _the_discovery_catalog_is(monkeypatch, fake) -> None:
     """*fake* stands in for the Discovery Catalog of whoever asks: the
     request's account, and the person a Solve's thread runs for, whom a
-    card's describes are asked as."""
-    monkeypatch.setattr(acquire, "_discovery_service", lambda: fake)
-    monkeypatch.setattr(acquire, "_discovery_service_for", lambda user: fake)
+    card's describes are asked as, whatever lock its reads are made under."""
+    monkeypatch.setattr(acquire, "_discovery_service", lambda **_reads: fake)
+    monkeypatch.setattr(acquire, "_discovery_service_for", lambda user, **_reads: fake)
 
 
 def _discovery_harness(client, user, token, monkeypatch, fake):

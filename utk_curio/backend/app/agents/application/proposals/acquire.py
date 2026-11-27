@@ -28,7 +28,11 @@ log = logging.getLogger(__name__)
 def _acquire_format(row: dict) -> str | None:
     """The format to download a confirmed row as, when it can be named: a
     ``direct`` row's from the content type the probe saw, a connector row's
-    from its own ``format`` when that is one the Discovery Catalog accepts."""
+    from its own ``format`` when that is one the Discovery Catalog accepts,
+    else from its link's extension when the link names the row's resource,
+    as a portal's coordinate minted from a link has it: Chicago's
+    ``/resource/x8fc-8rcq.geojson`` downloads as GeoJSON, where the portal's
+    first format is CSV."""
     from utk_curio.backend.app.discovery.domain import formats
     from utk_curio.backend.app.discovery.domain.manifest import DISCOVERY_ACQUIRABLE_FORMATS
 
@@ -38,7 +42,23 @@ def _acquire_format(row: dict) -> str | None:
     if probed and row.get("resourceId") == row.get("url"):
         return probed
     named = str(row.get("format") or "").strip().lower()
-    return named if named in DISCOVERY_ACQUIRABLE_FORMATS else None
+    if named in DISCOVERY_ACQUIRABLE_FORMATS:
+        return named
+    linked = formats.link_format(row.get("url")) if _link_names_its_resource(row) else None
+    return linked if linked in DISCOVERY_ACQUIRABLE_FORMATS else None
+
+
+def _link_names_its_resource(row: dict) -> bool:
+    """Whether *row*'s link names its resource: a provider's recogniser finds
+    the row's ``resourceId`` in it, as ``_LazyRoster.portal_coordinate``
+    finds the dataset id a link's coordinate is minted with. A link to
+    another file says nothing of the resource's format."""
+    from utk_curio.backend.app.discovery.providers import RECOGNISERS
+
+    url, resource_id = str(row.get("url") or ""), row.get("resourceId")
+    return bool(url and resource_id) and any(
+        provider.recognize(url) == resource_id for provider in RECOGNISERS
+    )
 
 
 def _acquire_confirmed_picks(rows: list[dict]) -> list[dict]:
@@ -175,22 +195,26 @@ def _held_discovery_resources(project_id: str) -> dict:
         return {}
 
 
-def _discovery_service():
-    """The Discovery Catalog of the request's account."""
+def _discovery_service(*, store_reads=None):
+    """The Discovery Catalog of the request's account (*store_reads* as
+    :func:`_discovery_service_for` takes it)."""
     from flask import g
 
-    return _discovery_service_for(getattr(g, "user", None))
+    return _discovery_service_for(getattr(g, "user", None), store_reads=store_reads)
 
 
-def _discovery_service_for(user):
+def _discovery_service_for(user, *, store_reads=None):
     """The Discovery Catalog of *user*: the request's account, or the person
     a job's thread runs for, which holds no request (a Solve's
-    ``acting_user``). A portal's rate limit and token are that account's."""
+    ``acting_user``). A portal's rate limit and token are that account's. Its
+    reads of what the account holds are made under *store_reads* when given:
+    the lock a Solve batch's threads take around such reads
+    (``SolveBatch.dataset_lookups``)."""
     from utk_curio.backend.app.discovery.service import DiscoveryService
     from utk_curio.backend.app.projects.services import _user_dir_key
 
     return DiscoveryService(
-        _user_dir_key(user) if user is not None else None, user=user
+        _user_dir_key(user) if user is not None else None, user=user, store_reads=store_reads,
     )
 
 
@@ -433,7 +457,9 @@ def _mint_row_acquirable(row: dict, roster: "_LazyRoster", budget=None) -> None:
       run's web budget, when one is given. The connector knows how to fetch
       the resource, so the probe of a landing page does not decide it. Once
       the budget is spent the source is not asked: the row keeps its
-      coordinate, unconfirmed, and is not acquirable (:func:`_unconfirmed`).
+      coordinate, unconfirmed, and is not acquirable (:func:`_unconfirmed`),
+      as it does when the source gave no answer (:func:`_source_describes`:
+      a rate limit, a portal not reached or answering 408, 429 or a 5xx).
     - A ``direct`` source downloads the URL itself, so the probe decides: an
       https URL the probe read as data, whose content type maps to a format the
       source accepts or which is a zip or a gzip the download unpacks, and
@@ -448,10 +474,11 @@ def _mint_row_acquirable(row: dict, roster: "_LazyRoster", budget=None) -> None:
     through the portal's own export; then a ``direct`` one, which downloads
     the link as it is, tried when the portal refused its coordinate. A
     coordinate, minted or the model's, stays only when the row qualifies or
-    the source was not asked, so one the source refused never reaches a
-    download, a builder or a file's provenance. A portal's coordinate the
-    spent web budget left unconfirmed stays, as a copied one does, and the
-    pick asks the portal with a budget of its own, rather than the link
+    the source did not answer for it (not asked, or no answer), so one the
+    source refused never reaches a download, a builder or a file's
+    provenance. A portal's coordinate left unconfirmed, by the spent web
+    budget or a portal that gave no answer, stays, as a copied one does, and
+    the pick asks the portal with a budget of its own, rather than the link
     alone, which can answer less than the export (a Socrata link with no
     ``$limit`` answers its first 1,000 rows). A downloadable row offers that
     and nothing else, so it carries no portal steps.
@@ -472,8 +499,8 @@ def _mint_row_acquirable(row: dict, roster: "_LazyRoster", budget=None) -> None:
 
 def _keep_if_acquirable(row: dict, roster: "_LazyRoster", budget=None) -> bool | None:
     """Mark *row* acquirable, or take its coordinate off when its source
-    refused it; a coordinate its source was not asked about stays. Returns
-    :func:`_acquirable`'s verdict."""
+    refused it; a coordinate its source did not answer for (not asked, or no
+    answer) stays. Returns :func:`_acquirable`'s verdict."""
     verdict = _acquirable(row, roster, budget)
     if verdict:
         row["acquirable"] = True
@@ -485,10 +512,10 @@ def _keep_if_acquirable(row: dict, roster: "_LazyRoster", budget=None) -> bool |
 
 
 def _unconfirmed(rows: list) -> int:
-    """How many of *rows* keep a Discovery coordinate the source was not asked
-    to confirm, the run's web budget being spent: after
-    :func:`_mint_row_acquirable`, every row with a coordinate that is not
-    acquirable."""
+    """How many of *rows* keep a Discovery coordinate the source did not
+    confirm, not asked, the run's web budget being spent, or giving no answer
+    (:func:`_source_describes`): after :func:`_mint_row_acquirable`, every
+    row with a coordinate that is not acquirable."""
     return sum(
         1 for row in rows or []
         if isinstance(row, dict) and row.get("sourceId") and row.get("resourceId")
@@ -496,18 +523,30 @@ def _unconfirmed(rows: list) -> int:
     )
 
 
-def _source_describes(dir_name: str, resource_id: str, asker=None) -> bool:
+def _source_describes(dir_name: str, resource_id: str, asker=None, lookups=None) -> bool | None:
     """Whether the Discovery Catalog describes *resource_id* of the source
     *dir_name*: the call a ``discovery.acquire`` proposal is grounded in,
     asked as *asker* when given, the person a Solve's thread runs for, else
     as the request's account. A describe asked as no one would share one rate
-    limit per portal with every other and send no token. A describe that
-    fails, for a resource the source does not have or for any other reason,
-    is a no."""
+    limit per portal with every other and send no token. Its read of what
+    that account holds of the resource is made under *lookups* when given,
+    the Solve batch's lock on such reads (``SolveBatch.dataset_lookups``).
+
+    A describe that fails is a no, but one that got no answer is None
+    (the failure's ``unanswered``: Curio's rate limit for the account refused
+    it, or the portal could not be reached or answered 408, 429 or a 5xx):
+    the resource is unconfirmed, as when the run's web budget is spent, and
+    confirming its row asks the source again. A portal that answered, a 404
+    for an id it does not have among other answers, answered no."""
     try:
-        service = _discovery_service_for(asker) if asker is not None else _discovery_service()
+        service = (_discovery_service_for(asker, store_reads=lookups) if asker is not None
+                   else _discovery_service(store_reads=lookups))
         service.describe_resource(dir_name, resource_id)
     except Exception as exc:  # noqa: BLE001 - an unconfirmed resource is not offered, never a run error
+        if getattr(exc, "unanswered", False):
+            log.info("%s gave no answer for %s (%s): the row keeps its coordinate, unconfirmed",
+                     dir_name, resource_id, exc)
+            return None
         log.info("%s did not describe %s (%s): the row is not offered for download",
                  dir_name, resource_id, exc)
         return False
@@ -516,7 +555,8 @@ def _source_describes(dir_name: str, resource_id: str, asker=None) -> bool:
 
 def _acquirable(row: dict, roster: "_LazyRoster", budget=None) -> bool | None:
     """Whether Curio can download *row*: True or False, or None for a
-    connector row whose source was not asked, the budget being spent."""
+    connector row whose source did not answer for it: not asked, the budget
+    being spent, or giving no answer (:func:`_source_describes`)."""
     source = roster.get(row.get("sourceId")) if row.get("resourceId") else None
     # A storage source (a folder, a bucket, a dataset repository) is added from
     # the Discovery Catalog page, and a service downloads for an area set there:

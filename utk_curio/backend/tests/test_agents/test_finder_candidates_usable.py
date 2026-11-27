@@ -32,6 +32,11 @@ Solve's threads too (on main as well); a link with a query, or an id its
 portal does not take, is no portal coordinate; and what the review found of
 the picks' adds, the lookup lock and the error card.
 
+A review of that round added: a card's describe reads what the asker holds
+under a Solve's lookup lock; a describe that got no answer leaves the portal's
+coordinate unconfirmed (on main as well); and a portal link's download is
+asked in the link's format.
+
 Names main lacks are read inside each test, so the module imports on main and
 each test fails at its own check.
 """
@@ -130,13 +135,16 @@ def _the_portals(monkeypatch, *, fails: bool = False, described: list | None = N
     return searched
 
 
-def _downloads(monkeypatch) -> list[tuple]:
+def _downloads(monkeypatch, *, formats: list | None = None) -> list[tuple]:
     """Downloads into the Data Catalog that start and keep running: each
-    start, by its coordinate."""
+    start, by its coordinate. Each start's format goes into *formats*, when
+    given."""
     started: list[tuple] = []
 
     def _start(self, dir_name, resource_id, **kwargs):
         started.append((dir_name, resource_id))
+        if formats is not None:
+            formats.append(kwargs.get("fmt"))
         return {"jobId": "job-1", "status": "queued"}
 
     monkeypatch.setattr(DiscoveryService, "start_acquire", _start)
@@ -343,6 +351,53 @@ class TestTheFinderSearchesTheDiscoveryCatalog:
             found = delegates._delegated_discovery_rows({"mission": "library branches"}, asker=user, lookups=lock)
         assert found.get("note") == agent_text.message("dataset.discovery-searched"), found
         assert held == {"searching": False, "reading": True}, held
+
+    def test_a_cards_describe_reads_what_the_asker_holds_under_the_solves_lookup_lock(
+        self, app, user_and_token, monkeypatch
+    ):
+        """Found by the review of #1652's second round, which asks a card's
+        describes as the person a Solve's thread runs for: a describe ends
+        with a read of what that account holds of the resource, which walks
+        its store and reconciles its dataset index, and a Solve's lookup lock
+        keeps such reads one at a time. The describe made its read outside the
+        lock. It is made under it, and the portal's answer is waited for
+        outside it."""
+        from pathlib import Path
+
+        from utk_curio.backend.app.datasets.repositories.user_store import UserDatasetRepository
+        from utk_curio.backend.app.discovery.application.browse import DiscoveryBrowse
+        from utk_curio.backend.app.discovery.domain.resource import DiscoveryResource, DiscoveryResourceDetail
+
+        user, _token = user_and_token
+        lock = threading.Lock()
+        held: dict = {}
+
+        def _describe(self, manifest, resource_id):
+            held["describing"] = lock.locked()
+            return DiscoveryResourceDetail(resource=DiscoveryResource(
+                source_id=manifest.id, resource_id=resource_id, name=LIBRARIES_NAME,
+                formats=("csv", "geojson", "json"), parameter_ids=(),
+            ))
+
+        def _formats(self):
+            held["reading"] = lock.locked()
+            return {}
+
+        # The shipped Chicago manifest, which the describe reads, as the
+        # Discovery Catalog's own tests pin it.
+        monkeypatch.setenv("CURIO_DISCOVERY_ROOT", str(Path(__file__).resolve().parents[4] / "discovery"))
+        monkeypatch.setattr(DiscoveryService, "list_catalog",
+                            lambda self, **kwargs: {"sources": [dict(CHICAGO_SOURCE)], "facets": {}})
+        monkeypatch.setattr(DiscoveryBrowse, "describe", _describe)
+        monkeypatch.setattr(UserDatasetRepository, "discovery_resource_formats", _formats)
+        row = {"name": LIBRARIES_NAME, "sourceType": "discovery", "sourceId": CHICAGO, "resourceId": LIBRARIES}
+        with app.app_context():
+            grounding._verify_candidate_parts(
+                [{"type": "datasetCandidates", "lanes": {"external": [row], "catalog": []}}],
+                {"asker": user, "lookups": lock},
+            )
+        assert row.get("acquirable") is True, row
+        assert held == {"describing": False, "reading": True}, held
 
     def test_a_discovery_search_names_each_source_as_the_roster_does(self, app, monkeypatch):
         """Found on the way, on main: discovery.search answered each row's
@@ -686,6 +741,61 @@ def _minted(app, monkeypatch, reply: dict, listing: list) -> dict:
     return part
 
 
+#: A link to the library branches on Chicago's portal that names the dataset
+#: and asks for nothing more.
+LIBRARIES_LINK = f"https://data.cityofchicago.org/resource/{LIBRARIES}.json"
+
+
+def _a_libraries_row(kind: str) -> dict:
+    """The library branches as a Finder's row: "copied" from the portal's
+    search (its coordinate, no link), with its "coordinate-and-link", or as
+    its "link" alone, which the probe read as JSON data."""
+    coordinate = {"sourceId": CHICAGO, "resourceId": LIBRARIES}
+    link = {"url": LIBRARIES_LINK, **_FETCHED_JSON}
+    return {"name": LIBRARIES_NAME, "sourceType": "portal",
+            **({} if kind == "link" else coordinate), **({} if kind == "copied" else link)}
+
+
+def _a_describe_that_meets(monkeypatch, answer: str) -> None:
+    """Chicago's describe, its request made by the real transport with no
+    socket, meeting *answer*: Curio's rate limit for the asker
+    ("rate-limited"), a portal never reached ("not-reached"), the portal's
+    answer of that status ("503", "404"), or a view document that says the
+    dataset is not on the portal ("not-on-the-portal")."""
+    import requests
+
+    from utk_curio.backend.app.common import egress_policy
+    from utk_curio.backend.app.discovery.domain.errors import RateLimited, ResourceNotFound
+    from utk_curio.backend.app.discovery.infrastructure import transport
+
+    class _Answer:
+        status_code = int(answer) if answer.isdigit() else 200
+        headers = {"Content-Type": "application/json"}
+
+        def iter_content(self, chunk_size=8192):
+            yield b'{"code": "not_found", "error": true}'
+
+        def close(self):
+            pass
+
+    def _request(method, url, **kwargs):
+        if answer == "not-reached":
+            raise requests.ConnectionError(f"timed out connecting to {url}")
+        return _Answer()
+
+    def _describe(self, dir_name, resource_id):
+        if answer == "rate-limited":
+            raise RateLimited("too many requests to this source - it allows 30 per minute")
+        if answer == "not-on-the-portal":
+            raise ResourceNotFound(f"{resource_id} is not on City of Chicago Data Portal")
+        return transport.HttpDiscoveryTransport().json_get(
+            f"{CHICAGO_SOURCE['baseUrl']}/api/views/{resource_id}.json")
+
+    monkeypatch.setattr(egress_policy, "_default_resolver", lambda host: ["93.184.216.34"])
+    monkeypatch.setattr(requests, "request", _request)
+    monkeypatch.setattr(DiscoveryService, "describe_resource", _describe)
+
+
 class TestTheCardOffersWhatCanBeDone:
     def test_a_portal_link_that_holds_its_dataset_id_gets_the_portals_coordinate(self, app, monkeypatch):
         """A link on a portal of the Discovery Catalog that holds the portal's
@@ -743,6 +853,81 @@ class TestTheCardOffersWhatCanBeDone:
             acquire._mint_row_acquirable(row, agents_roster._LazyRoster(_with_direct_url(portal)), egress.CallBudget(0))
         assert (row.get("sourceId"), row.get("resourceId"), row.get("acquirable")) == (DIRECT_URL, url, True), row
         assert described == [], described
+
+    @pytest.mark.parametrize("answer", ["rate-limited", "not-reached", "503"])
+    @pytest.mark.parametrize("kind", ["copied", "coordinate-and-link", "link"])
+    def test_a_describe_that_got_no_answer_leaves_the_portals_coordinate_unconfirmed(
+        self, app, monkeypatch, kind, answer
+    ):
+        """Found by the review of #1652, on main too: a describe that got no
+        answer read as the portal's no. Curio's rate limit for the asker
+        (Chicago allows 30 requests a minute), a portal not reached and a
+        portal's server error each took the coordinate off: a row copied from
+        the portal's search could not be picked, and a link to the portal's
+        dataset went to Direct URL, read Downloadable, and its pick downloaded
+        the link as it is, whose Socrata answer with no ``$limit`` is its
+        first 1,000 rows. The row keeps the portal's coordinate, unconfirmed,
+        and its pick asks the portal again. (On main a link alone gets Direct
+        URL's coordinate without asking the portal.)"""
+        _a_describe_that_meets(monkeypatch, answer)
+        row = _a_libraries_row(kind)
+        with app.app_context():
+            acquire._mint_row_acquirable(row, agents_roster._LazyRoster(_with_direct_url(CHICAGO_SOURCE)), None)
+        assert (row.get("sourceId"), row.get("resourceId"), row.get("acquirable")) == (CHICAGO, LIBRARIES, None), row
+        assert acquire._unconfirmed([row]) == 1, row
+
+    @pytest.mark.parametrize("answer", ["404", "not-on-the-portal"])
+    @pytest.mark.parametrize("kind", ["copied", "link"])
+    def test_a_portal_that_answered_no_takes_the_coordinate_off(self, app, monkeypatch, kind, answer):
+        """The guard of the one above: a portal that answered, a 404 for an
+        id it does not have among other answers, refuses the coordinate. A
+        copied row keeps none, and a link to the portal goes to Direct URL,
+        which downloads it as it is."""
+        _a_describe_that_meets(monkeypatch, answer)
+        row = _a_libraries_row(kind)
+        with app.app_context():
+            acquire._mint_row_acquirable(row, agents_roster._LazyRoster(_with_direct_url(CHICAGO_SOURCE)), None)
+        refused = (None, None, None) if kind == "copied" else (DIRECT_URL, LIBRARIES_LINK, True)
+        assert (row.get("sourceId"), row.get("resourceId"), row.get("acquirable")) == refused, row
+
+    @pytest.mark.parametrize("named", [None, "SODA API"])
+    def test_a_portal_links_download_is_asked_in_the_links_format(self, app, monkeypatch, named):
+        """Found by the review of #1652: a portal's coordinate minted from a
+        link downloaded in the format its row names alone, so a link to
+        Chicago's ``/resource/<id>.geojson`` whose row names no format the
+        Discovery Catalog takes downloaded the portal's first format, CSV.
+        Such a row downloads in its link's format, when the link names its
+        dataset."""
+        _the_portals(monkeypatch)
+        formats: list = []
+        started = _downloads(monkeypatch, formats=formats)
+        row = {"name": LIBRARIES_NAME, "sourceType": "portal", "lane": "external",
+               "url": f"https://data.cityofchicago.org/resource/{LIBRARIES}.geojson",
+               "verification": {"status": "verified", "httpStatus": 200, "contentType": "application/geo+json",
+                                "sampleKeys": ["features", "type"]},
+               "access": verify.ACCESS_FETCHABLE, **({"format": named} if named else {})}
+        with app.app_context():
+            acquire._mint_row_acquirable(row, agents_roster._LazyRoster(_with_direct_url(CHICAGO_SOURCE)), None)
+            acquire._acquire_confirmed_picks([row])
+        assert started == [(CHICAGO, LIBRARIES)], started
+        assert formats == ["geojson"], formats
+
+    def test_a_format_the_row_names_decides_its_download_whatever_its_link_says(self, app, monkeypatch):
+        """The guard of the one above: a row that names a format the
+        Discovery Catalog takes downloads in it."""
+        _the_portals(monkeypatch)
+        formats: list = []
+        started = _downloads(monkeypatch, formats=formats)
+        row = {"name": LIBRARIES_NAME, "sourceType": "portal", "lane": "external", "format": "CSV",
+               "url": f"https://data.cityofchicago.org/resource/{LIBRARIES}.geojson",
+               "verification": {"status": "verified", "httpStatus": 200, "contentType": "application/geo+json",
+                                "sampleKeys": ["features", "type"]},
+               "access": verify.ACCESS_FETCHABLE}
+        with app.app_context():
+            acquire._mint_row_acquirable(row, agents_roster._LazyRoster(_with_direct_url(CHICAGO_SOURCE)), None)
+            acquire._acquire_confirmed_picks([row])
+        assert started == [(CHICAGO, LIBRARIES)], started
+        assert formats == ["csv"], formats
 
     def test_a_web_page_answer_is_named_a_web_page(self):
         """A link that answers a web page answered, but it is no data: the

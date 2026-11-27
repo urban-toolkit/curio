@@ -187,19 +187,26 @@ class _LazyRoster:
 
     def __init__(self, sources: dict | None = None) -> None:
         self._sources = sources
-        self._described: dict[tuple[str, str], bool] = {}
+        self._described: dict[tuple[str, str], bool | None] = {}
         #: Whom its describes are asked as (:meth:`asked_by`); None for the
         #: request's account.
         self.asker = None
+        #: The lock its describes read what the asker holds under
+        #: (:meth:`asked_by`); None when no Solve batch gives one.
+        self.lookups = None
 
-    def asked_by(self, user) -> "_LazyRoster":
+    def asked_by(self, user, *, lookups=None) -> "_LazyRoster":
         """This roster, its describes asked as *user*: the person a job's
         thread runs for, which holds no request, as a Solve's threads run for
         its ``acting_user``. A portal limits and keys its requests by the
         account that makes them, so a describe asked as no one shares one
         bucket with every other and never sends a token. None leaves them the
-        request's account's."""
+        request's account's. A describe ends with a read of what that account
+        holds of the resource, made under *lookups* when given: the lock a
+        Solve batch's threads take around their reads of the account's store
+        (``SolveBatch.dataset_lookups``), held for that read alone."""
         self.asker = user
+        self.lookups = lookups
         return self
 
     def get(self, dir_name: object) -> dict | None:
@@ -261,16 +268,19 @@ class _LazyRoster:
 
     def describes(self, dir_name: str, resource_id: str, ask, *, budget=None) -> bool | None:
         """Whether the source *dir_name* describes *resource_id*, as *ask*
-        answers it, called with the source, the resource and :attr:`asker`:
-        the caller's describe through the Discovery Catalog
+        answers it, called with the source, the resource, :attr:`asker` and
+        :attr:`lookups`: the caller's describe through the Discovery Catalog
         (``proposals.acquire._source_describes``), asked once per resource in
         a pass. With *budget*, the run's web budget, each ask spends one call,
-        and once it is spent the source is not asked: None, unconfirmed."""
+        and once it is spent the source is not asked: None, unconfirmed. A
+        source that gave no answer (*ask* answers None) leaves the resource
+        unconfirmed too, for the rest of the pass."""
         key = (dir_name, resource_id)
         if key not in self._described:
             if budget is not None:
                 if budget.exhausted:
                     return None
                 budget.spend()
-            self._described[key] = bool(ask(dir_name, resource_id, self.asker))
+            answer = ask(dir_name, resource_id, self.asker, self.lookups)
+            self._described[key] = None if answer is None else bool(answer)
         return self._described[key]

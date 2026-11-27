@@ -792,8 +792,10 @@ def _verify_candidate_parts(parts: list, loop_ctx: dict | None = None) -> None:
     URL-less rows are loudly UNVERIFIED. The evidence rides the row into the
     card and the Node Builder handoff. A source's describe of a row's
     resource is asked as the loop's asker, the person a Solve's thread runs
-    for, which holds no request (``_LazyRoster.asked_by``). Then each card's
-    rows are ranked by what can be done with them, and its lanes best first
+    for, which holds no request, and reads what that person holds under the
+    loop's lookup lock, a Solve batch's, when it gives one
+    (``_LazyRoster.asked_by``). Then each card's rows are ranked by what can
+    be done with them, and its lanes best first
     (``agents_content.rank_candidates``)."""
     # One budget for the whole pass, spent per real HTTP request rather than
     # per row. The old counter ticked once per candidate while a single row
@@ -809,7 +811,9 @@ def _verify_candidate_parts(parts: list, loop_ctx: dict | None = None) -> None:
         if loop_ctx is not None
         else egress.CallBudget(agents_budgets.RUN_EGRESS_CALLS)
     )
-    roster = agents_roster._LazyRoster().asked_by((loop_ctx or {}).get("asker"))
+    roster = agents_roster._LazyRoster().asked_by(
+        (loop_ctx or {}).get("asker"), lookups=(loop_ctx or {}).get("lookups"),
+    )
     for part in parts:
         if not isinstance(part, dict) or part.get("type") != "datasetCandidates":
             continue
