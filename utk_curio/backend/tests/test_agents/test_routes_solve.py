@@ -1258,6 +1258,45 @@ class TestBuildAndValidate:
         assert set(done["builderSession"]["nodeStates"].values()) == {"approved"}
         assert [p["ref"] for k, p in events if k == "action_result" and p["action"] == "validate"] == refs
 
+    def test_a_pause_on_a_failed_node_ends_once_its_rows_solve_builds_it(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
+    ):
+        """A build paused because a node's check failed. The pause is about
+        that node alone: once its row's Solve builds it, the plan is paused on
+        nothing, and the line says where the plan stands, Ready once every
+        node is built, never that it is paused on a node that is built."""
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        self._fake_exec(monkeypatch, fail_markers=("always_bad",))
+        att_id, card, _ids, _ = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Plan.\n" + helper._plan_tail(), "always_bad()"],
+        )
+        refs = [n["ref"] for n in card["plan"]["nodes"]]
+        done = self._simulate(client, token, alice_project, att_id, "auto")[-1][1]
+        assert done["status"] == "paused"
+        assert done["reason"]["kind"] == "validation-failed" and done["reason"]["ref"] == refs[0]
+        # The sandbox behaves now: each row's Solve builds its node.
+        self._fake_exec(monkeypatch)
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn",
+            lambda config, messages, **kw: "print('fixed')",
+        )
+        rows = TestValidateNode()
+        first = rows._validate(client, token, alice_project, att_id, {"ref": refs[0]})[-1][1]
+        assert first["verdict"] == "pass"
+        assert first["builderSession"]["nodeStates"][refs[0]] == "validated"
+        assert "pauseReason" not in first["builderSession"], first["builderSession"]["pauseReason"]
+        second = rows._validate(client, token, alice_project, att_id, {"ref": refs[1]})[-1][1]
+        assert second["verdict"] == "pass"
+        # The listing every tab reads: every node built, and no pause.
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token),
+        ).get_json()["attachments"]
+        session = next(c for c in cards if c["attachmentId"] == att_id)["builderSession"]
+        assert {session["nodeStates"][ref] for ref in refs} == {"validated"}, session["nodeStates"]
+        assert "pauseReason" not in session, session["pauseReason"]
+
     def test_cancel_stops_at_the_next_boundary(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         from utk_curio.backend.app.agents.application.solve import simulation
         from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
