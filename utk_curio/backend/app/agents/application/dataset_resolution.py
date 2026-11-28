@@ -731,6 +731,46 @@ def held_datasets(spec: dict | None) -> set[str]:
     }
 
 
+#: The parts that hold a candidates card: the Finder's own, and its copy in a
+#: chat that asked for it.
+_CARD_PARTS = ("datasetCandidates", "sourcePick")
+
+
+def cards_as_held(turns: list, spec: dict | None) -> list:
+    """*turns* of a chat with each candidates card in them saying, of each
+    Data Catalog row, whether the dataflow of *spec* holds its dataset now
+    (``installed``, :func:`held_datasets`), not as the listing said when the
+    card was offered. Once a pick for one loader adds a dataset, the card of
+    another loader that offers it says so, as does a copy a chat that asked
+    holds. The pick reads the listing again either way
+    (:func:`resolve_picks`); the rows keep the order they were offered in.
+    The turns are copied where a card changes; the stored ones stay."""
+    held = held_datasets(spec)
+    out = []
+    for turn in turns or []:
+        content = turn.get("content") if isinstance(turn, dict) else None
+        if isinstance(content, list) and any(isinstance(p, dict) and p.get("type") in _CARD_PARTS for p in content):
+            turn = {**turn, "content": [
+                card_as_held(part, held) if isinstance(part, dict) and part.get("type") in _CARD_PARTS else part
+                for part in content
+            ]}
+        out.append(turn)
+    return out
+
+
+def card_as_held(part: dict, held: set[str]) -> dict:
+    """The candidates card *part* with each Data Catalog row ``installed`` as
+    the dataflow holds its dataset (*held*, :func:`held_datasets`); a copy."""
+    lanes = part.get("lanes") if isinstance(part.get("lanes"), dict) else {}
+    rows = lanes.get("catalog")
+    if not isinstance(rows, list):
+        return part
+    return {**part, "lanes": {**lanes, "catalog": [
+        {**row, "installed": str(row["datasetId"]) in held} if isinstance(row, dict) and row.get("datasetId") else row
+        for row in rows
+    ]}}
+
+
 def installs_awaited(spec: dict | None) -> set[str]:
     """The ids of the datasets a pick waits for the install of, in *spec*."""
     awaited: set[str] = set()
@@ -1102,6 +1142,8 @@ def ask_again(user_key: str, project_id: str, node: dict, asker_id: str) -> bool
         part = _offered_part(user_key, project_id, finder)
         if part is None:
             return False
+        # Its rows say what the dataflow holds now, not when it was offered.
+        part = card_as_held(part, held_datasets(spec))
         # The card first, then the record: a tab that sees the record name this
         # chat among the askers finds the card in it.
         _mirror_candidates_turn(

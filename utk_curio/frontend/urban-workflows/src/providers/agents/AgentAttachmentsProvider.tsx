@@ -8,6 +8,7 @@ import { useAgentSolve, type AgentSolveSlice } from "./useAgentSolve";
 import { useAgentSimulation, type AgentSimulationSlice } from "./useAgentSimulation";
 import { useAgentNodeRuns, type AgentNodeRunsSlice } from "./useAgentNodeRuns";
 import { useAttachmentsInTheRoom } from "./useAttachmentsInTheRoom";
+import { useGoesOnOnceAdded } from "./useGoesOnOnceAdded";
 import { usePickGoesOn } from "./usePickGoesOn";
 
 /**
@@ -72,6 +73,14 @@ export const AgentAttachmentsProvider: React.FC<{
   const recordDatasetSelection = usePickGoesOn({
     recordDatasetSelection: proposals.recordDatasetSelection,
     refreshAfterMutation,
+    runSimulation: simulation.runSimulation,
+    validateNode: nodeRuns.validateNode,
+  });
+  // An invited editor's pick that waited for the owner: once her Apply adds
+  // the dataset, the plan goes on from his tab as after a direct pick.
+  useGoesOnOnceAdded({
+    projectRef,
+    attachments: state.attachments,
     runSimulation: simulation.runSimulation,
     validateNode: nodeRuns.validateNode,
   });

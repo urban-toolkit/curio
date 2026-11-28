@@ -243,12 +243,16 @@ def check(user, project_id: str, kind_name: str, item: object, *, add: bool = Fa
 
 
 def ask(user, project_id: str, kind_name: str, item: object, *, node_id: object = None,
-        add: bool = False, owners_own: bool = False) -> dict[str, Any]:
+        node_name: object = None, add: bool = False, owners_own: bool = False) -> dict[str, Any]:
     """An editor's request that the owner add *item*, of the kind *kind_name*,
     to her dataflow: dropped on the node *node_id*, or onto the canvas, which
     made that node, or added with Add to project (*add*). The answer says when
     nothing was asked. One request stands for an item an editor asked for and
     the owner has not reviewed: asking again names the new node too.
+
+    *node_name* is the node's name, which her card shows (``nodeNames``, by
+    node id): the loader an editor's pick on a Dataset Finder's card asks the
+    dataset for.
 
     *owners_own* lets the kind name an item of the owner's own store, for a
     kind that has such requests (``ASKS_FOR_THE_OWNERS_OWN``): an editor's
@@ -262,6 +266,7 @@ def ask(user, project_id: str, kind_name: str, item: object, *, node_id: object 
     if asked.reason:
         return {"requested": False, "reason": asked.reason}
     node = str(node_id).strip() if isinstance(node_id, str) and node_id.strip() else None
+    named = str(node_name).strip() if node and isinstance(node_name, str) and node_name.strip() else None
 
     from utk_curio.backend.app.common.record_clock import utc_now
     from utk_curio.backend.app.projects.services import _history_person
@@ -272,8 +277,13 @@ def ask(user, project_id: str, kind_name: str, item: object, *, node_id: object 
                      and r.get(kind.ITEM) == asked.item
                      and (r.get("by") or {}).get("account") == str(user.id)), None)
         if mine is not None:
-            if node and node not in mine.setdefault("nodeIds", []):
+            changed = bool(node) and node not in mine.setdefault("nodeIds", [])
+            if changed:
                 mine["nodeIds"].append(node)
+            if named and (mine.get("nodeNames") or {}).get(node) != named:
+                mine.setdefault("nodeNames", {})[node] = named
+                changed = True
+            if changed:
                 _write(flow.owner_key, flow.project_id, requests)
             request = mine
         else:
@@ -286,6 +296,7 @@ def ask(user, project_id: str, kind_name: str, item: object, *, node_id: object 
                 kind.ITEM: asked.item,
                 "by": _history_person(user),
                 "nodeIds": [node] if node else [],
+                **({"nodeNames": {node: named}} if named else {}),
                 "requestedAt": utc_now().strftime("%Y-%m-%dT%H:%M:%SZ"),
             }
             requests.append(request)

@@ -42,6 +42,9 @@ from utk_curio.backend.app.discovery.providers.base import BaseProvider
 RESOURCE_ID_RE = re.compile(r"^[A-Za-z][\w-]{0,63}:[A-Za-z][\w.-]{0,127}$")
 
 _URL_RE = re.compile(r"[?&]service=wfs\b", re.IGNORECASE)
+#: Every link ``recognize`` takes is the service's own endpoint, whose
+#: capabilities document ``verify.py`` reads as its metadata.
+DATA_LINK_RE = _URL_RE
 
 #: Long enough that a search session costs one fetch; short enough that a layer
 #: published this morning is findable this afternoon.

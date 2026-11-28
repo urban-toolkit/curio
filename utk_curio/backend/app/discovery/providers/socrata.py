@@ -34,6 +34,10 @@ RESOURCE_ID_RE = re.compile(r"^[a-z0-9]{4}-[a-z0-9]{4}$")
 #: The URL shapes a 4x4 appears in. Used by ``verify.py`` to recognise a
 #: Socrata URL a model produced.
 _URL_ID_RE = re.compile(r"/(?:resource|api/views|d)/([a-z0-9]{4}-[a-z0-9]{4})\b")
+#: Of those, the ones that answer with the dataset or its metadata (SODA's
+#: ``/resource/<id>`` and the views API), which the views document stands
+#: for in ``verify.py``; a ``/d/<id>`` link is the dataset's page, probed itself.
+DATA_LINK_RE = re.compile(r"/(?:resource|api/views)/[a-z0-9]{4}-[a-z0-9]{4}\b")
 
 _EXT = {"csv": "csv", "geojson": "geojson", "json": "json"}
 

@@ -28,6 +28,7 @@ from utk_curio.backend.app.agents.application.catalog import (
     read_definition_bundle_anywhere,
 )
 from utk_curio.backend.app.agents.application.dataset_selection import (
+    claim_goes_on,
     record_dataset_selection,
 )
 from utk_curio.backend.app.agents.application.editors import (
@@ -168,6 +169,7 @@ __all__ = [
     "list_installed_in_project",
     "list_my_imports",
     "read_definition_bundle_anywhere",
+    "claim_goes_on",
     "record_dataset_selection",
     "ACCOUNT_INSTALL_TOOLS",
     "download_refusal",

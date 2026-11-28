@@ -270,7 +270,7 @@ class VerifiedRounds:
         try:
             # The node's goal and the dataflow's mission are human-authored intent
             # (a plan goal saying "synthetic sample data" authorizes inline data).
-            return agents_grounding._grounding_context(
+            ctx = agents_grounding._grounding_context(
                 self.user_key, self.project_id, self.grounding_loop_ctx, node_type=self.node_type,
                 base=grounding_base,
                 extra_texts=(str(self.node.get("goal") or ""), str(dataflow.get("task") or "")),
@@ -284,6 +284,12 @@ class VerifiedRounds:
                 # run: a call in it that makes values up is not one a round adds.
                 current=str(self.node.get("content") or ""),
             )
+            if self.is_data_loading:
+                # A loader with a Dataset Finder of its own is built only
+                # from a dataset tied to it, never from one of the listing
+                # nobody picked (step 5.6).
+                ctx.tied = agents_grounding.datasets_tied_to(self.spec, self.node, ctx, user_key=self.user_key)
+            return ctx
         except Exception:
             log.warning("Grounding context unavailable for node %s", self.node_id, exc_info=True)
             return None

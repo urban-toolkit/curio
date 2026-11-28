@@ -51,6 +51,9 @@ interface RequestBase {
   by: RequestAsker;
   /** The nodes the editor dropped it on or made with it. */
   nodeIds: string[];
+  /** The name of each node an editor's pick on a Dataset Finder's card asked
+   * for it, by node id: the loader it is the source of, which the card names. */
+  nodeNames?: Record<string, string>;
   /** For an item of a shared catalog, which no copy brings. */
   shared?: boolean;
   requestedAt?: string;
@@ -270,10 +273,28 @@ function fromTheSharedCatalog(request: EditorRequest): boolean {
   return request.shared === true;
 }
 
+/** The loaders an editor's pick asked for *request*'s item for, in the order
+ * the request names its nodes, as a sentence names them: "A", "A and B",
+ * "A, B and C"; null when no pick named one. */
+function loadersNamed(request: EditorRequest): string | null {
+  const names = (request.nodeIds ?? [])
+    .map((nodeId) => request.nodeNames?.[nodeId])
+    .filter((name): name is string => typeof name === "string" && name.trim() !== "");
+  if (names.length === 0) return null;
+  return names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
 /** What the owner's Apply of *request* does, as its card says it in place of
  * the line an agent's install has (`editor_requests.apply` and each kind's):
- * said to her, and on an editor's canvas of her. */
+ * said to her, and on an editor's canvas of her. A request an editor's pick
+ * made names first the loader it was picked for. */
 export function requestEffect(request: EditorRequest, viewer: RequestViewer | null): string {
+  const effect = whatItsApplyDoes(request, viewer);
+  const loaders = loadersNamed(request);
+  return loaders ? `Picked as the source of ${loaders}. ${effect}` : effect;
+}
+
+function whatItsApplyDoes(request: EditorRequest, viewer: RequestViewer | null): string {
   const owner = viewer === "owner";
   if (isPackageRequest(request)) {
     const model = request.packageKind === "model";

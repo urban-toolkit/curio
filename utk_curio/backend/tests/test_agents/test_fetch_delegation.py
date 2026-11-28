@@ -367,9 +367,11 @@ class _FakeDiscovery:
             raise DiscoveryError(f"{resource_id} is not on {source_id}")
         return {"resourceId": resource_id, "name": resource_id, "formats": ["csv", "geojson"]}
 
-    def start_acquire(self, source_id, resource_id, fmt=None):
+    def start_acquire(self, source_id, resource_id, fmt=None, title=None):
         from utk_curio.backend.app.discovery.domain.errors import DiscoveryError
 
+        # The title a pick's download is named by (step 5.6) is checked by
+        # test_finder_follow_ups.py; each call is recorded as before.
         self.calls.append((source_id, resource_id, fmt))
         if self.error:
             raise DiscoveryError(self.error)

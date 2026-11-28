@@ -142,6 +142,13 @@ export interface AgentDatasetSourceRecord {
    * pick left open (a portal file to import, another row to pick) shows it
    * in every tab; a Recorded card leaves it to that turn. */
   next?: string;
+  /** The account of the invited editor whose pick waited for the owner to
+   * add its dataset. */
+  pickedBy?: string;
+  /** How the plan that waited for the node goes on, once the owner added
+   * the dataset that editor picked: the answer a direct pick gives, which
+   * his tab takes once (`claimGoesOn`). */
+  goesOn?: AgentDatasetSelection["delegated"];
 }
 
 /** dev/126: the recorded selection for a node. */

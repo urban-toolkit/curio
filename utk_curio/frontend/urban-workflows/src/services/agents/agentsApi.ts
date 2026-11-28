@@ -239,6 +239,21 @@ export const agentsApi = {
     );
   },
 
+  /** Once the dataflow's owner added the dataset an editor's pick on this
+   * Dataset Finder waited for: how the plan that waited goes on (the
+   * `plan-waiting` answer a direct pick gives), for the tab of the editor who
+   * picked, once; null for anyone else, and once it was taken or the plan
+   * went on without it. */
+  claimGoesOn(
+    projectId: string,
+    attachmentId: string,
+  ): Promise<{ delegated: AgentDatasetSelection["delegated"] | null }> {
+    return apiFetch(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/dataset-selection/goes-on`,
+      { method: "POST" }
+    );
+  },
+
   /** Dismiss a pending install without applying it. */
   dismissProposal(
     projectId: string,

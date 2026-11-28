@@ -154,6 +154,16 @@ def _refine_with(provider_module):
     fetched - so it is written once here rather than once per provider. What
     varies (the URL shape, the metadata endpoint, what counts as evidence)
     lives in the provider module, which is the only place that knows it.
+
+    The verdict is what the LINK answered (DISCOVERY-CATALOG.md part 6:
+    Verified for data, Web page for a page about the data). The metadata
+    endpoint's answer stands for it when the link is the family's own data
+    or metadata endpoint (its ``DATA_LINK_RE``), which serves the dataset the
+    metadata describes. Any other link of the family, such as the dataset's
+    page on the portal (a Hub ``/about``, a Socrata ``/d/<id>``), is probed
+    itself once its dataset is confirmed, and its answer is the verdict, with
+    the metadata's evidence on top: a page reads Web page, never Verified,
+    and is no link code can fetch.
     """
 
     def _refine(url: str, *, request_fn=None, resolver=None, budget=None,
@@ -173,18 +183,37 @@ def _refine_with(provider_module):
         outcome["datasetId"] = resource_id
         if outcome["status"] != "verified":
             return outcome
+        evidence: dict = {}
         try:
             # Reuse the probe's body. This used to re-fetch the identical URL
             # and throw the first response away, doubling the request count for
             # every Socrata row and its whole redirect chain with it.
             body = outcome.get("_body") or ""
             payload = body if provider_module.EVIDENCE_TAKES_TEXT else json.loads(body)
-            outcome.update(provider_module.metadata_evidence(payload))
+            evidence = provider_module.metadata_evidence(payload)
         except Exception:
             pass  # the generic verdict stands; the refinement is best-effort
+        if meta_url != url and not _answers_for_its_link(provider_module, url):
+            outcome = verify_endpoint(
+                url, request_fn=request_fn, resolver=resolver, budget=budget,
+                headers=headers, params=params
+            )
+            outcome["provider"] = provider_module.PROVIDER_TYPE
+            outcome["datasetId"] = resource_id
+        if outcome["status"] == "verified":
+            outcome.update(evidence)
         return outcome
 
     return _refine
+
+
+def _answers_for_its_link(provider_module, url: str) -> bool:
+    """Whether *url* is its provider family's own data or metadata endpoint
+    (the module's ``DATA_LINK_RE``), whose dataset the metadata endpoint
+    describes, so that the metadata's answer is what the link answers. A
+    family that declares none is read through its metadata, as before."""
+    shape = getattr(provider_module, "DATA_LINK_RE", None)
+    return shape is None or bool(shape.search(url))
 
 
 def _validators() -> list[tuple]:

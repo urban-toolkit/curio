@@ -587,22 +587,65 @@ def _dataset_widget_ids(node: dict) -> list[str]:
 
 
 def _named_by_title(goal: str, catalog_ids: dict):
-    """The first dataset of *catalog_ids*, by id, whose title *goal* names:
-    the title's words together and in order, each in the singular
-    (:func:`_title_words`). Only a dataset the user or Curio put in the Data
-    Catalog is named: the listing also holds every saved node output of the
-    account, of any dataflow, titled after its node, which says nothing of
-    this goal (``CatalogRef.computed``). A title of generic words alone, such
-    as "Data" or "Load", names nothing. None when it names none."""
+    """The first dataset of *catalog_ids*, by id, whose title *goal* names
+    (:func:`_title_named`). None when it names none."""
     said = _title_words(goal)
     for dataset_id in sorted(catalog_ids or {}):
         ref = catalog_ids[dataset_id]
-        if getattr(ref, "computed", False):
-            continue
-        words = _title_words(getattr(ref, "title", "") or "")
-        if words and not set(words) <= _GENERIC_TITLE_WORDS and _holds_in_order(said, words):
+        if _title_named(said, ref):
             return ref
     return None
+
+
+def _title_named(said: list[str], ref) -> bool:
+    """Whether *said*, the title words of a goal (:func:`_title_words`),
+    name the title of *ref*, a dataset of the Data Catalog: the title's words
+    together and in order, each in the singular. Only a dataset the user or
+    Curio put in the Data Catalog is named: the listing also holds every
+    saved node output of the account, of any dataflow, titled after its node,
+    which says nothing of this goal (``CatalogRef.computed``). A title of
+    generic words alone, such as "Data" or "Load", names nothing."""
+    if getattr(ref, "computed", False):
+        return False
+    words = _title_words(getattr(ref, "title", "") or "")
+    return bool(words) and not set(words) <= _GENERIC_TITLE_WORDS and _holds_in_order(said, words)
+
+
+def datasets_tied_to(spec: dict | None, node: dict | None, ctx, *, user_key: str):
+    """For a data-loading node with a Dataset Finder of its own, whether a
+    dataset of the Data Catalog listing (a ``CatalogRef``) is tied to it, so
+    that a round may build the node from it (``GroundingContext.tied``), by
+    the ties its first attempt reads (:func:`_first_attempt_literals`): a
+    dataset of its dataflow (Add to project), one its goal names by its id or
+    by its title (:func:`_title_named`), one the user picked for the node or
+    asked for (*ctx*'s ``requested_dataset_ids``, which a confirmed pick
+    joins as the round starts), or one its dataset widget or the code it
+    holds now names. The listing holds every dataset Curio ships, which says
+    nothing about the node: so a loader whose Finder found nothing to pick,
+    or rated every row it found as not the data, keeps its own rounds and
+    their failure, and is never built from a dataset nobody picked.
+
+    None for a node without a Finder of its own, whose builder may load any
+    dataset of the listing, as its rounds always could."""
+    node = node if isinstance(node, dict) else {}
+    node_id = str(node.get("id") or "")
+    if not node_id or agents_dataset_resolution.finder_attachment(spec, node_id, user_key=user_key) is None:
+        return None
+    goal = str(node.get("goal") or "")
+    said = _title_words(goal)
+    held = set(_dataset_widget_ids(node)) | set(dataset_ids_in_code(str(node.get("content") or "")))
+
+    def tied(ref) -> bool:
+        dataset_id = str(getattr(ref, "dataset_id", "") or "")
+        return bool(
+            getattr(ref, "installed", False)
+            or dataset_id in held
+            or dataset_id in (getattr(ctx, "requested_dataset_ids", None) or set())
+            or (dataset_id and dataset_id in goal)
+            or _title_named(said, ref)
+        )
+
+    return tied
 
 
 def _holds_in_order(said: list[str], words: list[str]) -> bool:
@@ -1248,6 +1291,7 @@ def _gate_generated_content(
     node_id: str | None = None,
     widgets: list | None = None,
     current: str | None = None,
+    tie_to: tuple | None = None,
 ) -> tuple["source_grounding.GroundingVerdict", str | None]:
     """The ONE call every agent-authored-content boundary makes (dev/114):
     ``(verdict, refusal_text | None)``. The refusal is model-correctable
@@ -1255,7 +1299,9 @@ def _gate_generated_content(
     the node's code runs in (``source_grounding.code_engine``), None for
     content that is no code, which is read as a document; *chips*, what a
     run resolves the node's chips with (:func:`_chip_context`); *current*,
-    the content the node holds now, the user's own. Content whose
+    the content the node holds now, the user's own; *tie_to*, ``(spec,
+    node)`` for a Solve's write, which holds a loader with a Dataset Finder
+    of its own to the datasets tied to it (:func:`datasets_tied_to`). Content whose
     sources are grounded and that is a chart's or a map's document is then
     checked as Solve checks one (:func:`_document_refusal`), for *node_id*'s
     saved node, or for the node a node.create adds with the *widgets* it
@@ -1267,6 +1313,8 @@ def _gate_generated_content(
         request_texts=request_texts, requested_ids=requested_ids, code_engine=code_engine, chips=chips,
         current=current,
     )
+    if tie_to is not None:
+        ctx.tied = datasets_tied_to(tie_to[0], tie_to[1], ctx, user_key=user_key)
     verdict = source_grounding.check_grounding(code, code_engine or "python", ctx)
     if not verdict.ok:
         return verdict, source_grounding.refusal_text(verdict, ctx)
@@ -1404,7 +1452,8 @@ def _source_grounding_inputs(ctx: "source_grounding.GroundingContext") -> dict:
     """dev/114: the grounding a tool-less content delegate is HANDED (the
     DEC-063 pattern — evidence as inputs): the catalog datasets with their
     real paths, the paths the user typed, the URLs already verified, and the
-    rule. Bounded; plain data."""
+    rule. Bounded; plain data. A loader with a Dataset Finder of its own is
+    handed only the datasets tied to it (``ctx.tied``), the ones it may load."""
     datasets = [
         {
             "datasetId": ref.dataset_id,
@@ -1413,7 +1462,7 @@ def _source_grounding_inputs(ctx: "source_grounding.GroundingContext") -> dict:
             "use": f'dataset_path = curio_data_path("{ref.dataset_id}")',
             **({"path": ref.path} if ref.path else {}),
         }
-        for ref in list(ctx.catalog_ids.values())[:24]
+        for ref in [ref for ref in ctx.catalog_ids.values() if ctx.tied is None or ctx.tied(ref)][:24]
     ]
     secrets = [
         {

@@ -410,6 +410,27 @@ def _bounded_str(value: object, max_chars: int) -> str | None:
     return text
 
 
+def _fitted_text(value: object, max_chars: int) -> str | None:
+    """A non-empty free-text string as a row shows it: whole when it fits
+    *max_chars*, else cut after its last whole word that fits, with an
+    ellipsis (``labels.on_a_word``), and "" when not even its first word
+    fits, so no word is ever cut in the middle. None when it is no string or
+    empty. A candidate row's words about its data (who publishes it, its
+    format, coverage and requirement, why it fits) are shown, never acted
+    on: one too long for its bound is shortened, where an over-long name, id
+    or link still voids its row. On dev the 100-year loader's Finder gave the
+    right dataset a 179-character reason, and the whole card went."""
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if len(text) <= max_chars:
+        return text
+    cut = labels.on_a_word(text, max_chars - 1)
+    return cut if len(cut) <= max_chars else ""
+
+
 def _parse_candidate_row(raw: object, lane: str) -> dict | None:
     if not isinstance(raw, dict):
         return None
@@ -432,15 +453,16 @@ def _parse_candidate_row(raw: object, lane: str) -> dict | None:
         row["url"] = url_text
     for key in ("provider", "format", "coverage", "requirement"):
         if raw.get(key) is not None:
-            text = _bounded_str(raw.get(key), _CANDIDATE_TEXT_MAX_CHARS)
+            text = _fitted_text(raw.get(key), _CANDIDATE_TEXT_MAX_CHARS)
             if text is None:
                 return None
-            row[key] = text
+            if text:
+                row[key] = text
     fit = raw.get("fit")
     if fit is not None:
         if not isinstance(fit, dict):
             return None
-        rationale = _bounded_str(fit.get("rationale"), _CANDIDATE_TEXT_MAX_CHARS)
+        rationale = _fitted_text(fit.get("rationale"), _CANDIDATE_TEXT_MAX_CHARS)
         score = fit.get("score")
         if rationale is None or not isinstance(score, (int, float)) or not (0 <= score <= 100):
             return None
@@ -475,7 +497,9 @@ def _parse_candidate_row(raw: object, lane: str) -> dict | None:
 def _parse_dataset_candidates(raw: object) -> dict | None:
     """The dev/50 two-lane suggestions part (docs/06). Informational rows —
     selection, multi-select, and confirmation live client-side; a malformed
-    row invalidates the whole block (fail-open to text, the T2 rule)."""
+    row invalidates the whole block (fail-open to text, the T2 rule). A
+    free-text field over its bound is no malformed row: it is cut on a word
+    (:func:`_fitted_text`)."""
     if not isinstance(raw, dict):
         return None
     lanes_raw = raw.get("lanes")

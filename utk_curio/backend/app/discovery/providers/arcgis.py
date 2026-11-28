@@ -33,6 +33,11 @@ RESOURCE_ID_RE = re.compile(r"^[0-9a-f]{32}(?:_\d{1,4})?$")
 
 _URL_RE = re.compile(r"(?:hub\.arcgis\.com|/api/v3/datasets|arcgis\.com/home/item)", re.I)
 _ITEM_RE = re.compile(r"\b([0-9a-f]{32})(?:_(\d{1,4}))?\b")
+#: Of the links ``recognize`` takes, the ones that answer with the dataset or
+#: its metadata (ArcGIS Hub's v3 API and its downloads), which the v3 metadata
+#: stands for in ``verify.py``; any other, such as a dataset's ``/about`` page
+#: or an item's ``home/item.html``, is a page, probed itself.
+DATA_LINK_RE = re.compile(r"/api/(?:v3|download)/", re.I)
 
 _EXT = {"geojson": "geojson", "csv": "csv"}
 

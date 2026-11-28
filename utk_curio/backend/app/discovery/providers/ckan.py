@@ -36,6 +36,9 @@ _SEG = r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}"
 RESOURCE_ID_RE = re.compile(rf"^{_SEG}:{_SEG}$")
 
 _URL_RE = re.compile(r"/api/3/action/(?:package_show|package_search)\b")
+#: Every link ``recognize`` takes is the action API itself, which
+#: ``verify.py`` probes as its metadata.
+DATA_LINK_RE = _URL_RE
 
 
 #: The verify.py refinement contract: what this family is called, and
