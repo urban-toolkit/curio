@@ -27,22 +27,17 @@
   color: var(--curio-text-primary);
 }
 
+/* An error card's title, in the error colour, with no category tint. */
+.headerError {
+  color: var(--curio-danger-text);
+}
+
 .accentDot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: currentColor;
   flex: 0 0 auto;
-}
-
-.kind {
-  font-weight: 400;
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--curio-text-meta);
-  flex: 0 0 auto;
-  white-space: nowrap;
 }
 
 .inner {

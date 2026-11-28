@@ -548,9 +548,18 @@ def _needs_install(pick: dict) -> bool:
     return pick.get("lane") == "catalog" and not pick.get("installed") and not pick.get("imported")
 
 
-def acquired_pick(row: dict, dataset_id: str) -> dict:
+def _from(origin: str | None) -> dict:
+    """A downloaded pick's ``provider``: where its data comes from (*origin*,
+    ``acquire._picked_from``), which the card's Recorded line names in place of
+    the Data Catalog it lands in."""
+    origin = str(origin or "").strip()[:120]
+    return {"provider": origin} if origin else {}
+
+
+def acquired_pick(row: dict, dataset_id: str, *, origin: str | None = None) -> dict:
     """The catalog pick a downloaded external row becomes. The file is in the
-    account store, so ``curio_data_path("<id>")`` resolves it like an import."""
+    account store, so ``curio_data_path("<id>")`` resolves it like an import.
+    *origin* is where its data comes from (:func:`_from`)."""
     return {
         "lane": "catalog",
         "name": str(row.get("name") or dataset_id)[:120],
@@ -559,12 +568,14 @@ def acquired_pick(row: dict, dataset_id: str) -> dict:
         "installed": False,
         "imported": True,
         "discoverySource": {"sourceId": row.get("sourceId"), "resourceId": row.get("resourceId")},
+        **_from(origin),
     }
 
 
-def acquiring_pick(row: dict, job_id: object) -> dict:
+def acquiring_pick(row: dict, job_id: object, *, origin: str | None = None) -> dict:
     """The catalog pick for a download still running. It waits like an
-    uninstalled dataset until ``settle_acquisitions`` sees the file held."""
+    uninstalled dataset until ``settle_acquisitions`` sees the file held.
+    *origin* is where its data comes from (:func:`_from`)."""
     return {
         "lane": "catalog",
         "name": str(row.get("name") or row.get("resourceId") or "")[:120],
@@ -572,6 +583,7 @@ def acquiring_pick(row: dict, job_id: object) -> dict:
         "installed": False,
         "discoverySource": {"sourceId": row.get("sourceId"), "resourceId": row.get("resourceId")},
         "acquiring": {"jobId": str(job_id or "")},
+        **_from(origin),
     }
 
 
@@ -607,7 +619,9 @@ def settle_acquisitions(spec: dict, held: dict) -> list[str]:
             discovered = pick.get("discoverySource") or {}
             dataset_id = held.get((discovered.get("sourceId"), discovered.get("resourceId")))
             if dataset_id:
-                picks[index] = acquired_pick({**discovered, "name": pick.get("name")}, dataset_id)
+                picks[index] = acquired_pick(
+                    {**discovered, "name": pick.get("name")}, dataset_id, origin=pick.get("provider"),
+                )
                 settled = True
         if not settled:
             continue
@@ -1010,9 +1024,11 @@ def _mirror_candidates_turn(
 ) -> None:
     """The same candidates in the chat that asked for them (*asker_id*, the
     agent whose Solve or Build & validate reached the node): one line that
-    names the node and its Dataset Finder, which the asking agent's next runs
-    read in their context, and the card, a ``sourcePick`` part. The card is
-    no text, so no run reads it (``sessions.context_messages``), and its pick
+    asks for the node's source and counts what its Dataset Finder found
+    ("Pick a source for **CPL branches**. Its Dataset Finder found 4."),
+    which the asking agent's next runs read in their context, and the card, a
+    ``sourcePick`` part, its rows in the Finder's card's order. The card is no
+    text, so no run reads it (``sessions.context_messages``), and its pick
     posts on the route of the Finder (*finder_id*), which records it. Read
     outside the spec lock: a node with no title is named by its template's
     label, from the package store."""
@@ -1029,7 +1045,7 @@ def _mirror_candidates_turn(
             user_key, project_id, session_id, asker_id,
             [sessions.make_turn(
                 "agent",
-                f"**{label}** needs a source. Its {finder_name} found {_counted(total)}: pick one with Use this source.",
+                f"Pick a source for **{label}**. Its {finder_name} found {total}.",
                 content=[{
                     "type": "sourcePick",
                     "finderAttachmentId": finder_id,
@@ -1037,8 +1053,10 @@ def _mirror_candidates_turn(
                     "nodeLabel": label,
                     **({"discoveryId": part["discoveryId"]} if part.get("discoveryId") else {}),
                     "lanes": part.get("lanes") or {},
-                    # Its lanes as the Finder's card draws them, best first.
+                    # Its lanes and its rows as the Finder's card draws them,
+                    # best first.
                     **({"laneOrder": part["laneOrder"]} if part.get("laneOrder") else {}),
+                    **({"rowOrder": part["rowOrder"]} if part.get("rowOrder") else {}),
                 }],
             )],
         )

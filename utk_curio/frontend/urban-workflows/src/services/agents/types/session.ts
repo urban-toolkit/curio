@@ -86,6 +86,9 @@ export interface AgentCardPart {
   kind: string; // "result" today; unknown kinds render the generic shell
   title: string;
   lines: string[];
+  /** A run's trace (a Solve's rounds, a delegated task's record): drawn only
+   *  while the viewer shows run details. */
+  runDetails?: boolean;
 }
 
 /** The dev/50 two-lane suggestions part. Selection and confirmation live
@@ -97,6 +100,10 @@ export interface AgentDatasetCandidatesPart {
    * directly first, as the server ranked them; each lane's rows come ranked
    * too. Absent on a card minted before cards were ranked. */
   laneOrder?: ("external" | "catalog")[];
+  /** The card's rows as one list, best first across both lanes, by the same
+   * rule: each row's lane and its index in that lane. Absent on a card minted
+   * before cards were one list. */
+  rowOrder?: Array<["external" | "catalog", number]>;
   /** The card's own id: a node's Finder record names the card it offers now
    * and the one the pick was made on, and a pick names its card. Absent on a
    * card minted before cards had ids. */
@@ -116,6 +123,8 @@ export interface AgentSourcePickPart {
   lanes: AgentDatasetCandidatesPart["lanes"];
   /** The lanes best first, as the Finder's own card draws them. */
   laneOrder?: AgentDatasetCandidatesPart["laneOrder"];
+  /** Its rows as one list, best first, as the Finder's own card draws them. */
+  rowOrder?: AgentDatasetCandidatesPart["rowOrder"];
   /** The id of the Finder's card this one is the same as. */
   discoveryId?: string;
 }
@@ -184,6 +193,13 @@ export interface AgentSessionTurn {
   execution?: AgentExecution;
   /** Typed content parts for agent turns (memo dev/39); absent on old turns. */
   content?: AgentContentPart[];
+  /** A turn the runtime keeps for the agents alone, which the chat never
+   *  draws: what it says is said on a card in view. */
+  forAgents?: boolean;
+  /** A task another agent asked of this one, on the user turn the runtime
+   *  writes for it: who asked, and the task in a few words, which the chat
+   *  draws as one quiet line. */
+  asked?: { by: string; task: string };
 }
 
 export interface AgentSession {

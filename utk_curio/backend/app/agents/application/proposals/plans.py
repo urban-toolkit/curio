@@ -264,17 +264,23 @@ def _interaction_spec_edge(source: str, target: str, from_view: str | None = Non
 def _topology_clause(spec: dict, *, templates: dict | None = None) -> str:
     """dev/112 (G5): the applied turn's verdict on the saved graph — what the
     agent reads to confirm a repair instead of asserting one. A cycle the plan
-    could not have created (the user drew it) is reported here, never refused.
-    Each node of a cycle is named as its header names it, told apart from one
-    of the same name (``told_apart``; *templates* is each template's label)."""
+    could not have created (the user drew it) is reported here, never refused."""
+    cycle = _cycle_through(spec, templates=templates)
+    return f"Topology: cycle through {cycle}." if cycle else "Topology: acyclic."
+
+
+def _cycle_through(spec: dict, *, templates: dict | None = None) -> str | None:
+    """The saved graph's data cycle, ``A → B → A``, or None when it has none.
+    Each node of it is named as its header names it, told apart from one of
+    the same name (``told_apart``; *templates* is each template's label)."""
     dataflow = spec.get("dataflow") or {}
     nodes = {n.get("id"): n for n in dataflow.get("nodes") or [] if isinstance(n, dict)}
     pairs = plan_topology.net_data_edges(dataflow.get("edges") or [], {"edges": []}, set(), set())
     path = plan_topology.find_data_cycle(pairs)
     if path is None:
-        return "Topology: acyclic."
+        return None
     names = told_apart(nodes, templates=templates or {}, scenarios=scenario_names(dataflow))
-    return "Topology: cycle through " + plan_topology.format_cycle(path, lambda x: names.get(x) or x) + "."
+    return plan_topology.format_cycle(path, lambda x: names.get(x) or x)
 
 
 def _removal_phrase(n_nodes: int, n_edges: int, *, prefix: str = "removed ") -> str:
@@ -511,16 +517,24 @@ def _land_dataflow_plan(user_key: str, project_id: str, loop_ctx: dict, spec: di
         gone = steps.named(left.gone if left is not None else ())
         return "refused", agent_text.message("change.plan-target-removed", gone=gone), None
     agents_changes.landed(loop_ctx, steps.change, steps.canvas(), steps=steps.landed)
+    templates = node_names.template_labels(user_key, project_id)
     text, lines = _plan_landed_lines(steps.spec, steps.created, steps.edges, steps.removed_nodes, steps.removed_edges,
-                                     steps.node_runs, steps.attached, steps.scenarios,
-                                     templates=node_names.template_labels(user_key, project_id))
+                                     steps.node_runs, steps.attached, steps.scenarios, templates=templates)
+    left_undone = None
     if left is not None:
         what, gone = steps.left_undone(), steps.named(left.gone)
         text = agent_text.message("change.plan-stopped", gone=gone, left=what) + " " + text
+        left_undone = f"Left undone: {what}, since {gone} was removed"
         # Before the Topology verdict, which the card ends with.
-        lines.insert(len(lines) - 1, f"Left undone: {what}, since {gone} was removed")
-    return (agents_changes.LANDED, agent_text.message("change.plan-landed", result=text),
-            agents_changes.card(part, steps.change, lines))
+        lines.insert(len(lines) - 1, left_undone)
+    card = agents_changes.card(part, steps.change, lines)
+    # What the card shows people: its checks in their words, in its Details,
+    # and what was left undone, on the card itself. The model reads the same
+    # in its lines, which stay as they are.
+    card["checks"] = _plan_checks(steps.spec, steps.attached, steps.titles(), templates=templates)
+    if left_undone:
+        card["leftUndone"] = left_undone
+    return (agents_changes.LANDED, agent_text.message("change.plan-landed", result=text), card)
 
 
 class _Gone(Exception):
@@ -804,11 +818,15 @@ class _PlanSteps:
             **({"task": self.change["goalSet"]} if "goalSet" in self.change else {}),
         }
 
+    def titles(self) -> dict:
+        """Each planned node's title, by its node's id."""
+        return {self.ref_to_id.get(n["ref"]): n.get("title") for n in self.plan.get("nodes", []) if n.get("title")}
+
     def named(self, node_ids) -> str:
         """The nodes *node_ids* by name: a planned node's title, else an
         existing node's name as its canvas shows it, told apart from one of
         the same name (``told_apart``), else its id."""
-        titles = {self.ref_to_id.get(n["ref"]): n.get("title") for n in self.plan.get("nodes", [])}
+        titles = self.titles()
         existing = told_apart(
             {n.get("id"): n for n in self.before if isinstance(n, dict)},
             templates=node_names.template_labels(self.user_key, self.project_id),
@@ -1288,7 +1306,8 @@ def _attach_node_agent(
                 "reason": "not installed in this dataflow"}
     if manifest is not None and not attachments.node_target_matches(manifest, node_type, templates):
         return {"agentId": agent_id, "name": name, "attachmentId": None, "status": "skipped",
-                "reason": f"does not attach to {attachments.canonical_node_suffix(node_type)} nodes"}
+                "reason": f"does not attach to {attachments.canonical_node_suffix(node_type)} nodes",
+                "notItsKind": True}
     try:
         record = attachments.attach(
             spec, coord, {"kind": "node", "targetId": node_id},
@@ -1418,6 +1437,36 @@ def _attached_agent_lines(*results: dict) -> list[str]:
     for agent_id, reason in sorted(skipped.items()):
         lines.append(f"no {names[agent_id]}: {reason}")
     return lines
+
+
+def _plan_checks(spec: dict, attached_results: list, titles: dict, *, templates: dict | None = None) -> list[str]:
+    """What a landed plan's card says it checked, in people's words, for its
+    Details: the cycle check, then the agents its new nodes got and those
+    they did not, each with its nodes, by title when one, else counted:
+    ``Checks: no cycles. Node Builder on 3 nodes, Dataset Finder on CPL
+    branches; no Dataset Finder on Branch points, where it does not
+    attach.`` The card's lines say the same to the model
+    (``_plan_landed_lines``)."""
+    cycle = _cycle_through(spec, templates=templates)
+    on: dict[str, list] = {}
+    off: dict[tuple, list] = {}
+    for result in attached_results:
+        for row in result.get("attached") or []:
+            on.setdefault(row.get("name") or row["agentId"], []).append(row.get("nodeId"))
+        for row in result.get("skipped") or []:
+            why = ", where it does not attach" if row.get("notItsKind") else f": {row.get('reason') or 'skipped'}"
+            off.setdefault((row.get("name") or row["agentId"], why), []).append(row.get("nodeId"))
+
+    def where(node_ids: list) -> str:
+        if len(node_ids) == 1:
+            return titles.get(node_ids[0]) or str(node_ids[0])
+        return count_label(len(node_ids), "node")
+
+    got = ", ".join(f"{name} on {where(ids)}" for name, ids in on.items())
+    missed = "; ".join(f"no {name} on {where(ids)}{why}" for (name, why), ids in off.items())
+    agents = "; ".join(words for words in (got, missed) if words)
+    verdict = f"a cycle through {cycle}" if cycle else "no cycles"
+    return [f"Checks: {verdict}." + (f" {agents[0].upper()}{agents[1:]}." if agents else "")]
 
 
 def _attach_node_builder(spec: dict, node_id: str, *, user_key: str | None = None,

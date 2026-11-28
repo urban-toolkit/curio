@@ -63,17 +63,6 @@
 }
 
 /* Follow-up marker: same soft-pill grammar as the session chip. */
-.reviewChip {
-  flex: none;
-  padding: 1px 8px;
-  border-radius: 999px;
-  border: 1px solid var(--curio-warning-bg);
-  background: var(--curio-warning-bg);
-  color: var(--curio-warning-text);
-  font-size: 10px;
-  font-weight: 600;
-}
-
 /* Visually hidden, still announced — the live region's phase text. */
 .srOnly {
   position: absolute;

@@ -392,6 +392,7 @@ def _run_delegate_traced(
     # Without a name, the id's last segment: my-helper for agent.acme.my-helper.
     parent_label = parent_name or parent_coord.split("@", 1)[0].rsplit(".", 1)[-1]
     if isinstance(home_session_id, str):
+        asked = _asked_task(user_key, project_id, capability, inputs, node_id)
         with contextlib.suppress(Exception):
             sessions.append_turns(
                 user_key, project_id, home_session_id, home_attachment_id,
@@ -399,6 +400,7 @@ def _run_delegate_traced(
                     "user",
                     f"{sessions.DELEGATED_TURN_PREFIX}{parent_label}] "
                     f"{_delegation_task_text(capability, inputs)}",
+                    asked={"by": parent_label, "task": asked} if asked else None,
                 )],
             )
     started = time.monotonic()
@@ -430,15 +432,50 @@ def _run_delegate_traced(
                     (text or "")[:2000],
                     error=status != "ok",
                     execution=child,
+                    # The delegated run's trace: a run detail, which the
+                    # viewer's Show run details draws (board S08, G4).
                     content=[{
                         "type": "card",
                         "kind": "result" if status == "ok" else "error",
                         "title": f"Delegated task · {status}",
                         "lines": [l[:300] for l in lines[:10]],
+                        "runDetails": True,
                     }],
                 )],
             )
     return status, text, child, home_attachment_id
+
+
+def _asked_task(user_key: str, project_id: str, capability: str, inputs: dict, node_id: str | None) -> str | None:
+    """The task another agent asks of a Dataset Finder, in the words its chat
+    draws on one quiet line ("Asked by the Dataflow Builder: find a source
+    for CPL branches."), naming the node as its header does, as the dataflow
+    is now; None for any other task, whose framing turn the chat draws as it
+    is, and None when the node cannot be read, so the framing turn, which the
+    Finder reads, is written either way."""
+    if capability != "dataset.discover":
+        return None
+    target = node_id or (inputs or {}).get("nodeId")
+    if not isinstance(target, str) or not target:
+        return "find a source"
+    try:
+        spec = dataflow_docs.read(user_key, project_id) or {}
+        node = next(
+            (n for n in (spec.get("dataflow") or {}).get("nodes") or []
+             if isinstance(n, dict) and n.get("id") == target),
+            None,
+        )
+        if node is None:
+            return "find a source"
+        # Its title, else its template's label, read only when it has none.
+        title = node_names.saved_node_title(node)
+        name = labels.on_a_word(
+            title or labels.node_label(node, templates=node_names.template_labels(user_key, project_id)), 120,
+        )
+    except Exception:  # noqa: BLE001 - the framing turn is written without the line's node
+        log.warning("Could not name the node of a delegated search on %s", project_id, exc_info=True)
+        return None
+    return f"find a source for {name}"
 
 
 def _delegation_part_for(resolution, capability: str, status: str, text: str,

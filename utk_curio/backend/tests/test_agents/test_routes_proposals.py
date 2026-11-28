@@ -1202,6 +1202,14 @@ class TestDataflowPlanApply:
         # And the plan's card says what it attached.
         line = next(l for l in card["lines"] if l.startswith("agents attached:"))
         assert "Node Builder ×2" in line and "Dataset Finder" in line
+        # To people too, in its Details: each agent with its nodes, by title
+        # where one, and the one a node's kind does not take, after the cycle
+        # check. The lines above, which the model reads, stay as they are.
+        assert card["checks"] == [
+            "Checks: no cycles. Node Builder on 2 nodes, Dataset Finder on Load boundaries; "
+            "no Dataset Finder on Analyze, where it does not attach."
+        ], card["checks"]
+        assert "leftUndone" not in card
 
     def test_a_plan_lands_additively_with_server_ids(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
@@ -1933,6 +1941,8 @@ class TestALandedPlansResult:
         assert (card["canvas"]["removedNodeIds"], card["canvas"]["removedEdgeIds"]) == ([], [])
         assert card["lines"][0] == "+0 nodes · +1 connection"
         assert card["lines"][-1] == "Topology: acyclic."
+        # No node landed, so no agent is named.
+        assert card["checks"] == ["Checks: no cycles."], card["checks"]
 
 
 #: Why a test draft's node type is new. A draft that adds a template carries
@@ -2997,6 +3007,10 @@ class TestPlanTopologyApply:
         verdict = card["lines"][-1]
         assert verdict.startswith("Topology: cycle through")
         assert "Vega" in verdict and "Python Computation (combine)" in verdict
+        # Its Details say the same cycle, through the same nodes.
+        (checks,) = card["checks"]
+        cycle = verdict[len("Topology: cycle through "):-1]
+        assert checks.startswith(f"Checks: a cycle through {cycle}."), checks
 
     def test_a_connection_drawn_while_the_plan_waited_that_it_would_close_into_a_cycle_refuses_it(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch,

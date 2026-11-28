@@ -20,9 +20,10 @@ export function stoppedByPhrase(stoppedBy?: string): string {
     : "";
 }
 
-/** One attempt's summary line: "Round 3 · execution-error · 4.1 s". */
+/** One attempt's summary line: "Round 3 · execution-error · 4.1 s"; a round
+ *  whose document its grammar validated says so. */
 function attemptHeading(row: AgentSolveAttemptRow): string {
-  const bits = [`Round ${row.round}`, row.kind || row.verdict];
+  const bits = [`Round ${row.round}`, row.documentValidated ? "validated against its grammar" : row.kind || row.verdict];
   if (typeof row.durationMs === "number" && row.durationMs > 0) {
     bits.push(`${(row.durationMs / 1000).toFixed(1)} s`);
   }
@@ -51,7 +52,11 @@ export const AgentSolveAttemptsCard: React.FC<{
   agentName?: string | null;
 }> = ({ part, tintClassName, onOpenChat, agentName }) => {
   const attempts = part.attempts ?? [];
-  const phrase = stoppedByPhrase(part.stoppedBy);
+  // A corrected chart's or map's loop ends on the round its grammar
+  // validated: that is why it stopped, not that the sandbox runs no code.
+  const phrase = attempts[attempts.length - 1]?.documentValidated
+    ? "the last one validated against its grammar"
+    : stoppedByPhrase(part.stoppedBy);
   const label = part.label || part.nodeId;
   const name = (agentName ?? "").trim();
 
@@ -90,7 +95,9 @@ export const AgentSolveAttemptsCard: React.FC<{
                   <div className={styles.codeLabel}>
                     {row.codeIsProse
                       ? "What the builder said instead of writing code"
-                      : "The code this attempt ran"}
+                      : row.documentValidated
+                        ? "The document this round validated"
+                        : "The code this attempt ran"}
                     {row.codeTruncated ? " (truncated)" : ""}
                   </div>
                   {row.codeIsProse ? (

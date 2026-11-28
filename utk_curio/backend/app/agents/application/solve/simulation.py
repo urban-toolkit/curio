@@ -27,6 +27,8 @@ from utk_curio.backend.app.agents.application.solve import node_work as agents_n
 from utk_curio.backend.app.agents.application.solve import run_node as agents_run_node
 from utk_curio.backend.app.agents.application.solve import session as agents_session
 from utk_curio.backend.app.agents.application.solve import validate as agents_validate
+from utk_curio.backend.app.agents.domain.counts import count_label
+from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.projects import storage as projects_storage
 
@@ -41,6 +43,49 @@ _IN_FLIGHT = (
     "simulatingSince", "simulateExecutionId", "simulateMode", "simulateCancelRequested", "currentRef",
     "simulateBootId",
 )
+
+
+#: A plan node's ledger states once its code landed.
+_BUILT_STATES = ("validated", "approved")
+
+
+def _listed(names: list[str]) -> str:
+    """*names* in words: "A", "A and B", "A, B and C"."""
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def built_sentence(nodes: list[tuple[str, str | None]], agent: str | None) -> str:
+    """What the plan's chat says when a build leaves every node of the plan
+    built, for people and the agents alike: how each node's code was checked,
+    from *nodes*, each its title and its check (``validate.check_of``, None
+    when the ledger holds none), and where each node's code and checks are,
+    the chat of *agent* when every node's code landed with one agent, such as
+    "Built all 3 nodes. CPL branches and Branch points ran in the sandbox,
+    and Library branch map is valid against its grammar. Each node's code and
+    checks are in its Node Builder."."""
+    one = len(nodes) == 1
+    by_check: dict[str, list[str]] = {}
+    for title, check in nodes:
+        if check:
+            by_check.setdefault(check, []).append(title)
+    said = []
+    for check, words in (
+        (agents_validate.CHECK_RAN, "{names} ran in the sandbox"),
+        (agents_validate.CHECK_VALID, "{names} {is} valid against {its} grammar"),
+        (agents_validate.CHECK_WRITTEN, "{names} {was} written, with no code to run"),
+    ):
+        titles = by_check.get(check)
+        if titles:
+            alone = len(titles) == 1
+            said.append(words.format(names=_listed(titles), **{
+                "is": "is" if alone else "are", "its": "its" if alone else "their", "was": "was" if alone else "were",
+            }))
+    text = "Built its node." if one else f"Built all {count_label(len(nodes), 'node')}."
+    if said:
+        text += " " + (said[0] if len(said) == 1 else ", ".join(said[:-1]) + ", and " + said[-1]) + "."
+    where = f"its {agent}" if agent else "its own agent's chat"
+    text += f" Its code and checks are in {where}." if one else f" Each node's code and checks are in {where}."
+    return text
 
 
 def _ordered_plan_refs(plan: dict) -> list[str]:
@@ -265,7 +310,7 @@ def _not_built(state: str) -> bool:
 
 
 def built_outside_the_plan(user_key: str, project_id: str, node_id: str, *, change: dict | None = None,
-                           actor=None) -> list[dict]:
+                           check: str | None = None, actor=None) -> list[dict]:
     """A node whose code Solve this node left in it and checked (written into
     it, kept as it was, or landed as the agent's change) counts as built in
     each landed plan that holds it and has not built it yet: its row is
@@ -273,34 +318,40 @@ def built_outside_the_plan(user_key: str, project_id: str, node_id: str, *, chan
     its code landed as one, so Build & validate approves it, recording the
     approval on that change when there is one and in the plan's ledger, and
     never builds it again. A pause for sources that named it names it no
-    more, and ends when it named no other. Written under the spec lock, on the
-    dataflow as it is now, by *actor*. Returns ``{attachmentId, ref}`` for
-    each plan row that moved."""
+    more, and ends when it named no other; a pause on its failure ends. Each
+    plan that holds it, built already or not (its code may have landed as
+    the agent's change, which built its row), keeps the check this Solve
+    made, *check* (``validate.check_of``), on the code the node holds now.
+    Written under the spec lock, on the dataflow as it is now, by *actor*.
+    Returns ``{attachmentId, ref}`` for each plan row that moved."""
     moved: list[dict] = []
     with projects_storage.spec_write_lock(user_key, project_id):
         spec = dataflow_docs.live(user_key, project_id)
         if spec is None:
             return moved
+        changed = False
         for record in attachments.list_attachments(spec):
             session = record.get("builderSession")
             states = session.get("nodeStates") if isinstance(session, dict) else None
             if not isinstance(states, dict):
                 continue
-            refs = [
-                ref for ref, built in (session.get("nodeIds") or {}).items()
-                if built == node_id and _not_built(states.get(ref, "created"))
-            ]
-            if not refs:
+            holding = [ref for ref, built in (session.get("nodeIds") or {}).items() if built == node_id]
+            if not holding:
                 continue
+            refs = [ref for ref in holding if _not_built(states.get(ref, "created"))]
             for ref in refs:
                 states[ref] = "validated"
                 (session.get("sourceWaitBy") or {}).pop(ref, None)
                 if change and change.get("changeId"):
                     session.setdefault("nodeChanges", {})[ref] = dict(change)
+            for ref in holding:
+                agents_validate.keep_check(session, ref, check, agents_validate.node_code(spec, node_id))
+                agents_validate.end_pause_on(session, ref)
             _pause_follows(user_key, spec, record, session)
             record["builderSession"] = session
+            changed = True
             moved += [{"attachmentId": record.get("attachmentId"), "ref": ref} for ref in refs]
-        if moved:
+        if changed:
             dataflow_docs.write(user_key, project_id, spec, actor or dataflow_docs.by_curio(user_key, "solve"))
     return moved
 
@@ -480,6 +531,8 @@ class SimulationDriver:
         # found them, while they still wait: passed over with what reads from
         # them.
         self.waiting: list[str] = []
+        # The refs whose code this run landed.
+        self.built: list[str] = []
 
     # ── state ────────────────────────────────────────────────────────────────
     def _fresh(self):
@@ -595,9 +648,42 @@ class SimulationDriver:
         with agents_room.at_work(self.user_key, self.project_id, self.attachment_id,
                                  coord=self.coord, who=self.room_asker):
             done = yield from self._actions()
-            _, _, final_session, _ = self._fresh()
+            spec, record, final_session, proposal = self._fresh()
+            if self.built and done.get("status") in ("completed", "stepped"):
+                self._say_built(spec, record, final_session, proposal)
             done["builderSession"] = final_session
         yield "done", done
+
+    def _say_built(self, spec: dict, record: dict, session: dict, proposal: dict | None) -> None:
+        """One sentence in the plan's chat when this run left every node of
+        the plan built (:func:`built_sentence`): each node's own turn there is
+        kept for the agents (``validate._land_validated``), and its row on
+        the plan's card says it is built."""
+        plan = (proposal or {}).get("plan") or {}
+        node_ids = session.get("nodeIds") or {}
+        nodes = [n for n in plan.get("nodes") or [] if isinstance(n, dict) and n.get("ref") in node_ids]
+        states = session.get("nodeStates") or {}
+        if not nodes or any(states.get(n["ref"]) not in _BUILT_STATES for n in nodes):
+            return
+        # Only the checks that still hold: a node whose code changed after its
+        # check, by anyone, is said with none.
+        checks = agents_validate.checks_that_hold(spec, session)
+        changes = session.get("nodeChanges") or {}
+        homes = {(changes.get(n["ref"]) or {}).get("attachmentId") for n in nodes}
+        agents = {
+            agents_spec_reads._agent_name(self.user_key, str((attachments.get_attachment(spec, home) or {}).get("coord") or ""))
+            for home in homes if home
+        }
+        agents.discard(None)
+        agent = next(iter(agents)) if len(agents) == 1 and None not in homes else None
+        text = built_sentence([(n.get("title") or n["ref"], checks.get(n["ref"])) for n in nodes], agent)
+        session_id = record.get("sessionId")
+        if isinstance(session_id, str):
+            with contextlib.suppress(Exception):
+                sessions.append_turns(
+                    self.user_key, self.project_id, session_id, self.attachment_id,
+                    [sessions.make_turn("agent", text)],
+                )
 
     def _actions(self):
         """The actions, one at a time, until completion, a pause, a
@@ -705,6 +791,8 @@ class SimulationDriver:
             else:
                 yield kind, payload
         verdict = (validate_done or {}).get("verdict", "fail")
+        if verdict in ("pass", "not-executable"):
+            self.built.append(ref)
         change_id = (validate_done or {}).get("changeId")
         if change_id:
             # Where the node's change lives (dev/72: with the node's agent).
@@ -735,7 +823,7 @@ class SimulationDriver:
             })
         if verdict == "fail":
             return self._pause({
-                "kind": "validation-failed", "ref": ref,
+                "kind": agents_validate.PAUSED_ON_A_FAILURE, "ref": ref,
                 "message": "validation failed and nothing was written: each attempt's code is in the "
                 "node's agent chat; edit the node or its inputs, then continue",
             })

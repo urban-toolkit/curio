@@ -9,7 +9,9 @@ import { declaredValue } from "../_support/cssRules";
  * onto at most two lines within the rail's width ("Dataflow Builder", "Node
  * Builder") and cut only past them; what it is attached to is one line in
  * smaller type, cut short with an ellipsis. Held to one line, the names read
- * "Dataflo…" and "Node Bui…" in the rail's 78px.
+ * "Dataflo…" and "Node Bui…" in the rail's 78px. A name wraps between its
+ * words only: breaking inside one cut "Researcher" into "Research / er"
+ * (the leaner chat's boards, A1).
  *
  * Source-read: Jest maps CSS modules to `identity-obj-proxy`, so a rendered
  * assertion cannot see which rules apply. What each label says is read in
@@ -28,10 +30,16 @@ describe("the agents rail's labels", () => {
     expect(value(".name", "-webkit-box-orient")).toBe("vertical");
     expect(value(".name", "-webkit-line-clamp")).toBe("2");
     expect(value(".name", "overflow")).toBe("hidden");
-    // Within the rail's width: a word longer than the entry breaks inside it
-    // rather than spill past the rail.
+    // Within the rail's width, which clips what could not fit.
     expect(value(".name", "max-width")).toBe("100%");
-    expect(value(".name", "overflow-wrap")).toBe("anywhere");
+  });
+
+  test("an entry's name wraps between its words only, never inside one", () => {
+    expect(value(".name", "overflow-wrap")).toBe("normal");
+    expect(value(".name", "word-break")).toBe("normal");
+    // In a size at which "Researcher", the shipped agents' longest word,
+    // fits the entry, as the boards draw it.
+    expect(value(".name", "font-size")).toBe("10px");
   });
 
   test("what it is attached to stays on one line, cut short with an ellipsis", () => {

@@ -732,6 +732,35 @@ class TestAPlanWaitsAsItsSourceDoes:
         assert done.get("status") == "completed", done
         assert done["builderSession"]["nodeStates"]["load"] == "approved", done["builderSession"]
 
+    def test_a_loader_solve_this_node_built_keeps_the_check_it_made_on_the_plans_row(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """Solve this node ran the loader's code in the sandbox and it passed:
+        the plan that holds the loader keeps that check on its row, which the
+        row's tick says, though the code landing as the agent's change built
+        the row first. Before, the row was built with no check, and the card
+        claimed one it guessed from the node's kind."""
+        user, token = user_and_token
+        h, dataset_id = self._downloading(client, user, token, monkeypatch)
+        h.select(URL)
+        from utk_curio.backend.app.datasets.repositories import user_store
+
+        monkeypatch.setattr(
+            user_store.UserDatasetRepository, "discovery_resource_index",
+            lambda self: {(CHICAGO, "cauq-8yn6"): dataset_id},
+        )
+        r = client.post(
+            f"/api/agents/projects/{h.pid}/attachments/{h.node_builder_attachment_id()}/solve-node",
+            json={"nodeId": h.load}, headers=_auth(token),
+        )
+        assert r.status_code == 200, r.get_data(as_text=True)
+        done = _sse_events(r)[-1][1]
+        assert done.get("verdict") == "pass", done
+        kept = _plan_session(h)
+        assert kept.get("nodeChecks") == {"load": "ran"}, kept
+        listed = h.cards()[h.att]["builderSession"]
+        assert listed.get("nodeChecks") == {"load": "ran"}, listed
+
     @staticmethod
     def _catalog_row(dataset_id: str) -> str:
         return json.dumps({"datasetCandidates": {"lanes": {"external": [], "catalog": [

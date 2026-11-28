@@ -82,8 +82,8 @@ export const AgentReviewCard: React.FC<{
     <div className={styles.card} role="group" aria-label={`Review proposal: ${part.summary}`}>
       <div className={`${styles.header} ${tintClassName ?? ""}`}>
         <span className={styles.accentDot} aria-hidden="true" />
-        <span>{part.summary}</span>
-        <span className={styles.kind}>review</span>
+        {/* What waits for the person's review says so first. */}
+        <span>{`Review: ${part.summary}`}</span>
       </div>
       {part.source ? <SourceBlock source={part.source} /> : null}
       <JustificationBlock part={part} />

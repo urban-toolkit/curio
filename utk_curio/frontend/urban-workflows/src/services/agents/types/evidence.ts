@@ -138,9 +138,10 @@ export interface AgentDatasetSourceRecord {
   /** The id of the card the recorded pick was made on. */
   pickedFrom?: string;
   /** What the server said comes next of the pick, one sentence, which ends
-   * the Source recorded turn in every chat that holds the card. A card the
-   * pick left open (a portal file to import, another row to pick) shows it
-   * in every tab; a Recorded card leaves it to that turn. */
+   * the Source recorded turn the agents read in every chat that holds the
+   * card. The card says it in every tab: a Recorded card after its pick, and
+   * a card the pick left open (a portal file to import, another row to pick)
+   * under its Use this source. */
   next?: string;
 }
 

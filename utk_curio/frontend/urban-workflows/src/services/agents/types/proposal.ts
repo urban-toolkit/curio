@@ -109,6 +109,9 @@ export interface AgentBuilderSession {
   /** When that Build & validate started, in epoch seconds, by the server's
    * clock. */
   simulatingSince?: number;
+  /** When the running Solve of the plan began, or last finished a wave, in
+   * epoch seconds, by the server's clock. */
+  solvingSince?: number;
   /** dev/67-9: why the sequence paused: a plain reason with a next action.
    * `awaiting-source`: no node can go on but loaders that wait for their
    * source, each as its `nodeStates` entry says; `nodes` names each by its
@@ -123,6 +126,17 @@ export interface AgentBuilderSession {
   /** ref → the change its validated code landed as, and the attachment
    * whose chat holds it (dev/72: the node's own agent). */
   nodeChanges?: Record<string, { changeId: string; attachmentId?: string | null }>;
+  /** ref → how the code that landed was checked: `ran` in the sandbox,
+   * `valid` against its grammar, `written` with no code to run. The listing
+   * holds only the checks made on the code each node holds now: a code
+   * written with no check, or changed after its check, has none. */
+  nodeChecks?: Record<string, string>;
+  /** node id → why the last Solve left it pending, skipped or failed, which
+   * its row says after a reload and in every tab, as the stream says it live. */
+  nodeReasons?: Record<string, string>;
+  /** The last Solve's own reason, for the whole batch: its time spent, no
+   * agent that writes nodes, a specialist to install. */
+  batchReason?: string;
 }
 
 /** dev/114: the proposal's source block — bounded plain data. */
@@ -317,6 +331,11 @@ export interface AgentChangePart
   planId?: string;
   /** The dataflow's goal, which the plan gave a dataflow that had none. */
   goalSet?: string;
+  /** A plan's checks and the agents it put on its nodes, worded for a
+   *  person: its card's Details. Its `lines` say the same for the agents. */
+  checks?: string[];
+  /** What a plan left undone, when a node it joins went while it landed. */
+  leftUndone?: string;
   /** A new node's kind, and the roster's answer to whether the sandbox can
    * run it (dev/119, DEC-076): display only. */
   nodeType?: string;

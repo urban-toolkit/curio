@@ -1,46 +1,60 @@
 import React, { useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faRobot } from "@fortawesome/free-solid-svg-icons";
+import { faCheck } from "@fortawesome/free-solid-svg-icons";
 
 import styles from "../AgentReviewCard.module.css";
-import { ROW_STATE_CHIP, ROW_STATES_WITH_SOLVE } from "./reviewCardText";
+import { ROW_CHECK, ROW_UNCHECKED, ROW_WAIT_WORDS, type PlanRowView } from "./reviewCardText";
 
-/** One node of a landed plan (dev/71's lifecycle): its goal, its dependencies
- * by name, and Solve then Run, as its code is written and checked. */
+/** Where a row whose node waits for the person's pick goes: its sources, in
+ *  this chat or in its Dataset Finder's, and the tooltip that says which. */
+export interface RowSources {
+  show: () => void;
+  hint: string;
+}
+
+/** One node of a landed plan (dev/71's lifecycle), one row: its name, which
+ * opens the chat of its node's own agent; its state in one word, or a tick
+ * once its code landed and a check ran on it ("Not checked" when none did);
+ * its Solve while it can run and its Run once built; then what it does, and
+ * why it failed when it did. A row whose node waits for the person's pick
+ * goes to its own sources. */
 export const PlanNodeRow: React.FC<{
   node: { ref: string; nodeType: string; title: string; intent: string; expects?: string; scenario?: string };
-  /** The plan placed it. */
-  applied: boolean;
-  /** dev/71: dependency labels + readiness. */
-  deps: string[];
-  state: string;
+  view: PlanRowView;
+  /** Its Solve may start now. */
   solvable: boolean;
-  solveBlocker: string | null;
-  /** Its Solve runs on the server (the listing's `validating`), started in
-   *  another tab or by a pick: the row says so as for its own click. */
-  solving?: boolean;
-  /** #662: its scenario, the node a copy copies, its widgets. */
-  extras?: string[];
+  /** How its code was checked, once built: ran, valid, written. */
+  check: string | null;
+  /** What a build or a Solve does on it now. */
+  atWork: string | null;
+  /** The node upstream of it it waits for, by name. */
+  afterLabel: string | null;
+  /** Why it failed, and a notice that is no failure. */
+  reason: string | null;
+  notice: string | null;
   /** The row's Solve and Run, each told the line the row shows while a
    *  download on first use of what the node reads comes (empty once over). */
   onSolve?: (onLine: (line: string) => void) => Promise<void>;
   onRun?: (onLine: (line: string) => void) => Promise<void>;
-  /** dev/72: opens the chat that holds its validated code's change. */
-  onOpenChange?: () => void;
-  changeAgentName?: string;
+  /** Opens the chat of its node's own agent, named *chatAgentName*. */
+  onOpenChat?: () => void;
+  chatAgentName?: string | null;
+  /** Its node's sources, while it waits for the person's pick. */
+  sources?: RowSources | null;
 }> = ({
   node,
-  applied,
-  deps,
-  state,
+  view,
   solvable,
-  solveBlocker,
-  solving = false,
-  extras,
+  check,
+  atWork,
+  afterLabel,
+  reason,
+  notice,
   onSolve,
   onRun,
-  onOpenChange,
-  changeAgentName,
+  onOpenChat,
+  chatAgentName,
+  sources = null,
 }) => {
   // #662: a copy has its original's title; its scenario tells them apart.
   const label = node.scenario ? `${node.title} (${node.scenario})` : node.title;
@@ -68,71 +82,92 @@ export const PlanNodeRow: React.FC<{
     }
   };
 
-  const agentName = changeAgentName ?? "the node agent";
+  // Its tick says how its code was checked; a check this row cannot name is
+  // no claim.
+  const ticked = check ? ROW_CHECK[check] ?? null : null;
+  const building = view === "building" || rowBusy === "solve";
   return (
-    <li className={styles.planNodeRow}>
+    <li className={styles.planNodeRow} data-curio-plan-row={node.ref} data-curio-row-view={building ? "building" : view}>
       <div className={styles.planNodeHead}>
-        <span className={styles.planNodeTitle}>{node.title}</span>
-        <span className={styles.planNodeType}>{node.nodeType}</span>
-        {!applied ? (
-          <span className={styles.planEdgeRefused}>Not placed</span>
+        {onOpenChat ? (
+          <button
+            type="button"
+            className={styles.planNodeName}
+            data-tooltip={`Open its ${chatAgentName || "agent"}`}
+            onClick={onOpenChat}
+          >
+            {node.title}
+          </button>
         ) : (
-          <>
-            {ROW_STATE_CHIP[state] ? (
-              <span className={state === "failed" ? styles.planEdgeRefused : styles.planNodeCreated}>
-                {ROW_STATE_CHIP[state]}
-                {/* dev/72: the icon-link to the chat that holds its code's
-                    change (and the Solve trace). */}
-                {onOpenChange ? (
-                  <button
-                    type="button"
-                    className={styles.reviewLink}
-                    aria-label={`Open ${agentName}'s chat`}
-                    data-tooltip={`Open ${agentName}'s chat`}
-                    onClick={onOpenChange}
-                  >
-                    <FontAwesomeIcon icon={faRobot} />
-                  </button>
-                ) : null}
-              </span>
-            ) : (
-              <span className={styles.planNodeCreated}>Placed ✓</span>
-            )}
-            {onSolve && ROW_STATES_WITH_SOLVE.includes(state) ? (
-              <button
-                type="button"
-                className={styles.apply}
-                disabled={rowBusy !== null || solving || !solvable}
-                data-tooltip={solveBlocker ?? undefined}
-                onClick={() => void act("solve", onSolve)}
-                aria-label={`Solve node ${label}`}
-              >
-                {rowBusy === "solve" || solving ? "Solving…" : "Solve"}
-              </button>
-            ) : null}
-            {onRun && (state === "validated" || state === "approved") ? (
-              <button
-                type="button"
-                className={styles.run}
-                disabled={rowBusy !== null}
-                onClick={() => void act("run", onRun)}
-                aria-label={`Run through node ${label}`}
-              >
-                {rowBusy === "run" ? "Running…" : "Run"}
-              </button>
-            ) : null}
-          </>
+          // A name too long for the row is cut: its tooltip says it whole.
+          <span className={styles.planNodeTitle} data-tooltip={node.title}>
+            {node.title}
+          </span>
         )}
+        {ticked && !building ? (
+          <span className={styles.planNodeTick} role="img" aria-label={ticked.name} data-tooltip={ticked.says}>
+            <FontAwesomeIcon icon={faCheck} />
+          </span>
+        ) : null}
+        <span className={styles.planNodeSpacer} />
+        {view === "not-placed" ? <span className={styles.planRowFailed}>Not placed</span> : null}
+        {building ? (
+          <span className={styles.planRowBuilding} data-tooltip={atWork ?? undefined}>
+            Building…
+          </span>
+        ) : view === "done" && !ticked ? (
+          <span className={styles.planRowAfter} data-tooltip={ROW_UNCHECKED.says}>
+            {ROW_UNCHECKED.word}
+          </span>
+        ) : view === "pick" && sources ? (
+          // Its word goes to its own sources, and says where on its tooltip.
+          <button
+            type="button"
+            className={styles.planRowWaitsLink}
+            data-tooltip={sources.hint}
+            aria-label={`${ROW_WAIT_WORDS["awaiting-source"]}: show the sources of ${label}`}
+            onClick={sources.show}
+          >
+            {ROW_WAIT_WORDS["awaiting-source"]}
+          </button>
+        ) : view === "pick" ? (
+          <span className={styles.planRowWaits}>{ROW_WAIT_WORDS["awaiting-source"]}</span>
+        ) : view === "download" ? (
+          <span className={styles.planRowWaits}>{ROW_WAIT_WORDS["awaiting-download"]}</span>
+        ) : view === "install" ? (
+          <span className={styles.planRowWaits}>{ROW_WAIT_WORDS["awaiting-install"]}</span>
+        ) : view === "failed" ? (
+          <span className={styles.planRowFailed}>Failed</span>
+        ) : view === "after" && afterLabel ? (
+          <span className={styles.planRowAfter}>after {afterLabel}</span>
+        ) : null}
+        {onSolve && solvable && !building ? (
+          <button
+            type="button"
+            className={styles.apply}
+            disabled={rowBusy !== null}
+            onClick={() => void act("solve", onSolve)}
+            aria-label={`Solve node ${label}`}
+          >
+            Solve
+          </button>
+        ) : null}
+        {onRun && view === "done" ? (
+          <button
+            type="button"
+            className={styles.planRowRun}
+            disabled={rowBusy !== null}
+            onClick={() => void act("run", onRun)}
+            aria-label={`Run through node ${label}`}
+          >
+            {rowBusy === "run" ? "Running…" : "Run"}
+          </button>
+        ) : null}
       </div>
       {rowLine ? <div className={styles.planNodeExpects}>{rowLine}</div> : null}
-      {deps.length ? <div className={styles.planNodeExpects}>needs: {deps.join(", ")}</div> : null}
-      {node.expects ? <div className={styles.planNodeExpects}>{node.expects}</div> : null}
-      {(extras ?? []).map((line) => (
-        <div key={line} className={styles.planNodeExpects}>
-          {line}
-        </div>
-      ))}
-      <div className={styles.planNodeExpects}>{node.intent}</div>
+      <div className={styles.planNodeIntent}>{node.intent}</div>
+      {reason ? <div className={styles.planRowReason}>{reason}</div> : null}
+      {notice && view !== "failed" ? <div className={styles.planNodeExpects}>{notice}</div> : null}
       {rowError ? <div className={styles.error}>{rowError}</div> : null}
     </li>
   );

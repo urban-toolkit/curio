@@ -69,6 +69,7 @@ from .utils import (
     require_user_auth,
     save_workflow_test_screenshot,
     script_agent_replies,
+    show_run_details,
     stub_db_user,
     use_scripted_llm,
 )
@@ -82,6 +83,11 @@ NATIVE_STEM = "agent-native-call"
 # regression inside the panel then had to move 10% of a frame it only occupies
 # part of before the comparison would notice.
 CHAT_PANEL_SELECTOR = '[role="dialog"][aria-label^="Chat with"]'
+
+# The title of the card of a node an agent's node.create added, a Python
+# Computation node with no title of its own, as board S09 draws it: its kind
+# in words, its type id and node id run details.
+ADDED_TITLE = "Added a Python Computation node"
 
 USERNAME = "agentchat"
 USER_NAME = "Agent Chat User"
@@ -199,11 +205,12 @@ def _open_dataflow_with_agent(
 def _created_node_id(spec: AgentManifest) -> str:
     """The id the node this agent's change creates is given, the same every run.
 
-    The change card prints it ("node <id>"), and that line sits near the
-    width of the chat. A fresh uuid4 wraps it or not by how wide
-    its letters render, one line more or less, and the transcript, pinned to the
-    bottom, then moves everything above that line by a line height, so the
-    ``_chat`` frame changed from run to run with nothing else changed.
+    The change card prints it ("node <id>") under Show run details, which the
+    tests turn on to read it, and that line sits near the width of the chat. A
+    fresh uuid4 wraps it or not by how wide its letters render, one line more
+    or less, and the transcript, pinned to the bottom, then moves everything
+    above that line by a line height, so a frame taken with run details on
+    would change from run to run with nothing else changed.
     """
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"curio-e2e/agent-chat/{spec.agent_id}"))
 
@@ -366,16 +373,27 @@ class TestAgentChatGallery:
                     timeout=20000
                 )
             if created_id is not None:
-                # And the change card names it: it is in the capture.
-                expect(panel.get_by_text(f"node {created_id}")).to_be_visible(timeout=20000)
+                # And the change card says what it added, as board S09 draws
+                # it: its kind, in its title. It is in the capture.
+                expect(panel.get_by_text(ADDED_TITLE, exact=True)).to_be_visible(timeout=20000)
 
         dismiss_toasts(page)
         # Two captures, because there are two things worth seeing. First the
-        # chat: the change card, naming what it changed, with its Undo.
+        # chat: the change card, naming what it changed, with its Undo, as a
+        # viewer who never turned Show run details on sees it.
         save_workflow_test_screenshot(
             page, SCREENSHOT_STEM, test_name=f"{spec.agent_id}_chat",
             clip_selector=CHAT_PANEL_SELECTOR,
         )
+        if created_id is not None:
+            # The card names the node it added by its id under Show run
+            # details. Every parameter of this class shares the page, and the
+            # setting is the browser's: it is turned off again, or the next
+            # agent's frame would hold its reply's time and tokens.
+            show_run_details(panel)
+            expect(panel.get_by_text(f"node {created_id}")).to_be_visible(timeout=20000)
+            show_run_details(panel, on=False)
+            expect(panel.get_by_text(f"node {created_id}")).to_have_count(0, timeout=10000)
         # Then the canvas, which is the headline evidence and needs the panel out
         # of the way to be evidence at all: fitView spreads the nodes across the
         # whole viewport while the panel covers its right ~44%, so the node the
@@ -689,14 +707,18 @@ class TestNativeToolCall:
             f"the new node is {added[0]['id']}, not the scripted id {created_id}"
         )
         expect(page.locator(f'[data-id="{added[0]["id"]}"]')).to_be_visible(timeout=20000)
-        # And the change card names it: it is in the capture.
-        expect(panel.get_by_text(f"node {created_id}")).to_be_visible(timeout=20000)
+        # And the change card says what it added, as board S09 draws it: its
+        # kind, in its title. It is in the capture.
+        expect(panel.get_by_text(ADDED_TITLE, exact=True)).to_be_visible(timeout=20000)
 
         dismiss_toasts(page)
         save_workflow_test_screenshot(
             page, NATIVE_STEM, test_name="landed",
             clip_selector=CHAT_PANEL_SELECTOR,
         )
+        # The card names the node it added by its id under Show run details.
+        show_run_details(panel)
+        expect(panel.get_by_text(f"node {created_id}")).to_be_visible(timeout=20000)
 
         panel.get_by_role("button", name="Close chat").click()
         expect(page.locator(CHAT_PANEL_SELECTOR)).to_have_count(0, timeout=10000)

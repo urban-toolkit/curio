@@ -36,6 +36,7 @@ from .utils import (
     leave_agent_badge,
     node_locator,
     open_in_project_tab,
+    open_plan_details,
     open_scenario_details,
     play_node,
     read_node_code,
@@ -210,7 +211,8 @@ class TestTheDataflowBuilderBuildsTwoScenarios:
         card = panel.get_by_role("group", name=re.compile(r"^Change: Plan")).first
         expect(card).to_be_visible(timeout=45000)
         expect(card).to_contain_text("2 scenarios", timeout=15000)
-        listed = card.get_by_role("group", name="Scenarios this plan saves")
+        # Each scenario is in the card's Details.
+        listed = open_plan_details(card).get_by_role("group", name="Scenarios this plan saves")
         expect(listed.get_by_label("Scenario Real heights")).to_be_visible()
         expect(listed.get_by_label("Scenario Twice as tall")).to_contain_text(
             "a copy of Real heights · Shadows · sets height_factor 2"

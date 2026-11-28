@@ -105,6 +105,21 @@ export const AgentDockOverlay: React.FC = () => {
     (nodeId: string) => nodeIdsOnCanvas.split("\n").includes(nodeId),
     [nodeIdsOnCanvas],
   );
+  // Each node on the canvas by the name its header shows, read off React
+  // Flow's store as one string, so a rename renames a change card's node at
+  // once and a drag draws nothing again.
+  const nodeNamesOnCanvas = useStore(
+    useCallback((state: any) => {
+      const names: Record<string, string> = {};
+      for (const nodeId of (state.nodeInternals?.keys?.() ?? []) as Iterable<string>) {
+        const name = nodeNameIn(state, nodeId);
+        if (name) names[nodeId] = name;
+      }
+      return JSON.stringify(names);
+    }, []),
+  );
+  const nodeNames = useMemo(() => JSON.parse(nodeNamesOnCanvas) as Record<string, string>, [nodeNamesOnCanvas]);
+  const nodeNameOf = useCallback((nodeId: string) => nodeNames[nodeId] ?? null, [nodeNames]);
   // Who is at work in the dataflow's room, for the rail's running dots, as
   // their chips in the dock say it.
   const here = usePeopleHere();
@@ -261,7 +276,6 @@ export const AgentDockOverlay: React.FC = () => {
               solveWaiting={ctx.solveWaiting[shown.attachmentId]}
               solveEndedBy={ctx.solveEndedBy[shown.attachmentId] ?? null}
               solvePass={ctx.solvePass[shown.attachmentId] ?? null}
-              onSolveOneNode={(nodeId) => ctx.solveNode(shown.attachmentId, nodeId)}
               solveWave={ctx.solveWave[shown.attachmentId]}
               solveNotices={ctx.solveNotices[shown.attachmentId]}
               onCancelSolve={() => ctx.cancelSolve(shown.attachmentId)}
@@ -301,6 +315,8 @@ export const AgentDockOverlay: React.FC = () => {
               }
               // A card whose Finder is gone says whether its node went too.
               nodeOnCanvas={nodeOnCanvas}
+              // A change card names its node as the node's header does.
+              nodeNameOf={nodeNameOf}
               // dev/132: the portal-download row's Import button.
               onImportDataset={ctx.importDataset}
               delegateExists={(id) =>

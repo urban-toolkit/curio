@@ -78,7 +78,8 @@
 }
 
 /* The agent's name, wrapped onto at most two lines within the rail's width,
-   and cut only past them; a word longer than the entry breaks inside it. */
+   and cut only past them. It wraps between words only, never inside one, in
+   a size at which the shipped agents' longest word fits the entry. */
 .name {
   max-width: 100%;
   display: -webkit-box;
@@ -86,7 +87,9 @@
   -webkit-line-clamp: 2;
   line-clamp: 2;
   overflow: hidden;
-  overflow-wrap: anywhere;
+  font-size: 10px;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 /* What it is attached to: one line in smaller type, cut short. */
@@ -204,7 +207,7 @@
   background: var(--curio-role-running-bg);
 }
 
-/* "waits for you", in the warning tone of the plan line's "needs you". */
+/* "waits for you", in the warning tone of the plan line's waits. */
 .flyoutNoteWaiting {
   color: var(--curio-warning-text);
   background: var(--curio-warning-bg);

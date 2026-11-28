@@ -1096,7 +1096,12 @@ class VerifiedRounds:
             "kind": round_evidence.get("kind"),
             "source": self.start_source if self.use_current else "generated",
         }
-        if round_evidence.get("detail"):
+        if document_validated(verdict, round_evidence):
+            # Its grammar validated its document: the round ran nothing and
+            # failed nothing, and says so, never the runner's reason that the
+            # sandbox runs no code of its kind.
+            attempt["documentValidated"] = round_evidence["documentValidated"]
+        elif round_evidence.get("detail"):
             attempt["detail"] = str(round_evidence["detail"])[:agents_budgets.ATTEMPT_DETAIL_CHARS]
         if round_evidence.get("stderrTail"):
             attempt["stderrTail"] = str(round_evidence["stderrTail"])[-agents_budgets.ATTEMPT_STDERR_CHARS:]

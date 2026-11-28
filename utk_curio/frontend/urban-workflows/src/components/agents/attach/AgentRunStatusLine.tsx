@@ -11,7 +11,7 @@ import styles from "./AgentRunStatusLine.module.css";
  *
  * running: pulsing dot + rotating label + elapsed ("Cooking… · 0:12")
  * done:    "✓ Finished in 12s · 1.4k tokens" — this reply's own duration and
- *          Actual tokens (+ the review chip when a proposal awaits the user)
+ *          Actual tokens, which the chat shows with Show run details
  * error:   "Failed after 8s" (the error turn itself keeps the message)
  * stopped: "Stopped by Ana after 8s": someone stopped the turn, and what it
  *          said until then stays
@@ -103,9 +103,6 @@ export const AgentRunStatusLine: React.FC<{
       <span className={styles.text} aria-hidden="true" data-tooltip={breakdown}>
         {text}
       </span>
-      {display.pendingReview ? (
-        <span className={styles.reviewChip}>Awaiting your review</span>
-      ) : null}
     </span>
   );
 };

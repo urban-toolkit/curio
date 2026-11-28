@@ -6,10 +6,11 @@ import { declaredValue } from "../_support/cssRules";
 /**
  * The head of a landed plan's node row, in the plan card of the Dataflow
  * Builder's chat (PlanNodeRow), as its stylesheet draws it: the row's Solve
- * and Run, and its chip ("Placed ✓"), keep their words whole on one line and
- * never shrink; the row's title and node type give way, cut short with an
- * ellipsis. With the agents rail beside the transcript, the reconstruction's
- * plan card wrapped a row's title, its chip, and its Solve into "Solv" and "e".
+ * and Run, and its state's word ("Needs a source", "Failed", "Building…",
+ * "after CPL branches"), keep their words whole on one line and never shrink;
+ * the row's name gives way, cut short with an ellipsis. With the agents rail
+ * beside the transcript, the reconstruction's plan card wrapped a row's
+ * title, its chip, and its Solve into "Solv" and "e".
  *
  * Source-read: Jest maps CSS modules to `identity-obj-proxy`, so a rendered
  * assertion cannot see which rules apply.
@@ -20,22 +21,28 @@ const ROW = fs.readFileSync(path.join(COMPONENTS, "reviewCard/PlanNodeRow.tsx"),
 const value = (selector: string, property: string) => declaredValue(CARD, selector, property);
 
 describe("a plan row's head", () => {
-  test("its Solve, its Run and its chip keep their words whole, on one line, and never shrink", () => {
+  test("its Solve, its Run and its state's word keep their words whole, on one line, and never shrink", () => {
     for (const selector of [
       ".planNodeHead > .apply",
-      ".planNodeHead > .run",
-      ".planNodeHead > .planNodeCreated",
-      ".planNodeHead > .planEdgeRefused",
+      ".planNodeHead > .planRowRun",
+      ".planNodeHead > .planRowFailed",
+      ".planNodeHead > .planRowWaits",
+      ".planNodeHead > .planRowWaitsLink",
+      ".planNodeHead > .planRowBuilding",
+      ".planNodeHead > .planRowAfter",
     ]) {
       expect([selector, value(selector, "flex")]).toEqual([selector, "none"]);
       expect([selector, value(selector, "white-space")]).toEqual([selector, "nowrap"]);
     }
   });
 
-  test("its title and node type give way, cut short with an ellipsis on one line", () => {
-    expect(value(".planNodeTitle", "flex")).toBe("0 1 auto");
-    expect(value(".planNodeType", "flex")).toBe("1");
-    for (const selector of [".planNodeTitle", ".planNodeType"]) {
+  test("a built row's tick, beside the name, never shrinks", () => {
+    expect(value(".planNodeTick", "flex")).toBe("none");
+  });
+
+  test("its name gives way, cut short with an ellipsis on one line, as a link or as plain text", () => {
+    for (const selector of [".planNodeTitle", ".planNodeName"]) {
+      expect([selector, value(selector, "flex")]).toEqual([selector, "0 1 auto"]);
       expect([selector, value(selector, "min-width")]).toEqual([selector, "0"]);
       expect([selector, value(selector, "white-space")]).toEqual([selector, "nowrap"]);
       expect([selector, value(selector, "overflow")]).toEqual([selector, "hidden"]);
@@ -50,7 +57,7 @@ describe("a plan row's head", () => {
     // inside another selector (`.planNodeHead > .run`) is defined, yet draws
     // nothing of its own, so it does not count.
     const named = [...new Set([...ROW.matchAll(/\bstyles\.([A-Za-z_]\w*)/g)].map((m) => m[1]))];
-    expect(named).toEqual(expect.arrayContaining(["planNodeHead", "apply", "run"]));
+    expect(named).toEqual(expect.arrayContaining(["planNodeHead", "apply", "planRowRun"]));
     const selectors = [...CARD.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{[^{}]*\}/g)].flatMap((rule) =>
       rule[1].split(",").map((selector) => selector.trim()),
     );

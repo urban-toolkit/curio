@@ -33,13 +33,25 @@ function held() {
 
 describe("a plan row's Solve and Run say how far a download has come", () => {
   it.each([
-    ["Solve", "created", "onSolve", /Solve node Load/],
-    ["Run", "validated", "onRun", /Run through node Load/],
-  ])("its %s shows each line its run says, and none once the downloads are over or it ends", async (_kind, state, prop, button) => {
+    ["Solve", "solve", null, "onSolve", /Solve node Load/],
+    ["Run", "done", "ran", "onRun", /Run through node Load/],
+  ])("its %s shows each line its run says, and none once the downloads are over or it ends", async (_kind, view, check, prop, button) => {
     const row = held();
     // The row's run, whatever the types of the code under test name.
     const runs = { [prop]: row.run } as any;
-    render(<PlanNodeRow node={NODE} applied deps={[]} state={state} solvable solveBlocker={null} {...runs} />);
+    render(
+      <PlanNodeRow
+        node={NODE}
+        view={view as "solve" | "done"}
+        solvable={view === "solve"}
+        check={check}
+        atWork={null}
+        afterLabel={null}
+        reason={null}
+        notice={null}
+        {...runs}
+      />,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: button }));
     expect(row.run).toHaveBeenCalledTimes(1);

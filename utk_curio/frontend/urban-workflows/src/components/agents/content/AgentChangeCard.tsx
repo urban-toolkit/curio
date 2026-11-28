@@ -1,37 +1,24 @@
-import React, { useState } from "react";
+import React, { useId, useState } from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faChevronDown, faChevronUp } from "@fortawesome/free-solid-svg-icons";
 import type { AgentChangePart } from "../../../services/agents";
 import styles from "./AgentReviewCard.module.css";
-import { PlanEdgesList } from "./reviewCard/PlanEdgesList";
-import { PlanNodesList } from "./reviewCard/PlanNodesList";
-import { PlanScenariosList } from "./reviewCard/PlanScenariosList";
+import { PlanDetails } from "./reviewCard/PlanDetails";
+import { PlanNodesList, type NodeChat } from "./reviewCard/PlanNodesList";
+import type { RowSources } from "./reviewCard/PlanNodeRow";
 import { PlanSummary } from "./reviewCard/PlanSummary";
-import { SourceBlock } from "./reviewCard/SourceBlock";
+import { CodePreview } from "./reviewCard/CodePreview";
+import { SourceLine } from "./reviewCard/SourceLine";
 import { ValidationBlock } from "./reviewCard/ValidationBlock";
-import { nodeKindExecutable, type PlanNodeReviewState } from "./reviewCard/reviewCardText";
+import { changeTitle, type PlanNodeReviewState } from "./reviewCard/reviewCardText";
 
-/** What each kind of change is, on its card's header. */
-export const CHANGE_KIND_LABEL: Record<string, string> = {
-  content: "code",
-  settings: "settings",
-  node: "new node",
-  plan: "plan",
-};
+/** What a plan's Undo takes back, on its tooltip. */
+export const PLAN_UNDO_HINT = "Takes the plan back";
 
-/** dev/115 (Amendment A2) → dev/118 (DEC-075) → dev/119 (DEC-076): what Solve
- * does with a new node that loads data. Whether the sandbox can run its kind
- * is the ROSTER's answer (`executable`), falling back to the registry
- * descriptor; unknown says nothing rather than guessing. */
-const SolveLine: React.FC<{ part: AgentChangePart }> = ({ part }) => {
-  const executable = nodeKindExecutable({ nodeType: part.nodeType, executable: part.executable });
-  if (executable === null) return null;
-  return (
-    <div className={styles.meta}>
-      {executable
-        ? "Solve runs it in the sandbox and fixes errors before its code is trusted."
-        : "This kind has no code to run: Solve writes it, the browser or its own service renders it; it is never called verified."}
-    </div>
-  );
-};
+/** How the line of what a plan left undone starts, among its card's lines
+ * (`plans.py`'s `left_undone`). */
+const LEFT_UNDONE = "Left undone: ";
+export const PLAN_UNDO_GOAL_HINT = "Takes the plan back, and the goal it set";
 
 /**
  * The card of a change an agent made to the dataflow (`proposals/changes.py`):
@@ -45,11 +32,22 @@ const SolveLine: React.FC<{ part: AgentChangePart }> = ({ part }) => {
  * anew, until the user acts on it again. Either says it only while the card
  * holds the status it was refused on: undone by someone else since, it has
  * nothing to say. The code is model output: it renders as inert plain text
- * (REQ-SEC-002), never markup.
+ * (REQ-SEC-002), never markup. Its title says what it did, to the node its
+ * header names: "Replaced the code of CPL branches", "Changed the settings
+ * of Pools", "Added a Python Computation node". No chip names its kind; its
+ * accessible name keeps the change's own summary, which the agents read.
  *
- * A plan's card lists its nodes, each with Solve then Run as its code is
- * written and checked (Build & validate fills them in order), its
- * connections, its removals by name and its scenarios.
+ * A node's code or new node shows, each on one line, its source and its
+ * check, Verification holding every round and its code, then its code's
+ * first lines with Show all. A settings change shows each setting in its
+ * node's words. A new node's kind and id are run details.
+ *
+ * A plan's card, "Plan: 3 nodes, 2 connections", lists its nodes, one row
+ * each with its state, its Solve while it can run and its Run once built
+ * (Build & validate fills them in order); what it removed, and what it left
+ * undone or did not save. Its Details hold the goal it set, its checks, each
+ * node's kind and what it reads and writes, its connections and its
+ * scenarios.
  */
 export const AgentChangeCard: React.FC<{
   part: AgentChangePart;
@@ -68,6 +66,16 @@ export const AgentChangeCard: React.FC<{
   onOpenAgentChat?: (attachmentId: string) => void;
   delegateExists?: (attachmentId: string) => boolean;
   agentNameOf?: (attachmentId: string) => string | null;
+  /** A plan node's own agent, whose chat its row's name opens. */
+  nodeChatOf?: (nodeId: string) => NodeChat | null;
+  /** Where a plan node that waits for the person's pick finds its sources,
+   * which its row goes to. */
+  sourcesOf?: (nodeId: string) => RowSources | null;
+  /** The name the header of the change's node shows, null when the node is
+   * not on the canvas. */
+  nodeName?: string | null;
+  /** The viewer shows run details: a new node's kind and id. */
+  runDetails?: boolean;
 }> = ({
   part,
   tintClassName,
@@ -79,6 +87,10 @@ export const AgentChangeCard: React.FC<{
   onOpenAgentChat,
   delegateExists,
   agentNameOf,
+  nodeChatOf,
+  sourcesOf,
+  nodeName = null,
+  runDetails = false,
 }) => {
   const [busy, setBusy] = useState(false);
   // Why the card's own last Undo was refused, with the status it was refused
@@ -86,6 +98,8 @@ export const AgentChangeCard: React.FC<{
   const [error, setError] = useState<{ why: string; on: string } | null>(null);
   const own = error && error.on === part.status ? error.why : null;
   const said = busy ? null : refusal ?? own;
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const detailsId = useId();
 
   const undo = async () => {
     if (!onUndo || busy) return;
@@ -104,23 +118,50 @@ export const AgentChangeCard: React.FC<{
 
   const isPlan = part.kind === "plan" && Boolean(part.plan);
   const undone = part.status === "undone";
+  const undoControl = undone ? (
+    <div className={styles.outcome}>Undone</div>
+  ) : onUndo ? (
+    <button
+      type="button"
+      className={styles.dismiss}
+      disabled={busy}
+      data-tooltip={isPlan ? (part.goalSet ? PLAN_UNDO_GOAL_HINT : PLAN_UNDO_HINT) : undefined}
+      onClick={() => void undo()}
+    >
+      {busy ? "Undoing…" : "Undo"}
+    </button>
+  ) : null;
+  // The card's lines: a settings change's each setting, in its node's words.
+  // A code change's line names its node, as its title does; a new node's
+  // kind and id are run details.
+  const lines =
+    part.kind === "settings"
+      ? part.settingLines ?? (part.lines ?? []).slice(1)
+      : part.kind === "content" || part.kind === "node"
+        ? []
+        : part.lines ?? [];
+  // What the plan left undone stays in view: the card's own word, or, on a
+  // card stored before it had one, its line among those the agents read.
+  const leftUndone = isPlan
+    ? part.leftUndone ?? (part.lines ?? []).find((line) => line.startsWith(LEFT_UNDONE)) ?? null
+    : null;
+  // The scenarios the plan could not save stay in view.
+  const unsaved = isPlan
+    ? (part.plan?.scenarios ?? [])
+        .filter((_, index) => planNodeState?.scenarioStates?.[String(index)] === "refused")
+        .map((scenario) => scenario.name)
+    : [];
   return (
     <div className={styles.card} role="group" aria-label={`Change: ${part.summary}`} data-change-status={part.status}>
       <div className={`${styles.header} ${tintClassName ?? ""}`}>
         <span className={styles.accentDot} aria-hidden="true" />
-        <span>{part.summary}</span>
-        <span className={styles.kind}>{CHANGE_KIND_LABEL[part.kind] ?? part.kind}</span>
+        <span>{changeTitle(part, nodeName)}</span>
       </div>
-      {part.source ? <SourceBlock source={part.source} /> : null}
-      {isPlan ? <PlanSummary part={part} goalSet={part.goalSet} /> : null}
-      {(part.lines ?? []).map((line, i) => (
-        <div key={`line-${i}`} className={styles.meta}>
-          {line}
-        </div>
-      ))}
-      {part.validation ? <ValidationBlock validation={part.validation} /> : null}
       {isPlan ? (
         <>
+          <PlanSummary part={part} />
+          {leftUndone ? <div className={styles.planWarning}>{leftUndone}</div> : null}
+          {unsaved.length ? <div className={styles.planWarning}>{`Not saved ✗: ${unsaved.join(", ")}`}</div> : null}
           {!undone ? (
             <PlanNodesList
               part={part}
@@ -130,24 +171,46 @@ export const AgentChangeCard: React.FC<{
               onOpenAgentChat={onOpenAgentChat}
               delegateExists={delegateExists}
               agentNameOf={agentNameOf}
+              nodeChatOf={nodeChatOf}
+              sourcesOf={planNodeState ? sourcesOf : undefined}
             />
           ) : null}
-          {part.plan?.edges?.length ? <PlanEdgesList part={part} /> : null}
-          <PlanScenariosList part={part} planNodeState={planNodeState} />
+          <div className={styles.planFoot}>
+            <button
+              type="button"
+              className={styles.planDetailsToggle}
+              aria-expanded={detailsOpen}
+              aria-controls={detailsOpen ? detailsId : undefined}
+              onClick={() => setDetailsOpen((open) => !open)}
+            >
+              Details
+              <FontAwesomeIcon icon={detailsOpen ? faChevronUp : faChevronDown} aria-hidden="true" />
+            </button>
+            <span className={styles.planNodeSpacer} />
+            {undoControl}
+          </div>
+          {detailsOpen ? <PlanDetails id={detailsId} part={part} planNodeState={planNodeState} /> : null}
         </>
-      ) : part.kind === "content" || part.kind === "node" ? (
-        part.preview ? <div className={styles.preview}>{part.preview}</div> : null
-      ) : null}
-      {part.kind === "node" && part.source ? <SolveLine part={part} /> : null}
-      {undone ? (
-        <div className={styles.outcome}>Undone</div>
-      ) : onUndo ? (
-        <div className={styles.actions}>
-          <button type="button" className={styles.dismiss} disabled={busy} onClick={() => void undo()}>
-            {busy ? "Undoing…" : "Undo"}
-          </button>
-        </div>
-      ) : null}
+      ) : (
+        <>
+          {part.source ? <SourceLine source={part.source} /> : null}
+          {lines.map((line, i) => (
+            <div key={`line-${i}`} className={styles.meta}>
+              {line}
+            </div>
+          ))}
+          {part.validation ? <ValidationBlock validation={part.validation} /> : null}
+          {(part.kind === "content" || part.kind === "node") && part.preview ? <CodePreview text={part.preview} /> : null}
+          {runDetails && part.kind === "node"
+            ? (part.lines ?? []).map((line, i) => (
+                <div key={`detail-${i}`} className={styles.meta} data-curio-run-details="">
+                  {line}
+                </div>
+              ))
+            : null}
+          {undoControl ? <div className={styles.changeFoot}>{undoControl}</div> : null}
+        </>
+      )}
       {said ? (
         <div className={styles.error} role="alert">
           {said}

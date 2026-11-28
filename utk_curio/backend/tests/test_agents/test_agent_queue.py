@@ -362,6 +362,9 @@ def test_a_node_removed_while_the_plan_lands_stops_it_and_its_card_says_what_was
     # Sum is named as its header on the canvas names it: its title.
     assert "Left undone: 2 connections, since 'Sum' was removed" in card["lines"], card["lines"]
     assert card["lines"][-1].startswith("Topology"), card["lines"]
+    # The card shows people the same words on itself, its lines being the
+    # model's.
+    assert card["leftUndone"] == "Left undone: 2 connections, since 'Sum' was removed", card
     flow = _saved(client, token, project)
     assert set(_plan_nodes(flow)) == {"Fetch", "Clean"} and "sum" not in _by_id(flow), flow["nodes"]
     assert flow["edges"] == [], f"a connection of the stopped plan landed: {flow['edges']}"

@@ -106,6 +106,11 @@ class TestSolve:
             d["parentExecutionId"] == body["executionId"]
             for d in solve_turn["execution"]["delegations"]
         )
+        # Its sentence says how the batch ended, each node's row its own: the
+        # batch's card of lines is a run detail.
+        assert solve_turn["text"] == "Solved 2 of 2 plan nodes.", solve_turn["text"]
+        card = next(p for p in solve_turn["content"] if p.get("type") == "card" and p.get("title") == "Solve: 2 of 2 nodes")
+        assert card["runDetails"] is True, card
 
     def test_solve_needs_only_the_dataflow_builder_and_the_node_builder(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch
@@ -349,6 +354,62 @@ class TestSolve:
         reason_lines = [l for l in solve_turn["content"][0]["lines"] if l.startswith("reason:")]
         assert len(reason_lines) == 1
         assert "Apply it, then Retry" in reason_lines[0]
+
+    def test_a_batch_keeps_its_reasons_on_the_plans_ledger_for_every_tab(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
+    ):
+        """The batch's card of lines is a run detail, so its words on each node
+        are kept on the plan's ledger, which the listing hands every tab and a
+        reload: why each node failed, and the batch's own reason."""
+        user, token = user_and_token
+        att_id, _applied, _ = self._applied_plan(
+            client, user, token, alice_project, monkeypatch, install_writer=False,
+        )
+        body = self._solve(client, token, alice_project, att_id).get_json()
+        assert {r["status"] for r in body["results"].values()} == {"failed"}
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        session = next(c for c in cards if c["attachmentId"] == att_id)["builderSession"]
+        assert session["nodeReasons"] == {nid: r["error"] for nid, r in body["results"].items()}, session
+        assert session["batchReason"] == body["reason"], session
+        assert session["batchReason"].startswith("specialist not installed"), session
+        # Nothing ran: no node claims a check.
+        assert not session.get("nodeChecks"), session
+
+    def test_a_batch_keeps_how_it_checked_each_node_and_drops_its_old_reasons(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
+    ):
+        """Each node a batch ran in the sandbox keeps that check on the plan's
+        ledger, which its row's tick says; a node it solved keeps no reason of
+        an earlier batch, nor the plan the earlier batch's own."""
+        user, token = user_and_token
+        att_id, _applied, _ = self._applied_plan(
+            client, user, token, alice_project, monkeypatch, install_writer=False,
+        )
+        failed = self._solve(client, token, alice_project, att_id).get_json()
+        assert {r["status"] for r in failed["results"].values()} == {"failed"}
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        before = next(c for c in cards if c["attachmentId"] == att_id)
+        assert set(before["builderSession"]["nodeReasons"]) == set(failed["results"]), before["builderSession"]
+        # The specialist installed through its review, as the migration path does.
+        self._release_repair()
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/"
+            f"{before['activeProposal']['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert r.status_code == 200, r.get_data(as_text=True)
+        body = self._solve(client, token, alice_project, att_id, node_ids=list(failed["results"])).get_json()
+        assert {r["status"] for r in body["results"].values()} == {"solved"}, body["results"]
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        session = next(c for c in cards if c["attachmentId"] == att_id)["builderSession"]
+        assert session["nodeChecks"] == {ref: "ran" for ref in session["nodeIds"]}, session
+        assert "nodeReasons" not in session and "batchReason" not in session, session
 
     def test_missing_specialist_apply_then_retry_solves(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         # The migration path for every pre-dev/106 project (edge 8).
@@ -1097,6 +1158,127 @@ class TestBuildAndValidate:
             ).get_json()["turns"]
             assert any(p.get("changeId") == entry["changeId"] for t in home for p in t.get("content") or [])
 
+    def test_a_build_that_builds_the_whole_plan_ends_with_one_sentence(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
+    ):
+        """The plan's chat keeps each node's own turn for the agents, its row
+        on the plan's card saying it for people, and says once, when the build
+        leaves every node built, how each node's code was checked and where
+        its code and checks are. The ledger keeps each node's check, which
+        its row's tick says."""
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        self._fake_exec(monkeypatch)
+        att_id, card, _ids, _ = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Plan.\n" + helper._plan_tail(), "print('generated')"],
+        )
+        done = self._simulate(client, token, alice_project, att_id, "auto")[-1][1]
+        assert done["status"] == "completed"
+        refs = [n["ref"] for n in card["plan"]["nodes"]]
+        assert done["builderSession"]["nodeChecks"] == {ref: "ran" for ref in refs}
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session", headers=_auth(token),
+        ).get_json()["turns"]
+        per_node = [t for t in turns if "the trace and the change live in the node's" in (t.get("text") or "")]
+        assert len(per_node) == len(refs) and all(t.get("forAgents") is True for t in per_node), per_node
+        last = turns[-1]
+        assert last["role"] == "agent" and not last.get("forAgents"), last
+        assert last["text"] == (
+            "Built all 2 nodes. Load and Analyze ran in the sandbox. "
+            "Each node's code and checks are in its Node Builder."
+        ), last["text"]
+
+    def test_the_closing_sentence_says_each_check_in_words(self):
+        from utk_curio.backend.app.agents.application.solve.simulation import built_sentence
+
+        assert built_sentence(
+            [("CPL branches", "ran"), ("Branch points", "ran"), ("Library branch map", "valid")], "Node Builder",
+        ) == (
+            "Built all 3 nodes. CPL branches and Branch points ran in the sandbox, and Library branch map is "
+            "valid against its grammar. Each node's code and checks are in its Node Builder."
+        )
+        # Several of a kind, a node with no code to run, and nodes whose code
+        # landed with different agents.
+        assert built_sentence(
+            [("Load", "ran"), ("Map", "valid"), ("Chart", "valid"), ("Notes", "written")], None,
+        ) == (
+            "Built all 4 nodes. Load ran in the sandbox, Map and Chart are valid against their grammar, and "
+            "Notes was written, with no code to run. Each node's code and checks are in its own agent's chat."
+        )
+        # One node; a node whose check the ledger does not hold says none.
+        assert built_sentence([("Load", None)], "Node Builder") == (
+            "Built its node. Its code and checks are in its Node Builder."
+        )
+
+    def test_the_closing_sentence_claims_no_check_of_code_changed_after_it(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
+    ):
+        """The first node's row Solve ran its code in the sandbox; then
+        someone changed that code by hand. The check was of the code before:
+        the listing every tab reads holds it no more, and the build that
+        builds the rest says how each node it can vouch for was checked,
+        never that the changed one ran."""
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        self._fake_exec(monkeypatch)
+        att_id, card, ids, _ = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Plan.\n" + helper._plan_tail(), "print('generated')"],
+        )
+        refs = [n["ref"] for n in card["plan"]["nodes"]]
+        first = TestValidateNode()._validate(client, token, alice_project, att_id, {"ref": refs[0]})[-1][1]
+        assert first["verdict"] == "pass"
+        assert first["builderSession"]["nodeChecks"] == {refs[0]: "ran"}
+        # The row's Solve keeps where its code's change lives, as a build does.
+        assert first["builderSession"]["nodeChanges"][refs[0]] == {
+            "changeId": first["changeId"], "attachmentId": first["changeAttachmentId"],
+        }
+
+        def listed_checks():
+            cards = client.get(
+                f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token),
+            ).get_json()["attachments"]
+            return next(c for c in cards if c["attachmentId"] == att_id)["builderSession"].get("nodeChecks")
+
+        assert listed_checks() == {refs[0]: "ran"}
+        key = _user_dir_key(user)
+        spec = projects_storage.read_spec(key, alice_project)
+        next(n for n in spec["dataflow"]["nodes"] if n["id"] == ids[refs[0]])["content"] = "print('mine')"
+        projects_storage.write_spec(key, alice_project, spec)
+        assert listed_checks() == {}
+        done = self._simulate(client, token, alice_project, att_id, "auto")[-1][1]
+        assert done["status"] == "completed"
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session", headers=_auth(token),
+        ).get_json()["turns"]
+        assert turns[-1]["text"] == (
+            "Built all 2 nodes. Analyze ran in the sandbox. Each node's code and checks are in its Node Builder."
+        ), turns[-1]["text"]
+        assert listed_checks() == {refs[1]: "ran"}
+
+    def test_a_build_that_leaves_a_node_to_build_says_no_sentence(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
+    ):
+        """A Step that builds the plan's first node leaves the second to
+        build: the plan is not built, and its chat says nothing of it."""
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        self._fake_exec(monkeypatch)
+        att_id, _card, _ids, _ = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Plan.\n" + helper._plan_tail(), "print('generated')"],
+        )
+        done = self._simulate(client, token, alice_project, att_id, "step")[-1][1]
+        assert done["status"] == "stepped"
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session", headers=_auth(token),
+        ).get_json()["turns"]
+        assert not [t for t in turns if (t.get("text") or "").startswith("Built ")], turns
+
     def test_undo_of_a_validated_nodes_code_puts_back_the_code_before(
         self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
     ):
@@ -1258,6 +1440,45 @@ class TestBuildAndValidate:
         assert set(done["builderSession"]["nodeStates"].values()) == {"approved"}
         assert [p["ref"] for k, p in events if k == "action_result" and p["action"] == "validate"] == refs
 
+    def test_a_pause_on_a_failed_node_ends_once_its_rows_solve_builds_it(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
+    ):
+        """A build paused because a node's check failed. The pause is about
+        that node alone: once its row's Solve builds it, the plan is paused on
+        nothing, and the line says where the plan stands, Ready once every
+        node is built, never that it is paused on a node that is built."""
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        self._fake_exec(monkeypatch, fail_markers=("always_bad",))
+        att_id, card, _ids, _ = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Plan.\n" + helper._plan_tail(), "always_bad()"],
+        )
+        refs = [n["ref"] for n in card["plan"]["nodes"]]
+        done = self._simulate(client, token, alice_project, att_id, "auto")[-1][1]
+        assert done["status"] == "paused"
+        assert done["reason"]["kind"] == "validation-failed" and done["reason"]["ref"] == refs[0]
+        # The sandbox behaves now: each row's Solve builds its node.
+        self._fake_exec(monkeypatch)
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn",
+            lambda config, messages, **kw: "print('fixed')",
+        )
+        rows = TestValidateNode()
+        first = rows._validate(client, token, alice_project, att_id, {"ref": refs[0]})[-1][1]
+        assert first["verdict"] == "pass"
+        assert first["builderSession"]["nodeStates"][refs[0]] == "validated"
+        assert "pauseReason" not in first["builderSession"], first["builderSession"]["pauseReason"]
+        second = rows._validate(client, token, alice_project, att_id, {"ref": refs[1]})[-1][1]
+        assert second["verdict"] == "pass"
+        # The listing every tab reads: every node built, and no pause.
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token),
+        ).get_json()["attachments"]
+        session = next(c for c in cards if c["attachmentId"] == att_id)["builderSession"]
+        assert {session["nodeStates"][ref] for ref in refs} == {"validated"}, session["nodeStates"]
+        assert "pauseReason" not in session, session["pauseReason"]
+
     def test_cancel_stops_at_the_next_boundary(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         from utk_curio.backend.app.agents.application.solve import simulation
         from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
@@ -1372,6 +1593,94 @@ class TestValidateNode:
         part = self._card(client, token, alice_project, done["changeAttachmentId"], done["changeId"])
         assert part["validation"]["verdict"] == "pass"
         assert part["kind"] == "content"
+
+    def test_a_pass_keeps_how_it_was_checked_and_says_its_news_where_people_look(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
+    ):
+        """The plan's ledger keeps how the node's code was checked (it ran in
+        the sandbox), which its row's tick says. The node's agent's chat draws
+        the task the plan's agent asked of it as one quiet line (``asked``),
+        says the code ran, and keeps the Solve's trace as a run detail, its
+        rounds being the change card's Verification. The plan's chat keeps
+        its turn of the node for the agents: the node's row says it is built."""
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        self._fake_exec(monkeypatch)
+        att_id, ref, _node_id, _ = self._setup_plan_node(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Plan.\n" + helper._plan_tail(), "print('validated code')"],
+        )
+        done = self._validate(client, token, alice_project, att_id, {"ref": ref})[-1][1]
+        assert done["builderSession"]["nodeChecks"] == {ref: "ran"}
+
+        def turns_of(attachment_id):
+            return client.get(
+                f"/api/agents/projects/{alice_project}/attachments/{attachment_id}/session", headers=_auth(token),
+            ).get_json()["turns"]
+
+        home = turns_of(done["changeAttachmentId"])
+        [asked] = [t for t in home if t["role"] == "user"]
+        assert asked["asked"] == {"by": "Dataflow Builder", "task": "solve Load"}, asked
+        assert asked["text"].startswith("[Delegated by Dataflow Builder] Solve 'Load'"), asked["text"]
+        reply = home[-1]
+        assert reply["text"] == "Validated Load: its code ran after 1 round and is written into the node.", reply["text"]
+        trace = next(p for p in reply["content"] if p.get("type") == "card")
+        assert trace["runDetails"] is True, trace
+        plan_chat = turns_of(att_id)
+        [solved] = [t for t in plan_chat if "the trace and the change live in the node's" in (t.get("text") or "")]
+        assert solved["forAgents"] is True, solved
+
+    def test_an_agents_chat_write_of_a_checked_nodes_code_keeps_no_check(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
+    ):
+        """The node's own agent rewrites its code in its chat. That write runs
+        nothing, so the plan keeps no check of the node, the one its row's
+        Solve made of the code before included: its row claims none."""
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        self._fake_exec(monkeypatch)
+        att_id, ref, node_id, _ = self._setup_plan_node(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Plan.\n" + helper._plan_tail(), "print('validated code')"],
+        )
+        done = self._validate(client, token, alice_project, att_id, {"ref": ref})[-1][1]
+        assert done["builderSession"]["nodeChecks"] == {ref: "ran"}
+        write = (
+            '```curio.v1\n{"toolRequest": {"tool": "node.content.write", '
+            f'"params": {{"nodeId": "{node_id}", "content": "print(3)"}}}}}}\n```'
+        )
+        script = [write, "Rewritten."]
+        calls: list = []
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents.application.turns import titles
+
+            if messages and messages[0].get("content") == titles.title_prompt():
+                return "Title"
+            calls.append(messages)
+            return script[min(len(calls) - 1, len(script) - 1)]
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn", _fake_run)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{done['changeAttachmentId']}/run",
+            json={"message": "rewrite it"}, headers=_auth(token),
+        )
+        assert r.status_code == 200, r.get_json()
+        assert _saved_nodes(user, alice_project)[node_id]["content"] == "print(3)"
+        records = {
+            record["attachmentId"]: record
+            for record in projects_storage.read_spec(_user_dir_key(user), alice_project)["dataflow"]["agentAttachments"]
+        }
+        kept = records[att_id]["builderSession"]
+        assert kept["nodeStates"][ref] == "approved", kept
+        assert ref not in (kept.get("nodeChecks") or {}), kept
+        assert ref not in (kept.get("nodeCheckedCode") or {}), kept
+        cards = client.get(f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)).get_json()["attachments"]
+        listed = next(c for c in cards if c["attachmentId"] == att_id)["builderSession"]
+        assert ref not in (listed.get("nodeChecks") or {}), listed
 
     def test_failure_self_corrects_with_the_traceback(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token

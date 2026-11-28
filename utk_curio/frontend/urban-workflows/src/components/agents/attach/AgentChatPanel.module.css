@@ -226,7 +226,7 @@
   top: calc(100% + 6px);
   right: 0;
   z-index: 5;
-  width: 244px;
+  width: 262px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -269,6 +269,40 @@
   flex: none;
   width: 14px;
   font-size: 12px;
+}
+
+/* An item's name, with what it does under it in smaller type. */
+.menuItemText {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.menuItemSays {
+  font-size: 11px;
+  color: var(--curio-text-secondary);
+}
+
+/* A switch's box, in the icon's place: checked while it is on. */
+.menuCheck {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin: 0 0.5px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--curio-text-secondary);
+  border-radius: 3px;
+  font-size: 8px;
+}
+
+.menuCheckOn {
+  border-color: var(--curio-text-primary);
+  background: var(--curio-text-primary);
+  color: var(--curio-card-bg);
 }
 
 .menuSep {
@@ -421,72 +455,10 @@
   outline-offset: 1px;
 }
 
-/* ── initial intent, rendered as the conversation's first message ── */
-.intentMsg {
-  align-self: flex-end;
-  max-width: 85%;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-}
-
-.intentClamped {
-  display: -webkit-box;
-  -webkit-line-clamp: 4;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-/* Missing prompt asset: same bubble, muted. */
-.intentPlaceholder {
-  font-style: italic;
-  opacity: 0.8;
-}
-
-.intentControls {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.intentToggle {
-  border: none;
-  background: none;
-  padding: 0;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--curio-accent-sky-fg, var(--curio-role-running-fg));
-  cursor: pointer;
-}
-
-.intentEdit {
-  width: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  color: var(--curio-text-secondary, var(--curio-text-meta));
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.intentEdit:hover,
-.intentEdit:focus-visible {
-  background: var(--curio-surface-muted);
-  color: var(--curio-text-primary, var(--curio-text-primary));
-}
-
-.intentEditor {
-  align-self: stretch;
-}
-
+/* ── the initial intent's field, in More's Edit initial intent dialog ── */
 .intentTextarea {
   width: 100%;
-  min-height: 88px;
+  min-height: 160px;
   resize: vertical;
   background: var(--curio-card-bg);
   border: 1px solid var(--curio-border);
@@ -504,13 +476,7 @@
   outline-offset: 1px;
 }
 
-.intentActions {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-  align-items: center;
-}
-
+/* The goal line's Save and Cancel. */
 .intentSave {
   border: none;
   border-radius: 999px;
@@ -593,11 +559,6 @@
   color: var(--curio-text-primary);
 }
 
-.emptyChatSub {
-  font-size: 12px;
-  color: var(--curio-text-secondary);
-}
-
 .msgUser {
   align-self: flex-end;
   max-width: 85%;
@@ -609,17 +570,6 @@
   word-break: break-word;
   background: var(--curio-top-bar-bg, var(--curio-top-bar-bg));
   color: var(--curio-text-on-dark, var(--curio-text-on-dark));
-}
-
-/* The clamp's `overflow: hidden` clips at the padding box, so the bubble's
-   vertical padding showed the top half of the fifth line (#502). A
-   transparent border takes the padding's place: the background still runs
-   under it, and the clip falls right under the fourth line. */
-.msgUser.intentClamped {
-  padding-top: 0;
-  padding-bottom: 0;
-  border-top: 8px solid transparent;
-  border-bottom: 8px solid transparent;
 }
 
 /* A message someone else wrote, in a chat the owner and the editors the owner
@@ -721,6 +671,18 @@
   background: var(--curio-danger-bg);
   border-color: var(--curio-danger-border);
   color: var(--curio-danger-strong);
+}
+
+/* A task another agent asked of this one: one quiet line, centred like the
+   chat's own notes, never a bubble of the person's. */
+.askedLine {
+  align-self: center;
+  max-width: 92%;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--curio-text-secondary, var(--curio-text-meta));
+  text-align: center;
+  padding: 2px 0;
 }
 
 .systemLine {
@@ -908,48 +870,77 @@
   font-size: 0.82em;
 }
 
-/* SUGGESTED PROMPTS chips (docs/03 soft-token treatment): filled soft
-   surfaces with hairlines, above the input row. */
+/* The newest reply's suggestions, behind one button above the message box. */
 .suggestedRow {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px 0;
-  background: var(--curio-card-bg, var(--curio-card-bg));
+  padding: 8px 12px 0;
+  background: var(--curio-card-bg);
   border-top: 1px solid var(--curio-border);
 }
 
-.suggestedLabel {
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--curio-text-meta);
-  margin-right: 2px;
-}
-
-.suggestedChip {
-  border: 1px solid var(--curio-border);
-  background: var(--curio-surface-muted);
+.suggestedButton {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 11px;
+  border: 1px solid var(--curio-border-strong);
   border-radius: 999px;
-  padding: 4px 12px;
-  font-size: 0.78rem;
-  color: var(--curio-text-primary);
+  background: var(--curio-card-bg);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--curio-text-secondary);
   cursor: pointer;
-  max-width: 260px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.suggestedChip:hover,
-.suggestedChip:focus-visible {
+.suggestedButton:hover,
+.suggestedButton:focus-visible,
+.suggestedButtonOpen {
   background: var(--curio-surface-muted);
-  border-color: var(--curio-border-strong);
+  color: var(--curio-text-primary);
 }
 
-/* The chips row visually joins the footer beneath it. */
+/* Its menu opens upward, over the conversation. */
+.suggestedMenu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 5;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--curio-border-strong);
+  border-radius: 10px;
+  background: var(--curio-card-bg);
+  box-shadow: var(--curio-shadow-modal);
+}
+
+.suggestedItem {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--curio-text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.suggestedItem:hover,
+.suggestedItem:focus-visible {
+  background: var(--curio-surface-muted);
+}
+
+/* The button's row joins the message box under it. */
 .suggestedRow + .footer {
   border-top: none;
+  padding-top: 8px;
 }

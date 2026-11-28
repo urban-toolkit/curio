@@ -12,7 +12,7 @@ import { UserContext } from "../../providers/UserProvider";
 import type { UserData } from "../../utils/authApi";
 import type { AgentRemedy } from "../../services/agents";
 import { AddKeyAction } from "../../components/connectionKeys/AddKeyAction";
-import { SolveFeedback, SolveRemedies } from "../../components/agents/attach/builderStrip/SolveFeedback";
+import { SolveRemedies } from "../../components/agents/attach/builderStrip/SolveFeedback";
 import { CredentialHint } from "../../components/editing/CredentialHint";
 import { subscribeApiSettingsRequests } from "../../components/apiSettings/apiSettingsRequest";
 
@@ -84,14 +84,9 @@ describe("Add key for <host>", () => {
   });
 
   it("is not offered to a hosted guest under the plan line, which shows no empty key group", () => {
-    renderAs(
-      HOSTED_GUEST,
-      <>
-        <SolveFeedback reasons={["needs a key"]} notices={[]} />
-        <SolveRemedies remedies={[MISSING_KEY]} selectionRemedies={[]} />
-      </>,
-    );
-    expect(screen.getByText("needs a key")).toBeInTheDocument();
+    // Why the node failed is on its row of the plan's card
+    // (AgentChangeCard.test.tsx, "a failed row says so, why on a line of its own").
+    renderAs(HOSTED_GUEST, <SolveRemedies remedies={[MISSING_KEY]} />);
     expect(addKey()).toBeNull();
     expect(screen.queryByRole("group", { name: "Missing connection keys" })).toBeNull();
   });
@@ -115,7 +110,7 @@ describe("Add key for <host>", () => {
     ["the local guest", LOCAL_GUEST],
     ["a signed-in user", SIGNED_IN_USER],
   ])("is offered to %s under the plan line", (_who, value) => {
-    renderAs(value, <SolveRemedies remedies={[MISSING_KEY]} selectionRemedies={[]} />);
+    renderAs(value, <SolveRemedies remedies={[MISSING_KEY]} />);
     expect(screen.getByRole("group", { name: "Missing connection keys" })).toContainElement(addKey());
   });
 

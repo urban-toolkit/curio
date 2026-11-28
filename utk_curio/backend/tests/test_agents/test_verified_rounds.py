@@ -681,7 +681,12 @@ class TestNotExecutableKinds:
         assert exec_fn.calls == [] and len(inputs) == 1  # generated once, never run, never corrected
         attempt = outcome["attempts"][0]
         assert attempt["verdict"] == "not-executable" and attempt["kind"] == "not-executable"
-        assert "no code the sandbox could run" in attempt["detail"]
+        # The runner's honest outcome is the evidence's. The round, whose
+        # document its grammar validated, says that instead of why the sandbox
+        # ran nothing (test_document_validation.py, "a corrected chart's
+        # attempts").
+        assert "no code the sandbox could run" in outcome["evidence"]["detail"]
+        assert attempt["documentValidated"] == "vis-vega" and "detail" not in attempt, attempt
         assert [k for k, _ in events if k == "round_verdict"] == ["round_verdict"]
 
 
@@ -1647,6 +1652,8 @@ class TestSolveNode:
                            headers=_auth(token)).get_json()["turns"]
         assert "no change needed" in turns[-1]["text"]
         assert turns[-1]["content"][0]["title"].startswith("Solve · PASS")
+        # No change card holds its rounds: its trail stays in view.
+        assert "runDetails" not in turns[-1]["content"][0], turns[-1]["content"][0]
 
     def test_failing_current_content_is_fixed_into_a_change_with_its_undo(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
@@ -1676,6 +1683,12 @@ class TestSolveNode:
         assert part["validation"]["verdict"] == "pass"
         assert part["validation"]["attempts"][1]["kind"] == "executed"
         assert "bad_sep" not in part["preview"]
+        # Its rounds are the change card's Verification: the Solve's trail,
+        # on the turn that holds the card, is a run detail.
+        assert home == ctx["att"], (home, ctx["att"])
+        solved = next(t for t in reversed(turns) if part in (t.get("content") or []))
+        [trail] = [p for p in solved["content"] if p.get("type") == "card"]
+        assert trail["title"].startswith("Solve · PASS") and trail["runDetails"] is True, trail
         # Its Undo puts the code that failed back on the node.
         r = client.post(f"/api/agents/projects/{ctx['pid']}/attachments/{home}/changes/{done['changeId']}/undo",
                         headers=_auth(token))

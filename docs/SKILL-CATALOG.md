@@ -140,7 +140,7 @@ How a call holds its skills:
 
 The skills an agent's calls may hold are the agent's list: its manifest names them, and you change the list in its details ([Agent Catalog](AGENT-CATALOG.md#skills)). The skills of the packages a dataflow uses reach every agent on it ([Skills from packages](#skills-from-packages)). On a dataflow you edit at its owner's invitation, the agents hold the owner's skills ([Invited editors](AGENT-CATALOG.md#invited-editors)).
 
-**The skills a reply used.** A line under each chat reply names the skills its run held or loaded: those it was handed for the node the chat is on or the procedures its instruction follows, those your message named, those its words asked for, those earlier turns of the conversation took in, then those it loaded. Hovering a name says which. The core skills, which every call holds, are not named.
+**The skills a reply used.** With **Show run details**, in the chat's **More** menu, a line under each chat reply names the skills its run held or loaded: those it was handed for the node the chat is on or the procedures its instruction follows, those your message named, those its words asked for, those earlier turns of the conversation took in, then those it loaded. Hovering a name says which. The core skills, which every call holds, are not named.
 
 ---
 

@@ -34,6 +34,7 @@ from utk_curio.backend.app.agents.application.proposals import mint as agents_mi
 from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
 from utk_curio.backend.app.agents.application.proposals import store as agents_store
 from utk_curio.backend.app.agents.application.solve import simulation as agents_simulation
+from utk_curio.backend.app.agents.application.solve import validate as agents_validate
 from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.domain import node_settings
 from utk_curio.backend.app.agents.domain.counts import count_label
@@ -138,10 +139,13 @@ def _node_in(spec: dict, node_id: object) -> dict | None:
 def _resolve_plan_ledger(spec: dict, node_id: str):
     """When *node_id* is a node of a plan, the code an agent writes into it
     resolves the plan's ledger: its row approved, its run solved, and the
-    plan ready once nothing is left pending (dev/67-6, dev/71). The ledger
-    may live on the agent that planned it while the code comes from the
-    node's own (dev/72): found wherever it is. Returns what puts the ledger
-    back, for a write that is refused."""
+    plan ready once nothing is left pending (dev/67-6, dev/71). The write
+    itself checks nothing: the row keeps no check, an older one included,
+    until a check runs on this code (a validation's lands after it), and a
+    build's pause on the node's failure ends. The ledger may live on the
+    agent that planned it while the code comes from the node's own (dev/72):
+    found wherever it is. Returns what puts the ledger back, for a write that
+    is refused."""
     session: dict = {}
     ref = None
     for ledger_record in attachments.list_attachments(spec):
@@ -157,6 +161,8 @@ def _resolve_plan_ledger(spec: dict, node_id: str):
     before = copy.deepcopy(session)
     if ref is not None:
         (session.get("nodeStates") or {})[ref] = "approved"
+        agents_validate.keep_check(session, ref, None, None)
+        agents_validate.end_pause_on(session, ref)
         runs = session.get("nodeRuns")
         if isinstance(runs, dict) and node_id in runs:
             runs[node_id] = "solved"

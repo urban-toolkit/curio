@@ -12,7 +12,7 @@ import type {
 import { useDatasetDetails } from "../../datasets/catalog/datasetDetailsContext";
 import { sanitizeAgentUrl, sourceCardStanding } from "../../../services/agents";
 import styles from "./AgentDatasetCandidatesCard.module.css";
-import { VerificationChip } from "./verificationChip";
+import { verificationLabel } from "./verificationChip";
 import {
   acquireKey,
   startDiscoveryAcquire,
@@ -35,18 +35,97 @@ export function rowProvenance(row: AgentDatasetCandidateRow): DatasetDiscoverySo
   return Object.keys(source).length ? source : undefined;
 }
 
-const LANE_LABEL: Record<"external" | "catalog", string> = {
-  external: "External sources",
-  catalog: "From your Data Catalog",
-};
+type Lane = "external" | "catalog";
 
-/** The card's lanes in the order it draws them: the server's (`laneOrder`,
- * the lane that holds the best row first), then any lane it did not name, in
- * the order a card minted before cards were ranked drew them. */
-function laneOrder(part: AgentDatasetCandidatesPart): ("external" | "catalog")[] {
-  const lanes: ("external" | "catalog")[] = ["external", "catalog"];
+/** The card's lanes best first: the server's (`laneOrder`, the lane that
+ * holds the best row first), then any lane it did not name, in the order a
+ * card minted before cards were ranked drew them. */
+function laneOrder(part: AgentDatasetCandidatesPart): Lane[] {
+  const lanes: Lane[] = ["external", "catalog"];
   const ranked = (part.laneOrder ?? []).filter((lane) => lanes.includes(lane));
   return [...ranked, ...lanes.filter((lane) => !ranked.includes(lane))];
+}
+
+/** One row of the card, with the lane and the index a pick addresses it by. */
+interface PlacedRow {
+  lane: Lane;
+  index: number;
+  row: AgentDatasetCandidateRow;
+}
+
+/** The card's rows as one list, best first: in the server's order
+ * (`rowOrder`, by what can be done with each row, then its fit), then any row
+ * it does not name, lane by lane in the lanes' order, as a card minted before
+ * its rows were one list draws them. An entry that names no row is passed
+ * over. Exported for tests. */
+export function rowsInOrder(part: AgentDatasetCandidatesPart): PlacedRow[] {
+  const placed: PlacedRow[] = [];
+  const seen = new Set<string>();
+  const place = (lane: unknown, index: unknown) => {
+    if ((lane !== "external" && lane !== "catalog") || typeof index !== "number") return;
+    const row = (part.lanes[lane] ?? [])[index];
+    const key = `${lane}:${index}`;
+    if (!row || seen.has(key)) return;
+    seen.add(key);
+    placed.push({ lane, index, row });
+  };
+  for (const entry of part.rowOrder ?? []) {
+    if (Array.isArray(entry)) place(entry[0], entry[1]);
+  }
+  for (const lane of laneOrder(part)) {
+    (part.lanes[lane] ?? []).forEach((_row, index) => place(lane, index));
+  }
+  return placed;
+}
+
+/** Where a row's data comes from, on one line: its provider (a Data Catalog
+ * row with none comes from the Data Catalog), its format and its coverage. */
+function originLine(lane: Lane, row: AgentDatasetCandidateRow): string {
+  const from = row.provider || (lane === "catalog" ? "Data Catalog" : "");
+  return [from, row.format, row.coverage].filter(Boolean).join(" · ");
+}
+
+/** The verdicts of a link that gave no data: an error answer, no answer, or
+ * a URL the egress policy refused. */
+const FAILED_VERDICTS = new Set(["http-error", "unreachable", "refused"]);
+
+/** Whether a person downloads *row* from its portal: the probe said so, or
+ * the link answered a web page, which is no data. Never a row Curio
+ * downloads itself. */
+function manualDownload(row: AgentDatasetCandidateRow): boolean {
+  if (row.acquirable) return false;
+  return row.access === "manual-download" || (row.verification?.status === "verified" && Boolean(row.verification.webPage));
+}
+
+/** *text* without the full stop it ends with. */
+function unstopped(text: string | undefined): string {
+  return (text ?? "").trim().replace(/\.$/, "");
+}
+
+/** The one warning a row carries, or null: what keeps it from being used as
+ * it is. A row Curio downloads, and a link that answered data, carry none
+ * but their requirement. A portal download says why, and that its dataset id
+ * is not confirmed when its portal did not confirm its coordinate; a link
+ * that gave no data says what it answered, in the words of the one label
+ * table (`verificationLabel`); a link never checked says so. Exported for
+ * tests. */
+export function rowWarning(lane: Lane, row: AgentDatasetCandidateRow): string | null {
+  const requirement = unstopped(row.requirement) ? `${unstopped(row.requirement)}.` : null;
+  if (lane === "catalog" || row.acquirable) return requirement;
+  if (manualDownload(row)) {
+    const why = unstopped(row.accessWhy) || (row.verification?.webPage ? "the data URL answered with a web page" : "");
+    const unconfirmed = row.sourceId && row.resourceId ? "its dataset id is not confirmed" : "";
+    const reasons = [why, unconfirmed].filter(Boolean).join(", and ");
+    return reasons ? `Manual download: ${reasons}.` : "Manual download.";
+  }
+  const verification = row.verification;
+  if (verification && FAILED_VERDICTS.has(verification.status)) {
+    return `${verificationLabel(verification.status, verification).replace(/ ✗$/, "")}: not usable as offered.`;
+  }
+  if (verification && verification.status !== "verified") {
+    return `${verificationLabel(verification.status, verification)}.`;
+  }
+  return requirement;
 }
 
 /** dev/114: whose chat the card lives in — the Dataset Finder's (the DEC-047
@@ -131,10 +210,12 @@ function pickOrigin(pick: AgentDatasetCandidateRow): string | null {
 }
 
 /** What the card says once its node's Dataset Finder recorded the pick: what
- * was picked and where it comes from, and no more, the same in every chat and
- * tab. What comes of the pick (the record's `next`) ends the Source recorded
- * turn the server writes below the card in every chat that holds it, so the
- * card leaves it to that turn and the chat says it once. Exported for tests. */
+ * was picked and where it comes from, then what comes of the pick, as the
+ * server said it (the record's `next`), the same in every chat and tab
+ * ("Recorded: Chicago Neighborhoods (Data Catalog). The Dataflow Builder
+ * builds CPL branches from it."). The Source recorded turns the server
+ * writes are the agents' alone, so the chat says it once, here. Exported for
+ * tests. */
 export function recordedLine(record: AgentDatasetSourceRecord): string {
   const names = (record.picks ?? [])
     .map((pick) => {
@@ -143,7 +224,8 @@ export function recordedLine(record: AgentDatasetSourceRecord): string {
       return origin ? `${name} (${origin})` : name;
     })
     .join(", ");
-  return `Recorded: ${names}.`;
+  const next = (record.next ?? "").trim();
+  return next ? `Recorded: ${names}. ${next}` : `Recorded: ${names}.`;
 }
 
 /** What a closed card says: why nothing is to pick on it any more. *node* is
@@ -168,16 +250,6 @@ export function closedLine(
   }
 }
 
-/** The line that names the other chats holding the same card, *names* the
- * agents whose chats they are. */
-function mirroredLine(names: string[]): string {
-  if (names.length === 1) {
-    return `The same card is in the ${names[0]}'s chat. A pick in either shows in both.`;
-  }
-  const chats = names.map((name) => `the ${name}'s`);
-  return `The same card is in ${chats.slice(0, -1).join(", ")} and ${chats[chats.length - 1]} chats. A pick in any shows in all.`;
-}
-
 /** The portal page an external row may link to: only a URL the runtime
  *  vouched for (a source it can download from, or one its probe verified),
  *  and only over http(s). Anything else stays plain text (REQ-SEC-002). */
@@ -189,26 +261,29 @@ export function verifiedPortalUrl(row: AgentDatasetCandidateRow): string | null 
 }
 
 /**
- * The dev/50 two-lane suggestions surface (docs/06): one grouped card, two
- * labeled lanes, keyboard-operable multi-select rows carrying safe metadata
- * only. Toggling a selection composes the editable confirmation prompt into
- * the chat input (the suggested-prompt vehicle); Apply/Dismiss stay exclusively
+ * The Sources card (board S04): a node's candidates as one list, best first,
+ * of keyboard-operable multi-select rows carrying safe metadata only. Each
+ * row says what it is, where it comes from, why it fits the node (with no
+ * score) and, at most, one warning: what keeps it from being used as it is.
+ * Toggling a selection composes the editable confirmation prompt into the
+ * chat input (the suggested-prompt vehicle); Apply/Dismiss stay exclusively
  * on review cards. The one row action is Download, on a row Curio can
  * download: the same download the Discovery Catalog page runs. A row may also
- * open what it names, read-only, the way the same dataset or portal row does
- * everywhere else: a catalog row's "View details", and a verified external
- * row's "View on the portal". Every text field arrives bounded +
- * scheme-allowlisted from the server and renders as plain text here
- * (REQ-SEC-002).
+ * open what it names, read-only, with one link: a catalog row's View details,
+ * or the portal page of an external row whose link the runtime vouched for.
+ * A portal download's How to get it opens the portal's own steps and Import
+ * dataset. Every text field arrives bounded + scheme-allowlisted from the
+ * server and renders as plain text here (REQ-SEC-002).
  *
  * The card of a node's candidates, in its Dataset Finder's chat and in the
  * chat that asked for them, is named for the node, and its Use this source
- * records the pick on the Finder, naming the card it was made on. It follows
- * the Finder's record (`sourceCardStanding`): its rows show only while the
+ * records the pick on the Finder, naming the card it was made on; in the
+ * chat that asked, None fits? goes to the Finder's chat. It follows the
+ * Finder's record (`sourceCardStanding`): its rows show only while the
  * record asks for its pick; the card the pick was made on says Recorded, with
- * the pick and where it comes from; a card a newer search replaced, or one
- * whose Finder, node or record is gone, or whose node needs no pick, is
- * closed and says why.
+ * the pick, where it comes from and what comes of it; a card a newer search
+ * replaced, or one whose Finder, node or record is gone, or whose node needs
+ * no pick, is closed and says why.
  */
 export const AgentDatasetCandidatesCard: React.FC<{
   part: AgentDatasetCandidatesPart;
@@ -249,11 +324,9 @@ export const AgentDatasetCandidatesCard: React.FC<{
   /** Brings the card the record offers now into view, for a card a newer
    * search replaced. */
   onShowNewest?: (() => void) | null;
-  /** The chat of the node's Dataset Finder, for a card in another chat. */
+  /** The chat of the node's Dataset Finder, for a card in another chat: its
+   * None fits? goes there. */
   finderChat?: { name: string; onOpen: () => void } | null;
-  /** The agents whose chats asked for these candidates and hold the same
-   * card. */
-  mirroredIn?: string[] | null;
 }> = ({
   part,
   tintClassName,
@@ -271,9 +344,10 @@ export const AgentDatasetCandidatesCard: React.FC<{
   nodePresent = true,
   onShowNewest = null,
   finderChat = null,
-  mirroredIn = null,
 }) => {
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // The rows whose How to get it is open.
+  const [howToOpen, setHowToOpen] = useState<Set<string>>(new Set());
   const { openDatasetDetails } = useDatasetDetails();
   const [recording, setRecording] = useState(false);
   const [recorded, setRecorded] = useState<AgentDatasetSelection | null>(null);
@@ -435,117 +509,109 @@ export const AgentDatasetCandidatesCard: React.FC<{
     onComposePrompt?.(composeConfirmationPrompt(pick("catalog"), pick("external"), variant, handoffName));
   };
 
-  const renderRow = (lane: "external" | "catalog", row: AgentDatasetCandidateRow, i: number) => {
-    const key = rowKey(lane, i);
-    const meta = [row.provider, row.format, row.coverage].filter(Boolean).join(" · ");
+  const toggleHowTo = (key: string) => {
+    const next = new Set(howToOpen);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    setHowToOpen(next);
+  };
+
+  const renderRow = ({ lane, row, index }: PlacedRow) => {
+    const key = rowKey(lane, index);
+    const origin = originLine(lane, row);
+    const why = (row.fit?.rationale ?? "").trim();
+    const warning = rowWarning(lane, row);
+    // What the warning leaves out, on its tooltip: what the probe saw of a
+    // link that gave no data, or the row's requirement.
+    const failed = row.verification && FAILED_VERDICTS.has(row.verification.status);
+    const requirement = row.requirement?.trim() || undefined;
+    const warningDetail =
+      (failed ? row.verification?.detail : undefined) ?? (requirement && !warning?.startsWith(unstopped(requirement)) ? requirement : undefined);
     const portalUrl = lane === "external" ? verifiedPortalUrl(row) : null;
     const datasetId = lane === "catalog" ? row.datasetId : undefined;
+    const downloadable = lane === "external" && Boolean(row.acquirable);
+    // dev/132: a portal download's own steps (or what the probe observed,
+    // never invented here), and the import of the file they fetch; else a
+    // link the runtime did not vouch for, as plain text, unless it gave no
+    // data.
+    const manual = lane === "external" && manualDownload(row);
+    const steps = manual ? row.downloadSteps ?? [] : [];
+    const plainUrl = lane === "external" && row.url && !portalUrl && !failed && steps.length === 0 ? row.url : null;
+    const imports = manual && Boolean(onImportDataset);
+    const howTo = steps.length > 0 || Boolean(plainUrl) || imports;
+    const open = howTo && howToOpen.has(key);
     return (
       <li key={key} className={styles.row}>
         <label className={styles.rowLabel}>
           <input
             type="checkbox"
             checked={selected.has(key)}
-            onChange={() => toggle(lane, i)}
+            onChange={() => toggle(lane, index)}
             aria-label={`Select ${row.name}`}
           />
           <span className={styles.rowBody}>
-            <span className={styles.rowHead}>
-              <span className={styles.name}>{row.name}</span>
-              <span className={styles.badge}>{row.sourceType}</span>
-              {lane === "catalog" ? (
-                <span className={row.installed ? styles.installedChip : styles.notInstalledChip}>
-                  {row.installed ? "Installed" : "Not installed"}
-                </span>
-              ) : null}
-              {lane === "external" && row.acquirable ? (
-                // Set by the runtime against the real source roster, never by
-                // the model. It is the difference between a row Curio can
-                // download and one it can only hand to Node Builder.
-                <span className={styles.installedChip} data-tooltip="Curio can download this for you">
-                  Downloadable
-                </span>
-              ) : null}
-              {lane === "external" && row.acquirable ? downloadControl(row) : null}
-              {lane === "external" && row.verification ? (
-                // dev/67-4 (DEC-053): the runtime's verdict, never the
-                // model's claim — verified ✓ or a loud warning (the ONE
-                // label table, shared with the review card — dev/114).
-                <VerificationChip verification={row.verification} />
-              ) : null}
-            </span>
-            {meta ? <span className={styles.meta}>{meta}</span> : null}
-            {row.url && !portalUrl ? <span className={styles.url}>{row.url}</span> : null}
-            {row.fit ? (
-              <span className={styles.fit}>
-                Fit {row.fit.score}/100: {row.fit.rationale}
-              </span>
-            ) : null}
-            {row.requirement ? (
-              <span className={styles.requirement}>{row.requirement}</span>
-            ) : null}
-            {row.access === "manual-download" && !row.acquirable ? (
-              // dev/132: this source is a portal download, and the card is
-              // where the user learns how — the steps are the portal's own
-              // (or what the probe observed), never invented here.
-              <span className={styles.download}>
-                <span className={styles.downloadHead}>
-                  Download it from the portal
-                  {row.accessWhy ? `: ${row.accessWhy}` : ""}
-                </span>
-                {row.downloadSteps?.length ? (
-                  <ol className={styles.steps}>
-                    {row.downloadSteps.map((step, si) => (
-                      <li key={si}>{step}</li>
-                    ))}
-                  </ol>
-                ) : null}
-                {onImportDataset ? (
-                  <label className={styles.importControl}>
-                    <input
-                      type="file"
-                      className={styles.importInput}
-                      disabled={importing}
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        e.target.value = "";
-                        if (file) void importAndConfirm(file, row);
-                      }}
-                    />
-                    <span
-                      className={styles.importButton}
-                      aria-disabled={importing || undefined}
-                    >
-                      {importing ? "Importing…" : "Import dataset"}
-                    </span>
-                  </label>
-                ) : null}
+            <span className={styles.name}>{row.name}</span>
+            {origin ? <span className={styles.origin}>{origin}</span> : null}
+            {why ? <span className={styles.why}>{why}</span> : null}
+            {warning ? (
+              <span className={styles.warning} data-tooltip={warningDetail}>
+                {warning}
               </span>
             ) : null}
           </span>
         </label>
-        {datasetId || portalUrl ? (
-          // Outside the label, so opening what the row names never toggles
-          // the selection.
+        {downloadable || howTo || portalUrl || datasetId ? (
+          // Outside the label, so nothing here toggles the selection.
           <div className={styles.rowActions}>
-            {datasetId ? (
+            {downloadable ? downloadControl(row) : null}
+            {howTo ? (
               <button
                 type="button"
                 className={styles.rowLink}
-                onClick={() => openDatasetDetails(datasetId)}
+                aria-expanded={open}
+                onClick={() => toggleHowTo(key)}
               >
-                View details
+                How to get it
               </button>
             ) : null}
             {portalUrl ? (
-              <a
-                className={styles.rowLink}
-                href={portalUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                View on the portal ↗
+              <a className={styles.rowLink} href={portalUrl} target="_blank" rel="noopener noreferrer">
+                Portal ↗
               </a>
+            ) : null}
+            {datasetId ? (
+              <button type="button" className={styles.rowLink} onClick={() => openDatasetDetails(datasetId)}>
+                View details
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        {open ? (
+          <div className={styles.download} role="region" aria-label={`How to get ${row.name}`}>
+            {plainUrl ? <span className={styles.url}>{plainUrl}</span> : null}
+            {steps.length ? (
+              <ol className={styles.steps}>
+                {steps.map((step, si) => (
+                  <li key={si}>{step}</li>
+                ))}
+              </ol>
+            ) : null}
+            {imports ? (
+              <label className={styles.importControl}>
+                <input
+                  type="file"
+                  className={styles.importInput}
+                  disabled={importing}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (file) void importAndConfirm(file, row);
+                  }}
+                />
+                <span className={styles.importButton} aria-disabled={importing || undefined}>
+                  {importing ? "Importing…" : "Import dataset"}
+                </span>
+              </label>
             ) : null}
           </div>
         ) : null}
@@ -553,9 +619,8 @@ export const AgentDatasetCandidatesCard: React.FC<{
     );
   };
 
-  // The lanes best first, as the server ranked them; a card minted before
-  // cards were ranked draws the external lane first.
-  const lanes = laneOrder(part).filter((lane) => (part.lanes[lane] ?? []).length > 0);
+  // The rows as one list, best first, as the server ranked them.
+  const rows = rowsInOrder(part);
   // The card's own name: the node its candidates are for, when it knows it.
   const title = nodeLabel ? `Sources for ${nodeLabel}` : "Dataset candidates";
   // Where the card stands by its node's Finder's record: a card with no pick
@@ -583,8 +648,6 @@ export const AgentDatasetCandidatesCard: React.FC<{
       <div className={`${styles.header} ${tintClassName ?? ""}`}>
         <span className={styles.accentDot} aria-hidden="true" />
         <span>{title}</span>
-        {/* Without a pick of its own, a selection composes a message. */}
-        {onRecordSelection ? null : <span className={styles.kind}>select &amp; confirm in chat</span>}
       </div>
       {standing.kind === "recorded" && record ? (
         <div className={styles.done} role="status">
@@ -604,16 +667,7 @@ export const AgentDatasetCandidatesCard: React.FC<{
           ) : null}
         </div>
       ) : null}
-      {live
-        ? lanes.map((lane) => (
-            <div key={lane} role="group" aria-label={LANE_LABEL[lane]} className={styles.lane}>
-              <div className={styles.laneLabel}>{LANE_LABEL[lane]}</div>
-              <ul className={styles.rows}>
-                {part.lanes[lane].map((row, i) => renderRow(lane, row, i))}
-              </ul>
-            </div>
-          ))
-        : null}
+      {live && rows.length > 0 ? <ul className={styles.rows}>{rows.map(renderRow)}</ul> : null}
       {onRecordSelection && live ? (
         <div className={styles.confirmRow}>
           <button
@@ -626,8 +680,9 @@ export const AgentDatasetCandidatesCard: React.FC<{
             {recording ? "Recording…" : "Use this source"}
           </button>
           {finderChat ? (
+            // In the chat that asked: the Finder's chat, to ask it for more.
             <button type="button" className={`${styles.rowLink} ${styles.finderLink}`} onClick={finderChat.onOpen}>
-              Its {finderChat.name}&apos;s chat
+              None fits? Ask its {finderChat.name}
             </button>
           ) : null}
           {recorded || serverNote ? (
@@ -639,9 +694,6 @@ export const AgentDatasetCandidatesCard: React.FC<{
             <span className={styles.recordError} role="alert">{recordError}</span>
           ) : null}
         </div>
-      ) : null}
-      {mirroredIn && mirroredIn.length > 0 && live ? (
-        <div className={styles.mirrored}>{mirroredLine(mirroredIn)}</div>
       ) : null}
       {!onRecordSelection && (downloaded || recordError) ? (
         // A chat with no node to confirm for: the download still lands in the

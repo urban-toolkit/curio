@@ -7,14 +7,21 @@
  * menu's close is committed before the chat's own listener runs, which then
  * finds no layer open and would close the chat too. It takes the focus as it
  * opens, on its current item if it has one, and the arrow keys walk its items.
+ * A menu its owner stops drawing (*drawn* false: its suggestions went, a build
+ * started) is closed at once, its layer with it: no Escape goes to a menu
+ * nobody sees, and it never opens again by itself once drawn again.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { answerEscape, escapeAnswered, holdModalStack } from "../../../ModalShell";
 
-/** Its items. One that only says something, as Tokens used does, is disabled
- *  but still takes the focus and the arrows' walk, so the keyboard reads it. */
-const ITEMS = '[role="menuitem"]';
+/** Its items, a switch such as Show run details among them. One that only
+ *  says something, as Tokens used does, is disabled but still takes the focus
+ *  and the arrows' walk, so the keyboard reads it. */
+const ITEM_ROLES = ['[role="menuitem"]', '[role="menuitemcheckbox"]'];
+const ITEMS = ITEM_ROLES.join(", ");
+/** Its current item, the one it opens on when it has one. */
+const CURRENT_ITEM = ITEM_ROLES.map((role) => `[aria-current="true"]${role}`).join(", ");
 
 export interface MenuPopup<K> {
   /** What is open, or null: one menu, or one of a few (a rail's groups). */
@@ -27,8 +34,13 @@ export interface MenuPopup<K> {
   onMenuKeyDown: (event: React.KeyboardEvent<HTMLElement>) => void;
 }
 
-export function useMenuPopup<K = true>(): MenuPopup<K> {
-  const [open, setOpen] = useState<K | null>(null);
+export function useMenuPopup<K = true>(drawn = true): MenuPopup<K> {
+  const [held, setOpen] = useState<K | null>(null);
+  // Not drawn, it is closed in this very render, so its layer goes with it.
+  const open = drawn ? held : null;
+  useEffect(() => {
+    if (!drawn) setOpen(null);
+  }, [drawn]);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const anchorRef = useRef<HTMLElement | null>(null);
 
@@ -43,8 +55,7 @@ export function useMenuPopup<K = true>(): MenuPopup<K> {
     if (open === null) return undefined;
     const release = holdModalStack();
     const menu = menuRef.current;
-    const first =
-      menu?.querySelector<HTMLElement>(`[aria-current="true"]${ITEMS}`) ?? menu?.querySelector<HTMLElement>(ITEMS);
+    const first = menu?.querySelector<HTMLElement>(CURRENT_ITEM) ?? menu?.querySelector<HTMLElement>(ITEMS);
     first?.focus();
     const onPress = (event: PointerEvent) => {
       const target = event.target as Node;

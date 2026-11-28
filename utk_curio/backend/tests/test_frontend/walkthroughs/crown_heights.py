@@ -49,7 +49,6 @@ from ..utils import (
     frame_nodes,
     keep_drawing,
     leave_agent_badge,
-    open_plan_more,
     node_locator,
     open_in_project_tab,
     open_scenario_details,
@@ -460,7 +459,7 @@ def _solve(ctx: Ctx, agent, panel, token: str, project_id: str, titles: list[str
     and holding its content in the saved dataflow. Returns them, by title.
     Content alone is not enough: a node that held content before Solve wrote
     is skipped. A Solve that leaves one unsolved says each node's outcome,
-    what its progress list reads and how many calls reached the model."""
+    what its plan card's rows read and how many calls reached the model."""
     page = ctx.page
     strip = page.get_by_role("group", name=agent.name).first
     solve = strip.get_by_role("button", name=re.compile(r"^(Solve|Retry \d+ \w+)$"))
@@ -484,14 +483,13 @@ def _solve(ctx: Ctx, agent, panel, token: str, project_id: str, titles: list[str
         if ended and solved and not empty:
             break
         if (ended and not solved) or time.time() >= deadline:
-            # The list is in the plan line's more part, closed until asked for.
-            open_plan_more(panel, wait=False)
-            progress = panel.get_by_label("Plan node progress")
-            said = progress.first.inner_text() if progress.count() else "no progress list"
+            # Each node's state is on its row of the plan's card.
+            rows = panel.get_by_role("list", name="Planned nodes")
+            said = rows.last.inner_text() if rows.count() else "no plan rows"
             when = "ended" if ended else f"was still solving after {SOLVE_S:.0f} s"
             raise AssertionError(
-                f"Solve {when} with the outcomes {outcomes}, and {empty or 'no node'} empty. Its progress "
-                f"list reads {said!r}, and the model was called {len(captured_agent_prompts(ctx.backend, dataflow=project_id))} times."
+                f"Solve {when} with the outcomes {outcomes}, and {empty or 'no node'} empty. Its plan's "
+                f"rows read {said!r}, and the model was called {len(captured_agent_prompts(ctx.backend, dataflow=project_id))} times."
             )
         page.wait_for_timeout(1000)
     ctx.mark("cut", "end")

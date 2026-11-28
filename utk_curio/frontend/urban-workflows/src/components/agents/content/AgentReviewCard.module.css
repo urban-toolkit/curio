@@ -34,16 +34,6 @@
   flex: 0 0 auto;
 }
 
-.kind {
-  font-weight: 400;
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--curio-text-meta);
-  flex: 0 0 auto;
-  white-space: nowrap;
-}
-
 .preview {
   background: var(--curio-card-bg);
   border: 1px solid var(--curio-border);
@@ -161,85 +151,150 @@
   color: var(--curio-danger-strong);
 }
 
-/* dev/67-5 — the per-node plan review rows (Simulation Mode: create). */
+/* dev/67-5: a landed plan's nodes, one row each, divided by hairlines. */
 .planNodes {
   list-style: none;
-  margin: 8px 0 0;
+  margin: 4px 0 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  max-height: 320px;
-  overflow-y: auto;
 }
 
 .planNodeRow {
-  border: 1px solid var(--curio-border);
-  border-radius: 6px;
-  padding: 8px 10px;
+  border-top: 1px solid var(--curio-border);
+  padding: 7px 0 6px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
 }
 
-/* A row's head: its title and node type give way, cut short on one line; its
-   chip, its Solve and its Run keep their words whole. */
+/* A row's head: its name gives way, cut short on one line; its state, its
+   Solve and its Run keep their words whole. */
 .planNodeHead {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
-.planNodeTitle {
+.planNodeTitle,
+.planNodeName {
   flex: 0 1 auto;
   min-width: 0;
   font-weight: 600;
-  font-size: 0.85rem;
+  font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--curio-text-primary);
 }
 
-.planNodeType {
-  color: var(--curio-text-secondary);
-  font-size: 0.75rem;
+/* Its name opens its node's own agent's chat. */
+.planNodeName {
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.planNodeName:hover,
+.planNodeName:focus-visible {
+  text-decoration: underline;
+}
+
+/* A built row's tick, in the success tone. */
+.planNodeTick {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  color: var(--curio-success-text);
+  font-size: 12px;
+}
+
+.planNodeSpacer {
   flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .planNodeHead > .apply,
-.planNodeHead > .run,
-.planNodeHead > .planNodeCreated,
-.planNodeHead > .planEdgeRefused {
+.planNodeHead > .planRowRun,
+.planNodeHead > .planRowFailed,
+.planNodeHead > .planRowWaits,
+.planNodeHead > .planRowWaitsLink,
+.planNodeHead > .planRowBuilding,
+.planNodeHead > .planRowAfter {
   flex: none;
   white-space: nowrap;
 }
 
-/* A row's Run, beside its Solve: the builder strip's Run, on the card's own
-   ground. */
-.run {
+.planRowBuilding {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--curio-role-running-fg);
+}
+
+.planRowWaits {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--curio-warning-text);
+}
+
+/* A row that waits for the person's pick: its word, in the wait's tone, goes
+   to its node's sources. */
+.planRowWaitsLink {
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--curio-warning-text);
+  cursor: pointer;
+}
+
+.planRowWaitsLink:hover,
+.planRowWaitsLink:focus-visible {
+  text-decoration: underline;
+}
+
+.planRowFailed {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--curio-danger-text);
+}
+
+.planRowAfter {
+  font-size: 11.5px;
+  color: var(--curio-text-secondary);
+}
+
+/* A row's Run, beside its tick. */
+.planRowRun {
   border: 1px solid var(--curio-success-bg);
   border-radius: 8px;
-  padding: 5px 15px;
-  font-size: 0.8rem;
+  padding: 3px 12px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--curio-success-text);
   background: var(--curio-card-bg);
   cursor: pointer;
 }
 
-.run:disabled {
+.planRowRun:disabled {
   opacity: 0.6;
   cursor: default;
 }
 
-.planNodeCreated {
-  color: var(--curio-success-text);
-  font-size: 0.78rem;
-  font-weight: 600;
+.planNodeIntent {
+  color: var(--curio-text-secondary);
+  font-size: 12px;
+}
+
+/* Why a row's node failed, beside it. */
+.planRowReason {
+  color: var(--curio-danger-text);
+  font-size: 12px;
 }
 
 .planNodeExpects {
@@ -247,78 +302,142 @@
   font-size: 0.75rem;
 }
 
-/* dev/72: the compact icon-link riding a row's review chip — opens the node
- * agent's chat, where the content review and Solve trace live. */
-.reviewLink {
-  margin-left: 5px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 1px solid currentColor;
-  background: var(--curio-card-bg);
-  color: inherit;
-  font-size: 9px;
-  padding: 0;
-  cursor: pointer;
-  vertical-align: middle;
-  display: inline-flex;
+/* What a plan left undone or did not save, in view. */
+.planWarning {
+  font-size: 12px;
+  color: var(--curio-warning-text);
+}
+
+/* The card's foot: Details, and the plan's Undo. */
+.planFoot {
+  display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--curio-border);
 }
 
-.reviewLink:hover,
-.reviewLink:focus-visible {
-  transform: scale(1.12);
-  outline: none;
+.planDetailsToggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--curio-text-secondary);
+  cursor: pointer;
 }
 
-.planGoalInput {
-  width: 100%;
-  box-sizing: border-box;
-  font: inherit;
-  font-size: 0.8rem;
-  padding: 6px 8px;
-  border: 1px solid var(--curio-border-strong);
-  border-radius: 4px;
-  resize: vertical;
+.planDetailsToggle svg {
+  font-size: 10px;
 }
 
-.planGoalInput:disabled {
-  background: var(--curio-surface-muted);
+/* The plan's Details, under its foot. */
+.planDetails {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 10px;
+  border: 1px solid var(--curio-border);
+  border-radius: 8px;
+  background: var(--curio-card-bg);
+  font-size: 12px;
   color: var(--curio-text-secondary);
 }
 
-/* dev/67-7 — the validation verdict block. */
-.validation {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-  padding: 8px 10px;
-  border-radius: 6px;
-  font-size: 0.8rem;
+.planDetailsHead {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--curio-text-meta);
 }
 
-.validationPass {
-  background: var(--curio-success-bg);
-  border: 1px solid var(--curio-success-bg);
+.planDetailsNode b {
+  color: var(--curio-text-primary);
+}
+
+/* A scenario the plan saved, in its Details. */
+.planNodeCreated {
+  color: var(--curio-success-text);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+/* dev/67-7: the check of code that landed, one line, then Verification. */
+.check {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.checkLine {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.checkIcon {
+  flex: none;
+  font-size: 11px;
+}
+
+.checkPass .checkLine {
   color: var(--curio-success-text);
 }
 
-.validationFail {
-  background: var(--curio-danger-bg);
-  border: 1px solid var(--curio-danger-border);
+.checkFail .checkLine {
   color: var(--curio-danger-text);
 }
 
-.validationBadge {
-  font-weight: 700;
-  letter-spacing: 0.04em;
+.validationDetails {
+  color: var(--curio-text-secondary);
 }
 
-.validationDetails {
-  flex-basis: 100%;
+/* Verification: every round and its code, one click away. */
+.verificationToggle {
+  width: fit-content;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* A change's source, one line. */
+.sourceLine {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--curio-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* Show all of a change's code, and back. */
+.codeToggle {
+  margin-top: 4px;
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--curio-text-secondary);
+  cursor: pointer;
+}
+
+.previewWhole {
+  max-height: none;
+}
+
+/* A change's foot: its Undo. */
+.changeFoot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .validationDetails pre {

@@ -50,7 +50,6 @@ from .utils import (
     dismiss_toasts,
     install_session_cookie,
     leave_agent_badge,
-    open_plan_more,
     open_tools_palette,
     read_node_code,
     require_project_page,
@@ -325,9 +324,13 @@ class TestThePlansCard:
             "group", name=re.compile(r"^Change: Plan")
         ).first
         expect(card).to_be_visible(timeout=45000)
-        # The card says what it built, in the words the runtime landed it with.
-        expect(card).to_contain_text(f"{expected_nodes} nodes", timeout=15000)
-        expect(card).to_contain_text(f"{expected_edges} edges")
+        # The card says what it built, in Curio's words: "Plan: 7 nodes, 6
+        # connections".
+        expect(card).to_contain_text(
+            f"Plan: {expected_nodes} node{'' if expected_nodes == 1 else 's'}, "
+            f"{expected_edges} connection{'' if expected_edges == 1 else 's'}",
+            timeout=15000,
+        )
         expect(card.get_by_role("button", name="Undo")).to_be_visible()
         save_workflow_test_screenshot(
             page, SCREENSHOT_STEM, test_name="plan_card",
@@ -428,9 +431,9 @@ class TestSolveProgressAndReconnection:
 
         strip = page.get_by_role("group", name="Dataflow Builder").first
         expect(strip).to_be_visible(timeout=20000)
-        # The whole-plan button, named by its text. Each pending node's row has
-        # its own "Solve node <id> on its own" button, which a prefix match
-        # would also hit, and those rows may render before this one.
+        # The whole-plan button, named by its text. Each node's row on the plan
+        # card that can run has its own "Solve node <title>" button, which a
+        # prefix match would also hit, and those rows may render before this one.
         solve = strip.get_by_role("button", name=re.compile(r"^(Solve|Retry \d+ \w+)$"))
         expect(solve).to_be_visible(timeout=20000)
         assert page.evaluate(_HOLD_THE_SOLVE_REQUEST_JS, SOLVE_REQUEST_HOLD_MS)
@@ -450,12 +453,11 @@ class TestSolveProgressAndReconnection:
             f"the server refused Solve: HTTP {answer.status} {answer.text()[:300]}"
         )
 
-        # The run is reported while it runs: the plan line's per-node progress
-        # list, in its more part, is the surface a person watches. The list is
-        # there from the moment the plan is applied, with every node pending,
-        # so it is no sign that Solve started; the answer above is.
-        open_plan_more(panel)
-        progress = panel.get_by_label("Plan node progress")
+        # The run is reported while it runs: the plan card's rows, one a node,
+        # are the surface a person watches. They are there from the moment the
+        # plan is applied, with every node not built yet, so they are no sign
+        # that Solve started; the answer above is.
+        progress = panel.get_by_role("list", name="Planned nodes")
         expect(progress).to_be_visible(timeout=30000)
         hold = page.evaluate("() => window.__curioSolveHold")
         assert hold and hold["held"] == 1, (
@@ -469,11 +471,9 @@ class TestSolveProgressAndReconnection:
         page.wait_for_load_state("domcontentloaded")
         dismiss_toasts(page)
         panel = _open_chat(page)
-        # The per-node list survives the run's end, so it is the proof either
-        # way; a text match would also hit the agent's own description. The
-        # more part opens closed after the reload.
-        open_plan_more(panel, timeout=60000)
-        expect(panel.get_by_label("Plan node progress")).to_be_visible(timeout=60000)
+        # The rows survive the run's end, so they are the proof either way; a
+        # text match would also hit the agent's own description.
+        expect(panel.get_by_role("list", name="Planned nodes").first).to_be_visible(timeout=60000)
 
         # Whatever the run's outcome, what landed must be on disk and on the
         # canvas -- and every executable node that passed carries its code.

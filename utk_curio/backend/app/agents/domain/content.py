@@ -561,7 +561,9 @@ def rank_candidates(part: dict) -> None:
     """Order the rows of the candidates *part* by what can be done with them
     (:data:`_ROW_RANKS`), then by their fit, and name its lanes best first,
     the lane that holds the best row first (``laneOrder``), each lane keeping
-    its own rows. Runs once a card's rows are probed, so their access and
+    its own rows; and the card's one list across its lanes, by the same rule
+    (``rowOrder``, ``[lane, index]`` of each row, best first), which the card
+    draws its rows in. Runs once a card's rows are probed, so their access and
     whether Curio downloads them are known."""
     lanes = part.get("lanes") or {}
     best: dict[str, int] = {}
@@ -573,6 +575,14 @@ def rank_candidates(part: dict) -> None:
     part["laneOrder"] = sorted(
         _CANDIDATE_LANES, key=lambda lane: (best.get(lane, _UNKNOWN_RANK + 1), _CANDIDATE_LANES.index(lane)),
     )
+    every = [
+        (_row_order(lane, row), _CANDIDATE_LANES.index(lane), index, lane)
+        for lane in _CANDIDATE_LANES
+        if isinstance(lanes.get(lane), list)
+        for index, row in enumerate(lanes[lane])
+        if isinstance(row, dict)
+    ]
+    part["rowOrder"] = [[lane, index] for _order, _lane_at, index, lane in sorted(every)]
 
 
 def _field_error(where: str, value: object, max_chars: int) -> str | None:
@@ -1706,7 +1716,7 @@ def make_solve_attempts_part(
                 row["codeTruncated"] = True
             if attempt.get("codeIsProse"):
                 row["codeIsProse"] = True
-        for key in ("durationMs", "outputDataType", "contentSha256", "source"):
+        for key in ("durationMs", "outputDataType", "contentSha256", "source", "documentValidated"):
             if attempt.get(key) is not None:
                 row[key] = attempt[key] if key == "durationMs" else str(attempt[key])[:80]
         rows.append(row)

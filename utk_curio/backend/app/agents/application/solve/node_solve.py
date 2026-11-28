@@ -29,6 +29,7 @@ from utk_curio.backend.app.agents.application.solve import node_work as agents_n
 from utk_curio.backend.app.agents.application.solve import rounds as agents_rounds
 from utk_curio.backend.app.agents.application.solve import session as agents_session
 from utk_curio.backend.app.agents.application.solve import simulation as agents_simulation
+from utk_curio.backend.app.agents.application.solve import validate as agents_validate
 from utk_curio.backend.app.agents.application.turns import delegates as agents_delegates
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import policy as agents_policy
@@ -251,11 +252,13 @@ def _solved_node(
     )
     if _built(done):
         # Built outside a plan that holds the node: the plan counts it as
-        # built, so its Build & validate never builds it again.
+        # built, so its Build & validate never builds it again, and keeps the
+        # check this Solve made, which the node's row says.
         agents_simulation.built_outside_the_plan(
             user_key, project_id, node_id,
             change=({"changeId": done["changeId"], "attachmentId": done.get("changeAttachmentId") or attachment_id}
                     if done.get("changeId") else None),
+            check=agents_validate.check_of(done),
             actor=agents_spec_reads._agent_actor(user_key, spec, attachment_id, "solve", acting_user),
         )
     card = {
@@ -275,6 +278,11 @@ def _solved_node(
         )
         if trail_part is not None:
             parts.append(trail_part)
+    if any(part.get("type") == "solveAttempts" or (part.get("type") == "change" and part.get("validation"))
+           for part in parts):
+        # Its rounds are in view already, under the change card's
+        # Verification or on the attempts card: the trail is a run detail.
+        card["runDetails"] = True
     if isinstance(session_id, str):
         _append_solve_turn(user_key, project_id, attachment_id, session_id, coord, config, execution_id,
                            started, text, card_kind, card, parts, outcome, verdict)

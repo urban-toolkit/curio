@@ -23,6 +23,20 @@ export const NODE_ROW_SOLVE_HINT = "This node is being solved by its plan's row:
 /** A build's mode: one action, or every action until a pause. */
 export type BuildMode = "step" | "auto";
 
+/** A plan node's runs that are over and built it: solved, a run that ran
+ * (`verified`), a document its grammar validated (`valid`), or a kind with no
+ * code to run (`written`). */
+export const BUILT_RUNS = new Set(["solved", "verified", "valid", "written"]);
+/** A plan node's ledger states once its code landed. */
+export const BUILT_STATES = new Set(["validated", "approved"]);
+
+/** Whether a plan node is built, one rule for the plan line, its menu and the
+ * plan card's rows: its ledger state says its code landed, or its run (the
+ * live batch's over the record's) says a Solve built it, whatever built it. */
+export function isBuiltNode(state: string | null | undefined, run: string | null | undefined): boolean {
+  return BUILT_STATES.has(state ?? "") || BUILT_RUNS.has(run ?? "");
+}
+
 /** The build running on *attachment*'s plan: the one this tab runs for it
  * (*simulating*), else the one the server says runs (`buildRunning`, another
  * tab's among them); null when none runs. */

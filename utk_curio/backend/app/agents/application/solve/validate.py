@@ -290,7 +290,11 @@ def _validate_events(
                 done["verdict"] = "fail"
                 _say_it_failed(user_key, project_id, attachment_id, session_id, home_attachment_id, home_session_id,
                                spec, node, label, outcome, rounds_trace)
-            done["builderSession"] = _settle_node_state(user_key, project_id, attachment_id, ref, done["verdict"], by=by)
+            done["builderSession"] = _settle_node_state(
+                user_key, project_id, attachment_id, ref, done["verdict"], by=by, check=check_of(done),
+                change=({"changeId": done["changeId"], "attachmentId": done.get("changeAttachmentId") or attachment_id}
+                        if done.get("changeId") else None),
+            )
         yield "done", done
     finally:
         # Disconnect-safe: the in-flight guard never wedges the attachment.
@@ -320,7 +324,9 @@ def _handed_to_the_builder(rounds, announce):
 
 def _announce_delegated_solve(user_key, project_id, home_attachment_id, home_session_id, label,
                               *, parent_name: str) -> None:
-    """The framing user turn at HOME: the agent named *parent_name* delegated this Solve."""
+    """The framing user turn at HOME: the agent named *parent_name* delegated
+    this Solve. The chat draws it as one quiet line, "Asked by the Dataflow
+    Builder: solve CPL branches." (``asked``)."""
     if isinstance(home_session_id, str):
         with contextlib.suppress(Exception):
             sessions.append_turns(
@@ -329,6 +335,7 @@ def _announce_delegated_solve(user_key, project_id, home_attachment_id, home_ses
                     "user",
                     f"{sessions.DELEGATED_TURN_PREFIX}{parent_name}] Solve {label!r}: generate, "
                     "execute through the dataflow, validate, self-correct.",
+                    asked={"by": parent_name, "task": f"solve {label}"},
                 )],
             )
 
@@ -373,6 +380,8 @@ def _writes(done: dict) -> bool:
 
 
 def _trace_card(done: dict, rounds_used: int, rounds_trace: list) -> dict:
+    """The Solve's trace, a line a round: a run detail (``runDetails``), its
+    rounds being the change card's Verification, each with its code."""
     executed = count_label(len(done["evidence"].get("executedNodes") or []), "node")
     outcome = f"{labels.verdict_words(done['verdict'], done['evidence'])} after {count_label(rounds_used, 'round')}"
     lines = [f"dependencies executed: {executed}", *rounds_trace, f"outcome: {outcome}"]
@@ -381,6 +390,7 @@ def _trace_card(done: dict, rounds_used: int, rounds_trace: list) -> dict:
         "kind": "result" if done["verdict"] in ("pass", "not-executable") else "error",
         "title": f"Solve trace · {labels.verdict_words(done['verdict'], done['evidence'], capitals=True)}",
         "lines": lines[:10],
+        "runDetails": True,
     }
 
 
@@ -440,13 +450,17 @@ def _land_validated(user_key, project_id, attachment_id, session_id, home_attach
             [sessions.make_turn(
                 "agent",
                 f"Validated {label!r} against its grammar after {rounds}, written into the node." if validated
+                else f"Validated {label}: its code ran after {rounds} and is written into the node."
+                if done["verdict"] == "pass"
                 else f"Validated content for {label!r}: {done['verdict'].upper()} after {rounds}, written into the node.",
                 content=[_trace_card(done, rounds_used, rounds_trace), part],
             )],
         )
     if home_attachment_id and home_attachment_id != attachment_id and isinstance(session_id, str):
         # The parent references and LINKS; the story lives at home. The agent
-        # that wrote it is named as its manifest names it.
+        # that wrote it is named as its manifest names it. Its chat does not
+        # draw the turn: the node's row on the plan's card says it is built,
+        # and its name opens that chat. The agents read it.
         delegate = getattr(resolution, "manifest", None)
         delegate_coord = getattr(resolution, "coord", None) or ""
         delegate_name = getattr(delegate, "name", None) or delegate_coord
@@ -457,6 +471,7 @@ def _land_validated(user_key, project_id, attachment_id, session_id, home_attach
             [sessions.make_turn(
                 "agent",
                 f"{said}: the trace and the change live in the node's {delegate_name}.",
+                for_agents=True,
                 content=[content.make_delegation_part(
                     capability="node.content.generate",
                     coord=delegate_coord,
@@ -503,15 +518,104 @@ def _say_it_failed(user_key, project_id, attachment_id, session_id, home_attachm
         )
 
 
+#: How a node's code that landed was checked, as its row on the plan's card
+#: says it (``nodeChecks``): it ran in the sandbox, its document is valid
+#: against its grammar, or it was written with no code to run.
+CHECK_RAN, CHECK_VALID, CHECK_WRITTEN = "ran", "valid", "written"
+
+#: The plan's ledger of checks: how each node's code was checked, by ref, and
+#: the digest of the code each check was made on.
+CHECKS, CHECKED_CODE = "nodeChecks", "nodeCheckedCode"
+
+
+def check_of(done: dict) -> str | None:
+    """How the code a validation landed was checked (``CHECK_*``), from its
+    verdict and evidence; None for code that did not pass."""
+    if done.get("verdict") == "pass":
+        return CHECK_RAN
+    if done.get("verdict") == "not-executable":
+        return CHECK_VALID if labels.document_validated("not-executable", done.get("evidence") or {}) else CHECK_WRITTEN
+    return None
+
+
+def node_code(spec: dict, node_id: object) -> str | None:
+    """The code the node *node_id* holds in *spec*; None when *spec* holds no
+    such node."""
+    nodes = (spec.get("dataflow") or {}).get("nodes") or []
+    node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
+    return None if node is None else str(node.get("content") or "")
+
+
+def keep_check(session: dict, ref: str, check: str | None, code: str | None) -> None:
+    """Keep in the plan's ledger (*session*) how the code of its node *ref*
+    was checked, *check*, with the digest of *code*, the code that check was
+    made on. With no check, or no code, the ledger keeps none for *ref*: no
+    row claims a check that did not run on the code its node holds."""
+    if check and code is not None:
+        session.setdefault(CHECKS, {})[ref] = check
+        session.setdefault(CHECKED_CODE, {})[ref] = agents_rounds._content_sha(code)
+        return
+    for key in (CHECKS, CHECKED_CODE):
+        held = session.get(key)
+        if isinstance(held, dict):
+            held.pop(ref, None)
+
+
+def checks_that_hold(spec: dict, session: dict | None) -> dict[str, str]:
+    """The checks of *session*'s plan nodes that still hold in *spec*: each
+    ``nodeChecks`` entry whose node holds the code the check was made on. A
+    change to a node's code after its check, by anyone, drops the check, and
+    so does a node no longer there."""
+    session = session if isinstance(session, dict) else {}
+    digests = session.get(CHECKED_CODE) or {}
+    node_ids = session.get("nodeIds") or {}
+    held: dict[str, str] = {}
+    for ref, check in (session.get(CHECKS) or {}).items():
+        code = node_code(spec, node_ids.get(ref))
+        if code is not None and digests.get(ref) == agents_rounds._content_sha(code):
+            held[ref] = check
+    return held
+
+
+def session_as_it_holds(spec: dict, session: dict | None) -> dict | None:
+    """A copy of the plan's ledger *session* as a reader of *spec* is told it:
+    its checks those that still hold (:func:`checks_that_hold`). The ledger
+    kept is never changed by a read."""
+    if not isinstance(session, dict):
+        return session
+    shown = dict(session)
+    if CHECKS in shown:
+        shown[CHECKS] = checks_that_hold(spec, session)
+    return shown
+
+
+#: Why a build paused when a node's check failed (``pauseReason.kind``).
+PAUSED_ON_A_FAILURE = "validation-failed"
+
+
+def end_pause_on(session: dict, ref: str | None) -> None:
+    """A build's pause on a node whose check failed is about that node
+    alone: once something builds the node, the plan is paused on nothing,
+    and its line says where it stands."""
+    pause = session.get("pauseReason")
+    if ref and isinstance(pause, dict) and pause.get("kind") == PAUSED_ON_A_FAILURE and pause.get("ref") == ref:
+        session.pop("pauseReason", None)
+
+
 def _settle_node_state(user_key, project_id, attachment_id, ref, verdict: str, *,
-                       by: str = agents_node_work.BY_ROW) -> dict:
+                       by: str = agents_node_work.BY_ROW, check: str | None = None,
+                       change: dict | None = None) -> dict:
     """The per-node ledger: validated / failed / waiting for its source;
     infrastructure untouched. Written on the plan's record as the dataflow
     holds it now, under its spec lock, so a pick that landed meanwhile keeps
     its move. A node left waiting for its source keeps who left it so
     (``sourceWaitBy``: *by*, the build's mode or ``node`` for a row's Solve),
-    which says how the plan goes on after the pick. Returns the builder
-    session."""
+    which says how the plan goes on after the pick. A node validated keeps
+    how its code was checked (``nodeChecks``: *check*, :func:`check_of`),
+    with the code it was checked on, which its row's tick says, and where its
+    code's change lives (``nodeChanges``: *change*, a row's Solve's as a
+    build's), and a build's pause on its failure ends; one that did not lose
+    its check. Returns the builder session."""
     with projects_storage.spec_write_lock(user_key, project_id):
         fresh = agents_spec_reads._live_spec_or_404(user_key, project_id)
         fresh_record = agents_spec_reads._record_or_404(fresh, attachment_id)
@@ -522,7 +626,14 @@ def _settle_node_state(user_key, project_id, attachment_id, ref, verdict: str, *
                 # plan's ledger (Simulation Mode auto-approves it); the
                 # change's validation block carries the honest label.
                 fresh_session["nodeStates"][ref] = "validated"
-            elif verdict == "fail":
+                keep_check(fresh_session, ref, check,
+                           node_code(fresh, (fresh_session.get("nodeIds") or {}).get(ref)))
+                if change:
+                    fresh_session.setdefault("nodeChanges", {})[ref] = dict(change)
+                end_pause_on(fresh_session, ref)
+            elif verdict != "infrastructure":
+                keep_check(fresh_session, ref, None, None)
+            if verdict == "fail":
                 fresh_session["nodeStates"][ref] = "failed"
             elif verdict == AWAITING_SOURCE:
                 # The node waits for its source, for what its Dataset Finder's

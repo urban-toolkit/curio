@@ -19,9 +19,16 @@ jest.mock("../../services/packages/packagesApi", () => ({
 import { packagesApi } from "../../services/packages/packagesApi";
 
 import { AgentChatPanel } from "../../components/agents/attach/AgentChatPanel";
+import { SHOW_SOURCES_HINT } from "../../components/agents/attach/AgentBuilderStrip";
 import { GOAL_EMPTY, GOAL_PLACEHOLDER, GOAL_TOOLTIP } from "../../components/agents/attach/chat/GoalLine";
 import { modalStackDepth } from "../../components/ModalShell";
-import { BUILDER_TEMPLATES, BUILD_RUNNING_HINT, type AgentAttachment, type AgentSessionTurn } from "../../services/agents";
+import {
+  BUILDER_TEMPLATES,
+  BUILD_RUNNING_HINT,
+  type AgentAttachment,
+  type AgentChangePart,
+  type AgentSessionTurn,
+} from "../../services/agents";
 
 const attachment: AgentAttachment = {
   attachmentId: "a1",
@@ -224,7 +231,10 @@ describe("AgentChatPanel", () => {
 
   it("a user turn containing newlines keeps them in the transcript text", () => {
     renderPanel({ turns: [{ role: "user", text: "first\nsecond" }] });
-    const bubble = screen.getByText((_, el) => el?.textContent === "first\nsecond");
+    // The transcript holds this one turn, so its text is the transcript's too:
+    // the innermost element that holds it is the bubble.
+    const holders = screen.getAllByText((_, el) => el?.textContent === "first\nsecond");
+    const bubble = holders[holders.length - 1];
     expect(bubble.className).toMatch(/msgUser/);
   });
 
@@ -267,28 +277,38 @@ describe("AgentChatPanel", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("shows the prompt-sourced initial intent, with a placeholder when absent", () => {
-    renderPanel();
-    expect(screen.getByText(attachment.intent as string)).toBeInTheDocument();
-    renderPanel({ attachment: { ...attachment, intent: null } });
-    expect(screen.getByText(/no instruction prompt available/i)).toBeInTheDocument();
+  /** Opens More's Edit initial intent, and its dialog. */
+  const openIntent = () => {
+    fireEvent.click(within(openMore()).getByRole("menuitem", { name: /^Edit initial intent…/ }));
+    return screen.getByRole("dialog", { name: "Initial intent" });
+  };
+
+  it("keeps the agent's initial intent out of the transcript: More's Edit initial intent shows it, or a placeholder when absent", () => {
+    const first = renderPanel({ onSaveIntent: jest.fn() });
+    // Not a bubble of the person's at the top of the chat.
+    expect(document.querySelector(".messages")).not.toHaveTextContent(attachment.intent as string);
+    expect(within(openIntent()).getByRole("textbox", { name: "Initial intent" })).toHaveValue(attachment.intent);
+    first.unmount();
+
+    renderPanel({ attachment: { ...attachment, intent: null }, onSaveIntent: jest.fn() });
+    const field = within(openIntent()).getByRole("textbox", { name: "Initial intent" });
+    expect(field).toHaveValue("");
+    expect(field).toHaveAttribute("placeholder", "No instruction prompt available for this agent.");
   });
 
-  it("renders the intent as the first message, clamped with a show more/less toggle", () => {
+  it("shows a long intent whole in its field, with nothing cut off to show more of", () => {
     const long = "x".repeat(400);
-    renderPanel({ attachment: { ...attachment, intent: long, intentEdited: true } });
-    const bubble = screen.getByText(long);
-    expect(bubble.className).toMatch(/msgUser/); // plain first-message styling
-    const toggle = screen.getByRole("button", { name: /show more/i });
-    fireEvent.click(toggle);
-    expect(screen.getByRole("button", { name: /show less/i })).toBeInTheDocument();
+    renderPanel({ attachment: { ...attachment, intent: long, intentEdited: true }, onSaveIntent: jest.fn() });
+    expect(screen.queryByText(long)).toBeNull();
+    const dialog = openIntent();
+    expect(within(dialog).getByRole("textbox", { name: "Initial intent" })).toHaveValue(long);
+    expect(screen.queryByRole("button", { name: /show more/i })).toBeNull();
   });
 
   it("edits the intent: save sends the draft; an emptied draft sends null", async () => {
     const onSaveIntent = jest.fn().mockResolvedValue(undefined);
     renderPanel({ onSaveIntent });
-    fireEvent.click(screen.getByRole("button", { name: "Edit initial intent" }));
-    const textarea = screen.getByRole("textbox", { name: /initial intent/i });
+    const textarea = within(openIntent()).getByRole("textbox", { name: /initial intent/i });
     fireEvent.change(textarea, { target: { value: "focus on cost" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(onSaveIntent).toHaveBeenCalledWith("focus on cost");
@@ -296,12 +316,39 @@ describe("AgentChatPanel", () => {
       expect(screen.queryByRole("textbox", { name: /initial intent/i })).not.toBeInTheDocument(),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit initial intent" }));
-    fireEvent.change(screen.getByRole("textbox", { name: /initial intent/i }), {
+    fireEvent.change(within(openIntent()).getByRole("textbox", { name: /initial intent/i }), {
       target: { value: "   " },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(onSaveIntent).toHaveBeenLastCalledWith(null);
+  });
+
+  it("Cancel and Escape close the intent's dialog and save nothing, and Escape leaves the chat open", async () => {
+    const onSaveIntent = jest.fn().mockResolvedValue(undefined);
+    const onClose = jest.fn();
+    renderPanel({ onSaveIntent, onClose });
+    fireEvent.change(within(openIntent()).getByRole("textbox", { name: "Initial intent" }), {
+      target: { value: "never kept" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog", { name: "Initial intent" })).toBeNull();
+
+    openIntent();
+    fireEvent.keyDown(document.activeElement ?? window, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Initial intent" })).toBeNull());
+    expect(onSaveIntent).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("a refused save keeps the dialog open and says why", async () => {
+    const onSaveIntent = jest.fn().mockRejectedValue(new Error("the intent is too long"));
+    renderPanel({ onSaveIntent });
+    fireEvent.change(within(openIntent()).getByRole("textbox", { name: "Initial intent" }), {
+      target: { value: "y".repeat(10) },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("the intent is too long");
+    expect(screen.getByRole("dialog", { name: "Initial intent" })).toBeInTheDocument();
   });
 
   it("shows history loading and a retryable history error", () => {
@@ -708,9 +755,10 @@ describe("AgentChatPanel's agents rail", () => {
 });
 
 describe("AgentChatPanel's More menu", () => {
-  it("holds Rename conversation, Clear conversation and Tokens used", () => {
+  it("holds Rename conversation, Edit initial intent, Show run details, Clear conversation and Tokens used", () => {
     renderPanel({
       onSaveTitle: jest.fn(),
+      onSaveIntent: jest.fn(),
       onClearConversation: jest.fn(),
       turns: [
         { role: "user", text: "q1" },
@@ -719,15 +767,25 @@ describe("AgentChatPanel's More menu", () => {
     });
     // Named by what it does, which the tokens never change ("keeps its name
     // while the conversation's tokens arrive", below).
-    const more = screen.getByRole("button", { name: "More: rename, clear" });
+    const more = screen.getByRole("button", { name: "More: rename, edit initial intent, run details, clear" });
     expect(more).toHaveAttribute("aria-haspopup", "menu");
     expect(more).toHaveAttribute("data-tooltip", "More");
     const menu = openMore();
     expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
       "Rename conversation",
+      "Edit initial intent…What this chat's agent starts from",
       "Clear conversation…",
       "Tokens used: 1.4k1.1k in, 300 out, over 1 reply",
     ]);
+    // The viewer's switch, between them, off until turned on.
+    const runDetails = within(menu).getByRole("menuitemcheckbox", { name: /^Show run details/ });
+    expect(runDetails).toHaveTextContent("Show run detailsSkills, time, tokens and tools under each reply");
+    expect(runDetails).toHaveAttribute("aria-checked", "false");
+    expect(
+      Array.from(menu.querySelectorAll('[role="menuitem"], [role="menuitemcheckbox"]')).map((item) =>
+        item.textContent?.replace(/(…|details).*$/, "$1"),
+      ),
+    ).toEqual(["Rename conversation", "Edit initial intent…", "Show run details", "Clear conversation…", "Tokens used: 1.4k1.1k in, 300 out, over 1 reply"]);
   });
 
   it("Rename conversation opens the title for editing", () => {
@@ -754,9 +812,13 @@ describe("AgentChatPanel's More menu", () => {
     expect(screen.queryByRole("menu", { name: "Chat menu" })).toBeNull();
   });
 
-  it("is not there when it would hold nothing", () => {
+  it("holds the viewer's Show run details in a chat that offers nothing else", () => {
     renderPanel();
-    expect(screen.queryByRole("button", { name: /^More/ })).toBeNull();
+    const more = screen.getByRole("button", { name: "More: run details" });
+    fireEvent.click(more);
+    const menu = screen.getByRole("menu", { name: "Chat menu" });
+    expect(within(menu).queryAllByRole("menuitem")).toHaveLength(0);
+    expect(within(menu).getByRole("menuitemcheckbox", { name: /^Show run details/ })).toHaveFocus();
   });
 
   const used: AgentSessionTurn[] = [
@@ -764,25 +826,31 @@ describe("AgentChatPanel's More menu", () => {
     { role: "agent", text: "a1", execution: { executionId: "e1", usage: { inputTokens: 1100, outputTokens: 300 }, status: "ok", durationMs: 10 } },
   ];
 
-  it("Tokens used is reached from the keyboard, and a menu of tokens alone opens on it", () => {
+  it("every item, Show run details and Tokens used among them, is reached from the keyboard", () => {
     const first = renderPanel({ onSaveTitle: jest.fn(), onClearConversation: jest.fn(), turns: used });
     const menu = openMore();
     expect(within(menu).getByRole("menuitem", { name: "Rename conversation" })).toHaveFocus();
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowDown" });
+    expect(within(menu).getByRole("menuitemcheckbox", { name: /^Show run details/ })).toHaveFocus();
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: "End" });
     expect(screen.getByLabelText(/session token usage/i)).toHaveFocus();
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowDown" });
     expect(within(menu).getByRole("menuitem", { name: "Rename conversation" })).toHaveFocus();
     first.unmount();
 
+    // A menu of the switch and the tokens opens on the switch, and the
+    // tokens are one step down.
     renderPanel({ turns: used });
     openMore();
+    expect(screen.getByRole("menuitemcheckbox", { name: /^Show run details/ })).toHaveFocus();
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowDown" });
     expect(screen.getByLabelText(/session token usage/i)).toHaveFocus();
   });
 
   it("keeps its name while the conversation's tokens arrive", () => {
     const { rerender, props } = renderPanel({ onSaveTitle: jest.fn(), onClearConversation: jest.fn() });
     const more = screen.getByRole("button", { name: /^More/ });
-    expect(more).toHaveAccessibleName("More: rename, clear");
+    expect(more).toHaveAccessibleName("More: rename, run details, clear");
     rerender(
       <AgentChatPanel
         {...props}
@@ -791,7 +859,7 @@ describe("AgentChatPanel's More menu", () => {
       />,
     );
     expect(screen.getByRole("button", { name: /^More/ })).toBe(more);
-    expect(more).toHaveAccessibleName("More: rename, clear");
+    expect(more).toHaveAccessibleName("More: rename, run details, clear");
     fireEvent.click(more);
     expect(screen.getByLabelText(/session token usage/i)).toHaveTextContent("Tokens used: 1.0k");
   });
@@ -806,6 +874,87 @@ describe("AgentChatPanel's More menu", () => {
     expect(screen.getByText(/^Tokens used:/)).toHaveClass("menuTokensLive");
     rerender(<AgentChatPanel {...props} turns={used} runStatus={{ phase: "done", startedAt: Date.now(), durationMs: 10 }} />);
     expect(screen.getByText(/^Tokens used:/)).not.toHaveClass("menuTokensLive");
+  });
+});
+
+/** Turns on the viewer's Show run details from More. */
+const showRunDetails = () => {
+  fireEvent.click(within(openMore()).getByRole("menuitemcheckbox", { name: /^Show run details/ }));
+};
+
+describe("AgentChatPanel's Show run details", () => {
+  const ranReply: AgentSessionTurn = {
+    role: "agent",
+    text: "I planned 3 nodes.",
+    execution: {
+      executionId: "e-ran",
+      usage: { inputTokens: 36104, outputTokens: 2211 },
+      status: "ok",
+      durationMs: 14000,
+      pins: { skills: { handed: ["reuse-first"] } },
+      toolCalls: [
+        { tool: "dataflow.read", status: "ok" },
+        { tool: "catalog.search", status: "ok" },
+        { tool: "dataflow.read", status: "ok" },
+        { tool: "dataflow.plan.write", status: "applied" },
+      ],
+      skillsLoaded: ["data-sources"],
+    },
+  };
+  const ranTurns: AgentSessionTurn[] = [{ role: "user", text: "Map the libraries." }, ranReply];
+
+  it("is off for a viewer who never turned it on: no time, tokens, skills or tools under a reply", () => {
+    renderPanel({ turns: ranTurns });
+    expect(screen.queryByText(/Finished in/)).toBeNull();
+    expect(document.querySelector('[data-curio-reply-skills="true"]')).toBeNull();
+    expect(document.querySelector('[data-curio-reply-tools="true"]')).toBeNull();
+    expect(screen.getByText("I planned 3 nodes.")).toBeInTheDocument();
+  });
+
+  it("on, puts each reply's skills, time and tokens, and the tools it called, each once, under it", () => {
+    renderPanel({ turns: ranTurns });
+    showRunDetails();
+    expect(document.querySelector('[data-curio-reply-skills="true"]')).toHaveTextContent(
+      "Skills: reuse-first, data-sources",
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Finished in 14s · 38.3k tokens");
+    expect(document.querySelector('[data-curio-reply-tools="true"]')).toHaveTextContent(
+      "Tools: dataflow.read, catalog.search, dataflow.plan.write",
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^More/ }));
+    expect(screen.getByRole("menuitemcheckbox", { name: /^Show run details/ })).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("is the viewer's own: kept in this browser, the same in every chat, until turned off", () => {
+    const { RUN_DETAILS_KEY } = require("../../components/agents/attach/chat/runDetails");
+    const first = renderPanel({ turns: ranTurns });
+    showRunDetails();
+    expect(window.localStorage.getItem(RUN_DETAILS_KEY)).toBe("on");
+    first.unmount();
+
+    // Another agent's chat, opened later, shows them too.
+    const second = renderPanel({
+      attachment: { ...attachment, attachmentId: "a2", sessionId: "s2other", name: "Other Agent" },
+      turns: ranTurns,
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("Finished in 14s");
+    showRunDetails();
+    expect(window.localStorage.getItem(RUN_DETAILS_KEY)).toBeNull();
+    expect(screen.queryByText(/Finished in/)).toBeNull();
+    second.unmount();
+  });
+
+  it("a browser that keeps nothing still turns it on, for this page", () => {
+    const setItem = jest.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("storage is blocked");
+    });
+    try {
+      renderPanel({ turns: ranTurns });
+      showRunDetails();
+      expect(screen.getByRole("status")).toHaveTextContent("Finished in 14s");
+    } finally {
+      setItem.mockRestore();
+    }
   });
 });
 
@@ -1109,22 +1258,37 @@ describe("AgentChatPanel structured content (memo dev/39)", () => {
     expect(screen.getByText("n1 → canvas")).toBeInTheDocument();
   });
 
-  it("prefills the primary prompt and renders the chip row", () => {
+  /** Opens the Suggestions button's menu. */
+  const openSuggestions = (count: string) => {
+    fireEvent.click(screen.getByRole("button", { name: count }));
+    return screen.getByRole("menu", { name: "Suggested messages" });
+  };
+
+  it("leaves the message box empty, and counts the suggestions, the first one first, on one button", () => {
     renderPanel({ turns: promptsTurns });
-    expect(screen.getByDisplayValue("Build the NOAA node")).toBeInTheDocument();
-    expect(screen.getByRole("group", { name: "Suggested prompts" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Show the fetch code" })).toBeInTheDocument();
-    // The prefilled primary makes Send active immediately (docs/08).
-    expect(screen.getByRole("button", { name: "Send" })).not.toBeDisabled();
+    expect(screen.getByPlaceholderText(/^Message /)).toHaveValue("");
+    // Nothing to send until the person writes or picks something.
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    const menu = openSuggestions("3 suggestions");
+    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+      "Build the NOAA node",
+      "Show the fetch code",
+      "Use the catalog copy",
+    ]);
   });
 
-  it("clicking a chip replaces the input draft", () => {
+  it("a pick puts the suggestion in the message box in place of what it held, where it can be edited, and closes the menu", () => {
     renderPanel({ turns: promptsTurns });
-    fireEvent.click(screen.getByRole("button", { name: "Use the catalog copy" }));
+    fireEvent.change(screen.getByPlaceholderText(/^Message /), { target: { value: "my own words" } });
+    fireEvent.click(within(openSuggestions("3 suggestions")).getByRole("menuitem", { name: "Use the catalog copy" }));
+    expect(screen.getByPlaceholderText(/^Message /)).toHaveValue("Use the catalog copy");
     expect(screen.getByDisplayValue("Use the catalog copy")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Use the catalog copy")).toHaveFocus();
+    expect(screen.queryByRole("menu", { name: "Suggested messages" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
   });
 
-  it("a user-typed draft is never overwritten by a prefill", () => {
+  it("a user-typed draft is never overwritten: no suggestion goes in the box by itself", () => {
     const { rerender, props } = renderPanel({ turns: [{ role: "user", text: "q" }] });
     fireEvent.change(screen.getByPlaceholderText(/^Message /), {
       target: { value: "my own words" },
@@ -1134,14 +1298,14 @@ describe("AgentChatPanel structured content (memo dev/39)", () => {
     expect(screen.queryByDisplayValue("Build the NOAA node")).toBeNull();
   });
 
-  it("suggestions are stale once the user replied (no chip row)", () => {
+  it("suggestions are stale once the user replied (no Suggestions button)", () => {
     renderPanel({
       turns: [...promptsTurns, { role: "user", text: "next question" }],
     });
-    expect(screen.queryByRole("group", { name: "Suggested prompts" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /suggestions?$/ })).toBeNull();
   });
 
-  it("no chip row when alternatives are empty (prefill only)", () => {
+  it("a reply's one suggestion is one on the button, and the box stays empty", () => {
     renderPanel({
       turns: [
         {
@@ -1151,8 +1315,18 @@ describe("AgentChatPanel structured content (memo dev/39)", () => {
         },
       ],
     });
-    expect(screen.queryByRole("group", { name: "Suggested prompts" })).toBeNull();
-    expect(screen.getByDisplayValue("Only one")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/^Message /)).toHaveValue("");
+    expect(within(openSuggestions("1 suggestion")).getByRole("menuitem", { name: "Only one" })).toBeInTheDocument();
+  });
+
+  it("Escape closes the Suggestions menu, not the chat", () => {
+    const onClose = jest.fn();
+    renderPanel({ turns: promptsTurns, onClose });
+    openSuggestions("3 suggestions");
+    fireEvent.keyDown(document.activeElement ?? window, { key: "Escape" });
+    expect(screen.queryByRole("menu", { name: "Suggested messages" })).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "3 suggestions" })).toHaveFocus();
   });
 });
 
@@ -1212,16 +1386,16 @@ describe("AgentChatPanel changes, reviews + tool activity (memo dev/41)", () => 
     expect(onApplyProposal).toHaveBeenCalledWith("p1");
   });
 
-  it("shows transient tool-activity system lines", () => {
+  it("shows what the running turn does now: its newest step alone, one live line", () => {
     renderPanel({
       turns: [{ role: "user", text: "q" }],
       toolActivity: ["node.read …", "node.read · ok"],
     });
-    expect(screen.getByText("node.read …")).toBeInTheDocument();
     expect(screen.getByText("node.read · ok")).toBeInTheDocument();
+    expect(screen.queryByText("node.read …")).toBeNull();
   });
 
-  it("a reloaded reply keeps a failed tool call's reason under it (#447)", () => {
+  it("a reloaded reply keeps a failed tool call's reason under it, in plain words (#447)", () => {
     renderPanel({
       turns: [
         { role: "user", text: "check the data endpoint" },
@@ -1233,8 +1407,28 @@ describe("AgentChatPanel changes, reviews + tool activity (memo dev/41)", () => 
         }),
       ],
     });
+    expect(screen.getByText(`A page read was ${REFUSAL}`)).toBeInTheDocument();
+    // The tool's id is Show run details'.
+    expect(screen.queryByText(/web\.fetch/)).toBeNull();
+    // A call that succeeded leaves no line: a tool with no plain words of its
+    // own would read as a step.
+    expect(screen.queryByText(/^A step/)).not.toBeInTheDocument();
+  });
+
+  it("with Show run details, a failed call's line names its tool, as the call's record does (#447)", () => {
+    renderPanel({
+      turns: [
+        { role: "user", text: "check the data endpoint" },
+        savedReply("I could not reach that address.", {
+          toolCalls: [
+            { tool: "node.read", status: "ok", durationMs: 2 },
+            { tool: "web.fetch", status: "error", durationMs: 4, reason: REFUSAL, egress: true },
+          ],
+        }),
+      ],
+    });
+    showRunDetails();
     expect(screen.getByText(`web.fetch · ${REFUSAL}`)).toBeInTheDocument();
-    // A call that succeeded leaves no line.
     expect(screen.queryByText(/^node\.read ·/)).not.toBeInTheDocument();
   });
 
@@ -1250,7 +1444,19 @@ describe("AgentChatPanel changes, reviews + tool activity (memo dev/41)", () => 
         }),
       ],
     });
-    expect(screen.getByText(`web.fetch · ${REFUSAL}`)).toBeInTheDocument();
+    expect(screen.getByText(`A page read was ${REFUSAL}`)).toBeInTheDocument();
+  });
+
+  it("a failed call of a tool with no plain words of its own reads as a step, with its reason", () => {
+    renderPanel({
+      turns: [
+        { role: "user", text: "read the plan" },
+        savedReply("I could not read it.", {
+          toolCalls: [{ tool: "dataflow.read", status: "error", durationMs: 4, reason: "the dataflow is gone" }],
+        }),
+      ],
+    });
+    expect(screen.getByText("A step failed: the dataflow is gone")).toBeInTheDocument();
   });
 });
 
@@ -1356,8 +1562,10 @@ describe("AgentChatPanel says when a canvas agent changed nothing (#243)", () =>
         }),
       ],
     });
-    expect(screen.getByText("node.create · template.content must be a non-empty string")).toBeInTheDocument();
+    expect(screen.getByText("Adding a node failed: template.content must be a non-empty string")).toBeInTheDocument();
     expect(screen.getByText(NO_CHANGE)).toBeInTheDocument();
+    showRunDetails();
+    expect(screen.getByText("node.create · template.content must be a non-empty string")).toBeInTheDocument();
   });
 
   it("a node.create the turn recovered from leaves no line beside the change (#447)", () => {
@@ -1374,6 +1582,8 @@ describe("AgentChatPanel says when a canvas agent changed nothing (#243)", () =>
       ],
     });
     expect(screen.getByRole("group", { name: "Change: Created a new Python node" })).toBeInTheDocument();
+    expect(screen.queryByText(/^Adding a node failed/)).not.toBeInTheDocument();
+    showRunDetails();
     expect(screen.queryByText(/^node\.create ·/)).not.toBeInTheDocument();
   });
 
@@ -1511,6 +1721,66 @@ describe("AgentChatPanel has no attachment settings cog", () => {
   });
 });
 
+describe("AgentChatPanel draws a task another agent asked as one quiet line, and no turn kept for the agents", () => {
+  const asked: AgentSessionTurn = {
+    role: "user",
+    text: "[Delegated by Dataflow Builder] dataset.discover · intent: Load the branch locations.",
+    asked: { by: "Dataflow Builder", task: "find a source for CPL branches" },
+  };
+
+  it("a task asked by another agent reads as who asked and what, never as the person's message", () => {
+    renderPanel({ turns: [asked, { role: "agent", text: "I found 4 candidates." }] });
+    expect(screen.getByText("Asked by the Dataflow Builder: find a source for CPL branches.")).toBeInTheDocument();
+    expect(screen.queryByText(/\[Delegated by/)).toBeNull();
+    expect(document.querySelector(".msgUser")).toBeNull();
+  });
+
+  it("a turn the runtime keeps for the agents is not drawn, and leaves the reply before it with no suggestions to offer", () => {
+    const planned: AgentSessionTurn = {
+      role: "agent",
+      text: "I planned 3 nodes.",
+      content: [{ type: "suggestedPrompts", primary: "Solve the plan", alternatives: [] }],
+    };
+    const { rerender, props } = renderPanel({ turns: [{ role: "user", text: "Map the libraries." }, planned] });
+    expect(screen.getByRole("button", { name: "1 suggestion" })).toBeInTheDocument();
+    // The runtime spoke after the reply (a build's turn of a node, kept for
+    // the agents): the reply's suggestions are stale, as after a message of
+    // the person's, though the chat draws nothing new.
+    rerender(
+      <AgentChatPanel
+        {...props}
+        turns={[
+          { role: "user", text: "Map the libraries." },
+          planned,
+          { role: "agent", text: "Solved 'CPL branches': PASS after 1 round.", forAgents: true },
+        ]}
+      />,
+    );
+    expect(screen.queryByText(/Solved 'CPL branches'/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /suggestions?$/ })).toBeNull();
+  });
+
+  it("a turn kept for the agents offers no suggestions of its own either", () => {
+    renderPanel({
+      turns: [
+        { role: "user", text: "Map the libraries." },
+        {
+          role: "agent",
+          text: "Kept for the agents.",
+          forAgents: true,
+          content: [{ type: "suggestedPrompts", primary: "Hidden", alternatives: [] }],
+        },
+      ],
+    });
+    expect(screen.queryByRole("button", { name: /suggestions?$/ })).toBeNull();
+  });
+
+  it("a chat whose every turn is kept for the agents reads as an empty chat", () => {
+    renderPanel({ turns: [{ role: "agent", text: "kept for the agents", forAgents: true }] });
+    expect(screen.getByText("Ask this agent something to get started.")).toBeInTheDocument();
+  });
+});
+
 describe("AgentChatPanel delegation entries (memo dev/72)", () => {
   const delegation = {
     type: "delegation" as const,
@@ -1520,19 +1790,25 @@ describe("AgentChatPanel delegation entries (memo dev/72)", () => {
     category: "node",
     attachmentId: "att-r",
     status: "ok" as const,
-    summary: "verified — 200",
+    summary: "verified: 200",
   };
 
-  it("an agent turn's delegation part renders the entry and routes the icon-link", () => {
+  it("an agent turn's delegation part names the agent it asked, whose name opens its chat", () => {
     const onOpenAgentChat = jest.fn();
     renderPanel({
       turns: [{ role: "agent", text: "done", content: [delegation] }],
       onOpenAgentChat,
       delegateExists: (id) => id === "att-r",
     });
-    expect(screen.getByText("research.verify")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Open Researcher's chat" }));
+    const name = screen.getByRole("button", { name: "Open Researcher's chat" });
+    expect(name).toHaveTextContent("Researcher");
+    expect(screen.getByText("verified: 200")).toBeInTheDocument();
+    // What ran the task is Show run details'.
+    expect(screen.queryByText("research.verify")).toBeNull();
+    fireEvent.click(name);
     expect(onOpenAgentChat).toHaveBeenCalledWith("att-r");
+    showRunDetails();
+    expect(screen.getByText("research.verify · ok")).toBeInTheDocument();
   });
 
   it("a detached home renders the entry without a link", () => {
@@ -1541,7 +1817,9 @@ describe("AgentChatPanel delegation entries (memo dev/72)", () => {
       onOpenAgentChat: jest.fn(),
       delegateExists: () => false,
     });
-    expect(screen.getByText("research.verify")).toBeInTheDocument();
+    expect(screen.getByText("Researcher")).toBeInTheDocument();
+    showRunDetails();
+    expect(screen.getByText("research.verify · ok")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /open researcher/i }),
     ).toBeNull();
@@ -1801,7 +2079,7 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
     expect(statuses[0]).toHaveTextContent(/Cooking… · 0:00/);
   });
 
-  it("every finalized reply carries its own duration and tokens", () => {
+  it("with Show run details, every finalized reply carries its own duration and tokens", () => {
     renderPanel({
       turns: [
         { role: "user", text: "q1" },
@@ -1810,6 +2088,9 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
         doneTurn("a2", [100, 100], 900),
       ],
     });
+    // Off, a reply that finished says nothing of its run.
+    expect(screen.queryByRole("status")).toBeNull();
+    showRunDetails();
     const statuses = screen.getAllByRole("status");
     expect(statuses).toHaveLength(2);
     expect(statuses[0]).toHaveTextContent("Finished in 12s · 1.4k tokens");
@@ -1999,6 +2280,7 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
         { role: "agent", text: "a1" },
       ],
     });
+    showRunDetails();
     expect(screen.getByRole("status")).toHaveTextContent("Finished in 12s · 1.4k tokens");
   });
 
@@ -2016,6 +2298,7 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
         { role: "agent", text: "Load pedestrians needs a source." },
       ],
     });
+    showRunDetails();
     // One line, the reply's: the runtime's turn is not the reply again.
     const statuses = screen.getAllByRole("status");
     expect(statuses).toHaveLength(1);
@@ -2043,30 +2326,38 @@ describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Failed");
   });
 
-  it("a pending install review marks only the newest reply", () => {
+  it("a pending install review says so once, on its own card, which starts with Review: and carries no chip under any reply", () => {
+    const review = {
+      type: "proposal" as const,
+      proposalId: "p1",
+      tool: "dataset.install",
+      summary: "Install dataset · Cities",
+      preview: "Cities · csv · imported",
+      pins: { datasetId: "imported.cities@1" },
+      status: "pending" as const,
+    };
     renderPanel({
       attachment: {
         ...attachment,
-        activeProposal: {
-          proposalId: "p1",
-          tool: "dataset.install",
-          nodeId: "",
-          summary: "Install dataset · Cities",
-          status: "pending",
-        },
+        activeProposal: { proposalId: "p1", tool: "dataset.install", nodeId: "", summary: review.summary, status: "pending" },
       },
       turns: [
         { role: "user", text: "q1" },
         doneTurn("a1", [10, 10]),
         { role: "user", text: "q2" },
-        doneTurn("a2", [10, 10]),
+        { ...doneTurn("a2", [10, 10]), content: [review] } as AgentSessionTurn,
       ],
+      onApplyProposal: jest.fn(),
+      onDismissProposal: jest.fn(),
     });
-    const chips = screen.getAllByText("Awaiting your review");
-    expect(chips).toHaveLength(1);
-    const statuses = screen.getAllByRole("status");
-    expect(statuses[0]).not.toHaveTextContent("Awaiting your review");
-    expect(statuses[1]).toHaveTextContent("Awaiting your review");
+    const card = screen.getByRole("group", { name: `Review proposal: ${review.summary}` });
+    expect(within(card).getByText(`Review: ${review.summary}`)).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "Apply" })).toBeInTheDocument();
+    expect(screen.queryByText("Awaiting your review")).toBeNull();
+    // Nor with Show run details, whose lines under each reply are its run's.
+    showRunDetails();
+    expect(screen.getAllByRole("status")).toHaveLength(2);
+    expect(screen.queryByText("Awaiting your review")).toBeNull();
   });
 
   it("a review of a change saved before agents edited directly awaits nothing and keeps Dismiss alone", () => {
@@ -2624,6 +2915,11 @@ describe("AgentChatPanel offers each feature by what the agent declares", () => 
       BUILDER_TEMPLATES.map((t) => t.label),
     );
     expect(BUILDER_TEMPLATES).toHaveLength(6);
+    // What a template does is each chip's tooltip, not a line of the chat.
+    for (const chip of within(templates).getAllByRole("button")) {
+      expect(chip).toHaveAttribute("data-tooltip", "Fills the message box. Nothing is sent until you press Send.");
+    }
+    expect(screen.queryByText(/nothing is sent until you press Send/i)).toBeNull();
     fireEvent.click(within(templates).getByRole("button", { name: "Load and Clean" }));
     expect(screen.getByPlaceholderText(/^Message /)).toHaveValue(BUILDER_TEMPLATES[0].seed);
     // Nothing is sent until Send.
@@ -2661,7 +2957,7 @@ describe("AgentChatPanel offers each feature by what the agent declares", () => 
       // Clear conversation emptied the transcript; the plan and its line stay.
       turns: [],
     });
-    expect(screen.getByRole("group", { name: "My Orchestrator" })).toHaveTextContent("Planned · 2 nodes, 1 to solve");
+    expect(screen.getByRole("group", { name: "My Orchestrator" })).toHaveTextContent("Planned · 1 of 2 built");
     expect(screen.queryByRole("group", { name: "Planning templates" })).toBeNull();
     expect(screen.queryByText("Ask for a dataflow, or start from one of these:")).toBeNull();
     expect(screen.getByText("Ask this agent something to get started.")).toBeInTheDocument();
@@ -2720,6 +3016,8 @@ describe("AgentChatPanel offers each feature by what the agent declares", () => 
     });
     const card = screen.getByRole("group", { name: "Sources for Load areas" });
     fireEvent.click(within(card).getByRole("checkbox", { name: "Select Chicago areas" }));
+    // A card that records its own pick leaves the message box alone.
+    expect(screen.getByPlaceholderText(/^Message /)).toHaveValue("");
     fireEvent.click(within(card).getByRole("button", { name: /Use this source/ }));
     await screen.findByText("Source recorded for Load areas: Solve it to build its loader from this source.");
     expect(onRecordDatasetSelection).toHaveBeenCalledWith([
@@ -2904,7 +3202,7 @@ describe("AgentChatPanel: a node's candidates in the chat that asked for them", 
   };
   const ASKED: AgentSessionTurn = {
     role: "agent" as const,
-    text: "**Load boundaries** needs a source. Its Dataset Finder found 1 candidate: pick one with Use this source.",
+    text: "Pick a source for **Load boundaries**. Its Dataset Finder found 1.",
     content: [{ type: "sourcePick" as const, finderAttachmentId: "att-df", nodeId: "n1", nodeLabel: "Load boundaries", lanes: LANES }],
   };
   const FOUND: AgentSessionTurn = {
@@ -2931,7 +3229,7 @@ describe("AgentChatPanel: a node's candidates in the chat that asked for them", 
     ]);
   });
 
-  it("opens the Finder's chat from the card", () => {
+  it("opens the Finder's chat from the card when none fits", () => {
     const onOpenAgentChat = jest.fn();
     renderPanel({
       attachment: BUILDER,
@@ -2942,7 +3240,7 @@ describe("AgentChatPanel: a node's candidates in the chat that asked for them", 
       agentNameOf: (id: string) => (id === "att-df" ? "Dataset Finder" : null),
     });
     const card = screen.getByRole("group", { name: "Sources for Load boundaries" });
-    fireEvent.click(within(card).getByRole("button", { name: "Its Dataset Finder's chat" }));
+    fireEvent.click(within(card).getByRole("button", { name: "None fits? Ask its Dataset Finder" }));
     expect(onOpenAgentChat).toHaveBeenCalledWith("att-df");
   });
 
@@ -2959,7 +3257,9 @@ describe("AgentChatPanel: a node's candidates in the chat that asked for them", 
     expect(within(own).queryByRole("button", { name: "Use this source" })).toBeNull();
   });
 
-  it("the Finder's own card reads Use this source and says the chat that asked holds it too", () => {
+  // Board S04 (G64): the card says nothing of the other chats that hold it; a
+  // pick in any of them reads Recorded in all.
+  it("the Finder's own card reads Use this source and names no other chat", () => {
     renderPanel({
       attachment: FINDER,
       targetName: "Load boundaries",
@@ -2969,7 +3269,8 @@ describe("AgentChatPanel: a node's candidates in the chat that asked for them", 
     });
     const own = screen.getByRole("group", { name: "Sources for Load boundaries" });
     expect(within(own).getByRole("button", { name: "Use this source" })).toBeInTheDocument();
-    expect(own).toHaveTextContent("The same card is in the Dataflow Builder's chat. A pick in either shows in both.");
+    expect(own).not.toHaveTextContent("The same card is in");
+    expect(own).not.toHaveTextContent("Dataflow Builder");
   });
 
   it("a Dataset Finder's chat has no Solve this node: its agent solves no node", () => {
@@ -2979,6 +3280,9 @@ describe("AgentChatPanel: a node's candidates in the chat that asked for them", 
 });
 
 describe("AgentChatPanel: no Solve starts over a running build", () => {
+  // Its loader is placed and not built yet: its row offers its Solve while
+  // nothing runs over the plan. (A loader that waits for the person's pick
+  // offers none: the pick goes on by itself, AgentChangeCard.test.tsx.)
   const LANDED: AgentAttachment = {
     ...attachment,
     attachmentId: "dfb",
@@ -2990,7 +3294,7 @@ describe("AgentChatPanel: no Solve starts over a running build", () => {
       proposalId: "pp1", tool: "dataflow.plan.write", nodeId: "", summary: "Plan \u00b7 1 node", status: "applied",
       appliedRefs: ["load"],
     },
-    builderSession: { phase: "applied", planProposalId: "pp1", nodeStates: { load: "awaiting-source" }, nodeIds: { load: "n1" } },
+    builderSession: { phase: "applied", planProposalId: "pp1", nodeStates: { load: "created" }, nodeIds: { load: "n1" } },
   };
   const PLANNED: AgentSessionTurn = {
     role: "agent" as const,
@@ -3013,13 +3317,15 @@ describe("AgentChatPanel: no Solve starts over a running build", () => {
     }],
   };
 
-  it("the plan card's row Solve waits while this chat's build runs, saying why", () => {
-    const { rerender, props } = renderPanel({ attachment: LANDED, turns: [PLANNED], onSolvePlanNode: jest.fn() });
+  it("the plan card's row offers no Solve while this chat's build runs, which the plan line says", () => {
+    const { rerender, props } = renderPanel({
+      attachment: LANDED, turns: [PLANNED], onSolvePlanNode: jest.fn(), onSolve: jest.fn(),
+    });
     expect(screen.getByRole("button", { name: "Solve node Load boundaries" })).toBeEnabled();
+    expect(screen.queryByText("Build running")).toBeNull();
     rerender(<AgentChatPanel {...props} simulating="auto" />);
-    const solve = screen.getByRole("button", { name: "Solve node Load boundaries" });
-    expect(solve).toBeDisabled();
-    expect(solve).toHaveAttribute("data-tooltip", BUILD_RUNNING_HINT);
+    expect(screen.queryByRole("button", { name: "Solve node Load boundaries" })).toBeNull();
+    expect(screen.getByText("Build running")).toBeInTheDocument();
   });
 
   it("and while a build another tab runs, which the listing names", () => {
@@ -3028,10 +3334,24 @@ describe("AgentChatPanel: no Solve starts over a running build", () => {
       builderSession: { ...LANDED.builderSession!, simulateMode: "auto", simulatingSince: Date.now() / 1000 },
       buildRunning: "auto",
     };
-    renderPanel({ attachment: building, turns: [PLANNED], onSolvePlanNode: jest.fn() });
-    const solve = screen.getByRole("button", { name: "Solve node Load boundaries" });
-    expect(solve).toBeDisabled();
-    expect(solve).toHaveAttribute("data-tooltip", BUILD_RUNNING_HINT);
+    renderPanel({ attachment: building, turns: [PLANNED], onSolvePlanNode: jest.fn(), onSolve: jest.fn() });
+    expect(screen.queryByRole("button", { name: "Solve node Load boundaries" })).toBeNull();
+    expect(screen.getByText("Build running")).toBeInTheDocument();
+  });
+
+  it("the row the build is at reads Building, what it does on its tooltip", () => {
+    const at: AgentAttachment = { ...LANDED, builderSession: { ...LANDED.builderSession!, currentRef: "load" } };
+    renderPanel({
+      attachment: at,
+      turns: [PLANNED],
+      onSolvePlanNode: jest.fn(),
+      simulating: "auto",
+      simulationActivity: "writing its code",
+    });
+    const row = document.querySelector<HTMLElement>('[data-curio-plan-row="load"]')!;
+    expect(row).toHaveAttribute("data-curio-row-view", "building");
+    expect(within(row).getByText("Building…")).toHaveAttribute("data-tooltip", "Writing its code");
+    expect(within(row).queryByRole("button", { name: /^Solve node/ })).toBeNull();
   });
 
   it("Solve this node waits while a build runs on its node's plan, saying why", () => {
@@ -3061,7 +3381,7 @@ describe("AgentChatPanel: Solve this node points at the card in its own chat", (
         targetName: "Load boundaries",
         turns: [{
           role: "agent" as const,
-          text: "**Load boundaries** needs a source. Its Dataset Finder found 1 candidate: pick one with Use this source.",
+          text: "Pick a source for **Load boundaries**. Its Dataset Finder found 1.",
           content: [{
             type: "sourcePick" as const, finderAttachmentId: "att-df", nodeId: "n1", nodeLabel: "Load boundaries",
             lanes: { external: [{ name: "Chicago areas", sourceType: "portal" as const, url: "https://data.example.org/areas.geojson" }], catalog: [] },
@@ -3090,6 +3410,168 @@ describe("AgentChatPanel: Solve this node points at the card in its own chat", (
       Element.prototype.scrollIntoView = scrollIntoView;
     }
   });
+
+  it("a card only in a turn kept for the agents is none to show: the row does not point at it", async () => {
+    renderPanel({
+      attachment: { ...attachment, attachmentId: "nb1", coord: "agent.curio.node-builder@1", name: "Node Builder", target: { kind: "node" as const, targetId: "n1" }, solvesNodes: true, waitsForYou: ["n1"] },
+      targetName: "Load boundaries",
+      turns: [{
+        role: "agent" as const,
+        text: "**Load boundaries** needs a source.",
+        forAgents: true,
+        content: [{
+          type: "sourcePick" as const, finderAttachmentId: "att-df", nodeId: "n1", nodeLabel: "Load boundaries",
+          lanes: { external: [{ name: "Chicago areas", sourceType: "portal" as const, url: "https://data.example.org/areas.geojson" }], catalog: [] },
+        }],
+      }],
+      onRecordSourcePick: jest.fn(),
+      onSolveNode: jest.fn().mockResolvedValue({
+        verdict: "awaiting-source",
+        rounds: 0,
+        remedy: { kind: "dataset-selection", attachmentId: "att-df", nodeId: "n1" },
+      }),
+      onOpenAgentChat: jest.fn(),
+      agentNameOf: (id: string) => (id === "att-df" ? "Dataset Finder" : null),
+    });
+    const row = screen.getByRole("group", { name: "Solve this node" });
+    fireEvent.click(within(row).getByRole("button", { name: "Solve this node" }));
+    // It says where the candidates are: with the node's Dataset Finder.
+    expect(await within(row).findByRole("status")).toHaveTextContent(
+      "Awaiting a source: this node's Dataset Finder has candidates for you to pick with Use this source.",
+    );
+    expect(screen.queryByRole("group", { name: "Sources for Load boundaries" })).toBeNull();
+    expect(within(row).queryByRole("button", { name: "Show its sources" })).toBeNull();
+  });
+});
+
+// The plan line's Show its sources, while the plan waits for the person's
+// pick: it goes to the node's sources card in this chat, which the build
+// asked for, else to the node's Dataset Finder's chat, which holds its own.
+describe("AgentChatPanel: the plan line's Show its sources", () => {
+  const BUILDER: AgentAttachment = {
+    ...attachment,
+    attachmentId: "dfb",
+    coord: "agent.curio.dataflow-builder@1",
+    name: "Dataflow Builder",
+    category: "canvas",
+    capabilities: DATAFLOW_BUILDER_CAPABILITIES,
+    waitsForYou: ["n1"],
+    planProposal: {
+      proposalId: "pp1", tool: "dataflow.plan.write", nodeId: "", summary: "Plan · 1 node", status: "applied",
+      appliedRefs: ["load"], nodeIds: { load: "n1" },
+    },
+    builderSession: { phase: "applied", planProposalId: "pp1", nodeStates: { load: "awaiting-source" }, nodeIds: { load: "n1" } },
+  };
+  const FINDER: AgentAttachment = {
+    ...attachment,
+    attachmentId: "att-df",
+    coord: "agent.curio.dataset-finder@1",
+    name: "Dataset Finder",
+    category: "data",
+    capabilities: DATASET_FINDER_CAPABILITIES,
+    target: { kind: "node" as const, targetId: "n1" },
+    waitsForYou: ["n1"],
+    sourceRecord: { status: "candidates-pending", candidates: 1, askedBy: "dfb" },
+    solvesNodes: false,
+  };
+  const ASKED: AgentSessionTurn = {
+    role: "agent" as const,
+    text: "Pick a source for **Load boundaries**. Its Dataset Finder found 1.",
+    content: [{
+      type: "sourcePick" as const, finderAttachmentId: "att-df", nodeId: "n1", nodeLabel: "Load boundaries",
+      lanes: { external: [{ name: "Chicago areas", sourceType: "portal" as const, url: "https://data.example.org/areas.geojson" }], catalog: [] },
+    }],
+  };
+
+  it("shows the node's card in this chat", () => {
+    const scrolled: Element[] = [];
+    const scrollIntoView = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this);
+    };
+    try {
+      const onOpenAgentChat = jest.fn();
+      renderPanel({
+        attachment: BUILDER, turns: [ASKED], attachments: [BUILDER, FINDER], onRecordSourcePick: jest.fn(), onOpenAgentChat,
+        onSolve: jest.fn(),
+      });
+      // The line offers no Resume: the pick goes on by itself.
+      expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+      scrolled.length = 0;
+      fireEvent.click(screen.getByRole("button", { name: "Show its sources" }));
+      expect(scrolled).toEqual([screen.getByRole("group", { name: "Sources for Load boundaries" })]);
+      expect(onOpenAgentChat).not.toHaveBeenCalled();
+    } finally {
+      Element.prototype.scrollIntoView = scrollIntoView;
+    }
+  });
+
+  it("opens the node's Dataset Finder's chat when this chat holds no card of it", () => {
+    const onOpenAgentChat = jest.fn();
+    renderPanel({ attachment: BUILDER, turns: [], attachments: [BUILDER, FINDER], onOpenAgentChat, onSolve: jest.fn() });
+    fireEvent.click(screen.getByRole("button", { name: "Show its sources" }));
+    expect(onOpenAgentChat).toHaveBeenCalledWith("att-df");
+  });
+
+  it("says on its tooltip where it goes: this chat, or the chat of the node's Finder, by its name", () => {
+    const { unmount } = renderPanel({
+      attachment: BUILDER, turns: [ASKED], attachments: [BUILDER, FINDER], onRecordSourcePick: jest.fn(),
+      onOpenAgentChat: jest.fn(), onSolve: jest.fn(),
+    });
+    expect(screen.getByRole("button", { name: "Show its sources" })).toHaveAttribute("data-tooltip", SHOW_SOURCES_HINT);
+    unmount();
+    renderPanel({
+      attachment: BUILDER, turns: [], attachments: [BUILDER, FINDER], onOpenAgentChat: jest.fn(), onSolve: jest.fn(),
+      agentNameOf: (id: string) => (id === "att-df" ? "My Finder" : null),
+    });
+    expect(screen.getByRole("button", { name: "Show its sources" })).toHaveAttribute(
+      "data-tooltip",
+      "Opens the chat of its My Finder, which holds its sources. Your pick builds it, and the plan goes on.",
+    );
+  });
+
+  it("a card only in a turn kept for the agents is in no view: it goes to the Finder's chat", () => {
+    const onOpenAgentChat = jest.fn();
+    renderPanel({
+      attachment: BUILDER, turns: [{ ...ASKED, forAgents: true }], attachments: [BUILDER, FINDER], onOpenAgentChat,
+      onRecordSourcePick: jest.fn(), onSolve: jest.fn(),
+    });
+    const show = screen.getByRole("button", { name: "Show its sources" });
+    expect(show).toHaveAttribute("data-tooltip", expect.stringMatching(/^Opens the chat of its Dataset Finder/));
+    fireEvent.click(show);
+    expect(onOpenAgentChat).toHaveBeenCalledWith("att-df");
+  });
+
+  it("the plan card's waiting row goes to its node's sources too, its tooltip saying where", () => {
+    const scrolled: Element[] = [];
+    const scrollIntoView = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this);
+    };
+    try {
+      const PLAN_CARD: AgentSessionTurn = {
+        role: "agent" as const,
+        text: "Planned.",
+        content: [{
+          type: "change" as const, changeId: "c-plan", tool: "dataflow.plan.write", kind: "plan", planId: "pp1",
+          summary: "Plan · 1 node", status: "applied", lines: [], preview: "",
+          plan: { goal: "g", nodes: [{ ref: "load", nodeType: "t", title: "Load boundaries", intent: "load them" }], edgeCount: 0, edges: [] },
+        } as AgentChangePart],
+      };
+      renderPanel({
+        attachment: BUILDER, turns: [PLAN_CARD, ASKED], attachments: [BUILDER, FINDER], onRecordSourcePick: jest.fn(),
+        onOpenAgentChat: jest.fn(), onSolve: jest.fn(), onSolvePlanNode: jest.fn(),
+      });
+      const row = document.querySelector<HTMLElement>('[data-curio-plan-row="load"]')!;
+      const waits = within(row).getByRole("button", { name: "Needs a source: show the sources of Load boundaries" });
+      expect(waits).toHaveAttribute("data-tooltip", SHOW_SOURCES_HINT);
+      scrolled.length = 0;
+      fireEvent.click(waits);
+      expect(scrolled).toEqual([screen.getByRole("group", { name: "Sources for Load boundaries" })]);
+    } finally {
+      Element.prototype.scrollIntoView = scrollIntoView;
+    }
+  });
 });
 
 // A card of a node's candidates follows its Finder's record, as the listing
@@ -3113,7 +3595,7 @@ describe("AgentChatPanel: a candidates card follows its Finder's record", () => 
    * Finder, *discoveryId*. */
   const asked = (discoveryId: string, row = AREAS): AgentSessionTurn => ({
     role: "agent" as const,
-    text: "**Load boundaries** needs a source. Its Dataset Finder found 1 candidate: pick one with Use this source.",
+    text: "Pick a source for **Load boundaries**. Its Dataset Finder found 1.",
     content: [{
       type: "sourcePick" as const, finderAttachmentId: "att-df", nodeId: "n1", nodeLabel: "Load boundaries",
       discoveryId, lanes: { external: [row], catalog: [] },
@@ -3200,7 +3682,7 @@ describe("AgentChatPanel: a candidates card follows its Finder's record", () => 
       pickedFrom: "d2",
       askedBy: "dfb",
       askers: ["dfb"],
-      next: "The Dataflow Builder goes on with its plan and builds the loader from this source.",
+      next: "The Dataflow Builder builds Load boundaries from it.",
     });
     renderPanel({
       attachment: { ...BUILDER, waitsForYou: [] },
@@ -3211,11 +3693,13 @@ describe("AgentChatPanel: a candidates card follows its Finder's record", () => 
     const [older, newer] = cards();
     expect(within(older).getByRole("status")).not.toHaveTextContent("Recorded");
     expect(within(older).getByRole("status")).toHaveTextContent("Closed: newer candidates replaced these.");
-    expect(within(newer).getByRole("status")).toHaveTextContent(/^Recorded: Chicago blocks \(City of Chicago\)\.$/);
+    expect(within(newer).getByRole("status")).toHaveTextContent(
+      /^Recorded: Chicago blocks \(City of Chicago\)\. The Dataflow Builder builds Load boundaries from it\.$/,
+    );
   });
 
-  it("says the pick once in each chat: the card names it and where it comes from, and the turn under it what comes of it", () => {
-    const NEXT = "The Dataflow Builder goes on with its plan and builds the loader from this source.";
+  it("says the pick once in each chat: the card names it, where it comes from and what comes of it, and draws no turn of the agents'", () => {
+    const NEXT = "The Dataflow Builder builds Load boundaries from it.";
     const picked = finder({
       status: "resolved",
       picks: [{ ...BLOCKS, provider: "City of Chicago" }],
@@ -3226,13 +3710,15 @@ describe("AgentChatPanel: a candidates card follows its Finder's record", () => 
       next: NEXT,
     });
     /** The turn the pick writes in a chat that holds the card, as the server
-     * words it: *who* is the node's name, the same in both chats. */
+     * words it and keeps it, for the agents (board S08): *who* is the node's
+     * name, the same in both chats. */
     const recordedTurn = (who: string): AgentSessionTurn => ({
       role: "agent" as const,
       text: `Source recorded for ${who}: Chicago blocks. ${NEXT}`,
+      forAgents: true,
       content: [{ type: "card" as const, kind: "result", title: "Dataset selection recorded", lines: ["external · Chicago blocks · verified"] }],
     });
-    // The chat that asked: the card, then the turn the pick wrote there.
+    // The chat that asked: the card, and the turn the pick wrote there.
     const first = renderPanel({
       attachment: { ...BUILDER, waitsForYou: [] },
       turns: [asked("d2", BLOCKS), recordedTurn("Load boundaries")],
@@ -3240,10 +3726,14 @@ describe("AgentChatPanel: a candidates card follows its Finder's record", () => 
       onRecordSourcePick: jest.fn(),
     });
     const [card] = cards();
-    expect(within(card).getByRole("status")).toHaveTextContent(/^Recorded: Chicago blocks \(City of Chicago\)\.$/);
+    expect(within(card).getByRole("status")).toHaveTextContent(
+      /^Recorded: Chicago blocks \(City of Chicago\)\. The Dataflow Builder builds Load boundaries from it\.$/,
+    );
     expect(screen.getAllByText(NEXT, { exact: false })).toHaveLength(1);
+    expect(screen.queryByText(/^Source recorded for/)).toBeNull();
+    expect(screen.queryByText("Dataset selection recorded")).toBeNull();
     first.unmount();
-    // The Finder's own chat: the same card, then its own turn.
+    // The Finder's own chat: the same card, and its own turn.
     renderPanel({
       attachment: picked,
       targetName: "Load boundaries",
@@ -3251,8 +3741,11 @@ describe("AgentChatPanel: a candidates card follows its Finder's record", () => 
       onRecordDatasetSelection: jest.fn(),
     });
     const [own] = cards();
-    expect(within(own).getByRole("status")).toHaveTextContent(/^Recorded: Chicago blocks \(City of Chicago\)\.$/);
+    expect(within(own).getByRole("status")).toHaveTextContent(
+      /^Recorded: Chicago blocks \(City of Chicago\)\. The Dataflow Builder builds Load boundaries from it\.$/,
+    );
     expect(screen.getAllByText(NEXT, { exact: false })).toHaveLength(1);
+    expect(screen.queryByText(/^Source recorded for/)).toBeNull();
   });
 
   it("is closed once no pick is needed: a skip, whose source is grounded already", () => {
@@ -3299,7 +3792,9 @@ describe("AgentChatPanel: a candidates card follows its Finder's record", () => 
     expect(within(older).getByRole("status")).toHaveTextContent("Recorded: Chicago areas.");
   });
 
-  it("the Finder's own card names every chat that holds the same card", () => {
+  // Board S04 (G64): the card names no other chat that holds it; a pick in
+  // any of them reads Recorded in all.
+  it("the Finder's own card names no other chat that holds the same card", () => {
     renderPanel({
       attachment: finder({ ...PENDING_D2, askers: ["dfb", "nb1"] }, ["n1"]),
       targetName: "Load boundaries",
@@ -3308,9 +3803,10 @@ describe("AgentChatPanel: a candidates card follows its Finder's record", () => 
       agentNameOf: (id: string) => ({ dfb: "Dataflow Builder", nb1: "Node Builder" } as Record<string, string>)[id] ?? null,
     });
     const [own] = cards();
-    expect(own).toHaveTextContent(
-      "The same card is in the Dataflow Builder's and the Node Builder's chats. A pick in any shows in all.",
-    );
+    expect(within(own).getByRole("button", { name: "Use this source" })).toBeInTheDocument();
+    expect(own).not.toHaveTextContent("The same card is in");
+    expect(own).not.toHaveTextContent("Dataflow Builder");
+    expect(own).not.toHaveTextContent("Node Builder");
   });
 });
 
@@ -3359,14 +3855,26 @@ describe("AgentChatPanel: a row's Solve the server runs shows on the plan card",
     }],
   };
 
-  it("its row reads Solving and waits, and the other rows' Solve waits for it, saying why", () => {
-    renderPanel({ attachment: RUNNING, turns: [PLANNED], onSolvePlanNode: jest.fn() });
-    const solving = screen.getByRole("button", { name: "Solve node Load boundaries" });
-    expect(solving).toBeDisabled();
-    expect(solving).toHaveTextContent("Solving…");
-    const other = screen.getByRole("button", { name: "Solve node Stats" });
-    expect(other).toBeDisabled();
-    expect(other).toHaveAttribute("data-tooltip", "A node of this plan is being solved: wait for its Solve to end");
+  it("its row reads Building, and no row offers its Solve until it ends", () => {
+    const { rerender, props } = renderPanel({
+      attachment: RUNNING,
+      turns: [PLANNED],
+      onSolvePlanNode: jest.fn(),
+      onSolve: jest.fn(),
+      onSimulate: jest.fn().mockResolvedValue(undefined),
+    });
+    const row = (ref: string) => document.querySelector<HTMLElement>(`[data-curio-plan-row="${ref}"]`)!;
+    expect(row("load")).toHaveAttribute("data-curio-row-view", "building");
+    expect(within(row("load")).getByText("Building…")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Solve node Load boundaries" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Solve node Stats" })).toBeNull();
+    // No build starts over it either: the plan line's menu of builds waits.
+    expect(screen.queryByRole("button", { name: "More plan actions" })).toBeNull();
+    // Its Solve over, each row not built offers its own again.
+    rerender(<AgentChatPanel {...props} attachment={{ ...RUNNING, validating: undefined }} />);
+    expect(screen.getByRole("button", { name: "Solve node Load boundaries" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Solve node Stats" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "More plan actions" })).toBeInTheDocument();
   });
 });
 

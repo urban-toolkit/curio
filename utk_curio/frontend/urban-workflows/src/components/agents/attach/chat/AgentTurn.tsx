@@ -3,7 +3,6 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faRobot } from "@fortawesome/free-solid-svg-icons";
 
 import {
-  askersOf,
   DATASET_SELECT_CAPABILITY,
   declaresCapability,
   installsIntoAccount,
@@ -33,7 +32,17 @@ import { SafeAgentContent } from "../../content/SafeAgentContent";
 import { AgentRunStatusLine } from "../AgentRunStatusLine";
 import { LlmConfigAction } from "../../../llmConfigs/LlmConfigAction";
 import styles from "../AgentChatPanel.module.css";
-import { lastingToolFailures, planNodeStateFor } from "./chatPanelDerived";
+import type { NodeChat } from "../../content/reviewCard/PlanNodesList";
+import type { RowSources } from "../../content/reviewCard/PlanNodeRow";
+import {
+  drawsNothing,
+  failedCallWords,
+  lastingToolFailures,
+  planNodeStateFor,
+  shownReplyText,
+  toolsCalledBy,
+  type PlanLive,
+} from "./chatPanelDerived";
 
 /** The callbacks a turn's cards may need: an install's review, a change's
  * Undo, a landed plan's rows. */
@@ -70,6 +79,16 @@ export interface AgentTurnActions {
   targetName?: string | null;
   /** A build runs on this agent's plan: no plan row's Solve starts. */
   buildRunning?: boolean;
+  /** What runs on this agent's plan now: each row of its card says its node's. */
+  planLive?: PlanLive;
+  /** A plan node's own agent, whose chat its row's name opens. */
+  nodeChatOf?: (nodeId: string) => NodeChat | null;
+  /** Where a plan node that waits for the person's pick finds its sources:
+   * this chat or its Dataset Finder's, which its row goes to. */
+  sourcesOf?: (nodeId: string) => RowSources | null;
+  /** The name a node's header shows, null when the node is not on the
+   * canvas: a change card's title names its node by it. */
+  nodeNameOf?: (nodeId: string) => string | null;
   onImportDataset?: (
     file: File,
     discoverySource?: import("../../../../services/datasetCatalog/datasetCatalogTypes").DatasetDiscoverySourceInput,
@@ -95,6 +114,12 @@ export interface AgentTurnActions {
  * that stay under it, and its meta line. Agent rich content renders ONLY
  * through the safe renderer (REQ-SEC-002); error markers and the lines under
  * the reply are plain text.
+ *
+ * Under the reply stays what a person acts on: a failed call's reason, that
+ * a canvas agent changed nothing, a reply still running, stopped or failed.
+ * What the run used (its skills, its time and tokens, the tools it called,
+ * the cards of its trace, what ran a task it handed on) shows only with the
+ * viewer's Show run details (*runDetails*).
  */
 export const AgentTurn: React.FC<{
   turn: AgentSessionTurn;
@@ -104,13 +129,19 @@ export const AgentTurn: React.FC<{
   actions: AgentTurnActions;
   /** A canvas agent's reply that changed nothing on the canvas (#243). */
   canvasUnchanged?: boolean;
-}> = ({ turn: t, attachment, tint, meta, actions, canvasUnchanged = false }) => {
+  /** The viewer shows run details. */
+  runDetails?: boolean;
+}> = ({ turn: t, attachment, tint, meta, actions, canvasUnchanged = false, runDetails = false }) => {
   // An agent on a node that records the dataset the node loads.
   const isFinderOnNode =
     declaresCapability(attachment, DATASET_SELECT_CAPABILITY) && attachment.target.kind === "node";
   // #447: the failed tool calls that keep their reason under the reply.
   const failedCalls = lastingToolFailures(t);
-  const usedSkills = t.error ? [] : skillsUsedBy(t.execution);
+  const usedSkills = t.error || !runDetails ? [] : skillsUsedBy(t.execution);
+  const toolsCalled = runDetails && !t.error ? toolsCalledBy(t) : [];
+  // How the reply ended: running, stopped and failed are always said; a reply
+  // that finished says its time and tokens with Show run details.
+  const shownMeta = meta && (meta.kind !== "done" || runDetails) ? meta : null;
   // An install on an invited editor's chat is the owner's to review.
   const waitsForOwner = (part: AgentProposalPart) =>
     Boolean(actions.installsWaitForOwner) && installsIntoAccount(part.tool);
@@ -119,10 +150,14 @@ export const AgentTurn: React.FC<{
   // the dataflow.
   const ownNode = attachment.target.targetId ?? null;
   const ownRecord = isFinderOnNode ? attachment.sourceRecord ?? null : null;
-  const askerNames = askersOf(ownRecord)
-    .filter((asker) => asker !== attachment.attachmentId)
-    .map((asker) => actions.agentNameOf?.(asker) ?? null)
-    .filter((name): name is string => Boolean(name));
+  // The reply's words, but for the candidates it printed, which their card
+  // shows.
+  const shownText = t.error ? t.text : shownReplyText(t.text);
+  // A reply that was only those candidates, with nothing else to draw,
+  // takes no place in the chat (board S08).
+  if (drawsNothing(t, shownText, runDetails, { failedCalls: failedCalls.length, meta: Boolean(shownMeta), canvasUnchanged })) {
+    return null;
+  }
   return (
     <div className={styles.agentRow}>
       <span className={`${styles.agentRowAvatar} ${tint}`} aria-hidden="true">
@@ -130,10 +165,10 @@ export const AgentTurn: React.FC<{
       </span>
       <div className={styles.agentCol}>
         <div className={`${styles.msgAgent} ${t.error ? styles.msgError : ""}`}>
-          {t.error ? t.text : <SafeAgentContent text={t.text} onInternalLink={actions.onInternalLink} />}
+          {t.error ? t.text : shownText ? <SafeAgentContent text={shownText} onInternalLink={actions.onInternalLink} /> : null}
           {t.error ? <LlmConfigAction remedy={t.remedy} /> : null}
           {(t.content ?? [])
-            .filter((p): p is AgentCardPart => p.type === "card")
+            .filter((p): p is AgentCardPart => p.type === "card" && (runDetails || (p as AgentCardPart).runDetails !== true))
             .map((card, j) => (
               <AgentChatCard key={j} card={card} tintClassName={tint} />
             ))}
@@ -144,7 +179,12 @@ export const AgentTurn: React.FC<{
                 key={`cand-${j}`}
                 part={part}
                 tintClassName={tint}
-                onComposePrompt={actions.onComposePrompt}
+                // A card that records its own pick (Use this source) leaves
+                // the message box alone; one with no pick of its own composes
+                // the message that confirms its selection.
+                onComposePrompt={
+                  actions.onRecordDatasetSelection && isFinderOnNode ? undefined : actions.onComposePrompt
+                }
                 // dev/114: in the chat of an agent that builds nodes, the
                 // runtime minted these from a dataset.discover delegation, so
                 // the confirmation asks it to build.
@@ -167,9 +207,8 @@ export const AgentTurn: React.FC<{
                 // steps: the same catalog import as the drawer footer.
                 onImportDataset={actions.onImportDataset && isFinderOnNode ? actions.onImportDataset : undefined}
                 // The Finder's card is named for its node and follows its
-                // record: Recorded where the pick was made, closed once newer
-                // candidates replaced it, and, while it is the card on offer,
-                // it names the chats that asked, which hold the same card.
+                // record: Recorded where the pick was made, and closed once
+                // newer candidates replaced it.
                 {...(isFinderOnNode
                   ? {
                       nodeLabel: actions.targetName ?? null,
@@ -180,8 +219,6 @@ export const AgentTurn: React.FC<{
                       onShowNewest: actions.showCardOf
                         ? () => actions.showCardOf!(ownRecord?.discoveryId ?? null, null)
                         : null,
-                      mirroredIn:
-                        !part.discoveryId || ownRecord?.discoveryId === part.discoveryId ? askerNames : [],
                     }
                   : {})}
               />
@@ -199,7 +236,7 @@ export const AgentTurn: React.FC<{
               return (
                 <AgentDatasetCandidatesCard
                   key={`pick-${part.nodeId}-${j}`}
-                  part={{ type: "datasetCandidates", lanes: part.lanes, laneOrder: part.laneOrder }}
+                  part={{ type: "datasetCandidates", lanes: part.lanes, laneOrder: part.laneOrder, rowOrder: part.rowOrder }}
                   tintClassName={tint}
                   nodeLabel={part.nodeLabel}
                   nodeId={part.nodeId}
@@ -250,6 +287,7 @@ export const AgentTurn: React.FC<{
                 part={part}
                 onOpenChat={actions.onOpenAgentChat}
                 delegateExists={actions.delegateExists}
+                runDetails={runDetails}
               />
             ))}
           {(t.content ?? [])
@@ -261,12 +299,16 @@ export const AgentTurn: React.FC<{
                 tintClassName={tint}
                 onUndo={actions.onUndoChange}
                 refusal={actions.refusalOf?.(part.changeId) ?? null}
-                planNodeState={planNodeStateFor(attachment, part, Boolean(actions.buildRunning))}
+                planNodeState={planNodeStateFor(attachment, part, Boolean(actions.buildRunning), actions.planLive)}
                 onSolvePlanNode={actions.onSolvePlanNode}
                 onRunPlanNode={actions.onRunPlanNode}
                 onOpenAgentChat={actions.onOpenAgentChat}
                 delegateExists={actions.delegateExists}
                 agentNameOf={actions.agentNameOf}
+                nodeChatOf={actions.nodeChatOf}
+                sourcesOf={actions.sourcesOf}
+                nodeName={part.nodeId ? actions.nodeNameOf?.(part.nodeId) ?? null : null}
+                runDetails={runDetails}
               />
             ))}
           {(t.content ?? [])
@@ -289,9 +331,11 @@ export const AgentTurn: React.FC<{
               />
             ))}
         </div>
+        {/* Why a call failed: what it did in plain words, and its tool's id
+            with Show run details. */}
         {failedCalls.map((call, j) => (
           <div key={`call-${j}`} className={styles.turnNote}>
-            {call.tool} · {call.reason}
+            {runDetails ? `${call.tool} · ${call.reason}` : failedCallWords(call)}
           </div>
         ))}
         {canvasUnchanged ? <div className={styles.turnNote}>No changes were made to the canvas</div> : null}
@@ -312,9 +356,20 @@ export const AgentTurn: React.FC<{
         ) : null}
         {/* Per-reply execution status (dev/80 amendment): running while THIS
             reply streams, then its own duration + tokens. */}
-        {meta ? (
+        {shownMeta ? (
           <div className={styles.turnMeta}>
-            <AgentRunStatusLine display={meta} tintClassName={tint} />
+            <AgentRunStatusLine display={shownMeta} tintClassName={tint} />
+          </div>
+        ) : null}
+        {toolsCalled.length > 0 ? (
+          <div className={`${styles.turnNote} ${styles.turnSkills}`} data-curio-reply-tools="true">
+            Tools:{" "}
+            {toolsCalled.map((tool, j) => (
+              <React.Fragment key={tool}>
+                {j > 0 ? ", " : null}
+                <span className={styles.turnSkill}>{tool}</span>
+              </React.Fragment>
+            ))}
           </div>
         ) : null}
       </div>

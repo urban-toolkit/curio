@@ -78,6 +78,9 @@ export interface AgentSolveAttemptRow {
   outputDataType?: string;
   contentSha256?: string;
   source?: string;
+  /** A chart's or a map's round whose document its grammar validated (the
+   *  grammar's name): it ran nothing and failed nothing. */
+  documentValidated?: string;
 }
 
 /** dev/127: every attempt to fix ONE node, in the transcript, durably. */

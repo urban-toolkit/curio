@@ -1,81 +1,119 @@
-import React, { useEffect, useId, useState } from "react";
+import React, { useEffect, useState } from "react";
+import clsx from "clsx";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faChevronDown, faChevronUp } from "@fortawesome/free-solid-svg-icons";
-import { BUILD_RUNNING_HINT, ROW_SOLVE_RUNNING_HINT, buildRunningOn } from "../../../services/agents/planBuild";
+import { ROW_SOLVE_RUNNING_HINT, buildRunningOn, isBuiltNode } from "../../../services/agents/planBuild";
 import type { AgentAttachment, AgentRemedy, AgentSolveWave } from "../../../services/agents";
 import { LlmConfigAction, remedyOf } from "../../llmConfigs/LlmConfigAction";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { nodeLabel } from "../../scenarios/scenarioLabels";
-import { AgentRunStatusLine } from "./AgentRunStatusLine";
+import { useRunTicker } from "./useRunTicker";
 import styles from "./AgentBuilderStrip.module.css";
-import { BatchActions, type BatchPart } from "./builderStrip/BatchActions";
 import { MissingSpecialistReview } from "./builderStrip/MissingSpecialistReview";
-import { NodeRunPills } from "./builderStrip/NodeRunPills";
-import { PlanBuildActions } from "./builderStrip/PlanBuildActions";
-import { SolveFeedback, SolveRemedies } from "./builderStrip/SolveFeedback";
+import { SolveRemedies } from "./builderStrip/SolveFeedback";
+import { useMenuPopup } from "./chat/useMenuPopup";
 import {
-  batchDetailFor,
-  distinctLines,
+  AT_WORK_RUNS,
+  AT_WORK_WORDS,
+  builtCount,
   inPlanOrder,
   mainActionOf,
   passLineText,
   planLeftToBuild,
   planLineWords,
+  plural,
   remediesByHost,
-  selectionRemediesOf,
-  sessionEndingText,
-  solveDisabledReasonFor,
+  waveWords,
+  type PauseView,
 } from "./builderStrip/builderStripDerived";
 
-/** The more part's toggle, by what a click on it does. */
-export const SHOW_PLAN_MORE = "Show the plan's nodes and actions";
-export const HIDE_PLAN_MORE = "Hide the plan's nodes and actions";
+/** The line's menu of the plan's other actions, by what it holds. */
+export const PLAN_ACTIONS = "More plan actions";
 
-/** Why no Solve is offered while a build of the plan runs. */
-export { BUILD_RUNNING_HINT };
+/** What the line's actions do, on their tooltips. */
+export const SOLVE_HINT = "Builds every node: each runs in the sandbox, is fixed, and lands only once it ran";
+export const RETRY_FAILED_HINT = "Solves the nodes that failed again: each runs in the sandbox, is fixed, and lands only once it ran";
+export const RETRY_INTERRUPTED_HINT =
+  "Solve was interrupted: the server stopped while it was running. Finished nodes kept their content; nothing was " +
+  "replayed. Retry continues from what is still pending, in a new run linked to the interrupted one.";
+export const STOP_SOLVE_HINT =
+  "Ends the session after the current node finishes (a running fetch cannot be aborted). Everything already written " +
+  "stays. Solve keeps running if you close this chat.";
+export const STOP_BUILD_HINT =
+  "Stops the build after its current step. Everything built stays. The build goes on if you close this chat.";
+export const SHOW_SOURCES_HINT = "Goes to its sources in this chat. Your pick builds it, and the plan goes on.";
+/** Show its sources' tooltip when this chat holds no card of the node's
+ *  sources: the chat of its Dataset Finder, named *finder*, does. */
+export const showSourcesInFinderHint = (finder: string): string =>
+  `Opens the chat of its ${finder}, which holds its sources. Your pick builds it, and the plan goes on.`;
+export const RESUME_HINT = "Goes on with the build, in plan order, from where it paused";
+export const RUN_HINT = "Runs every node of the dataflow";
 
-/** How the line's notice of a pause its build ended on starts. */
-const PAUSED_NOTICE = "Paused: ";
+/** What the menu's two builds do, under their names. */
+export const BUILD_PLAN_SAYS = "In plan order, each node's code lands as it passes; the first failure pauses.";
+export const STEP_SAYS = "Builds the next node only.";
+
+/** The ledger states of a node that waits for its source, by what it waits on. */
+const WAIT_OF_STATE: Record<string, PauseView["kind"]> = {
+  "awaiting-source": "pick",
+  "awaiting-download": "download",
+  "awaiting-install": "install",
+};
+
+/** The running line: the dot, what runs and on which node, the time it has
+ *  run, and how many of the plan's nodes are built. */
+const PlanRunLine: React.FC<{
+  label: string;
+  subject: string | null;
+  detail: string;
+  startedAt: number;
+  tooltip?: string;
+  srLabel: string;
+}> = ({ label, subject, detail, startedAt, tooltip, srLabel }) => {
+  const { elapsedLabel } = useRunTicker(startedAt);
+  return (
+    <span className={styles.runLine} role="status" aria-live="polite" data-tooltip={tooltip}>
+      <span className={styles.srOnly}>{srLabel}</span>
+      <span className={styles.runDot} aria-hidden="true" />
+      <span aria-hidden="true">
+        <span className={styles.linePhase}>{label}</span>
+        {subject ? ` ${subject}` : null}
+        <span className={styles.lineMuted}>{` · ${elapsedLabel} · ${detail}`}</span>
+      </span>
+    </span>
+  );
+};
 
 /**
  * The plan line of an agent that declares dataflow.orchestrate (dev/52 DR-5),
  * under the chat's Goal line. Everything derives from the server-owned
  * `builderSession` (DR-2).
  *
- * The line says the phase in words, its counts and who it waits for, and
- * holds one main action: Solve (or Retry), Stop while a batch or a build runs,
- * Resume when a build paused, Run workflow once the plan is ready. While a
- * build runs neither the line nor its more part offers a Solve, the plan's or
- * a node's: a build is a stream over the plan, not an agent job, and a Solve
- * would run over the same nodes.
- * Its more part, closed until asked for, holds the plan's nodes with their own
- * Solve, Build & validate plan, Step, the other batch actions and the hints,
- * at most a third of the panel's height, scrolling. What comes with a fix
- * stays in view under the line: a paused build's pause, said there once, a
- * missing key's Add key, a missing specialist's Add to project, the nodes
- * awaiting a source, an action's error with its Open API Settings. Before any
- * plan there is no line: the planning templates are in the empty
+ * The line says where the plan stands in one count: Planned, Ready, and while
+ * a batch or a build runs, the node at work, the time it has run and how many
+ * nodes are built. A pause or a failure names its node. It holds one action:
+ * Solve (or Retry), Stop while a batch or a build runs, Show its sources while
+ * a node waits for the person's pick of its source (the pick goes on by
+ * itself), Resume when a build paused on anything else, Run workflow once the
+ * plan is ready. Beside it, a menu holds Build & validate plan and Step while
+ * a landed plan has nodes left to build and nothing runs. Each node's own
+ * state, its Solve and Run, are on its row of the plan's card. What comes with
+ * a fix stays in view under the line: a missing key's Add key, a missing
+ * specialist's Add to project, an action's error with its Open API Settings.
+ * Before any plan there is no line: the planning templates are in the empty
  * conversation.
  */
 export const AgentBuilderStrip: React.FC<{
   attachment: AgentAttachment;
   onSolve: (nodeIds?: string[]) => Promise<unknown>;
   /** dev/63: the live batch's transient per-node statuses (nodeId → status,
-   * including "solving") — overlays the persisted nodeRuns for display. */
+   * including "solving"), over the persisted nodeRuns. */
   solveProgress?: Record<string, string>;
-  /** dev/106: the live batch's per-node failure reasons (nodeId → text) —
-   * rendered ONCE per distinct reason under the pills, never per node. */
+  /** dev/106: the live batch's per-node failure reasons (nodeId → text): the
+   * line's tooltip, and each on its node's row of the plan's card. */
   solveErrors?: Record<string, string>;
-  /** dev/116: the live batch's per-node remedies — rendered ONCE per host.
-   * dev/126: a `dataset-selection` remedy is rendered per NODE instead (each
-   * one opens a different chat). */
+  /** dev/116: the live batch's per-node remedies: an Add key per host. */
   solveRemedies?: Record<string, AgentRemedy>;
-  /** dev/126: open the chat of a node's agent that finds its datasets (the
-   * awaiting-selection remedy's action). Omitted → the reason line stands alone. */
-  onOpenChat?: (attachmentId: string) => void;
-  /** The name of the agent an attachment of this dataflow binds, from the
-   * live list: the buttons and pills for a node awaiting a source name it. */
-  agentNameOf?: (attachmentId: string) => string | null;
   /** dev/131: what the running session is blocked on, per node — the live
    * `solve_pass`/`solve_waiting` summary. A node whose `kind` is
    * "dataset-selection" is waiting for the USER. */
@@ -89,13 +127,8 @@ export const AgentBuilderStrip: React.FC<{
   solveEndedBy?: string | null;
   /** dev/131: the session's pass number while it runs. */
   solvePass?: number | null;
-  /** dev/131: resolve ONE node through its own agent (the per-node Solve).
-   *  Omitted → the pills carry no action. */
-  onSolveNode?: (nodeId: string) => Promise<unknown>;
-  /** dev/118: the live batch's current wave — "solving wave 2 of 3 — 4 nodes". */
+  /** dev/118: the live batch's current wave. */
   solveWave?: AgentSolveWave;
-  /** dev/118: per-node notices that are not errors — ONE line per distinct text. */
-  solveNotices?: Record<string, string>;
   /** dev/63: cancel the running solve — in-flight children finish; the rest
    * revert to pending. Omitted → no Stop control. */
   onCancelSolve?: () => Promise<void>;
@@ -107,7 +140,7 @@ export const AgentBuilderStrip: React.FC<{
   /** dev/67-9: Build & validate over the landed plan: step or auto. */
   onSimulate?: (mode: "step" | "auto") => Promise<unknown>;
   onCancelSimulate?: () => Promise<void>;
-  /** dev/67-9: the running simulation's narration line. */
+  /** dev/67-9: the running build's narration: the line's tooltip. */
   simulationActivity?: string;
   /** The build the chat runs for this agent, step or auto, which outlives
    *  this line: drawn again (the chat opened again, or the rail back on this
@@ -115,20 +148,24 @@ export const AgentBuilderStrip: React.FC<{
    *  which the listing names, holds the line the same way
    *  (`buildRunningOn`). */
   simulating?: "step" | "auto" | null;
+  /** Brings the card of *nodeId*'s sources into view: in this chat, else in
+   *  its Dataset Finder's. */
+  onShowSources?: (nodeId: string) => void;
+  /** Where Show its sources goes for *nodeId*, on its tooltip: this chat, or
+   *  its Dataset Finder's. Omitted, this chat. */
+  sourcesHintOf?: (nodeId: string) => string;
+  /** The viewer shows run details: the batch's pass and wave. */
+  runDetails?: boolean;
 }> = ({
   attachment,
   onSolve,
   solveProgress,
   solveErrors,
   solveRemedies,
-  onOpenChat,
-  agentNameOf,
   solveWaiting,
   solveEndedBy,
   solvePass,
-  onSolveNode,
   solveWave,
-  solveNotices,
   onCancelSolve,
   onApplyProposal,
   onDismissProposal,
@@ -136,6 +173,9 @@ export const AgentBuilderStrip: React.FC<{
   onCancelSimulate,
   simulationActivity,
   simulating = null,
+  onShowSources,
+  sourcesHintOf,
+  runDetails = false,
 }) => {
   const { playAllNodes, isRunActive: browserRunActive, serverRunActive, nodes } = useFlowContext();
   const isRunActive = browserRunActive || serverRunActive;
@@ -153,82 +193,156 @@ export const AgentBuilderStrip: React.FC<{
   const building = simBusy ?? buildRunningOn(attachment, simulating);
   // A row's Solve of the plan runs on the server, the one a pick goes on with
   // among them: no build or Step starts over it.
-  const buildWaitReason = attachment.validating ? ROW_SOLVE_RUNNING_HINT : null;
+  const rowSolveRunning = Boolean(attachment.validating);
   // Its Stop was asked for: the build stops after its current step.
   const [buildStopping, setBuildStopping] = useState(false);
+  // This line's build was stopped: the line says so until a build runs again.
+  const [buildStopped, setBuildStopped] = useState(false);
   useEffect(() => {
     if (!building) setBuildStopping(false);
+    else setBuildStopped(false);
   }, [building]);
-  const [nodeSolving, setNodeSolving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // The refusal's remedy, when it has one (no LLM configuration answers a
   // delegate this run relies on).
   const [errorRemedy, setErrorRemedy] = useState<AgentRemedy | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  // A pause this line's build ended on is said until a build of the plan runs
-  // again, from this line or not: a pick's own continuation builds the plan
-  // from the provider, and the plan has gone on by then.
-  useEffect(() => {
-    if (building) setNotice((said) => (said?.startsWith(PAUSED_NOTICE) ? null : said));
-  }, [building]);
-  // The more part opens only when asked for, and stays as it was across the
-  // session's updates.
-  const [moreOpen, setMoreOpen] = useState(false);
-  const moreId = useId();
+  // When the line first saw what runs now.
+  const [runStartedAt, setRunStartedAt] = useState<number | null>(null);
 
   const session = attachment.builderSession ?? { phase: "idle" as const };
   const phase = session.phase ?? "idle";
   const nodeRuns = session.nodeRuns ?? {};
-  // The live overlay wins per node while the batch streams (dev/63); the
-  // persisted session takes back over on the terminal refetch. The pills
-  // read in the plan's order, as its card lists its nodes, and so do the
-  // Open Dataset Finder buttons of the nodes awaiting a source.
-  const canvasIds = flowNodes.map((node) => node.id);
-  const entries = inPlanOrder(
-    Object.entries({ ...nodeRuns, ...(solveProgress ?? {}) }),
-    attachment.planProposal,
-    canvasIds,
-  );
-  const selectionRemedies = inPlanOrder(selectionRemediesOf(solveRemedies), attachment.planProposal, canvasIds);
-  const pending = entries.filter(([, s]) => s === "pending").map(([id]) => id);
-  const failed = entries.filter(([, s]) => s === "failed").map(([id]) => id);
-  const unresolved = pending.length + failed.length;
-
-  // dev/83: the shared running-status line (dot + elapsed + fraction) replaces
-  // the bare "solving…" note. One fixed label per batch kind.
+  const nodeStates = session.nodeStates ?? {};
   const liveJob = attachment.liveJob?.status === "running" ? attachment.liveJob : null;
-  const activeBatchLabel =
-    solving || phase === "solving" || liveJob?.kind === "solve-batch"
-      ? "Solving"
-      : building === "auto"
-        ? "Building"
-        : building === "step"
-          ? "Stepping"
-          : null;
-  // Elapsed is strip-local observation time: builderSession persists no batch
-  // start timestamp, so a panel reopened mid-run shows time since this strip
-  // observed the batch (the dev/80 client-measured posture). A label change
-  // (new batch kind) restarts the clock.
-  const [batchStartedAt, setBatchStartedAt] = useState<number | null>(null);
+  const solveRunning = solving || phase === "solving" || liveJob?.kind === "solve-batch";
+
+  // The plan's nodes, in its order, each with its ref; then nodes the batch
+  // runs that the plan does not list, an earlier plan's.
+  const plan = attachment.planProposal ?? null;
+  const refs = plan?.tool === "dataflow.plan.write" ? plan.appliedRefs ?? [] : [];
+  const refOf: Record<string, string> = {};
+  for (const ref of refs) {
+    const id = plan?.nodeIds?.[ref] ?? session.nodeIds?.[ref];
+    if (id) refOf[id] = ref;
+  }
+  const runs: Record<string, string> = { ...nodeRuns, ...(solveProgress ?? {}) };
+  const canvasIds = flowNodes.map((node) => node.id);
+  const ids = inPlanOrder(
+    [...new Set([...Object.keys(refOf), ...Object.keys(runs)])].map((id) => [id, null] as [string, null]),
+    plan,
+    canvasIds,
+  ).map(([id]) => id);
+  const stateOf = (id: string) => (refOf[id] ? nodeStates[refOf[id]] : undefined);
+  const isBuilt = (id: string) => isBuiltNode(stateOf(id), runs[id]);
+  const built = ids.filter(isBuilt).length;
+  const left = ids.length - built;
+  const failed = ids.filter((id) => !isBuilt(id) && (runs[id] === "failed" || stateOf(id) === "failed"));
+  const pending = ids.filter((id) => runs[id] === "pending");
+
+  // The nodes that wait for the person's pick of their source: those the
+  // running Solve says, those the listing says this agent waits on, and the
+  // plan's nodes its ledger keeps waiting for a pick.
+  const waitsForPick = new Set([
+    ...(solveWaiting ?? []).filter((w) => w.kind === "dataset-selection").map((w) => w.nodeId),
+    ...Object.entries(solveRemedies ?? {})
+      .filter(([, remedy]) => remedy?.kind === "dataset-selection")
+      .map(([id]) => id),
+    ...(attachment.waitsForYou ?? []),
+    ...ids.filter((id) => stateOf(id) === "awaiting-source"),
+  ]);
+  const pickIds = ids.filter((id) => waitsForPick.has(id)).concat([...waitsForPick].filter((id) => !ids.includes(id)));
+
+  // The plan that landed, while any of its nodes is left to build, counted as
+  // the line counts them: Build & validate and Step work on it.
+  const landedPlan = planLeftToBuild(plan, session, runs) ? plan : null;
+  // A build's pause on a node whose check failed is about that node alone:
+  // once something built it (a record saved before the server ended such a
+  // pause holds it still), the plan is paused on nothing.
+  const pausedOnABuiltNode = (() => {
+    const held = session.pauseReason;
+    if (held?.kind !== "validation-failed" || !held.ref) return false;
+    const id = plan?.nodeIds?.[held.ref] ?? session.nodeIds?.[held.ref];
+    return isBuiltNode(nodeStates[held.ref], id ? runs[id] : undefined);
+  })();
+  const pauseReason = !building && !pausedOnABuiltNode ? session.pauseReason ?? null : null;
+  // Why the build paused, as the line names it; a wait for a pick is the
+  // line's own (`pickIds`).
+  const pause: PauseView | null = (() => {
+    if (!pauseReason) return null;
+    const pausedIds = [
+      ...(pauseReason.nodes ?? []).map((n) => n.nodeId ?? (n.ref ? plan?.nodeIds?.[n.ref] : undefined)),
+      pauseReason.ref ? plan?.nodeIds?.[pauseReason.ref] ?? session.nodeIds?.[pauseReason.ref] : undefined,
+    ].filter((id): id is string => Boolean(id));
+    if (pauseReason.kind === "validation-failed") {
+      return { kind: "failed", names: pausedIds.map(nodeNameOf) };
+    }
+    if (pauseReason.kind === "awaiting-source") {
+      const waits = pausedIds.map((id) => WAIT_OF_STATE[stateOf(id) ?? ""] ?? "pick");
+      const kind = waits.includes("download") ? "download" : waits.includes("install") ? "install" : "pick";
+      return { kind, names: pausedIds.filter((_, i) => waits[i] === kind).map(nodeNameOf) };
+    }
+    return { kind: "other", names: [], message: pauseReason.message };
+  })();
+
+  const running = solveRunning || building !== null;
+  // A plan whose every node is built is ready, whatever built them: a batch,
+  // a build or the rows' own Solves.
+  const shownPhase = phase === "applied" && ids.length > 0 && left === 0 ? "ready" : phase;
+  // The plan waits on the person when every node left to build waits for its
+  // pick, or for a node upstream of it that does, as a build that paused on a
+  // pick says by pausing: then the line's action goes to the card; else Solve
+  // goes on with the others.
+  const waitsUpstream = new Set((solveWaiting ?? []).filter((w) => w.kind === "upstream").map((w) => w.nodeId));
+  const pickBlocksAll =
+    pickIds.length > 0 &&
+    (pauseReason?.kind === "awaiting-source" ||
+      ids.filter((id) => !isBuilt(id)).every((id) => waitsForPick.has(id) || waitsUpstream.has(id)));
+  const words = planLineWords({
+    phase: shownPhase,
+    waitingForPick: running ? [] : pickIds.map(nodeNameOf),
+    pickBlocksAll,
+    pause: pause && pause.kind !== "pick" ? pause : null,
+    failed: running ? [] : failed.map(nodeNameOf),
+    ended: !solveRunning && solveEndedBy && solveEndedBy !== "complete" ? solveEndedBy : null,
+    buildStopped,
+    nodes: ids.length,
+    left,
+  });
+  const main = mainActionOf({
+    solveRunning,
+    canStopSolve: Boolean(onCancelSolve),
+    building: building !== null,
+    canStopBuild: Boolean(onCancelSimulate),
+    waitsForPick: pickBlocksAll,
+    paused: Boolean(pauseReason && landedPlan && onSimulate),
+    phase: shownPhase,
+  });
+
+  // The running line's clock: from when the server says the run began
+  // (`simulatingSince` for a build, `solvingSince` for a batch, in epoch
+  // seconds), so a chat opened again goes on counting; never from later than
+  // this line first saw the run, so a browser clock behind the server's counts
+  // from that sight, never below it. A run of another kind starts it again.
+  const runKind = solveRunning ? "solve" : building ? "build" : null;
   useEffect(() => {
-    setBatchStartedAt(activeBatchLabel ? Date.now() : null);
-  }, [activeBatchLabel]);
+    setRunStartedAt(runKind ? Date.now() : null);
+  }, [runKind]);
+  const serverSince = runKind === "build" ? session.simulatingSince : runKind === "solve" ? session.solvingSince : undefined;
+  const clockFrom =
+    runStartedAt !== null && typeof serverSince === "number" && serverSince > 0
+      ? Math.min(serverSince * 1000, runStartedAt)
+      : runStartedAt;
+  // A batch's Stop reads Stopping… until that batch ends, however it ends.
+  useEffect(() => {
+    if (!solveRunning) setCancelling(false);
+  }, [solveRunning]);
 
   const solve = async (nodeIds?: string[]) => {
     setSolving(true);
     setError(null);
     setErrorRemedy(null);
-    setNotice(null);
     try {
-      const result = (await onSolve(nodeIds)) as { cancelled?: boolean; notAttempted?: string[] } | undefined;
-      if (result?.cancelled) {
-        const skipped = result.notAttempted?.length ?? 0;
-        setNotice(
-          skipped
-            ? `Cancelled: ${skipped} node${skipped === 1 ? "" : "s"} not attempted`
-            : "Cancelled: all dispatched nodes finished",
-        );
-      }
+      await onSolve(nodeIds);
     } catch (e) {
       setErrorRemedy(remedyOf(e));
       setError(e instanceof Error ? e.message : "Solve failed");
@@ -248,31 +362,14 @@ export const AgentBuilderStrip: React.FC<{
     }
   };
 
-  // The plan that landed, while any of its nodes is left to build: Build &
-  // validate and Step work on it.
-  const landedPlan = planLeftToBuild(attachment.planProposal, session) ? attachment.planProposal! : null;
-  const pauseReason = session.pauseReason ?? null;
-  // dev/106: the missing-specialist review, from the mirror.
-  const installReview =
-    attachment.activeProposal &&
-    attachment.activeProposal.tool === "project.install" &&
-    attachment.activeProposal.status === "pending"
-      ? attachment.activeProposal
-      : null;
-
   const simulate = async (mode: "step" | "auto") => {
-    if (!onSimulate || building || buildWaitReason) return;
+    if (!onSimulate || building || rowSolveRunning) return;
     setSimBusy(mode);
     setError(null);
     setErrorRemedy(null);
-    setNotice(null);
     try {
-      const done = (await onSimulate(mode)) as { status?: string; reason?: { message?: string } } | undefined;
-      if (done?.status === "paused" && done.reason?.message) {
-        setNotice(`${PAUSED_NOTICE}${done.reason.message}`);
-      } else if (done?.status === "cancelled") {
-        setNotice("Simulation cancelled; everything already built stays.");
-      }
+      const done = (await onSimulate(mode)) as { status?: string } | undefined;
+      if (done?.status === "cancelled") setBuildStopped(true);
     } catch (e) {
       setErrorRemedy(remedyOf(e));
       setError(e instanceof Error ? e.message : "The simulation failed");
@@ -293,23 +390,6 @@ export const AgentBuilderStrip: React.FC<{
     }
   };
 
-  // dev/131: "users should have the ability to resolve each node
-  // individually" — the node's OWN agent runs the same verified loop.
-  const solveOne = async (nodeId: string) => {
-    if (!onSolveNode || nodeSolving) return;
-    setNodeSolving(nodeId);
-    setError(null);
-    setErrorRemedy(null);
-    try {
-      await onSolveNode(nodeId);
-    } catch (e) {
-      setErrorRemedy(remedyOf(e));
-      setError(e instanceof Error ? e.message : "Solving that node failed");
-    } finally {
-      setNodeSolving(null);
-    }
-  };
-
   const review = async (fn: ((proposalId: string) => Promise<unknown>) | undefined, proposalId: string) => {
     if (!fn || !proposalId || reviewBusy) return;
     setReviewBusy(true);
@@ -325,172 +405,248 @@ export const AgentBuilderStrip: React.FC<{
     }
   };
 
-  // The nodes that wait for the user's pick of their source: those the
-  // running Solve says, and those the listing says this agent waits on (the
-  // candidates its chat holds, as Build & validate paused on them).
-  const userBlocked = (solveWaiting ?? []).filter((w) => w.kind === "dataset-selection");
-  const userBlockedIds = new Set([...userBlocked.map((w) => w.nodeId), ...(attachment.waitsForYou ?? [])]);
-  const everyUnresolvedNeedsUser =
-    unresolved > 0 && pending.concat(failed).every((id) => userBlockedIds.has(id));
-  // While a build runs no Solve is offered: it would run over the same nodes.
-  const solveDisabledReason = building
-    ? BUILD_RUNNING_HINT
-    : solveDisabledReasonFor({ phase, unresolved, everyUnresolvedNeedsUser });
-  const solveRunning = solving || phase === "solving" || liveJob?.kind === "solve-batch";
-  // A batch's Stop reads Stopping… until that batch ends, however it ends: one
-  // this line did not start (another tab's, or one a chat opened again found
-  // running) has no Solve of this line's whose end would put it back.
-  useEffect(() => {
-    if (!solveRunning) setCancelling(false);
-  }, [solveRunning]);
-  const runDisabledReason =
-    unresolved > 0 ? `${unresolved} node${unresolved === 1 ? "" : "s"} unsolved` : null;
-
-  const paused = !building && Boolean(pauseReason);
-  // A paused build's pause is said once, under the line, whether the more
-  // part is open or not: the session's, which a tab opened since reads too,
-  // in place of this line's own notice of it.
-  const pauseLine = paused && pauseReason ? `${PAUSED_NOTICE}${pauseReason.message}` : null;
-  const noticeLine = pauseLine && notice?.startsWith(PAUSED_NOTICE) ? null : notice;
-  const main = mainActionOf({
-    solveRunning,
-    canStopSolve: Boolean(onCancelSolve),
-    building: Boolean(building),
-    canStopBuild: Boolean(onCancelSimulate),
-    paused: paused && Boolean(landedPlan && onSimulate),
-    phase,
-  });
-  const words = planLineWords({ phase, paused, nodes: entries.length, unresolved });
+  // dev/106: the missing-specialist review, from the mirror.
+  const installReview =
+    attachment.activeProposal &&
+    attachment.activeProposal.tool === "project.install" &&
+    attachment.activeProposal.status === "pending"
+      ? attachment.activeProposal
+      : null;
   const keyRemedies = remediesByHost(solveRemedies);
   // Before any plan there is nothing to solve, build or run, and nothing the
   // line could say: the templates are in the empty conversation.
   const shown =
     phase !== "idle" ||
-    entries.length > 0 ||
+    ids.length > 0 ||
     landedPlan !== null ||
     installReview !== null ||
-    solveRunning ||
-    building !== null ||
-    Boolean(error || notice) ||
-    keyRemedies.length > 0 ||
-    selectionRemedies.length > 0;
+    running ||
+    Boolean(error) ||
+    keyRemedies.length > 0;
+
+  // The line's menu: the builds that can run now, never while one runs. A
+  // menu the line stops drawing closes, layer and all (`useMenuPopup`).
+  const menuItems: Array<{ mode: "auto" | "step"; name: string; says: string }> =
+    landedPlan && onSimulate && !running && !rowSolveRunning
+      ? [
+          ...(main === "resume" ? [] : [{ mode: "auto" as const, name: "Build & validate plan", says: BUILD_PLAN_SAYS }]),
+          { mode: "step" as const, name: "Step", says: STEP_SAYS },
+        ]
+      : [];
+  const menu = useMenuPopup(shown && menuItems.length > 0);
   if (!shown) return null;
 
-  // The batch's controls: the line holds the one that is its main action, the
-  // more part the others.
-  const mainPart: BatchPart | null =
-    main === "solve" ? "solve" : main === "stop-solve" ? "stop" : main === "run" ? "run" : null;
-  const batchActions = (parts: readonly BatchPart[], inline: boolean) => (
-    <BatchActions
-      phase={phase}
-      solveRunning={solveRunning}
-      solveDisabledReason={solveDisabledReason}
-      unresolved={unresolved}
-      failedCount={failed.length}
-      pendingCount={pending.length}
-      cancelling={cancelling}
-      runDisabledReason={runDisabledReason}
-      isRunActive={isRunActive}
-      onSolve={() => void solve(failed.length && !pending.length ? failed : undefined)}
-      onCancel={onCancelSolve ? () => void cancel() : undefined}
-      onRun={() => playAllNodes()}
-      parts={parts}
-      inline={inline}
-    />
-  );
-  const otherParts = (["solve", "stop", "run"] as const).filter((part) => part !== mainPart);
+  // What runs, on which node, for the running line.
+  const atWork = solveRunning
+    ? ids.filter((id) => AT_WORK_RUNS.has(runs[id] ?? ""))
+    : building && session.currentRef
+      ? [plan?.nodeIds?.[session.currentRef] ?? session.nodeIds?.[session.currentRef]].filter((id): id is string => Boolean(id))
+      : [];
+  const atWorkSubject = atWork.length === 1 ? nodeNameOf(atWork[0]) : atWork.length > 1 ? plural(atWork.length, "node") : null;
+  const atWorkTooltip =
+    atWork.length === 1
+      ? building
+        ? simulationActivity
+          ? `${nodeNameOf(atWork[0])}: ${simulationActivity}`
+          : undefined
+        : AT_WORK_WORDS[runs[atWork[0]] ?? ""]
+          ? `${nodeNameOf(atWork[0])}: ${AT_WORK_WORDS[runs[atWork[0]] ?? ""]}`
+          : undefined
+      : building
+        ? simulationActivity
+        : undefined;
+  const pickWords =
+    solveRunning && pickIds.length > 0
+      ? ` · ${pickIds.length === 1 ? `${nodeNameOf(pickIds[0])} needs a source` : `${plural(pickIds.length, "node")} need a source`}`
+      : "";
+  // The line's tooltip: why a build paused, in the server's words, else why
+  // its nodes failed, and the last Solve's own reason while nodes are left:
+  // the live batch's words over those the plan's ledger keeps of the last
+  // Solve (`nodeReasons`, `batchReason`), which a reload and every tab read.
+  // Each node's is on its row of the card too.
+  const keptReasons = session.nodeReasons ?? {};
+  const reasons = pauseReason
+    ? [pauseReason.message]
+    : Array.from(
+        new Set(
+          [...failed.map((id) => solveErrors?.[id] ?? keptReasons[id]), left > 0 ? session.batchReason : undefined].filter(
+            (r): r is string => Boolean(r),
+          ),
+        ),
+      );
 
-  // What the closed more part holds that the line does not say: the plan's
-  // failures, their reasons on the tooltip, or how the last session ended
-  // when it left work undone (a finished one reads Ready). Open, the more
-  // part says it itself.
-  const reasons = distinctLines(solveErrors);
-  const ending =
-    !solveRunning && solveEndedBy && solveEndedBy !== "complete" ? sessionEndingText(solveEndedBy, unresolved) : "";
-  const sign = moreOpen
-    ? null
-    : failed.length > 0
-      ? { text: `${failed.length} failed: see more`, tooltip: reasons.join("\n") || undefined, failures: true }
-      : ending
-        ? { text: ending, tooltip: ending, failures: false }
-        : null;
+  // Where Show its sources goes for a node: this chat, or its Finder's.
+  const sourcesHint = (nodeId: string) => sourcesHintOf?.(nodeId) ?? SHOW_SOURCES_HINT;
+
+  const solveLabel =
+    phase === "interrupted"
+      ? `Retry ${left} interrupted`
+      : failed.length && !pending.length
+        ? `Retry ${failed.length} failed`
+        : "Solve";
+  const solveHint =
+    phase === "interrupted" ? RETRY_INTERRUPTED_HINT : failed.length && !pending.length ? RETRY_FAILED_HINT : SOLVE_HINT;
 
   return (
     <div className={styles.plan} role="group" aria-label={attachment.name}>
       <div className={styles.line}>
-        <span className={styles.lineWords}>
-          {activeBatchLabel && batchStartedAt !== null ? (
-            <AgentRunStatusLine
-              display={{ kind: "running", startedAt: batchStartedAt }}
-              runningLabel={activeBatchLabel}
-              runningDetail={batchDetailFor(entries, solveWave)}
-              srLabel="Solve batch running"
+        {running && clockFrom !== null ? (
+          <span className={styles.lineWords}>
+            <PlanRunLine
+              label={building === "step" ? "Stepping" : building ? "Building" : "Solving"}
+              subject={atWorkSubject}
+              detail={builtCount(built, ids.length) + pickWords}
+              startedAt={clockFrom}
+              tooltip={atWorkTooltip}
+              srLabel={building ? "Build running" : "Solve batch running"}
             />
-          ) : (
-            <>
-              <span className={styles.linePhase}>{words.phase}</span>
-              {words.counts ? ` · ${words.counts}` : null}
-            </>
-          )}
-        </span>
-        {/* A polite live region that stays mounted, empty while there is
-            nothing to say, so what comes into it is announced. */}
-        <span
-          className={`${styles.lineSign}${sign?.failures ? ` ${styles.lineSignFailed}` : ""}`}
-          aria-live="polite"
-          data-curio-plan-sign=""
-          data-tooltip={sign?.tooltip}
-        >
-          {sign ? sign.text : null}
-        </span>
-        {userBlockedIds.size > 0 ? (
-          <span className={styles.lineNeedsYou}>
-            {userBlockedIds.size} need{userBlockedIds.size === 1 ? "s" : ""} you
           </span>
+        ) : (
+          // A polite live region: what comes into it, a failure or a pause, is
+          // announced.
+          <span
+            className={styles.lineWords}
+            aria-live="polite"
+            data-curio-plan-words=""
+            data-tooltip={reasons.length ? reasons.join("\n") : undefined}
+          >
+            <span className={styles.linePhase}>{words.phase}</span>
+            {words.muted ? <span className={styles.lineMuted}>{` · ${words.muted}`}</span> : null}
+            {words.subject || words.predicate ? <span className={styles.lineMuted}>{" · "}</span> : null}
+            {/* A name too long for the line is cut: its tooltip says it whole. */}
+            {words.subject ? <span data-tooltip={words.subject}>{words.subject}</span> : null}
+            {words.predicate ? (
+              <span className={words.tone === "fail" ? styles.lineFail : words.tone === "warn" ? styles.lineWarn : undefined}>
+                {words.subject ? ` ${words.predicate}` : words.predicate}
+              </span>
+            ) : null}
+            {words.waits ? (
+              <>
+                <span className={styles.lineMuted}>{" · "}</span>
+                <span className={styles.lineWarn}>{words.waits}</span>
+              </>
+            ) : null}
+          </span>
+        )}
+        {main === "solve" ? (
+          <button
+            type="button"
+            className={styles.solve}
+            disabled={solveRunning}
+            data-tooltip={solveHint}
+            onClick={() => void solve(failed.length && !pending.length ? failed : undefined)}
+          >
+            {solveRunning ? "Solving…" : solveLabel}
+          </button>
         ) : null}
-        {mainPart ? batchActions([mainPart], true) : null}
+        {main === "stop-solve" ? (
+          <button
+            type="button"
+            className={styles.run}
+            disabled={cancelling}
+            data-tooltip={STOP_SOLVE_HINT}
+            onClick={() => void cancel()}
+          >
+            {cancelling ? "Stopping…" : "Stop"}
+          </button>
+        ) : null}
         {main === "stop-build" ? (
           <button
             type="button"
             className={styles.run}
             disabled={buildStopping}
-            data-tooltip="Stops the build after its current step. Everything already built stays."
+            data-tooltip={STOP_BUILD_HINT}
             onClick={() => void stopBuild()}
           >
             {buildStopping ? "Stopping…" : "Stop"}
+          </button>
+        ) : null}
+        {main === "show-sources" ? (
+          <button
+            type="button"
+            className={styles.solve}
+            // Where it goes: this chat, or the node's Dataset Finder's. With
+            // several nodes waiting it goes to the first, which it names;
+            // each node's row on the plan card goes to its own.
+            data-tooltip={
+              pickIds.length > 1
+                ? `${nodeNameOf(pickIds[0])}: ${sourcesHint(pickIds[0])}`
+                : sourcesHint(pickIds[0])
+            }
+            disabled={!onShowSources}
+            onClick={() => onShowSources?.(pickIds[0])}
+          >
+            Show its sources
           </button>
         ) : null}
         {main === "resume" ? (
           <button
             type="button"
             className={styles.solve}
-            disabled={Boolean(buildWaitReason)}
-            data-tooltip={buildWaitReason ?? (pauseReason ? `Paused: ${pauseReason.message}` : undefined)}
+            disabled={rowSolveRunning}
+            data-tooltip={rowSolveRunning ? ROW_SOLVE_RUNNING_HINT : RESUME_HINT}
             onClick={() => void simulate("auto")}
           >
             Resume
           </button>
         ) : null}
-        <button
-          type="button"
-          className={styles.moreToggle}
-          aria-expanded={moreOpen}
-          aria-controls={moreOpen ? moreId : undefined}
-          aria-label={moreOpen ? HIDE_PLAN_MORE : SHOW_PLAN_MORE}
-          data-tooltip={moreOpen ? HIDE_PLAN_MORE : SHOW_PLAN_MORE}
-          onClick={() => setMoreOpen((open) => !open)}
-        >
-          <FontAwesomeIcon icon={moreOpen ? faChevronUp : faChevronDown} />
-        </button>
+        {main === "run" ? (
+          <button
+            type="button"
+            className={styles.solve}
+            disabled={isRunActive}
+            data-tooltip={isRunActive ? "A run is already in progress" : RUN_HINT}
+            onClick={() => playAllNodes()}
+          >
+            Run workflow
+          </button>
+        ) : null}
+        {menuItems.length > 0 ? (
+          <span className={styles.menuWrap}>
+            <button
+              ref={(el) => {
+                menu.anchorRef.current = el;
+              }}
+              type="button"
+              className={clsx(styles.moreToggle, menu.open !== null && styles.moreToggleOpen)}
+              aria-label={PLAN_ACTIONS}
+              aria-haspopup="menu"
+              aria-expanded={menu.open !== null}
+              data-tooltip={PLAN_ACTIONS}
+              onClick={() => menu.toggle(true)}
+            >
+              <FontAwesomeIcon icon={menu.open !== null ? faChevronUp : faChevronDown} />
+            </button>
+            {menu.open !== null ? (
+              <div
+                ref={menu.menuRef}
+                className={styles.menu}
+                role="menu"
+                aria-label={PLAN_ACTIONS}
+                onKeyDown={menu.onMenuKeyDown}
+              >
+                {menuItems.map((item) => (
+                  <button
+                    key={item.mode}
+                    type="button"
+                    role="menuitem"
+                    className={styles.menuItem}
+                    onClick={() => {
+                      menu.close();
+                      void simulate(item.mode);
+                    }}
+                  >
+                    {item.name}
+                    <span className={styles.menuItemSays}>{item.says}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </span>
+        ) : null}
       </div>
-      {/* What comes with a fix stays in view, whatever the more part shows. */}
-      <SolveRemedies
-        remedies={keyRemedies}
-        selectionRemedies={selectionRemedies}
-        onOpenChat={onOpenChat}
-        agentNameOf={agentNameOf}
-        nodeNameOf={nodeNameOf}
-      />
+      {/* What comes with a fix stays in view. */}
+      <SolveRemedies remedies={keyRemedies} />
       {installReview && (onApplyProposal || onDismissProposal) ? (
         <MissingSpecialistReview
           review={installReview}
@@ -500,70 +656,19 @@ export const AgentBuilderStrip: React.FC<{
           onDismiss={onDismissProposal ? () => void review(onDismissProposal, installReview.proposalId) : undefined}
         />
       ) : null}
-      {noticeLine ? <div className={styles.hint}>{noticeLine}</div> : null}
-      {pauseLine ? <div className={styles.hint}>{pauseLine}</div> : null}
       {error ? (
         <div className={styles.error}>
           {error} <LlmConfigAction remedy={errorRemedy} />
         </div>
       ) : null}
-      {moreOpen ? (
-        <div id={moreId} className={styles.more}>
-          {entries.length > 0 ? (
-            <NodeRunPills
-              entries={entries}
-              userBlockedIds={userBlockedIds}
-              solveWaiting={solveWaiting}
-              // A node's own Solve waits for a batch, and for a build too.
-              solveRunning={solveRunning || building !== null}
-              nodeSolving={nodeSolving}
-              onSolveNode={onSolveNode ? (nodeId) => void solveOne(nodeId) : undefined}
-              nodeNameOf={nodeNameOf}
-            />
-          ) : null}
-          {solveRunning && (solvePass ?? 0) > 0 ? (
-            <div className={styles.hint} aria-live="polite">
-              {passLineText(solvePass as number, unresolved, userBlockedIds.size)}
-            </div>
-          ) : null}
-          {!solveRunning && solveEndedBy ? (
-            <div className={styles.hint} role="status">
-              {sessionEndingText(solveEndedBy, unresolved)}
-            </div>
-          ) : null}
-          <SolveFeedback reasons={reasons} notices={distinctLines(solveNotices)} />
-          {landedPlan && onSimulate ? (
-            <PlanBuildActions
-              plan={landedPlan}
-              paused={Boolean(pauseReason)}
-              simBusy={building}
-              // A paused build's Resume is the line's own action, and so is a
-              // running build's Stop.
-              withBuild={main !== "resume"}
-              waitReason={buildWaitReason}
-              onSimulate={(mode) => void simulate(mode)}
-            />
-          ) : null}
-          {batchActions(otherParts, false)}
-          {/* Why Solve is off, but not that the nodes wait for you: the line
-              says how many need you, their rows say what for, and a paused
-              build's line says it under the line. */}
-          {solveDisabledReason && phase !== "ready" && (building || !everyUnresolvedNeedsUser) ? (
-            <div className={styles.hint}>{solveDisabledReason}</div>
-          ) : null}
-          {solveRunning ? (
-            // dev/115 (DEC-021 slice): the batch is a background job.
-            <div className={styles.hint}>Solve keeps running if you close this panel.</div>
-          ) : null}
-          {phase === "interrupted" ? (
-            <div className={styles.hint} role="status">
-              Solve was interrupted: the server stopped while it was running. Finished nodes kept
-              their content; nothing was replayed. Retry continues from what is still pending.
-            </div>
-          ) : null}
-          {simulationActivity ? (
-            <div className={styles.hint} aria-live="polite">{simulationActivity}</div>
-          ) : null}
+      {runDetails && solveRunning && ((solvePass ?? 0) > 0 || waveWords(solveWave)) ? (
+        <div className={styles.hint} data-curio-run-details="">
+          {[
+            (solvePass ?? 0) > 0 ? passLineText(solvePass as number, left, pickIds.length) : null,
+            waveWords(solveWave),
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         </div>
       ) : null}
     </div>

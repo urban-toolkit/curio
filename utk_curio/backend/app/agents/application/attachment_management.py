@@ -25,6 +25,7 @@ from utk_curio.backend.app.agents.application.proposals import store as agents_s
 from utk_curio.backend.app.agents.application.solve import node_work as agents_node_work
 from utk_curio.backend.app.agents.application.solve import session as agents_session
 from utk_curio.backend.app.agents.application.solve import simulation as agents_simulation
+from utk_curio.backend.app.agents.application.solve import validate as agents_validate
 from utk_curio.backend.app.agents.application.turns import prompts as agents_prompts
 from utk_curio.backend.app.agents.application.turns import turn_jobs
 from utk_curio.backend.app.agents.domain import content
@@ -121,8 +122,10 @@ def _attachment_card(spec: dict, record: dict, user_key: str, *,
         # The plan the agent landed, whose nodes Build & validate and Solve fill.
         "planProposal": agents_store._proposal_summary(record.get("planProposal")),
         # The Dataflow Builder orchestration session (dev/52 DR-2) — drives
-        # the phase-aware builder panel; absent for every other agent.
-        "builderSession": record.get("builderSession"),
+        # the phase-aware builder panel; absent for every other agent. Its
+        # checks are those that still hold: a node whose code changed after
+        # its check, by anyone, claims none.
+        "builderSession": agents_validate.session_as_it_holds(spec, record.get("builderSession")),
         # The server's word on what runs on that plan now (``node_work``): the
         # mode of its Build & validate, and its plan row's Solve, ``{ref,
         # nodeId}``. A tab trusts these and never its own clock: a build an

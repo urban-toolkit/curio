@@ -152,11 +152,17 @@ def make_turn(
     execution: dict | None = None,
     content: list | None = None,
     by: dict | None = None,
+    for_agents: bool = False,
+    asked: dict | None = None,
 ) -> dict:
     """One turn of a transcript. *by*, on a person's message, names who wrote
     it, as a point of the dataflow's history names a person (``{kind,
     account, name}``): the owner and the editors the owner invited share an
-    attachment's chat."""
+    attachment's chat. *for_agents*: a turn the agents read, which the chat
+    does not draw (``forAgents``), its news said elsewhere in the chat.
+    *asked*, on the turn that hands an agent a task another agent asked of
+    it: ``{by, task}``, which the chat draws as one quiet line, "Asked by the
+    <by>: <task>.", where the agents read the turn's text."""
     if role not in TURN_ROLES:
         raise SessionError(f"turn role must be one of {TURN_ROLES}, got {role!r}")
     turn: dict = {
@@ -166,6 +172,10 @@ def make_turn(
     }
     if by:
         turn["by"] = by
+    if for_agents:
+        turn["forAgents"] = True
+    if asked:
+        turn["asked"] = asked
     if error:
         turn["error"] = True
     if execution is not None:

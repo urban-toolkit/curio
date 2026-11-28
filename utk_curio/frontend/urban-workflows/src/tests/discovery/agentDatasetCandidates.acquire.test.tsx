@@ -90,7 +90,9 @@ describe('composeConfirmationPrompt', () => {
   });
 });
 
-describe('the Downloadable chip', () => {
+// A row carries no chip since step 7.1 (board S04): its Download button is
+// what marks a row the runtime said Curio can download.
+describe('the Download button marks a row Curio downloads', () => {
   const renderCard = (rows: AgentDatasetCandidateRow[]) =>
     render(
       <AgentDatasetCandidatesCard
@@ -100,12 +102,18 @@ describe('the Downloadable chip', () => {
 
   test('marks a row the runtime said can be downloaded', () => {
     renderCard([external({ acquirable: true, sourceId: 'source.a.b@1', resourceId: 'r1' })]);
-    expect(screen.getByText('Downloadable')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument();
+    expect(screen.queryByText('Downloadable')).toBeNull();
   });
 
   test('is absent when the runtime did not say so', () => {
     renderCard([external({ url: 'https://a.example/x' })]);
-    expect(screen.queryByText('Downloadable')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Download' })).toBeNull();
+  });
+
+  test('is absent from a row whose coordinate the runtime did not confirm', () => {
+    renderCard([external({ url: 'https://a.example/x', sourceId: 'source.a.b@1', resourceId: 'r1' })]);
+    expect(screen.queryByRole('button', { name: 'Download' })).toBeNull();
   });
 });
 

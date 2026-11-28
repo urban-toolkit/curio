@@ -44,31 +44,51 @@ describe("a candidate's link says what it answered", () => {
   });
 });
 
-describe("the card draws first the lane that holds the best row", () => {
-  const part = (laneOrder: string[]) =>
+// The card is one list since step 7.1 (board S04): it draws its rows in the
+// server's order (`rowOrder`), and a card minted before that order draws the
+// lane that holds the best row first, as the server ranked its lanes.
+describe("the card draws first the row that can be used most directly", () => {
+  const part = (laneOrder: string[], rowOrder?: [string, number][]) =>
     ({
       type: "datasetCandidates",
       laneOrder,
+      ...(rowOrder ? { rowOrder } : {}),
       lanes: {
-        external: [{ name: "Portal page", sourceType: "portal", url: "https://data.example.org/portal" }],
+        external: [
+          { name: "Portal page", sourceType: "portal", url: "https://data.example.org/portal" },
+          { name: "Error answer", sourceType: "api", url: "https://data.example.org/gone" },
+        ],
         catalog: [{ name: "Held", sourceType: "catalog", datasetId: "imported.held@1", installed: true }],
       },
     }) as unknown as AgentDatasetCandidatesPart;
 
-  const LANES = ["External sources", "From your Data Catalog"];
-  const lanes = () =>
-    screen
-      .getAllByRole("group")
-      .map((group) => group.getAttribute("aria-label"))
-      .filter((name) => LANES.includes(name ?? ""));
+  const rows = () => screen.getAllByRole("checkbox").map((box) => box.getAttribute("aria-label"));
 
-  it("draws the Data Catalog first when the server ranks it first", () => {
+  it("draws the Data Catalog's rows first when the server ranks its lane first", () => {
     render(<AgentDatasetCandidatesCard part={part(["catalog", "external"])} />);
-    expect(lanes()).toEqual(["From your Data Catalog", "External sources"]);
+    expect(rows()).toEqual(["Select Held", "Select Portal page", "Select Error answer"]);
   });
 
-  it("draws the external lane first when the server ranks it first", () => {
+  it("draws the external rows first when the server ranks their lane first", () => {
     render(<AgentDatasetCandidatesCard part={part(["external", "catalog"])} />);
-    expect(lanes()).toEqual(["External sources", "From your Data Catalog"]);
+    expect(rows()).toEqual(["Select Portal page", "Select Error answer", "Select Held"]);
+  });
+
+  it("draws the rows in the server's order across both lanes when it gives one", () => {
+    render(
+      <AgentDatasetCandidatesCard
+        part={part(["external", "catalog"], [["external", 0], ["catalog", 0], ["external", 1]])}
+      />,
+    );
+    expect(rows()).toEqual(["Select Portal page", "Select Held", "Select Error answer"]);
+  });
+
+  it("draws a row the server's order leaves out after the rest, and passes over an entry that names no row", () => {
+    render(
+      <AgentDatasetCandidatesCard
+        part={part(["external", "catalog"], [["catalog", 0], ["external", 7], ["external", 1]])}
+      />,
+    );
+    expect(rows()).toEqual(["Select Held", "Select Error answer", "Select Portal page"]);
   });
 });

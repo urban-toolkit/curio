@@ -80,6 +80,35 @@ describe("AgentSolveAttemptsCard (dev/127)", () => {
     expect(within(card).getAllByText("The code this attempt ran")).toHaveLength(3);
   });
 
+  it("says a corrected chart's round its grammar validated was validated, with the document it checked, never why nothing ran", () => {
+    render(
+      <AgentSolveAttemptsCard
+        part={part({
+          label: "Density chart",
+          stoppedBy: "not-executable",
+          verdict: "not-executable",
+          rounds: 2,
+          attempts: [
+            { round: 1, verdict: "fail", kind: "document-invalid", error: "the document's encoding.x needs a type", code: '{"mark": "bar"}' },
+            {
+              round: 2, verdict: "not-executable", kind: "not-executable", error: "", documentValidated: "vis-vega",
+              code: '{"mark": "bar", "encoding": {"x": {"field": "a", "type": "quantitative"}}}',
+            },
+          ],
+        })}
+      />,
+    );
+    const card = screen.getByRole("group", { name: /Attempts to fix Density chart/ });
+    expect(within(card).getByText("Round 2 · validated against its grammar")).toBeInTheDocument();
+    expect(within(card).getByText("The document this round validated")).toBeInTheDocument();
+    expect(within(card).getByText("2 attempts · the last one validated against its grammar")).toBeInTheDocument();
+    expect(card).not.toHaveTextContent(/not-executable|cannot run|no code the sandbox could run/);
+    // The round that failed keeps its error and the code it checked.
+    expect(within(card).getByText(/Round 1 · document-invalid/)).toBeInTheDocument();
+    expect(card).toHaveTextContent("the document's encoding.x needs a type");
+    expect(within(card).getByText("The code this attempt ran")).toBeInTheDocument();
+  });
+
   it("names how many attempts there were and what stopped the loop", () => {
     render(<AgentSolveAttemptsCard part={part()} />);
     expect(screen.getByText(/3 attempts · the attempt cap was reached/)).toBeInTheDocument();
