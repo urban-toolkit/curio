@@ -2571,7 +2571,7 @@ applies or dismisses it.
 Each message runs on the server: close or reload the tab and the agent goes on,
 its reply in the chat when you come back. Everyone who edits the dataflow sees
 it as it runs, and sees what Curio writes into the chat outside a message, such
-as a pick's *Source recorded* turn or the turns of **Solve**, as it lands, with
+as a pick its card says *Recorded* or the turns of **Solve**, as it lands, with
 no reload. One message of a chat runs at a time: one you send while another
 runs waits its turn (*Waiting its turn*), and **Withdraw** takes it back before
 it starts. A message Curio refuses stays in your chat with the reason under
@@ -2627,14 +2627,18 @@ also gives every created node a **Node Builder**, and every
 data-loading node a **Dataset Finder**, which Solve or **Build & validate plan**
 asks for candidates when the node's source is not settled. The candidates
 appear in the Dataflow Builder's chat, as the same card the Finder's chat
-holds: **Use this source** on either records your pick, and the card you picked
-on says *Recorded* in both, with the pick and where it comes from. Below it,
-each chat says what comes of the pick: the Dataflow Builder goes on with its
-plan by itself as you were going, one **Step** after a Step, building the
-loader from that source. A source that downloads into the Data Catalog, or
-waits for its install, is built once it is there and you press **Resume**. A
-card of older candidates, or one whose Finder or node is gone, closes and says
-why. See [Solve](AGENT-CATALOG.md#solve) in the Agent Catalog guide.
+holds, one list with the source you can use most directly first: each row
+says where it comes from, why it fits the node and what keeps it from being
+used as it is, and a portal download's **How to get it** opens its steps and
+**Import dataset**. **None fits? Ask its Dataset Finder** opens the Finder's
+chat. **Use this source** on either card records your pick, and the card you
+picked on says *Recorded* in both, with the pick, where it comes from and what
+comes of it: the Dataflow Builder goes on with its plan by itself as you were
+going, one **Step** after a Step, building the loader from that source. A
+source that downloads into the Data Catalog, or waits for its install, is
+built once it is there and you press **Resume**. A card of older candidates,
+or one whose Finder or node is gone, closes and says why. See
+[Solve](AGENT-CATALOG.md#solve) in the Agent Catalog guide.
 A plan can also declare the widgets each node's code reads, and save
 [scenarios](#scenarios), including a copy of one with a widget value changed;
 see [Widgets and scenarios](AGENT-CATALOG.md#widgets-and-scenarios).
