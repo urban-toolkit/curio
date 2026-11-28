@@ -52,9 +52,10 @@ from utk_curio.backend.tests.test_agents.test_finder_candidates_usable import (
     _the_portals,
 )
 
-#: What a sentence keeps of the Dataflow Builder's plan once the owner adds the
-#: dataset an editor picked: the words a direct pick says (``_plan_waiting``).
-GOES_ON = "the Dataflow Builder goes on with its plan and builds the loader from this source"
+#: How a pick that waits for the owner says what comes once she adds the
+#: dataset: the plan's agent, in the words a direct pick's answer gives
+#: (``_plan_waiting``), which go on after it.
+ONCE_ADDED = "once it is added, the Dataflow Builder "
 #: A dataset named as the dev check's download was, in lower case.
 LOWER_NAME = "x8fc-8rcq.geojson (Chicago Public Library locations)"
 #: A fit reason as long as the dev check's 100-year loader's (179 characters there).
@@ -171,7 +172,11 @@ class TestTheOwnersApplyLetsThePlanGoOn:
                                                      "continueWith")} == {
             "status": "plan-waiting", "attachmentId": h.att, "nodeId": h.load, "ref": "load", "running": None,
             "continueWith": "build"}, delegated
-        assert GOES_ON in delegated.get("reason", ""), delegated
+        # It says what comes, naming no control, and the record every tab
+        # shows says the same sentence (``next``).
+        reason = delegated.get("reason") or ""
+        assert reason.startswith("the Dataflow Builder ") and "Resume" not in reason, delegated
+        assert record.get("next") == reason[:1].upper() + reason[1:] + ".", record
         # Once: another tab of his, or a reload, is told nothing more.
         assert _goes_on(h, BOB_TOKEN) == {}
         assert "goesOn" not in (_listed(h, BOB_TOKEN)[h.finder_attachment_id()]["sourceRecord"] or {})
@@ -220,7 +225,7 @@ class TestTheOwnersApplyLetsThePlanGoOn:
         ]
         for text in said:
             assert "Resume" not in text and "press" not in text, text
-            assert f"once it is added, {GOES_ON}" in text, text
+            assert ONCE_ADDED in text, text
             assert "Alice" in text and LOWER_NAME in text, text
             assert LOWER_NAME[0].upper() + LOWER_NAME[1:] not in text, text
 
