@@ -1670,13 +1670,18 @@ def saved(user_key: str, project_id: str, by: dict) -> dict:
 
 
 def put_back(user_key: str, project_id: str, point_id: str, by: dict, *, keep: Iterable[str] = (),
-             target: Optional[dict] = None, expect: Optional[dict] = None, dry_run: bool = False) -> dict:
+             target: Optional[dict] = None, expect: Optional[dict] = None, dry_run: bool = False,
+             point: Optional[dict] = None) -> dict:
     """Put the version *point_id* back: one transaction makes the doc hold
     it, but for what :data:`KEPT_BY_A_PUT_BACK` and *keep* name, for every
     tab, and a version named after it, its parent the version put back.
     *target*, given, is the dataflow put back in place of the version's own:
     a plan's Undo puts back the dataflow as the plan's first write found it
-    (:func:`dataflow_found_by`). *expect*, given, holds fields of the
+    (:func:`dataflow_found_by`). *point*, given, is the version the write
+    makes in place of that one: a plan's Undo is a version made from the one
+    on the canvas, as any other change is, named after what it did, since
+    what it leaves keeps every field the plan did not write as it is now.
+    *expect*, given, holds fields of the
     dataflow it puts back only while the doc still holds the value *expect*
     gives each, checked in the write's transaction (``dataflow_docs.write``'s
     *checked*): a plan's Undo puts the goal back only while it reads the
@@ -1716,7 +1721,9 @@ def put_back(user_key: str, project_id: str, point_id: str, by: dict, *, keep: I
     if checked:
         # The write's base holds what the doc must still hold for each to land.
         spec.base.setdefault("dataflow", {}).update(copy.deepcopy(checked))
-    made = {"kind": PUT_BACK, "what": "Put back", "restores": point_id, "parent": point_id, "by": by}
+    made = dict(point) if point is not None else {
+        "kind": PUT_BACK, "what": "Put back", "restores": point_id, "parent": point_id, "by": by,
+    }
     written = dataflow_docs.write(user_key, project_id, spec, dataflow_docs.person(_account(by), "putBack"),
                                   point=made, checked=tuple(checked))
     if not written.wrote:

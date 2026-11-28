@@ -34,7 +34,8 @@ history's checked writes:
 * settings get their old values back, as a new point, only while they hold
   what the agent set;
 * a plan puts back the dataflow as its first write found it
-  (``history.put_back``), with what a person wrote before it that made no
+  (``history.put_back``), as a version made from the one on the canvas and
+  named after the Undo, with what a person wrote before it that made no
   version of its own, only while nobody changed the dataflow between its
   writes and nothing it puts back outside the plan's own nodes changed
   since: so a node it removed comes back with its connections. It takes
@@ -403,7 +404,8 @@ def undo(user_key: str, project_id: str, attachment_id: str, change_id: str, use
     typed: list[dict] = []
     if change["kind"] == PLAN:
         try:
-            canvas, typed = agents_plans._undo_plan(user_key, project_id, attachment_id, change, by, anyway=anyway)
+            canvas, typed = agents_plans._undo_plan(user_key, project_id, attachment_id, change, by, label,
+                                                    anyway=anyway)
         except agents_plans.AsksFirst as asks:
             # Nothing was undone: the card asks first, naming who typed where.
             return {"attachmentId": attachment_id, "changeId": change_id, "status": APPLIED, "canvas": [],
