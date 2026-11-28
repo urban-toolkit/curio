@@ -145,8 +145,10 @@ describe("once the owner added the dataset an editor picked, the plan goes on fr
     await waitFor(() => expect(api.claimGoesOn).toHaveBeenCalledWith("p1", "att-df"));
     await waitFor(() => expect(api.simulate).toHaveBeenCalledWith("p1", "dfb", "auto", expect.any(Function)));
     // The listing again, read before the server dropped the go-on: not twice.
+    // (Build & validate reads the listing too, so the reads are counted from here.)
+    const reads = api.listAttachments.mock.calls.length;
     fireEvent.click(screen.getByText("reload"));
-    await waitFor(() => expect(api.listAttachments).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(api.listAttachments.mock.calls.length).toBeGreaterThan(reads));
     await settle();
     expect(api.claimGoesOn).toHaveBeenCalledTimes(1);
     expect(api.simulate).toHaveBeenCalledTimes(1);
