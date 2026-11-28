@@ -150,6 +150,27 @@ def record_dataset_selection(project_id: str, attachment_id: str):
 
 
 @agents_bp.route(
+    "/projects/<project_id>/attachments/<attachment_id>/dataset-selection/goes-on",
+    methods=["POST"],
+)
+@require_auth
+def claim_goes_on(project_id: str, attachment_id: str):
+    """How the plan a pick waited on goes on, once the owner added the
+    dataset an editor picked: ``{"delegated": <the plan-waiting answer a
+    direct pick gives>}`` for the tab of the editor who picked, once, while
+    the plan still waits to go on; ``{"delegated": null}`` for anyone else,
+    and once it was taken or the plan went on without it."""
+    try:
+        flow = _dataflow(project_id)
+        delegated = agents_services.claim_goes_on(flow.key, flow.project_id, attachment_id)
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    return jsonify({"delegated": delegated}), 200
+
+
+@agents_bp.route(
     "/projects/<project_id>/attachments/<attachment_id>/session", methods=["GET"]
 )
 @require_auth

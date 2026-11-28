@@ -1116,6 +1116,10 @@ edges[{i}].{field} {view}: no map or plot of {endpoint} has an id; name the view
 
 {call}({literal}) (line {line}): not a {kind} in this project's Data Catalog: use the id of a catalog.search row
 
+## grounding.not-tied-to-the-loader
+
+{read_at}: loads {dataset} ({title}), a dataset of the Data Catalog that this dataflow does not hold and nobody picked for this loader; load a dataset of the dataflow, the one picked for this loader, or one its goal names. Its Dataset Finder offers the user the datasets that may be its source, and the user's pick adds the one picked to the dataflow
+
 ## grounding.path-from-prefix
 
 {where}: the file name is composed at run time from a prefix; write the complete path as one literal so it can be grounded

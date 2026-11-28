@@ -12,6 +12,7 @@ import logging
 import time
 import uuid
 
+from utk_curio.backend.app.agents.application import attachments
 from utk_curio.backend.app.agents.application import verify
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.application import dataset_resolution as agents_dataset_resolution
@@ -61,15 +62,19 @@ def _link_names_its_resource(row: dict) -> bool:
     )
 
 
-def _acquire_confirmed_picks(rows: list[dict]) -> list[dict]:
+def _acquire_confirmed_picks(rows: list[dict], roster: "_LazyRoster | None" = None) -> list[dict]:
     """Download every confirmed acquirable row through the Discovery Catalog, and record
     each as the catalog pick it becomes.
 
     The download is ``DiscoveryService.start_acquire``, the one the Discovery Catalog page
     uses, so the dataset carries its ``discoverySource`` and a resource the account
-    already holds is not fetched again. It is not handed to a builder: the
+    already holds is not fetched again. It is named as the page's Download
+    names it, after the portal's own title (:func:`_portal_title`, from the
+    describe *roster* asked when the row was confirmed), not after its file.
+    It is not handed to a builder: the
     builder writes fetch code, and here Curio fetches. Every download shares one
-    wait. One that lands inside it becomes an imported catalog pick; one still
+    wait. One that lands inside it becomes an imported catalog pick, which the
+    pick then adds to the dataflow, as it adds a Data Catalog row; one still
     running becomes a pick that is ``acquiring``, settled by
     ``_settle_discovery_acquisitions`` once the dataset is held. Returns one summary
     per download.
@@ -87,7 +92,7 @@ def _acquire_confirmed_picks(rows: list[dict]) -> list[dict]:
                    "resourceId": row["resourceId"]}
         try:
             started = service.start_acquire(
-                row["sourceId"], row["resourceId"], fmt=_acquire_format(row),
+                row["sourceId"], row["resourceId"], fmt=_acquire_format(row), title=_portal_title(row, roster),
             )
         except DiscoveryError as exc:
             row["acquireError"] = str(exc)[:200]
@@ -118,6 +123,38 @@ def _acquire_confirmed_picks(rows: list[dict]) -> list[dict]:
     return summaries
 
 
+def _portal_title(row: dict, roster: "_LazyRoster | None" = None) -> str | None:
+    """What a confirmed row's download is titled in the Data Catalog: the
+    title its portal gives the resource, which the describe that confirmed
+    the row answered (``_LazyRoster.described_name``), as the Discovery
+    Catalog page's Download names a portal's dataset after the row it shows
+    rather than after the remote file ("x8fc-8rcq.geojson"); else the row's
+    own name, for a link Direct URL downloads."""
+    named = roster.described_name(row.get("sourceId"), row.get("resourceId")) if roster is not None else None
+    return str(named or row.get("name") or "").strip() or None
+
+
+def _add_to_the_dataflow(user, project_id: str, rows: list[dict]) -> tuple[dict, Exception] | None:
+    """Add the dataset of each of *rows*, a pick's Data Catalog rows, to the
+    dataflow, as Add to project adds it (the Data Catalog's install), as
+    *user*, marking each row ``installed``: the one way a picked dataset
+    joins the dataflow, a Data Catalog row's (``dataset_selection._add_catalog_picks``)
+    and a pick's download's, whenever it lands. Returns the first row the
+    Data Catalog refused, with why, and adds none after it; None once every
+    one is added."""
+    from utk_curio.backend.app.datasets.application.catalog_service import DatasetCatalogService
+
+    for row in rows:
+        try:
+            DatasetCatalogService(user).install_dataset(project_id, str(row["datasetId"]))
+        except Exception as exc:  # noqa: BLE001 - the pick waits for its install, and says why
+            log.warning("Could not add the picked dataset %s to dataflow %s", row.get("datasetId"), project_id,
+                        exc_info=True)
+            return row, exc
+        row["installed"] = True
+    return None
+
+
 def _acquisition_outcome(acquisitions: list[dict], *,
                          once_it_lands: str = "Solve the node once it lands") -> dict | None:
     """What the confirmation says when no builder was started: a download still
@@ -144,11 +181,13 @@ def _acquisition_outcome(acquisitions: list[dict], *,
     return None
 
 
-def _settle_discovery_acquisitions(user_key: str, project_id: str) -> None:
+def _settle_discovery_acquisitions(user_key: str, project_id: str) -> list[dict]:
     """Resolve nodes whose confirmed pick has come since it was confirmed: a
     download that landed, or a dataset the dataflow holds now that a pick
     waited for the install of, however it was added (Add to project, the
-    owner's Apply of an editor's request).
+    owner's Apply of an editor's request). A download that landed joins the
+    dataflow first, as a pick's dataset does (:func:`_add_to_the_dataflow`),
+    before the spec lock, which the add's own write takes.
 
     Called at the entry of a Solve, Solve this node and each validation of a
     plan's node (Build & validate, Resume, a row's Solve), while the request's
@@ -156,24 +195,59 @@ def _settle_discovery_acquisitions(user_key: str, project_id: str) -> None:
     needs only the dataflow. Reads the spec first, so a project with nothing
     to settle costs one read. A plan that waited for such a node goes on with
     it (``simulation.follow_the_sources``): a running Build & validate builds
-    it, or the next one does.
+    it, or the next one does. Returns the plan nodes that moved, as
+    ``follow_the_sources`` gives them.
     """
 
     spec = projects_storage.read_spec(user_key, project_id)
     downloading = agents_dataset_resolution.has_acquiring_picks(spec)
     installed = bool(agents_dataset_resolution.installs_awaited(spec) & agents_dataset_resolution.held_datasets(spec))
     if not downloading and not installed:
-        return
+        return []
     held = _held_discovery_resources(project_id) if downloading else {}
+    landed = _landed_downloads(spec, held)
+    if landed:
+        _add_to_the_dataflow(agents_spec_reads._acting_user(), project_id, landed)
+    moved: list[dict] = []
     with projects_storage.spec_write_lock(user_key, project_id):
         fresh = dataflow_docs.live(user_key, project_id)
         if fresh is None:
-            return
+            return moved
         changed = agents_dataset_resolution.settle_acquisitions(fresh, held) if held else []
+        _say_which_joined(fresh, {row["datasetId"] for row in landed if row.get("installed")})
         changed += agents_dataset_resolution.settle_installs(fresh)
         if changed:
-            agents_simulation.follow_the_sources(user_key, fresh)
+            moved = agents_simulation.follow_the_sources(user_key, fresh)
             dataflow_docs.write(user_key, project_id, fresh, dataflow_docs.by_curio(user_key, "dataset"))
+    return moved
+
+
+def _landed_downloads(spec: dict | None, held: dict) -> list[dict]:
+    """A Data Catalog row for each dataset a pick's download landed as, which
+    the account holds now (*held*, by its Discovery coordinate) and the
+    dataflow of *spec* does not: what joins the dataflow."""
+    in_the_dataflow = agents_dataset_resolution.held_datasets(spec)
+    rows: list[dict] = []
+    for record in attachments.list_attachments(spec or {}):
+        state = record.get(agents_dataset_resolution.RECORD_KEY)
+        for pick in (state.get("picks") or []) if isinstance(state, dict) else []:
+            if not isinstance(pick, dict) or not pick.get("acquiring"):
+                continue
+            coordinate = pick.get("discoverySource") or {}
+            dataset_id = held.get((coordinate.get("sourceId"), coordinate.get("resourceId")))
+            if dataset_id and str(dataset_id) not in in_the_dataflow | {row["datasetId"] for row in rows}:
+                rows.append({"lane": "catalog", "datasetId": str(dataset_id), "name": pick.get("name")})
+    return rows
+
+
+def _say_which_joined(spec: dict, joined: set) -> None:
+    """Each landed download's pick whose dataset joined the dataflow
+    (*joined*) says so (``installed``), as a pick's add does."""
+    for record in attachments.list_attachments(spec) if joined else []:
+        state = record.get(agents_dataset_resolution.RECORD_KEY)
+        for pick in (state.get("picks") or []) if isinstance(state, dict) else []:
+            if isinstance(pick, dict) and pick.get("imported") and str(pick.get("datasetId") or "") in joined:
+                pick["installed"] = True
 
 
 def _held_discovery_resources(project_id: str) -> dict:
@@ -523,7 +597,7 @@ def _unconfirmed(rows: list) -> int:
     )
 
 
-def _source_describes(dir_name: str, resource_id: str, asker=None, lookups=None) -> bool | None:
+def _source_describes(dir_name: str, resource_id: str, asker=None, lookups=None) -> dict | bool | None:
     """Whether the Discovery Catalog describes *resource_id* of the source
     *dir_name*: the call a ``discovery.acquire`` proposal is grounded in,
     asked as *asker* when given, the person a Solve's thread runs for, else
@@ -531,6 +605,8 @@ def _source_describes(dir_name: str, resource_id: str, asker=None, lookups=None)
     limit per portal with every other and send no token. Its read of what
     that account holds of the resource is made under *lookups* when given,
     the Solve batch's lock on such reads (``SolveBatch.dataset_lookups``).
+    A yes is what the source described, the resource's own ``name`` among
+    it, which titles its download (:func:`_portal_title`).
 
     A describe that fails is a no, but one that got no answer is None
     (the failure's ``unanswered``: Curio's rate limit for the account refused
@@ -541,7 +617,7 @@ def _source_describes(dir_name: str, resource_id: str, asker=None, lookups=None)
     try:
         service = (_discovery_service_for(asker, store_reads=lookups) if asker is not None
                    else _discovery_service(store_reads=lookups))
-        service.describe_resource(dir_name, resource_id)
+        described = service.describe_resource(dir_name, resource_id)
     except Exception as exc:  # noqa: BLE001 - an unconfirmed resource is not offered, never a run error
         if getattr(exc, "unanswered", False):
             log.info("%s gave no answer for %s (%s): the row keeps its coordinate, unconfirmed",
@@ -550,7 +626,7 @@ def _source_describes(dir_name: str, resource_id: str, asker=None, lookups=None)
         log.info("%s did not describe %s (%s): the row is not offered for download",
                  dir_name, resource_id, exc)
         return False
-    return True
+    return described if isinstance(described, dict) and described else True
 
 
 def _acquirable(row: dict, roster: "_LazyRoster", budget=None) -> bool | None:

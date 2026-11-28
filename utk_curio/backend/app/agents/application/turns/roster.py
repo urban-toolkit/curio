@@ -188,6 +188,8 @@ class _LazyRoster:
     def __init__(self, sources: dict | None = None) -> None:
         self._sources = sources
         self._described: dict[tuple[str, str], bool | None] = {}
+        #: The name each source gave a resource it described (:meth:`describes`).
+        self._names: dict[tuple[str, str], str] = {}
         #: Whom its describes are asked as (:meth:`asked_by`); None for the
         #: request's account.
         self.asker = None
@@ -274,7 +276,8 @@ class _LazyRoster:
         a pass. With *budget*, the run's web budget, each ask spends one call,
         and once it is spent the source is not asked: None, unconfirmed. A
         source that gave no answer (*ask* answers None) leaves the resource
-        unconfirmed too, for the rest of the pass."""
+        unconfirmed too, for the rest of the pass. What a source described
+        keeps the name it gives the resource (:meth:`described_name`)."""
         key = (dir_name, resource_id)
         if key not in self._described:
             if budget is not None:
@@ -283,4 +286,11 @@ class _LazyRoster:
                 budget.spend()
             answer = ask(dir_name, resource_id, self.asker, self.lookups)
             self._described[key] = None if answer is None else bool(answer)
+            if isinstance(answer, dict) and str(answer.get("name") or "").strip():
+                self._names[key] = str(answer["name"]).strip()
         return self._described[key]
+
+    def described_name(self, dir_name: object, resource_id: object) -> str | None:
+        """The name the source *dir_name* gave *resource_id* when it described
+        it in this pass (:meth:`describes`), or None."""
+        return self._names.get((dir_name, resource_id))

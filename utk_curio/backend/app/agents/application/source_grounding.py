@@ -280,6 +280,14 @@ class GroundingContext:
     #: The content the node holds now, which is the user's own; None for a
     #: node the content would create.
     current_content: str | None = None
+    #: For a data-loading node with a Dataset Finder of its own: whether a
+    #: dataset of the Data Catalog listing is tied to the node, so that its
+    #: code may load it (``grounding.datasets_tied_to``: the dataflow holds
+    #: it, the node's goal names it, the user picked it for the node, or the
+    #: node's widget or code holds it). The listing holds every dataset Curio
+    #: ships, which says nothing about the node: a dataset of it no tie holds
+    #: is refused. None ties every dataset of the listing.
+    tied: Callable[[CatalogRef], bool] | None = None
 
 
 @dataclass(frozen=True)
@@ -1609,6 +1617,15 @@ def _http_status(evidence: dict | None) -> int | None:
     return status if isinstance(status, int) else None
 
 
+def _not_tied(read_at: str, catalog: CatalogRef) -> str:
+    """Why the loader may not load *catalog*, a dataset of the Data Catalog
+    listing nothing ties to it (``GroundingContext.tied``), read at *read_at*."""
+    return agent_text.message(
+        "grounding.not-tied-to-the-loader", read_at=read_at, dataset=repr(catalog.dataset_id),
+        title=labels.fit(catalog.title, _TITLE_MAX_CHARS),
+    )
+
+
 def _unrequested_catalog_reads(catalog_reads: list[tuple[str, str]], ctx: GroundingContext) -> list[str]:
     """#411: the user asked for particular catalog datasets. Code that reads
     catalog data but none of those put another dataset in their place, so each
@@ -1645,6 +1662,8 @@ def _judge_refs(
                         "grounding.not-in-catalog", call=ref.call, literal=repr(ref.literal), line=ref.line, kind=kind,
                     )
                 )
+            elif ctx.tied is not None and not ctx.tied(catalog):
+                violations.append(_not_tied(f"{ref.call}({ref.literal!r}) (line {ref.line})", catalog))
             else:
                 catalog_reads.append((f"{ref.call}({ref.literal!r}) (line {ref.line})", catalog.dataset_id))
                 source_refs.append({
@@ -1662,7 +1681,11 @@ def _judge_refs(
                 )
                 continue
             catalog = _catalog_match(ref.literal, ctx)
-            if catalog is not None:
+            if catalog is not None and ctx.tied is not None and not ctx.tied(catalog) and not _user_match(
+                ref.literal, ctx,
+            ):
+                violations.append(_not_tied(where, catalog))
+            elif catalog is not None:
                 if not _user_match(ref.literal, ctx):  # a path the user typed is theirs to load
                     catalog_reads.append((where, catalog.dataset_id))
                 source_refs.append({

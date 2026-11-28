@@ -308,7 +308,9 @@ def get_attachment_session(user_key: str, project_id: str, attachment_id: str) -
     leaves the asks (by its execution id), so a tab never shows it twice or
     misses it. With them, how many times the chat was cleared (``clears``):
     a tab that finds it moved on since its last read knows the chat was
-    cleared, from whichever tab, and drops the turns only it kept."""
+    cleared, from whichever tab, and drops the turns only it kept. Each
+    candidates card in it says which of its datasets the dataflow holds now
+    (``dataset_resolution.cards_as_held``)."""
     spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
     asks = turn_jobs.asks_of(user_key, project_id, attachment_id)
@@ -318,6 +320,7 @@ def get_attachment_session(user_key: str, project_id: str, attachment_id: str) -
         if isinstance(session_id, str)
         else ([], 0)
     )
+    turns = agents_dataset_resolution.cards_as_held(turns, spec)
     settled = {(turn.get("execution") or {}).get("executionId") for turn in turns if isinstance(turn, dict)}
     asks = [each for each in asks if not _settled_in(each, settled)]
     return {"attachmentId": attachment_id, "sessionId": session_id, "turns": turns, "asks": asks, "clears": clears}

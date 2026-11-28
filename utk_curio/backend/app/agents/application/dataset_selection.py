@@ -24,6 +24,7 @@ from utk_curio.backend.app.agents.application.proposals import acquire as agents
 from utk_curio.backend.app.agents.application.proposals import mint as agents_mint
 from utk_curio.backend.app.agents.application.solve import budgets as agents_budgets
 from utk_curio.backend.app.agents.application.solve import node_solve as agents_node_solve
+from utk_curio.backend.app.agents.application.solve import node_work as agents_node_work
 from utk_curio.backend.app.agents.application.solve import simulation as agents_simulation
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
@@ -72,7 +73,9 @@ def record_dataset_selection(
     refuses the whole confirmation, before anything is downloaded or recorded
     (``editors.download_refusal``), and a pick of a dataset the dataflow does
     not hold asks the owner to add it, as his Add to project does, and waits
-    for her review.
+    for her review. The record keeps his account (``pickedBy``): once her
+    Apply ends the wait, the plan that waited goes on from his tab
+    (:func:`settle_source_waits`, :func:`claim_goes_on`).
     """
 
     spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
@@ -114,15 +117,15 @@ def record_dataset_selection(
         if part is None:
             raise AgentServiceError(f"these candidates are no longer in the {name}'s chat", 409)
     rows = _resolved_picks(user_key, project_id, part, picks, editor=owner_reviews is not None)
-    _probe_the_external_picks_again(rows)
+    roster = _probe_the_external_picks_again(rows)
     if owner_reviews is not None and any(r["lane"] == "external" and r.get("acquirable") for r in rows):
         raise AgentServiceError(agents_editors.download_refusal(owner_reviews), 403)
     # A row Curio can download is downloaded now, by the Discovery Catalog, and
-    # recorded as the catalog pick it becomes.
-    acquisitions = agents_acquire._acquire_confirmed_picks(rows)
+    # recorded as the catalog pick it becomes, titled as its portal titles it.
+    acquisitions = agents_acquire._acquire_confirmed_picks(rows, roster=roster)
     node_id = str(target.get("targetId") or "")
     # Before the spec lock, which the add's own write takes.
-    added = _add_catalog_picks(project_id, rows, node_id=node_id, owner_reviews=owner_reviews)
+    added = _add_catalog_picks(user_key, project_id, spec, rows, node_id=node_id, owner_reviews=owner_reviews)
     with projects_storage.spec_write_lock(user_key, project_id):
         fresh = agents_spec_reads._live_spec_or_404(user_key, project_id)
         if discovery_id is not None:
@@ -133,11 +136,13 @@ def record_dataset_selection(
         )
         if state is None:
             raise AgentServiceError(f"attachment {attachment_id!r} not found", 404)
+        if (added or {}).get("status") == OWNER_REVIEW:
+            state["pickedBy"] = added["by"]
         # A plan that waits for the node waits as the record now says: for
         # the download or the install of the pick, or no more, and then its
         # agent goes on with it (or its running Build & validate builds it).
         moved = agents_simulation.follow_the_sources(user_key, fresh)
-        waiting_plan = agents_simulation.plan_waiting_on(fresh, node_id)
+        waiting_plan = _plan_waiting_for(fresh, node_id)
         dataflow_docs.write(user_key, project_id, fresh, agents_spec_reads._person(user_key, "dataset"))
     released = next((m for m in moved if m["nodeId"] == node_id and m["state"] == "created"), None)
     payload = {
@@ -162,7 +167,7 @@ def record_dataset_selection(
         user_key, project_id, node_id, rows, state, guest=guest, released=released,
     ) or agents_acquire._acquisition_outcome(
         acquisitions, once_it_lands=_once_it_lands(user_key, waiting_plan),
-    ) or _add_outcome(user_key, added, waiting_plan)
+    ) or _add_outcome(user_key, added, waiting_plan, node_id)
     if delegated is not None:
         payload["delegated"] = delegated
     after = _what_comes_next(user_key, rows, state, delegated, waiting_plan)
@@ -197,11 +202,13 @@ def _resolved_picks(user_key: str, project_id: str, part: dict | None, picks: ob
         raise AgentServiceError(str(exc), 422) from exc
 
 
-def _probe_the_external_picks_again(rows: list[dict]) -> None:
+def _probe_the_external_picks_again(rows: list[dict]) -> "agents_roster._LazyRoster":
     """Probe each external pick again, and say again what can be done with
     it: the card may be minutes or days old, and the record must carry what
     is true now (the row keeps its own mint-time verdict in the transcript
-    either way), as the delegation that follows depends on it (dev/132)."""
+    either way), as the delegation that follows depends on it (dev/132).
+    Returns the roster it was confirmed with, which holds what each portal
+    described of its rows, the title of each resource among it."""
     budget = egress.CallBudget(agents_budgets.RUN_EGRESS_CALLS)
     roster = agents_roster._LazyRoster()
     for row in rows:
@@ -211,6 +218,7 @@ def _probe_the_external_picks_again(rows: list[dict]) -> None:
             row["verification"] = verify.verify_external_source(row["url"], budget=budget)
             agents_mint._mint_row_access(row)
         agents_acquire._mint_row_acquirable(row, roster, budget)
+    return roster
 
 
 def settle_source_waits(user_key: str, project_id: str) -> None:
@@ -219,8 +227,88 @@ def settle_source_waits(user_key: str, project_id: str) -> None:
     editor's request adds it, or whose download landed; a plan that waited
     for such a node goes on (``acquire._settle_discovery_acquisitions``).
     Registered with the editor requests (``projects/editor_requests.py``,
-    ``when_applied``), whose Apply calls it with the dataflow's owner key."""
-    agents_acquire._settle_discovery_acquisitions(user_key, project_id)
+    ``when_applied``), whose Apply calls it with the dataflow's owner key.
+
+    Her Apply starts no build: it approves adding the dataset, not spending
+    a build. A plan that waited for a node whose source an editor picked
+    goes on as after a direct pick, from his tab: the Finder's record keeps
+    how (:func:`_keep_how_the_plan_goes_on`), which his tab takes once
+    (:func:`claim_goes_on`)."""
+    moved = agents_acquire._settle_discovery_acquisitions(user_key, project_id) or []
+    released = [entry for entry in moved if entry.get("state") == "created" and entry.get("nodeId")]
+    if released:
+        _keep_how_the_plan_goes_on(user_key, project_id, released)
+
+
+def _keep_how_the_plan_goes_on(user_key: str, project_id: str, released: list[dict]) -> None:
+    """For each plan node *released* (``simulation.follow_the_sources``'
+    entries, put back to ``created``) whose source is the pick of an editor
+    that waited for the owner (``pickedBy``), the Finder's record keeps how
+    the plan goes on (``goesOn``): the answer a direct pick gives
+    (:func:`_plan_waiting`), which his tab takes, and its sentence as what
+    comes of the pick (``next``). A plan whose Build & validate runs now
+    builds the node itself and needs none."""
+    with projects_storage.spec_write_lock(user_key, project_id):
+        fresh = dataflow_docs.live(user_key, project_id)
+        if fresh is None:
+            return
+        kept = False
+        for entry in released:
+            finder = agents_dataset_resolution.finder_attachment(fresh, entry["nodeId"], user_key=user_key)
+            state = (finder or {}).get(agents_dataset_resolution.RECORD_KEY)
+            if not (isinstance(state, dict) and state.get("pickedBy")
+                    and state.get("status") == agents_dataset_resolution.STATE_RESOLVED):
+                continue
+            goes_on = _plan_waiting(user_key, entry["nodeId"], entry)
+            if not goes_on["continueWith"]:
+                continue
+            state["goesOn"] = goes_on
+            state["next"] = _sentence(goes_on["reason"])
+            finder["revision"] = int(finder.get("revision", 1)) + 1
+            kept = True
+        if kept:
+            dataflow_docs.write(user_key, project_id, fresh, dataflow_docs.by_curio(user_key, "dataset"))
+
+
+def claim_goes_on(user_key: str, project_id: str, attachment_id: str) -> dict | None:
+    """How the plan that the pick on this Dataset Finder (*attachment_id*)
+    waited on goes on, once the owner added the dataset an editor picked: the
+    answer a direct pick gives (``plan-waiting``, :func:`_plan_waiting`), for
+    the tab of the editor who picked (``pickedBy``), once, which goes on with
+    it as after his own pick. The record's ``goesOn`` waits for that tab, if
+    it was closed when she applied, and goes as it is answered.
+
+    None for any other account, which takes nothing; and None, the record's
+    ``goesOn`` taken off, once the plan went on without it: its node built or
+    waiting again, or a Build & validate or the row's Solve running on it."""
+    account = str(getattr(agents_spec_reads._acting_user(), "id", "") or "")
+    with projects_storage.spec_write_lock(user_key, project_id):
+        fresh = agents_spec_reads._live_spec_or_404(user_key, project_id)
+        record = agents_spec_reads._record_or_404(fresh, attachment_id)
+        state = record.get(agents_dataset_resolution.RECORD_KEY)
+        goes_on = state.get("goesOn") if isinstance(state, dict) else None
+        if not isinstance(goes_on, dict) or not account or state.get("pickedBy") != account:
+            return None
+        state.pop("goesOn")
+        record["revision"] = int(record.get("revision", 1)) + 1
+        still = _still_waits_to_go_on(fresh, goes_on)
+        dataflow_docs.write(user_key, project_id, fresh, agents_spec_reads._person(user_key, "dataset"))
+    return goes_on if still else None
+
+
+def _still_waits_to_go_on(spec: dict, goes_on: dict) -> bool:
+    """Whether the plan of *goes_on* (its agent, ``ref`` and ``nodeId``) still
+    waits to go on with that node: placed again and not built since, with no
+    Build & validate or row's Solve running on it."""
+    plan = attachments.get_attachment(spec, str(goes_on.get("attachmentId") or "")) or {}
+    session = plan.get("builderSession") if isinstance(plan.get("builderSession"), dict) else {}
+    ref = goes_on.get("ref")
+    return (
+        (session.get("nodeIds") or {}).get(ref) == goes_on.get("nodeId")
+        and (session.get("nodeStates") or {}).get(ref) == "created"
+        and agents_node_work.build_running(session) is None
+        and agents_node_work.row_solve_running(session) is None
+    )
 
 
 # The owner's Apply of an editor's request ends the wait of a pick for what it
@@ -236,54 +324,70 @@ OWNER_REVIEW = "owner-review"
 ADD_FAILED = "add-failed"
 
 
-def _add_catalog_picks(project_id: str, rows: list[dict], *, node_id: str, owner_reviews: str | None) -> dict | None:
+def _add_catalog_picks(user_key: str, project_id: str, spec: dict, rows: list[dict], *, node_id: str,
+                       owner_reviews: str | None) -> dict | None:
     """The owner's "Pick adds it" (11-26): each picked Data Catalog dataset
-    the dataflow does not hold is added to it now, as Add to project adds it,
-    so the pick resolves the node and a plan that waits for it goes on.
+    the dataflow does not hold is added to it now, as Add to project adds it
+    (``acquire._add_to_the_dataflow``), so the pick resolves the node and a
+    plan that waits for it goes on. So is a dataset already in the account's
+    store: one the pick's download landed (``imported``), and one imported
+    from a card's download steps.
 
     An editor the owner invited (*owner_reviews*, her name) changes no
     account but his own: his pick asks her to add the dataset, as his Add to
     project does (``projects/editor_requests.py``, the request naming the
-    node), whether it is his, the shared catalog's or one of her own a card
-    offered (:func:`_ask_the_owner`), and waits for her review. Her Apply adds
-    it and ends the wait (:func:`settle_source_waits`).
+    node of *spec*, as its header does), whether it is his, the shared
+    catalog's or one of her own a card offered (:func:`_ask_the_owner`), and
+    waits for her review. Her Apply adds it and ends the wait
+    (:func:`settle_source_waits`).
 
     A pick whose download outlasted the confirmation's wait (``acquiring``)
-    names no dataset yet: its landing, not an add, ends its wait.
+    names no dataset yet: its landing adds it (``_settle_discovery_acquisitions``).
 
     Returns a summary while a pick still waits: ``owner-review`` with the
-    names and the owner, or ``add-failed`` with why the Data Catalog refused
-    the add. None when the dataflow holds every pick."""
+    names, the owner and his account, or ``add-failed`` with why the Data
+    Catalog refused the add. None when the dataflow holds every pick."""
     needed = [
         row for row in rows
-        if row.get("datasetId") and not row.get("acquiring") and agents_dataset_resolution._needs_install(row)
+        if row.get("lane") == "catalog" and row.get("datasetId") and not row.get("acquiring")
+        and not row.get("installed")
     ]
     if not needed:
         return None
     user = agents_spec_reads._acting_user()
     if owner_reviews is not None:
-        return _ask_the_owner(user, project_id, needed, node_id=node_id, owner=owner_reviews)
-    from utk_curio.backend.app.datasets.application.catalog_service import DatasetCatalogService
-
-    for row in needed:
-        try:
-            DatasetCatalogService(user).install_dataset(project_id, str(row["datasetId"]))
-        except Exception as exc:  # noqa: BLE001 - the pick waits for its install, and says why
-            log.warning("Could not add the picked dataset %s to dataflow %s", row.get("datasetId"), project_id,
-                        exc_info=True)
-            name = row.get("name") or row.get("datasetId")
-            return {"status": ADD_FAILED, "reason": f"{name} could not be added to the dataflow: {str(exc)[:200]}"}
-        row["installed"] = True
-    return None
+        return _ask_the_owner(user, project_id, needed, node_id=node_id, owner=owner_reviews,
+                              node_name=_node_name(user_key, project_id, spec, node_id))
+    refused = agents_acquire._add_to_the_dataflow(user, project_id, needed)
+    if refused is None:
+        return None
+    row, exc = refused
+    name = row.get("name") or row.get("datasetId")
+    # The sentence opens with Curio's words: a name keeps its own case.
+    return {"status": ADD_FAILED,
+            "reason": f"the picked dataset {name} could not be added to the dataflow: {str(exc)[:200]}"}
 
 
-def _ask_the_owner(user, project_id: str, rows: list[dict], *, node_id: str, owner: str) -> dict | None:
+def _node_name(user_key: str, project_id: str, spec: dict | None, node_id: str) -> str:
+    """The node *node_id* of *spec*, named as its header on the canvas names
+    it (``dataset_resolution.node_label``)."""
+    node = next(
+        (n for n in ((spec or {}).get("dataflow") or {}).get("nodes") or []
+         if isinstance(n, dict) and n.get("id") == node_id),
+        {"id": node_id},
+    )
+    return agents_dataset_resolution.node_label(user_key, project_id, node)
+
+
+def _ask_the_owner(user, project_id: str, rows: list[dict], *, node_id: str, owner: str,
+                   node_name: str | None = None) -> dict | None:
     """An editor's request that the dataflow's *owner* add each of *rows*,
-    naming the node *node_id*: a dataset of his, which her Apply copies into
-    her store, one of the shared catalog, or one of her own, which a card of
-    a run of hers offered (``owners_own``: the listing he picked from vouched
-    for each row, :func:`_resolved_picks`). A dataset the dataflow holds
-    already needs no request.
+    naming the node *node_id* and its name (*node_name*), which her card
+    shows: a dataset of his, which her Apply copies into her store, one of
+    the shared catalog, or one of her own, which a card of a run of hers
+    offered (``owners_own``: the listing he picked from vouched for each row,
+    :func:`_resolved_picks`). A dataset the dataflow holds already needs no
+    request.
 
     Every row is checked before any is asked for, so a row the requests
     refuse, one no Data Catalog holds any more, refuses the pick (422) and
@@ -292,14 +396,17 @@ def _ask_the_owner(user, project_id: str, rows: list[dict], *, node_id: str, own
         _asked_of_the_owner(user, project_id, row, node_id=node_id, check=True)
     waiting = []
     for row in rows:
-        if _asked_of_the_owner(user, project_id, row, node_id=node_id).get("requested"):
+        if _asked_of_the_owner(user, project_id, row, node_id=node_id, node_name=node_name).get("requested"):
             waiting.append(str(row.get("name") or row["datasetId"]))
         else:
             row["installed"] = True
-    return {"status": OWNER_REVIEW, "names": waiting, "owner": owner} if waiting else None
+    if not waiting:
+        return None
+    return {"status": OWNER_REVIEW, "names": waiting, "owner": owner, "by": str(getattr(user, "id", "") or "")}
 
 
-def _asked_of_the_owner(user, project_id: str, row: dict, *, node_id: str, check: bool = False) -> dict:
+def _asked_of_the_owner(user, project_id: str, row: dict, *, node_id: str, node_name: str | None = None,
+                        check: bool = False) -> dict:
     """The editor's request for the dataset of *row* (:func:`_ask_the_owner`),
     or with *check* the request's checks alone, which ask for nothing. A
     refusal is the pick's: the request's own status, or a 422 for a dataset
@@ -311,8 +418,8 @@ def _asked_of_the_owner(user, project_id: str, row: dict, *, node_id: str, check
         if check:
             projects_editor_requests.check(user, project_id, "datasets", dataset_id, add=True, owners_own=True)
             return {}
-        return projects_editor_requests.ask(user, project_id, "datasets", dataset_id, node_id=node_id, add=True,
-                                            owners_own=True)
+        return projects_editor_requests.ask(user, project_id, "datasets", dataset_id, node_id=node_id,
+                                            node_name=node_name, add=True, owners_own=True)
     except projects_editor_requests.RequestError as exc:
         raise AgentServiceError(str(exc), exc.status) from exc
     except DatasetCatalogError as exc:
@@ -321,19 +428,47 @@ def _asked_of_the_owner(user, project_id: str, row: dict, *, node_id: str, check
         ) from exc
 
 
-def _add_outcome(user_key: str, added: dict | None, waiting_plan: dict | None) -> dict | None:
+def _add_outcome(user_key: str, added: dict | None, waiting_plan: dict | None, node_id: str) -> dict | None:
     """What a pick's answer says of a picked Data Catalog dataset that still
     waits (*added*, :func:`_add_catalog_picks`): for the owner's review, then
-    what builds the loader once she added it, or why the add failed."""
+    what builds the loader once she added it (:func:`_once_it_is_added`), or
+    why the add failed. The sentence opens with Curio's words, so a name it
+    holds keeps its own case (:func:`_sentence`)."""
     if not added or added.get("status") != OWNER_REVIEW:
         return added
     names = ", ".join(added["names"])
-    then = _once_it_lands(user_key, waiting_plan).replace("once it lands", "once it is added")
     return {
         "status": OWNER_REVIEW,
-        "reason": f"{names} waits for {added['owner']}, who owns this dataflow, to add it from the requests "
-                  f"in the Data Catalog's drawer; {then}",
+        "reason": f"the pick waits for {added['owner']}, who owns this dataflow, to add {names} from the "
+                  f"requests in the Data Catalog's drawer; {_once_it_is_added(user_key, node_id, waiting_plan)}",
     }
+
+
+def _once_it_is_added(user_key: str, node_id: str, waiting_plan: dict | None) -> str:
+    """What builds the loader once the dataflow's owner adds the dataset an
+    editor's pick asked her for: the plan that waits for the node goes on as
+    after a direct pick, in its words (:func:`_plan_waiting`), from the tab of
+    the editor who picked, which takes it whenever it is open once her Apply
+    landed (:func:`claim_goes_on`); outside a plan, the node's Solve. No
+    control a plan line may not show is named: her Apply ends the pause, and
+    Resume with it."""
+    if not waiting_plan:
+        return "Solve the node once it is added"
+    return "once it is added, " + _plan_waiting(user_key, node_id, waiting_plan)["reason"]
+
+
+def _plan_waiting_for(spec: dict, node_id: str) -> dict | None:
+    """The landed plan whose node *node_id* waits for its source
+    (``simulation.plan_waiting_on``) and what left the node waiting
+    (``waitedBy``, from the plan's ``sourceWaitBy``), as
+    ``simulation.follow_the_sources`` says it of a node it puts back: how the
+    plan goes on once it does. None when no plan waits for it."""
+    waiting = agents_simulation.plan_waiting_on(spec, node_id)
+    if waiting:
+        plan = attachments.get_attachment(spec, str(waiting.get("attachmentId") or "")) or {}
+        waited_by = ((plan.get("builderSession") or {}).get("sourceWaitBy") or {}).get(waiting.get("ref"))
+        waiting["waitedBy"] = waited_by
+    return waiting
 
 
 def _still_offered(record: dict, discovery_id: str, name: str) -> None:
@@ -369,7 +504,9 @@ def _once_it_lands(user_key: str, waiting_plan: dict | None) -> str:
 
 
 def _sentence(reason: str) -> str:
-    """*reason* as a sentence: capitalized, ending with a period."""
+    """*reason* as a sentence: capitalized, ending with a period. Every
+    reason a pick's answer gives opens with Curio's own words, never with a
+    name, whose case a sentence never changes ("x8fc-8rcq.geojson")."""
     reason = reason.strip().rstrip(".")
     return f"{reason[:1].upper()}{reason[1:]}." if reason else ""
 

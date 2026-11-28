@@ -15,6 +15,45 @@ import { useCallback } from "react";
 import { useOptionalToastContext } from "../ToastProvider";
 import type { AgentDatasetPick, AgentDatasetSelection } from "../../services/agents/types";
 
+/** What goes on with a plan: its Build & validate or one Step, and a plan
+ * row's Solve, each started from this tab. */
+export interface PlanRuns {
+  runSimulation: (attachmentId: string, mode: "step" | "auto") => Promise<unknown>;
+  validateNode: (attachmentId: string, target: { ref?: string }) => Promise<unknown>;
+}
+
+/**
+ * The plan that waited for a node goes on from this tab, as a `plan-waiting`
+ * answer says (*delegated*: a direct pick's, or the one the owner's Apply of
+ * an editor's pick kept for the tab of the editor who picked,
+ * `useGoesOnOnceAdded`): with its Build & validate (`build`), with one Step
+ * (`step`), or with the plan row's Solve (`node`) for its ref. A build
+ * running now builds the node itself, and any other answer starts nothing.
+ * The toast says why a plan could not go on.
+ */
+export function goOnWithThePlan(
+  delegated: AgentDatasetSelection["delegated"] | null | undefined,
+  runs: PlanRuns,
+  toast: ReturnType<typeof useOptionalToastContext>,
+): void {
+  if (delegated?.status !== "plan-waiting" || !delegated.attachmentId || delegated.running) return;
+  const planAgent = delegated.attachmentId;
+  const goesOn =
+    delegated.continueWith === "build"
+      ? runs.runSimulation(planAgent, "auto")
+      : delegated.continueWith === "step"
+        ? runs.runSimulation(planAgent, "step")
+        : delegated.continueWith === "node" && delegated.ref
+          ? runs.validateNode(planAgent, { ref: delegated.ref })
+          : null;
+  goesOn?.catch((e) => {
+    toast?.showToast(
+      `The plan could not go on with the source: ${e instanceof Error ? e.message : String(e)}`,
+      "error",
+    );
+  });
+}
+
 export function usePickGoesOn(opts: {
   recordDatasetSelection: (
     attachmentId: string,
@@ -40,24 +79,7 @@ export function usePickGoesOn(opts: {
       for (const asker of askers) {
         if (asker !== attachmentId) void refreshAfterMutation(asker).catch(() => undefined);
       }
-      const delegated = selection.delegated;
-      if (delegated?.status === "plan-waiting" && delegated.attachmentId && !delegated.running) {
-        const planAgent = delegated.attachmentId;
-        const goesOn =
-          delegated.continueWith === "build"
-            ? runSimulation(planAgent, "auto")
-            : delegated.continueWith === "step"
-              ? runSimulation(planAgent, "step")
-              : delegated.continueWith === "node" && delegated.ref
-                ? validateNode(planAgent, { ref: delegated.ref })
-                : null;
-        goesOn?.catch((e) => {
-          toast?.showToast(
-            `The plan could not go on with the source: ${e instanceof Error ? e.message : String(e)}`,
-            "error",
-          );
-        });
-      }
+      goOnWithThePlan(selection.delegated, { runSimulation, validateNode }, toast);
       return selection;
     },
     [recordDatasetSelection, refreshAfterMutation, runSimulation, validateNode, toast],
